@@ -1,0 +1,236 @@
+#!/usr/bin/perl
+
+# This program checksums MySQL tables on one or more servers.
+#
+# This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
+# Feedback and improvements are gratefully received.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+
+$OUTPUT_AUTOFLUSH = 1;
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+# Define cmdline args; each is GetOpt::Long spec, whether required,
+# human-readable description.  Add more hash entries as needed.
+my %opt_spec = (
+   l => { s => 'help',         d => 'Show this help message' },
+   d => { s => 'database|d=s', d => 'Checksum only this database' },
+   t => { s => 'table|t=s',    d => 'Checksum only this table' },
+   f => { s => 'function|f=s', d => 'CRC function (SHA1, MD5) default: best available' },
+   e => { s => 'engine|e=s',   d => 'Only do tables of this comma-separated list of storage engines' },
+   c => { s => 'nocrc',        d => 'Do not do a CRC, do count only' },
+   r => { s => 'onlycrc',      d => 'Do not do a count, do CRC only' },
+   k => { s => 'lock|k',       d => 'Lock table on master until done on slaves' },
+   w => { s => 'wait|w',       d => 'Do MASTER_POS_WAIT to guarantee consistency (implies -k)' },
+   g => { s => 'ignore|g=s',   d => 'Ignore this comma-separated list of databases' },
+   o => { s => 'port|P=i',     d => 'Database server port' },
+   u => { s => 'user|u=s',     d => 'Database username' },
+   p => { s => 'pass|p=s',     d => 'Database password' },
+);
+
+# Define the order cmdline opts will appear in help output.  Add any extra ones
+# defined above.  If it's not in this list, it's not an option to this
+# program.  Note that 'h' is host and 'l' is help.
+my @opt_keys = qw( l d t f e c r k g w o p u );
+
+# This is the container for the command-line options' values to be stored in
+# after processing.  Initial values are defaults.
+my %opts = (
+   l => 0,
+   d => '',
+   t => '',
+   f => 'SHA1',
+   e => '',
+   c => 0,
+   r => 0,
+   k => 0,
+   g => '',
+   w => 0,
+   o => 3306,
+   u => getlogin() || getpwuid($UID),
+   p => '',
+);
+
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $opt_spec{$_}->{s} => ref $opts{$_} ? $opts{$_} : \$opts{$_} }  @opt_keys );
+
+# If waiting for master pos on the slave, must lock on the master.
+$opts{k} ||= $opts{w};
+# Make comma-separated lists into hashes
+$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g}) };
+if ( $opts{e} ) {
+   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
+}
+
+if ( $opts{l} || !@ARGV ) {
+   print "Usage: $PROGRAM_NAME -u <user> -p <pass> [OPTION]... MASTER [SLAVE...]\n\n  Options:\n\n";
+   foreach my $key ( @opt_keys ) {
+      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^=]*))?/;
+      $long  = "--$long" . ( $short ? ',' : '' );
+      $short = $short ? " -$short" : '';
+      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+   }
+   print <<USAGE;
+
+$PROGRAM_NAME checksums MySQL tables.  If you specify multiple servers, the
+first server is treated as the master, and the rest as slaves of it, for
+purposes of locking and doing MASTER_POS_WAIT.
+
+For more details, please read the documentation:
+
+   perldoc $PROGRAM_NAME
+
+USAGE
+   exit(1);
+}
+
+my @hosts = @ARGV;
+
+# ############################################################################
+# Ready to work now.
+# ############################################################################
+
+my $hdr = '%-10s %-8s %-8s %-30s %10s %40s' . "\n";
+
+my $db_options = {
+   RaiseError      => 1,
+   PrintError      => 1,
+   AutoCommit      => $opts{k} ? 0 : 1,
+};
+
+my $main_dbh  = get_dbh($hosts[0]);
+$main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
+my @databases = @{$main_dbh->selectcol_arrayref('show databases')};
+
+DATABASE:
+foreach my $database ( @databases ) {
+   next DATABASE if
+      ( $opts{d} && $opts{d} ne $database )
+      || $database =~ m/^information_schema$/mi
+      || exists $opts{g}->{$database};
+
+   my @tables = @{$main_dbh->selectcol_arrayref('SHOW TABLES FROM ' . $database)};
+   next DATABASE unless @tables;
+
+   my %info_for;
+   TABLE:
+   foreach my $table ( @tables ) {
+      next TABLE if $opts{t} && $table ne $opts{t};
+
+      # Get the table type, and a query to generate a checksum for it.
+      my ( $engine, $query ) = checksum_query( $main_dbh, $database, $table );
+
+      # Skip views, and tables of the wrong engine.
+      next TABLE if
+         $engine eq 'VIEW'
+         || ( $opts{e} && !exists $opts{e}->{lc($engine)});
+      $info_for{$table} = {
+         database => $database,
+         table    => $table,
+         engine   => $engine,
+         query    => $query,
+      };
+   }
+
+   next DATABASE unless %info_for;
+
+   # Print header
+   my @hdr_args = qw(HOST ENGINE DATABASE TABLE COUNT CHECKSUM);
+   printf($hdr, @hdr_args);
+
+   TABLE:
+   foreach my $table ( sort keys %info_for ) {
+
+      my %children;
+      foreach my $host ( @hosts ) {
+         my $pid = fork();
+         if ( defined($pid) && $pid == 0 ) { # I am a child
+            do_tbl($host, $info_for{$table});
+         }
+         elsif ( !defined($pid) ) {
+            die("Unable to fork!");
+         }
+         # I already exited if I'm a child, so I'm the parent.
+         $children{$host} = $pid;
+      }
+
+      # Wait for the children to exit.
+      foreach my $host ( keys %children ) {
+         my $pid = waitpid($children{$host}, 0);
+      }
+   }
+}
+
+sub do_tbl {
+   my ( $host, $info ) = @_;
+   my $dbh = get_dbh($host);
+   my ( $cnt, $crc ) = do_var_crc($host, $dbh, $info->{query});
+   printf($hdr, $host, @{$info}{qw(engine database table)}, $cnt, $crc);
+   exit(0);
+}
+
+sub checksum_query {
+   my ( $dbh, $db, $tbl ) = @_;
+   my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE $db.$tbl"))[1];
+   return ( 'VIEW', '' ) if $ddl =~ m/^CREATE ALGORITHM/;
+
+   my ( $type ) = $ddl =~ m/^\) (?:ENGINE|TYPE)=(\S+)/m;
+
+   # Make a list of all columns.
+   my @defs  = $ddl =~ m/^(\s+`.*)$/gm;
+   my @cols  = map { $_ =~ m/(`[^`]+`)/g } @defs;
+   my $cols  = join(', ', @cols);
+
+   # To handle nulls, make a bitmap of nullable columns that are null.
+   my @nulls = map { $_ =~ m/(`[^`]+`)/g } grep { $_ !~ m/NOT NULL/ } @defs;
+   my $nulls = @nulls
+             ? (", CONCAT(" . join(', ', map { "ISNULL($_)" } @nulls) .  ")")
+             : '';
+
+   # Find whether there's a PK.  This is important for order-by in InnoDB.
+   my $order = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
+
+   # Make the query.
+   my $query = "SELECT MIN(LEAST(0, "
+      . "LENGTH(\@crc := SHA1(CONCAT_WS('#', \@crc, SHA1(CONCAT_WS('#', $cols$nulls))))), "
+      . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl` $order";
+
+   return ( $type, $query );
+}
+
+sub get_dbh {
+   my ( $host ) = @_;
+   return DBI->connect(
+      "DBI:mysql:$opts{d};host=$host;port=$opts{o}", $opts{u}, $opts{p}, $db_options )
+      or die("Can't connect to DB: $!");
+}
+
+sub do_var_crc {
+   my ( $host, $dbh, $query ) = @_;
+   eval { $dbh->do("select 1") };
+   $dbh->do('set @crc := "", @cnt := 0');
+   $dbh->do($query);
+   return @{$dbh->selectall_arrayref('select @cnt, @crc')->[0]};
+}
