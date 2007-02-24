@@ -25,6 +25,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use Time::HiRes qw(time);
 
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -40,8 +41,8 @@ my %opt_spec = (
    t => { s => 'table|t=s',    d => 'Checksum only this table' },
    f => { s => 'function|f=s', d => 'CRC function (SHA1, MD5) default: best available' },
    e => { s => 'engine|e=s',   d => 'Only do tables of this comma-separated list of storage engines' },
-   c => { s => 'nocrc',        d => 'Do not do a CRC, do count only' },
-   r => { s => 'onlycrc',      d => 'Do not do a count, do CRC only' },
+   c => { s => 'nocrc',        d => 'Skip the CRC' },
+   r => { s => 'nocount',      d => 'Skip the count' },
    k => { s => 'lock|k',       d => 'Lock table on master until done on slaves' },
    w => { s => 'wait|w',       d => 'Do MASTER_POS_WAIT to guarantee consistency (implies -k)' },
    g => { s => 'ignore|g=s',   d => 'Ignore this comma-separated list of databases' },
@@ -61,7 +62,7 @@ my %opts = (
    l => 0,
    d => '',
    t => '',
-   f => 'SHA1',
+   f => '',
    e => '',
    c => 0,
    r => 0,
@@ -112,7 +113,7 @@ my @hosts = @ARGV;
 # Ready to work now.
 # ############################################################################
 
-my $hdr = '%-10s %-8s %-8s %-30s %10s %40s' . "\n";
+my $hdr = '%-10s %-8s %-8s %-30s %10s %40s %4s' . "\n";
 
 my $db_options = {
    RaiseError      => 1,
@@ -157,7 +158,7 @@ foreach my $database ( @databases ) {
    next DATABASE unless %info_for;
 
    # Print header
-   my @hdr_args = qw(HOST ENGINE DATABASE TABLE COUNT CHECKSUM);
+   my @hdr_args = qw(HOST ENGINE DATABASE TABLE COUNT CHECKSUM TIME);
    printf($hdr, @hdr_args);
 
    TABLE:
@@ -186,8 +187,22 @@ foreach my $database ( @databases ) {
 sub do_tbl {
    my ( $host, $info ) = @_;
    my $dbh = get_dbh($host);
-   my ( $cnt, $crc ) = do_var_crc($host, $dbh, $info->{query});
-   printf($hdr, $host, @{$info}{qw(engine database table)}, $cnt, $crc);
+   my $cnt = '';
+   my $crc = '';
+   my $start = time();
+   if ( $info->{engine} eq 'MyISAM' && !$opts{f}  ) {
+      if ( !$opts{c} ) {
+         $crc = $dbh->selectall_arrayref("CHECKSUM TABLE $info->{database}.$info->{table}",
+            { Slice => {} })->[0]->{Checksum};
+      }
+      if ( !$opts{r} ) {
+         $cnt = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $info->{database}.$info->{table}")->[0]->[0];
+      }
+   }
+   else {
+      ( $cnt, $crc ) = do_var_crc($host, $dbh, $info->{query});
+   }
+   printf($hdr, $host, @{$info}{qw(engine database table)}, $cnt, $crc, sprintf('%.3f', time() - $start));
    exit(0);
 }
 
@@ -213,8 +228,9 @@ sub checksum_query {
    my $order = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
 
    # Make the query.
+   my $func = $opts{f} || 'SHA1';
    my $query = "SELECT MIN(LEAST(0, "
-      . "LENGTH(\@crc := SHA1(CONCAT_WS('#', \@crc, SHA1(CONCAT_WS('#', $cols$nulls))))), "
+      . "LENGTH(\@crc := $func(CONCAT_WS('#', \@crc, $func(CONCAT_WS('#', $cols$nulls))))), "
       . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl` $order";
 
    return ( $type, $query );
