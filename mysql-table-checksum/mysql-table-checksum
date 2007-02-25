@@ -79,7 +79,7 @@ my %opts = (
    r => 0,
    k => 0,
    v => 0,
-   w => 0,
+   w => undef,
    o => 3306,
    u => getlogin() || getpwuid($UID),
    p => '',
@@ -89,7 +89,7 @@ Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $opt_spec{$_}->{s} => ref $opts{$_} ? $opts{$_} : \$opts{$_} }  @opt_keys );
 
 # Apply dependencies between arguments.
-$opts{k} ||= $opts{w};
+$opts{k} ||= defined $opts{w};
 $opts{v} ||= $opts{k};
 $opts{f} ||= $opts{s} ? 'SHA1' : '';
 
@@ -196,7 +196,7 @@ foreach my $database ( @databases ) {
 
       # Lock table and get master position on the master, if applicable.
       $main_dbh->do("LOCK TABLES $database.$table READ") if $opts{k};
-      if ( $opts{w} ) {
+      if ( defined $opts{w} ) {
          my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
          @{$info_for{$table}}{keys %$master_status} = values %$master_status;
       }
@@ -231,7 +231,7 @@ sub do_tbl {
    my $sta = 'NULL';
    my $lag = 'NULL';
    my $beg = time();
-   if ( !$is_master && $opts{w} ) {
+   if ( !$is_master && defined $opts{w} ) {
       $sta = $dbh->selectall_arrayref(
          "SELECT MASTER_POS_WAIT('$info->{File}', $info->{Position}, $opts{w})")->[0]->[0];
       $sta = 'NULL' unless defined $sta;
