@@ -1,7 +1,6 @@
 #!/usr/bin/perl
 
 # TODO:
-# How does the timeout to master_pos_wait work?
 # Is it possible to XOR rows so the result is order-independent?
 
 # This program checksums MySQL tables on one or more servers.
