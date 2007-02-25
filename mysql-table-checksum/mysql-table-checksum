@@ -1,5 +1,9 @@
 #!/usr/bin/perl
 
+# TODO:
+# How does the timeout to master_pos_wait work?
+# Is it possible to XOR rows so the result is order-independent?
+
 # This program checksums MySQL tables on one or more servers.
 #
 # This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
@@ -25,6 +29,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use List::Util qw(max);
 use Time::HiRes qw(time);
 
 $OUTPUT_AUTOFLUSH = 1;
@@ -36,38 +41,44 @@ $OUTPUT_AUTOFLUSH = 1;
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my %opt_spec = (
-   l => { s => 'help',         d => 'Show this help message' },
-   d => { s => 'database|d=s', d => 'Checksum only this database' },
-   t => { s => 'table|t=s',    d => 'Checksum only this table' },
-   f => { s => 'function|f=s', d => 'CRC function (SHA1, MD5) default: best available' },
-   e => { s => 'engine|e=s',   d => 'Only do tables of this comma-separated list of storage engines' },
-   c => { s => 'nocrc',        d => 'Skip the CRC' },
-   r => { s => 'nocount',      d => 'Skip the count' },
-   k => { s => 'lock|k',       d => 'Lock table on master until done on slaves' },
-   w => { s => 'wait|w',       d => 'Do MASTER_POS_WAIT to guarantee consistency (implies -k)' },
-   g => { s => 'ignore|g=s',   d => 'Ignore this comma-separated list of databases' },
-   o => { s => 'port|P=i',     d => 'Database server port' },
-   u => { s => 'user|u=s',     d => 'Database username' },
-   p => { s => 'pass|p=s',     d => 'Database password' },
+   l => { s => 'help',           d => 'Show this help message' },
+   d => { s => 'databases|d=s',  d => 'Checksum only this comma-separated list of databases' },
+   g => { s => 'ignore-db|g=s',  d => 'Ignore this comma-separated list of databases' },
+   t => { s => 'tables|t=s',     d => 'Checksum only this comma-separated list of tables' },
+   n => { s => 'ignore-tbl|n=s', d => 'Ignore this comma-separated list of tables' },
+   e => { s => 'engine|e=s',     d => 'Only do tables of this comma-separated list of storage engines' },
+   s => { s => 'where=s',        d => 'Checksum only rows matching this WHERE clause (implies -f SHA1)' },
+   f => { s => 'function|f=s',   d => 'CRC function (SHA1, MD5...) overrides --nocrc' },
+   c => { s => 'nocrc',          d => 'Skip the CRC' },
+   r => { s => 'nocount',        d => 'Skip the count' },
+   k => { s => 'lock|k',         d => 'Lock table on master until done on slaves (implies -v)' },
+   v => { s => 'slavelag|v',     d => 'Report how far slaves lag master' },
+   w => { s => 'wait|w=i',       d => 'How long to do MASTER_POS_WAIT on slaves (implies -kv)' },
+   o => { s => 'port|P=i',       d => 'Database server port' },
+   u => { s => 'user|u=s',       d => 'Database username' },
+   p => { s => 'pass|p=s',       d => 'Database password' },
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l d t f e c r k g w o p u );
+my @opt_keys = qw( l d g t n e s f c r k v w o p u );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
    l => 0,
    d => '',
+   g => '',
    t => '',
-   f => '',
+   n => '',
    e => '',
+   s => '',
+   f => '',
    c => 0,
    r => 0,
    k => 0,
-   g => '',
+   v => 0,
    w => 0,
    o => 3306,
    u => getlogin() || getpwuid($UID),
@@ -77,13 +88,26 @@ my %opts = (
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $opt_spec{$_}->{s} => ref $opts{$_} ? $opts{$_} : \$opts{$_} }  @opt_keys );
 
-# If waiting for master pos on the slave, must lock on the master.
+# Apply dependencies between arguments.
 $opts{k} ||= $opts{w};
-# Make comma-separated lists into hashes
+$opts{v} ||= $opts{k};
+$opts{f} ||= $opts{s} ? 'SHA1' : '';
+
+# Make comma-separated lists into hashes.
+if ( $opts{d} ) {
+   $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
+}
 $opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g}) };
+if ( $opts{t} ) {
+   $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
+}
+$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n}) };
 if ( $opts{e} ) {
    $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
 }
+
+# Create a WHERE clause
+$opts{s} = $opts{s} ? " WHERE $opts{s}" : '';
 
 if ( $opts{l} || !@ARGV ) {
    print "Usage: $PROGRAM_NAME -u <user> -p <pass> [OPTION]... MASTER [SLAVE...]\n\n  Options:\n\n";
@@ -107,28 +131,27 @@ USAGE
    exit(1);
 }
 
-my @hosts = @ARGV;
-
 # ############################################################################
 # Ready to work now.
 # ############################################################################
 
-my $hdr = '%-10s %-8s %-8s %-30s %10s %40s %4s' . "\n";
+my $exit_status = 0;
+my @hosts = unique(@ARGV);
 
 my $db_options = {
-   RaiseError      => 1,
-   PrintError      => 1,
-   AutoCommit      => $opts{k} ? 0 : 1,
+   RaiseError => 1,
+   PrintError => 1,
+   AutoCommit => $opts{k} ? 0 : 1,
 };
 
-my $main_dbh  = get_dbh($hosts[0]);
+my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
 my @databases = @{$main_dbh->selectcol_arrayref('show databases')};
 
 DATABASE:
 foreach my $database ( @databases ) {
    next DATABASE if
-      ( $opts{d} && $opts{d} ne $database )
+      ( $opts{d} && !exists($opts{d}->{$database}) )
       || $database =~ m/^information_schema$/mi
       || exists $opts{g}->{$database};
 
@@ -138,7 +161,9 @@ foreach my $database ( @databases ) {
    my %info_for;
    TABLE:
    foreach my $table ( @tables ) {
-      next TABLE if $opts{t} && $table ne $opts{t};
+      next TABLE if
+         ( $opts{t} && !exists($opts{t}->{$table}) )
+         || exists $opts{n}->{$table};
 
       # Get the table type, and a query to generate a checksum for it.
       my ( $engine, $query ) = checksum_query( $main_dbh, $database, $table );
@@ -157,18 +182,30 @@ foreach my $database ( @databases ) {
 
    next DATABASE unless %info_for;
 
-   # Print header
-   my @hdr_args = qw(HOST ENGINE DATABASE TABLE COUNT CHECKSUM TIME);
+   # Design and print header
+   my $crc_wid  = lc($opts{f}) eq 'md5' ? 32 : 40;
+   my $max_tbl  = max(5, map { length($_) } keys %info_for);
+   my $max_db   = max(8, length($database));
+   my $max_host = max(4, map { length($_) } @hosts);
+   my $hdr      = "%-${max_host}s %-${max_db}s %-${max_tbl}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+   my @hdr_args = qw(HOST DATABASE TABLE ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
    printf($hdr, @hdr_args);
 
    TABLE:
    foreach my $table ( sort keys %info_for ) {
 
+      # Lock table and get master position on the master, if applicable.
+      $main_dbh->do("LOCK TABLES $database.$table READ") if $opts{k};
+      if ( $opts{w} ) {
+         my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
+         @{$info_for{$table}}{keys %$master_status} = values %$master_status;
+      }
+
       my %children;
       foreach my $host ( @hosts ) {
          my $pid = fork();
          if ( defined($pid) && $pid == 0 ) { # I am a child
-            do_tbl($host, $info_for{$table});
+            do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
          }
          elsif ( !defined($pid) ) {
             die("Unable to fork!");
@@ -180,29 +217,54 @@ foreach my $database ( @databases ) {
       # Wait for the children to exit.
       foreach my $host ( keys %children ) {
          my $pid = waitpid($children{$host}, 0);
+         $exit_status ||= $CHILD_ERROR;
       }
+      $main_dbh->do("UNLOCK TABLES") if $opts{k};
    }
 }
 
 sub do_tbl {
-   my ( $host, $info ) = @_;
-   my $dbh = get_dbh($host);
+   my ( $host, $info, $is_master, $hdr ) = @_;
+   my $dbh = get_dbh($host, $info->{database});
    my $cnt = '';
    my $crc = '';
-   my $start = time();
+   my $sta = 'NULL';
+   my $lag = 'NULL';
+   my $beg = time();
+   if ( !$is_master && $opts{w} ) {
+      $sta = $dbh->selectall_arrayref(
+         "SELECT MASTER_POS_WAIT('$info->{File}', $info->{Position}, $opts{w})")->[0]->[0];
+      $sta = 'NULL' unless defined $sta;
+   }
+   if ( !$is_master && $opts{v} ) {
+      my $res = $dbh->selectrow_hashref("SHOW SLAVE STATUS");
+      $lag = $res && defined $res->{Seconds_Behind_Master}
+           ? $res->{Seconds_Behind_Master}
+           : 'NULL';
+   }
+   my $mid = time();
    if ( $info->{engine} eq 'MyISAM' && !$opts{f}  ) {
       if ( !$opts{c} ) {
          $crc = $dbh->selectall_arrayref("CHECKSUM TABLE $info->{database}.$info->{table}",
             { Slice => {} })->[0]->{Checksum};
       }
       if ( !$opts{r} ) {
-         $cnt = $dbh->selectall_arrayref("SELECT COUNT(*) FROM $info->{database}.$info->{table}")->[0]->[0];
+         $cnt = do_count($dbh, $info);
       }
    }
    else {
-      ( $cnt, $crc ) = do_var_crc($host, $dbh, $info->{query});
+      if ( !$opts{f} && $opts{c} ) {
+         $cnt = do_count($dbh, $info);
+      }
+      else {
+         ( $cnt, $crc ) = do_var_crc($dbh, $info->{query});
+      }
    }
-   printf($hdr, $host, @{$info}{qw(engine database table)}, $cnt, $crc, sprintf('%.3f', time() - $start));
+   $crc ||= 'NULL';
+   my $end = time();
+   $dbh->disconnect();
+   printf($hdr, $host, @{$info}{qw(database table engine)}, $cnt, $crc,
+      sprintf('%d', $end - $mid), sprintf('%d', $mid - $beg), $sta, $lag);
    exit(0);
 }
 
@@ -224,29 +286,182 @@ sub checksum_query {
              ? (", CONCAT(" . join(', ', map { "ISNULL($_)" } @nulls) .  ")")
              : '';
 
-   # Find whether there's a PK.  This is important for order-by in InnoDB.
-   my $order = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
+   # Apply WHERE and find whether there's a PK (for order-by in InnoDB).
+   my $index = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
 
    # Make the query.
    my $func = $opts{f} || 'SHA1';
    my $query = "SELECT MIN(LEAST(0, "
       . "LENGTH(\@crc := $func(CONCAT_WS('#', \@crc, $func(CONCAT_WS('#', $cols$nulls))))), "
-      . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl` $order";
+      . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl`$index$opts{s}";
 
    return ( $type, $query );
 }
 
+exit $exit_status;
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+
 sub get_dbh {
-   my ( $host ) = @_;
+   my ( $host, $db ) = @_;
+   $db ||= '';
    return DBI->connect(
-      "DBI:mysql:$opts{d};host=$host;port=$opts{o}", $opts{u}, $opts{p}, $db_options )
+      "DBI:mysql:$db;host=$host;port=$opts{o}", $opts{u}, $opts{p}, $db_options )
       or die("Can't connect to DB: $!");
 }
 
 sub do_var_crc {
-   my ( $host, $dbh, $query ) = @_;
-   eval { $dbh->do("select 1") };
+   my ( $dbh, $query ) = @_;
    $dbh->do('set @crc := "", @cnt := 0');
    $dbh->do($query);
    return @{$dbh->selectall_arrayref('select @cnt, @crc')->[0]};
 }
+
+sub do_count {
+   my ( $dbh, $info ) = @_;
+   return $dbh->selectall_arrayref(
+      "SELECT COUNT(*) FROM $info->{database}.$info->{table}$opts{s}"
+   )->[0]->[0];
+}
+
+sub unique {
+   my %seen;
+   grep { !$seen{$_}++ } @_;
+}
+
+# ############################################################################
+# Documentation
+# ############################################################################
+=pod
+
+=head1 NAME
+
+mysql-table-checksum - Print checksums for MySQL tables on one or many servers.
+
+=head1 OVERVIEW
+
+This script generates table checksums for MySQL tables, typically useful for
+verifying your slaves are in sync with the master.
+
+Invoke the script with options and server names on the command line.  If you
+specify more than one server, the script assumes the first server is the master
+and others are slaves.  It iterates through the databases and tables, and for
+each table generates a checksum for each server, in the order you specified them
+on the command line.  For speed it does these in parallel, forking off a child
+process for each table.  Duplicate server names are ignored, but if you want to
+checksum a server against itself you can use two different forms of the hostname
+(for example, localhost and 127.0.0.1).
+
+There are several options to help you get a more consistent read as
+unobtrusively as possible.  The most basic thing the script can do is lock the
+table on the master until the checksum on the slave is finished, preventing
+replication changes from affecting the data in the table.  This is one table at
+a time; it does not lock all tables at once.  Also, the checksums are on the
+in-memory copy of the table, so there is no need to flush them to disk.  If your
+slaves are keeping up with the master, this is probably a fine way to do things.
+You can tell the script to print how far behind the slave is to help you see
+this.
+
+If the slaves aren't keeping up, you can tell the checksum to wait on the slave
+until it has reached the position in the master's binlog where the table was
+locked.  The wait parameter is a timeout value, so if it times out, it'll go
+ahead with the checksum even if the slave hasn't caught up to that position.
+Check the STAT column to see.
+
+Checksums use SHA1 by default on non-MyISAM tables, and the built-in table
+checksum on MyISAM tables, but you can specify a CRC function to use too.  Good
+options include SHA1 and MD5.  This function is run in SQL, not in Perl, so the
+function must be built in to MySQL.
+
+You can skip the row count or the checksum if you want.  The non-MyISAM checksum
+technique automatically counts rows as it does the checksum, so skipping the
+count on InnoDB doesn't save you any overhead, if you're worried about that.
+COUNT(*) is not used unless you skip the checksum.
+
+You can constrain the checksum to only do some databases or tables and ignore
+some databases or tables.  You can tell it to only do tables with some storage
+engines.  The script only examines table structure on the master, so if the
+storage engine or table structure differs on the slave, it won't notice.  The
+script ignores views.
+
+You can further restrict the checksum to only a part of a table with the --where
+option, similar the the -w option to mysqldump.  The argument to this option
+should be quoted and should not contain the word WHERE.  For example, specifying
+"--where 'foo=bar'" on the command line will result in the checksum being run
+with "WHERE foo=bar".  If you specify this option for a table that doesn't have
+a foo column, the query will cause an error.
+
+Output is to STDOUT, one line per server and table, with header lines for each
+database.  The columns in the output are as follows:
+
+=over
+
+=item HOST
+
+The server's hostname.
+
+=item DATABASE
+
+The database the table is in.
+
+=item TABLE
+
+The table name.
+
+=item ENGINE
+
+The table's storage engine.
+
+=item COUNT
+
+The table's row count, unless you specified to skip it, in which case it's zero.
+
+=item CHECKSUM
+
+The table's checksum, unless you specifed to skip it or the table has no rows,
+in which case it's NULL.
+
+=item TIME
+
+The time the actual checksum and/or counting took.
+
+=item WAIT
+
+How long the checksum blocked before beginning.
+
+=item STAT
+
+The return value of MASTER_POS_WAIT().
+
+=item LAG
+
+How far the slave lags the master, as reported by SHOW SLAVE STATUS.
+
+=back
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
+Feedback and improvements are gratefully received.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz, baron at xaprb dot com.
+
+=cut
