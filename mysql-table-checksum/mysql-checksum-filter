@@ -1,0 +1,165 @@
+#!/usr/bin/perl
+
+# This program sorts and filters table checksums output by mysql-table-checksum,
+# and only shows you ones that have problems.
+#
+# This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+use Data::Dumper;
+use English qw(-no_match_vars);
+use Getopt::Long;
+
+$OUTPUT_AUTOFLUSH = 1;
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+# Define cmdline args; each is GetOpt::Long spec, whether required,
+# human-readable description.  Add more hash entries as needed.
+my %opt_spec = (
+   l => { s => 'help',       d => 'Show this help message' },
+   v => { s => 'verbose|v',  d => 'Output lines that have no differences' },
+   m => { s => 'master|m=s', d => 'Name of the master server' },
+);
+
+# Define the order cmdline opts will appear in help output.  Add any extra ones
+# defined above.  If it's not in this list, it's not an option to this
+# program.  Note that 'h' is host and 'l' is help.
+my @opt_keys = qw( l v m );
+
+# This is the container for the command-line options' values to be stored in
+# after processing.  Initial values are defaults.
+my %opts = (
+   l => 0,
+   v => 0,
+   m => 0,
+);
+
+Getopt::Long::Configure( 'no_ignore_case', 'bundling' );
+GetOptions( map { $opt_spec{$_}->{s} => ref $opts{$_} ? $opts{$_} : \$opts{$_} } @opt_keys );
+
+if ( $opts{l} ) {
+   print "Usage: $PROGRAM_NAME [OPTION]... [FILE]...\n\n  Options:\n\n";
+   foreach my $key (@opt_keys) {
+      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^=]*))?/;
+      $long = "--$long" . ( $short ? ',' : '' );
+      $short = $short ? " -$short" : '';
+      printf( "  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d} );
+   }
+   print <<USAGE;
+
+$PROGRAM_NAME filters checksums so you only see ones that differ.  If you pass
+files on the command line it analyzes them; otherwise it reads from standard
+input.
+
+For more details, please read the documentation:
+
+   perldoc $PROGRAM_NAME
+
+USAGE
+   exit(1);
+}
+
+# ############################################################################
+# Ready to work now.
+# ############################################################################
+
+my $exit_status = 0;
+my $one_file    = @ARGV < 2;
+
+my $DATABASE = 0;
+my $TABLE    = 1;
+my $HOST     = 2;
+my $ENGINE   = 3;
+my $COUNT    = 4;
+my $CRC      = 5;
+my $TIME     = 6;
+my $WAIT     = 7;
+my $STAT     = 8;
+my $LAG      = 9;
+my $ORIG     = 10;
+
+my %lines_for;    # All lines from all files, if > 1 file on cmdline
+my $last_tbl;     # db.tbl of last line read
+my $current_set = [];    # working set of lines to process
+
+while ( my $line = <> ) {    # Magically reads STDIN or files in @ARGV
+   chomp $line;
+   next unless $line;
+   next if $line =~ m/^DATABASE/;
+   my @cols = $line =~ m/(\S+)/g;
+   next unless @cols == 10;
+   push @cols, $line;
+   my $tbl = $cols[$DATABASE] . '.' . $cols[$TABLE];
+
+   if ($one_file) { # Process immediately.
+      if ( $last_tbl && $last_tbl ne $tbl ) {
+         process_set($current_set);
+         $current_set = [ \@cols ];
+      }
+      else {
+         push @$current_set, \@cols;
+      }
+   }
+   else { # Stash into %lines_for and process later.
+      $lines_for{$tbl} ||= [];
+      push @{ $lines_for{$tbl} }, \@cols;
+   }
+   $last_tbl = $tbl;
+}
+
+if ($one_file) {
+   process_set($current_set);
+}
+else {
+   foreach my $set ( values %lines_for ) {
+      process_set($set);
+   }
+}
+
+sub process_set {
+   my ($set) = @_;
+   return unless @$set;
+
+   # Sort the "master" to the front, all others in aphabetical order
+   @$set = sort {
+           $a->[$HOST] eq $opts{m} ? -1
+         : $b->[$HOST] eq $opts{m} ? 1
+         : $a->[$HOST] cmp $b->[$HOST]
+   } @$set;
+
+   # If the verbose flag is set, or if anything differs, print it
+   my $first = $set->[0];
+
+   my $print = $opts{v} || grep {
+            $_->[$CRC]   ne $first->[$CRC]
+         || $_->[$COUNT] ne $first->[$COUNT]
+   } @{$set}[ 1 .. ( scalar(@$set) - 2 ) ];
+
+   if ($print) {
+      foreach my $line (@$set) {
+         print $line->[$ORIG], "\n";
+      }
+   }
+}
+
+exit $exit_status;
