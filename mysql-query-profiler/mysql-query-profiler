@@ -1,0 +1,987 @@
+#!/usr/bin/perl
+
+# This is mysql-query-profiler, a program to analyze SQL queries for MySQL.
+# 
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# Copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.  All rights
+# reserved, except for those granted under the license.
+#
+# This program is free software.  You may use, modify, and redistribute it
+# under either the GNU GPL version 2, or the Perl Artistic License, at your
+# option.  For details please read the documentation, available by issuing
+# `perldoc mysql-query-profiler'.
+
+# TODO: format things more compactly.
+# TODO: allow a side-by-side comparison of two queries
+
+use strict;
+use warnings FATAL => 'all';
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+use Term::ReadLine;
+use Time::HiRes qw(time);
+use List::Util qw(sum min first);
+
+$OUTPUT_AUTOFLUSH = 1;
+
+use constant MAX_ULONG => 4294967295; # 2^32-1
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+my %opt_spec = (
+   a => { s => 'allowcache',    d => 'Enable query cache (default is disabled)' },
+   d => { s => 'database|d=s',  d => 'Database' },
+   c => { s => 'nocalibrate',   d => "Don't try to compensate for SHOW STATUS" },
+   g => { s => 'debug|g',       d => 'For development purposes only' },
+   f => { s => 'flush=i',       d => 'Flush tables 1) never 2) once 3) every query; default 1' },
+   h => { s => 'host|h=s',      d => 'Database server hostname' },
+   i => { s => 'noinnodb',      d => "Don't show any InnoDB statistics" },
+   l => { s => 'help',          d => 'Show this help message' },
+   n => { s => 'only|n=s',      d => "Only print separate stats for this list of queries (e.g.  1,5,7)" },
+   o => { s => 'port|P=i',      d => 'Database server port' },
+   p => { s => 'pass|p=s',      d => 'Database password' },
+   s => { s => 'separate|s',    d => 'Print stats separately for each query' },
+   t => { s => 'tab|t',         d => 'Print tab-separated values (for a spreadsheet)' },
+   u => { s => 'user|u=s',      d => 'Database username' },
+   v => { s => 'verbosity|v=i', d => 'Verbosity 1, 2 or 3; default 1' },
+);
+
+# For ordering them the way I want...
+my @opt_keys = qw( h d o u p v g s n a f i c t l );
+
+my %opts = (
+   a => 0,
+   d => '',
+   c => 0,
+   f => 0,
+   g => 0,
+   h => '',
+   i => 0,
+   n => '',
+   o => 0,
+   p => 0,
+   s => 0,
+   u => '',
+   v => 1,
+   t => 0,
+   l => 0,
+);
+
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+
+$opts{f} ||= 1;
+$opts{v} ||= 1;
+$opts{n} =   [ split(/,/, $opts{n} || '' ) ];
+
+if ( $opts{l} || !@ARGV ) {
+   print "Usage: $PROGRAM_NAME <options> batch-file\n\n  Options:\n\n";
+   foreach my $key ( @opt_keys ) {
+      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^=]*))?/;
+      $long  = "--$long" . ( $short ? ',' : '' );
+      $short = $short ? " -$short" : '';
+      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+   }
+   print <<USAGE;
+
+$PROGRAM_NAME executes the queries in a file and prints
+statistics about the server load they caused.  All arguments are
+optional, but you must specify a file to profile.  Example:
+
+   $PROGRAM_NAME -v 3 queries.sql
+
+Separate each query in the file with a blank line.
+
+If possible, database options are read from your .my.cnf file.
+For more details, please read the documentation:
+
+   perldoc $PROGRAM_NAME
+
+USAGE
+   exit(1);
+}
+
+# This will end up containing what's needed to connect to MySQL.
+my $conn = {
+   h  => $opts{h},
+   db => $opts{d},
+   u  => $opts{u},
+   p  => $opts{p},
+   o  => $opts{o},
+};
+
+if ( grep { !$conn->{$_} } keys %$conn ) {
+   # Try to use the user's .my.cnf file.
+   eval {
+      my $homedir = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE};
+      open my $conf_file, "<", "$homedir/.my.cnf" or die $OS_ERROR;
+      while ( my $line = <$conf_file> ) {
+         chomp $line;
+         $line =~ s/(^\s*)|(\s*#.*$)//g;
+         next unless $line;
+         my ( $key, $val ) = split( /\s*=\s*/, $line );
+         next unless defined $val;
+         if ( $key eq 'host' )     { $conn->{h}  ||= $val; }
+         if ( $key eq 'user' )     { $conn->{u}  ||= $val; }
+         if ( $key =~ m/^pass/ )   { $conn->{p}  ||= $val; }
+         if ( $key eq 'database' ) { $conn->{db} ||= $val; }
+         if ( $key eq 'port' )     { $conn->{o}  ||= $val; }
+      }
+      close $conf_file;
+   };
+   if ( $EVAL_ERROR && $EVAL_ERROR !~ m/No such file/ ) {
+      print "I tried to read your .my.cnf file, but got '$EVAL_ERROR'\n";
+   }
+}
+
+# Fill in defaults for some things
+$conn->{o} ||= 3306;
+$conn->{h} ||= 'localhost';
+$conn->{u} ||= getlogin() || getpwuid($UID);
+$conn->{p} ||= '';
+
+my %prompts = (
+   o  => "Port number: ",
+   h  => "Database host: ",
+   u  => "Database user: ",
+   p  => "Database password: ",
+   db => "Database: ",
+);
+
+# If anything remains, prompt the terminal
+my $term;
+foreach my $thing ( grep { !$conn->{$_} } keys %$conn ) {
+   $term ||= Term::ReadLine->new('terminal');
+   $conn->{$thing} = $term->readline($prompts{$thing});
+}
+
+# ############################################################################
+# Get ready to do the main work.
+# ############################################################################
+
+# Connect to the database
+my $dbh = DBI->connect(
+   "DBI:mysql:database=$conn->{db};host=$conn->{h};port=$conn->{o}",
+   $conn->{u}, $conn->{p}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+   or die("Can't connect to DB: $!");
+
+# Version 5.0.2 implements SESSION status and InnoDB status values.
+# Version 5.0.3 implements InnoDB row lock status values.
+my $verbosity   = min( $opts{v}, 3 );
+my $variables   = get_variables($dbh);
+my $have_innodb = $variables->{have_innodb} eq 'YES' ? 1 : 0;
+
+my ( $major, $minor, $rev ) = $variables->{version} =~ m/(\d+)\.(\d+)\.(\d+)/;
+my $have_session            = $major >= 5 && $rev >= 2 ? 1 : 0;
+my $have_last               = $major >= 5 && $rev >= 1 ? 1 : 0;
+my $have_rowlock            = $major >= 5 && $rev >= 3 ? 1 : 0;
+
+if ( $opts{i} ) {
+   $have_innodb  = 0;
+   $have_rowlock = 0;
+}
+
+# Configure the query cache
+my $have_qcache = 0;
+if ( $variables->{query_cache_size} ) {
+   if ( $opts{a} ) {
+      $have_qcache = 1;
+   }
+   else {
+      $dbh->do("SET SESSION query_cache_type = OFF");
+   }
+}
+
+# Depending on the level of verbosity and the server version, summary and
+# separate printouts will include different formats.
+my $formats_for = {
+   1 => [
+      $have_last    ? qw( OPT_COST ) : qw(),
+                      qw( TBL_IDX ),
+      $have_qcache  ? qw( QCACHE )   : qw(),
+   ],
+   2 => [
+      $have_last    ? qw( OPT_COST )       : qw(),
+                      qw( TBL_IDX ),
+      $have_qcache  ? qw( QCACHE )         : qw(),
+      $have_innodb  ? qw( ROW_OPS_INNODB ) : qw( ROW_OPS ),
+   ],
+   3 => [
+      $have_last    ? qw( OPT_COST )                         : qw(),
+                      qw( TBL_IDX ),
+      $have_qcache  ? qw( QCACHE )                           : qw(),
+      $have_innodb  ? qw( ROW_OPS_INNODB )                   : qw( ROW_OPS ),
+      $have_rowlock ? qw( ROW_LOCKS )                        : qw(),
+      $have_innodb  ? qw( IO_OPS IO_INNODB INNODB_DATA_OPS ) : qw( IO_OPS ),
+   ],
+};
+
+# Globals that'll get set by subroutines.  Used in formats, which is why they
+# must be global.
+my $ch                 = {};
+my $qcost              = 0;
+my $qcost_total        = 0;
+my $qtime_total        = 0;
+my $which_query        = 0;
+my $query_time         = 0;
+my $query_text         = '';
+my $qcache_inval       = 0;
+my $qcache_inval_total = 0;
+
+# ############################################################################
+# Get a baseline for how much SHOW STATUS costs.
+# ############################################################################
+
+# Every status variable this script cares about
+my @important_vars = qw(
+   Com_commit Com_delete Com_delete_multi Com_insert Com_insert_select
+   Com_replace Com_replace_select Com_select Com_update Com_update_multi
+   Created_tmp_disk_tables Created_tmp_files Created_tmp_tables Handler_commit
+   Handler_delete Handler_read_first Handler_read_key Handler_read_next
+   Handler_read_prev Handler_read_rnd Handler_read_rnd_next Handler_update
+   Handler_write Innodb_buffer_pool_pages_flushed
+   Innodb_buffer_pool_read_ahead_rnd Innodb_buffer_pool_read_ahead_seq
+   Innodb_buffer_pool_read_requests Innodb_buffer_pool_reads
+   Innodb_buffer_pool_wait_free Innodb_buffer_pool_write_requests
+   Innodb_data_fsyncs Innodb_data_read Innodb_data_reads Innodb_data_writes
+   Innodb_data_written Innodb_dblwr_pages_written Innodb_dblwr_writes
+   Innodb_log_waits Innodb_log_write_requests Innodb_log_writes
+   Innodb_os_log_fsyncs Innodb_os_log_written Innodb_pages_created
+   Innodb_pages_read Innodb_pages_written Innodb_row_lock_time
+   Innodb_row_lock_waits Innodb_rows_deleted Innodb_rows_inserted
+   Innodb_rows_read Innodb_rows_updated Key_read_requests Key_reads
+   Key_write_requests Key_writes Last_query_cost Qcache_hits Qcache_inserts
+   Qcache_lowmem_prunes Qcache_queries_in_cache Questions Select_full_join
+   Select_full_range_join Select_range Select_range_check Select_scan
+   Sort_merge_passes Sort_range Sort_rows Sort_scan Table_locks_immediate
+   );
+
+# SESSION status variables this script cares about.
+my @session_vars
+   = $have_session
+   ? qw(
+      Com_commit Com_delete Com_delete_multi Com_insert Com_insert_select
+      Com_replace Com_replace_select Com_select Com_update Com_update_multi
+      Created_tmp_disk_tables Created_tmp_tables Handler_commit Handler_delete
+      Handler_read_first Handler_read_key Handler_read_next Handler_read_prev
+      Handler_read_rnd Handler_read_rnd_next Handler_update Handler_write
+      Last_query_cost Select_full_join Select_full_range_join Select_range
+      Select_range_check Select_scan Sort_merge_passes Sort_range Sort_rows
+      Sort_scan
+      )
+   : qw();
+
+# Status variables that may decrease (if monotonically increasing variables
+# decrease, it means they wrapped over the max size of a ulong).
+my %non_monotonic_vars = (
+   Qcache_queries_in_cache => 1,
+   Last_query_cost         => 1,
+);
+
+my $status_0 = get_status_info($dbh);
+my $status_1 = get_status_info($dbh);
+
+my $base;
+if ( $opts{c} ) {
+   $base = { map { $_ => 0 } @important_vars };
+}
+else {
+   $base = { map { $_ => $status_1->{$_} - $status_0->{$_} } @important_vars };
+}
+
+if ( $opts{g} ) {
+   print "calibrating...\n";
+   sleep(1);
+   my $status_2 = get_status_info($dbh);
+   my $base_2
+      = { map { $_ => $status_2->{$_} - $status_1->{$_} } @session_vars };
+   foreach my $key ( @session_vars ) {
+      if ( $base_2->{$key} != $base->{$key} ) {
+         print "Difference: $key $base_2->{$key} $base->{$key}\n";
+      }
+   }
+}
+
+# ############################################################################
+# The main work happens here.
+# ############################################################################
+
+# Get the file and split it into individual queries.  Only profile queries
+# separately if there is more than one.
+my $file_contents = get_file( $ARGV[0] );
+my @queries       = map { s/;?\s+$//g; { text => $_ } } split( /;\s*?\n\s*?\n/, $file_contents );
+my $separate      = $opts{s} && @queries > 1;
+
+# Get a baseline for how much SHOW STATUS costs.
+my $sql_status_0 = get_status_info($dbh);
+
+# ############################################################################
+# Run the queries
+# ############################################################################
+my $can_flush_tables = 1;
+foreach my $i ( 0 .. $#queries ) {
+   my $query = $queries[$i];
+   # Flush the tables if instructed
+   if ( $can_flush_tables ) {
+      if ( $i == 0 && $opts{f} == 2 ) {
+         eval {
+            $dbh->do("FLUSH TABLES");
+         };
+         if ( $EVAL_ERROR ) {
+            print STDERR "Warning: can't FLUSH TABLES because $EVAL_ERROR\n";
+            $can_flush_tables = 0;
+         }
+      }
+      elsif ( $opts{f} > 2 ) {
+         eval {
+            $dbh->do("FLUSH TABLES");
+         };
+         if ( $EVAL_ERROR ) {
+            print STDERR "Warning: can't FLUSH TABLES because $EVAL_ERROR\n";
+            $can_flush_tables = 0;
+         }
+      }
+   }
+
+   $query->{start}  = time();
+   $dbh->do( $query->{text} );    # Do the actual query
+   $query->{end}    = time();
+   $query->{status} = get_status_info($dbh);
+}
+my $sql_status_1 = get_status_info($dbh);
+$dbh->disconnect;
+
+# ############################################################################
+# Tab-separated output for a spreadsheet.
+# ############################################################################
+if ( $opts{t} ) {
+
+   # Get a list of all the SHOW STATUS measurements.
+   my @statuses = (
+      $sql_status_0,
+      ( map { $_->{status} } @queries ),
+      $sql_status_1,
+   );
+
+   # Decide which variables to output.  If verbosity is 1, output only those
+   # whose values are non-zero across the board.  If verbosity is greater,
+   # output everything.
+   my @variables = sort keys %$sql_status_0;
+   if ( $verbosity == 1 ) {
+      @variables = grep {
+         # Discover whether there is a true value in any set.  A 'true' value
+         # is one where the value isn't the same as the value for the same key
+         # in the previous set.  The first (before) and last (calibrate) set
+         # are excluded.
+         my $var = $_;
+         first { # first() terminates early, unlike grep()
+            defined $statuses[$_]->{$var}
+             && defined $statuses[$_ - 1]->{$var}
+             && $statuses[$_]->{$var} != $statuses[$_ - 1]->{$var}
+         } ( 1 .. $#statuses - 1 );
+      } @variables;
+   }
+
+   # Print headers.
+   print
+      join("\t",
+         'Variable_name',
+         'Before',
+         ( map { "After$_" } ( 1 ..  $#statuses - 1 ) ),
+         'Calibration',
+      ),
+      "\n";
+
+   # Print each variable in tab-separated values.
+   foreach my $key ( @variables ) {
+      print
+         join("\t", $key, map { defined($_->{$key}) ? $_->{$key} : '' } @statuses),
+         "\n";
+   }
+}
+
+# ############################################################################
+# Tabular layout for human readability.
+# ############################################################################
+else {
+   # Print the separate results and accumulate global totals.
+   my $num_status_calls = 1;
+   foreach my $i ( 0 .. $#queries ) {
+      my $query    = $queries[$i];
+      my $before   = $i ? $queries[ $i - 1 ]->{status} : $sql_status_0;
+      my $after    = $query->{status};
+
+      $num_status_calls++;
+
+      # Accumulate some globals
+      $qcost_total += $after->{Last_query_cost};
+      $qtime_total += $query->{end} - $query->{start};
+      $which_query = $i + 1;
+      $query_time  = $query->{end} - $query->{start};
+      $ch          = get_changes( $before, $after, 1 );
+
+      # Accumulate query cache invalidations
+      $qcache_inval
+         = ($ch->{Qcache_inserts} > 0 && $ch->{Qcache_queries_in_cache} == 0)
+            || $ch->{Qcache_queries_in_cache} < 0
+         ? -$ch->{Qcache_queries_in_cache} - $ch->{Qcache_lowmem_prunes}
+         : 0;
+      $qcache_inval_total += $qcache_inval;
+
+      # Print separate stats
+      if ( $separate
+         && (!@{$opts{n}} || grep { $i + 1 == $_ } @{$opts{n}} ))
+      {
+         $qcost        = $after->{Last_query_cost};
+         ( $query_text = $query->{text} ) =~ s/\s+/ /g;
+         $FORMAT_NAME  = 'QUERY';
+         write;
+         foreach my $format_name ( @{$formats_for->{$verbosity}}) {
+            $FORMAT_NAME = $format_name;
+            write;
+         }
+      }
+   }
+
+   # Print summary stats
+   $ch           = get_changes( $sql_status_0, $sql_status_1, $num_status_calls );
+   $qcache_inval = $qcache_inval_total;
+   $qcost        = $qcost_total;
+   $FORMAT_NAME  = "SUMMARY";
+   write;
+   foreach my $format_name ( @{$formats_for->{$verbosity}}) {
+      $FORMAT_NAME = $format_name;
+      write;
+   }
+   if ( !$have_session ) {
+      if ( $sql_status_1->{Questions} - $sql_status_0->{Questions}
+         > (@queries * 2) + 1 )
+      {
+         print STDERR "WARNING: Something else accessed the database at "
+            . "the same time you were trying to profile this batch!  These "
+            . "numbers are not correct!\n";
+      }
+      else {
+         print STDERR "WARNING: These statistics could be wrong if "
+            . "anything else was accessing the database at the same time.\n";
+      }
+   }
+}
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+
+sub get_changes {
+   my ( $before, $after, $num_base ) = @_;
+   $num_base ||= 1;
+   return { map {
+      $after->{$_}  ||= 0;
+      $before->{$_} ||= 0;
+      my $val = $after->{$_} - $before->{$_} - ( $num_base * $base->{$_} );
+      if ( $val < 0 && !defined($non_monotonic_vars{$_}) ) {
+         # Handle when a ulong wraps over the 32-bit boundary
+         $val += MAX_ULONG;
+      }
+      $_ => $val;
+   } @important_vars };
+}
+
+sub get_status_info {
+   my $dbh = shift;
+   my $res = $dbh->selectall_arrayref('SHOW /*!50002 SESSION */ STATUS');
+   my %result = map { @{$_} } @$res;
+   return { map { $_ => $result{$_} || 0 } @important_vars };
+}
+
+sub get_variables {
+   my $dbh = shift;
+   my $res = $dbh->selectall_arrayref('SHOW VARIABLES');
+   return { map { @{$_} } @$res };
+}
+
+sub get_file {
+   my $filename = shift;
+   open my $file, "<", "$filename" or die "Can't open $filename: $OS_ERROR";
+   my $file_contents = do { local $INPUT_RECORD_SEPARATOR; <$file>; };
+   close $file;
+   return $file_contents;
+}
+
+# ############################################################################
+# Formats
+# ############################################################################
+
+format SUMMARY =
+
++----------------------------------------------------------+
+|                         SUMMARY                          |
++----------------------------------------------------------+
+
+__ Overall stats ___________________________________________
+   Total elapsed time              @##########.###
+$qtime_total
+   Questions                       @##########
+$ch->{Questions}
+     COMMIT                        @##########
+$ch->{Com_commit}
+     DELETE                        @##########
+$ch->{Com_delete}
+     DELETE MULTI                  @##########
+$ch->{Com_delete_multi}
+     INSERT                        @##########
+$ch->{Com_insert}
+     INSERT SELECT                 @##########
+$ch->{Com_insert_select}
+     REPLACE                       @##########
+$ch->{Com_replace}
+     REPLACE SELECT                @##########
+$ch->{Com_replace_select}
+     SELECT                        @##########
+$ch->{Com_select}
+     UPDATE                        @##########
+$ch->{Com_update}
+     UPDATE MULTI                  @##########
+$ch->{Com_update_multi}
+.
+
+format TBL_IDX =
+
+__ Table and index accesses ________________________________
+   Table locks acquired            @##########
+$ch->{Table_locks_immediate}
+   Table scans                     @##########
+$ch->{Select_scan} + $ch->{Select_full_join}
+     Join                          @##########
+$ch->{Select_full_join}
+   Index range scans               @##########
+{
+   $ch->{Select_range} + $ch->{Select_full_range_join}
+   + $ch->{Select_range_check}
+}
+     Join without check            @##########
+$ch->{Select_full_range_join}
+     Join with check               @##########
+$ch->{Select_range_check}
+   Rows sorted                     @##########
+$ch->{Sort_rows}
+     Range sorts                   @##########
+$ch->{Sort_range}
+     Merge passes                  @##########
+$ch->{Sort_merge_passes}
+     Table scans                   @##########
+$ch->{Sort_scan}
+.
+
+format QCACHE =
+   Query cache
+     Hits                          @##########
+$ch->{Qcache_hits}
+     Inserts                       @##########
+$ch->{Qcache_inserts}
+     Invalidations                 @##########
+$qcache_inval
+.
+
+format ROW_OPS_INNODB =
+
+__ Row operations ____________________ Handler ______ InnoDB
+   Reads                           @##########   @##########
+{
+   $ch->{Handler_read_rnd}
+   + $ch->{Handler_read_rnd_next}
+   + $ch->{Handler_read_key}
+   + $ch->{Handler_read_first}
+   + $ch->{Handler_read_next}
+   + $ch->{Handler_read_prev},
+   $ch->{Innodb_rows_read} || 0
+}
+     Fixed pos (might be sort)     @##########
+$ch->{Handler_read_rnd}
+     Next row (table scan)         @##########
+$ch->{Handler_read_rnd_next}
+     Bookmark lookup               @##########
+$ch->{Handler_read_key}
+     First in index (full scan?)   @##########
+$ch->{Handler_read_first}
+     Next in index                 @##########
+$ch->{Handler_read_next}
+     Prev in index                 @##########
+$ch->{Handler_read_prev}
+   Writes
+     Delete                        @##########   @##########
+$ch->{Handler_delete}, $ch->{Innodb_rows_deleted}
+     Update                        @##########   @##########
+$ch->{Handler_update}, $ch->{Innodb_rows_updated}
+     Insert                        @##########   @##########
+$ch->{Handler_write}, $ch->{Innodb_rows_inserted}
+     Commit                        @##########
+$ch->{Handler_commit}
+.
+
+format ROW_OPS =
+
+__ Row operations ____________________ Handler _____________
+   Reads                           @##########
+{
+   $ch->{Handler_read_rnd}
+   + $ch->{Handler_read_rnd_next}
+   + $ch->{Handler_read_key}
+   + $ch->{Handler_read_first}
+   + $ch->{Handler_read_next}
+   + $ch->{Handler_read_prev}
+}
+     Fixed pos (might be sort)     @##########
+$ch->{Handler_read_rnd}
+     Next row (table scan)         @##########
+$ch->{Handler_read_rnd_next}
+     Bookmark lookup               @##########
+$ch->{Handler_read_key}
+     First in index (full scan?)   @##########
+$ch->{Handler_read_first}
+     Next in index                 @##########
+$ch->{Handler_read_next}
+     Prev in index                 @##########
+$ch->{Handler_read_prev}
+   Writes
+     Delete                        @##########
+$ch->{Handler_delete}
+     Update                        @##########
+$ch->{Handler_update}
+     Insert                        @##########
+$ch->{Handler_write}
+     Commit                        @##########
+$ch->{Handler_commit}
+.
+
+format ROW_LOCKS =
+   InnoDB row locks
+     Number of locks waited for                  @##########
+$ch->{Innodb_row_lock_waits}
+     Total ms spent acquiring locks              @##########
+$ch->{Innodb_row_lock_time}
+.
+
+format IO_OPS =
+
+__ I/O Operations _____________________ Memory ________ Disk
+   Key cache
+     Key reads                     @##########    @#########
+$ch->{Key_read_requests}, $ch->{Key_reads}
+     Key writes                    @##########    @#########
+$ch->{Key_write_requests}, $ch->{Key_writes}
+   Temp tables                     @##########    @#########
+$ch->{Created_tmp_tables}, $ch->{Created_tmp_disk_tables}
+   Temp files                                     @#########
+$ch->{Created_tmp_files}
+.
+
+format IO_INNODB =
+   InnoDB buffer pool
+     Reads                         @##########    @#########
+$ch->{Innodb_buffer_pool_read_requests}, $ch->{Innodb_buffer_pool_reads}
+     Random read-aheads            @##########
+$ch->{Innodb_buffer_pool_read_ahead_rnd}
+     Sequential read-aheads        @##########
+$ch->{Innodb_buffer_pool_read_ahead_seq}
+     Write requests                @##########    @#########
+$ch->{Innodb_buffer_pool_write_requests}, $ch->{Innodb_buffer_pool_pages_flushed}
+     Reads/creates blocked by flushes             @#########
+$ch->{Innodb_buffer_pool_wait_free}
+   InnoDB log operations
+     Log writes                    @##########    @#########
+$ch->{Innodb_log_write_requests}, $ch->{Innodb_log_writes}
+     Log writes blocked by flushes                @#########
+$ch->{Innodb_log_waits}
+.
+
+format INNODB_DATA_OPS =
+
+__ InnoDB Data Operations ____ Pages _____ Ops _______ Bytes
+   Reads                       @####   @######    @#########
+$ch->{Innodb_pages_read}, $ch->{Innodb_data_reads}, $ch->{Innodb_data_read}
+   Writes                      @####   @######    @#########
+$ch->{Innodb_pages_written}, $ch->{Innodb_data_writes}, $ch->{Innodb_data_written}
+   Doublewrites                @####   @######
+$ch->{Innodb_dblwr_pages_written}, $ch->{Innodb_dblwr_writes}
+   Creates                     @####
+$ch->{Innodb_pages_created}
+   Fsyncs                              @######
+$ch->{Innodb_data_fsyncs}
+   OS fsyncs                           @######    @#########
+$ch->{Innodb_os_log_fsyncs}, $ch->{Innodb_os_log_written}
+.
+
+format QUERY =
+
++----------------------------------------------------------+
+| @||||||||||||||||||||||||||||||||||||||||||||||||||||||| |
+sprintf("QUERY %d (%.4f sec)", $which_query, $query_time)
++----------------------------------------------------------+
+^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<...
+$query_text
+
+__ Overall stats ___________________________________________
+   Elapsed time                    @##########.###
+$query_time
+.
+
+format OPT_COST =
+   Optimizer cost                  @##########.###
+$qcost
+.
+
+# ############################################################################
+# Perldoc
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+mysql-query-profiler - Execute a batch of SQL statements and print statistics.
+
+=head1 SYNOPSIS
+
+Assuming a queries.sql file that contains 6 queries, the following should
+drown you with enough information:
+
+ mysql-query-profiler queries.sql
+ mysql-query-profiler --verbosity 3 queries.sql
+ mysql-query-profiler --verbosity 2 --separate --only 2,5,6 queries.sql
+ mysql-query-profiler --tab queries.sql > results.csv
+
+Please be sure to read HOW TO INTERPRET to understand what information means
+what.
+
+=head1 DESCRIPTION
+
+mysql-query-profiler is a program to read a file containing one or more SQL
+statements, execute them, and analyze the output of SHOW STATUS afterwards.
+It then prints statistics about how the batch performed.  For example, it can
+show how many table scans the batch caused, how many page reads, how many
+temporary tables, and so forth.  It can print information about the entire
+batch (default), every query, or only specified queries.  It has three levels
+of verbosity (default is level 1, not very verbose).
+
+All command-line arguments are optional, but you must specify a file
+containing the batch to profile as the last argument.
+
+If the file contains multiple statements, they must be terminated by
+semicolons and separated by blank lines.  If you don't do that,
+mysql-query-profiler won't be able to split the file into individual queries,
+and MySQL will complain about syntax errors.
+
+If the MySQL server version is before 5.0.2, you should make sure the server
+is completely unused before trying to profile a batch.  Prior to this version,
+SHOW STATUS showed only global status variables, so other queries will
+interfere and produce false results.  The program will try to detect if
+anything did interfere, but there can be no guarantees.
+
+Prior to MySQL 5.0.2, InnoDB status variables are not available, and prior to
+version 5.0.3, InnoDB row lock status variables are not available.
+mysql-query-profiler will omit any output related to these variables if
+they're not available.  You may be interested in innotop, a MySQL and InnoDB
+monitoring program I've written.  It is available at L<http://www.xaprb.com/>.
+
+For more information about SHOW STATUS, read the relevant section of the MySQL
+manual at
+L<http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html>
+
+If your server's query cache exists and is enabled (query_cache_size > 0), it
+is disabled locally for the batch.  You can change this with the --allowcache
+command-line argument.  If you do allow the queries to be served from the
+cache, you'll see an extra section in the output to show you information about
+how the batch affected the cache (hits, inserts, invalidations).  See
+L<http://dev.mysql.com/doc/refman/5.0/en/query-cache.html> for more
+information about the query cache.
+
+If you want to execute FLUSH TABLES to flush tables to disk and close them,
+use the --flush command-line argument.  The default value of 1 will not flush
+any tables.  2 will flush once before the batch, and 3 will flush before each
+query in the batch.  You need special privileges to execute this.  See
+L<http://dev.mysql.com/doc/refman/5.0/en/flush.html> for more information.
+
+If you don't want to see any InnoDB statistics (for example, you know your
+queries only involve MyISAM tables), give the --noinnodb argument.
+
+By default, the program tries to find and subtract the "cost of observation,"
+i.e. the cost to run SHOW STATUS.  However, if you are not running on a quiet
+server, some statistics will be poisoned by other queries, even in newer
+versions of MySQL.  To avoid this, give the --nocalibrate argument.  If you
+don't do this, you might see some wacky numbers, such as a negative number of
+key reads :-)
+
+=head1 HOW TO INTERPRET
+
+=head2 TAB-SEPARATED OUTPUT
+
+If you specify the --tab argument, you will just get the raw output of
+SHOW STATUS in tab-separated format, convenient for opening with a spreadsheet
+program or passing to awk, etc.  This is a less fancy, more bare-bones output
+format for those of you who know what you're about.  This is not the default
+output -- that is discussed later -- but it's so much shorter to describe,
+I'll do it first and get it out of the way.
+
+=over
+
+=item * Most of the command-line options for controlling verbosity and such are
+ignored in --tab mode.
+
+=item * The variable names you see in MySQL, such as 'Com_select', are kept --
+there are no euphimisms, so you have to know your MySQL variables.
+
+=item * The columns are Variable_name, Before, After1...AfterN, Calibration.
+The Variable_name column is just what it sounds like.  Before is the result
+from the first run of SHOW STATUS.  After1, After2, etc are the results of
+running SHOW STATUS after each query in the batch.  Finally, the last column
+is the result of running SHOW STATUS just after the last AfterN column, so you
+can see how much work SHOW STATUS itself causes.
+
+=item * If you specify --verbosity 2 or 3, you'll get every variable in the
+list this program tracks.  If not (default) you'll only get variables where
+there was some difference from one column to the next.  This cuts down on the
+noise.
+
+=back
+
+=head2 NORMAL OUTPUT
+
+If you don't specify --tab, you'll get a report formatted for human
+readability.  This is the default output format.
+
+mysql-query-profiler can output a lot of information, as you've seen if you
+ran the examples in the SYNOPSIS.  What does it all mean?
+
+First, there are two basic groups of information you might see: per-query and
+summary.  If your batch contains only one query, these will be the same and
+you'll only see the summary.  You can recognize the difference by looking for
+centered, all-caps, boxed-in section headers.
+
+Next, the information in each section is grouped into subsections, headed by
+an underlined title.  Each of these sections has varying information in it.
+Which sections you see depends on command-line arguments and your MySQL
+version.  I'll explain each section briefly.  If you really want to know where
+the numbers come from, read
+L<http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html>.
+
+You need to understand which numbers are insulated from other queries and
+which are not.  This depends on your MySQL version.  Version 5.0.2 introduced
+the concept of session status variables, so you can see information about only
+your own connection.  However, many variables aren't session-ized, so when you
+have MySQL 5.0.2 or greater, you will actually see a mix of session and global
+variables.  That means other queries happening at the same time will pollute
+some of your results.  If you have MySQL versions older than 5.0.2, you won't
+have ANY connection-specific stats, so your results will be polluted by other
+queries no matter what.  Because of the mixture of session and global
+variables, by far the best way to profile is on a completely quiet server
+where nothing else is interfering with your results.
+
+While explaining the results in the sections that follow, I'll refer to a
+value as "protected" if it comes from a session-specific variable and can be
+relied upon to be accurate even on a busy server.  Just keep in mind, if
+you're not using MySQL 5.0.2 or newer, your results will be inaccurate unless
+you're running against a totally quiet server, even if I label it as
+"protected."
+
+=head2 Overall stats
+
+This section shows the overall elapsed time for the query, as measured by
+Perl, and the optimizer cost as reported by MySQL.
+
+If you're viewing separate query statistics, this is all you'll see.  If
+you're looking at a summary, you'll also see a breakdown of the questions the
+queries asked the server.
+
+The execution time is not totally reliable, as it includes network round-trip
+time, Perl's own execution time, and so on.  However, on a low-latency
+network, this should be fairly negligible, giving you a reasonable measure of
+the query's time, especially for queries longer than a few tenths of a second.
+
+The optimizer cost comes from the Last_query_cost variable, and is protected
+from other connections in MySQL 5.0.7 and greater.  It is not available before
+5.0.1.
+
+The total number of questions is not protected, but the breakdown of
+individual question types is, because it comes from the Com_ status variables.
+
+=head2 Table and index accesses
+
+This section shows you information about the batch's table and index-level
+operations (as opposed to row-level operations, which will be in the next
+section).  The "Table locks acquired" and "Temp files" values are unprotected,
+but everything else in this section is protected.
+
+If you gave the --allowcache argument, you'll see statistics on the query
+cache.  These are unprotected.
+
+=head2 Row operations
+
+These values are all about the row-level operations your batch caused.  For
+example, how many rows were inserted, updated, or deleted.  You'll also see
+row-level index access statistics, such as how many times the query sought and
+read the next entry in an index.
+
+Depending on your MySQL version, you'll either see one or two columns of
+information in this section.  The one headed "Handler" is all from the
+Handler_ variables, and those statistics are protected.  If your MySQL version
+supports it, you'll also see a column headed "InnoDB," which is unprotected.
+
+=head2 I/O Operations
+
+This section gives information on I/O operations your batch caused, both in
+memory and on disk.  Unless you have MySQL 5.0.2 or greater, you'll only see
+information on the key cache.  Otherwise, you'll see a lot of information on
+InnoDB's I/O operations as well, such as how many times the query was able to
+satisfy a read from the buffer pool and how many times it had to go to the
+disk.
+
+None of the information in this section is protected.
+
+=head2 InnoDB Data Operations
+
+This section only appears when you're querying MySQL 5.0.2 or newer.  None of
+the information is protected.  You'll see statistics about how many pages were
+affected, how many operations took place, and how many bytes were affected.
+
+=head1 CONFIGURATION
+
+No configuration file is needed.  If you specify arguments on the command
+line, they take precedence over other sources.  Otherwise,
+mysql-query-profiler will try to read your MySQL client configuration file
+($HOME/.my.cnf), and if it can't find what it needs to connect to MySQL, will
+prompt you interactively.
+
+=head1 SYSTEM REQUIREMENTS
+
+You need the following Perl modules: Getopt::Long, DBI, DBD::mysql,
+Term::ReadLine, and Time::HiRes.
+
+=head1 LICENSE
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+Copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.  All rights
+reserved, except for those granted under the license.
+
+This program is free software.  You may redistribute it under either the GNU
+GPL version 2, or the Perl Artistic License, at your option.  For details on
+these licenses, please issue `man perlartistic' or `man perlgpl'.
+
+=head1 AUTHOR
+
+Baron Schwartz, baron at xaprb dot com.
+
+=head1 ACKNOWLEDGEMENTS
+
+I was inspired by the wonderful mysqlreport utility available at
+L<http://www.hackmysql.com/>.  Thanks.
