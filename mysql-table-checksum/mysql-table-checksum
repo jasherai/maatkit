@@ -186,8 +186,8 @@ foreach my $database ( @databases ) {
    my $max_tbl  = max(5, map { length($_) } keys %info_for);
    my $max_db   = max(8, length($database));
    my $max_host = max(4, map { length($_) } @hosts);
-   my $hdr      = "%-${max_host}s %-${max_db}s %-${max_tbl}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
-   my @hdr_args = qw(HOST DATABASE TABLE ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
+   my $hdr      = "%-${max_db}s %-${max_tbl}s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+   my @hdr_args = qw(DATABASE TABLE HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
    printf($hdr, @hdr_args);
 
    TABLE:
@@ -262,7 +262,7 @@ sub do_tbl {
    }
    my $end = time();
    $dbh->disconnect();
-   printf($hdr, $host, @{$info}{qw(database table engine)}, $cnt, $crc,
+   printf($hdr, $info->{database}, $info->{table}, $host, $info->{engine}, $cnt, $crc,
       sprintf('%d', $end - $mid), sprintf('%d', $mid - $beg), $sta, $lag);
    exit(0);
 }
@@ -398,13 +398,10 @@ Output is to STDOUT, one line per server and table, with header lines for each
 database.  I tried to make the output easy to process with awk.  For this reason
 columns are always present.  If there's no value, the script prints 'NULL'.
 
-The columns in the output are as follows:
+The columns in the output are as follows.  The database and table come first so
+you can sort by them easily.
 
 =over
-
-=item HOST
-
-The server's hostname.
 
 =item DATABASE
 
@@ -413,6 +410,10 @@ The database the table is in.
 =item TABLE
 
 The table name.
+
+=item HOST
+
+The server's hostname.
 
 =item ENGINE
 
