@@ -42,12 +42,12 @@ $OUTPUT_AUTOFLUSH = 1;
 # human-readable description.  Add more hash entries as needed.
 my %opt_spec = (
    l => { s => 'help',           d => 'Show this help message' },
-   d => { s => 'databases|d=s',  d => 'Checksum only this comma-separated list of databases' },
-   g => { s => 'ignore-db|g=s',  d => 'Ignore this comma-separated list of databases' },
-   t => { s => 'tables|t=s',     d => 'Checksum only this comma-separated list of tables' },
-   n => { s => 'ignore-tbl|n=s', d => 'Ignore this comma-separated list of tables' },
-   e => { s => 'engine|e=s',     d => 'Only do tables of this comma-separated list of storage engines' },
-   s => { s => 'where=s',        d => 'Checksum only rows matching this WHERE clause (implies -f SHA1)' },
+   d => { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
+   g => { s => 'ignoredb|g=s',   d => 'Ignore this comma-separated list of databases' },
+   t => { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
+   n => { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
+   e => { s => 'engine|e=s',     d => 'Only do this comma-separated list of storage engines' },
+   s => { s => 'where=s',        d => 'Only do rows matching this WHERE clause (implies -f SHA1)' },
    f => { s => 'function|f=s',   d => 'CRC function (SHA1, MD5...) overrides --nocrc' },
    c => { s => 'nocrc',          d => 'Skip the CRC' },
    r => { s => 'nocount',        d => 'Skip the count' },
@@ -226,8 +226,8 @@ foreach my $database ( @databases ) {
 sub do_tbl {
    my ( $host, $info, $is_master, $hdr ) = @_;
    my $dbh = get_dbh($host, $info->{database});
-   my $cnt = '';
-   my $crc = '';
+   my $cnt = 'NULL';
+   my $crc = 'NULL';
    my $sta = 'NULL';
    my $lag = 'NULL';
    my $beg = time();
@@ -258,9 +258,9 @@ sub do_tbl {
       }
       else {
          ( $cnt, $crc ) = do_var_crc($dbh, $info->{query});
+         $crc ||= 'NULL';
       }
    }
-   $crc ||= 'NULL';
    my $end = time();
    $dbh->disconnect();
    printf($hdr, $host, @{$info}{qw(database table engine)}, $cnt, $crc,
@@ -393,8 +393,13 @@ should be quoted and should not contain the word WHERE.  For example, specifying
 with "WHERE foo=bar".  If you specify this option for a table that doesn't have
 a foo column, the query will cause an error.
 
+=head1 OUTPUT
+
 Output is to STDOUT, one line per server and table, with header lines for each
-database.  The columns in the output are as follows:
+database.  I tried to make the output easy to process with awk.  For this reason
+columns are always present.  If there's no value, the script prints 'NULL'.
+
+The columns in the output are as follows:
 
 =over
 
@@ -416,12 +421,12 @@ The table's storage engine.
 
 =item COUNT
 
-The table's row count, unless you specified to skip it, in which case it's zero.
+The table's row count, unless you specified to skip it.
 
 =item CHECKSUM
 
-The table's checksum, unless you specifed to skip it or the table has no rows,
-in which case it's NULL.
+The table's checksum, unless you specifed to skip it or the table has no rows.
+MyISAM checksums will be 0 if there are no rows; other styles will print NULL.
 
 =item TIME
 
