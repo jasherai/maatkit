@@ -163,3 +163,60 @@ sub process_set {
 }
 
 exit $exit_status;
+
+# ############################################################################
+# Documentation
+# ############################################################################
+=pod
+
+=head1 NAME
+
+mysql-checksum-filter - Filter checksums from mysql-table-checksum
+
+=head1 OVERVIEW
+
+This script takes the unsorted, verbose output from mysql-table-checksum and
+sorts it, then filters it so you only see tables that have different checksums.
+
+You can pipe input directly into it from mysql-table-checksum, or you can save
+the output from that script and run this script on the resulting file(s).  If
+you run it against just one file, or pipe output directly into it, it'll output
+results during processing.  Processing multiple files is slightly more
+expensive, and you won't see any output until they're all read.
+
+Of course, you could also process multiple files like this:
+
+ cat file1 file2 file3 | sort -u | mysql-checksum-filter
+
+but that still doesn't output anything until all files are read.
+
+If you give the -m argument, the script will sort lines for that host first, so
+you can see the checksum values on the master server before the slave.
+
+If you give the -v argument, the script will always output all lines (but not
+header lines).  You might want to do this in combination with -m.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz, baron at xaprb dot com.
+
+=cut
