@@ -5,7 +5,7 @@
 
 # This program checksums MySQL tables on one or more servers.
 #
-# This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -466,7 +466,7 @@ How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
+This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED

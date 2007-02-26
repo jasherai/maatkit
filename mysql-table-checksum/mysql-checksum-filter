@@ -3,7 +3,7 @@
 # This program sorts and filters table checksums output by mysql-table-checksum,
 # and only shows you ones that have problems.
 #
-# This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -198,7 +198,7 @@ header lines).  You might want to do this in combination with -m.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
+This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
