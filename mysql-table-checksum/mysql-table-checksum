@@ -6,7 +6,7 @@
 # This program checksums MySQL tables on one or more servers.
 #
 # This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
-# Feedback and improvements are gratefully received.
+# Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -53,6 +53,7 @@ my %opt_spec = (
    k => { s => 'lock|k',         d => 'Lock table on master until done on slaves (implies -v)' },
    v => { s => 'slavelag|v',     d => 'Report how far slaves lag master' },
    w => { s => 'wait|w=i',       d => 'How long to do MASTER_POS_WAIT on slaves (implies -kv)' },
+   b => { s => 'tab|b',          d => 'Output separated with tabs' },
    o => { s => 'port|P=i',       d => 'Database server port' },
    u => { s => 'user|u=s',       d => 'Database username' },
    p => { s => 'pass|p=s',       d => 'Database password' },
@@ -61,7 +62,7 @@ my %opt_spec = (
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l d g t n e s f c r k v w o p u );
+my @opt_keys = qw( l d g t n e s f c r k v w b o p u );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -79,6 +80,7 @@ my %opts = (
    k => 0,
    v => 0,
    w => undef,
+   b => 0,
    o => 3306,
    u => getlogin() || getpwuid($UID),
    p => '',
@@ -182,11 +184,17 @@ foreach my $database ( @databases ) {
    next DATABASE unless %info_for;
 
    # Design and print header
-   my $crc_wid  = lc($opts{f}) eq 'md5' ? 32 : 40;
-   my $max_tbl  = max(5, map { length($_) } keys %info_for);
-   my $max_db   = max(8, length($database));
-   my $max_host = max(4, map { length($_) } @hosts);
-   my $hdr      = "%-${max_db}s %-${max_tbl}s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+   my $hdr;
+   if ( $opts{b} ) {
+      $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
+   }
+   else {
+      my $crc_wid  = lc($opts{f}) eq 'md5' ? 32 : 40;
+      my $max_tbl  = max(5, map { length($_) } keys %info_for);
+      my $max_db   = max(8, length($database));
+      my $max_host = max(4, map { length($_) } @hosts);
+      $hdr         = "%-${max_db}s %-${max_tbl}s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+   }
    my @hdr_args = qw(DATABASE TABLE HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
    printf($hdr, @hdr_args);
 
@@ -398,6 +406,16 @@ Output is to STDOUT, one line per server and table, with header lines for each
 database.  I tried to make the output easy to process with awk.  For this reason
 columns are always present.  If there's no value, the script prints 'NULL'.
 
+The default is column-aligned output for human readability, but you can change
+it to tab-separated if you want.
+
+Output is unsorted, though all lines about one table should be output together.
+For speed, all checksums are done in parallel (as much as possible) and may
+complete out of the order in which they were started.  You might want to run
+them through another script or command-line utility to make sure they are in the
+order you want.  If you pipe the output through mysql-checksum-filter, you can
+avoid seeing output about tables that are the same.
+
 The columns in the output are as follows.  The database and table come first so
 you can sort by them easily.
 
@@ -449,7 +467,7 @@ How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
 This program is copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.
-Feedback and improvements are gratefully received.
+Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
