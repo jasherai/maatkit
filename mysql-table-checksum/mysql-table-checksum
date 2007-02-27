@@ -347,10 +347,19 @@ sub unique {
 
 mysql-table-checksum - Print checksums for MySQL tables on one or many servers.
 
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+The checksums work for me on MySQL version 4.1.20-log and various MySQL 5.0.x
+versions.
+
 =head1 OVERVIEW
 
 This script generates table checksums for MySQL tables, typically useful for
-verifying your slaves are in sync with the master.
+verifying your slaves are in sync with the master.  The checksums are generated
+by a query on the server, and there is virtually no network traffic as a result.
 
 Invoke the script with options and server names on the command line.  If you
 specify more than one server, the script assumes the first server is the master
