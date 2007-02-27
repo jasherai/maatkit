@@ -1,0 +1,8 @@
+This package contains mysql-table-checksum and mysql-checksum-filter.  Please
+view the perldoc for more details on them.
+
+Changelog:
+
+2007-02-26: version 1.0.0
+
+   * Initial release.

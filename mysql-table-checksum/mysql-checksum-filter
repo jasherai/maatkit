@@ -27,6 +27,8 @@ use Data::Dumper;
 use English qw(-no_match_vars);
 use Getopt::Long;
 
+our $VERSION = '@VERSION@';
+
 $OUTPUT_AUTOFLUSH = 1;
 
 # ############################################################################
