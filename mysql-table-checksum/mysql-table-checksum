@@ -31,6 +31,8 @@ use Getopt::Long;
 use List::Util qw(max);
 use Time::HiRes qw(time);
 
+our $VERSION = '@VERSION@';
+
 $OUTPUT_AUTOFLUSH = 1;
 
 # ############################################################################
