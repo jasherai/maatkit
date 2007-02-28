@@ -1,0 +1,8 @@
+This package contains mysql-query-profiler.  Please
+view the perldoc for more details.
+
+Changelog:
+
+2007-03-01: version 1.0.0
+
+   * Initial release.
