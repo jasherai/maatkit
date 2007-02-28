@@ -30,7 +30,7 @@ all: $(DISTFILES)
 
 versions:
 	$(SED) -i -e s/@VERSION@/$(VERSION)/ $(DISTDIR)/$(NAME)
-	$(SED) -i -e s/@VERSION@/$(VERSION)/ $(DISTDIR)/$(NAME)
+	$(SED) -i -e s/@VERSION@/$(VERSION)/ $(DISTDIR)/$(FILTER)
 
 distdir: all
 	if test -d $(DISTDIR) ; then $(RM) -rf $(DISTDIR) ; fi
