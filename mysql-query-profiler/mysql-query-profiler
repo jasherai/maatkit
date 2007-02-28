@@ -2,6 +2,9 @@
 
 # This is mysql-query-profiler, a program to analyze SQL queries for MySQL.
 # 
+# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# Feedback and improvements are welcome.
+#
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
 # MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
@@ -26,6 +29,8 @@ use Getopt::Long;
 use Term::ReadLine;
 use Time::HiRes qw(time);
 use List::Util qw(sum min first);
+
+our $VERSION = '@VERSION@';
 
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -758,13 +763,12 @@ drown you with enough information:
  mysql-query-profiler --verbosity 2 --separate --only 2,5,6 queries.sql
  mysql-query-profiler --tab queries.sql > results.csv
 
-Please be sure to read HOW TO INTERPRET to understand what information means
-what.
+Read HOW TO INTERPRET to learn what it all means.
 
 =head1 DESCRIPTION
 
-mysql-query-profiler is a program to read a file containing one or more SQL
-statements, execute them, and analyze the output of SHOW STATUS afterwards.
+mysql-query-profiler reads a file containing one or more SQL
+statements, executes them, and analyzes the output of SHOW STATUS afterwards.
 It then prints statistics about how the batch performed.  For example, it can
 show how many table scans the batch caused, how many page reads, how many
 temporary tables, and so forth.  It can print information about the entire
@@ -788,8 +792,7 @@ anything did interfere, but there can be no guarantees.
 Prior to MySQL 5.0.2, InnoDB status variables are not available, and prior to
 version 5.0.3, InnoDB row lock status variables are not available.
 mysql-query-profiler will omit any output related to these variables if
-they're not available.  You may be interested in innotop, a MySQL and InnoDB
-monitoring program I've written.  It is available at L<http://www.xaprb.com/>.
+they're not available.
 
 For more information about SHOW STATUS, read the relevant section of the MySQL
 manual at
@@ -966,6 +969,9 @@ Term::ReadLine, and Time::HiRes.
 
 =head1 LICENSE
 
+This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+Feedback and improvements are welcome.
+
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
 MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
@@ -984,4 +990,10 @@ Baron Schwartz, baron at xaprb dot com.
 =head1 ACKNOWLEDGEMENTS
 
 I was inspired by the wonderful mysqlreport utility available at
-L<http://www.hackmysql.com/>.  Thanks.
+L<http://www.hackmysql.com/>.
+
+Other contributors: Bart van Bragt.
+
+Thanks to all who have helped.
+
+=cut
