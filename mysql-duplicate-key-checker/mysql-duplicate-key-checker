@@ -1,8 +1,5 @@
 #!/usr/bin/perl
 
-# TODO what if a table is fked to two parents: dupe-fk must pay attention to
-# parents too.
-
 # This is mysql-duplicate-key-checker, a program to analyze MySQL tables for
 # duplicated or redundant indexes and foreign keys.
 # 
@@ -213,9 +210,6 @@ foreach my $database ( @databases ) {
       }
    }
 
-   # TODO: filter for dupes here, then design header.
-   # TODO: Don't print a key/fk more than once if it is duped.
-
    my @to_print;
    foreach my $table ( sort keys %info_for ) {
       my $hash = $info_for{$table};
@@ -242,17 +236,17 @@ foreach my $database ( @databases ) {
          }
       }
 
-      # Print foreign keys
+      # Prepare foreign keys
       if ( $opts{f} =~ m/f/ ) {
          my @fks = sort { $a->{cols} cmp $b->{cols} } @{$hash->{fks}};
          if ( $opts{v} ) { # Print all
             push @to_print, map { make_hash($database, $table, 'FK', $_) } @fks;
          }
-         else { # Otherwise print duplicates.  $i $j avoids backtracking.
+         else { # Otherwise output duplicates.  $i $j avoids backtracking.
             my %seen;
             foreach my $i ( 0..$#fks - 1 ) {
                foreach my $j ( $i+1..$#fks ) {
-                  if ( $fks[$i]->{cols} eq $fks[$j]->{cols} ) {
+                  if ( $fks[$i]->{parent} eq $fks[$j]->{parent} && $fks[$i]->{cols} eq $fks[$j]->{cols} ) {
                      push @to_print, make_hash($database, $table, 'FK', $fks[$i]) if !$seen{$i}++;
                      push @to_print, make_hash($database, $table, 'FK', $fks[$j]) if !$seen{$j}++;
                   }
