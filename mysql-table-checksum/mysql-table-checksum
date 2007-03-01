@@ -89,7 +89,7 @@ my %opts = (
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $opt_spec{$_}->{s} => ref $opts{$_} ? $opts{$_} : \$opts{$_} }  @opt_keys );
+GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
 
 # Apply dependencies between arguments.
 $opts{k} ||= defined $opts{w};
