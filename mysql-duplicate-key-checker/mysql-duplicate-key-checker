@@ -49,12 +49,13 @@ my %opt_spec = (
    p => { s => 'pass|p=s',       d => 'Database password' },
    u => { s => 'user|u=s',       d => 'Database username' },
    v => { s => 'verbose|v',      d => 'Output everything, not just dupes' },
+   s => { s => 'allstruct|s',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
    b => { s => 'tab|b',          d => 'Output separated with tabs' },
 );
 
 # Define the order cmdline opts will appear in help output.  If it's not in
 # this list, it's not an option to this program.
-my @opt_keys = qw( l d g t n f h o u p v b );
+my @opt_keys = qw( l d g t n f h o u p v s b );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -70,6 +71,7 @@ my %opts = (
    u => '',
    v => 0,
    b => 0,
+   s => 1,
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -170,7 +172,7 @@ while ( my ( $thing ) = grep { !$conn->{$_} } keys %$conn ) {
 
 # Connect to the database
 my $dbh = DBI->connect(
-   "DBI:mysql:database=$conn->{db};host=$conn->{h};port=$conn->{o}",
+   "DBI:mysql:;host=$conn->{h};port=$conn->{o}",
    $conn->{u}, $conn->{p}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $!");
 
@@ -208,6 +210,9 @@ foreach my $database ( @databases ) {
       }
    }
 
+   # TODO: filter for dupes here, then design header.
+   # TODO: Don't print a key/fk more than once if it is duped.
+
    next DATABASE unless %info_for;
 
    # Design and print header
@@ -222,19 +227,61 @@ foreach my $database ( @databases ) {
       my $max_db   = max(8, length($database));
       $hdr         = "%-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %4s %5s %s\n";
    }
-   printf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT COLUMNS));
+   my $header = sprintf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT COLUMNS));
+   my $header_printed = 0;
 
    foreach my $table ( sort keys %info_for ) {
       my $hash = $info_for{$table};
-      my @keys = sort { $a->{cols} cmp $b->{cols} } @{$hash->{keys}};
-      foreach my $key ( @keys ) {
-         printf($hdr, $database, $table, $hash->{engine}, $key->{name}, 'KEY',
-         $key->{struct}, $key->{cols});
+
+      # Print indexes
+      if ( $opts{f} =~ m/k/ ) {
+         my @keys = sort { $a->{cols} cmp $b->{cols} } @{$hash->{keys}};
+         my @toprint;
+         if ( $opts{v} ) { # Print all
+            @toprint = @keys;
+         }
+         else { # Find duplicate/redundant by prefix matching.
+            foreach my $i ( 0..$#keys - 1 ) {
+               my $pat = quotemeta($keys[$i]->{cols});
+               my $dup = 0;
+               foreach my $j ( $i+1..$#keys ) {
+                  if ( ($keys[$i]->{struct} eq $keys[$j]->{struct} || $opts{s})
+                     && $keys[$j]->{cols} =~ m/^$pat/ )
+                  {
+                     push @toprint, $keys[$i] if !$dup++;
+                     push @toprint, $keys[$j];
+                  }
+               }
+            }
+         }
+         foreach my $key ( @toprint ) {
+            print $header unless $header_printed++;
+            printf($hdr, $database, $table, $hash->{engine}, $key->{name}, 'KEY', $key->{struct}, $key->{cols});
+         }
       }
-      my @fks = sort { $a->{cols} cmp $b->{cols} } @{$hash->{fks}};
-      foreach my $key ( @fks ) {
-         printf($hdr, $database, $table, $hash->{engine}, $key->{name}, 'FK',
-         'NULL', $key->{cols});
+
+      # Print foreign keys
+      if ( $opts{f} =~ m/f/ ) {
+         my @fks = sort { $a->{cols} cmp $b->{cols} } @{$hash->{fks}};
+         my @toprint;
+         if ( $opts{v} ) { # Print all
+            @toprint = @fks;
+         }
+         else { # Otherwise print duplicates.  $i $j avoids backtracking.
+            foreach my $i ( 0..$#fks - 1 ) {
+               my $dup = 0;
+               foreach my $j ( $i+1..$#fks ) {
+                  if ( $fks[$i]->{cols} eq $fks[$j]->{cols} ) {
+                     push @toprint, $fks[$i] if !$dup++;
+                     push @toprint, $fks[$j];
+                  }
+               }
+            }
+         }
+         foreach my $key ( @toprint ) {
+            print $header unless $header_printed++;
+            printf($hdr, $database, $table, $hash->{engine}, $key->{name}, 'FK', 'NULL', $key->{cols});
+         }
       }
    }
 }
@@ -277,10 +324,10 @@ sub find_fks {
    my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
 
    # A foreign key is a duplicate no matter what order the columns are in, so
-   # re-order them alphabetically for ease.
+   # re-order them alphabetically so they can be compared.
    my @result = map {
       my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
-      my ( $cols ) = $_ =~ m#(?<=\()([^\)]+)(?=\))#;
+      my ( $cols ) = $_ =~ m/\(([^\)]+)\)/;
       {  name => $name,
          cols => join(',', sort(split(/`, `/, $cols))),
       };
