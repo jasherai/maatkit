@@ -242,7 +242,7 @@ sub do_tbl {
    my $beg = time();
    if ( !$is_master && defined $opts{w} ) {
       $sta = $dbh->selectall_arrayref(
-         "SELECT MASTER_POS_WAIT('$info->{File}', $info->{Position}, $opts{w})")->[0]->[0];
+         "SELECT /*$info->{database}.$info->{table}*/ MASTER_POS_WAIT('$info->{File}', $info->{Position}, $opts{w})")->[0]->[0];
       $sta = 'NULL' unless defined $sta;
    }
    if ( !$is_master && $opts{v} ) {
@@ -300,7 +300,7 @@ sub checksum_query {
 
    # Make the query.
    my $func = $opts{f} || 'SHA1';
-   my $query = "SELECT MIN(LEAST(0, "
+   my $query = "SELECT /*$db.$tbl*/ MIN(LEAST(0, "
       . "LENGTH(\@crc := $func(CONCAT_WS('#', \@crc, $func(CONCAT_WS('#', $cols$nulls))))), "
       . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl`$index$opts{s}";
 
