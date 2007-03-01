@@ -1,0 +1,313 @@
+#!/usr/bin/perl
+use strict;
+use warnings FATAL => 'all';
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+use Term::ReadLine;
+
+$OUTPUT_AUTOFLUSH = 1;
+
+our $VERSION = q{@VERSION@};
+
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+# Define cmdline args; each is GetOpt::Long spec, whether required,
+# human-readable description.  Add more hash entries as needed.
+my %opt_spec = (
+   d => { s => 'database|d=s',  d => 'Database' },
+   h => { s => 'host|h=s',      d => 'Database server hostname' },
+   o => { s => 'port|P=i',      d => 'Database server port' },
+   p => { s => 'pass|p=s',      d => 'Database password' },
+   u => { s => 'user|u=s',      d => 'Database username' },
+   l => { s => 'help',          d => 'Show this help message' },
+);
+
+# Define the order cmdline opts will appear in help output.  Add any extra ones
+# defined above.  If it's not in this list, it's not an option to this
+# program.  Note that 'h' is host and 'l' is help.
+my @opt_keys = qw( h d o u p l );
+
+# This is the container for the command-line options' values to be stored in
+# after processing.  Initial values are defaults.
+my %opts = (
+   d => '',
+   h => '',
+   o => 0,
+   p => 0,
+   u => '',
+);
+
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+
+if ( $opts{l} ) {
+   print "Usage: $PROGRAM_NAME <options>\n\n  Options:\n\n";
+   foreach my $key ( @opt_keys ) {
+      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^=]*))?/;
+      $long  = "--$long" . ( $short ? ',' : '' );
+      $short = $short ? " -$short" : '';
+      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+   }
+   print <<USAGE;
+
+$PROGRAM_NAME does something or other.
+
+If possible, database options are read from your .my.cnf file.
+For more details, please read the documentation:
+
+   perldoc $PROGRAM_NAME
+
+USAGE
+   exit(1);
+}
+
+# This will end up containing what's needed to connect to MySQL.
+my $conn = {
+   h  => $opts{h},
+   db => $opts{d},
+   u  => $opts{u},
+   p  => $opts{p},
+   o  => $opts{o},
+};
+
+if ( grep { !$conn->{$_} } keys %$conn ) {
+   # Try to use the user's .my.cnf file.
+   eval {
+      my $homedir = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE};
+      open my $conf_file, "<", "$homedir/.my.cnf" or die $OS_ERROR;
+      while ( my $line = <$conf_file> ) {
+         chomp $line;
+         $line =~ s/(^\s*)|(\s*#.*$)//g;
+         next unless $line;
+         my ( $key, $val ) = split( /\s*=\s*/, $line );
+         next unless defined $val;
+         if ( $key eq 'host' )     { $conn->{h}  ||= $val; }
+         if ( $key eq 'user' )     { $conn->{u}  ||= $val; }
+         if ( $key =~ m/^pass/ )   { $conn->{p}  ||= $val; }
+         if ( $key eq 'database' ) { $conn->{db} ||= $val; }
+         if ( $key eq 'port' )     { $conn->{o}  ||= $val; }
+      }
+      close $conf_file;
+   };
+   if ( $EVAL_ERROR && $EVAL_ERROR !~ m/No such file/ ) {
+      print "I tried to read your .my.cnf file, but got '$EVAL_ERROR'\n";
+   }
+}
+
+# Fill in defaults for some things
+$conn->{o} ||= 3306;
+$conn->{h} ||= 'localhost';
+$conn->{u} ||= getlogin() || getpwuid($UID);
+$conn->{p} ||= '';
+
+my %prompts = (
+   o  => "Port number: ",
+   h  => "Database host: ",
+   u  => "Database user: ",
+   p  => "Database password: ",
+   db => "Database: ",
+);
+
+# If anything remains, prompt the terminal
+my $term;
+while ( my ( $thing ) = grep { !$conn->{$_} } keys %$conn ) {
+   $term ||= Term::ReadLine->new('terminal');
+   $conn->{$thing} = $term->readline($prompts{$thing});
+}
+
+# ############################################################################
+# Get ready to do the main work.
+# ############################################################################
+
+# Connect to the database
+my $parser = IndexAnalyzer->new;
+my $dbh = DBI->connect(
+   "DBI:mysql:database=$conn->{db};host=$conn->{h};port=$conn->{o}",
+   $conn->{u}, $conn->{p}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+   or die("Can't connect to DB: $!");
+
+my @tables = @{$dbh->selectcol_arrayref("show tables")};
+
+foreach my $table ( @tables ) {
+   my $ddl = $dbh->selectall_arrayref("show create table $table")
+      ->[0]->[1];
+   
+   my @indexes = $parser->find_duplicate_indexes($ddl);
+   my @fks     = $parser->find_duplicate_fks($ddl);
+
+   if ( @indexes ) {
+      print "Table $conn->{db}.$table has possible duplicate indexes:\n\t",
+         join("\n\t", @indexes), "\n";
+   }
+   if ( @fks ) {
+      print "Table $conn->{db}.$table has duplicate foreign keys:\n\t",
+         join("\n\t", @fks), "\n";
+   }
+
+   if ( @indexes || @fks ) {
+      print "Here is the CREATE TABLE statement:\n$ddl\n\n";
+   }
+}
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+
+# Pass in the DDL of the CREATE TABLE statement.
+sub find_storage_engine {
+   my ( $ddl ) = @_;
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   return $engine;
+}
+
+# The general format of a key is
+# [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
+# Grab every key, then pick and choose the parts of them.  Filter out
+# foreign and fulltext keys.  
+sub find_indexes {
+   my ( $ddl ) = @_;
+   my $engine = find_storage_engine($ddl);
+
+   # Don't analyze views.
+   return () unless defined $engine;
+
+   # Find and filter the indexes.
+   my @indexes = $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
+   @indexes = grep { $_ !~ m/FOREIGN|FULLTEXT|SPATIAL/ } @indexes;
+
+   # Make allowances for HASH bugs in SHOW CREATE TABLE
+   # (http://bugs.mysql.com/bug.php?id=22632).
+   if ( $engine ne 'MEMORY' ) {
+      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
+   }
+
+   # Return just the type and columns, like 'BTREE `col1`,`col2`'  If
+   # there is no type, use BTREE since it is the default.
+   @indexes = map {
+      my ( $type, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      $type ||= 'BTREE';
+      # Strip out prefix length notation from indexes such as
+      # KEY `day` (`day`(12)),
+      $cols =~ s/\(.*?\)//g;
+      "$type $cols";
+   } @indexes;
+   return @indexes;
+}
+
+# Pass in the DDL of the CREATE TABLE statement.
+sub find_duplicate_indexes {
+   my ( $ddl ) = @_;
+   
+   # Ok, so now I have the CREATE TABLE statement.  Find every line that has
+   # an index declaration in it, and grab from the first column on, ignoring
+   # all the PRIMARY/UNIQUE etc stuff, FULLTEXT indexes, and the index name.
+   my @indexes = find_indexes($ddl);
+   return () unless @indexes;
+   my @dupes;
+
+   my %dupe_of; # Just to avoid double-reporting
+
+   # Look at each index and see if it's an exact prefix of any other index.
+   # Along the way, keep track of which indexes are duplicates of others, so
+   # there's no double reporting.  For example, indexes that are exactly the
+   # same would be regarded as duplicates of each other twice.
+   foreach my $i ( 0..$#indexes ) {
+      my $index = $indexes[$i];
+      $dupe_of{$i} ||= [];
+      foreach my $j ( 0..$#indexes ) {
+         $dupe_of{$j} ||= [];
+         next if $i == $j || grep { $_ == $i } @{$dupe_of{$j}};
+         my $other_index = quotemeta($indexes[$j]);
+         if ( $index eq $indexes[$j] || $index =~ m/^$other_index/ ) {
+            push @dupes, $index, $indexes[$j];
+            push @{$dupe_of{$i}}, $j;
+         }
+      }
+   }
+
+   return @dupes;
+}
+
+# Pass in the CREATE TABLE statement.
+sub find_duplicate_fks {
+   my ( $ddl ) = @_;
+
+   # Don't analyze views.
+   return () unless defined find_storage_engine($ddl);
+
+   my @dupes;
+   my @fks = $ddl =~ m/FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
+
+   # A foreign key is a duplicate no matter what order the columns are in, so
+   # re-order them alphabetically for ease.
+   foreach my $i ( 0..$#fks) {
+      my $fk = $fks[$i];
+      next unless $fk =~ m/`, `/; # multi-column FK
+      $fk =~ s#(?<=\()([^\)]+)(?=\))#join(', ', sort(split(/, /, $1)))#ge;
+      $fks[$i] = $fk;
+   }
+
+   # Now compare each FK's definition.
+   foreach my $i ( 0..$#fks) {
+      foreach my $j ( $i+1..$#fks ) {
+         if ( $fks[$i] eq $fks[$j] ) {
+            push @dupes, $fks[$i], $fks[$j];
+         }
+      }
+   }
+
+   return @dupes;
+}
+# ############################################################################
+# Perldoc
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+duplicate-index-checker - Find possible duplicate indexes and foreign keys on
+MySQL tables.
+
+=head1 DESCRIPTION
+
+This program examines the output of SHOW CREATE TABLE on all tables in a MySQL
+database, and if it finds any index in a table that a) covers all the same
+columns as another, or b) covers an exact leftmost prefix of another, it
+prints out the suspicious indexes.  It does this just by string matching of
+the index definition statements.  It also looks for duplicate foreign keys.
+
+This is a very quickly thrown-together script (though as time goes on, I am
+less and less able to claim that).  Please tell me if you find anything it
+does wrong.  It may not handle FULLTEXT or R-Tree or other fanciness
+correctly.  If you find something it doesn't do right, send me the output of
+SHOW CREATE TABLE [tablename] and what you think it ought to do, and I'll see
+if I can fix it.
+
+=head1 SYSTEM REQUIREMENTS
+
+You need the following Perl modules: DBI, DBD::mysql, and Term::ReadKey.
+
+=head1 LICENSE
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+Copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.  All rights
+reserved, except for those granted under the license.
+
+This program is free software.  You may redistribute it under either the GNU
+GPL version 2, or the Perl Artistic License, at your option.  For details on
+these licenses, please issue `man perlartistic' or `man perlgpl'.
+
+=head1 AUTHOR
+
+Baron Schwartz, baron at xaprb dot com.
+
+=cut
