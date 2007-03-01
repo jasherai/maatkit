@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 # This is mysql-duplicate-key-checker, a program to analyze MySQL tables for
-# duplicated or redundant indexes and foreign keys.
+# duplicated or redundant indexes and foreign key constraints.
 # 
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
@@ -349,7 +349,7 @@ sub find_fks {
 }
 
 # ############################################################################
-# Perldoc
+# Documentation
 # ############################################################################
 
 =pod
@@ -361,35 +361,103 @@ MySQL tables.
 
 =head1 DESCRIPTION
 
-This program examines the output of SHOW CREATE TABLE on all tables in a MySQL
-database, and if it finds any index in a table that a) covers all the same
-columns as another, or b) covers an exact leftmost prefix of another, it
-prints out the suspicious indexes.  It does this just by string matching of
-the index definition statements.  It also looks for duplicate foreign keys.
+This program examines the output of SHOW CREATE TABLE on MySQL tables, and if
+it finds indexes that a) cover the same columns as another index in the same
+order, or b) cover an exact leftmost prefix of another index, it prints out
+the suspicious indexes.  By default, indexes must be of the same type, so a
+BTREE index is not a duplicate of a FULLTEXT index, even if they have the same
+colums.  You can override this.
 
-This is a very quickly thrown-together script (though as time goes on, I am
-less and less able to claim that).  Please tell me if you find anything it
-does wrong.  It may not handle FULLTEXT or R-Tree or other fanciness
-correctly.  If you find something it doesn't do right, send me the output of
-SHOW CREATE TABLE [tablename] and what you think it ought to do, and I'll see
-if I can fix it.
+It also looks for duplicate foreign keys.  A duplicate foreign key covers the
+same columns as another in the same table, and references the same parent
+table.
 
+If possible, it will read your .my.cnf file so you don't have to specify
+username and password.
+
+By default it scans every table in every database, and prints out every
+duplicated index and foreign key.  You can specify only to check foreign keys
+or indexes.  You can also tell it to check only certain databases and tables,
+ignore databases and tables, and so on.
+
+You can specify to print out every index and/or foreign key without checking
+for duplicates.  This is an easy way to get a full listing, and it's pretty
+fast, since SHOW CREATE TABLE is very quick.
+
+=head1 OUTPUT
+
+Output is to STDOUT, one line per server and table, with header lines for each
+database.  I tried to make the output easy to process with awk.  For this reason
+columns are always present.  If there's no value, the script prints 'NULL'.
+
+The default is column-aligned output for human readability, but you can change
+it to tab-separated.  Output is sorted by database and table.
+
+The columns in the output are as follows.
+
+=over
+
+=item DATABASE
+
+The database the table is in.
+
+=item TABLE
+
+The table name.
+
+=item ENGINE
+
+The table's storage engine.
+
+=item OBJECT
+
+The index or constraint's name, e.g. `tbl_ibfk_3` (the default InnoDB name for
+the third foreign key on a table named tbl).
+
+=item TYPE
+
+'KEY' for indexes, 'FK' for foreign keys.
+
+=item STRUCT
+
+The type of index: BTREE, FULLTEXT, HASH etc.  By default MySQL's indexes are
+BTREE in most cases.  This does not apply to foreign keys.
+
+=item PARENT
+
+The parent table to which the foreign key constraint refers.  This does not
+apply to indexes.
+
+=item COLUMNS
+
+The columns included in the index or foreign key constraint.  For indexes,
+this column list is output verbatim, as shown in SHOW CREATE TABLE.  For
+foreign keys, the columns are ordered so string comparison can find
+duplicates, since column order in a foreign key is immaterial.
+
+=back
 =head1 SYSTEM REQUIREMENTS
 
 You need the following Perl modules: DBI, DBD::mysql, and Term::ReadKey.
 
 =head1 LICENSE
 
+This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+Feedback and improvements are welcome.
+
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
 MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
-Copyright (c) 2006 Baron Schwartz, baron at xaprb dot com.  All rights
-reserved, except for those granted under the license.
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
 
-This program is free software.  You may redistribute it under either the GNU
-GPL version 2, or the Perl Artistic License, at your option.  For details on
-these licenses, please issue `man perlartistic' or `man perlgpl'.
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
