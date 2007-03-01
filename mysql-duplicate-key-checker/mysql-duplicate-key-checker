@@ -1,7 +1,10 @@
 #!/usr/bin/perl
 
+# TODO what if a table is fked to two parents: dupe-fk must pay attention to
+# parents too.
+
 # This is mysql-duplicate-key-checker, a program to analyze MySQL tables for
-# duplicated indexes and foreign keys.
+# duplicated or redundant indexes and foreign keys.
 # 
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
@@ -115,7 +118,6 @@ USAGE
 # This will end up containing what's needed to connect to MySQL.
 my $conn = {
    h  => $opts{h},
-   db => $opts{d},
    u  => $opts{u},
    p  => $opts{p},
    o  => $opts{o},
@@ -135,7 +137,6 @@ if ( grep { !$conn->{$_} } keys %$conn ) {
          if ( $key eq 'host' )     { $conn->{h}  ||= $val; }
          if ( $key eq 'user' )     { $conn->{u}  ||= $val; }
          if ( $key =~ m/^pass/ )   { $conn->{p}  ||= $val; }
-         if ( $key eq 'database' ) { $conn->{db} ||= $val; }
          if ( $key eq 'port' )     { $conn->{o}  ||= $val; }
       }
       close $conf_file;
@@ -156,7 +157,6 @@ my %prompts = (
    h  => "Database host: ",
    u  => "Database user: ",
    p  => "Database password: ",
-   db => "Database: ",
 );
 
 # If anything remains, prompt the terminal
@@ -202,6 +202,9 @@ foreach my $database ( @databases ) {
       my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
       my $hash = {
          engine   => $engine,
+         database => $database,
+         table    => $table,
+         engine   => $engine,
       };
       $hash->{keys} = $opts{f} =~ m/k/ ? [ find_keys($hash, $ddl) ] : [];
       $hash->{fks}  = $opts{f} =~ m/f/ ? [ find_fks($hash, $ddl) ]  : [];
@@ -213,82 +216,91 @@ foreach my $database ( @databases ) {
    # TODO: filter for dupes here, then design header.
    # TODO: Don't print a key/fk more than once if it is duped.
 
-   next DATABASE unless %info_for;
-
-   # Design and print header
-   my $hdr;
-   if ( $opts{b} ) {
-      $hdr = ( "%s\t" x 7 ) . "\n";
-   }
-   else {
-      my @all_keys = map { @{$_->{fks}}, @{$_->{keys}} } values %info_for;
-      my $max_idx  = max(5, map { length($_->{name}) } @all_keys);
-      my $max_tbl  = max(5, map { length($_) } keys %info_for);
-      my $max_db   = max(8, length($database));
-      $hdr         = "%-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %4s %5s %s\n";
-   }
-   my $header = sprintf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT COLUMNS));
-   my $header_printed = 0;
-
+   my @to_print;
    foreach my $table ( sort keys %info_for ) {
       my $hash = $info_for{$table};
 
-      # Print indexes
+      # Prepare indexes
       if ( $opts{f} =~ m/k/ ) {
          my @keys = sort { $a->{cols} cmp $b->{cols} } @{$hash->{keys}};
-         my @toprint;
          if ( $opts{v} ) { # Print all
-            @toprint = @keys;
+            push @to_print, map { make_hash($database, $table, 'KEY', $_) } @keys;
          }
          else { # Find duplicate/redundant by prefix matching.
+            my %seen; # Avoid outputting a key more than once.
             foreach my $i ( 0..$#keys - 1 ) {
                my $pat = quotemeta($keys[$i]->{cols});
-               my $dup = 0;
                foreach my $j ( $i+1..$#keys ) {
                   if ( ($keys[$i]->{struct} eq $keys[$j]->{struct} || $opts{s})
                      && $keys[$j]->{cols} =~ m/^$pat/ )
                   {
-                     push @toprint, $keys[$i] if !$dup++;
-                     push @toprint, $keys[$j];
+                     push @to_print, make_hash($database, $table, 'KEY', $keys[$i]) if !$seen{$i}++;
+                     push @to_print, make_hash($database, $table, 'KEY', $keys[$j]) if !$seen{$j}++;
                   }
                }
             }
-         }
-         foreach my $key ( @toprint ) {
-            print $header unless $header_printed++;
-            printf($hdr, $database, $table, $hash->{engine}, $key->{name}, 'KEY', $key->{struct}, $key->{cols});
          }
       }
 
       # Print foreign keys
       if ( $opts{f} =~ m/f/ ) {
          my @fks = sort { $a->{cols} cmp $b->{cols} } @{$hash->{fks}};
-         my @toprint;
          if ( $opts{v} ) { # Print all
-            @toprint = @fks;
+            push @to_print, map { make_hash($database, $table, 'FK', $_) } @fks;
          }
          else { # Otherwise print duplicates.  $i $j avoids backtracking.
+            my %seen;
             foreach my $i ( 0..$#fks - 1 ) {
-               my $dup = 0;
                foreach my $j ( $i+1..$#fks ) {
                   if ( $fks[$i]->{cols} eq $fks[$j]->{cols} ) {
-                     push @toprint, $fks[$i] if !$dup++;
-                     push @toprint, $fks[$j];
+                     push @to_print, make_hash($database, $table, 'FK', $fks[$i]) if !$seen{$i}++;
+                     push @to_print, make_hash($database, $table, 'FK', $fks[$j]) if !$seen{$j}++;
                   }
                }
             }
          }
-         foreach my $key ( @toprint ) {
-            print $header unless $header_printed++;
-            printf($hdr, $database, $table, $hash->{engine}, $key->{name}, 'FK', 'NULL', $key->{cols});
-         }
       }
    }
+
+   next DATABASE unless @to_print;
+
+   # Design and print header
+   my $hdr;
+   if ( $opts{b} ) {
+      $hdr = ( "%s\t" x 8 ) . "\n";
+   }
+   else {
+      my $max_idx  = max(5, map { length($_->{name}) } @to_print);
+      my $max_tbl  = max(5, map { length($_->{table}) } @to_print);
+      my $max_db   = max(8, length($database));
+      my $max_par  = max(6, map { length($_->{parent} || '') } @to_print);
+      $hdr         = "%-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %-4s %-8s %-${max_par}s %s\n";
+   }
+
+   printf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT PARENT COLUMNS));
+   foreach my $thing ( @to_print ) {
+      printf($hdr, @{$thing}{qw(database table engine name type struct parent cols)});
+   }
+
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub make_hash {
+   my ( $database, $table, $type, $hash ) = @_;
+   return {
+      database => $database,
+      table    => $table,
+      engine   => $hash->{engine},
+      name     => $hash->{name},
+      type     => $type,
+      struct   => $hash->{struct} || 'NULL',
+      parent   => $hash->{parent} || 'NULL',
+      cols     => $hash->{cols},
+   };
+}
 
 # The general format of a key is
 # [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
@@ -310,6 +322,7 @@ sub find_keys {
       my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
       $struct ||= 'BTREE';
       {
+         engine   => $info->{engine},
          struct   => $struct,
          cols     => $cols,
          name     => $name || 'PRIMARY',
@@ -328,8 +341,14 @@ sub find_fks {
    my @result = map {
       my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
       my ( $cols ) = $_ =~ m/\(([^\)]+)\)/;
-      {  name => $name,
-         cols => join(',', sort(split(/`, `/, $cols))),
+      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
+      if ( $parent !~ m/\./ ) {
+         $parent = "`$info->{database}`.$parent";
+      }
+      {  name   => $name,
+         engine => $info->{engine},
+         parent => $parent,
+         cols   => join(',', sort(split(/`, `/, $cols))),
       };
    } @fks;
    return @result;
