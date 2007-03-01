@@ -57,7 +57,7 @@ my %opts = (
 );
 
 Getopt::Long::Configure( 'no_ignore_case', 'bundling' );
-GetOptions( map { $opt_spec{$_}->{s} => ref $opts{$_} ? $opts{$_} : \$opts{$_} } @opt_keys );
+GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} } @opt_keys );
 
 if ( $opts{l} ) {
    print "Usage: $PROGRAM_NAME [OPTION]... [FILE]...\n\n  Options:\n\n";
