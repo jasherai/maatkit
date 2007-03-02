@@ -66,12 +66,12 @@ my %opts = (
    t => '',
    n => '',
    f => 'fk',
-   o => 0,
-   p => 0,
-   u => '',
+   o => 3306,
+   p => undef,
+   u => undef,
    v => 0,
    b => 0,
-   s => 1,
+   s => 0,
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -144,10 +144,8 @@ if ( grep { !$conn->{$_} } keys %$conn ) {
 }
 
 # Fill in defaults for some things
-$conn->{o} ||= 3306;
 $conn->{h} ||= 'localhost';
 $conn->{u} ||= getlogin() || getpwuid($UID);
-$conn->{p} ||= '';
 
 my %prompts = (
    o  => "Port number: ",
@@ -158,7 +156,7 @@ my %prompts = (
 
 # If anything remains, prompt the terminal
 my $term;
-foreach my $thing ( grep { !$conn->{$_} } keys %$conn ) {
+foreach my $thing ( grep { !defined $conn->{$_} } keys %$conn ) {
    $term ||= Term::ReadLine->new('terminal');
    $conn->{$thing} = $term->readline($prompts{$thing});
 }
@@ -225,7 +223,7 @@ foreach my $database ( @databases ) {
             foreach my $i ( 0..$#keys - 1 ) {
                my $pat = quotemeta($keys[$i]->{cols});
                foreach my $j ( $i+1..$#keys ) {
-                  if ( ($keys[$i]->{struct} eq $keys[$j]->{struct} || $opts{s})
+                  if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts{s})
                      && $keys[$j]->{cols} =~ m/^$pat/ )
                   {
                      push @to_print, make_hash($database, $table, 'KEY', $keys[$i]) if !$seen{$i}++;
@@ -313,8 +311,9 @@ sub find_keys {
 
    my @keys = map {
       my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
+      $struct = $struct || $special || 'BTREE';
       my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
-      $struct ||= 'BTREE';
       {
          engine   => $info->{engine},
          struct   => $struct,
