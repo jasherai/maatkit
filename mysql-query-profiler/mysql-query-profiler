@@ -70,10 +70,10 @@ my %opts = (
    h => '',
    i => 0,
    n => '',
-   o => 0,
-   p => 0,
+   o => 3306,
+   p => undef,
    s => 0,
-   u => '',
+   u => undef,
    v => 1,
    t => 0,
    l => 0,
@@ -147,10 +147,8 @@ if ( grep { !$conn->{$_} } keys %$conn ) {
 }
 
 # Fill in defaults for some things
-$conn->{o} ||= 3306;
 $conn->{h} ||= 'localhost';
 $conn->{u} ||= getlogin() || getpwuid($UID);
-$conn->{p} ||= '';
 
 my %prompts = (
    o  => "Port number: ",
@@ -162,7 +160,7 @@ my %prompts = (
 
 # If anything remains, prompt the terminal
 my $term;
-foreach my $thing ( grep { !$conn->{$_} } keys %$conn ) {
+foreach my $thing ( grep { !defined $conn->{$_} } keys %$conn ) {
    $term ||= Term::ReadLine->new('terminal');
    $conn->{$thing} = $term->readline($prompts{$thing});
 }
