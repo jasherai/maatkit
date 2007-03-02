@@ -332,7 +332,7 @@ sub find_keys {
 
    my @keys = map {
       my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
-      my ( $special ) = $_ =~ m/FULLTEXT|SPATIAL/;
+      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
       $struct = $struct || $special || 'BTREE';
       if ( $info->{engine} =~ m/HEAP|MEMORY/i ) {
          $struct = 'HASH';
