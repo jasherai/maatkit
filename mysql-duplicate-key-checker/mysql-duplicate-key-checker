@@ -158,7 +158,7 @@ my %prompts = (
 
 # If anything remains, prompt the terminal
 my $term;
-while ( my ( $thing ) = grep { !$conn->{$_} } keys %$conn ) {
+foreach my $thing ( grep { !$conn->{$_} } keys %$conn ) {
    $term ||= Term::ReadLine->new('terminal');
    $conn->{$thing} = $term->readline($prompts{$thing});
 }
