@@ -411,6 +411,59 @@ should be quoted and should not contain the word WHERE.  For example, specifying
 with "WHERE foo=bar".  If you specify this option for a table that doesn't have
 a foo column, the query will cause an error.
 
+=head1 HOW TO GET A CONSISTENT CHECKSUM ACROSS REPLICATED SERVERS
+
+If you are using this tool to verify your slaves still have the same data as the
+master, which is why I wrote it, you should read this section.
+
+The script is designed so you can get a consistent checksum on the master and
+slaves.  The first feature to do this is knowing which server is the master.
+It's the first server you specify on the command line.
+
+If your servers are inactive, you might be able to just run the tool with no
+further ado.  This is unlikely, so you probably need to take a checksum on the
+master, then ensure the slave is caught up and no changes propagate to the
+slave(s) before taking the checksum there.
+
+There are several ways to do this, depending on your setup and how much overhead
+you can tolerate.  The lowest-impact way to do it is simply hope the slave is
+caught up to the master.  You can tell the script to report slave lag in one of
+the columns so you can see if there's much lag, then just run the tool as usual.
+If you see tables that are different and the slave is behind the master, it
+might just be a false positive.  You can dig deeper on the tables that are
+troublesome, perhaps with one of the more intrusive methods I'm about to
+explain.
+
+The next most disruptive technique is to lock the table on the master, then take
+checksums.  This should prevent changes from propagating to the slaves.  You can
+just lock on the master (with -k), or you can both lock on the master and wait
+on the slaves till they reach that point in the master's binlog (-w).  Which is
+better depends on your workload; only you know that.
+
+If you decide to make the checksums on the slaves wait until they're guaranteed
+to be caught up to the master, the algorithm looks like this:
+
+ For each table,
+   Master: lock table
+   Master: get pos
+   In parallel,
+     Master: checksum
+     Slave(s): wait for pos, then checksum
+   End
+   Master: unlock table
+ End 
+
+Another option, which is useful in certain cases, is to checksum only some of
+the rows.  If you know your data is being appended to the table and old data
+isn't changing, you could checksum up until a few hours ago (for example) and
+not worry about any data newer than that.  To do this effectively, you need some
+way to know which rows are "old," such as a timestamp column.  You should also
+have an index on that column.  Then you can use the --where option to limit the
+rows that are checksummed.
+
+If you need a different algorithm and this program doesn't support it, please
+get in touch with me and let's see how we can add it.
+
 =head1 OUTPUT
 
 Output is to STDOUT, one line per server and table, with header lines for each
