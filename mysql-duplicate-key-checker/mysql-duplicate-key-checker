@@ -49,13 +49,14 @@ my %opt_spec = (
    p => { s => 'pass|p=s',       d => 'Database password' },
    u => { s => 'user|u=s',       d => 'Database username' },
    v => { s => 'verbose|v',      d => 'Output everything, not just dupes' },
-   s => { s => 'allstruct|s',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
+   a => { s => 'allstruct|a',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
    b => { s => 'tab|b',          d => 'Output separated with tabs' },
+   s => { s => 'allatonce|s',    d => 'Print only once, instead of one DB at a time' },
 );
 
 # Define the order cmdline opts will appear in help output.  If it's not in
 # this list, it's not an option to this program.
-my @opt_keys = qw( l d g t n f h o u p v s b );
+my @opt_keys = qw( l d g t n f h o u p v a b s );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -71,6 +72,7 @@ my %opts = (
    u => undef,
    v => 0,
    b => 0,
+   a => 0,
    s => 0,
 );
 
@@ -172,6 +174,7 @@ my $dbh = DBI->connect(
    or die("Can't connect to DB: $!");
 
 my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+my @whole_batch;
 
 DATABASE:
 foreach my $database ( @databases ) {
@@ -227,7 +230,7 @@ foreach my $database ( @databases ) {
             foreach my $i ( 0..$#keys - 1 ) {
                my $pat = quotemeta($keys[$i]->{cols});
                foreach my $j ( $i+1..$#keys ) {
-                  if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts{s})
+                  if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts{a})
                      && $keys[$j]->{cols} =~ m/^$pat/ )
                   {
                      push @to_print, make_hash($database, $table, 'KEY', $keys[$i]) if !$seen{$i}++;
@@ -260,29 +263,43 @@ foreach my $database ( @databases ) {
 
    next DATABASE unless @to_print;
 
-   # Design and print header
-   my $hdr;
-   if ( $opts{b} ) {
-      $hdr = ( "%s\t" x 8 ) . "\n";
+   if ( $opts{s} ) {
+      push @whole_batch, @to_print;
    }
    else {
-      my $max_idx  = max(5, map { length($_->{name}) } @to_print);
-      my $max_tbl  = max(5, map { length($_->{table}) } @to_print);
-      my $max_db   = max(8, length($database));
-      my $max_par  = max(6, map { length($_->{parent} || '') } @to_print);
-      $hdr         = "%-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %-4s %-8s %-${max_par}s %s\n";
+      print_batch(@to_print);
    }
+}
 
-   printf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT PARENT COLUMNS));
-   foreach my $thing ( @to_print ) {
-      printf($hdr, @{$thing}{qw(database table engine name type struct parent cols)});
-   }
-
+if ( @whole_batch && $opts{s} ) {
+   print_batch(@whole_batch);
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub print_batch {
+   my ( @batch ) = @_;
+
+   my $hdr;
+   if ( $opts{b} ) {
+      $hdr = ( "%s\t" x 8 ) . "\n";
+   }
+   else {
+      my $max_idx  = max(5, map { length($_->{name}) } @batch);
+      my $max_tbl  = max(5, map { length($_->{table}) } @batch);
+      my $max_db   = max(8, map { length($_->{database}) } @batch);
+      my $max_par  = max(6, map { length($_->{parent} || '') } @batch);
+      $hdr         = "%-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %-4s %-8s %-${max_par}s %s\n";
+   }
+
+   printf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT PARENT COLUMNS));
+   foreach my $thing ( @batch ) {
+      printf($hdr, @{$thing}{qw(database table engine name type struct parent cols)});
+   }
+
+}
 
 sub make_hash {
    my ( $database, $table, $type, $hash ) = @_;
