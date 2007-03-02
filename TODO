@@ -1,0 +1,6 @@
+Pipe output from duplicate-key-checker into another tool to graph structures 
+   (check out dot for graphing)
+mysqldiff, datadiff, coldiff:
+   * http://www.adamspiers.org/computing/mysqldiff/
+   * http://www.mrjoy.com/datadiff/
+   * http://rossbeyer.net/software/mysql_coldiff/
