@@ -149,16 +149,16 @@ my $db_options = {
 
 my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
-my @databases = @{$main_dbh->selectcol_arrayref('show databases')};
+my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
 
 DATABASE:
 foreach my $database ( @databases ) {
    next DATABASE if
       ( $opts{d} && !exists($opts{d}->{$database}) )
-      || $database =~ m/^information_schema$/mi
+      || $database =~ m/^(information_schema|lost\+found)$/mi
       || exists $opts{g}->{$database};
 
-   my @tables = @{$main_dbh->selectcol_arrayref('SHOW TABLES FROM ' . $database)};
+   my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
    next DATABASE unless @tables;
 
    my %info_for;
