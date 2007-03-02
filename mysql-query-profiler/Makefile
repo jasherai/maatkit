@@ -15,7 +15,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-query-profiler
-VERSION = 1.0.0
+VERSION = 1.0.1
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \
