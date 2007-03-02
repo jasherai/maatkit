@@ -3,6 +3,11 @@ view the perldoc for more details on them.
 
 Changelog:
 
+2007-03-02: version 1.0.1
+
+   * Fix quoting and skip lost+found database
+   * Add documentation
+
 2007-02-26: version 1.0.0
 
    * Initial release.
