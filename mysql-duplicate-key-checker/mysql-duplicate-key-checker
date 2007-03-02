@@ -175,12 +175,16 @@ my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 
 DATABASE:
 foreach my $database ( @databases ) {
+
+   # Ignore databases as instructed.  Also ignore INFORMATION_SCHEMA and skip
+   # databases caused by lost+found directories created in the root of ext3
+   # filesystems; they are not really databases.
    next DATABASE if
       ( $opts{d} && !exists($opts{d}->{$database}) )
-      || $database =~ m/^information_schema$/mi
+      || $database =~ m/^(information_schema|lost\+found)$/mi
       || exists $opts{g}->{$database};
 
-   my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM ' . $database)};
+   my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
    next DATABASE unless @tables;
 
    my %info_for;
@@ -191,7 +195,7 @@ foreach my $database ( @databases ) {
          ( $opts{t} && !exists($opts{t}->{$table}) )
          || exists $opts{n}->{$table};
 
-      my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE $database.$table"))[1];
+      my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$database`.`$table`"))[1];
       next TABLE if $ddl =~ m/^CREATE ALGORITHM/;
 
       my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
