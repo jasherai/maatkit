@@ -30,6 +30,7 @@ use Term::ReadLine;
 
 # Make the file's Perl version the same as its CVS revision number.
 # our $VERSION = sprintf "%d.%03d", q$Revision$ =~ /(\d+)/g;
+our $VERSION = '@VERSION@';
 
 # ############################################################################
 # Get configuration information.
@@ -56,9 +57,9 @@ my @opt_keys = qw( h d o u p l );
 my %opts = (
    d => '',
    h => '',
-   o => 0,
-   p => 0,
-   u => '',
+   o => 3306,
+   p => undef,
+   u => undef,
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -121,10 +122,8 @@ if ( grep { !$conn->{$_} } keys %$conn ) {
 }
 
 # Fill in defaults for some things
-$conn->{o} ||= 3306;
 $conn->{h} ||= 'localhost';
 $conn->{u} ||= getlogin() || getpwuid($UID);
-$conn->{p} ||= '';
 
 my %prompts = (
    o  => "Port number: ",
@@ -136,7 +135,7 @@ my %prompts = (
 
 # If anything remains, prompt the terminal
 my $term;
-while ( my ( $thing ) = grep { !$conn->{$_} } keys %$conn ) {
+foreach my $thing ( grep { !defined $conn->{$_} } keys %$conn ) {
    $term ||= Term::ReadLine->new('terminal');
    $conn->{$thing} = $term->readline($prompts{$thing});
 }
