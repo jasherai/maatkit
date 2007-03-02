@@ -326,14 +326,17 @@ sub find_keys {
 
    # Make allowances for HASH bugs in SHOW CREATE TABLE
    # (http://bugs.mysql.com/bug.php?id=22632).
-   if ( $info->{engine} ne 'MEMORY' ) {
+   if ( $info->{engine} !~ m/MEMORY|HEAP/ ) {
       @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
    }
 
    my @keys = map {
       my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
-      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
+      my ( $special ) = $_ =~ m/FULLTEXT|SPATIAL/;
       $struct = $struct || $special || 'BTREE';
+      if ( $info->{engine} =~ m/HEAP|MEMORY/i ) {
+         $struct = 'HASH';
+      }
       my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
       {
          engine   => $info->{engine},
