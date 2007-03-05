@@ -158,7 +158,7 @@ foreach my $database ( @databases ) {
       || $database =~ m/^(information_schema|lost\+found)$/mi
       || exists $opts{g}->{$database};
 
-   my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
+   my @tables = @{$main_dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
    next DATABASE unless @tables;
 
    my %info_for;
