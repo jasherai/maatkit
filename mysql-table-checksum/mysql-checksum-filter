@@ -155,7 +155,7 @@ sub process_set {
    my $print = $opts{v} || grep {
             $_->[$CRC]   ne $first->[$CRC]
          || $_->[$COUNT] ne $first->[$COUNT]
-   } @{$set}[ 1 .. ( scalar(@$set) - 2 ) ];
+   } @{$set}[ 1 .. ( scalar(@$set) - 1 ) ];
 
    if ($print) {
       foreach my $line (@$set) {
