@@ -1,0 +1,400 @@
+#!/usr/bin/perl
+
+# This program synchronizes data between two MySQL tables, which need not be
+# on the same server.
+#
+# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+
+our $VERSION = '@VERSION@';
+
+$OUTPUT_AUTOFLUSH = 1;
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+# Define cmdline args; each is GetOpt::Long spec, whether required,
+# human-readable description.  Add more hash entries as needed.
+my %opt_spec = (
+   l => { s => 'help',           d => 'Show this help message' },
+   u => { s => 'user|u=s',       d => 'Database username' },
+   p => { s => 'pass|p=s',       d => 'Database password' },
+   d => { s => 'database|d=s',   d => 'Database' },
+   t => { s => 'table|t=s',      d => 'Table' },
+   a => { s => 'algorithm|a=s',  d => 'Sync algorithm to use' },
+   g => { s => 'grouping|g=s',   d => 'Grouping for recursion in top-down algorithm' },
+# TODO:
+# check that master is amaster, and slave is a slave
+# Don't allow updates on dest server if it is a slave unless --updateon=master|slave
+# Allow choice of REPLACE/INSERT/INSERT IGNORE/INSERT ODKU/UPDATE
+);
+
+# Define the order cmdline opts will appear in help output.  Add any extra ones
+# defined above.  If it's not in this list, it's not an option to this
+# program.  Note that 'h' is host and 'l' is help.
+my @opt_keys = qw( l u p d t a );
+
+# This is the container for the command-line options' values to be stored in
+# after processing.  Initial values are defaults.
+my %opts = (
+   l => 0,
+   u => getlogin() || getpwuid($UID),
+   p => '',
+   d => undef,
+   t => undef,
+   a => 'topdown',
+   o => 3306,
+);
+
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+
+if ( $opts{l} || @ARGV < 2 ) {
+   print "Usage: $PROGRAM_NAME [OPTION].. <source> <dest>\n\n  Options:\n\n";
+   foreach my $key ( @opt_keys ) {
+      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^=]*))?/;
+      $long  = "--$long" . ( $short ? ',' : '' );
+      $short = $short ? " -$short" : '';
+      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+   }
+   print <<USAGE;
+
+$PROGRAM_NAME finds and resolves data differences between two MySQL tables.
+
+For more details, please read the documentation:
+
+   perldoc $PROGRAM_NAME
+
+USAGE
+   exit(1);
+}
+
+# ############################################################################
+# Ready to work now.
+# ############################################################################
+
+my $exit_status = 0;
+
+my $db_options = {
+   RaiseError => 1,
+   PrintError => 1,
+   AutoCommit => $opts{k} ? 0 : 1,
+};
+
+my ( $source, $dest ) = @ARGV;
+
+my $dbh_s = get_dbh($source);
+my $dbh_d = get_dbh($dest);
+
+my %code_for_algorithm = (
+   topdown => \&topdown,
+);
+
+if ( $code_for_algorithm{$opts{a}} ) {
+   $code_for_algorithm{$opts{a}}->();
+}
+else {
+   die "Sorry, algorithm '$opts{a}' unknown; try "
+      . join('|', keys %code_for_algorithm);
+}
+
+exit $exit_status;
+
+# ############################################################################
+# Top-down algorithm
+# ############################################################################
+
+sub topdown {
+
+   # TODO
+   # Verify that the tables have the same structure or something?
+
+   my $tbl_struct = get_tbl_struct();
+
+   # Design a grouping strategy.  First entry is the last one to be executed
+   # -- this goes from fine-grained to coarse-grained.
+   my @groupings = (
+      { cols => [qw(engineacct)], strategy => 'all' },
+   );
+
+   # Begin the recursion
+   recurse_topdown($#groupings, \@groupings, $tbl_struct, {});
+}
+
+sub recurse_topdown {
+   my ( $level, $groupings, $tbl_struct, $where ) = @_;
+
+   # Get the differences.  Must fetch all into memory before trying to
+   # recurse, so we can detect if too many groups have differences and we
+   # should abort.
+   my $grp     = $groupings->[$level]->{cols};
+   my $query   = grouped_checksum_query($tbl_struct, $grp, {});
+
+   # Figure out which groups are different from source to dest.
+   my %diffs;
+   my $sth = $dbh_s->prepare($query);
+   $sth->execute;
+   while ( my $row = $sth->fetchrow_hashref ) {
+      my $key = join('#', @{$row}{@$grp});
+      $row->{action} = 'insert';
+      $diffs{$key} = $row;
+   }
+   $sth = $dbh_d->prepare($query);
+   $sth->execute;
+   while ( my $row = $sth->fetchrow_hashref ) {
+      my $key = join('#', @{$row}{@$grp});
+      if ( $diffs{$key} ) {
+         if ( $diffs{$key}->{crc} eq $row->{crc} ) {
+            delete $diffs{$key};
+         }
+         else {
+            $diffs{$key}->{action} = 'update';
+         }
+      }
+      else {
+         $row->{action} = 'delete';
+         $diffs{$key} = $row;
+      }
+   }
+
+   if ( %diffs ) {
+      foreach my $key ( sort keys %diffs ) {
+         my $row = $diffs{$key};
+         my %new_where = %$where;
+         @new_where{@$grp} = @{$row}{@$grp};
+         if ( $level ) {
+            # TODO
+            # INS/UPD/DEL
+            # recurse_topdown($level - 1, $groupings, $tbl_struct, \%new_where);
+         }
+         else {
+            bottom_out_topdown($row, $tbl_struct, \%new_where);
+         }
+      }
+   }
+
+}
+
+# $row is not a row in the table -- it's a row from one of the grouped
+# checksum queries.
+sub bottom_out_topdown {
+   my ( $row, $tbl_struct, $where ) = @_;
+   my @pks   = @{$tbl_struct->{keys}->{PRIMARY}};
+   my $query = ungrouped_checksum_query($tbl_struct, \@pks, $where);
+
+   # Figure out which rows in the TABLE are different from source to dest (at
+   # this point we have drilled down to row-level diffs and are not working on
+   # aggregated checksums anymore).
+   my %diffs; # Each entry is a row in the table.
+   my $sth = $dbh_s->prepare($query);
+   $sth->execute;
+   while ( my $row = $sth->fetchrow_hashref ) {
+      my $key = join('#', @{$row}{@pks});
+      $row->{action} = 'insert';
+      $diffs{$key} = $row;
+   }
+   $sth = $dbh_d->prepare($query);
+   $sth->execute;
+   while ( my $row = $sth->fetchrow_hashref ) {
+      my $key = join('#', @{$row}{@pks});
+      if ( $diffs{$key} ) {
+         if ( $diffs{$key}->{crc} eq $row->{crc} ) {
+            delete $diffs{$key};
+         }
+         else {
+            $diffs{$key}->{action} = 'update';
+         }
+      }
+      else {
+         $row->{action} = 'delete';
+         $diffs{$key} = $row;
+      }
+   }
+
+# TODO: optimize for special cases where it's a mass delete or mass insert.
+# Can do the whole group at once in that case.
+
+   if ( %diffs ) {
+      foreach my $key ( sort keys %diffs ) {
+         my $row = $diffs{$key};
+         print join("\t", @{$row}{@pks, 'action'}), "\n";
+      }
+   }
+
+
+}
+
+# ############################################################################
+# End top-down algorithm
+# ############################################################################
+
+sub ungrouped_checksum_query {
+   my ( $info, $primary_key, $where ) = @_;
+
+   # To handle nulls, make a bitmap of nullable columns that are null.
+   my $null = @{$info->{null}}
+            ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$info->{null}}) .  ")")
+            : '';
+   my $cols = join(', ', map { $dbh_s->quote_identifier($_) } @{$info->{cols}});
+   my $pks  = join(', ', map { $dbh_s->quote_identifier($_) } @$primary_key);
+   my @crit = map {
+      $dbh_s->quote_identifier($_) . '=' . $dbh_s->quote($where->{$_})
+   } keys %$where;
+   my $crit = @crit ? join(' AND ', @crit) : '1 = 1';
+
+   # Make the query.
+   my $query = <<"   END";
+
+      select $pks, MD5(CONCAT_WS('#', $cols$null)) AS crc
+      FROM `$opts{d}`.`$opts{t}`
+      WHERE $crit
+
+   END
+
+   return ( $query );
+}
+
+sub grouped_checksum_query {
+   my ( $info, $groupby, $where ) = @_;
+
+   # To handle nulls, make a bitmap of nullable columns that are null.
+   my $null = @{$info->{null}}
+            ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$info->{null}}) .  ")")
+            : '';
+   my $cols = join(', ', map { $dbh_s->quote_identifier($_) } @{$info->{cols}});
+   my $grp  = join(', ', map { $dbh_s->quote_identifier($_) } @$groupby);
+   my @crit = map {
+      $dbh_s->quote_identifier($_) . '=' . $dbh_s->quote($where->{$_})
+   } keys %$where;
+   my $crit = @crit ? join(' AND ', @crit) : '1 = 1';
+
+   # Make the query.
+   my $query = <<"   END";
+
+      select $grp, COUNT(*) AS cnt,
+         CONCAT(
+            LPAD(CONV(BIT_XOR(CONV(SUBSTRING(\@CRC
+                                                    := MD5(CONCAT_WS('#', $cols$null)),
+                                                    1,  16), 16, 10)), 10, 16), 16, '0'),
+            LPAD(CONV(BIT_XOR(CONV(SUBSTRING(\@CRC, 17, 16), 16, 10)), 10, 16), 16, '0')
+         ) AS crc
+      FROM `$opts{d}`.`$opts{t}`
+      WHERE $crit
+      GROUP BY $grp
+
+   END
+
+   return ( $query );
+}
+
+sub get_tbl_struct {
+   my $ddl = ($dbh_s->selectrow_array("SHOW CREATE TABLE `$opts{d}`.`$opts{t}`"))[1];
+   my @defs = $ddl =~ m/^(\s+`.*)$/gm;
+   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
+   my @keys =
+      map {
+         my ($name) = $_ =~ m/(PRIMARY|`[^`]*`)/;
+         my ($cols) = $_ =~ m/\((.+)\),?$/;
+         $name =~ s/`//g;
+         ($name, [ grep { m/[^,]/ } split('`', $cols) ])
+      }
+      $ddl =~ m/^  ((?:PRIMARY )?KEY .*)$/gm;
+
+   return {
+      cols => \@cols,
+      null => \@null,
+      keys => { @keys },
+   };
+}
+
+sub get_dbh {
+   my ( $host ) = @_;
+   return DBI->connect(
+      "DBI:mysql:$opts{d};host=$host;port=$opts{o}", $opts{u}, $opts{p}, $db_options )
+      or die("Can't connect to DB: $!");
+}
+
+sub do_var_crc {
+   my ( $dbh, $query ) = @_;
+   $dbh->do('set @crc := "", @cnt := 0');
+   $dbh->do($query);
+   return @{$dbh->selectall_arrayref('select @cnt, @crc')->[0]};
+}
+
+sub do_count {
+   my ( $dbh, $info ) = @_;
+   return $dbh->selectall_arrayref(
+      "SELECT COUNT(*) FROM $info->{database}.$info->{table}$opts{s}"
+   )->[0]->[0];
+}
+
+sub unique {
+   my %seen;
+   grep { !$seen{$_}++ } @_;
+}
+
+# ############################################################################
+# Documentation
+# ############################################################################
+=pod
+
+=head1 NAME
+
+mysql-table-checksum - Print checksums for MySQL tables on one or many servers.
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 OVERVIEW
+
+=head1 OUTPUT
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz, baron at xaprb dot com.
+
+=cut
