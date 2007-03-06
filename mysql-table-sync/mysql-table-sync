@@ -39,11 +39,15 @@ $OUTPUT_AUTOFLUSH = 1;
 # human-readable description.  Add more hash entries as needed.
 my %opt_spec = (
    l => { s => 'help',           d => 'Show this help message' },
+   o => { s => 'port|o=s',       d => 'Database server port' },
    u => { s => 'user|u=s',       d => 'Database username' },
    p => { s => 'pass|p=s',       d => 'Database password' },
    d => { s => 'database|d=s',   d => 'Database' },
    t => { s => 'table|t=s',      d => 'Table' },
    a => { s => 'algorithm|a=s',  d => 'Sync algorithm to use' },
+   x => { s => 'execute|x=s',    d => 'What to do: (p)rint, e(x)ecute, or both' },
+   # TODO: this is not fully baked
+   v => { s => 'verbose|v',      d => 'Whether to be verbose when in print mode' },
    g => { s => 'grouping|g=s',   d => 'Grouping for recursion in top-down algorithm' },
 # TODO:
 # check that master is amaster, and slave is a slave
@@ -54,18 +58,21 @@ my %opt_spec = (
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l u p d t a );
+my @opt_keys = qw( l o u p d t a x v g );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
    l => 0,
+   o => 3306,
    u => getlogin() || getpwuid($UID),
    p => '',
    d => undef,
    t => undef,
    a => 'topdown',
-   o => 3306,
+   x => 'p',
+   g => '',
+   v => '',
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -90,6 +97,8 @@ For more details, please read the documentation:
 USAGE
    exit(1);
 }
+
+# TODO: read .my.cnf
 
 # ############################################################################
 # Ready to work now.
@@ -135,15 +144,16 @@ sub topdown {
 
    # Design a grouping strategy.  First entry is the last one to be executed
    # -- this goes from fine-grained to coarse-grained.
-   my @groupings = (
-      { cols => [qw(engineacct)], strategy => 'all' },
-   );
+   my @groupings = map {
+      { cols => [$_] }
+   } $opts{g} =~ m/(\w+)/g;
+   die "You must define some groupings." unless @groupings;
 
    # Begin the recursion
-   recurse_topdown($#groupings, \@groupings, $tbl_struct, {});
+   topdown_recurse($#groupings, \@groupings, $tbl_struct, {});
 }
 
-sub recurse_topdown {
+sub topdown_recurse {
    my ( $level, $groupings, $tbl_struct, $where ) = @_;
 
    # Get the differences.  Must fetch all into memory before trying to
@@ -158,7 +168,7 @@ sub recurse_topdown {
    $sth->execute;
    while ( my $row = $sth->fetchrow_hashref ) {
       my $key = join('#', @{$row}{@$grp});
-      $row->{action} = 'insert';
+      $row->{action} = 'INSERT';
       $diffs{$key} = $row;
    }
    $sth = $dbh_d->prepare($query);
@@ -170,11 +180,11 @@ sub recurse_topdown {
             delete $diffs{$key};
          }
          else {
-            $diffs{$key}->{action} = 'update';
+            $diffs{$key}->{action} = 'UPDATE';
          }
       }
       else {
-         $row->{action} = 'delete';
+         $row->{action} = 'DELETE';
          $diffs{$key} = $row;
       }
    }
@@ -190,16 +200,20 @@ sub recurse_topdown {
             # recurse_topdown($level - 1, $groupings, $tbl_struct, \%new_where);
          }
          else {
-            bottom_out_topdown($row, $tbl_struct, \%new_where);
+            if ( $row->{action} eq 'DELETE' ) {
+               handle_data_change('DELETE', $row, \%new_where, $row->{cnt});
+            }
+            else {
+               topdown_bottom_out($row, $tbl_struct, \%new_where);
+            }
          }
       }
    }
-
 }
 
 # $row is not a row in the table -- it's a row from one of the grouped
 # checksum queries.
-sub bottom_out_topdown {
+sub topdown_bottom_out {
    my ( $row, $tbl_struct, $where ) = @_;
    my @pks   = @{$tbl_struct->{keys}->{PRIMARY}};
    my $query = ungrouped_checksum_query($tbl_struct, \@pks, $where);
@@ -208,13 +222,18 @@ sub bottom_out_topdown {
    # this point we have drilled down to row-level diffs and are not working on
    # aggregated checksums anymore).
    my %diffs; # Each entry is a row in the table.
+   my $num_src = 0;
+   my $num_dst = 0;
+
    my $sth = $dbh_s->prepare($query);
    $sth->execute;
    while ( my $row = $sth->fetchrow_hashref ) {
       my $key = join('#', @{$row}{@pks});
-      $row->{action} = 'insert';
+      $row->{action} = 'INSERT';
       $diffs{$key} = $row;
+      $num_src++;
    }
+
    $sth = $dbh_d->prepare($query);
    $sth->execute;
    while ( my $row = $sth->fetchrow_hashref ) {
@@ -224,32 +243,58 @@ sub bottom_out_topdown {
             delete $diffs{$key};
          }
          else {
-            $diffs{$key}->{action} = 'update';
+            $diffs{$key}->{action} = 'UPDATE';
          }
       }
       else {
-         $row->{action} = 'delete';
+         $row->{action} = 'DELETE'; # TODO: name action something more magical
          $diffs{$key} = $row;
       }
+      $num_dst++;
    }
 
-# TODO: optimize for special cases where it's a mass delete or mass insert.
-# Can do the whole group at once in that case.
-
    if ( %diffs ) {
-      foreach my $key ( sort keys %diffs ) {
-         my $row = $diffs{$key};
-         print join("\t", @{$row}{@pks, 'action'}), "\n";
+      if ( $opts{v} || $opts{x} =~ m/x/ ) { # Do the changes
+         foreach my $key ( sort keys %diffs ) {
+            my $row = $diffs{$key};
+            my %where = map { $_ => $row->{$_} } @pks;
+            handle_data_change($row->{action}, $row, \%where);
+         }
+      }
+      else { # Just summarize this group and report
+         my %counts;
+         map { $counts{$_->{action}}++ } values %diffs;
+         foreach my $action ( keys %counts ) {
+            handle_data_change($action, $row, $where, $counts{$action});
+         }
       }
    }
 
+}
 
+# TODO: put in logic to allow it to delete on the dest server
+sub handle_data_change {
+   my ( $action, $row, $where, $count ) = @_;
+   $count = sprintf('/*%8d */', $count || 0);
+
+   my @crit = map {
+      $dbh_s->quote_identifier($_) . '=' . $dbh_s->quote($where->{$_})
+   } keys %$where;
+   my $crit = @crit ? ' WHERE ' . join(' AND ', @crit) : '';
+
+   if ( $opts{x} =~ m/p/ ) {
+      print STDOUT "$action $count from `$opts{d}`.`$opts{t}`$crit;\n";
+   }
+   if ( $opts{x} =~ m/x/ ) {
+      # TODO$dbh_s->do("");
+   }
 }
 
 # ############################################################################
 # End top-down algorithm
 # ############################################################################
 
+# TODO: make a SELECT FOR UPDATE option so no table locks needed
 sub ungrouped_checksum_query {
    my ( $info, $primary_key, $where ) = @_;
 
