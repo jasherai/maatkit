@@ -3,6 +3,11 @@ view the perldoc for more details on them.
 
 Changelog:
 
+2007-03-06: version 1.0.2
+
+   * Fix more quoting
+   * Fix an off-by-one error in mysql-checksum-filter
+
 2007-03-02: version 1.0.1
 
    * Fix quoting and skip lost+found database
