@@ -158,7 +158,7 @@ foreach my $database ( @databases ) {
       || $database =~ m/^(information_schema|lost\+found)$/mi
       || exists $opts{g}->{$database};
 
-   my @tables = @{$main_dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
+   my @tables = @{$main_dbh->selectcol_arrayref("SHOW TABLES FROM `$database`")};
    next DATABASE unless @tables;
 
    my %info_for;
@@ -204,7 +204,7 @@ foreach my $database ( @databases ) {
    foreach my $table ( sort keys %info_for ) {
 
       # Lock table and get master position on the master, if applicable.
-      $main_dbh->do("LOCK TABLES $database.$table READ") if $opts{k};
+      $main_dbh->do("LOCK TABLES `$database`.`$table` READ") if $opts{k};
       if ( defined $opts{w} ) {
          my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
          @{$info_for{$table}}{keys %$master_status} = values %$master_status;
@@ -254,7 +254,7 @@ sub do_tbl {
    my $mid = time();
    if ( $info->{engine} eq 'MyISAM' && !$opts{f}  ) {
       if ( !$opts{c} ) {
-         $crc = $dbh->selectall_arrayref("CHECKSUM TABLE $info->{database}.$info->{table}",
+         $crc = $dbh->selectall_arrayref("CHECKSUM TABLE `$info->{database}`.`$info->{table}`",
             { Slice => {} })->[0]->{Checksum};
       }
       if ( !$opts{r} ) {
@@ -279,7 +279,7 @@ sub do_tbl {
 
 sub checksum_query {
    my ( $dbh, $db, $tbl ) = @_;
-   my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE $db.$tbl"))[1];
+   my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$db`.`$tbl`"))[1];
    return ( 'VIEW', '' ) if $ddl =~ m/^CREATE ALGORITHM/;
 
    my ( $type ) = $ddl =~ m/^\) (?:ENGINE|TYPE)=(\S+)/m;
@@ -331,7 +331,7 @@ sub do_var_crc {
 sub do_count {
    my ( $dbh, $info ) = @_;
    return $dbh->selectall_arrayref(
-      "SELECT COUNT(*) FROM $info->{database}.$info->{table}$opts{s}"
+      "SELECT COUNT(*) FROM `$info->{database}`.`$info->{table}`$opts{s}"
    )->[0]->[0];
 }
 
