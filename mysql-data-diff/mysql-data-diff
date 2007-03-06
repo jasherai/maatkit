@@ -1,0 +1,346 @@
+#!/usr/bin/perl
+
+=head1 NAME
+
+mysql-data-diff - tool allows one to compare the data of two databases
+
+=head1 SYNOPSIS
+
+    mysql-data-diff cleandb dirtydb
+    mysql-data-diff --notime cleandb dirtydb
+    mysql-data-diff -u root -h hostname -p password cleandb dirtydb
+
+=head1 DESCRIPTION
+
+This tool allows one to compare the data in the corresponding tables
+of two databases to see which rows differ between the two.
+
+mysql-data-diff was written as part of an internal testing framework to
+allow us to validate the correctness of our system in terms of
+database access at as fine a granularity as possible.  This is
+done by connecting to a MySQL server, and comparing the data in
+corresponding tables from two databases (I.E. mydb.foo vs. yourdb.foo).
+Any rows that differ between the two tables, or are present in only
+one table will be returned.
+
+Simply set up two databases with identical tables, one of which
+contains all the data that you expect to see after your test suite
+has finished running, and the other to be operated on by your test
+suite. Use mysql-data-diff to compare the contents of the tables.
+
+=head1 CONDITIONS
+
+All tables being diffed must meet ALL of these criteria:
+
+* Table contains at least one 'NOT NULL' column.
+
+* The names of a pair of tables to be compared (one in dirtydb
+  and a corresponding one in cleandb) do not differ between
+  cleandb and dirtydb.
+
+* Each pair of tables to be compared have identical definitions.
+
+=head1 OPTIONS
+
+=over 4
+
+=item cleandb
+
+The DB that defines what the data 'should' be.
+
+=item dirtydb
+
+The DB that contains the data to compare against the cleandb.
+
+=item [-h, --host]
+
+The hostname that has the MySQL server.
+
+=item [-u, --user]
+
+The user to authenticate as.
+
+=item [-p, --password]
+
+The password to authenticate with.
+
+=item [--notime]
+
+Ignore all DATE, TIME, DATETIME, and TIMESTAMP columns when
+comparing data.
+
+=item [--table]
+
+The table name to compare. Use mupltiple times to select many
+tables - C<mysql-data-diff --table t1 --table t2 ...>.
+
+=item [--ask]
+
+Ask questions. Now, allows you to select columns to compare by.
+
+=back
+
+=head1 CAVEATS
+
+Presently this tool does not verify that schema match, which
+may produce unexpected results. Also, the query may be slow
+if the tables involved contain large amounts of data.
+
+=cut
+
+use strict;
+use warnings FATAL => 'all';
+
+our $VERSION = 0.3;
+
+use DBI;
+use Pod::Usage;
+use Getopt::Long;
+
+my %opt = (
+    host => '',
+    user => 'root',
+    password => '',
+    'time' => 1,
+);
+GetOptions(\%opt,
+    'help',
+    'h|host:s',
+    'u|user:s',
+    'p|password:s',
+    'time!',
+    'table:s@',
+    'ask!',
+) or pod2usage(1);
+
+pod2usage(
+    -verbose => 2,
+    -exitval => 0,
+) if $opt{'help'};
+
+my ($cleandb, $dirtydb) = @ARGV;
+pod2usage(
+    -msg     => "Databases wasn't specified",
+    -exitval => 1,
+) unless $cleandb && $dirtydb;
+
+my $dbh = DBI->connect(
+    "DBI:mysql:$dirtydb:$opt{'host'}",
+    $opt{'user'}, $opt{'password'},
+    { PrintError => 1 },
+);
+my $clean_dbh = DBI->connect(
+    "DBI:mysql:$cleandb:$opt{'host'}",
+    $opt{'user'}, $opt{'password'},
+    { PrintError => 1 }
+);
+
+# They didn't specify tables, so figure it out...
+my @tables = get_tables();
+unless ( @tables ) {
+    print STDERR "$cleandb database has no tables, or tables you've specified don't exist\n";
+    exit 1;
+}
+
+my @data;
+foreach my $table( @tables ) {
+    my ($column, @constraints) = get_column_constraints( $table );
+    unless ( $column ) {
+        print "Couldn't find NOT NULL column in $cleandb.$table, skipping table.\n";
+        next;
+    }
+
+    my $joinby = join(' AND ', @constraints);
+    push @data, [
+        $table,
+        "SELECT t1.* FROM
+            $cleandb.$table AS t1 LEFT OUTER JOIN
+            $dirtydb.$table AS t2 ON ($joinby)
+        WHERE t2.$column IS NULL",
+
+        "SELECT t2.* FROM
+            $cleandb.$table AS t1 RIGHT OUTER JOIN
+            $dirtydb.$table AS t2 ON ($joinby)
+        WHERE t1.$column IS NULL"
+    ];
+}
+unless ( @data ) {
+    print STDERR "Must have at least 1 table to compare.\n";
+    exit 1;
+}
+
+my $hits = 0;
+while ( my $d = shift @data ) {
+    my ($table, $query1, $query2) = @$d;
+    my ($out1, $count1) = ("", 0);
+    my ($out2, $count2) = ("", 0);
+
+    $out1 = "$dirtydb.$table is missing:\n";
+    my $sth = $dbh->prepare( $query1 ) or die "couldn't prepare '$query1': ". $dbh->err;
+    $sth->execute or die "couldn't execute '$query1': ". $sth->err;
+    $sth->finish;
+    $sth->execute or die "couldn't execute '$query1': ". $sth->err;
+    while(my $row = $sth->fetchrow_arrayref) {
+        $out1 .= join(", ", map munge($dbh, $_), @$row) . "\n";
+        $hits++;
+        $count1++;
+    }
+    $sth->finish();
+    $out1 = "$dirtydb.$table is not missing any rows." unless $count1;
+
+    $out2 = "$dirtydb.$table should not have:\n";
+    $sth = $dbh->prepare($query2);
+    $sth->execute or die "couldn't execute '$query2': ". $sth->err;
+    $sth->finish;
+    $sth->execute or die "couldn't execute '$query2': ". $sth->err;
+    while(my $row = $sth->fetchrow_arrayref) {
+        $out2 .= join(", ", map munge($dbh, $_), @$row) . "\n";
+        $hits++;
+        $count2++;
+    }
+    $sth->finish();
+    $out2 = "$dirtydb.$table has no unexpected rows.\n" if($count2 == 0);
+
+    print "$out1\n$out2\n\n";
+}
+
+$dbh->disconnect;
+$clean_dbh->disconnect;
+
+if( $hits > 0 ) {
+    # Give a useful return code if we found any variances.
+    exit(1);
+}
+
+sub munge {
+    my ($dbh, $x) = @_;
+
+    return "NULL" unless defined $x;
+    # number
+    return $x if $x =~ /^\d+(\.\d+)?([eE][+-]?\d+)?$/;
+    return $dbh->quote($x);
+}
+
+sub get_column_constraints {
+    my $table = shift;
+
+    my $query = "EXPLAIN $cleandb.$table";
+    my $sth = $dbh->prepare( $query ) or die "couldn't prepare '$query': ". $dbh->err;
+    $sth->execute or die "could execute '$query': ". $sth->err;
+    my @rows;
+    while( my $row = $sth->fetchrow_arrayref ) {
+        # Ignore DATE, TIME, DATETIME, and TIMESTAMP columns if we've been told
+        # to.  Note that we're *NOT* ignoring YEAR columns.
+        next if !$opt{'time'} && $row->[1] =~ /date|time/i;
+        push @rows, [ @$row ];
+    }
+    $sth->finish;
+
+    my %columns = ();
+    if ( $opt{'ask'} ) {
+        print "Table $table\n";
+        print "Select columns [". join( ', ', map $_->[0], @rows ). "]: ";
+        my $input = <STDIN>; chomp $input; $input =~ s/^\s*|\s*$//g;
+        if ( $input ) {
+            %columns = map { lc $_ => 1 } split /\s*,\s*/, $input;
+        }
+    }
+
+    %columns = map { lc $_->[0] => 1 } @rows
+        unless keys %columns;
+
+
+    my @constraints;
+    my $leading_column = '';
+    foreach my $row( @rows ) {
+        my $c = $row->[0];
+
+        # Column number 2 contains the NULLability of the column.
+        if ( !$leading_column && $row->[2] ne "YES" ) {
+            $leading_column = $c;
+        }
+        next unless $columns{ lc $c };
+
+        if ( $row->[2] ne "YES" ) {
+            push @constraints, "(t1.$c = t2.$c)";
+        } else {
+            push @constraints, "(t1.$c = t2.$c OR (t1.$c IS NULL AND t2.$c IS NULL))";
+        }
+
+    }
+    return ($leading_column, @constraints);
+}
+
+sub get_tables {
+    my @clean_tables = _get_tables( $cleandb );
+    my %clean_table = map { lc $_ => 1 } @clean_tables;
+    my @dirty_tables = _get_tables( $dirtydb );
+    my %dirty_table = map { lc $_ => 1 } @dirty_tables;
+
+    my @tables;
+    foreach my $t ( @clean_tables, @dirty_tables ) {
+        if ( $clean_table{ lc $t } && $dirty_table{ lc $t } ) {
+            push @tables, $t;
+        } else {
+            print "Skipped table $t - doesn't exist in both DBs\n";
+        }
+    }
+
+    if ( $opt{'table'} ) {
+        my %filter = map { lc $_ => 1 } @{ $opt{table} };
+        @tables = grep $filter{ lc $_ }, @tables;
+    }
+
+    my %seen;
+    @tables = grep !$seen{ lc $_ }++, @tables;
+
+    return @tables;
+}
+
+sub _get_tables {
+    my $db = shift;
+    my $query = "SHOW TABLES FROM $db";
+
+    my $sth = $dbh->prepare( $query ) or die "couldn't prepare '$query': ". $dbh->err;
+    $sth->execute or die "couldn't execute '$query': ". $sth->err;
+
+    my @tables = ();
+    while( my $row = $sth->fetchrow_arrayref ) {
+        push @tables, $row->[0];
+    }
+    return @tables;
+}
+
+=head1 REQUIREMENTS
+
+=over 4
+
+=item Perl - Perl 5.6 or greater
+
+=item MySQL - Access to a MySQL 3.23.x or greater server
+
+=item Perl modules:
+
+L<DBI>, L<DBD::mysql>, L<Getopt::Long> and L<Pod::Usage>.
+
+=back
+
+=head1 INSTALLATION
+
+Put F<mysql-data-diff> somewhere in your path, and set
+the permissions appropriately. Run it without any options
+to see an explanation on how to use it.
+
+=head1 AUTHORS
+
+    "Ruslan U. Zakirov" <Ruslan.Zakirov@gmail.com>
+
+    "Jon D. Frisby" <jfrisby@mrjoy.com>
+    http://www.mrjoy.com
+
+=head1 LICENSE
+
+mysql-data-diff is distributed under the GNU GPL version 2.0.
+
+=cut
+
