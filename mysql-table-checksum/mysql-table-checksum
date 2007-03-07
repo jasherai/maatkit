@@ -2,6 +2,8 @@
 
 # TODO:
 # Is it possible to XOR rows so the result is order-independent?
+# Read .my.cnf
+# Add a --paranoid flag that'll checksum each column separately
 
 # This program checksums MySQL tables on one or more servers.
 #
