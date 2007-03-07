@@ -40,32 +40,40 @@ $OUTPUT_AUTOFLUSH = 1;
 my %opt_spec = (
    l => { s => 'help',           d => 'Show this help message' },
    a => { s => 'algorithm|a=s',  d => 'Sync algorithm to use' },
-   x => { s => 'execute|x=s',    d => 'What to do: (e)xplain, (p)rint, e(x)ecute' },
+   p => { s => 'print|p',        d => 'Print all sync queries to STDOUT' },
+   e => { s => 'explain|e=i',    d => 'Explain changes at recursion levels 0..n' },
+   x => { s => 'execute|x',      d => 'Execute queries required to sync' },
    g => { s => 'grouping|g=s',   d => 'Grouping for recursion in top-down algorithm' },
 # TODO:
 # check that master is amaster, and slave is a slave
 # Don't allow updates on dest server if it is a slave unless --updateon=master|slave
 # Allow choice of REPLACE/INSERT/INSERT IGNORE/INSERT ODKU/UPDATE
+# Allow using a different key than primary key
+# Allow to specify which columns
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l a x g );
+my @opt_keys = qw( l a p e x g );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
    l => 0,
    a => 'topdown',
-   x => 'p',
+   p => 0,
+   e => 0,
+   x => 1,
    g => '',
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
 
+# ############################################################################
 # Try to use the user's .my.cnf file.
+# ############################################################################
 my $my_cnf = {
    host => 'localhost',
    user => getlogin() || getpwuid($UID),
@@ -92,6 +100,10 @@ eval {
    }
 };
 
+# ############################################################################
+# Parse arguments saying which tables.  If the script doesn't have everything
+# it needs, how help text.
+# ############################################################################
 my $source = parse_dsn(shift(@ARGV), {},      $my_cnf);
 my $dest   = parse_dsn(shift(@ARGV), $source, $my_cnf);
 
@@ -121,9 +133,15 @@ USAGE
 }
 
 # ############################################################################
-# Ready to work now.
+# Algorithm lookup table.
 # ############################################################################
+my %code_for_algorithm = (
+   topdown => \&topdown,
+);
 
+# ############################################################################
+# Do the work.
+# ############################################################################
 my $exit_status = 0;
 
 my $dbh_s = get_dbh($source);
@@ -132,15 +150,11 @@ my $tbl_n = "`$opts{d}`.`$opts{t}`"; # XXX
 my $tbl_s = get_tbl_struct();
 my $tbl_c = join(', ', map { $dbh_s->quote_identifier($_) } @{$tbl_s->{cols}});
 
-my %code_for_algorithm = (
-   topdown => \&topdown,
-);
-
 if ( $code_for_algorithm{$opts{a}} ) {
    $code_for_algorithm{$opts{a}}->();
 }
 else {
-   die "Sorry, algorithm '$opts{a}' unknown; try "
+   die "Sorry, algorithm '$opts{a}' unknown; try one of "
       . join('|', keys %code_for_algorithm);
 }
 
