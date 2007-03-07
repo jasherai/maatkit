@@ -280,27 +280,29 @@ sub topdown_bottom_out {
 
 }
 
-# TODO: put in logic to allow it to delete on the dest server
+# TODO: put in logic to allow it to act on the dest server
 sub handle_data_change {
    my ( $action, $row, $where, $count ) = @_;
-   $count = sprintf('/*%8d */', $count || 0);
+   $count = sprintf('/*%8d */', $count || 1);
 
    my @crit = map {
       $dbh_s->quote_identifier($_) . '=' . $dbh_s->quote($where->{$_})
    } keys %$where;
    my $crit = @crit ? ' WHERE ' . join(' AND ', @crit) : '';
 
-   if ( $action eq 'UPDATE' ) {
+   if ( $action eq 'DELETE' ) {
+      my $query = "DELETE FROM $tbl_n$crit";
       if ( $opts{x} =~ m/p/ ) {
-         print STDOUT "$action $count FROM $tbl_n$crit;\n";
+         print STDOUT "$query;\n";
       }
       if ( $opts{x} =~ m/x/ ) {
-         # TODO$dbh_s->do("");
+         $dbh_s->do($query);
       }
    }
    else {
       if ( $opts{x} =~ m/p/ ) {
          print STDOUT "$action $count INTO $tbl_n$crit;\n";
+# TODO 3 actions: do, explain, print queries
       }
       if ( $opts{x} =~ m/x/ ) {
          my $row = $dbh_s->selectrow_arrayref("SELECT * FROM $tbl_n$crit");
@@ -316,11 +318,11 @@ sub handle_data_change {
 
 # TODO: make a SELECT FOR UPDATE option so no table locks needed
 sub ungrouped_checksum_query {
-   my ( $info, $primary_key, $where ) = @_;
+   my ( $primary_key, $where ) = @_;
 
    # To handle nulls, make a bitmap of nullable columns that are null.
-   my $null = @{$info->{null}}
-            ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$info->{null}}) .  ")")
+   my $null = @{$tbl_s->{null}}
+            ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$tbl_s->{null}}) .  ")")
             : '';
    my $pks  = join(', ', map { $dbh_s->quote_identifier($_) } @$primary_key);
    my @crit = map {
@@ -341,11 +343,11 @@ sub ungrouped_checksum_query {
 }
 
 sub grouped_checksum_query {
-   my ( $info, $groupby, $where ) = @_;
+   my ( $groupby, $where ) = @_;
 
    # To handle nulls, make a bitmap of nullable columns that are null.
-   my $null = @{$info->{null}}
-            ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$info->{null}}) .  ")")
+   my $null = @{$tbl_s->{null}}
+            ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$tbl_s->{null}}) .  ")")
             : '';
    my $grp  = join(', ', map { $dbh_s->quote_identifier($_) } @$groupby);
    my @crit = map {
