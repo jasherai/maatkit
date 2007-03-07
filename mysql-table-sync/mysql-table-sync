@@ -116,6 +116,14 @@ my ( $source, $dest ) = @ARGV;
 
 my $dbh_s = get_dbh($source);
 my $dbh_d = get_dbh($dest);
+my $tbl_n = "`$opts{d}`.`$opts{t}`";
+my $tbl_s = get_tbl_struct();
+my $tbl_c = join(', ', map { $dbh_s->quote_identifier($_) } @{$tbl_s->{cols}});
+
+# TODO this might need to be on the other server, and needs other algorithms
+my $sth_insupd = $dbh_s->prepare(
+   "REPLACE INTO $tbl_n($tbl_c) VALUES("
+   . join(',', map { "?" } @{$tbl_s->{cols}}) . ")");
 
 my %code_for_algorithm = (
    topdown => \&topdown,
@@ -140,8 +148,6 @@ sub topdown {
    # TODO
    # Verify that the tables have the same structure or something?
 
-   my $tbl_struct = get_tbl_struct();
-
    # Design a grouping strategy.  First entry is the last one to be executed
    # -- this goes from fine-grained to coarse-grained.
    my @groupings = map {
@@ -150,17 +156,17 @@ sub topdown {
    die "You must define some groupings." unless @groupings;
 
    # Begin the recursion
-   topdown_recurse($#groupings, \@groupings, $tbl_struct, {});
+   topdown_recurse($#groupings, \@groupings, {});
 }
 
 sub topdown_recurse {
-   my ( $level, $groupings, $tbl_struct, $where ) = @_;
+   my ( $level, $groupings, $where ) = @_;
 
    # Get the differences.  Must fetch all into memory before trying to
    # recurse, so we can detect if too many groups have differences and we
    # should abort.
    my $grp     = $groupings->[$level]->{cols};
-   my $query   = grouped_checksum_query($tbl_struct, $grp, {});
+   my $query   = grouped_checksum_query($grp, {});
 
    # Figure out which groups are different from source to dest.
    my %diffs;
@@ -168,7 +174,7 @@ sub topdown_recurse {
    $sth->execute;
    while ( my $row = $sth->fetchrow_hashref ) {
       my $key = join('#', @{$row}{@$grp});
-      $row->{action} = 'INSERT';
+      $row->{_act_} = 'INSERT';
       $diffs{$key} = $row;
    }
    $sth = $dbh_d->prepare($query);
@@ -180,11 +186,11 @@ sub topdown_recurse {
             delete $diffs{$key};
          }
          else {
-            $diffs{$key}->{action} = 'UPDATE';
+            $diffs{$key}->{_act_} = 'UPDATE';
          }
       }
       else {
-         $row->{action} = 'DELETE';
+         $row->{_act_} = 'DELETE';
          $diffs{$key} = $row;
       }
    }
@@ -197,14 +203,16 @@ sub topdown_recurse {
          if ( $level ) {
             # TODO
             # INS/UPD/DEL
-            # recurse_topdown($level - 1, $groupings, $tbl_struct, \%new_where);
+            # recurse_topdown($level - 1, $groupings, \%new_where);
          }
          else {
-            if ( $row->{action} eq 'DELETE' ) {
+            if ( $row->{_act_} eq 'DELETE' ) {
+               # Deletes can be handled with a single query...
                handle_data_change('DELETE', $row, \%new_where, $row->{cnt});
             }
             else {
-               topdown_bottom_out($row, $tbl_struct, \%new_where);
+               # ... but updates and inserts must be done a row at a time.
+               topdown_bottom_out($row, \%new_where);
             }
          }
       }
@@ -214,9 +222,9 @@ sub topdown_recurse {
 # $row is not a row in the table -- it's a row from one of the grouped
 # checksum queries.
 sub topdown_bottom_out {
-   my ( $row, $tbl_struct, $where ) = @_;
-   my @pks   = @{$tbl_struct->{keys}->{PRIMARY}};
-   my $query = ungrouped_checksum_query($tbl_struct, \@pks, $where);
+   my ( $row, $where ) = @_;
+   my @pks   = @{$tbl_s->{keys}->{PRIMARY}};
+   my $query = ungrouped_checksum_query(\@pks, $where);
 
    # Figure out which rows in the TABLE are different from source to dest (at
    # this point we have drilled down to row-level diffs and are not working on
@@ -229,7 +237,7 @@ sub topdown_bottom_out {
    $sth->execute;
    while ( my $row = $sth->fetchrow_hashref ) {
       my $key = join('#', @{$row}{@pks});
-      $row->{action} = 'INSERT';
+      $row->{_act_} = 'INSERT';
       $diffs{$key} = $row;
       $num_src++;
    }
@@ -243,11 +251,11 @@ sub topdown_bottom_out {
             delete $diffs{$key};
          }
          else {
-            $diffs{$key}->{action} = 'UPDATE';
+            $diffs{$key}->{_act_} = 'UPDATE';
          }
       }
       else {
-         $row->{action} = 'DELETE'; # TODO: name action something more magical
+         $row->{_act_} = 'DELETE'; # TODO: name _act_ something more magical
          $diffs{$key} = $row;
       }
       $num_dst++;
@@ -258,12 +266,12 @@ sub topdown_bottom_out {
          foreach my $key ( sort keys %diffs ) {
             my $row = $diffs{$key};
             my %where = map { $_ => $row->{$_} } @pks;
-            handle_data_change($row->{action}, $row, \%where);
+            handle_data_change($row->{_act_}, $row, \%where);
          }
       }
       else { # Just summarize this group and report
          my %counts;
-         map { $counts{$_->{action}}++ } values %diffs;
+         map { $counts{$_->{_act_}}++ } values %diffs;
          foreach my $action ( keys %counts ) {
             handle_data_change($action, $row, $where, $counts{$action});
          }
@@ -282,11 +290,23 @@ sub handle_data_change {
    } keys %$where;
    my $crit = @crit ? ' WHERE ' . join(' AND ', @crit) : '';
 
-   if ( $opts{x} =~ m/p/ ) {
-      print STDOUT "$action $count from `$opts{d}`.`$opts{t}`$crit;\n";
+   if ( $action eq 'UPDATE' ) {
+      if ( $opts{x} =~ m/p/ ) {
+         print STDOUT "$action $count FROM $tbl_n$crit;\n";
+      }
+      if ( $opts{x} =~ m/x/ ) {
+         # TODO$dbh_s->do("");
+      }
    }
-   if ( $opts{x} =~ m/x/ ) {
-      # TODO$dbh_s->do("");
+   else {
+      if ( $opts{x} =~ m/p/ ) {
+         print STDOUT "$action $count INTO $tbl_n$crit;\n";
+      }
+      if ( $opts{x} =~ m/x/ ) {
+         my $row = $dbh_s->selectrow_arrayref("SELECT * FROM $tbl_n$crit");
+         $sth_insupd->execute(@$row);
+         # TODO commit?
+      }
    }
 }
 
@@ -302,7 +322,6 @@ sub ungrouped_checksum_query {
    my $null = @{$info->{null}}
             ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$info->{null}}) .  ")")
             : '';
-   my $cols = join(', ', map { $dbh_s->quote_identifier($_) } @{$info->{cols}});
    my $pks  = join(', ', map { $dbh_s->quote_identifier($_) } @$primary_key);
    my @crit = map {
       $dbh_s->quote_identifier($_) . '=' . $dbh_s->quote($where->{$_})
@@ -312,8 +331,8 @@ sub ungrouped_checksum_query {
    # Make the query.
    my $query = <<"   END";
 
-      select $pks, MD5(CONCAT_WS('#', $cols$null)) AS crc
-      FROM `$opts{d}`.`$opts{t}`
+      select $pks, MD5(CONCAT_WS('#', $tbl_c$null)) AS crc
+      FROM $tbl_n
       WHERE $crit
 
    END
@@ -328,7 +347,6 @@ sub grouped_checksum_query {
    my $null = @{$info->{null}}
             ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$info->{null}}) .  ")")
             : '';
-   my $cols = join(', ', map { $dbh_s->quote_identifier($_) } @{$info->{cols}});
    my $grp  = join(', ', map { $dbh_s->quote_identifier($_) } @$groupby);
    my @crit = map {
       $dbh_s->quote_identifier($_) . '=' . $dbh_s->quote($where->{$_})
@@ -341,11 +359,11 @@ sub grouped_checksum_query {
       select $grp, COUNT(*) AS cnt,
          CONCAT(
             LPAD(CONV(BIT_XOR(CONV(SUBSTRING(\@CRC
-                                                    := MD5(CONCAT_WS('#', $cols$null)),
+                                                    := MD5(CONCAT_WS('#', $tbl_c$null)),
                                                     1,  16), 16, 10)), 10, 16), 16, '0'),
             LPAD(CONV(BIT_XOR(CONV(SUBSTRING(\@CRC, 17, 16), 16, 10)), 10, 16), 16, '0')
          ) AS crc
-      FROM `$opts{d}`.`$opts{t}`
+      FROM $tbl_n
       WHERE $crit
       GROUP BY $grp
 
@@ -355,7 +373,7 @@ sub grouped_checksum_query {
 }
 
 sub get_tbl_struct {
-   my $ddl = ($dbh_s->selectrow_array("SHOW CREATE TABLE `$opts{d}`.`$opts{t}`"))[1];
+   my $ddl = ($dbh_s->selectrow_array("SHOW CREATE TABLE $tbl_n"))[1];
    my @defs = $ddl =~ m/^(\s+`.*)$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
    my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
