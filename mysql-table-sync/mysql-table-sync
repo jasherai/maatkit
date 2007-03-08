@@ -7,6 +7,7 @@
 # Allow a threshold of expensiveness
 # Allow soething other than REPLACE so not all columns get updated when the user
    # isn't syncing all columns
+# Allow to calculate, use, and delete summary tables separately
 
 # This program synchronizes data between two MySQL tables, which need not be
 # on the same server.
@@ -40,6 +41,8 @@ our $VERSION = '@VERSION@';
 
 $OUTPUT_AUTOFLUSH = 1;
 
+my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
+
 # ############################################################################
 # Get configuration information.
 # ############################################################################
@@ -47,22 +50,24 @@ $OUTPUT_AUTOFLUSH = 1;
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my %opt_spec = (
-   l => { s => 'help',           d => 'Show this help message' },
-   a => { s => 'algorithm|a=s',  d => 'Sync algorithm to use' },
-   p => { s => 'print|p',        d => 'Print all sync queries to STDOUT' },
-   e => { s => 'explain|e=i',    d => 'Explain changes at recursion levels 0..n' },
-   x => { s => 'execute|x',      d => 'Execute queries required to sync' },
-   g => { s => 'grouping|g=s',   d => 'Grouping for recursion in top-down algorithm' },
-   r => { s => 'replicate|r',    d => 'Change on master (source) and let replication propagate'},
-   f => { s => 'forupdate|f',    d => 'Use SELECT FOR UPDATE for checksums' },
-   c => { s => 'columns|c=s',    d => 'Comma-separated column list' },
+   l => { s => 'help',             d => 'Show this help message' },
+   a => { s => 'algorithm|a=s',    d => 'Sync algorithm to use' },
+   p => { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
+   e => { s => 'explain|e=i',      d => 'Explain changes at recursion levels 0..n' },
+   x => { s => 'execute|x',        d => 'Execute queries required to sync' },
+   g => { s => 'grouping|g=s',     d => 'Grouping for recursion in top-down algorithm' },
+   r => { s => 'replicate|r',      d => 'Change on master (source) and let replication propagate'},
+   f => { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
+   c => { s => 'columns|c=s',      d => 'Comma-separated column list' },
+   b => { s => 'branchfactor|b=i', d => 'Branch factor for bottom-up algorithm' },
+   P => { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
 
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l a p e x g r f c );
+my @opt_keys = qw( l a p e x g r f c b P );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -76,6 +81,9 @@ my %opts = (
    r => 0,
    f => 0,
    c => '',
+   b => 128,
+   # Generate a quasi-random string that's constant in a given day
+   P => '__cmp' . crypt(sprintf("d%02d%02d", $year + 1900, $mon, $mday), '00'),
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -437,21 +445,40 @@ sub td_grouped_checksum_query {
 # ############################################################################
 # Bottom-up algorithm
 # TODO: unexpected advantage: building the tree is totally server-independent
-# and can be done in parallel.  # TODO: fork off kids for this
+# and can be done in parallel.  Ooops, except for count(*) # TODO: fork off kids for this
 # TODO: put acknowledgements in the perdoc
 # ############################################################################
 
 sub bottomup {
+
+   # Ensure branch factor is a power of two.
+   $opts{b} = 2 ** int( log($opts{b}) / log(2) );
+
+   # Store table prefix in hashes
+   $source->{prefix} = "$opts{P}_s_";
+   $dest->{prefix}   = "$opts{P}_d_";
+
+   my $src_rows = bu_build_checksum($source);
+   my $dst_rows = bu_build_checksum($dest);
 
    bu_build_tree($source);
    bu_build_tree($dest);
 
 }
 
+sub bu_build_checksum {
+   my ( $info ) = @_;
+   my my $query = bu_checksum_query($info);
+}
+
 sub bu_build_tree {
    my ( $info ) = @_;
+}
 
-   # Create the checksum table.
+sub bu_checksum_query {
+   my ( $info ) = @_;
+   my $dbh = $info->{dbh};
+   my $tbl = $info->{info};
 }
 
 # ############################################################################
@@ -468,7 +495,7 @@ sub parse_dsn {
    my ( $user, $pass, $host, $port, $database, $table ) = $dsn =~ m{
       (?:
          (.*?)       # Username
-         (?::(.*))?  # Optional passoword
+         (?::(.*))?  # Optional password
       @)?            # User-pass is optional
       (?:
          (.*?)       # Hostname
@@ -537,25 +564,6 @@ sub get_dbh {
       $conn->{user}, $conn->{pass},
       { RaiseError => 1, PrintError => 1, AutoCommit => $opts{k} ? 0 : 1 } )
       or die("Can't connect to DB: $!");
-}
-
-sub do_var_crc {
-   my ( $dbh, $query ) = @_;
-   $dbh->do('set @crc := "", @cnt := 0');
-   $dbh->do($query);
-   return @{$dbh->selectall_arrayref('SELECT @cnt, @crc')->[0]};
-}
-
-sub do_count {
-   my ( $dbh, $info ) = @_;
-   return $dbh->selectall_arrayref(
-      "SELECT COUNT(*) FROM $info->{database}.$info->{table}$opts{s}"
-   )->[0]->[0];
-}
-
-sub unique {
-   my %seen;
-   grep { !$seen{$_}++ } @_;
 }
 
 sub coalesce {
