@@ -55,6 +55,9 @@ my %opt_spec = (
 # Allow using a different key than primary key
 # Allow to specify which columns
 # Verify that the grouping isn't just the whole primary key
+# Allow a threshold of expensiveness
+# Allow soething other than REPLACE so not all columns get updated when the user
+   # isn't syncing all columns
 
 );
 
@@ -205,8 +208,8 @@ sub topdown_recurse {
    my ( $level, $groupings, $where ) = @_;
 
    my $grouping  = $groupings->[$level]->{cols};
-   my $src_query = grouped_checksum_query($source, $grouping, $where);
-   my $dst_query = grouped_checksum_query($dest,   $grouping, $where);
+   my $src_query = topdown_grouped_checksum_query($source, $grouping, $where);
+   my $dst_query = topdown_grouped_checksum_query($dest,   $grouping, $where);
    my $src_cnt   = 0;
    my $dst_cnt   = 0;
    my %diffs;
@@ -255,7 +258,7 @@ sub topdown_recurse {
          if ( $row->{_act_} eq 'DELETE' ) {
             # Deletes can be handled with a single query, pruning this whole
             # section of the recursion tree.
-            handle_data_change('DELETE', $row, \%new_where, $row->{cnt});
+            topdown_handle_data_change('DELETE', $row, \%new_where, $row->{cnt});
          }
          elsif ( $level < $#{$groupings} ) {
             # There is more recursion to do.
@@ -277,8 +280,8 @@ sub topdown_bottom_out {
    my ( $level, $row, $where ) = @_;
 
    my @key       = @{$source->{info}->{keys}->{PRIMARY}}; #TODO could be another key
-   my $src_query = ungrouped_checksum_query($source, \@key, $where);
-   my $dst_query = ungrouped_checksum_query($dest,   \@key, $where);
+   my $src_query = topdown_ungrouped_checksum_query($source, \@key, $where);
+   my $dst_query = topdown_ungrouped_checksum_query($dest,   \@key, $where);
    my $src_cnt   = 0;
    my $dst_cnt   = 0;
    my %diffs; # Each entry is a row in the table.
@@ -315,28 +318,25 @@ sub topdown_bottom_out {
 
    if ( %diffs ) {
 
-      explain_data_change($level, \%diffs, $where) if $opts{e} > $level;
+      if ( $opts{e} > $level ) {
+         my %counts;
+         map { $counts{$_->{_act_}}++ } values %diffs;
+         foreach my $action ( keys %counts ) {
+            print join(' ', '--', $action, scalar(keys %diffs),
+            make_where_clause($source->{dbh}, $where)), "\n";
+         }
+      }
 
       foreach my $key ( sort keys %diffs ) {
          my $row = $diffs{$key};
          my %new_where = %$where;
          @new_where{@key} = @{$row}{@key};
-         handle_data_change($row->{_act_}, $row, \%new_where);
+         topdown_handle_data_change($row->{_act_}, $row, \%new_where);
       }
    }
 }
 
-sub explain_data_change {
-   my ( $level, $diffs, $where ) = @_;
-   my %counts;
-   map { $counts{$_->{_act_}}++ } values %$diffs;
-   foreach my $action ( keys %counts ) {
-      print join(' ', '--', $action, scalar(keys %$diffs),
-      make_where_clause($source->{dbh}, $where)), "\n";
-   }
-}
-
-sub handle_data_change {
+sub topdown_handle_data_change {
    my ( $action, $row, $where ) = @_;
 
    my $which = $opts{r} ? $source : $dest;
@@ -366,43 +366,7 @@ sub handle_data_change {
    }
 }
 
-# ############################################################################
-# End top-down algorithm
-# ############################################################################
-
-# Parses a DSN in login:pass@host:port/database.table format
-sub parse_dsn {
-   my ($dsn, $prev, $defs) = @_;
-   return unless $dsn;
-   $prev ||= {};
-   $defs ||= {};
-
-   my ( $user, $pass, $host, $port, $database, $table ) = $dsn =~ m{
-      (?:
-         (.*?)       # Username
-         (?::(.*))?  # Optional passoword
-      @)?            # User-pass is optional
-      (?:
-         (.*?)       # Hostname
-         (?::(.*))?  # Optional port
-      /)?            # Host-port is optional
-      (?:
-         (.*?)       # Database
-      \.)?           # Database is optional
-      (.*)           # Table is required
-      }x or return undef;
-
-   return {
-      user     => coalesce( $user,     $prev->{user},     $defs->{user} ),
-      pass     => coalesce( $pass,     $prev->{pass},     $defs->{pass} ),
-      host     => coalesce( $host,     $prev->{host},     $defs->{host} ),
-      port     => coalesce( $port,     $prev->{port},     $defs->{port} ),
-      database => coalesce( $database, $prev->{database}, $defs->{database} ),
-      table    => coalesce( $table,    $prev->{table} ),
-   };
-}
-
-sub ungrouped_checksum_query {
+sub topdown_ungrouped_checksum_query {
    my ( $info, $key, $where ) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
@@ -432,7 +396,7 @@ sub ungrouped_checksum_query {
    return ( $query );
 }
 
-sub grouped_checksum_query {
+sub topdown_grouped_checksum_query {
    my ( $info, $groupby, $where ) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
@@ -469,6 +433,42 @@ sub grouped_checksum_query {
    END
 
    return ( $query );
+}
+
+# ############################################################################
+# End top-down algorithm
+# ############################################################################
+
+# Parses a DSN in login:pass@host:port/database.table format
+sub parse_dsn {
+   my ($dsn, $prev, $defs) = @_;
+   return unless $dsn;
+   $prev ||= {};
+   $defs ||= {};
+
+   my ( $user, $pass, $host, $port, $database, $table ) = $dsn =~ m{
+      (?:
+         (.*?)       # Username
+         (?::(.*))?  # Optional passoword
+      @)?            # User-pass is optional
+      (?:
+         (.*?)       # Hostname
+         (?::(.*))?  # Optional port
+      /)?            # Host-port is optional
+      (?:
+         (.*?)       # Database
+      \.)?           # Database is optional
+      (.*)           # Table is required
+      }x or return undef;
+
+   return {
+      user     => coalesce( $user,     $prev->{user},     $defs->{user} ),
+      pass     => coalesce( $pass,     $prev->{pass},     $defs->{pass} ),
+      host     => coalesce( $host,     $prev->{host},     $defs->{host} ),
+      port     => coalesce( $port,     $prev->{port},     $defs->{port} ),
+      database => coalesce( $database, $prev->{database}, $defs->{database} ),
+      table    => coalesce( $table,    $prev->{table} ),
+   };
 }
 
 sub get_tbl_struct {
