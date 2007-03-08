@@ -2,6 +2,11 @@
 
 # TODO examine why md5 returns values like 7FFFFFFFFFFFFFFF7FFFFFFFFFFFFFFF and
 # 44AB717791FDA9610000000000000000
+# Allow using a different key than primary key
+# Verify that the grouping isn't just the whole primary key
+# Allow a threshold of expensiveness
+# Allow soething other than REPLACE so not all columns get updated when the user
+   # isn't syncing all columns
 
 # This program synchronizes data between two MySQL tables, which need not be
 # on the same server.
@@ -51,12 +56,6 @@ my %opt_spec = (
    r => { s => 'replicate|r',    d => 'Change on master (source) and let replication propagate'},
    f => { s => 'forupdate|f',    d => 'Use SELECT FOR UPDATE for checksums' },
    c => { s => 'columns|c=s',    d => 'Comma-separated column list' },
-# TODO:
-# Allow using a different key than primary key
-# Verify that the grouping isn't just the whole primary key
-# Allow a threshold of expensiveness
-# Allow soething other than REPLACE so not all columns get updated when the user
-   # isn't syncing all columns
 
 );
 
@@ -152,7 +151,8 @@ USAGE
 # Lookup tables
 # ############################################################################
 my %code_for_algorithm = (
-   topdown => \&topdown,
+   topdown  => \&topdown,
+   bottomup => \&bottomup,
 );
 
 # ############################################################################
@@ -199,16 +199,16 @@ sub topdown {
    die "You must define some groupings." unless @groupings;
 
    # Begin the recursion
-   topdown_recurse(0, \@groupings, {});
+   td_recurse(0, \@groupings, {});
 }
 
 # Figure out which groups are different between source and dest.
-sub topdown_recurse {
+sub td_recurse {
    my ( $level, $groupings, $where ) = @_;
 
    my $grouping  = $groupings->[$level]->{cols};
-   my $src_query = topdown_grouped_checksum_query($source, $grouping, $where);
-   my $dst_query = topdown_grouped_checksum_query($dest,   $grouping, $where);
+   my $src_query = td_grouped_checksum_query($source, $grouping, $where);
+   my $dst_query = td_grouped_checksum_query($dest,   $grouping, $where);
    my $src_cnt   = 0;
    my $dst_cnt   = 0;
    my %diffs;
@@ -257,15 +257,15 @@ sub topdown_recurse {
          if ( $row->{_act_} eq 'DELETE' ) {
             # Deletes can be handled with a single query, pruning this whole
             # section of the recursion tree.
-            topdown_handle_data_change('DELETE', $row, \%new_where, $row->{cnt});
+            td_handle_data_change('DELETE', $row, \%new_where, $row->{cnt});
          }
          elsif ( $level < $#{$groupings} ) {
             # There is more recursion to do.
-            topdown_recurse($level + 1, $groupings, \%new_where);
+            td_recurse($level + 1, $groupings, \%new_where);
          }
          else {
             # Non-recursed update/insert must be done a row at a time.
-            topdown_bottom_out($level + 1, $row, \%new_where);
+            td_bottom_out($level + 1, $row, \%new_where);
          }
       }
    }
@@ -275,12 +275,12 @@ sub topdown_recurse {
 # $row is not a row in the table -- it's a row from one of the grouped
 # checksum queries.  But it is only one level removed from the individual rows
 # in the table, hence the name bottom_out.
-sub topdown_bottom_out {
+sub td_bottom_out {
    my ( $level, $row, $where ) = @_;
 
    my @key       = @{$source->{info}->{keys}->{PRIMARY}}; #TODO could be another key
-   my $src_query = topdown_ungrouped_checksum_query($source, \@key, $where);
-   my $dst_query = topdown_ungrouped_checksum_query($dest,   \@key, $where);
+   my $src_query = td_ungrouped_checksum_query($source, \@key, $where);
+   my $dst_query = td_ungrouped_checksum_query($dest,   \@key, $where);
    my $src_cnt   = 0;
    my $dst_cnt   = 0;
    my %diffs; # Each entry is a row in the table.
@@ -330,12 +330,12 @@ sub topdown_bottom_out {
          my $row = $diffs{$key};
          my %new_where = %$where;
          @new_where{@key} = @{$row}{@key};
-         topdown_handle_data_change($row->{_act_}, $row, \%new_where);
+         td_handle_data_change($row->{_act_}, $row, \%new_where);
       }
    }
 }
 
-sub topdown_handle_data_change {
+sub td_handle_data_change {
    my ( $action, $row, $where ) = @_;
 
    my $which = $opts{r} ? $source : $dest;
@@ -365,7 +365,7 @@ sub topdown_handle_data_change {
    }
 }
 
-sub topdown_ungrouped_checksum_query {
+sub td_ungrouped_checksum_query {
    my ( $info, $key, $where ) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
@@ -395,7 +395,7 @@ sub topdown_ungrouped_checksum_query {
    return ( $query );
 }
 
-sub topdown_grouped_checksum_query {
+sub td_grouped_checksum_query {
    my ( $info, $groupby, $where ) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
@@ -435,7 +435,27 @@ sub topdown_grouped_checksum_query {
 }
 
 # ############################################################################
-# End top-down algorithm
+# Bottom-up algorithm
+# TODO: unexpected advantage: building the tree is totally server-independent
+# and can be done in parallel.  # TODO: fork off kids for this
+# TODO: put acknowledgements in the perdoc
+# ############################################################################
+
+sub bottomup {
+
+   bu_build_tree($source);
+   bu_build_tree($dest);
+
+}
+
+sub bu_build_tree {
+   my ( $info ) = @_;
+
+   # Create the checksum table.
+}
+
+# ############################################################################
+# Subroutines
 # ############################################################################
 
 # Parses a DSN in login:pass@host:port/database.table format
