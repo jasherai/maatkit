@@ -1,4 +1,328 @@
 #!/usr/bin/perl
 
-# Get timestamp, user, cxn id, host, query, table, index, special
-# output to STDOUT, a log file, or insert into a database.table
+# This is mysql-deadlock-logger, a program that extracts and saves a summary of
+# the last deadlock recorded in MySQL.
+#
+# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+
+our $VERSION = '@VERSION@';
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+# Define cmdline args; each is GetOpt::Long spec, whether required,
+# human-readable description.  Add more hash entries as needed.
+my %opt_spec = (
+   l => { s => 'help',        d => 'Show this help message' },
+   s => { s => 'source|s=s',  d => 'Server to check for deadlock' },
+   d => { s => 'dest|d=s',    d => 'Server in which to store info' },
+   p => { s => 'print|p',     d => 'Print to STDOUT' },
+   c => { s => 'collapse|c',  d => 'Collapse whitespace in queries' },
+);
+
+# Define the order cmdline opts will appear in help output.  Add any extra ones
+# defined above.  If it's not in this list, it's not an option to this
+# program.  Note that 'h' is host and 'l' is help.
+my @opt_keys = qw( l s d p c );
+
+# This is the container for the command-line options' values to be stored in
+# after processing.  Initial values are defaults.
+my %opts = (
+   l => '',
+   s => '',
+   d => '',
+   p => 1,
+   c => '',
+);
+
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+
+$opts{c} = $opts{p} unless defined $opts{c};
+
+# ############################################################################
+# Try to use the user's .my.cnf file.
+# ############################################################################
+my $my_cnf = {
+   host => 'localhost',
+   user => getlogin() || getpwuid($UID),
+   port => 3306,
+};
+eval {
+   my $homedir = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '';
+   my $filename = "$homedir/.my.cnf";
+   if ( -f $filename ) {
+      open my $conf_file, "<", "$homedir/.my.cnf" or die $OS_ERROR;
+      while ( my $line = <$conf_file> ) {
+         chomp $line;
+         $line =~ s/(^\s*)|(\s*#.*$)//g;
+         next unless $line;
+         my ( $key, $val ) = split( /\s*=\s*/, $line );
+         next unless defined $val;
+         if ( $key eq 'host' )     { $my_cnf->{host} = $val; }
+         if ( $key eq 'user' )     { $my_cnf->{user} = $val; }
+         if ( $key =~ m/^pass/ )   { $my_cnf->{pass} = $val; }
+         if ( $key eq 'database' ) { $my_cnf->{database} = $val; }
+         if ( $key eq 'port' )     { $my_cnf->{port} = $val; }
+      }
+      close $conf_file;
+   }
+};
+
+# ############################################################################
+# Parse arguments saying where to connect.  If the script doesn't have
+# everything it needs, show help text.
+# ############################################################################
+# Parses a DSN in login:pass@host:port/database.table format
+sub parse_dsn {
+   my ($dsn, $prev, $defs) = @_;
+   $dsn  ||= '';
+   $prev ||= {};
+   $defs ||= {};
+
+   my ( $user, $pass, $host, $port, $database, $table ) = $dsn =~ m{
+      (?:
+         (.*?)       # Username
+         (?::(.*))?  # Optional password
+      @)?            # User-pass is optional
+      (?:
+         (.*?)       # Hostname
+         (?::(.*))?  # Optional port
+      /)?            # Host-port is optional
+      (?:
+         (?:(.*?))?  # Optional database
+         (?:\.(.*?))?# Optional table
+      )?             # Database-table is optional
+      }x;
+
+   return {
+      user     => coalesce( $user,     $prev->{user},     $defs->{user} ),
+      pass     => coalesce( $pass,     $prev->{pass},     $defs->{pass} ),
+      host     => coalesce( $host,     $prev->{host},     $defs->{host} ),
+      port     => coalesce( $port,     $prev->{port},     $defs->{port} ),
+      database => coalesce( $database, $prev->{database}, $defs->{database} ),
+      table    => coalesce( $table,    $prev->{table} ),
+   };
+}
+
+sub coalesce {
+   my $i = 0;
+   while ( $i < @_ && !defined $_[$i] ) {
+      $i++;
+   }
+   return $_[$i];
+}
+
+my $source = parse_dsn($opts{s}, {},      $my_cnf);
+my $dest   = parse_dsn($opts{d}, $source, $my_cnf);
+
+if ( $opts{l} || !$source ) {
+   print "Usage: $PROGRAM_NAME <options>\n\n  Options:\n\n";
+   foreach my $key ( @opt_keys ) {
+      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^=]*))?/;
+      $long  = "--$long" . ( $short ? ',' : '' );
+      $short = $short ? " -$short" : '';
+      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+   }
+   print <<USAGE;
+
+$PROGRAM_NAME extracts and saves information about the
+most recent deadlock in a MySQL server.
+
+If possible, database options are read from your .my.cnf file.
+For more details, please read the documentation:
+
+   perldoc $PROGRAM_NAME
+
+USAGE
+   exit(1);
+}
+
+# ############################################################################
+# Configuration info.
+# ############################################################################
+
+# Some common patterns and variables
+my $MAX_ULONG = 4294967295;                   # 2^32-1
+my $d         = qr/(\d+)/;                    # Digit
+my $t         = qr/(\d+ \d+)/;                # Transaction ID
+my $i         = qr/((?:\d{1,3}\.){3}\d+)/;    # IP address
+my $n         = qr/([^`\s]+)/;                # MySQL object name
+my $w         = qr/(\w+)/;                    # Words
+my $s         = qr/(\d{6} .\d:\d\d:\d\d)/;    # InnoDB timestamp
+
+# A thread's proc_info can be at least 98 different things I've found in the
+# source.  Fortunately, most of them begin with a gerunded verb.  These are
+# the ones that don't.
+my %is_proc_info = (
+   'After create'                 => 1,
+   'Execution of init_command'    => 1,
+   'FULLTEXT initialization'      => 1,
+   'Reopen tables'                => 1,
+   'Repair done'                  => 1,
+   'Repair with keycache'         => 1,
+   'System lock'                  => 1,
+   'Table lock'                   => 1,
+   'Thread initialized'           => 1,
+   'User lock'                    => 1,
+   'copy to tmp table'            => 1,
+   'discard_or_import_tablespace' => 1,
+   'end'                          => 1,
+   'got handler lock'             => 1,
+   'got old table'                => 1,
+   'init'                         => 1,
+   'key cache'                    => 1,
+   'locks'                        => 1,
+   'malloc'                       => 1,
+   'query end'                    => 1,
+   'rename result table'          => 1,
+   'rename'                       => 1,
+   'setup'                        => 1,
+   'statistics'                   => 1,
+   'status'                       => 1,
+   'table cache'                  => 1,
+   'update'                       => 1,
+);
+
+# ############################################################################
+# Start working.
+# ############################################################################
+
+# Connect to the database
+my $dbh = DBI->connect(
+   "DBI:mysql:database=$source->{database};host=$source->{host};port=$source->{port}",
+   $source->{user}, $source->{pass}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+   or die("Can't connect to DB: $!");
+
+my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
+
+# Pull out the deadlock section
+my $dl_text;
+my @matches = $text =~ m#\n(---+)\n([A-Z /]+)\n\1\n(.*?)(?=\n(---+)\n[A-Z /]+\n\4\n|$)#gs;
+while ( my ( $start, $name, $text, $end ) = splice(@matches, 0, 4) ) {
+   next unless $name eq 'LATEST DETECTED DEADLOCK';
+   $dl_text = $text;
+}
+
+exit(0) unless $dl_text;
+
+my @sections = $dl_text =~ m/^\*{3} (.*)\n(?s:(.*?))(?=^\*)/gm;
+
+# Loop through each section.  There are no assumptions about how many
+# there are, who holds and wants what locks, and who gets rolled back.
+my %txns;
+while ( my ($header, $body) = splice(@sections, 0, 2) ) {
+   my ( $txn_id, $what ) = $header =~ m/^\($d\) (.*):$/m;
+   next unless $txn_id;
+   $txns{$txn_id} ||= { id => $txn_id };
+   my $hash = $txns{$txn_id};
+
+   if ( $what eq 'TRANSACTION' ) {
+      @{$hash}{qw(query_time)} = $body =~ m/ACTIVE $d sec/;
+
+      # Parsing the line that begins 'MySQL thread id' is complicated.  The only
+      # thing always in the line is the thread and query id.  See function
+      # innobase_mysql_print_thd in InnoDB source file sql/ha_innodb.cc.
+      my ( $thread_line ) = $body =~ m/^(MySQL thread id .*)$/m;
+      my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
+
+      if ( $thread_line ) {
+         # These parts can always be gotten.
+         ( $mysql_thread_id, $query_id ) = $thread_line =~ m/^MySQL thread id $d, query id $d/m;
+
+         # If it's a master/slave thread, "Has (read|sent) all" may be the thread's
+         # proc_info.  In these cases, there won't be any host/ip/user info
+         ( $query_status ) = $thread_line =~ m/(Has (?:read|sent) all .*$)/m;
+         if ( defined($query_status) ) {
+            $user = 'system user';
+         }
+
+         # It may be the case that the query id is the last thing in the line.
+         elsif ( $thread_line =~ m/query id \d+ / ) {
+            # The IP address is the only non-word thing left, so it's the most
+            # useful marker for where I have to start guessing.
+            ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
+            if ( defined $ip ) {
+               ( $user, $query_status ) = $thread_line =~ m/$ip $w(?: (.*))?$/;
+            }
+            else { # OK, there wasn't an IP address.
+               # There might not be ANYTHING except the query status.
+               ( $query_status ) = $thread_line =~ m/query id \d+ (.*)$/;
+               if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
+                  # The remaining tokens are, in order: hostname, user, query_status.
+                  # It's basically impossible to know which is which.
+                  ( $hostname, $user, $query_status ) = $thread_line
+                     =~ m/query id \d+(?: ([A-Za-z]\S+))?(?: $w(?: (.*))?)?$/m;
+               }
+               else {
+                  $user = 'system user';
+               }
+            }
+         }
+      }
+
+      my ( $query_text ) = $body =~ m/\nMySQL thread id .*\n((?s).*)/;
+      $query_text =~ s/\s+$//;
+      # TODO: add an option to remove whitespace
+      $query_text =~ s/\s+/ /g;
+
+      @{$hash}{qw(thread hostname ip user query)}
+         = ($mysql_thread_id, $hostname, $ip, $user, $query_text);
+      foreach my $key ( keys %$hash ) {
+         if ( !defined $hash->{$key} ) {
+            $hash->{$key} = '';
+         }
+      }
+
+   }
+   else {
+      # Prefer information about locks waited for over held.
+      if ( $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' || !$hash->{lock_type} ) {
+         @{$hash}{ qw(lock_type idx db tbl txn_id lock_mode) }
+            = $body
+            =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n/$n` trx id $t lock.mode (\S+)}m;
+         my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
+         $hash->{txn_id} = $high ? ( $low + $high * $MAX_ULONG ) : $low;
+      }
+   }
+}
+
+my ( $ts ) = $dl_text =~ m/^$s$/m;
+my ( $year, $mon, $day, $hour, $min, $sec ) = $ts =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/;
+$ts = sprintf('%02d-%02d-%02dT%02d:%02d:%02d', $year + 2000, $mon, $day, $hour, $min, $sec);
+
+my ( $victim ) = $dl_text =~ m/^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)$/m;
+foreach my $txn ( values %txns ) {
+   $txn->{victim}    = $txn->{id} == $victim ? 1 : 0;
+   $txn->{ts} = $ts;
+}
+
+my @cols = qw( thread txn_id ts query_time user hostname ip db tbl idx lock_type lock_mode victim query );
+
+print join(" ", @cols), "\n";
+foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
+   print join(" ", map { $txn->{$_} } @cols), "\n";
+}
