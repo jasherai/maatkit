@@ -50,13 +50,8 @@ my %opt_spec = (
    g => { s => 'grouping|g=s',   d => 'Grouping for recursion in top-down algorithm' },
    m => { s => 'master|m',       d => 'Change on master (source) and let replication propagate'},
 # TODO:
-# check that master is amaster, and slave is a slave
-# Don't allow updates on dest server if it is a slave unless --updateon=master|slave
-# Allow choice of REPLACE/INSERT/INSERT IGNORE/INSERT ODKU/UPDATE
 # Allow using a different key than primary key
 # Allow to specify which columns
-   # TODO
-   # Verify that the tables have the same structure or something?
 # Verify that the grouping isn't just the whole primary key
 
 );
@@ -237,9 +232,9 @@ sub topdown_recurse {
       $dst_cnt++;
    }
 
-   if ( $opts{e} >= $level ) {
-      printf("-- SUMMARY %2d %10d %10d %10d\n", $level, $src_cnt, $dst_cnt, scalar(keys %diffs));
-      #$hdr = "-- CHANGES %2d %10d" . join("\t", sort (keys %$where, @$grouping)) . "\n";
+   if ( $opts{e} > $level ) {
+      print join(' ', '-- LEVEL', $level + 1, $src_cnt, $dst_cnt,
+         scalar(keys %diffs), make_where_clause($source->{dbh}, $where)), "\n";
    }
 
    if ( %diffs ) {
@@ -311,7 +306,7 @@ sub topdown_bottom_out {
 
    if ( %diffs ) {
 
-      explain_data_change($level, \%diffs, $where) if $opts{e} >= $level;
+      explain_data_change($level, \%diffs, $where) if $opts{e} > $level;
 
       foreach my $key ( sort keys %diffs ) {
          my $row = $diffs{$key};
