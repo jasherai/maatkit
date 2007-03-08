@@ -125,7 +125,7 @@ eval {
 
 # ############################################################################
 # Parse arguments saying which tables.  If the script doesn't have everything
-# it needs, how help text.
+# it needs, show help text.
 # ############################################################################
 my $source = parse_dsn(shift(@ARGV), {},      $my_cnf);
 my $dest   = parse_dsn(shift(@ARGV), $source, $my_cnf);
