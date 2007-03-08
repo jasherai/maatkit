@@ -50,6 +50,7 @@ my %opt_spec = (
    g => { s => 'grouping|g=s',   d => 'Grouping for recursion in top-down algorithm' },
    r => { s => 'replicate|r',    d => 'Change on master (source) and let replication propagate'},
    f => { s => 'forupdate|f',    d => 'Use SELECT FOR UPDATE for checksums' },
+   c => { s => 'columns|c=s',    d => 'Comma-separated column list' },
 # TODO:
 # Allow using a different key than primary key
 # Allow to specify which columns
@@ -60,7 +61,7 @@ my %opt_spec = (
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l a p e x g r f );
+my @opt_keys = qw( l a p e x g r f c );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -73,10 +74,16 @@ my %opts = (
    g => '',
    r => 0,
    f => 0,
+   c => '',
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+
+# Make comma-separated lists into hashes.
+if ( $opts{c} ) {
+   $opts{c} = { map { $_ => 1 } split(/,\s*/, $opts{c}) };
+}
 
 # ############################################################################
 # Try to use the user's .my.cnf file.
@@ -345,7 +352,7 @@ sub handle_data_change {
       }
    }
    else {
-      my $vals = $source->{dbh}->selectrow_hashref("SELECT * FROM $source->{db_tbl}$crit");
+      my $vals = $source->{dbh}->selectrow_hashref("SELECT $source->{cols} FROM $source->{db_tbl}$crit");
       my $query = "REPLACE INTO $which->{db_tbl}($which->{cols}) VALUES("
          . join(',', map { $which->{dbh}->quote($vals->{$_}) } @{$which->{info}->{cols}}) . ")";
 
@@ -402,15 +409,14 @@ sub ungrouped_checksum_query {
 
    # Columns that need to be in the checksum list.
    my @cols = grep { !exists($where->{$_}) } @{$tbl->{cols}};
+   if ( $opts{c} ) {
+      @cols = grep { exists($opts{c}->{$_}) } @cols;
+   }
    my $cols = join(',', map { $dbh->quote_identifier($_) } @cols);
 
    # To handle nulls, make a bitmap of nullable columns that are null.
-   my $null = @{$tbl->{null}}
-            ? (", CONCAT(" . join(', ',
-               map  { "ISNULL(`$_`)" }
-               grep { $tbl->{null_hash}->{$_} }
-               @cols) . ")")
-            : '';
+   my @null = grep { $tbl->{null_hash}->{$_} } @cols;
+   my $null = @null ? (", CONCAT(" . join(', ', map  { "ISNULL(`$_`)" } @null) . ")") : '';
 
    my $key_cols  = join(', ', map { $dbh->quote_identifier($_) } @$key);
    my $crit = make_where_clause($dbh, $where);
@@ -433,15 +439,14 @@ sub grouped_checksum_query {
 
    # Columns that need to be in the checksum list.
    my @cols = grep { !exists($where->{$_}) } @{$tbl->{cols}};
+   if ( $opts{c} ) {
+      @cols = grep { exists($opts{c}->{$_}) } @cols;
+   }
    my $cols = join(',', map { $dbh->quote_identifier($_) } @cols);
 
    # To handle nulls, make a bitmap of nullable columns that are null.
-   my $null = @{$tbl->{null}}
-            ? (", CONCAT(" . join(', ',
-               map  { "ISNULL(`$_`)" }
-               grep { $tbl->{null_hash}->{$_} }
-               @cols) . ")")
-            : '';
+   my @null = grep { $tbl->{null_hash}->{$_} } @cols;
+   my $null = @null ? (", CONCAT(" . join(', ', map  { "ISNULL(`$_`)" } @null) . ")") : '';
 
    my $grp  = join(', ', map { $dbh->quote_identifier($_) } @$groupby);
    my $crit = make_where_clause($dbh, $where);
