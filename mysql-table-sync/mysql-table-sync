@@ -1,5 +1,8 @@
 #!/usr/bin/perl
 
+# TODO examine why md5 returns values like 7FFFFFFFFFFFFFFF7FFFFFFFFFFFFFFF and
+# 44AB717791FDA9610000000000000000
+
 # This program synchronizes data between two MySQL tables, which need not be
 # on the same server.
 #
@@ -23,6 +26,7 @@
 use strict;
 use warnings FATAL => 'all';
 
+use Data::Dumper;
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
@@ -68,7 +72,7 @@ my %opts = (
    a => 'topdown',
    p => 0,
    e => 0,
-   x => 1,
+   x => 0,
    g => '',
    m => '',
 );
@@ -206,7 +210,7 @@ sub topdown_recurse {
    my $src_sth = $source->{dbh}->prepare($src_query);
    $src_sth->execute;
    while ( my $row = $src_sth->fetchrow_hashref ) {
-      my $key = make_key($row, $groupings);
+      my $key = make_key($row, $grouping);
       $row->{_act_} = 'INSERT';
       $diffs{$key} = $row;
       $src_cnt++;
@@ -216,7 +220,7 @@ sub topdown_recurse {
    my $dst_sth = $dest->{dbh}->prepare($dst_query);
    $dst_sth->execute;
    while ( my $row = $dst_sth->fetchrow_hashref ) {
-      my $key = make_key($row, $groupings);
+      my $key = make_key($row, $grouping);
       if ( $diffs{$key} ) {
          if ( $diffs{$key}->{crc} eq $row->{crc} ) {
             delete $diffs{$key};
@@ -267,7 +271,7 @@ sub topdown_recurse {
 sub topdown_bottom_out {
    my ( $row, $where ) = @_;
 
-   my @key   = @{$source->{info}->{keys}->{PRIMARY}}; #TODO could be another key
+   my @key       = @{$source->{info}->{keys}->{PRIMARY}}; #TODO could be another key
    my $src_query = ungrouped_checksum_query($source, \@key, $where);
    my $dst_query = ungrouped_checksum_query($dest,   \@key, $where);
    my $src_cnt   = 0;
@@ -308,12 +312,10 @@ sub topdown_bottom_out {
 
       explain_data_change(\%diffs) if $opts{e}; # TODO compare level
 
-      if ( $opts{x} ) { # Do the changes
-         foreach my $key ( sort keys %diffs ) {
-            my $row = $diffs{$key};
-            my %where = map { $_ => $row->{$_} } @key;
-            handle_data_change($row->{_act_}, $row, \%where);
-         }
+      foreach my $key ( sort keys %diffs ) {
+         my $row = $diffs{$key};
+         my %where = map { $_ => $row->{$_} } @key;
+         handle_data_change($row->{_act_}, $row, \%where);
       }
    }
 }
