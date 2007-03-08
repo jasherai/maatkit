@@ -48,7 +48,8 @@ my %opt_spec = (
    e => { s => 'explain|e=i',    d => 'Explain changes at recursion levels 0..n' },
    x => { s => 'execute|x',      d => 'Execute queries required to sync' },
    g => { s => 'grouping|g=s',   d => 'Grouping for recursion in top-down algorithm' },
-   m => { s => 'master|m',       d => 'Change on master (source) and let replication propagate'},
+   r => { s => 'replicate|r',    d => 'Change on master (source) and let replication propagate'},
+   f => { s => 'forupdate|f',    d => 'Use SELECT FOR UPDATE for checksums' },
 # TODO:
 # Allow using a different key than primary key
 # Allow to specify which columns
@@ -59,7 +60,7 @@ my %opt_spec = (
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l a p e x g m );
+my @opt_keys = qw( l a p e x g r f );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -70,7 +71,8 @@ my %opts = (
    e => 0,
    x => 0,
    g => '',
-   m => '',
+   r => 0,
+   f => 0,
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -317,7 +319,6 @@ sub topdown_bottom_out {
    }
 }
 
-# TODO: print out headers and a key.  Maybe make the format a global.
 sub explain_data_change {
    my ( $level, $diffs, $where ) = @_;
    my %counts;
@@ -328,12 +329,10 @@ sub explain_data_change {
    }
 }
 
-# TODO: put in logic to allow it to act on the dest server
-      # TODO this might need to be on the other server, and needs other algorithms
 sub handle_data_change {
    my ( $action, $row, $where ) = @_;
 
-   my $which = $opts{m} ? $source : $dest; # TODO
+   my $which = $opts{r} ? $source : $dest;
    my $crit = make_where_clause($which->{dbh}, $where);
 
    if ( $action eq 'DELETE' ) {
@@ -365,7 +364,6 @@ sub handle_data_change {
 # ############################################################################
 
 # Parses a DSN in login:pass@host:port/database.table format
-# TODO: implement 'only compare some columns'
 sub parse_dsn {
    my ($dsn, $prev, $defs) = @_;
    return unless $dsn;
@@ -397,23 +395,30 @@ sub parse_dsn {
    };
 }
 
-# TODO: make a SELECT FOR UPDATE option so no table locks needed
 sub ungrouped_checksum_query {
    my ( $info, $key, $where ) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
 
+   # Columns that need to be in the checksum list.
+   my @cols = grep { !exists($where->{$_}) } @{$tbl->{cols}};
+   my $cols = join(',', map { $dbh->quote_identifier($_) } @cols);
+
    # To handle nulls, make a bitmap of nullable columns that are null.
    my $null = @{$tbl->{null}}
-            ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$tbl->{null}}) .  ")")
+            ? (", CONCAT(" . join(', ',
+               map  { "ISNULL(`$_`)" }
+               grep { $tbl->{null_hash}->{$_} }
+               @cols) . ")")
             : '';
+
    my $key_cols  = join(', ', map { $dbh->quote_identifier($_) } @$key);
    my $crit = make_where_clause($dbh, $where);
 
    # Make the query.
    my $query = <<"   END";
 
-      SELECT $key_cols, MD5(CONCAT_WS('#', $info->{cols}$null)) AS crc
+      SELECT $key_cols, MD5(CONCAT_WS('#', $cols$null)) AS crc
       FROM $info->{db_tbl}
       $crit
 
@@ -421,18 +426,26 @@ sub ungrouped_checksum_query {
    return ( $query );
 }
 
-# TODO: can eliminate any $where columns from the query
 sub grouped_checksum_query {
    my ( $info, $groupby, $where ) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
 
+   # Columns that need to be in the checksum list.
+   my @cols = grep { !exists($where->{$_}) } @{$tbl->{cols}};
+   my $cols = join(',', map { $dbh->quote_identifier($_) } @cols);
+
    # To handle nulls, make a bitmap of nullable columns that are null.
    my $null = @{$tbl->{null}}
-            ? (", CONCAT(" . join(', ', map { "ISNULL(`$_`)" } @{$tbl->{null}}) .  ")")
+            ? (", CONCAT(" . join(', ',
+               map  { "ISNULL(`$_`)" }
+               grep { $tbl->{null_hash}->{$_} }
+               @cols) . ")")
             : '';
+
    my $grp  = join(', ', map { $dbh->quote_identifier($_) } @$groupby);
    my $crit = make_where_clause($dbh, $where);
+   my $lock = $opts{f} ? ' FOR UPDATE' : '';
 
    # Make the query.
    my $query = <<"   END";
@@ -440,13 +453,13 @@ sub grouped_checksum_query {
       SELECT $grp, COUNT(*) AS cnt,
          CONCAT(
             LPAD(CONV(BIT_XOR(CONV(SUBSTRING(\@CRC
-                                                    := MD5(CONCAT_WS('#', $info->{cols}$null)),
+                                                    := MD5(CONCAT_WS('#', $cols$null)),
                                                     1,  16), 16, 10)), 10, 16), 16, '0'),
             LPAD(CONV(BIT_XOR(CONV(SUBSTRING(\@CRC, 17, 16), 16, 10)), 10, 16), 16, '0')
          ) AS crc
       FROM $info->{db_tbl}
       $crit
-      GROUP BY $grp
+      GROUP BY $grp$lock
 
    END
 
@@ -469,9 +482,11 @@ sub get_tbl_struct {
       $ddl =~ m/^  ((?:PRIMARY )?KEY .*)$/gm;
 
    return {
-      cols => \@cols,
-      null => \@null,
-      keys => { @keys },
+      cols      => \@cols,
+      col_hash  => { map { $_ => 1 } @cols },
+      null      => \@null,
+      null_hash => { map { $_ => 1 } @null },
+      keys      => { @keys },
    };
 }
 
