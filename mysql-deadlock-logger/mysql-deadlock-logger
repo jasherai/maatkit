@@ -39,8 +39,8 @@ my %opt_spec = (
    l => { s => 'help',        d => 'Show this help message' },
    s => { s => 'source|s=s',  d => 'Server to check for deadlock' },
    d => { s => 'dest|d=s',    d => 'Server in which to store info' },
-   p => { s => 'print|p',     d => 'Print to STDOUT' },
-   c => { s => 'collapse|c',  d => 'Collapse whitespace in queries' },
+   p => { s => 'print|p=i',   d => 'Print to STDOUT' },
+   c => { s => 'collapse|c=i',d => 'Collapse whitespace in queries' },
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
@@ -54,8 +54,8 @@ my %opts = (
    l => '',
    s => '',
    d => '',
-   p => 1,
-   c => '',
+   p => 0,
+   c => undef,
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -113,9 +113,9 @@ sub parse_dsn {
          (?::(.*))?  # Optional port
       /)?            # Host-port is optional
       (?:
-         (?:(.*?))?  # Optional database
-         (?:\.(.*?))?# Optional table
-      )?             # Database-table is optional
+         (.*?)       # Database
+      \.)?           # Database is optional
+      (.*)?          # Table is optional
       }x;
 
    return {
@@ -286,8 +286,7 @@ while ( my ($header, $body) = splice(@sections, 0, 2) ) {
 
       my ( $query_text ) = $body =~ m/\nMySQL thread id .*\n((?s).*)/;
       $query_text =~ s/\s+$//;
-      # TODO: add an option to remove whitespace
-      $query_text =~ s/\s+/ /g;
+      $query_text =~ s/\s+/ /g if $opts{c};
 
       @{$hash}{qw(thread hostname ip user query)}
          = ($mysql_thread_id, $hostname, $ip, $user, $query_text);
@@ -320,9 +319,34 @@ foreach my $txn ( values %txns ) {
    $txn->{ts} = $ts;
 }
 
-my @cols = qw( thread txn_id ts query_time user hostname ip db tbl idx lock_type lock_mode victim query );
+my @cols = qw( ts thread txn_id query_time user hostname ip db tbl idx lock_type lock_mode victim query );
 
-print join(" ", @cols), "\n";
-foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-   print join(" ", map { $txn->{$_} } @cols), "\n";
+if ( $dest && $dest->{table} ) {
+   my $db_tbl = 
+      join('.',
+      map  {  $dbh->quote_identifier($_) }
+      grep { $_ }
+      ( $dest->{database}, $dest->{table} ));
+   my $dbh2 = DBI->connect(
+      "DBI:mysql:database=$dest->{database};host=$dest->{host};port=$dest->{port}",
+      $dest->{user}, $dest->{pass}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+      or die("Can't connect to DB: $!");
+   my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
+   my $parms = join(',', map { '?' } @cols);
+   my $query = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
+   foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
+      $query->execute(@{$txn}{@cols});
+   }
+}
+
+if ( $opts{p} ) {
+   print join("\t", @cols), "\n";
+   foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
+      # If $opts{c} is on, it's already been taken care of, but if it's unset,
+      # by default strip whitespace.
+      if ( !defined $opts{c} ) {
+         $txn->{query} =~ s/\s+/ /g;
+      }
+      print join("\t", map { $txn->{$_} } @cols), "\n";
+   }
 }
