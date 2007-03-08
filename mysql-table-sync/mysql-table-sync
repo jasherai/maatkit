@@ -53,7 +53,6 @@ my %opt_spec = (
    c => { s => 'columns|c=s',    d => 'Comma-separated column list' },
 # TODO:
 # Allow using a different key than primary key
-# Allow to specify which columns
 # Verify that the grouping isn't just the whole primary key
 # Allow a threshold of expensiveness
 # Allow soething other than REPLACE so not all columns get updated when the user
