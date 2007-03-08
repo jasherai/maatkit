@@ -1,0 +1,8 @@
+This package contains mysql-deadlock-logger.  Please view the perldoc for more
+details.
+
+Changelog:
+
+2007-03-08: version 0.8.0
+
+   * Initial release
