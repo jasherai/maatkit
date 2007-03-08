@@ -44,12 +44,13 @@ my %opt_spec = (
    c => { s => 'collapse|c=i', d => 'Collapse whitespace in queries' },
    n => { s => 'numip|n',      d => 'Express IP addresses as integers' },
    C => { s => 'columns|C=s',  d => 'Comma-separated columns in the output' },
+   t => { s => 'tab|t',        d => 'Output tab-separated' },
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l s d p c n C );
+my @opt_keys = qw( l s d p c n C t );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -61,6 +62,7 @@ my %opts = (
    c => undef,
    n => 0,
    C => '',
+   t => 0,
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -355,14 +357,15 @@ if ( $dest && $dest->{table} ) {
 }
 
 if ( $opts{p} ) {
-   print join("\t", @cols), "\n";
+   my $sep = $opts{t} ? "\t" : ' ';
+   print join($sep, @cols), "\n";
    foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
       # If $opts{c} is on, it's already been taken care of, but if it's unset,
       # by default strip whitespace.
       if ( !defined $opts{c} ) {
          $txn->{query} =~ s/\s+/ /g;
       }
-      print join("\t", map { $txn->{$_} } @cols), "\n";
+      print join($sep, map { $txn->{$_} } @cols), "\n";
    }
 }
 
@@ -425,6 +428,9 @@ so there is one line per query that deadlocked.  You can disable this with
 --collapse=0.  When saving the query to a database table, whitespace is not
 collapsed by default.  If you omit the --collapse argument altogether, the
 script will probably do what you want in all cases.
+
+Sometimes not all information (for example, username or IP address) is included
+in the deadlock information.
 
 You can choose which columns are ouput with the --columns argument.  The default
 columns are as follows:
