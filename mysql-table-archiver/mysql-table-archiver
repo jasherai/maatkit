@@ -1,0 +1,7 @@
+#!/usr/bin/perl
+
+# Output to a file or to STDOUT
+# Specify where to archive to
+# specify table, index to use
+# specify eearliest date range
+# specify how many in a chunk

@@ -1,0 +1,4 @@
+#!/usr/bin/perl
+
+# Get timestamp, user, cxn id, host, query, table, index, special
+# output to STDOUT, a log file, or insert into a database.table
