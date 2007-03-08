@@ -26,6 +26,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use Socket qw(inet_aton);
 
 our $VERSION = '@VERSION@';
 
@@ -36,17 +37,19 @@ our $VERSION = '@VERSION@';
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my %opt_spec = (
-   l => { s => 'help',        d => 'Show this help message' },
-   s => { s => 'source|s=s',  d => 'Server to check for deadlock' },
-   d => { s => 'dest|d=s',    d => 'Server in which to store info' },
-   p => { s => 'print|p=i',   d => 'Print to STDOUT' },
-   c => { s => 'collapse|c=i',d => 'Collapse whitespace in queries' },
+   l => { s => 'help',         d => 'Show this help message' },
+   s => { s => 'source|s=s',   d => 'Server to check for deadlock' },
+   d => { s => 'dest|d=s',     d => 'Server in which to store info' },
+   p => { s => 'print|p',      d => 'Print to STDOUT' },
+   c => { s => 'collapse|c=i', d => 'Collapse whitespace in queries' },
+   n => { s => 'numip|n',      d => 'Express IP addresses as integers' },
+   C => { s => 'columns|C=s',  d => 'Comma-separated columns in the output' },
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l s d p c );
+my @opt_keys = qw( l s d p c n C );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -56,12 +59,16 @@ my %opts = (
    d => '',
    p => 0,
    c => undef,
+   n => 0,
+   C => '',
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
 
+# Process options...
 $opts{c} = $opts{p} unless defined $opts{c};
+$opts{C} = $opts{C} ? { map { $_ => 1 } $opts{C} =~ m/(\w+)/g } : 0;
 
 # ############################################################################
 # Try to use the user's .my.cnf file.
@@ -150,9 +157,12 @@ if ( $opts{l} || !$source ) {
    print <<USAGE;
 
 $PROGRAM_NAME extracts and saves information about the
-most recent deadlock in a MySQL server.
+most recent deadlock in a MySQL server.  The --source and --dest arguments
+take the form
+   user:pass\@host:port/database.table.
+All parts are optional, and default to values in your .my.cnf file.  Missing
+values to --dest are filled in from --source.
 
-If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
 
    perldoc $PROGRAM_NAME
@@ -166,7 +176,7 @@ USAGE
 # ############################################################################
 
 # Some common patterns and variables
-my $MAX_ULONG = 4294967295;                   # 2^32-1
+my $MAX_ULONG = 4294967296;                   # 2^32
 my $d         = qr/(\d+)/;                    # Digit
 my $t         = qr/(\d+ \d+)/;                # Transaction ID
 my $i         = qr/((?:\d{1,3}\.){3}\d+)/;    # IP address
@@ -241,7 +251,7 @@ while ( my ($header, $body) = splice(@sections, 0, 2) ) {
    my $hash = $txns{$txn_id};
 
    if ( $what eq 'TRANSACTION' ) {
-      @{$hash}{qw(query_time)} = $body =~ m/ACTIVE $d sec/;
+      @{$hash}{qw(txn_time)} = $body =~ m/ACTIVE $d sec/;
 
       # Parsing the line that begins 'MySQL thread id' is complicated.  The only
       # thing always in the line is the thread and query id.  See function
@@ -315,11 +325,16 @@ $ts = sprintf('%02d-%02d-%02dT%02d:%02d:%02d', $year + 2000, $mon, $day, $hour, 
 
 my ( $victim ) = $dl_text =~ m/^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)$/m;
 foreach my $txn ( values %txns ) {
-   $txn->{victim}    = $txn->{id} == $victim ? 1 : 0;
-   $txn->{ts} = $ts;
+   $txn->{victim} = $txn->{id} == $victim ? 1 : 0;
+   $txn->{ts}     = $ts;
+   $txn->{server} = $source->{host};
+   $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
 }
 
-my @cols = qw( ts thread txn_id query_time user hostname ip db tbl idx lock_type lock_mode victim query );
+my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx lock_type lock_mode victim query );
+if ( $opts{C} ) {
+   @cols = grep { $opts{C}->{$_} } @cols;
+}
 
 if ( $dest && $dest->{table} ) {
    my $db_tbl = 
@@ -350,3 +365,165 @@ if ( $opts{p} ) {
       print join("\t", map { $txn->{$_} } @cols), "\n";
    }
 }
+
+# ############################################################################
+# Documentation
+# ############################################################################
+=pod
+
+=head1 NAME
+
+mysql-deadlock-logger - Extract and log MySQL deadlock information.
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 OVERVIEW
+
+This program extracts deadlock data from a MySQL server (currently only InnoDB
+deadlock information is available).  You can print it to standard output or save
+it in a database table.
+
+You specify a server to connect to with a URL-like argument to the --source
+option.  This argument takes the form user:pass@host:port/database.table.  All
+parts are optional, and in fact the table doesn't matter anyway.  If possible,
+values from your .my.cnf file will fill in missing bits, so you might be able to
+omit the whole argument.
+
+If you want to store the information into a MySQL database table, specify it
+with the --dest argument, which takes the same form as --source.  Missing bits
+in --dest are filled in with values from --source, so you can omit even more
+parts, but you must specify a table.  You should probably create a table before
+you try to store anything in it ;-)  This works for me, though you may need
+something different if you decide you don't want all the columns of ouput:
+
+ CREATE TABLE `deadlocks` (
+   `server` char(20) NOT NULL,
+   `ts` datetime NOT NULL,
+   `thread` int unsigned NOT NULL,
+   `txn_id` bigint unsigned NOT NULL,
+   `txn_time` smallint unsigned NOT NULL,
+   `user` char(16) NOT NULL,
+   `hostname` char(20) NOT NULL,
+   `ip` char(15) NOT NULL, -- alternatively, `ip` int unsigned NOT NULL
+   `db` char(64) NOT NULL,
+   `tbl` char(64) NOT NULL,
+   `idx` char(64) NOT NULL,
+   `lock_type` char(16) NOT NULL,
+   `lock_mode` char(1) NOT NULL,
+   `victim` tinyint unsigned NOT NULL,
+   `query` text NOT NULL,
+   PRIMARY KEY  (`server`,`ts`,`thread`)
+ ) ENGINE=InnoDB
+
+=head1 OUTPUT
+
+If you print to standard output, query text whitespace is collapsed by default
+so there is one line per query that deadlocked.  You can disable this with
+--collapse=0.  When saving the query to a database table, whitespace is not
+collapsed by default.  If you omit the --collapse argument altogether, the
+script will probably do what you want in all cases.
+
+You can choose which columns are ouput with the --columns argument.  The default
+columns are as follows:
+
+=over
+
+=item server
+
+The (source) server on which the deadlock occurred.  This might be useful if
+you're tracking deadlocks on many servers.
+
+=item ts
+
+The date and time of the last detected deadlock.
+
+=item thread
+
+The MySQL thread number, which is the same as the connection ID in SHOW FULL
+PROCESSLIST.
+
+=item txn_id
+
+The InnoDB transaction ID, which InnoDB expresses as two unsigned integers.  I
+have multiplied them out to be one number.
+
+=item txn_time
+
+How long the transaction was active when the deadlock happened.
+
+=item user
+
+The connection's database username.
+
+=item hostname
+
+The connection's host.
+
+=item ip
+
+The connection's IP address.  If you give the --numip argument, this is
+converted to an unsigned integer.
+
+=item db
+
+The database in which the deadlock occurred.
+
+=item tbl
+
+The table on which the deadlock occurred.
+
+=item idx
+
+The index on which the deadlock occurred.
+
+=item lock_type
+
+The lock type the transaction held on the lock that caused the deadlock.
+
+=item lock_mode
+
+The lock mode of the lock that caused the deadlock.
+
+=item victim
+
+Whether the transaction was selected as the deadlock victim and rolled back.
+
+=item query
+
+The query that caused the deadlock.
+
+=back
+
+=head1 BUGS
+
+There must be bugs.  InnoDB's status information is a beast to parse.  I ripped
+off some of the parsing code for innotop, but there still might be some things
+wrong.  Please tell me when you find them.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz, baron at xaprb dot com.
+
+=cut
