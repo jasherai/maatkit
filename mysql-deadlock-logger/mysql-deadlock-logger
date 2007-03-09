@@ -319,6 +319,8 @@ while ( my ($header, $body) = splice(@sections, 0, 2) ) {
             =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n/$n` trx id $t lock.mode (\S+)}m;
          my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
          $hash->{txn_id} = $high ? ( $low + $high * $MAX_ULONG ) : $low;
+         $hash->{wait_hold}
+            = $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' ? 'w' : 'h';
       }
    }
 }
@@ -335,7 +337,8 @@ foreach my $txn ( values %txns ) {
    $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
 }
 
-my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx lock_type lock_mode victim query );
+my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
+               lock_type lock_mode wait_hold victim query );
 if ( $opts{C} ) {
    @cols = grep { $opts{C}->{$_} } @cols;
 }
@@ -404,7 +407,7 @@ with the --dest argument, which takes the same form as --source.  Missing bits
 in --dest are filled in with values from --source, so you can omit even more
 parts, but you must specify a table.  You should probably create a table before
 you try to store anything in it ;-)  This works for me, though you may need
-something different if you decide you don't want all the columns of ouput:
+something different if you decide you don't want all the columns of output:
 
  CREATE TABLE `deadlocks` (
    `server` char(20) NOT NULL,
@@ -420,10 +423,31 @@ something different if you decide you don't want all the columns of ouput:
    `idx` char(64) NOT NULL,
    `lock_type` char(16) NOT NULL,
    `lock_mode` char(1) NOT NULL,
+   `wait_hold` char(1) NOT NULL,
    `victim` tinyint unsigned NOT NULL,
    `query` text NOT NULL,
    PRIMARY KEY  (`server`,`ts`,`thread`)
  ) ENGINE=InnoDB
+
+=head1 INNODB CAVEATS AND DETAILS
+
+InnoDB's output is hard to parse and sometimes there's no way to do it right.
+
+Sometimes not all information (for example, username or IP address) is included
+in the deadlock information.  In this case there's nothing for the script to put
+in those columns.  It may also be the case that the deadlock output is so long
+(because there were a lot of locks) that the whole thing is truncated.
+
+Though there are usually two transactions involved in a deadlock, there are more
+locks than that; at a minimum, one more lock than transactions is necessary to
+create a cycle in the waits-for graph.  This program prints the transactions
+(always two in the InnoDB output, even when there are more transactions in the
+waits-for graph than that) and fills in locks.  It prefers waited-for over held
+when choosing lock information to output, but you can figure out the rest with a
+moment's thought.  If you see one wait-for and one held lock, you're looking at
+the same lock, so of course you'd prefer to see both wait-for locks and get more
+information.  If the two waited-for locks are not on the same table, more than
+two transactions were involved in the deadlock.
 
 =head1 OUTPUT
 
@@ -433,10 +457,7 @@ so there is one line per query that deadlocked.  You can disable this with
 collapsed by default.  If you omit the --collapse argument altogether, the
 script will probably do what you want in all cases.
 
-Sometimes not all information (for example, username or IP address) is included
-in the deadlock information.
-
-You can choose which columns are ouput with the --columns argument.  The default
+You can choose which columns are output with the --columns argument.  The default
 columns are as follows:
 
 =over
@@ -496,6 +517,11 @@ The lock type the transaction held on the lock that caused the deadlock.
 =item lock_mode
 
 The lock mode of the lock that caused the deadlock.
+
+=item wait_hold
+
+Whether the transaction was waiting for the lock or holding the lock.  Usually
+you will see the two waited-for locks.
 
 =item victim
 
