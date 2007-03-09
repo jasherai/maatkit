@@ -43,7 +43,7 @@ my %opt_spec = (
    p => { s => 'print|p',      d => 'Print to STDOUT' },
    c => { s => 'collapse|c=i', d => 'Collapse whitespace in queries' },
    n => { s => 'numip|n',      d => 'Express IP addresses as integers' },
-   C => { s => 'columns|C=s',  d => 'Comma-separated columns in the output' },
+   C => { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
    t => { s => 'tab|t',        d => 'Output tab-separated' },
 );
 
@@ -158,18 +158,25 @@ if ( $opts{l} || !$source ) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME extracts and saves information about the
-most recent deadlock in a MySQL server.  The --source and --dest arguments
-take the form
+mysql-deadlock-logger extracts and saves information about the most
+recent deadlock in a MySQL server.  You need to specify whether to
+print the output or save it in a database.
+
+The --source and --dest arguments take the form
    user:pass\@host:port/database.table.
-All parts are optional, and default to values in your .my.cnf file.  Missing
-values to --dest are filled in from --source.
+All parts are optional, and default to values in your .my.cnf file.
+Missing values to --dest are filled in from --source.
 
 For more details, please read the documentation:
 
    perldoc $PROGRAM_NAME
 
 USAGE
+   exit(1);
+}
+if (!$opts{p} && !$dest->{table}) {
+   print "You need to specify what to do (print or save).\n"
+     . "Use the --help option to learn more.\n";
    exit(1);
 }
 
@@ -393,8 +400,9 @@ installed in any reasonably new version of Perl.
 =head1 OVERVIEW
 
 This program extracts deadlock data from a MySQL server (currently only InnoDB
-deadlock information is available).  You can print it to standard output or save
-it in a database table.
+deadlock information is available).  You can print it to standard output or
+save it in a database table.  By default it does neither, and you need to tell
+it what to do.
 
 You specify a server to connect to with a URL-like argument to the --source
 option.  This argument takes the form user:pass@host:port/database.table.  All
