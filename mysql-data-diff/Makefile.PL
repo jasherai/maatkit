@@ -1,14 +1,15 @@
 use ExtUtils::MakeMaker;
+$program = 'mysql-data-diff';
 
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
 WriteMakefile(
-    NAME          => 'mysql-data-diff',
+    NAME          => $program,
     # TODO: check later what's wrong with this
-    # ABSTRACT_FROM => 'mysql-data-diff',
-    VERSION_FROM  => 'mysql-data-diff',
+    # ABSTRACT_FROM => $program,
+    VERSION_FROM  => $program,
 
-    EXE_FILES     => ['mysql-data-diff'],
+    EXE_FILES     => [$program],
     LIBS          => [''],
 
     PREREQ_PM     => {
