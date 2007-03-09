@@ -42,8 +42,8 @@ distdir: all
 dist: distdir versions
 	$(TAR) czf $(DISTDIR).tar.gz $(DISTDIR)
 	$(ZIP) -r $(DISTDIR).zip $(DISTDIR)
-	$(RM) -rf $(DISTDIR)
 
 distclean:
 	$(RM) -f $(DISTDIR).tar.gz
 	$(RM) -f $(DISTDIR).zip
+	$(RM) -rf $(DISTDIR)
