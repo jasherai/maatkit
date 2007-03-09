@@ -223,11 +223,11 @@ my %is_proc_info = (
 # Start working.
 # ############################################################################
 
-# TODO: delete .my.cnf and make sure this stuff works!
-
 # Connect to the database
 my $dbh = DBI->connect(
-   "DBI:mysql:database=$source->{database};host=$source->{host};port=$source->{port}",
+   "DBI:mysql:" . join(";",
+      map  { "$_=$source->{$_}" }
+      grep { defined $source->{$_} } qw(database host port)),
    $source->{user}, $source->{pass}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $!");
 
@@ -347,7 +347,9 @@ if ( $dest && $dest->{table} ) {
       grep { $_ }
       ( $dest->{database}, $dest->{table} ));
    my $dbh2 = DBI->connect(
-      "DBI:mysql:database=$dest->{database};host=$dest->{host};port=$dest->{port}",
+      "DBI:mysql:" . join(";",
+         map  { "$_=$dest->{$_}" }
+         grep { defined $dest->{$_} } qw(database host port)),
       $dest->{user}, $dest->{pass}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
       or die("Can't connect to DB: $!");
    my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
