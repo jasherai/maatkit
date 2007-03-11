@@ -440,12 +440,12 @@ sub td_grouped_checksum_query {
 
       SELECT $grp, COUNT(*) AS cnt,
          CONCAT(
-            LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@CRC
-                                                    := MD5(CONCAT_WS('#', $cols$null)),
-                                                    1,  16), 16, 10) AS
-                                                    UNSIGNED)), 10, 16), 16, '0'),
-            LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@CRC, 17, 16), 16, 10) AS
-            UNSIGNED), 10, 16), 16, '0')
+            LPAD(CONV(BIT_XOR(
+               CAST(CONV(LEFT(\@CRC := MD5(CONCAT_WS('#', $cols$null)), 16), 16, 10) AS UNSIGNED)
+               ), 10, 16), 16, '0'),
+            LPAD(CONV(BIT_XOR(
+               CAST(CONV(RIGHT(\@CRC, 16), 16, 10) AS UNSIGNED)
+               ), 10, 16), 16, '0')
          ) AS crc
       FROM $info->{db_tbl}
       $crit
