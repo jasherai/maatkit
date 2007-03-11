@@ -9,9 +9,9 @@
 # Verify that the grouping isn't just the whole primary key
 # Allow a threshold of expensiveness
 # Allow soething other than REPLACE so not all columns get updated when the user
-   # isn't syncing all columns
+# isn't syncing all columns
 # Allow to calculate, use, and delete summary tables separately
-# Allow to bypass indexes on summary tables in bottom-up
+# Allow not to put indexes on summary tables in bottom-up
 
 # This program synchronizes data between two MySQL tables, which need not be
 # on the same server.
@@ -209,6 +209,8 @@ exit $exit_status;
 # Top-down algorithm
 # ############################################################################
 
+# TODO: for top-down, we should know approximately how many rows might be bad at any
+# level in the recursion, and can give up unless the number is decreasing.
 sub topdown {
 
    # Design a grouping strategy.
@@ -486,7 +488,7 @@ sub bottomup {
    my $levels    = round( log( $true_size / $opts{B} ) / log(2) );
 
    if ( $est_1 != $levels ) {
-      # Rebuild remainder for $source
+      # TODO: Rebuild remainder for $source, $dest if needed
    }
 
    bu_build_tree($source, $levels);
@@ -495,10 +497,14 @@ sub bottomup {
 }
 
 # Get a size estimate (not a precise count because that may be very slow).
+# Can't use COUNT(*) because it might be optimized away and so rows could be
+# null.
 sub estimate_size {
    my ($info) = @_;
-   return $info->{dbh}->selectrow_hashref(
-      "EXPLAIN SELECT COUNT(*) FROM $info->{db_tbl}")->{rows};
+   my $query = "EXPLAIN SELECT COUNT("
+      . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
+      . ") FROM $info->{db_tbl}";
+   return $info->{dbh}->selectrow_hashref($query)->{rows};
 }
 
 sub round {
