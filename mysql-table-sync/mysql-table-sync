@@ -1,13 +1,17 @@
 #!/usr/bin/perl
 
+# Look up the law of large numbers and justify why not to use SUM()
+# Explain why @crc & $mask is the same as mod()
 # TODO examine why md5 returns values like 7FFFFFFFFFFFFFFF7FFFFFFFFFFFFFFF and
 # 44AB717791FDA9610000000000000000
-# Allow using a different key than primary key
+# Allow using a different key than primary key (look for PRIMARY everywhere and
+# s/// it)
 # Verify that the grouping isn't just the whole primary key
 # Allow a threshold of expensiveness
 # Allow soething other than REPLACE so not all columns get updated when the user
    # isn't syncing all columns
 # Allow to calculate, use, and delete summary tables separately
+# Allow to bypass indexes on summary tables in bottom-up
 
 # This program synchronizes data between two MySQL tables, which need not be
 # on the same server.
@@ -36,6 +40,8 @@ use Data::Dumper;
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use List::Util qw(max);
+use POSIX qw(ceil);
 
 our $VERSION = '@VERSION@';
 
@@ -59,15 +65,17 @@ my %opt_spec = (
    r => { s => 'replicate|r',      d => 'Change on master (source) and let replication propagate'},
    f => { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
    c => { s => 'columns|c=s',      d => 'Comma-separated column list' },
-   b => { s => 'branchfactor|b=i', d => 'Branch factor for bottom-up algorithm' },
+   B => { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm' },
    P => { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
+   E => { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
+   T => { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
 
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l a p e x g r f c b P );
+my @opt_keys = qw( l a p e x g r f c B P E T );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -81,10 +89,16 @@ my %opts = (
    r => 0,
    f => 0,
    c => '',
-   b => 128,
+   B => 128,
    # Generate a quasi-random string that's constant in a given day
    P => '__cmp' . crypt(sprintf("d%02d%02d", $year + 1900, $mon, $mday), '00'),
+   E => 'InnoDB',
+   T => '',
 );
+
+# ############################################################################
+# Get and process options
+# ############################################################################
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
@@ -93,6 +107,7 @@ GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
 if ( $opts{c} ) {
    $opts{c} = { map { $_ => 1 } split(/,\s*/, $opts{c}) };
 }
+$opts{T} = $opts{T} ? 'TEMPORARY' : '';
 
 # ############################################################################
 # Try to use the user's .my.cnf file.
@@ -177,10 +192,7 @@ foreach my $table ( $source, $dest ) {
       grep { $_ }
       ( $table->{database}, $table->{table} ));
    $table->{info} = get_tbl_struct($table);
-   $table->{cols} =
-      join(', ',
-      map  { $dbh->quote_identifier($_) }
-      @{$table->{info}->{cols}});
+   $table->{cols} = col_list(@{$table->{info}->{cols}});
 }
 
 if ( $code_for_algorithm{$opts{a}} ) {
@@ -383,13 +395,13 @@ sub td_ungrouped_checksum_query {
    if ( $opts{c} ) {
       @cols = grep { exists($opts{c}->{$_}) } @cols;
    }
-   my $cols = join(',', map { $dbh->quote_identifier($_) } @cols);
+   my $cols = col_list(@cols);
 
    # To handle nulls, make a bitmap of nullable columns that are null.
    my @null = grep { $tbl->{null_hash}->{$_} } @cols;
    my $null = @null ? (", CONCAT(" . join(', ', map  { "ISNULL(`$_`)" } @null) . ")") : '';
 
-   my $key_cols  = join(', ', map { $dbh->quote_identifier($_) } @$key);
+   my $key_cols = col_list(@$key);
    my $crit = make_where_clause($dbh, $where);
 
    # Make the query.
@@ -413,13 +425,13 @@ sub td_grouped_checksum_query {
    if ( $opts{c} ) {
       @cols = grep { exists($opts{c}->{$_}) } @cols;
    }
-   my $cols = join(',', map { $dbh->quote_identifier($_) } @cols);
+   my $cols = col_list(@cols);
 
    # To handle nulls, make a bitmap of nullable columns that are null.
    my @null = grep { $tbl->{null_hash}->{$_} } @cols;
    my $null = @null ? (", CONCAT(" . join(', ', map  { "ISNULL(`$_`)" } @null) . ")") : '';
 
-   my $grp  = join(', ', map { $dbh->quote_identifier($_) } @$groupby);
+   my $grp  = col_list(@$groupby);
    my $crit = make_where_clause($dbh, $where);
    my $lock = $opts{f} ? ' FOR UPDATE' : '';
 
@@ -428,10 +440,12 @@ sub td_grouped_checksum_query {
 
       SELECT $grp, COUNT(*) AS cnt,
          CONCAT(
-            LPAD(CONV(BIT_XOR(CONV(SUBSTRING(\@CRC
+            LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@CRC
                                                     := MD5(CONCAT_WS('#', $cols$null)),
-                                                    1,  16), 16, 10)), 10, 16), 16, '0'),
-            LPAD(CONV(BIT_XOR(CONV(SUBSTRING(\@CRC, 17, 16), 16, 10)), 10, 16), 16, '0')
+                                                    1,  16), 16, 10) AS
+                                                    UNSIGNED)), 10, 16), 16, '0'),
+            LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@CRC, 17, 16), 16, 10) AS
+            UNSIGNED), 10, 16), 16, '0')
          ) AS crc
       FROM $info->{db_tbl}
       $crit
@@ -445,41 +459,143 @@ sub td_grouped_checksum_query {
 # ############################################################################
 # Bottom-up algorithm
 # TODO: unexpected advantage: building the tree is totally server-independent
-# and can be done in parallel.  Ooops, except for count(*) # TODO: fork off kids for this
+# and can be done in parallel.  Ooops, except for count(*) # TODO: fork off
+# kids for this and their return code can be count(*).
 # TODO: put acknowledgements in the perdoc
+# cite: Remote Comparison of Database Tables
 # ############################################################################
 
 sub bottomup {
 
    # Ensure branch factor is a power of two.
-   $opts{b} = 2 ** int( log($opts{b}) / log(2) );
+   $opts{b} = 2 ** round( log($opts{B}) / log(2) );
 
    # Store table prefix in hashes
    $source->{prefix} = "$opts{P}_s_";
    $dest->{prefix}   = "$opts{P}_d_";
 
-   my $src_rows = bu_build_checksum($source);
-   my $dst_rows = bu_build_checksum($dest);
+   # Build the initial checksum tables and calculate how many summary tables
+   # to build.  Begin with estimates of table size to allow calculating the
+   # checksum remainder on the first level.
+   my $est_size  = max( estimate_size($source), estimate_size($dest) );
+   my $est_1     = round( log( $est_size / $opts{B} ) / log(2) );
+   my $src_size  = bu_build_checksum( $source, $est_1 );
+   my $est_2     = round( log( max( $est_size, $src_size ) / $opts{B} ) / log(2) );
+   my $dst_size  = bu_build_checksum( $dest, $est_2 );
+   my $true_size = max( $src_size, $dst_size );
+   my $levels    = round( log( $true_size / $opts{B} ) / log(2) );
 
-   bu_build_tree($source);
-   bu_build_tree($dest);
+   if ( $est_1 != $levels ) {
+      # Rebuild remainder for $source
+   }
+
+   bu_build_tree($source, $levels);
+   bu_build_tree($dest,   $levels);
 
 }
 
+# Get a size estimate (not a precise count because that may be very slow).
+sub estimate_size {
+   my ($info) = @_;
+   return $info->{dbh}->selectrow_hashref(
+      "EXPLAIN SELECT COUNT(*) FROM $info->{db_tbl}")->{rows};
+}
+
+sub round {
+   my ($number) = @_;
+   return int( $number + .5 );
+}
+
+# TODO: figure out the needed size of remainder col
+# Builds the first-level checksum table and returns number of rows in it.
 sub bu_build_checksum {
-   my ( $info ) = @_;
-   my my $query = bu_checksum_query($info);
+   my ($info, $levels) = @_;
+   my $dbh    = $info->{dbh};
+   my $tbl    = $info->{info};
+   my $pk     = col_list( @{ $tbl->{keys}->{PRIMARY} } );
+   my @cols   = @{ $tbl->{cols} };
+   my $cols   = col_list(@cols);
+   my $pks    = join( ',', @{ $tbl->{defs} }{ @{ $tbl->{keys}->{PRIMARY} } } );
+   my @null   = grep { $tbl->{null_hash}->{$_} } @cols;
+   my $null = @null
+            ? ( ", CONCAT(" . join( ', ', map {"ISNULL(`$_`)"} @null ) . ")" ) : '';
+   my $name = "$info->{prefix}_0";
+   my $mask = (2 ** $levels) - 1;
+
+   # Create the table
+   $dbh->do("DROP TABLE IF EXISTS $name");
+   my $table_query = <<"   END";
+      CREATE $opts{T} TABLE $name (
+         $pks,
+         crc char(32) not null,
+         remainder int not null,
+         UNIQUE KEY(crc),
+         KEY(remainder),
+         PRIMARY KEY($pk)
+      ) ENGINE=$opts{E}
+   END
+   $dbh->do($table_query);
+
+   # Populate it
+   my $sum_query = <<"   END";
+      INSERT INTO $name($pk, crc, remainder)
+      SELECT $pk,
+         \@CRC := MD5(CONCAT_WS('#', $cols$null)) AS crc,
+         CAST(CONV(RIGHT(\@CRC, 8), 16, 10) AS UNSIGNED) & $mask
+      FROM $info->{db_tbl}
+   END
+   $dbh->do('SET @CRC := NULL');
+   my $sth = $dbh->prepare($sum_query);
+   $sth->execute();
+   return $sth->rows;
 }
 
+# Builds the nth-level summary tables
+# TODO: qhote tbl names
 sub bu_build_tree {
-   my ( $info ) = @_;
-}
-
-sub bu_checksum_query {
-   my ( $info ) = @_;
+   my ($info, $levels) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
+
+   # Do from 1 to levels + 1 because level 0 has already been built.
+   foreach my $i ( 1 .. $levels + 1 ) {
+      my $modulo   = $opts{B} ** ( $levels - $i );
+      my $last_mod = $modulo * $opts{B};
+      my $this_tbl = "$info->{prefix}_" . $i;
+      my $last_tbl = "$info->{prefix}_" . ( $i - 1 );
+      my $mask     = $modulo - 1;
+
+      # Create the table
+      $dbh->do("DROP TABLE IF EXISTS $this_tbl");
+      my $table_query = <<"      END";
+         CREATE $opts{T} TABLE $this_tbl (
+            parent int not null,
+            crc char(32) not null,
+            remainder int not null,
+            KEY(remainder),
+            PRIMARY KEY(parent)
+         ) ENGINE=$opts{E}
+      END
+      $dbh->do($table_query);
+
+      # Populate it
+      $dbh->do('SET @CRC := NULL, @GRP_CRC := NULL');
+      my $sum_query = <<"      END";
+         INSERT INTO $this_tbl(parent, crc, remainder)
+         SELECT remainder,
+            \@CRC := CONCAT(
+               LPAD(CONV(BIT_XOR(CAST(CONV(LEFT(\@GRP_CRC := MD5(crc), 16), 16, 10) as unsigned)), 10, 16), 16, '0'),
+               LPAD(CONV(BIT_XOR(CAST(CONV(RIGHT(\@GRP_CRC,            16), 16, 10) as unsigned)), 10, 16), 16, '0')
+            ) AS this_crc,
+            CAST(CONV(RIGHT(\@CRC, 8), 16, 10) AS UNSIGNED) & $mask AS this_remainder
+         FROM $last_tbl
+         GROUP BY remainder
+         ORDER BY NULL
+      END
+      $dbh->do($sum_query);
+   }
 }
+
 
 # ############################################################################
 # Subroutines
@@ -520,7 +636,7 @@ sub parse_dsn {
 sub get_tbl_struct {
    my ( $info ) = @_;
    my $ddl = ($info->{dbh}->selectrow_array("SHOW CREATE TABLE $info->{db_tbl}"))[1];
-   my @defs = $ddl =~ m/^(\s+`.*)$/gm;
+   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
    my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
    my @keys =
@@ -531,6 +647,8 @@ sub get_tbl_struct {
          ($name, [ grep { m/[^,]/ } split('`', $cols) ])
       }
       $ddl =~ m/^  ((?:PRIMARY )?KEY .*)$/gm;
+   my %alldefs;
+   @alldefs{@cols} = @defs;
 
    return {
       cols      => \@cols,
@@ -538,6 +656,7 @@ sub get_tbl_struct {
       null      => \@null,
       null_hash => { map { $_ => 1 } @null },
       keys      => { @keys },
+      defs      => \%alldefs,
    };
 }
 
@@ -564,6 +683,10 @@ sub get_dbh {
       $conn->{user}, $conn->{pass},
       { RaiseError => 1, PrintError => 1, AutoCommit => $opts{k} ? 0 : 1 } )
       or die("Can't connect to DB: $!");
+}
+
+sub col_list {
+   return '`' . join('`,`', @_) . '`';
 }
 
 sub coalesce {
