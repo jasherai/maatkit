@@ -57,11 +57,11 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # human-readable description.  Add more hash entries as needed.
 my %opt_spec = (
    l => { s => 'help',             d => 'Show this help message' },
-   a => { s => 'algorithm|a=s',    d => 'Sync algorithm to use' },
+   a => { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
    p => { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
    e => { s => 'explain|e=i',      d => 'Explain changes at recursion levels 0..n' },
    x => { s => 'execute|x',        d => 'Execute queries required to sync' },
-   g => { s => 'grouping|g=s',     d => 'Grouping for recursion in top-down algorithm' },
+   d => { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
    r => { s => 'replicate|r',      d => 'Change on master (source) and let replication propagate'},
    f => { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
    c => { s => 'columns|c=s',      d => 'Comma-separated column list' },
@@ -75,7 +75,7 @@ my %opt_spec = (
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l a p e x g r f c B P E T );
+my @opt_keys = qw( l a p e x d r f c B P E T );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -85,7 +85,7 @@ my %opts = (
    p => 0,
    e => 0,
    x => 0,
-   g => '',
+   d => '',
    r => 0,
    f => 0,
    c => '',
@@ -214,9 +214,9 @@ sub topdown {
    # Design a grouping strategy.
    my @groupings = map {
       { cols => [$_] }
-   } $opts{g} =~ m/(\w+)/g;
+   } $opts{d} =~ m/(\w+)/g;
    # TODO: check groupings are valid columns
-   die "You must define some groupings." unless @groupings;
+   die "You must define drilldown groupings with --drilldown." unless @groupings;
 
    # Begin the recursion
    td_recurse(0, \@groupings, {});
