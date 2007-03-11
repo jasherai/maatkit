@@ -91,7 +91,7 @@ my %opts = (
    c => '',
    B => 128,
    # Generate a quasi-random string that's constant in a given day
-   P => '__cmp' . crypt(sprintf("d%02d%02d", $year + 1900, $mon, $mday), '00'),
+   P => '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00'),
    E => 'InnoDB',
    T => '',
 );
@@ -525,12 +525,12 @@ sub bu_build_checksum {
    # Create the table
    $dbh->do("DROP TABLE IF EXISTS $name");
    my $table_query = <<"   END";
-      CREATE $opts{T} TABLE $name (
+      CREATE $opts{T} TABLE `$info->{database}`.`$name` (
          $pks,
-         crc char(32) not null,
-         remainder int not null,
-         UNIQUE KEY(crc),
-         KEY(remainder),
+         __crc char(32) not null,
+         __remainder int not null,
+         UNIQUE KEY(__crc),
+         KEY(__remainder),
          PRIMARY KEY($pk)
       ) ENGINE=$opts{E}
    END
@@ -538,7 +538,7 @@ sub bu_build_checksum {
 
    # Populate it
    my $sum_query = <<"   END";
-      INSERT INTO $name($pk, crc, remainder)
+      INSERT INTO `$info->{database}`.`$name`($pk, __crc, __remainder)
       SELECT $pk,
          \@CRC := MD5(CONCAT_WS('#', $cols$null)) AS crc,
          CAST(CONV(RIGHT(\@CRC, 8), 16, 10) AS UNSIGNED) & $mask
@@ -551,7 +551,6 @@ sub bu_build_checksum {
 }
 
 # Builds the nth-level summary tables
-# TODO: qhote tbl names
 sub bu_build_tree {
    my ($info, $levels) = @_;
    my $dbh = $info->{dbh};
@@ -568,12 +567,12 @@ sub bu_build_tree {
       # Create the table
       $dbh->do("DROP TABLE IF EXISTS $this_tbl");
       my $table_query = <<"      END";
-         CREATE $opts{T} TABLE $this_tbl (
-            parent int not null,
-            crc char(32) not null,
-            remainder int not null,
-            KEY(remainder),
-            PRIMARY KEY(parent)
+         CREATE $opts{T} TABLE `$info->{database}`.`$this_tbl` (
+            __parent int not null,
+            __crc char(32) not null,
+            __remainder int not null,
+            KEY(__remainder),
+            PRIMARY KEY(__parent)
          ) ENGINE=$opts{E}
       END
       $dbh->do($table_query);
@@ -581,21 +580,20 @@ sub bu_build_tree {
       # Populate it
       $dbh->do('SET @CRC := NULL, @GRP_CRC := NULL');
       my $sum_query = <<"      END";
-         INSERT INTO $this_tbl(parent, crc, remainder)
-         SELECT remainder,
+         INSERT INTO `$info->{database}`.`$this_tbl`(__parent, __crc, __remainder)
+         SELECT __remainder,
             \@CRC := CONCAT(
-               LPAD(CONV(BIT_XOR(CAST(CONV(LEFT(\@GRP_CRC := MD5(crc), 16), 16, 10) as unsigned)), 10, 16), 16, '0'),
-               LPAD(CONV(BIT_XOR(CAST(CONV(RIGHT(\@GRP_CRC,            16), 16, 10) as unsigned)), 10, 16), 16, '0')
+               LPAD(CONV(BIT_XOR(CAST(CONV(LEFT(\@GRP_CRC := MD5(__crc), 16), 16, 10) as unsigned)), 10, 16), 16, '0'),
+               LPAD(CONV(BIT_XOR(CAST(CONV(RIGHT(\@GRP_CRC,              16), 16, 10) as unsigned)), 10, 16), 16, '0')
             ) AS this_crc,
             CAST(CONV(RIGHT(\@CRC, 8), 16, 10) AS UNSIGNED) & $mask AS this_remainder
-         FROM $last_tbl
-         GROUP BY remainder
+         FROM `$info->{database}`.`$last_tbl`
+         GROUP BY __remainder
          ORDER BY NULL
       END
       $dbh->do($sum_query);
    }
 }
-
 
 # ############################################################################
 # Subroutines
