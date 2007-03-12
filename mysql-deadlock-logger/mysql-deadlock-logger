@@ -319,7 +319,7 @@ while ( my ($header, $body) = splice(@sections, 0, 2) ) {
 
    }
    else {
-      # Prefer information about locks waited for over held.
+      # Prefer information about locks waited-for over locks-held.
       if ( $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' || !$hash->{lock_type} ) {
          @{$hash}{ qw(lock_type idx db tbl txn_id lock_mode) }
             = $body
@@ -330,24 +330,33 @@ while ( my ($header, $body) = splice(@sections, 0, 2) ) {
             = $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' ? 'w' : 'h';
       }
    }
-}
 
-my ( $ts ) = $dl_text =~ m/^$s$/m;
-my ( $year, $mon, $day, $hour, $min, $sec ) = $ts =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/;
-$ts = sprintf('%02d-%02d-%02dT%02d:%02d:%02d', $year + 2000, $mon, $day, $hour, $min, $sec);
-
-my ( $victim ) = $dl_text =~ m/^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)$/m;
-foreach my $txn ( values %txns ) {
-   $txn->{victim} = $txn->{id} == $victim ? 1 : 0;
-   $txn->{ts}     = $ts;
-   $txn->{server} = $source->{host};
-   $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
+   # Ensure all values are defined
+   map { $hash->{$_} = 0 unless defined $hash->{$_} }
+      qw(thread txn_id txn_time);
+   map { $hash->{$_} = '' unless defined $hash->{$_} }
+      qw(user hostname db tbl idx lock_type lock_mode query);
 }
 
 my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
                lock_type lock_mode wait_hold victim query );
 if ( $opts{C} ) {
    @cols = grep { $opts{C}->{$_} } @cols;
+}
+
+# Extract some miscellaneous data from the deadlock.
+my ( $ts ) = $dl_text =~ m/^$s$/m;
+my ( $year, $mon, $day, $hour, $min, $sec ) = $ts =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/;
+$ts = sprintf('%02d-%02d-%02dT%02d:%02d:%02d', $year + 2000, $mon, $day, $hour, $min, $sec);
+my ( $victim ) = $dl_text =~ m/^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)$/m;
+$victim ||= 0;
+
+# Stick the misc data into the transactions.
+foreach my $txn ( values %txns ) {
+   $txn->{victim} = $txn->{id} == $victim ? 1 : 0;
+   $txn->{ts}     = $ts;
+   $txn->{server} = $source->{host};
+   $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
 }
 
 if ( $dest && $dest->{table} ) {
