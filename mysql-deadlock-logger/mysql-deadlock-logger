@@ -250,7 +250,13 @@ while ( my ( $start, $name, $text, $end ) = splice(@matches, 0, 4) ) {
 
 exit(0) unless $dl_text;
 
-my @sections = $dl_text =~ m/^\*{3} (.*)\n(?s:(.*?))(?=^\*)/gm;
+my @sections
+   = $dl_text
+   =~ m{
+      ^\*{3}\s([^\n]*)  # *** (1) WAITING FOR THIS...
+      (.*?)             # Followed by anything, non-greedy
+      (?=(?:^\*{3})|\z) # Followed by another three-stars or EOF
+   }gmsx;
 
 # Loop through each section.  There are no assumptions about how many
 # there are, who holds and wants what locks, and who gets rolled back.
