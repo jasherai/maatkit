@@ -857,7 +857,20 @@ sub coalesce {
 
 =head1 NAME
 
-mysql-table-checksum - Print checksums for MySQL tables on one or many servers.
+mysql-table-sync - Efficiently synchronize data between two MySQL tables.
+
+=head1 DESCRIPTION
+
+Given two MySQL tables already known to be different, and assuming the
+differences are moderately small, find and resolve the differences between the
+tables.
+
+The DBA must choose the algorithm and parameters to use when reconciling
+differences between the tables.  See below for help making this decision.
+Different algorithms have more or less network traffic, impact on the servers,
+or work better in certain circumstances.  The tool supports a variety of
+algorithms so you can resolve the differences as efficiently as possible within
+whatever parameters matter to you.
 
 =head1 SYSTEM REQUIREMENTS
 
