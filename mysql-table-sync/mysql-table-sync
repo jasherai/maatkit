@@ -526,7 +526,8 @@ sub bu_build_checksum {
          $pks,
          __crc char(32) not null,
          __remainder int not null,
-         KEY(__remainder)
+         KEY(__remainder),
+         PRIMARY KEY($pk)
       ) ENGINE=$opts{E}
    END
    $dbh->do($table_query);
@@ -683,7 +684,7 @@ sub bu_key_eq {
    foreach my $i ( 0 .. @$key_1 - 1 ) {
       my $l = $r1->{$key_1->[$i]};
       my $r = $r2->{$key_2->[$i]};
-      my $parity = defined $l + defined $r;
+      my $parity = defined($l) + defined($r);
       if ( $parity == 1 || ( $parity == 2 && $l ne $r )) {
          return 0;
       }
