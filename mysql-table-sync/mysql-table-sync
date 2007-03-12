@@ -462,6 +462,10 @@ sub td_grouped_checksum_query {
 # kids for this and their return code can be count(*).
 # TODO: put acknowledgements in the perdoc
 # cite: Remote Comparison of Database Tables
+# Severe limitation of algorithm: just because an intermediate level in the tree
+# doesn't exist, doesn't mean the rows in the tables don't exist!  The
+# randomization corrupts the entire tree when there is a single row bad, so
+# coming from the top back down, it looks like the whole table is bad.
 # ############################################################################
 
 sub bottomup {
@@ -700,11 +704,8 @@ sub bu_fetch_level {
              ? '__parent'
              : col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
 
-   my $query = <<"   END";
-      SELECT $cols, __crc
-      FROM $tbl $where
-      ORDER BY $order
-   END
+   my $query = "SELECT $cols, __crc FROM $tbl $where ORDER BY $order";
+   print $query, "\n";
    my $sth = $dbh->prepare($query);
    $sth->execute();
    return $sth;
@@ -791,7 +792,7 @@ sub get_tbl_struct {
 }
 
 # Get a size estimate (not a precise count because that may be very slow).
-# Can't use COUNT(*) because it might be optimized away and so rows could be
+# Can't use COUNT(*) because it might be optimized away and so 'rows' could be
 # null.
 sub estimate_size {
    my ($info) = @_;
