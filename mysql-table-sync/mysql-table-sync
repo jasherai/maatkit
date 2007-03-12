@@ -56,7 +56,7 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my %opt_spec = (
-   l => { s => 'help',             d => 'Show this help message' },
+   h => { s => 'help|h',           d => 'Show this help message' },
    a => { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
    p => { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
    e => { s => 'explain|e=i',      d => 'Explain changes at recursion levels 0..n' },
@@ -72,15 +72,12 @@ my %opt_spec = (
 
 );
 
-# Define the order cmdline opts will appear in help output.  Add any extra ones
-# defined above.  If it's not in this list, it's not an option to this
-# program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l a p e x d r f c B P E T );
+my @opt_keys = qw( h a p e x d r f c B P E T );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   l => 0,
+   h => 0,
    a => 'topdown',
    p => 0,
    e => 0,
@@ -145,7 +142,7 @@ eval {
 my $source = parse_dsn(shift(@ARGV), {},      $my_cnf);
 my $dest   = parse_dsn(shift(@ARGV), $source, $my_cnf);
 
-if ( $opts{l} || !$dest ) {
+if ( $opts{h} || !$dest ) {
    print "Usage: $PROGRAM_NAME [OPTION].. <source> <dest>\n\n  Options:\n\n";
    foreach my $key ( @opt_keys ) {
       my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^=]*))?/;
@@ -494,22 +491,7 @@ sub bottomup {
    bu_build_tree($source, $levels);
    bu_build_tree($dest,   $levels);
 
-}
-
-# Get a size estimate (not a precise count because that may be very slow).
-# Can't use COUNT(*) because it might be optimized away and so rows could be
-# null.
-sub estimate_size {
-   my ($info) = @_;
-   my $query = "EXPLAIN SELECT COUNT("
-      . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
-      . ") FROM $info->{db_tbl}";
-   return $info->{dbh}->selectrow_hashref($query)->{rows};
-}
-
-sub round {
-   my ($number) = @_;
-   return int( $number + .5 );
+   bu_merge_tree($dest, $source, $levels);
 }
 
 # TODO: figure out the needed size of remainder col
@@ -601,6 +583,150 @@ sub bu_build_tree {
    }
 }
 
+# There are actually 2 more than $levels summary tables; there are tables 0 ..
+# $levels + 1 (see bu_build_tree).
+sub bu_merge_tree {
+   my ($dest, $source, $levels) = @_;
+
+   my @bad_parents; # List of parents that must differ at current level
+   my @bulk_insert;
+   my @bulk_delete;
+   my @bad_rows;     # List of rows that differ in the target tables.
+   my $level = $levels + 1;
+   
+   do {
+      my $src_sth = bu_fetch_level($source, $level, @bad_parents);
+      my $dst_sth = bu_fetch_level($dest,   $level, @bad_parents);
+      @bad_parents = (); # Clear out for next loop once used to fetch this loop
+
+      my @src_key = $level ? '__parent' : @{$source->{info}->{keys}->{PRIMARY}};
+      my @dst_key = $level ? '__parent' : @{$dest->{info}->{keys}->{PRIMARY}};
+      my ($sr, $dr); # Source row, dest row
+
+      # The statements fetch in order, so use a 'merge' algorithm of shifting
+      # forward after they match.  This is essentially a FULL OUTER JOIN.
+      MERGE:
+      while ( 1 ) { # Exit this loop via 'last'
+
+         $sr ||= $src_sth->fetchrow_hashref;
+         $dr ||= $dst_sth->fetchrow_hashref;
+         last MERGE unless $sr || $dr;
+
+         # If the current row is the "same row" on both sides...
+         if ( $sr && $dr && bu_key_eq($sr, $dr, \@src_key, \@dst_key) ) {
+
+            # The "same" row descends from parents that differ.
+            if ( $sr->{__crc} ne $dr->{__crc} ) {
+               if ( $level ) {
+                  push @bad_parents, $sr->{__parent};
+               }
+               else {
+                  push @bad_rows, [ 'UPDATE', $sr ];
+               }
+            }
+            $sr = $dr = undef;
+         }
+
+         # The row in the source doesn't exist at the destination
+         elsif ( !$dr || ( $sr && bu_key_le($sr, $dr, \@src_key, \@dst_key) ) ) {
+            if ( $level ) {
+               push @bulk_insert, [ $level, $sr->{__parent} ];
+            }
+            else {
+               push @bad_rows, [ 'INSERT', $sr ];
+            }
+            $sr = undef;
+         }
+
+         # Symmetric to the above
+         elsif ( !$sr || ( $dr && bu_key_le($dr, $sr, \@dst_key, \@src_key) ) ) {
+            if ( $level ) {
+               push @bulk_delete, [ $level, $dr->{__parent} ];
+            }
+            else {
+               push @bad_rows, [ 'DELETE', $dr ];
+            }
+            $dr = undef;
+         }
+
+      }
+
+      $level--;
+   } while ( $level >= 0 && @bad_parents );
+   print Dumper(@bad_rows);
+}
+
+# I named this 'le' for clarity about what it does, even though the way it's
+# used is in a strict 'lt' sense because 'bu_key_eq' would prevent the code from
+# reaching this function.  NULL sorts before defined values in MySQL, so I
+# consider undef "less than."
+sub bu_key_le {
+   my ( $r1, $r2, $key_1, $key_2 ) = @_;
+   foreach my $i ( 0 .. @$key_1 - 1 ) {
+      my $l = $r1->{$key_1->[$i]};
+      my $r = $r2->{$key_2->[$i]};
+      if ( (defined $l && !defined $r) || ( defined $l && defined $r && $l gt $r )) {
+         return 0;
+      }
+   }
+   return 1;
+}
+
+sub bu_key_eq {
+   my ( $r1, $r2, $key_1, $key_2 ) = @_;
+   foreach my $i ( 0 .. @$key_1 - 1 ) {
+      my $l = $r1->{$key_1->[$i]};
+      my $r = $r2->{$key_2->[$i]};
+      my $parity = defined $l + defined $r;
+      if ( $parity == 1 || ( $parity == 2 && $l ne $r )) {
+         return 0;
+      }
+   }
+   return 1;
+}
+
+sub bu_fetch_level {
+   my ( $info, $level, @bad_remainders ) = @_;
+   my $dbh = $info->{dbh};
+   my $tbl = "$info->{prefix}_" . $level;
+
+   my $cols  = $level
+             ? '__parent'
+             : col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
+   my $where = @bad_remainders
+             ? "WHERE __remainder in(" . join(',', @bad_remainders) . ")"
+             : '';
+   my $order = $level
+             ? '__parent'
+             : col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
+
+   my $query = <<"   END";
+      SELECT $cols, __crc
+      FROM $tbl $where
+      ORDER BY $order
+   END
+   my $sth = $dbh->prepare($query);
+   $sth->execute();
+   return $sth;
+}
+
+# TODO: here is a bug
+# mysql> select * from __cmp00vEERwy1RHIg_s__4;
+# +----------+----------------------------------+-------------+
+# | __parent | __crc                            | __remainder |
+# +----------+----------------------------------+-------------+
+# |        0 | F49CF0DF394EDB3E0000000000000000 |           0 | 
+# +----------+----------------------------------+-------------+
+# 1 row in set (0.00 sec)
+#
+# mysql> select * from __cmp00vEERwy1RHIg_s__3;
+# +----------+----------------------------------+-------------+
+# | __parent | __crc                            | __remainder |
+# +----------+----------------------------------+-------------+
+# |        0 | 48F456B779761D8BF21C22A7A355B9AD |           0 | 
+# +----------+----------------------------------+-------------+
+# 1 row in set (0.00 sec)
+
 # ############################################################################
 # Subroutines
 # ############################################################################
@@ -662,6 +788,22 @@ sub get_tbl_struct {
       keys      => { @keys },
       defs      => \%alldefs,
    };
+}
+
+# Get a size estimate (not a precise count because that may be very slow).
+# Can't use COUNT(*) because it might be optimized away and so rows could be
+# null.
+sub estimate_size {
+   my ($info) = @_;
+   my $query = "EXPLAIN SELECT COUNT("
+      . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
+      . ") FROM $info->{db_tbl}";
+   return $info->{dbh}->selectrow_hashref($query)->{rows};
+}
+
+sub round {
+   my ($number) = @_;
+   return int( $number + .5 );
 }
 
 sub make_where_clause {
