@@ -12,6 +12,12 @@
 # isn't syncing all columns
 # Allow to calculate, use, and delete summary tables separately
 # Allow not to put indexes on summary tables in bottom-up
+# TODO: new bottom-up algorithm: group by an auto_increment PK divided by the
+# factor, which now doesn't need to be a power of two anymore.  Eliminate modulo
+# arithmetic and the randomization.
+# TODO: another algorithm: binary search for where the corruption starts, say a
+# chunk at a time of 10000 from start/end of table, then when a different chunk is
+# found, binary search within that chunk to find the first row and report it.
 
 # This program synchronizes data between two MySQL tables, which need not be
 # on the same server.
@@ -501,7 +507,8 @@ sub bottomup {
 }
 
 # TODO: figure out the needed size of remainder col
-# Builds the first-level checksum table and returns number of rows in it.
+# TODO: don't PK on the same PK as the target table; nothing ever looks up by that.
+# Builds the first-level checksum table and returns the number of rows in it.
 sub bu_build_checksum {
    my ($info, $levels) = @_;
    my $dbh    = $info->{dbh};
@@ -795,12 +802,15 @@ sub get_tbl_struct {
 
 # Get a size estimate (not a precise count because that may be very slow).
 # Can't use COUNT(*) because it might be optimized away and so 'rows' could be
-# null.
+# null.  And in tables where there is no NULL column, again it could be
+# optimized away, so I must generate a WHERE clause that will defeat this.
 sub estimate_size {
    my ($info) = @_;
+   my ( $pkcol ) = @{$info->{info}->{keys}->{PRIMARY}};
    my $query = "EXPLAIN SELECT COUNT("
       . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
-      . ") FROM $info->{db_tbl}";
+      . ") FROM $info->{db_tbl} "
+      . "WHERE COALESCE(`$pkcol`, `$pkcol`) = `$pkcol`";
    return $info->{dbh}->selectrow_hashref($query)->{rows};
 }
 
