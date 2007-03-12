@@ -466,6 +466,8 @@ sub td_grouped_checksum_query {
 # doesn't exist, doesn't mean the rows in the tables don't exist!  The
 # randomization corrupts the entire tree when there is a single row bad, so
 # coming from the top back down, it looks like the whole table is bad.
+# TODO: maybe an algorithm that shifts the checksum one direction each time so
+# adjacent rows stay adjacent would be better.
 # ############################################################################
 
 sub bottomup {
