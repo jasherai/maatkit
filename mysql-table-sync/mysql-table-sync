@@ -72,10 +72,10 @@ my %opt_spec = (
    P => { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
    E => { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
    T => { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
-
+   L => { s => 'levels|L=i',       d => 'Number of levels in bottom-up algorithm' },
 );
 
-my @opt_keys = qw( h a p e x d r f c B P E T );
+my @opt_keys = qw( h a p e x d r f c B P E T L );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -94,6 +94,7 @@ my %opts = (
    P => '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00'),
    E => 'InnoDB',
    T => '',
+   L => 0,
 );
 
 # ############################################################################
@@ -471,35 +472,49 @@ sub td_grouped_checksum_query {
 sub bottomup {
 
    # Ensure branch factor is a power of two.
-   $opts{b} = 2 ** round( log($opts{B}) / log(2) );
+   $opts{b} = max(2, 2 ** round( log($opts{B}) / log(2) ));
 
    # Store table prefix in hashes
    $source->{prefix} = "$opts{P}_s_";
    $dest->{prefix}   = "$opts{P}_d_";
 
-   # Build the initial checksum tables and calculate how many summary tables
-   # to build.  Begin with estimates of table size to allow calculating the
-   # checksum remainder on the first level.
-   my $est_size  = max( estimate_size($source), estimate_size($dest) );
+   # Begin with estimates of table size to allow calculating the checksum
+   # remainder on the first level.
+   my $est_size = max( estimate_size($source), estimate_size($dest) );
+   # TODO use  $opts{L}
    my $est_1     = round( log( $est_size / $opts{B} ) / log(2) );
 
    # Determine the data type needed for the remainder column.
    my $rem_col  = $est_1 + 2 <= 8  ? 'TINYINT'
                 : $est_1 + 2 <= 16 ? 'SMALLINT'
+                : $est_1 + 2 <= 24 ? 'MEDIUMINT'
                 : $est_1 + 2 <= 32 ? 'INT'
                 :                    'BIGINT';
    $source->{rem_col} = $rem_col;
    $dest->{rem_col}   = $rem_col;
 
+   # Build the initial checksum tables and calculate how many summary tables to build.  
    my $src_size  = bu_build_checksum( $source, $est_1 );
    my $est_2     = round( log( max( $est_size, $src_size ) / $opts{B} ) / log(2) );
    my $dst_size  = bu_build_checksum( $dest, $est_2 );
    my $true_size = max( $src_size, $dst_size );
    my $levels    = round( log( $true_size / $opts{B} ) / log(2) );
 
+   # Similar to the above, choose a type for the __cnt columns
+   my $cnt_size = ceil( log($true_size) / log(2) );
+   my $cnt_col  = $cnt_size <= 8  ? 'TINYINT'
+                : $cnt_size <= 16 ? 'SMALLINT'
+                : $cnt_size <= 24 ? 'MEDIUMINT'
+                : $cnt_size <= 32 ? 'INT'
+                :                   'BIGINT';
+   $source->{cnt_col} = $cnt_col;
+   $dest->{cnt_col}   = $cnt_col;
+
    if ( $levels > $est_1 + 2 && $levels > 8 ) {
-      die "Estimated number of levels $est_1 too inaccurate; re-run with $levels";
-      # TODO make another cmdline option for this
+      # The initial estimated number of levels caused the first-level tables to
+      # have too-small data types, and I don't want to run ALTER TABLE; I'd
+      # rather ask the user to re-run.
+      die "Estimated number of levels $est_1 too small; re-run with --levels $levels";
    }
    if ( $est_1 != $levels ) {
       bu_rebuild_remainder($source, $levels);
@@ -567,8 +582,7 @@ sub bu_rebuild_remainder {
    $info->{dbh}->do($query);
 }
 
-# Builds the nth-level summary tables TODO choose a datatype for __cnt according
-# to how many rows in 0-th level table
+# Builds the nth-level summary tables.
 sub bu_build_tree {
    my ($info, $levels) = @_;
    my $dbh = $info->{dbh};
@@ -590,7 +604,7 @@ sub bu_build_tree {
             __par int not null,
             __crc char(32) not null,
             __rem $info->{rem_col} UNSIGNED not null,
-            __cnt int unsigned not null,
+            __cnt $info->{cnt_col} unsigned not null,
             KEY(__rem),
             PRIMARY KEY(__par)
          ) ENGINE=$opts{E}
@@ -819,23 +833,6 @@ sub bu_fetch_level {
    $sth->execute();
    return $sth;
 }
-
-# TODO: here is a bug
-# mysql> select * from __cmp00vEERwy1RHIg_s__4;
-# +----------+----------------------------------+-------------+
-# | __par | __crc                            | __rem |
-# +----------+----------------------------------+-------------+
-# |        0 | F49CF0DF394EDB3E0000000000000000 |           0 | 
-# +----------+----------------------------------+-------------+
-# 1 row in set (0.00 sec)
-#
-# mysql> select * from __cmp00vEERwy1RHIg_s__3;
-# +----------+----------------------------------+-------------+
-# | __par | __crc                            | __rem |
-# +----------+----------------------------------+-------------+
-# |        0 | 48F456B779761D8BF21C22A7A355B9AD |           0 | 
-# +----------+----------------------------------+-------------+
-# 1 row in set (0.00 sec)
 
 # ############################################################################
 # Subroutines
