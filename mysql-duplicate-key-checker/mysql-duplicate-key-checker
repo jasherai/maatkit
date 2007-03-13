@@ -171,7 +171,7 @@ foreach my $thing ( grep { !defined $conn->{$_} } keys %$conn ) {
 my $dbh = DBI->connect(
    "DBI:mysql:;host=$conn->{h};port=$conn->{o}",
    $conn->{u}, $conn->{p}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-   or die("Can't connect to DB: $!");
+   or die("Can't connect to DB: $OS_ERROR");
 
 my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 my @whole_batch;
