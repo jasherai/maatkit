@@ -6,3 +6,5 @@ mysqldiff, datadiff, coldiff:
    * http://rossbeyer.net/software/mysql_coldiff/
 query sniper:
    * http://www.stillhq.com/mysql/000008.html
+stale table sniper: remove tables with certain patterns, or older than a certain
+amount.
