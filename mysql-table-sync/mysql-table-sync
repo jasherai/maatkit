@@ -112,10 +112,11 @@ $opts{T} = $opts{T} ? 'TEMPORARY' : '';
 # ############################################################################
 # Try to use the user's .my.cnf file.
 # ############################################################################
-my $my_cnf = {
+my $dsn_defaults = {
    host => 'localhost',
    user => getlogin() || getpwuid($UID),
    port => 3306,
+   key  => 'PRIMARY',
 };
 eval {
    my $homedir = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '';
@@ -128,11 +129,11 @@ eval {
          next unless $line;
          my ( $key, $val ) = split( /\s*=\s*/, $line );
          next unless defined $val;
-         if ( $key eq 'host' )     { $my_cnf->{host} = $val; }
-         if ( $key eq 'user' )     { $my_cnf->{user} = $val; }
-         if ( $key =~ m/^pass/ )   { $my_cnf->{pass} = $val; }
-         if ( $key eq 'database' ) { $my_cnf->{database} = $val; }
-         if ( $key eq 'port' )     { $my_cnf->{port} = $val; }
+         if ( $key eq 'host' )     { $dsn_defaults->{host} = $val; }
+         if ( $key eq 'user' )     { $dsn_defaults->{user} = $val; }
+         if ( $key =~ m/^pass/ )   { $dsn_defaults->{pass} = $val; }
+         if ( $key eq 'database' ) { $dsn_defaults->{database} = $val; }
+         if ( $key eq 'port' )     { $dsn_defaults->{port} = $val; }
       }
       close $conf_file;
    }
@@ -142,8 +143,8 @@ eval {
 # Parse arguments saying which tables.  If the script doesn't have everything
 # it needs, show help text.
 # ############################################################################
-my $source = parse_dsn(shift(@ARGV), {},      $my_cnf);
-my $dest   = parse_dsn(shift(@ARGV), $source, $my_cnf);
+my $source = parse_dsn(shift(@ARGV), {},      $dsn_defaults);
+my $dest   = parse_dsn(shift(@ARGV), $source, $dsn_defaults);
 
 if ( $opts{h} || !$dest ) {
    print "Usage: $PROGRAM_NAME [OPTION].. <source> <dest>\n\n  Options:\n\n";
@@ -300,7 +301,7 @@ sub td_recurse {
 sub td_bottom_out {
    my ( $level, $row, $where ) = @_;
 
-   my @key       = @{$source->{info}->{keys}->{PRIMARY}}; #TODO could be another key
+   my @key       = @{$source->{info}->{keys}->{$source->{key}}};
    my $src_query = td_ungrouped_checksum_query($source, \@key, $where);
    my $dst_query = td_ungrouped_checksum_query($dest,   \@key, $where);
    my $src_cnt   = 0;
@@ -506,10 +507,10 @@ sub bu_build_checksum {
    my ($info, $levels) = @_;
    my $dbh    = $info->{dbh};
    my $tbl    = $info->{info};
-   my $pk     = col_list( @{ $tbl->{keys}->{PRIMARY} } );
+   my $pk     = col_list( @{ $tbl->{keys}->{$info->{key}} } );
    my @cols   = @{ $tbl->{cols} };
    my $cols   = col_list(@cols);
-   my $pks    = join( ',', @{ $tbl->{defs} }{ @{ $tbl->{keys}->{PRIMARY} } } );
+   my $pks    = join( ',', @{ $tbl->{defs} }{ @{ $tbl->{keys}->{$info->{key}} } } );
    my @null   = grep { $tbl->{null_hash}->{$_} } @cols;
    my $null = @null
             ? ( ", CONCAT(" . join( ', ', map {"ISNULL(`$_`)"} @null ) . ")" ) : '';
@@ -544,7 +545,7 @@ sub bu_build_checksum {
 
 sub bu_rebuild_remainder {
    my ( $info, $levels ) = @_;
-   my $pk   = col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
+   my $pk   = col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
    my $mask = (2 ** $levels) - 1;
    my $name = "$info->{prefix}_0";
    my $query = <<"   END";
@@ -624,8 +625,8 @@ sub bu_merge_tree {
       my $dst_sth = bu_fetch_level($dest,   $level, @bad_parents);
       @bad_parents = (); # Clear out for next loop once used to fetch this loop
 
-      my @src_key = $level ? '__par' : @{$source->{info}->{keys}->{PRIMARY}};
-      my @dst_key = $level ? '__par' : @{$dest->{info}->{keys}->{PRIMARY}};
+      my @src_key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{key}}};
+      my @dst_key = $level ? '__par' : @{$dest->{info}->{keys}->{$dest->{key}}};
       my ($sr, $dr); # Source row, dest row
 
       # The statements fetch in order, so use a 'merge' algorithm of shifting
@@ -699,7 +700,7 @@ sub bu_merge_tree {
 # part of the tree.
 sub bu_handle_bulk_change {
    my ( $action, $info, @rows ) = @_;
-   my $pk = col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
+   my $pk = col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
    my @rows_to_do;
 
    foreach my $row ( @rows ) {
@@ -792,13 +793,13 @@ sub bu_fetch_level {
 
    my $cols  = $level
              ? '__par, __cnt'
-             : col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
+             : col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
    my $where = @bad_remainders
              ? "WHERE __rem in(" . join(',', @bad_remainders) . ")"
              : '';
    my $order = $level
              ? '__par'
-             : col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
+             : col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
 
    my $query = "SELECT $cols, __crc FROM $tbl $where ORDER BY $order";
    print $query, "\n";
@@ -828,27 +829,30 @@ sub bu_fetch_level {
 # Subroutines
 # ############################################################################
 
-# Parses a DSN in login:pass@host:port/database.table format
+# Parses a DSN in login:pass@host:port/database.table:key format
 sub parse_dsn {
    my ($dsn, $prev, $defs) = @_;
    return unless $dsn;
    $prev ||= {};
    $defs ||= {};
 
-   my ( $user, $pass, $host, $port, $database, $table ) = $dsn =~ m{
+   my ( $user, $pass, $host, $port, $database, $table, $key) = $dsn =~ m{
       (?:
-         (.*?)       # Username
-         (?::(.*))?  # Optional password
+         (.+?)       # Username
+         (?::(.+))?  # Optional password
       @)?            # User-pass is optional
       (?:
-         (.*?)       # Hostname
-         (?::(.*))?  # Optional port
+         (.+?)       # Hostname
+         (?::(.+))?  # Optional port
       /)?            # Host-port is optional
       (?:
-         (.*?)       # Database
+         (.+?)       # Database
       \.)?           # Database is optional
-      (.*)           # Table is required
-      }x or return undef;
+      ([^:]+)        # Table is required
+      (?::
+         (.+)        # Key/index
+      )?             # Index is optional
+      }xsm or return undef;
 
    return {
       user     => coalesce( $user,     $prev->{user},     $defs->{user} ),
@@ -857,6 +861,7 @@ sub parse_dsn {
       port     => coalesce( $port,     $prev->{port},     $defs->{port} ),
       database => coalesce( $database, $prev->{database}, $defs->{database} ),
       table    => coalesce( $table,    $prev->{table} ),
+      key      => coalesce( $key,      $prev->{key},      $defs->{key} ),
    };
 }
 
@@ -866,23 +871,27 @@ sub get_tbl_struct {
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
    my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
-   my @keys =
+   my %keys =
       map {
          my ($name) = $_ =~ m/(PRIMARY|`[^`]*`)/;
          my ($cols) = $_ =~ m/\((.+)\),?$/;
          $name =~ s/`//g;
          ($name, [ grep { m/[^,]/ } split('`', $cols) ])
       }
-      $ddl =~ m/^  ((?:PRIMARY )?KEY .*)$/gm;
+      $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
    my %alldefs;
    @alldefs{@cols} = @defs;
+
+   if ( !exists $keys{$info->{key}} ) {
+      die "No such key $info->{key} in table $info->{host}/$info->{db_tbl}";
+   }
 
    return {
       cols      => \@cols,
       col_hash  => { map { $_ => 1 } @cols },
       null      => \@null,
       null_hash => { map { $_ => 1 } @null },
-      keys      => { @keys },
+      keys      => \%keys,
       defs      => \%alldefs,
    };
 }
@@ -893,7 +902,7 @@ sub get_tbl_struct {
 # optimized away, so I must generate a WHERE clause that will defeat this.
 sub estimate_size {
    my ($info) = @_;
-   my ( $pkcol ) = @{$info->{info}->{keys}->{PRIMARY}};
+   my ( $pkcol ) = @{$info->{info}->{keys}->{$info->{key}}};
    my $query = "EXPLAIN SELECT COUNT("
       . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
       . ") FROM $info->{db_tbl} "
