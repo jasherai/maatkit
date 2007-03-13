@@ -158,7 +158,7 @@ if ( $opts{h} || !$dest ) {
 
 $PROGRAM_NAME finds and resolves data differences between two MySQL tables.
 <source> and <dest> are data sources in the format
-   user:pass\@host:port/database.table
+   user:pass\@host:port/database.table:key
 Everything but the table name is optional, and defaults will be read from your
 environment and your .my.cnf file if possible.  Values for <dest> default to the
 values for <source>.
