@@ -482,12 +482,25 @@ sub bottomup {
    # checksum remainder on the first level.
    my $est_size  = max( estimate_size($source), estimate_size($dest) );
    my $est_1     = round( log( $est_size / $opts{B} ) / log(2) );
+
+   # Determine the data type needed for the remainder column.
+   my $rem_col  = $est_1 + 2 <= 8  ? 'TINYINT'
+                : $est_1 + 2 <= 16 ? 'SMALLINT'
+                : $est_1 + 2 <= 32 ? 'INT'
+                :                    'BIGINT';
+   $source->{rem_col} = $rem_col;
+   $dest->{rem_col}   = $rem_col;
+
    my $src_size  = bu_build_checksum( $source, $est_1 );
    my $est_2     = round( log( max( $est_size, $src_size ) / $opts{B} ) / log(2) );
    my $dst_size  = bu_build_checksum( $dest, $est_2 );
    my $true_size = max( $src_size, $dst_size );
    my $levels    = round( log( $true_size / $opts{B} ) / log(2) );
 
+   if ( $levels > $est_1 + 2 && $levels > 8 ) {
+      die "Estimated number of levels $est_1 too inaccurate; re-run with $levels";
+      # TODO make another cmdline option for this
+   }
    if ( $est_1 != $levels ) {
       bu_rebuild_remainder($source, $levels);
    }
@@ -501,7 +514,6 @@ sub bottomup {
    bu_merge_tree($dest, $source, $levels);
 }
 
-# TODO: figure out the needed size of remainder col
 # Builds the first-level checksum table and returns the number of rows in it.
 sub bu_build_checksum {
    my ($info, $levels) = @_;
@@ -523,7 +535,7 @@ sub bu_build_checksum {
       CREATE $opts{T} TABLE `$info->{database}`.`$name` (
          $pks,
          __crc char(32) not null,
-         __rem int not null,
+         __rem $info->{rem_col} UNSIGNED not null,
          KEY(__rem),
          PRIMARY KEY($pk)
       ) ENGINE=$opts{E}
@@ -535,7 +547,7 @@ sub bu_build_checksum {
       INSERT INTO `$info->{database}`.`$name`($pk, __crc, __rem)
       SELECT $pk,
          MD5(CONCAT_WS('#', $cols$null)) AS __crc,
-         CAST(CONV(RIGHT(MD5(CONCAT_WS('#', $pk)), 8), 16, 10) AS UNSIGNED) & $mask AS __rem
+         CAST(CONV(RIGHT(MD5(CONCAT_WS('#', $pk)), 16), 16, 10) AS UNSIGNED) & $mask AS __rem
       FROM $info->{db_tbl}
    END
    my $sth = $dbh->prepare($sum_query);
@@ -577,7 +589,7 @@ sub bu_build_tree {
          CREATE $opts{T} TABLE `$info->{database}`.`$this_tbl` (
             __par int not null,
             __crc char(32) not null,
-            __rem int not null,
+            __rem $info->{rem_col} UNSIGNED not null,
             __cnt int unsigned not null,
             KEY(__rem),
             PRIMARY KEY(__par)
@@ -907,7 +919,6 @@ sub estimate_size {
       . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
       . ") FROM $info->{db_tbl} "
       . "WHERE COALESCE(`$pkcol`, `$pkcol`) = `$pkcol`";
-      return 2;
    return $info->{dbh}->selectrow_hashref($query)->{rows};
 }
 
