@@ -56,8 +56,6 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # Get configuration information.
 # ############################################################################
 
-# Define cmdline args; each is GetOpt::Long spec, whether required,
-# human-readable description.  Add more hash entries as needed.
 my %opt_spec = (
    h => { s => 'help|h',           d => 'Show this help message' },
    a => { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
@@ -465,12 +463,6 @@ sub td_grouped_checksum_query {
 # kids for this and their return code can be count(*).
 # TODO: put acknowledgements in the perdoc
 # cite: Remote Comparison of Database Tables
-# Severe limitation of algorithm: just because an intermediate level in the tree
-# doesn't exist, doesn't mean the rows in the tables don't exist!  The
-# randomization corrupts the entire tree when there is a single row bad, so
-# coming from the top back down, it looks like the whole table is bad.
-# TODO: maybe an algorithm that shifts the checksum one direction each time so
-# adjacent rows stay adjacent would be better.
 # ############################################################################
 
 sub bottomup {
@@ -545,7 +537,8 @@ sub bu_build_checksum {
    return $sth->rows;
 }
 
-# Builds the nth-level summary tables
+# Builds the nth-level summary tables TODO choose a datatype for __cnt according
+# to how many rows in 0-th level table
 sub bu_build_tree {
    my ($info, $levels) = @_;
    my $dbh = $info->{dbh};
@@ -558,6 +551,7 @@ sub bu_build_tree {
       my $this_tbl = "$info->{prefix}_" . $i;
       my $last_tbl = "$info->{prefix}_" . ( $i - 1 );
       my $mask     = $modulo - 1;
+      my $cnt_sum  = $i > 1 ? 'SUM(__cnt)' : 'COUNT(*)';
 
       # Create the table
       $dbh->do("DROP TABLE IF EXISTS $this_tbl");
@@ -566,6 +560,7 @@ sub bu_build_tree {
             __parent int not null,
             __crc char(32) not null,
             __remainder int not null,
+            __cnt int unsigned not null,
             KEY(__remainder),
             PRIMARY KEY(__parent)
          ) ENGINE=$opts{E}
@@ -575,13 +570,15 @@ sub bu_build_tree {
       # Populate it
       $dbh->do('SET @CRC := NULL');
       my $sum_query = <<"      END";
-         INSERT INTO `$info->{database}`.`$this_tbl`(__parent, __crc, __remainder)
+         INSERT INTO `$info->{database}`.`$this_tbl`
+            (__parent, __crc, __remainder, __cnt)
          SELECT __remainder,
             CONCAT(
-               LPAD(CONV(BIT_XOR(CAST(CONV(LEFT(\@GRP_CRC := MD5(__crc), 16), 16, 10) as unsigned)), 10, 16), 16, '0'),
-               LPAD(CONV(BIT_XOR(CAST(CONV(RIGHT(\@GRP_CRC,              16), 16, 10) as unsigned)), 10, 16), 16, '0')
+               LPAD(CONV(BIT_XOR(CAST(CONV(LEFT(\@CRC := MD5(__crc), 16), 16, 10) as unsigned)), 10, 16), 16, '0'),
+               LPAD(CONV(BIT_XOR(CAST(CONV(RIGHT(\@CRC,              16), 16, 10) as unsigned)), 10, 16), 16, '0')
             ) AS this_crc,
-            __remainder & $mask AS this_remainder
+            __remainder & $mask AS this_remainder,
+            $cnt_sum AS total_rows
          FROM `$info->{database}`.`$last_tbl`
          GROUP BY __remainder
          ORDER BY NULL
@@ -637,7 +634,7 @@ sub bu_merge_tree {
          # The row in the source doesn't exist at the destination
          elsif ( !$dr || ( $sr && bu_key_le($sr, $dr, \@src_key, \@dst_key) ) ) {
             if ( $level ) {
-               push @bulk_insert, [ $level, $sr->{__parent} ];
+               push @bulk_insert, $sr;
             }
             else {
                push @bad_rows, [ 'INSERT', $sr ];
@@ -648,7 +645,7 @@ sub bu_merge_tree {
          # Symmetric to the above
          elsif ( !$sr || ( $dr && bu_key_le($dr, $sr, \@dst_key, \@src_key) ) ) {
             if ( $level ) {
-               push @bulk_delete, [ $level, $dr->{__parent} ];
+               push @bulk_delete, $dr;
             }
             else {
                push @bad_rows, [ 'DELETE', $dr ];
@@ -660,7 +657,11 @@ sub bu_merge_tree {
 
       $level--;
    } while ( $level >= 0 && @bad_parents );
+
+# TODO: estimate # rows needing change before going further
    print Dumper(@bad_rows);
+   print Dumper(@bulk_insert);
+   print Dumper(@bulk_delete);
 }
 
 # I named this 'le' for clarity about what it does, even though the way it's
@@ -698,7 +699,7 @@ sub bu_fetch_level {
    my $tbl = "$info->{prefix}_" . $level;
 
    my $cols  = $level
-             ? '__parent'
+             ? '__parent, __cnt'
              : col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
    my $where = @bad_remainders
              ? "WHERE __remainder in(" . join(',', @bad_remainders) . ")"
