@@ -488,7 +488,10 @@ sub bottomup {
    my $levels    = round( log( $true_size / $opts{B} ) / log(2) );
 
    if ( $est_1 != $levels ) {
-      # TODO: Rebuild remainder for $source, $dest if needed
+      bu_rebuild_remainder($source, $levels);
+   }
+   if ( $est_2 != $levels ) {
+      bu_rebuild_remainder($dest, $levels);
    }
 
    bu_build_tree($source, $levels);
@@ -537,6 +540,18 @@ sub bu_build_checksum {
    my $sth = $dbh->prepare($sum_query);
    $sth->execute();
    return $sth->rows;
+}
+
+sub bu_rebuild_remainder {
+   my ( $info, $levels ) = @_;
+   my $pk   = col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
+   my $mask = (2 ** $levels) - 1;
+   my $name = "$info->{prefix}_0";
+   my $query = <<"   END";
+      UPDATE `$info->{database}`.`$name` SET __rem =
+         CAST(CONV(RIGHT(MD5(CONCAT_WS('#', $pk)), 8), 16, 10) AS UNSIGNED) & $mask
+   END
+   $info->{dbh}->do($query);
 }
 
 # Builds the nth-level summary tables TODO choose a datatype for __cnt according
@@ -883,6 +898,7 @@ sub estimate_size {
       . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
       . ") FROM $info->{db_tbl} "
       . "WHERE COALESCE(`$pkcol`, `$pkcol`) = `$pkcol`";
+      return 2;
    return $info->{dbh}->selectrow_hashref($query)->{rows};
 }
 
