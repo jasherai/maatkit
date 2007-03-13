@@ -15,7 +15,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-deadlock-logger
-VERSION = 0.8.0
+VERSION = 0.9.0
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \
