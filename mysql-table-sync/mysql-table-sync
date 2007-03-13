@@ -1,5 +1,7 @@
 #!/usr/bin/perl
 
+# Explain structure of tables, what __rem/__par mean etc
+# top-down with where clauses allows mass insert/deletes much more efficiently.
 # Look up the law of large numbers and justify why not to use SUM()
 # Explain why @crc & $mask is the same as mod()
 # TODO examine why md5 returns values like 7FFFFFFFFFFFFFFF7FFFFFFFFFFFFFFF and
@@ -517,8 +519,8 @@ sub bu_build_checksum {
       CREATE $opts{T} TABLE `$info->{database}`.`$name` (
          $pks,
          __crc char(32) not null,
-         __remainder int not null,
-         KEY(__remainder),
+         __rem int not null,
+         KEY(__rem),
          PRIMARY KEY($pk)
       ) ENGINE=$opts{E}
    END
@@ -526,10 +528,10 @@ sub bu_build_checksum {
 
    # Populate it
    my $sum_query = <<"   END";
-      INSERT INTO `$info->{database}`.`$name`($pk, __crc, __remainder)
+      INSERT INTO `$info->{database}`.`$name`($pk, __crc, __rem)
       SELECT $pk,
          MD5(CONCAT_WS('#', $cols$null)) AS __crc,
-         CAST(CONV(RIGHT(MD5(CONCAT_WS('#', $pk)), 8), 16, 10) AS UNSIGNED) & $mask AS __remainder
+         CAST(CONV(RIGHT(MD5(CONCAT_WS('#', $pk)), 8), 16, 10) AS UNSIGNED) & $mask AS __rem
       FROM $info->{db_tbl}
    END
    my $sth = $dbh->prepare($sum_query);
@@ -557,12 +559,12 @@ sub bu_build_tree {
       $dbh->do("DROP TABLE IF EXISTS $this_tbl");
       my $table_query = <<"      END";
          CREATE $opts{T} TABLE `$info->{database}`.`$this_tbl` (
-            __parent int not null,
+            __par int not null,
             __crc char(32) not null,
-            __remainder int not null,
+            __rem int not null,
             __cnt int unsigned not null,
-            KEY(__remainder),
-            PRIMARY KEY(__parent)
+            KEY(__rem),
+            PRIMARY KEY(__par)
          ) ENGINE=$opts{E}
       END
       $dbh->do($table_query);
@@ -571,16 +573,16 @@ sub bu_build_tree {
       $dbh->do('SET @CRC := NULL');
       my $sum_query = <<"      END";
          INSERT INTO `$info->{database}`.`$this_tbl`
-            (__parent, __crc, __remainder, __cnt)
-         SELECT __remainder,
+            (__par, __crc, __rem, __cnt)
+         SELECT __rem,
             CONCAT(
                LPAD(CONV(BIT_XOR(CAST(CONV(LEFT(\@CRC := MD5(__crc), 16), 16, 10) as unsigned)), 10, 16), 16, '0'),
                LPAD(CONV(BIT_XOR(CAST(CONV(RIGHT(\@CRC,              16), 16, 10) as unsigned)), 10, 16), 16, '0')
             ) AS this_crc,
-            __remainder & $mask AS this_remainder,
+            __rem & $mask AS this_remainder,
             $cnt_sum AS total_rows
          FROM `$info->{database}`.`$last_tbl`
-         GROUP BY __remainder
+         GROUP BY __rem
          ORDER BY NULL
       END
       $dbh->do($sum_query);
@@ -592,19 +594,23 @@ sub bu_build_tree {
 sub bu_merge_tree {
    my ($dest, $source, $levels) = @_;
 
-   my @bad_parents; # List of parents that must differ at current level
-   my @bulk_insert;
-   my @bulk_delete;
-   my @bad_rows;     # List of rows that differ in the target tables.
    my $level = $levels + 1;
+   my @bad_parents; # List of parents that must differ at current level
+
+   # Lists of rows that differ in the target tables.
+   my (@to_update, @to_delete, @to_insert);
+   my (@bulk_insert, @bulk_delete);
    
    do {
+# TODO: print informational messages: at level x, currently x rows yet to
+      # examine/potentially bad, examining x parent-level rows, have found x
+      # rows known to be bad
       my $src_sth = bu_fetch_level($source, $level, @bad_parents);
       my $dst_sth = bu_fetch_level($dest,   $level, @bad_parents);
       @bad_parents = (); # Clear out for next loop once used to fetch this loop
 
-      my @src_key = $level ? '__parent' : @{$source->{info}->{keys}->{PRIMARY}};
-      my @dst_key = $level ? '__parent' : @{$dest->{info}->{keys}->{PRIMARY}};
+      my @src_key = $level ? '__par' : @{$source->{info}->{keys}->{PRIMARY}};
+      my @dst_key = $level ? '__par' : @{$dest->{info}->{keys}->{PRIMARY}};
       my ($sr, $dr); # Source row, dest row
 
       # The statements fetch in order, so use a 'merge' algorithm of shifting
@@ -615,6 +621,8 @@ sub bu_merge_tree {
          $sr ||= $src_sth->fetchrow_hashref;
          $dr ||= $dst_sth->fetchrow_hashref;
          last MERGE unless $sr || $dr;
+# TODO: we can already look at $sr->{__cnt} - $dr->{__cnt}
+# and abort if rowcount too high
 
          # If the current row is the "same row" on both sides...
          if ( $sr && $dr && bu_key_eq($sr, $dr, \@src_key, \@dst_key) ) {
@@ -622,10 +630,10 @@ sub bu_merge_tree {
             # The "same" row descends from parents that differ.
             if ( $sr->{__crc} ne $dr->{__crc} ) {
                if ( $level ) {
-                  push @bad_parents, $sr->{__parent};
+                  push @bad_parents, $sr->{__par};
                }
                else {
-                  push @bad_rows, [ 'UPDATE', $sr ];
+                  push @to_update, $sr;
                }
             }
             $sr = $dr = undef;
@@ -637,7 +645,7 @@ sub bu_merge_tree {
                push @bulk_insert, $sr;
             }
             else {
-               push @bad_rows, [ 'INSERT', $sr ];
+               push @to_insert, $sr;
             }
             $sr = undef;
          }
@@ -648,20 +656,82 @@ sub bu_merge_tree {
                push @bulk_delete, $dr;
             }
             else {
-               push @bad_rows, [ 'DELETE', $dr ];
+               push @to_delete, $dr;
             }
             $dr = undef;
          }
 
+         else {
+            die "This code should never have run.  This is a bug.";
+         }
       }
 
       $level--;
    } while ( $level >= 0 && @bad_parents );
 
 # TODO: estimate # rows needing change before going further
-   print Dumper(@bad_rows);
-   print Dumper(@bulk_insert);
-   print Dumper(@bulk_delete);
+
+   bu_handle_data_change('UPDATE', @to_update);
+   bu_handle_data_change('INSERT', @to_insert);
+   bu_handle_data_change('DELETE', @to_delete);
+   bu_handle_bulk_change('INSERT', $source, @bulk_insert);
+   bu_handle_bulk_change('DELETE', $dest,   @bulk_delete);
+}
+
+# TODO: Conceptually, we're doing SELECT PKs FROM table0 where __rem & $foo =
+   # $foo but maybe that can be optimized into an in() list
+# Finds atomic rows that got folded into an entirely insertable or deleteable
+# part of the tree.
+sub bu_handle_bulk_change {
+   my ( $action, $info, @rows ) = @_;
+   my $pk = col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
+   my @rows_to_do;
+
+   foreach my $row ( @rows ) {
+      my $modulo = $row->{__par};
+      my $vals = $info->{dbh}->selectall_arrayref(
+         "SELECT $pk FROM $info->{prefix}_0 "
+            . "WHERE __rem & $modulo = $modulo",
+         { Slice => {} });
+      push @rows_to_do, @$vals;
+   }
+
+   bu_handle_data_change($action, @rows_to_do);
+}
+
+sub bu_handle_data_change {
+   my ( $action, @rows ) = @_;
+
+   my $which = $opts{r} ? $source : $dest;
+   foreach my $row ( @rows ) {
+      delete $row->{__crc}; # Now the row can be used as a WHERE clause
+      my $crit = make_where_clause($which->{dbh}, $row);
+
+      if ( $action eq 'DELETE' ) {
+         my $query = "DELETE FROM $which->{db_tbl}$crit";
+         if ( $opts{p} ) {
+            print STDOUT $query, ";\n";
+         }
+         if ( $opts{x} ) {
+            $which->{dbh}->do($query);
+         }
+      }
+      else {
+         my $vals = $source->{dbh}->selectrow_hashref(
+            "SELECT $source->{cols} FROM $source->{db_tbl}$crit");
+         my $query = "REPLACE INTO $which->{db_tbl}($which->{cols}) VALUES("
+            . join(',', map { $which->{dbh}->quote($vals->{$_}) }
+               @{$which->{info}->{cols}}) . ")";
+
+         if ( $opts{p} ) {
+            print STDOUT $query, ";\n";
+         }
+         if ( $opts{x} ) {
+            $which->{dbh}->do($query);
+            # TODO commit?
+         }
+      }
+   }
 }
 
 # I named this 'le' for clarity about what it does, even though the way it's
@@ -673,8 +743,15 @@ sub bu_key_le {
    foreach my $i ( 0 .. @$key_1 - 1 ) {
       my $l = $r1->{$key_1->[$i]};
       my $r = $r2->{$key_2->[$i]};
-      if ( (defined $l && !defined $r) || ( defined $l && defined $r && $l gt $r )) {
+      if ( (defined $l && !defined $r)
+         || ( defined $l && defined $r && $l gt $r )
+      ) {
          return 0;
+      }
+      elsif ( (!defined $l && defined $r)
+         || ( defined $l && defined $r && $l lt $r )
+      ) {
+         return 1;
       }
    }
    return 1;
@@ -699,13 +776,13 @@ sub bu_fetch_level {
    my $tbl = "$info->{prefix}_" . $level;
 
    my $cols  = $level
-             ? '__parent, __cnt'
+             ? '__par, __cnt'
              : col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
    my $where = @bad_remainders
-             ? "WHERE __remainder in(" . join(',', @bad_remainders) . ")"
+             ? "WHERE __rem in(" . join(',', @bad_remainders) . ")"
              : '';
    my $order = $level
-             ? '__parent'
+             ? '__par'
              : col_list( @{ $info->{info}->{keys}->{PRIMARY} } );
 
    my $query = "SELECT $cols, __crc FROM $tbl $where ORDER BY $order";
@@ -718,7 +795,7 @@ sub bu_fetch_level {
 # TODO: here is a bug
 # mysql> select * from __cmp00vEERwy1RHIg_s__4;
 # +----------+----------------------------------+-------------+
-# | __parent | __crc                            | __remainder |
+# | __par | __crc                            | __rem |
 # +----------+----------------------------------+-------------+
 # |        0 | F49CF0DF394EDB3E0000000000000000 |           0 | 
 # +----------+----------------------------------+-------------+
@@ -726,7 +803,7 @@ sub bu_fetch_level {
 #
 # mysql> select * from __cmp00vEERwy1RHIg_s__3;
 # +----------+----------------------------------+-------------+
-# | __parent | __crc                            | __remainder |
+# | __par | __crc                            | __rem |
 # +----------+----------------------------------+-------------+
 # |        0 | 48F456B779761D8BF21C22A7A355B9AD |           0 | 
 # +----------+----------------------------------+-------------+
