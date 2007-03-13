@@ -75,9 +75,10 @@ my %opt_spec = (
    E => { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
    T => { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
    L => { s => 'levels|L=i',       d => 'Number of levels in bottom-up algorithm' },
+   C => { s => 'cleanup|C',        d => 'Clean up scratch tables for bottom-up algorithm' },
 );
 
-my @opt_keys = qw( h a p b e x d r f c B P E T L );
+my @opt_keys = qw( h a p b e x d r f c B P E T L C );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -98,6 +99,7 @@ my %opts = (
    E => 'InnoDB',
    T => '',
    L => 0,
+   C => undef,
 );
 
 # ############################################################################
@@ -112,6 +114,9 @@ if ( $opts{c} ) {
    $opts{c} = { map { $_ => 1 } split(/,\s*/, $opts{c}) };
 }
 $opts{T} = $opts{T} ? 'TEMPORARY' : '';
+if ( !defined $opts{C} ) {
+   $opts{C} = !$opts{T};
+}
 
 # ############################################################################
 # Try to use the user's .my.cnf file.
@@ -375,7 +380,7 @@ sub td_handle_data_change {
    my $crit = make_where_clause($which->{dbh}, $where);
 
    if ( $action eq 'DELETE' ) {
-      my $query = "DELETE FROM $which->{db_tbl}$crit";
+      my $query = "DELETE FROM $which->{db_tbl} $crit";
       if ( $opts{p} ) {
          print STDOUT $query, ";\n";
       }
@@ -384,7 +389,7 @@ sub td_handle_data_change {
       }
    }
    else {
-      my $vals = $source->{dbh}->selectrow_hashref("SELECT $source->{cols} FROM $source->{db_tbl}$crit");
+      my $vals = $source->{dbh}->selectrow_hashref("SELECT $source->{cols} FROM $source->{db_tbl} $crit");
       my $query = "REPLACE INTO $which->{db_tbl}($which->{cols}) VALUES("
          . join(',', map { $which->{dbh}->quote($vals->{$_}) } @{$which->{info}->{cols}}) . ")";
 
@@ -519,6 +524,7 @@ sub bottomup {
    $source->{cnt_col} = $cnt_col;
    $dest->{cnt_col}   = $cnt_col;
 
+   # Check and possibly rebuild remainders.
    if ( $levels > $est_1 + 2 && $levels > 8 ) {
       # The initial estimated number of levels caused the first-level tables to
       # have too-small data types, and I don't want to run ALTER TABLE; I'd
@@ -532,10 +538,12 @@ sub bottomup {
       bu_rebuild_remainder($dest, $levels);
    }
 
+   # Build the trees, merge them, and clean them up. TODO this part can be
+   # parallelized with fork.
    bu_build_tree($source, $levels);
    bu_build_tree($dest,   $levels);
-
    bu_merge_tree($dest, $source, $levels);
+   bu_cleanup_tree($dest, $source) if $opts{C};
 }
 
 # Builds the first-level checksum table and returns the number of rows in it.
@@ -752,6 +760,20 @@ sub bu_merge_tree {
    bu_handle_bulk_change('DELETE', $dest,   @bulk_delete);
 }
 
+sub bu_cleanup_tree {
+   my @servers = @_;
+   foreach my $info ( @servers ) {
+      my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES FROM `$info->{database}`")};
+      foreach my $table ( grep { m/^$info->{prefix}_\d+$/ } @tables ) {
+         my $query = "DROP TABLE `$info->{database}`.`$table`";
+         if ( $opts{b} ) {
+            print '-- ', $query, "\n";
+         }
+         $info->{dbh}->do($query);
+      }
+   }
+}
+
 # TODO: Conceptually, we're doing SELECT PKs FROM table0 where __rem & $foo =
    # $foo but maybe that can be optimized into an in() list
 # Finds atomic rows that got folded into an entirely insertable or deleteable
@@ -783,7 +805,7 @@ sub bu_handle_data_change {
       my $crit = make_where_clause($which->{dbh}, $row);
 
       if ( $action eq 'DELETE' ) {
-         my $query = "DELETE FROM $which->{db_tbl}$crit";
+         my $query = "DELETE FROM $which->{db_tbl} $crit";
          if ( $opts{p} ) {
             print STDOUT $query, ";\n";
          }
@@ -793,7 +815,7 @@ sub bu_handle_data_change {
       }
       else {
          my $vals = $source->{dbh}->selectrow_hashref(
-            "SELECT $source->{cols} FROM $source->{db_tbl}$crit");
+            "SELECT $source->{cols} FROM $source->{db_tbl} $crit");
          my $query = "REPLACE INTO $which->{db_tbl}($which->{cols}) VALUES("
             . join(',', map { $which->{dbh}->quote($vals->{$_}) }
                @{$which->{info}->{cols}}) . ")";
