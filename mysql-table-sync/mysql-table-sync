@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 
+# Allow iud param to only do inserts/updates/deletes
 # Explain structure of tables, what __rem/__par mean etc
 # top-down with where clauses allows mass insert/deletes much more efficiently.
 # Look up the law of large numbers and justify why not to use SUM()
