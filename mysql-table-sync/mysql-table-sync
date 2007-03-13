@@ -19,8 +19,8 @@
 # chunk at a time of 10000 from start/end of table, then when a different chunk is
 # found, binary search within that chunk to find the first row and report it.
 
-# This program synchronizes data between two MySQL tables, which need not be
-# on the same server.
+# This program efficiently synchronizes data between two MySQL tables, which
+# can be on different servers.
 #
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
@@ -63,7 +63,8 @@ my %opt_spec = (
    h => { s => 'help|h',           d => 'Show this help message' },
    a => { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
    p => { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
-   e => { s => 'explain|e=i',      d => 'Explain changes at recursion levels 0..n' },
+   b => { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
+   e => { s => 'explain|e=i',      d => 'Explain changes at levels 0..n in top-down algorithm' },
    x => { s => 'execute|x',        d => 'Execute queries required to sync' },
    d => { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
    r => { s => 'replicate|r',      d => 'Change on master (source) and let replication propagate'},
@@ -76,7 +77,7 @@ my %opt_spec = (
    L => { s => 'levels|L=i',       d => 'Number of levels in bottom-up algorithm' },
 );
 
-my @opt_keys = qw( h a p e x d r f c B P E T L );
+my @opt_keys = qw( h a p b e x d r f c B P E T L );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -84,6 +85,7 @@ my %opts = (
    h => 0,
    a => 'topdown',
    p => 0,
+   b => 0,
    e => 0,
    x => 0,
    d => '',
@@ -239,6 +241,9 @@ sub td_recurse {
    my %diffs;
 
    # Fetch from source:
+   if ( $opts{b} ) {
+      print '-- ', $src_query, "\n";
+   }
    my $src_sth = $source->{dbh}->prepare($src_query);
    $src_sth->execute;
    while ( my $row = $src_sth->fetchrow_hashref ) {
@@ -249,6 +254,9 @@ sub td_recurse {
    }
 
    # Fetch from dest:
+   if ( $opts{b} ) {
+      print '-- ', $dst_query, "\n";
+   }
    my $dst_sth = $dest->{dbh}->prepare($dst_query);
    $dst_sth->execute;
    while ( my $row = $dst_sth->fetchrow_hashref ) {
@@ -473,7 +481,7 @@ sub td_grouped_checksum_query {
 sub bottomup {
 
    # Ensure branch factor is a power of two.
-   $opts{b} = max(2, 2 ** round( log($opts{B}) / log(2) ));
+   $opts{B} = max(2, 2 ** round( log($opts{B}) / log(2) ));
 
    # Store table prefix in hashes
    $source->{prefix} = "$opts{P}_s_";
@@ -639,18 +647,19 @@ sub bu_merge_tree {
 
    my $level = $levels + 1;
    my @bad_parents; # List of parents that must differ at current level
+   my ( $rows_in_src, $rows_in_dst ) = (0,0);
 
    # Lists of rows that differ in the target tables.
    my (@to_update, @to_delete, @to_insert);
    my (@bulk_insert, @bulk_delete);
    
    do {
-# TODO: print informational messages: at level x, currently x rows yet to
-      # examine/potentially bad, examining x parent-level rows, have found x
-      # rows known to be bad
       my $src_sth = bu_fetch_level($source, $level, @bad_parents);
       my $dst_sth = bu_fetch_level($dest,   $level, @bad_parents);
-      @bad_parents = (); # Clear out for next loop once used to fetch this loop
+
+      # Reset for next loop, once used to fetch this loop
+      @bad_parents = ();
+      $rows_in_src = $rows_in_dst = 0;
 
       my @src_key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{key}}};
       my @dst_key = $level ? '__par' : @{$dest->{info}->{keys}->{$dest->{key}}};
@@ -661,9 +670,22 @@ sub bu_merge_tree {
       MERGE:
       while ( 1 ) { # Exit this loop via 'last'
 
-         $sr ||= $src_sth->fetchrow_hashref;
-         $dr ||= $dst_sth->fetchrow_hashref;
+         if ( !$sr ) {
+            $sr = $src_sth->fetchrow_hashref;
+            if ( $sr ) {
+               $rows_in_src += $sr->{__cnt} || 1;
+            }
+         }
+         if ( !$dr ) {
+            $dr = $dst_sth->fetchrow_hashref;
+            if ( $dr ) {
+               $rows_in_dst += $dr->{__cnt} || 1;
+            }
+         }
+
          last MERGE unless $sr || $dr;
+
+
 # TODO: we can already look at $sr->{__cnt} - $dr->{__cnt}
 # and abort if rowcount too high
 
@@ -709,6 +731,15 @@ sub bu_merge_tree {
          }
       }
 
+      if ( $opts{e} ) {
+         printf("-- At level %-3d %4d parents %4d src rows %4d dst rows\n",
+            $level, scalar(@bad_parents), $rows_in_src, $rows_in_dst);
+         printf("-- At level %-3d %4d updates %4d inserts  %4d deletes"
+            . " %4d bulk-ins %4d bulk-del\n",
+            $level, scalar(@to_update), scalar(@to_insert), scalar(@to_delete),
+            scalar(@bulk_insert), scalar(@bulk_delete));
+      }
+
       $level--;
    } while ( $level >= 0 && @bad_parents );
 
@@ -732,10 +763,11 @@ sub bu_handle_bulk_change {
 
    foreach my $row ( @rows ) {
       my $modulo = $row->{__par};
-      my $vals = $info->{dbh}->selectall_arrayref(
-         "SELECT $pk FROM $info->{prefix}_0 "
-            . "WHERE __rem & $modulo = $modulo",
-         { Slice => {} });
+      my $query  =  "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $modulo = $modulo";
+      if ( $opts{b} ) {
+         print '-- ', $query, "\n";
+      }
+      my $vals = $info->{dbh}->selectall_arrayref($query, { Slice => {} });
       push @rows_to_do, @$vals;
    }
 
@@ -829,7 +861,9 @@ sub bu_fetch_level {
              : col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
 
    my $query = "SELECT $cols, __crc FROM $tbl $where ORDER BY $order";
-   print $query, "\n";
+   if ( $opts{b} ) {
+      print '-- ', $query, "\n";
+   }
    my $sth = $dbh->prepare($query);
    $sth->execute();
    return $sth;
@@ -917,6 +951,9 @@ sub estimate_size {
       . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
       . ") FROM $info->{db_tbl} "
       . "WHERE COALESCE(`$pkcol`, `$pkcol`) = `$pkcol`";
+   if ( $opts{b} ) {
+      print '-- ', $query, "\n";
+   }
    return $info->{dbh}->selectrow_hashref($query)->{rows};
 }
 
@@ -947,7 +984,7 @@ sub get_dbh {
       "DBI:mysql:$conn->{database};host=$conn->{host};port=$conn->{port}",
       $conn->{user}, $conn->{pass},
       { RaiseError => 1, PrintError => 1, AutoCommit => $opts{k} ? 0 : 1 } )
-      or die("Can't connect to DB: $!");
+      or die("Can't connect to DB: $OS_ERROR");
 }
 
 sub col_list {
