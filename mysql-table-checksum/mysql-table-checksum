@@ -322,7 +322,7 @@ sub get_dbh {
    $db ||= '';
    return DBI->connect(
       "DBI:mysql:$db;host=$host;port=$opts{o}", $opts{u}, $opts{p}, $db_options )
-      or die("Can't connect to DB: $!");
+      or die("Can't connect to DB: $OS_ERROR");
 }
 
 sub do_var_crc {

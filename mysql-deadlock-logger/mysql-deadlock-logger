@@ -236,7 +236,7 @@ my $dbh = DBI->connect(
       map  { "$_=$source->{$_}" }
       grep { defined $source->{$_} } qw(database host port)),
    $source->{user}, $source->{pass}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-   or die("Can't connect to DB: $!");
+   or die("Can't connect to DB: $OS_ERROR");
 
 my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
 
@@ -376,7 +376,7 @@ if ( $dest && $dest->{table} ) {
          map  { "$_=$dest->{$_}" }
          grep { defined $dest->{$_} } qw(database host port)),
       $dest->{user}, $dest->{pass}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-      or die("Can't connect to DB: $!");
+      or die("Can't connect to DB: $OS_ERROR");
    my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
    my $parms = join(',', map { '?' } @cols);
    my $query = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
