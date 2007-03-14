@@ -95,7 +95,7 @@ if ( $opts{e} ) {
 if ( $opts{l} ) {
    print "Usage: $PROGRAM_NAME <options>\n\n  Options:\n\n";
    foreach my $key ( @opt_keys ) {
-      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^=]*))?/;
+      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
       $long  = "--$long" . ( $short ? ',' : '' );
       $short = $short ? " -$short" : '';
       printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
