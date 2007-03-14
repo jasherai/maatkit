@@ -71,7 +71,7 @@ my %opt_spec = (
    E => { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
    T => { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
    L => { s => 'levels|L=i',       d => 'Number of levels in bottom-up algorithm' },
-   C => { s => 'cleanup|C',        d => 'Clean up scratch tables for bottom-up algorithm' },
+   C => { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm' },
 );
 
 my @opt_keys = qw( h a p b e x d r f c B P E T L C );
@@ -103,7 +103,8 @@ my %opts = (
 # ############################################################################
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys )
+   or $opts{h} = 1;
 
 # Make comma-separated lists into hashes.
 if ( $opts{c} ) {
@@ -154,7 +155,7 @@ my $dest   = parse_dsn(shift(@ARGV), $source, $dsn_defaults);
 if ( $opts{h} || !$dest ) {
    print "Usage: $PROGRAM_NAME [OPTION].. <source> <dest>\n\n  Options:\n\n";
    foreach my $key ( @opt_keys ) {
-      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^=]*))?/;
+      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
       $long  = "--$long" . ( $short ? ',' : '' );
       $short = $short ? " -$short" : '';
       printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
