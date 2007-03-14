@@ -6,6 +6,7 @@
 # Add a --paranoid flag that'll checksum each column separately
 # Allow using GROUP_CONCAT
 # Allow to specify separator
+# Allow to use different user/pass on diffeerent servers
 
 # This program checksums MySQL tables on one or more servers.
 #
