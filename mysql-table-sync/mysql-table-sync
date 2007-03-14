@@ -5,10 +5,6 @@
 # top-down with where clauses allows mass insert/deletes much more efficiently.
 # Look up the law of large numbers and justify why not to use SUM()
 # Explain why @crc & $mask is the same as mod()
-# TODO examine why md5 returns values like 7FFFFFFFFFFFFFFF7FFFFFFFFFFFFFFF and
-# 44AB717791FDA9610000000000000000
-# Allow using a different key than primary key (look for PRIMARY everywhere and
-# s/// it)
 # Verify that the grouping isn't just the whole primary key
 # Allow a threshold of expensiveness
 # Allow soething other than REPLACE so not all columns get updated when the user
