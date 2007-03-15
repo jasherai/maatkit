@@ -379,7 +379,7 @@ sub find_fks {
 
 =head1 NAME
 
-duplicate-index-checker - Find possible duplicate indexes and foreign keys on
+mysql-duplicate-index-checker - Find possible duplicate indexes and foreign keys on
 MySQL tables.
 
 =head1 DESCRIPTION
