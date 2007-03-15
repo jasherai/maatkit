@@ -8,3 +8,4 @@ query sniper:
    * http://www.stillhq.com/mysql/000008.html
 stale table sniper: remove tables with certain patterns, or older than a certain
 amount.
+grant-extractor: get all grants for all users, sorted and canonicalized.
