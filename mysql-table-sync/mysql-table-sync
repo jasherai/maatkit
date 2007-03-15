@@ -495,7 +495,7 @@ sub bottomup {
    my $level_est_1 = bu_num_levels($est_size);
 
    # Determine the data type needed for the remainder column.
-   my $rem_col        = 'int'; # TODO bu_rem_type($est_size);
+   my $rem_col        = bu_size_to_type(( $opts{B} ** ($level_est_1 + 2)) - 1);
    $source->{rem_col} = $rem_col;
    $dest->{rem_col}   = $rem_col;
 
@@ -507,20 +507,12 @@ sub bottomup {
    my $levels      = bu_num_levels( $true_size );
 
    # Similar to the above, choose a type for the __cnt columns
-   # TODO
-   my $cnt_size = ceil( log($true_size) / log(2) );
-   my $cnt_col  = $cnt_size <= 8  ? 'TINYINT'
-                : $cnt_size <= 16 ? 'SMALLINT'
-                : $cnt_size <= 24 ? 'MEDIUMINT'
-                : $cnt_size <= 32 ? 'INT'
-                :                   'BIGINT';
-                $cnt_size = 'int'; #TODO
+   my $cnt_col        = bu_size_to_type($true_size);
    $source->{cnt_col} = $cnt_col;
    $dest->{cnt_col}   = $cnt_col;
 
    # Check and possibly rebuild remainders.
-   # TODO review levels
-   if ( $levels > $level_est_1 + 2 && $levels > 8 ) {
+   if ( $levels > $level_est_1 + 2 ) {
       # The initial estimated number of levels caused the first-level tables to
       # have too-small data types, and I don't want to run ALTER TABLE; I'd
       # rather ask the user to re-run.
@@ -690,10 +682,6 @@ sub bu_merge_tree {
 
          last MERGE unless $sr || $dr;
 
-
-# TODO: we can already look at $sr->{__cnt} - $dr->{__cnt}
-# and abort if rowcount too high
-
          # If the current row is the "same row" on both sides...
          if ( $sr && $dr && bu_key_eq($sr, $dr, \@src_key, \@dst_key) ) {
 
@@ -744,6 +732,11 @@ sub bu_merge_tree {
             $level, scalar(@to_update), scalar(@to_insert), scalar(@to_delete),
             scalar(@bulk_insert), scalar(@bulk_delete));
       }
+
+      # TODO if ( $opts{m} < @bad_parents
+# TODO: we can already look at $sr->{__cnt} - $dr->{__cnt}
+# and abort if rowcount too high
+
 
       $level--;
    } while ( $level >= 0 && @bad_parents );
@@ -910,6 +903,7 @@ sub bu_num_levels {
    return int( log( $size / $opts{B} ) / log(2) );
 }
 
+# Returns the maximum modulus that the tables will need.
 sub bu_size_to_type {
    my ( $size ) = @_;
    return $size < 256        ? 'TINYINT'
