@@ -1,5 +1,8 @@
 #!/usr/bin/perl
 
+# Advantage of bottom-up: parts can be parallelized
+# TODO: put acknowledgements in the perdoc
+# cite: Remote Comparison of Database Tables
 # Allow iud param to only do inserts/updates/deletes
 # Explain structure of tables, what __rem/__par mean etc
 # top-down with where clauses allows mass insert/deletes much more efficiently.
@@ -62,8 +65,9 @@ my %opt_spec = (
    b => { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
    e => { s => 'explain|e=i',      d => 'Explain changes at levels 0..n in top-down algorithm' },
    x => { s => 'execute|x',        d => 'Execute queries required to sync' },
+   s => { s => 'strategy|s=s',     d => 'Query strategy when syncing' },
    d => { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
-   r => { s => 'replicate|r',      d => 'Change on master (source) and let replication propagate'},
+   r => { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
    f => { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
    c => { s => 'columns|c=s',      d => 'Comma-separated column list' },
    B => { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm' },
@@ -74,7 +78,12 @@ my %opt_spec = (
    C => { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm' },
 );
 
-my @opt_keys = qw( h a p b e x d r f c B P E T S C );
+my @opt_keys = qw( h a p b e x s d r f c B P E T S C );
+
+# Generate a quasi-random string that's constant in a given day
+# TODO: does this work on windows?
+my $prefix = '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00');
+$prefix =~ s/\W+/_/g;
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -85,13 +94,14 @@ my %opts = (
    b => 0,
    e => 0,
    x => 0,
+   s => 's',
    d => '',
    r => 0,
    f => 0,
    c => '',
    B => 128,
    # Generate a quasi-random string that's constant in a given day
-   P => '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00'),
+   P => $prefix,
    E => 'InnoDB',
    T => '',
    S => 0,
@@ -113,6 +123,9 @@ if ( $opts{c} ) {
 $opts{T} = $opts{T} ? 'TEMPORARY' : '';
 if ( !defined $opts{C} ) {
    $opts{C} = !$opts{T};
+}
+if ( $opts{m} ) {
+   $opts{s} = 'r';
 }
 
 # ############################################################################
@@ -473,11 +486,6 @@ sub td_grouped_checksum_query {
 
 # ############################################################################
 # Bottom-up algorithm
-# TODO: unexpected advantage: building the tree is totally server-independent
-# and can be done in parallel.  Ooops, except for count(*) # TODO: fork off
-# kids for this and their return code can be count(*).
-# TODO: put acknowledgements in the perdoc
-# cite: Remote Comparison of Database Tables
 # ############################################################################
 
 sub bottomup {
@@ -724,25 +732,31 @@ sub bu_merge_tree {
          }
       }
 
+      my $sum_bulk_ins = sum(map { $_->{__cnt} } @bulk_insert) || 0;
+      my $sum_bulk_del = sum(map { $_->{__cnt} } @bulk_delete) || 0;
+
       if ( $opts{e} ) {
          printf("-- Level %1d summary: %4d parents %4d src rows %4d dst rows\n",
             $level, scalar(@bad_parents), $rows_in_src, $rows_in_dst);
-         printf("-- Level %1d changes: %4d updates %4d inserts  %4d deletes"
-            . " %4d bulk-ins %4d bulk-del\n",
-            $level, scalar(@to_update), scalar(@to_insert), scalar(@to_delete),
-            scalar(@bulk_insert), scalar(@bulk_delete));
+         printf("-- Level %1d changes: %4d updates %4d inserts  %4d deletes %4d total\n",
+            $level, scalar(@to_update), scalar(@to_insert) + $sum_bulk_ins,
+            scalar(@to_delete) + $sum_bulk_del,
+            scalar(@to_update) + scalar(@to_insert) + $sum_bulk_ins
+               + scalar(@to_delete) + $sum_bulk_del
+         );
+         printf("-- Level %1d bulk-op: %4d inserts %4d ins-rows %4d deletes %4d del-rows\n",
+            $level, scalar(@bulk_insert), $sum_bulk_ins,
+            scalar(@bulk_delete), $sum_bulk_del);
       }
 
       # TODO if ( $opts{m} < @bad_parents
-# TODO: we can already look at $sr->{__cnt} - $dr->{__cnt}
-# and abort if rowcount too high
-
+      # TODO: we can already look at $sr->{__cnt} - $dr->{__cnt}
+      # and abort if rowcount too high
 
       $level--;
    } while ( $level >= 0 && @bad_parents );
 
-# TODO: estimate # rows needing change before going further
-
+   # TODO: estimate # rows needing change before going further
    bu_handle_data_change('UPDATE', @to_update);
    bu_handle_data_change('INSERT', @to_insert);
    bu_handle_data_change('DELETE', @to_delete);
@@ -803,9 +817,11 @@ sub bu_handle_data_change {
    my ( $action, @rows ) = @_;
 
    my $which = $opts{r} ? $source : $dest;
+   my $dbh   = $which->{dbh};
+
    foreach my $row ( @rows ) {
       delete $row->{__crc}; # Now the row can be used as a WHERE clause
-      my $crit = make_where_clause($which->{dbh}, $row);
+      my $crit = make_where_clause($dbh, $row);
 
       if ( $action eq 'DELETE' ) {
          my $query = "DELETE FROM $which->{db_tbl} $crit";
@@ -813,21 +829,32 @@ sub bu_handle_data_change {
             print STDOUT $query, ";\n";
          }
          if ( $opts{x} ) {
-            $which->{dbh}->do($query);
+            $dbh->do($query);
          }
       }
       else {
          my $vals = $source->{dbh}->selectrow_hashref(
             "SELECT $source->{cols} FROM $source->{db_tbl} $crit");
-         my $query = "REPLACE INTO $which->{db_tbl}($which->{cols}) VALUES("
-            . join(',', map { $which->{dbh}->quote($vals->{$_}) }
-               @{$which->{info}->{cols}}) . ")";
+
+         my $query;
+         if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
+            my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
+            $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
+               . join(',', map { $dbh->quote($vals->{$_}) }
+                  @{$which->{info}->{cols}}) . ")";
+         }
+         else {
+            $query = "UPDATE $which->{db_tbl} SET "
+               . join(',',
+                  map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($vals->{$_}) }
+                  @{$which->{info}->{cols}});
+         }
 
          if ( $opts{p} ) {
             print STDOUT $query, ";\n";
          }
          if ( $opts{x} ) {
-            $which->{dbh}->do($query);
+            $dbh->do($query);
             # TODO commit?
          }
       }
