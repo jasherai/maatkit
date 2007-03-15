@@ -42,7 +42,7 @@ use Data::Dumper;
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use List::Util qw(max);
+use List::Util qw(sum max);
 use POSIX qw(ceil);
 
 our $VERSION = '@VERSION@';
@@ -70,11 +70,11 @@ my %opt_spec = (
    P => { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
    E => { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
    T => { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
-   L => { s => 'levels|L=i',       d => 'Number of levels in bottom-up algorithm' },
+   S => { s => 'size|S=i',         d => 'Table size in bottom-up algorithm' },
    C => { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm' },
 );
 
-my @opt_keys = qw( h a p b e x d r f c B P E T L C );
+my @opt_keys = qw( h a p b e x d r f c B P E T S C );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -94,7 +94,7 @@ my %opts = (
    P => '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00'),
    E => 'InnoDB',
    T => '',
-   L => 0,
+   S => 0,
    C => undef,
 );
 
@@ -491,47 +491,45 @@ sub bottomup {
 
    # Begin with estimates of table size to allow calculating the checksum
    # remainder on the first level.
-   my $est_size = max( estimate_size($source), estimate_size($dest) );
-   # TODO use  $opts{L}
-   my $est_1     = round( log( $est_size / $opts{B} ) / log(2) );
+   my $est_size    = $opts{S} || max( estimate_size($source), estimate_size($dest) );
+   my $level_est_1 = bu_num_levels($est_size);
 
    # Determine the data type needed for the remainder column.
-   my $rem_col  = $est_1 + 2 <= 8  ? 'TINYINT'
-                : $est_1 + 2 <= 16 ? 'SMALLINT'
-                : $est_1 + 2 <= 24 ? 'MEDIUMINT'
-                : $est_1 + 2 <= 32 ? 'INT'
-                :                    'BIGINT';
+   my $rem_col        = 'int'; # TODO bu_rem_type($est_size);
    $source->{rem_col} = $rem_col;
    $dest->{rem_col}   = $rem_col;
 
    # Build the initial checksum tables and calculate how many summary tables to build.  
-   my $src_size  = bu_build_checksum( $source, $est_1 );
-   my $est_2     = round( log( max( $est_size, $src_size ) / $opts{B} ) / log(2) );
-   my $dst_size  = bu_build_checksum( $dest, $est_2 );
-   my $true_size = max( $src_size, $dst_size );
-   my $levels    = round( log( $true_size / $opts{B} ) / log(2) );
+   my $src_size    = bu_build_checksum( $source, $level_est_1 );
+   my $level_est_2 = bu_num_levels( max( $est_size, $src_size ) );
+   my $dst_size    = bu_build_checksum( $dest, $level_est_2 );
+   my $true_size   = max( $src_size, $dst_size );
+   my $levels      = bu_num_levels( $true_size );
 
    # Similar to the above, choose a type for the __cnt columns
+   # TODO
    my $cnt_size = ceil( log($true_size) / log(2) );
    my $cnt_col  = $cnt_size <= 8  ? 'TINYINT'
                 : $cnt_size <= 16 ? 'SMALLINT'
                 : $cnt_size <= 24 ? 'MEDIUMINT'
                 : $cnt_size <= 32 ? 'INT'
                 :                   'BIGINT';
+                $cnt_size = 'int'; #TODO
    $source->{cnt_col} = $cnt_col;
    $dest->{cnt_col}   = $cnt_col;
 
    # Check and possibly rebuild remainders.
-   if ( $levels > $est_1 + 2 && $levels > 8 ) {
+   # TODO review levels
+   if ( $levels > $level_est_1 + 2 && $levels > 8 ) {
       # The initial estimated number of levels caused the first-level tables to
       # have too-small data types, and I don't want to run ALTER TABLE; I'd
       # rather ask the user to re-run.
-      die "Estimated number of levels $est_1 too small; re-run with --levels $levels";
+      die "Table size estimates ($est_size) were too small; specify --size $true_size";
    }
-   if ( $est_1 != $levels ) {
+   if ( $level_est_1 != $levels ) {
       bu_rebuild_remainder($source, $levels);
    }
-   if ( $est_2 != $levels ) {
+   if ( $level_est_2 != $levels ) {
       bu_rebuild_remainder($dest, $levels);
    }
 
@@ -556,7 +554,7 @@ sub bu_build_checksum {
    my $null = @null
             ? ( ", CONCAT(" . join( ', ', map {"ISNULL(`$_`)"} @null ) . ")" ) : '';
    my $name = "$info->{prefix}_0";
-   my $mask = (2 ** $levels) - 1;
+   my $mask = ($opts{B} ** ($levels - 1)) - 1;
 
    # Create the table
    $dbh->do("DROP TABLE IF EXISTS $name");
@@ -587,7 +585,7 @@ sub bu_build_checksum {
 sub bu_rebuild_remainder {
    my ( $info, $levels ) = @_;
    my $pk   = col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
-   my $mask = (2 ** $levels) - 1;
+   my $mask = ($opts{B} ** ($levels - 1)) - 1;
    my $name = "$info->{prefix}_0";
    my $query = <<"   END";
       UPDATE `$info->{database}`.`$name` SET __rem =
@@ -597,18 +595,20 @@ sub bu_rebuild_remainder {
 }
 
 # Builds the nth-level summary tables.
+# TODO: allow to use other hash functions like SHA1, and genericize the substringing code
+# and the required size of the columns.
 sub bu_build_tree {
    my ($info, $levels) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
 
-   # Do from 1 to levels + 1 because level 0 has already been built.
-   foreach my $i ( 1 .. $levels + 1 ) {
-      my $modulo   = $opts{B} ** ( $levels - $i );
+   # Do from 1 because level 0 has already been built.
+   foreach my $i ( 1 .. $levels ) {
+      my $modulo   = int($opts{B} ** ( $levels - $i - 1 ));
       my $last_mod = $modulo * $opts{B};
       my $this_tbl = "$info->{prefix}_" . $i;
       my $last_tbl = "$info->{prefix}_" . ( $i - 1 );
-      my $mask     = $modulo - 1;
+      my $mask     = max(0, $modulo - 1);
       my $cnt_sum  = $i > 1 ? 'SUM(__cnt)' : 'COUNT(*)';
 
       # Create the table
@@ -626,14 +626,13 @@ sub bu_build_tree {
       $dbh->do($table_query);
 
       # Populate it
-      $dbh->do('SET @CRC := NULL');
       my $sum_query = <<"      END";
          INSERT INTO `$info->{database}`.`$this_tbl`
             (__par, __crc, __rem, __cnt)
          SELECT __rem,
             CONCAT(
-               LPAD(CONV(BIT_XOR(CAST(CONV(LEFT(\@CRC := MD5(__crc), 16), 16, 10) as unsigned)), 10, 16), 16, '0'),
-               LPAD(CONV(BIT_XOR(CAST(CONV(RIGHT(\@CRC,              16), 16, 10) as unsigned)), 10, 16), 16, '0')
+               LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(__crc, 1,  16), 16, 10) as unsigned)), 10, 16), 16, '0'),
+               LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(__crc, 17, 16), 16, 10) as unsigned)), 10, 16), 16, '0')
             ) AS this_crc,
             __rem & $mask AS this_remainder,
             $cnt_sum AS total_rows
@@ -645,12 +644,13 @@ sub bu_build_tree {
    }
 }
 
-# There are actually 2 more than $levels summary tables; there are tables 0 ..
-# $levels + 1 (see bu_build_tree).
+# There are actually 1 more than $levels summary tables; there are tables 0 ..
+# $levels (see bu_build_tree).  Level 0 has a different structure.  It has
+# primary keys instead of a __par pointer.
 sub bu_merge_tree {
    my ($dest, $source, $levels) = @_;
 
-   my $level = $levels + 1;
+   my $level = $levels;
    my @bad_parents; # List of parents that must differ at current level
    my ( $rows_in_src, $rows_in_dst ) = (0,0);
 
@@ -737,9 +737,9 @@ sub bu_merge_tree {
       }
 
       if ( $opts{e} ) {
-         printf("-- At level %-3d %4d parents %4d src rows %4d dst rows\n",
+         printf("-- Level %1d summary: %4d parents %4d src rows %4d dst rows\n",
             $level, scalar(@bad_parents), $rows_in_src, $rows_in_dst);
-         printf("-- At level %-3d %4d updates %4d inserts  %4d deletes"
+         printf("-- Level %1d changes: %4d updates %4d inserts  %4d deletes"
             . " %4d bulk-ins %4d bulk-del\n",
             $level, scalar(@to_update), scalar(@to_insert), scalar(@to_delete),
             scalar(@bulk_insert), scalar(@bulk_delete));
@@ -753,8 +753,8 @@ sub bu_merge_tree {
    bu_handle_data_change('UPDATE', @to_update);
    bu_handle_data_change('INSERT', @to_insert);
    bu_handle_data_change('DELETE', @to_delete);
-   bu_handle_bulk_change('INSERT', $source, @bulk_insert);
-   bu_handle_bulk_change('DELETE', $dest,   @bulk_delete);
+   bu_handle_bulk_change('INSERT', $levels, $source, @bulk_insert);
+   bu_handle_bulk_change('DELETE', $levels, $dest,   @bulk_delete);
 }
 
 sub bu_cleanup_tree {
@@ -771,18 +771,31 @@ sub bu_cleanup_tree {
    }
 }
 
-# TODO: Conceptually, we're doing SELECT PKs FROM table0 where __rem & $foo =
-   # $foo but maybe that can be optimized into an in() list
 # Finds atomic rows that got folded into an entirely insertable or deleteable
 # part of the tree.
 sub bu_handle_bulk_change {
-   my ( $action, $info, @rows ) = @_;
+   my ( $action, $levels, $info, @rows ) = @_;
    my $pk = col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
    my @rows_to_do;
 
    foreach my $row ( @rows ) {
-      my $modulo = $row->{__par};
-      my $query  =  "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $modulo = $modulo";
+
+      # This is logically equivalent, but then MySQL won't use indexes:
+      # my $mask = ($opts{B} ** ($levels - 1)) - 1;
+      # "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $mask = $row->{__par}"
+
+      my $parent   = $row->{__par};
+      my @val_list = $parent;
+      foreach my $i ( 0 .. $levels ) {
+         my $exp = $opts{B} ** $i;
+         next unless $exp > $parent;
+         push @val_list, sum(@val_list, $exp);
+      }
+      my $val_list = join(',', @val_list);
+      print $val_list, "\n"; # TODO I am sure this isn't right.
+
+      my $query = "SELECT $pk FROM $info->{prefix}_0 WHERE __rem IN($val_list)";
+
       if ( $opts{b} ) {
          print '-- ', $query, "\n";
       }
@@ -886,6 +899,24 @@ sub bu_fetch_level {
    my $sth = $dbh->prepare($query);
    $sth->execute();
    return $sth;
+}
+
+# Returns how many levels of tables you need to build for a table of a given
+# size.  If your B factor is 4 and you pass in 100, you need the summaries
+# to be grouping mod 64, 16, 4, 1 so you need 4 levels (5 total including 0,
+# which is row-for-row with the real table).
+sub bu_num_levels {
+   my ( $size ) = @_;
+   return int( log( $size / $opts{B} ) / log(2) );
+}
+
+sub bu_size_to_type {
+   my ( $size ) = @_;
+   return $size < 256        ? 'TINYINT'
+        : $size < 65536      ? 'SMALLINT'
+        : $size < 16777216   ? 'MEDIUMINT'
+        : $size < 4294967296 ? 'INT'
+        :                      'BIGINT';
 }
 
 # ############################################################################
