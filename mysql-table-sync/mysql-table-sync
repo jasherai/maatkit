@@ -388,32 +388,10 @@ sub td_bottom_out {
 
 sub td_handle_data_change {
    my ( $action, $row, $where ) = @_;
-
    my $which = $opts{r} ? $source : $dest;
-   my $crit = make_where_clause($which->{dbh}, $where);
-
-   if ( $action eq 'DELETE' ) {
-      my $query = "DELETE FROM $which->{db_tbl} $crit";
-      if ( $opts{p} ) {
-         print STDOUT $query, ";\n";
-      }
-      if ( $opts{x} ) {
-         $which->{dbh}->do($query);
-      }
-   }
-   else {
-      my $vals = $source->{dbh}->selectrow_hashref("SELECT $source->{cols} FROM $source->{db_tbl} $crit");
-      my $query = "REPLACE INTO $which->{db_tbl}($which->{cols}) VALUES("
-         . join(',', map { $which->{dbh}->quote($vals->{$_}) } @{$which->{info}->{cols}}) . ")";
-
-      if ( $opts{p} ) {
-         print STDOUT $query, ";\n";
-      }
-      if ( $opts{x} ) {
-         $which->{dbh}->do($query);
-         # TODO commit?
-      }
-   }
+   my $dbh   = $which->{dbh};
+   my $crit  = make_where_clause($dbh, $where);
+   handle_data_change($action, $row, $crit);
 }
 
 sub td_ungrouped_checksum_query {
@@ -838,42 +816,7 @@ sub bu_handle_data_change {
    foreach my $row ( @rows ) {
       delete $row->{__crc}; # Now the row can be used as a WHERE clause
       my $crit = make_where_clause($dbh, $row);
-
-      if ( $action eq 'DELETE' ) {
-         my $query = "DELETE FROM $which->{db_tbl} $crit";
-         if ( $opts{p} ) {
-            print STDOUT $query, ";\n";
-         }
-         if ( $opts{x} ) {
-            $dbh->do($query);
-         }
-      }
-      else {
-         my $vals = $source->{dbh}->selectrow_hashref(
-            "SELECT $source->{cols} FROM $source->{db_tbl} $crit");
-
-         my $query;
-         if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
-            my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
-            $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
-               . join(',', map { $dbh->quote($vals->{$_}) }
-                  @{$which->{info}->{cols}}) . ")";
-         }
-         else {
-            $query = "UPDATE $which->{db_tbl} SET "
-               . join(',',
-                  map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($vals->{$_}) }
-                  @{$which->{info}->{cols}});
-         }
-
-         if ( $opts{p} ) {
-            print STDOUT $query, ";\n";
-         }
-         if ( $opts{x} ) {
-            $dbh->do($query);
-            # TODO commit?
-         }
-      }
+      handle_data_change($action, $row, $crit);
    }
 }
 
@@ -959,6 +902,42 @@ sub bu_size_to_type {
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+# Code factored out of bu_handle_data_change and td_handle_data_change.
+sub handle_data_change {
+   my ( $action, $row, $crit ) = @_;
+   my $which = $opts{r} ? $source : $dest;
+   my $dbh   = $which->{dbh};
+   my $query;
+
+   if ( $action eq 'DELETE' ) {
+      $query = "DELETE FROM $which->{db_tbl} $crit";
+   }
+   else {
+      my $vals = $source->{dbh}->selectrow_hashref(
+         "SELECT $source->{cols} FROM $source->{db_tbl} $crit");
+      if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
+         my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
+         $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
+            . join(',', map { $dbh->quote($vals->{$_}) }
+               @{$which->{info}->{cols}}) . ")";
+      }
+      else {
+         $query = "UPDATE $which->{db_tbl} SET "
+            . join(',',
+               map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($vals->{$_}) }
+               @{$which->{info}->{cols}});
+      }
+   }
+
+   if ( $opts{p} ) {
+      print STDOUT $query, ";\n";
+   }
+   if ( $opts{x} ) {
+      $dbh->do($query);
+         # TODO commit?
+   }
+}
 
 # Parses a DSN in login:pass@host:port/database.table:key format
 sub parse_dsn {
