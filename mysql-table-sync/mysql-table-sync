@@ -38,7 +38,6 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Data::Dumper;
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
@@ -669,7 +668,7 @@ sub bu_merge_tree {
          last MERGE unless $sr || $dr;
 
          # If the current row is the "same row" on both sides...
-         if ( $sr && $dr && bu_key_eq($sr, $dr, \@src_key, \@dst_key) ) {
+         if ( $sr && $dr && bu_key_eq($source, $sr, $dr, \@src_key, \@dst_key) ) {
 
             # The "same" row descends from parents that differ.
             if ( $sr->{__crc} ne $dr->{__crc} ) {
@@ -688,7 +687,7 @@ sub bu_merge_tree {
          }
 
          # The row in the source doesn't exist at the destination
-         elsif ( !$dr || ( $sr && bu_key_le($sr, $dr, \@src_key, \@dst_key) ) ) {
+         elsif ( !$dr || ( $sr && bu_key_le($source, $sr, $dr, \@src_key, \@dst_key) ) ) {
             if ( $level ) {
                push @bulk_insert, $sr;
                if ( $level && $opts{v} > 1 ) {
@@ -707,7 +706,7 @@ sub bu_merge_tree {
          }
 
          # Symmetric to the above
-         elsif ( !$sr || ( $dr && bu_key_le($dr, $sr, \@dst_key, \@src_key) ) ) {
+         elsif ( !$sr || ( $dr && bu_key_le($source, $dr, $sr, \@dst_key, \@src_key) ) ) {
             if ( $level ) {
                push @bulk_delete, $dr;
                if ( $level && $opts{v} > 1 ) {
@@ -781,12 +780,13 @@ sub bu_handle_bulk_change {
    return unless $action =~ m/$opts{o}/i;
    my $pk = col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
    my @rows_to_do;
+   my $mask = ($opts{B} ** ($levels - 1)) - 1;
 
    foreach my $row ( @rows ) {
 
       # TODO: optimization.
       # This is logically correct, but MySQL won't use indexes:
-      # "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $row->{__par} = $row->{__par}"
+      # "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $mask = $row->{__par}"
       # This ends up looking like __rem & 3 = 3.  This will match any of the
       # following (partial list):
       # +-------+--------+
@@ -811,7 +811,7 @@ sub bu_handle_bulk_change {
       # values.
 
       my $parent = $row->{__par};
-      my $query  = "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $parent = $parent";
+      my $query  = "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $mask = $parent";
       debug_print($query);
       my $vals = $info->{dbh}->selectall_arrayref($query, { Slice => {} });
       push @rows_to_do, @$vals;
@@ -838,17 +838,18 @@ sub bu_handle_data_change {
 # reaching this function.  NULL sorts before defined values in MySQL, so I
 # consider undef "less than."
 sub bu_key_le {
-   my ( $r1, $r2, $key_1, $key_2 ) = @_;
+   my ( $info, $r1, $r2, $key_1, $key_2 ) = @_;
    foreach my $i ( 0 .. @$key_1 - 1 ) {
       my $l = $r1->{$key_1->[$i]};
       my $r = $r2->{$key_2->[$i]};
+      my $n = $key_1->[$i] eq '__par' || $info->{info}->{num_hash}->{$key_1->[$i]}; # Whether numeric col
       if ( (defined $l && !defined $r)
-         || ( defined $l && defined $r && $l gt $r )
+         || ( defined $l && defined $r && ($n ? $l > $r : $l gt $r) )
       ) {
          return 0;
       }
       elsif ( (!defined $l && defined $r)
-         || ( defined $l && defined $r && $l lt $r )
+         || ( defined $l && defined $r && ($n ? $l < $r : $l lt $r) )
       ) {
          return 1;
       }
@@ -857,12 +858,13 @@ sub bu_key_le {
 }
 
 sub bu_key_eq {
-   my ( $r1, $r2, $key_1, $key_2 ) = @_;
+   my ( $info, $r1, $r2, $key_1, $key_2 ) = @_;
    foreach my $i ( 0 .. @$key_1 - 1 ) {
       my $l = $r1->{$key_1->[$i]};
       my $r = $r2->{$key_2->[$i]};
+      my $n = $key_1->[$i] eq '__par' || $info->{info}->{num_hash}->{$key_1->[$i]}; # Whether numeric col
       my $parity = defined($l) + defined($r);
-      if ( $parity == 1 || ( $parity == 2 && $l ne $r )) {
+      if ( $parity == 1 || ( $parity == 2 && ($n ? $l != $r : $l ne $r) )) {
          return 0;
       }
    }
@@ -997,6 +999,8 @@ sub get_tbl_struct {
    my $ddl = ($info->{dbh}->selectrow_array("SHOW CREATE TABLE $info->{db_tbl}"))[1];
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   my @nums = map  { $_ =~ m/`([^`]+)`/g }
+              grep { $_ =~ m/`[^`]+` (?:(?:tiny|big|medium|small)?int|float|double|decimal)/ } @defs;
    my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
    my %keys =
       map {
@@ -1020,6 +1024,8 @@ sub get_tbl_struct {
       null_hash => { map { $_ => 1 } @null },
       keys      => \%keys,
       defs      => \%alldefs,
+      nums      => \@nums,
+      num_hash  => { map { $_ => 1 } @nums },
    };
 }
 
