@@ -10,7 +10,6 @@
 # Look up the law of large numbers and justify why not to use SUM()
 # Explain why @crc & $mask is the same as mod()
 # Allow a threshold of expensiveness
-# Allow to calculate, use, and delete summary tables separately
 # TODO: another algorithm: binary search for where the corruption starts, say a
 # chunk at a time of 10000 from start/end of table, then when a different chunk is
 # found, binary search within that chunk to find the first row and report it.
@@ -74,10 +73,12 @@ my %opt_spec = (
    E => { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
    T => { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
    S => { s => 'size|S=i',         d => 'Table size in bottom-up algorithm' },
+   U => { s => 'build|U!',         d => 'Build tables for bottom-up algorithm' },
+   A => { s => 'analyze|A',        d => 'Analyze (find/fix/print) in bottom-up algorithm' },
    C => { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm' },
 );
 
-my @opt_keys = qw( h a e p b v x o m s d r f c B P E T S C );
+my @opt_keys = qw( h a e p b v x o m s d r f c B P E T S U A C );
 
 # Generate a quasi-random string that's constant in a given day
 # TODO: does this work on windows?
@@ -106,6 +107,8 @@ my %opts = (
    E => 'InnoDB',
    T => '',
    S => 0,
+   U => 1,
+   A => 1,
    C => undef,
 );
 
@@ -173,6 +176,7 @@ if ( $opts{h} || !$dest ) {
    print "Usage: $PROGRAM_NAME [OPTION].. <source> <dest>\n\n  Options:\n\n";
    foreach my $key ( @opt_keys ) {
       my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+      $long  = "[no]$long" if $opt_spec{$key}->{s} =~ m/!/;
       $long  = "--$long" . ( $short ? ',' : '' );
       $short = $short ? " -$short" : '';
       printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
@@ -468,48 +472,59 @@ sub bottomup {
    $source->{prefix} = "$opts{P}_s_";
    $dest->{prefix}   = "$opts{P}_d_";
 
-   # Begin with estimates of table size to allow calculating the checksum
-   # remainder on the first level.
-   my $est_size    = $opts{S} || max( estimate_size($source), estimate_size($dest) );
-   my $level_est_1 = bu_num_levels($est_size);
+   my $levels = 0;
+   if ( $opts{U} ) {
 
-   # Determine the data type needed for the remainder column.
-   my $rem_col        = bu_size_to_type(( $opts{B} ** ($level_est_1 + 2)) - 1);
-   $source->{rem_col} = $rem_col;
-   $dest->{rem_col}   = $rem_col;
+      # Begin with estimates of table size to allow calculating the checksum
+      # remainder on the first level.
+      my $est_size    = $opts{S} || max( estimate_size($source), estimate_size($dest) );
+      my $level_est_1 = bu_num_levels($est_size);
 
-   # Build the initial checksum tables and calculate how many summary tables to build.  
-   my $src_size    = bu_build_checksum( $source, $level_est_1 );
-   my $level_est_2 = bu_num_levels( max( $est_size, $src_size ) );
-   my $dst_size    = bu_build_checksum( $dest, $level_est_2 );
-   my $true_size   = max( $src_size, $dst_size );
-   my $levels      = bu_num_levels( $true_size );
+      # Determine the data type needed for the remainder column.
+      my $rem_col        = bu_size_to_type(( $opts{B} ** ($level_est_1 + 2)) - 1);
+      $source->{rem_col} = $rem_col;
+      $dest->{rem_col}   = $rem_col;
 
-   # Similar to the above, choose a type for the __cnt columns
-   my $cnt_col        = bu_size_to_type($true_size);
-   $source->{cnt_col} = $cnt_col;
-   $dest->{cnt_col}   = $cnt_col;
+      # Build the initial checksum tables and calculate how many summary tables to build.  
+      my $src_size    = bu_build_checksum( $source, $level_est_1 );
+      my $level_est_2 = bu_num_levels( max( $est_size, $src_size ) );
+      my $dst_size    = bu_build_checksum( $dest, $level_est_2 );
+      my $true_size   = max( $src_size, $dst_size );
+      $levels         = bu_num_levels( $true_size );
 
-   # Check and possibly rebuild remainders.
-   if ( $levels > $level_est_1 + 2 ) {
-      # The initial estimated number of levels caused the first-level tables to
-      # have too-small data types, and I don't want to run ALTER TABLE; I'd
-      # rather ask the user to re-run.
-      die "Table size estimates ($est_size) were too small; specify --size $true_size";
+      # Similar to the above, choose a type for the __cnt columns
+      my $cnt_col        = bu_size_to_type($true_size);
+      $source->{cnt_col} = $cnt_col;
+      $dest->{cnt_col}   = $cnt_col;
+
+      # Check and possibly rebuild remainders.
+      if ( $levels > $level_est_1 + 2 ) {
+         # The initial estimated number of levels caused the first-level tables to
+         # have too-small data types, and I don't want to run ALTER TABLE; I'd
+         # rather ask the user to re-run.
+         die "Table size estimates ($est_size) were too small; specify --size $true_size";
+      }
+      if ( $level_est_1 != $levels ) {
+         bu_rebuild_remainder($source, $levels);
+      }
+      if ( $level_est_2 != $levels ) {
+         bu_rebuild_remainder($dest, $levels);
+      }
+
+      # Build the trees, merge them, and clean them up. TODO this part can be
+      # parallelized with fork.
+      bu_build_tree($source, $levels);
+      bu_build_tree($dest,   $levels);
    }
-   if ( $level_est_1 != $levels ) {
-      bu_rebuild_remainder($source, $levels);
-   }
-   if ( $level_est_2 != $levels ) {
-      bu_rebuild_remainder($dest, $levels);
+   else {
+      $levels  = bu_existing_levels( $source );
    }
 
-   # Build the trees, merge them, and clean them up. TODO this part can be
-   # parallelized with fork.
-   bu_build_tree($source, $levels);
-   bu_build_tree($dest,   $levels);
-   bu_merge_tree($dest,   $source, $levels);
-   bu_cleanup_tree($dest, $source) if $opts{C};
+   my $finished_work = 1;
+   if ( $opts{A} ) {
+      $finished_work = bu_merge_tree($dest,   $source, $levels);
+   }
+   bu_cleanup_tree($dest, $source) if $finished_work && $opts{C};
 }
 
 # Builds the first-level checksum table and returns the number of rows in it.
@@ -920,6 +935,15 @@ sub bu_size_to_type {
         : $size < 16777216   ? 'MEDIUMINT'
         : $size < 4294967296 ? 'INT'
         :                      'BIGINT';
+}
+
+# Figure out how many levels exist for pre-existing tables.
+sub bu_existing_levels {
+   my ($info) = @_;
+   my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES FROM `$info->{database}`")};
+   @tables    = grep { m/^$info->{prefix}_\d+$/ } @tables;
+   die "No existing tables with prefix $info->{prefix} found" unless @tables;
+   return max(map { $_ =~ m/(\d+)$/g } @tables);
 }
 
 # ############################################################################
