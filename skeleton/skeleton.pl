@@ -71,6 +71,7 @@ if ( $opts{l} || grep { !$opts{$_} && $opt_spec{$_}->{r} } @opt_keys ) {
    print "Usage: $PROGRAM_NAME <options> batch-file\n\n  Options:\n\n";
    foreach my $key ( @opt_keys ) {
       my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+      $long  = "[no]$long" if $opt_spec{$key}->{s} =~ m/!/;
       $long  = "--$long" . ( $short ? ',' : '' );
       $short = $short ? " -$short" : '';
       printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
