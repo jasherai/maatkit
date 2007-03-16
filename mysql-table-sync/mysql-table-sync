@@ -117,6 +117,8 @@ Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys )
    or $opts{h} = 1;
 
+$opts{h} = 1 if $opts{s} && $opts{s} !~ m/^(s|r)/;
+
 # Make comma-separated lists into hashes.
 if ( $opts{c} ) {
    $opts{c} = { map { $_ => 1 } split(/,\s*/, $opts{c}) };
@@ -125,7 +127,7 @@ $opts{T} = $opts{T} ? 'TEMPORARY' : '';
 if ( !defined $opts{C} ) {
    $opts{C} = !$opts{T};
 }
-if ( $opts{m} ) {
+if ( $opts{r} ) {
    $opts{s} = 'r';
 }
 
