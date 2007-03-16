@@ -259,9 +259,6 @@ sub td_recurse {
    my %diffs;
 
    # Fetch from source:
-   if ( $opts{b} ) {
-      print '-- ', $src_query, "\n";
-   }
    my $src_sth = $source->{dbh}->prepare($src_query);
    $src_sth->execute;
    while ( my $row = $src_sth->fetchrow_hashref ) {
@@ -272,15 +269,12 @@ sub td_recurse {
    }
 
    # Fetch from dest:
-   if ( $opts{b} ) {
-      print '-- ', $dst_query, "\n";
-   }
    my $dst_sth = $dest->{dbh}->prepare($dst_query);
    $dst_sth->execute;
    while ( my $row = $dst_sth->fetchrow_hashref ) {
       my $key = make_key($row, $grouping);
       if ( $diffs{$key} ) {
-         if ( $diffs{$key}->{crc} eq $row->{crc} ) {
+         if ( $diffs{$key}->{__crc} eq $row->{__crc} ) {
             delete $diffs{$key};
          }
          else {
@@ -308,7 +302,7 @@ sub td_recurse {
          if ( $row->{_act_} eq 'DELETE' ) {
             # Deletes can be handled with a single query, pruning this whole
             # section of the recursion tree.
-            td_handle_data_change('DELETE', $row, \%new_where, $row->{cnt});
+            td_handle_data_change('DELETE', $row, \%new_where, $row->{__cnt});
          }
          elsif ( $level < $#{$groupings} ) {
             # There is more recursion to do.
@@ -352,7 +346,7 @@ sub td_bottom_out {
    while ( my $row = $dst_sth->fetchrow_hashref ) {
       my $key = make_key($row, \@key);
       if ( $diffs{$key} ) {
-         if ( $diffs{$key}->{crc} eq $row->{crc} ) {
+         if ( $diffs{$key}->{__crc} eq $row->{__crc} ) {
             delete $diffs{$key};
          }
          else {
@@ -414,13 +408,11 @@ sub td_ungrouped_checksum_query {
    my $crit = make_where_clause($dbh, $where);
 
    # Make the query.
-   my $query = <<"   END";
-
-      SELECT $key_cols, MD5(CONCAT_WS('#', $cols$null)) AS crc
-      FROM $info->{db_tbl}
-      $crit
-
-   END
+   my $query = "SELECT $key_cols, MD5(CONCAT_WS('#', $cols$null)) AS __crc "
+      . "FROM $info->{db_tbl} $crit";
+   if ( $opts{b} ) {
+      print '-- ', $query, "\n";
+   }
    return ( $query );
 }
 
@@ -446,8 +438,7 @@ sub td_grouped_checksum_query {
 
    # Make the query.
    my $query = <<"   END";
-
-      SELECT $grp, COUNT(*) AS cnt,
+      SELECT $grp, COUNT(*) AS __cnt,
          CONCAT(
             LPAD(CONV(BIT_XOR(
                CAST(CONV(LEFT(\@CRC := MD5(CONCAT_WS('#', $cols$null)), 16), 16, 10) AS UNSIGNED)
@@ -455,13 +446,15 @@ sub td_grouped_checksum_query {
             LPAD(CONV(BIT_XOR(
                CAST(CONV(RIGHT(\@CRC, 16), 16, 10) AS UNSIGNED)
                ), 10, 16), 16, '0')
-         ) AS crc
+         ) AS __crc
       FROM $info->{db_tbl}
       $crit
       GROUP BY $grp$lock
-
    END
 
+   if ( $opts{b} ) {
+      print '-- ', $query, "\n";
+   }
    return ( $query );
 }
 
@@ -678,6 +671,10 @@ sub bu_merge_tree {
             if ( $sr->{__crc} ne $dr->{__crc} ) {
                if ( $level ) {
                   push @bad_parents, $sr->{__par};
+                  if ( $level && $opts{e} > 1 ) {
+                     printf("-- Level %1d UPDATE parent:   %4d\n",
+                        $level, $sr->{__par});
+                  }
                }
                else {
                   push @to_update, $sr;
@@ -690,9 +687,17 @@ sub bu_merge_tree {
          elsif ( !$dr || ( $sr && bu_key_le($sr, $dr, \@src_key, \@dst_key) ) ) {
             if ( $level ) {
                push @bulk_insert, $sr;
+               if ( $level && $opts{e} > 1 ) {
+                  printf("-- Level %1d BULKIN parent:   %4d\n",
+                     $level, $sr->{__par});
+               }
             }
             else {
                push @to_insert, $sr;
+               if ( $level && $opts{e} > 1 ) {
+                  printf("-- Level %1d INSERT parent:   %4d\n",
+                     $level, $sr->{__par});
+               }
             }
             $sr = undef;
          }
@@ -701,9 +706,17 @@ sub bu_merge_tree {
          elsif ( !$sr || ( $dr && bu_key_le($dr, $sr, \@dst_key, \@src_key) ) ) {
             if ( $level ) {
                push @bulk_delete, $dr;
+               if ( $level && $opts{e} > 1 ) {
+                  printf("-- Level %1d BULKDE parent:   %4d\n",
+                     $level, $dr->{__par});
+               }
             }
             else {
                push @to_delete, $dr;
+               if ( $level && $opts{e} > 1 ) {
+                  printf("-- Level %1d DELETE parent:   %4d\n",
+                     $level, $dr->{__par});
+               }
             }
             $dr = undef;
          }
@@ -717,15 +730,15 @@ sub bu_merge_tree {
       my $sum_bulk_del = sum(map { $_->{__cnt} } @bulk_delete) || 0;
 
       if ( $opts{e} ) {
-         printf("-- Level %1d summary: %4d parents %4d src rows %4d dst rows\n",
+         printf("--         Level %1d summary: %4d parents %4d src rows %4d dst rows\n",
             $level, scalar(@bad_parents), $rows_in_src, $rows_in_dst);
-         printf("-- Level %1d changes: %4d updates %4d inserts  %4d deletes %4d total\n",
+         printf("--         Level %1d changes: %4d updates %4d inserts  %4d deletes %4d total\n",
             $level, scalar(@to_update), scalar(@to_insert) + $sum_bulk_ins,
             scalar(@to_delete) + $sum_bulk_del,
             scalar(@to_update) + scalar(@to_insert) + $sum_bulk_ins
                + scalar(@to_delete) + $sum_bulk_del
          );
-         printf("-- Level %1d bulk-op: %4d inserts %4d ins-rows %4d deletes %4d del-rows\n",
+         printf("--         Level %1d bulk-op: %4d inserts %4d ins-rows %4d deletes %4d del-rows\n",
             $level, scalar(@bulk_insert), $sum_bulk_ins,
             scalar(@bulk_delete), $sum_bulk_del);
       }
