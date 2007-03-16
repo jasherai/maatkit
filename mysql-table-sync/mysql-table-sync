@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 # TODO: add --lock and --wait parameters
+# TODO: convert top-down to iteration and proper comparison.
 # Advantage of bottom-up: parts can be parallelized
 # TODO: put acknowledgements in the perdoc
 # cite: Remote Comparison of Database Tables
@@ -8,7 +9,6 @@
 # top-down with where clauses allows mass insert/deletes much more efficiently.
 # Look up the law of large numbers and justify why not to use SUM()
 # Explain why @crc & $mask is the same as mod()
-# Verify that the grouping isn't just the whole primary key
 # Allow a threshold of expensiveness
 # Allow to calculate, use, and delete summary tables separately
 # TODO: another algorithm: binary search for where the corruption starts, say a
@@ -63,6 +63,7 @@ my %opt_spec = (
    v => { s => 'verbose|v+',       d => 'Explain differences found' },
    x => { s => 'execute|x',        d => 'Execute queries required to sync' },
    o => { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default: all)' },
+   m => { s => 'maxcost|m=i',      d => 'Maximum rowcount before bailing out' },
    s => { s => 'strategy|s=s',     d => 'Query strategy when syncing' },
    d => { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
    r => { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
@@ -76,7 +77,7 @@ my %opt_spec = (
    C => { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm' },
 );
 
-my @opt_keys = qw( h a e p b v x o s d r f c B P E T S C );
+my @opt_keys = qw( h a e p b v x o m s d r f c B P E T S C );
 
 # Generate a quasi-random string that's constant in a given day
 # TODO: does this work on windows?
@@ -94,6 +95,7 @@ my %opts = (
    v => 0,
    x => 0,
    o => 'INSUPDDEL',
+   m => 0,
    s => 's',
    d => '',
    r => 0,
@@ -239,7 +241,6 @@ sub topdown {
    my @groupings = map {
       { cols => [$_] }
    } $opts{d} =~ m/(\w+)/g;
-   # TODO: check groupings are valid columns
    die "You must define drilldown groupings with --drilldown." unless @groupings;
 
    # Begin the recursion
@@ -624,6 +625,7 @@ sub bu_build_tree {
 # There are actually 1 more than $levels summary tables; there are tables 0 ..
 # $levels (see bu_build_tree).  Level 0 has a different structure.  It has
 # primary keys instead of a __par pointer.
+# Returns true if it finished working.
 sub bu_merge_tree {
    my ($dest, $source, $levels) = @_;
 
@@ -673,8 +675,8 @@ sub bu_merge_tree {
             # The "same" row descends from parents that differ.
             if ( $sr->{__crc} ne $dr->{__crc} ) {
                if ( $level ) {
-                  push @bad_parents, $sr->{__par};
-                  if ( $level && $opts{v} > 1 ) {
+                  push @bad_parents, $sr;
+                  if ( $level && $opts{v} > 2 ) {
                      printf("-- Level %1d UPDATE parent:   %4d\n",
                         $level, $sr->{__par});
                   }
@@ -690,14 +692,14 @@ sub bu_merge_tree {
          elsif ( !$dr || ( $sr && bu_key_le($source, $sr, $dr, \@src_key, \@dst_key) ) ) {
             if ( $level ) {
                push @bulk_insert, $sr;
-               if ( $level && $opts{v} > 1 ) {
+               if ( $level && $opts{v} > 2 ) {
                   printf("-- Level %1d BULKIN parent:   %4d\n",
                      $level, $sr->{__par});
                }
             }
             else {
                push @to_insert, $sr;
-               if ( $level && $opts{v} > 1 ) {
+               if ( $level && $opts{v} > 2 ) {
                   printf("-- Level %1d INSERT parent:   %4d\n",
                      $level, $sr->{__par});
                }
@@ -709,14 +711,14 @@ sub bu_merge_tree {
          elsif ( !$sr || ( $dr && bu_key_le($source, $dr, $sr, \@dst_key, \@src_key) ) ) {
             if ( $level ) {
                push @bulk_delete, $dr;
-               if ( $level && $opts{v} > 1 ) {
+               if ( $level && $opts{v} > 2 ) {
                   printf("-- Level %1d BULKDE parent:   %4d\n",
                      $level, $dr->{__par});
                }
             }
             else {
                push @to_delete, $dr;
-               if ( $level && $opts{v} > 1 ) {
+               if ( $level && $opts{v} > 2 ) {
                   printf("-- Level %1d DELETE parent:   %4d\n",
                      $level, $dr->{__par});
                }
@@ -731,8 +733,14 @@ sub bu_merge_tree {
 
       my $sum_bulk_ins = sum(map { $_->{__cnt} } @bulk_insert) || 0;
       my $sum_bulk_del = sum(map { $_->{__cnt} } @bulk_delete) || 0;
+      my $sum_parents  = sum(map { $_->{__cnt} || 1 } @bad_parents) || 0;
+      my $num_bad_rows = scalar(@to_update) + scalar(@to_insert) + $sum_bulk_ins
+                       + scalar(@to_delete) + $sum_bulk_del + $sum_parents;
 
       if ( $opts{v} ) {
+         printf("--         Level %1d total:   %4d rows\n", $level, $num_bad_rows);
+      }
+      if ( $opts{v} > 1 ) {
          printf("--         Level %1d summary: %4d parents %4d src rows %4d dst rows\n",
             $level, scalar(@bad_parents), $rows_in_src, $rows_in_dst);
          printf("--         Level %1d changes: %4d updates %4d inserts  %4d deletes %4d total\n",
@@ -746,19 +754,21 @@ sub bu_merge_tree {
             scalar(@bulk_delete), $sum_bulk_del);
       }
 
-      # TODO if ( $opts{m} < @bad_parents
-      # TODO: we can already look at $sr->{__cnt} - $dr->{__cnt}
-      # and abort if rowcount too high
+      if ( $level < $levels && $opts{m} && $opts{m} < $num_bad_rows ) {
+         print "-- Level $level halt: $num_bad_rows rows, --maxcost=$opts{m}\n";
+         return 0;
+      }
 
       $level--;
    } while ( $level >= 0 && @bad_parents );
 
-   # TODO: estimate # rows needing change before going further
    bu_handle_data_change('UPDATE', @to_update);
    bu_handle_data_change('INSERT', @to_insert);
    bu_handle_data_change('DELETE', @to_delete);
    bu_handle_bulk_change('INSERT', $levels, $source, @bulk_insert);
    bu_handle_bulk_change('DELETE', $levels, $dest,   @bulk_delete);
+
+   return 1; # Finished the work.
 }
 
 sub bu_cleanup_tree {
@@ -787,7 +797,7 @@ sub bu_handle_bulk_change {
       # TODO: optimization.
       # This is logically correct, but MySQL won't use indexes:
       # "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $mask = $row->{__par}"
-      # This ends up looking like __rem & 3 = 3.  This will match any of the
+      # This ends up looking like __rem & 255 = 3.  This will match any of the
       # following (partial list):
       # +-------+--------+
       # | __rem | binary |
@@ -872,15 +882,15 @@ sub bu_key_eq {
 }
 
 sub bu_fetch_level {
-   my ( $info, $level, @bad_remainders ) = @_;
+   my ( $info, $level, @bad_parents ) = @_;
    my $dbh = $info->{dbh};
    my $tbl = "$info->{prefix}_" . $level;
 
    my $cols  = $level
              ? '__par, __cnt'
              : col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
-   my $where = @bad_remainders
-             ? "WHERE __rem IN(" . join(',', @bad_remainders) . ")"
+   my $where = @bad_parents
+             ? "WHERE __rem IN(" . join(',', map { $_->{__par} } @bad_parents) . ")"
              : '';
    my $order = $level
              ? '__par'
