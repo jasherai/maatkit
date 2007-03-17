@@ -1,0 +1,8 @@
+This package contains mysql-show-grants.  Please view the perldoc for
+more details.
+
+Changelog:
+
+2007-04-17: version 0.8.0
+
+   * Initial release.
