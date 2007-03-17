@@ -43,13 +43,14 @@ my %opt_spec = (
    P => { s => 'port|P=i',     r => 0, d => 'Database server port' },
    p => { s => 'pass|p=s',     r => 0, d => 'Database password' },
    u => { s => 'user|u=s',     r => 0, d => 'Database username' },
-   #o => { s => 
+   o => { s => 'only|o=s',     r => 0, d => 'Only show grants for this comma-separated list of users' },
+   i => { s => 'ignore|i=s',   r => 0, d => 'Ignore this comma-separated list of users' },
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( h d P u p l );
+my @opt_keys = qw( h d P u p l o i );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -59,10 +60,33 @@ my %opts = (
    P => 3306,
    p => undef,
    u => undef,
+   o => undef,
+   i => undef,
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+
+# Turn comma-separated lists into arrays and hashes
+if ( $opts{o} ) {
+   my @users = map {
+         my ( $user, $host )
+            = $_ =~ m/
+               ^               # Beginning of line
+               '?([^'@]*)'?    # Username optionally enclosed by '
+               (?:
+                  @            # Followed by @
+                  '?([^']*?)'? # And host optionally enclosed by '
+               )?              # ... which is all optional
+               $               # End of line
+               /xms;
+         $host ||= '%';
+         { User => $user, Host => $host };
+      }
+      grep { $_ =~ m/\S/ }
+      split(/,\s*/, $opts{o});
+   $opts{o} = \@users;
+}
 
 if ( $opts{l} || grep { !$opts{$_} && $opt_spec{$_}->{r} } @opt_keys ) {
    print "Usage: $PROGRAM_NAME <options> batch-file\n\n  Options:\n\n";
@@ -148,13 +172,18 @@ my $dbh = DBI->connect(
    $conn->{u}, $conn->{p}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
 
-my $users = $dbh->selectall_arrayref(
+my $users = $opts{o} || $dbh->selectall_arrayref(
    'SELECT DISTINCT User, Host FROM mysql.user ORDER BY User, Host',
    { Slice => {} });
 
 foreach my $u (@$users) {
-   my @grants = @{ $dbh->selectcol_arrayref(
-      "SHOW GRANTS FOR '$u->{User}'\@'$u->{Host}'") };
+   my @grants;
+   eval {
+      @grants = @{ $dbh->selectcol_arrayref(
+         "SHOW GRANTS FOR '$u->{User}'\@'$u->{Host}'") };
+   };
+   next unless @grants;
+
    @grants = map {
       # Sort the actual grants lexically within each row for consistency.
       $_ =~ s/GRANT (.*?) ON (`|\*)/"GRANT " . join(', ', sort(split(', ', $1))) . " ON $2"/e;
