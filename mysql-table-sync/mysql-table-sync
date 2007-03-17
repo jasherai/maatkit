@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-# TODO: add --lock and --wait parameters
 # TODO: convert top-down to iteration and proper comparison.
 # Advantage of bottom-up: parts can be parallelized
+# Advantage of top-down: locking tables is easier.
 # TODO: put acknowledgements in the perdoc
 # cite: Remote Comparison of Database Tables
 # Explain structure of tables, what __rem/__par mean etc
@@ -68,6 +68,8 @@ my %opt_spec = (
    r => { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
    f => { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
    c => { s => 'columns|c=s',      d => 'Comma-separated column list' },
+   k => { s => 'lock|k',           d => 'Lock tables when beginning work' },
+   w => { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
    B => { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm' },
    P => { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
    E => { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
@@ -78,7 +80,7 @@ my %opt_spec = (
    C => { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm' },
 );
 
-my @opt_keys = qw( h a e p b v x o m s d r f c B P E T S U A C );
+my @opt_keys = qw( h a e p b v x o m s d r f c k w B P E T S U A C );
 
 # Generate a quasi-random string that's constant in a given day
 # TODO: does this work on windows?
@@ -102,6 +104,8 @@ my %opts = (
    r => 0,
    f => 0,
    c => '',
+   k => 0,
+   w => 0,
    B => 128,
    P => $prefix,
    E => 'InnoDB',
@@ -121,6 +125,7 @@ GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys )
    or $opts{h} = 1;
 
 $opts{h} = 1 if $opts{s} && $opts{s} !~ m/^(s|r)/;
+$opts{k} ||= $opts{w};
 
 # Make comma-separated lists into hashes.
 if ( $opts{c} ) {
@@ -223,12 +228,46 @@ foreach my $table ( $source, $dest ) {
    $table->{cols} = col_list(@{$table->{info}->{cols}});
 }
 
+if ( $opts{k} && $opts{a} eq 'topdown' ) {
+   if ( $opts{v} ) {
+      print "-- Locking table on source\n";
+   }
+   my $query = "LOCK TABLES $source->{db_tbl} READ";
+   debug_print($query);
+   $source->{dbh}->do($query);
+   if ( $opts{v} ) {
+      print "-- Acquired table lock on source\n";
+   }
+}
+
+if ( $opts{w} ) {
+   my $query = 'SHOW MASTER STATUS';
+   debug_print($query);
+   my $ms = $source->{dbh}->selectrow_hashref($query);
+   if ( $opts{v} ) {
+      print "-- Waiting for destination to catch up in binlog\n";
+   }
+   $query = "SELECT MASTER_POS_WAIT('$ms->{File}', $ms->{Position}, $opts{w})";
+   debug_print($query);
+   my $stat = $dest->{dbh}->selectall_arrayref($query)->[0]->[0];
+   $stat = 'NULL' unless defined $stat;
+   if ( $opts{v} ) {
+      print "-- Result of waiting: $stat\n";
+   }
+}
+
 if ( $code_for_algorithm{$opts{a}} ) {
    $code_for_algorithm{$opts{a}}->();
 }
 else {
    die "Sorry, algorithm '$opts{a}' unknown; try one of "
       . join('|', keys %code_for_algorithm);
+}
+
+foreach my $table ( $source, $dest ) {
+   my $dbh = $table->{dbh};
+   $dbh->commit if $opts{k};
+   $dbh->disconnect;
 }
 
 exit $exit_status;
@@ -988,7 +1027,6 @@ sub handle_data_change {
    }
    if ( $opts{x} ) {
       $dbh->do($query);
-         # TODO commit?
    }
 }
 
