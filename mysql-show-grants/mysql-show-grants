@@ -70,22 +70,21 @@ GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
 # Turn comma-separated lists into arrays and hashes
 if ( $opts{o} ) {
    my @users = map {
-         my ( $user, $host )
-            = $_ =~ m/
-               ^               # Beginning of line
-               '?([^'@]*)'?    # Username optionally enclosed by '
-               (?:
-                  @            # Followed by @
-                  '?([^']*?)'? # And host optionally enclosed by '
-               )?              # ... which is all optional
-               $               # End of line
-               /xms;
-         $host ||= '%';
+         my ( $user, $host ) = parse_user($_);
          { User => $user, Host => $host };
       }
       grep { $_ =~ m/\S/ }
       split(/,\s*/, $opts{o});
    $opts{o} = \@users;
+}
+if ( $opts{i} ) {
+   my @users = map {
+         my ( $user, $host ) = parse_user($_);
+         "'$user'\@'$host'";
+      }
+      grep { $_ =~ m/\S/ }
+      split(/,\s*/, $opts{i});
+   $opts{i} = { map { $_ => 1 } @users };
 }
 
 if ( $opts{l} || grep { !$opts{$_} && $opt_spec{$_}->{r} } @opt_keys ) {
@@ -176,12 +175,19 @@ my $users = $opts{o} || $dbh->selectall_arrayref(
    'SELECT DISTINCT User, Host FROM mysql.user ORDER BY User, Host',
    { Slice => {} });
 
+my $exit_status;
+
 foreach my $u (@$users) {
+   next if $opts{i} && $opts{i}->{"'$u->{User}'\@'$u->{Host}'"};
+
    my @grants;
    eval {
       @grants = @{ $dbh->selectcol_arrayref(
          "SHOW GRANTS FOR '$u->{User}'\@'$u->{Host}'") };
    };
+   if ( $EVAL_ERROR ) {
+      $exit_status = 1;
+   }
    next unless @grants;
 
    @grants = map {
@@ -196,6 +202,27 @@ foreach my $u (@$users) {
       $b =~ m/IDENTIFIED BY/ <=> $a =~ m/IDENTIFIED BY/ || $a cmp $b
    } @grants;
    print join( "\n", "-- Grants for '$u->{User}'\@'$u->{Host}'", map {"$_;"} @grants ), "\n";
+   $exit_status = 0;
+}
+exit($exit_status);
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+sub parse_user {
+   my ( $spec ) = @_;
+   my ( $user, $host )
+      = $spec =~ m/
+         ^               # Beginning of line
+         '?([^'@]*)'?    # Username optionally enclosed by '
+         (?:
+            @            # Followed by @
+            '?([^']*?)'? # And host optionally enclosed by '
+         )?              # ... which is all optional
+         $               # End of line
+         /xms;
+   $host ||= '%';
+   return ( $user, $host );
 }
 
 # ############################################################################
