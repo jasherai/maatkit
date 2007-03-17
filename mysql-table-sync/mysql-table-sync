@@ -280,160 +280,151 @@ exit $exit_status;
 # level in the recursion, and can give up unless the number is decreasing.
 sub topdown {
 
-   # Design a grouping strategy.
-   my @groupings = map {
-      { cols => [$_] }
-   } $opts{d} =~ m/(\w+)/g;
-   die "You must define drilldown groupings with --drilldown." unless @groupings;
-
-   # Begin the recursion
-   td_recurse(0, \@groupings, {});
-}
-
-# Figure out which groups are different between source and dest.
-sub td_recurse {
-   my ( $level, $groupings, $where ) = @_;
-
-   my $grouping  = $groupings->[$level]->{cols};
-   my $src_query = td_grouped_checksum_query($source, $grouping, $where);
-   my $dst_query = td_grouped_checksum_query($dest,   $grouping, $where);
-   my $src_cnt   = 0;
-   my $dst_cnt   = 0;
-   my %diffs;
-
-   # Fetch from source:
-   my $src_sth = $source->{dbh}->prepare($src_query);
-   $src_sth->execute;
-   while ( my $row = $src_sth->fetchrow_hashref ) {
-      my $key = make_key($row, $grouping);
-      $row->{_act_} = 'INSERT';
-      $diffs{$key} = $row;
-      $src_cnt++;
+   # Design a grouping strategy: user-defined, then finally primary key.
+   my @groupings = { cols => $source->{info}->{keys}->{$source->{key}} };
+   if ( $opts{d} ) {
+      push @groupings, map { { cols => [$_] } } $opts{d} =~ m/(\w+)/g;
    }
 
-   # Fetch from dest:
-   my $dst_sth = $dest->{dbh}->prepare($dst_query);
-   $dst_sth->execute;
-   while ( my $row = $dst_sth->fetchrow_hashref ) {
-      my $key = make_key($row, $grouping);
-      if ( $diffs{$key} ) {
-         if ( $diffs{$key}->{__crc} eq $row->{__crc} ) {
-            delete $diffs{$key};
+   # Array indices
+   my ($WHERE, $LEVEL, $COUNT) = (0, 1, 2);
+
+   # Queue of groups to drill into on next iteration.  Managing as a queue, not
+   # stack, is breadth-first search, not depth-first.
+   my @to_examine = [ {}, $#groupings, 0 ]; # TODO --where applies here
+
+   # Lists of rows that differ in the target tables.
+   my (@to_update, @to_delete, @to_insert);
+
+   # Counters
+   my %count = map { $_ => 0 } qw(ins upd del bad);
+
+   do {
+      my $work  = shift @to_examine;
+      my $level = $work->[$LEVEL];
+      my $where = $work->[$WHERE];
+
+      my $grouping = $groupings[$level]->{cols};
+      my $src_sth  = td_fetch_level($source, $level, $grouping, $where);
+      my $dst_sth  = td_fetch_level($dest,   $level, $grouping, $where);
+
+      my ($sr, $dr);       # Source row, dest row
+      my %this_level = ( rows => 0, cnt => 0 );
+
+      # The statements fetch in order, so use a 'merge' algorithm of advancing
+      # after rows match.  This is essentially a FULL OUTER JOIN.
+      MERGE:
+      while ( 1 ) { # Exit this loop via 'last'
+
+         if ( !$sr ) {
+            $sr = $src_sth->fetchrow_hashref;
          }
+         if ( !$dr ) {
+            $dr = $dst_sth->fetchrow_hashref;
+         }
+
+         last MERGE unless $sr || $dr;
+
+         my %new_where = %$where;  # Will get more cols added and used below.
+
+         # If the current row is the "same row" on both sides...
+         if ( $sr && $dr && bu_key_eq($source, $sr, $dr, $grouping, $grouping) ) {
+            # The "same" row descends from parents that differ.
+            if ( $sr->{__crc} ne $dr->{__crc} ) {
+               @new_where{@$grouping} = @{$sr}{@$grouping};
+               if ( $level ) {
+                  # Special case: push $level - 1 because this will be processed
+                  # later.
+                  push @to_examine, [ \%new_where, $level - 1, $sr->{__cnt} ];
+                  $this_level{cnt}++;
+                  $this_level{rows} += $sr->{__cnt};
+                  if ( $level && $opts{v} > 2 ) {
+                     printf("-- Level %1d: CHECK  group of  %4d rows %s\n",
+                        $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
+                  }
+               }
+               else {
+                  push @to_update, \%new_where;
+                  $count{upd}++;
+                  $count{bad}++;
+                  if ( $opts{v} > 2 ) {
+                     printf("-- Level %1d: UPDATE             1 row  %s\n",
+                        $level, make_where_clause($source->{dbh}, \%new_where));
+                  }
+               }
+            }
+            $sr = $dr = undef;
+         }
+
+         # The row in the source doesn't exist at the destination
+         elsif ( !$dr || ( $sr && bu_key_le($source, $sr, $dr, $grouping, $grouping) ) ) {
+            @new_where{@$grouping} = @{$sr}{@$grouping};
+            push @to_insert, \%new_where;
+            $count{ins} += $sr->{__cnt} || 1;
+            $count{bad} += $sr->{__cnt} || 1;
+            if ( $level && $opts{v} > 2 ) {
+               printf("-- Level %1d: INSERT group of  %4d rows %s\n",
+                  $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
+            }
+            $sr = undef;
+         }
+
+         # Symmetric to the above
+         elsif ( !$sr || ( $dr && bu_key_le($source, $dr, $sr, $grouping, $grouping) ) ) {
+            @new_where{@$grouping} = @{$dr}{@$grouping};
+            push @to_delete, \%new_where;
+            $count{del} += $dr->{__cnt} || 1;
+            $count{bad} += $dr->{__cnt} || 1;
+            if ( $level && $opts{v} > 2 ) {
+               printf("-- Level %1d: DELETE group of  %4d rows %s\n",
+                  $level, $dr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
+            }
+            $dr = undef;
+         }
+
          else {
-            $diffs{$key}->{_act_} = 'UPDATE';
+            die "This code should never have run.  This is a bug.";
          }
-      }
-      else {
-         $row->{_act_} = 'DELETE';
-         $diffs{$key} = $row;
-      }
-      $dst_cnt++;
-   }
 
-   if ( $opts{v} > $level ) {
-      print join(' ', '-- LEVEL', $level + 1, $src_cnt, $dst_cnt,
-         scalar(keys %diffs), make_where_clause($source->{dbh}, $where)), "\n";
-   }
-
-   if ( %diffs ) {
-      foreach my $key ( sort keys %diffs ) {
-         my $row = $diffs{$key};
-         my %new_where = %$where;
-         @new_where{@$grouping} = @{$row}{@$grouping};
-
-         if ( $row->{_act_} eq 'DELETE' ) {
-            # Deletes can be handled with a single query, pruning this whole
-            # section of the recursion tree.
-            td_handle_data_change('DELETE', $row, \%new_where, $row->{__cnt});
+         if ( $level < $#groupings && $opts{m} && $opts{m} < $count{bad}) {
+            print "-- Level $level halt: $count{bad} rows, --maxcost=$opts{m}\n";
+            return 0;
          }
-         elsif ( $level < $#{$groupings} ) {
-            # There is more recursion to do.
-            td_recurse($level + 1, $groupings, \%new_where);
-         }
-         else {
-            # Non-recursed update/insert must be done a row at a time.
-            td_bottom_out($level + 1, $row, \%new_where);
-         }
-      }
-   }
 
-}
-
-# $row is not a row in the table -- it's a row from one of the grouped
-# checksum queries.  But it is only one level removed from the individual rows
-# in the table, hence the name bottom_out.
-sub td_bottom_out {
-   my ( $level, $row, $where ) = @_;
-
-   my @key       = @{$source->{info}->{keys}->{$source->{key}}};
-   my $src_query = td_ungrouped_checksum_query($source, \@key, $where);
-   my $dst_query = td_ungrouped_checksum_query($dest,   \@key, $where);
-   my $src_cnt   = 0;
-   my $dst_cnt   = 0;
-   my %diffs; # Each entry is a row in the table.
-
-   # Fetch from source:
-   my $src_sth = $source->{dbh}->prepare($src_query);
-   $src_sth->execute;
-   while ( my $row = $src_sth->fetchrow_hashref ) {
-      my $key = make_key($row, \@key);
-      $row->{_act_} = 'INSERT';
-      $diffs{$key} = $row;
-      $src_cnt++;
-   }
-
-   # Fetch from dest:
-   my $dst_sth = $dest->{dbh}->prepare($dst_query);
-   $dst_sth->execute;
-   while ( my $row = $dst_sth->fetchrow_hashref ) {
-      my $key = make_key($row, \@key);
-      if ( $diffs{$key} ) {
-         if ( $diffs{$key}->{__crc} eq $row->{__crc} ) {
-            delete $diffs{$key};
-         }
-         else {
-            $diffs{$key}->{_act_} = 'UPDATE';
-         }
-      }
-      else {
-         $row->{_act_} = 'DELETE';
-         $diffs{$key} = $row;
-      }
-      $dst_cnt++;
-   }
-
-   if ( %diffs ) {
-
-      if ( $opts{v} > $level ) {
-         my %counts;
-         map { $counts{$_->{_act_}}++ } values %diffs;
-         foreach my $action ( keys %counts ) {
-            print join(' ', '--', $action, scalar(keys %diffs),
-            make_where_clause($source->{dbh}, $where)), "\n";
-         }
       }
 
-      foreach my $key ( sort keys %diffs ) {
-         my $row = $diffs{$key};
-         my %new_where = %$where;
-         @new_where{@key} = @{$row}{@key};
-         td_handle_data_change($row->{_act_}, $row, \%new_where);
+      if ( $opts{v} ) {
+         printf("--          Level %1d total:   %4d bad rows      %4d to inspect\n",
+            $level, $count{bad}, sum(map { $_->[$COUNT] } @to_examine) || 0);
       }
-   }
+      if ( $opts{v} > 1 ) {
+         printf("--          Level %1d summary: %4d bad groups in %4d src groups %4d dst groups\n",
+            $level, scalar(@to_examine), $src_sth->rows, $dst_sth->rows);
+         printf("--          Level %1d changes: %4d updates       %4d inserts    %4d deletes\n",
+            $level, scalar(@to_update), $count{ins}, $count{del});
+      }
+
+      $level--;
+   } while ( @to_examine );
+
+   td_handle_data_change('INSERT', @to_insert);
+   td_handle_data_change('DELETE', @to_delete);
+   td_handle_data_change('UPDATE', @to_update);
 }
 
 sub td_handle_data_change {
-   my ( $action, $row, $where ) = @_;
+   my ( $action, @rows ) = @_;
    return unless $action =~ m/$opts{o}/i;
-   my $which = $opts{r} ? $source : $dest;
-   my $dbh   = $which->{dbh};
-   my $crit  = make_where_clause($dbh, $where);
-   handle_data_change($action, $row, $crit);
+   foreach my $where ( @rows ) {
+      my $which = $opts{r} ? $source : $dest;
+      my $dbh   = $which->{dbh};
+      my $crit  = make_where_clause($dbh, $where);
+      handle_data_change($action, $crit);
+   }
 }
 
-sub td_ungrouped_checksum_query {
-   my ( $info, $key, $where ) = @_;
+sub td_fetch_level {
+   my ( $info, $level, $groupby, $where ) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
 
@@ -446,56 +437,45 @@ sub td_ungrouped_checksum_query {
 
    # To handle nulls, make a bitmap of nullable columns that are null.
    my @null = grep { $tbl->{null_hash}->{$_} } @cols;
-   my $null = @null ? (", CONCAT(" . join(', ', map  { "ISNULL(`$_`)" } @null) . ")") : '';
-
-   my $key_cols = col_list(@$key);
-   my $crit = make_where_clause($dbh, $where);
-
-   # Make the query.
-   my $query = "SELECT /*$info->{db_tbl}*/ $key_cols, MD5(CONCAT_WS('$opts{e}', $cols$null)) AS __crc "
-      . "FROM $info->{db_tbl} $crit";
-   debug_print($query);
-   return ( $query );
-}
-
-sub td_grouped_checksum_query {
-   my ( $info, $groupby, $where ) = @_;
-   my $dbh = $info->{dbh};
-   my $tbl = $info->{info};
-
-   # Columns that need to be in the checksum list.
-   my @cols = grep { !exists($where->{$_}) } @{$tbl->{cols}};
-   if ( $opts{c} ) {
-      @cols = grep { exists($opts{c}->{$_}) } @cols;
-   }
-   my $cols = col_list(@cols);
-
-   # To handle nulls, make a bitmap of nullable columns that are null.
-   my @null = grep { $tbl->{null_hash}->{$_} } @cols;
-   my $null = @null ? (", CONCAT(" . join(', ', map  { "ISNULL(`$_`)" } @null) . ")") : '';
+   my $null = @null
+            ? (", CONCAT(" . join(', ', map  { "ISNULL(`$_`)" } @null) . ")")
+            : '';
 
    my $grp  = col_list(@$groupby);
    my $crit = make_where_clause($dbh, $where);
    my $lock = $opts{f} ? ' FOR UPDATE' : '';
 
-   # Make the query.
-   ( my $query = <<"   END" ) =~ s/\s+/ /g;
-      SELECT /*$info->{db_tbl}*/ $grp, COUNT(*) AS __cnt,
-         CONCAT(
-            LPAD(CONV(BIT_XOR(
-               CAST(CONV(LEFT(\@CRC := MD5(CONCAT_WS('$opts{e}', $cols$null)), 16), 16, 10) AS UNSIGNED)
-               ), 10, 16), 16, '0'),
-            LPAD(CONV(BIT_XOR(
-               CAST(CONV(RIGHT(\@CRC, 16), 16, 10) AS UNSIGNED)
-               ), 10, 16), 16, '0')
-         ) AS __crc
-      FROM $info->{db_tbl}
-      $crit
-      GROUP BY $grp$lock
-   END
-
+   my $query;
+   if ( $level ) {
+      ( $query = <<"      END" ) =~ s/\s+/ /g;
+         SELECT /*$info->{db_tbl}*/
+            $grp,
+            COUNT(*) AS __cnt,
+            CONCAT(
+               LPAD(CONV(BIT_XOR(
+                  CAST(CONV(LEFT(\@CRC := MD5(CONCAT_WS('$opts{e}', $cols$null)), 16), 16, 10) AS UNSIGNED)
+                  ), 10, 16), 16, '0'),
+               LPAD(CONV(BIT_XOR(
+                  CAST(CONV(RIGHT(\@CRC, 16), 16, 10) AS UNSIGNED)
+                  ), 10, 16), 16, '0')
+            ) AS __crc
+         FROM $info->{db_tbl}
+         $crit
+         GROUP BY $grp
+         ORDER BY $grp$lock
+      END
+   }
+   else {
+      $query = "SELECT /*$info->{db_tbl}*/ $grp, "
+         . "MD5(CONCAT_WS('$opts{e}', $cols$null)) AS __crc "
+         . "FROM $info->{db_tbl} $crit "
+         . "ORDER BY $grp";
+   }
    debug_print($query);
-   return ( $query );
+
+   my $sth = $dbh->prepare($query);
+   $sth->execute();
+   return $sth;
 }
 
 # ############################################################################
@@ -699,14 +679,22 @@ sub bu_merge_tree {
       @bad_parents = ();
       $rows_in_src = $rows_in_dst = 0;
 
+# TODO: make src and dest keys the same.
+# TODO rename bu_key_*
       my @src_key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{key}}};
       my @dst_key = $level ? '__par' : @{$dest->{info}->{keys}->{$dest->{key}}};
       my ($sr, $dr); # Source row, dest row
 
-      # The statements fetch in order, so use a 'merge' algorithm of shifting
-      # forward after they match.  This is essentially a FULL OUTER JOIN.
+      # The statements fetch in order, so use a 'merge' algorithm of advancing
+      # after rows match.  This is essentially a FULL OUTER JOIN.
       MERGE:
       while ( 1 ) { # Exit this loop via 'last'
+
+# TODO
+     # if ( $level < $levels && $opts{m} && $opts{m} < $num_bad_rows ) {
+     #    print "-- Level $level halt: $num_bad_rows rows, --maxcost=$opts{m}\n";
+     #    return 0;
+     # }
 
          if ( !$sr ) {
             $sr = $src_sth->fetchrow_hashref;
@@ -725,7 +713,6 @@ sub bu_merge_tree {
 
          # If the current row is the "same row" on both sides...
          if ( $sr && $dr && bu_key_eq($source, $sr, $dr, \@src_key, \@dst_key) ) {
-
             # The "same" row descends from parents that differ.
             if ( $sr->{__crc} ne $dr->{__crc} ) {
                if ( $level ) {
@@ -808,11 +795,6 @@ sub bu_merge_tree {
             scalar(@bulk_delete), $sum_bulk_del);
       }
 
-      if ( $level < $levels && $opts{m} && $opts{m} < $num_bad_rows ) {
-         print "-- Level $level halt: $num_bad_rows rows, --maxcost=$opts{m}\n";
-         return 0;
-      }
-
       $level--;
    } while ( $level >= 0 && @bad_parents );
 
@@ -893,7 +875,7 @@ sub bu_handle_data_change {
    foreach my $row ( @rows ) {
       delete $row->{__crc}; # Now the row can be used as a WHERE clause
       my $crit = make_where_clause($dbh, $row);
-      handle_data_change($action, $row, $crit);
+      handle_data_change($action, $crit);
    }
 }
 
@@ -997,36 +979,44 @@ sub debug_print {
 
 # Code factored out of bu_handle_data_change and td_handle_data_change.
 sub handle_data_change {
-   my ( $action, $row, $crit ) = @_;
+   my ( $action, $crit ) = @_;
    my $which = $opts{r} ? $source : $dest;
    my $dbh   = $which->{dbh};
-   my $query;
 
    if ( $action eq 'DELETE' ) {
-      $query = "DELETE FROM $which->{db_tbl} $crit";
-   }
-   else {
-      my $vals = $source->{dbh}->selectrow_hashref(
-         "SELECT $source->{cols} FROM $source->{db_tbl} $crit");
-      if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
-         my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
-         $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
-            . join(',', map { $dbh->quote($vals->{$_}) }
-               @{$which->{info}->{cols}}) . ")";
+      my $query = "DELETE FROM $which->{db_tbl} $crit";
+      if ( $opts{p} ) {
+         print STDOUT $query, ";\n";
       }
-      else {
-         $query = "UPDATE $which->{db_tbl} SET "
-            . join(',',
-               map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($vals->{$_}) }
-               @{$which->{info}->{cols}});
+      if ( $opts{x} ) {
+         $dbh->do($query);
       }
    }
 
-   if ( $opts{p} ) {
-      print STDOUT $query, ";\n";
-   }
-   if ( $opts{x} ) {
-      $dbh->do($query);
+   else {
+      my $query = "SELECT $source->{cols} FROM $source->{db_tbl} $crit";
+      my $sth = $source->{dbh}->prepare($query);
+      $sth->execute();
+      while ( my $res = $sth->fetchrow_hashref() ) {
+         if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
+            my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
+            $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
+               . join(',', map { $dbh->quote($res->{$_}) }
+                  @{$which->{info}->{cols}}) . ")";
+         }
+         else {
+            $query = "UPDATE $which->{db_tbl} SET "
+               . join(',',
+                  map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($res->{$_}) }
+                  @{$which->{info}->{cols}});
+         }
+         if ( $opts{p} ) {
+            print STDOUT $query, ";\n";
+         }
+         if ( $opts{x} ) {
+            $dbh->do($query);
+         }
+      }
    }
 }
 
