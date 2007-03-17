@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 
+# TODO add a drop-first option, print timestamp and version information
 # mysql-show-grants canonicalizes and prints MySQL grants so you can effectively
 # replicate, compare and version-control them.
 #
@@ -283,5 +284,38 @@ Or
 You can specify multiple values joined with a comma:
 
    mysql-show-grants -i foo,root@localhost
+
+=head1 SEE ALSO
+
+Someone pointed out that this has been done before (not surprising, as it's not
+all that complicated).  Visit http://www.futhark.ch/mysql/139.html for a simpler
+implementation of the same general concept, though without the canonicalization.
+
+=head1 SYSTEM REQUIREMENTS
+
+You need the following Perl modules: DBI, DBD::mysql, and Term::ReadKey.
+
+=head1 LICENSE
+
+This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz, baron at xaprb dot com.
 
 =cut
