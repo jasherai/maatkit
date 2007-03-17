@@ -268,4 +268,20 @@ control.
 Finally, if you want to diff grants across servers, it will be hard without
 "canonicalizing" them, which this script does.  The output is fully diff-able.
 
+=head1 OPTIONS
+
+The --only and --ignore options allow you to select or ignore users.  You need
+to fully qualify the user by host, as MySQL does.  If you omit the host part,
+the default is '%'.  For instance if you want to see grants for 'foo'@'%', do
+this:
+
+   mysql-show-grants -o foo
+
+Or
+   mysql-show-grants -o foo@%
+
+You can specify multiple values joined with a comma:
+
+   mysql-show-grants -i foo,root@localhost
+
 =cut
