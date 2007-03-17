@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
-# mysql-show-grants prints MySQL grants so you can effectively version-control and
-# replicate them.
+# mysql-show-grants canonicalizes and prints MySQL grants so you can effectively
+# replicate, compare and version-control them.
 #
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
@@ -162,30 +162,54 @@ foreach my $u (@$users) {
    } @grants;
 
    # Sort the grant rows for consistency too, but the one with the password
-   # should always come first.  It is first in the list, so don't sort the
-   # whole list.
-   @grants = ( $grants[0], sort @grants[ 1 .. $#grants ] );
+   # should always come first.
+   @grants = sort {
+      $b =~ m/IDENTIFIED BY/ <=> $a =~ m/IDENTIFIED BY/ || $a cmp $b
+   } @grants;
    print join( "\n", "-- Grants for '$u->{User}'\@'$u->{Host}'", map {"$_;"} @grants ), "\n";
 }
 
 # ############################################################################
-# Documenation
+# Documentation
 # ############################################################################
+
 =pod
 
 =head1 NAME
 
-mysql-show-grants - Print grants (user privileges and passwords) from a MySQL
-database.
+mysql-show-grants - Canonicalize and print MySQL grants so you can effectively
+replicate, compare and version-control them.
 
 =head1 DESCRIPTION
 
 mysql-show-grants extracts, orders, and then prints grants for MySQL user
 accounts.
 
-Why would you want this?  Two main scenarios.  The first is to easily replicate
-users from one server to another; you can simply extract the grants from the
-first server and pipe the output directly into another server.
+Why would you want this?  There are several reasons.
 
-The second use is to place your grants into version control.
+The first is to easily replicate users from one server to another; you can
+simply extract the grants from the first server and pipe the output directly
+into another server.
+
+The second use is to place your grants into version control.  If you do a daily
+automated grant dump into version control, you'll get lots of spurious
+changesets for grants that don't change, because MySQL prints the actual grants
+out in a seemingly random order.  For instance, one day it'll say
+
+  GRANT DELETE, INSERT, UPDATE ON `test`.* TO 'foo'@'%';
+
+And then another day it'll say
+
+  GRANT INSERT, DELETE, UPDATE ON `test`.* TO 'foo'@'%';
+
+The grants haven't changed, but the order has.  This script sorts the grants
+within the line, between 'GRANT' and 'ON'.  If there are multiple rows from SHOW
+GRANTS, it sorts the rows too, except that it always prints the row with the
+user's password first, if it exists.  This removes three kinds of inconsistency
+you'll get from running SHOW GRANTS, and avoids spurious changesets in version
+control.
+
+Finally, if you want to diff grants across servers, it will be hard without
+"canonicalizing" them, which this script does.  The output is fully diff-able.
+
 =cut
