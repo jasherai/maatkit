@@ -669,6 +669,9 @@ sub bu_merge_tree {
    my (@to_update, @to_delete, @to_insert);
    my (@bulk_insert, @bulk_delete);
    
+   # Counters
+   my %count = map { $_ => 0 } qw(ins upd del bad);
+
    do {
       my $src_sth = bu_fetch_level($source, $level, @bad_parents);
       my $dst_sth = bu_fetch_level($dest,   $level, @bad_parents);
@@ -712,6 +715,8 @@ sub bu_merge_tree {
                   }
                }
                else {
+                  $count{upd}++;
+                  $count{bad}++;
                   push @to_update, $sr;
                }
             }
@@ -734,6 +739,8 @@ sub bu_merge_tree {
                      $level, $sr->{__par});
                }
             }
+            $count{ins} += $sr->{__cnt} || 1;
+            $count{bad} += $sr->{__cnt} || 1;
             $sr = undef;
          }
 
@@ -753,6 +760,8 @@ sub bu_merge_tree {
                      $level, $dr->{__par});
                }
             }
+            $count{del} += $dr->{__cnt} || 1;
+            $count{bad} += $dr->{__cnt} || 1;
             $dr = undef;
          }
 
@@ -760,10 +769,10 @@ sub bu_merge_tree {
             die "This code should never have run.  This is a bug.";
          }
 
-        # if ( $level < $levels && $opts{m} && $opts{m} < $num_bad_rows ) {
-        #    print "-- Level $level halt: $num_bad_rows rows, --maxcost=$opts{m}\n";
-        #    return 0;
-        # }
+         if ( $level < $levels && $opts{m} && $opts{m} < $count{bad} ) {
+            print "-- Level $level halt: $count{bad} rows, --maxcost=$opts{m}\n";
+            return 0;
+         }
 
       }
 
