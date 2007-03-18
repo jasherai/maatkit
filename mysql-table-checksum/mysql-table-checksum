@@ -219,7 +219,14 @@ foreach my $database ( @databases ) {
       foreach my $host ( @hosts ) {
          my $pid = fork();
          if ( defined($pid) && $pid == 0 ) { # I am a child
-            do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
+            eval {
+               do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
+            };
+            if ( $EVAL_ERROR ) {
+               print STDERR $EVAL_ERROR, "\n";
+               exit(1);
+            }
+            exit(0);
          }
          elsif ( !defined($pid) ) {
             die("Unable to fork!");
@@ -231,7 +238,7 @@ foreach my $database ( @databases ) {
       # Wait for the children to exit.
       foreach my $host ( keys %children ) {
          my $pid = waitpid($children{$host}, 0);
-         $exit_status ||= $CHILD_ERROR;
+         $exit_status = $CHILD_ERROR;
       }
       $main_dbh->do("UNLOCK TABLES") if $opts{k};
    }
@@ -279,7 +286,6 @@ sub do_tbl {
    $dbh->disconnect();
    printf($hdr, $info->{database}, $info->{table}, $host, $info->{engine}, $cnt, $crc,
       sprintf('%d', $end - $mid), sprintf('%d', $mid - $beg), $sta, $lag);
-   exit(0);
 }
 
 sub checksum_query {
