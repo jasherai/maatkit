@@ -1,6 +1,5 @@
 #!/usr/bin/perl
 
-# TODO: convert top-down to iteration and proper comparison.
 # Advantage of bottom-up: parts can be parallelized
 # Advantage of top-down: locking tables is easier.
 # TODO: put acknowledgements in the perdoc
@@ -8,8 +7,6 @@
 # Explain structure of tables, what __rem/__par mean etc
 # top-down with where clauses allows mass insert/deletes much more efficiently.
 # Look up the law of large numbers and justify why not to use SUM()
-# Explain why @crc & $mask is the same as mod()
-# Allow a threshold of expensiveness
 # TODO: another algorithm: binary search for where the corruption starts, say a
 # chunk at a time of 10000 from start/end of table, then when a different chunk is
 # found, binary search within that chunk to find the first row and report it.
@@ -545,6 +542,10 @@ sub bottomup {
 }
 
 # Builds the first-level checksum table and returns the number of rows in it.
+# The bitwise & operator in the __rem calculation is essentially the same as
+# MOD().  In unsigned arithmetic, num MOD 128 is the same as num & 127.  It has
+# the advantage of taking the absolute value of the modulo though, so there will
+# be no negative values.
 sub bu_build_checksum {
    my ($info, $levels) = @_;
    my $dbh    = $info->{dbh};
@@ -1182,7 +1183,112 @@ installed in any reasonably new version of Perl.
 
 =head1 OVERVIEW
 
+This tool implements two algorithms to find differences between two MySQL
+tables, which need not be on the same server.  One is "bottom-up" and builds
+summary tables from each table, then traverses them to find rows and chunks of
+rows that differ.  The other is "top-down" and builds no summary tables, but
+repeatedly queries the target table.  Each algorithm has strengths and
+limitations, and is suitable for different situations.
+
+Once you've identified the differences, you can also choose from several methods
+of resolving them.  One method is to do inserts, updates and deletes to the
+destination table.  The other assumes the destination table is on a replication
+slave and makes the changes on the source (master) server, counting on
+replication to propagate the changes.  Again it's up to a smart DBA to decide
+which method is best.
+
+There are also variations on all the techniques, in support of locking,
+master/slave consistency, partial-row updates, and so forth.
+
+=head1 FINDING DIFFERENCES BOTTOM-UP
+
+The bottom-up method of finding differences begins by checksumming every row in
+the source and destination target tables.  The result of the checksum is stored
+in a scratch table on the server.
+
+This scratch table is what I call the "level 0" table.  It contains the target
+table's primary key columns and a checksum of all the columns, concatenated.
+This checksum is easy to compare and makes it possible to see whether the rows
+differ.  Level 0 contains one row per row in the target table.
+
+Table "level 1" is derived from level 0 by grouping a number of rows together
+and checksumming the group.  How many rows are grouped together is up to the
+user, but it must be a power of two.  128 is a suggestion I've seen.  I refer to
+this number as the "branch factor" because the summary tables conceptually build
+a tree.
+
+The grouping works by dividing the checksum of each row in level 0 by the branch
+factor and taking the remainder.  A checksum is a number, though it is usually
+written as a string of hex digits, such as acbd18db4cc2f85cedef654fccc4a4d8, so
+you can divide and take the remainder (modulus) easily.  (This tool actually
+uses some bitwise arithmetic to optimize this, but I won't go into it here).
+
+Level 1's primary key is not the target table's primary key.  It is the
+modulus of the group from which the row was derived.  For example, if a number
+of rows in level 0 have a modulus of 11, they will be grouped together into a
+single row in level 1, with the primary key value of 11.
+
+Assuming a branch factor of 128, level 1 has 1/128th as many rows as level 0,
+give or take.  Level 2 is built from level 1, and has 1/128th as many rows in it
+again, and so on until level N, which has just a single row.
+
+After building scratch tables 0 through N, the tool begins at level N and
+works backwards.  At level N, there is just a single row.  If the checksum in
+this row matches on source and destination, the tables must be identical,
+and there is no more work to do.  If they differ though, some rows in level N-1
+must differ, and the tool examines the "parent" rows in level N-1.  It continues
+to do this until it travels all the way back "up the tree" to level 0 and
+identifies exactly which rows in the target tables are different.
+
+I've glossed over many subtleties.  For example, as the summary tables are
+built, not only their checksums but the remainders are computed on the fly; the
+remainders are stored in the summary tables and are indexed for efficient lookup
+as the algorithm traverses back up the tree seeking differences.  A running
+count is also stored so at any given point you know how many rows in the target
+table got rolled into the one row you're examining, no matter what level you're
+at in the tree.  There are some optimizations that can be used to short-circuit
+the process when entire chunks of rows are missing from one of the tables, and
+so on.  But these optimizations and subtleties are just efficiencies, and are
+not necessary for correctness.
+
 =head1 OUTPUT
+
+=head1 COMPATIBILITY
+
+My goal with this tool is a superb solution for MySQL, and MySQL alone.  I find
+that trying to be "cross-platform" generally means a mediocre solution for all
+supported platforms.  However, I think you can probably make some very minor
+changes and use this tool on other platforms.
+
+=head1 HISTORY AND ACKNOWLEDGEMENTS
+
+My work is based in part on Giuseppe Maxia's work on distributed databases,
+L<http://www.sysadminmag.com/articles/2004/0408/> and code derived from that
+article.  There is more explanation, and a link to the code, at
+L<http://www.perlmonks.org/?node_id=381053>.
+
+Another programmer extended Maxia's work even further.  Fabien Coelho changed
+and generalized Maxia's technique, introducing symmetry and avoiding some
+problems that might have caused too-frequent checksum collisions.  This work
+grew into pg_comparator, L<http://www.coelho.net/pg_comparator/>.  Coelho also
+explained the technique further in a paper titled "Remote Comparison of Database
+Tables" (L<http://cri.ensmp.fr/classement/doc/A-375.pdf>).
+
+This existing literature mostly addressed how to find the differences between
+the tables, not how to resolve them once found.  I needed a tool that would not
+only find them efficiently, but would then resolve them.  I first began thinking
+about how to improve the technique further with my article
+L<http://www.xaprb.com/blog/2007/03/05/an-algorithm-to-find-and-resolve-data-differences-between-mysql-tables/>,
+where I discussed a number of problems with the Maxia/Coelho "bottom-up"
+algorithm.  After writing that article, I began to write this tool.  I wanted to
+actually implement their algorithm with some improvements so I was sure I
+understood it completely.  I discovered it is not what I thought it was, and is
+considerably more complex than it appeared to me at first.  Fabien Coelho was
+kind enough to address some questions over email.
+
+The improvements to the bottom-up algorithm are my original work, as is the
+top-down algorithm.  The techniques to actually resolve the differences are also
+my own work.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
