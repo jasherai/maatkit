@@ -1,16 +1,5 @@
 #!/usr/bin/perl
 
-# Advantage of bottom-up: parts can be parallelized
-# Advantage of top-down: locking tables is easier.
-# TODO: put acknowledgements in the perdoc
-# cite: Remote Comparison of Database Tables
-# Explain structure of tables, what __rem/__par mean etc
-# top-down with where clauses allows mass insert/deletes much more efficiently.
-# Look up the law of large numbers and justify why not to use SUM()
-# TODO: another algorithm: binary search for where the corruption starts, say a
-# chunk at a time of 10000 from start/end of table, then when a different chunk is
-# found, binary search within that chunk to find the first row and report it.
-
 # This program efficiently synchronizes data between two MySQL tables, which
 # can be on different servers.
 #
@@ -63,6 +52,7 @@ my %opt_spec = (
    s => { s => 'strategy|s=s',     d => 'Query strategy when syncing' },
    d => { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
    r => { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
+   # TODO use LOCK IN SHARE MODE
    f => { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
    c => { s => 'columns|c=s',      d => 'Comma-separated column list' },
    k => { s => 'lock|k',           d => 'Lock tables when beginning work' },
@@ -80,7 +70,6 @@ my %opt_spec = (
 my @opt_keys = qw( h a e p b v x o m s d r f c k w B P E T S U A C );
 
 # Generate a quasi-random string that's constant in a given day
-# TODO: does this work on windows?
 my $prefix = '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00');
 $prefix =~ s/\W+/_/g;
 
@@ -203,6 +192,10 @@ USAGE
 # ############################################################################
 # Lookup tables
 # ############################################################################
+# TODO: another algorithm: binary search for where the corruption starts, say a
+# chunk at a time of 10000 from start/end of table, then when a different chunk
+# is found, binary search within that chunk to find the first row and report it.
+
 my %code_for_algorithm = (
    topdown  => \&topdown,
    bottomup => \&bottomup,
@@ -440,6 +433,12 @@ sub td_fetch_level {
    my $crit = make_where_clause($dbh, $where);
    my $lock = $opts{f} ? ' FOR UPDATE' : '';
 
+   # Maxia's approach used SUM() as the aggregate function.  This is not a good
+   # aggregate function; though it commutes, and is therefore order-independent,
+   # the law of large numbers will cause checksum collisions on large data sets.
+   # BIT_XOR() is really just a bitwise parity.  It is also order-independent,
+   # but you expect any given bit in the result to be essentially a random coin
+   # flip over the group.
    my $query;
    if ( $level ) {
       ( $query = <<"      END" ) =~ s/\s+/ /g;
@@ -1165,9 +1164,18 @@ mysql-table-sync - Efficiently synchronize data between two MySQL tables.
 
 =head1 DESCRIPTION
 
-Given two MySQL tables already known to be different, and assuming the
-differences are moderately small, find and resolve the differences between the
-tables.
+I wrote this tool to help me resync slaves that "drift" from their masters,
+which can happen for any number of reasons.  I wanted a solution that would work
+well for MySQL replication, so I didn't have to re-initialize the slaves, which
+can be prohibitively expensive -- if there's enough data, even stopping and
+restarting the slave is costly, as it takes a while to "warm up" the server.
+Add to that the overhead of copying huge amounts of data over the network, and
+the time involved, and a way to resync the slaves "live" is very attractive
+indeed.  There are also many constraints introduced by replication, which I
+wanted to either avoid or use to my advantage.
+
+I recognize that not everyone has exactly these needs, so I made the tool much
+more generic than I'd need to patch a table that's out of sync on a slave.
 
 The DBA must choose the algorithm and parameters to use when reconciling
 differences between the tables.  See below for help making this decision.
@@ -1217,28 +1225,31 @@ user, but it must be a power of two.  128 is a suggestion I've seen.  I refer to
 this number as the "branch factor" because the summary tables conceptually build
 a tree.
 
-The grouping works by dividing the checksum of each row in level 0 by the branch
-factor and taking the remainder.  A checksum is a number, though it is usually
-written as a string of hex digits, such as acbd18db4cc2f85cedef654fccc4a4d8, so
-you can divide and take the remainder (modulus) easily.  (This tool actually
-uses some bitwise arithmetic to optimize this, but I won't go into it here).
+The grouping works by dividing the checksum of each row in level 0 by some power
+of the branch factor and taking the remainder.  A checksum is a number, though
+it is usually written as a string of hex digits, such as
+acbd18db4cc2f85cedef654fccc4a4d8, so you can divide and take the remainder
+(modulus) easily.  (This tool actually uses some bitwise arithmetic to optimize
+this, but I won't go into it here).  The power of the branch factor decreases as
+the levels are built, so the remainders get smaller and smaller, grouping the
+rows into fewer and fewer summary rows.
 
-Level 1's primary key is not the target table's primary key.  It is the
-modulus of the group from which the row was derived.  For example, if a number
-of rows in level 0 have a modulus of 11, they will be grouped together into a
-single row in level 1, with the primary key value of 11.
+Level 1's primary key is not the target table's primary key.  It is the modulus
+of the group from which the row was derived.  For example, if a number of rows
+in level 0 have a modulus of 11, they will be grouped together into a single row
+in level 1, with the primary key value of 11.
 
 Assuming a branch factor of 128, level 1 has 1/128th as many rows as level 0,
 give or take.  Level 2 is built from level 1, and has 1/128th as many rows in it
 again, and so on until level N, which has just a single row.
 
-After building scratch tables 0 through N, the tool begins at level N and
-works backwards.  At level N, there is just a single row.  If the checksum in
-this row matches on source and destination, the tables must be identical,
-and there is no more work to do.  If they differ though, some rows in level N-1
-must differ, and the tool examines the "parent" rows in level N-1.  It continues
-to do this until it travels all the way back "up the tree" to level 0 and
-identifies exactly which rows in the target tables are different.
+After building scratch tables 0 through N, the tool begins at level N and works
+backwards.  At level N, there is just a single row.  If the checksum in this row
+matches on source and destination, the tables must be identical, and there is no
+more work to do.  If they differ though, some rows in level N-1 must differ, and
+the tool examines the "parent" rows in level N-1.  It continues to do this until
+it travels all the way back "up the tree" to level 0 and identifies exactly
+which rows in the target tables are different.  It uses breadth-first search.
 
 I've glossed over many subtleties.  For example, as the summary tables are
 built, not only their checksums but the remainders are computed on the fly; the
@@ -1251,7 +1262,270 @@ the process when entire chunks of rows are missing from one of the tables, and
 so on.  But these optimizations and subtleties are just efficiencies, and are
 not necessary for correctness.
 
+Here are some details about the table structures: The __crc column contains the
+checksum of the row from which it was derived.  The __cnt column contains the
+running count of rows from which it was derived, except in the case of level 0
+where each row is derived from one row.  The __rem column contains the checksum
+modulus the power of the branching factor.  The __par column in level N is a
+"pointer" to the __rem column in level N-1.
+
+=head1 FINDING DIFFERENCES TOP-DOWN
+
+The top-down algorithm is nearly the reverse of the bottom-up algorithm.
+Instead of building summary tables bottom-up from many rows and ending with one
+row, then searching top-down back through the summaries, it does an n-ary search
+on clusters of the tables, which I refer to as "groupings."  The search begins
+with grouped data and ends with single rows, instead of beginning with single
+rows and working towards summaries.  There are no summary tables.
+
+The basic idea is to choose an appropriate grouping strategy which will allow
+MySQL to use indexes to drill down through regions of the table, grouping each
+region together at first and comparing whole chunks of data between the source
+and destination.  Suppose the tables contain day-level data for many client
+accounts; clients can have many accounts.  Day, client, account and whatever the
+primary key is, are all indexed.  The drill-down strategy might first group the
+table by day and see which days differ between the tables, then within the days
+that differ group by client, then account, and finally descend to the individual
+row level, using the primary key.
+
+This approach is also a breadth-first search as I've implemented it.  At each
+level in the drill-down, the tool knows a set of truths, such as the value of
+certain columns in the rows, the number of rows that might be bad, and so on.
+In this respect it is fairly similar to the bottom-up approach.
+
+=head1 PROS AND CONS OF THE TWO SEARCH METHODS
+
+Each method for finding the rows that differ has its own strengths and
+weaknesses, and is suited for different scenarios.
+
+The bottom-up approach has these advantages:
+
+=over
+
+=item *
+
+The checksum and modulo arithmetic ensure a uniform hierarchy of rows in the
+"tree" of N-level summary tables.  Taking the modulo of a checksum is
+essentially a random number, which will distribute rows approximately evenly in
+each successive summary.
+
+=item *
+
+The algorithm makes no assumptions about keys or data types, and will work on
+any table with a primary key or a user-specified index.  All you need is a way
+to identify a row, in the final analysis.
+
+=item *
+
+The technique works the same on every table structure; there's no need to think
+about the "best" way to do it for a specific table.
+
+=item *
+
+The summary tables can be kept and re-used for successive analyses, or to
+restart an analysis that fails for some reason (for example, you specified a
+maximum cost before halting, and it was exceeded but you've changed your mind;
+no need to rebuild the summaries, you can just restart).
+
+=item *
+
+If you assume that there are occasional "bad" rows scattered through the table,
+the entire tree of summary tables will need to be examined to find them.
+Pre-calculating this is an up-front penalty that pays off in efficiency once you
+try to find the bad rows.
+
+=item *
+
+This algorithm's best and worst cases, in terms of pre-computing the summary
+tables, are identical.  Given that you know the table size, you know how
+expensive it will be.
+
+=item *
+
+Parts of the algorithm can be parallelized readily, though I have not yet done
+so, as I want to make sure the implementation is correct first (I plan to do
+this soon).
+
+=item *
+
+This algorithm is network-efficient, as the potentially large rows in the target
+tables (suppose each row has very large BLOBS in it) are not sent across the
+network.  Only the checksums are sent across the network, until the bad rows
+themselves are identified.
+
+=back
+
+The algorithm has its shortcomings too, though:
+
+=over
+
+=item *
+
+It is necessary to do some possibly significant work up front to design the
+summary tables properly.  For example, you need to know the maximum possible
+number of rows to be examined.  I have tried to optimize this process as much as
+possible by examining index statistics and making estimates.  This is fairly
+cheap, and should work in nearly every case, but it makes the coding much more
+complex, just to avoid things like a COUNT(*) query, which is notoriously slow
+on InnoDB.
+
+=item *
+
+All the summary tables may add up to a LOT of data on very large tables.  If the
+target table is narrow, the summary tables may be even larger than the target
+tables, though there will never be more rows in level 0 than the target table
+has.
+
+=item *
+
+It's hard to make this approach play nicely with replication.  If you build
+temporary tables in memory, you're playing havoc with statement-based
+replication should the slave crash.  Even if you build them on disk, which is
+durable and restartable, the summary tables built on the master will replicate
+to the slave.  The slave server will be doing double work with the master's
+queries running on it.  Either way, building summary tables on the server is
+anathema to replication.
+
+=item *
+
+It's hard to lock the table for consistency, should you wish to.  You can't
+design the summary tables until you start querying the target tables, yet you
+can't write to the summary tables while only holding a lock on the target table,
+which would require releasing and re-acquiring the lock on the target -- race
+conditions abound.  I do have a workaround to this problem in mind, but have not
+implemented it yet (and it would not solve the problem in cases where the
+destination table is being written to).
+
+=item *
+
+The original algorithm, as designed by Coelho, didn't use any indexes or
+pre-computed and cached remainders and counts on the summary tables.  This is
+extremely inefficient on large tables, causing repeated table scans.  While I
+have modified the algorithm to avoid this, it comes at the cost of larger table
+and index size on the server.
+
+=item *
+
+The checksum/modulo approach destroys locality of reference in the target
+tables.  Suppose the rows that differ between the source and destination tables
+are concentrated in a small region of the table; the checksum/modulo math will
+randomly scatter these neighbors throughout the summary tables.  This precludes
+some types of optimizations.  This is very important on extremely large tables,
+as it causes lots of random I/O during the search phase.  It's also a realistic
+scenario for large tables, which may tend to be append-only logs or similar
+(credit card transactions, for example).
+
+=item *
+
+The reverse of something I mentioned earlier as a benefit becomes a drawback
+when only a small part of the table is bad.  Building the entire summary table
+tree for just one bad row is wasteful.  Most of the tree will compare equal, but
+there's no chance for early optimizations by pruning those branches; they've
+already been built by the time the search notices they aren't needed.
+
+=item *
+
+All the INSERT .. SELECT statements necessary to build the summary tables will
+acquire shared row locks on InnoDB tables.  This overhead adds up.
+
+=back
+
+The top-down approach is quite different, both in behavior and implementation
+details.  Here are some of its strengths:
+
+=over
+
+=item *
+
+This approach is network-efficient.  Large rows are not sent across the network,
+just as with the bottom-up approach.  However, it is also memory and space
+efficient on the servers, as there are no summary tables to build.
+
+=item *
+
+This approach does allow for early optimizations such as tree-pruning in the
+search.
+
+=item *
+
+The target table's natural groupings, created by its indexes, can (and should)
+be exploited.
+
+=item *
+
+The queries are not replicated because they don't affect any data.  The queries
+on the master will not cause extra work on the slave.
+
+=item *
+
+It's easy to lock the tables with one of several strategies, including
+intentionally locking InnoDB tables with SELECT FOR UPDATE or SELECT LOCK ON
+SHARE MODE, and MySQL's own table locks.
+
+=item *
+
+There is no need in this algorithm to compute branching factors and numbers of
+summary levels needed according the the size of the target tables.  There's no
+up-front analysis to do.  You don't need to pre-compute anything before
+searching for differences.
+
+=item *
+
+Spatial locality can be exploited.  Adjacent "bad" rows stay adjacent during the
+search.  This can help avoid random I/O during the search.
+
+=item *
+
+There are more opportunities for bulk operations, such as noticing a large chunk
+of the table can be inserted or deleted en masse.  While there are some in the
+bottom-up approach, there are not as many, and they're harder to optimize.
+
+=item *
+
+The best case for this algorithm is not the same cost as the worst case.  This
+can be good or bad, depending on the scenario.
+
+=item *
+
+The grouping strategy determines the "branch factor" of the search tree, and it
+can vary from level to level in the search, depending on the data and the
+strategy chosen.  This can be a good thing in the hands of a smart DBA, or a bad
+thing in a novice's hands.
+
+=item *
+
+As the search descends through the tree of groupings, it needs to examine fewer
+and fewer columns in the target tables.
+
+=back
+
+The top-down approach is not without its weaknesses:
+
+=over
+
+=item *
+
+The search strategy can be simpler or more complex.  It's up to the DBA.  There
+are certainly more possibilities, and choosing a good top-down strategy might be
+hard.
+
+=item *
+
+If there's no locality to exploit, the top-down approach might not be able to
+prune the search tree, and it might end up doing more work than the bottom-up.
+
+=item *
+
+The drill-down must repeatedly checksum the entire row (except the columns it
+holds as constants in each level of the search).  If the rows are very large,
+for example if there are large text columns, this might be a lot of work for the
+server to do over and over.
+
+=back
+
 =head1 OUTPUT
+
+TODO
 
 =head1 COMPATIBILITY
 
