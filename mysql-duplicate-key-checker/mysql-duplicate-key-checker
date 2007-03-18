@@ -459,6 +459,7 @@ foreign keys, the columns are ordered so string comparison can find
 duplicates, since column order in a foreign key is immaterial.
 
 =back
+
 =head1 SYSTEM REQUIREMENTS
 
 You need the following Perl modules: DBI, DBD::mysql, and Term::ReadKey.
