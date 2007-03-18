@@ -1162,6 +1162,22 @@ sub coalesce {
 
 mysql-table-sync - Efficiently synchronize data between two MySQL tables.
 
+=head1 SYNOPSIS
+
+To compare two tables,
+
+ mysql-table-sync -a topdown -d col1,col2 user:pass@host1/db.tbl user@host2/db.tbl
+
+Or,
+
+ mysql-table-sync -a bottomup -B 128 user:pass@host1/db.tbl user@host2/db.tbl
+
+To show the differences between the tables, use the --verbose option.  Issue
+this option multiple times for more detail.  To see queries that will make the
+second table the same as the first, use the --print option.  To execute these
+queries, use the --execute option.  To see the queries issued while searching
+for differences, use the --debug option.
+
 =head1 DESCRIPTION
 
 I wrote this tool to help me resync slaves that "drift" from their masters,
@@ -1522,6 +1538,33 @@ for example if there are large text columns, this might be a lot of work for the
 server to do over and over.
 
 =back
+
+=head1 RESOLVING DIFFERENCES
+
+Once the tool has found the differences, you probably want to resolve them.
+There are two major ways I know to do this, and several variations.
+
+The most obvious way is to simply issue INSERT, UPDATE, and DELETE statements
+against the destination server.
+
+A more subtle approach is to take advantage of replication and issue the
+statements on the master, letting replication propagate them to the slave.  In
+this case a slightly different approach is needed.  If a row is missing on the
+slave, you can't just INSERT it on the master, or you'll presumably get a
+duplicate key error.  You could do INSERT IGNORE or REPLACE instead.
+
+The tool uses REPLACE by default when you're using replication.  To tell it to
+use INSERT and UPDATE instead, use the --strategy=s option.  You can use
+--strategy=s to use REPLACE even when you're not using replication to fix the
+destination table.
+
+You can also use the --onlydo option to only issue some kinds of statements --
+for example, suppose you want to run the INSERT and UPDATE statements but not
+the DELETE.
+
+=head1 GUARANTEEING CONSISTENCY
+
+TODO
 
 =head1 OUTPUT
 
