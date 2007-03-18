@@ -276,8 +276,6 @@ exit $exit_status;
 # Top-down algorithm
 # ############################################################################
 
-# TODO: for top-down, we should know approximately how many rows might be bad at any
-# level in the recursion, and can give up unless the number is decreasing.
 sub topdown {
 
    # Design a grouping strategy: user-defined, then finally primary key.
@@ -328,7 +326,7 @@ sub topdown {
          my %new_where = %$where;  # Will get more cols added and used below.
 
          # If the current row is the "same row" on both sides...
-         if ( $sr && $dr && bu_key_eq($source, $sr, $dr, $grouping, $grouping) ) {
+         if ( $sr && $dr && key_eq($source, $sr, $dr, $grouping) ) {
             # The "same" row descends from parents that differ.
             if ( $sr->{__crc} ne $dr->{__crc} ) {
                @new_where{@$grouping} = @{$sr}{@$grouping};
@@ -357,7 +355,7 @@ sub topdown {
          }
 
          # The row in the source doesn't exist at the destination
-         elsif ( !$dr || ( $sr && bu_key_le($source, $sr, $dr, $grouping, $grouping) ) ) {
+         elsif ( !$dr || ( $sr && key_le($source, $sr, $dr, $grouping) ) ) {
             @new_where{@$grouping} = @{$sr}{@$grouping};
             push @to_insert, \%new_where;
             $count{ins} += $sr->{__cnt} || 1;
@@ -370,7 +368,7 @@ sub topdown {
          }
 
          # Symmetric to the above
-         elsif ( !$sr || ( $dr && bu_key_le($source, $dr, $sr, $grouping, $grouping) ) ) {
+         elsif ( !$sr || ( $dr && key_le($source, $dr, $sr, $grouping) ) ) {
             @new_where{@$grouping} = @{$dr}{@$grouping};
             push @to_delete, \%new_where;
             $count{del} += $dr->{__cnt} || 1;
@@ -679,22 +677,13 @@ sub bu_merge_tree {
       @bad_parents = ();
       $rows_in_src = $rows_in_dst = 0;
 
-# TODO: make src and dest keys the same.
-# TODO rename bu_key_*
-      my @src_key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{key}}};
-      my @dst_key = $level ? '__par' : @{$dest->{info}->{keys}->{$dest->{key}}};
+      my @key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{key}}};
       my ($sr, $dr); # Source row, dest row
 
       # The statements fetch in order, so use a 'merge' algorithm of advancing
       # after rows match.  This is essentially a FULL OUTER JOIN.
       MERGE:
       while ( 1 ) { # Exit this loop via 'last'
-
-# TODO
-     # if ( $level < $levels && $opts{m} && $opts{m} < $num_bad_rows ) {
-     #    print "-- Level $level halt: $num_bad_rows rows, --maxcost=$opts{m}\n";
-     #    return 0;
-     # }
 
          if ( !$sr ) {
             $sr = $src_sth->fetchrow_hashref;
@@ -712,7 +701,7 @@ sub bu_merge_tree {
          last MERGE unless $sr || $dr;
 
          # If the current row is the "same row" on both sides...
-         if ( $sr && $dr && bu_key_eq($source, $sr, $dr, \@src_key, \@dst_key) ) {
+         if ( $sr && $dr && key_eq($source, $sr, $dr, \@key) ) {
             # The "same" row descends from parents that differ.
             if ( $sr->{__crc} ne $dr->{__crc} ) {
                if ( $level ) {
@@ -730,7 +719,7 @@ sub bu_merge_tree {
          }
 
          # The row in the source doesn't exist at the destination
-         elsif ( !$dr || ( $sr && bu_key_le($source, $sr, $dr, \@src_key, \@dst_key) ) ) {
+         elsif ( !$dr || ( $sr && key_le($source, $sr, $dr, \@key) ) ) {
             if ( $level ) {
                push @bulk_insert, $sr;
                if ( $level && $opts{v} > 2 ) {
@@ -749,7 +738,7 @@ sub bu_merge_tree {
          }
 
          # Symmetric to the above
-         elsif ( !$sr || ( $dr && bu_key_le($source, $dr, $sr, \@dst_key, \@src_key) ) ) {
+         elsif ( !$sr || ( $dr && key_le($source, $dr, $sr, \@key) ) ) {
             if ( $level ) {
                push @bulk_delete, $dr;
                if ( $level && $opts{v} > 2 ) {
@@ -770,6 +759,12 @@ sub bu_merge_tree {
          else {
             die "This code should never have run.  This is a bug.";
          }
+
+        # if ( $level < $levels && $opts{m} && $opts{m} < $num_bad_rows ) {
+        #    print "-- Level $level halt: $num_bad_rows rows, --maxcost=$opts{m}\n";
+        #    return 0;
+        # }
+
       }
 
       my $sum_bulk_ins = sum(map { $_->{__cnt} } @bulk_insert) || 0;
@@ -879,44 +874,6 @@ sub bu_handle_data_change {
    }
 }
 
-# I named this 'le' for clarity about what it does, even though the way it's
-# used is in a strict 'lt' sense because 'bu_key_eq' would prevent the code from
-# reaching this function.  NULL sorts before defined values in MySQL, so I
-# consider undef "less than."
-sub bu_key_le {
-   my ( $info, $r1, $r2, $key_1, $key_2 ) = @_;
-   foreach my $i ( 0 .. @$key_1 - 1 ) {
-      my $l = $r1->{$key_1->[$i]};
-      my $r = $r2->{$key_2->[$i]};
-      my $n = $key_1->[$i] eq '__par' || $info->{info}->{num_hash}->{$key_1->[$i]}; # Whether numeric col
-      if ( (defined $l && !defined $r)
-         || ( defined $l && defined $r && ($n ? $l > $r : $l gt $r) )
-      ) {
-         return 0;
-      }
-      elsif ( (!defined $l && defined $r)
-         || ( defined $l && defined $r && ($n ? $l < $r : $l lt $r) )
-      ) {
-         return 1;
-      }
-   }
-   return 1;
-}
-
-sub bu_key_eq {
-   my ( $info, $r1, $r2, $key_1, $key_2 ) = @_;
-   foreach my $i ( 0 .. @$key_1 - 1 ) {
-      my $l = $r1->{$key_1->[$i]};
-      my $r = $r2->{$key_2->[$i]};
-      my $n = $key_1->[$i] eq '__par' || $info->{info}->{num_hash}->{$key_1->[$i]}; # Whether numeric col
-      my $parity = defined($l) + defined($r);
-      if ( $parity == 1 || ( $parity == 2 && ($n ? $l != $r : $l ne $r) )) {
-         return 0;
-      }
-   }
-   return 1;
-}
-
 sub bu_fetch_level {
    my ( $info, $level, @bad_parents ) = @_;
    my $dbh = $info->{dbh};
@@ -971,6 +928,44 @@ sub bu_existing_levels {
 # Subroutines
 # ############################################################################
 
+# I named this 'le' for clarity about what it does, even though the way it's
+# used is in a strict 'lt' sense because key_eq would prevent the code from
+# reaching this function.  NULL sorts before defined values in MySQL, so I
+# consider undef "less than."
+sub key_le {
+   my ( $info, $r1, $r2, $key ) = @_;
+   foreach my $i ( 0 .. @$key - 1 ) {
+      my $l = $r1->{$key->[$i]};
+      my $r = $r2->{$key->[$i]};
+      my $n = $key->[$i] eq '__par' || $info->{info}->{num_hash}->{$key->[$i]}; # Whether numeric col
+      if ( (defined $l && !defined $r)
+         || ( defined $l && defined $r && ($n ? $l > $r : $l gt $r) )
+      ) {
+         return 0;
+      }
+      elsif ( (!defined $l && defined $r)
+         || ( defined $l && defined $r && ($n ? $l < $r : $l lt $r) )
+      ) {
+         return 1;
+      }
+   }
+   return 1;
+}
+
+sub key_eq {
+   my ( $info, $r1, $r2, $key ) = @_;
+   foreach my $i ( 0 .. @$key - 1 ) {
+      my $l = $r1->{$key->[$i]};
+      my $r = $r2->{$key->[$i]};
+      my $n = $key->[$i] eq '__par' || $info->{info}->{num_hash}->{$key->[$i]}; # Whether numeric col
+      my $parity = defined($l) + defined($r);
+      if ( $parity == 1 || ( $parity == 2 && ($n ? $l != $r : $l ne $r) )) {
+         return 0;
+      }
+   }
+   return 1;
+}
+
 # All output has to be prefixed with SQL comments so the output can be piped
 # right into MySQL if desired.
 sub debug_print {
@@ -995,6 +990,7 @@ sub handle_data_change {
 
    else {
       my $query = "SELECT $source->{cols} FROM $source->{db_tbl} $crit";
+      debug_print($query);
       my $sth = $source->{dbh}->prepare($query);
       $sth->execute();
       while ( my $res = $sth->fetchrow_hashref() ) {
