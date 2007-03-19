@@ -1,6 +1,7 @@
 GLOBAL: use
 DBI->connect("DBI:mysql:mysql_read_default_group=mysql;host=$host;port=$port",
             $user, $pass, { Options });
+http://search.cpan.org/dist/DBD-mysql/lib/DBD/mysql.pm
 Pipe output from duplicate-key-checker into another tool to graph structures 
    (check out dot for graphing)
 mysqldiff, datadiff, coldiff:
