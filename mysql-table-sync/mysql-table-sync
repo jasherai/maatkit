@@ -400,6 +400,11 @@ sub topdown {
    td_handle_data_change('UPDATE', @to_update);
 }
 
+# TODO: group together UPDATE/DELETE whose first key is the same, e.g.
+# DELETE FROM `rkbid2`.`adgrouppriority` WHERE `engineacct` = '733' AND `adgroup` = '332286601';
+# DELETE FROM `rkbid2`.`adgrouppriority` WHERE `engineacct` = '733' AND `adgroup` = '332286661';
+# DELETE FROM `rkbid2`.`adgrouppriority` WHERE `engineacct` = '733' AND `adgroup` = '332287681';
+# can be grouped with AND adgroup in(....)
 sub td_handle_data_change {
    my ( $action, @rows ) = @_;
    return unless $action =~ m/$opts{o}/i;
