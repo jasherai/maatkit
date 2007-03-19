@@ -362,13 +362,10 @@ If you issue the --flush option, the script will also print FLUSH PRIVILEGES.
 You might need this on pre-4.1.1 servers if you want to drop a user
 completely.
 
-You can list each grant statement separately with the --separate option.
-This also causes each revoke statement to be listed separately, and if you
-used the --flush option, will cause a FLUSH PRIVILEGES after each user,
-instead of once at the end of all the output.
-
-# TODO add a drop-first option, print timestamp and version information
-
+You can list each grant statement separately with the --separate option.  This
+also causes each revoke statement to be listed separately, and if you used the
+--flush option, will cause a FLUSH PRIVILEGES after each user, instead of once
+at the end of all the output.
 
 =head1 SEE ALSO
 
