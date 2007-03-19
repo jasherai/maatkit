@@ -41,20 +41,23 @@ our $VERSION = '@VERSION@';
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my %opt_spec = (
-   d => { s => 'database|d=s', r => 0, d => 'Database' },
-   h => { s => 'host|h=s',     r => 0, d => 'Database server hostname' },
-   l => { s => 'help',         r => 0, d => 'Show this help message' },
-   P => { s => 'port|P=i',     r => 0, d => 'Database server port' },
-   p => { s => 'pass|p=s',     r => 0, d => 'Database password' },
-   u => { s => 'user|u=s',     r => 0, d => 'Database username' },
-   o => { s => 'only|o=s',     r => 0, d => 'Only show grants for this comma-separated list of users' },
-   i => { s => 'ignore|i=s',   r => 0, d => 'Ignore this comma-separated list of users' },
+   d => { s => 'database|d=s', d => 'Database' },
+   h => { s => 'host|h=s',     d => 'Database server hostname' },
+   l => { s => 'help',         d => 'Show this help message' },
+   P => { s => 'port|P=i',     d => 'Database server port' },
+   p => { s => 'pass|p=s',     d => 'Database password' },
+   u => { s => 'user|u=s',     d => 'Database username' },
+   o => { s => 'only|o=s',     d => 'Only show grants for this comma-separated list of users' },
+   i => { s => 'ignore|i=s',   d => 'Ignore this comma-separated list of users' },
+   D => { s => 'drop|D',       d => 'Add DROP USER before each user' },
+   r => { s => 'revoke|r',     d => 'Add REVOKE statements' },
+   s => { s => 'separate|s',   d => 'List each GRANT or REVOKE separately' },
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( h d P u p l o i );
+my @opt_keys = qw( h d P u p l o i D r s);
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -66,6 +69,9 @@ my %opts = (
    u => undef,
    o => undef,
    i => undef,
+   D => 0,
+   r => 0,
+   s => '',
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -194,20 +200,63 @@ foreach my $u (@$users) {
    }
    next unless @grants;
 
-   @grants = map {
-      # Sort the actual grants lexically within each row for consistency.
-      $_ =~ s/GRANT (.*?) ON (`|\*)/"GRANT " . join(', ', sort(split(', ', $1))) . " ON $2"/e;
-      $_;
-   } @grants;
+   if ( $opts{s} ) { # List each grant separately.
+      @grants = map {
+         my ( $grants, $on_what ) = $_ =~ m/GRANT (.*?) ON ((?:`|\*).*)$/;
+         map { "GRANT $_ ON $on_what" } split(', ', $grants);
+      } @grants;
+      my $count;
+      # If the row with IDENTIFIED BY has multiple grants, this will create many
+      # such rows; strip it from all but the first.
+      @grants = map {
+         if ( $_ =~ m/IDENTIFIED BY/ ) {
+            if ( $count++ ) {
+               $_ =~ s/ IDENTIFIED BY.*//;
+            }
+         }
+         $_;
+      } @grants;
+   }
+   else { # Sort the actual grants lexically within each row for consistency.
+      @grants = map {
+         $_ =~ s/GRANT (.*?) ON (`|\*)/"GRANT " . join(', ', sort(split(', ', $1))) . " ON $2"/e;
+         $_;
+      } @grants;
+   }
 
    # Sort the grant rows for consistency too, but the one with the password
    # should always come first.
    @grants = sort {
       $b =~ m/IDENTIFIED BY/ <=> $a =~ m/IDENTIFIED BY/ || $a cmp $b
    } @grants;
+
+   # Print REVOKE statements.
+   if ( $opts{r} ) {
+      my @revoke = map {
+         my ( $grants, $on_what, $user ) = $_
+            =~ m/GRANT (.*?) ON ((?:`|\*).*?) TO ('[^']+'\@'[^']+')/;
+         map { "REVOKE $_ ON $on_what FROM $user" } split(', ', $grants);
+      } @grants;
+      print join(
+         "\n",
+         "-- Revoke statements for '$u->{User}'\@'$u->{Host}'",
+         map {"$_;"} @revoke),
+         "\n";
+   }
+
+   if ( $opts{D} ) {
+      print join("\n",
+         "-- You may need to issue this on pre-4.1 servers",
+         "-- DELETE FROM `mysql`.`user` WHERE `User`='$u->{User}' AND `Host`='$u->{Host}';",
+         "DROP USER '$u->{User}'\@'$u->{Host}';",
+         ), "\n";
+   }
+   
    print join( "\n", "-- Grants for '$u->{User}'\@'$u->{Host}'", map {"$_;"} @grants ), "\n";
    $exit_status = 0;
 }
+
+$dbh->disconnect;
 exit($exit_status);
 
 # ############################################################################
