@@ -1,3 +1,6 @@
+GLOBAL: use
+DBI->connect("DBI:mysql:mysql_read_default_group=mysql;host=$host;port=$port",
+            $user, $pass, { Options });
 Pipe output from duplicate-key-checker into another tool to graph structures 
    (check out dot for graphing)
 mysqldiff, datadiff, coldiff:
@@ -8,4 +11,3 @@ query sniper:
    * http://www.stillhq.com/mysql/000008.html
 stale table sniper: remove tables with certain patterns, or older than a certain
 amount.
-grant-extractor: get all grants for all users, sorted and canonicalized.
