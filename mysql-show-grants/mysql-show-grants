@@ -330,8 +330,11 @@ user's password first, if it exists.  This removes three kinds of inconsistency
 you'll get from running SHOW GRANTS, and avoids spurious changesets in version
 control.
 
-Finally, if you want to diff grants across servers, it will be hard without
+Third, if you want to diff grants across servers, it will be hard without
 "canonicalizing" them, which this script does.  The output is fully diff-able.
+
+With the --revoke, --separate and other options, this script also makes it
+easy to revoke specific privileges from users.  This is tedious otherwise.
 
 =head1 OPTIONS
 
@@ -372,6 +375,8 @@ at the end of all the output.
 Someone pointed out that this has been done before (not surprising, as it's not
 all that complicated).  Visit http://www.futhark.ch/mysql/139.html for a simpler
 implementation of the same general concept, though without the canonicalization.
+I borrowed the idea of adding DROP USER from that script, and it inspired me
+to add the REVOKE functionality too.
 
 =head1 SYSTEM REQUIREMENTS
 
