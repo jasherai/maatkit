@@ -1,9 +1,5 @@
 #!/usr/bin/perl
 
-# TODO add a drop-first option, print timestamp and version information
-# http://dev.mysql.com/doc/refman/4.1/en/drop-user.html
-# http://dev.mysql.com/doc/refman/5.0/en/drop-user.html
-# http://dev.mysql.com/doc/refman/5.0/en/revoke.html
 # mysql-show-grants canonicalizes and prints MySQL grants so you can effectively
 # replicate, compare and version-control them.
 #
@@ -52,12 +48,13 @@ my %opt_spec = (
    D => { s => 'drop|D',       d => 'Add DROP USER before each user' },
    r => { s => 'revoke|r',     d => 'Add REVOKE statements' },
    s => { s => 'separate|s',   d => 'List each GRANT or REVOKE separately' },
+   f => { s => 'flush|f',      d => 'Add FLUSH PRIVILEGES' },
 );
 
 # Define the order cmdline opts will appear in help output.  Add any extra ones
 # defined above.  If it's not in this list, it's not an option to this
 # program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( h d P u p l o i D r s);
+my @opt_keys = qw( h d P u p l o i D r s f);
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -72,6 +69,7 @@ my %opts = (
    D => 0,
    r => 0,
    s => '',
+   f => 0,
 );
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -181,6 +179,12 @@ my $dbh = DBI->connect(
    $conn->{u}, $conn->{p}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
 
+my ( $version, $ts ) = $dbh->selectrow_array("SELECT VERSION(), NOW()");
+print join("\n",
+   "-- Grants dumped by mysql-show-grants $VERSION",
+   "-- Dumped from server $conn->{h}, MySQL $version at $ts",
+   ), "\n";
+
 my $users = $opts{o} || $dbh->selectall_arrayref(
    'SELECT DISTINCT User, Host FROM mysql.user ORDER BY User, Host',
    { Slice => {} });
@@ -246,14 +250,22 @@ foreach my $u (@$users) {
 
    if ( $opts{D} ) {
       print join("\n",
-         "-- You may need to issue this on pre-4.1 servers",
-         "-- DELETE FROM `mysql`.`user` WHERE `User`='$u->{User}' AND `Host`='$u->{Host}';",
          "DROP USER '$u->{User}'\@'$u->{Host}';",
+         "DELETE FROM `mysql`.`user` WHERE `User`='$u->{User}' AND `Host`='$u->{Host}';",
          ), "\n";
    }
    
    print join( "\n", "-- Grants for '$u->{User}'\@'$u->{Host}'", map {"$_;"} @grants ), "\n";
+
+   if ( $opts{f} && $opts{s} ) {
+      print "FLUSH PRIVILEGES;\n";
+   }
+
    $exit_status = 0;
+}
+
+if ( $opts{f} && !$opts{s} ) {
+   print "FLUSH PRIVILEGES;\n";
 }
 
 $dbh->disconnect;
@@ -336,6 +348,27 @@ Or
 You can specify multiple values joined with a comma:
 
    mysql-show-grants -i foo,root@localhost
+
+You can convert each GRANT statement into its corresponding REVOKE statement
+with the --revoke option.  This will allow you to easily revoke the
+privileges.  You can also specify the --drop option to automatically drop the
+user.  In MySQL pre-5.0.2, this only works if all grants have already been
+revoked.  For versions earlier than that, you will need to revoke all
+privileges separately, then issue DROP USER.  For versions pre-4.1.1, you need
+to revoke all the privileges, then DELETE from the mysql.user table.  The
+output helpfully includes all this for you.
+
+If you issue the --flush option, the script will also print FLUSH PRIVILEGES.
+You might need this on pre-4.1.1 servers if you want to drop a user
+completely.
+
+You can list each grant statement separately with the --separate option.
+This also causes each revoke statement to be listed separately, and if you
+used the --flush option, will cause a FLUSH PRIVILEGES after each user,
+instead of once at the end of all the output.
+
+# TODO add a drop-first option, print timestamp and version information
+
 
 =head1 SEE ALSO
 
