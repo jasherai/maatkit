@@ -404,7 +404,7 @@ sub topdown {
 # DELETE FROM tbl WHERE `account` = '733' AND `ikey` = '332286601';
 # DELETE FROM tbl WHERE `account` = '733' AND `ikey` = '332286661';
 # DELETE FROM tbl WHERE `account` = '733' AND `ikey` = '332287681';
-# can be grouped with AND adgroup in(....)
+# can be grouped with AND ikey in(....)
 sub td_handle_data_change {
    my ( $action, @rows ) = @_;
    return unless $action =~ m/$opts{o}/i;
