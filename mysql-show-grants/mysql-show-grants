@@ -1,6 +1,9 @@
 #!/usr/bin/perl
 
 # TODO add a drop-first option, print timestamp and version information
+# http://dev.mysql.com/doc/refman/4.1/en/drop-user.html
+# http://dev.mysql.com/doc/refman/5.0/en/drop-user.html
+# http://dev.mysql.com/doc/refman/5.0/en/revoke.html
 # mysql-show-grants canonicalizes and prints MySQL grants so you can effectively
 # replicate, compare and version-control them.
 #
