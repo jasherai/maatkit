@@ -42,41 +42,35 @@ my %opt_spec = (
    D => { s => 'database|D=s', r => 0, d => 'Database to use' },
    h => { s => 'host|h=s',     r => 0, d => 'Connect to host' },
    l => { s => 'help',         r => 0, d => 'Show this help message' },
-   P => { s => 'port|P=i',     r => 0, d => 'Database server port' },
+   P => { s => 'port|P=i',     r => 0, d => 'Port number to use for connection' },
    S => { s => 'socket|S=s',   r => 0, d => 'Socket file to use for connection' },
-   p => { s => 'pass|p=s',     r => 0, d => 'Database password' },
+   p => { s => 'password|p=s', r => 0, d => 'Password to use when connecting' },
    u => { s => 'user|u=s',     r => 0, d => 'User for login if not current user' },
 );
-
-# Define the order cmdline opts will appear in help output.  Add any extra ones
-# defined above.  If it's not in this list, it's not an option to this
-# program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( D h p P S u l );
-
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = (
-   D => undef,
-   h => undef,
-   P => undef,
-   p => undef,
-   u => undef,
-   S => undef,
-);
+my %opts;
+# Post-process...
+foreach my $spec ( values %opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+}
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+GetOptions( map { $_->{k} => \$opts{$_->{k}} }  values %opt_spec);
 
 # If a filename or other argument(s) is required after the other arguments,
 # add "|| !@ARGV" inside the parens on the next line.
-if ( $opts{l} || grep { !$opts{$_} && $opt_spec{$_}->{r} } @opt_keys ) {
+if ( $opts{help} || grep { !$opts{$_} && $opt_spec{$_}->{r} } keys %opt_spec ) {
    print "Usage: $PROGRAM_NAME <options> batch-file\n\n  Options:\n\n";
-   foreach my $key ( @opt_keys ) {
-      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
-      $long  = "[no]$long" if $opt_spec{$key}->{s} =~ m/!/;
-      $long  = "--$long" . ( $short ? ',' : '' );
-      $short = $short ? " -$short" : '';
-      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } values %opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
@@ -100,7 +94,5 @@ my %conn = ( h => 'host', P => 'port', S => 'socket');
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(h P S))
    . ';mysql_read_default_group=mysql';
-   print $dsn, "\n";
-   exit;
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
