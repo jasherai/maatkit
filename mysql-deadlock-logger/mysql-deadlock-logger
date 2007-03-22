@@ -47,59 +47,29 @@ my %opt_spec = (
    t => { s => 'tab|t',        d => 'Output tab-separated' },
 );
 
-# Define the order cmdline opts will appear in help output.  Add any extra ones
-# defined above.  If it's not in this list, it's not an option to this
-# program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l s d p c n C t );
-
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   l => '',
    s => '',
    d => '',
-   p => 0,
-   c => undef,
-   n => 0,
    C => '',
-   t => 0,
 );
+# Post-process...
+foreach my $spec ( values %opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+}
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+GetOptions( map { $_->{s} => \$opts{$_->{k}} }  values %opt_spec);
 
 # Process options...
 $opts{c} = $opts{p} unless defined $opts{c};
 $opts{C} = $opts{C} ? { map { $_ => 1 } $opts{C} =~ m/(\w+)/g } : 0;
-
-# ############################################################################
-# Try to use the user's .my.cnf file.
-# ############################################################################
-my $my_cnf = {
-   host => 'localhost',
-   user => getlogin() || getpwuid($UID),
-   port => 3306,
-};
-eval {
-   my $homedir = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '';
-   my $filename = "$homedir/.my.cnf";
-   if ( -f $filename ) {
-      open my $conf_file, "<", "$homedir/.my.cnf" or die $OS_ERROR;
-      while ( my $line = <$conf_file> ) {
-         chomp $line;
-         $line =~ s/(^\s*)|(\s*#.*$)//g;
-         next unless $line;
-         my ( $key, $val ) = split( /\s*=\s*/, $line );
-         next unless defined $val;
-         if ( $key eq 'host' )     { $my_cnf->{host} = $val; }
-         if ( $key eq 'user' )     { $my_cnf->{user} = $val; }
-         if ( $key =~ m/^pass/ )   { $my_cnf->{pass} = $val; }
-         if ( $key eq 'database' ) { $my_cnf->{database} = $val; }
-         if ( $key eq 'port' )     { $my_cnf->{port} = $val; }
-      }
-      close $conf_file;
-   }
-};
 
 # ############################################################################
 # Parse arguments saying where to connect.  If the script doesn't have
@@ -107,10 +77,9 @@ eval {
 # ############################################################################
 # Parses a DSN in login:pass@host:port/database.table format
 sub parse_dsn {
-   my ($dsn, $prev, $defs) = @_;
+   my ($dsn, $prev) = @_;
    $dsn  ||= '';
    $prev ||= {};
-   $defs ||= {};
 
    my ( $user, $pass, $host, $port, $database, $table ) = $dsn =~ m{
       (?:
@@ -128,33 +97,24 @@ sub parse_dsn {
       }x;
 
    return {
-      user     => coalesce( $user,     $prev->{user},     $defs->{user} ),
-      pass     => coalesce( $pass,     $prev->{pass},     $defs->{pass} ),
-      host     => coalesce( $host,     $prev->{host},     $defs->{host} ),
-      port     => coalesce( $port,     $prev->{port},     $defs->{port} ),
-      database => coalesce( $database, $prev->{database}, $defs->{database} ),
-      table    => coalesce( $table,    $prev->{table} ),
+      u => $user     || $prev->{u},
+      p => $pass     || $prev->{p},
+      h => $host     || $prev->{h},
+      P => $port     || $prev->{P},
+      D => $database || $prev->{D},
+      t => $table    || $prev->{t},
    };
 }
 
-sub coalesce {
-   my $i = 0;
-   while ( $i < @_ && !defined $_[$i] ) {
-      $i++;
-   }
-   return $_[$i];
-}
+my $source = parse_dsn($opts{s}, {}      );
+my $dest   = parse_dsn($opts{d}, $source );
 
-my $source = parse_dsn($opts{s}, {},      $my_cnf);
-my $dest   = parse_dsn($opts{d}, $source, $my_cnf);
-
-if ( $opts{l} || !$source ) {
-   print "Usage: $PROGRAM_NAME <options>\n\n  Options:\n\n";
-   foreach my $key ( @opt_keys ) {
-      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
-      $long  = "--$long" . ( $short ? ',' : '' );
-      $short = $short ? " -$short" : '';
-      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+if ( $opts{help} ) {
+   print "Usage: $PROGRAM_NAME <options>\n\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } values %opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
@@ -174,7 +134,7 @@ For more details, please read the documentation:
 USAGE
    exit(1);
 }
-if (!$opts{p} && !$dest->{table}) {
+if (!$opts{p} && !$dest->{t}) {
    print "You need to specify what to do (print or save).\n"
      . "Use the --help option to learn more.\n";
    exit(1);
@@ -229,14 +189,20 @@ my %is_proc_info = (
 # ############################################################################
 # Start working.
 # ############################################################################
+my %conn = ( h => 'host', P => 'port', S => 'socket');
 
 # Connect to the database
-my $dbh = DBI->connect(
-   "DBI:mysql:" . join(";",
-      map  { "$_=$source->{$_}" }
-      grep { defined $source->{$_} } qw(database host port)),
-   $source->{user}, $source->{pass}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+my $dsn = 'DBI:mysql:' . ( $source->{D} || '' ) . ';'
+   . join(';', map  { "$conn{$_}=$source->{$_}" } grep { defined $source->{$_} } qw(h P S))
+   . ';mysql_read_default_group=mysql';
+my $dbh = DBI->connect($dsn, @{$source}{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
+
+# Since the user might not have specified hostname for connection, try to
+# extract it from $dbh
+if ( !$source->{h} ) {
+   ($source->{h}) = $dbh->{mysql_hostinfo} =~ m/(\w+) via/;
+}
 
 my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
 
@@ -361,21 +327,21 @@ $victim ||= 0;
 foreach my $txn ( values %txns ) {
    $txn->{victim} = $txn->{id} == $victim ? 1 : 0;
    $txn->{ts}     = $ts;
-   $txn->{server} = $source->{host};
+   $txn->{server} = $source->{h} || '';
    $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
 }
 
-if ( $dest && $dest->{table} ) {
+if ( $dest && $dest->{t} ) {
    my $db_tbl = 
       join('.',
       map  {  $dbh->quote_identifier($_) }
       grep { $_ }
-      ( $dest->{database}, $dest->{table} ));
-   my $dbh2 = DBI->connect(
-      "DBI:mysql:" . join(";",
-         map  { "$_=$dest->{$_}" }
-         grep { defined $dest->{$_} } qw(database host port)),
-      $dest->{user}, $dest->{pass}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+      ( $dest->{D}, $dest->{t} ));
+
+   $dsn = 'DBI:mysql:' . ( $dest->{D} || '' ) . ';'
+      . join(';', map  { "$conn{$_}=$dest->{$_}" } grep { defined $dest->{$_} } qw(h P S))
+   . ';mysql_read_default_group=mysql';
+   my $dbh2 = DBI->connect($dsn, @{$dest}{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
       or die("Can't connect to DB: $OS_ERROR");
    my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
    my $parms = join(',', map { '?' } @cols);
