@@ -54,6 +54,7 @@ my @opt_spec = (
 # after processing.  Initial values are defaults.
 my %opts;
 # Post-process...
+my %opt_seen;
 foreach my $spec ( @opt_spec ) {
    my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
@@ -61,6 +62,7 @@ foreach my $spec ( @opt_spec ) {
    $spec->{t} = $short;
    $spec->{n} = $spec->{s} =~ m/!/;
    $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
 }
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');

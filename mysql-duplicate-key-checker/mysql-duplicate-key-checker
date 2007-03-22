@@ -36,22 +36,22 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-my %opt_spec = (
-   l => { s => 'help',           d => 'Show this help message' },
-   d => { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
-   g => { s => 'ignoredb|g=s',   d => 'Ignore this comma-separated list of databases' },
-   t => { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
-   n => { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
-   f => { s => 'function|f=s',   d => 'Do f=foreign keys, k=keys.  Default is do both.' },
-   h => { s => 'host|h=s',       d => 'Connect to host' },
-   P => { s => 'port|P=i',       d => 'Port number to use for connection' },
-   S => { s => 'socket|S=s',     d => 'Socket file to use for connection' },
-   p => { s => 'password|p=s',   d => 'Password to use when connecting' },
-   u => { s => 'user|u=s',       d => 'User for login if not current user' },
-   v => { s => 'verbose|v',      d => 'Output everything, not just dupes' },
-   a => { s => 'allstruct|a',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
-   b => { s => 'tab|b',          d => 'Output separated with tabs' },
-   s => { s => 'allatonce|s',    d => 'Print only once, instead of one DB at a time' },
+my @opt_spec = (
+   { s => 'allatonce|s',    d => 'Print only once, instead of one DB at a time' },
+   { s => 'allstruct|a',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
+   { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
+   { s => 'function|f=s',   d => 'Do f=foreign keys, k=keys.  Default is do both.' },
+   { s => 'help',           d => 'Show this help message' },
+   { s => 'host|h=s',       d => 'Connect to host' },
+   { s => 'ignoredb|g=s',   d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
+   { s => 'password|p=s',   d => 'Password to use when connecting' },
+   { s => 'port|P=i',       d => 'Port number to use for connection' },
+   { s => 'socket|S=s',     d => 'Socket file to use for connection' },
+   { s => 'tab|b',          d => 'Output separated with tabs' },
+   { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
+   { s => 'user|u=s',       d => 'User for login if not current user' },
+   { s => 'verbose|v',      d => 'Output everything, not just dupes' },
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -68,17 +68,19 @@ my %opts = (
    s => 0,
 );
 # Post-process...
-foreach my $spec ( values %opt_spec ) {
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
    my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
    $spec->{t} = $short;
    $spec->{n} = $spec->{s} =~ m/!/;
    $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
 }
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} }  values %opt_spec);
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec);
 
 # Make comma-separated lists into hashes.
 if ( $opts{d} ) {
@@ -95,7 +97,7 @@ if ( $opts{e} ) {
 
 if ( $opts{help} ) {
    print "Usage: $PROGRAM_NAME <options>\n\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } values %opt_spec ) {
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
       printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});

@@ -36,15 +36,15 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
-my %opt_spec = (
-   l => { s => 'help',         d => 'Show this help message' },
-   s => { s => 'source|s=s',   d => 'Server to check for deadlock' },
-   d => { s => 'dest|d=s',     d => 'Server in which to store info' },
-   p => { s => 'print|p',      d => 'Print to STDOUT' },
-   c => { s => 'collapse|c=i', d => 'Collapse whitespace in queries' },
-   n => { s => 'numip|n',      d => 'Express IP addresses as integers' },
-   C => { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
-   t => { s => 'tab|t',        d => 'Output tab-separated' },
+my @opt_spec = (
+   { s => 'collapse|c=i', d => 'Collapse whitespace in queries' },
+   { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
+   { s => 'dest|d=s',     d => 'Server in which to store info' },
+   { s => 'help',         d => 'Show this help message' },
+   { s => 'numip|n',      d => 'Express IP addresses as integers' },
+   { s => 'print|p',      d => 'Print to STDOUT' },
+   { s => 'source|s=s',   d => 'Server to check for deadlock' },
+   { s => 'tab|t',        d => 'Output tab-separated' },
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -55,17 +55,19 @@ my %opts = (
    C => '',
 );
 # Post-process...
-foreach my $spec ( values %opt_spec ) {
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
    my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
    $spec->{t} = $short;
    $spec->{n} = $spec->{s} =~ m/!/;
    $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
 }
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} }  values %opt_spec);
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec);
 
 # Process options...
 $opts{c} = $opts{p} unless defined $opts{c};
@@ -111,7 +113,7 @@ my $dest   = parse_dsn($opts{d}, $source );
 
 if ( $opts{help} ) {
    print "Usage: $PROGRAM_NAME <options>\n\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } values %opt_spec ) {
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
       printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
