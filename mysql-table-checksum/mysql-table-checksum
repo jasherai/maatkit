@@ -2,7 +2,6 @@
 
 # TODO:
 # Is it possible to XOR rows so the result is order-independent?
-# Read .my.cnf
 # Add a --paranoid flag that'll checksum each column separately
 # Allow using GROUP_CONCAT
 # Allow to specify separator
@@ -46,55 +45,43 @@ $OUTPUT_AUTOFLUSH = 1;
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
-my %opt_spec = (
-   l => { s => 'help',           d => 'Show this help message' },
-   d => { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
-   g => { s => 'ignoredb|g=s',   d => 'Ignore this comma-separated list of databases' },
-   t => { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
-   n => { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
-   e => { s => 'engine|e=s',     d => 'Only do this comma-separated list of storage engines' },
-   s => { s => 'where=s',        d => 'Only do rows matching this WHERE clause (implies -f SHA1)' },
-   f => { s => 'function|f=s',   d => 'CRC function (SHA1, MD5...) overrides --nocrc' },
-   c => { s => 'nocrc',          d => 'Skip the CRC' },
-   r => { s => 'nocount',        d => 'Skip the count' },
-   k => { s => 'lock|k',         d => 'Lock table on master until done on slaves (implies -v)' },
-   v => { s => 'slavelag|v',     d => 'Report how far slaves lag master' },
-   w => { s => 'wait|w=i',       d => 'How long to do MASTER_POS_WAIT on slaves (implies -kv)' },
-   b => { s => 'tab|b',          d => 'Output separated with tabs' },
-   o => { s => 'port|P=i',       d => 'Database server port' },
-   u => { s => 'user|u=s',       d => 'Database username' },
-   p => { s => 'pass|p=s',       d => 'Database password' },
+my @opt_spec = (
+   { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
+   { s => 'engine|e=s',     d => 'Only do this comma-separated list of storage engines' },
+   { s => 'function|f=s',   d => 'CRC function (SHA1, MD5...) overrides --nocrc' },
+   { s => 'help',           d => 'Show this help message' },
+   { s => 'ignoredb|g=s',   d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
+   { s => 'lock|k',         d => 'Lock table on master until done on slaves (implies -v)' },
+   { s => 'count|r!',       d => 'Do the count (default)' },
+   { s => 'crc|c!',         d => 'Do the CRC (default)' },
+   { s => 'password|p=s',   d => 'Password to use when connecting' },
+   { s => 'port|P=i',       d => 'Port number to use for connection' },
+   { s => 'slavelag|v',     d => 'Report how far slaves lag master' },
+   { s => 'socket|S=s',     d => 'Socket file to use for connection' },
+   { s => 'tab|b',          d => 'Output separated with tabs' },
+   { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
+   { s => 'user|u=s',       d => 'User for login if not current user' },
+   { s => 'wait|w=i',       d => 'How long to do MASTER_POS_WAIT on slaves (implies -kv)' },
+   { s => 'where|W=s',      d => 'Only do rows matching this WHERE clause (implies -f SHA1)' },
 );
-
-# Define the order cmdline opts will appear in help output.  Add any extra ones
-# defined above.  If it's not in this list, it's not an option to this
-# program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l d g t n e s f c r k v w b o p u );
-
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = (
-   l => 0,
-   d => '',
-   g => '',
-   t => '',
-   n => '',
-   e => '',
-   s => '',
-   f => '',
-   c => 0,
-   r => 0,
-   k => 0,
-   v => 0,
-   w => undef,
-   b => 0,
-   o => 3306,
-   u => getlogin() || getpwuid($UID),
-   p => '',
-);
+my %opts = ( W => '', r => 1, c => 1 );
+# Post-process...
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+}
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec);
 
 # Apply dependencies between arguments.
 $opts{k} ||= defined $opts{w};
@@ -105,25 +92,24 @@ $opts{f} ||= $opts{s} ? 'SHA1' : '';
 if ( $opts{d} ) {
    $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
 }
-$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g}) };
+$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
 if ( $opts{t} ) {
    $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
 }
-$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n}) };
+$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
 if ( $opts{e} ) {
    $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
 }
 
 # Create a WHERE clause
-$opts{s} = $opts{s} ? " WHERE $opts{s}" : '';
+$opts{W} = $opts{W} ? " WHERE $opts{W}" : '';
 
-if ( $opts{l} || !@ARGV ) {
-   print "Usage: $PROGRAM_NAME -u <user> -p <pass> [OPTION]... MASTER [SLAVE...]\n\n  Options:\n\n";
-   foreach my $key ( @opt_keys ) {
-      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
-      $long  = "--$long" . ( $short ? ',' : '' );
-      $short = $short ? " -$short" : '';
-      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+if ( $opts{help} || !@ARGV ) {
+   print "Usage: $PROGRAM_NAME -u <user> -p <pass> [OPTION]... MASTER [SLAVE...]\n\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
@@ -131,6 +117,7 @@ $PROGRAM_NAME checksums MySQL tables.  If you specify multiple servers, the
 first server is treated as the master, and the rest as slaves of it, for
 purposes of locking and doing MASTER_POS_WAIT.
 
+If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
 
    perldoc $PROGRAM_NAME
@@ -313,7 +300,7 @@ sub checksum_query {
    my $func = $opts{f} || 'SHA1';
    my $query = "SELECT /*$db.$tbl*/ MIN(LEAST(0, "
       . "LENGTH(\@crc := $func(CONCAT_WS('#', \@crc, $func(CONCAT_WS('#', $cols$nulls))))), "
-      . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl`$index$opts{s}";
+      . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl`$index$opts{W}";
 
    return ( $type, $query );
 }
@@ -326,9 +313,13 @@ exit $exit_status;
 
 sub get_dbh {
    my ( $host, $db ) = @_;
+   my %conn = ( h => 'host', P => 'port', S => 'socket');
+
    $db ||= '';
-   return DBI->connect(
-      "DBI:mysql:$db;host=$host;port=$opts{o}", $opts{u}, $opts{p}, $db_options )
+   my $dsn = "DBI:mysql:$db;host=$host"
+      . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(h P S))
+      . ';mysql_read_default_group=mysql';
+   return DBI->connect($dsn, @opts{qw(u p)}, $db_options )
       or die("Can't connect to DB: $OS_ERROR");
 }
 
@@ -342,7 +333,7 @@ sub do_var_crc {
 sub do_count {
    my ( $dbh, $info ) = @_;
    return $dbh->selectall_arrayref(
-      "SELECT COUNT(*) FROM `$info->{database}`.`$info->{table}`$opts{s}"
+      "SELECT COUNT(*) FROM `$info->{database}`.`$info->{table}`$opts{W}"
    )->[0]->[0];
 }
 
