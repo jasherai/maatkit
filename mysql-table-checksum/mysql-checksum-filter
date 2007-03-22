@@ -23,7 +23,6 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Data::Dumper;
 use English qw(-no_match_vars);
 use Getopt::Long;
 
@@ -37,35 +36,35 @@ $OUTPUT_AUTOFLUSH = 1;
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
-my %opt_spec = (
-   l => { s => 'help',       d => 'Show this help message' },
-   v => { s => 'verbose|v',  d => 'Output lines that have no differences' },
-   m => { s => 'master|m=s', d => 'Name of the master server' },
+my @opt_spec = (
+   { s => 'help',       d => 'Show this help message' },
+   { s => 'verbose|v',  d => 'Output lines that have no differences' },
+   { s => 'master|m=s', d => 'Name of the master server' },
 );
-
-# Define the order cmdline opts will appear in help output.  Add any extra ones
-# defined above.  If it's not in this list, it's not an option to this
-# program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( l v m );
-
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = (
-   l => 0,
-   v => 0,
-   m => 0,
-);
+my %opts = ( m => '' );
+# Post-process...
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+}
 
-Getopt::Long::Configure( 'no_ignore_case', 'bundling' );
-GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} } @opt_keys );
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec);
 
-if ( $opts{l} ) {
-   print "Usage: $PROGRAM_NAME [OPTION]... [FILE]...\n\n  Options:\n\n";
-   foreach my $key (@opt_keys) {
-      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
-      $long = "--$long" . ( $short ? ',' : '' );
-      $short = $short ? " -$short" : '';
-      printf( "  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d} );
+if ( $opts{help} ) {
+   print "Usage: $PROGRAM_NAME <options> batch-file\n\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 

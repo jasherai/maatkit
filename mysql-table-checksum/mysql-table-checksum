@@ -252,16 +252,16 @@ sub do_tbl {
    }
    my $mid = time();
    if ( $info->{engine} eq 'MyISAM' && !$opts{f}  ) {
-      if ( !$opts{c} ) {
+      if ( $opts{c} ) {
          $crc = $dbh->selectall_arrayref("CHECKSUM TABLE `$info->{database}`.`$info->{table}`",
             { Slice => {} })->[0]->{Checksum};
       }
-      if ( !$opts{r} ) {
+      if ( $opts{r} ) {
          $cnt = do_count($dbh, $info);
       }
    }
    else {
-      if ( !$opts{f} && $opts{c} ) {
+      if ( !$opts{f} && !$opts{c} ) {
          $cnt = do_count($dbh, $info);
       }
       else {
