@@ -1,5 +1,5 @@
 use ExtUtils::MakeMaker;
-$program = 'mysql-duplicate-key-checker';
+$program = 'mysql-table-maintainer';
 
 WriteMakefile(
     NAME         => $program,

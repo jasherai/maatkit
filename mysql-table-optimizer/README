@@ -1,14 +1,8 @@
-This package contains mysql-duplicate-key-checker.  Please view the perldoc for
+This package contains mysql-table-maintainer.  Please view the perldoc for
 more details.
 
 Changelog:
 
-2007-03-02: version 1.0.1
-
-   * Fixed several small bugs with quoting
-   * Fixed bugs with index types (FULLTEXT, HASH etc)
-   * Add --allatonce option
-
-2007-03-01: version 1.0.0
+2007-03-22: version 0.9.0
 
    * Initial release.
