@@ -37,20 +37,20 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
-my %opt_spec = (
-   D => { s => 'database|D=s', r => 0, d => 'Database to use' },
-   h => { s => 'host|h=s',     r => 0, d => 'Connect to host' },
-   l => { s => 'help',         r => 0, d => 'Show this help message' },
-   P => { s => 'port|P=i',     r => 0, d => 'Port number to use for connection' },
-   S => { s => 'socket|S=s',   r => 0, d => 'Socket file to use for connection' },
-   p => { s => 'password|p=s', r => 0, d => 'Password to use when connecting' },
-   u => { s => 'user|u=s',     r => 0, d => 'User for login if not current user' },
+my @opt_spec = (
+   { s => 'database|D=s', r => 0, d => 'Database to use' },
+   { s => 'host|h=s',     r => 0, d => 'Connect to host' },
+   { s => 'help',         r => 0, d => 'Show this help message' },
+   { s => 'password|p=s', r => 0, d => 'Password to use when connecting' },
+   { s => 'port|P=i',     r => 0, d => 'Port number to use for connection' },
+   { s => 'socket|S=s',   r => 0, d => 'Socket file to use for connection' },
+   { s => 'user|u=s',     r => 0, d => 'User for login if not current user' },
 );
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts;
 # Post-process...
-foreach my $spec ( values %opt_spec ) {
+foreach my $spec ( @opt_spec ) {
    my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
@@ -60,13 +60,13 @@ foreach my $spec ( values %opt_spec ) {
 }
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} }  values %opt_spec);
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec);
 
 # If a filename or other argument(s) is required after the other arguments,
 # add "|| !@ARGV" inside the parens on the next line.
-if ( $opts{help} || grep { !$opts{$_} && $opt_spec{$_}->{r} } keys %opt_spec ) {
+if ( $opts{help} ) {
    print "Usage: $PROGRAM_NAME <options> batch-file\n\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } values %opt_spec ) {
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
       printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
