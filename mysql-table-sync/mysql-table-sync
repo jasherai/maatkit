@@ -39,35 +39,33 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # Get configuration information.
 # ############################################################################
 
-my %opt_spec = (
-   h => { s => 'help|h',           d => 'Show this help message' },
-   a => { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
-   e => { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
-   p => { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
-   b => { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
-   v => { s => 'verbose|v+',       d => 'Explain differences found' },
-   x => { s => 'execute|x',        d => 'Execute queries required to sync' },
-   o => { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default: all)' },
-   m => { s => 'maxcost|m=i',      d => 'Maximum rowcount before bailing out' },
-   s => { s => 'strategy|s=s',     d => 'Query strategy when syncing' },
-   d => { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
-   r => { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
+my @opt_spec = (
+   { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
+   { s => 'analyze|A',        d => 'Analyze (find/fix/print) in bottom-up algorithm' },
+   { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm' },
+   { s => 'build|U!',         d => 'Build tables for bottom-up algorithm' },
+   { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm' },
+   { s => 'columns|c=s',      d => 'Comma-separated column list' },
+   { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
+   { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
+   { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
+   { s => 'execute|x',        d => 'Execute queries required to sync' },
+   { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
+   { s => 'help|h',           d => 'Show this help message' },
+   { s => 'lock|k',           d => 'Lock tables when beginning work' },
+   { s => 'maxcost|m=i',      d => 'Maximum rowcount before bailing out' },
+   { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default: all)' },
+   { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
+   { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
+   { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
+   { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
+   { s => 'size|S=i',         d => 'Table size in bottom-up algorithm' },
+   { s => 'strategy|s=s',     d => 'Query strategy when syncing' },
+   { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
+   { s => 'verbose|v+',       d => 'Explain differences found' },
+   { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
    # TODO use LOCK IN SHARE MODE
-   f => { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
-   c => { s => 'columns|c=s',      d => 'Comma-separated column list' },
-   k => { s => 'lock|k',           d => 'Lock tables when beginning work' },
-   w => { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
-   B => { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm' },
-   P => { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
-   E => { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
-   T => { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
-   S => { s => 'size|S=i',         d => 'Table size in bottom-up algorithm' },
-   U => { s => 'build|U!',         d => 'Build tables for bottom-up algorithm' },
-   A => { s => 'analyze|A',        d => 'Analyze (find/fix/print) in bottom-up algorithm' },
-   C => { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm' },
 );
-
-my @opt_keys = qw( h a e p b v x o m s d r f c k w B P E T S U A C );
 
 # Generate a quasi-random string that's constant in a given day
 my $prefix = '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00');
@@ -76,38 +74,34 @@ $prefix =~ s/\W+/_/g;
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   h => 0,
    a => 'topdown',
    e => '#',
-   p => 0,
-   b => 0,
-   v => 0,
-   x => 0,
    o => 'INSUPDDEL',
-   m => 0,
    s => 's',
-   d => '',
-   r => 0,
-   f => 0,
-   c => '',
-   k => 0,
-   w => 0,
    B => 128,
    P => $prefix,
    E => 'InnoDB',
-   T => '',
-   S => 0,
    U => 1,
    A => 1,
-   C => undef,
+   v => 0,
 );
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+}
 
 # ############################################################################
 # Get and process options
 # ############################################################################
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys )
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec)
    or $opts{h} = 1;
 
 $opts{h} = 1 if $opts{s} && $opts{s} !~ m/^(s|r)/;
@@ -127,50 +121,18 @@ if ( $opts{r} ) {
 $opts{o} = lc(join('|', $opts{o} =~ m/(\w{3})/g));
 
 # ############################################################################
-# Try to use the user's .my.cnf file.
-# ############################################################################
-my $dsn_defaults = {
-   host => 'localhost',
-   user => getlogin() || getpwuid($UID),
-   port => 3306,
-   key  => 'PRIMARY',
-};
-eval {
-   my $homedir = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE} || '';
-   my $filename = "$homedir/.my.cnf";
-   if ( -f $filename ) {
-      open my $conf_file, "<", "$homedir/.my.cnf" or die $OS_ERROR;
-      while ( my $line = <$conf_file> ) {
-         chomp $line;
-         $line =~ s/(^\s*)|(\s*#.*$)//g;
-         next unless $line;
-         my ( $key, $val ) = split( /\s*=\s*/, $line );
-         next unless defined $val;
-         if ( $key eq 'host' )     { $dsn_defaults->{host} = $val; }
-         if ( $key eq 'user' )     { $dsn_defaults->{user} = $val; }
-         if ( $key =~ m/^pass/ )   { $dsn_defaults->{pass} = $val; }
-         if ( $key eq 'database' ) { $dsn_defaults->{database} = $val; }
-         if ( $key eq 'port' )     { $dsn_defaults->{port} = $val; }
-      }
-      close $conf_file;
-   }
-};
-
-# ############################################################################
 # Parse arguments saying which tables.  If the script doesn't have everything
 # it needs, show help text.
 # ############################################################################
-my $source = parse_dsn(shift(@ARGV), {},      $dsn_defaults);
-my $dest   = parse_dsn(shift(@ARGV), $source, $dsn_defaults);
+my $source = parse_dsn(shift(@ARGV), {}     );
+my $dest   = parse_dsn(shift(@ARGV), $source);
 
 if ( $opts{h} || !$dest ) {
-   print "Usage: $PROGRAM_NAME [OPTION].. <source> <dest>\n\n  Options:\n\n";
-   foreach my $key ( @opt_keys ) {
-      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
-      $long  = "[no]$long" if $opt_spec{$key}->{s} =~ m/!/;
-      $long  = "--$long" . ( $short ? ',' : '' );
-      $short = $short ? " -$short" : '';
-      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+   print "Usage: $PROGRAM_NAME [OPTION].. <source> <dest>\n\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
@@ -211,9 +173,11 @@ foreach my $table ( $source, $dest ) {
    $table->{dbh} = $dbh;
    $table->{db_tbl} =
       join('.',
-      map  {  $dbh->quote_identifier($_) }
+      map  { $dbh->quote_identifier($_) }
       grep { $_ }
-      ( $table->{database}, $table->{table} ));
+      map  { $_ =~ s/(^`|`$)//g; $_; }
+      grep { $_ }
+      ( $table->{D}, $table->{t} ));
    $table->{info} = get_tbl_struct($table);
    $table->{cols} = col_list(@{$table->{info}->{cols}});
 }
@@ -269,7 +233,7 @@ exit $exit_status;
 sub topdown {
 
    # Design a grouping strategy: user-defined, then finally primary key.
-   my @groupings = { cols => $source->{info}->{keys}->{$source->{key}} };
+   my @groupings = { cols => $source->{info}->{keys}->{$source->{k}} };
    if ( $opts{d} ) {
       push @groupings, map { { cols => [$_] } } $opts{d} =~ m/(\w+)/g;
    }
@@ -554,10 +518,10 @@ sub bu_build_checksum {
    my ($info, $levels) = @_;
    my $dbh    = $info->{dbh};
    my $tbl    = $info->{info};
-   my $pk     = col_list( @{ $tbl->{keys}->{$info->{key}} } );
+   my $pk     = col_list( @{ $tbl->{keys}->{$info->{k}} } );
    my @cols   = @{ $tbl->{cols} };
    my $cols   = col_list(@cols);
-   my $pks    = join( ',', @{ $tbl->{defs} }{ @{ $tbl->{keys}->{$info->{key}} } } );
+   my $pks    = join( ',', @{ $tbl->{defs} }{ @{ $tbl->{keys}->{$info->{k}} } } );
    my @null   = grep { $tbl->{null_hash}->{$_} } @cols;
    my $null = @null
             ? ( ", CONCAT(" . join( ', ', map {"ISNULL(`$_`)"} @null ) . ")" ) : '';
@@ -565,11 +529,11 @@ sub bu_build_checksum {
    my $mask = ($opts{B} ** ($levels - 1)) - 1;
 
    # Create the table
-   my $query = "DROP TABLE IF EXISTS `$info->{database}`.`$name`";
+   my $query = "DROP TABLE IF EXISTS `$info->{D}`.`$name`";
    debug_print($query);
    $dbh->do($query);
    ( $query = <<"   END") =~ s/\s+/ /g;
-      CREATE $opts{T} TABLE `$info->{database}`.`$name` (
+      CREATE $opts{T} TABLE `$info->{D}`.`$name` (
          $pks,
          __crc CHAR(32) NOT NULL,
          __rem $info->{rem_col} UNSIGNED NOT NULL,
@@ -582,7 +546,7 @@ sub bu_build_checksum {
 
    # Populate it
    ( $query = <<"   END") =~ s/\s+/ /g;
-      INSERT INTO `$info->{database}`.`$name`($pk, __crc, __rem)
+      INSERT INTO `$info->{D}`.`$name`($pk, __crc, __rem)
       SELECT $pk,
          MD5(CONCAT_WS('$opts{e}', $cols$null)) AS __crc,
          CAST(CONV(RIGHT(MD5(CONCAT_WS('$opts{e}', $pk)), 16), 16, 10) AS UNSIGNED) & $mask AS __rem
@@ -596,10 +560,10 @@ sub bu_build_checksum {
 
 sub bu_rebuild_remainder {
    my ( $info, $levels ) = @_;
-   my $pk   = col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
+   my $pk   = col_list( @{ $info->{info}->{keys}->{$info->{k}} } );
    my $mask = ($opts{B} ** ($levels - 1)) - 1;
    my $name = "$info->{prefix}_0";
-   my $query = "UPDATE `$info->{database}`.`$name` SET __rem = "
+   my $query = "UPDATE `$info->{D}`.`$name` SET __rem = "
       . "CAST(CONV(RIGHT(MD5(CONCAT_WS('$opts{e}', $pk)), 8), 16, 10) AS UNSIGNED) & $mask";
    debug_print($query);
    $info->{dbh}->do($query);
@@ -623,11 +587,11 @@ sub bu_build_tree {
       my $cnt_sum  = $i > 1 ? 'SUM(__cnt)' : 'COUNT(*)';
 
       # Create the table
-      my $query = "DROP TABLE IF EXISTS `$info->{database}`.`$this_tbl`";
+      my $query = "DROP TABLE IF EXISTS `$info->{D}`.`$this_tbl`";
       debug_print($query);
       $dbh->do($query);
       ( $query = <<"      END" ) =~ s/\s+/ /g;
-         CREATE $opts{T} TABLE `$info->{database}`.`$this_tbl` (
+         CREATE $opts{T} TABLE `$info->{D}`.`$this_tbl` (
             __par INT NOT NULL,
             __crc CHAR(32) NOT NULL,
             __rem $info->{rem_col} UNSIGNED NOT NULL,
@@ -641,7 +605,7 @@ sub bu_build_tree {
 
       # Populate it
       ( $query = <<"      END" ) =~ s/\s+/ /g;
-         INSERT INTO `$info->{database}`.`$this_tbl`
+         INSERT INTO `$info->{D}`.`$this_tbl`
             (__par, __crc, __rem, __cnt)
          SELECT __rem,
             CONCAT(
@@ -650,7 +614,7 @@ sub bu_build_tree {
             ) AS this_crc,
             __rem & $mask AS this_remainder,
             $cnt_sum AS total_rows
-         FROM `$info->{database}`.`$last_tbl`
+         FROM `$info->{D}`.`$last_tbl`
          GROUP BY __rem
          ORDER BY NULL
       END
@@ -685,7 +649,7 @@ sub bu_merge_tree {
       @bad_parents = ();
       $rows_in_src = $rows_in_dst = 0;
 
-      my @key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{key}}};
+      my @key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{k}}};
       my ($sr, $dr); # Source row, dest row
 
       # The statements fetch in order, so use a 'merge' algorithm of advancing
@@ -819,9 +783,9 @@ sub bu_merge_tree {
 sub bu_cleanup_tree {
    my @servers = @_;
    foreach my $info ( @servers ) {
-      my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES FROM `$info->{database}`")};
+      my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES FROM `$info->{D}`")};
       foreach my $table ( grep { m/^$info->{prefix}_\d+$/ } @tables ) {
-         my $query = "DROP TABLE IF EXISTS `$info->{database}`.`$table`";
+         my $query = "DROP TABLE IF EXISTS `$info->{D}`.`$table`";
          debug_print($query);
          $info->{dbh}->do($query);
       }
@@ -833,7 +797,7 @@ sub bu_cleanup_tree {
 sub bu_handle_bulk_change {
    my ( $action, $levels, $info, @rows ) = @_;
    return unless $action =~ m/$opts{o}/i;
-   my $pk = col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
+   my $pk = col_list( @{ $info->{info}->{keys}->{$info->{k}} } );
    my @rows_to_do;
    my $mask = ($opts{B} ** ($levels - 1)) - 1;
 
@@ -895,13 +859,13 @@ sub bu_fetch_level {
 
    my $cols  = $level
              ? '__par, __cnt'
-             : col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
+             : col_list( @{ $info->{info}->{keys}->{$info->{k}} } );
    my $where = @bad_parents
              ? "WHERE __rem IN(" . join(',', map { $_->{__par} } @bad_parents) . ")"
              : '';
    my $order = $level
              ? '__par'
-             : col_list( @{ $info->{info}->{keys}->{$info->{key}} } );
+             : col_list( @{ $info->{info}->{keys}->{$info->{k}} } );
 
    my $query = "SELECT $cols, __crc FROM $tbl $where ORDER BY $order";
    debug_print($query);
@@ -932,7 +896,7 @@ sub bu_size_to_type {
 # Figure out how many levels exist for pre-existing tables.
 sub bu_existing_levels {
    my ($info) = @_;
-   my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES FROM `$info->{database}`")};
+   my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES FROM `$info->{D}`")};
    @tables    = grep { m/^$info->{prefix}_\d+$/ } @tables;
    die "No existing tables with prefix $info->{prefix} found" unless @tables;
    return max(map { $_ =~ m/(\d+)$/g } @tables);
@@ -1015,10 +979,12 @@ sub handle_data_change {
                   @{$which->{info}->{cols}}) . ")";
          }
          else {
+            # TODO: eliminate columns in the $crit
             $query = "UPDATE $which->{db_tbl} SET "
                . join(',',
                   map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($res->{$_}) }
-                  @{$which->{info}->{cols}});
+                  @{$which->{info}->{cols}})
+               . ' ' . $crit;
          }
          if ( $opts{p} ) {
             print STDOUT $query, ";\n";
@@ -1032,10 +998,9 @@ sub handle_data_change {
 
 # Parses a DSN in login:pass@host:port/database.table:key format
 sub parse_dsn {
-   my ($dsn, $prev, $defs) = @_;
+   my ($dsn, $prev) = @_;
    return unless $dsn;
    $prev ||= {};
-   $defs ||= {};
 
    my ( $user, $pass, $host, $port, $database, $table, $key) = $dsn =~ m{
       (?:
@@ -1056,13 +1021,13 @@ sub parse_dsn {
       }xsm or return undef;
 
    return {
-      user     => coalesce( $user,     $prev->{user},     $defs->{user} ),
-      pass     => coalesce( $pass,     $prev->{pass},     $defs->{pass} ),
-      host     => coalesce( $host,     $prev->{host},     $defs->{host} ),
-      port     => coalesce( $port,     $prev->{port},     $defs->{port} ),
-      database => coalesce( $database, $prev->{database}, $defs->{database} ),
-      table    => coalesce( $table,    $prev->{table} ),
-      key      => coalesce( $key,      $prev->{key},      $defs->{key} ),
+      u => $user     || $prev->{u},
+      p => $pass     || $prev->{p},
+      h => $host     || $prev->{h},
+      P => $port     || $prev->{P},
+      D => $database || $prev->{D},
+      t => $table    || $prev->{t},
+      k => $key      || $prev->{k} || 'PRIMARY',
    };
 }
 
@@ -1085,8 +1050,8 @@ sub get_tbl_struct {
    my %alldefs;
    @alldefs{@cols} = @defs;
 
-   if ( !exists $keys{$info->{key}} ) {
-      die "No such key $info->{key} in table $info->{host}/$info->{db_tbl}";
+   if ( !exists $keys{$info->{k}} ) {
+      die "No such key $info->{k} in table $info->{h}/$info->{db_tbl}";
    }
 
    return {
@@ -1107,7 +1072,7 @@ sub get_tbl_struct {
 # optimized away, so I must generate a WHERE clause that will defeat this.
 sub estimate_size {
    my ($info) = @_;
-   my ( $pkcol ) = @{$info->{info}->{keys}->{$info->{key}}};
+   my ( $pkcol ) = @{$info->{info}->{keys}->{$info->{k}}};
    my $query = "EXPLAIN SELECT COUNT("
       . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
       . ") FROM $info->{db_tbl} "
@@ -1138,11 +1103,12 @@ sub make_key {
 }
 
 sub get_dbh {
-   my ( $conn ) = @_;
-   return DBI->connect(
-      "DBI:mysql:$conn->{database};host=$conn->{host};port=$conn->{port}",
-      $conn->{user}, $conn->{pass},
-      { RaiseError => 1, PrintError => 1, AutoCommit => $opts{k} ? 0 : 1 } )
+   my ( $info ) = @_;
+   my %conn = ( h => 'host', P => 'port', S => 'socket');
+   my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(h P S))
+      . ';mysql_read_default_group=mysql';
+   return DBI->connect($dsn, @{$info}{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
       or die("Can't connect to DB: $OS_ERROR");
 }
 
