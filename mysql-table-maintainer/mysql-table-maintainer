@@ -41,6 +41,8 @@ $OUTPUT_AUTOFLUSH = 1;
 my @opt_spec = (
    { s => 'analyze|a',        d => 'Run ANALYZE TABLE' },
    { s => 'check|c',          d => 'Run CHECK TABLE' },
+   { s => 'checkopts',        d => 'Options to CHECK TABLE' },
+   { s => 'checkrepair|k',    d => 'Run REPAIR if CHECK found problems (implies -cr) '},
    { s => 'databases|d=s',    d => 'Only do this comma-separated list of databases' },
    { s => 'debug|b',          d => 'Print SQL statements executed' },
    { s => 'help',             d => 'Show this help message' },
@@ -52,6 +54,7 @@ my @opt_spec = (
    { s => 'password|p=s',     d => 'Password to use when connecting' },
    { s => 'port|P=i',         d => 'Port number to use for connection' },
    { s => 'repair|r',         d => 'Run REPAIR TABLE' },
+   { s => 'repairopts',       d => 'Options to REPAIR TABLE' },
    { s => 'socket|S=s',       d => 'Socket file to use for connection' },
    { s => 'tables|t=s',       d => 'Only do this comma-separated list of tables' },
    { s => 'user|u=s',         d => 'User for login if not current user' },
@@ -91,8 +94,11 @@ if ( $opts{t} ) {
    $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
 }
 $opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n}) };
-if ( $opts{e} ) {
-   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
+#TODO engine if ( $opts{e} ) {
+   #$opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
+#}
+if ( $opts{k} ) {
+   $opts{c} = $opts{r} = 1;
 }
 
 if ( $opts{help} ) {
@@ -132,10 +138,10 @@ my @whole_batch;
 my $exit_code;
 
 my %code_for = (
-   ANALYZE  => \&make_analyze_query,
-   CHECK    => \&make_check_query,
-   OPTIMIZE => \&make_optimize_query,
-   REPAIR   => \&make_repair_query,
+   a => \&make_analyze_query,
+   c => \&make_check_query,
+   o => \&make_optimize_query,
+   r => \&make_repair_query,
 );
 
 DATABASE:
@@ -164,10 +170,12 @@ foreach my $database ( @databases ) {
          || exists $opts{n}->{$table};
 
       $exit_code = 1;
+      my $needs_repair = 0;
 
       ACTION:
-      foreach my $action ( qw(ANALYZE CHECK OPTIMIZE REPAIR) ) {
-         if ( $opts{lc(substr($action, 0, 1))} ) { # 1st letter same as option
+      foreach my $action ( qw(a c o r) ) { # ANALYZE CHECK OPTIMIZE REPAIR
+         if ( defined $opts{$action} ) {
+            next ACTION if $action eq 'r' && $opts{k} && !$needs_repair;
             my $query = $code_for{$action}->($database, $table, $spec);
             next ACTION unless $query;
             debug_print($query);
@@ -181,6 +189,13 @@ foreach my $database ( @databases ) {
                   msg  => $_->{Msg_text},
                }
             } @$res;
+
+            if ( $action eq 'c' ) { # See whether table needs repair
+               my $msg = $res->[ scalar(@$res) - 1 ]->{Msg_text};
+               if ( $msg !~ m/^(?:OK|Table is already up to date)$/ ) {
+                  $needs_repair = 1;
+               }
+            }
          }
       }
    }
@@ -210,6 +225,24 @@ sub make_analyze_query {
    }
 }
 
+# See http://dev.mysql.com/doc/refman/5.1/en/check-table.html and previous
+# versions of it.
+sub make_check_query {
+   my ( $database, $table, $spec ) = @_;
+
+   if ( $spec->{Engine}
+      && ( $spec->{Engine} =~ m/^(?:MyISAM|InnoDB)$/
+         || ( $spec->{Engine} eq 'VIEW'    && version_ge('5.0.2'))
+         || ( $spec->{Engine} eq 'ARCHIVE' && version_ge('5.0.16'))
+         || ( $spec->{Engine} eq 'CSV'     && version_ge('5.1.9'))
+      ))
+   {
+      my $check_options = $opts{checkopts} || '';
+      my $query = "CHECK TABLE `$database`.`$table` $check_options";
+      return $query;
+   }
+}
+
 # See http://dev.mysql.com/doc/refman/4.1/en/optimize-table.html
 # and http://dev.mysql.com/doc/refman/5.0/en/archive-storage-engine.html
 sub make_optimize_query {
@@ -221,6 +254,20 @@ sub make_optimize_query {
    {
       my $binlog = make_binlog_option();
       my $query = "OPTIMIZE $binlog TABLE `$database`.`$table`";
+      return $query;
+   }
+}
+
+sub make_repair_query {
+   my ( $database, $table, $spec ) = @_;
+
+   if ( $spec->{Engine}
+      && ( $spec->{Engine} =~ m/^(?:MyISAM|ARCHIVE)$/
+         || ( $spec->{Engine} eq 'CSV' && version_ge('5.1.9'))))
+   {
+      my $binlog = make_binlog_option();
+      my $repair_opts = $opts{repairopts} || '';
+      my $query = "REPAIR $binlog TABLE `$database`.`$table` $repair_opts";
       return $query;
    }
 }
