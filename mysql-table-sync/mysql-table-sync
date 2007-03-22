@@ -51,7 +51,7 @@ my @opt_spec = (
    { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
    { s => 'execute|x',        d => 'Execute queries required to sync' },
    { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
-   { s => 'help|h',           d => 'Show this help message' },
+   { s => 'help',             d => 'Show this help message' },
    { s => 'lock|k',           d => 'Lock tables when beginning work' },
    { s => 'maxcost|m=i',      d => 'Maximum rowcount before bailing out' },
    { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default: all)' },
@@ -60,7 +60,7 @@ my @opt_spec = (
    { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
    { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
    { s => 'size|S=i',         d => 'Table size in bottom-up algorithm' },
-   { s => 'strategy|s=s',     d => 'Query strategy when syncing' },
+   { s => 'strategy|s=s',     d => 'Query strategy when syncing (r or s)' },
    { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
    { s => 'verbose|v+',       d => 'Explain differences found' },
    { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
@@ -101,10 +101,9 @@ foreach my $spec ( @opt_spec ) {
 # ############################################################################
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec)
-   or $opts{h} = 1;
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
-$opts{h} = 1 if $opts{s} && $opts{s} !~ m/^(s|r)/;
+$opts{help} = 1 if $opts{s} && $opts{s} !~ m/^(s|r)/;
 $opts{k} ||= $opts{w};
 
 # Make comma-separated lists into hashes.
@@ -127,7 +126,7 @@ $opts{o} = lc(join('|', $opts{o} =~ m/(\w{3})/g));
 my $source = parse_dsn(shift(@ARGV), {}     );
 my $dest   = parse_dsn(shift(@ARGV), $source);
 
-if ( $opts{h} || !$dest ) {
+if ( $opts{help} || !$dest ) {
    print "Usage: $PROGRAM_NAME [OPTION].. <source> <dest>\n\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
