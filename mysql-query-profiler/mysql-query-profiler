@@ -41,22 +41,23 @@ use constant MAX_ULONG => 4294967295; # 2^32-1
 # Get configuration information.
 # ############################################################################
 
-my %opt_spec = (
-   a => { s => 'allowcache|a',  d => 'Enable query cache (default is disabled)' },
-   c => { s => 'nocalibrate|c', d => "Don't try to compensate for SHOW STATUS" },
-   D => { s => 'database|D=s',  d => 'Database to use' },
-   f => { s => 'flush|f=i',     d => 'Flush tables 1) never 2) once 3) every query; default 1' },
-   g => { s => 'debug|g',       d => 'For development purposes only' },
-   h => { s => 'host|h=s',      d => 'Connect to host' },
-   i => { s => 'noinnodb|i',    d => "Don't show any InnoDB statistics" },
-   l => { s => 'help',          d => 'Show this help message' },
-   n => { s => 'only|n=s',      d => "Only print separate stats for this list of queries (e.g.  1,5,7)" },
-   p => { s => 'password|p=s',  d => 'Password to use when connecting' },
-   P => { s => 'port|P=i',      d => 'Port number to use for connection' },
-   s => { s => 'separate|s',    d => 'Print stats separately for each query' },
-   t => { s => 'tab|t',         d => 'Print tab-separated values (for a spreadsheet)' },
-   u => { s => 'user|u=s',      d => 'User for login if not current user' },
-   v => { s => 'verbosity|v=i', d => 'Verbosity 1, 2 or 3; default 1' },
+my @opt_spec = (
+   { s => 'allowcache|a',  d => 'Enable query cache (default is disabled)' },
+   { s => 'database|D=s',  d => 'Database to use' },
+   { s => 'debug|g',       d => 'For development purposes only' },
+   { s => 'flush|f=i',     d => 'Flush tables 1) never 2) once 3) every query; default 1' },
+   { s => 'help',          d => 'Show this help message' },
+   { s => 'host|h=s',      d => 'Connect to host' },
+   { s => 'nocalibrate|c', d => "Don't try to compensate for SHOW STATUS" },
+   { s => 'noinnodb|i',    d => "Don't show any InnoDB statistics" },
+   { s => 'only|n=s',      d => "Only print separate stats for this list of queries (e.g.  1,5,7)" },
+   { s => 'password|p=s',  d => 'Password to use when connecting' },
+   { s => 'port|P=i',      d => 'Port number to use for connection' },
+   { s => 'separate|s',    d => 'Print stats separately for each query' },
+   { s => 'socket|S=s',    d => 'Socket file to use for connection' },
+   { s => 'tab|t',         d => 'Print tab-separated values (for a spreadsheet)' },
+   { s => 'user|u=s',      d => 'User for login if not current user' },
+   { s => 'verbosity|v=i', d => 'Verbosity 1, 2 or 3; default 1' },
 );
 
 my %opts = (
@@ -64,17 +65,19 @@ my %opts = (
    v => 1,
 );
 # Post-process...
-foreach my $spec ( values %opt_spec ) {
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
    my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
    $spec->{t} = $short;
    $spec->{n} = $spec->{s} =~ m/!/;
    $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
 }
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} }  values %opt_spec);
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec);
 
 $opts{f} ||= 1;
 $opts{v} ||= 1;
@@ -82,7 +85,7 @@ $opts{n} = [ split(/,/, $opts{n} || '' ) ];
 
 if ( $opts{help} || !@ARGV ) {
    print "Usage: $PROGRAM_NAME <options> batch-file\n\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } values %opt_spec ) {
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
       printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
