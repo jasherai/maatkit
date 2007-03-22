@@ -43,13 +43,13 @@ use constant MAX_ULONG => 4294967295; # 2^32-1
 
 my @opt_spec = (
    { s => 'allowcache|a',  d => 'Enable query cache (default is disabled)' },
+   { s => 'calibrate|c!',  d => "Try to compensate for SHOW STATUS (default)" },
    { s => 'database|D=s',  d => 'Database to use' },
    { s => 'debug|g',       d => 'For development purposes only' },
    { s => 'flush|f=i',     d => 'Flush tables 1) never 2) once 3) every query; default 1' },
    { s => 'help',          d => 'Show this help message' },
    { s => 'host|h=s',      d => 'Connect to host' },
-   { s => 'nocalibrate|c', d => "Don't try to compensate for SHOW STATUS" },
-   { s => 'noinnodb|i',    d => "Don't show any InnoDB statistics" },
+   { s => 'innodb|i!',     d => "Show InnoDB statistics (default)" },
    { s => 'only|n=s',      d => "Only print separate stats for this list of queries (e.g.  1,5,7)" },
    { s => 'password|p=s',  d => 'Password to use when connecting' },
    { s => 'port|P=i',      d => 'Port number to use for connection' },
@@ -84,7 +84,7 @@ $opts{v} ||= 1;
 $opts{n} = [ split(/,/, $opts{n} || '' ) ];
 
 if ( $opts{help} || !@ARGV ) {
-   print "Usage: $PROGRAM_NAME <options> batch-file\n\n";
+   print "Usage: $PROGRAM_NAME <options> FILE\n\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
@@ -92,13 +92,11 @@ if ( $opts{help} || !@ARGV ) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME executes the queries in a file and prints
-statistics about the server load they caused.  All arguments are
-optional, but you must specify a file to profile.  Example:
+$PROGRAM_NAME executes blank-line-separated queries in a file and prints
+statistics about the server load they caused.  All arguments are optional, but
+you must specify a file to profile.  Example:
 
    $PROGRAM_NAME -v 3 queries.sql
-
-Separate each query in the file with a blank line.
 
 If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
