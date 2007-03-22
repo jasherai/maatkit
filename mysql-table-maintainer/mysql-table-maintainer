@@ -27,6 +27,7 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
+use Time::HiRes qw(time);
 
 our $VERSION = '@VERSION@';
 
@@ -36,15 +37,14 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-# TODO: restrict to certain engine?
-
 my @opt_spec = (
    { s => 'analyze|a',        d => 'Run ANALYZE TABLE' },
    { s => 'check|c',          d => 'Run CHECK TABLE' },
-   { s => 'checkopts',        d => 'Options to CHECK TABLE' },
+   { s => 'checkopts=s',      d => 'Options to CHECK TABLE' },
    { s => 'checkrepair|k',    d => 'Run REPAIR if CHECK found problems (implies -cr) '},
    { s => 'databases|d=s',    d => 'Only do this comma-separated list of databases' },
    { s => 'debug|b',          d => 'Print SQL statements executed' },
+   { s => 'engines|e=s',      d => 'Only do this comma-separated list of engines' },
    { s => 'help',             d => 'Show this help message' },
    { s => 'host|h=s',         d => 'Connect to host' },
    { s => 'ignoredb|g=s',     d => 'Ignore this comma-separated list of databases' },
@@ -53,12 +53,13 @@ my @opt_spec = (
    { s => 'optimize|o',       d => 'Run OPTIMIZE TABLE' },
    { s => 'password|p=s',     d => 'Password to use when connecting' },
    { s => 'port|P=i',         d => 'Port number to use for connection' },
+   { s => 'quiet|q+',         d => 'Be quieter.  Specify twice for no output' },
    { s => 'repair|r',         d => 'Run REPAIR TABLE' },
-   { s => 'repairopts',       d => 'Options to REPAIR TABLE' },
+   { s => 'repairopts=s',     d => 'Options to REPAIR TABLE' },
    { s => 'socket|S=s',       d => 'Socket file to use for connection' },
    { s => 'tables|t=s',       d => 'Only do this comma-separated list of tables' },
    { s => 'user|u=s',         d => 'User for login if not current user' },
-   { s => 'views|v!',         d => 'Do views also (default)' }, # TODO
+   { s => 'views|v',          d => 'Do views also' },
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -94,12 +95,15 @@ if ( $opts{t} ) {
    $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
 }
 $opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n}) };
-#TODO engine if ( $opts{e} ) {
-   #$opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
-#}
+if ( $opts{e} ) {
+   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
+}
 if ( $opts{k} ) {
    $opts{c} = $opts{r} = 1;
 }
+
+# You gotta tell me what to do...
+$opts{help} = 1 unless $opts{a} || $opts{c} || $opts{o} || $opts{r};
 
 if ( $opts{help} ) {
    print "Usage: $PROGRAM_NAME <options>\n\n";
@@ -133,9 +137,9 @@ my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
 
-my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+my $ok_pattern = qr/^(?:OK|Table is already up to date)$/;
 my @whole_batch;
-my $exit_code;
+my $exit_code = 0;
 
 my %code_for = (
    a => \&make_analyze_query,
@@ -144,6 +148,7 @@ my %code_for = (
    r => \&make_repair_query,
 );
 
+my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 DATABASE:
 foreach my $database ( @databases ) {
 
@@ -160,49 +165,91 @@ foreach my $database ( @databases ) {
    my @tables = @{$dbh->selectall_arrayref($query, { Slice => {} })};
    next DATABASE unless @tables;
 
-   my @to_print;
+   my $max_db  = max( 8, length($database));
+   my $max_tbl = max( 5, map { length( $_->{Name} ) } @tables );
+   my $hdr     = "%-${max_db}s %-${max_tbl}s %-7s %-8s %-8s %3s %6s %s\n";
+   my $printed = 0;
 
    TABLE:
    foreach my $spec ( @tables ) {
       my $table = $spec->{Name};
+      my $engine = $spec->{Engine} || $spec->{Comment};
+
+      $exit_code = 0;
+      my $needs_repair = 0;
+
+      # Detect crashed tables, which should certainly be repaired if needed.  A
+      # typical comment in a crashed table:
+      # Table './test/smallhist' is marked as crashed and should be repaired
+      if ( $spec->{Comment} =~ m/marked as crashed/ ) {
+         my ( $db, $tbl ) = $spec->{Comment} =~ m{Table './(\w+)/(\w+)' is marked};
+         if ( $db eq $database && $tbl eq $table ) {
+            # It's the same table, so it's this table (as opposed to a view
+            # complaining about a base table on which it depends).
+            $engine       = 'CORRUPT';
+            $needs_repair = 1;
+         }
+         else {
+            $engine = 'VIEW';
+         }
+      }
+
       next TABLE if
          ( $opts{t} && !exists($opts{t}->{$table}) )
-         || exists $opts{n}->{$table};
-
-      $exit_code = 1;
-      my $needs_repair = 0;
+         || exists $opts{n}->{$table}
+         || ($opts{e} && $engine !~m/CORRUPT|VIEW|UNKNOWN/ && !exists $opts{e}->{lc $engine})
+         || ($engine eq 'VIEW' && !$opts{v});
 
       ACTION:
       foreach my $action ( qw(a c o r) ) { # ANALYZE CHECK OPTIMIZE REPAIR
          if ( defined $opts{$action} ) {
             next ACTION if $action eq 'r' && $opts{k} && !$needs_repair;
-            my $query = $code_for{$action}->($database, $table, $spec);
+            my $query = $code_for{$action}->($database, $table, $engine);
             next ACTION unless $query;
             debug_print($query);
-            my $res = $dbh->selectall_arrayref($query, { Slice => {} } );
-            push @to_print, map {
-               {  db   => $database,
-                  tbl  => $table,
-                  eng  => $spec->{Engine} || $spec->{Comment},
-                  op   => $_->{Op},
-                  type => $_->{Msg_type},
-                  msg  => $_->{Msg_text},
-               }
-            } @$res;
+            my $start = time();
+            my $res = eval { $dbh->selectall_arrayref($query, { Slice => {} } ) };
+            next ACTION unless $res;
+            my $time_str = sprintf('%.2f', time() - $start);
 
-            if ( $action eq 'c' ) { # See whether table needs repair
+            # Sometimes there are a ton of repeated messages, so I try to
+            # collapse them into one with a count.
+            my %to_print;
+            my $order = 0;
+            foreach my $row ( @$res ) {
+               my $key = join(',', @{$row}{ qw(Msg_type Msg_text) });
+               if ( $to_print{$key} ) {
+                  $to_print{$key}->{count}++;
+               }
+               else {
+                  $row->{order} = $order++;
+                  $row->{count} = 1;
+                  $to_print{$key} = $row;
+               }
+            }
+
+            foreach my $row ( sort { $a->{order} <=> $b->{order} } values %to_print ) {
+               if ( !$opts{q} || ($opts{q} <= 1 && $row->{Msg_text} !~ m/$ok_pattern/ )) {
+                  printf($hdr, qw(DATABASE TABLE ENGINE OP TYPE CNT TIME MSG))
+                     unless $printed++;
+                  printf($hdr, $database, $table, $engine, $row->{Op},
+                     $row->{Msg_type}, $row->{count}, $time_str, $row->{Msg_text});
+               }
+            }
+
+            # Check the LAST row to see whether table needs repair.  Last ROW,
+            # not last %to_print value.
+            if ( $action eq 'c' ) {
                my $msg = $res->[ scalar(@$res) - 1 ]->{Msg_text};
-               if ( $msg !~ m/^(?:OK|Table is already up to date)$/ ) {
+               if ( $engine ne 'VIEW' && $msg !~ m/$ok_pattern/ ) {
                   $needs_repair = 1;
                }
             }
+
          }
       }
    }
 
-   next DATABASE unless @to_print;
-
-   print_batch(@to_print);
 }
 
 exit($exit_code);
@@ -213,11 +260,11 @@ exit($exit_code);
 
 # See http://dev.mysql.com/doc/refman/4.1/en/analyze-table.html
 sub make_analyze_query {
-   my ( $database, $table, $spec ) = @_;
+   my ( $database, $table, $engine ) = @_;
 
-   if ( $spec->{Engine}
-      && ( $spec->{Engine} =~ m/^(?:MyISAM|BDB)$/
-         || ( $spec->{Engine} eq 'InnoDB' && version_ge('4.0.13'))))
+   if ( $engine
+      && ( $engine =~ m/^(?:MyISAM|BDB)$/
+         || ( $engine eq 'InnoDB' && version_ge('4.0.13'))))
    {
       my $binlog = make_binlog_option();
       my $query = "ANALYZE $binlog TABLE `$database`.`$table`";
@@ -228,13 +275,14 @@ sub make_analyze_query {
 # See http://dev.mysql.com/doc/refman/5.1/en/check-table.html and previous
 # versions of it.
 sub make_check_query {
-   my ( $database, $table, $spec ) = @_;
+   my ( $database, $table, $engine ) = @_;
 
-   if ( $spec->{Engine}
-      && ( $spec->{Engine} =~ m/^(?:MyISAM|InnoDB)$/
-         || ( $spec->{Engine} eq 'VIEW'    && version_ge('5.0.2'))
-         || ( $spec->{Engine} eq 'ARCHIVE' && version_ge('5.0.16'))
-         || ( $spec->{Engine} eq 'CSV'     && version_ge('5.1.9'))
+   if ( $engine
+      && ( $engine =~ m/^(?:MyISAM|InnoDB)$/
+         || $engine eq 'CORRUPT'
+         || ( $engine eq 'VIEW'    && version_ge('5.0.2'))
+         || ( $engine eq 'ARCHIVE' && version_ge('5.0.16'))
+         || ( $engine eq 'CSV'     && version_ge('5.1.9'))
       ))
    {
       my $check_options = $opts{checkopts} || '';
@@ -246,11 +294,11 @@ sub make_check_query {
 # See http://dev.mysql.com/doc/refman/4.1/en/optimize-table.html
 # and http://dev.mysql.com/doc/refman/5.0/en/archive-storage-engine.html
 sub make_optimize_query {
-   my ( $database, $table, $spec ) = @_;
+   my ( $database, $table, $engine ) = @_;
 
-   if ( $spec->{Engine}
-      && ( $spec->{Engine} =~ m/^(?:MyISAM|BDB|InnoDB)$/
-         || ( $spec->{Engine} eq 'ARCHIVE' && version_ge('5.0.16'))))
+   if ( $engine
+      && ( $engine =~ m/^(?:MyISAM|BDB|InnoDB)$/
+         || ( $engine eq 'ARCHIVE' && version_ge('5.0.16'))))
    {
       my $binlog = make_binlog_option();
       my $query = "OPTIMIZE $binlog TABLE `$database`.`$table`";
@@ -259,11 +307,11 @@ sub make_optimize_query {
 }
 
 sub make_repair_query {
-   my ( $database, $table, $spec ) = @_;
+   my ( $database, $table, $engine ) = @_;
 
-   if ( $spec->{Engine}
-      && ( $spec->{Engine} =~ m/^(?:MyISAM|ARCHIVE)$/
-         || ( $spec->{Engine} eq 'CSV' && version_ge('5.1.9'))))
+   if ( $engine
+      && ( $engine =~ m/^(?:CORRUPT|MyISAM|ARCHIVE)$/
+         || ( $engine eq 'CSV' && version_ge('5.1.9'))))
    {
       my $binlog = make_binlog_option();
       my $repair_opts = $opts{repairopts} || '';
@@ -291,22 +339,6 @@ sub version_ge {
 # right into MySQL if desired.
 sub debug_print {
    print '-- ', @_, "\n" if $opts{b};
-}
-
-sub print_batch {
-   my ( @batch ) = @_;
-
-   my $max_db   = max( 8, map { length( $_->{db} ) } @batch );
-   my $max_tbl  = max( 5, map { length( $_->{tbl} ) } @batch );
-   my $max_op   = max( 2, map { length( $_->{op} ) } @batch );
-   my $max_type = max( 4, map { length( $_->{type} ) } @batch );
-   my $hdr      = "%-${max_db}s %-${max_tbl}s %-6s %-${max_op}s %-${max_type}s %s\n";
-
-   printf($hdr, qw(DATABASE TABLE ENGINE OP TYPE MSG));
-   foreach my $thing ( @batch ) {
-      printf($hdr, @{$thing}{qw(db tbl eng op type msg)});
-   }
-
 }
 
 # ############################################################################
