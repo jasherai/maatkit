@@ -27,7 +27,6 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
-use Term::ReadLine;
 
 our $VERSION = '@VERSION@';
 
@@ -44,40 +43,42 @@ my %opt_spec = (
    t => { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
    n => { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
    f => { s => 'function|f=s',   d => 'Do f=foreign keys, k=keys.  Default is do both.' },
-   h => { s => 'host|h=s',       d => 'Database server hostname' },
-   o => { s => 'port|P=i',       d => 'Database server port' },
-   p => { s => 'pass|p=s',       d => 'Database password' },
-   u => { s => 'user|u=s',       d => 'Database username' },
+   h => { s => 'host|h=s',       d => 'Connect to host' },
+   P => { s => 'port|P=i',       d => 'Port number to use for connection' },
+   S => { s => 'socket|S=s',     d => 'Socket file to use for connection' },
+   p => { s => 'password|p=s',   d => 'Password to use when connecting' },
+   u => { s => 'user|u=s',       d => 'User for login if not current user' },
    v => { s => 'verbose|v',      d => 'Output everything, not just dupes' },
    a => { s => 'allstruct|a',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
    b => { s => 'tab|b',          d => 'Output separated with tabs' },
    s => { s => 'allatonce|s',    d => 'Print only once, instead of one DB at a time' },
 );
 
-# Define the order cmdline opts will appear in help output.  If it's not in
-# this list, it's not an option to this program.
-my @opt_keys = qw( l d g t n f h o u p v a b s );
-
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   l => 0,
    d => '',
    g => '',
    t => '',
    n => '',
    f => 'fk',
-   o => 3306,
-   p => undef,
-   u => undef,
    v => 0,
    b => 0,
    a => 0,
    s => 0,
 );
+# Post-process...
+foreach my $spec ( values %opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+}
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+GetOptions( map { $_->{k} => \$opts{$_->{k}} }  values %opt_spec);
 
 # Make comma-separated lists into hashes.
 if ( $opts{d} ) {
@@ -92,13 +93,12 @@ if ( $opts{e} ) {
    $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
 }
 
-if ( $opts{l} ) {
-   print "Usage: $PROGRAM_NAME <options>\n\n  Options:\n\n";
-   foreach my $key ( @opt_keys ) {
-      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
-      $long  = "--$long" . ( $short ? ',' : '' );
-      $short = $short ? " -$short" : '';
-      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+if ( $opts{help} ) {
+   print "Usage: $PROGRAM_NAME <options>\n\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } values %opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
@@ -114,63 +114,16 @@ USAGE
    exit(1);
 }
 
-# This will end up containing what's needed to connect to MySQL.
-my $conn = {
-   h  => $opts{h},
-   u  => $opts{u},
-   p  => $opts{p},
-   o  => $opts{o},
-};
-
-if ( grep { !$conn->{$_} } keys %$conn ) {
-   # Try to use the user's .my.cnf file.
-   eval {
-      my $homedir = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE};
-      open my $conf_file, "<", "$homedir/.my.cnf" or die $OS_ERROR;
-      while ( my $line = <$conf_file> ) {
-         chomp $line;
-         $line =~ s/(^\s*)|(\s*#.*$)//g;
-         next unless $line;
-         my ( $key, $val ) = split( /\s*=\s*/, $line );
-         next unless defined $val;
-         if ( $key eq 'host' )     { $conn->{h}  ||= $val; }
-         if ( $key eq 'user' )     { $conn->{u}  ||= $val; }
-         if ( $key =~ m/^pass/ )   { $conn->{p}  ||= $val; }
-         if ( $key eq 'port' )     { $conn->{o}  ||= $val; }
-      }
-      close $conf_file;
-   };
-   if ( $EVAL_ERROR && $EVAL_ERROR !~ m/No such file/ ) {
-      print "I tried to read your .my.cnf file, but got '$EVAL_ERROR'\n";
-   }
-}
-
-# Fill in defaults for some things
-$conn->{h} ||= 'localhost';
-$conn->{u} ||= getlogin() || getpwuid($UID);
-
-my %prompts = (
-   o  => "Port number: ",
-   h  => "Database host: ",
-   u  => "Database user: ",
-   p  => "Database password: ",
-);
-
-# If anything remains, prompt the terminal
-my $term;
-foreach my $thing ( grep { !defined $conn->{$_} } keys %$conn ) {
-   $term ||= Term::ReadLine->new('terminal');
-   $conn->{$thing} = $term->readline($prompts{$thing});
-}
-
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
+my %conn = ( h => 'host', P => 'port', S => 'socket');
 
 # Connect to the database
-my $dbh = DBI->connect(
-   "DBI:mysql:;host=$conn->{h};port=$conn->{o}",
-   $conn->{u}, $conn->{p}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(h P S))
+   . ';mysql_read_default_group=mysql';
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
 
 my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
