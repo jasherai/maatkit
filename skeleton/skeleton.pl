@@ -60,7 +60,7 @@ foreach my $spec ( values %opt_spec ) {
 }
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{k} => \$opts{$_->{k}} }  values %opt_spec);
+GetOptions( map { $_->{s} => \$opts{$_->{k}} }  values %opt_spec);
 
 # If a filename or other argument(s) is required after the other arguments,
 # add "|| !@ARGV" inside the parens on the next line.

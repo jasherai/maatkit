@@ -78,7 +78,7 @@ foreach my $spec ( values %opt_spec ) {
 }
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{k} => \$opts{$_->{k}} }  values %opt_spec);
+GetOptions( map { $_->{s} => \$opts{$_->{k}} }  values %opt_spec);
 
 # Make comma-separated lists into hashes.
 if ( $opts{d} ) {
