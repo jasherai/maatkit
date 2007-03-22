@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
-# This is mysql-duplicate-key-checker, a program to analyze MySQL tables for
-# duplicated or redundant indexes and foreign key constraints.
+# This is mysql-table-maintainer, a program to run table maintenance
+# statements against MySQL tables.
 # 
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
@@ -37,8 +37,6 @@ $OUTPUT_AUTOFLUSH = 1;
 # ############################################################################
 
 my @opt_spec = (
-   { s => 'allatonce|s',    d => 'Print only once, instead of one DB at a time' },
-   { s => 'allstruct|a',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
    { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
    { s => 'function|f=s',   d => 'Do f=foreign keys, k=keys.  Default is do both.' },
    { s => 'help',           d => 'Show this help message' },
