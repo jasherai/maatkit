@@ -130,6 +130,7 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
 
 my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 my @whole_batch;
+my $exit_code;
 
 DATABASE:
 foreach my $database ( @databases ) {
@@ -153,8 +154,13 @@ foreach my $database ( @databases ) {
          ( $opts{t} && !exists($opts{t}->{$table}) )
          || exists $opts{n}->{$table};
 
-      my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$database`.`$table`"))[1];
-      next TABLE if $ddl =~ m/^CREATE ALGORITHM/;
+      $exit_code = 1;
+      my $ddl;
+      eval {
+         $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$database`.`$table`"))[1];
+         $exit_code = 0;
+      };
+      next TABLE if !$ddl || $ddl =~ m/^CREATE ALGORITHM/;
 
       my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
       my $hash = {
@@ -229,6 +235,8 @@ foreach my $database ( @databases ) {
 if ( @whole_batch && $opts{s} ) {
    print_batch(@whole_batch);
 }
+
+exit($exit_code);
 
 # ############################################################################
 # Subroutines
