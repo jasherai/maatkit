@@ -26,7 +26,6 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use Term::ReadLine;
 
 our $VERSION = '@VERSION@';
 
@@ -36,44 +35,36 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
-my %opt_spec = (
-   d => { s => 'database|d=s', d => 'Database' },
-   h => { s => 'host|h=s',     d => 'Database server hostname' },
-   l => { s => 'help',         d => 'Show this help message' },
-   P => { s => 'port|P=i',     d => 'Database server port' },
-   p => { s => 'pass|p=s',     d => 'Database password' },
-   u => { s => 'user|u=s',     d => 'Database username' },
-   o => { s => 'only|o=s',     d => 'Only show grants for this comma-separated list of users' },
-   i => { s => 'ignore|i=s',   d => 'Ignore this comma-separated list of users' },
-   D => { s => 'drop|D',       d => 'Add DROP USER before each user' },
-   r => { s => 'revoke|r',     d => 'Add REVOKE statements' },
-   s => { s => 'separate|s',   d => 'List each GRANT or REVOKE separately' },
-   f => { s => 'flush|f',      d => 'Add FLUSH PRIVILEGES' },
+my @opt_spec = (
+   { s => 'database|D=s', r => 0, d => 'Database to use' },
+   { s => 'drop|d',       d => 'Add DROP USER before each user' },
+   { s => 'flush|f',      d => 'Add FLUSH PRIVILEGES' },
+   { s => 'host|h=s',     r => 0, d => 'Connect to host' },
+   { s => 'ignore|i=s',   d => 'Ignore this comma-separated list of users' },
+   { s => 'help',         r => 0, d => 'Show this help message' },
+   { s => 'only|o=s',     d => 'Only show grants for this comma-separated list of users' },
+   { s => 'password|p=s', r => 0, d => 'Password to use when connecting' },
+   { s => 'port|P=i',     r => 0, d => 'Port number to use for connection' },
+   { s => 'revoke|r',     d => 'Add REVOKE statements' },
+   { s => 'separate|s',   d => 'List each GRANT or REVOKE separately' },
+   { s => 'socket|S=s',   r => 0, d => 'Socket file to use for connection' },
+   { s => 'user|u=s',     r => 0, d => 'User for login if not current user' },
 );
-
-# Define the order cmdline opts will appear in help output.  Add any extra ones
-# defined above.  If it's not in this list, it's not an option to this
-# program.  Note that 'h' is host and 'l' is help.
-my @opt_keys = qw( h d P u p l o i D r s f);
-
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = (
-   d => '',
-   h => '',
-   P => 3306,
-   p => undef,
-   u => undef,
-   o => undef,
-   i => undef,
-   D => 0,
-   r => 0,
-   s => '',
-   f => 0,
-);
+my %opts;
+# Post-process...
+foreach my $spec ( @opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+}
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $opt_spec{$_}->{s} => \$opts{$_} }  @opt_keys );
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec);
 
 # Turn comma-separated lists into arrays and hashes
 if ( $opts{o} ) {
@@ -95,14 +86,12 @@ if ( $opts{i} ) {
    $opts{i} = { map { $_ => 1 } @users };
 }
 
-if ( $opts{l} || grep { !$opts{$_} && $opt_spec{$_}->{r} } @opt_keys ) {
-   print "Usage: $PROGRAM_NAME <options> batch-file\n\n  Options:\n\n";
-   foreach my $key ( @opt_keys ) {
-      my ( $long, $short ) = $opt_spec{$key}->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
-      $long  = "[no]$long" if $opt_spec{$key}->{s} =~ m/!/;
-      $long  = "--$long" . ( $short ? ',' : '' );
-      $short = $short ? " -$short" : '';
-      printf("  %-13s %-4s %s\n", $long, $short, $opt_spec{$key}->{d});
+if ( $opts{help} ) {
+   print "Usage: $PROGRAM_NAME <options> batch-file\n\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
@@ -117,72 +106,22 @@ USAGE
    exit(1);
 }
 
-# This will end up containing what's needed to connect to MySQL.
-my $conn = {
-   h  => $opts{h},
-   db => $opts{d},
-   u  => $opts{u},
-   p  => $opts{p},
-   P  => $opts{P},
-};
-
-if ( grep { !$conn->{$_} } keys %$conn ) {
-   # Try to use the user's .my.cnf file.
-   eval {
-      my $homedir = $ENV{HOME} || $ENV{HOMEPATH} || $ENV{USERPROFILE};
-      open my $conf_file, "<", "$homedir/.my.cnf" or die $OS_ERROR;
-      while ( my $line = <$conf_file> ) {
-         chomp $line;
-         $line =~ s/(^\s*)|(\s*#.*$)//g;
-         next unless $line;
-         my ( $key, $val ) = split( /\s*=\s*/, $line );
-         next unless defined $val;
-         if ( $key eq 'host' )     { $conn->{h}  ||= $val; }
-         if ( $key eq 'user' )     { $conn->{u}  ||= $val; }
-         if ( $key =~ m/^pass/ )   { $conn->{p}  ||= $val; }
-         if ( $key eq 'database' ) { $conn->{db} ||= $val; }
-         if ( $key eq 'port' )     { $conn->{P}  ||= $val; }
-      }
-      close $conf_file;
-   };
-   if ( $EVAL_ERROR && $EVAL_ERROR !~ m/No such file/ ) {
-      print "I tried to read your .my.cnf file, but got '$EVAL_ERROR'\n";
-   }
-}
-
-# Fill in defaults for some things
-$conn->{h} ||= 'localhost';
-$conn->{u} ||= getlogin() || getpwuid($UID);
-
-my %prompts = (
-   P  => "Port number: ",
-   h  => "Database host: ",
-   u  => "Database user: ",
-   p  => "Database password: ",
-   db => "Database: ",
-);
-
-# If anything remains, prompt the terminal
-my $term;
-foreach my $thing ( grep { !defined $conn->{$_} } keys %$conn ) {
-   $term ||= Term::ReadLine->new('terminal');
-   $conn->{$thing} = $term->readline($prompts{$thing});
-}
-
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
+my %conn = ( h => 'host', P => 'port', S => 'socket');
 
 # Connect to the database
-my $dbh = DBI->connect(
-   "DBI:mysql:database=$conn->{db};host=$conn->{h};port=$conn->{P}",
-   $conn->{u}, $conn->{p}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(h P S))
+   . ';mysql_read_default_group=mysql';
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
 
 my ( $version, $ts ) = $dbh->selectrow_array("SELECT VERSION(), NOW()");
 print join("\n",
    "-- Grants dumped by mysql-show-grants $VERSION",
-   "-- Dumped from server $conn->{h}, MySQL $version at $ts",
+   "-- Dumped from server $dbh->{mysql_hostinfo}, MySQL $version at $ts",
    ), "\n";
 
 my $users = $opts{o} || $dbh->selectall_arrayref(
@@ -259,7 +198,7 @@ foreach my $u (@$users) {
          "\n";
    }
 
-   if ( $opts{D} ) {
+   if ( $opts{d} ) {
       print join("\n",
          "DROP USER '$u->{User}'\@'$u->{Host}';",
          "DELETE FROM `mysql`.`user` WHERE `User`='$u->{User}' AND `Host`='$u->{Host}';",
