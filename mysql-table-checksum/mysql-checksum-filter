@@ -37,9 +37,10 @@ $OUTPUT_AUTOFLUSH = 1;
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
+   { s => 'header|h',   d => 'Keep the headers' },
    { s => 'help',       d => 'Show this help message' },
-   { s => 'verbose|v',  d => 'Output lines that have no differences' },
    { s => 'master|m=s', d => 'Name of the master server' },
+   { s => 'verbose|v',  d => 'Output lines that have no differences' },
 );
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -60,7 +61,7 @@ Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec);
 
 if ( $opts{help} ) {
-   print "Usage: $PROGRAM_NAME <options> batch-file\n\n";
+   print "Usage: $PROGRAM_NAME <options> FILE\n\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
@@ -103,10 +104,16 @@ my %lines_for;    # All lines from all files, if > 1 file on cmdline
 my $last_tbl;     # db.tbl of last line read
 my $current_set = [];    # working set of lines to process
 
+LINE:
 while ( my $line = <> ) {    # Magically reads STDIN or files in @ARGV
    chomp $line;
    next unless $line;
-   next if $line =~ m/^DATABASE/;
+
+   if ( $one_file && $line =~ m/^DATABASE/ && $opts{H} ) {
+      print $line, "\n";
+      next LINE;
+   }
+
    my @cols = $line =~ m/(\S+)/g;
    next unless @cols == 10;
    push @cols, $line;
