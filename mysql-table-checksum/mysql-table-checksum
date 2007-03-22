@@ -81,7 +81,7 @@ foreach my $spec ( @opt_spec ) {
 }
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec);
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
 # Apply dependencies between arguments.
 $opts{k} ||= defined $opts{w};
