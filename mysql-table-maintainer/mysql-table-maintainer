@@ -36,20 +36,26 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
+# TODO: restrict to certain engine?
+
 my @opt_spec = (
-   { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
-   { s => 'function|f=s',   d => 'Do f=foreign keys, k=keys.  Default is do both.' },
-   { s => 'help',           d => 'Show this help message' },
-   { s => 'host|h=s',       d => 'Connect to host' },
-   { s => 'ignoredb|g=s',   d => 'Ignore this comma-separated list of databases' },
-   { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
-   { s => 'password|p=s',   d => 'Password to use when connecting' },
-   { s => 'port|P=i',       d => 'Port number to use for connection' },
-   { s => 'socket|S=s',     d => 'Socket file to use for connection' },
-   { s => 'tab|b',          d => 'Output separated with tabs' },
-   { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
-   { s => 'user|u=s',       d => 'User for login if not current user' },
-   { s => 'verbose|v',      d => 'Output everything, not just dupes' },
+   { s => 'analyze|a',        d => 'Run ANALYZE TABLE' },
+   { s => 'check|c',          d => 'Run CHECK TABLE' },
+   { s => 'databases|d=s',    d => 'Only do this comma-separated list of databases' },
+   { s => 'debug|b',          d => 'Print SQL statements executed' },
+   { s => 'help',             d => 'Show this help message' },
+   { s => 'host|h=s',         d => 'Connect to host' },
+   { s => 'ignoredb|g=s',     d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoretbl|n=s',    d => 'Ignore this comma-separated list of tables' },
+   { s => 'writetobinlog|w!', d => 'Write the statement to the binlog (default)' },
+   { s => 'optimize|o',       d => 'Run OPTIMIZE TABLE' },
+   { s => 'password|p=s',     d => 'Password to use when connecting' },
+   { s => 'port|P=i',         d => 'Port number to use for connection' },
+   { s => 'repair|r',         d => 'Run REPAIR TABLE' },
+   { s => 'socket|S=s',       d => 'Socket file to use for connection' },
+   { s => 'tables|t=s',       d => 'Only do this comma-separated list of tables' },
+   { s => 'user|u=s',         d => 'User for login if not current user' },
+   { s => 'views|v!',         d => 'Do views also (default)' }, # TODO
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -59,11 +65,7 @@ my %opts = (
    g => '',
    t => '',
    n => '',
-   f => 'fk',
-   v => 0,
-   b => 0,
-   a => 0,
-   s => 0,
+   w => 1,
 );
 # Post-process...
 my %opt_seen;
@@ -102,8 +104,7 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME examines MySQL tables for duplicate or redundant indexes and
-foreign keys.
+$PROGRAM_NAME runs table maintenance commands on MySQL tables.
 
 If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
@@ -130,6 +131,13 @@ my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 my @whole_batch;
 my $exit_code;
 
+my %code_for = (
+   ANALYZE  => \&make_analyze_query,
+   CHECK    => \&make_check_query,
+   OPTIMIZE => \&make_optimize_query,
+   REPAIR   => \&make_repair_query,
+);
+
 DATABASE:
 foreach my $database ( @databases ) {
 
@@ -141,97 +149,45 @@ foreach my $database ( @databases ) {
       || $database =~ m/^(information_schema|lost\+found)$/mi
       || exists $opts{g}->{$database};
 
-   my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
+   my $query = "SHOW TABLE STATUS FROM `$database`";
+   debug_print($query);
+   my @tables = @{$dbh->selectall_arrayref($query, { Slice => {} })};
    next DATABASE unless @tables;
 
-   my %info_for;
+   my @to_print;
 
    TABLE:
-   foreach my $table ( @tables ) {
+   foreach my $spec ( @tables ) {
+      my $table = $spec->{Name};
       next TABLE if
          ( $opts{t} && !exists($opts{t}->{$table}) )
          || exists $opts{n}->{$table};
 
       $exit_code = 1;
-      my $ddl;
-      eval {
-         $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$database`.`$table`"))[1];
-         $exit_code = 0;
-      };
-      next TABLE if !$ddl || $ddl =~ m/^CREATE ALGORITHM/;
 
-      my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
-      my $hash = {
-         engine   => $engine,
-         database => $database,
-         table    => $table,
-         engine   => $engine,
-      };
-      $hash->{keys} = $opts{f} =~ m/k/ ? [ find_keys($hash, $ddl) ] : [];
-      $hash->{fks}  = $opts{f} =~ m/f/ ? [ find_fks($hash, $ddl) ]  : [];
-      if ( @{$hash->{keys}} || @{$hash->{fks}} ) {
-         $info_for{$table} = $hash;
-      }
-   }
-
-   my @to_print;
-   foreach my $table ( sort keys %info_for ) {
-      my $hash = $info_for{$table};
-
-      # Prepare indexes
-      if ( $opts{f} =~ m/k/ ) {
-         my @keys = sort { $a->{cols} cmp $b->{cols} } @{$hash->{keys}};
-         if ( $opts{v} ) { # Print all
-            push @to_print, map { make_hash($database, $table, 'KEY', $_) } @keys;
-         }
-         else { # Find duplicate/redundant by prefix matching.
-            my %seen; # Avoid outputting a key more than once.
-            foreach my $i ( 0..$#keys - 1 ) {
-               my $pat = quotemeta($keys[$i]->{cols});
-               foreach my $j ( $i+1..$#keys ) {
-                  if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts{a})
-                     && $keys[$j]->{cols} =~ m/^$pat/ )
-                  {
-                     push @to_print, make_hash($database, $table, 'KEY', $keys[$i]) if !$seen{$i}++;
-                     push @to_print, make_hash($database, $table, 'KEY', $keys[$j]) if !$seen{$j}++;
-                  }
+      ACTION:
+      foreach my $action ( qw(ANALYZE CHECK OPTIMIZE REPAIR) ) {
+         if ( $opts{lc(substr($action, 0, 1))} ) { # 1st letter same as option
+            my $query = $code_for{$action}->($database, $table, $spec);
+            next ACTION unless $query;
+            debug_print($query);
+            my $res = $dbh->selectall_arrayref($query, { Slice => {} } );
+            push @to_print, map {
+               {  db   => $database,
+                  tbl  => $table,
+                  eng  => $spec->{Engine} || $spec->{Comment},
+                  op   => $_->{Op},
+                  type => $_->{Msg_type},
+                  msg  => $_->{Msg_text},
                }
-            }
-         }
-      }
-
-      # Prepare foreign keys
-      if ( $opts{f} =~ m/f/ ) {
-         my @fks = sort { $a->{cols} cmp $b->{cols} } @{$hash->{fks}};
-         if ( $opts{v} ) { # Print all
-            push @to_print, map { make_hash($database, $table, 'FK', $_) } @fks;
-         }
-         else { # Otherwise output duplicates.  $i $j avoids backtracking.
-            my %seen;
-            foreach my $i ( 0..$#fks - 1 ) {
-               foreach my $j ( $i+1..$#fks ) {
-                  if ( $fks[$i]->{parent} eq $fks[$j]->{parent} && $fks[$i]->{cols} eq $fks[$j]->{cols} ) {
-                     push @to_print, make_hash($database, $table, 'FK', $fks[$i]) if !$seen{$i}++;
-                     push @to_print, make_hash($database, $table, 'FK', $fks[$j]) if !$seen{$j}++;
-                  }
-               }
-            }
+            } @$res;
          }
       }
    }
 
    next DATABASE unless @to_print;
 
-   if ( $opts{s} ) {
-      push @whole_batch, @to_print;
-   }
-   else {
-      print_batch(@to_print);
-   }
-}
-
-if ( @whole_batch && $opts{s} ) {
-   print_batch(@whole_batch);
+   print_batch(@to_print);
 }
 
 exit($exit_code);
@@ -240,96 +196,70 @@ exit($exit_code);
 # Subroutines
 # ############################################################################
 
+# See http://dev.mysql.com/doc/refman/4.1/en/analyze-table.html
+sub make_analyze_query {
+   my ( $database, $table, $spec ) = @_;
+
+   if ( $spec->{Engine}
+      && ( $spec->{Engine} =~ m/^(?:MyISAM|BDB)$/
+         || ( $spec->{Engine} eq 'InnoDB' && version_ge('4.0.13'))))
+   {
+      my $binlog = make_binlog_option();
+      my $query = "ANALYZE $binlog TABLE `$database`.`$table`";
+      return $query;
+   }
+}
+
+# See http://dev.mysql.com/doc/refman/4.1/en/optimize-table.html
+# and http://dev.mysql.com/doc/refman/5.0/en/archive-storage-engine.html
+sub make_optimize_query {
+   my ( $database, $table, $spec ) = @_;
+
+   if ( $spec->{Engine}
+      && ( $spec->{Engine} =~ m/^(?:MyISAM|BDB|InnoDB)$/
+         || ( $spec->{Engine} eq 'ARCHIVE' && version_ge('5.0.16'))))
+   {
+      my $binlog = make_binlog_option();
+      my $query = "OPTIMIZE $binlog TABLE `$database`.`$table`";
+      return $query;
+   }
+}
+
+# TODO use a conditional comment
+sub make_binlog_option {
+   return !$opts{m} && version_ge('4.1.1') ? 'NO_WRITE_TO_BINLOG' : '';
+}
+
+# Compares versions like 5.0.27 and 4.1.15-standard-log
+sub version_ge {
+   my ( $target ) = @_;
+   my @version = $dbh->{mysql_serverinfo} =~ m/(\d+)/g;
+   my @target  = $target  =~ m/(\d+)/g;
+   return $version[0] >= $target[0]
+       && $version[1] >= $target[1]
+       && $version[2] >= $target[2];
+}
+
+# All output has to be prefixed with SQL comments so the output can be piped
+# right into MySQL if desired.
+sub debug_print {
+   print '-- ', @_, "\n" if $opts{b};
+}
+
 sub print_batch {
    my ( @batch ) = @_;
 
-   my $hdr;
-   if ( $opts{b} ) {
-      $hdr = ( "%s\t" x 8 ) . "\n";
-   }
-   else {
-      my $max_idx  = max(5, map { length($_->{name}) } @batch);
-      my $max_tbl  = max(5, map { length($_->{table}) } @batch);
-      my $max_db   = max(8, map { length($_->{database}) } @batch);
-      my $max_par  = max(6, map { length($_->{parent} || '') } @batch);
-      $hdr         = "%-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %-4s %-8s %-${max_par}s %s\n";
-   }
+   my $max_db   = max( 8, map { length( $_->{db} ) } @batch );
+   my $max_tbl  = max( 5, map { length( $_->{tbl} ) } @batch );
+   my $max_op   = max( 2, map { length( $_->{op} ) } @batch );
+   my $max_type = max( 4, map { length( $_->{type} ) } @batch );
+   my $hdr      = "%-${max_db}s %-${max_tbl}s %-6s %-${max_op}s %-${max_type}s %s\n";
 
-   printf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT PARENT COLUMNS));
+   printf($hdr, qw(DATABASE TABLE ENGINE OP TYPE MSG));
    foreach my $thing ( @batch ) {
-      printf($hdr, @{$thing}{qw(database table engine name type struct parent cols)});
+      printf($hdr, @{$thing}{qw(db tbl eng op type msg)});
    }
 
-}
-
-sub make_hash {
-   my ( $database, $table, $type, $hash ) = @_;
-   return {
-      database => $database,
-      table    => $table,
-      engine   => $hash->{engine},
-      name     => $hash->{name},
-      type     => $type,
-      struct   => $hash->{struct} || 'NULL',
-      parent   => $hash->{parent} || 'NULL',
-      cols     => $hash->{cols},
-   };
-}
-
-# The general format of a key is
-# [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
-sub find_keys {
-   my ( $info, $ddl ) = @_;
-
-   # Find and filter the indexes.
-   my @indexes = $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
-   @indexes = grep { $_ !~ m/FOREIGN/ } @indexes;
-
-   # Make allowances for HASH bugs in SHOW CREATE TABLE
-   # (http://bugs.mysql.com/bug.php?id=22632).
-   if ( $info->{engine} !~ m/MEMORY|HEAP/ ) {
-      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
-   }
-
-   my @keys = map {
-      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
-      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
-      $struct = $struct || $special || 'BTREE';
-      if ( $info->{engine} =~ m/HEAP|MEMORY/i ) {
-         $struct = 'HASH';
-      }
-      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
-      {
-         engine   => $info->{engine},
-         struct   => $struct,
-         cols     => $cols,
-         name     => $name || 'PRIMARY',
-      }
-   } @indexes;
-   return @keys;
-}
-
-sub find_fks {
-   my ( $info, $ddl ) = @_;
-
-   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
-
-   # A foreign key is a duplicate no matter what order the columns are in, so
-   # re-order them alphabetically so they can be compared.
-   my @result = map {
-      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
-      my ( $cols ) = $_ =~ m/\(([^\)]+)\)/;
-      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
-      if ( $parent !~ m/\./ ) {
-         $parent = "`$info->{database}`.$parent";
-      }
-      {  name   => $name,
-         engine => $info->{engine},
-         parent => $parent,
-         cols   => join(',', sort(split(/`, `/, $cols))),
-      };
-   } @fks;
-   return @result;
 }
 
 # ############################################################################
