@@ -26,7 +26,6 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use Term::ReadLine;
 
 # Make the file's Perl version the same as its CVS revision number.
 # our $VERSION = sprintf "%d.%03d", q$Revision$ =~ /(\d+)/g;
@@ -66,7 +65,7 @@ GetOptions( map { $_->{k} => \$opts{$_->{k}} }  values %opt_spec);
 # If a filename or other argument(s) is required after the other arguments,
 # add "|| !@ARGV" inside the parens on the next line.
 if ( $opts{help} || grep { !$opts{$_} && $opt_spec{$_}->{r} } keys %opt_spec ) {
-   print "Usage: $PROGRAM_NAME <options> batch-file\n\n  Options:\n\n";
+   print "Usage: $PROGRAM_NAME <options> batch-file\n\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } values %opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
