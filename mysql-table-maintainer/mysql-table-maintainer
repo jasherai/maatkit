@@ -37,6 +37,49 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
+# TODO: add an option to only do tables of a certain size
+#            Name: api
+#          Engine: InnoDB
+#         Version: 10
+#      Row_format: Compact
+#            Rows: 5
+#  Avg_row_length: 3276
+#     Data_length: 16384
+# Max_data_length: 0
+#    Index_length: 16384
+#       Data_free: 0
+#  Auto_increment: NULL
+#     Create_time: 2007-03-22 11:12:27
+#     Update_time: NULL
+#      Check_time: NULL
+#       Collation: latin1_swedish_ci
+#        Checksum: NULL
+#  Create_options: 
+#         Comment: InnoDB free: 6899712 kB
+# 
+#            Name: apiusage
+#          Engine: MyISAM
+#         Version: 10
+#      Row_format: Dynamic
+#            Rows: 129798
+#  Avg_row_length: 54
+#     Data_length: 7062432
+# Max_data_length: 281474976710655
+#    Index_length: 3989504
+#       Data_free: 0
+#  Auto_increment: NULL
+#     Create_time: 2006-11-15 10:32:53
+#     Update_time: 2007-03-23 02:25:02
+#      Check_time: NULL
+#       Collation: latin1_swedish_ci
+#        Checksum: NULL
+#  Create_options: 
+#         Comment: 
+# 
+# TODO: add an option to only do tables like %pattern%
+# TODO: or only do tables that are x old, or not checked in x (units):
+# http://perldoc.perl.org/perlfaq4.html#How-can-I-compare-two-dates-and-find-the-difference%3F
+# TODO: report data, index, total size change before/after and InnoDB free
 my @opt_spec = (
    { s => 'analyze|a',        d => 'Run ANALYZE TABLE' },
    { s => 'check|c',          d => 'Run CHECK TABLE' },
@@ -160,6 +203,7 @@ foreach my $database ( @databases ) {
       || $database =~ m/^(information_schema|lost\+found)$/mi
       || exists $opts{g}->{$database};
 
+   # TODO like %pattern%
    my $query = "SHOW TABLE STATUS FROM `$database`";
    debug_print($query);
    my @tables = @{$dbh->selectall_arrayref($query, { Slice => {} })};
@@ -320,7 +364,6 @@ sub make_repair_query {
    }
 }
 
-# TODO use a conditional comment
 sub make_binlog_option {
    return !$opts{m} && version_ge('4.1.1') ? 'NO_WRITE_TO_BINLOG' : '';
 }
