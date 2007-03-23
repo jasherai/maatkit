@@ -181,11 +181,14 @@ foreach my $table ( $source, $dest ) {
    $table->{cols} = col_list(@{$table->{info}->{cols}});
 }
 
+# TODO: ensure this works right on bottom-up, and only get read lock on source
+# unless the reconciliation method is to chaneg the source and let replication
+# do it.
 if ( $opts{k} && $opts{a} eq 'topdown' ) {
    if ( $opts{v} ) {
       print "-- Locking table on source\n";
    }
-   my $query = "LOCK TABLES $source->{db_tbl} READ";
+   my $query = "LOCK TABLES $source->{db_tbl} WRITE";
    debug_print($query);
    $source->{dbh}->do($query);
    if ( $opts{v} ) {
@@ -219,7 +222,7 @@ else {
 
 foreach my $table ( $source, $dest ) {
    my $dbh = $table->{dbh};
-   $dbh->commit if $opts{k};
+   $dbh->commit if $opts{k} || $opts{f};
    $dbh->disconnect;
 }
 
@@ -431,7 +434,7 @@ sub td_fetch_level {
       $query = "SELECT /*$info->{db_tbl}*/ $grp, "
          . "MD5(CONCAT_WS('$opts{e}', $cols$null)) AS __crc "
          . "FROM $info->{db_tbl} $crit "
-         . "ORDER BY $grp";
+         . "ORDER BY $grp$lock";
    }
    debug_print($query);
 
@@ -1102,12 +1105,17 @@ sub make_key {
 }
 
 sub get_dbh {
+   my $db_options = {
+      AutoCommit => !$opts{k} && !$opts{f},
+      RaiseError => 1,
+      PrintError => 1,
+   };
    my ( $info ) = @_;
    my %conn = ( h => 'host', P => 'port', S => 'socket');
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(h P S))
       . ';mysql_read_default_group=mysql';
-   return DBI->connect($dsn, @{$info}{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
       or die("Can't connect to DB: $OS_ERROR");
 }
 
