@@ -1,0 +1,151 @@
+#!/usr/bin/perl
+
+# This is mysql-table-sniper, a program to help remove tables from a MySQL server.
+# 
+# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+use List::Util qw(max);
+
+our $VERSION = '@VERSION@';
+
+$OUTPUT_AUTOFLUSH = 1;
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+   print <<USAGE;
+
+$PROGRAM_NAME helps you remove tables from a MySQL server.
+
+If possible, database options are read from your .my.cnf file.
+For more details, please read the documentation:
+
+   perldoc $PROGRAM_NAME
+
+USAGE
+   exit(1);
+}
+
+# ############################################################################
+# Get ready to do the main work.
+# ############################################################################
+
+my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+my @whole_batch;
+
+DATABASE:
+foreach my $database ( @databases ) {
+
+   # Ignore databases as instructed.  Also ignore INFORMATION_SCHEMA and skip
+   # databases caused by lost+found directories created in the root of ext3
+   # filesystems; they are not really databases.
+   next DATABASE if
+      ( $opts{d} && !exists($opts{d}->{$database}) )
+      || $database =~ m/^(information_schema|lost\+found)$/mi
+      || exists $opts{g}->{$database};
+
+   my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
+   next DATABASE unless @tables;
+
+   my %info_for;
+
+   # Get a list of active connections
+   my $processes = $dbh->selectall_hashref("show processlist", 'Id');
+
+   foreach my $db ( @{ $dbh->selectcol_arrayref('show databases') } ) {
+      my @tables = @{ $dbh->selectcol_arrayref("show tables from $db") };
+      foreach my $tbl ( @tables ) {
+
+         # We only want tables whose name ends in digits NOT preceded by other
+         # digits (for example, barontest_2006_12_06 should not be dropped).
+         my ( $process ) = $tbl =~ m/\D_(\d+)$/;
+
+         next unless $process;
+
+         # If the process doesn't exist anymore, the table isn't in use.
+         if ( !exists($processes->{$process} ) ) {
+            print "Dropping table $db.$tbl\n" if $ENV{RKGDEBUG};
+            $dbh->do("drop table if exists $db.$tbl");
+         }
+      }
+   }
+
+   TABLE:
+   foreach my $table ( @tables ) {
+      next TABLE if exists $opts{n}->{$table};
+
+      my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$database`.`$table`"))[1];
+      next TABLE if $ddl =~ m/^CREATE ALGORITHM/;
+
+   }
+
+}
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+
+# ############################################################################
+# Documentation
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+mysql-stale-table-sniper - Find and possibly remove stale MySQL tables.
+
+=head1 DESCRIPTION
+
+=head1 OUTPUT
+
+=head1 SYSTEM REQUIREMENTS
+
+You need the following Perl modules: DBI, DBD::mysql, and Term::ReadKey.
+
+=head1 LICENSE
+
+This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz, baron at xaprb dot com.
+
+=cut
