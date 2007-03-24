@@ -26,7 +26,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use List::Util qw(max);
+use List::Util qw(max maxstr);
 use Time::HiRes qw(time);
 
 our $VERSION = '@VERSION@';
@@ -37,47 +37,9 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-# TODO: add an option to only do tables of a certain size
-#            Name: api
-#          Engine: InnoDB
-#         Version: 10
-#      Row_format: Compact
-#            Rows: 5
-#  Avg_row_length: 3276
-#     Data_length: 16384
-# Max_data_length: 0
-#    Index_length: 16384
-#       Data_free: 0
-#  Auto_increment: NULL
-#     Create_time: 2007-03-22 11:12:27
-#     Update_time: NULL
-#      Check_time: NULL
-#       Collation: latin1_swedish_ci
-#        Checksum: NULL
-#  Create_options: 
-#         Comment: InnoDB free: 6899712 kB
-# 
-#            Name: apiusage
-#          Engine: MyISAM
-#         Version: 10
-#      Row_format: Dynamic
-#            Rows: 129798
-#  Avg_row_length: 54
-#     Data_length: 7062432
-# Max_data_length: 281474976710655
-#    Index_length: 3989504
-#       Data_free: 0
-#  Auto_increment: NULL
-#     Create_time: 2006-11-15 10:32:53
-#     Update_time: 2007-03-23 02:25:02
-#      Check_time: NULL
-#       Collation: latin1_swedish_ci
-#        Checksum: NULL
-#  Create_options: 
-#         Comment: 
-# 
-# TODO: or only do tables that are x old, or not checked in x (units):
-# http://perldoc.perl.org/perlfaq4.html#How-can-I-compare-two-dates-and-find-the-difference%3F
+# TODO: include ability to issue ALTER engine=engine for older versions.
+# TODO: documentation
+
 my @opt_spec = (
    { s => 'analyze|a',        d => 'Run ANALYZE TABLE' },
    { s => 'check|c',          d => 'Run CHECK TABLE' },
@@ -93,7 +55,7 @@ my @opt_spec = (
    { s => 'ignoretbl|n=s',    d => 'Ignore this comma-separated list of tables' },
    { s => 'longnum|l',        d => 'Do not shorten size and row count' },
    { s => 'minsize|m=s',      d => 'Ignore tables smaller than SIZE' },
-   # TODO { s => 'minchecktime=s',   d => 'Ignore tables checked more recently than TIME' },
+   { s => 'minage=s',         d => 'Ignore tables newer than TIME' },
    { s => 'optimize|o',       d => 'Run OPTIMIZE TABLE' },
    { s => 'password|p=s',     d => 'Password to use when connecting' },
    { s => 'port|P=i',         d => 'Port number to use for connection' },
@@ -153,6 +115,10 @@ if ( $opts{z} ) {
 # Convert sizes into units
 if ( $opts{m} ) {
    $opts{m} = lengthen($opts{m});
+}
+# Convert time into datetime string
+if ( $opts{minage} ) {
+   $opts{minage} = to_datetime($opts{minage});
 }
 
 # You gotta tell me what to do...
@@ -256,11 +222,14 @@ foreach my $database ( @databases ) {
          $engine = 'CORRUPT';
       }
 
+      my $tbl_time = maxstr( '', map { $_ || '' } @{$spec}{qw(Check_time Create_time Update_time)});
+
       next TABLE if
          ( $opts{t} && !exists($opts{t}->{$table}) )
          || exists $opts{n}->{$table}
          || ($opts{e} && $engine !~m/CORRUPT|VIEW|UNKNOWN/ && !exists $opts{e}->{lc $engine})
          || ($opts{m} && (!$size || $size < $opts{m}))
+         || ($opts{minage} && $tbl_time && $tbl_time gt $opts{minage})
          || ($engine eq 'VIEW' && !$opts{v});
 
       ACTION:
@@ -326,17 +295,69 @@ exit($exit_code);
 # Subroutines
 # ############################################################################
 
+sub to_datetime {
+   my ( $str ) = @_;
+
+   # Maybe it's already in some fragment of YYYY-MM-DD HH:MM:SS format.
+   my ( $year, $mon, $day, $hour, $min, $sec )
+      = $str =~ m/
+         ^
+         (\d{4})     # Year
+         (?:-
+            (\d{2})  # Mon
+         )?
+         (?:-
+            (\d{2})  # Day
+         )?
+         (?:[\sT]
+            (\d{2})  # Hour
+         )?
+         (?::
+            (\d{2})  # Min
+         )?
+         (?::
+            (\d{2})  # Sec
+         )?
+         $/xms;
+   if ( !defined $year ) {
+      # It must be something like 1y or 5d or 2w.
+      my ( $num, $suffix ) = $str =~ m/^([\d\.]+)([hdwmy])$/;
+      die "Unrecognized time '$str'; it must be in ISO format or like 1h, 2d etc"
+         unless $num;
+      my %sec_factors = (
+         h => 3_600,
+         d => 3_600 * 24,
+         w => 3_600 * 24 * 7,
+         m => 3_600 * 24 * 30,
+         y => 3_600 * 24 * 365,
+      );
+      $num = int(time() - $num * $sec_factors{$suffix});
+      ($sec, $min, $hour, $day, $mon, $year) = localtime($num);
+      $mon++;
+      $year += 1900;
+   }
+
+   # Fill in anything missing and return the string
+   $mon  ||= 1;
+   $day  ||= 1;
+   $hour ||= 0;
+   $min  ||= 0;
+   $sec  ||= 0;
+   return sprintf('%d-%02d-%02d %02d:%02d:%02d',
+      $year, $mon, $day, $hour, $min, $sec );
+}
+
 sub lengthen {
    my ( $str ) = @_;
+   my ( $num, $suffix ) = $str =~ m/^([\d\.]+)([kMGT])?$/;
+   die "Unrecognized size format '$str'; must be like 5, 1k, 5G, etc" unless $num;
+   return $num unless $suffix;
    my %len_factors = (
       k => 1_024,
       M => 1_024 ** 2,
       G => 1_024 ** 3,
       T => 1_024 ** 4,
    );
-   my ( $num, $suffix ) = $str =~ m/^([\d\.]+)([kMGT])?$/;
-   die "Unrecognized size format '$str'; must be like 5, 1k, 5G, etc" unless $num;
-   return $num unless $suffix;
    return $num * $len_factors{$suffix};
 }
 
