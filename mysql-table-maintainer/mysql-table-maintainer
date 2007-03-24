@@ -181,6 +181,9 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
    or die("Can't connect to DB: $OS_ERROR");
 
 my $ok_pattern = qr/^(?:OK|Table is already up to date)$/;
+my @engines    = qw(myisam innodb memory heap merge archive federated ndb csv
+                    blackhole example falcon solid pbxt);
+my $engine_re  = join('|', @engines);
 my @whole_batch;
 my $exit_code = 0;
 
@@ -236,6 +239,9 @@ foreach my $database ( @databases ) {
          else {
             $engine = 'VIEW';
          }
+      }
+      elsif ( !$spec->{Engine} || $spec->{Engine} !~ m/^(?:$engine_re)$/ ) {
+         $engine = 'CORRUPT';
       }
 
       next TABLE if
