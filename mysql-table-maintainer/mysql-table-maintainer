@@ -219,7 +219,7 @@ foreach my $database ( @databases ) {
 
    my $max_db  = max( 8, length($database));
    my $max_tbl = max( 5, map { length( $_->{Name} ) } @tables );
-   my $hdr     = "%-${max_db}s %-${max_tbl}s %-7s %6s %-8s %-8s %3s %6s %s\n";
+   my $hdr     = "%-${max_db}s %-${max_tbl}s %-7s %6s %-8s %-8s %3s %4s %s\n";
    my $printed = 0;
 
    TABLE:
@@ -270,7 +270,7 @@ foreach my $database ( @databases ) {
          my $res = eval { $dbh->selectall_arrayref($query, { Slice => {} } ) };
          exit(1) if $opts{stoponerror} && $EVAL_ERROR; # Already printed by DBI
          next ACTION unless $res;
-         my $time_str = sprintf('%.2f', time() - $start);
+         my $time_str = sprintf('%d', time() - $start);
 
          # Sometimes there are a ton of repeated messages, so I try to
          # collapse them into one with a count.
