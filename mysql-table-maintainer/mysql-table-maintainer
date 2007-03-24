@@ -85,6 +85,7 @@ my @opt_spec = (
    { s => 'check|c',          d => 'Run CHECK TABLE' },
    { s => 'checkopts=s',      d => 'Options to CHECK TABLE' },
    { s => 'checkrepair|k',    d => 'Run REPAIR if CHECK found problems (implies -cr) '},
+   { s => 'checkoptimize|z',  d => 'Run OPTIMIZE if CHECK found NO problems (implies -co) '},
    { s => 'databases|d=s',    d => 'Only do this comma-separated list of databases' },
    { s => 'debug|b',          d => 'Print SQL statements executed' },
    { s => 'engines|e=s',      d => 'Only do this comma-separated list of engines' },
@@ -144,6 +145,9 @@ if ( $opts{e} ) {
 }
 if ( $opts{k} ) {
    $opts{c} = $opts{r} = 1;
+}
+if ( $opts{z} ) {
+   $opts{c} = $opts{o} = 1;
 }
 
 # You gotta tell me what to do...
@@ -215,7 +219,7 @@ foreach my $database ( @databases ) {
 
    my $max_db  = max( 8, length($database));
    my $max_tbl = max( 5, map { length( $_->{Name} ) } @tables );
-   my $hdr     = "%-${max_db}s %-${max_tbl}s %-7s %-8s %-8s %3s %6s %s\n";
+   my $hdr     = "%-${max_db}s %-${max_tbl}s %-7s %6s %-8s %-8s %3s %6s %s\n";
    my $printed = 0;
 
    TABLE:
@@ -241,7 +245,7 @@ foreach my $database ( @databases ) {
             $engine = 'VIEW';
          }
       }
-      elsif ( !$spec->{Engine} || $spec->{Engine} !~ m/^(?:$engine_re)$/ ) {
+      elsif ( !$spec->{Engine} || $spec->{Engine} !~ m/^(?:$engine_re)$/i ) {
          $engine = 'CORRUPT';
       }
 
@@ -252,53 +256,56 @@ foreach my $database ( @databases ) {
          || ($engine eq 'VIEW' && !$opts{v});
 
       ACTION:
-      foreach my $action ( qw(a c o r) ) { # ANALYZE CHECK OPTIMIZE REPAIR
-         if ( defined $opts{$action} ) {
-            next ACTION if $action eq 'r' && $opts{k} && !$needs_repair;
-            my $query = $code_for{$action}->($database, $table, $engine);
-            next ACTION unless $query;
-            debug_print($query);
-            my $start = time();
-            my $res = eval { $dbh->selectall_arrayref($query, { Slice => {} } ) };
-            exit(1) if $opts{stoponerror} && $EVAL_ERROR; # Already printed by DBI
-            next ACTION unless $res;
-            my $time_str = sprintf('%.2f', time() - $start);
+      foreach my $action ( grep { defined $opts{$_} } qw(a c o r) ) { # ANALYZE CHECK OPTIMIZE REPAIR
 
-            # Sometimes there are a ton of repeated messages, so I try to
-            # collapse them into one with a count.
-            my %to_print;
-            my $order = 0;
-            foreach my $row ( @$res ) {
-               my $key = join(',', @{$row}{ qw(Msg_type Msg_text) });
-               if ( $to_print{$key} ) {
-                  $to_print{$key}->{count}++;
-               }
-               else {
-                  $row->{order} = $order++;
-                  $row->{count} = 1;
-                  $to_print{$key} = $row;
-               }
-            }
-
-            foreach my $row ( sort { $a->{order} <=> $b->{order} } values %to_print ) {
-               if ( !$opts{q} || ($opts{q} <= 1 && $row->{Msg_text} !~ m/$ok_pattern/ )) {
-                  printf($hdr, qw(DATABASE TABLE ENGINE OP TYPE CNT TIME MSG))
-                     unless $printed++;
-                  printf($hdr, $database, $table, $engine, $row->{Op},
-                     $row->{Msg_type}, $row->{count}, $time_str, $row->{Msg_text});
-               }
-            }
-
-            # Check the LAST row to see whether table needs repair.  Last ROW,
-            # not last %to_print value.
-            if ( $action eq 'c' ) {
-               my $msg = $res->[ scalar(@$res) - 1 ]->{Msg_text};
-               if ( $engine ne 'VIEW' && $msg !~ m/$ok_pattern/ ) {
-                  $needs_repair = 1;
-               }
-            }
-
+         if (  ($action eq 'r' && $opts{k} && !$needs_repair)
+            || ($action eq 'o' && $opts{z} && $needs_repair) ) {
+            next ACTION;
          }
+
+         my $query = $code_for{$action}->($database, $table, $engine);
+         next ACTION unless $query;
+         debug_print($query);
+         my $start = time();
+         my $res = eval { $dbh->selectall_arrayref($query, { Slice => {} } ) };
+         exit(1) if $opts{stoponerror} && $EVAL_ERROR; # Already printed by DBI
+         next ACTION unless $res;
+         my $time_str = sprintf('%.2f', time() - $start);
+
+         # Sometimes there are a ton of repeated messages, so I try to
+         # collapse them into one with a count.
+         my %to_print;
+         my $order = 0;
+         foreach my $row ( @$res ) {
+            my $key = join(',', @{$row}{ qw(Msg_type Msg_text) });
+            if ( $to_print{$key} ) {
+               $to_print{$key}->{count}++;
+            }
+            else {
+               $row->{order} = $order++;
+               $row->{count} = 1;
+               $to_print{$key} = $row;
+            }
+         }
+
+         foreach my $row ( sort { $a->{order} <=> $b->{order} } values %to_print ) {
+            if ( !$opts{q} || ($opts{q} <= 1 && $row->{Msg_text} !~ m/$ok_pattern/ )) {
+               printf($hdr, qw(DATABASE TABLE ENGINE SIZE OP TYPE CNT TIME MSG))
+                  unless $printed++;
+               printf($hdr, $database, $table, $engine, get_size($spec), $row->{Op},
+                  $row->{Msg_type}, $row->{count}, $time_str, $row->{Msg_text});
+            }
+         }
+
+         # Check the LAST row to see whether table needs repair.  Last ROW,
+         # not last %to_print value.
+         if ( $action eq 'c' ) {
+            my $msg = $res->[ scalar(@$res) - 1 ]->{Msg_text};
+            if ( $engine ne 'VIEW' && $msg !~ m/$ok_pattern/ ) {
+               $needs_repair = 1;
+            }
+         }
+
       }
    }
 
@@ -309,6 +316,18 @@ exit($exit_code);
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub get_size {
+   my ( $spec ) = @_;
+   my $num = ($spec->{Data_length} || 0) + ($spec->{Index_length} || 0);
+
+   my $n = 0;
+   while ( $num >= 1_024 ) {
+      $num /= 1_024;
+      ++$n;
+   }
+   return sprintf( "%.1f%s", $num, (' ','k','M','G', 'T')[$n]);
+}
 
 # See http://dev.mysql.com/doc/refman/4.1/en/analyze-table.html
 sub make_analyze_query {
