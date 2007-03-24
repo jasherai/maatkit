@@ -76,10 +76,8 @@ $OUTPUT_AUTOFLUSH = 1;
 #  Create_options: 
 #         Comment: 
 # 
-# TODO: add an option to only do tables like %pattern%
 # TODO: or only do tables that are x old, or not checked in x (units):
 # http://perldoc.perl.org/perlfaq4.html#How-can-I-compare-two-dates-and-find-the-difference%3F
-# TODO: report data, index, total size change before/after and InnoDB free
 my @opt_spec = (
    { s => 'analyze|a',        d => 'Run ANALYZE TABLE' },
    { s => 'check|c',          d => 'Run CHECK TABLE' },
@@ -93,6 +91,7 @@ my @opt_spec = (
    { s => 'host|h=s',         d => 'Connect to host' },
    { s => 'ignoredb|g=s',     d => 'Ignore this comma-separated list of databases' },
    { s => 'ignoretbl|n=s',    d => 'Ignore this comma-separated list of tables' },
+   { s => 'longnum|l',        d => 'Do not shorten size and row count' },
    { s => 'writetobinlog|w!', d => 'Write the statement to the binlog (default)' },
    { s => 'optimize|o',       d => 'Run OPTIMIZE TABLE' },
    { s => 'password|p=s',     d => 'Password to use when connecting' },
@@ -211,7 +210,6 @@ foreach my $database ( @databases ) {
       || $database =~ m/^(information_schema|lost\+found)$/mi
       || exists $opts{g}->{$database};
 
-   # TODO like %pattern%
    my $query = "SHOW TABLE STATUS FROM `$database`";
    debug_print($query);
    my @tables = @{$dbh->selectall_arrayref($query, { Slice => {} })};
@@ -219,7 +217,7 @@ foreach my $database ( @databases ) {
 
    my $max_db  = max( 8, length($database));
    my $max_tbl = max( 5, map { length( $_->{Name} ) } @tables );
-   my $hdr     = "%-${max_db}s %-${max_tbl}s %-7s %6s %-8s %-8s %3s %4s %s\n";
+   my $hdr     = "%-${max_db}s %-${max_tbl}s %-7s %6s %6s %-8s %-8s %3s %4s %s\n";
    my $printed = 0;
 
    TABLE:
@@ -290,10 +288,12 @@ foreach my $database ( @databases ) {
 
          foreach my $row ( sort { $a->{order} <=> $b->{order} } values %to_print ) {
             if ( !$opts{q} || ($opts{q} <= 1 && $row->{Msg_text} !~ m/$ok_pattern/ )) {
-               printf($hdr, qw(DATABASE TABLE ENGINE SIZE OP TYPE CNT TIME MSG))
+               printf($hdr, qw(DATABASE TABLE ENGINE SIZE ROWS OP TYPE CNT TIME MSG))
                   unless $printed++;
-               printf($hdr, $database, $table, $engine, get_size($spec), $row->{Op},
-                  $row->{Msg_type}, $row->{count}, $time_str, $row->{Msg_text});
+               printf($hdr, $database, $table, $engine,
+                  shorten(($spec->{Data_length} || 0) + ($spec->{Index_length} || 0)),
+                  shorten($spec->{Rows}), $row->{Op}, $row->{Msg_type}, $row->{count},
+                  $time_str, $row->{Msg_text});
             }
          }
 
@@ -317,12 +317,11 @@ exit($exit_code);
 # Subroutines
 # ############################################################################
 
-sub get_size {
-   my ( $spec ) = @_;
-   my $num = ($spec->{Data_length} || 0) + ($spec->{Index_length} || 0);
-
+sub shorten {
+   my ( $num ) = @_;
+   return $num if $opts{l};
    my $n = 0;
-   while ( $num >= 1_024 ) {
+   while ( $num >= 1_024 && $n < 5) {
       $num /= 1_024;
       ++$n;
    }
