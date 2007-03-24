@@ -81,9 +81,9 @@ $OUTPUT_AUTOFLUSH = 1;
 my @opt_spec = (
    { s => 'analyze|a',        d => 'Run ANALYZE TABLE' },
    { s => 'check|c',          d => 'Run CHECK TABLE' },
+   { s => 'checkoptimize|z',  d => 'Run OPTIMIZE if CHECK found NO problems (implies -co) '},
    { s => 'checkopts=s',      d => 'Options to CHECK TABLE' },
    { s => 'checkrepair|k',    d => 'Run REPAIR if CHECK found problems (implies -cr) '},
-   { s => 'checkoptimize|z',  d => 'Run OPTIMIZE if CHECK found NO problems (implies -co) '},
    { s => 'databases|d=s',    d => 'Only do this comma-separated list of databases' },
    { s => 'debug|b',          d => 'Print SQL statements executed' },
    { s => 'engines|e=s',      d => 'Only do this comma-separated list of engines' },
@@ -92,18 +92,20 @@ my @opt_spec = (
    { s => 'ignoredb|g=s',     d => 'Ignore this comma-separated list of databases' },
    { s => 'ignoretbl|n=s',    d => 'Ignore this comma-separated list of tables' },
    { s => 'longnum|l',        d => 'Do not shorten size and row count' },
-   { s => 'writetobinlog|w!', d => 'Write the statement to the binlog (default)' },
+   { s => 'minsize|m=s',      d => 'Ignore tables smaller than SIZE' },
+   # TODO { s => 'minchecktime=s',   d => 'Ignore tables checked more recently than TIME' },
    { s => 'optimize|o',       d => 'Run OPTIMIZE TABLE' },
    { s => 'password|p=s',     d => 'Password to use when connecting' },
    { s => 'port|P=i',         d => 'Port number to use for connection' },
    { s => 'quiet|q+',         d => 'Be quieter.  Specify twice for no output' },
-   { s => 'repair|r',         d => 'Run REPAIR TABLE' },
    { s => 'repairopts=s',     d => 'Options to REPAIR TABLE' },
+   { s => 'repair|r',         d => 'Run REPAIR TABLE' },
    { s => 'socket|S=s',       d => 'Socket file to use for connection' },
    { s => 'stoponerror',      d => 'Stop if there is an error' },
    { s => 'tables|t=s',       d => 'Only do this comma-separated list of tables' },
    { s => 'user|u=s',         d => 'User for login if not current user' },
    { s => 'views|v',          d => 'Do views also' },
+   { s => 'writetobinlog|w!', d => 'Write the statement to the binlog (default)' },
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -130,7 +132,7 @@ foreach my $spec ( @opt_spec ) {
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
-# Make comma-separated lists into hashes.
+# Process some options...
 if ( $opts{d} ) {
    $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
 }
@@ -147,6 +149,10 @@ if ( $opts{k} ) {
 }
 if ( $opts{z} ) {
    $opts{c} = $opts{o} = 1;
+}
+# Convert sizes into units
+if ( $opts{m} ) {
+   $opts{m} = lengthen($opts{m});
 }
 
 # You gotta tell me what to do...
@@ -224,6 +230,9 @@ foreach my $database ( @databases ) {
    foreach my $spec ( @tables ) {
       my $table = $spec->{Name};
       my $engine = $spec->{Engine} || $spec->{Comment};
+      my $size   = $spec->{Data_length}
+                 ? (($spec->{Data_length} || 0) + ($spec->{Index_length} || 0))
+                 : undef;
 
       $exit_code = 0;
       my $needs_repair = 0;
@@ -251,6 +260,7 @@ foreach my $database ( @databases ) {
          ( $opts{t} && !exists($opts{t}->{$table}) )
          || exists $opts{n}->{$table}
          || ($opts{e} && $engine !~m/CORRUPT|VIEW|UNKNOWN/ && !exists $opts{e}->{lc $engine})
+         || ($opts{m} && (!$size || $size < $opts{m}))
          || ($engine eq 'VIEW' && !$opts{v});
 
       ACTION:
@@ -290,9 +300,8 @@ foreach my $database ( @databases ) {
             if ( !$opts{q} || ($opts{q} <= 1 && $row->{Msg_text} !~ m/$ok_pattern/ )) {
                printf($hdr, qw(DATABASE TABLE ENGINE SIZE ROWS OP TYPE CNT TIME MSG))
                   unless $printed++;
-               printf($hdr, $database, $table, $engine,
-                  shorten(($spec->{Data_length} || 0) + ($spec->{Index_length} || 0)),
-                  shorten($spec->{Rows}), $row->{Op}, $row->{Msg_type}, $row->{count},
+               printf($hdr, $database, $table, $engine, shorten($size || 0),
+                  shorten($spec->{Rows} || 0), $row->{Op}, $row->{Msg_type}, $row->{count},
                   $time_str, $row->{Msg_text});
             }
          }
@@ -316,6 +325,20 @@ exit($exit_code);
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub lengthen {
+   my ( $str ) = @_;
+   my %len_factors = (
+      k => 1_024,
+      M => 1_024 ** 2,
+      G => 1_024 ** 3,
+      T => 1_024 ** 4,
+   );
+   my ( $num, $suffix ) = $str =~ m/^([\d\.]+)([kMGT])?$/;
+   die "Unrecognized size format '$str'; must be like 5, 1k, 5G, etc" unless $num;
+   return $num unless $suffix;
+   return $num * $len_factors{$suffix};
+}
 
 sub shorten {
    my ( $num ) = @_;
@@ -391,7 +414,7 @@ sub make_repair_query {
 }
 
 sub make_binlog_option {
-   return !$opts{m} && version_ge('4.1.1') ? 'NO_WRITE_TO_BINLOG' : '';
+   return !$opts{w} && version_ge('4.1.1') ? 'NO_WRITE_TO_BINLOG' : '';
 }
 
 # Compares versions like 5.0.27 and 4.1.15-standard-log
