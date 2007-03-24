@@ -100,6 +100,7 @@ my @opt_spec = (
    { s => 'repair|r',         d => 'Run REPAIR TABLE' },
    { s => 'repairopts=s',     d => 'Options to REPAIR TABLE' },
    { s => 'socket|S=s',       d => 'Socket file to use for connection' },
+   { s => 'stoponerror',      d => 'Stop if there is an error' },
    { s => 'tables|t=s',       d => 'Only do this comma-separated list of tables' },
    { s => 'user|u=s',         d => 'User for login if not current user' },
    { s => 'views|v',          d => 'Do views also' },
@@ -259,6 +260,7 @@ foreach my $database ( @databases ) {
             debug_print($query);
             my $start = time();
             my $res = eval { $dbh->selectall_arrayref($query, { Slice => {} } ) };
+            exit(1) if $opts{stoponerror} && $EVAL_ERROR; # Already printed by DBI
             next ACTION unless $res;
             my $time_str = sprintf('%.2f', time() - $start);
 
