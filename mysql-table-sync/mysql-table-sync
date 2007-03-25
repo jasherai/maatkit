@@ -375,6 +375,11 @@ sub topdown {
       $level--;
    } while ( @to_examine );
 
+   # Release locks/close transaction as soon as possible.
+   if ( $opts{r} && $opts{f} ) {
+      $dest->{dbh}->commit;
+   }
+
    td_handle_data_change('INSERT', @to_insert);
    td_handle_data_change('DELETE', @to_delete);
    td_handle_data_change('UPDATE', @to_update);
@@ -389,10 +394,7 @@ sub td_handle_data_change {
    my ( $action, @rows ) = @_;
    return unless $action =~ m/$opts{o}/i;
    foreach my $where ( @rows ) {
-      my $which = $opts{r} ? $source : $dest;
-      my $dbh   = $which->{dbh};
-      my $crit  = make_where_clause($dbh, $where);
-      handle_data_change($action, $crit);
+      handle_data_change($action, $where);
    }
 }
 
@@ -420,7 +422,7 @@ sub td_fetch_level {
 
    if ( $opts{f} && !$opts{k} ) { # User wants us to lock for consistency.
       # Is this the server where changes will happen?
-      my $is_target = ($opts{r} && $which eq 'source') || $which eq 'dest';
+      my $is_target = $opts{r} ? $which eq 'source' : $which eq 'dest';
       $lock = $is_target ? ' FOR UPDATE' : ' LOCK IN SHARE MODE';
    }
 
@@ -433,7 +435,7 @@ sub td_fetch_level {
    my $query;
    if ( $level ) {
       ( $query = <<"      END" ) =~ s/\s+/ /g;
-         SELECT /*$info->{db_tbl}*/
+         SELECT /*$which:$info->{db_tbl}*/
             $grp,
             COUNT(*) AS __cnt,
             CONCAT(
@@ -451,7 +453,7 @@ sub td_fetch_level {
       END
    }
    else {
-      $query = "SELECT /*$info->{db_tbl}*/ $grp, "
+      $query = "SELECT /*$which:$info->{db_tbl}*/ $grp, "
          . "MD5(CONCAT_WS('$opts{e}', $cols$null)) AS __crc "
          . "FROM $info->{db_tbl} $crit "
          . "ORDER BY $grp$lock";
@@ -864,13 +866,10 @@ sub bu_handle_bulk_change {
 sub bu_handle_data_change {
    my ( $action, @rows ) = @_;
    return unless $action =~ m/$opts{o}/i;
-   my $which = $opts{r} ? $source : $dest;
-   my $dbh   = $which->{dbh};
 
    foreach my $row ( @rows ) {
       delete $row->{__crc}; # Now the row can be used as a WHERE clause
-      my $crit = make_where_clause($dbh, $row);
-      handle_data_change($action, $crit);
+      handle_data_change($action, $row);
    }
 }
 
@@ -974,9 +973,10 @@ sub debug_print {
 
 # Code factored out of bu_handle_data_change and td_handle_data_change.
 sub handle_data_change {
-   my ( $action, $crit ) = @_;
+   my ( $action, $where) = @_;
    my $which = $opts{r} ? $source : $dest;
    my $dbh   = $which->{dbh};
+   my $crit  = make_where_clause($dbh, $where);
 
    if ( $action eq 'DELETE' ) {
       my $query = "DELETE FROM $which->{db_tbl} $crit";
@@ -1001,7 +1001,7 @@ sub handle_data_change {
                   @{$which->{info}->{cols}}) . ")";
          }
          else {
-            my @cols = grep { !exists($crit->{$_}) } @{$which->{info}->{cols}};
+            my @cols = grep { !exists($where->{$_}) } @{$which->{info}->{cols}};
             $query = "UPDATE $which->{db_tbl} SET "
                . join(',',
                   map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($res->{$_}) } @cols)
