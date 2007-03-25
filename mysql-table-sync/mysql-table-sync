@@ -50,7 +50,7 @@ my @opt_spec = (
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
    { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
    { s => 'execute|x',        d => 'Execute queries required to sync' },
-   { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE for checksums' },
+   { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
    { s => 'help',             d => 'Show this help message' },
    { s => 'lock|k',           d => 'Lock tables when beginning work' },
    { s => 'maxcost|m=i',      d => 'Maximum rowcount before bailing out' },
@@ -64,7 +64,6 @@ my @opt_spec = (
    { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
    { s => 'verbose|v+',       d => 'Explain differences found' },
    { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
-   # TODO use LOCK IN SHARE MODE
 );
 
 # Generate a quasi-random string that's constant in a given day
@@ -181,14 +180,14 @@ foreach my $table ( $source, $dest ) {
    $table->{cols} = col_list(@{$table->{info}->{cols}});
 }
 
-# TODO: ensure this works right on bottom-up, and only get read lock on source
-# unless the reconciliation method is to chaneg the source and let replication
-# do it.
-if ( $opts{k} && $opts{a} eq 'topdown' ) {
+# User wants us to lock for consistency.  But only lock on source initially;
+# might have to wait for the slave to catch up before locking on the dest.
+if ( $opts{k} ) {
    if ( $opts{v} ) {
       print "-- Locking table on source\n";
    }
-   my $query = "LOCK TABLES $source->{db_tbl} WRITE";
+   my $lock_mode = $opts{r} ? 'WRITE' : 'READ';
+   my $query = "LOCK TABLES $source->{db_tbl} $lock_mode";
    debug_print($query);
    $source->{dbh}->do($query);
    if ( $opts{v} ) {
@@ -209,6 +208,20 @@ if ( $opts{w} ) {
    $stat = 'NULL' unless defined $stat;
    if ( $opts{v} ) {
       print "-- Result of waiting: $stat\n";
+   }
+}
+
+# Now lock on dest if desired (see above).
+if ( $opts{k} ) {
+   if ( $opts{v} ) {
+      print "-- Locking table on destination\n";
+   }
+   my $lock_mode = $opts{r} ? 'READ' : 'WRITE';
+   my $query = "LOCK TABLES $dest->{db_tbl} $lock_mode";
+   debug_print($query);
+   $dest->{dbh}->do($query);
+   if ( $opts{v} ) {
+      print "-- Acquired table lock on destination\n";
    }
 }
 
@@ -259,8 +272,8 @@ sub topdown {
       my $where = $work->[$WHERE];
 
       my $grouping = $groupings[$level]->{cols};
-      my $src_sth  = td_fetch_level($source, $level, $grouping, $where);
-      my $dst_sth  = td_fetch_level($dest,   $level, $grouping, $where);
+      my $src_sth  = td_fetch_level($source, $level, $grouping, $where, 'source');
+      my $dst_sth  = td_fetch_level($dest,   $level, $grouping, $where, 'dest');
 
       my ($sr, $dr);       # Source row, dest row
       my %this_level = ( rows => 0, cnt => 0 );
@@ -383,7 +396,7 @@ sub td_handle_data_change {
 }
 
 sub td_fetch_level {
-   my ( $info, $level, $groupby, $where ) = @_;
+   my ( $info, $level, $groupby, $where, $which ) = @_;
    my $dbh = $info->{dbh};
    my $tbl = $info->{info};
 
@@ -402,7 +415,13 @@ sub td_fetch_level {
 
    my $grp  = col_list(@$groupby);
    my $crit = make_where_clause($dbh, $where);
-   my $lock = $opts{f} ? ' FOR UPDATE' : '';
+   my $lock = '';
+
+   if ( $opts{f} && !$opts{k} ) { # User wants us to lock for consistency.
+      # Is this the server where changes will happen?
+      my $is_target = ($opts{r} && $which eq 'source') || $which eq 'dest';
+      $lock = $is_target ? ' FOR UPDATE' : ' LOCK IN SHARE MODE';
+   }
 
    # Maxia's approach used SUM() as the aggregate function.  This is not a good
    # aggregate function; though it commutes, and is therefore order-independent,
@@ -469,7 +488,7 @@ sub bottomup {
       $source->{rem_col} = $rem_col;
       $dest->{rem_col}   = $rem_col;
 
-      # Build the initial checksum tables and calculate how many summary tables to build.  
+      # Build the initial checksum tables and calculate how many summary tables to build.
       my $src_size    = bu_build_checksum( $source, $level_est_1 );
       my $level_est_2 = bu_num_levels( max( $est_size, $src_size ) );
       my $dst_size    = bu_build_checksum( $dest, $level_est_2 );
@@ -639,7 +658,7 @@ sub bu_merge_tree {
    # Lists of rows that differ in the target tables.
    my (@to_update, @to_delete, @to_insert);
    my (@bulk_insert, @bulk_delete);
-   
+
    # Counters
    my %count = map { $_ => 0 } qw(ins upd del bad);
 
@@ -981,11 +1000,10 @@ sub handle_data_change {
                   @{$which->{info}->{cols}}) . ")";
          }
          else {
-            # TODO: eliminate columns in the $crit
+            my @cols = grep { !exists($crit->{$_}) } @{$which->{info}->{cols}};
             $query = "UPDATE $which->{db_tbl} SET "
                . join(',',
-                  map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($res->{$_}) }
-                  @{$which->{info}->{cols}})
+                  map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($res->{$_}) } @cols)
                . ' ' . $crit;
          }
          if ( $opts{p} ) {
