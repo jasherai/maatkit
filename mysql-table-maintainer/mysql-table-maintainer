@@ -195,7 +195,8 @@ foreach my $database ( @databases ) {
    TABLE:
    foreach my $spec ( @tables ) {
       my $table = $spec->{Name};
-      my $engine = $spec->{Engine} || $spec->{Comment};
+      my $engine = $spec->{Engine}
+                 || ($spec->{Comment} eq 'VIEW' ? 'VIEW' : 'NULL');
       my $size   = $spec->{Data_length}
                  ? (($spec->{Data_length} || 0) + ($spec->{Index_length} || 0))
                  : undef;
@@ -211,15 +212,13 @@ foreach my $database ( @databases ) {
          if ( $db eq $database && $tbl eq $table ) {
             # It's the same table, so it's this table (as opposed to a view
             # complaining about a base table on which it depends).
-            $engine       = 'CORRUPT';
             $needs_repair = 1;
          }
          else {
+            # It is a view after all, but the Comment saying VIEW has been
+            # replaced with the text of the problem.
             $engine = 'VIEW';
          }
-      }
-      elsif ( !$spec->{Engine} || $spec->{Engine} !~ m/^(?:$engine_re)$/i ) {
-         $engine = 'CORRUPT';
       }
 
       my $tbl_time = maxstr( '', map { $_ || '' } @{$spec}{qw(Check_time Create_time Update_time)});
@@ -227,7 +226,7 @@ foreach my $database ( @databases ) {
       next TABLE if
          ( $opts{t} && !exists($opts{t}->{$table}) )
          || exists $opts{n}->{$table}
-         || ($opts{e} && $engine !~m/CORRUPT|VIEW|UNKNOWN/ && !exists $opts{e}->{lc $engine})
+         || ($opts{e} && $engine !~m/NULL|VIEW/ && !exists $opts{e}->{lc $engine})
          || ($opts{m} && (!$size || $size < $opts{m}))
          || ($opts{minage} && $tbl_time && $tbl_time gt $opts{minage})
          || ($engine eq 'VIEW' && !$opts{v});
@@ -393,7 +392,7 @@ sub make_check_query {
 
    if ( $engine
       && ( $engine =~ m/^(?:MyISAM|InnoDB)$/
-         || $engine eq 'CORRUPT'
+         || $engine eq 'NULL'
          || ( $engine eq 'VIEW'    && version_ge('5.0.2'))
          || ( $engine eq 'ARCHIVE' && version_ge('5.0.16'))
          || ( $engine eq 'CSV'     && version_ge('5.1.9'))
@@ -424,7 +423,7 @@ sub make_repair_query {
    my ( $database, $table, $engine ) = @_;
 
    if ( $engine
-      && ( $engine =~ m/^(?:CORRUPT|MyISAM|ARCHIVE)$/
+      && ( $engine =~ m/^(?:NULL|MyISAM|ARCHIVE)$/
          || ( $engine eq 'CSV' && version_ge('5.1.9'))))
    {
       my $binlog = make_binlog_option();
