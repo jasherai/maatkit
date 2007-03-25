@@ -3,6 +3,13 @@ view the perldoc for more details on them.
 
 Changelog:
 
+2007-03-25: version 1.0.3
+
+   * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.
+   * Make the exit code behave as expected.
+   * Handle errors from tables that have gone away or can't be read.
+   * Change command-line option names.
+
 2007-03-06: version 1.0.2
 
    * Fix more quoting

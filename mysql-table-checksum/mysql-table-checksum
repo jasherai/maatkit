@@ -33,7 +33,6 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
-use Time::HiRes qw(time);
 
 our $VERSION = '@VERSION@';
 
@@ -272,7 +271,7 @@ sub do_tbl {
    my $end = time();
    $dbh->disconnect();
    printf($hdr, $info->{database}, $info->{table}, $host, $info->{engine}, $cnt, $crc,
-      sprintf('%d', $end - $mid), sprintf('%d', $mid - $beg), $sta, $lag);
+      $end - $mid, $mid - $beg, $sta, $lag);
 }
 
 sub checksum_query {
