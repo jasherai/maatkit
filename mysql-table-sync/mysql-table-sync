@@ -211,13 +211,14 @@ if ( $opts{w} ) {
    }
 }
 
-# Now lock on dest if desired (see above).
-if ( $opts{k} ) {
+# Now lock on dest if desired (see above).  In this case don't lock at all on
+# destination if it's a replication slave, or the replication thread will be
+# locked out... we assume there is nothing else writing on the slave.
+if ( $opts{k} && !$opts{r} ) {
    if ( $opts{v} ) {
       print "-- Locking table on destination\n";
    }
-   my $lock_mode = $opts{r} ? 'READ' : 'WRITE';
-   my $query = "LOCK TABLES $dest->{db_tbl} $lock_mode";
+   my $query = "LOCK TABLES $dest->{db_tbl} READ";
    debug_print($query);
    $dest->{dbh}->do($query);
    if ( $opts{v} ) {
