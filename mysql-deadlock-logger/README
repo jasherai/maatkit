@@ -3,6 +3,10 @@ details.
 
 Changelog:
 
+2007-03-25: version 1.0.0
+
+   * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.
+
 2007-03-13: version 0.9.0
 
    * Fix a couple spots where InnoDB output parsing failed and caused a crash.
