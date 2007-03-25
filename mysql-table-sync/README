@@ -3,6 +3,13 @@ more details.
 
 Changelog:
 
+2007-03-25: version 0.9.0
+
+   * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.
+   * Change some parsing of DSNs.
+   * Handle UPDATE statements correctly in handle_data_change.
+   * Handle some special cases in locking for consistency.
+
 2007-03-18: version 0.8.0
 
    * Initial release.
