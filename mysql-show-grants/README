@@ -3,6 +3,12 @@ more details.
 
 Changelog:
 
+2007-03-25: version 1.0.0
+
+   * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.
+   * Fix the --revoke and --separate options so revokes are not separate unless
+     specified.  Add REVOKE GRANT OPTION when the user has it.
+
 2007-03-19: version 0.9.1
 
    * Added --separate, --drop, --revoke and --flush options.
