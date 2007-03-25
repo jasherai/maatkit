@@ -907,7 +907,7 @@ prompt you interactively.
 =head1 SYSTEM REQUIREMENTS
 
 You need the following Perl modules: Getopt::Long, DBI, DBD::mysql,
-Term::ReadLine, and Time::HiRes.
+and Time::HiRes.
 
 =head1 LICENSE
 

@@ -3,6 +3,11 @@ details.
 
 Changelog:
 
+2007-03-25: version 1.0.2
+
+   * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.
+   * Documentation.
+
 2007-03-02: version 1.0.1
 
    * Fix prompting
