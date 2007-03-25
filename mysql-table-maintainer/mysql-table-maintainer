@@ -27,7 +27,6 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max maxstr);
-use Time::HiRes qw(time);
 
 our $VERSION = '@VERSION@';
 
@@ -38,7 +37,6 @@ $OUTPUT_AUTOFLUSH = 1;
 # ############################################################################
 
 # TODO: include ability to issue ALTER engine=engine for older versions.
-# TODO: documentation
 
 my @opt_spec = (
    { s => 'analyze|a',        d => 'Run ANALYZE TABLE' },
@@ -67,7 +65,7 @@ my @opt_spec = (
    { s => 'tables|t=s',       d => 'Only do this comma-separated list of tables' },
    { s => 'user|u=s',         d => 'User for login if not current user' },
    { s => 'views|v',          d => 'Do views also' },
-   { s => 'writetobinlog|w!', d => 'Write the statement to the binlog (default)' },
+   { s => 'nobinlog|w!',      d => 'Do not write the statement to the binlog' },
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -157,11 +155,6 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
    or die("Can't connect to DB: $OS_ERROR");
 
 my $ok_pattern = qr/^(?:OK|Table is already up to date)$/;
-my @engines    = qw(myisam innodb memory heap merge archive federated ndb csv
-                    blackhole example falcon solid pbxt);
-my $engine_re  = join('|', @engines);
-my @whole_batch;
-my $exit_code = 0;
 
 my %code_for = (
    a => \&make_analyze_query,
@@ -201,7 +194,6 @@ foreach my $database ( @databases ) {
                  ? (($spec->{Data_length} || 0) + ($spec->{Index_length} || 0))
                  : undef;
 
-      $exit_code = 0;
       my $needs_repair = 0;
 
       # Detect crashed tables, which should certainly be repaired if needed.  A
@@ -288,7 +280,7 @@ foreach my $database ( @databases ) {
 
 }
 
-exit($exit_code);
+exit(0);
 
 # ############################################################################
 # Subroutines
@@ -461,42 +453,116 @@ sub debug_print {
 
 =head1 NAME
 
-mysql-duplicate-index-checker - Find possible duplicate indexes and foreign keys on
-MySQL tables.
+mysql-table-maintainer - Conveniently run MySQL table maintenance commands
+(ANALYZE, CHECK, OPTIMIZE, REPAIR).
 
 =head1 DESCRIPTION
 
-This program examines the output of SHOW CREATE TABLE on MySQL tables, and if
-it finds indexes that a) cover the same columns as another index in the same
-order, or b) cover an exact leftmost prefix of another index, it prints out
-the suspicious indexes.  By default, indexes must be of the same type, so a
-BTREE index is not a duplicate of a FULLTEXT index, even if they have the same
-colums.  You can override this.
+This program allows you to conveniently run table maintenance commands on your
+MySQL tables.  You can run any or all of ANALYZE, CHECK, OPTIMIZE, and REPAIR on
+selected tables.  By default it will run on all tables in all databases, but you
+need to specify what actions to take.  Some options allow you to run one thing,
+check the result, then run another depending on the result.
 
-It also looks for duplicate foreign keys.  A duplicate foreign key covers the
-same columns as another in the same table, and references the same parent
-table.
+I've included features to detect what version of MySQL you're connected to and
+only take certain actions depending on that.  For example, in version 5.1.9 and
+newer, you can run REPAIR against tables using the CSV storage engine.  If I've
+missed any special cases in this behavior, be sure to let me know!  I consulted
+the MySQL documentation to design these exceptions.
 
-If possible, it will read your .my.cnf file so you don't have to specify
-username and password.
+I've also tried to detect when there's a problem and do the right thing with
+regards to optimizing and repairing tables.  For example, a view's status is all
+NULL, except for the Comment field, which says "VIEW."  But, when the view or a
+table it's based on is bad, the Comment field has the error message -- just like
+a bad table.  In this case it might be hard to tell whether you're looking at a
+bad table, bad view, or a view on a bad table!  I've added some logic to try to
+work it out and avoid double-repairing or checking the wrong object.
 
-By default it scans every table in every database, and prints out every
-duplicated index and foreign key.  You can specify only to check foreign keys
-or indexes.  You can also tell it to check only certain databases and tables,
-ignore databases and tables, and so on.
+=head1 USAGE
 
-You can specify to print out every index and/or foreign key without checking
-for duplicates.  This is an easy way to get a full listing, and it's pretty
-fast, since SHOW CREATE TABLE is very quick.
+I'll only discuss options I don't think are obvious.
+
+=over
+
+=item --checkopts
+
+Specific options you want added to the CHECK command, such as FAST.
+
+=item --checkoptimize
+
+This two-for-one option will check the table, then optimize it, but only if
+check found no problems.  You can still pass specific arguments to CHECK with
+the --checkopts option.
+
+=item --checkrepair
+
+This two-for-one option will check the table, and if it finds problems, try to
+repair it.  You can pass specific arguments to CHECK and REPAIR with the
+--checkopts and --repairopts options.
+
+=item --longnum
+
+By default the row count and table size are shortened to units of kibibytes,
+mebibytes, etc (multiples of 1024).  You can disable that with this option.
+
+=item --minsize
+
+You can specify only to do tables larger than a certain size with this option.
+You can specify it in number of bytes, kibibytes, mebibytes etc with k through T
+suffixes.  Example: 999, 5.3G, etc.
+
+=item --minage
+
+You can specify only to do tables "older than" a certain point in time.  The
+"age" of the table is the maximum of the Create_time, Update_time, and
+Check_time columns from SHOW TABLE STATUS.  I think this will do the right
+thing.  Let me know if you find exceptions.
+
+The age itself can be specified either as a fractional or full datetime value,
+or as an interval of time in the past.  For example, if you say 2006, it expands
+to '2006-01-01 00:00:00'.  If you want to specify the full argument, you can
+join the date and time parts with a capital T, thusly: 2004-09-21T14:39:32.
+This might help you avoid quotes on the command line.
+
+If you don't specify a time, the script tries to interpret it as an interval of
+hours, days, weeks, months, or years.  For example, 5h or 3w.  These just get
+multiplied out to a number of seconds (assuming every day is 24 hours, every
+month is 30 days, every year is 365 days) and subtracted from the current time.
+This will definitely not do The Right Thing in all cases, but it's a
+low-fidelity, easy way to get the job done without making you install
+date-manipulation modules from CPAN.
+
+=item --stoponerror
+
+If the script detects an error with a query, it'll stop.  This is a genuine
+error, not just a row of output that says there was an error with the
+maintenance command.
+
+=item --views
+
+By default views are skipped.  Specify this option to include them.
+
+=item --nobinlog
+
+By default the table maintenance commands get written to the binlog and
+replicated to slaves.  Specify this option to disable that.  This only works on
+some versions of MySQL.
+
+=back
 
 =head1 OUTPUT
 
-Output is to STDOUT, one line per server and table, with header lines for each
-database.  I tried to make the output easy to process with awk.  For this reason
-columns are always present.  If there's no value, the script prints 'NULL'.
+Output is to STDOUT, with header lines for each database.  I tried to make the
+output easy to process with awk.  For this reason columns are always present.
+If there's no value, the script prints 'NULL'.
 
-The default is column-aligned output for human readability, but you can change
-it to tab-separated.  Output is sorted by database and table.
+For each action the script takes, it prints the result from MySQL, combined with
+information from SHOW TABLE STATUS.  There may be many lines from the result.
+If lines have repeated messages, they collapse together with a count greater
+than 1.
+
+By default all output is shown.  If you say --quiet once, you'll only see
+worrisome output; if you say --quiet twice, you won't see any output at all.
 
 The columns in the output are as follows.
 
@@ -514,31 +580,40 @@ The table name.
 
 The table's storage engine.
 
-=item OBJECT
+=item SIZE
 
-The index or constraint's name, e.g. `tbl_ibfk_3` (the default InnoDB name for
-the third foreign key on a table named tbl).
+The total combined index and data size, or 0 if unknown.  You can control the
+format with the --longnum option.
+
+=item ROWS
+
+The number of rows reported by SHOW TABLE STATUS, or 0 if unknown.  You can
+control the format with the --longnum option.
+
+=item OP
+
+The operation as reported by the maintenance command.  It is usually the command
+itself.
 
 =item TYPE
 
-'KEY' for indexes, 'FK' for foreign keys.
+The type of message as reported by the maintenance command.
 
-=item STRUCT
+=item CNT
 
-The type of index: BTREE, FULLTEXT, HASH etc.  By default MySQL's indexes are
-BTREE in most cases.  This does not apply to foreign keys.
+The number of duplicate lines of output collaped together.  Sometimes an
+operation like REPAIR will print the same message, for example "Duplicate key for
+record at 0 against record at 0," many times.  I try to compact the output for
+obvious reasons.
 
-=item PARENT
+=item TIME
 
-The parent table to which the foreign key constraint refers.  This does not
-apply to indexes.
+How many seconds the operation took.
 
-=item COLUMNS
+=item MSG
 
-The columns included in the index or foreign key constraint.  For indexes,
-this column list is output verbatim, as shown in SHOW CREATE TABLE.  For
-foreign keys, the columns are ordered so string comparison can find
-duplicates, since column order in a foreign key is immaterial.
+The message from the maintenance command.  Anything other than 'OK' or 'Table is
+already up to date' is probably worrisome.
 
 =back
 
