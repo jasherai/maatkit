@@ -11,4 +11,3 @@ stale table sniper: remove tables with certain patterns, or older than a certain
 mysql-binlog-pipeliner: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
 check everything to make sure AutoCommit didn't get broken when I updated DBH connections
 * mysql-measure-tables
-* Get rid of mentions of readkey where they aren't used.

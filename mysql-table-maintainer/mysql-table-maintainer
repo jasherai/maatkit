@@ -619,7 +619,7 @@ already up to date' is probably worrisome.
 
 =head1 SYSTEM REQUIREMENTS
 
-You need the following Perl modules: DBI, DBD::mysql, and Term::ReadKey.
+You need the following Perl modules: DBI and DBD::mysql.
 
 =head1 LICENSE
 
