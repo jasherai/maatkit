@@ -3,6 +3,13 @@ more details.
 
 Changelog:
 
+2007-03-02: version 1.0.2
+
+   * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.
+   * Error handling if there aren't permissions to run SHOW CREATE TABLE on a
+     view.
+   * Documentation copy/paste error.
+
 2007-03-02: version 1.0.1
 
    * Fixed several small bugs with quoting
