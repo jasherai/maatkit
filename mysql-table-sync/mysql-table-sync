@@ -1565,14 +1565,30 @@ TODO
 
 =head1 OUTPUT
 
-TODO
+Output varies greatly depending on the command-line options you specify.
+There are several different kinds of output: debugging, status, and query.  I
+have tried to ensure it will always be valid SQL, though much of it will be
+commented out.
+
+If you specify the --verbose option, you'll see information about the process
+of discovering the differences between the tables.  The output is slightly
+different for top-down and bottom-up algorithms.  Specify this option multiple
+times to increase the amount of information you see.
+
+If you specify the --print option, the queries needed to sync the destination
+table with the source table will be printed to STDOUT.
+
+If you specify the --debug option, the queries needed to discover the
+differences between source and destination will be printed to STDOUT,
+commented out.  You can use this to see how many queries are executed for a
+given strategy, or whatever other debugging you want.  If you remove the
+comment characters, you can also replay the process of finding the
+differences.
 
 =head1 COMPATIBILITY
 
-My goal with this tool is a superb solution for MySQL, and MySQL alone.  I find
-that trying to be "cross-platform" generally means a mediocre solution for all
-supported platforms.  However, I think you can probably make some very minor
-changes and use this tool on other platforms.
+My goal is a superb solution for MySQL.  However, I think you can probably
+make some minor changes and use this tool on other platforms.
 
 =head1 HISTORY AND ACKNOWLEDGEMENTS
 
