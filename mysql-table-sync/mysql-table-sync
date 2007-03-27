@@ -41,10 +41,10 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 
 my @opt_spec = (
    { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
-   { s => 'analyze|A',        d => 'Analyze (find/fix/print) in bottom-up algorithm' },
-   { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm' },
-   { s => 'build|U!',         d => 'Build tables for bottom-up algorithm' },
-   { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm' },
+   { s => 'analyze|A!',       d => 'Analyze (find/fix/print) in bottom-up algorithm (default)' },
+   { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm (default 128)' },
+   { s => 'build|U!',         d => 'Build tables for bottom-up algorithm (default)' },
+   { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
    { s => 'columns|c=s',      d => 'Comma-separated column list' },
    { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
@@ -59,10 +59,10 @@ my @opt_spec = (
    { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
    { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
    { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
-   { s => 'size|S=i',         d => 'Table size in bottom-up algorithm' },
-   { s => 'strategy|s=s',     d => 'Query strategy when syncing (r or s)' },
-   { s => 'temp|T=s',         d => 'Use temporary tables in bottom-up algorithm' },
-   { s => 'verbose|v+',       d => 'Explain differences found' },
+   { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
+   { s => 'strategy|s=s',     d => 'Query strategy when syncing (r=replace, s=ins/upd/del)' },
+   { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm (default: no)' },
+   { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times' },
    { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
 );
 
@@ -553,11 +553,11 @@ sub bu_build_checksum {
    my $mask = ($opts{B} ** ($levels - 1)) - 1;
 
    # Create the table
-   my $query = "DROP TABLE IF EXISTS `$info->{D}`.`$name`";
+   my $query = "DROP TABLE IF EXISTS `$name`";
    debug_print($query);
    $dbh->do($query);
    ( $query = <<"   END") =~ s/\s+/ /g;
-      CREATE $opts{T} TABLE `$info->{D}`.`$name` (
+      CREATE $opts{T} TABLE `$name` (
          $pks,
          __crc CHAR(32) NOT NULL,
          __rem $info->{rem_col} UNSIGNED NOT NULL,
@@ -570,7 +570,7 @@ sub bu_build_checksum {
 
    # Populate it
    ( $query = <<"   END") =~ s/\s+/ /g;
-      INSERT INTO `$info->{D}`.`$name`($pk, __crc, __rem)
+      INSERT INTO `$name`($pk, __crc, __rem)
       SELECT $pk,
          MD5(CONCAT_WS('$opts{e}', $cols$null)) AS __crc,
          CAST(CONV(RIGHT(MD5(CONCAT_WS('$opts{e}', $pk)), 16), 16, 10) AS UNSIGNED) & $mask AS __rem
@@ -587,7 +587,7 @@ sub bu_rebuild_remainder {
    my $pk   = col_list( @{ $info->{info}->{keys}->{$info->{k}} } );
    my $mask = ($opts{B} ** ($levels - 1)) - 1;
    my $name = "$info->{prefix}_0";
-   my $query = "UPDATE `$info->{D}`.`$name` SET __rem = "
+   my $query = "UPDATE `$name` SET __rem = "
       . "CAST(CONV(RIGHT(MD5(CONCAT_WS('$opts{e}', $pk)), 8), 16, 10) AS UNSIGNED) & $mask";
    debug_print($query);
    $info->{dbh}->do($query);
@@ -611,11 +611,11 @@ sub bu_build_tree {
       my $cnt_sum  = $i > 1 ? 'SUM(__cnt)' : 'COUNT(*)';
 
       # Create the table
-      my $query = "DROP TABLE IF EXISTS `$info->{D}`.`$this_tbl`";
+      my $query = "DROP TABLE IF EXISTS `$this_tbl`";
       debug_print($query);
       $dbh->do($query);
       ( $query = <<"      END" ) =~ s/\s+/ /g;
-         CREATE $opts{T} TABLE `$info->{D}`.`$this_tbl` (
+         CREATE $opts{T} TABLE `$this_tbl` (
             __par INT NOT NULL,
             __crc CHAR(32) NOT NULL,
             __rem $info->{rem_col} UNSIGNED NOT NULL,
@@ -629,7 +629,7 @@ sub bu_build_tree {
 
       # Populate it
       ( $query = <<"      END" ) =~ s/\s+/ /g;
-         INSERT INTO `$info->{D}`.`$this_tbl`
+         INSERT INTO `$this_tbl`
             (__par, __crc, __rem, __cnt)
          SELECT __rem,
             CONCAT(
@@ -638,7 +638,7 @@ sub bu_build_tree {
             ) AS this_crc,
             __rem & $mask AS this_remainder,
             $cnt_sum AS total_rows
-         FROM `$info->{D}`.`$last_tbl`
+         FROM `$last_tbl`
          GROUP BY __rem
          ORDER BY NULL
       END
@@ -807,9 +807,9 @@ sub bu_merge_tree {
 sub bu_cleanup_tree {
    my @servers = @_;
    foreach my $info ( @servers ) {
-      my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES FROM `$info->{D}`")};
+      my @tables = @{$info->{dbh}->selectcol_arrayref('SHOW TABLES')};
       foreach my $table ( grep { m/^$info->{prefix}_\d+$/ } @tables ) {
-         my $query = "DROP TABLE IF EXISTS `$info->{D}`.`$table`";
+         my $query = "DROP TABLE IF EXISTS `$table`";
          debug_print($query);
          $info->{dbh}->do($query);
       }
@@ -917,7 +917,7 @@ sub bu_size_to_type {
 # Figure out how many levels exist for pre-existing tables.
 sub bu_existing_levels {
    my ($info) = @_;
-   my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES FROM `$info->{D}`")};
+   my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES")};
    @tables    = grep { m/^$info->{prefix}_\d+$/ } @tables;
    die "No existing tables with prefix $info->{prefix} found" unless @tables;
    return max(map { $_ =~ m/(\d+)$/g } @tables);
