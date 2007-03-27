@@ -251,7 +251,7 @@ sub topdown {
    # Design a grouping strategy: user-defined, then finally primary key.
    my @groupings = { cols => $source->{info}->{keys}->{$source->{k}} };
    if ( $opts{d} ) {
-      push @groupings, map { { cols => [$_] } } $opts{d} =~ m/(\w+)/g;
+      push @groupings, reverse map { { cols => [$_] } } $opts{d} =~ m/(\w+)/g;
    }
 
    # Array indices
@@ -1187,8 +1187,8 @@ the time involved, and a way to resync the slaves "live" is very attractive
 indeed.  There are also many constraints introduced by replication, which I
 wanted to either avoid or use to my advantage.
 
-I recognize that not everyone has exactly these needs, so I made the tool much
-more generic than I'd need to patch a table that's out of sync on a slave.
+I know not everyone has exactly these needs, so I made the tool much more
+generic than I'd need to patch a table that's out of sync on a slave.
 
 The DBA must choose the algorithm and parameters to use when reconciling
 differences between the tables.  See below for help making this decision.
@@ -1270,10 +1270,10 @@ remainders are stored in the summary tables and are indexed for efficient lookup
 as the algorithm traverses back up the tree seeking differences.  A running
 count is also stored so at any given point you know how many rows in the target
 table got rolled into the one row you're examining, no matter what level you're
-at in the tree.  There are some optimizations that can be used to short-circuit
-the process when entire chunks of rows are missing from one of the tables, and
-so on.  But these optimizations and subtleties are just efficiencies, and are
-not necessary for correctness.
+at in the tree.  Some optimizations can be used to short-circuit the process
+when entire chunks of rows are missing from one of the tables, and so on.  But
+these optimizations and subtleties are just efficiencies, and are not necessary
+for correctness.
 
 Here are some details about the table structures: The __crc column contains the
 checksum of the row from which it was derived.  The __cnt column contains the
@@ -1342,8 +1342,8 @@ no need to rebuild the summaries, you can just restart).
 
 =item *
 
-If you assume that there are occasional "bad" rows scattered through the table,
-the entire tree of summary tables will need to be examined to find them.
+If you assume there are occasional "bad" rows scattered through the table, the
+entire tree of summary tables will need to be examined to find them.
 Pre-calculating this is an up-front penalty that pays off in efficiency once you
 try to find the bad rows.
 
@@ -1570,11 +1570,6 @@ There are several different kinds of output: debugging, status, and query.  I
 have tried to ensure it will always be valid SQL, though much of it will be
 commented out.
 
-If you specify the --verbose option, you'll see information about the process
-of discovering the differences between the tables.  The output is slightly
-different for top-down and bottom-up algorithms.  Specify this option multiple
-times to increase the amount of information you see.
-
 If you specify the --print option, the queries needed to sync the destination
 table with the source table will be printed to STDOUT.
 
@@ -1584,6 +1579,124 @@ commented out.  You can use this to see how many queries are executed for a
 given strategy, or whatever other debugging you want.  If you remove the
 comment characters, you can also replay the process of finding the
 differences.
+
+If you specify the --verbose option, you'll see information about the process of
+discovering the differences between the tables.  The output is quite different
+for top-down and bottom-up algorithms.  Specify this option multiple times to
+increase the amount of information you see.  This output is complex enough
+that I'll need to explain it separately.
+
+=head2 TOP-DOWN OUTPUT
+
+At its most verbose, the top-down output may resemble this:
+
+   -- Level 2: CHECK  group of    81 rows WHERE `col2` = '20'
+   -- Level 2: INSERT group of    18 rows WHERE `col2` = '42'
+   --          Level 2 total:     18 bad rows        81 to inspect
+   --          Level 2 summary:    1 bad groups in    3 src groups    2 dst groups
+   --          Level 2 changes:    0 updates         18 inserts       0 deletes
+   -- Level 1: CHECK  group of     6 rows WHERE `col3` = '737696900' AND `col2` = '20'
+   -- Level 1: CHECK  group of     1 rows WHERE `col3` = '737953400' AND `col2` = '20'
+   -- Level 1: CHECK  group of     1 rows WHERE `col3` = '737955900' AND `col2` = '20'
+   --          Level 1 total:     18 bad rows         8 to inspect
+   --          Level 1 summary:    3 bad groups in   32 src groups   32 dst groups
+   --          Level 1 changes:    0 updates         18 inserts       0 deletes
+   --          Level 0 total:     18 bad rows         2 to inspect
+   --          Level 0 summary:    2 bad groups in    6 src groups    6 dst groups
+   --          Level 0 changes:    0 updates         18 inserts       0 deletes
+   -- Level 0: UPDATE             1 row  WHERE `col3` = '737953400' AND `col1` = '87551' AND `col2` = '20'
+   --          Level 0 total:     19 bad rows         1 to inspect
+   --          Level 0 summary:    1 bad groups in    1 src groups    1 dst groups
+   --          Level 0 changes:    1 updates         18 inserts       0 deletes
+   --          Level 0 total:     19 bad rows         0 to inspect
+   --          Level 0 summary:    0 bad groups in    1 src groups    1 dst groups
+   --          Level 0 changes:    1 updates         18 inserts       0 deletes
+
+Outdented lines are actions that must be taken later, indented lines are
+play-by-play status as differences between the tables are found.  There will be
+one group of indented lines for each group of rows drilled into and found to
+have differences.
+
+The first two lines are details of level 2.  At level 2, col2 is held as a
+constant.  There is one group of 81 rows where col2 = 20, which does not match
+from source to destination.  It needs further checking and is marked as CHECK.
+The next level will drill down into this group.  Also at level 2, there is one
+group of 18 rows that needs to be inserted to sync the destination table.  This
+does not need to be drilled into on the next level.
+
+The next three lines summarize the findings at level 2, and the work that
+remains to be done.  Line 1 shows level 2 found a total of 18 rows known to
+differ between the source and destination, and there are 81 more to inspect
+further.  Line 2 shows level 2 found 1 entire group of rows known to be bad
+(the group that must be inserted) after inspecting 3 groups from the source
+table and 2 from the destination table.  The difference, 3-2, is the one group
+that must be inserted.  Line 3 shows 18 rows have been queued for insertion
+en masse.
+
+The next six lines are what happens in the one group at level 1.  At level 1,
+the group of rows where col2 = 20 is drilled into, grouped on col3.  The first
+three lines of output show the algorithm finds three groups of rows that don't
+match.  The next three show the total bad-row count still at 18, so no new bad
+rows have been found, but the number of rows that must be drilled into is much
+smaller now -- only 8 rows.  Level 1 found 3 bad groups by checking 32 groups
+from each table, and queued no new rows into the known-bad list.
+
+The level 0 output shows these 3 groups being examined a row at a time, with no
+more drilldown possible.  And you can see the one bad row being found.
+Eventually the last line of output shows 18 rows must be inserted (no change
+from before) and 1 row must be updated to sync the destination table.
+
+=head2 BOTTOM-UP OUTPUT
+
+At maximum verbosity, the output from the bottom-up algorithm may look like this
+(this output is from the same tables as the top-down output).
+
+   -- Level 2 UPDATE parent:      0
+   --         Level 2 total:    100 rows
+   --         Level 2 summary:    1 parents  100 src rows   82 dst rows
+   --         Level 2 changes:    0 updates    0 inserts     0 deletes    0 total
+   --         Level 2 bulk-op:    0 inserts    0 ins-rows    0 deletes    0 del-rows
+   -- Level 1 UPDATE parent:      0
+   -- Level 1 BULKIN parent:      1
+   -- Level 1 UPDATE parent:      2
+   -- Level 1 UPDATE parent:      3
+   -- Level 1 UPDATE parent:      4
+   -- Level 1 UPDATE parent:      5
+   -- Level 1 UPDATE parent:      8
+   -- Level 1 UPDATE parent:      9
+   -- Level 1 UPDATE parent:     10
+   -- Level 1 UPDATE parent:     11
+   -- Level 1 UPDATE parent:     14
+   -- Level 1 UPDATE parent:     15
+   --         Level 1 total:     84 rows
+   --         Level 1 summary:   11 parents  100 src rows   82 dst rows
+   --         Level 1 changes:    0 updates    1 inserts     0 deletes    1 total
+   --         Level 1 bulk-op:    1 inserts    1 ins-rows    0 deletes    0 del-rows
+   --         Level 0 total:     19 rows
+   --         Level 0 summary:    0 parents   83 src rows   66 dst rows
+   --         Level 0 changes:    1 updates   18 inserts     0 deletes   19 total
+   --         Level 0 bulk-op:    1 inserts    1 ins-rows    0 deletes    0 del-rows
+
+The first level, level 2, says the parent row whose remainder is 0 (this will
+always be the case at the first level in bottom-up) differs.  At this point it
+looks like the parent must be updated to reconcile source and destination
+tables, but it's not yet known which individual rows must be changed.  The level
+2 summary says there are 100 rows grouped together from parent rows, that is 1
+parent value with 100 rows in the source and 82 in the destination (the
+difference is the 18 rows that must be inserted, but that is not yet known).
+The next two lines of output show what work is queued to do -- row-level
+updates, inserts and deletes, and bulk inserts and deletes.  Each bulk insert or
+delete knows how many rows it will affect.
+
+The next set of output, for level 1, shows that this level of the tree has 11
+rows that don't match between source and destination.  These are again marked as
+UPDATE because they differ, but it's still not known why.  One row doesn't exist
+in the destination and is marked as BULKIN, for "bulk insert."  This level of
+drill-down was able to narrow the part of the table possibly bad from 100 to 84
+rows.
+
+At level 0, this narrows down to just 19 rows.  Most of these are inserted
+singly, and there is one update.
 
 =head1 COMPATIBILITY
 
