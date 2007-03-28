@@ -901,7 +901,7 @@ sub bu_fetch_level {
 # which is row-for-row with the real table).
 sub bu_num_levels {
    my ( $size ) = @_;
-   return int( log( $size / $opts{B} ) / log(2) );
+   return int( log($size) / log($opts{B}) );
 }
 
 # Returns the maximum modulus that the tables will need.
