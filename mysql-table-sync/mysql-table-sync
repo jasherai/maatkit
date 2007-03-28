@@ -1646,10 +1646,28 @@ more drilldown possible.  And you can see the one bad row being found.
 Eventually the last line of output shows 18 rows must be inserted (no change
 from before) and 1 row must be updated to sync the destination table.
 
+It might help to see what happens with only one level of verbosity, this time on
+a 50,000 row table with 5 rows missing from the destination:
+
+   --          Level 2 total:       0 bad rows       6385 to inspect
+   --          Level 1 total:       0 bad rows       5142 to inspect
+   --          Level 1 total:       1 bad rows       4235 to inspect
+   --          Level 1 total:       1 bad rows       2919 to inspect
+   --          Level 1 total:       1 bad rows       2560 to inspect
+   --          Level 1 total:       1 bad rows        325 to inspect
+   --          Level 0 total:       2 bad rows        142 to inspect
+   --          Level 0 total:       2 bad rows        141 to inspect
+   --          Level 0 total:       3 bad rows         61 to inspect
+   --          Level 0 total:       4 bad rows         37 to inspect
+   --          Level 0 total:       5 bad rows          0 to inspect
+
+Now you can see it progressing from 0 known bad rows, with 6385 to do, all the
+way to 5 known bad rows and 0 left to do.
+
 =head2 BOTTOM-UP OUTPUT
 
 At maximum verbosity, the output from the bottom-up algorithm may look like this
-(this output is from the same tables as the top-down output).
+(this output is from the same 100-row tables as above).
 
    -- Level 2 UPDATE parent:      0
    --         Level 2 total:    100 rows
@@ -1697,6 +1715,16 @@ rows.
 
 At level 0, this narrows down to just 19 rows.  Most of these are inserted
 singly, and there is one update.
+
+Again, here is what happens with just one level of verbosity on the same
+50,000-row tables as above:
+
+   --         Level 2 total:   50000 rows
+   --         Level 1 total:    1945 rows
+   --         Level 0 total:       5 rows
+
+At the beginning, all 50,000 rows look bad, but as it navigates the tree, it
+narrows it down to just the 5 missing rows.
 
 =head1 COMPATIBILITY
 
