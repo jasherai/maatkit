@@ -176,6 +176,8 @@ my $ch                 = {};
 my $qcost              = 0;
 my $qcost_total        = 0;
 my $qtime_total        = 0;
+my $bytes_in_total     = 0;
+my $bytes_out_total    = 0;
 my $which_query        = 0;
 my $query_time         = 0;
 my $query_text         = '';
@@ -188,6 +190,7 @@ my $qcache_inval_total = 0;
 
 # Every status variable this script cares about
 my @important_vars = qw(
+   Bytes_received Bytes_sent
    Com_commit Com_delete Com_delete_multi Com_insert Com_insert_select
    Com_replace Com_replace_select Com_select Com_update Com_update_multi
    Created_tmp_disk_tables Created_tmp_files Created_tmp_tables Handler_commit
@@ -214,7 +217,8 @@ my @important_vars = qw(
 my @session_vars
    = $have_session
    ? qw(
-      Com_commit Com_delete Com_delete_multi Com_insert Com_insert_select
+      Bytes_received Bytes_sent Com_commit
+      Com_delete Com_delete_multi Com_insert Com_insert_select
       Com_replace Com_replace_select Com_select Com_update Com_update_multi
       Created_tmp_disk_tables Created_tmp_tables Handler_commit Handler_delete
       Handler_read_first Handler_read_key Handler_read_next Handler_read_prev
@@ -298,6 +302,8 @@ foreach my $i ( 0 .. $#queries ) {
    }
 
    $query->{start}  = time();
+   # It appears to me that this actually fetches all the data over the wire,
+   # which is what I want for purposes of counting bytes in and bytes out.
    $dbh->do( $query->{text} );    # Do the actual query
    $query->{end}    = time();
    $query->{status} = get_status_info($dbh);
@@ -381,6 +387,8 @@ else {
          ? -$ch->{Qcache_queries_in_cache} - $ch->{Qcache_lowmem_prunes}
          : 0;
       $qcache_inval_total += $qcache_inval;
+      $bytes_in_total     += $ch->{Bytes_received};
+      $bytes_out_total    += $ch->{Bytes_sent};
 
       # Print separate stats
       if ( $separate
@@ -497,6 +505,10 @@ $ch->{Com_select}
 $ch->{Com_update}
      UPDATE MULTI                  @##########
 $ch->{Com_update_multi}
+   Data into server                @##########
+$bytes_in_total
+   Data out of server              @##########
+$bytes_out_total
 .
 
 format TBL_IDX =
@@ -678,6 +690,10 @@ $query_text
 __ Overall stats ___________________________________________
    Elapsed time                    @##########.###
 $query_time
+   Data into server                @##########
+$ch->{Bytes_received}
+   Data out of server              @##########
+$ch->{Bytes_sent}
 .
 
 format OPT_COST =
