@@ -307,7 +307,7 @@ sub topdown {
                   $this_level{cnt}++;
                   $this_level{rows} += $sr->{__cnt};
                   if ( $level && $opts{v} > 2 ) {
-                     printf("-- Level %1d: CHECK  group of  %4d rows %s\n",
+                     printf("-- Level %1d: CHECK  group of  %5d rows %s\n",
                         $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
                   }
                }
@@ -316,7 +316,7 @@ sub topdown {
                   $count{upd}++;
                   $count{bad}++;
                   if ( $opts{v} > 2 ) {
-                     printf("-- Level %1d: UPDATE             1 row  %s\n",
+                     printf("-- Level %1d: UPDATE              1 row  %s\n",
                         $level, make_where_clause($source->{dbh}, \%new_where));
                   }
                }
@@ -331,7 +331,7 @@ sub topdown {
             $count{ins} += $sr->{__cnt} || 1;
             $count{bad} += $sr->{__cnt} || 1;
             if ( $level && $opts{v} > 2 ) {
-               printf("-- Level %1d: INSERT group of  %4d rows %s\n",
+               printf("-- Level %1d: INSERT group of  %5d rows %s\n",
                   $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
             }
             $sr = undef;
@@ -344,7 +344,7 @@ sub topdown {
             $count{del} += $dr->{__cnt} || 1;
             $count{bad} += $dr->{__cnt} || 1;
             if ( $level && $opts{v} > 2 ) {
-               printf("-- Level %1d: DELETE group of  %4d rows %s\n",
+               printf("-- Level %1d: DELETE group of  %5d rows %s\n",
                   $level, $dr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
             }
             $dr = undef;
@@ -362,13 +362,13 @@ sub topdown {
       }
 
       if ( $opts{v} ) {
-         printf("--          Level %1d total:   %4d bad rows      %4d to inspect\n",
+         printf("--          Level %1d total:   %5d bad rows      %5d to inspect\n",
             $level, $count{bad}, sum(map { $_->[$COUNT] } @to_examine) || 0);
       }
       if ( $opts{v} > 1 ) {
-         printf("--          Level %1d summary: %4d bad groups in %4d src groups %4d dst groups\n",
+         printf("--          Level %1d summary: %5d bad groups in %5d src groups %5d dst groups\n",
             $level, scalar(@to_examine), $src_sth->rows, $dst_sth->rows);
-         printf("--          Level %1d changes: %4d updates       %4d inserts    %4d deletes\n",
+         printf("--          Level %1d changes: %5d updates       %5d inserts    %5d deletes\n",
             $level, scalar(@to_update), $count{ins}, $count{del});
       }
 
@@ -703,7 +703,7 @@ sub bu_merge_tree {
                if ( $level ) {
                   push @bad_parents, $sr;
                   if ( $level && $opts{v} > 2 ) {
-                     printf("-- Level %1d UPDATE parent:   %4d\n",
+                     printf("-- Level %1d UPDATE parent:   %5d\n",
                         $level, $sr->{__par});
                   }
                }
@@ -721,14 +721,14 @@ sub bu_merge_tree {
             if ( $level ) {
                push @bulk_insert, $sr;
                if ( $level && $opts{v} > 2 ) {
-                  printf("-- Level %1d BULKIN parent:   %4d\n",
+                  printf("-- Level %1d BULKIN parent:   %5d\n",
                      $level, $sr->{__par});
                }
             }
             else {
                push @to_insert, $sr;
                if ( $level && $opts{v} > 2 ) {
-                  printf("-- Level %1d INSERT parent:   %4d\n",
+                  printf("-- Level %1d INSERT parent:   %5d\n",
                      $level, $sr->{__par});
                }
             }
@@ -742,14 +742,14 @@ sub bu_merge_tree {
             if ( $level ) {
                push @bulk_delete, $dr;
                if ( $level && $opts{v} > 2 ) {
-                  printf("-- Level %1d BULKDE parent:   %4d\n",
+                  printf("-- Level %1d BULKDE parent:   %5d\n",
                      $level, $dr->{__par});
                }
             }
             else {
                push @to_delete, $dr;
                if ( $level && $opts{v} > 2 ) {
-                  printf("-- Level %1d DELETE parent:   %4d\n",
+                  printf("-- Level %1d DELETE parent:   %5d\n",
                      $level, $dr->{__par});
                }
             }
@@ -776,18 +776,18 @@ sub bu_merge_tree {
                        + scalar(@to_delete) + $sum_bulk_del + $sum_parents;
 
       if ( $opts{v} ) {
-         printf("--         Level %1d total:   %4d rows\n", $level, $num_bad_rows);
+         printf("--         Level %1d total:   %5d rows\n", $level, $num_bad_rows);
       }
       if ( $opts{v} > 1 ) {
-         printf("--         Level %1d summary: %4d parents %4d src rows %4d dst rows\n",
+         printf("--         Level %1d summary: %5d parents %5d src rows %5d dst rows\n",
             $level, scalar(@bad_parents), $rows_in_src, $rows_in_dst);
-         printf("--         Level %1d changes: %4d updates %4d inserts  %4d deletes %4d total\n",
+         printf("--         Level %1d changes: %5d updates %5d inserts  %5d deletes %5d total\n",
             $level, scalar(@to_update), scalar(@to_insert) + $sum_bulk_ins,
             scalar(@to_delete) + $sum_bulk_del,
             scalar(@to_update) + scalar(@to_insert) + $sum_bulk_ins
                + scalar(@to_delete) + $sum_bulk_del
          );
-         printf("--         Level %1d bulk-op: %4d inserts %4d ins-rows %4d deletes %4d del-rows\n",
+         printf("--         Level %1d bulk-op: %5d inserts %5d ins-rows %5d deletes %5d del-rows\n",
             $level, scalar(@bulk_insert), $sum_bulk_ins,
             scalar(@bulk_delete), $sum_bulk_del);
       }
