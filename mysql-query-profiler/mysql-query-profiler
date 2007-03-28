@@ -21,6 +21,8 @@
 
 # TODO: format things more compactly.
 # TODO: allow a side-by-side comparison of two queries
+# TODO: allow a mode where it starts, calibrates, and pauses while you run some
+# app or query, then you press a key and it gets the diffs.
 
 use strict;
 use warnings FATAL => 'all';
