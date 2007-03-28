@@ -47,6 +47,7 @@ my @opt_spec = (
    { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
    { s => 'columns|c=s',      d => 'Comma-separated column list' },
    { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
+   { s => 'queries|q',        d => 'Make debugging output executable SQL' },
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
    { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
    { s => 'execute|x',        d => 'Execute queries required to sync' },
@@ -570,7 +571,7 @@ sub bu_build_checksum {
 
    # Populate it
    ( $query = <<"   END") =~ s/\s+/ /g;
-      INSERT INTO `$name`($pk, __crc, __rem)
+      INSERT /*$info->{db_tbl}*/ INTO `$name`($pk, __crc, __rem)
       SELECT $pk,
          MD5(CONCAT_WS('$opts{e}', $cols$null)) AS __crc,
          CAST(CONV(RIGHT(MD5(CONCAT_WS('$opts{e}', $pk)), 16), 16, 10) AS UNSIGNED) & $mask AS __rem
@@ -629,7 +630,7 @@ sub bu_build_tree {
 
       # Populate it
       ( $query = <<"      END" ) =~ s/\s+/ /g;
-         INSERT INTO `$this_tbl`
+         INSERT /*$info->{db_tbl}*/ INTO `$this_tbl`
             (__par, __crc, __rem, __cnt)
          SELECT __rem,
             CONCAT(
@@ -968,7 +969,11 @@ sub key_eq {
 # All output has to be prefixed with SQL comments so the output can be piped
 # right into MySQL if desired.
 sub debug_print {
-   print '-- ', @_, "\n" if $opts{b};
+   return unless $opts{b};
+   print '-- ' if !$opts{q};
+   print @_;
+   print ";\n" if $opts{q};
+   print "\n" if $opts{b};
 }
 
 # Code factored out of bu_handle_data_change and td_handle_data_change.
