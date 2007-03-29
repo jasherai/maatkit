@@ -236,14 +236,16 @@ my $base = $opts{c}
    : ( { map { $_ => 0 } @important_vars } );
 
 if ( $opts{r} ) {
-   print "calibrating...\n";
+   my $base_2 = $opts{c} ? $base
+      : ( { map { $_ => $status_1->{$_} - $status_0->{$_} } @important_vars } );
+
    sleep(1);
    my $status_2 = get_status_info($dbh);
-   my $base_2
+   my $base_3
       = { map { $_ => $status_2->{$_} - $status_1->{$_} } @session_vars };
    foreach my $key ( @session_vars ) {
-      if ( $base_2->{$key} != $base->{$key} ) {
-         print "Difference: $key $base_2->{$key} $base->{$key}\n";
+      if ( $base_3->{$key} != $base_2->{$key} ) {
+         print "Cost of observation changed: $key $base_3->{$key} $base_2->{$key}\n";
       }
    }
 }
