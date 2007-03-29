@@ -19,9 +19,6 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: allow a mode where it starts, calibrates, and pauses while you run some
-# app or query, then you press a key and it gets the diffs.
-
 use strict;
 use warnings FATAL => 'all';
 
@@ -45,7 +42,6 @@ my @opt_spec = (
    { s => 'allowcache|a',  d => 'Enable query cache (default is disabled)' },
    { s => 'calibrate|c!',  d => "Try to compensate for SHOW STATUS (default)" },
    { s => 'database|D=s',  d => 'Database to use' },
-   { s => 'debug|g',       d => 'For development purposes only' },
    { s => 'external|e',    d => 'Calibrate, then pause while an external program runs' },
    { s => 'flush|f+',      d => 'Flush tables.  Specify twice to flush between every query.' },
    { s => 'help',          d => 'Show this help message' },
@@ -59,6 +55,7 @@ my @opt_spec = (
    { s => 'tab|t',         d => 'Print tab-separated values (for a spreadsheet)' },
    { s => 'user|u=s',      d => 'User for login if not current user' },
    { s => 'verbose|v+',    d => 'Verbosity (specify multiple times for more detail)' },
+   { s => 'verify|r',      d => 'Verify that nothing else is accessing the server' },
 );
 
 my %opts = (
@@ -234,15 +231,11 @@ my %non_monotonic_vars = (
 my $status_0 = get_status_info($dbh);
 my $status_1 = get_status_info($dbh);
 
-my $base;
-if ( $opts{c} ) {
-   $base = { map { $_ => 0 } @important_vars };
-}
-else {
-   $base = { map { $_ => $status_1->{$_} - $status_0->{$_} } @important_vars };
-}
+my $base = $opts{c}
+   ? ( { map { $_ => $status_1->{$_} - $status_0->{$_} } @important_vars } )
+   : ( { map { $_ => 0 } @important_vars } );
 
-if ( $opts{g} ) {
+if ( $opts{r} ) {
    print "calibrating...\n";
    sleep(1);
    my $status_2 = get_status_info($dbh);
@@ -264,7 +257,7 @@ my $sql_status_0 = get_status_info($dbh);
 my @queries;
 
 # ############################################################################
-# Run the queries
+# Do the profiling.
 # ############################################################################
 my $have_flushed_tables = 0;
 
@@ -291,20 +284,16 @@ else {
    my $file_contents = get_file( $ARGV[0] );
    @queries          = map { s/;?\s+$//g; { text => $_ } } split( /;\s*?\n\s*?\n/, $file_contents );
 
-   foreach my $i ( 0 .. $#queries ) {
-      my $query = $queries[$i];
+   foreach my $query ( @queries ) {
       flush_tables($have_flushed_tables++);
-
       $query->{start}  = time();
       # It appears to me that this actually fetches all the data over the wire,
       # which is what I want for purposes of counting bytes in and bytes out.
-      $dbh->do( $query->{text} );    # Do the actual query
+      $dbh->do( $query->{text} );
       $query->{end}    = time();
       $query->{status} = get_status_info($dbh);
    }
 }
-my $sql_status_1 = get_status_info($dbh);
-$dbh->disconnect;
 
 # ############################################################################
 # Tab-separated output for a spreadsheet.
@@ -315,7 +304,7 @@ if ( $opts{t} ) {
    my @statuses = (
       $sql_status_0,
       ( map { $_->{status} } @queries ),
-      $sql_status_1,
+      get_status_info($dbh),
    );
 
    # Decide which variables to output.  If verbosity is 0, output only those
@@ -360,13 +349,10 @@ if ( $opts{t} ) {
 # ############################################################################
 else {
    # Print the separate results and accumulate global totals.
-   my $num_status_calls = 1;
    foreach my $i ( 0 .. $#queries ) {
-      my $query    = $queries[$i];
-      my $before   = $i ? $queries[ $i - 1 ]->{status} : $sql_status_0;
-      my $after    = $query->{status};
-
-      $num_status_calls++;
+      my $query     = $queries[$i];
+      my $before    = $i ? $queries[ $i - 1 ]->{status} : $sql_status_0;
+      my $after     = $query->{status};
 
       # Accumulate some globals
       $qcost_total += $after->{Last_query_cost};
@@ -401,7 +387,7 @@ else {
    }
 
    # Print summary stats
-   $ch           = get_changes( $sql_status_0, $sql_status_1, $num_status_calls );
+   $ch           = get_changes( $sql_status_0, $queries[-1]->{status}, scalar(@queries) );
    $qcache_inval = $qcache_inval_total;
    $qcost        = $qcost_total;
    $FORMAT_NAME  = "SUMMARY";
@@ -411,7 +397,7 @@ else {
       write;
    }
    if ( !$have_session ) {
-      if ( $sql_status_1->{Questions} - $sql_status_0->{Questions}
+      if ( $queries[-1]->{Questions} - $sql_status_0->{Questions}
          > (@queries * 2) + 1 )
       {
          print STDERR "WARNING: Something else accessed the database at "
@@ -424,6 +410,8 @@ else {
       }
    }
 }
+
+$dbh->disconnect;
 
 # ############################################################################
 # Subroutines
@@ -786,9 +774,13 @@ queries only involve MyISAM tables), give the --noinnodb argument.
 By default, the program tries to find and subtract the "cost of observation,"
 i.e. the cost to run SHOW STATUS.  However, if you are not running on a quiet
 server, some statistics will be poisoned by other queries, even in newer
-versions of MySQL.  To avoid this, give the --nocalibrate argument.  If you
-don't do this, you might see some wacky numbers, such as a negative number of
-key reads :-)
+versions of MySQL.  This can cause strange results, such as a negative number of
+key reads.  If you are seeing this and need to disable calibration, give the
+--nocalibrate argument.
+
+If you give the --verify argument, the program will calibrate, then re-calibrate
+and verify that the cost of observation remains constant.  If it changes,
+something else is accessing the server and messing up your measurements.
 
 =head1 HOW TO INTERPRET
 
