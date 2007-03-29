@@ -19,8 +19,6 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: format things more compactly.
-# TODO: allow a side-by-side comparison of two queries
 # TODO: allow a mode where it starts, calibrates, and pauses while you run some
 # app or query, then you press a key and it gets the diffs.
 
@@ -48,7 +46,8 @@ my @opt_spec = (
    { s => 'calibrate|c!',  d => "Try to compensate for SHOW STATUS (default)" },
    { s => 'database|D=s',  d => 'Database to use' },
    { s => 'debug|g',       d => 'For development purposes only' },
-   { s => 'flush|f=i',     d => 'Flush tables 1) never 2) once 3) every query; default 1' },
+   { s => 'external|e',    d => 'Calibrate, then pause while an external program runs' },
+   { s => 'flush|f+',      d => 'Flush tables.  Specify twice to flush between every query.' },
    { s => 'help',          d => 'Show this help message' },
    { s => 'host|h=s',      d => 'Connect to host' },
    { s => 'innodb|i!',     d => "Show InnoDB statistics (default)" },
@@ -59,12 +58,13 @@ my @opt_spec = (
    { s => 'socket|S=s',    d => 'Socket file to use for connection' },
    { s => 'tab|t',         d => 'Print tab-separated values (for a spreadsheet)' },
    { s => 'user|u=s',      d => 'User for login if not current user' },
-   { s => 'verbosity|v=i', d => 'Verbosity 1, 2 or 3; default 1' },
+   { s => 'verbose|v+',    d => 'Verbosity (specify multiple times for more detail)' },
 );
 
 my %opts = (
    n => '',
-   v => 1,
+   v => 0,
+   c => 1,
 );
 # Post-process...
 my %opt_seen;
@@ -81,12 +81,11 @@ foreach my $spec ( @opt_spec ) {
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
-$opts{f} ||= 1;
-$opts{v} ||= 1;
 $opts{n} = [ split(/,/, $opts{n} || '' ) ];
+$opts{v} = min(2, $opts{v});
 
-if ( $opts{help} || !@ARGV ) {
-   print "Usage: $PROGRAM_NAME <options> FILE\n\n";
+if ( $opts{help} || (!@ARGV && !$opts{e} )) {
+   print "Usage: $PROGRAM_NAME <options> [FILE]\n\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
@@ -94,12 +93,7 @@ if ( $opts{help} || !@ARGV ) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME executes blank-line-separated queries in a file and prints
-statistics about the server load they caused.  All arguments are optional, but
-you must specify a file to profile.  Example:
-
-   $PROGRAM_NAME -v 3 queries.sql
-
+$PROGRAM_NAME prints statistics about MySQL server load.
 If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
 
@@ -123,7 +117,6 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
 
 # Version 5.0.2 implements SESSION status and InnoDB status values.
 # Version 5.0.3 implements InnoDB row lock status values.
-my $verbosity   = min( $opts{v}, 3 );
 my $variables   = get_variables($dbh);
 my $have_innodb = $variables->{have_innodb} eq 'YES' ? 1 : 0;
 
@@ -140,7 +133,7 @@ if ( $opts{i} ) {
 # Configure the query cache
 my $have_qcache = 0;
 if ( $variables->{query_cache_size} ) {
-   if ( $opts{a} ) {
+   if ( $opts{a} || $opts{e} ) {
       $have_qcache = 1;
    }
    else {
@@ -151,18 +144,18 @@ if ( $variables->{query_cache_size} ) {
 # Depending on the level of verbosity and the server version, summary and
 # separate printouts will include different formats.
 my $formats_for = {
-   1 => [
+   0 => [
       $have_last    ? qw( OPT_COST ) : qw(),
                       qw( TBL_IDX ),
       $have_qcache  ? qw( QCACHE )   : qw(),
    ],
-   2 => [
+   1 => [
       $have_last    ? qw( OPT_COST )       : qw(),
                       qw( TBL_IDX ),
       $have_qcache  ? qw( QCACHE )         : qw(),
       $have_innodb  ? qw( ROW_OPS_INNODB ) : qw( ROW_OPS ),
    ],
-   3 => [
+   2 => [
       $have_last    ? qw( OPT_COST )                         : qw(),
                       qw( TBL_IDX ),
       $have_qcache  ? qw( QCACHE )                           : qw(),
@@ -263,52 +256,52 @@ if ( $opts{g} ) {
 }
 
 # ############################################################################
-# The main work happens here.
+# The main work happens now.
 # ############################################################################
 
-# Get the file and split it into individual queries.  Only profile queries
-# separately if there is more than one.
-my $file_contents = get_file( $ARGV[0] );
-my @queries       = map { s/;?\s+$//g; { text => $_ } } split( /;\s*?\n\s*?\n/, $file_contents );
-my $separate      = $opts{s} && @queries > 1;
-
-# Get a baseline for how much SHOW STATUS costs.
+# Get a baseline status.
 my $sql_status_0 = get_status_info($dbh);
+my @queries;
 
 # ############################################################################
 # Run the queries
 # ############################################################################
-my $can_flush_tables = 1;
-foreach my $i ( 0 .. $#queries ) {
-   my $query = $queries[$i];
-   # Flush the tables if instructed
-   if ( $can_flush_tables ) {
-      if ( $i == 0 && $opts{f} == 2 ) {
-         eval {
-            $dbh->do("FLUSH TABLES");
-         };
-         if ( $EVAL_ERROR ) {
-            print STDERR "Warning: can't FLUSH TABLES because $EVAL_ERROR\n";
-            $can_flush_tables = 0;
-         }
-      }
-      elsif ( $opts{f} > 2 ) {
-         eval {
-            $dbh->do("FLUSH TABLES");
-         };
-         if ( $EVAL_ERROR ) {
-            print STDERR "Warning: can't FLUSH TABLES because $EVAL_ERROR\n";
-            $can_flush_tables = 0;
-         }
-      }
-   }
+my $have_flushed_tables = 0;
 
-   $query->{start}  = time();
-   # It appears to me that this actually fetches all the data over the wire,
-   # which is what I want for purposes of counting bytes in and bytes out.
-   $dbh->do( $query->{text} );    # Do the actual query
-   $query->{end}    = time();
-   $query->{status} = get_status_info($dbh);
+if ( $opts{e} ) {
+   flush_tables($have_flushed_tables++);
+   my $start = time();
+   print "Press <ENTER> when the external program is finished";
+   <STDIN>;
+   my $end = time();
+   # Hack the @queries variable by stuffing the external program's data in as a
+   # hash reference just as though it had been a query in a file.
+   # TODO: this isn't working right, it reports Bytes_sent when I don't run
+   # anything external.
+   push @queries, {
+      text   => '[External program]',
+      start  => $start,
+      end    => $end,
+      status => get_status_info($dbh),
+   };
+}
+else {
+   # Get the file and split it into individual queries.  Only profile queries
+   # separately if there is more than one.
+   my $file_contents = get_file( $ARGV[0] );
+   @queries          = map { s/;?\s+$//g; { text => $_ } } split( /;\s*?\n\s*?\n/, $file_contents );
+
+   foreach my $i ( 0 .. $#queries ) {
+      my $query = $queries[$i];
+      flush_tables($have_flushed_tables++);
+
+      $query->{start}  = time();
+      # It appears to me that this actually fetches all the data over the wire,
+      # which is what I want for purposes of counting bytes in and bytes out.
+      $dbh->do( $query->{text} );    # Do the actual query
+      $query->{end}    = time();
+      $query->{status} = get_status_info($dbh);
+   }
 }
 my $sql_status_1 = get_status_info($dbh);
 $dbh->disconnect;
@@ -325,11 +318,11 @@ if ( $opts{t} ) {
       $sql_status_1,
    );
 
-   # Decide which variables to output.  If verbosity is 1, output only those
+   # Decide which variables to output.  If verbosity is 0, output only those
    # whose values are non-zero across the board.  If verbosity is greater,
    # output everything.
    my @variables = sort keys %$sql_status_0;
-   if ( $verbosity == 1 ) {
+   if ( !$opts{v} ) {
       @variables = grep {
          # Discover whether there is a true value in any set.  A 'true' value
          # is one where the value isn't the same as the value for the same key
@@ -393,14 +386,14 @@ else {
       $bytes_out_total    += $ch->{Bytes_sent};
 
       # Print separate stats
-      if ( $separate
+      if ( $opts{s} && @queries > 1
          && (!@{$opts{n}} || grep { $i + 1 == $_ } @{$opts{n}} ))
       {
          $qcost        = $after->{Last_query_cost};
          ( $query_text = $query->{text} ) =~ s/\s+/ /g;
          $FORMAT_NAME  = 'QUERY';
          write;
-         foreach my $format_name ( @{$formats_for->{$verbosity}}) {
+         foreach my $format_name ( @{$formats_for->{$opts{v}}}) {
             $FORMAT_NAME = $format_name;
             write;
          }
@@ -413,7 +406,7 @@ else {
    $qcost        = $qcost_total;
    $FORMAT_NAME  = "SUMMARY";
    write;
-   foreach my $format_name ( @{$formats_for->{$verbosity}}) {
+   foreach my $format_name ( @{$formats_for->{$opts{v}}}) {
       $FORMAT_NAME = $format_name;
       write;
    }
@@ -436,6 +429,16 @@ else {
 # Subroutines
 # ############################################################################
 
+sub flush_tables {
+   my ($have_flushed) = @_;
+   return if !$opts{f}
+      || ( $opts{f} == 1 && $have_flushed );
+   eval { $dbh->do("FLUSH TABLES") };
+   if ( $EVAL_ERROR ) {
+      print STDERR "Warning: can't FLUSH TABLES because $EVAL_ERROR\n";
+   }
+}
+
 sub get_changes {
    my ( $before, $after, $num_base ) = @_;
    $num_base ||= 1;
@@ -453,7 +456,10 @@ sub get_changes {
 
 sub get_status_info {
    my $dbh = shift;
-   my $res = $dbh->selectall_arrayref('SHOW /*!50002 SESSION */ STATUS');
+   my $res = $dbh->selectall_arrayref(
+      $have_session
+         ? ($opts{e} ? 'SHOW GLOBAL STATUS' : 'SHOW SESSION STATUS')
+         : 'SHOW STATUS' );
    my %result = map { @{$_} } @$res;
    return { map { $_ => $result{$_} || 0 } @important_vars };
 }
@@ -719,8 +725,8 @@ Assuming a queries.sql file that contains 6 queries, the following should
 drown you with enough information:
 
  mysql-query-profiler queries.sql
- mysql-query-profiler --verbosity 3 queries.sql
- mysql-query-profiler --verbosity 2 --separate --only 2,5,6 queries.sql
+ mysql-query-profiler -vv queries.sql
+ mysql-query-profiler -v --separate --only 2,5,6 queries.sql
  mysql-query-profiler --tab queries.sql > results.csv
 
 Read HOW TO INTERPRET to learn what it all means.
@@ -733,10 +739,12 @@ It then prints statistics about how the batch performed.  For example, it can
 show how many table scans the batch caused, how many page reads, how many
 temporary tables, and so forth.  It can print information about the entire
 batch (default), every query, or only specified queries.  It has three levels
-of verbosity (default is level 1, not very verbose).
+of verbosity (default is not very verbose), which you can control by specifying
+the --verbose option once or twice.
 
-All command-line arguments are optional, but you must specify a file
-containing the batch to profile as the last argument.
+All command-line arguments are optional, but you must either specify a file
+containing the batch to profile as the last argument, or specify that you're
+profiling an external program with the --external option.
 
 If the file contains multiple statements, they must be terminated by
 semicolons and separated by blank lines.  If you don't do that,
@@ -795,23 +803,30 @@ I'll do it first and get it out of the way.
 
 =over
 
-=item * Most of the command-line options for controlling verbosity and such are
+=item *
+
+Most of the command-line options for controlling verbosity and such are
 ignored in --tab mode.
 
-=item * The variable names you see in MySQL, such as 'Com_select', are kept --
+=item *
+
+The variable names you see in MySQL, such as 'Com_select', are kept --
 there are no euphimisms, so you have to know your MySQL variables.
 
-=item * The columns are Variable_name, Before, After1...AfterN, Calibration.
+=item *
+
+The columns are Variable_name, Before, After1...AfterN, Calibration.
 The Variable_name column is just what it sounds like.  Before is the result
 from the first run of SHOW STATUS.  After1, After2, etc are the results of
 running SHOW STATUS after each query in the batch.  Finally, the last column
 is the result of running SHOW STATUS just after the last AfterN column, so you
 can see how much work SHOW STATUS itself causes.
 
-=item * If you specify --verbosity 2 or 3, you'll get every variable in the
-list this program tracks.  If not (default) you'll only get variables where
-there was some difference from one column to the next.  This cuts down on the
-noise.
+=item *
+
+If you specify -v or -vv, you'll get every variable in the list this program
+tracks.  If not (default) you'll only get variables where there was some
+difference from one column to the next.  This cuts down on the noise.
 
 =back
 
