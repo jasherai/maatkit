@@ -53,7 +53,7 @@ my @opt_spec = (
    { s => 'execute|x',        d => 'Execute queries required to sync' },
    { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
    { s => 'help',             d => 'Show this help message' },
-   { s => 'lock|k',           d => 'Lock tables when beginning work' },
+   { s => 'lock|k!',          d => 'Lock tables when beginning work' },
    { s => 'maxcost|m=i',      d => 'Maximum rowcount before bailing out' },
    { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default: all)' },
    { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
@@ -63,6 +63,7 @@ my @opt_spec = (
    { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
    { s => 'strategy|s=s',     d => 'Query strategy when syncing (r=replace, s=ins/upd/del)' },
    { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm (default: no)' },
+   { s => 'timeoutok|t',      d => 'Keep going if --wait fails' },
    { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times' },
    { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
 );
@@ -104,7 +105,7 @@ Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
 $opts{help} = 1 if $opts{s} && $opts{s} !~ m/^(s|r)/;
-$opts{k} ||= $opts{w};
+$opts{k} ||= $opts{w} if !defined $opts{k};
 
 # Make comma-separated lists into hashes.
 if ( $opts{c} ) {
@@ -207,6 +208,9 @@ if ( $opts{w} ) {
    debug_print($query);
    my $stat = $dest->{dbh}->selectall_arrayref($query)->[0]->[0];
    $stat = 'NULL' unless defined $stat;
+   if ( $stat eq 'NULL' || $stat < 0 && !$opts{t} ) {
+      die "MASTER_POS_WAIT failed: $stat";
+   }
    if ( $opts{v} ) {
       print "-- Result of waiting: $stat\n";
    }
@@ -1566,7 +1570,37 @@ the DELETE.
 
 =head1 GUARANTEEING CONSISTENCY
 
-TODO
+I wrote this tool to synchronize tables live, without stopping the servers
+they're on.  This requires some kind of locking to guarantee a consistent write
+after reading.  This tool supports several methods.
+
+The first is simple table locks.  If you specify the --lock option, it will lock
+the table for reading or writing, depending on how you want to update.  If you
+want to update on a master and let replication propagate the changes, it locks
+for write on the master and read on the slave; if you want to make changes on
+the slave, it locks for read on the master and doesn't lock on the slave, to
+avoid blocking the replication thread on the slave.
+
+If you are using InnoDB tables, you can get consistency without locking the
+whole table.  This is especially useful if you're only trying to synchronize
+part of the table that you know to be bad.  Use the --forupdate option to make
+the SELECT statements acquire locks.  As above, it gets either shared (LOCK IN
+SHARE MODE) or exclusive (FOR UPDATE) locks, depending on how you are syncing.
+This only applies to the top-down algorithm.  The bottom-up algorithm creates
+tables, which implicitly commits and releases locks unless you use temporary
+tables (the --temp option).  If you're using temporary tables with the bottom-up
+algorithm, there are implicit shared locks on the target tables if they're
+InnoDB.
+
+Finally, if you're working on a master and slave server, you should probably
+specify the --wait option in conjunction with one of the above. This locks on
+the master, finds the master's position, and then waits for the slave to catch
+up to that position.  The argument to the option is the number of seconds the
+slave should wait before timing out.  By default --wait implies --lock, but you
+can specify --nolock if you want to override this and use InnoDB's row-level
+locks.  Also by default, if the wait timeout is exceeded or another
+MASTER_POS_WAIT error occurs, the program will exit with an error, but you can
+use the --timeoutok option to control this.
 
 =head1 OUTPUT
 
