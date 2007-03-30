@@ -399,6 +399,8 @@ sub td_handle_data_change {
    my ( $action, @rows ) = @_;
    return unless $action =~ m/$opts{o}/i;
    foreach my $where ( @rows ) {
+      # TODO I'm worried this is double-fetching rows that need to be
+      # mass-inserted or updated.
       handle_data_change($action, $where);
    }
 }
