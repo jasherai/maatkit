@@ -190,7 +190,7 @@ sub generate_coldef {
    my $type;
    do {
       $type = $types[int(rand() * @types)];
-   } while ( !$is_pk || $type ne 'timestamp' ); # Don't put timestamp in PK
+   } while ( $is_pk && $type eq 'timestamp' ); # Don't put timestamp in PK
    my $notnull = $is_pk || rand() > .5 ? 'not null' : '';
    return {
       name => "col$i",
