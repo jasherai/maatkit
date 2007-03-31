@@ -52,7 +52,7 @@ my @opt_spec = (
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = ( a => 'topdown', t => 1, s => 500 );
+my %opts = ( t => 1, s => 500 );
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
@@ -116,13 +116,14 @@ while ( $i++ < $opts{t} ) {
    if ( unique(@bad) < 2 ) {
       die "Tables aren't different before starting: $bad.";
    }
-   `mysql-table-sync test2 test3 -a $opts{a} -x`;
+   my $algorithm = $opts{a} || (rand() < .5) ? 'topdown' : 'bottomup';
+   `mysql-table-sync test2 test3 -a $algorithm -x`;
    my $good = `mysql-table-checksum -t test1,test2,test3 localhost`;
    my @good = $good =~ m/([a-f0-9]{32})/g;
    if ( !$good || unique(@good) > 1 ) {
       die "Tables are different after fixing: $good";
    }
-   print "Test $i OK\n";
+   print "Test $i with $algorithm OK\n";
 }
 
 sub unique {
@@ -146,7 +147,10 @@ sub random_perturb {
       else {
          my $col = $cols[int(rand() * @cols)];
          my $query = "update test3 set $col = $col + 1 order by rand(0) limit 1";
-         $changes += $dbh->do($query);
+         eval { $changes += $dbh->do($query); };
+         if ( $EVAL_ERROR ) {
+            die "While doing $query\n";
+         }
       }
    }
 }
