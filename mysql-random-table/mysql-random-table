@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is a test for mysql-table-sync.  It depends on mysql-table-checksum.
+# This program creates random MySQL tables and fills them with random data.
 #
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
@@ -26,8 +26,6 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 
-# Make the file's Perl version the same as its CVS revision number.
-# our $VERSION = sprintf "%d.%03d", q$Revision$ =~ /(\d+)/g;
 our $VERSION = '@VERSION@';
 
 # ############################################################################
@@ -44,13 +42,14 @@ my @opt_spec = (
    { s => 'port|P=i',     d => 'Port number to use for connection' },
    { s => 'socket|S=s',   d => 'Socket file to use for connection' },
    { s => 'user|u=s',     d => 'User for login if not current user' },
-   { s => 'tests|t=i',    d => 'Number of tests to run' },
-   { s => 'size|s=i',     d => 'Size of test tables, default 500 rows' },
-   { s => 'algorithm|a=s', d => 'Algorithm' },
+   { s => 'size|s=i',     d => 'Size of test table, default 500 rows' },
+   { s => 'name|n=s',     d => 'Table name (default is test1)' },
+   { s => 'dropfirst|d',  d => 'Drop the table before creating it' },
+   { s => 'print|r',      d => 'Print SQL' },
 );
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = ( t => 1, s => 500 );
+my %opts = ( s => 500, n => 'test1' );
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
@@ -77,7 +76,7 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME tests mysql-table-sync.
+$PROGRAM_NAME makes random MySQL tables and fills them with random data.
 
 If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
@@ -100,86 +99,74 @@ my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
 
-my @types = qw(tinyint int smallint mediumint bigint date datetime timestamp);
+my %types = (
+   tinyint => {
+      arg => [ -128, 127, 255 ],
+      gen => \&rand_int,
+   },
+   smallint => {
+      arg => [ -32768, 32767, 65535 ],
+      gen => \&rand_int,
+   },
+   mediumint => {
+      arg => [ -8388608, 8388607, 16777215 ],
+      gen => \&rand_int,
+   },
+   int => {
+      arg => [ -2147483648, 2147483647, 4294967295 ],
+      gen => \&rand_int,
+   },
+   bigint => {
+      arg => [ -9223372036854775808, 9223372036854775807, 18446744073709551615 ],
+      gen => \&rand_int,
+   },
+   date => {
+      arg => '%4d-%02d-%02d',
+      gen => \&rand_date,
+   },
+   datetime => {
+      arg => '%4d-%02d-%02d %02d:%02d:%02d',
+      gen => \&rand_date,
+   },
+   timestamp => {
+      arg => '%4d-%02d-%02d %02d:%02d:%02d',
+      gen => \&rand_date,
+   },
+);
+my @types = keys %types;
+my $max_int = 2 ** 32 - 1;
 
-my $i = 0;
-while ( $i++ < $opts{t} ) {
-   my ( $tbl, $pk, $cols ) = generate_random_table();
-   map { $dbh->do("drop table if exists test$_") } 1..3;
-   $dbh->do($tbl);
-   insert_data($pk, $cols);
-   $dbh->do("create table test2 like test1");
-   $dbh->do("insert into test2 select * from test1");
-   $dbh->do("create table test3 like test1");
-   $dbh->do("insert into test3 select * from test1");
-   random_perturb($pk, $cols);
-   `mysql-table-checksum -t test1,test2,test3 localhost`;
-   #`mysql-table-sync test2 test3 -a $opts{a} -x`;
-   my $lines = `mysql-table-checksum -t test1,test2,test3 localhost`;
-   print $lines;
-}
-
-sub random_perturb {
-   my ( $pk, $cols ) = @_;
-   foreach ( @$pk ) {
-      shift @$cols;
-   }
-
-   if ( rand() < .3) {
-      # do some deletes
-      $dbh->do("delete from test3 order by rand() limit " .
-      int(rand()*$opts{s}/100));
-   }
-   if ( rand() < .67 ) {
-      my $col = $cols->[int(rand() * @$cols)];
-      $dbh->do("update test3 set $col->{name} = $col->{name} + 1 order by rand() limit 1");
-   }
-}
-
+my ( $tbl, $pk, $cols ) = generate_random_table();
+$dbh->do("DROP TABLE IF EXISTS `$opts{n}`") if $opts{d};
+print "$tbl;\n" if $opts{r};
+$dbh->do($tbl);
+insert_data($pk, $cols);
 
 sub insert_data {
    my ( $pk, $cols ) = @_;
+   my $sql = "INSERT IGNORE INTO `$opts{n}`(" . join(",", map{$_->{name}}@$cols)
+      . ") VALUES (" . join(",", map { '?' } @$cols) . ")";
+   my $sth = $dbh->prepare($sql);
    foreach my $i ( 0 .. $opts{s} ) {
-      my $sql = "insert ignore into test1("
-         . join(",", map{$_->{name}}@$cols)
-         . ") values ("
-         . join(",", map{generate_val($_->{type})} @$cols)
-         . ")";
-      $dbh->do($sql);
+      my @vals = map{ $types{$_->{type}}->{gen}->($_)  } @$cols;
+      $sth->execute(@vals);
    }
-}
-
-sub generate_val {
-   my $type = shift;
-   my $val = $type =~ m/int/ ? rand_int($type)
-           : $type =~ m/date|time/ ? rand_date($type)
-           : die($type . ' is not a type I know');
-   return $dbh->quote($val);
 }
 
 sub rand_int {
-   my ( $type ) = @_;
-   my $limit = $type eq 'tinyint' ? 255
-             : $type eq 'int'     ? 2147483647
-             : $type eq 'smallint' ? 32767
-             : $type eq 'mediumint' ? 8388607
-             :                        922337203685;
-   return int(rand() * $limit);
+   my ( $spec ) = @_;
+   my $range = $types{$spec->{type}}->{arg};
+   my $bottom = $spec->{unsigned} ? 0 : $range->[0];
+   my $top    = $spec->{unsigned} ? $range->[1] : $range->[2];
+   return $bottom + int(rand() * ($top-$bottom));
 }
 
 sub rand_date {
-   my $type = shift;
-   my $fmt = $type =~ m/time/ ? '%4d-%02d-%02d %02d:%02d:%02d' : '%4d-%02d-%02d';
-   my $year = 1900 + rand() * 200;
-   my $mon = 1 + rand() * 12;
-   my $day = 1 + rand() * 28;
-   if ( $type !~ m/time/ ) {
-      return sprintf($fmt,$year,$mon, $day);
-   }
-   my $hr = rand() * 24;
-   my $min = rand() * 60;
-   my $sec = rand() * 60;
-   return sprintf($fmt,$year,$mon, $day,$hr,$min,$sec);
+   my ($spec) = @_;
+   my $fmt = $types{$spec->{type}}->{arg};
+   my $time = int( rand() * $max_int );
+   my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime($time);
+   return sprintf( $fmt, $year + 1900, $mon + 1, $mday, $hour, $min, $sec);
 }
 
 sub generate_random_table {
@@ -190,8 +177,8 @@ sub generate_random_table {
       my $col = generate_coldef($i, $i <= $pk);
       push @cols, $col;
    }
-   my $sql = "create table test1(" . join(",", map { $_->{def} }@cols)
-      . ", primary key(" . join(",", map { $_->{name} }@cols[0..$pk])
+   my $sql = "CREATE TABLE `$opts{n}` (" . join(",", map { $_->{def} }@cols)
+      . ", PRIMARY KEY(" . join(",", map { $_->{name} }@cols[0..$pk])
       . "))engine=innodb";
    return ($sql, [ @cols[0..$pk] ], [ @cols ]);
 }
