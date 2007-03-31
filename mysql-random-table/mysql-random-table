@@ -186,9 +186,12 @@ sub generate_random_table {
 }
 
 sub generate_coldef {
-   my ( $i, $notnull ) = @_;
-   my $type = $types[int(rand() * @types)];
-   $notnull = $notnull || rand() > .5 ? 'not null' : '';
+   my ( $i, $is_pk ) = @_;
+   my $type;
+   do {
+      $type = $types[int(rand() * @types)];
+   } while ( !$is_pk || $type ne 'timestamp' ); # Don't put timestamp in PK
+   my $notnull = $is_pk || rand() > .5 ? 'not null' : '';
    return {
       name => "col$i",
       type => $type,
