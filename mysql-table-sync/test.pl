@@ -103,6 +103,7 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
    or die("Can't connect to DB: $OS_ERROR");
 
 my $i = 0;
+$LIST_SEPARATOR = " ";
 while ( $i++ < $opts{t} ) {
    print `mysql-random-table -d -s $opts{s}`;
    map { $dbh->do("drop table if exists test$_") } 2..3;
@@ -123,7 +124,7 @@ while ( $i++ < $opts{t} ) {
    if ( !$good || unique(@good) > 1 ) {
       die "Tables are different after fixing: $good";
    }
-   print "Test $i with $algorithm OK\n";
+   print "Test $i with $algorithm OK @good\n";
 }
 
 sub unique {
