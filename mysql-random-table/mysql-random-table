@@ -180,7 +180,7 @@ sub generate_random_table {
       push @cols, $col;
    }
    my $sql = "CREATE TABLE `$opts{n}` (" . join(",", map { $_->{def} }@cols)
-      . ", PRIMARY KEY(" . join(",", map { $_->{name} }@cols[0..$pk])
+      . ", PRIMARY KEY(" . join(",", map { $_->{name} }@cols[0..$pk-1])
       . "))engine=innodb";
    return ($sql, [ @cols[0..$pk] ], [ @cols ]);
 }
