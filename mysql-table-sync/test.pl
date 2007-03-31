@@ -122,6 +122,7 @@ while ( $i++ < $opts{t} ) {
    if ( !$good || unique(@good) > 1 ) {
       die "Tables are different after fixing: $good";
    }
+   print "Test $i OK\n";
 }
 
 sub unique {
@@ -144,14 +145,8 @@ sub random_perturb {
       }
       else {
          my $col = $cols[int(rand() * @cols)];
-         my $query;
-         eval { # May make a duplicate key problem
-            $query = "update test3 set $col = $col + 1 order by rand(0) limit 1";
-            $changes += $dbh->do($query);
-         };
-         if ( $EVAL_ERROR ) {
-            print "Problem doing $query\n";
-         }
+         my $query = "update test3 set $col = $col + 1 order by rand(0) limit 1";
+         $changes += $dbh->do($query);
       }
    }
 }
