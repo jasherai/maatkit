@@ -161,6 +161,8 @@ sub rand_int {
    return $bottom + int(rand() * ($top-$bottom));
 }
 
+# TODO: need to generate character data too.
+# TODO: returns datetimes before 1970, which is no good I think...
 sub rand_date {
    my ($spec) = @_;
    my $fmt = $types{$spec->{type}}->{arg};
