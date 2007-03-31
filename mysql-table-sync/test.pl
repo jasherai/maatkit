@@ -104,7 +104,7 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
 
 my $i = 0;
 while ( $i++ < $opts{t} ) {
-   `mysql-random-table -d -s $opts{s}`;
+   print `mysql-random-table -d -s $opts{s}`;
    map { $dbh->do("drop table if exists test$_") } 2..3;
    $dbh->do("create table test2 like test1");
    $dbh->do("insert into test2 select * from test1");
