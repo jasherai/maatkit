@@ -105,7 +105,6 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
    or die("Can't connect to DB: $OS_ERROR");
 
 my $i = 0;
-$LIST_SEPARATOR = " ";
 while ( $i++ < $opts{t} ) {
    my $cols = $opts{c} ? "-c $opts{c}" : '';
    print `mysql-random-table -d $cols -s $opts{s}`;
@@ -120,6 +119,7 @@ while ( $i++ < $opts{t} ) {
    if ( unique(@bad) < 2 ) {
       die "Tables aren't different before starting: $bad.";
    }
+   # TODO: reverse and sync test2 to test3
    my $algorithm = $opts{a} || (rand() < .5) ? ' topdown' : 'bottomup';
    `mysqldump --tables test test1 > save.sql`;
    `mysql-table-sync -1 -a $algorithm -x test2 test3`;
@@ -128,7 +128,7 @@ while ( $i++ < $opts{t} ) {
    if ( !$good || unique(@good) > 1 ) {
       die "Tables are different after fixing\n$good";
    }
-   print "Test $i with $algorithm OK @good\n";
+   printf("Test %2d with %8s OK %s %s %s\n", $i, $algorithm, @good);
 }
 
 sub unique {
