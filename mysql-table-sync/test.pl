@@ -39,6 +39,7 @@ our $VERSION = '@VERSION@';
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
+   { s => 'columns|c=i',  d => 'Max number of columns in test tables' },
    { s => 'database|D=s', d => 'Database to use' },
    { s => 'host|h=s',     d => 'Connect to host' },
    { s => 'help',         d => 'Show this help message' },
@@ -106,7 +107,8 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
 my $i = 0;
 $LIST_SEPARATOR = " ";
 while ( $i++ < $opts{t} ) {
-   print `mysql-random-table -d -s $opts{s}`;
+   my $cols = $opts{c} ? "-c $opts{c}" : '';
+   print `mysql-random-table -d $cols -s $opts{s}`;
    map { $dbh->do("drop table if exists test$_") } 2..3;
    $dbh->do("create table test2 like test1");
    $dbh->do("insert into test2 select * from test1");
@@ -119,7 +121,7 @@ while ( $i++ < $opts{t} ) {
       die "Tables aren't different before starting: $bad.";
    }
    my $algorithm = $opts{a} || (rand() < .5) ? ' topdown' : 'bottomup';
-   `mysql-table-sync test2 test3 -a $algorithm -x`;
+   `mysql-table-sync -1 -a $algorithm -x test2 test3`;
    my $good = `mysql-table-checksum -t test1,test2,test3 localhost`;
    my @good = $good =~ m/([a-f0-9]{32})/g;
    if ( !$good || unique(@good) > 1 ) {
