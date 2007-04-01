@@ -26,6 +26,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use List::Util qw(min);
 
 # Make the file's Perl version the same as its CVS revision number.
 # our $VERSION = sprintf "%d.%03d", q$Revision$ =~ /(\d+)/g;
@@ -135,6 +136,8 @@ sub unique {
 sub random_perturb {
    my $changes = 0;
    my $goal    = 1 + int(rand() * $opts{s});
+   $goal = min($goal, $dbh->selectall_arrayref(
+      "select count(*) from test3")->[0]->[0]);
    my @cols =
       map  { $_->{Field} }
       grep { !$_->{Key} }
