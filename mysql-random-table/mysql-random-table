@@ -141,15 +141,18 @@ $dbh->do("DROP TABLE IF EXISTS `$opts{n}`") if $opts{d};
 print "$tbl;\n" if $opts{r};
 $dbh->do($tbl);
 insert_data($pk, $cols);
+$opts{s} ||= 1;
 
 sub insert_data {
    my ( $pk, $cols ) = @_;
    my $sql = "INSERT IGNORE INTO `$opts{n}`(" . join(",", map{$_->{name}}@$cols)
       . ") VALUES (" . join(",", map { '?' } @$cols) . ")";
    my $sth = $dbh->prepare($sql);
-   foreach my $i ( 0 .. $opts{s} ) {
+   my $changes = 0;
+   while ( $changes < $opts{s} ) {
       my @vals = map{ $types{$_->{type}}->{gen}->($_)  } @$cols;
       $sth->execute(@vals);
+      $changes += $sth->rows;
    }
 }
 
