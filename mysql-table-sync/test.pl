@@ -117,7 +117,7 @@ while ( $i++ < $opts{t} ) {
    if ( unique(@bad) < 2 ) {
       die "Tables aren't different before starting: $bad.";
    }
-   my $algorithm = $opts{a} || (rand() < .5) ? 'topdown' : 'bottomup';
+   my $algorithm = $opts{a} || (rand() < .5) ? ' topdown' : 'bottomup';
    `mysql-table-sync test2 test3 -a $algorithm -x`;
    my $good = `mysql-table-checksum -t test1,test2,test3 localhost`;
    my @good = $good =~ m/([a-f0-9]{32})/g;
