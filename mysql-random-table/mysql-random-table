@@ -25,6 +25,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use List::Util qw(min max);
 
 our $VERSION = '@VERSION@';
 
@@ -231,7 +232,7 @@ sub rand_date {
 
 sub generate_random_table {
    my $num_cols = int(2 + rand() * $opts{c});
-   my $pk = 1 + int(rand() * 3);
+   my $pk = min($num_cols - 1, max(1, int(rand() * ($num_cols - 1))));
    my @cols;
    foreach my $i ( 1 .. $num_cols ) {
       my $col = generate_coldef($i, $i <= $pk);
