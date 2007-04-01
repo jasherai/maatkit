@@ -140,19 +140,19 @@ my ( $tbl, $pk, $cols ) = generate_random_table();
 $dbh->do("DROP TABLE IF EXISTS `$opts{n}`") if $opts{d};
 print "$tbl;\n" if $opts{r};
 $dbh->do($tbl);
-insert_data($pk, $cols);
 $opts{s} ||= 1;
+my $size = int(rand() * $opts{s});
+$size ||= 1;
+insert_data($pk, $cols);
 
 sub insert_data {
    my ( $pk, $cols ) = @_;
    my $sql = "INSERT IGNORE INTO `$opts{n}`(" . join(",", map{$_->{name}}@$cols)
       . ") VALUES (" . join(",", map { '?' } @$cols) . ")";
    my $sth = $dbh->prepare($sql);
-   my $changes = 0;
-   while ( $changes < $opts{s} ) {
+   foreach ( 0..$size ) {
       my @vals = map{ $types{$_->{type}}->{gen}->($_)  } @$cols;
       $sth->execute(@vals);
-      $changes += $sth->rows;
    }
 }
 
