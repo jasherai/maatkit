@@ -151,7 +151,10 @@ sub insert_data {
       . ") VALUES (" . join(",", map { '?' } @$cols) . ")";
    my $sth = $dbh->prepare($sql);
    foreach ( 0..$size ) {
-      my @vals = map{ $types{$_->{type}}->{gen}->($_)  } @$cols;
+      my @vals = map {
+         # There's a 20% chance of nullable columns getting a NULL.
+         $_->{null} && rand() < .2 ? undef : $types{$_->{type}}->{gen}->($_)
+      } @$cols;
       $sth->execute(@vals);
    }
 }
@@ -198,6 +201,7 @@ sub generate_coldef {
    return {
       name => "col$i",
       type => $type,
+      null => !$notnull,
       def => "col$i $type $notnull",
    };
 }
