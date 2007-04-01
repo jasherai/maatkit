@@ -245,7 +245,7 @@ else {
 
 foreach my $table ( $source, $dest ) {
    my $dbh = $table->{dbh};
-   $dbh->commit if $opts{k} || $opts{f};
+   $dbh->commit if $opts{k} || $opts{f} || $opts{1};
    $dbh->disconnect;
 }
 
