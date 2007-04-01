@@ -3,6 +3,14 @@ details.
 
 Changelog:
 
+2007-04-01: version 1.0.3
+
+   * Profile Bytes_received and Bytes_sent.
+   * Add --external option so you can profile another program without running its queries.
+   * Fix commandline options: change --flush and --verbose, and change --debug to --verify.
+   * Fix behavior of --calibrate.  It was not calibrating by default.  This was making things look too expensive.
+   * More documentation.
+
 2007-03-25: version 1.0.2
 
    * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.
