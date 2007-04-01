@@ -271,8 +271,6 @@ if ( $opts{e} ) {
    my $end = time();
    # Hack the @queries variable by stuffing the external program's data in as a
    # hash reference just as though it had been a query in a file.
-   # TODO: this isn't working right, it reports Bytes_sent when I don't run
-   # anything external.
    push @queries, {
       text   => '[External program]',
       start  => $start,
