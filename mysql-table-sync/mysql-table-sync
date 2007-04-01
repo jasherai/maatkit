@@ -159,6 +159,8 @@ USAGE
 # TODO: another algorithm: binary search for where the corruption starts, say a
 # chunk at a time of 10000 from start/end of table, then when a different chunk
 # is found, binary search within that chunk to find the first row and report it.
+# TODO: grouping strategy: first chars of char column.
+# TODO: grouping strategy: number modulo const (between is more easily optimized)
 
 my %code_for_algorithm = (
    topdown  => \&topdown,
@@ -298,12 +300,18 @@ sub topdown {
             $dr = $dst_sth->fetchrow_hashref;
          }
 
+         # Compare the rows if both exist.  The result is used several places.
+         my $cmp;
+         if ( $sr && $dr ) {
+            $cmp = key_cmp($source, $sr, $dr, $grouping);
+         }
+
          last MERGE unless $sr || $dr;
 
          my %new_where = %$where;  # Will get more cols added and used below.
 
          # If the current row is the "same row" on both sides...
-         if ( $sr && $dr && key_eq($source, $sr, $dr, $grouping) ) {
+         if ( $sr && $dr && defined $cmp && $cmp == 0 ) {
             # The "same" row descends from parents that differ.
             if ( $sr->{__crc} ne $dr->{__crc} ) {
                @new_where{@$grouping} = @{$sr}{@$grouping};
@@ -332,7 +340,7 @@ sub topdown {
          }
 
          # The row in the source doesn't exist at the destination
-         elsif ( !$dr || ( $sr && key_le($source, $sr, $dr, $grouping) ) ) {
+         elsif ( !$dr || ( defined $cmp && $cmp < 0 ) ) {
             @new_where{@$grouping} = @{$sr}{@$grouping};
             push @to_insert, \%new_where;
             $count{ins} += $sr->{__cnt} || 1;
@@ -345,7 +353,7 @@ sub topdown {
          }
 
          # Symmetric to the above
-         elsif ( !$sr || ( $dr && key_le($source, $dr, $sr, $grouping) ) ) {
+         elsif ( !$sr || ( defined $cmp && $cmp > 0 ) ) {
             @new_where{@$grouping} = @{$dr}{@$grouping};
             push @to_delete, \%new_where;
             $count{del} += $dr->{__cnt} || 1;
@@ -703,10 +711,16 @@ sub bu_merge_tree {
             }
          }
 
+         # Compare the rows if both exist.  The result is used several places.
+         my $cmp;
+         if ( $sr && $dr ) {
+            $cmp = key_cmp($source, $sr, $dr, \@key);
+         }
+
          last MERGE unless $sr || $dr;
 
          # If the current row is the "same row" on both sides...
-         if ( $sr && $dr && key_eq($source, $sr, $dr, \@key) ) {
+         if ( $sr && $dr && defined $cmp && $cmp == 0 ) {
             # The "same" row descends from parents that differ.
             if ( $sr->{__crc} ne $dr->{__crc} ) {
                if ( $level ) {
@@ -726,7 +740,7 @@ sub bu_merge_tree {
          }
 
          # The row in the source doesn't exist at the destination
-         elsif ( !$dr || ( $sr && key_le($source, $sr, $dr, \@key) ) ) {
+         elsif ( !$dr || ( defined $cmp && $cmp < 0 ) ) {
             if ( $level ) {
                push @bulk_insert, $sr;
                if ( $level && $opts{v} > 2 ) {
@@ -747,7 +761,7 @@ sub bu_merge_tree {
          }
 
          # Symmetric to the above
-         elsif ( !$sr || ( $dr && key_le($source, $dr, $sr, \@key) ) ) {
+         elsif ( !$sr || ( defined $cmp && $cmp > 0 ) ) {
             if ( $level ) {
                push @bulk_delete, $dr;
                if ( $level && $opts{v} > 2 ) {
@@ -936,42 +950,29 @@ sub bu_existing_levels {
 # Subroutines
 # ############################################################################
 
-# I named this 'le' for clarity about what it does, even though the way it's
-# used is in a strict 'lt' sense because key_eq would prevent the code from
-# reaching this function.  NULL sorts before defined values in MySQL, so I
-# consider undef "less than."
-sub key_le {
+# NULL sorts before defined values in MySQL, so I consider undef "less than."
+# Otherwise I compare strings case-insensitively even though this will cause
+# problems in some cases.
+# TODO: figure out when things should be compared with a _cs or _bin
+# collation.  Maybe this is impossible.
+sub key_cmp {
    my ( $info, $r1, $r2, $key ) = @_;
    foreach my $i ( 0 .. @$key - 1 ) {
       my $l = $r1->{$key->[$i]};
       my $r = $r2->{$key->[$i]};
-      my $n = $key->[$i] eq '__par' || $info->{info}->{num_hash}->{$key->[$i]}; # Whether numeric col
-      if ( (defined $l && !defined $r)
-         || ( defined $l && defined $r && ($n ? $l > $r : $l gt $r) )
-      ) {
-         return 0;
+      if ( defined $l && defined $r ) {
+         my $n   = $key->[$i] eq '__par' || $info->{info}->{num_hash}->{$key->[$i]}; # Whether numeric col
+         my $cmp = $n ? $l <=> $r : lc $l cmp lc $r;
+         return $cmp unless $cmp == 0;
       }
-      elsif ( (!defined $l && defined $r)
-         || ( defined $l && defined $r && ($n ? $l < $r : $l lt $r) )
-      ) {
+      elsif ( defined $l ) {
          return 1;
       }
-   }
-   return 1;
-}
-
-sub key_eq {
-   my ( $info, $r1, $r2, $key ) = @_;
-   foreach my $i ( 0 .. @$key - 1 ) {
-      my $l = $r1->{$key->[$i]};
-      my $r = $r2->{$key->[$i]};
-      my $n = $key->[$i] eq '__par' || $info->{info}->{num_hash}->{$key->[$i]}; # Whether numeric col
-      my $parity = defined($l) + defined($r);
-      if ( $parity == 1 || ( $parity == 2 && ($n ? $l != $r : $l ne $r) )) {
-         return 0;
+      elsif ( defined $r ) {
+         return -1;
       }
    }
-   return 1;
+   return 0;
 }
 
 # All output has to be prefixed with SQL comments so the output can be piped
