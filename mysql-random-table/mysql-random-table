@@ -46,10 +46,17 @@ my @opt_spec = (
    { s => 'name|n=s',     d => 'Table name (default is test1)' },
    { s => 'dropfirst|d',  d => 'Drop the table before creating it' },
    { s => 'print|r',      d => 'Print SQL' },
+   { s => 'words|w=s',    d => 'File of words for random text' },
 );
+
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = ( s => 500, n => 'test1' );
+my %opts = (
+   s => 500,
+   n => 'test1',
+   w => '/usr/share/dict/words'
+);
+
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
@@ -132,9 +139,44 @@ my %types = (
       arg => '%4d-%02d-%02d %02d:%02d:%02d',
       gen => \&rand_date,
    },
+   char => {
+      arg => 0,
+      len => 255,
+      gen => \&rand_text,
+   },
+   varchar => {
+      arg => 0,
+      len => 512,
+      gen => \&rand_text,
+   },
+   text => {
+      arg => 0,
+      len => 20000, # be reasonable...
+      gen => \&rand_text,
+   },
+#   binary => {
+#      arg => 1,
+#      gen => \&rand_text,
+#   },
+#   varbinary => {
+#      arg => 1,
+#      gen => \&rand_text,
+#   },
+#   blob => {
+#      arg => 1,
+#      gen => \&rand_text,
+#   },
 );
 my @types = keys %types;
 my $max_int = 2 ** 32 - 1;
+my @dict;
+
+open my $dict, "<", $opts{w} or die $OS_ERROR;
+while ( my $line = <$dict> ) {
+   chomp $line;
+   push @dict, $line;
+}
+close $dict;
 
 my ( $tbl, $pk, $cols ) = generate_random_table();
 $dbh->do("DROP TABLE IF EXISTS `$opts{n}`") if $opts{d};
@@ -159,6 +201,16 @@ sub insert_data {
    }
 }
 
+sub rand_text {
+   my ( $spec ) = @_;
+   my $len = int(rand() * $spec->{len});
+   my $str = '';
+   while ( length($str) < $len ) {
+      $str .= $dict[int(rand()*@dict)] . ' ';
+   }
+   return $str;
+}
+
 sub rand_int {
    my ( $spec ) = @_;
    my $range = $types{$spec->{type}}->{arg};
@@ -167,8 +219,6 @@ sub rand_int {
    return $bottom + int(rand() * ($top-$bottom));
 }
 
-# TODO: need to generate character data too.
-# TODO: returns datetimes before 1970, which is no good I think...
 sub rand_date {
    my ($spec) = @_;
    my $fmt = $types{$spec->{type}}->{arg};
@@ -198,10 +248,13 @@ sub generate_coldef {
       $type = $types[int(rand() * @types)];
    } while ( $is_pk && $type eq 'timestamp' ); # Don't put timestamp in PK
    my $notnull = $is_pk || rand() > .5 ? 'not null' : '';
+   my $len     = $types{$type}->{len} ? 1 + int(rand() * $types{$type}->{len}) : 0;
+   my $lenspec = $len ? "($len)" : '';
    return {
       name => "col$i",
       type => $type,
       null => !$notnull,
-      def => "col$i $type $notnull",
+      len  => $len,
+      def => "col$i $type$lenspec $notnull",
    };
 }
