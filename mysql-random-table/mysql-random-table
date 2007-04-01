@@ -243,10 +243,12 @@ sub generate_random_table {
 
 sub generate_coldef {
    my ( $i, $is_pk ) = @_;
+
    my $type;
    do {
       $type = $types[int(rand() * @types)];
-   } while ( $is_pk && $type eq 'timestamp' ); # Don't put timestamp in PK
+   } while ( $is_pk && $type =~ m/^(?:timestamp|text)$/ ); # Don't put text/timestamp in PK
+
    my $notnull = $is_pk || rand() > .5 ? 'not null' : '';
    my $len     = $types{$type}->{len} ? 1 + int(rand() * $types{$type}->{len}) : 0;
    my $lenspec = $len ? "($len)" : '';
