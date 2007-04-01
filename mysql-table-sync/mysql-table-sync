@@ -60,6 +60,7 @@ my @opt_spec = (
    { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
    { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
    { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
+   { s => 'singletxn|1',      d => 'Do in a single transaction' },
    { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
    { s => 'strategy|s=s',     d => 'Query strategy when syncing (r=replace, s=ins/upd/del)' },
    { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm (default: no)' },
@@ -85,6 +86,7 @@ my %opts = (
    U => 1,
    A => 1,
    v => 0,
+   1 => 0,
 );
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
@@ -381,7 +383,7 @@ sub topdown {
    } while ( @to_examine );
 
    # Release locks/close transaction as soon as possible.
-   if ( $opts{r} && $opts{f} ) {
+   if ( $opts{r} && $opts{f} && !$opts{1} ) {
       $dest->{dbh}->commit;
    }
 
@@ -1136,7 +1138,7 @@ sub make_key {
 
 sub get_dbh {
    my $db_options = {
-      AutoCommit => !$opts{k} && !$opts{f},
+      AutoCommit => !$opts{k} && !$opts{f} && !$opts{1},
       RaiseError => 1,
       PrintError => 1,
    };
