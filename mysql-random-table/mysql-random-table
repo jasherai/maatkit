@@ -214,8 +214,8 @@ sub rand_text {
 sub rand_int {
    my ( $spec ) = @_;
    my $range = $types{$spec->{type}}->{arg};
-   my $bottom = $spec->{unsigned} ? 0 : $range->[0];
-   my $top    = $spec->{unsigned} ? $range->[1] : $range->[2];
+   my $bottom = $spec->{uns} ? 0 : $range->[0];
+   my $top    = $spec->{uns} ? $range->[1] : $range->[2];
    return $bottom + int(rand() * ($top-$bottom));
 }
 
@@ -249,7 +249,8 @@ sub generate_coldef {
       $type = $types[int(rand() * @types)];
    } while ( $is_pk && $type =~ m/^(?:timestamp|text)$/ ); # Don't put text/timestamp in PK
 
-   my $notnull = $is_pk || rand() > .5 ? 'not null' : '';
+   my $notnull = $is_pk || rand() > .5 ? ' not null' : '';
+   my $unsign  = ref $types{$type}->{arg} eq 'ARRAY' && rand() < .3 ? ' unsigned' : '';
    my $len     = $types{$type}->{len} ? 1 + int(rand() * $types{$type}->{len}) : 0;
    my $lenspec = $len ? "($len)" : '';
    return {
@@ -257,6 +258,7 @@ sub generate_coldef {
       type => $type,
       null => !$notnull,
       len  => $len,
-      def => "col$i $type$lenspec $notnull",
+      uns  => !$unsign,
+      def => "col$i $type$lenspec$unsign$notnull",
    };
 }
