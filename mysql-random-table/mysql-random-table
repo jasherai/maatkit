@@ -35,6 +35,7 @@ our $VERSION = '@VERSION@';
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
+   { s => 'columns|c=i',  d => 'Max number of columns' },
    { s => 'database|D=s', d => 'Database to use' },
    { s => 'host|h=s',     d => 'Connect to host' },
    { s => 'help',         d => 'Show this help message' },
@@ -52,6 +53,7 @@ my @opt_spec = (
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
+   c => 20,
    s => 500,
    n => 'test1',
    w => '/usr/share/dict/words'
@@ -228,7 +230,7 @@ sub rand_date {
 }
 
 sub generate_random_table {
-   my $num_cols = int(5 + rand() * 20);
+   my $num_cols = int(2 + rand() * $opts{c});
    my $pk = 1 + int(rand() * 3);
    my @cols;
    foreach my $i ( 1 .. $num_cols ) {
