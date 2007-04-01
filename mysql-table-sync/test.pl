@@ -121,11 +121,12 @@ while ( $i++ < $opts{t} ) {
       die "Tables aren't different before starting: $bad.";
    }
    my $algorithm = $opts{a} || (rand() < .5) ? ' topdown' : 'bottomup';
+   `mysqldump --tables test test1 > save.sql`;
    `mysql-table-sync -1 -a $algorithm -x test2 test3`;
    my $good = `mysql-table-checksum -t test1,test2,test3 localhost`;
    my @good = $good =~ m/([a-f0-9]{32})/g;
    if ( !$good || unique(@good) > 1 ) {
-      die "Tables are different after fixing: $good";
+      die "Tables are different after fixing\n$good";
    }
    print "Test $i with $algorithm OK @good\n";
 }
