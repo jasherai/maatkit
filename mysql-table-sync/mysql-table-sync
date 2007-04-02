@@ -35,6 +35,13 @@ $OUTPUT_AUTOFLUSH = 1;
 
 my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
 
+# TODO: another algorithm: binary search for where the corruption starts, say a
+# chunk at a time of 10000 from start/end of table, then when a different chunk
+# is found, binary search within that chunk to find the first row and report it.
+# TODO: grouping strategy: first chars of char column.
+# TODO: grouping strategy: number modulo const (between is more easily optimized)
+# TODO: save memory by using more efficient bind methods from DBI.
+
 # ############################################################################
 # Get configuration information.
 # ############################################################################
@@ -157,11 +164,6 @@ USAGE
 # ############################################################################
 # Lookup tables
 # ############################################################################
-# TODO: another algorithm: binary search for where the corruption starts, say a
-# chunk at a time of 10000 from start/end of table, then when a different chunk
-# is found, binary search within that chunk to find the first row and report it.
-# TODO: grouping strategy: first chars of char column.
-# TODO: grouping strategy: number modulo const (between is more easily optimized)
 
 my %code_for_algorithm = (
    topdown  => \&topdown,
