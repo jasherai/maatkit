@@ -47,6 +47,7 @@ my @opt_spec = (
    { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
    { s => 'columns|c=s',      d => 'Comma-separated column list' },
    { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
+   { s => 'deleteinsert|l',   d => 'Convert all UPDATES to DELETE and INSERT' },
    { s => 'queries|q',        d => 'Make debugging output executable SQL' },
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
    { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
@@ -395,9 +396,15 @@ sub topdown {
       $dest->{dbh}->commit;
    }
 
-   td_handle_data_change('INSERT', @to_insert);
    td_handle_data_change('DELETE', @to_delete);
-   td_handle_data_change('UPDATE', @to_update);
+   td_handle_data_change('INSERT', @to_insert);
+   if ( $opts{l} ) {
+      td_handle_data_change('DELETE', @to_update);
+      td_handle_data_change('INSERT', @to_update);
+   }
+   else {
+      td_handle_data_change('UPDATE', @to_update);
+   }
 }
 
 # TODO: group together UPDATE/DELETE whose first key is the same, e.g.
@@ -668,6 +675,8 @@ sub bu_build_tree {
 # $levels (see bu_build_tree).  Level 0 has a different structure.  It has
 # primary keys instead of a __par pointer.
 # Returns true if it finished working.
+# TODO: there is a lot of shared code here with topdown, maybe factor out the
+# FULL OUTER JOIN-ish code into a subroutine?
 sub bu_merge_tree {
    my ($dest, $source, $levels) = @_;
 
@@ -818,11 +827,17 @@ sub bu_merge_tree {
       $level--;
    } while ( $level >= 0 && @bad_parents );
 
-   bu_handle_data_change('UPDATE', @to_update);
-   bu_handle_data_change('INSERT', @to_insert);
    bu_handle_data_change('DELETE', @to_delete);
-   bu_handle_bulk_change('INSERT', $levels, $source, @bulk_insert);
+   bu_handle_data_change('INSERT', @to_insert);
    bu_handle_bulk_change('DELETE', $levels, $dest,   @bulk_delete);
+   bu_handle_bulk_change('INSERT', $levels, $source, @bulk_insert);
+   if ( $opts{l} ) {
+      bu_handle_data_change('DELETE', @to_update);
+      bu_handle_data_change('INSERT', @to_update);
+   }
+   else {
+      bu_handle_data_change('UPDATE', @to_update);
+   }
 
    return 1; # Finished the work.
 }
@@ -1025,7 +1040,14 @@ sub handle_data_change {
             print STDOUT $query, ";\n";
          }
          if ( $opts{x} ) {
-            $dbh->do($query);
+            eval { $dbh->do($query) };
+            if ( $EVAL_ERROR ) {
+               if ( $EVAL_ERROR =~ m/Duplicate entry/ ) {
+                  die "Your tables probably have some differences "
+                     . "that cannot be resolved with UPDATE statements.  "
+                     . "Re-run the tool with --deleteinsert to proceed.\n";
+               }
+            }
          }
       }
    }
