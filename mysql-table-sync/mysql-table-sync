@@ -1595,6 +1595,22 @@ You can also use the --onlydo option to only issue some kinds of statements --
 for example, suppose you want to run the INSERT and UPDATE statements but not
 the DELETE.
 
+There are cases where no combination of UPDATE statements can resolve
+differences without violating some unique key.  For example, suppose there's a
+primary key on column a and a unique key on column b.  Then there is no way to
+sync these two tables with straightforward UPDATE statements:
+
+ +---+---+  +---+---+
+ | a | b |  | a | b |
+ +---+---+  +---+---+
+ | 1 | 2 |  | 1 | 1 | 
+ | 2 | 1 |  | 2 | 2 | 
+ +---+---+  +---+---+
+
+If you run into this, you can use the --deleteinsert option to convert all
+UPDATE statements into DELETE followed by INSERT.  The tool orders statements
+such that this will succeed.
+
 =head1 GUARANTEEING CONSISTENCY
 
 I wrote this tool to synchronize tables live, without stopping the servers
