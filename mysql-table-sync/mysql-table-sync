@@ -40,6 +40,8 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # is found, binary search within that chunk to find the first row and report it.
 # TODO: grouping strategy: first chars of char column.
 # TODO: grouping strategy: number modulo const (between is more easily optimized)
+# TODO: for safety's sake, don't use REPLACE if there's more than one unique
+# key.
 # TODO: save memory by using more efficient bind methods from DBI.
 # TODO: use trace methods to print out SQL executed.
 # TODO: allow different collations on source and dest.
