@@ -1675,6 +1675,8 @@ You can also use the --onlydo option to only issue some kinds of statements --
 for example, suppose you want to run the INSERT and UPDATE statements but not
 the DELETE.
 
+=head1 SPECIAL CASES
+
 There are cases where no combination of UPDATE statements can resolve
 differences without violating some unique key.  For example, suppose there's a
 primary key on column a and a unique key on column b.  Then there is no way to
@@ -1690,6 +1692,21 @@ sync these two tables with straightforward UPDATE statements:
 If you run into this, you can use the --deleteinsert option to convert all
 UPDATE statements into DELETE followed by INSERT.  The tool orders statements
 such that this will succeed.
+
+If necessary, you can use the --singletxn option to make sure sychronizing
+either succeeds or rolls back entirely.  Of course this will have no effect on
+non-transactional tables such as MyISAM.  Running the entire sync in a single
+transaction causes extra overhead.
+
+Another special case is comparing strings between servers.  If your primary key
+or drilldown columns are character data, the tool will potentially issue queries
+to the source server when it doesn't think it can reliably compare two strings
+exactly the same way MySQL does.  The collation used is the column's collation
+on the source server, so if the character set or collation differ between the
+tables being synced, it's hard to say what the results will be.  This feature
+will cause more network traffic between the servers as it compares the tables.
+This is a feature I don't have fully baked yet.  You can disable it with the
+--nocollate option.
 
 =head1 GUARANTEEING CONSISTENCY
 
@@ -1725,6 +1742,9 @@ locks.  Also by default, if the wait timeout is exceeded or another
 MASTER_POS_WAIT error occurs, the program will exit with an error, but you can
 use the --timeoutok option to control this.
 
+You can use the --singletxn option to make the entire sync run in one
+transaction.
+
 =head1 OUTPUT
 
 Output varies greatly depending on the command-line options you specify.
@@ -1736,11 +1756,11 @@ If you specify the --print option, the queries needed to sync the destination
 table with the source table will be printed to STDOUT.
 
 If you specify the --debug option, the queries needed to discover the
-differences between source and destination will be printed to STDOUT,
-commented out.  You can use this to see how many queries are executed for a
-given strategy, or whatever other debugging you want.  If you remove the
-comment characters, you can also replay the process of finding the
-differences.
+differences between source and destination will be printed to STDOUT, commented
+out.  You can use this to see how many queries are executed for a given
+strategy, or whatever other debugging you want.  If you remove the comment
+characters with the --queries option, you can also replay the process of finding
+the differences.
 
 If you specify the --verbose option, you'll see information about the process of
 discovering the differences between the tables.  The output is quite different
