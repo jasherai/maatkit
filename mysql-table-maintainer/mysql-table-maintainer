@@ -375,7 +375,7 @@ sub make_analyze_query {
 
    if ( $engine
       && ( $engine =~ m/^(?:MyISAM|BDB)$/
-         || ( $engine eq 'InnoDB' && version_ge('4.0.13'))))
+         || ( $engine eq 'InnoDB' && version_ge($dbh, '4.0.13'))))
    {
       my $binlog = make_binlog_option();
       my $query = "ANALYZE $binlog TABLE `$database`.`$table`";
@@ -391,9 +391,9 @@ sub make_check_query {
    if ( $engine
       && ( $engine =~ m/^(?:MyISAM|InnoDB)$/
          || $engine eq 'NULL'
-         || ( $engine eq 'VIEW'    && version_ge('5.0.2'))
-         || ( $engine eq 'ARCHIVE' && version_ge('5.0.16'))
-         || ( $engine eq 'CSV'     && version_ge('5.1.9'))
+         || ( $engine eq 'VIEW'    && version_ge($dbh, '5.0.2'))
+         || ( $engine eq 'ARCHIVE' && version_ge($dbh, '5.0.16'))
+         || ( $engine eq 'CSV'     && version_ge($dbh, '5.1.9'))
       ))
    {
       my $check_options = $opts{checkopts} || '';
@@ -409,7 +409,7 @@ sub make_optimize_query {
 
    if ( $engine
       && ( $engine =~ m/^(?:MyISAM|BDB|InnoDB)$/
-         || ( $engine eq 'ARCHIVE' && version_ge('5.0.16'))))
+         || ( $engine eq 'ARCHIVE' && version_ge($dbh, '5.0.16'))))
    {
       my $binlog = make_binlog_option();
       my $query = "OPTIMIZE $binlog TABLE `$database`.`$table`";
@@ -422,7 +422,7 @@ sub make_repair_query {
 
    if ( $engine
       && ( $engine =~ m/^(?:NULL|MyISAM|ARCHIVE)$/
-         || ( $engine eq 'CSV' && version_ge('5.1.9'))))
+         || ( $engine eq 'CSV' && version_ge($dbh, '5.1.9'))))
    {
       my $binlog = make_binlog_option();
       my $repair_opts = $opts{repairopts} || '';
@@ -432,17 +432,14 @@ sub make_repair_query {
 }
 
 sub make_binlog_option {
-   return !$opts{w} && version_ge('4.1.1') ? 'NO_WRITE_TO_BINLOG' : '';
+   return !$opts{w} && version_ge($dbh, '4.1.1') ? 'NO_WRITE_TO_BINLOG' : '';
 }
 
 # Compares versions like 5.0.27 and 4.1.15-standard-log
 sub version_ge {
-   my ( $target ) = @_;
-   my @version = $dbh->{mysql_serverinfo} =~ m/(\d+)/g;
-   my @target  = $target  =~ m/(\d+)/g;
-   return $version[0] >= $target[0]
-       && $version[1] >= $target[1]
-       && $version[2] >= $target[2];
+   my ( $dbh, $target ) = @_;
+   my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
+   return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
 }
 
 # All output has to be prefixed with SQL comments so the output can be piped
