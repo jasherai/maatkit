@@ -36,7 +36,10 @@ $OUTPUT_AUTOFLUSH = 1;
 my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
 
 # TODO: warn if the MySQL server versions don't match.  Figure out in what
-# version concat_ws changed behavior.
+# version concat_ws changed behavior.  (It was MySQL 4.0.14, and it skips empty
+# strings, so
+# CONCAT_WS(',', 'a', '')
+# will produce either 'a,' or just 'a'
 # TODO: CRC32 can be used for checksums.
 # TODO: another algorithm: binary search for where the corruption starts, say a
 # chunk at a time of 10000 from start/end of table, then when a different chunk
