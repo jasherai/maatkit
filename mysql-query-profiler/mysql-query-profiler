@@ -58,6 +58,9 @@ my @opt_spec = (
    { s => 'verify|r',      d => 'Verify that nothing else is accessing the server' },
 );
 
+# TODO: allow to read commands from a batch file and execute them.  Allow to
+# read from STDIN or multiple files on cmdline.
+
 my %opts = (
    n => '',
    v => 0,
