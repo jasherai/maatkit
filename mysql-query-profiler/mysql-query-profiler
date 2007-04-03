@@ -58,9 +58,6 @@ my @opt_spec = (
    { s => 'verify|r',      d => 'Verify that nothing else is accessing the server' },
 );
 
-# TODO: allow to read commands from a batch file and execute them.  Allow to
-# read from STDIN or multiple files on cmdline.
-
 my %opts = (
    n => '',
    v => 0,
@@ -85,7 +82,7 @@ $opts{n} = [ split(/,/, $opts{n} || '' ) ];
 $opts{v} = min(2, $opts{v});
 
 if ( $opts{help} || (!@ARGV && !$opts{e} )) {
-   print "Usage: $PROGRAM_NAME <options> [FILE]\n\n";
+   print "Usage: $PROGRAM_NAME <options> [FILE]...\n\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
@@ -93,8 +90,14 @@ if ( $opts{help} || (!@ARGV && !$opts{e} )) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME prints statistics about MySQL server load.
-If possible, database options are read from your .my.cnf file.
+$PROGRAM_NAME reads and executes queries, and prints statistics about MySQL
+server load.  If possible, database options are read from your .my.cnf file.
+
+If FILE is given, queries are read and executed from the file(s).  With no FILE,
+or when FILE is -, read standard input.  If --external is specified, lines in
+FILE are executed by the shell.  You must specify - if no FILE and you want
+--external mode to read and execute from standard input.
+
 For more details, please read the documentation:
 
    perldoc $PROGRAM_NAME
@@ -257,35 +260,65 @@ my @queries;
 # ############################################################################
 my $have_flushed_tables = 0;
 
-if ( $opts{e} ) {
-   flush_tables($have_flushed_tables++);
-   my $start = time();
-   print "Press <ENTER> when the external program is finished";
-   <STDIN>;
-   my $end = time();
-   # Hack the @queries variable by stuffing the external program's data in as a
-   # hash reference just as though it had been a query in a file.
-   push @queries, {
-      text   => '[External program]',
-      start  => $start,
-      end    => $end,
-      status => get_status_info($dbh),
-   };
+if ( $opts{e} ) { # An external process will issue queries
+   if ( !@ARGV ) { # Don't read files or STDIN
+      flush_tables($have_flushed_tables++);
+      my $start = time();
+      print "Press <ENTER> when the external program is finished";
+      <STDIN>;
+      my $end = time();
+      # Hack the @queries variable by stuffing the external program's data in as a
+      # hash reference just as though it had been a query in a file.
+      push @queries, {
+         text   => '[External program]',
+         start  => $start,
+         end    => $end,
+         status => get_status_info($dbh),
+      };
+   }
+   else {
+      while ( my $line = <> ) { # Read from STDIN, or files named on cmdline
+         chomp $line;
+         next unless $line;
+
+         flush_tables($have_flushed_tables++);
+         my $start = time();
+         if ( $opts{v} ) {
+            print STDERR `$line`;
+         }
+         else {
+            `$line`;
+         }
+         my $end = time();
+         # Hack the @queries variable by stuffing the external program's data in as a
+         # hash reference just as though it had been a query in a file.
+         push @queries, {
+            text   => $line,
+            start  => $start,
+            end    => $end,
+            status => get_status_info($dbh),
+         };
+      }
+   }
 }
 else {
-   # Get the file and split it into individual queries.  Only profile queries
-   # separately if there is more than one.
-   my $file_contents = get_file( $ARGV[0] );
-   @queries          = map { s/;?\s+$//g; { text => $_ } } split( /;\s*?\n\s*?\n/, $file_contents );
+   local $INPUT_RECORD_SEPARATOR = ''; # read a paragraph at a time
+   while ( my $line = <> ) { # Read from STDIN, or files named on cmdline
+      chomp $line;
+      next unless $line;
+      $line =~ s/;\s*\z//xms; # Remove trailing whitespace/semicolon
 
-   foreach my $query ( @queries ) {
       flush_tables($have_flushed_tables++);
-      $query->{start}  = time();
+      my $query = {
+         text  => $line,
+         start => time(),
+      };
       # It appears to me that this actually fetches all the data over the wire,
       # which is what I want for purposes of counting bytes in and bytes out.
-      $dbh->do( $query->{text} );
+      $dbh->do( $line );
       $query->{end}    = time();
       $query->{status} = get_status_info($dbh);
+      push @queries, $query;
    }
 }
 
@@ -706,17 +739,33 @@ $qcost
 
 =head1 NAME
 
-mysql-query-profiler - Execute a batch of SQL statements and print statistics.
+mysql-query-profiler - Execute a batch of SQL statements and print statistics,
+or measure and print statistics on activity caused by other processes.
 
 =head1 SYNOPSIS
+
+You can use mysql-query-profiler to either profile the queries in a file, or
+watch a server and report on the activity another process causes.
 
 Assuming a queries.sql file that contains 6 queries, the following should
 drown you with enough information:
 
  mysql-query-profiler queries.sql
+ cat queries.sql | mysql-query-profiler
  mysql-query-profiler -vv queries.sql
  mysql-query-profiler -v --separate --only 2,5,6 queries.sql
  mysql-query-profiler --tab queries.sql > results.csv
+
+Or, you can just measure what happens in the server, as an impartial
+"third-party observer:"
+
+ mysql-query-profiler --external
+
+Or, you can specify a file containing shell commands to be executed and measured
+the same way:
+
+ mysql-query-profiler --external commands.txt
+ cat commands.txt | mysql-query-profiler --external -
 
 Read HOW TO INTERPRET to learn what it all means.
 
@@ -733,12 +782,20 @@ the --verbose option once or twice.
 
 All command-line arguments are optional, but you must either specify a file
 containing the batch to profile as the last argument, or specify that you're
-profiling an external program with the --external option.
+profiling an external program with the --external option, or provide input to
+STDIN.
 
-If the file contains multiple statements, they must be terminated by
-semicolons and separated by blank lines.  If you don't do that,
-mysql-query-profiler won't be able to split the file into individual queries,
-and MySQL will complain about syntax errors.
+If the file contains multiple statements, they must be separated by blank lines.
+If you don't do that, mysql-query-profiler won't be able to split the file into
+individual queries, and MySQL will complain about syntax errors.
+
+If you specify the --external option, mysql-query-profiler operates as a
+third-party observer instead of running queries itself.  If you don't specify
+any input, it will just pause until you press the Return key, and then report on
+what has happened while it was paused.  If you do specify input, either through
+files or by passing the special filename - (which will make it read from STDIN),
+it executes lines as shell commands, measuring what happens in the MyQSL server
+in the meantime.
 
 If the MySQL server version is before 5.0.2, you should make sure the server
 is completely unused before trying to profile a batch.  Prior to this version,
