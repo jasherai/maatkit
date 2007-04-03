@@ -6,6 +6,7 @@
 # Allow using GROUP_CONCAT
 # Allow to specify separator
 # Allow to use different user/pass on diffeerent servers
+# Warn when server versions differ.
 
 # This program checksums MySQL tables on one or more servers.
 #
