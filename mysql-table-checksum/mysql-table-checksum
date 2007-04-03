@@ -6,7 +6,12 @@
 # Allow using GROUP_CONCAT
 # Allow to specify separator
 # Allow to use different user/pass on diffeerent servers
-# Warn when server versions differ.
+# TODO: warn if the MySQL server versions don't match.  Figure out in what
+# version concat_ws changed behavior.  (It was MySQL 4.0.14, and it skips empty
+# strings, so
+# CONCAT_WS(',', 'a', '')
+# will produce either 'a,' or just 'a'
+# TODO: CRC32 can be used for checksums.
 
 # This program checksums MySQL tables on one or more servers.
 #
