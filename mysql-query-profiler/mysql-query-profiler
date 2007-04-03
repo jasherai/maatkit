@@ -34,6 +34,8 @@ $OUTPUT_AUTOFLUSH = 1;
 
 use constant MAX_ULONG => 4294967295; # 2^32-1
 
+# TODO: print out results as you go?
+
 # ############################################################################
 # Get configuration information.
 # ############################################################################
@@ -283,15 +285,8 @@ if ( $opts{e} ) { # An external process will issue queries
 
          flush_tables($have_flushed_tables++);
          my $start = time();
-         if ( $opts{v} ) {
-            print STDERR `$line`;
-         }
-         else {
-            `$line`;
-         }
+         print `$line`;
          my $end = time();
-         # Hack the @queries variable by stuffing the external program's data in as a
-         # hash reference just as though it had been a query in a file.
          push @queries, {
             text   => $line,
             start  => $start,
@@ -299,6 +294,7 @@ if ( $opts{e} ) { # An external process will issue queries
             status => get_status_info($dbh),
          };
       }
+      print "__BEGIN__\n";
    }
 }
 else {
@@ -795,7 +791,8 @@ any input, it will just pause until you press the Return key, and then report on
 what has happened while it was paused.  If you do specify input, either through
 files or by passing the special filename - (which will make it read from STDIN),
 it executes lines as shell commands, measuring what happens in the MyQSL server
-in the meantime.
+in the meantime.  The shell command's output is printed to STDOUT and terminated
+with __BEGIN__, after which the profiling output is printed.
 
 If the MySQL server version is before 5.0.2, you should make sure the server
 is completely unused before trying to profile a batch.  Prior to this version,
