@@ -53,6 +53,7 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: allow different collations on source and dest.
 # TODO: turn off foreign key checks.
 # TODO: allow to disable keys on destination.
+# TODO: autodetect index violation and rewrite all UPD to DEL/INS
 
 # ############################################################################
 # Get configuration information.
