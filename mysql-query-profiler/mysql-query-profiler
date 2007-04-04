@@ -561,6 +561,8 @@ $ch->{Sort_range}
 $ch->{Sort_merge_passes}
      Table scans                   @##########
 $ch->{Sort_scan}
+     Potential filesorts           @##########
+min($ch->{Sort_scan}, $ch->{Created_tmp_tables})
 .
 
 format QCACHE =
@@ -941,6 +943,11 @@ This section shows you information about the batch's table and index-level
 operations (as opposed to row-level operations, which will be in the next
 section).  The "Table locks acquired" and "Temp files" values are unprotected,
 but everything else in this section is protected.
+
+The "Potential filesorts" value is calculated as the number of times a query had
+both a scan sort (Sort_scan) and created a temporary table (Created_tmp_tables).
+There is no Sort_filesort or similar status value, so it's a best guess at
+whether a query did a filesort.  It should be fairly accurate.
 
 If you gave the --allowcache argument, you'll see statistics on the query
 cache.  These are unprotected.
