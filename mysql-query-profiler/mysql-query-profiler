@@ -504,7 +504,7 @@ format SUMMARY =
 |                         SUMMARY                          |
 +----------------------------------------------------------+
 
-__ Overall stats ___________________________________________
+__ Overall stats _______________________ Value _____________
    Total elapsed time              @##########.###
 $qtime_total
    Questions                       @##########
@@ -537,7 +537,7 @@ $bytes_out_total
 
 format TBL_IDX =
 
-__ Table and index accesses ________________________________
+__ Table and index accesses ____________ Value _____________
    Table locks acquired            @##########
 $ch->{Table_locks_immediate}
    Table scans                     @##########
@@ -713,7 +713,7 @@ sprintf("QUERY %d (%.4f sec)", $which_query, $query_time)
 ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<...
 $query_text
 
-__ Overall stats ___________________________________________
+__ Overall stats _______________________ Value _____________
    Elapsed time                    @##########.###
 $query_time
    Data into server                @##########
