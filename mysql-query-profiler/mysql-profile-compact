@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-profile-compare, a program to take results from
+# This is mysql-profile-compact, a program to take results from
 # mysql-query-profiler and stack them side by side for comparison.
 # 
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
@@ -69,6 +69,7 @@ if ( $opts{help} ) {
    print <<USAGE;
 
 $PROGRAM_NAME stacks query profiler results side by side for easy comparison.
+With no FILE, or when FILE is -, read from standard input.
 
 For more details, please read the documentation:
 
@@ -152,264 +153,11 @@ print join("\n", @report), "\n";
 
 =head1 NAME
 
-mysql-query-profiler - Execute a batch of SQL statements and print statistics,
-or measure and print statistics on activity caused by other processes.
+mysql-profiler-compact - Compact the output from mysql-query-profiler.
 
 =head1 SYNOPSIS
 
-You can use mysql-query-profiler to either profile the queries in a file, or
-watch a server and report on the activity another process causes.
-
-Assuming a queries.sql file that contains 6 queries, the following should
-drown you with enough information:
-
- mysql-query-profiler queries.sql
- cat queries.sql | mysql-query-profiler
- mysql-query-profiler -vv queries.sql
- mysql-query-profiler -v --separate --only 2,5,6 queries.sql
- mysql-query-profiler --tab queries.sql > results.csv
-
-Or, you can just measure what happens in the server, as an impartial
-"third-party observer:"
-
- mysql-query-profiler --external
-
-Or, you can specify a file containing shell commands to be executed and measured
-the same way:
-
- mysql-query-profiler --external commands.txt
- cat commands.txt | mysql-query-profiler --external -
-
-Read HOW TO INTERPRET to learn what it all means.
-
 =head1 DESCRIPTION
-
-mysql-query-profiler reads a file containing one or more SQL
-statements, executes them, and analyzes the output of SHOW STATUS afterwards.
-It then prints statistics about how the batch performed.  For example, it can
-show how many table scans the batch caused, how many page reads, how many
-temporary tables, and so forth.  It can print information about the entire
-batch (default), every query, or only specified queries.  It has three levels
-of verbosity (default is not very verbose), which you can control by specifying
-the --verbose option once or twice.
-
-All command-line arguments are optional, but you must either specify a file
-containing the batch to profile as the last argument, or specify that you're
-profiling an external program with the --external option, or provide input to
-STDIN.
-
-If the file contains multiple statements, they must be separated by blank lines.
-If you don't do that, mysql-query-profiler won't be able to split the file into
-individual queries, and MySQL will complain about syntax errors.
-
-If you specify the --external option, mysql-query-profiler operates as a
-third-party observer instead of running queries itself.  If you don't specify
-any input, it will just pause until you press the Return key, and then report on
-what has happened while it was paused.  If you do specify input, either through
-files or by passing the special filename - (which will make it read from STDIN),
-it executes lines as shell commands, measuring what happens in the MyQSL server
-in the meantime.  The shell command's output is printed to STDOUT and terminated
-with __BEGIN__, after which the profiling output is printed.
-
-If the MySQL server version is before 5.0.2, you should make sure the server
-is completely unused before trying to profile a batch.  Prior to this version,
-SHOW STATUS showed only global status variables, so other queries will
-interfere and produce false results.  The program will try to detect if
-anything did interfere, but there can be no guarantees.
-
-Prior to MySQL 5.0.2, InnoDB status variables are not available, and prior to
-version 5.0.3, InnoDB row lock status variables are not available.
-mysql-query-profiler will omit any output related to these variables if
-they're not available.
-
-For more information about SHOW STATUS, read the relevant section of the MySQL
-manual at
-L<http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html>
-
-If your server's query cache exists and is enabled (query_cache_size > 0), it
-is disabled locally for the batch.  You can change this with the --allowcache
-command-line argument.  If you do allow the queries to be served from the
-cache, you'll see an extra section in the output to show you information about
-how the batch affected the cache (hits, inserts, invalidations).  See
-L<http://dev.mysql.com/doc/refman/5.0/en/query-cache.html> for more
-information about the query cache.
-
-If you want to execute FLUSH TABLES to flush tables to disk and close them,
-use the --flush command-line argument.  The default value of 1 will not flush
-any tables.  2 will flush once before the batch, and 3 will flush before each
-query in the batch.  You need special privileges to execute this.  See
-L<http://dev.mysql.com/doc/refman/5.0/en/flush.html> for more information.
-
-If you don't want to see any InnoDB statistics (for example, you know your
-queries only involve MyISAM tables), give the --noinnodb argument.
-
-By default, the program tries to find and subtract the "cost of observation,"
-i.e. the cost to run SHOW STATUS.  However, if you are not running on a quiet
-server, some statistics will be poisoned by other queries, even in newer
-versions of MySQL.  This can cause strange results, such as a negative number of
-key reads.  If you are seeing this and need to disable calibration, give the
---nocalibrate argument.
-
-If you give the --verify argument, the program will calibrate, then re-calibrate
-and verify that the cost of observation remains constant.  If it changes,
-something else is accessing the server and messing up your measurements.
-
-=head1 HOW TO INTERPRET
-
-=head2 TAB-SEPARATED OUTPUT
-
-If you specify the --tab argument, you will just get the raw output of
-SHOW STATUS in tab-separated format, convenient for opening with a spreadsheet
-program or passing to awk, etc.  This is a less fancy, more bare-bones output
-format for those of you who know what you're about.  This is not the default
-output -- that is discussed later -- but it's so much shorter to describe,
-I'll do it first and get it out of the way.
-
-=over
-
-=item *
-
-Most of the command-line options for controlling verbosity and such are
-ignored in --tab mode.
-
-=item *
-
-The variable names you see in MySQL, such as 'Com_select', are kept --
-there are no euphimisms, so you have to know your MySQL variables.
-
-=item *
-
-The columns are Variable_name, Before, After1...AfterN, Calibration.
-The Variable_name column is just what it sounds like.  Before is the result
-from the first run of SHOW STATUS.  After1, After2, etc are the results of
-running SHOW STATUS after each query in the batch.  Finally, the last column
-is the result of running SHOW STATUS just after the last AfterN column, so you
-can see how much work SHOW STATUS itself causes.
-
-=item *
-
-If you specify -v or -vv, you'll get every variable in the list this program
-tracks.  If not (default) you'll only get variables where there was some
-difference from one column to the next.  This cuts down on the noise.
-
-=back
-
-=head2 NORMAL OUTPUT
-
-If you don't specify --tab, you'll get a report formatted for human
-readability.  This is the default output format.
-
-mysql-query-profiler can output a lot of information, as you've seen if you
-ran the examples in the SYNOPSIS.  What does it all mean?
-
-First, there are two basic groups of information you might see: per-query and
-summary.  If your batch contains only one query, these will be the same and
-you'll only see the summary.  You can recognize the difference by looking for
-centered, all-caps, boxed-in section headers.
-
-Next, the information in each section is grouped into subsections, headed by
-an underlined title.  Each of these sections has varying information in it.
-Which sections you see depends on command-line arguments and your MySQL
-version.  I'll explain each section briefly.  If you really want to know where
-the numbers come from, read
-L<http://dev.mysql.com/doc/refman/5.0/en/server-status-variables.html>.
-
-You need to understand which numbers are insulated from other queries and
-which are not.  This depends on your MySQL version.  Version 5.0.2 introduced
-the concept of session status variables, so you can see information about only
-your own connection.  However, many variables aren't session-ized, so when you
-have MySQL 5.0.2 or greater, you will actually see a mix of session and global
-variables.  That means other queries happening at the same time will pollute
-some of your results.  If you have MySQL versions older than 5.0.2, you won't
-have ANY connection-specific stats, so your results will be polluted by other
-queries no matter what.  Because of the mixture of session and global
-variables, by far the best way to profile is on a completely quiet server
-where nothing else is interfering with your results.
-
-While explaining the results in the sections that follow, I'll refer to a
-value as "protected" if it comes from a session-specific variable and can be
-relied upon to be accurate even on a busy server.  Just keep in mind, if
-you're not using MySQL 5.0.2 or newer, your results will be inaccurate unless
-you're running against a totally quiet server, even if I label it as
-"protected."
-
-=head2 Overall stats
-
-This section shows the overall elapsed time for the query, as measured by
-Perl, and the optimizer cost as reported by MySQL.
-
-If you're viewing separate query statistics, this is all you'll see.  If
-you're looking at a summary, you'll also see a breakdown of the questions the
-queries asked the server.
-
-The execution time is not totally reliable, as it includes network round-trip
-time, Perl's own execution time, and so on.  However, on a low-latency
-network, this should be fairly negligible, giving you a reasonable measure of
-the query's time, especially for queries longer than a few tenths of a second.
-
-The optimizer cost comes from the Last_query_cost variable, and is protected
-from other connections in MySQL 5.0.7 and greater.  It is not available before
-5.0.1.
-
-The total number of questions is not protected, but the breakdown of
-individual question types is, because it comes from the Com_ status variables.
-
-=head2 Table and index accesses
-
-This section shows you information about the batch's table and index-level
-operations (as opposed to row-level operations, which will be in the next
-section).  The "Table locks acquired" and "Temp files" values are unprotected,
-but everything else in this section is protected.
-
-The "Potential filesorts" value is calculated as the number of times a query had
-both a scan sort (Sort_scan) and created a temporary table (Created_tmp_tables).
-There is no Sort_filesort or similar status value, so it's a best guess at
-whether a query did a filesort.  It should be fairly accurate.
-
-If you gave the --allowcache argument, you'll see statistics on the query
-cache.  These are unprotected.
-
-=head2 Row operations
-
-These values are all about the row-level operations your batch caused.  For
-example, how many rows were inserted, updated, or deleted.  You'll also see
-row-level index access statistics, such as how many times the query sought and
-read the next entry in an index.
-
-Depending on your MySQL version, you'll either see one or two columns of
-information in this section.  The one headed "Handler" is all from the
-Handler_ variables, and those statistics are protected.  If your MySQL version
-supports it, you'll also see a column headed "InnoDB," which is unprotected.
-
-=head2 I/O Operations
-
-This section gives information on I/O operations your batch caused, both in
-memory and on disk.  Unless you have MySQL 5.0.2 or greater, you'll only see
-information on the key cache.  Otherwise, you'll see a lot of information on
-InnoDB's I/O operations as well, such as how many times the query was able to
-satisfy a read from the buffer pool and how many times it had to go to the
-disk.
-
-None of the information in this section is protected.
-
-=head2 InnoDB Data Operations
-
-This section only appears when you're querying MySQL 5.0.2 or newer.  None of
-the information is protected.  You'll see statistics about how many pages were
-affected, how many operations took place, and how many bytes were affected.
-
-=head1 CONFIGURATION
-
-No configuration file is needed.  If you specify arguments on the command
-line, they take precedence over other sources.  Otherwise,
-mysql-query-profiler will try to read your MySQL client configuration file
-($HOME/.my.cnf), and if it can't find what it needs to connect to MySQL, will
-prompt you interactively.
-
-=head1 SYSTEM REQUIREMENTS
-
-You need the following Perl modules: Getopt::Long, DBI, DBD::mysql,
-and Time::HiRes.
 
 =head1 LICENSE
 
@@ -430,14 +178,5 @@ these licenses, please issue `man perlartistic' or `man perlgpl'.
 =head1 AUTHOR
 
 Baron Schwartz, baron at xaprb dot com.
-
-=head1 ACKNOWLEDGEMENTS
-
-I was inspired by the wonderful mysqlreport utility available at
-L<http://www.hackmysql.com/>.
-
-Other contributors: Bart van Bragt.
-
-Thanks to all who have helped.
 
 =cut
