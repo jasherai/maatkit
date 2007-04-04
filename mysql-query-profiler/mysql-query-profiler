@@ -34,8 +34,6 @@ $OUTPUT_AUTOFLUSH = 1;
 
 use constant MAX_ULONG => 4294967295; # 2^32-1
 
-# TODO: print out results as you go?
-
 # ############################################################################
 # Get configuration information.
 # ############################################################################
