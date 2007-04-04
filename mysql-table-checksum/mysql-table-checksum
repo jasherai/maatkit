@@ -1,19 +1,6 @@
 #!/usr/bin/perl
 
-# TODO:
-# Is it possible to XOR rows so the result is order-independent?
-# Add a --paranoid flag that'll checksum each column separately
-# Allow using GROUP_CONCAT
-# Allow to specify separator
-# Allow to use different user/pass on diffeerent servers
-# TODO: warn if the MySQL server versions don't match.  Figure out in what
-# version concat_ws changed behavior.  (It was MySQL 4.0.14, and it skips empty
-# strings, so
-# CONCAT_WS(',', 'a', '')
-# will produce either 'a,' or just 'a'
-# TODO: CRC32 can be used for checksums.
-
-# This program checksums MySQL tables on one or more servers.
+# This program efficiently checksums MySQL tables on one or more servers.
 #
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
@@ -44,6 +31,13 @@ our $VERSION = '@VERSION@';
 
 $OUTPUT_AUTOFLUSH = 1;
 
+# TODO:
+# Is it possible to XOR rows so the result is order-independent?
+# Add a --paranoid flag that'll checksum each column separately
+# Allow using GROUP_CONCAT
+# Allow to specify separator
+# Allow to use different user/pass on diffeerent servers
+
 # ############################################################################
 # Get configuration information.
 # ############################################################################
@@ -67,12 +61,20 @@ my @opt_spec = (
    { s => 'tab|b',          d => 'Output separated with tabs' },
    { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
    { s => 'user|u=s',       d => 'User for login if not current user' },
+   { s => 'verify|v!',      d => 'Do not try to verify checksum compatibility' },
    { s => 'wait|w=i',       d => 'How long to do MASTER_POS_WAIT on slaves (implies -kl)' },
    { s => 'where|W=s',      d => 'Only do rows matching this WHERE clause (implies -f SHA1)' },
 );
+
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = ( W => '', r => 1, c => 1 );
+my %opts = (
+   W => '',
+   r => 1,
+   c => 1,
+   v => 1,
+);
+
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
@@ -118,9 +120,8 @@ if ( $opts{help} || !@ARGV ) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME checksums MySQL tables.  If you specify multiple servers, the
-first server is treated as the master, and the rest as slaves of it, for
-purposes of locking and doing MASTER_POS_WAIT.
+$PROGRAM_NAME efficiently checksums MySQL tables.  If you specify multiple
+servers, the first server assumed to be the master.
 
 If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
@@ -147,6 +148,27 @@ my $db_options = {
 my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
 my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
+
+if ( $opts{v} ) {
+   # Verify that CONCAT_WS is compatible across all servers.  On older versions
+   # of MySQL it skips both empty strings and NULL; on newer just NULL.
+   my @verify_sums;
+   foreach my $host ( @hosts ) {
+      my $dbh = get_dbh($host, ($opts{d} ? keys %{$opts{d}} : '' ));
+      my $cks = $dbh->selectall_arrayref("SELECT MD5(CONCAT_WS(',', '1', ''))")->[0]->[0];
+      push @verify_sums, { host => $host, ver => $dbh->{mysql_serverinfo}, sum => $cks };
+   }
+   if ( unique(map { $_->{sum} } @verify_sums ) > 1 ) {
+      my $max = max(map { length($_) } @hosts);
+      die "Not all servers have compatible versions.  Some return different\n"
+         . "checksum values for the same query, and cannot be compared.  This\n"
+         . "behavior changed in MySQL 4.0.14.  Here is info on each host:\n\n"
+         . join("\n",
+            map { sprintf("%-${max}s %-32s %s", @{$_}{qw(host sum ver)}) }
+            { host => 'HOST', sum => 'CHECKSUM', ver => 'VERSION'}, @verify_sums)
+         . "\n\nYou can disable this check with --noverify.\n";
+   }
+}
 
 DATABASE:
 foreach my $database ( @databases ) {
@@ -354,7 +376,7 @@ sub unique {
 
 =head1 NAME
 
-mysql-table-checksum - Print checksums for MySQL tables on one or many servers.
+mysql-table-checksum - Efficiently checksum MySQL tables on one or many servers.
 
 =head1 SYSTEM REQUIREMENTS
 
@@ -534,6 +556,38 @@ The return value of MASTER_POS_WAIT().
 How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 
 =back
+
+=head1 CHECKSUM ALGORITHM
+
+The checksum algorithm varies depending on storage engine and command-line
+options.  You may specify a function with the --function option; otherwise
+mysql-table-checksum uses the built-in CHECKSUM TABLE command for MyISAM, and
+uses a cryptographic hash of all the columns in each row for other storage
+engines.
+
+The cryptographic hash algorithm concatenates all columns together with a
+separator, followed by a bitmap of each nullable column that is NULL
+(necessary because CONCAT_WS() skips NULL columns).  It hashes this value and
+stores it in a user variable.  Each additional row is hashed in the same way,
+and then the result and the user variable are concatenated and re-hashed.  In
+this way the user variable acts as an accumulator for the whole table.
+
+It is theoretically possible for two rows to concatenate to the same thing
+even though the columns have different values.  For example, assuming a
+concatenation separator of #, the following two rows will produce the same
+hash value:
+
+  ab#cde fgh
+  ab     cde#fgh
+
+I will soon add some ways for you to avoid this if you are worried about it.
+
+MySQL versions before 4.0.14 skipped both NULL and empty string values in
+CONCAT_WS().  You cannot compare the checksums of servers with incompatible
+CONCAT_WS() behavior, so mysql-table-checksum verifies all servers behave the
+same way.  You can disable this (for example, you might be using only MyISAM
+tables, so you don't need the cryptographic hash and CONCAT_WS() algorithm)
+with the --noverify option.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
