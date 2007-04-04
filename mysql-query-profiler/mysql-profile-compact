@@ -40,10 +40,16 @@ use constant MAX_ULONG => 4294967295; # 2^32-1
 # ############################################################################
 
 my @opt_spec = (
+   { s => 'help',        d => 'Show help text' },
+   { s => 'queries|q=s', d => 'Only do these queries (e.g. 2,4,6)' },
+   { s => 'mode|m=s',    d => 'Mode: QUERY or SUMMARY' },
+   { s => 'headers|h=i', d => 'Reprint headers every N queries' },
 );
 
 my %opts = (
+   h => 2000,
 );
+
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
@@ -58,6 +64,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+# Post-post-process...
+if ( $opts{q} ) {
+   $opts{q} = { map { $_ => 1 } $opts{q} =~ m/(\d+)/g };
+}
 
 if ( $opts{help} ) {
    print "Usage: $PROGRAM_NAME <options>... [FILE]...\n\n";
@@ -84,12 +95,14 @@ USAGE
 # ############################################################################
 
 my @report;
-my $q = 0; # query
-my $m = ''; # mode: start, query, body
-my $l = 0; # line number
-my $n = 0; # width of normal text
-my $c = 100; # where to cut off the text
-my $h = 0; # how many chars to cut
+my @header;
+my $query = 0; # query
+my $mode = ''; # mode: start, query, body
+my $lnum = 0; # line number
+my $tw = 0; # width of normal text
+my $left = 100; # where to cut off the text
+my $right = 0; # how many chars to cut
+my $seen = 0;
 
 LINE:
 while ( my $line = <> ) {
@@ -97,53 +110,74 @@ while ( my $line = <> ) {
    next unless $line;
 
    if ( $line =~ m/---/ ) {
-      $m = $m eq 'b' ? 's'
-         : $m eq ''  ? 's'
-         :             'q';
+      $mode = $mode eq 'b' ? 's'
+            : $mode eq ''  ? 's'
+            :             'q';
       next LINE;
    }
 
-   if ( $m eq 's' && $line =~ m/QUERY (\d+)/ ) {
-      $q = $1;
-      if ( $q == 2 ) {
+   if ( $mode eq 's' && $line =~ m/(SUMMARY|QUERY)(?: (\d+))?/ ) {
+      $opts{m} ||= $1;
+
+      if ( ( $opts{m} ne $1 ) || ($2 && $opts{q} && !$opts{q}->{$2}) ) {
+         $mode = '' if $opts{m} ne $1;  # Skip until next header
+         next LINE;
+      }
+      $query = $2;
+
+      if ( $seen++ == 1 ) {
          # Normalize report, and figure out where to 'cut' all subsequent reports.
-         $n = max(map { length($_) } @report);
+         $tw = max(map { length($_) } @report);
          @report = map {
-            $c = $_ =~ m/^(\D+)\d/         ? min(length($1), $c)
-               : $_ =~ m/^(_[^_]+_*?)__ / ? min(length($1), $c)
-               :                             $c;
-            sprintf("%-${n}s", $_);
+            $left = $_ =~ m/^(\D+)\d/        ? min(length($1), $left)
+                  : $_ =~ m/^(__[^_]+_*?)_ / ? min(length($1), $left)
+                  :                            $left;
+            sprintf("%-${tw}s", $_);
          } @report;
-         $h = $n - $c;
-         # die join("\n", map{substr($_,$c)}@report), "\n";
+         $right = $tw - $left;
+      }
+
+
+      if ( $seen == 1 || ($seen - 1 ) % $opts{h} == 0 ) {
+         push @header, sprintf("%-${tw}s", "$1 $query");
+      }
+      else {
+         push @header, sprintf("%-${right}s", "$1 $query");
       }
       next LINE;
    }
 
-   if ( $m eq 'q' && $line =~ m/__ Overall/ ) {
-      $m = 'b';
-      $l = 0;
+   if ( $mode eq 'q' && $line =~ m/__ Overall/ ) {
+      $mode = 'b';
+      $lnum = 0;
       # next LINE; This line needs to be processed, don't skip.
    }
 
-   if ( $m eq 'b' ) {
-      if ( $q == 1 ) { # First report: build labels
+   if ( $mode eq 'b' ) {
+      if ( $seen == 1 ) {    # First report: build labels
          push @report, $line;
       }
-      elsif($l < @report) {# Subsequent reports: tack onto right
-         $line =~ s/^.{$h}//; # Chop the start
-         $line =~ s/^([ a-zA-Z]+)(?=__)/'_' x length($1)/e; # Snip leftovers in headings
-         $line =~ s/^_(.*?[a-zA-Z])$/ $1/; # Add a space to right of prev heading
-         $line =~ s/(\D*)(?=\d)/(' ' x length($1))/e; # Zap non-digits
-         $line =~ s/^ *([ A-Za-z]+) *$/(' ' x length($1))/e; # Blank out sub-headings
-         $report[$l] .= sprintf("%-${h}s", $line);
+      elsif ( $lnum < @report ) {    # Subsequent reports: tack onto right
+         if ( ($seen - 1 ) % $opts{h} == 0 ) {
+            $report[$lnum] .= sprintf( " %${tw}s", $line );
+         }
+         else {
+            $line =~ s/^.{$left}//;                                # Chop the start
+            $line =~ s/^([ a-zA-Z]+)(?=__)/'_' x length($1)/e;     # Snip leftovers in headings
+            $line =~ s/(\D*)(?=\d)/(' ' x length($1))/e;           # Zap non-digits
+            $line =~ s/^ *([ A-Za-z]+) *$/(' ' x length($1))/e;    # Blank out sub-headings
+            $report[$lnum] .= sprintf( " %-${right}s", $line );
+         }
       }
-      $l++;
+      $lnum++;
    }
 
 }
 
-print join("\n", @report), "\n";
+# Must fix up the first header, because it was pushed onto the array before $tw
+# was known.  Plus I want it aligned a bit differently.
+$header[0] = sprintf("%-${tw}s", (' ' x $left) . $header[0]);
+print join(' ', @header), "\n", join("\n", @report), "\n";
 
 # ############################################################################
 # Perldoc
