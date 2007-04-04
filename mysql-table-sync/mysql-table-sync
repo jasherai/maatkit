@@ -322,6 +322,9 @@ sub topdown {
       my ($sr, $dr);       # Source row, dest row
       my %this_level = ( rows => 0, cnt => 0 );
 
+      # TODO: keep track of what the last change was, and accumulate adjacent
+      # INSERT and UPDATE statements into IN() lists as I go.
+
       # The statements fetch in order, so use a 'merge' algorithm of advancing
       # after rows match.  This is essentially a FULL OUTER JOIN.
       MERGE:
