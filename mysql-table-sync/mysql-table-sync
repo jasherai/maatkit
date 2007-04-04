@@ -51,6 +51,7 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: save memory by using more efficient bind methods from DBI.
 # TODO: use trace methods to print out SQL executed.
 # TODO: allow different collations on source and dest.
+# TODO: turn off foreign key checks.
 # TODO: allow to disable keys on destination.
 
 # ############################################################################
