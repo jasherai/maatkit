@@ -3,6 +3,19 @@ more details.
 
 Changelog:
 
+2007-04-05: version 0.9.1
+
+   * Documentation.
+   * Fix order of drilldown groupings in topdown algorithm.
+   * Fix logarithmic math for bottomup algorithm (determining size from level).
+   * Add --queries option.  Add SQL comments to some queries.
+   * Add --singletxn option.
+   * Fix key comparison to match MySQL's sort order.
+   * Re-order statements to DELETE, UPDATE, INSERT.
+   * Add --deleteinsert option.
+   * Verify CONCAT_WS is compatible on both servers.
+   * Add test script.
+
 2007-03-25: version 0.9.0
 
    * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.
