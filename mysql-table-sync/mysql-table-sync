@@ -36,11 +36,6 @@ $OUTPUT_AUTOFLUSH = 1;
 my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
 
 # TODO: write a helper to analyze indexes and suggest a drilldown strategy.
-# TODO: warn if the MySQL server versions don't match.  Figure out in what
-# version concat_ws changed behavior.  (It was MySQL 4.0.14, and it skips empty
-# strings, so
-# CONCAT_WS(',', 'a', '')
-# will produce either 'a,' or just 'a'
 # TODO: CRC32 can be used for checksums.
 # TODO: another algorithm: binary search for where the corruption starts, say a
 # chunk at a time of 10000 from start/end of table, then when a different chunk
@@ -51,10 +46,10 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # key.
 # TODO: save memory by using more efficient bind methods from DBI.
 # TODO: use trace methods to print out SQL executed.
-# TODO: allow different collations on source and dest.
 # TODO: turn off foreign key checks.
 # TODO: allow to disable keys on destination.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
+# TODO: add --where option.
 
 # ############################################################################
 # Get configuration information.
@@ -89,6 +84,7 @@ my @opt_spec = (
    { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm (default: no)' },
    { s => 'timeoutok|t',      d => 'Keep going if --wait fails' },
    { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times' },
+   { s => 'verify|V!',        d => 'Verify checksum compatibility across servers (default)' },
    { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
 );
 
@@ -109,6 +105,7 @@ my %opts = (
    U => 1,
    A => 1,
    v => 0,
+   V => 1,
    1 => 0,
    O => 1,
 );
@@ -204,6 +201,23 @@ foreach my $table ( $source, $dest ) {
       ( $table->{D}, $table->{t} ));
    $table->{info} = get_tbl_struct($table);
    $table->{cols} = col_list(@{$table->{info}->{cols}});
+}
+
+if ( $opts{V} ) {
+   # Verify that CONCAT_WS is compatible across all servers.  On older versions
+   # of MySQL it skips both empty strings and NULL; on newer just NULL.
+   my @verify_sums;
+   foreach my $host ( $source, $dest ) {
+      my $cks = $host->{dbh}->selectall_arrayref("SELECT MD5(CONCAT_WS(',', '1', ''))")->[0]->[0];
+      push @verify_sums, { ver => $host->{dbh}->{mysql_serverinfo}, sum => $cks };
+   }
+   if ( unique(map { $_->{sum} } @verify_sums ) > 1 ) {
+      die "The servers have incompatible versions.  They return different\n"
+         . "checksum values for the same query, and cannot be compared.  This\n"
+         . "behavior changed in MySQL 4.0.14.  Here is info on each host:\n\n"
+         . join("\n", map { "$_->{sum}    $_->{ver}" } @verify_sums)
+         . "\n\nYou can disable this check with --noverify.\n";
+   }
 }
 
 # User wants us to lock for consistency.  But only lock on source initially;
