@@ -61,7 +61,7 @@ my @opt_spec = (
    { s => 'tab|b',          d => 'Output separated with tabs' },
    { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
    { s => 'user|u=s',       d => 'User for login if not current user' },
-   { s => 'verify|v!',      d => 'Do not try to verify checksum compatibility' },
+   { s => 'verify|v!',      d => 'Verify checksum compatibility across servers (default)' },
    { s => 'wait|w=i',       d => 'How long to do MASTER_POS_WAIT on slaves (implies -kl)' },
    { s => 'where|W=s',      d => 'Only do rows matching this WHERE clause (implies -f SHA1)' },
 );
