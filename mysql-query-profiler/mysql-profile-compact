@@ -33,8 +33,6 @@ our $VERSION = '@VERSION@';
 
 $OUTPUT_AUTOFLUSH = 1;
 
-use constant MAX_ULONG => 4294967295; # 2^32-1
-
 # ############################################################################
 # Get configuration information.
 # ############################################################################
@@ -42,7 +40,7 @@ use constant MAX_ULONG => 4294967295; # 2^32-1
 my @opt_spec = (
    { s => 'help',        d => 'Show help text' },
    { s => 'queries|q=s', d => 'Only do these queries (e.g. 2,4,6)' },
-   { s => 'mode|m=s',    d => 'Mode: QUERY or SUMMARY' },
+   { s => 'mode|m=s',    d => 'Mode: what type of reports to process' },
    { s => 'headers|h=i', d => 'Reprint headers every N queries' },
 );
 
@@ -96,13 +94,13 @@ USAGE
 
 my @report;
 my @header;
-my $query = 0; # query
-my $mode = ''; # mode: start, query, body
-my $lnum = 0; # line number
-my $tw = 0; # width of normal text
-my $left = 100; # where to cut off the text
-my $right = 0; # how many chars to cut
-my $seen = 0;
+my $query = 0;      # query
+my $mode  = '';     # mode: start, query, body
+my $lnum  = 0;      # line number
+my $tw    = 0;      # width of normal text
+my $left  = 100;    # where to cut off the text
+my $right = 0;      # how many chars to cut
+my $seen  = 0;
 
 LINE:
 while ( my $line = <> ) {
@@ -112,11 +110,11 @@ while ( my $line = <> ) {
    if ( $line =~ m/---/ ) {
       $mode = $mode eq 'b' ? 's'
             : $mode eq ''  ? 's'
-            :             'q';
+            :                'q';
       next LINE;
    }
 
-   if ( $mode eq 's' && $line =~ m/(SUMMARY|QUERY)(?: (\d+))?/ ) {
+   if ( $mode eq 's' && $line =~ m/(EXTERNAL|SUMMARY|QUERY)(?: (\d+))?/ ) {
       $opts{m} ||= $1;
 
       if ( ( $opts{m} ne $1 ) || ($2 && $opts{q} && !$opts{q}->{$2}) ) {
@@ -227,7 +225,8 @@ with a command-line option like -q 4,8,12,16,20 to view every 4th query.
 If the first profile it sees is labeled QUERY X, it will only look at QUERY
 profiles from then on.  The same holds for SUMMARY profiles.  This is because
 there are different numbers of lines in QUERY and SUMMARY profiles.  You can
-specify which kind of profile result you want to process.
+specify which kind of profile result you want to process.  See
+mysql-query-profiler for the full list of types.
 
 =head1 LICENSE
 
