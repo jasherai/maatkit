@@ -172,6 +172,7 @@ my $query_time         = 0;
 my $query_text         = '';
 my $qcache_inval       = 0;
 my $qcache_inval_total = 0;
+my $hdr_type           = '';
 
 # ############################################################################
 # Get a baseline for how much SHOW STATUS costs.
@@ -398,7 +399,8 @@ else {
       {
          $qcost        = $after->{Last_query_cost};
          ( $query_text = $query->{text} ) =~ s/\s+/ /g;
-         $FORMAT_NAME  = 'QUERY';
+         $FORMAT_NAME  = $opts{e} ? 'SUMMARY'  : 'QUERY';
+         $hdr_type     = $opts{e} ? 'EXTERNAL' : 'QUERY';
          write;
          foreach my $format_name ( @{$formats_for->{$opts{v}}}) {
             $FORMAT_NAME = $format_name;
@@ -501,7 +503,8 @@ sub get_file {
 format SUMMARY =
 
 +----------------------------------------------------------+
-|                         SUMMARY                          |
+| @||||||||||||||||||||||||||||||||||||||||||||||||||||||| |
+sprintf("$hdr_type %d (%.4f sec)", $which_query, $query_time)
 +----------------------------------------------------------+
 
 __ Overall stats _______________________ Value _____________
@@ -888,7 +891,9 @@ ran the examples in the SYNOPSIS.  What does it all mean?
 First, there are two basic groups of information you might see: per-query and
 summary.  If your batch contains only one query, these will be the same and
 you'll only see the summary.  You can recognize the difference by looking for
-centered, all-caps, boxed-in section headers.
+centered, all-caps, boxed-in section headers.  Externally profiled commands will
+have EXTERNAL, individually profiled queries will have QUERY, and summary will
+say SUMMARY.
 
 Next, the information in each section is grouped into subsections, headed by
 an underlined title.  Each of these sections has varying information in it.
