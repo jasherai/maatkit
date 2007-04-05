@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
-# This is mysql-profile-compact, a program to take results from
-# mysql-query-profiler and stack them side by side for comparison.
+# This is mysql-profile-compact, a program to align results from
+# mysql-query-profiler side by side for comparison.
 # 
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
@@ -79,7 +79,7 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME stacks query profiler results side by side for easy comparison.
+$PROGRAM_NAME aligns query profiler results side by side for easy comparison.
 With no FILE, or when FILE is -, read from standard input.
 
 For more details, please read the documentation:
@@ -123,20 +123,25 @@ while ( my $line = <> ) {
          $mode = '' if $opts{m} ne $1;  # Skip until next header
          next LINE;
       }
-      $query = $2;
+      $seen++; # Wait until after deciding to process/skip
+      $query = $2 || $seen;
 
-      if ( $seen++ == 1 ) {
-         # Normalize report, and figure out where to 'cut' all subsequent reports.
-         $tw = max(map { length($_) } @report);
-         @report = map {
+      if ( $seen == 2 ) { # First report is completely read
+         # Figure out where to 'cut' all subsequent reports.
+         $tw   = max(map { length($_) } @report);
+         map {
             $left = $_ =~ m/^(\D+)\d/        ? min(length($1), $left)
                   : $_ =~ m/^(__[^_]+_*?)_ / ? min(length($1), $left)
                   :                            $left;
-            sprintf("%-${tw}s", $_);
          } @report;
          $right = $tw - $left;
       }
 
+      # Normalize the width of all report lines.
+      my $width = $seen == 2 ? $tw : max(map { length($_) } @report);
+      @report = map {
+         length($_) == $width ? $_ : sprintf("%-${width}s", $_);
+      } @report;
 
       if ( $seen == 1 || ($seen - 1 ) % $opts{h} == 0 ) {
          push @header, sprintf("%-${tw}s", "$1 $query");
@@ -187,11 +192,42 @@ print join(' ', @header), "\n", join("\n", @report), "\n";
 
 =head1 NAME
 
-mysql-profiler-compact - Compact the output from mysql-query-profiler.
+mysql-profile-compact - Compact the output from mysql-query-profiler.
 
 =head1 SYNOPSIS
 
+To view queries 2, 4 and 6 side by side:
+
+ mysql-profile-compact -q 2,4,6 profile-results.txt
+
+To view the summaries of different profiling side by side, for example when you
+have profiled many queries and saved into one file, then changed something,
+re-run and saved into another file:
+
+ mysql-profile-compact -m SUMMARY results-1.txt results-2.txt
+
+If you have many queries, you might have to scroll horizontally a long way, and
+lose sight of the headers at the left.  To get the headers to repeat every 10
+queries:
+
+ mysql-profile-compact -h 10 one-thousand-queries.txt
+
 =head1 DESCRIPTION
+
+mysql-profile-compact slices and aligns the output from mysql-query-profiler so
+you can compare profile results side by side easily.  It prints the first
+profile result intact, but each subsequent result is trimmed to be as narrow as
+possible, then aligned next to the first.
+
+You can also use this to examine only some profile results.  For example, if you
+have a set of queries to get a table into a known state, and then a query you
+want to profile, you can ignore the setup queries.  This is typically easy to do
+with a command-line option like -q 4,8,12,16,20 to view every 4th query.
+
+If the first profile it sees is labeled QUERY X, it will only look at QUERY
+profiles from then on.  The same holds for SUMMARY profiles.  This is because
+there are different numbers of lines in QUERY and SUMMARY profiles.  You can
+specify which kind of profile result you want to process.
 
 =head1 LICENSE
 
