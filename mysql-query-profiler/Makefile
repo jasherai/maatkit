@@ -15,11 +15,13 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-query-profiler
-VERSION = 1.0.3
+HELPER = mysql-profile-compact
+VERSION = 1.1.1
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \
 	$(NAME) \
+	$(HELPER) \
 	MANIFEST \
 	README
 DISTDIR = $(NAME)-$(VERSION)
@@ -28,6 +30,7 @@ all: $(DISTFILES)
 
 versions:
 	$(SED) -i -e s/@VERSION@/$(VERSION)/ $(DISTDIR)/$(NAME)
+	$(SED) -i -e s/@VERSION@/$(VERSION)/ $(DISTDIR)/$(HELPER)
 
 distdir: all
 	if test -d $(DISTDIR) ; then $(RM) -rf $(DISTDIR) ; fi
