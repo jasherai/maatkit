@@ -120,9 +120,9 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
 
 my $variables    = get_variables($dbh);
 my $have_innodb  = !$opts{i} && $variables->{have_innodb} eq 'YES' ? 1 : 0;
-my $have_last    = version_ge($dbh, '5.0.1'); # Last query cost according to optimizer.
 my $have_session = version_ge($dbh, '5.0.2'); # SESSION status and InnoDB status values.
 my $have_rowlock = version_ge($dbh, '5.0.3') && $have_innodb; # InnoDB row lock status.
+my $have_last    = version_ge($dbh, '5.0.1') && !$opts{e};    # Last query cost according to optimizer.
 
 # Configure the query cache
 my $have_qcache = 0;
@@ -293,7 +293,6 @@ if ( $opts{e} ) { # An external process will issue queries
             status => get_status_info($dbh),
          };
       }
-      print "__BEGIN__\n";
    }
 }
 else {
