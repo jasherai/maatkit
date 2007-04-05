@@ -998,6 +998,10 @@ prompt you interactively.
 You need the following Perl modules: Getopt::Long, DBI, DBD::mysql,
 and Time::HiRes.
 
+=head1 SEE ALSO
+
+L<mysql-profile-compact>
+
 =head1 LICENSE
 
 This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.

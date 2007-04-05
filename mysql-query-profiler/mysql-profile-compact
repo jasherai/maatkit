@@ -228,6 +228,10 @@ there are different numbers of lines in QUERY and SUMMARY profiles.  You can
 specify which kind of profile result you want to process.  See
 mysql-query-profiler for the full list of types.
 
+=head1 SEE ALSO
+
+L<mysql-query-profiler>
+
 =head1 LICENSE
 
 This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.

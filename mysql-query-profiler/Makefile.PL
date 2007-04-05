@@ -4,7 +4,7 @@ $program = 'mysql-query-profiler';
 WriteMakefile(
     NAME         => $program,
     VERSION_FROM => $program,
-    EXE_FILES    => [$program],
+    EXE_FILES    => [$program, 'mysql-profile-compact'],
     PREREQ_PM    => {
         DBI           => 1.13,
         DBD::mysql    => 1.0,
