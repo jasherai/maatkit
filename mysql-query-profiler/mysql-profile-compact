@@ -162,14 +162,14 @@ while ( my $line = <> ) {
       }
       elsif ( $lnum < @report ) {    # Subsequent reports: tack onto right
          if ( ($seen - 1 ) % $opts{h} == 0 ) {
-            $report[$lnum] .= sprintf( " %${tw}s", $line );
+            $report[$lnum] .= sprintf( "|%${tw}s", $line );
          }
          else {
             $line =~ s/^.{$left}//;                                # Chop the start
             $line =~ s/^([ a-zA-Z]+)(?=__)/'_' x length($1)/e;     # Snip leftovers in headings
             $line =~ s/(\D*)(?=\d)/(' ' x length($1))/e;           # Zap non-digits
             $line =~ s/^ *([ A-Za-z]+) *$/(' ' x length($1))/e;    # Blank out sub-headings
-            $report[$lnum] .= sprintf( " %-${right}s", $line );
+            $report[$lnum] .= sprintf( "|%-${right}s", $line );
          }
       }
       $lnum++;
@@ -180,7 +180,7 @@ while ( my $line = <> ) {
 # Must fix up the first header, because it was pushed onto the array before $tw
 # was known.  Plus I want it aligned a bit differently.
 $header[0] = sprintf("%-${tw}s", (' ' x $left) . $header[0]);
-print join(' ', @header), "\n", join("\n", @report), "\n";
+print join('|', @header), "\n", join("\n", @report), "\n";
 
 # ############################################################################
 # Perldoc
