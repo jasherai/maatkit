@@ -35,6 +35,7 @@ $OUTPUT_AUTOFLUSH = 1;
 
 my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
 
+# TODO: where clauses need to use IS NULL instead of = NULL.
 # TODO: write a helper to analyze indexes and suggest a drilldown strategy.
 # TODO: CRC32 can be used for checksums.
 # TODO: another algorithm: binary search for where the corruption starts, say a
