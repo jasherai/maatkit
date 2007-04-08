@@ -297,7 +297,7 @@ while ( my ($header, $body) = splice(@sections, 0, 2) ) {
       if ( $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' || !$hash->{lock_type} ) {
          @{$hash}{ qw(lock_type idx db tbl txn_id lock_mode) }
             = $body
-            =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n/$n` trx id $t lock.mode (\S+)}m;
+            =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n(?:/|`\.`)$n` trx id $t lock.mode (\S+)}m;
          my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
          $hash->{txn_id} = $high ? ( $low + $high * $MAX_ULONG ) : $low;
          $hash->{wait_hold}
