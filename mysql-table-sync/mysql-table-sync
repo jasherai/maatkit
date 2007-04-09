@@ -60,6 +60,7 @@ my @opt_spec = (
    { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
    { s => 'analyze|A!',       d => 'Analyze (find/fix/print) in bottom-up algorithm (default)' },
    { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm (default 128)' },
+   { s => 'bufferresults',    d => 'Fetch all rows from MySQL before comparing' },
    { s => 'build|U!',         d => 'Build tables for bottom-up algorithm (default)' },
    { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
    { s => 'collate|O!',       d => 'Use MySQL to compare strings if necessary (default)' },
@@ -97,6 +98,7 @@ $prefix =~ s/\W+/_/g;
 # after processing.  Initial values are defaults.
 my %opts = (
    a => 'topdown',
+   bufferresults => 0,
    e => '#',
    o => 'INSUPDDEL',
    s => 's',
@@ -539,7 +541,7 @@ sub td_fetch_level {
    }
    debug_print($query);
 
-   my $sth = $dbh->prepare($query);
+   my $sth = $dbh->prepare($query, { mysql_use_result => !$opts{bufferresults}});
    $sth->execute();
    return $sth;
 }
@@ -990,7 +992,7 @@ sub bu_fetch_level {
 
    my $query = "SELECT $cols, __crc FROM $tbl $where ORDER BY $order";
    debug_print($query);
-   my $sth = $dbh->prepare($query);
+   my $sth = $dbh->prepare($query, { mysql_use_result => !$opts{bufferresults}});
    $sth->execute();
    return $sth;
 }
