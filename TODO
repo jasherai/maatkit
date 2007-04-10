@@ -2,10 +2,7 @@ GLOBAL: use pod USAGE section for folks who want to use pod2usage
    use SEE ALSO to refer to other programs.
 Pipe output from duplicate-key-checker into another tool to graph structures 
    (check out dot for graphing)
-mysqldiff, datadiff, coldiff:
-   * http://www.adamspiers.org/computing/mysqldiff/
-   * http://www.mrjoy.com/datadiff/
-   * http://rossbeyer.net/software/mysql_coldiff/
+mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 query sniper:
    * http://www.stillhq.com/mysql/000008.html
 stale table sniper: remove tables with certain patterns, or older than a certain amount.
