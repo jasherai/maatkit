@@ -30,6 +30,8 @@ our $VERSION = '@VERSION@';
 
 $OUTPUT_AUTOFLUSH = 1;
 
+# TODO: --allatonce option or similar (see duplicate-key-checker)
+
 # ############################################################################
 # Get configuration information.
 # ############################################################################
@@ -80,6 +82,7 @@ For more details, please read the documentation:
 USAGE
    exit(1);
 }
+# TODO: standard gnu language about when no file, or file is -, read stdin...
 
 # ############################################################################
 # Ready to work now.
@@ -109,7 +112,7 @@ while ( my $line = <> ) {    # Magically reads STDIN or files in @ARGV
    chomp $line;
    next unless $line;
 
-   if ( $one_file && $line =~ m/^DATABASE/ && $opts{H} ) {
+   if ( $one_file && $line =~ m/^DATABASE/ && $opts{h} ) {
       print $line, "\n";
       next LINE;
    }
