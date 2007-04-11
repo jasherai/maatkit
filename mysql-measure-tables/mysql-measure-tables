@@ -1,0 +1,51 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings FATAL => 'all';
+
+# TODO: Might also want to record row format, data free, etc.
+
+=pod
+Useful query to find the biggest hogs:
+
+select dbname, tblname,
+      concat(cast((datasize+indexsize)/1024/1024/1024 as decimal(4,2)), 'GB') as size,
+      rowsest
+from tablesize
+where day = current_date
+order by datasize+indexsize desc, rowsest desc limit 20;
+
+Useful query to find how much tables have grown in the last week:
+
+select today.dbname, today.tblname,
+   (today.datasize + today.indexsize) - (lastweek.datasize + lastweek.indexsize) as growth
+from (
+   select * from tablesize
+   where day = date_sub(current_date, interval 7 day)
+) as lastweek
+   inner join (
+      select * from tablesize
+      where day = current_date
+   ) as today on today.dbname = lastweek.dbname
+      and today.tblname = lastweek.tblname
+where (today.datasize + today.indexsize) - (lastweek.datasize + lastweek.indexsize) <> 0
+order by (today.datasize + today.indexsize) - (lastweek.datasize + lastweek.indexsize);
+
+=cut
+
+my @DBS = @{ $dbh->selectcol_arrayref('show databases') };
+foreach my $db ( sort grep { $_ =~ m/$db_pat/ } @DBS ) {
+   $dbh->do( "use " . $db );
+
+   my $tables =  $dbh->selectall_hashref('show table status', 'Name');
+   foreach my $table ( sort keys %$tables ) {
+         my $status = $tables->{$table};
+         next if $status->{'Comment'} eq 'VIEW';
+         print "$db.$table\n" if $args->{'-progress'};
+         $dbh->do("replace into tablesize(dbname, tblname, day, datasize,
+            indexsize, rowsest) values('$db', '$table', current_date,
+               $status->{Data_length}, $status->{Index_length},
+               $status->{Rows})");
+   }
+   $dbh->commit();
+}
