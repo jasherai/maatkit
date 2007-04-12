@@ -349,10 +349,10 @@ sub topdown {
       MERGE:
       while ( 1 ) { # Exit this loop via 'last'
 
-         if ( !$sr ) {
+         if ( !$sr && $sr->{Active} ) {
             $sr = $src_sth->fetchrow_hashref;
          }
-         if ( !$dr ) {
+         if ( !$dr && $dr->{Active} ) {
             $dr = $dst_sth->fetchrow_hashref;
          }
 
@@ -769,13 +769,13 @@ sub bu_merge_tree {
       MERGE:
       while ( 1 ) { # Exit this loop via 'last'
 
-         if ( !$sr ) {
+         if ( !$sr && $sr->{Active} ) {
             $sr = $src_sth->fetchrow_hashref;
             if ( $sr ) {
                $rows_in_src += $sr->{__cnt} || 1;
             }
          }
-         if ( !$dr ) {
+         if ( !$dr && $dr->{Active} ) {
             $dr = $dst_sth->fetchrow_hashref;
             if ( $dr ) {
                $rows_in_dst += $dr->{__cnt} || 1;
