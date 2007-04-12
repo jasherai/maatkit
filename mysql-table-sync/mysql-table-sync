@@ -349,10 +349,10 @@ sub topdown {
       MERGE:
       while ( 1 ) { # Exit this loop via 'last'
 
-         if ( !$sr && $sr->{Active} ) {
+         if ( !$sr && $src_sth->{Active} ) {
             $sr = $src_sth->fetchrow_hashref;
          }
-         if ( !$dr && $dr->{Active} ) {
+         if ( !$dr && $dst_sth->{Active} ) {
             $dr = $dst_sth->fetchrow_hashref;
          }
 
@@ -486,9 +486,6 @@ sub td_fetch_level {
 
    # Columns that need to be in the checksum list.
    my @cols = grep { !exists($where->{$_}) } @{$tbl->{cols}};
-   if ( $opts{c} ) {
-      @cols = grep { exists($opts{c}->{$_}) } @cols;
-   }
    my $cols = col_list(@cols);
 
    # To handle nulls, make a bitmap of nullable columns that are null.
@@ -769,13 +766,13 @@ sub bu_merge_tree {
       MERGE:
       while ( 1 ) { # Exit this loop via 'last'
 
-         if ( !$sr && $sr->{Active} ) {
+         if ( !$sr && $src_sth->{Active} ) {
             $sr = $src_sth->fetchrow_hashref;
             if ( $sr ) {
                $rows_in_src += $sr->{__cnt} || 1;
             }
          }
-         if ( !$dr && $dr->{Active} ) {
+         if ( !$dr && $dst_sth->{Active} ) {
             $dr = $dst_sth->fetchrow_hashref;
             if ( $dr ) {
                $rows_in_dst += $dr->{__cnt} || 1;
@@ -1174,6 +1171,9 @@ sub get_tbl_struct {
    my $ddl = ($info->{dbh}->selectrow_array("SHOW CREATE TABLE $info->{db_tbl}"))[1];
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   if ( $opts{c} ) { # Eliminate columns the user said to ignore
+      @cols = grep { exists($opts{c}->{$_}) } @cols;
+   }
    my @nums = map  { $_ =~ m/`([^`]+)`/g }
               grep { $_ =~ m/`[^`]+` (?:(?:tiny|big|medium|small)?int|float|double|decimal)/ } @defs;
    my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
