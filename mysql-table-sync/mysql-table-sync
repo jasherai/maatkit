@@ -2186,6 +2186,49 @@ The improvements to the bottom-up algorithm are my original work, as is the
 top-down algorithm.  The techniques to actually resolve the differences are also
 my own work.
 
+Another tool that can synchronize tables is the SQLyog Job Agent from webyog.
+Thanks to Rohit Nadhani, SJA's author, for the conversations about the general
+techniques.  There is a comparison of mysql-table-sync and SJA at
+L<http://www.xaprb.com/blog/2007/04/05/mysql-table-sync-vs-sqlyog-job-agent/>
+
+Thanks to the following people and organizations for helping in many ways:
+
+=over
+
+=item *
+
+Fabien Coelho
+
+=item *
+
+Alan Rimm-Kaufman (The Rimm-Kaufman Group)
+
+=item *
+
+John Miller (The Rimm-Kaufman Group)
+
+=item *
+
+Giuseppe Maxia and others at MySQL AB
+
+=item *
+
+Rohit Nadhani (WebYog)
+
+=item *
+
+Travis Rodak
+
+=item *
+
+Dane Miller
+
+=item *
+
+The helpful monks at Perlmonks
+
+=back
+
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
 This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
