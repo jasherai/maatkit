@@ -74,7 +74,7 @@ my @opt_spec = (
    { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
    { s => 'help',             d => 'Show this help message' },
    { s => 'lock|k!',          d => 'Lock tables when beginning work' },
-   { s => 'maxcost|m=i',      d => 'Maximum rowcount before bailing out' },
+   { s => 'maxcost|m=i',      d => 'Maximum rowcount before aborting' },
    { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default: all)' },
    { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
    { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
@@ -1123,7 +1123,7 @@ sub handle_data_change {
                if ( $EVAL_ERROR =~ m/Duplicate entry/ ) {
                   die "Your tables probably have some differences "
                      . "that cannot be resolved with UPDATE statements.  "
-                     . "Re-run the tool with --deleteinsert to proceed.\n";
+                     . "Re-run mysql-table-sync with --deleteinsert to proceed.\n";
                }
             }
          }
@@ -1321,6 +1321,219 @@ second table the same as the first, use the --print option.  To execute these
 queries, use the --execute option.  To see the queries issued while searching
 for differences, use the --debug option.
 
+=head1 OPTIONS
+
+Many options are enabled by default and can be disabled by prefixing with --no.
+
+=over
+
+=item --algorithm
+
+The algorithm to use when comparing the tables.  Top-down drills into the tables
+with GROUP BY queries.  Bottom-up builds levels of summary tables with
+logarithmically fewer rows at each successive level, and then navigates the
+tables in reverse to find differences.  Top-down is explained in L<"FINDING
+DIFFERENCES TOP-DOWN"> and bottom-up in L<"FINDING DIFFERENCES BOTTOM-UP">.
+
+=item --analyze
+
+Only applies to bottom-up search.  Specifies that mysql-table-sync should examine the
+summary tables and find table differences, and if desired, issue queries to
+resolve them.  This is the default behavior, but you can disable it if you just
+want to build the summary tables.
+
+=item --branchfactor
+
+Branch factor for bottom-up algorithm.  Each successive summary table will group
+this many rows together in the next summary table.  This means each summary
+table will be approximately this fraction of the size of the previous table.  If
+you don't specify an exact power of two, mysql-table-sync will round it to the
+nearest power of two.  The default is 128.
+
+=item --bufferresults
+
+Fetch all rows from MySQL before comparing.  This is disabled by default.  If
+enabled, all rows will be fetched into memory for comparing.  This may result in
+the results "cursor" being held open for a shorter time on the server, but if
+the tables are large, it could take a long time anyway, and eat all your memory.
+For most non-trivial data sizes, you want to leave this disabled.
+
+=item --build
+
+Build summary tables for bottom-up algorithm.  Enabled by default.  You can
+disable to use existing summary tables.
+
+=item --cleanup
+
+Clean up scratch tables for bottom-up algorithm.  Enabled by default.  You can
+disable this to leave the scratch (summary) tables for later analysis or
+troubleshooting.
+
+=item --collate
+
+Use MySQL to compare strings if necessary.  Enabled by default.  Perl cannot
+reliably compare character strings the same way MySQL does, so if it's unsure
+how two strings should be sorted, mysql-table-sync will send them to MySQL and
+ask its opinion.  You should leave this enabled.
+
+=item --columns
+
+Comma-separated list of columns to compare and synchronize.  If you specify this
+list, mysql-table-sync will completely ignore any other columns.  Specifying
+a column that doesn't exist is not an error.
+
+=item --debug
+
+Print debugging output to STDOUT.  This is mostly the queries used to compare
+data.  It is not complete at the moment.
+
+=item --deleteinsert
+
+Convert all UPDATES to DELETE and INSERT.  This can help prevent conflicts due
+to unique indexes on columns other than the primary key.  This option will
+become obsolete when I make mysql-table-sync auto-detect this situation and handle it
+itself.
+
+=item --drilldown
+
+Drilldown groupings for the top-down algorithm.  This governs how the
+comparison algorithm searches for differences.  If you specify col2,col3 it will
+group rows by col2, find groups that differ, search within them grouped by col3,
+and then search within these rows on primary key.  The behavior of this option
+is likely to change in the future.
+
+=item --engine
+
+Storage engine to use for the bottom-up summary tables.  If you don't specify,
+it is controlled by the server's default storage engine.
+
+=item --execute
+
+After finding differences, execute the queries required to sync the tables.
+
+=item --forupdate
+
+Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums.  This only applies to
+the top-down algorithm.  It can help prevent the tables being changed while
+you're examining them.  mysql-table-sync automatically decides which type of
+locks to acquire, based on other command-line options.  This doesn't do anything
+on some storage engines, such as MyISAM.
+
+=item --help
+
+Show a brief help message.
+
+=item --lock
+
+Lock tables when beginning work.  This uses table-level LOCK TABLES.  This can
+help prevent tables being changed while you're examining them.
+
+=item --maxcost
+
+Maximum rowcount before aborting.  In either algorithm, if you specify this
+option mysql-table-sync will abort if it discovers more than this many rows need
+to be changed to sync the tables.  There may be more rows to change than can be
+definitely discovered up front, but this might be a good way to stop before
+doing too much work.
+
+=item --onlydo
+
+Only do INSERT, UPDATE, or DELETE queries while syncing tables.  The default is
+to do all three, but if you want to, you can specify any combination of actions.
+For example, if you want to do a two-way sync of rows that have been added to
+either table, one way to do it is specify '--onlydo iu' and then run
+mysql-table-sync again the "other direction" with the same iu argument.  That
+will avoid deleting extra rows from the destination table, which the second
+invocation will then copy back to the source table.
+
+=item --prefix
+
+Tablename prefix for bottom-up algorithm.  In case the default prefix clashes
+with existing tables for some reason, or in case you want to use work tables
+that were built previously.  The default is a pseudo-random value that is
+constant within a given day.  If you run mysql-table-sync again the next day, it
+will choose a different prefix.
+
+=item --print
+
+Print all sync queries to STDOUT.  If you don't trust mysql-table-sync, or just
+want to see what it will do, this is a good way.  These queries are valid SQL
+and you can run them yourself if you want to sync the tables manually.
+
+=item --queries
+
+Output the --debug debugging output as SQL that can be executed.  By default
+it's commented out with SQL comments by default, so it won't interfere with the
+output of --print.  This option removes the comments.
+
+=item --replicate
+
+Change the table on the master/source server, and let replication propagate the
+changes to the destination table.  If you're syncing a master and slave, this is
+almost certainly the option you should use.  Implies --strategy=r.
+
+=item --separator
+
+Separator for CONCAT_WS, which is used to concatenate all columns in each row
+for checksumming.  The default is '#', but you might want to change it if
+you're suspicious about this for any reason (possible collisions, for example).
+
+=item --singletxn
+
+Do all work in a single transaction.  This has no effect unless you're syncing
+tables that use a transactional storage engine.
+
+=item --size
+
+Table size in bottom-up algorithm.  Size estimates used to build the summary
+tables may be off.  If this happens, mysql-table-sync will die and tell you what
+value to use for this parameter.  Most of the time the size estimates should be
+accurate enough (they just have to be within some logarithmic order of
+magnitude), so estimating size up front is a good optimization.  It prevents
+COUNT() queries that aren't needed.
+
+=item --strategy
+
+Query strategy when syncing (r=replace, s=ins/upd/del).  If you specify r,
+INSERT and UPDATE queries will be issued as REPLACE.  This is most useful when
+you're syncing by writing to the master.
+
+=item --temp
+
+Use temporary tables in bottom-up algorithm.  The default is to use real tables.
+
+=item --timeoutok
+
+Keep going if --wait fails.  If you specify --wait and the slave doesn't catch
+up to the master's position before the wait times out, the default behavior is
+to abort.  This option makes mysql-table-sync keep going anyway.  Warning: if
+you are trying to get a consistent comparision between the two servers, you
+probably don't want to keep going after a timeout.
+
+=item --verbose
+
+Explain the differences found while comparing the tables.  Specify up to three
+times for more verbosity.  See L<"OUTPUT"> for more details about the output.
+
+=item --verify
+
+Verify checksum compatibility across servers.  Some older versions of MySQL
+won't concatenate columns the same, so checksums might differ.
+mysql-table-checksum checks for this and aborts if the servers have different
+behavior.  If you know your columns will never contain the empty string, you can
+safely disable this check.
+
+=item --wait
+
+Make the slave wait to catch up to the master before comparing the tables.  The
+value is the number of seconds to wait before timing out (see also --timeoutok).
+mysql-table-sync issues LOCK TABLES on the master, then finds the master's
+binlog position and waits for the slave to catch up to that position before
+comparing tables.  This is useful for guaranteeing a consistent comparision
+between the servers.
+
+=back
+
 =head1 DESCRIPTION
 
 I wrote this tool to help me resync slaves that "drift" from their masters,
@@ -1333,7 +1546,7 @@ the time involved, and a way to resync the slaves "live" is very attractive
 indeed.  There are also many constraints introduced by replication, which I
 wanted to either avoid or use to my advantage.
 
-I know not everyone has exactly these needs, so I made the tool much more
+I know not everyone has exactly these needs, so I made mysql-table-sync much more
 generic than I'd need to patch a table that's out of sync on a slave.
 
 The DBA must choose the algorithm and parameters to use when reconciling
@@ -1402,11 +1615,11 @@ Assuming a branch factor of 128, level 1 has 1/128th as many rows as level 0,
 give or take.  Level 2 is built from level 1, and has 1/128th as many rows in it
 again, and so on until level N, which has just a single row.
 
-After building scratch tables 0 through N, the tool begins at level N and works
+After building scratch tables 0 through N, mysql-table-sync begins at level N and works
 backwards.  At level N, there is just a single row.  If the checksum in this row
 matches on source and destination, the tables must be identical, and there is no
 more work to do.  If they differ though, some rows in level N-1 must differ, and
-the tool examines the "parent" rows in level N-1.  It continues to do this until
+mysql-table-sync examines the "parent" rows in level N-1.  It continues to do this until
 it travels all the way back "up the tree" to level 0 and identifies exactly
 which rows in the target tables are different.  It uses breadth-first search.
 
@@ -1448,7 +1661,7 @@ that differ group by client, then account, and finally descend to the individual
 row level, using the primary key.
 
 This approach is also a breadth-first search as I've implemented it.  At each
-level in the drill-down, the tool knows a set of truths, such as the value of
+level in the drill-down, mysql-table-sync knows a set of truths, such as the value of
 certain columns in the rows, the number of rows that might be bad, and so on.
 In this respect it is fairly similar to the bottom-up approach.
 
@@ -1684,7 +1897,7 @@ server to do over and over.
 
 =head1 RESOLVING DIFFERENCES
 
-Once the tool has found the differences, you probably want to resolve them.
+Once mysql-table-sync has found the differences, you probably want to resolve them.
 There are two major ways I know to do this, and several variations.
 
 The most obvious way is to simply issue INSERT, UPDATE, and DELETE statements
@@ -1729,7 +1942,7 @@ non-transactional tables such as MyISAM.  Running the entire sync in a single
 transaction causes extra overhead.
 
 Another special case is comparing strings between servers.  If your primary key
-or drilldown columns are character data, the tool will potentially issue queries
+or drilldown columns are character data, mysql-table-sync will potentially issue queries
 to the source server when it doesn't think it can reliably compare two strings
 exactly the same way MySQL does.  The collation used is the column's collation
 on the source server, so if the character set or collation differ between the
