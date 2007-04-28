@@ -51,6 +51,7 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: allow to disable keys on destination.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
 # TODO: add --where option.
+# InnoDB can do checksums as of 4.1.1
 
 # ############################################################################
 # Get configuration information.

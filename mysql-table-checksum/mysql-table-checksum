@@ -37,6 +37,8 @@ $OUTPUT_AUTOFLUSH = 1;
 # Allow using GROUP_CONCAT
 # Allow to specify separator
 # Allow to use different user/pass on diffeerent servers
+# InnoDB can do checksums as of 4.1.1
+# Martin Friebe's algorithm.
 
 # ############################################################################
 # Get configuration information.
@@ -611,5 +613,10 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 =head1 AUTHOR
 
 Baron Schwartz, baron at xaprb dot com.
+
+=head1 ACKNOWLEDGEMENTS
+
+Giuseppe Maxia,
+Martin Friebe,
 
 =cut
