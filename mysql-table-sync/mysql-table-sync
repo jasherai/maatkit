@@ -51,7 +51,20 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: allow to disable keys on destination.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
 # TODO: add --where option.
-# InnoDB can do checksums as of 4.1.1
+# TODO: InnoDB can do checksums as of 4.1.1
+# TODO: check the results of the following query:
+# set @CRC := null;
+# 
+# select 
+#    CONCAT(
+#       LPAD(CONV(BIT_XOR(
+#          CAST(CONV(LEFT(@CRC, 16), 16, 10) AS UNSIGNED)
+#          ), 10, 16), 16, '0'),
+#       LPAD(CONV(BIT_XOR(
+#          CAST(CONV(RIGHT(@CRC:=md5(9), 16), 16, 10) AS UNSIGNED)
+#          ), 10, 16), 16, '0')
+#    ) AS crc;
+
 
 # ############################################################################
 # Get configuration information.
@@ -368,6 +381,7 @@ sub topdown {
          my %new_where = %$where;  # Will get more cols added and used below.
 
          # If the current row is the "same row" on both sides...
+         # TODO: must check for identical row-count too.
          if ( $sr && $dr && defined $cmp && $cmp == 0 ) {
             # The "same" row descends from parents that differ.
             if ( $sr->{__crc} ne $dr->{__crc} ) {
@@ -511,6 +525,8 @@ sub td_fetch_level {
    # BIT_XOR() is really just a bitwise parity.  It is also order-independent,
    # but you expect any given bit in the result to be essentially a random coin
    # flip over the group.
+   # TODO: the CRC doesn't work right.  Try a table with single column, three
+   # rows with integer 1; right part of CRC is all zeroes.
    my $query;
    if ( $level ) {
       ( $query = <<"      END" ) =~ s/\s+/ /g;
@@ -1561,6 +1577,9 @@ whatever parameters matter to you.
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
+
+You need MySQL version 4.1.1 or greater; earlier versions lack the BIT_XOR()
+function required to take a groupwise checksum.
 
 =head1 OVERVIEW
 
