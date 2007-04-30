@@ -38,7 +38,6 @@ $OUTPUT_AUTOFLUSH = 1;
 # Allow to specify separator
 # Allow to use different user/pass on diffeerent servers
 # InnoDB can do checksums as of 4.1.1
-# Martin Friebe's algorithm.
 
 # ############################################################################
 # Get configuration information.
@@ -157,7 +156,7 @@ my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
 my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
 
-if ( $opts{v} ) {
+if ( $opts{v} && @hosts > 1 ) {
    # Verify that CONCAT_WS is compatible across all servers.  On older versions
    # of MySQL it skips both empty strings and NULL; on newer just NULL.
    my @verify_sums;
@@ -178,6 +177,11 @@ if ( $opts{v} ) {
    }
 }
 
+my $fetch_sth = $main_dbh->prepare(
+   "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ?");
+my $update_sth = $main_dbh->prepare(
+   "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? WHERE db = ? AND tbl = ?");
+
 DATABASE:
 foreach my $database ( @databases ) {
    next DATABASE if
@@ -193,6 +197,7 @@ foreach my $database ( @databases ) {
    foreach my $table ( @tables ) {
       next TABLE if
          ( $opts{t} && !exists($opts{t}->{$table}) )
+         || ( $opts{R} && $opts{R} eq "$database.$table" )
          || exists $opts{n}->{$table};
 
       # Get the table type, and a query to generate a checksum for it.
@@ -208,9 +213,18 @@ foreach my $database ( @databases ) {
          engine   => $engine,
          query    => $query,
       };
+
+      # If we're in --replicate mode, do the query right now.
+      if ( $opts{R} ) {
+         $main_dbh->do('SET @crc := NULL');
+         $main_dbh->do($query);
+         $fetch_sth->execute($database, $table);
+         my ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
+         $update_sth->execute($crc, $cnt, $database, $table);
+      }
    }
 
-   next DATABASE unless %info_for;
+   next DATABASE if !%info_for || $opts{R};
 
    # Design and print header
    my $hdr;
@@ -332,10 +346,28 @@ sub checksum_query {
    my $index = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
 
    # Make the query.
-   my $func = $opts{f} || 'SHA1';
-   my $query = "SELECT /*$db.$tbl*/ MIN(LEAST(0, "
+   my $func  = $opts{f} || 'SHA1';
+   my $query = '';
+   if ( $opts{R} ) {
+      ($query = <<"      EOF") =~ s/^      //gm;
+         INSERT /*$db.$tbl*/ INTO $opts{R}(db, tbl, this_cnt, this_crc)
+         SELECT '$db', '$tbl', COUNT(*),
+            CONCAT(
+               LPAD(CONV(BIT_XOR(
+                  CAST(CONV(LEFT(\@crc, 16), 16, 10) AS UNSIGNED)
+                  ), 10, 16), 16, '0'),
+               LPAD(CONV(BIT_XOR(
+                  CAST(CONV(RIGHT(\@crc:=$func(CONCAT_WS('#', $cols$nulls)), 16), 16, 10) AS UNSIGNED)
+                  ), 10, 16), 16, '0')
+            ) AS crc
+         FROM `$db`.`$tbl`$index$opts{W}
+      EOF
+   }
+   else {
+      $query = "SELECT /*$db.$tbl*/ MIN(LEAST(0, "
       . "LENGTH(\@crc := $func(CONCAT_WS('#', \@crc, $func(CONCAT_WS('#', $cols$nulls))))), "
       . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl`$index$opts{W}";
+   }
 
    return ( $type, $query );
 }
