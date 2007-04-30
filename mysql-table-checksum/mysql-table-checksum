@@ -58,6 +58,7 @@ my @opt_spec = (
    { s => 'crc|c!',         d => 'Do the CRC (default)' },
    { s => 'password|p=s',   d => 'Password to use when connecting' },
    { s => 'port|P=i',       d => 'Port number to use for connection' },
+   { s => 'replicate|R=s',  d => 'Use replication strategy and store in this table' },
    { s => 'slavelag|l',     d => 'Report how far slaves lag master' },
    { s => 'socket|S=s',     d => 'Socket file to use for connection' },
    { s => 'tab|b',          d => 'Output separated with tabs' },
@@ -113,6 +114,11 @@ if ( $opts{e} ) {
 # Create a WHERE clause
 $opts{W} = $opts{W} ? " WHERE $opts{W}" : '';
 
+my @hosts = unique(@ARGV);
+if ( $opts{R} && @hosts > 1 ) {
+   die "You can only specify one host with --replicate\n";
+}
+
 if ( $opts{help} || !@ARGV ) {
    print "Usage: $PROGRAM_NAME -u <user> -p <pass> [OPTION]... MASTER [SLAVE...]\n\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
@@ -122,8 +128,9 @@ if ( $opts{help} || !@ARGV ) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME efficiently checksums MySQL tables.  If you specify multiple
-servers, the first server assumed to be the master.
+$PROGRAM_NAME efficiently checksums MySQL tables
+on one or more servers.  If you specify multiple servers, the first
+server is assumed to be the master.
 
 If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
@@ -139,7 +146,6 @@ USAGE
 # ############################################################################
 
 my $exit_status = 0;
-my @hosts = unique(@ARGV);
 
 my $db_options = {
    RaiseError => 1,
