@@ -364,7 +364,7 @@ sub checksum_query {
    # Apply WHERE and find whether there's a PK (for order-by in InnoDB).
    my $index = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
 
-   # Make the query.
+   # Make the query. TODO: decide how many to split into for R-mode.
    my $func  = $opts{f} || 'SHA1';
    my $query = '';
    if ( $opts{R} ) {
@@ -437,6 +437,14 @@ sub unique {
 
 mysql-table-checksum - Efficiently checksum MySQL tables on one or many servers.
 
+=head1 SYNOPSIS 
+
+  mysql-table-checksum --replicate=mydb.checksum master-host
+
+Or,
+
+  mysql-table-checksum master-host slave-host1 slave-host2 ... slave-hostN
+
 =head1 SYSTEM REQUIREMENTS
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
@@ -461,7 +469,16 @@ checksum a server against itself you can use two different forms of the hostname
 (for example, localhost and 127.0.0.1).
 
 There are several options to help you get a more consistent read as
-unobtrusively as possible.  The most basic thing the script can do is lock the
+unobtrusively as possible.  
+
+Probably the best way is to replicate the checksum queries themselves and store
+the results in a table, then check them on the slaves with standard SQL to find
+tables that are not in sync with the master.  This method has the advantage of
+working through the normal replication channels, so you don't need to do
+anything fancy.  This only works with statement-based replication.  Use the
+--replicate option to choose this method.
+
+Aside from that, the most basic thing the script can do is lock the
 table on the master until the checksum on the slave is finished, preventing
 replication changes from affecting the data in the table.  This is one table at
 a time; it does not lock all tables at once.  Also, the checksums are on the
@@ -504,9 +521,51 @@ a foo column, the query will cause an error.
 If you are using this tool to verify your slaves still have the same data as the
 master, which is why I wrote it, you should read this section.
 
-The script is designed so you can get a consistent checksum on the master and
-slaves.  The first feature to do this is knowing which server is the master.
-It's the first server you specify on the command line.
+The best way to do this with statement-based replication is to use the
+--replicate option.  Otherwise use one of the other methods.
+
+=head2 USING THE REPLICATE OPTION
+
+If you use statement-based replication, the best way to get a consistent
+checksum on the master and slaves is simply do it on the master and let
+replication run the same statement on the slaves.  This makes everything very
+easy.
+
+When you choose the --replicate option, the master runs a different kind of
+checksum query than in other modes.  It is order-independent, so it returns the
+same result no matter how the rows are ordered, and it is insertable into
+another table.  The query inserts the count and checksum into a table you must
+specify in the --replicate option (see L<SYNOPSIS>).
+
+The table must have at least these columns: db, tbl, this_crc, master_crc,
+this_cnt, master_cnt.  Here is a suggested table structure:
+
+  CREATE TABLE checksum (
+     db         char(64)     NOT NULL,
+     tbl        char(64)     NOT NULL,
+     this_crc   char(32)     NOT NULL,
+     this_cnt   int unsigned NOT NULL,
+     master_crc char(32)         NULL,
+     master_cnt int unsigned     NULL,
+     ts         timestamp    NOT NULL,
+     PRIMARY KEY (db,tbl)
+  );
+
+When the queries are finished running on the master and its slaves, you can go
+to the slaves and issue SQL queries to see if any tables are different from the
+master.  Try the following:
+
+  SELECT db, tbl FROM test.checksum
+  WHERE master_cnt <> this_cnt OR master_crc <> this_crc;
+
+When you use --replicate, all the other options pertaining to locking and so on
+are ignored.
+
+=head2 OTHER METHODS
+
+If you can't use the above method (for example, you are comparing data on
+servers that are not in a master-slave replication setup), here are some methods
+you can use.
 
 If your servers are inactive, you might be able to just run the tool with no
 further ado.  This is unlikely, so you probably need to take a checksum on the
@@ -551,6 +610,12 @@ rows that are checksummed.
 
 If you need a different algorithm and this program doesn't support it, please
 get in touch with me and let's see how we can add it.
+
+What I typically do when I'm not using the --replicate option is simply run the
+tool on all servers with no further options.  This runs fast, parallel,
+non-blocking checksums simultaneously.  If there are tables that look different,
+I re-run with --wait=600 on the tables in question.  This makes the tool lock on
+the master as explained above.
 
 =head1 OUTPUT
 
