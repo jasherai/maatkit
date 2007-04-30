@@ -214,18 +214,9 @@ foreach my $database ( @databases ) {
          query    => $query,
       };
 
-      # If we're in --replicate mode, do the query right now.
-      if ( $opts{R} ) {
-         print "$database $table\n";
-         $main_dbh->do('SET @crc := NULL');
-         $main_dbh->do($query);
-         $fetch_sth->execute($database, $table);
-         my ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
-         $update_sth->execute($crc, $cnt, $database, $table);
-      }
    }
 
-   next DATABASE if !%info_for || $opts{R};
+   next DATABASE unless %info_for;
 
    # Design and print header
    my $hdr;
@@ -244,6 +235,17 @@ foreach my $database ( @databases ) {
 
    TABLE:
    foreach my $table ( sort keys %info_for ) {
+
+      if ( $opts{R} ) { # We're in --replicate mode.
+         eval {
+            do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
+         };
+         if ( $EVAL_ERROR ) {
+            print STDERR $EVAL_ERROR, "\n";
+            $exit_status = 1;
+         }
+         next TABLE;
+      }
 
       # Lock table and get master position on the master, if applicable.
       $main_dbh->do("LOCK TABLES `$database`.`$table` READ") if $opts{k};
@@ -279,6 +281,22 @@ foreach my $database ( @databases ) {
       }
       $main_dbh->do("UNLOCK TABLES") if $opts{k};
    }
+}
+
+sub do_tbl_replicate {
+   my ( $host, $info, $hdr ) = @_;
+   my $dbh = $main_dbh;
+   my $cnt = 'NULL';
+   my $crc = 'NULL';
+   my $beg = time();
+   $dbh->do('SET @crc := NULL');
+   $dbh->do($info->{query});
+   $fetch_sth->execute($info->{database}, $info->{table});
+   ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
+   $update_sth->execute($crc, $cnt, $info->{database}, $info->{table});
+   my $end = time();
+   printf($hdr, $info->{database}, $info->{table}, $host, $info->{engine}, $cnt, $crc,
+      $end - $beg, 'NULL', 'NULL', 'NULL');
 }
 
 sub do_tbl {
@@ -351,7 +369,7 @@ sub checksum_query {
    my $query = '';
    if ( $opts{R} ) {
       ($query = <<"      EOF") =~ s/^      //gm;
-         INSERT /*$db.$tbl*/ INTO $opts{R}(db, tbl, this_cnt, this_crc)
+         REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, this_cnt, this_crc)
          SELECT '$db', '$tbl', COUNT(*),
             CONCAT(
                LPAD(CONV(BIT_XOR(
