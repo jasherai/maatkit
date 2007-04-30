@@ -216,6 +216,7 @@ foreach my $database ( @databases ) {
 
       # If we're in --replicate mode, do the query right now.
       if ( $opts{R} ) {
+         print "$database $table\n";
          $main_dbh->do('SET @crc := NULL');
          $main_dbh->do($query);
          $fetch_sth->execute($database, $table);
