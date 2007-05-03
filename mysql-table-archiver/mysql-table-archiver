@@ -9,3 +9,4 @@
 # Allow to ANALYZE TABLE or OPTIMIZE TABLE after or before
 # whether to print progress to output, and how often (how many rows, how many
 # secs?)
+# \N is a null in a CSV file
