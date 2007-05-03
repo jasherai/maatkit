@@ -58,6 +58,7 @@ my @opt_spec = (
    { s => 'port|P=i',       d => 'Port number to use for connection' },
    { s => 'replicate|R=s',  d => 'Use replication strategy and store in this table' },
    { s => 'slavelag|l',     d => 'Report how far slaves lag master' },
+   { s => 'separator|s=s',  d => 'Separator for CONCAT_WS' },
    { s => 'socket|S=s',     d => 'Socket file to use for connection' },
    { s => 'tab|b',          d => 'Output separated with tabs' },
    { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
@@ -73,6 +74,7 @@ my %opts = (
    W => '',
    r => 1,
    c => 1,
+   s => '#',
    v => 1,
 );
 
@@ -108,6 +110,9 @@ $opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
 if ( $opts{e} ) {
    $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
 }
+
+# Don't let someone put a ' in the separator
+$opts{s} =~ s/'//g;
 
 # Create a WHERE clause
 $opts{W} = $opts{W} ? " WHERE $opts{W}" : '';
@@ -380,7 +385,7 @@ sub checksum_query {
                   CAST(CONV(LEFT(\@crc, 16), 16, 10) AS UNSIGNED)
                   ), 10, 16), 16, '0'),
                LPAD(CONV(BIT_XOR(
-                  CAST(CONV(RIGHT(\@crc:=$func(CONCAT_WS('#', $cols$nulls)), 16), 16, 10) AS UNSIGNED)
+                  CAST(CONV(RIGHT(\@crc:=$func(CONCAT_WS('$opts{s}', $cols$nulls)), 16), 16, 10) AS UNSIGNED)
                   ), 10, 16), 16, '0')
             ) AS crc
          FROM `$db`.`$tbl`$index$opts{W}
@@ -388,7 +393,7 @@ sub checksum_query {
    }
    else {
       $query = "SELECT /*$db.$tbl*/ MIN(LEAST(0, "
-      . "LENGTH(\@crc := $func(CONCAT_WS('#', \@crc, $func(CONCAT_WS('#', $cols$nulls))))), "
+      . "LENGTH(\@crc := $func(CONCAT_WS('$opts{s}', \@crc, $func(CONCAT_WS('$opts{s}', $cols$nulls))))), "
       . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl`$index$opts{W}";
    }
 
@@ -455,6 +460,25 @@ mysql-table-checksum - Efficiently checksum MySQL tables on one or many servers.
 Or,
 
   mysql-table-checksum master-host slave-host1 slave-host2 ... slave-hostN
+
+=head1 OPTIONS
+
+Many options are enabled by default and can be disabled by prefixing with --no.
+
+=over
+
+=item --databases
+
+Only checksum this comma-separated list of databases.
+
+=item --engine
+
+Only checksum tables whose storage engine is in this comma-separated list.
+You can use this to restrict the checksum to InnoDB, for example.
+
+=item --function
+
+=back
 
 =head1 SYSTEM REQUIREMENTS
 
