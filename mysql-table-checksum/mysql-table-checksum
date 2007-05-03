@@ -37,7 +37,6 @@ $OUTPUT_AUTOFLUSH = 1;
 # Allow using GROUP_CONCAT
 # Allow to specify separator
 # Allow to use different user/pass on diffeerent servers
-# InnoDB can do checksums as of 4.1.1
 
 # ############################################################################
 # Get configuration information.
@@ -177,10 +176,13 @@ if ( $opts{v} && @hosts > 1 ) {
    }
 }
 
-my $fetch_sth = $main_dbh->prepare(
-   "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ?");
-my $update_sth = $main_dbh->prepare(
-   "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? WHERE db = ? AND tbl = ?");
+my ($fetch_sth, $update_sth);
+if ( $opts{R} ) {
+   $fetch_sth = $main_dbh->prepare(
+      "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ?");
+   my $update_sth = $main_dbh->prepare(
+      "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? WHERE db = ? AND tbl = ?");
+}
 
 DATABASE:
 foreach my $database ( @databases ) {
@@ -319,7 +321,9 @@ sub do_tbl {
            : 'NULL';
    }
    my $mid = time();
-   if ( $info->{engine} eq 'MyISAM' && !$opts{f}  ) {
+   if (  ($info->{engine} eq 'MyISAM' && !$opts{f})
+      || ($info->{engine} eq 'InnoDB' && !$opts{f} && version_ge($dbh, '4.1.1') ))
+   {
       if ( $opts{c} ) {
          $crc = $dbh->selectall_arrayref("CHECKSUM TABLE `$info->{database}`.`$info->{table}`",
             { Slice => {} })->[0]->{Checksum};
@@ -426,6 +430,13 @@ sub do_count {
 sub unique {
    my %seen;
    grep { !$seen{$_}++ } @_;
+}
+
+# Compares versions like 5.0.27 and 4.1.15-standard-log
+sub version_ge {
+   my ( $dbh, $target ) = @_;
+   my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
+   return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
 }
 
 # ############################################################################
@@ -738,7 +749,10 @@ Baron Schwartz, baron at xaprb dot com.
 
 =head1 ACKNOWLEDGEMENTS
 
+This is an incomplete list.  My apologies for omissions or misspellings.
+
 Giuseppe Maxia,
+Heikki Tuuri,
 Martin Friebe,
 
 =cut
