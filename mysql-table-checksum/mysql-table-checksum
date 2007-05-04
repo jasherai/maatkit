@@ -95,11 +95,12 @@ foreach my $spec ( @opt_spec ) {
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
-# Apply dependencies between arguments.
+# Post-process command-line options and arguments.
 $opts{k} ||= defined $opts{w};
 $opts{l} ||= $opts{k};
 $opts{f} ||= $opts{W} ? 'SHA1'    : '';
-$opts{a} =   $opts{R} ? 'BIT_XOR' : uc $opts{a};
+$opts{a}   = uc $opts{a};
+$opts{f} ||= 'SHA1' if $opts{R};
 
 # Make comma-separated lists into hashes.
 if ( $opts{d} ) {
@@ -135,7 +136,7 @@ if ( $opts{R} && @hosts > 1 ) {
    die "You can only specify one host with --replicate\n";
 }
 
-if ( $opts{help} || $opts{a} !~ m/^(?:ACCUM|BIT_XOR)$/ || !@ARGV ) {
+if ( $opts{help} ) {
    print "Usage: $PROGRAM_NAME [OPTION]... HOST [HOST...]\n\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
@@ -198,9 +199,6 @@ if ( $opts{v} && @hosts > 1 ) {
 
 my ($fetch_sth, $update_sth);
 if ( $opts{R} ) {
-   if ( !version_ge($main_dbh, '4.1.1') ) {
-      die "--replicate can only be used on MySQL 4.1.1 and greater.\n";
-   }
    $fetch_sth = $main_dbh->prepare(
       "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ?");
    $update_sth = $main_dbh->prepare(
@@ -319,7 +317,7 @@ sub do_tbl_replicate {
    my $cnt = 'NULL';
    my $crc = 'NULL';
    my $beg = time();
-   $dbh->do('SET @crc := NULL');
+   $dbh->do('SET @crc := NULL, @cnt := 0');
    $dbh->do($info->{query});
    $fetch_sth->execute($info->{database}, $info->{table});
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
@@ -349,7 +347,7 @@ sub do_tbl {
            : 'NULL';
    }
    my $mid = time();
-   if ( !$opts{f} && version_ge($dbh, '4.1.1') ) {
+   if ( !$opts{f} && !$opts{R} && version_ge($dbh, '4.1.1') ) {
       if ( $opts{c} ) {
          $crc = $dbh->selectall_arrayref("CHECKSUM TABLE `$info->{database}`.`$info->{table}`",
             { Slice => {} })->[0]->{Checksum};
@@ -401,6 +399,16 @@ sub checksum_query {
    my $query = '';
    if ( $opts{a} eq 'BIT_XOR' ) {
 
+      # This checksum algorithm does not use any user variables, so its
+      # behavior should be completely deterministic.  It concatenates the
+      # columns in each row and checksums them, then slices this checksum up
+      # into 16-character chunks.  It then converts them BIGINTs with the
+      # CONV() function, and then groupwise XORs them to produce an
+      # order-independent checksum of the slice over all the rows.  It then
+      # converts these back to base 16 and puts them back together.  The
+      # effect is the same as XORing a very wide (32 characters = 128 bits for
+      # MD5, and SHA1 is even larger) unsigned integer over all the rows.
+
       # Split the CRC result up into slices and glue them together.
       my @slices;
       for ( my $start = 1; $start < $crc_wid; $start += 16 ) {
@@ -424,18 +432,39 @@ sub checksum_query {
             . ") AS crc FROM `$db`.`$tbl`$opts{W}";
       }
       else {
-         $query = "SELECT \@cnt := COUNT(*), \@crc := CONCAT("
+         $query = "SELECT /*$db.$tbl*/ COUNT(*) as cnt, CONCAT("
             . join(', ', @slices)
             . ") AS crc FROM `$db`.`$tbl`$opts{W}";
       }
 
    }
-   else {
-      # Find whether there's a PK (for order-by).
+   else { # Use an accumulator variable.
+      # Find whether there's a PK (for order-by).  Since the accumulator
+      # variable re-checksums every row combined with the previous row's
+      # checksum, row order matters.
+      # TODO allow the user to specify an index for ordering.
       my $index = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
-      $query = "SELECT /*$db.$tbl*/ MIN(LEAST(0, "
-      . "LENGTH(\@crc := $func(CONCAT_WS('$opts{s}', \@crc, $chks))), "
-      . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl`$index$opts{W}";
+
+      # Generate the query.  This query relies on @crc being NULL, and @cnt
+      # being 0 when it begins.  It checksums each row, appends it to the
+      # running checksum, and checksums the two together.  In this way it acts
+      # as an accumulator for all the rows.  It then prepends a steadily
+      # increasing number to the left, left-padded with zeroes, so each
+      # checksum taken is stringwise greater than the last.  In this way the
+      # MAX() function can be used to return the last checksum calculated.
+      # @cnt is not used for a row count, it is only used to make MAX() work
+      # correctly.
+      if ( $opts{R} ) {
+         $query = "REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, this_cnt, this_crc) "
+            . "SELECT '$db', '$tbl', COUNT(*) AS cnt, RIGHT(MAX("
+            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
+            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
+      }
+      else {
+         $query = "SELECT /*$db.$tbl*/ COUNT(*) AS cnt, RIGHT(MAX("
+            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
+            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
+      }
    }
 
    return ( $type, $query );
@@ -461,9 +490,9 @@ sub get_dbh {
 
 sub do_var_crc {
    my ( $dbh, $query ) = @_;
-   $dbh->do('set @crc := "", @cnt := 0');
-   $dbh->do($query);
-   return @{$dbh->selectall_arrayref('select @cnt, @crc')->[0]};
+   $dbh->do('set @crc := NULL, @cnt := 0');
+   my $res = $dbh->selectall_arrayref($query, { Slice => {} })->[0];
+   return ($res->{cnt}, $res->{crc});
 }
 
 sub do_count {
@@ -500,7 +529,7 @@ mysql-table-checksum - Efficiently checksum MySQL tables on one or many servers.
 
 Or,
 
-  mysql-table-checksum master-host slave-host1 slave-host2 ... slave-hostN
+  mysql-table-checksum host host1 host2 ... hostN
 
 =head1 OPTIONS
 
@@ -526,13 +555,13 @@ concatenated and re-checksummed.  This technique is order-dependent.  If the
 table has a primary key, it will be used to order the results for consistency;
 otherwise it's up to chance.
 
-The ACCUM algorithm has two important advantages over BIT_XOR: speed (there
-are fewer cryptographic hash operations) and possibly fewer collisions.  You
-can construct a pathological case where a table with a single column, having
-all the same values and an even number of rows, will checksum and BIT_XOR to
-zero.  In this case you will not be able to distinguish a table full of one
-value from a table full of another value.  The ACCUM algorithm will
-distinguish them.
+The ACCUM algorithm has two possible advantages over BIT_XOR: speed (there may
+be fewer cryptographic hash operations and it may read less data) and possibly
+fewer collisions.  You can construct a pathological case where a table with a
+single column, having all the same values and an even number of rows, will
+checksum and BIT_XOR to zero.  In this case you will not be able to
+distinguish a table full of one value from a table full of another value.  The
+ACCUM algorithm will distinguish them.
 
 However, the ACCUM algorithm is order-dependent, so if you have two tables
 with identical data but the rows are out of order, you'll get different
@@ -612,12 +641,10 @@ The port number to use for the connection.
 
 This option enables a completely different checksum strategy for a consistent,
 lock-free checksum across a master and its slaves.  This only works with
-statement-based replication on MySQL 4.1.1 and greater.
-
-Instead of running the checksum queries on each server, you only run it on the
-master.  You specify a table to insert the results into.  The query will
-insert directly into the table, so it will be replicated through the binlog to
-the slaves.
+statement-based replication.  Instead of running the checksum queries on each
+server, you only run it on the master.  You specify a table to insert the
+results into.  The query will insert directly into the table, so it will be
+replicated through the binlog to the slaves.
 
 The argument to the option is the table in which the checksums should be
 stored.  The table must have at least these columns: db, tbl, this_crc,
@@ -626,9 +653,9 @@ master_crc, this_cnt, master_cnt.  Here is a suggested table structure:
   CREATE TABLE checksum (
      db         char(64)     NOT NULL,
      tbl        char(64)     NOT NULL,
-     this_crc   char(32)     NOT NULL,
+     this_crc   char(40)     NOT NULL,
      this_cnt   int unsigned NOT NULL,
-     master_crc char(32)         NULL,
+     master_crc char(40)         NULL,
      master_cnt int unsigned     NULL,
      ts         timestamp    NOT NULL,
      PRIMARY KEY (db,tbl)
