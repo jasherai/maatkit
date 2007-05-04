@@ -25,7 +25,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use List::Util qw(max);
+use List::Util qw(min max);
 
 our $VERSION = '@VERSION@';
 
@@ -45,6 +45,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
+   { s => 'algorithm|a=s',  d => 'Checksum algorithm (default: BIT_XOR)' },
    { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
    { s => 'engine|e=s',     d => 'Only do this comma-separated list of storage engines' },
    { s => 'function|f=s',   d => 'CRC function (SHA1, MD5...) overrides --nocrc' },
@@ -56,7 +57,7 @@ my @opt_spec = (
    { s => 'crc|c!',         d => 'Do the CRC (default)' },
    { s => 'password|p=s',   d => 'Password to use when connecting' },
    { s => 'port|P=i',       d => 'Port number to use for connection' },
-   { s => 'replicate|R=s',  d => 'Use replication strategy and store in this table' },
+   { s => 'replicate|R=s',  d => 'Replicate checksums in a table (implies -a BIT_XOR)' },
    { s => 'slavelag|l',     d => 'Report how far slaves lag master' },
    { s => 'separator|s=s',  d => 'Separator for CONCAT_WS' },
    { s => 'socket|S=s',     d => 'Socket file to use for connection' },
@@ -71,6 +72,7 @@ my @opt_spec = (
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
+   a => 'BIT_XOR',
    W => '',
    r => 1,
    c => 1,
@@ -96,7 +98,8 @@ GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 # Apply dependencies between arguments.
 $opts{k} ||= defined $opts{w};
 $opts{l} ||= $opts{k};
-$opts{f} ||= $opts{s} ? 'SHA1' : '';
+$opts{f} ||= $opts{W} ? 'SHA1'    : '';
+$opts{a} =   $opts{R} ? 'BIT_XOR' : uc $opts{a};
 
 # Make comma-separated lists into hashes.
 if ( $opts{d} ) {
@@ -117,13 +120,23 @@ $opts{s} =~ s/'//g;
 # Create a WHERE clause
 $opts{W} = $opts{W} ? " WHERE $opts{W}" : '';
 
+if ( $opts{a} !~ m/^(?:ACCUM|BIT_XOR)$/ ) {
+   warn "--algorithm=$opts{a}: unknown algorithm.\n";
+   $opts{help} = 1;
+}
+
+if ( !@ARGV ) {
+   warn "No hosts specified.\n";
+   $opts{help} = 1;
+}
+
 my @hosts = unique(@ARGV);
 if ( $opts{R} && @hosts > 1 ) {
    die "You can only specify one host with --replicate\n";
 }
 
-if ( $opts{help} || !@ARGV ) {
-   print "Usage: $PROGRAM_NAME -u <user> -p <pass> [OPTION]... MASTER [SLAVE...]\n\n";
+if ( $opts{help} || $opts{a} !~ m/^(?:ACCUM|BIT_XOR)$/ || !@ARGV ) {
+   print "Usage: $PROGRAM_NAME [OPTION]... HOST [HOST...]\n\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
@@ -132,8 +145,8 @@ if ( $opts{help} || !@ARGV ) {
    print <<USAGE;
 
 $PROGRAM_NAME efficiently checksums MySQL tables
-on one or more servers.  If you specify multiple servers, the first
-server is assumed to be the master.
+on one or more hosts.  If you specify multiple hosts, the first
+is assumed to be the master.
 
 If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
@@ -160,6 +173,8 @@ my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
 my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
 
+my $crc_wid = max(16, length(($main_dbh->selectrow_array("SELECT $opts{f}('a')"))[0]));
+
 if ( $opts{v} && @hosts > 1 ) {
    # Verify that CONCAT_WS is compatible across all servers.  On older versions
    # of MySQL it skips both empty strings and NULL; on newer just NULL.
@@ -183,10 +198,19 @@ if ( $opts{v} && @hosts > 1 ) {
 
 my ($fetch_sth, $update_sth);
 if ( $opts{R} ) {
+   if ( !version_ge($main_dbh, '4.1.1') ) {
+      die "--replicate can only be used on MySQL 4.1.1 and greater.\n";
+   }
    $fetch_sth = $main_dbh->prepare(
       "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ?");
-   my $update_sth = $main_dbh->prepare(
+   $update_sth = $main_dbh->prepare(
       "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? WHERE db = ? AND tbl = ?");
+}
+elsif ( $opts{a} eq 'BIT_XOR' ) {
+   if ( !version_ge($main_dbh, '4.1.1') ) {
+      warn "MySQL version is less than 4.1.1; using --algorithm=ACCUM.\n";
+      $opts{a} = 'ACCUM';
+   }
 }
 
 DATABASE:
@@ -231,7 +255,6 @@ foreach my $database ( @databases ) {
       $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
    }
    else {
-      my $crc_wid  = lc($opts{f}) eq 'md5' ? 32 : 40;
       my $max_tbl  = max(5, map { length($_) } keys %info_for);
       my $max_db   = max(8, length($database));
       my $max_host = max(4, map { length($_) } @hosts);
@@ -263,22 +286,22 @@ foreach my $database ( @databases ) {
 
       my %children;
       foreach my $host ( @hosts ) {
-         my $pid = fork();
-         if ( defined($pid) && $pid == 0 ) { # I am a child
+         my $pid = @hosts > 1 ? fork() : undef;
+         if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
             eval {
                do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
             };
             if ( $EVAL_ERROR ) {
                print STDERR $EVAL_ERROR, "\n";
-               exit(1);
+               exit(1); # die, even if only a single host
             }
-            exit(0);
+            exit(0) if @hosts > 1; # exit only if I'm a child
          }
-         elsif ( !defined($pid) ) {
+         elsif ( @hosts > 1 && !defined($pid) ) {
             die("Unable to fork!");
          }
          # I already exited if I'm a child, so I'm the parent.
-         $children{$host} = $pid;
+         $children{$host} = $pid if @hosts > 1;
       }
 
       # Wait for the children to exit.
@@ -326,7 +349,7 @@ sub do_tbl {
            : 'NULL';
    }
    my $mid = time();
-   if ( version_ge($dbh, '4.1.1') ) {
+   if ( !$opts{f} && version_ge($dbh, '4.1.1') ) {
       if ( $opts{c} ) {
          $crc = $dbh->selectall_arrayref("CHECKSUM TABLE `$info->{database}`.`$info->{table}`",
             { Slice => {} })->[0]->{Checksum};
@@ -360,38 +383,58 @@ sub checksum_query {
    # Make a list of all columns.
    my @defs  = $ddl =~ m/^(\s+`.*)$/gm;
    my @cols  = map { $_ =~ m/(`[^`]+`)/g } @defs;
-   my $cols  = join(', ', @cols);
+   my @tocrc = @cols;
 
-   # To handle nulls, make a bitmap of nullable columns that are null.
+   # To detect when columns are NULL, make a bitmap of nullable columns.
    my @nulls = map { $_ =~ m/(`[^`]+`)/g } grep { $_ !~ m/NOT NULL/ } @defs;
-   my $nulls = @nulls
-             ? (", CONCAT(" . join(', ', map { "ISNULL($_)" } @nulls) .  ")")
-             : '';
+   if ( @nulls ) {
+      push @tocrc, "CONCAT(" . join(', ', map { "ISNULL($_)" } @nulls) . ")";
+   }
 
-   # Apply WHERE and find whether there's a PK (for order-by in InnoDB).
-   my $index = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
+   # Design the column checksum expression.
+   my $func = $opts{f} || 'SHA1';
+   my $chks = @tocrc > 1
+            ? "$func(CONCAT_WS('$opts{s}', " . join(',', @tocrc) . '))'
+            : "$func($tocrc[0])";
 
-   # Make the query. TODO: decide how many to split into for R-mode.
-   my $func  = $opts{f} || 'SHA1';
+   # Make the query.
    my $query = '';
-   if ( $opts{R} ) {
-      ($query = <<"      EOF") =~ s/^      //gm;
-         REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, this_cnt, this_crc)
-         SELECT '$db', '$tbl', COUNT(*),
-            CONCAT(
-               LPAD(CONV(BIT_XOR(
-                  CAST(CONV(LEFT(\@crc, 16), 16, 10) AS UNSIGNED)
-                  ), 10, 16), 16, '0'),
-               LPAD(CONV(BIT_XOR(
-                  CAST(CONV(RIGHT(\@crc:=$func(CONCAT_WS('$opts{s}', $cols$nulls)), 16), 16, 10) AS UNSIGNED)
-                  ), 10, 16), 16, '0')
-            ) AS crc
-         FROM `$db`.`$tbl`$index$opts{W}
-      EOF
+   if ( $opts{a} eq 'BIT_XOR' ) {
+
+      # Split the CRC result up into slices and glue them together.
+      my @slices;
+      for ( my $start = 1; $start < $crc_wid; $start += 16 ) {
+         my $len = min(16, $crc_wid - $start + 1);
+         push @slices,
+            "LPAD(CONV(BIT_XOR("
+            . "CAST(CONV(SUBSTRING(\@crc, $start, $len), 16, 10) AS UNSIGNED))"
+            . ", 10, 16), $len, '0')";
+      }
+
+      # The last slice actually needs to do a real CRC on the columns.
+      # TODO: when there are two slices, the second... when three, the
+      # third... argh.  Figure out how to fix this.
+      # $slices[-1] =~ s/\@crc/\@crc:=$func(CONCAT_WS('$opts{s}', $cols$nulls))/;
+      map { s/\@crc/$chks/ } @slices;
+
+      if ( $opts{R} ) {
+         $query = "REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, this_cnt, this_crc) "
+            . "SELECT '$db', '$tbl', COUNT(*), CONCAT("
+            . join(', ', @slices)
+            . ") AS crc FROM `$db`.`$tbl`$opts{W}";
+      }
+      else {
+         $query = "SELECT \@cnt := COUNT(*), \@crc := CONCAT("
+            . join(', ', @slices)
+            . ") AS crc FROM `$db`.`$tbl`$opts{W}";
+      }
+
    }
    else {
+      # Find whether there's a PK (for order-by).
+      my $index = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
       $query = "SELECT /*$db.$tbl*/ MIN(LEAST(0, "
-      . "LENGTH(\@crc := $func(CONCAT_WS('$opts{s}', \@crc, $func(CONCAT_WS('$opts{s}', $cols$nulls))))), "
+      . "LENGTH(\@crc := $func(CONCAT_WS('$opts{s}', \@crc, $chks))), "
       . "\@cnt := \@cnt + 1)) AS len FROM `$db`.`$tbl`$index$opts{W}";
    }
 
@@ -465,6 +508,38 @@ Many options are enabled by default and can be disabled by prefixing with --no.
 
 =over
 
+=item --algorithm
+
+Specifies which checksum algorithm to use when not using CHECKSUM TABLE (see
+--function).  Valid arguments are BIT_XOR and ACCUM.  BIT_XOR is the default.
+
+The BIT_XOR algorithm is available for MySQL 4.1.1 and newer.  It uses a
+cryptographic hash of all columns concatenated together with a separator,
+followed by a bitmap of each nullable column that is NULL (necessary because
+CONCAT_WS() skips NULL columns).  It then uses BIT_XOR(), which is
+order-independent, to reduce all the rows to a single checksum.
+
+For servers older than 4.1.1, BIT_XOR() is not available, and the ACCUM
+algorithm is used as a fallback.  In this case a single user variable is used
+as an accumulator.  Each row is reduced to a single checksum, which is
+concatenated and re-checksummed.  This technique is order-dependent.  If the
+table has a primary key, it will be used to order the results for consistency;
+otherwise it's up to chance.
+
+The ACCUM algorithm has two important advantages over BIT_XOR: speed (there
+are fewer cryptographic hash operations) and possibly fewer collisions.  You
+can construct a pathological case where a table with a single column, having
+all the same values and an even number of rows, will checksum and BIT_XOR to
+zero.  In this case you will not be able to distinguish a table full of one
+value from a table full of another value.  The ACCUM algorithm will
+distinguish them.
+
+However, the ACCUM algorithm is order-dependent, so if you have two tables
+with identical data but the rows are out of order, you'll get different
+checksums with ACCUM.
+
+Choose your poison.
+
 =item --databases
 
 Only checksum this comma-separated list of databases.
@@ -476,10 +551,13 @@ You can use this to restrict the checksum to InnoDB, for example.
 
 =item --function
 
-You can use this option to choose the cryptographic hash function used to create
-a row checksum for each row.  The default is to use SHA1, but other good choices
-include MD5.  If you leave this at its default, storage engines that support
-MySQL's built-in CHECKSUM TABLE command will be checksummed with that.
+You can use this option to choose the cryptographic hash function used to
+create a row checksum for each row.  The default is to use SHA1, but other
+good choices include MD5.  Whatever function you specify is run in SQL, not in
+Perl, so it must be available to MySQL.
+
+If you leave this option at its default, storage engines that support MySQL's
+built-in CHECKSUM TABLE command will be checksummed with that.
 
 One reason you might override this is to do checksums across tables that have
 the same data but different row formats (possibly because of different storage
@@ -533,17 +611,36 @@ The port number to use for the connection.
 =item --replicate
 
 This option enables a completely different checksum strategy for a consistent,
-lock-free checksum across a master and its slaves.  Instead of running the
-checksum queries on each server, you only run it on the master.  You specify a
-table to insert the results into.  The query will insert directly into the
-table, so it will be replicated through the binlog to the slaves.  This
-eliminates the need to do complicated locking and unlocking, waiting for master
-binlog positions, and so on.
+lock-free checksum across a master and its slaves.  This only works with
+statement-based replication on MySQL 4.1.1 and greater.
 
-You then run a simple query on each slave to see which tables have differences
-from the master.
+Instead of running the checksum queries on each server, you only run it on the
+master.  You specify a table to insert the results into.  The query will
+insert directly into the table, so it will be replicated through the binlog to
+the slaves.
 
-The argument to the query is the table in which the checksums should be stored.
+The argument to the option is the table in which the checksums should be
+stored.  The table must have at least these columns: db, tbl, this_crc,
+master_crc, this_cnt, master_cnt.  Here is a suggested table structure:
+
+  CREATE TABLE checksum (
+     db         char(64)     NOT NULL,
+     tbl        char(64)     NOT NULL,
+     this_crc   char(32)     NOT NULL,
+     this_cnt   int unsigned NOT NULL,
+     master_crc char(32)         NULL,
+     master_cnt int unsigned     NULL,
+     ts         timestamp    NOT NULL,
+     PRIMARY KEY (db,tbl)
+  );
+
+When the queries are finished replicating, you can run a simple query on each
+slave to see which tables have differences from the master.  See L<"CONSISTENT
+CHECKSUMS"> for details.
+
+This option eliminates the need to do complicated locking and unlocking,
+waiting for master binlog positions, and so on.  It disables --lock, --wait,
+and --slavelag.
 
 =item --slavelag
 
@@ -579,12 +676,12 @@ MySQL user account to use for the connection.
 This option is enabled by default.  It runs a trivial checksum on all servers to
 ensure they have compatible CONCAT_WS() and cryptographic hash functions.
 
-Some versions of MySQL will skip empty strings in CONCAT_WS, and others will
-only skip NULLs.  The two kinds of behavior will produce different results if
-you have any columns containing the empty string in your table.  If you know you
-don't (for instance, all columns are integers), you can safely disable this
-check and you will get a reliable checksum even on servers with different
-behavior.
+Versions of MySQL before 4.0.14 will skip empty strings and NULLs in
+CONCAT_WS, and others will only skip NULLs.  The two kinds of behavior will
+produce different results if you have any columns containing the empty string
+in your table.  If you know you don't (for instance, all columns are
+integers), you can safely disable this check and you will get a reliable
+checksum even on servers with different behavior.
 
 =item --wait
 
@@ -593,12 +690,23 @@ slaves.  It combines locking and waiting to accomplish this.  First it locks the
 table on the master (the first server on the command line).  Then it finds the
 master's binlog position and checksums.
 
+The argument to the option is the number of seconds to wait for the slaves to
+catch up to the master.  It is actually the argument to MASTER_POS_WAIT().  If
+the slaves don't catch up to the master within this time, they will unblock
+and go ahead with the checksum.  You can tell whether this happened by
+examining the STAT column in mysql-table-checksum's output.
+
 =item --where
 
 You can use this option to limit the checksum to only part of the table.  This
 is particularly useful if you have append-only tables and don't want to
 constantly re-check all rows; you could run a daily job to just check
 yesterday's rows, for instance.
+
+This option is much like the -w option to mysqldump.  Do not specify the WHERE
+keyword.  You may need to quote the value.  Here is an example:
+
+  mysql-table-checksum --where "foo=bar"
 
 =back
 
@@ -613,136 +721,70 @@ versions.
 =head1 OVERVIEW
 
 This script generates table checksums for MySQL tables, typically useful for
-verifying your slaves are in sync with the master.  The checksums are generated
-by a query on the server, and there is virtually no network traffic as a result.
+verifying your slaves are in sync with the master.  The checksums are
+generated by a query on the server, and there is virtually no network traffic
+as a result.
 
-Invoke the script with options and server names on the command line.  If you
-specify more than one server, the script assumes the first server is the master
-and others are slaves.  It iterates through the databases and tables, and for
-each table generates a checksum for each server, in the order you specified them
-on the command line.  For speed it does these in parallel, forking off a child
-process for each table.  Duplicate server names are ignored, but if you want to
-checksum a server against itself you can use two different forms of the hostname
-(for example, localhost and 127.0.0.1).
+If you specify more than one server, the script assumes the first server is
+the master and others are slaves.  Checksums are done in parallel for speed,
+forking off a child process for each table.  Duplicate server names are
+ignored, but if you want to checksum a server against itself you can use two
+different forms of the hostname (for example, localhost and 127.0.0.1).
 
-There are several options to help you get a more consistent read as
-unobtrusively as possible.  
-
-Probably the best way is to replicate the checksum queries themselves and store
-the results in a table, then check them on the slaves with standard SQL to find
-tables that are not in sync with the master.  This method has the advantage of
-working through the normal replication channels, so you don't need to do
-anything fancy.  This only works with statement-based replication.  Use the
---replicate option to choose this method.
-
-Aside from that, the most basic thing the script can do is lock the
-table on the master until the checksum on the slave is finished, preventing
-replication changes from affecting the data in the table.  This is one table at
-a time; it does not lock all tables at once.  Also, the checksums are on the
-in-memory copy of the table, so there is no need to flush them to disk.  If your
-slaves are keeping up with the master, this is probably a fine way to do things.
-You can tell the script to print how far behind the slave is to help you see
-this.
-
-If the slaves aren't keeping up, you can tell the checksum to wait on the slave
-until it has reached the position in the master's binlog where the table was
-locked.  The wait parameter is a timeout value, so if it times out, it'll go
-ahead with the checksum even if the slave hasn't caught up to that position.
-Check the STAT column to see.
-
-Checksums use SHA1 by default on non-MyISAM tables, and the built-in table
-checksum on MyISAM tables, but you can specify a CRC function to use too.  Good
-options include SHA1 and MD5.  This function is run in SQL, not in Perl, so the
-function must be built in to MySQL.
-
-You can skip the row count or the checksum if you want.  The non-MyISAM checksum
-technique automatically counts rows as it does the checksum, so skipping the
-count on InnoDB doesn't save you any overhead, if you're worried about that.
-COUNT(*) is not used unless you skip the checksum.
-
-You can constrain the checksum to only do some databases or tables and ignore
-some databases or tables.  You can tell it to only do tables with some storage
-engines.  The script only examines table structure on the master, so if the
+mysql-table-checksum only examines table structure on the master, so if the
 storage engine or table structure differs on the slave, it won't notice.  The
 script ignores views.
 
-You can further restrict the checksum to only a part of a table with the --where
-option, similar the the -w option to mysqldump.  The argument to this option
-should be quoted and should not contain the word WHERE.  For example, specifying
-"--where 'foo=bar'" on the command line will result in the checksum being run
-with "WHERE foo=bar".  If you specify this option for a table that doesn't have
-a foo column, the query will cause an error.
-
-=head1 HOW TO GET A CONSISTENT CHECKSUM ACROSS REPLICATED SERVERS
+=head1 CONSISTENT CHECKSUMS
 
 If you are using this tool to verify your slaves still have the same data as the
 master, which is why I wrote it, you should read this section.
 
 The best way to do this with statement-based replication is to use the
---replicate option.  Otherwise use one of the other methods.
+--replicate option.  When the queries are finished running on the master and
+its slaves, you can go to the slaves and issue SQL queries to see if any
+tables are different from the master.  Try the following:
 
-=head2 USING THE REPLICATE OPTION
-
-If you use statement-based replication, the best way to get a consistent
-checksum on the master and slaves is simply do it on the master and let
-replication run the same statement on the slaves.  This makes everything very
-easy.
-
-When you choose the --replicate option, the master runs a different kind of
-checksum query than in other modes.  It is order-independent, so it returns the
-same result no matter how the rows are ordered, and it is insertable into
-another table.  The query inserts the count and checksum into a table you must
-specify in the --replicate option (see L<SYNOPSIS>).
-
-The table must have at least these columns: db, tbl, this_crc, master_crc,
-this_cnt, master_cnt.  Here is a suggested table structure:
-
-  CREATE TABLE checksum (
-     db         char(64)     NOT NULL,
-     tbl        char(64)     NOT NULL,
-     this_crc   char(32)     NOT NULL,
-     this_cnt   int unsigned NOT NULL,
-     master_crc char(32)         NULL,
-     master_cnt int unsigned     NULL,
-     ts         timestamp    NOT NULL,
-     PRIMARY KEY (db,tbl)
-  );
-
-When the queries are finished running on the master and its slaves, you can go
-to the slaves and issue SQL queries to see if any tables are different from the
-master.  Try the following:
-
-  SELECT db, tbl FROM test.checksum
+  SELECT db, tbl FROM checksum
   WHERE master_cnt <> this_cnt OR master_crc <> this_crc;
 
-When you use --replicate, all the other options pertaining to locking and so on
-are ignored.
+If you can't use this method, try the following:
 
-=head2 OTHER METHODS
+=over
 
-If you can't use the above method (for example, you are comparing data on
-servers that are not in a master-slave replication setup), here are some methods
-you can use.
+=item *
 
-If your servers are inactive, you might be able to just run the tool with no
-further ado.  This is unlikely, so you probably need to take a checksum on the
-master, then ensure the slave is caught up and no changes propagate to the
-slave(s) before taking the checksum there.
+If your servers are not being written to, you can just run the tool with no
+further ado:
 
-There are several ways to do this, depending on your setup and how much overhead
-you can tolerate.  The lowest-impact way to do it is simply hope the slave is
-caught up to the master.  You can tell the script to report slave lag in one of
-the columns so you can see if there's much lag, then just run the tool as usual.
-If you see tables that are different and the slave is behind the master, it
-might just be a false positive.  You can dig deeper on the tables that are
-troublesome, perhaps with one of the more intrusive methods I'm about to
-explain.
+  mysql-table-checksum server1 server2 ... serverN
+
+=item *
+
+If the servers are being written to, you need some way to make sure they are
+consistent at the moment you run the checksums.  For situations other than
+master-slave replication, you will have to figure this out yourself.  You may
+be able to use the --where option with a date or time column to only checksum
+data that's not recent.
+
+=item *
+
+If you are checksumming a master and slaves, you can do a fast parallel
+checksum and assume the slaves are caught up to the master.  In practice, this
+tends to work well except for tables which are constantly updated.  You can
+use the --slavelag option to see how far behind each slave was when it
+checksummed a given table.  This can help you decide whether to investigate
+further.
+
+=item *
 
 The next most disruptive technique is to lock the table on the master, then take
 checksums.  This should prevent changes from propagating to the slaves.  You can
-just lock on the master (with -k), or you can both lock on the master and wait
-on the slaves till they reach that point in the master's binlog (-w).  Which is
+just lock on the master (with --lock), or you can both lock on the master and wait
+on the slaves till they reach that point in the master's binlog (--wait).  Which is
 better depends on your workload; only you know that.
+
+=item *
 
 If you decide to make the checksums on the slaves wait until they're guaranteed
 to be caught up to the master, the algorithm looks like this:
@@ -757,16 +799,7 @@ to be caught up to the master, the algorithm looks like this:
    Master: unlock table
  End 
 
-Another option, which is useful in certain cases, is to checksum only some of
-the rows.  If you know your data is being appended to the table and old data
-isn't changing, you could checksum up until a few hours ago (for example) and
-not worry about any data newer than that.  To do this effectively, you need some
-way to know which rows are "old," such as a timestamp column.  You should also
-have an index on that column.  Then you can use the --where option to limit the
-rows that are checksummed.
-
-If you need a different algorithm and this program doesn't support it, please
-get in touch with me and let's see how we can add it.
+=back
 
 What I typically do when I'm not using the --replicate option is simply run the
 tool on all servers with no further options.  This runs fast, parallel,
@@ -781,9 +814,9 @@ database.  I tried to make the output easy to process with awk.  For this reason
 columns are always present.  If there's no value, the script prints 'NULL'.
 
 The default is column-aligned output for human readability, but you can change
-it to tab-separated if you want.
+it to tab-separated if you want.  Use the --tab option for this.
 
-Output is unsorted, though all lines about one table should be output together.
+Output is unsorted, though all lines for one table should be output together.
 For speed, all checksums are done in parallel (as much as possible) and may
 complete out of the order in which they were started.  You might want to run
 them through another script or command-line utility to make sure they are in the
@@ -837,38 +870,6 @@ The return value of MASTER_POS_WAIT().
 How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 
 =back
-
-=head1 CHECKSUM ALGORITHM
-
-The checksum algorithm varies depending on storage engine and command-line
-options.  You may specify a function with the --function option; otherwise
-mysql-table-checksum uses the built-in CHECKSUM TABLE command for MyISAM, and
-uses a cryptographic hash of all the columns in each row for other storage
-engines.
-
-The cryptographic hash algorithm concatenates all columns together with a
-separator, followed by a bitmap of each nullable column that is NULL
-(necessary because CONCAT_WS() skips NULL columns).  It hashes this value and
-stores it in a user variable.  Each additional row is hashed in the same way,
-and then the result and the user variable are concatenated and re-hashed.  In
-this way the user variable acts as an accumulator for the whole table.
-
-It is theoretically possible for two rows to concatenate to the same thing
-even though the columns have different values.  For example, assuming a
-concatenation separator of #, the following two rows will produce the same
-hash value:
-
-  ab#cde fgh
-  ab     cde#fgh
-
-I will soon add some ways for you to avoid this if you are worried about it.
-
-MySQL versions before 4.0.14 skipped both NULL and empty string values in
-CONCAT_WS().  You cannot compare the checksums of servers with incompatible
-CONCAT_WS() behavior, so mysql-table-checksum verifies all servers behave the
-same way.  You can disable this (for example, you might be using only MyISAM
-tables, so you don't need the cryptographic hash and CONCAT_WS() algorithm)
-with the --noverify option.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
