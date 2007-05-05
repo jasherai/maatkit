@@ -390,7 +390,7 @@ sub do_tbl_replicate {
    my $cnt = 'NULL';
    my $crc = 'NULL';
    my $beg = time();
-   $dbh->do('SET @crc := NULL, @cnt := 0');
+   $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
    $dbh->do($info->{query});
    $fetch_sth->execute($info->{database}, $info->{table});
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
@@ -794,10 +794,12 @@ The port number to use for the connection.
 
 This option enables a completely different checksum strategy for a consistent,
 lock-free checksum across a master and its slaves.  This only works with
-statement-based replication.  Instead of running the checksum queries on each
-server, you only run it on the master.  You specify a table to insert the
-results into.  The query will insert directly into the table, so it will be
-replicated through the binlog to the slaves.
+statement-based replication (mysql-table-checksum will switch the binlog format
+to STATEMENT for the duration of the session if your server uses row-based
+replication).  Instead of running the checksum queries on each server, you only
+run it on the master.  You specify a table to insert the results into.  The
+query will insert directly into the table, so it will be replicated through the
+binlog to the slaves.
 
 The argument to the option is the table in which the checksums should be
 stored.  The table must have at least these columns: db, tbl, this_crc,
@@ -899,12 +901,14 @@ keyword.  You may need to quote the value.  Here is an example:
 If you are using this tool to verify your slaves still have the same data as the
 master, which is why I wrote it, you should read this section.
 
-The best way to do this with statement-based replication is to use the
---replicate option.  When the queries are finished running on the master and
-its slaves, you can go to the slaves and issue SQL queries to see if any
-tables are different from the master.  Try the following:
+The best way to do this with replication is to use the --replicate option.  When
+the queries are finished running on the master and its slaves, you can go to the
+slaves and issue SQL queries to see if any tables are different from the master.
+Try the following:
 
-  SELECT db, tbl FROM checksum
+  SELECT db, tbl, this_cnt-master_cnt AS cnt_diff,
+     this_crc<>master_crc AS crc_diff
+  FROM checksum
   WHERE master_cnt <> this_cnt OR master_crc <> this_crc;
 
 If you can't use this method, try the following:
