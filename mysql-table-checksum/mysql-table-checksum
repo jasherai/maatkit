@@ -26,6 +26,7 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(min max);
+use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 
@@ -39,6 +40,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
    { s => 'algorithm|a=s',  d => 'Checksum algorithm (default: BIT_XOR)' },
+   { s => 'askpass',        d => 'Prompt for username and password for connections' },
    { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
    { s => 'engine|e=s',     d => 'Only do this comma-separated list of storage engines' },
    { s => 'function|f=s',   d => 'CRC function (SHA1, MD5...) overrides --nocrc' },
@@ -162,6 +164,8 @@ my $db_options = {
    PrintError => 0,
    AutoCommit => $opts{k} ? 0 : 1,
 };
+
+my %db_info; # holds user/pass etc for each host
 
 my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
@@ -474,6 +478,22 @@ sub get_dbh {
    my ( $host, $db ) = @_;
    my %conn = ( h => 'host', P => 'port', S => 'socket');
 
+   if ( $opts{askpass} ) {
+      if ( !$db_info{$host} ) {
+         print "Username for $host: ";
+         my $user = <STDIN>;
+         chomp $user;
+         print "Passoword for $user on $host: ";
+         ReadMode('noecho');
+         my $pass = <STDIN>;
+         chomp $pass;
+         ReadMode('normal');
+         $db_info{$host} = { u => $user, p => $pass };
+      }
+      $opts{u} = $db_info{$host}->{u};
+      $opts{p} = $db_info{$host}->{p};
+   }
+
    $db ||= '';
    my $dsn = "DBI:mysql:$db;host=$host"
       . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(h P S))
@@ -562,6 +582,10 @@ with identical data but the rows are out of order, you'll get different
 checksums with ACCUM.
 
 Choose your poison.
+
+=item --askpass
+
+Prompt for a username and password for each host.
 
 =item --databases
 
