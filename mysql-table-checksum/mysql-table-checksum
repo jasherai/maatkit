@@ -31,13 +31,6 @@ our $VERSION = '@VERSION@';
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# TODO:
-# Is it possible to XOR rows so the result is order-independent?
-# Add a --paranoid flag that'll checksum each column separately
-# Allow using GROUP_CONCAT
-# Allow to specify separator
-# Allow to use different user/pass on diffeerent servers
-
 # ############################################################################
 # Get configuration information.
 # ############################################################################
@@ -52,6 +45,7 @@ my @opt_spec = (
    { s => 'help',           d => 'Show this help message' },
    { s => 'ignoredb|g=s',   d => 'Ignore this comma-separated list of databases' },
    { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
+   { s => 'index|i=s',      d => 'Index to use for ACCUM checksum algorithm' },
    { s => 'lock|k',         d => 'Lock table on master until done on slaves (implies -l)' },
    { s => 'count|r!',       d => 'Do the count (default)' },
    { s => 'crc|c!',         d => 'Do the CRC (default)' },
@@ -72,7 +66,6 @@ my @opt_spec = (
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   a => 'BIT_XOR',
    W => '',
    r => 1,
    c => 1,
@@ -98,8 +91,8 @@ GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 # Post-process command-line options and arguments.
 $opts{k} ||= defined $opts{w};
 $opts{l} ||= $opts{k};
-$opts{f} ||= $opts{W} ? 'SHA1'    : '';
-$opts{a}   = uc $opts{a};
+$opts{f} ||= $opts{W} || $opts{a} ? 'SHA1' : '';
+$opts{a}   = $opts{a} ? uc $opts{a} : 'BIT_XOR';
 $opts{f} ||= 'SHA1' if $opts{R};
 
 # Make comma-separated lists into hashes.
@@ -166,7 +159,7 @@ my $exit_status = 0;
 
 my $db_options = {
    RaiseError => 1,
-   PrintError => 1,
+   PrintError => 0,
    AutoCommit => $opts{k} ? 0 : 1,
 };
 
@@ -442,8 +435,9 @@ sub checksum_query {
       # Find whether there's a PK (for order-by).  Since the accumulator
       # variable re-checksums every row combined with the previous row's
       # checksum, row order matters.
-      # TODO allow the user to specify an index for ordering.
-      my $index = $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)' : '';
+      my $index = $opts{i}                           ? " USE INDEX(`$opts{i}`)"
+                : $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)'
+                : '';
 
       # Generate the query.  This query relies on @crc being NULL, and @cnt
       # being 0 when it begins.  It checksums each row, appends it to the
@@ -609,6 +603,13 @@ Use this option to skip a comma-separated list of databases.
 =item --ignoretbl
 
 Use this option to skip a comma-separated list of tables.
+
+=item --index
+
+If you specify --algorithm=ACCUM and the table has no PRIMARY KEY, row ordering
+will be non-deterministic, and you may get unpredictable results.  If there is
+another index that will give predictable results, this option can be used to
+specify it.
 
 =item --lock
 
