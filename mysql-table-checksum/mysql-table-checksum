@@ -39,7 +39,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
-   { s => 'algorithm|a=s',     d => 'Checksum algorithm (default: BIT_XOR)' },
+   { s => 'algorithm|a=s',     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
    { s => 'askpass',           d => 'Prompt for username and password for connections' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
@@ -96,9 +96,6 @@ GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 # Post-process command-line options and arguments.
 $opts{k} ||= defined $opts{w};
 $opts{l} ||= $opts{k};
-$opts{f} ||= $opts{W} || $opts{a} ? 'SHA1' : '';
-$opts{a}   = $opts{a} ? uc $opts{a} : 'BIT_XOR';
-$opts{f} ||= 'SHA1' if $opts{R};
 
 # Make comma-separated lists into hashes.
 if ( $opts{d} ) {
@@ -119,7 +116,7 @@ $opts{s} =~ s/'//g;
 # Create a WHERE clause
 $opts{W} = $opts{W} ? " WHERE $opts{W}" : '';
 
-if ( $opts{a} !~ m/^(?:ACCUM|BIT_XOR)$/ ) {
+if ( $opts{a} && $opts{a} !~ m/^(?:ACCUM|CHECKSUM|BIT_XOR)$/ ) {
    warn "--algorithm=$opts{a}: unknown algorithm.\n";
    $opts{help} = 1;
 }
@@ -175,17 +172,54 @@ my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
 my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
 
-my $func      = $opts{f} || 'SHA1';
-my $crc_wid   = max(16, length(($main_dbh->selectrow_array("SELECT $opts{f}('a')"))[0]));
+# Figure out what strategy to use
+my $strat;
+if ( (!$opts{a} || $opts{a} eq 'CHECKSUM')   # By default, use CHECKSUM TABLE
+   && !$opts{W}                              # CHECKSUM does whole table
+   && !$opts{R}                              # CHECKSUM can't be INSERT.. SELECTed
+   && version_ge($main_dbh, '4.1.1') )       # CHECKSUM doesn't exist before this
+{
+   $strat = 'CHECKSUM';
+}
+elsif (!$opts{a} || $opts{a} eq 'ACCUM') {   # Fall back to ACCUM
+   $strat = 'ACCUM';
+}
+elsif ( $opts{a} eq 'BIT_XOR'
+   && version_ge($main_dbh, '4.1.1') )       # BIT_XOR() doesn't exist before this
+{
+   $strat = 'BIT_XOR';
+}
+else {
+   $strat = 'ACCUM';                         # Fallback if all else fails
+}
+if ( $opts{a} && $opts{a} ne $strat ) {
+   warn "--algorithm=$opts{a} can't be used; falling back to $strat\n";
+}
+
+# If using a cryptographic hash strategy, decide what hash function to use.
+my $func = $opts{f} || 'SHA1';
+if ( $strat =~ m/ACCUM|BIT_XOR/ ) {
+   my $res = eval { $main_dbh->do("SELECT $func('test-string')") };
+   if ( !$res ) {
+      my $err = '';
+      if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
+         $err = qq{ because "$1"};
+      }
+      if ( lc $func eq 'md5' ) {  # There's nothing to fall back to
+         die "Cryptographic function $func cannot be used$err\n";
+      }
+      warn "Cryptographic function $func cannot be used$err; falling back to MD5()\n";
+      $func = 'MD5';
+   }
+}
+
+my $crc_wid   = max(16, length(($main_dbh->selectrow_array("SELECT $func('a')"))[0]));
 my $crc_slice = 0;
 my $sanity    = '';
 
-# TODO: Figure out whether the specified cryptographic hash function is implemented on
-# this version of MySQL
-
 # Figure out which slice in a sliced BIT_XOR checksum should have the actual
 # concat-columns-and-checksum, and which should just get variable references.
-if ( $opts{o} && version_ge($main_dbh, '4.1.1') && $opts{f} && $opts{a} eq 'BIT_XOR' ) {
+if ( $opts{o} && $strat eq 'BIT_XOR' ) {
    my $desired = uc $main_dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
    my $result  = '';
    for ( my $start = 1; $start < $crc_wid && $result ne $desired; $start += 16 && ++$crc_slice ) {
@@ -238,12 +272,6 @@ if ( $opts{R} ) {
       "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ?");
    $update_sth = $main_dbh->prepare(
       "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? WHERE db = ? AND tbl = ?");
-}
-elsif ( $opts{a} eq 'BIT_XOR' ) {
-   if ( !version_ge($main_dbh, '4.1.1') ) {
-      warn "MySQL version is less than 4.1.1; using --algorithm=ACCUM.\n";
-      $opts{a} = 'ACCUM';
-   }
 }
 
 DATABASE:
@@ -382,7 +410,7 @@ sub do_tbl {
            : 'NULL';
    }
    my $mid = time();
-   if ( !$opts{f} && !$opts{R} && version_ge($dbh, '4.1.1') ) {
+   if ( $strat eq 'CHECKSUM' ) {
       if ( $opts{c} ) {
          $crc = $dbh->selectall_arrayref("CHECKSUM TABLE `$info->{database}`.`$info->{table}`",
             { Slice => {} })->[0]->{Checksum};
@@ -392,13 +420,8 @@ sub do_tbl {
       }
    }
    else {
-      if ( !$opts{f} && !$opts{c} ) {
-         $cnt = do_count($dbh, $info);
-      }
-      else {
-         ( $cnt, $crc ) = do_var_crc($dbh, $info->{query});
-         $crc ||= 'NULL';
-      }
+      ( $cnt, $crc ) = do_var_crc($dbh, $info->{query});
+      $crc ||= 'NULL';
    }
    my $end = time();
    $dbh->disconnect();
@@ -431,7 +454,7 @@ sub checksum_query {
 
    # Make the query.
    my $query = '';
-   if ( $opts{a} eq 'BIT_XOR' ) {
+   if ( $strat eq 'BIT_XOR' ) {
 
       # This checksum algorithm does not use any user variables, so its
       # behavior should be completely deterministic.  It concatenates the
@@ -604,8 +627,7 @@ mysql-table-checksum only examines table structure on the master, so if the
 storage engine or table structure differs on the slave, it won't notice.  It
 ignores views.
 
-The checksums work for me on MySQL version 4.1.20-log and various MySQL 5.0.x
-versions.
+The checksums are tested on MySQL version 3.23.58 through 6.0-alpha.
 
 =head1 OPTIONS
 
