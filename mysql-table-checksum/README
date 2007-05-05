@@ -3,6 +3,21 @@ view the perldoc for more details on them.
 
 Changelog:
 
+2007-05-05: version 1.1.0
+
+   * Added a way to do checksums on slaves via replication.
+   * Added a row-order-independent BIT_XOR checksum algorithm.
+   * Much better documentation, which reflects more logically designed program.
+   * Added compatibility options for MySQL 3.23.58 through 6.0 alpha.
+   * Added a test suite.
+   * As per Heikki Tuuri, InnoDB and other engines can do CHECKSUM TABLE since 4.1.1
+   * Made existing ACCUM user-variable algorithm work with SELECT and INSERT.
+   * Changed default behavior for --count to avoid extra COUNT(*) query.
+   * Added --algorithm, --askpass, --defaults-file, --index, --replicate, and --separator options.
+   * Added warnings if the cmdline options are wrong.
+   * Don't fork when there is only one host.
+   * Speed and query optimizations.
+
 2007-04-05: version 1.0.4
 
    * Verify servers have compatible MySQL version so checksums are valid.
