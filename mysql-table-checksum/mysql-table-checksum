@@ -51,6 +51,7 @@ my @opt_spec = (
    { s => 'lock|k',         d => 'Lock table on master until done on slaves (implies -l)' },
    { s => 'count|r!',       d => 'Do the count (default)' },
    { s => 'crc|c!',         d => 'Do the CRC (default)' },
+   { s => 'optxor|o!',      d => 'Optimize BIT_XOR with user variables (default)'},
    { s => 'password|p=s',   d => 'Password to use when connecting' },
    { s => 'port|P=i',       d => 'Port number to use for connection' },
    { s => 'replicate|R=s',  d => 'Replicate checksums in a table (implies -a BIT_XOR)' },
@@ -69,6 +70,7 @@ my @opt_spec = (
 # after processing.  Initial values are defaults.
 my %opts = (
    W => '',
+   o => 1,
    r => 1,
    c => 1,
    s => '#',
@@ -171,16 +173,43 @@ my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
 my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
 
-my $crc_wid = max(16, length(($main_dbh->selectrow_array("SELECT $opts{f}('a')"))[0]));
+my $func      = $opts{f} || 'SHA1';
+my $crc_wid   = max(16, length(($main_dbh->selectrow_array("SELECT $opts{f}('a')"))[0]));
+my $crc_slice = 0;
+my $sanity    = '';
+
+# Figure out which slice in a sliced BIT_XOR checksum should have the actual
+# concat-columns-and-checksum, and which should just get variable references.
+if ( $opts{o} && version_ge($main_dbh, '4.1.1') && $opts{f} && $opts{a} eq 'BIT_XOR' ) {
+   my $desired = uc $main_dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
+   my $result  = '';
+   for ( my $start = 1; $start < $crc_wid && $result ne $desired; $start += 16 && ++$crc_slice ) {
+      $main_dbh->do('SET @crc := NULL, @cnt := 0');
+      my $slices = make_slices("\@crc := $func('a')");
+      my $sanity = "SELECT CONCAT($slices) as test from (select null) as t";
+      $result    = $main_dbh->selectall_arrayref($sanity)->[0]->[0];
+   }
+   if ( $result ne $desired ) {
+      # Disable the user-variable optimization.
+      $opts{o} = 0;
+   }
+}
 
 if ( $opts{v} && @hosts > 1 ) {
    # Verify that CONCAT_WS is compatible across all servers.  On older versions
    # of MySQL it skips both empty strings and NULL; on newer just NULL.
    my @verify_sums;
+   my @verify_vars;
    foreach my $host ( @hosts ) {
       my $dbh = get_dbh($host, ($opts{d} ? keys %{$opts{d}} : '' ));
       my $cks = $dbh->selectall_arrayref("SELECT MD5(CONCAT_WS(',', '1', ''))")->[0]->[0];
       push @verify_sums, { host => $host, ver => $dbh->{mysql_serverinfo}, sum => $cks };
+      if ( $sanity ) {
+         # Also verify all servers treat user-variables the same way.
+         $dbh->do('SET @crc := NULL, @cnt := 0');
+         $cks = $dbh->selectall_arrayref($sanity)->[0]->[0];
+         push @verify_vars, { host => $host, ver => $dbh->{mysql_serverinfo}, sum => $cks };
+      }
    }
    if ( unique(map { $_->{sum} } @verify_sums ) > 1 ) {
       my $max = max(map { length($_) } @hosts);
@@ -191,6 +220,10 @@ if ( $opts{v} && @hosts > 1 ) {
             map { sprintf("%-${max}s %-32s %s", @{$_}{qw(host sum ver)}) }
             { host => 'HOST', sum => 'CHECKSUM', ver => 'VERSION'}, @verify_sums)
          . "\n\nYou can disable this check with --noverify.\n";
+   }
+   if ( unique(map { $_->{sum} } @verify_vars ) > 1 ) {
+      # No need to die, just disable the variable optimization.
+      $opts{o} = 0;
    }
 }
 
@@ -387,7 +420,6 @@ sub checksum_query {
    }
 
    # Design the column checksum expression.
-   my $func = $opts{f} || 'SHA1';
    my $chks = @tocrc > 1
             ? "$func(CONCAT_WS('$opts{s}', " . join(',', @tocrc) . '))'
             : "$func($tocrc[0])";
@@ -406,32 +438,14 @@ sub checksum_query {
       # effect is the same as XORing a very wide (32 characters = 128 bits for
       # MD5, and SHA1 is even larger) unsigned integer over all the rows.
 
-      # Split the CRC result up into slices and glue them together.
-      my @slices;
-      for ( my $start = 1; $start < $crc_wid; $start += 16 ) {
-         my $len = min(16, $crc_wid - $start + 1);
-         push @slices,
-            "LPAD(CONV(BIT_XOR("
-            . "CAST(CONV(SUBSTRING(\@crc, $start, $len), 16, 10) AS UNSIGNED))"
-            . ", 10, 16), $len, '0')";
-      }
-
-      # The last slice actually needs to do a real CRC on the columns.
-      # TODO: when there are two slices, the second... when three, the
-      # third... argh.  Figure out how to fix this.
-      # $slices[-1] =~ s/\@crc/\@crc:=$func(CONCAT_WS('$opts{s}', $cols$nulls))/;
-      map { s/\@crc/$chks/ } @slices;
+      my $slices = make_slices($chks);
 
       if ( $opts{R} ) {
          $query = "REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, this_cnt, this_crc) "
-            . "SELECT '$db', '$tbl', COUNT(*), CONCAT("
-            . join(', ', @slices)
-            . ") AS crc FROM `$db`.`$tbl`$opts{W}";
+            . "SELECT '$db', '$tbl', COUNT(*), CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
       }
       else {
-         $query = "SELECT /*$db.$tbl*/ COUNT(*) as cnt, CONCAT("
-            . join(', ', @slices)
-            . ") AS crc FROM `$db`.`$tbl`$opts{W}";
+         $query = "SELECT /*$db.$tbl*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
       }
 
    }
@@ -466,6 +480,29 @@ sub checksum_query {
    }
 
    return ( $type, $query );
+}
+
+sub make_slices {
+   my ( $chks ) = @_;
+
+   # Split the CRC result up into slices and glue them together.
+   my @slices;
+   for ( my $start = 1; $start < $crc_wid; $start += 16 ) {
+      my $len = min(16, $crc_wid - $start + 1);
+      push @slices,
+         "LPAD(CONV(BIT_XOR("
+         . "CAST(CONV(SUBSTRING(\@crc, $start, $len), 16, 10) AS UNSIGNED))"
+         . ", 10, 16), $len, '0')";
+   }
+
+   if ( $crc_slice >= @slices && $opts{o} ) {
+      map { s/\@crc/$chks/ } @slices;
+   }
+   else {
+      $slices[$crc_slice] =~ s/\@crc/$chks/;
+   }
+
+   return join(', ', @slices);
 }
 
 exit $exit_status;
@@ -543,7 +580,27 @@ mysql-table-checksum - Efficiently checksum MySQL tables on one or many servers.
 
 Or,
 
-  mysql-table-checksum host host1 host2 ... hostN
+  mysql-table-checksum host host1 host2 ... hostN | mysql-checksum-filter
+
+=head1 OVERVIEW
+
+This program generates table checksums for MySQL tables, typically useful for
+verifying your slaves are in sync with the master.  The checksums are
+generated by a query on the server, and there is virtually no network traffic
+as a result.
+
+If you specify more than one server, mysql-table-checksum assumes the first
+server is the master and others are slaves.  Checksums are parallelized for
+speed, forking off a child process for each table.  Duplicate server names are
+ignored, but if you want to checksum a server against itself you can use two
+different forms of the hostname (for example, localhost and 127.0.0.1).
+
+mysql-table-checksum only examines table structure on the master, so if the
+storage engine or table structure differs on the slave, it won't notice.  It
+ignores views.
+
+The checksums work for me on MySQL version 4.1.20-log and various MySQL 5.0.x
+versions.
 
 =head1 OPTIONS
 
@@ -563,17 +620,16 @@ CONCAT_WS() skips NULL columns).  It then uses BIT_XOR(), which is
 order-independent, to reduce all the rows to a single checksum.
 
 For servers older than 4.1.1, BIT_XOR() is not available, and the ACCUM
-algorithm is used as a fallback.  In this case a single user variable is used
-as an accumulator.  Each row is reduced to a single checksum, which is
-concatenated and re-checksummed.  This technique is order-dependent.  If the
-table has a primary key, it will be used to order the results for consistency;
-otherwise it's up to chance.
+algorithm is used as a fallback.  In this case a single user variable is used as
+an accumulator.  Each row is reduced to a single checksum, which is concatenated
+with the accumulator and re-checksummed.  This technique is order-dependent.  If
+the table has a primary key, it will be used to order the results for
+consistency; otherwise it's up to chance.
 
 The ACCUM algorithm has two possible advantages over BIT_XOR: speed (there may
 be fewer cryptographic hash operations and it may read less data) and possibly
-fewer collisions.  You can construct a pathological case where a table with a
-single column, having all the same values and an even number of rows, will
-checksum and BIT_XOR to zero.  In this case you will not be able to
+fewer collisions.  The pathological worst case is where identical rows will
+cancel each other out in the BIT_XOR.  In this case you will not be able to
 distinguish a table full of one value from a table full of another value.  The
 ACCUM algorithm will distinguish them.
 
@@ -581,11 +637,25 @@ However, the ACCUM algorithm is order-dependent, so if you have two tables
 with identical data but the rows are out of order, you'll get different
 checksums with ACCUM.
 
-Choose your poison.
+Choose your (mild) poison.  Each algorithm is very good in reality.
 
 =item --askpass
 
 Prompt for a username and password for each host.
+
+=item --count
+
+Count the rows as well as taking their checksum. This is enabled by default.
+Disabling it doesn't save you anything except in the case where you are allowing
+the built-in CHECKSUM TABLE to take the checksum.  In this case the count must
+be gotten from a separate COUNT(*) query, which you probably don't care about
+(if the built-in checksum tells you your data is identical on two hosts, that is
+a very strong assurance).
+
+=item --crc
+
+Take the checksum of the rows as well as their count.  This is enabled by
+default.  If you disable it, you'll just get COUNT(*) queries.
 
 =item --databases
 
@@ -603,18 +673,18 @@ create a row checksum for each row.  The default is to use SHA1, but other
 good choices include MD5.  Whatever function you specify is run in SQL, not in
 Perl, so it must be available to MySQL.
 
-If you leave this option at its default, storage engines that support MySQL's
-built-in CHECKSUM TABLE command will be checksummed with that.
-
-One reason you might override this is to do checksums across tables that have
-the same data but different row formats (possibly because of different storage
-engines), and thus will return different values for CHECKSUM TABLE.  Or you
-might want to checksum on a pre-4.1.1 server, which is when CHECKSUM TABLE was
-introduced.
+If you leave this option at its default, servers that support MySQL's built-in
+CHECKSUM TABLE command will be checksummed with that.  In this case you probably
+want to specify --nocount to avoid running a separate COUNT(*) query.
 
 Checksums based on cryptographic hash functions simultaneously count rows, so if
-you want a row count, this might be faster than CHECKSUM TABLE, which requires a
-separate COUNT(*) query to get row count.
+you want a row count, a cryptographic hash might be faster than CHECKSUM TABLE.
+
+Another reason to specify a cryptographic hash checksum is to do checksums
+across tables that have the same data but different row formats (possibly
+because of different storage engines), and thus will return different values for
+CHECKSUM TABLE.  Or you might want to checksum on a pre-4.1.1 server, which is
+when CHECKSUM TABLE was introduced.
 
 If you want to checksum only part of the table with a WHERE clause, CHECKSUM
 TABLE will not work, so this option is enabled by default when you specify
@@ -645,14 +715,33 @@ keep this lock until the checksums complete on the other servers.
 This option isn't very useful by itself, so you probably want to use --wait
 instead.
 
-=item --count
+=item --optxor
 
-Count the rows as well as taking their checksum. This is enabled by default.
+This option, which is enabled by default, specifies to use user variables to
+reduce the number of times each row must be passed through the cryptographic
+hash function when you are using the BIT_XOR algorithm.
 
-=item --crc
+With the optimization, the queries look like this in pseudo-code:
 
-Take the checksum of the rows as well as their count.  This is enabled by
-default.
+  SELECT CONCAT(
+     BIT_XOR(SLICE_OF(@user_variable)),
+     BIT_XOR(SLICE_OF(@user_variable)),
+     ...
+     BIT_XOR(SLICE_OF(@user_variable := HASH(col1, col2... colN))));
+
+The exact positioning of user variables and calls to the hash function is
+determined dynamically, and will vary between MySQL versions.  Without the
+optimization, it looks like this:
+
+  SELECT CONCAT(
+     BIT_XOR(SLICE_OF(MD5(col1, col2... colN))),
+     BIT_XOR(SLICE_OF(MD5(col1, col2... colN))),
+     ...
+     BIT_XOR(SLICE_OF(MD5(col1, col2... colN))));
+
+The difference is the number of times all the columns must be mashed together
+and fed through the hash function.  If you are checksumming really large
+columns, such as BLOB or TEXT columns, this might make a big difference.
 
 =item --password
 
@@ -694,6 +783,11 @@ This option eliminates the need to do complicated locking and unlocking,
 waiting for master binlog positions, and so on.  It disables --lock, --wait,
 and --slavelag.
 
+=item --separator
+
+This option controls the separator character used for CONCAT_WS() when taking
+row checksums with user-variables.
+
 =item --slavelag
 
 If this option is enabled, the output will show how many seconds behind the
@@ -702,18 +796,13 @@ non-blocking checksum, and you know your slaves might lag the master.  You can
 inspect the results and make an educated guess whether any discrepancies on the
 slave are due to slave lag instead of corrupt data.
 
-=item --separator
-
-This option controls the separator character used for CONCAT_WS() when taking
-row checksums with user-variables.
-
 =item --socket
 
 The socket file to use for the connection.
 
 =item --tab
 
-Instead of using tabular, aligned output, print tab-separated output.
+Instead of column-aligned output, print tab-separated output.
 
 =item --tables
 
@@ -735,6 +824,10 @@ in your table.  If you know you don't (for instance, all columns are
 integers), you can safely disable this check and you will get a reliable
 checksum even on servers with different behavior.
 
+This option also checks all servers to be sure the --optxor optimization will
+work correctly.  If not, it simply disables the optimization, rather than
+stopping with an error.
+
 =item --wait
 
 This option helps you get a consistent checksum across a master server and its
@@ -746,7 +839,7 @@ The argument to the option is the number of seconds to wait for the slaves to
 catch up to the master.  It is actually the argument to MASTER_POS_WAIT().  If
 the slaves don't catch up to the master within this time, they will unblock
 and go ahead with the checksum.  You can tell whether this happened by
-examining the STAT column in mysql-table-checksum's output.
+examining the STAT column in the output.
 
 =item --where
 
@@ -761,31 +854,6 @@ keyword.  You may need to quote the value.  Here is an example:
   mysql-table-checksum --where "foo=bar"
 
 =back
-
-=head1 SYSTEM REQUIREMENTS
-
-You need Perl, DBI, DBD::mysql, and some core packages that ought to be
-installed in any reasonably new version of Perl.
-
-The checksums work for me on MySQL version 4.1.20-log and various MySQL 5.0.x
-versions.
-
-=head1 OVERVIEW
-
-This script generates table checksums for MySQL tables, typically useful for
-verifying your slaves are in sync with the master.  The checksums are
-generated by a query on the server, and there is virtually no network traffic
-as a result.
-
-If you specify more than one server, the script assumes the first server is
-the master and others are slaves.  Checksums are done in parallel for speed,
-forking off a child process for each table.  Duplicate server names are
-ignored, but if you want to checksum a server against itself you can use two
-different forms of the hostname (for example, localhost and 127.0.0.1).
-
-mysql-table-checksum only examines table structure on the master, so if the
-storage engine or table structure differs on the slave, it won't notice.  The
-script ignores views.
 
 =head1 CONSISTENT CHECKSUMS
 
@@ -863,7 +931,7 @@ the master as explained above.
 
 Output is to STDOUT, one line per server and table, with header lines for each
 database.  I tried to make the output easy to process with awk.  For this reason
-columns are always present.  If there's no value, the script prints 'NULL'.
+columns are always present.  If there's no value, mysql-table-checksum prints 'NULL'.
 
 The default is column-aligned output for human readability, but you can change
 it to tab-separated if you want.  Use the --tab option for this.
@@ -873,7 +941,7 @@ For speed, all checksums are done in parallel (as much as possible) and may
 complete out of the order in which they were started.  You might want to run
 them through another script or command-line utility to make sure they are in the
 order you want.  If you pipe the output through mysql-checksum-filter, you can
-avoid seeing output about tables that are the same.
+sort the output and/or avoid seeing output about tables that have no differences.
 
 The columns in the output are as follows.  The database and table come first so
 you can sort by them easily.
@@ -903,7 +971,7 @@ The table's row count, unless you specified to skip it.
 =item CHECKSUM
 
 The table's checksum, unless you specifed to skip it or the table has no rows.
-MyISAM checksums will be 0 if there are no rows; other styles will print NULL.
+some types of checksums will be 0 if there are no rows; others will print NULL.
 
 =item TIME
 
@@ -923,6 +991,29 @@ How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 
 =back
 
+=head1 BUGS
+
+Please use the mailing lists, forums and other tools at
+L<http://sourceforge.net/projects/mysqltoolkit> to discuss any bugs, feature
+requests, etc.
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 AUTHOR
+
+Baron "Xaprb" Schwartz.
+
+=head1 ACKNOWLEDGEMENTS
+
+This is an incomplete list.  My apologies for omissions or misspellings.
+
+Giuseppe Maxia,
+Heikki Tuuri,
+Martin Friebe,
+
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
 This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
@@ -941,17 +1032,5 @@ licenses.
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 Place, Suite 330, Boston, MA  02111-1307  USA.
-
-=head1 AUTHOR
-
-Baron Schwartz, baron at xaprb dot com.
-
-=head1 ACKNOWLEDGEMENTS
-
-This is an incomplete list.  My apologies for omissions or misspellings.
-
-Giuseppe Maxia,
-Heikki Tuuri,
-Martin Friebe,
 
 =cut
