@@ -72,7 +72,7 @@ my @opt_spec = (
 my %opts = (
    W => '',
    o => 1,
-   r => 1,
+   r => 0,
    c => 1,
    s => '#',
    v => 1,
@@ -179,7 +179,17 @@ if ( (!$opts{a} || $opts{a} eq 'CHECKSUM')   # By default, use CHECKSUM TABLE
    && !$opts{R}                              # CHECKSUM can't be INSERT.. SELECTed
    && version_ge($main_dbh, '4.1.1') )       # CHECKSUM doesn't exist before this
 {
-   $strat = 'CHECKSUM';
+   if ( !$opts{a} && $opts{r} ) {
+      # The user didn't specify an algorithm, but wants a count, which is
+      # inefficient with CHECKSUM TABLE.  Since the user didn't explicitly
+      # demand this poor strategy, we fall back to another.
+      $strat = 'ACCUM';
+   }
+   else {
+      # Alas, the user wants me to be stupid and run two queries where one would
+      # suffice.
+      $strat = 'CHECKSUM';
+   }
 }
 elsif (!$opts{a} || $opts{a} eq 'ACCUM') {   # Fall back to ACCUM
    $strat = 'ACCUM';
@@ -419,9 +429,12 @@ sub do_tbl {
          $cnt = do_count($dbh, $info);
       }
    }
-   else {
+   elsif ( $opts{c} ) {
       ( $cnt, $crc ) = do_var_crc($dbh, $info->{query});
       $crc ||= 'NULL';
+   }
+   else {
+      $cnt = do_count($dbh, $info);
    }
    my $end = time();
    $dbh->disconnect();
@@ -623,9 +636,8 @@ speed, forking off a child process for each table.  Duplicate server names are
 ignored, but if you want to checksum a server against itself you can use two
 different forms of the hostname (for example, localhost and 127.0.0.1).
 
-mysql-table-checksum only examines table structure on the master, so if the
-storage engine or table structure differs on the slave, it won't notice.  It
-ignores views.
+mysql-table-checksum only examines table structure on the first host specified,
+so if anything differs on the others, it won't notice.  It ignores views.
 
 The checksums are tested on MySQL version 3.23.58 through 6.0-alpha.
 
@@ -637,21 +649,28 @@ Many options are enabled by default and can be disabled by prefixing with --no.
 
 =item --algorithm
 
-Specifies which checksum algorithm to use when not using CHECKSUM TABLE (see
---function).  Valid arguments are BIT_XOR and ACCUM.  BIT_XOR is the default.
+Specifies which checksum algorithm to use.  Valid arguments are CHECKSUM,
+BIT_XOR and ACCUM.  The latter two do cryptographic hash checksums.
 
-The BIT_XOR algorithm is available for MySQL 4.1.1 and newer.  It uses a
+CHECKSUM is built into MySQL, but has some disadvantages.  BIT_XOR and ACCUM are
+implemented by the SQL queries mysql-table-checksum generates.  They use a
 cryptographic hash of all columns concatenated together with a separator,
 followed by a bitmap of each nullable column that is NULL (necessary because
-CONCAT_WS() skips NULL columns).  It then uses BIT_XOR(), which is
-order-independent, to reduce all the rows to a single checksum.
+CONCAT_WS() skips NULL columns).  
 
-For servers older than 4.1.1, BIT_XOR() is not available, and the ACCUM
-algorithm is used as a fallback.  In this case a single user variable is used as
-an accumulator.  Each row is reduced to a single checksum, which is concatenated
-with the accumulator and re-checksummed.  This technique is order-dependent.  If
-the table has a primary key, it will be used to order the results for
-consistency; otherwise it's up to chance.
+CHECKSUM is the default.  This method uses MySQL's built-in CHECKSUM TABLE
+command.  It cannot be used before MySQL 4.1.1, and various options disable it
+as well.  It does not simultaneously count rows; that requires an extra COUNT(*)
+query.
+
+The BIT_XOR algorithm is available for MySQL 4.1.1 and newer.  It uses
+BIT_XOR(), which is order-independent, to reduce all the rows to a single
+checksum.
+
+ACCUM uses a user variable as an accumulator.  It reduces each row to a single
+checksum, which is concatenated with the accumulator and re-checksummed.  This
+technique is order-dependent.  If the table has a primary key, it will be used
+to order the results for consistency; otherwise it's up to chance.
 
 The ACCUM algorithm has two possible advantages over BIT_XOR: speed (there may
 be fewer cryptographic hash operations and it may read less data) and possibly
@@ -664,7 +683,15 @@ However, the ACCUM algorithm is order-dependent, so if you have two tables
 with identical data but the rows are out of order, you'll get different
 checksums with ACCUM.
 
-Choose your (mild) poison.  Each algorithm is very good in reality.
+Choose your (mild) poison.  Each algorithm is very good in reality.  If a given
+algorithm won't work for some reason, mysql-table-checksum falls back to
+another.  The least common denominator is ACCUM, which works on MySQL 3.23.2 and
+newer.
+
+One reason to specify a cryptographic hash algorithm instead of CHECKSUM is to
+checksum tables that have the same data but different row formats (possibly
+because of different storage engines), and thus will return different values for
+CHECKSUM TABLE.
 
 =item --askpass
 
@@ -672,12 +699,9 @@ Prompt for a username and password for each host.
 
 =item --count
 
-Count the rows as well as taking their checksum. This is enabled by default.
-Disabling it doesn't save you anything except in the case where you are allowing
-the built-in CHECKSUM TABLE to take the checksum.  In this case the count must
-be gotten from a separate COUNT(*) query, which you probably don't care about
-(if the built-in checksum tells you your data is identical on two hosts, that is
-a very strong assurance).
+Count the rows as well as taking their checksum. This is disabled by default to
+avoid an extra COUNT(*) query when --algorithm is CHECKSUM.  For other
+algorithms, you get a count for free.
 
 =item --crc
 
@@ -700,27 +724,10 @@ You can use this to restrict the checksum to InnoDB, for example.
 
 =item --function
 
-You can use this option to choose the cryptographic hash function used to
-create a row checksum for each row.  The default is to use SHA1, but other
-good choices include MD5.  Whatever function you specify is run in SQL, not in
+You can use this option to choose the cryptographic hash function used for
+--algorithm=ACCUM or --algorithm=BIT_XOR.  The default is to use SHA1, but MD5
+is also a good choice.  Whatever function you specify is run in SQL, not in
 Perl, so it must be available to MySQL.
-
-If you leave this option at its default, servers that support MySQL's built-in
-CHECKSUM TABLE command will be checksummed with that.  In this case you probably
-want to specify --nocount to avoid running a separate COUNT(*) query.
-
-Checksums based on cryptographic hash functions simultaneously count rows, so if
-you want a row count, a cryptographic hash might be faster than CHECKSUM TABLE.
-
-Another reason to specify a cryptographic hash checksum is to do checksums
-across tables that have the same data but different row formats (possibly
-because of different storage engines), and thus will return different values for
-CHECKSUM TABLE.  Or you might want to checksum on a pre-4.1.1 server, which is
-when CHECKSUM TABLE was introduced.
-
-If you want to checksum only part of the table with a WHERE clause, CHECKSUM
-TABLE will not work, so this option is enabled by default when you specify
---where.
 
 =item --ignoredb
 
