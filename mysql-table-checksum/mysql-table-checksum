@@ -132,23 +132,21 @@ if ( $opts{R} && @hosts > 1 ) {
 }
 
 if ( $opts{help} ) {
-   print "Usage: $PROGRAM_NAME [OPTION]... HOST [HOST...]\n\n";
+   print "Usage: mysql-table-checksum [OPTION]... HOST [HOST...]\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
-$PROGRAM_NAME efficiently checksums MySQL tables
-on one or more hosts.  If you specify multiple hosts, the first
-is assumed to be the master.
+mysql-table-checksum efficiently checksums MySQL tables on one or more hosts.
+If you specify multiple hosts, the first is assumed to be the master.
+Connection options are read from MySQL option files.  For more details, please
+read the documentation:
 
-If possible, MySQL options are read from defaults files such as ~/.my.cnf or
-another defaults file you specify with --defaults-file.  For more details,
-please read the documentation:
-
-   perldoc $PROGRAM_NAME
+   perldoc mysql-table-checksum
 
 USAGE
    exit(1);

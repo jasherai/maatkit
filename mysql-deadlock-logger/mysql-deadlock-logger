@@ -26,6 +26,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use List::Util qw(max);
 use Socket qw(inet_aton);
 
 our $VERSION = '@VERSION@';
@@ -39,6 +40,7 @@ our $VERSION = '@VERSION@';
 my @opt_spec = (
    { s => 'collapse|c=i', d => 'Collapse whitespace in queries' },
    { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'dest|d=s',     d => 'Server in which to store info' },
    { s => 'help',         d => 'Show this help message' },
    { s => 'numip|n',      d => 'Express IP addresses as integers' },
@@ -57,7 +59,7 @@ my %opts = (
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
    $spec->{t} = $short;
@@ -111,12 +113,18 @@ sub parse_dsn {
 my $source = parse_dsn($opts{s}, {}      );
 my $dest   = parse_dsn($opts{d}, $source );
 
+if (!$opts{p} && !$dest->{t}) {
+   warn "You need to specify what to do (print or save).\n";
+   $opts{help} = 1;
+}
+
 if ( $opts{help} ) {
-   print "Usage: $PROGRAM_NAME <options>\n\n";
+   print "Usage: mysql-deadlock-logger <options>\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
@@ -126,19 +134,14 @@ print the output or save it in a database.
 
 The --source and --dest arguments take the form
    user:pass\@host:port/database.table.
-All parts are optional, and default to values in your .my.cnf file.
+All parts are optional, and default values are read from options files.
 Missing values to --dest are filled in from --source.
 
 For more details, please read the documentation:
 
-   perldoc $PROGRAM_NAME
+   perldoc mysql-deadlock-logger
 
 USAGE
-   exit(1);
-}
-if (!$opts{p} && !$dest->{t}) {
-   print "You need to specify what to do (print or save).\n"
-     . "Use the --help option to learn more.\n";
    exit(1);
 }
 
@@ -191,11 +194,11 @@ my %is_proc_info = (
 # ############################################################################
 # Start working.
 # ############################################################################
-my %conn = ( h => 'host', P => 'port', S => 'socket');
+my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
 
 # Connect to the database
 my $dsn = 'DBI:mysql:' . ( $source->{D} || '' ) . ';'
-   . join(';', map  { "$conn{$_}=$source->{$_}" } grep { defined $source->{$_} } qw(h P S))
+   . join(';', map  { "$conn{$_}=$source->{$_}" } grep { defined $source->{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
 my $dbh = DBI->connect($dsn, @{$source}{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");

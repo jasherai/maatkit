@@ -26,7 +26,7 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use Time::HiRes qw(time);
-use List::Util qw(sum min first);
+use List::Util qw(sum min max first);
 
 our $VERSION = '@VERSION@';
 
@@ -42,6 +42,7 @@ my @opt_spec = (
    { s => 'allowcache|a',  d => 'Enable query cache (default is disabled)' },
    { s => 'calibrate|c!',  d => "Try to compensate for SHOW STATUS (default)" },
    { s => 'database|D=s',  d => 'Database to use' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'external|e',    d => 'Calibrate, then pause while an external program runs' },
    { s => 'flush|f+',      d => 'Flush tables.  Specify twice to do between every query' },
    { s => 'help',          d => 'Show this help message' },
@@ -66,7 +67,7 @@ my %opts = (
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
    $spec->{t} = $short;
@@ -82,16 +83,17 @@ $opts{n} = [ split(/,/, $opts{n} || '' ) ];
 $opts{v} = min(2, $opts{v});
 
 if ( $opts{help} || (!@ARGV && !$opts{e} )) {
-   print "Usage: $PROGRAM_NAME <options> [FILE]...\n\n";
+   print "Usage: mysql-query-profiler <options> [FILE]...\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
-$PROGRAM_NAME reads and executes queries, and prints statistics about MySQL
-server load.  If possible, database options are read from your .my.cnf file.
+mysql-query-profiler reads and executes queries, and prints statistics about
+MySQL server load.  Connection options are read from MySQL option files.
 
 If FILE is given, queries are read and executed from the file(s).  With no FILE,
 or when FILE is -, read standard input.  If --external is specified, lines in
@@ -100,7 +102,7 @@ FILE are executed by the shell.  You must specify - if no FILE and you want
 
 For more details, please read the documentation:
 
-   perldoc $PROGRAM_NAME
+   perldoc mysql-query-profiler
 
 USAGE
    exit(1);
@@ -109,11 +111,11 @@ USAGE
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
-my %conn = ( h => 'host', P => 'port', S => 'socket');
+my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
 
 # Connect to the database
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
-   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(h P S))
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");

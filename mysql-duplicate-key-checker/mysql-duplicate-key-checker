@@ -40,6 +40,7 @@ my @opt_spec = (
    { s => 'allatonce|s',    d => 'Print only once, instead of one DB at a time' },
    { s => 'allstruct|a',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
    { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'function|f=s',   d => 'Do f=foreign keys, k=keys.  Default is do both.' },
    { s => 'help',           d => 'Show this help message' },
    { s => 'host|h=s',       d => 'Connect to host' },
@@ -70,7 +71,7 @@ my %opts = (
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
    $spec->{t} = $short;
@@ -96,21 +97,20 @@ if ( $opts{e} ) {
 }
 
 if ( $opts{help} ) {
-   print "Usage: $PROGRAM_NAME <options>\n\n";
+   print "Usage: mysql-duplicate-key-checker <options>\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
-$PROGRAM_NAME examines MySQL tables for duplicate or redundant indexes and
-foreign keys.
-
-If possible, database options are read from your .my.cnf file.
+mysql-duplicate-key-checker examines MySQL tables for duplicate or redundant
+indexes and foreign keys.  Connection options are read from MySQL option files.
 For more details, please read the documentation:
 
-   perldoc $PROGRAM_NAME
+   perldoc mysql-duplicate-key-checker
 
 USAGE
    exit(1);
@@ -119,11 +119,11 @@ USAGE
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
-my %conn = ( h => 'host', P => 'port', S => 'socket');
+my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
 
 # Connect to the database
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
-   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(h P S))
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");

@@ -25,6 +25,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 use Getopt::Long;
+use List::Util qw(max);
 
 our $VERSION = '@VERSION@';
 
@@ -63,21 +64,20 @@ Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
 if ( $opts{help} ) {
-   print "Usage: $PROGRAM_NAME <options> FILE\n\n";
+   print "Usage: mysql-checksum-filter <options> FILE\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
-$PROGRAM_NAME filters checksums so you only see ones that differ.  If you pass
-files on the command line it analyzes them; otherwise it reads from standard
-input.
+mysql-checksum-filter filters checksums so you only see ones that differ.  If
+you pass files on the command line it analyzes them; otherwise it reads from
+standard input.  For more details, please read the documentation:
 
-For more details, please read the documentation:
-
-   perldoc $PROGRAM_NAME
+   perldoc mysql-checksum-filter
 
 USAGE
    exit(1);

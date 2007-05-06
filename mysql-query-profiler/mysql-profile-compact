@@ -69,20 +69,21 @@ if ( $opts{q} ) {
 }
 
 if ( $opts{help} ) {
-   print "Usage: $PROGRAM_NAME <options>... [FILE]...\n\n";
+   print "Usage: mysql-profile-compact <options>... [FILE]...\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
-$PROGRAM_NAME aligns query profiler results side by side for easy comparison.
-With no FILE, or when FILE is -, read from standard input.
+mysql-profile-compact aligns query profiler results side by side for easy
+comparison.  With no FILE, or when FILE is -, read from standard input.
 
 For more details, please read the documentation:
 
-   perldoc $PROGRAM_NAME
+   perldoc mysql-profile-compact
 
 USAGE
    exit(1);

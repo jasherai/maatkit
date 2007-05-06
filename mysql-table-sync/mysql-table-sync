@@ -80,6 +80,7 @@ my @opt_spec = (
    { s => 'collate|O!',       d => 'Use MySQL to compare strings if necessary (default)' },
    { s => 'columns|c=s',      d => 'Comma-separated column list' },
    { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'deleteinsert|l',   d => 'Convert all UPDATES to DELETE and INSERT' },
    { s => 'queries|q',        d => 'Make debugging output executable SQL' },
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
@@ -129,7 +130,7 @@ my %opts = (
 
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
    $spec->{t} = $short;
@@ -169,24 +170,25 @@ my $source = parse_dsn(shift(@ARGV), {}     );
 my $dest   = parse_dsn(shift(@ARGV), $source);
 
 if ( $opts{help} || !$dest ) {
-   print "Usage: $PROGRAM_NAME [OPTION].. <source> <dest>\n\n";
+   print "Usage: mysql-table-sync [OPTION].. <source> <dest>\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
-$PROGRAM_NAME finds and resolves data differences between two MySQL tables.
+mysql-table-sync finds and resolves data differences between two MySQL tables.
 <source> and <dest> are data sources in the format
+
    user:pass\@host:port/database.table:key
-Everything but the table name is optional, and defaults will be read from your
-environment and your .my.cnf file if possible.  Values for <dest> default to the
-values for <source>.
 
-For more details, please read the documentation:
+Everything but the table name is optional.  Values for <dest> default to the
+values for <source>.  Connection options are read from MySQL option files.  For
+more details, please read the documentation:
 
-   perldoc $PROGRAM_NAME
+   perldoc mysql-table-sync
 
 USAGE
    exit(1);
@@ -1293,9 +1295,9 @@ sub get_dbh {
       PrintError => 1,
    };
    my ( $info ) = @_;
-   my %conn = ( h => 'host', P => 'port', S => 'socket');
+   my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(h P S))
+      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
    return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
       or die("Can't connect to DB: $OS_ERROR");
