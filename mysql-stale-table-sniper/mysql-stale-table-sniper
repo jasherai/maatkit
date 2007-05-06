@@ -1,5 +1,28 @@
 #!/usr/bin/perl
 
+mysql> show table status\G
+*************************** 1. row *****
+           Name: t
+         Engine: InnoDB
+        Version: 10
+     Row_format: Compact
+           Rows: 0
+ Avg_row_length: 0
+    Data_length: 16384
+Max_data_length: 0
+   Index_length: 0
+      Data_free: 0
+ Auto_increment: NULL
+    Create_time: 2007-05-06 17:42:01
+    Update_time: NULL
+     Check_time: NULL
+      Collation: latin1_swedish_ci
+       Checksum: NULL
+ Create_options:
+        Comment: InnoDB free: 4096 kB
+1 row in set (0.00 sec)
+
+
 # This is mysql-table-sniper, a program to help remove tables from a MySQL server.
 # 
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
@@ -35,14 +58,72 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
+# Define cmdline args; each is GetOpt::Long spec, whether required,
+# human-readable description.  Add more hash entries as needed.
+my @opt_spec = (
+   { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'engine|e=s',        d => 'Only do this comma-separated list of storage engines' },
+   { s => 'help',              d => 'Show this help message' },
+   { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
+   { s => 'optxor|o!',         d => 'Optimize BIT_XOR with user variables (default)'},
+   { s => 'password|p=s',      d => 'Password to use when connecting' },
+   { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'tab|b',             d => 'Output separated with tabs' },
+   { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
+   { s => 'user|u=s',          d => 'User for login if not current user' },
+);
+
+# This is the container for the command-line options' values to be stored in
+# after processing.  Initial values are defaults.
+my %opts = (
+);
+
+# Post-process...
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+}
+
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+# Make comma-separated lists into hashes.
+if ( $opts{d} ) {
+   $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
+}
+$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
+if ( $opts{t} ) {
+   $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
+}
+$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
+if ( $opts{e} ) {
+   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
+}
+
+if ( $opts{help} ) {
+   print "Usage: mysql-stale-table-sniper [OPTION]... HOST [HOST...]\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+   }
    print <<USAGE;
 
-$PROGRAM_NAME helps you remove tables from a MySQL server.
+mysql-stale-table-sniper helps you remove tables from a MySQL server.
+Connection options are read from MySQL option files.  For more details, please
+read the documentation:
 
-If possible, database options are read from your .my.cnf file.
-For more details, please read the documentation:
-
-   perldoc $PROGRAM_NAME
+   perldoc mysql-stale-table-sniper
 
 USAGE
    exit(1);
@@ -57,33 +138,110 @@ my @whole_batch;
 
 DATABASE:
 foreach my $database ( @databases ) {
-
-   # Ignore databases as instructed.  Also ignore INFORMATION_SCHEMA and skip
-   # databases caused by lost+found directories created in the root of ext3
-   # filesystems; they are not really databases.
    next DATABASE if
       ( $opts{d} && !exists($opts{d}->{$database}) )
       || $database =~ m/^(information_schema|lost\+found)$/mi
       || exists $opts{g}->{$database};
 
-   my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
+   my @tables = @{$main_dbh->selectcol_arrayref("SHOW TABLES FROM `$database`")};
    next DATABASE unless @tables;
 
    my %info_for;
+   TABLE:
+   foreach my $table ( @tables ) {
+      next TABLE if
+         ( $opts{t} && !exists($opts{t}->{$table}) )
+         || ( $opts{R} && $opts{R} eq "$database.$table" )
+         || exists $opts{n}->{$table};
+
+      # Get the table type, and a query to generate a checksum for it.
+      my ( $engine, $query ) = checksum_query( $main_dbh, $database, $table );
+
+      # Skip views, and tables of the wrong engine.
+      next TABLE if
+         $engine eq 'VIEW'
+         || ( $opts{e} && !exists $opts{e}->{lc($engine)});
+      $info_for{$table} = {
+         database => $database,
+         table    => $table,
+         engine   => $engine,
+         query    => $query,
+      };
+
+   }
+
+   next DATABASE unless %info_for;
+
+   # Design and print header
+   my $hdr;
+   if ( $opts{b} ) {
+      $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
+   }
+   else {
+      my $max_tbl  = max(5, map { length($_) } keys %info_for);
+      my $max_db   = max(8, length($database));
+      my $max_host = max(4, map { length($_) } @hosts);
+      $hdr         = "%-${max_db}s %-${max_tbl}s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+   }
+   my @hdr_args = qw(DATABASE TABLE HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
+   printf($hdr, @hdr_args);
+
+   TABLE:
+   foreach my $table ( sort keys %info_for ) {
+
+      if ( $opts{R} ) { # We're in --replicate mode.
+         eval {
+            do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
+         };
+         if ( $EVAL_ERROR ) {
+            print STDERR $EVAL_ERROR, "\n";
+            $exit_status = 1;
+         }
+         next TABLE;
+      }
+
+      # Lock table and get master position on the master, if applicable.
+      $main_dbh->do("LOCK TABLES `$database`.`$table` READ") if $opts{k};
+      if ( defined $opts{w} ) {
+         my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
+         @{$info_for{$table}}{keys %$master_status} = values %$master_status;
+      }
+
+      my %children;
+      foreach my $host ( @hosts ) {
+         my $pid = @hosts > 1 ? fork() : undef;
+         if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
+            eval {
+               do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
+            };
+            if ( $EVAL_ERROR ) {
+               print STDERR $EVAL_ERROR, "\n";
+               exit(1); # die, even if only a single host
+            }
+            exit(0) if @hosts > 1; # exit only if I'm a child
+         }
+         elsif ( @hosts > 1 && !defined($pid) ) {
+            die("Unable to fork!");
+         }
+         # I already exited if I'm a child, so I'm the parent.
+         $children{$host} = $pid if @hosts > 1;
+      }
+
+      # Wait for the children to exit.
+      foreach my $host ( keys %children ) {
+         my $pid = waitpid($children{$host}, 0);
+         $exit_status = $CHILD_ERROR;
+      }
+      $main_dbh->do("UNLOCK TABLES") if $opts{k};
+   }
+}
 
    # Get a list of active connections
    my $processes = $dbh->selectall_hashref("show processlist", 'Id');
-
-   foreach my $db ( @{ $dbh->selectcol_arrayref('show databases') } ) {
-      my @tables = @{ $dbh->selectcol_arrayref("show tables from $db") };
-      foreach my $tbl ( @tables ) {
-
          # We only want tables whose name ends in digits NOT preceded by other
          # digits (for example, barontest_2006_12_06 should not be dropped).
          my ( $process ) = $tbl =~ m/\D_(\d+)$/;
-
          next unless $process;
-
          # If the process doesn't exist anymore, the table isn't in use.
          if ( !exists($processes->{$process} ) ) {
             print "Dropping table $db.$tbl\n" if $ENV{RKGDEBUG};
@@ -92,16 +250,6 @@ foreach my $database ( @databases ) {
       }
    }
 
-   TABLE:
-   foreach my $table ( @tables ) {
-      next TABLE if exists $opts{n}->{$table};
-
-      my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$database`.`$table`"))[1];
-      next TABLE if $ddl =~ m/^CREATE ALGORITHM/;
-
-   }
-
-}
 
 # ############################################################################
 # Subroutines
