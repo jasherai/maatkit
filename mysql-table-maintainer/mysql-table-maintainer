@@ -123,20 +123,20 @@ if ( $opts{minage} ) {
 $opts{help} = 1 unless $opts{a} || $opts{c} || $opts{o} || $opts{r};
 
 if ( $opts{help} ) {
-   print "Usage: $PROGRAM_NAME <options>\n\n";
+   print "Usage: mysql-table-maintainer <options>\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
-$PROGRAM_NAME runs table maintenance commands on MySQL tables.
+mysql-table-maintainer runs table maintenance commands on MySQL tables.
+Connection options are read from MySQL option files.  For more details, please
+read the documentation:
 
-If possible, database options are read from your .my.cnf file.
-For more details, please read the documentation:
-
-   perldoc $PROGRAM_NAME
+   perldoc mysql-table-maintainer
 
 USAGE
    exit(1);

@@ -39,6 +39,7 @@ our $VERSION = '@VERSION@';
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
    { s => 'database|D=s', r => 0, d => 'Database to use' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'host|h=s',     r => 0, d => 'Connect to host' },
    { s => 'help',         r => 0, d => 'Show this help message' },
    { s => 'password|p=s', r => 0, d => 'Password to use when connecting' },
@@ -52,7 +53,7 @@ my %opts;
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
    $spec->{t} = $short;
@@ -68,10 +69,11 @@ GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 # add "|| !@ARGV" inside the parens on the next line.
 if ( $opts{help} ) {
    print "Usage: $PROGRAM_NAME <options> batch-file\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
@@ -89,11 +91,11 @@ USAGE
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
-my %conn = ( h => 'host', P => 'port', S => 'socket');
+my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
 
 # Connect to the database
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
-   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(h P S))
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");

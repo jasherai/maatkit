@@ -26,6 +26,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use List::Util qw(max);
 
 our $VERSION = '@VERSION@';
 
@@ -37,6 +38,7 @@ our $VERSION = '@VERSION@';
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
    { s => 'database|D=s', r => 0, d => 'Database to use' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'drop|d',       d => 'Add DROP USER before each user' },
    { s => 'flush|f',      d => 'Add FLUSH PRIVILEGES' },
    { s => 'host|h=s',     r => 0, d => 'Connect to host' },
@@ -56,7 +58,7 @@ my %opts;
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^(\w+)(?:\|([^!+=]*))?/;
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
    $spec->{k} = $short || $long;
    $spec->{l} = $long;
    $spec->{t} = $short;
@@ -89,20 +91,20 @@ if ( $opts{i} ) {
 }
 
 if ( $opts{help} ) {
-   print "Usage: $PROGRAM_NAME <options> batch-file\n\n";
+   print "Usage: mysql-show-grants <options> batch-file\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-13s %-4s %s\n", $long, $short, $spec->{d});
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
    print <<USAGE;
 
-$PROGRAM_NAME shows grants (user privileges) from a MySQL server.
+mysql-show-grants shows grants (user privileges) from a MySQL server.
+Connection options are read from MySQL option files.  For more details, please
+read the documentation:
 
-If possible, database options are read from your .my.cnf file.
-For more details, please read the documentation:
-
-   perldoc $PROGRAM_NAME
+   perldoc mysql-show-grants
 
 USAGE
    exit(1);
@@ -111,11 +113,11 @@ USAGE
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
-my %conn = ( h => 'host', P => 'port', S => 'socket');
+my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
 
 # Connect to the database
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
-   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(h P S))
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
