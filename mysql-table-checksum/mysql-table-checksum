@@ -807,9 +807,9 @@ master_crc, this_cnt, master_cnt.  Here is a suggested table structure:
      db         char(64)     NOT NULL,
      tbl        char(64)     NOT NULL,
      this_crc   char(40)     NOT NULL,
-     this_cnt   int unsigned NOT NULL,
+     this_cnt   int          NOT NULL,
      master_crc char(40)         NULL,
-     master_cnt int unsigned     NULL,
+     master_cnt int              NULL,
      ts         timestamp    NOT NULL,
      PRIMARY KEY (db,tbl)
   );
