@@ -64,6 +64,7 @@ my @opt_spec = (
    { s => 'port|P=i',          t => 'o', d => 'Port number to use for connection' },
    { s => 'socket|S=s',        t => 'o', d => 'Socket file to use for connection' },
    { s => 'user|u=s',          t => 'o', d => 'User for login if not current user' },
+   { s => 'or',                t => 'o', d => 'OR conditions together' },
 
    { s => 'empty',             t => 'c', d => 'Table has no rows' },
    { s => 'engine=s',          t => 'c', d => 'Table storage engine matches this pattern' },
@@ -83,8 +84,6 @@ my @opt_spec = (
    { s => 'exec_plus=s',       t => 'a', d => 'Execute this SQL against all tables at once' },
    { s => 'print',             t => 'a', d => 'Print the database and table name' },
 
-   { s => 'and',               t => 'e', d => 'AND conditions together' },
-   { s => 'or',                t => 'e', d => 'OR conditions together' },
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -106,6 +105,16 @@ foreach my $spec ( @opt_spec ) {
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
+# ############################################################################
+# Validate arguments
+# ############################################################################
+foreach my $option ( qw(mmin mtime tablesize datasize indexsize rows) ) {
+   if ( $opts{$option} && $opts{$option} !~ m/^[+-]?\d+[kMG]?$/ ) {
+      warn "Invalid argument to --$option\n";
+      $opts{help} = 1;
+   }
+}
+
 if ( $opts{help} ) {
    print "Usage: mysql-find [option]... [database...]\n\n";
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
@@ -126,11 +135,29 @@ USAGE
    exit(1);
 }
 
-# Post-post-process.
-# If no other action was given, the default action is to print.
-if ( !$opts{exec} && !$opts{exec_plus} ) {
-   $opts{print} = 1;
-}
+# ############################################################################
+# Lookup tables
+# ############################################################################
+my %time_for;
+
+# Functions to call while evaluating tests.
+my %test_for = (
+   mmin => sub {
+      my ( $table ) = @_;
+      return defined $table->{Update_time} && (
+            ( $opts{mmin} =~ m/-/ && $table->{Update_time} gt $time_for{mmin} )
+         || ( $opts{mmin} =~ m/\+/ && $table->{Update_time} lt $time_for{mmin} )
+         || ( $table->{Update_time} lt $time_for{mmin} ));
+   },
+);
+
+# Functions to call when doing actions
+my %action_for = (
+   print => sub {
+      my ( $table ) = @_;
+      print "$table->{Database}.$table->{Name}\n";
+   },
+);
 
 # ############################################################################
 # Get ready to do the main work.
@@ -143,6 +170,20 @@ my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
    . ';mysql_read_default_group=mysql';
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
+
+# If no other action was given, the default action is to print.
+if ( !$opts{exec} && !$opts{exec_plus} ) {
+   $opts{print} = 1;
+}
+
+# Figure out the time referred to by --mmin and --mtime options
+foreach my $option ( grep { defined $opts{$_} } qw(mmin mtime) ) {
+   my ($val) = $opts{$option} =~ m/(\d+)/;
+   my $start = $opts{daystart}   ? 'CURRENT_DATE' : 'CURRENT_TIMESTAMP';
+   my $inter = $option =~ m/min/ ? 'MINUTE'       : 'DAY';
+   my $query = "SELECT DATE_SUB($start, INTERVAL $val $inter)";
+   $time_for{$option} = $dbh->selectcol_arrayref($query)->[0];
+}
 
 my @databases = @ARGV         ? @ARGV
               : $opts{dblike} ? @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE ?', {}, $opts{dblike})}
@@ -168,114 +209,39 @@ foreach my $database ( @databases ) {
       delete $table->{Type};
    }
 
-   # TODO: apply matching rules
-   do_actions(@tables);
-}
+   # Apply the tests to find the matching tables
+   @tables = grep {
+      my $table = $_;
+      my @tests = grep { $opts{$_} } keys %test_for;
+      !@tests || ($opts{or} ? any($table, @tests) : all($table, @tests));
+   } @tables;
 
-sub do_actions {
-   my ( @tables ) = @_;
    foreach my $table ( @tables ) {
-      $opts{print} && do_print($table);
+      foreach my $action ( keys %action_for ) {
+         $action_for{$action}->($table);
+      }
    }
 }
 
-sub do_print {
-   my ( $table ) = @_;
-   print "$table->{Database}.$table->{Name}\n";
+# One test is true (see List::Util man page)
+sub any {
+   my ( $table, @tests ) = @_;
+   foreach my $test ( @tests ) {
+      return 1 if $test_for{$test}->($table);
+   }
+   return 0;
+}
+
+# All tests are true (see List::Util man page)
+sub all {
+   my ( $table, @tests ) = @_;
+   foreach my $test ( @tests ) {
+      return 0 unless $test_for{$test}->($table);
+   }
+   return 1;
 }
 
 __DATA__
-   next DATABASE unless @tables;
-
-   my %info_for;
-   TABLE:
-   foreach my $table ( @tables ) {
-      next TABLE if
-         ( $opts{t} && !exists($opts{t}->{$table}) )
-         || ( $opts{R} && $opts{R} eq "$database.$table" )
-         || exists $opts{n}->{$table};
-
-      # Get the table type, and a query to generate a checksum for it.
-      my ( $engine, $query ) = checksum_query( $main_dbh, $database, $table );
-
-      # Skip views, and tables of the wrong engine.
-      next TABLE if
-         $engine eq 'VIEW'
-         || ( $opts{e} && !exists $opts{e}->{lc($engine)});
-      $info_for{$table} = {
-         database => $database,
-         table    => $table,
-         engine   => $engine,
-         query    => $query,
-      };
-
-   }
-
-   next DATABASE unless %info_for;
-
-   # Design and print header
-   my $hdr;
-   if ( $opts{b} ) {
-      $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
-   }
-   else {
-      my $max_tbl  = max(5, map { length($_) } keys %info_for);
-      my $max_db   = max(8, length($database));
-      my $max_host = max(4, map { length($_) } @hosts);
-      $hdr         = "%-${max_db}s %-${max_tbl}s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
-   }
-   my @hdr_args = qw(DATABASE TABLE HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
-   printf($hdr, @hdr_args);
-
-   TABLE:
-   foreach my $table ( sort keys %info_for ) {
-
-      if ( $opts{R} ) { # We're in --replicate mode.
-         eval {
-            do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
-         };
-         if ( $EVAL_ERROR ) {
-            print STDERR $EVAL_ERROR, "\n";
-            $exit_status = 1;
-         }
-         next TABLE;
-      }
-
-      # Lock table and get master position on the master, if applicable.
-      $main_dbh->do("LOCK TABLES `$database`.`$table` READ") if $opts{k};
-      if ( defined $opts{w} ) {
-         my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
-         @{$info_for{$table}}{keys %$master_status} = values %$master_status;
-      }
-
-      my %children;
-      foreach my $host ( @hosts ) {
-         my $pid = @hosts > 1 ? fork() : undef;
-         if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
-            eval {
-               do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
-            };
-            if ( $EVAL_ERROR ) {
-               print STDERR $EVAL_ERROR, "\n";
-               exit(1); # die, even if only a single host
-            }
-            exit(0) if @hosts > 1; # exit only if I'm a child
-         }
-         elsif ( @hosts > 1 && !defined($pid) ) {
-            die("Unable to fork!");
-         }
-         # I already exited if I'm a child, so I'm the parent.
-         $children{$host} = $pid if @hosts > 1;
-      }
-
-      # Wait for the children to exit.
-      foreach my $host ( keys %children ) {
-         my $pid = waitpid($children{$host}, 0);
-         $exit_status = $CHILD_ERROR;
-      }
-      $main_dbh->do("UNLOCK TABLES") if $opts{k};
-   }
-}
 
    # Get a list of active connections
    my $processes = $dbh->selectall_hashref("show processlist", 'Id');
