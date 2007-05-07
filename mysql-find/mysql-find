@@ -1,24 +1,5 @@
 #!/usr/bin/perl
 
-#            Name: t                                Name: foo
-#          Engine: InnoDB                           Type: MyISAM
-#         Version: 10
-#      Row_format: Compact                    Row_format: Fixed
-#            Rows: 0                                Rows: 0
-#  Avg_row_length: 0                      Avg_row_length: 0
-#     Data_length: 16384                     Data_length: 0
-# Max_data_length: 0                     Max_data_length: 21474836479
-#    Index_length: 0                        Index_length: 1024
-#       Data_free: 0                           Data_free: 0
-#  Auto_increment: NULL                   Auto_increment: NULL
-#     Create_time: 2007-05-06 17:42:01       Create_time: 2007-04-08 17:23:29
-#     Update_time: NULL                      Update_time: 2007-04-08 17:23:29
-#      Check_time: NULL                       Check_time: NULL
-#       Collation: latin1_swedish_ci
-#        Checksum: NULL
-#  Create_options:                        Create_options:
-#         Comment: InnoDB free: 4096 kB          Comment:
-
 # This is mysql-find, a program to find tables and take actions like GNU find.
 #
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
@@ -51,34 +32,53 @@ our $VERSION = '@VERSION@';
 $OUTPUT_AUTOFLUSH = 1;
 
 # ############################################################################
+# TODO
+# ############################################################################
+# The following properties can be put into conditions too:
+#         Version: 10
+#      Row_format: Compact                    Row_format: Fixed
+#  Avg_row_length: 0                      Avg_row_length: 0
+#       Data_free: 0                           Data_free: 0
+#  Auto_increment: NULL                   Auto_increment: NULL
+#       Collation: latin1_swedish_ci
+#        Checksum: NULL
+#         Comment: InnoDB free: 4096 kB          Comment:
+
+# ############################################################################
 # Get configuration information.
 # ############################################################################
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
+   { s => 'case-insensitive',  t => 'o', d => 'Regular expression patterns ignore case' },
    { s => 'daystart',          t => 'o', d => 'Measure times from the beginning of the day' },
    { s => 'defaults-file|F=s', t => 'o', d => 'Only read default options from the given file' },
    { s => 'help',              t => 'o', d => 'Show this help message' },
    { s => 'password|p=s',      t => 'o', d => 'Password to use when connecting' },
    { s => 'port|P=i',          t => 'o', d => 'Port number to use for connection' },
+   { s => 'quote!',            t => 'o', d => 'Quote database and table names (default)' },
    { s => 'socket|S=s',        t => 'o', d => 'Socket file to use for connection' },
    { s => 'user|u=s',          t => 'o', d => 'User for login if not current user' },
-   { s => 'or',                t => 'o', d => 'OR conditions together' },
+   { s => 'or',                t => 'o', d => 'Combine conditions with OR, not AND' },
 
+   { s => 'cmin=s',            t => 'c', d => 'Table was created n minutes ago' },
+   { s => 'ctime=s',           t => 'c', d => 'Table was created n days ago' },
+   { s => 'datasize=s',        t => 'c', d => 'Table data uses n bytes of space' },
+   { s => 'dblike=s',          t => 'c', d => 'Database name matches SQL LIKE pattern' },
+   { s => 'dbregex=s',         t => 'c', d => 'Database name matches this pattern' },
    { s => 'empty',             t => 'c', d => 'Table has no rows' },
    { s => 'engine=s',          t => 'c', d => 'Table storage engine matches this pattern' },
-   { s => 'tbllike=s',         t => 'c', d => 'Table name matches SQL LIKE pattern' },
-   { s => 'dblike=s',          t => 'c', d => 'Database name matches SQL LIKE pattern' },
+   { s => 'indexsize=s',       t => 'c', d => 'Table indexes use n bytes of space' },
+   { s => 'kmin=s',            t => 'c', d => 'Table was checked n minutes ago' },
+   { s => 'ktime=s',           t => 'c', d => 'Table was checked n days ago' },
    { s => 'mmin=s',            t => 'c', d => 'Table was last modified n minutes ago' },
    { s => 'mtime=s',           t => 'c', d => 'Table was last modified n days ago' },
    { s => 'pid=s',             t => 'c', d => 'Table name has nonexistent MySQL connection ID' },
-   { s => 'tblregex=s',        t => 'c', d => 'Table name matches this pattern' },
-   { s => 'dbregex=s',         t => 'c', d => 'Database name matches this pattern' },
+   { s => 'rows=s',            t => 'c', d => 'Table has n rows' },
    { s => 'tablesize=s',       t => 'c', d => 'Table (data+index) uses n bytes of space' },
-   { s => 'datasize=s',        t => 'c', d => 'Table (data+index) uses n bytes of space' },
-   { s => 'indexsize=s',       t => 'c', d => 'Table (data+index) uses n bytes of space' },
-   { s => 'rows=s',            t => 'c', d => 'Table (data+index) uses n bytes of space' },
+   { s => 'tbllike=s',         t => 'c', d => 'Table name matches SQL LIKE pattern' },
+   { s => 'tblregex=s',        t => 'c', d => 'Table name matches this pattern' },
 
    { s => 'exec=s',            t => 'a', d => 'Execute this SQL against each table' },
    { s => 'exec_plus=s',       t => 'a', d => 'Execute this SQL against all tables at once' },
@@ -88,7 +88,7 @@ my @opt_spec = (
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = ();
+my %opts = ( quote => 1 );
 
 # Post-process...
 my %opt_seen;
@@ -106,13 +106,22 @@ Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
 # ############################################################################
-# Validate arguments
+# Validate and expand arguments
 # ############################################################################
-foreach my $option ( qw(mmin mtime tablesize datasize indexsize rows) ) {
+foreach my $option (
+      grep { defined $opts{$_} }
+      qw(cmin ctime datasize indexsize kmin ktime mmin mtime rows tablesize) )
+{
    if ( $opts{$option} && $opts{$option} !~ m/^[+-]?\d+[kMG]?$/ ) {
       warn "Invalid argument to --$option\n";
       $opts{help} = 1;
    }
+   $opts{$option} = expand($opts{$option});
+}
+
+if ( $opts{pid} && $opts{pid} !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
+   warn "--pid regex doesn't capture digits with (\\d+)\n";
+   $opts{help} = 1;
 }
 
 if ( $opts{help} ) {
@@ -139,15 +148,74 @@ USAGE
 # Lookup tables
 # ############################################################################
 my %time_for;
+my %connections;
+my $this_pid;
 
 # Functions to call while evaluating tests.
 my %test_for = (
+   cmin => sub {
+      my ( $table ) = @_;
+      return test_date($table, 'Create_time', 'cmin');
+   },
+   ctime => sub {
+      my ( $table ) = @_;
+      return test_date($table, 'Create_time', 'ctime');
+   },
+   datasize => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Data_length', $opts{datasize});
+   },
+   dbregex => sub {
+      my ( $table ) = @_;
+      return test_regex($table, 'Database', $opts{dblike});
+   },
+   empty => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Rows', '0');
+   },
+   engine => sub {
+      my ( $table ) = @_;
+      return test_regex($table, 'Engine', $opts{engine});
+   },
+   indexsize => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Index_length', $opts{indexsize});
+   },
+   kmin => sub {
+      my ( $table ) = @_;
+      return test_date($table, 'Check_time', 'kmin');
+   },
+   ktime => sub {
+      my ( $table ) = @_;
+      return test_date($table, 'Check_time', 'ktime');
+   },
    mmin => sub {
       my ( $table ) = @_;
-      return defined $table->{Update_time} && (
-            ( $opts{mmin} =~ m/-/ && $table->{Update_time} gt $time_for{mmin} )
-         || ( $opts{mmin} =~ m/\+/ && $table->{Update_time} lt $time_for{mmin} )
-         || ( $table->{Update_time} lt $time_for{mmin} ));
+      return test_date($table, 'Update_time', 'mmin');
+   },
+   mtime => sub {
+      my ( $table ) = @_;
+      return test_date($table, 'Update_time', 'mtime');
+   },
+   pid => sub {
+      my ( $table ) = @_;
+
+      #TODO my ( $process ) = $tbl =~ m/\D_(\d+)$/;
+      my $test = $opts{'case-insensitive'} ? "(?i)$opts{pid}" : $opts{pid};
+      my ( $pid ) = $table->{Name} =~ m/$test/;
+      return $pid && $pid < $this_pid && !exists $connections{$pid};
+   },
+   rows => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Rows', $opts{rows});
+   },
+   tablesize => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Table_length', $opts{tablesize});
+   },
+   tblregex => sub {
+      my ( $table ) = @_;
+      return test_regex($table, 'Name', $opts{tblregex});
    },
 );
 
@@ -176,15 +244,30 @@ if ( !$opts{exec} && !$opts{exec_plus} ) {
    $opts{print} = 1;
 }
 
-# Figure out the time referred to by --mmin and --mtime options
-foreach my $option ( grep { defined $opts{$_} } qw(mmin mtime) ) {
+# Figure out the time referred to by date/time options
+my $basetime;
+foreach my $option ( grep { defined $opts{$_} } qw(cmin ctime kmin ktime mmin mtime) ) {
+   # Initialize a consistent point in time
+   $basetime ||=
+      $dbh->selectcol_arrayref(
+         "SELECT " . ($opts{daystart} ? 'CURRENT_DATE' : 'CURRENT_TIMESTAMP')
+      )->[0];
+
    my ($val) = $opts{$option} =~ m/(\d+)/;
-   my $start = $opts{daystart}   ? 'CURRENT_DATE' : 'CURRENT_TIMESTAMP';
-   my $inter = $option =~ m/min/ ? 'MINUTE'       : 'DAY';
-   my $query = "SELECT DATE_SUB($start, INTERVAL $val $inter)";
+   my $inter = $option =~ m/min/ ? 'MINUTE' : 'DAY';
+   my $query = "SELECT DATE_SUB('$basetime', INTERVAL $val $inter)";
    $time_for{$option} = $dbh->selectcol_arrayref($query)->[0];
 }
 
+if ( $opts{pid} ) { # Fetch and save a list of processes currently running.
+   $this_pid    = $dbh->{mysql_thread_id};
+   %connections = map { $_ => 1 }
+      @{$dbh->selectcol_arrayref('SHOW FULL PROCESSLIST')};
+}
+
+# ############################################################################
+# Go do it.
+# ############################################################################
 my @databases = @ARGV         ? @ARGV
               : $opts{dblike} ? @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE ?', {}, $opts{dblike})}
               :                 @{$dbh->selectcol_arrayref('SHOW DATABASES')};
@@ -202,10 +285,10 @@ foreach my $database ( @databases ) {
 
    # Make results uniform across MySQL versions
    foreach my $table ( @tables ) {
-      $table->{Database}    = $dbh->quote_identifier($database);
-      $table->{Name}        = $dbh->quote_identifier($table->{Name});
-      $table->{Engine}    ||= $table->{Type};
-      $table->{Collation} ||= 'latin1_swedish_ci';
+      $table->{Database}       = $database;
+      $table->{Engine}       ||= $table->{Type};
+      $table->{Collation}    ||= 'latin1_swedish_ci';
+      $table->{Table_length}   = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
       delete $table->{Type};
    }
 
@@ -216,6 +299,14 @@ foreach my $database ( @databases ) {
       !@tests || ($opts{or} ? any($table, @tests) : all($table, @tests));
    } @tables;
 
+   # Quote database and table names if desired
+   if ( $opts{quote} ) {
+      foreach my $table ( @tables ) {
+         $table->{Database} = $dbh->quote_identifier($table->{Database});
+         $table->{Name}     = $dbh->quote_identifier($table->{Name});
+      }
+   }
+
    foreach my $table ( @tables ) {
       foreach my $action ( keys %action_for ) {
          $action_for{$action}->($table);
@@ -223,7 +314,11 @@ foreach my $database ( @databases ) {
    }
 }
 
-# One test is true (see List::Util man page)
+# ############################################################################
+# Subroutines
+# ############################################################################
+
+# One test is true
 sub any {
    my ( $table, @tests ) = @_;
    foreach my $test ( @tests ) {
@@ -232,7 +327,7 @@ sub any {
    return 0;
 }
 
-# All tests are true (see List::Util man page)
+# All tests are true
 sub all {
    my ( $table, @tests ) = @_;
    foreach my $test ( @tests ) {
@@ -241,26 +336,50 @@ sub all {
    return 1;
 }
 
-__DATA__
+# Checks the given property of the given table to see if it passes the test
+sub test_number {
+   my ( $table, $prop, $test ) = @_;
+   my ($num) = $test =~ m/(\d+)/;
+   return defined $table->{$prop} && (
+         ( $test =~ m/-/  && $table->{$prop} > $num )
+      || ( $test =~ m/\+/ && $table->{$prop} < $num )
+      || (                   $table->{prop} == $num ));
+}
 
-   # Get a list of active connections
-   my $processes = $dbh->selectall_hashref("show processlist", 'Id');
-         # We only want tables whose name ends in digits NOT preceded by other
-         # digits (for example, barontest_2006_12_06 should not be dropped).
-         my ( $process ) = $tbl =~ m/\D_(\d+)$/;
-         next unless $process;
-         # If the process doesn't exist anymore, the table isn't in use.
-         if ( !exists($processes->{$process} ) ) {
-            print "Dropping table $db.$tbl\n" if $ENV{RKGDEBUG};
-            $dbh->do("drop table if exists $db.$tbl");
-         }
-      }
+# Checks the given property of the given table to see if it passes the test
+sub test_date {
+   my ( $table, $prop, $test ) = @_;
+   return defined $table->{$prop} && (
+         ( $opts{$test} =~ m/-/ &&  $table->{$prop} gt $time_for{$test} )
+      || ( $opts{$test} =~ m/\+/ && $table->{$prop} lt $time_for{$test} )
+      || (                          $table->{$prop} eq $time_for{$test} ));
+}
+
+# Checks the given property of the given table to see if it passes the test
+sub test_regex {
+   my ( $table, $prop, $test ) = @_;
+   if ( $opts{'case-insensitive'} ) {
+      $test = "(?i)$test";
    }
+   return defined $table->{$prop} && $table->{$prop} =~ m/$test/;
+}
 
+{
+   my %factor_for = (
+      k => 1_024,
+      M => 1_048_576,
+      G => 1_073_741_824,
+   );
 
-# ############################################################################
-# Subroutines
-# ############################################################################
+   sub expand {
+      my ( $test ) = @_;
+      my ($pre, $num, $factor) = $test =~ m/([+-])?(\d+)([kMG])?/;
+      if ( $factor ) {
+         $num *= $factor_for{$factor};
+      }
+      return "$pre$num";
+   }
+}
 
 # ############################################################################
 # Documentation
@@ -270,7 +389,7 @@ __DATA__
 
 =head1 NAME
 
-mysql-stale-table-sniper - Find and possibly remove stale MySQL tables.
+mysql-find - Foo foo
 
 =head1 DESCRIPTION
 
