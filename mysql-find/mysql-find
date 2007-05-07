@@ -83,7 +83,7 @@ my @opt_spec = (
    { s => 'exec=s',            y => 'a', d => 'Execute this SQL with each item found' },
    { s => 'exec_plus=s',       y => 'a', d => 'Execute this SQL with all items at once' },
    { s => 'print',             y => 'a', d => 'Print the database and table name' },
-   { s => 'printf=s',          y => 'a', d => 'Print format on STDOUT, interpreting escapes and directives' },
+   { s => 'printf=s',          y => 'a', d => 'Print format, with escapes and directives' },
    # TODO: insert action (actually, that should just be exec)
 
 );
@@ -160,11 +160,30 @@ my %connections;  # Holds a list of thread IDs connected
 my $dbh;          # This program's $dbh
 my $this_pid;     # The thread ID of this program's $dbh
 my %sth_for;      # Prepared $sths per-option, for exec etc
-my %fmt_for;      # Interpolated things for sprintf
+my %fmt_for;      # Interpolated things for printf
 
 my %arg_for = (
+   a => 'Auto_increment',
+   A => 'Avg_row_length',
+   c => 'Checksum',
+   C => 'Create_time',
    D => 'Database',
+   d => 'Data_length',
+   E => 'Engine',
+   F => 'Data_free',
+   f => 'Innodb_free',
+   I => 'Index_length',
+   K => 'Check_time',
+   L => 'Collation',
+   M => 'Max_data_length',
    N => 'Name',
+   O => 'Comment',
+   P => 'Create_options',
+   R => 'Row_format',
+   S => 'Rows',
+   T => 'Table_length',
+   U => 'Update_time',
+   V => 'Version',
 );
 
 # Functions to call while evaluating tests.
@@ -255,7 +274,9 @@ my %action_for = (
          my ($str, $arg_names) = interpolate($opts{printf});
          $fmt_for{printf} = { str => $str, arg_names => $arg_names };
       }
-      printf($fmt_for{printf}->{str}, map { defined $_ ? $_ : '' } @{$table}{@{$fmt_for{printf}->{arg_names}}});
+      printf($fmt_for{printf}->{str},
+         map { defined $_ ? $_ : '' }
+         @{$table}{@{$fmt_for{printf}->{arg_names}}});
    },
 );
 
