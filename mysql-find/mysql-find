@@ -1,30 +1,26 @@
 #!/usr/bin/perl
 
-mysql> show table status\G
-*************************** 1. row *****
-           Name: t
-         Engine: InnoDB
-        Version: 10
-     Row_format: Compact
-           Rows: 0
- Avg_row_length: 0
-    Data_length: 16384
-Max_data_length: 0
-   Index_length: 0
-      Data_free: 0
- Auto_increment: NULL
-    Create_time: 2007-05-06 17:42:01
-    Update_time: NULL
-     Check_time: NULL
-      Collation: latin1_swedish_ci
-       Checksum: NULL
- Create_options:
-        Comment: InnoDB free: 4096 kB
-1 row in set (0.00 sec)
+#            Name: t                                Name: foo
+#          Engine: InnoDB                           Type: MyISAM
+#         Version: 10
+#      Row_format: Compact                    Row_format: Fixed
+#            Rows: 0                                Rows: 0
+#  Avg_row_length: 0                      Avg_row_length: 0
+#     Data_length: 16384                     Data_length: 0
+# Max_data_length: 0                     Max_data_length: 21474836479
+#    Index_length: 0                        Index_length: 1024
+#       Data_free: 0                           Data_free: 0
+#  Auto_increment: NULL                   Auto_increment: NULL
+#     Create_time: 2007-05-06 17:42:01       Create_time: 2007-04-08 17:23:29
+#     Update_time: NULL                      Update_time: 2007-04-08 17:23:29
+#      Check_time: NULL                       Check_time: NULL
+#       Collation: latin1_swedish_ci
+#        Checksum: NULL
+#  Create_options:                        Create_options:
+#         Comment: InnoDB free: 4096 kB          Comment:
 
-
-# This is mysql-table-sniper, a program to help remove tables from a MySQL server.
-# 
+# This is mysql-find, a program to find tables and take actions like GNU find.
+#
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
 #
@@ -61,25 +57,39 @@ $OUTPUT_AUTOFLUSH = 1;
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
-   { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
-   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-   { s => 'engine|e=s',        d => 'Only do this comma-separated list of storage engines' },
-   { s => 'help',              d => 'Show this help message' },
-   { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
-   { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
-   { s => 'optxor|o!',         d => 'Optimize BIT_XOR with user variables (default)'},
-   { s => 'password|p=s',      d => 'Password to use when connecting' },
-   { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'tab|b',             d => 'Output separated with tabs' },
-   { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
-   { s => 'user|u=s',          d => 'User for login if not current user' },
+   { s => 'daystart',          t => 'o', d => 'Measure times from the beginning of the day' },
+   { s => 'defaults-file|F=s', t => 'o', d => 'Only read default options from the given file' },
+   { s => 'help',              t => 'o', d => 'Show this help message' },
+   { s => 'password|p=s',      t => 'o', d => 'Password to use when connecting' },
+   { s => 'port|P=i',          t => 'o', d => 'Port number to use for connection' },
+   { s => 'socket|S=s',        t => 'o', d => 'Socket file to use for connection' },
+   { s => 'user|u=s',          t => 'o', d => 'User for login if not current user' },
+
+   { s => 'empty',             t => 'c', d => 'Table has no rows' },
+   { s => 'engine=s',          t => 'c', d => 'Table storage engine matches this pattern' },
+   { s => 'tbllike=s',         t => 'c', d => 'Table name matches SQL LIKE pattern' },
+   { s => 'dblike=s',          t => 'c', d => 'Database name matches SQL LIKE pattern' },
+   { s => 'mmin=s',            t => 'c', d => 'Table was last modified n minutes ago' },
+   { s => 'mtime=s',           t => 'c', d => 'Table was last modified n days ago' },
+   { s => 'pid=s',             t => 'c', d => 'Table name has nonexistent MySQL connection ID' },
+   { s => 'tblregex=s',        t => 'c', d => 'Table name matches this pattern' },
+   { s => 'dbregex=s',         t => 'c', d => 'Database name matches this pattern' },
+   { s => 'tablesize=s',       t => 'c', d => 'Table (data+index) uses n bytes of space' },
+   { s => 'datasize=s',        t => 'c', d => 'Table (data+index) uses n bytes of space' },
+   { s => 'indexsize=s',       t => 'c', d => 'Table (data+index) uses n bytes of space' },
+   { s => 'rows=s',            t => 'c', d => 'Table (data+index) uses n bytes of space' },
+
+   { s => 'exec=s',            t => 'a', d => 'Execute this SQL against each table' },
+   { s => 'exec_plus=s',       t => 'a', d => 'Execute this SQL against all tables at once' },
+   { s => 'print',             t => 'a', d => 'Print the database and table name' },
+
+   { s => 'and',               t => 'e', d => 'AND conditions together' },
+   { s => 'or',                t => 'e', d => 'OR conditions together' },
 );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts = (
-);
+my %opts = ();
 
 # Post-process...
 my %opt_seen;
@@ -96,21 +106,8 @@ foreach my $spec ( @opt_spec ) {
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
-# Make comma-separated lists into hashes.
-if ( $opts{d} ) {
-   $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
-}
-$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
-if ( $opts{t} ) {
-   $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
-}
-$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
-if ( $opts{e} ) {
-   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
-}
-
 if ( $opts{help} ) {
-   print "Usage: mysql-stale-table-sniper [OPTION]... HOST [HOST...]\n\n";
+   print "Usage: mysql-find [option]... [database...]\n\n";
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
@@ -119,31 +116,75 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-mysql-stale-table-sniper helps you remove tables from a MySQL server.
-Connection options are read from MySQL option files.  For more details, please
-read the documentation:
+mysql-find finds MySQL tables and executes actions, like GNU find.  The default
+action is to print the database and table name.  Connection options are read
+from MySQL option files.  For more details, please read the documentation:
 
-   perldoc mysql-stale-table-sniper
+   perldoc mysql-find
 
 USAGE
    exit(1);
+}
+
+# Post-post-process.
+# If no other action was given, the default action is to print.
+if ( !$opts{exec} && !$opts{exec_plus} ) {
+   $opts{print} = 1;
 }
 
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
 
-my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
-my @whole_batch;
+# Connect to the database
+my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
+my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
+   . ';mysql_read_default_group=mysql';
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+   or die("Can't connect to DB: $OS_ERROR");
+
+my @databases = @ARGV         ? @ARGV
+              : $opts{dblike} ? @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE ?', {}, $opts{dblike})}
+              :                 @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 
 DATABASE:
 foreach my $database ( @databases ) {
-   next DATABASE if
-      ( $opts{d} && !exists($opts{d}->{$database}) )
-      || $database =~ m/^(information_schema|lost\+found)$/mi
-      || exists $opts{g}->{$database};
+   next DATABASE if $database =~ m/^(?:information_schema|lost\+found)$/mi;
 
-   my @tables = @{$main_dbh->selectcol_arrayref("SHOW TABLES FROM `$database`")};
+   my $sth = $opts{tbllike}
+           ? $dbh->prepare("SHOW TABLE STATUS FROM `$database` LIKE ?")
+           : $dbh->prepare("SHOW TABLE STATUS FROM `$database`");
+
+   $sth->execute($opts{tbllike} || ());
+   my @tables = @{$sth->fetchall_arrayref({})};
+
+   # Make results uniform across MySQL versions
+   foreach my $table ( @tables ) {
+      $table->{Database}    = $dbh->quote_identifier($database);
+      $table->{Name}        = $dbh->quote_identifier($table->{Name});
+      $table->{Engine}    ||= $table->{Type};
+      $table->{Collation} ||= 'latin1_swedish_ci';
+      delete $table->{Type};
+   }
+
+   # TODO: apply matching rules
+   do_actions(@tables);
+}
+
+sub do_actions {
+   my ( @tables ) = @_;
+   foreach my $table ( @tables ) {
+      $opts{print} && do_print($table);
+   }
+}
+
+sub do_print {
+   my ( $table ) = @_;
+   print "$table->{Database}.$table->{Name}\n";
+}
+
+__DATA__
    next DATABASE unless @tables;
 
    my %info_for;
