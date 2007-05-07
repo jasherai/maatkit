@@ -50,6 +50,7 @@ $OUTPUT_AUTOFLUSH = 1;
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
+# TODO: print these by group
 my @opt_spec = (
    { s => 'case-insensitive',  t => 'o', d => 'Regular expression patterns ignore case' },
    { s => 'daystart',          t => 'o', d => 'Measure times from the beginning of the day' },
@@ -200,7 +201,7 @@ my %test_for = (
    pid => sub {
       my ( $table ) = @_;
 
-      #TODO my ( $process ) = $tbl =~ m/\D_(\d+)$/;
+      #TODO document this my ( $process ) = $tbl =~ m/\D_(\d+)$/;
       my $test = $opts{'case-insensitive'} ? "(?i)$opts{pid}" : $opts{pid};
       my ( $pid ) = $table->{Name} =~ m/$test/;
       return $pid && $pid < $this_pid && !exists $connections{$pid};
@@ -283,12 +284,17 @@ foreach my $database ( @databases ) {
    $sth->execute($opts{tbllike} || ());
    my @tables = @{$sth->fetchall_arrayref({})};
 
-   # Make results uniform across MySQL versions
+   # Make results uniform across MySQL versions, and generate additional
+   # properties TODO document these properties.
    foreach my $table ( @tables ) {
+      my ($ib_free) = $table->{Comment} =~ m/InnoDB free: (\d+) kB/;
+
       $table->{Database}       = $database;
       $table->{Engine}       ||= $table->{Type};
       $table->{Collation}    ||= 'latin1_swedish_ci';
       $table->{Table_length}   = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
+      $table->{Innodb_free}    = defined $ib_free ? 1_024 * $ib_free : undef;
+
       delete $table->{Type};
    }
 
@@ -307,6 +313,7 @@ foreach my $database ( @databases ) {
       }
    }
 
+   # TODO: implement test_plus by saving to a global list.
    foreach my $table ( @tables ) {
       foreach my $action ( keys %action_for ) {
          $action_for{$action}->($table);
@@ -341,9 +348,9 @@ sub test_number {
    my ( $table, $prop, $test ) = @_;
    my ($num) = $test =~ m/(\d+)/;
    return defined $table->{$prop} && (
-         ( $test =~ m/-/  && $table->{$prop} > $num )
-      || ( $test =~ m/\+/ && $table->{$prop} < $num )
-      || (                   $table->{prop} == $num ));
+         ( $test =~ m/-/  && $table->{$prop} < $num )
+      || ( $test =~ m/\+/ && $table->{$prop} > $num )
+      || (                   $table->{$prop} == $num ));
 }
 
 # Checks the given property of the given table to see if it passes the test
@@ -364,21 +371,15 @@ sub test_regex {
    return defined $table->{$prop} && $table->{$prop} =~ m/$test/;
 }
 
-{
-   my %factor_for = (
-      k => 1_024,
-      M => 1_048_576,
-      G => 1_073_741_824,
-   );
 
-   sub expand {
-      my ( $test ) = @_;
-      my ($pre, $num, $factor) = $test =~ m/([+-])?(\d+)([kMG])?/;
-      if ( $factor ) {
-         $num *= $factor_for{$factor};
-      }
-      return "$pre$num";
+sub expand {
+   my ( $test ) = @_;
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+   my ($pre, $num, $factor) = $test =~ m/([+-])?(\d+)([kMG])?/;
+   if ( $factor ) {
+      $num *= $factor_for{$factor};
    }
+   return "$pre$num";
 }
 
 # ############################################################################
