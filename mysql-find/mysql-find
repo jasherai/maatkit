@@ -34,7 +34,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # ############################################################################
 # TODO
 # ############################################################################
-# The following properties can be put into conditions too:
+# The following properties can be tested:
 #         Version: 10
 #      Row_format: Compact                    Row_format: Fixed
 #  Avg_row_length: 0                      Avg_row_length: 0
@@ -48,42 +48,43 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-# Define cmdline args; each is GetOpt::Long spec, whether required,
-# human-readable description.  Add more hash entries as needed.
-# TODO: print these by group
+# 'y' is the 'tYpe' of the option ('t' is generated later and used for something
+# else).
 my @opt_spec = (
-   { s => 'case-insensitive',  t => 'o', d => 'Regular expression patterns ignore case' },
-   { s => 'daystart',          t => 'o', d => 'Measure times from the beginning of the day' },
-   { s => 'defaults-file|F=s', t => 'o', d => 'Only read default options from the given file' },
-   { s => 'help',              t => 'o', d => 'Show this help message' },
-   { s => 'password|p=s',      t => 'o', d => 'Password to use when connecting' },
-   { s => 'port|P=i',          t => 'o', d => 'Port number to use for connection' },
-   { s => 'quote!',            t => 'o', d => 'Quote database and table names (default)' },
-   { s => 'socket|S=s',        t => 'o', d => 'Socket file to use for connection' },
-   { s => 'user|u=s',          t => 'o', d => 'User for login if not current user' },
-   { s => 'or',                t => 'o', d => 'Combine conditions with OR, not AND' },
+   { s => 'case-insensitive',  y => 'o', d => 'Regular expression patterns ignore case' },
+   { s => 'daystart',          y => 'o', d => 'Measure times from the beginning of the day' },
+   { s => 'defaults-file|F=s', y => 'o', d => 'Only read default options from the given file' },
+   { s => 'help',              y => 'o', d => 'Show this help message' },
+   { s => 'password|p=s',      y => 'o', d => 'Password to use when connecting' },
+   { s => 'port|P=i',          y => 'o', d => 'Port number to use for connection' },
+   { s => 'quote!',            y => 'o', d => 'Quote database and table names (default)' },
+   { s => 'socket|S=s',        y => 'o', d => 'Socket file to use for connection' },
+   { s => 'user|u=s',          y => 'o', d => 'User for login if not current user' },
+   { s => 'or',                y => 'o', d => 'Combine tests with OR, not AND' },
 
-   { s => 'cmin=s',            t => 'c', d => 'Table was created n minutes ago' },
-   { s => 'ctime=s',           t => 'c', d => 'Table was created n days ago' },
-   { s => 'datasize=s',        t => 'c', d => 'Table data uses n bytes of space' },
-   { s => 'dblike=s',          t => 'c', d => 'Database name matches SQL LIKE pattern' },
-   { s => 'dbregex=s',         t => 'c', d => 'Database name matches this pattern' },
-   { s => 'empty',             t => 'c', d => 'Table has no rows' },
-   { s => 'engine=s',          t => 'c', d => 'Table storage engine matches this pattern' },
-   { s => 'indexsize=s',       t => 'c', d => 'Table indexes use n bytes of space' },
-   { s => 'kmin=s',            t => 'c', d => 'Table was checked n minutes ago' },
-   { s => 'ktime=s',           t => 'c', d => 'Table was checked n days ago' },
-   { s => 'mmin=s',            t => 'c', d => 'Table was last modified n minutes ago' },
-   { s => 'mtime=s',           t => 'c', d => 'Table was last modified n days ago' },
-   { s => 'pid=s',             t => 'c', d => 'Table name has nonexistent MySQL connection ID' },
-   { s => 'rows=s',            t => 'c', d => 'Table has n rows' },
-   { s => 'tablesize=s',       t => 'c', d => 'Table (data+index) uses n bytes of space' },
-   { s => 'tbllike=s',         t => 'c', d => 'Table name matches SQL LIKE pattern' },
-   { s => 'tblregex=s',        t => 'c', d => 'Table name matches this pattern' },
+   { s => 'cmin=s',            y => 't', d => 'Table was created n minutes ago' },
+   { s => 'ctime=s',           y => 't', d => 'Table was created n days ago' },
+   { s => 'datasize=s',        y => 't', d => 'Table data uses n bytes of space' },
+   { s => 'dblike=s',          y => 't', d => 'Database name matches SQL LIKE pattern' },
+   { s => 'dbregex=s',         y => 't', d => 'Database name matches this pattern' },
+   { s => 'empty',             y => 't', d => 'Table has no rows' },
+   { s => 'engine=s',          y => 't', d => 'Table storage engine matches this pattern' },
+   { s => 'indexsize=s',       y => 't', d => 'Table indexes use n bytes of space' },
+   { s => 'kmin=s',            y => 't', d => 'Table was checked n minutes ago' },
+   { s => 'ktime=s',           y => 't', d => 'Table was checked n days ago' },
+   { s => 'mmin=s',            y => 't', d => 'Table was last modified n minutes ago' },
+   { s => 'mtime=s',           y => 't', d => 'Table was last modified n days ago' },
+   { s => 'pid=s',             y => 't', d => 'Table name has nonexistent MySQL connection ID' },
+   { s => 'rows=s',            y => 't', d => 'Table has n rows' },
+   { s => 'tablesize=s',       y => 't', d => 'Table (data+index) uses n bytes of space' },
+   { s => 'tbllike=s',         y => 't', d => 'Table name matches SQL LIKE pattern' },
+   { s => 'tblregex=s',        y => 't', d => 'Table name matches this pattern' },
 
-   { s => 'exec=s',            t => 'a', d => 'Execute this SQL against each table' },
-   { s => 'exec_plus=s',       t => 'a', d => 'Execute this SQL against all tables at once' },
-   { s => 'print',             t => 'a', d => 'Print the database and table name' },
+   { s => 'exec=s',            y => 'a', d => 'Execute this SQL with each item found' },
+   { s => 'exec_plus=s',       y => 'a', d => 'Execute this SQL with all items at once' },
+   { s => 'print',             y => 'a', d => 'Print the database and table name' },
+   { s => 'printf=s',          y => 'a', d => 'Print format on STDOUT, interpreting escapes and directives' },
+   # TODO: insert action (actually, that should just be exec)
 
 );
 
@@ -126,13 +127,19 @@ if ( $opts{pid} && $opts{pid} !~ m/\(\\d\+\)/ ) { # Ensure there is a capture gr
 }
 
 if ( $opts{help} ) {
-   print "Usage: mysql-find [option]... [database...]\n\n";
+   print "Usage: mysql-find [option]... [database...]\n";
+   my %sections = ( o => 'Options', t => 'Tests', a => 'Actions' );
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
-      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+   foreach my $section ( qw(o t a) ) {
+      print "\n$sections{$section}:\n";
+      foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+         next unless $spec->{y} eq $section;
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t} ? "-$spec->{t}" : '';
+         printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+      }
    }
+
    print <<USAGE;
 
 mysql-find finds MySQL tables and executes actions, like GNU find.  The default
@@ -146,11 +153,19 @@ USAGE
 }
 
 # ############################################################################
-# Lookup tables
+# Lookup tables and global variables
 # ############################################################################
-my %time_for;
-my %connections;
-my $this_pid;
+my %time_for;     # Holds time constants for mmin, mtime etc
+my %connections;  # Holds a list of thread IDs connected
+my $dbh;          # This program's $dbh
+my $this_pid;     # The thread ID of this program's $dbh
+my %sth_for;      # Prepared $sths per-option, for exec etc
+my %fmt_for;      # Interpolated things for sprintf
+
+my %arg_for = (
+   D => 'Database',
+   N => 'Name',
+);
 
 # Functions to call while evaluating tests.
 my %test_for = (
@@ -226,6 +241,22 @@ my %action_for = (
       my ( $table ) = @_;
       print "$table->{Database}.$table->{Name}\n";
    },
+   exec => sub {
+      my ( $table ) = @_;
+      if ( !$sth_for{exec} ) {
+         my $sql = $opts{exec};
+      }
+      # TODO
+      die "exec: TODO\n";
+   },
+   printf => sub {
+      my ( $table ) = @_;
+      if ( !$fmt_for{printf} ) {
+         my ($str, $arg_names) = interpolate($opts{printf});
+         $fmt_for{printf} = { str => $str, arg_names => $arg_names };
+      }
+      printf($fmt_for{printf}->{str}, map { defined $_ ? $_ : '' } @{$table}{@{$fmt_for{printf}->{arg_names}}});
+   },
 );
 
 # ############################################################################
@@ -237,11 +268,11 @@ my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'soc
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
-my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+$dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
    or die("Can't connect to DB: $OS_ERROR");
 
 # If no other action was given, the default action is to print.
-if ( !$opts{exec} && !$opts{exec_plus} ) {
+if ( !grep { $opts{$_} } qw( exec exec_plus print printf ) ) {
    $opts{print} = 1;
 }
 
@@ -315,7 +346,8 @@ foreach my $database ( @databases ) {
 
    # TODO: implement test_plus by saving to a global list.
    foreach my $table ( @tables ) {
-      foreach my $action ( keys %action_for ) {
+      my @actions = grep { $opts{$_} } keys %action_for;
+      foreach my $action ( @actions ) {
          $action_for{$action}->($table);
       }
    }
@@ -371,6 +403,26 @@ sub test_regex {
    return defined $table->{$prop} && $table->{$prop} =~ m/$test/;
 }
 
+# Does string-interpolation and stuff.  Returns the string and a list of the
+# properties that go into the resulting placeholders.
+sub interpolate {
+   my ( $str, $is_sql ) = @_;
+   my @arg_names;
+
+   # Replace arguments and keep track of which table properties go in which
+   # placeholder.
+   if ( $is_sql ) {
+   # # TODO this is for sql $sql =~ s/%(.)/(exists $arg_for{$1} && push @arg_names, $1 ) ? '?' : "%$1"/xge;
+   }
+   else {
+      $str =~ s/%(.)/(exists $arg_for{$1} && push @arg_names, $arg_for{$1} ) ? '\%s' : "%$1"/xge;
+   }
+
+   # Get Perl to interpolate escape sequences
+   $str =~ s/(?<!\\)"/\\"/g;
+   $str = eval qq{"$str"};
+   return ( $str, \@arg_names );
+}
 
 sub expand {
    my ( $test ) = @_;
