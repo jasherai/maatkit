@@ -34,6 +34,8 @@ $OUTPUT_AUTOFLUSH = 1;
 # ############################################################################
 # TODO
 # ############################################################################
+# Can I make % directives be replaced by %whatever while preserving formatting
+# instructions?
 # The following properties can be tested:
 #         Version: 10
 #      Row_format: Compact                    Row_format: Fixed
@@ -84,7 +86,6 @@ my @opt_spec = (
    { s => 'exec_plus=s',       y => 'a', d => 'Execute this SQL with all items at once' },
    { s => 'print',             y => 'a', d => 'Print the database and table name' },
    { s => 'printf=s',          y => 'a', d => 'Print format, with escapes and directives' },
-   # TODO: insert action (actually, that should just be exec)
 
 );
 
@@ -262,11 +263,14 @@ my %action_for = (
    },
    exec => sub {
       my ( $table ) = @_;
-      if ( !$sth_for{exec} ) {
-         my $sql = $opts{exec};
+      if ( !$fmt_for{exec} ) {
+         my ($str, $arg_names) = interpolate($opts{exec});
+         $fmt_for{exec} = { str => $str, arg_names => $arg_names };
       }
-      # TODO
-      die "exec: TODO\n";
+      my $sql = sprintf($fmt_for{exec}->{str},
+         map { defined $_ ? $_ : '' }
+         @{$table}{@{$fmt_for{exec}->{arg_names}}});
+      $dbh->do($sql);
    },
    printf => sub {
       my ( $table ) = @_;
@@ -326,6 +330,7 @@ my @databases = @ARGV         ? @ARGV
               :                 @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 
 DATABASE:
+my @exec_plus;
 foreach my $database ( @databases ) {
    next DATABASE if $database =~ m/^(?:information_schema|lost\+found)$/mi;
 
@@ -365,13 +370,21 @@ foreach my $database ( @databases ) {
       }
    }
 
-   # TODO: implement test_plus by saving to a global list.
    foreach my $table ( @tables ) {
       my @actions = grep { $opts{$_} } keys %action_for;
       foreach my $action ( @actions ) {
          $action_for{$action}->($table);
       }
    }
+
+   push @exec_plus, @tables;
+}
+
+# Handle exec_plus TODO document %s
+if ( $opts{exec_plus} ) {
+   my $table_list = join(', ', map { "$_->{Database}.$_->{Name}" } @exec_plus);
+   (my $sql = $opts{exec_plus}) =~ s/%s/$table_list/g;
+   $dbh->do($sql);
 }
 
 # ############################################################################
@@ -427,17 +440,11 @@ sub test_regex {
 # Does string-interpolation and stuff.  Returns the string and a list of the
 # properties that go into the resulting placeholders.
 sub interpolate {
-   my ( $str, $is_sql ) = @_;
+   my ( $str ) = @_;
    my @arg_names;
 
-   # Replace arguments and keep track of which table properties go in which
-   # placeholder.
-   if ( $is_sql ) {
-   # # TODO this is for sql $sql =~ s/%(.)/(exists $arg_for{$1} && push @arg_names, $1 ) ? '?' : "%$1"/xge;
-   }
-   else {
-      $str =~ s/%(.)/(exists $arg_for{$1} && push @arg_names, $arg_for{$1} ) ? '\%s' : "%$1"/xge;
-   }
+   # Replace % directives
+   $str =~ s/%(.)/(exists $arg_for{$1} && push @arg_names, $arg_for{$1} ) ? '\%s' : "%$1"/xge;
 
    # Get Perl to interpolate escape sequences
    $str =~ s/(?<!\\)"/\\"/g;
