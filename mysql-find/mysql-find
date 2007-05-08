@@ -536,11 +536,10 @@ mysql-find looks for MySQL tables that pass the tests you specify, and executes
 the actions you specify.  The default action is to print the database and table
 name to STDOUT.
 
-mysql-find is not as complicated as GNU find.  It doesn't allow you to specify
-complicated expressions on the command line.  This is a good thing, in my
-opinion.  I tried to make it useful AND usable.
+mysql-find is simpler than GNU find.  It doesn't allow you to specify
+complicated expressions on the command line.
 
-Right now mysql-find only looks for and processes tables.  If you need it to do
+mysql-find only looks for and processes tables.  If you need it to do
 other things, like triggers or columns, file a bug report and I'll add the
 features.
 
@@ -553,10 +552,10 @@ or setting; tests, which determine whether a table should be included in the
 list of tables found; and actions, which do something to the tables mysql-find
 finds.
 
-=head2 OPTIONS
-
 mysql-find uses standard Getopt::Long option parsing, so you should use double
 dashes in front of long option names, unlike GNU find.
+
+=head2 OPTIONS
 
 =over
 
@@ -621,13 +620,13 @@ is done in SQL, so if you say to find tables modified 5 days ago, that
 translates to SELECT DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 5 DAY).  If you
 specify --daystart, if course it's relative to CURRENT_DATE instead.
 
-However, table sizes and so forth are not consistent at an instant in time.  It
-can take some time for MySQL to process all the SHOW TABLE STATUS queries, and
-mysql-find can't do anything about that.  These measurements are as of the time
-they're taken.
+However, table sizes and other metrics are not consistent at an instant in
+time.  It can take some time for MySQL to process all the SHOW queries, and
+mysql-find can't do anything about that.  These measurements are as of the
+time they're taken.
 
-If you need some other tests, file a bug report and I'll enhance mysql-find for
-you.
+If you need some test that's not in this list, file a bug report and I'll
+enhance mysql-find for you.  It's really easy.
 
 =over
 
@@ -710,25 +709,25 @@ Table was last modified n days ago.  This tests the Update_time column.
 
 =item --pid
 
-Table name has nonexistent MySQL connection ID.  This tests the table name for a
-pattern.  The argument to this test must be a Perl regular expression that
-captures digits like this: (\d+).  If the table name matches the pattern, these
-captured digits are taken to be the MySQL connection ID of some process.  If the
-connection is gone according to SHOW FULL PROCESSLIST, the test returns true.
-If the connection ID is greater than mysql-find's own connection ID, mysql-find
-ignores that table for safety.
+Table name has nonexistent MySQL connection ID.  This tests the table name for
+a pattern.  The argument to this test must be a Perl regular expression that
+captures digits like this: (\d+).  If the table name matches the pattern,
+these captured digits are taken to be the MySQL connection ID of some process.
+If the connection doesn't exist according to SHOW FULL PROCESSLIST, the test
+returns true.  If the connection ID is greater than mysql-find's own
+connection ID, the test returns false for safety.
 
 Why would you want to do this?  If you use MySQL statement-based replication,
 you probably know the trouble temporary tables can cause.  You might choose to
-work around this by creating real tables with unique names, instead of temporary
-tables.  One way to do this is to append your connection ID to the end of the
-table, thusly: scratch_table_12345.  This assures that the table name is unique
-and lets you have a way to find which connection it was associated with.  And
-perhaps most importantly, if that connection no longer exists, you can assume
-that the connection died without cleaning up its tables, and this table is a
-candidate for removal.
+work around this by creating real tables with unique names, instead of
+temporary tables.  One way to do this is to append your connection ID to the
+end of the table, thusly: scratch_table_12345.  This assures the table name is
+unique and lets you have a way to find which connection it was associated
+with.  And perhaps most importantly, if the connection no longer exists, you
+can assume the connection died without cleaning up its tables, and this table
+is a candidate for removal.
 
-This is the way I manage scratch tables, and that's why I included this test in
+This how I manage scratch tables, and that's why I included this test in
 mysql-find.
 
 The argument I use to --pid is "\D_(\d+)$".  That finds tables with a series of
@@ -752,8 +751,8 @@ Table row format matches pattern.  This tests the Row_format column.
 
 =item --tablesize
 
-Table (data+index) uses n bytes of space.  This tests the sum of the Data_length
-and Index_length columns.
+Table uses n bytes of space.  This tests the sum of the Data_length and
+Index_length columns.
 
 =item --tbllike
 
@@ -771,8 +770,9 @@ Table version is n.  This tests the Version column.
 
 =head2 ACTIONS
 
-Actions happen in an indeterminate order.  If you need determinism, file a bug
-report and I'll add this feature.
+The exec_plus action happens after everything else, but otherwise actions
+happen in an indeterminate order.  If you need determinism, file a bug report
+and I'll add this feature.
 
 =over
 
@@ -885,7 +885,7 @@ You need the following Perl modules: DBI and DBD::mysql.
 =head1 LICENSE
 
 This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
-Feedback and improvements are welcome.
+Feedback and improvements are welcome (see L<"BUGS">).
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
