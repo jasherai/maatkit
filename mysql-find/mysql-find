@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
-# This is mysql-find, a program to find tables and take actions like GNU find.
+# This is mysql-find, a program that searches for MySQL tables and takes actions
+# like GNU find.
 #
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
 # Feedback and improvements are welcome.
@@ -31,20 +32,8 @@ our $VERSION = '@VERSION@';
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# ############################################################################
-# TODO
-# ############################################################################
-# Can I make % directives be replaced by %whatever while preserving formatting
-# instructions?
-# The following properties can be tested:
-#         Version: 10
-#      Row_format: Compact                    Row_format: Fixed
-#  Avg_row_length: 0                      Avg_row_length: 0
-#       Data_free: 0                           Data_free: 0
-#  Auto_increment: NULL                   Auto_increment: NULL
-#       Collation: latin1_swedish_ci
-#        Checksum: NULL
-#         Comment: InnoDB free: 4096 kB          Comment:
+# TODO: Can I make % directives be replaced by %whatever while preserving
+# formatting instructions?
 
 # ############################################################################
 # Get configuration information.
@@ -57,16 +46,23 @@ my @opt_spec = (
    { s => 'daystart',          y => 'o', d => 'Measure times from the beginning of the day' },
    { s => 'defaults-file|F=s', y => 'o', d => 'Only read default options from the given file' },
    { s => 'help',              y => 'o', d => 'Show this help message' },
+   { s => 'or',                y => 'o', d => 'Combine tests with OR, not AND' },
    { s => 'password|p=s',      y => 'o', d => 'Password to use when connecting' },
    { s => 'port|P=i',          y => 'o', d => 'Port number to use for connection' },
    { s => 'quote!',            y => 'o', d => 'Quote database and table names (default)' },
    { s => 'socket|S=s',        y => 'o', d => 'Socket file to use for connection' },
    { s => 'user|u=s',          y => 'o', d => 'User for login if not current user' },
-   { s => 'or',                y => 'o', d => 'Combine tests with OR, not AND' },
 
+   { s => 'autoinc=s',         y => 't', d => 'Table next AUTO_INCREMENT is n' },
+   { s => 'avgrowlen=s',       y => 't', d => 'Table avg row len is n bytes' },
+   { s => 'checksum=s',        y => 't', d => 'Table checksum is n' },
    { s => 'cmin=s',            y => 't', d => 'Table was created n minutes ago' },
+   { s => 'collation=s',       y => 't', d => 'Table collation matches pattern' },
+   { s => 'comment=s',         y => 't', d => 'Table comment matches pattern' },
+   { s => 'createopts=s',      y => 't', d => 'Table create option matches pattern' },
    { s => 'ctime=s',           y => 't', d => 'Table was created n days ago' },
    { s => 'datasize=s',        y => 't', d => 'Table data uses n bytes of space' },
+   { s => 'datafree=s',        y => 't', d => 'Table has n bytes of free space' },
    { s => 'dblike=s',          y => 't', d => 'Database name matches SQL LIKE pattern' },
    { s => 'dbregex=s',         y => 't', d => 'Database name matches this pattern' },
    { s => 'empty',             y => 't', d => 'Table has no rows' },
@@ -78,9 +74,11 @@ my @opt_spec = (
    { s => 'mtime=s',           y => 't', d => 'Table was last modified n days ago' },
    { s => 'pid=s',             y => 't', d => 'Table name has nonexistent MySQL connection ID' },
    { s => 'rows=s',            y => 't', d => 'Table has n rows' },
+   { s => 'rowformat=s',       y => 't', d => 'Table row format matches pattern' },
    { s => 'tablesize=s',       y => 't', d => 'Table (data+index) uses n bytes of space' },
    { s => 'tbllike=s',         y => 't', d => 'Table name matches SQL LIKE pattern' },
    { s => 'tblregex=s',        y => 't', d => 'Table name matches this pattern' },
+   { s => 'version=s',         y => 't', d => 'Table version is n' },
 
    { s => 'exec=s',            y => 'a', d => 'Execute this SQL with each item found' },
    { s => 'exec_plus=s',       y => 'a', d => 'Execute this SQL with all items at once' },
@@ -113,7 +111,7 @@ GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 # ############################################################################
 foreach my $option (
       grep { defined $opts{$_} }
-      qw(cmin ctime datasize indexsize kmin ktime mmin mtime rows tablesize) )
+      qw(cmin ctime datasize indexsize kmin ktime mmin mtime rows tablesize version) )
 {
    if ( $opts{$option} && $opts{$option} !~ m/^[+-]?\d+[kMG]?$/ ) {
       warn "Invalid argument to --$option\n";
@@ -143,9 +141,9 @@ if ( $opts{help} ) {
 
    print <<USAGE;
 
-mysql-find finds MySQL tables and executes actions, like GNU find.  The default
-action is to print the database and table name.  Connection options are read
-from MySQL option files.  For more details, please read the documentation:
+mysql-find searches for MySQL tables and executes actions, like GNU find.  The
+default action is to print the database and table name.  Connection options are
+read from MySQL option files.  For more details, please read the documentation:
 
    perldoc mysql-find
 
@@ -189,13 +187,41 @@ my %arg_for = (
 
 # Functions to call while evaluating tests.
 my %test_for = (
+   autoinc => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Auto_increment', $opts{autoinc});
+   },
+   avgrowlen => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Avg_row_length', $opts{avgrowlen});
+   },
+   checksum => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Checksum', $opts{checksum});
+   },
    cmin => sub {
       my ( $table ) = @_;
       return test_date($table, 'Create_time', 'cmin');
    },
+   collation => sub {
+      my ( $table ) = @_;
+      return test_regex($table, 'Collation', $opts{collation});
+   },
+   comment => sub {
+      my ( $table ) = @_;
+      return test_regex($table, 'Comment', $opts{comment});
+   },
+   createopts => sub {
+      my ( $table ) = @_;
+      return test_regex($table, 'Create_options', $opts{createopts});
+   },
    ctime => sub {
       my ( $table ) = @_;
       return test_date($table, 'Create_time', 'ctime');
+   },
+   datafree => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Data_free', $opts{datafree});
    },
    datasize => sub {
       my ( $table ) = @_;
@@ -235,8 +261,6 @@ my %test_for = (
    },
    pid => sub {
       my ( $table ) = @_;
-
-      #TODO document this my ( $process ) = $tbl =~ m/\D_(\d+)$/;
       my $test = $opts{'case-insensitive'} ? "(?i)$opts{pid}" : $opts{pid};
       my ( $pid ) = $table->{Name} =~ m/$test/;
       return $pid && $pid < $this_pid && !exists $connections{$pid};
@@ -245,6 +269,10 @@ my %test_for = (
       my ( $table ) = @_;
       return test_number($table, 'Rows', $opts{rows});
    },
+   rowformat => sub {
+      my ( $table ) = @_;
+      return test_regex($table, 'Row_format', $opts{rowformat});
+   },
    tablesize => sub {
       my ( $table ) = @_;
       return test_number($table, 'Table_length', $opts{tablesize});
@@ -252,6 +280,10 @@ my %test_for = (
    tblregex => sub {
       my ( $table ) = @_;
       return test_regex($table, 'Name', $opts{tblregex});
+   },
+   version => sub {
+      my ( $table ) = @_;
+      return test_number($table, 'Version', $opts{version});
    },
 );
 
@@ -283,6 +315,11 @@ my %action_for = (
          @{$table}{@{$fmt_for{printf}->{arg_names}}});
    },
 );
+
+# Sanity check to catch misspellings...
+foreach my $test ( keys %test_for, keys %action_for ) {
+   die "No such option $test" unless grep { $_->{k} eq $test } @opt_spec;
+}
 
 # ############################################################################
 # Get ready to do the main work.
@@ -329,8 +366,8 @@ my @databases = @ARGV         ? @ARGV
               : $opts{dblike} ? @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE ?', {}, $opts{dblike})}
               :                 @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 
-DATABASE:
 my @exec_plus;
+DATABASE:
 foreach my $database ( @databases ) {
    next DATABASE if $database =~ m/^(?:information_schema|lost\+found)$/mi;
 
@@ -342,15 +379,14 @@ foreach my $database ( @databases ) {
    my @tables = @{$sth->fetchall_arrayref({})};
 
    # Make results uniform across MySQL versions, and generate additional
-   # properties TODO document these properties.
+   # properties.
    foreach my $table ( @tables ) {
       my ($ib_free) = $table->{Comment} =~ m/InnoDB free: (\d+) kB/;
 
-      $table->{Database}       = $database;
-      $table->{Engine}       ||= $table->{Type};
-      $table->{Collation}    ||= 'latin1_swedish_ci';
-      $table->{Table_length}   = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
-      $table->{Innodb_free}    = defined $ib_free ? 1_024 * $ib_free : undef;
+      $table->{Database}         = $database;
+      $table->{Engine}         ||= $table->{Type};
+      $table->{Table_length}     = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
+      $table->{Innodb_free}      = defined $ib_free ? 1_024 * $ib_free : undef;
 
       delete $table->{Type};
    }
@@ -380,7 +416,7 @@ foreach my $database ( @databases ) {
    push @exec_plus, @tables;
 }
 
-# Handle exec_plus TODO document %s
+# Handle exec_plus
 if ( $opts{exec_plus} ) {
    my $table_list = join(', ', map { "$_->{Database}.$_->{Name}" } @exec_plus);
    (my $sql = $opts{exec_plus}) =~ s/%s/$table_list/g;
@@ -423,7 +459,7 @@ sub test_number {
 sub test_date {
    my ( $table, $prop, $test ) = @_;
    return defined $table->{$prop} && (
-         ( $opts{$test} =~ m/-/ &&  $table->{$prop} gt $time_for{$test} )
+         ( $opts{$test} =~ m/-/  && $table->{$prop} gt $time_for{$test} )
       || ( $opts{$test} =~ m/\+/ && $table->{$prop} lt $time_for{$test} )
       || (                          $table->{$prop} eq $time_for{$test} ));
 }
@@ -470,11 +506,326 @@ sub expand {
 
 =head1 NAME
 
-mysql-find - Foo foo
+mysql-find - Find MySQL tables and execute actions, like GNU find.
 
 =head1 DESCRIPTION
 
-=head1 OUTPUT
+mysql-find looks for MySQL tables that pass the tests you specify, and executes
+the actions you specify.  The default action is to print the database and table
+name to STDOUT.
+
+mysql-find is not as complicated as GNU find.  It doesn't allow you to specify
+complicated expressions on the command line.  This is a good thing, in my
+opinion.  I tried to make it useful AND usable.
+
+=head1 OPTIONS
+
+There are three kinds of options: normal options, which determine some behavior
+or setting; tests, which determine whether a table should be included in the
+list of tables found; and actions, which do something to the tables mysql-find
+finds.
+
+=head2 OPTIONS
+
+mysql-find uses standard Getopt::Long option parsing, so you should use double
+dashes in front of long option names, unlike GNU find.
+
+=over
+
+=item --case-insensitive
+
+Specifies that all regular expression searches are case-insensitive.
+
+=item --daystart
+
+Measure times (for --mmin, etc) from the beginning of today rather than from the
+current time.
+
+=item --defaults-file
+
+If you specify this option, only this file is read for MySQL default options;
+otherwise all the default files will be read.
+
+=item --or
+
+By default, tests are evaluated as though there were an AND between them.  This
+option switches it to OR.
+
+Option parsing is not implemented by mysql-find itself, so you cannot specify
+complicated expressions with parentheses and mixtures of OR and AND.
+
+=item --password
+
+The password to use when connecting.
+
+=item --port
+
+The port number to use for the connection.
+
+=item --quote
+
+This option is enabled by default.  It quotes MySQL identifier names with
+MySQL's standard backtick character.
+
+=item --socket
+
+The socket file to use for the connection.
+
+=item --user
+
+The user for login if not the current user.
+
+=back
+
+=head2 TESTS
+
+Most tests check some criterion against a column of SHOW TABLE STATUS output.
+Numeric arguments can be specified as +n for greater than n, -n for less than n,
+and n for exactly n.  All numeric options can take an optional suffix multiplier
+of k, M or G (1_024, 1_048_576, and 1_073_741_824 respectively).  All patterns
+are Perl regular expressions (see 'man perlre') unless specified as SQL LIKE
+patterns.
+
+=over
+
+=item --autoinc
+
+Table's next AUTO_INCREMENT is n.  This tests the Auto_increment column.
+
+=item --avgrowlen
+
+Table avg row len is n bytes.  This tests the Avg_row_length column.
+
+=item --checksum
+
+Table checksum is n.  This tests the Checksum column.
+
+=item --cmin
+
+Table was created n minutes ago.  This tests the Create_time column.
+
+=item --collation
+
+Table collation matches pattern.  This tests the Collation column.
+
+=item --comment
+
+Table comment matches pattern.  This tests the Comment column.
+
+=item --createopts
+
+Table create option matches pattern.  This tests the Create_options column.
+
+=item --ctime
+
+Table was created n days ago.  This tests the Create_time column.
+
+=item --datasize
+
+Table data uses n bytes of space.  This tests the Data_length column.
+
+=item --datafree
+
+Table has n bytes of free space.  This tests the Data_free column.
+
+=item --dblike
+
+Database name matches SQL LIKE pattern.
+
+=item --dbregex
+
+Database name matches this pattern.
+
+=item --empty
+
+Table has no rows.  This tests the Rows column.
+
+=item --engine
+
+Table storage engine matches this pattern.  This tests the Engine column, or in
+earlier versions of MySQL, the Type column.
+
+=item --indexsize
+
+Table indexes use n bytes of space.  This tests the Index_length column.
+
+=item --kmin
+
+Table was checked n minutes ago.  This tests the Check_time column.
+
+=item --ktime
+
+Table was checked n days ago.  This tests the Check_time column.
+
+=item --mmin
+
+Table was last modified n minutes ago.  This tests the Update_time column.
+
+=item --mtime
+
+Table was last modified n days ago.  This tests the Update_time column.
+
+=item --pid
+
+Table name has nonexistent MySQL connection ID.  This tests the table name for a
+pattern.  The argument to this test must be a Perl regular expression that
+captures digits like this: (\d+).  If the table name matches the pattern, these
+captured digits are taken to be the MySQL connection ID of some process.  If the
+process is no longer connected to the server according to SHOW FULL PROCESSLIST,
+the test returns true.
+
+Why would you want to do this?  If you use MySQL statement-based replication,
+you probably know the trouble temporary tables can cause.  You might choose to
+work around this by creating real tables with unique names, instead of temporary
+tables.  One good way to do this is to append your connection ID to the end of
+the table, thusly: scratch_table_12345.  This assures that the table name is
+unique and lets you have a way to find which connection it was associated with.
+And perhaps most importantly, if that connection no longer exists, you can
+assume that the connection died without cleaning up its tables, and this table
+is a candidate for removal.
+
+This is the way I manage scratch tables, and that's why I included this test in
+mysql-find.
+
+The argument I use to --pid is "\D_(\d+)$".  That finds tables with a series of
+numbers at the end, preceded by an underscore and some non-number character (the
+latter criterion prevents me from examining tables with a date at the end, which
+people tend to do: scratch_2007_05_07 for example).  It's better to keep the
+scratch tables separate of course, but that's not an option for my
+circumstances.
+
+=item --rows
+
+Table has n rows.  This tests the Rows column.
+
+=item --rowformat
+
+Table row format matches pattern.  This tests the Row_format column.
+
+=item --tablesize
+
+Table (data+index) uses n bytes of space.  This tests the sum of the Data_length
+and Index_length columns.
+
+=item --tbllike
+
+Table name matches SQL LIKE pattern.
+
+=item --tblregex
+
+Table name matches this pattern.
+
+=item --version
+
+Table version is n.  This tests the Version column.
+
+=back
+
+=head2 ACTIONS
+
+=over
+
+=item --exec
+
+Execute this SQL with each item found.  The SQL can contain escapes and
+formatting directives (see --printf).
+
+=item --exec_plus
+
+Execute this SQL with all items at once.  This option is unlike --exec.  There
+are no escaping or formatting directives; there is only one special placeholder
+for the list of database and table names, %s.  The list of tables found will be
+joined together with commas and substituted wherever you place %s.
+
+You might use this, for example, to drop all the tables you found:
+
+   DROP TABLE %s
+
+This is sort of like GNU find's "-exec command {} +" syntax.  Only it's not
+totally cryptic.  And it doesn't require me to write a command-line parser.
+
+=item --print
+
+Print the database and table name, followed by a newline.  This is the default
+action if no other action is specified.
+
+=item --printf
+
+Print format on the standard output, interpreting '\' escapes and '%'
+directives.  Escapes are backslashed characters, like \n and \t.  Perl
+interprets these, so you can use any escapes Perl knows about.  Directives are
+replaced by %s, and as of this writing, you can't add any special formatting
+instructions, like field widths or alignment (though I'm musing over ways to do
+that).
+
+Here is a list of the directives.  Note that most of them simply come from
+columns of SHOW TABLE STATUS.  If the column is NULL or doesn't exist, you get
+an empty string in the output.
+
+   CHAR DATA SOURCE        NOTES
+   ---- ------------------ ------------------------------------------
+   a    Auto_increment
+   A    Avg_row_length
+   c    Checksum
+   C    Create_time
+   D    Database           The database name in which the table lives
+   d    Data_length
+   E    Engine             In older versions of MySQL, this is Type
+   F    Data_free
+   f    Innodb_free        Parsed from the Comment field
+   I    Index_length
+   K    Check_time
+   L    Collation
+   M    Max_data_length
+   N    Name
+   O    Comment
+   P    Create_options
+   R    Row_format
+   S    Rows
+   T    Table_length       Data_length+Index_length
+   U    Update_time
+   V    Version
+
+=back
+
+=head1 EXAMPLES
+
+Find all tables created more than a day ago, which use the MyISAM engine, and
+print their names:
+
+  mysql-find --mtime +1 --engine MyISAM
+
+Find MyISAM tables that haven't been updated in a month, and convert them to
+ARCHIVE storage engine (data warehousing, anyone?):
+
+  mysql-find --ctime +30 --engine MyISAM --exec "ALTER TABLE %D.%N ENGINE=ARCHIVE"
+
+Find tables created by a process that no longer exists, following the name_pid
+naming convention, and remove them:
+
+  mysql-find --pid '\D_(\d+)$' --exec_plus "DROP TABLE %s"
+
+Find empty tables in the test and junk databases, and delete them:
+
+  mysql-find --empty junk test --exec_plus "DROP TABLE %s"
+
+Find tables more than five gigabytes in total size:
+
+  mysql-find --tablesize +5G
+
+Find all tables and print their total data and index size, and sort largest
+tables first (sort is a different program, by the way).
+
+  mysql-find --printf "%T\t%D.%N\n" | sort -rn
+
+As above, but this time, insert the data back into the database for posterity:
+
+  mysql-find --noquote --exec "INSERT INTO sysdata.tblsize(db, tbl, size) VALUES('%D', '%N', %T)"
+
+=head1 BUGS
+
+Please report bugs, request features, discuss etc via the mailing lists, forums
+and other tools at http://sourceforge.net/projects/mysqltoolkit.
 
 =head1 SYSTEM REQUIREMENTS
 
