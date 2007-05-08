@@ -50,6 +50,7 @@ my @opt_spec = (
    { s => 'password|p=s',      y => 'o', d => 'Password to use when connecting' },
    { s => 'port|P=i',          y => 'o', d => 'Port number to use for connection' },
    { s => 'quote!',            y => 'o', d => 'Quote database and table names (default)' },
+   { s => 'showtables',        y => 'o', d => 'Use SHOW TABLES for speed' },
    { s => 'socket|S=s',        y => 'o', d => 'Socket file to use for connection' },
    { s => 'user|u=s',          y => 'o', d => 'User for login if not current user' },
 
@@ -123,6 +124,13 @@ foreach my $option (
 if ( $opts{pid} && $opts{pid} !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
    warn "--pid regex doesn't capture digits with (\\d+)\n";
    $opts{help} = 1;
+}
+
+if ( $opts{showtables} ) {
+   # TODO: check to make sure nothing depends on SHOW TABLE STATUS
+# TODO: better yet, check and if not needed and not explicitly specified,
+   # optimize
+# TODO document whatever I end up doing
 }
 
 if ( $opts{help} ) {
@@ -353,7 +361,17 @@ foreach my $option ( grep { defined $opts{$_} } qw(cmin ctime kmin ktime mmin mt
    $time_for{$option} = $dbh->selectcol_arrayref($query)->[0];
 }
 
-if ( $opts{pid} ) { # Fetch and save a list of processes currently running.
+# Fetch and save a list of processes currently running.
+if ( $opts{pid} ) {
+   # Ensure I have the PROCESS privilege.
+   my $proc =
+      grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
+      @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+   if ( !$proc ) {
+      die "--pid requires the PROCESS privilege for safety.\n";
+   }
+
+   # Get the data
    $this_pid    = $dbh->{mysql_thread_id};
    %connections = map { $_ => 1 }
       @{$dbh->selectcol_arrayref('SHOW FULL PROCESSLIST')};
@@ -371,9 +389,10 @@ DATABASE:
 foreach my $database ( @databases ) {
    next DATABASE if $database =~ m/^(?:information_schema|lost\+found)$/mi;
 
+   my $sta = $opts{showtables} ? 'S' : ' STATUS';
    my $sth = $opts{tbllike}
-           ? $dbh->prepare("SHOW TABLE STATUS FROM `$database` LIKE ?")
-           : $dbh->prepare("SHOW TABLE STATUS FROM `$database`");
+           ? $dbh->prepare("SHOW TABLE$sta FROM `$database` LIKE ?")
+           : $dbh->prepare("SHOW TABLE$sta FROM `$database`");
 
    $sth->execute($opts{tbllike} || ());
    my @tables = @{$sth->fetchall_arrayref({})};
@@ -381,14 +400,18 @@ foreach my $database ( @databases ) {
    # Make results uniform across MySQL versions, and generate additional
    # properties.
    foreach my $table ( @tables ) {
-      my ($ib_free) = $table->{Comment} =~ m/InnoDB free: (\d+) kB/;
-
-      $table->{Database}         = $database;
-      $table->{Engine}         ||= $table->{Type};
-      $table->{Table_length}     = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
-      $table->{Innodb_free}      = defined $ib_free ? 1_024 * $ib_free : undef;
-
-      delete $table->{Type};
+      if ( $opts{showtables} ) {
+         my ($name) = values %$table;
+         $table = { Name => $name };
+      }
+      else {
+         my ($ib_free)          = $table->{Comment} && $table->{Comment} =~ m/InnoDB free: (\d+) kB/;
+         $table->{Engine}       ||= $table->{Type};
+         $table->{Table_length} = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
+         $table->{Innodb_free}  = defined $ib_free ? 1_024 * $ib_free : undef;
+         delete $table->{Type};
+      }
+      $table->{Database} = $database;
    }
 
    # Apply the tests to find the matching tables
@@ -518,6 +541,10 @@ mysql-find is not as complicated as GNU find.  It doesn't allow you to specify
 complicated expressions on the command line.  This is a good thing, in my
 opinion.  I tried to make it useful AND usable.
 
+Right now mysql-find only looks for and processes tables.  If you need it to do
+other things, like triggers or columns, file a bug report and I'll add the
+features.
+
 =head1 OPTIONS
 
 There are three kinds of options: normal options, which determine some behavior
@@ -565,7 +592,15 @@ The port number to use for the connection.
 =item --quote
 
 This option is enabled by default.  It quotes MySQL identifier names with
-MySQL's standard backtick character.
+MySQL's standard backtick character.  Quoting happens after tests are run, and
+before actions are run.
+
+=item --showtables
+
+Use SHOW TABLES for speed.  This is usually much faster than SHOW TABLE STATUS
+on InnoDB, and if all you need is the table names and no other data, this can be
+a big win.  If you specify tests that require SHOW TABLE STATUS, mysql-find will
+raise an error.
 
 =item --socket
 
@@ -585,6 +620,20 @@ and n for exactly n.  All numeric options can take an optional suffix multiplier
 of k, M or G (1_024, 1_048_576, and 1_073_741_824 respectively).  All patterns
 are Perl regular expressions (see 'man perlre') unless specified as SQL LIKE
 patterns.
+
+Dates and times are all measured relative to the same instant, when mysql-find
+first asks the database server what time it is.  All date and time manipulation
+is done in SQL, so if you say to find tables modified 5 days ago, that
+translates to SELECT DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 5 DAY).  If you
+specify --daystart, if course it's relative to CURRENT_DATE instead.
+
+However, table sizes and so forth are not consistent at an instant in time.  It
+can take some time for MySQL to process all the SHOW TABLE STATUS queries, and
+mysql-find can't do anything about that.  These measurements are as of the time
+they're taken.
+
+If you need some other tests, file a bug report and I'll enhance mysql-find for
+you.
 
 =over
 
@@ -671,18 +720,19 @@ Table name has nonexistent MySQL connection ID.  This tests the table name for a
 pattern.  The argument to this test must be a Perl regular expression that
 captures digits like this: (\d+).  If the table name matches the pattern, these
 captured digits are taken to be the MySQL connection ID of some process.  If the
-process is no longer connected to the server according to SHOW FULL PROCESSLIST,
-the test returns true.
+connection is gone according to SHOW FULL PROCESSLIST, the test returns true.
+If the connection ID is greater than mysql-find's own connection ID, mysql-find
+ignores that table for safety.
 
 Why would you want to do this?  If you use MySQL statement-based replication,
 you probably know the trouble temporary tables can cause.  You might choose to
 work around this by creating real tables with unique names, instead of temporary
-tables.  One good way to do this is to append your connection ID to the end of
-the table, thusly: scratch_table_12345.  This assures that the table name is
-unique and lets you have a way to find which connection it was associated with.
-And perhaps most importantly, if that connection no longer exists, you can
-assume that the connection died without cleaning up its tables, and this table
-is a candidate for removal.
+tables.  One way to do this is to append your connection ID to the end of the
+table, thusly: scratch_table_12345.  This assures that the table name is unique
+and lets you have a way to find which connection it was associated with.  And
+perhaps most importantly, if that connection no longer exists, you can assume
+that the connection died without cleaning up its tables, and this table is a
+candidate for removal.
 
 This is the way I manage scratch tables, and that's why I included this test in
 mysql-find.
@@ -690,9 +740,13 @@ mysql-find.
 The argument I use to --pid is "\D_(\d+)$".  That finds tables with a series of
 numbers at the end, preceded by an underscore and some non-number character (the
 latter criterion prevents me from examining tables with a date at the end, which
-people tend to do: scratch_2007_05_07 for example).  It's better to keep the
-scratch tables separate of course, but that's not an option for my
-circumstances.
+people tend to do: baron_scratch_2007_05_07 for example).  It's better to keep
+the scratch tables separate of course.
+
+If you do this, make sure the user mysql-find runs as has the PROCESS privilege!
+Otherwise it will only see connections from the same user, and might think some
+tables are ready to remove when they're still in use.  For safety, mysql-find
+checks this for you.
 
 =item --rows
 
@@ -722,6 +776,9 @@ Table version is n.  This tests the Version column.
 =back
 
 =head2 ACTIONS
+
+Actions happen in an indeterminate order.  If you need determinism, file a bug
+report and I'll add this feature.
 
 =over
 
@@ -801,9 +858,9 @@ ARCHIVE storage engine (data warehousing, anyone?):
   mysql-find --ctime +30 --engine MyISAM --exec "ALTER TABLE %D.%N ENGINE=ARCHIVE"
 
 Find tables created by a process that no longer exists, following the name_pid
-naming convention, and remove them:
+naming convention, and remove them.  Use --showtables for speed:
 
-  mysql-find --pid '\D_(\d+)$' --exec_plus "DROP TABLE %s"
+  mysql-find --showtables --pid '\D_(\d+)$' --exec_plus "DROP TABLE %s"
 
 Find empty tables in the test and junk databases, and delete them:
 
