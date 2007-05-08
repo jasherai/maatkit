@@ -125,6 +125,30 @@ if ( $opts{pid} && $opts{pid} !~ m/\(\\d\+\)/ ) { # Ensure there is a capture gr
    $opts{help} = 1;
 }
 
+my %arg_for = (
+   a => 'Auto_increment',
+   A => 'Avg_row_length',
+   c => 'Checksum',
+   C => 'Create_time',
+   D => 'Database',
+   d => 'Data_length',
+   E => 'Engine',
+   F => 'Data_free',
+   f => 'Innodb_free',
+   I => 'Index_length',
+   K => 'Check_time',
+   L => 'Collation',
+   M => 'Max_data_length',
+   N => 'Name',
+   O => 'Comment',
+   P => 'Create_options',
+   R => 'Row_format',
+   S => 'Rows',
+   T => 'Table_length',
+   U => 'Update_time',
+   V => 'Version',
+);
+
 # Interpolate strings for printf and exec.  At the same time discover whether
 # I must use SHOW TABLE STATUS (slower than SHOW TABLES) to fetch data.
 my %fmt_for;  # Interpolated strings
@@ -175,30 +199,6 @@ my %time_for;     # Holds time constants for mmin, mtime etc
 my %connections;  # Holds a list of thread IDs connected
 my $dbh;          # This program's $dbh
 my $this_pid;     # The thread ID of this program's $dbh
-
-my %arg_for = (
-   a => 'Auto_increment',
-   A => 'Avg_row_length',
-   c => 'Checksum',
-   C => 'Create_time',
-   D => 'Database',
-   d => 'Data_length',
-   E => 'Engine',
-   F => 'Data_free',
-   f => 'Innodb_free',
-   I => 'Index_length',
-   K => 'Check_time',
-   L => 'Collation',
-   M => 'Max_data_length',
-   N => 'Name',
-   O => 'Comment',
-   P => 'Create_options',
-   R => 'Row_format',
-   S => 'Rows',
-   T => 'Table_length',
-   U => 'Update_time',
-   V => 'Version',
-);
 
 # Functions to call while evaluating tests.
 my %test_for = (
@@ -400,10 +400,10 @@ foreach my $database ( @databases ) {
    # properties.
    foreach my $table ( @tables ) {
       if ( $showstat ) {
-         my ($ib_free)          = $table->{Comment} && $table->{Comment} =~ m/InnoDB free: (\d+) kB/;
+         my ($ib_free)            = $table->{Comment} && $table->{Comment} =~ m/InnoDB free: (\d+) kB/;
          $table->{Engine}       ||= $table->{Type};
-         $table->{Table_length} = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
-         $table->{Innodb_free}  = defined $ib_free ? 1_024 * $ib_free : undef;
+         $table->{Table_length}   = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
+         $table->{Innodb_free}    = $ib_free ? 1_024 * $ib_free : undef;
          delete $table->{Type};
       }
       else {
