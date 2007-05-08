@@ -50,7 +50,6 @@ my @opt_spec = (
    { s => 'password|p=s',      y => 'o', d => 'Password to use when connecting' },
    { s => 'port|P=i',          y => 'o', d => 'Port number to use for connection' },
    { s => 'quote!',            y => 'o', d => 'Quote database and table names (default)' },
-   { s => 'showtables',        y => 'o', d => 'Use SHOW TABLES for speed' },
    { s => 'socket|S=s',        y => 'o', d => 'Socket file to use for connection' },
    { s => 'user|u=s',          y => 'o', d => 'User for login if not current user' },
 
@@ -126,11 +125,21 @@ if ( $opts{pid} && $opts{pid} !~ m/\(\\d\+\)/ ) { # Ensure there is a capture gr
    $opts{help} = 1;
 }
 
-if ( $opts{showtables} ) {
-   # TODO: check to make sure nothing depends on SHOW TABLE STATUS
-# TODO: better yet, check and if not needed and not explicitly specified,
-   # optimize
-# TODO document whatever I end up doing
+# Interpolate strings for printf and exec.  At the same time discover whether
+# I must use SHOW TABLE STATUS (slower than SHOW TABLES) to fetch data.
+my %fmt_for;  # Interpolated strings
+my $showstat
+   = grep { $opts{$_} } qw( 
+      autoinc avgrowlen checksum cmin collation comment createopts ctime
+      datasize datafree empty engine indexsize kmin ktime mmin mtime rows
+      rowformat tablesize version);
+foreach my $thing (qw(exec printf)) {
+   next unless $opts{$thing};
+   my ($str, $arg_names) = interpolate($opts{$thing});
+   $fmt_for{$thing} = { str => $str, arg_names => $arg_names };
+   if ( grep { $_ !~ m/^(Database|Name)$/ } @$arg_names ) {
+      $showstat = 1;
+   }
 }
 
 if ( $opts{help} ) {
@@ -166,8 +175,6 @@ my %time_for;     # Holds time constants for mmin, mtime etc
 my %connections;  # Holds a list of thread IDs connected
 my $dbh;          # This program's $dbh
 my $this_pid;     # The thread ID of this program's $dbh
-my %sth_for;      # Prepared $sths per-option, for exec etc
-my %fmt_for;      # Interpolated things for printf
 
 my %arg_for = (
    a => 'Auto_increment',
@@ -303,10 +310,6 @@ my %action_for = (
    },
    exec => sub {
       my ( $table ) = @_;
-      if ( !$fmt_for{exec} ) {
-         my ($str, $arg_names) = interpolate($opts{exec});
-         $fmt_for{exec} = { str => $str, arg_names => $arg_names };
-      }
       my $sql = sprintf($fmt_for{exec}->{str},
          map { defined $_ ? $_ : '' }
          @{$table}{@{$fmt_for{exec}->{arg_names}}});
@@ -314,10 +317,6 @@ my %action_for = (
    },
    printf => sub {
       my ( $table ) = @_;
-      if ( !$fmt_for{printf} ) {
-         my ($str, $arg_names) = interpolate($opts{printf});
-         $fmt_for{printf} = { str => $str, arg_names => $arg_names };
-      }
       printf($fmt_for{printf}->{str},
          map { defined $_ ? $_ : '' }
          @{$table}{@{$fmt_for{printf}->{arg_names}}});
@@ -389,7 +388,7 @@ DATABASE:
 foreach my $database ( @databases ) {
    next DATABASE if $database =~ m/^(?:information_schema|lost\+found)$/mi;
 
-   my $sta = $opts{showtables} ? 'S' : ' STATUS';
+   my $sta = $showstat ? ' STATUS' : 'S';
    my $sth = $opts{tbllike}
            ? $dbh->prepare("SHOW TABLE$sta FROM `$database` LIKE ?")
            : $dbh->prepare("SHOW TABLE$sta FROM `$database`");
@@ -400,16 +399,16 @@ foreach my $database ( @databases ) {
    # Make results uniform across MySQL versions, and generate additional
    # properties.
    foreach my $table ( @tables ) {
-      if ( $opts{showtables} ) {
-         my ($name) = values %$table;
-         $table = { Name => $name };
-      }
-      else {
+      if ( $showstat ) {
          my ($ib_free)          = $table->{Comment} && $table->{Comment} =~ m/InnoDB free: (\d+) kB/;
          $table->{Engine}       ||= $table->{Type};
          $table->{Table_length} = ($table->{Index_length} || 0) + ($table->{Data_length} || 0);
          $table->{Innodb_free}  = defined $ib_free ? 1_024 * $ib_free : undef;
          delete $table->{Type};
+      }
+      else {
+         my ($name) = values %$table;
+         $table = { Name => $name };
       }
       $table->{Database} = $database;
    }
@@ -545,6 +544,8 @@ Right now mysql-find only looks for and processes tables.  If you need it to do
 other things, like triggers or columns, file a bug report and I'll add the
 features.
 
+mysql-find uses SHOW TABLES when possible, and SHOW TABLE STATUS when needed.
+
 =head1 OPTIONS
 
 There are three kinds of options: normal options, which determine some behavior
@@ -594,13 +595,6 @@ The port number to use for the connection.
 This option is enabled by default.  It quotes MySQL identifier names with
 MySQL's standard backtick character.  Quoting happens after tests are run, and
 before actions are run.
-
-=item --showtables
-
-Use SHOW TABLES for speed.  This is usually much faster than SHOW TABLE STATUS
-on InnoDB, and if all you need is the table names and no other data, this can be
-a big win.  If you specify tests that require SHOW TABLE STATUS, mysql-find will
-raise an error.
 
 =item --socket
 
@@ -850,17 +844,17 @@ an empty string in the output.
 Find all tables created more than a day ago, which use the MyISAM engine, and
 print their names:
 
-  mysql-find --mtime +1 --engine MyISAM
+  mysql-find --ctime +1 --engine MyISAM
 
-Find MyISAM tables that haven't been updated in a month, and convert them to
-ARCHIVE storage engine (data warehousing, anyone?):
+Find InnoDB tables that haven't been updated in a month, and convert them to
+MyISAM storage engine (data warehousing, anyone?):
 
-  mysql-find --ctime +30 --engine MyISAM --exec "ALTER TABLE %D.%N ENGINE=ARCHIVE"
+  mysql-find --mtime +30 --engine InnoDB --exec "ALTER TABLE %D.%N ENGINE=MyISAM"
 
 Find tables created by a process that no longer exists, following the name_pid
-naming convention, and remove them.  Use --showtables for speed:
+naming convention, and remove them.
 
-  mysql-find --showtables --pid '\D_(\d+)$' --exec_plus "DROP TABLE %s"
+  mysql-find --pid '\D_(\d+)$' --exec_plus "DROP TABLE %s"
 
 Find empty tables in the test and junk databases, and delete them:
 
