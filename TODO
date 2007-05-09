@@ -5,6 +5,4 @@ Pipe output from duplicate-key-checker into another tool to graph structures
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 query sniper:
    * http://www.stillhq.com/mysql/000008.html
-stale table sniper: remove tables with certain patterns, or older than a certain amount.
 mysql-binlog-pipeliner: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
-* mysql-measure-tables: measure innodb free space too, as it might be file_per_table
