@@ -46,6 +46,7 @@ my @opt_spec = (
    { s => 'daystart',          y => 'o', d => 'Measure times from the beginning of the day' },
    { s => 'defaults-file|F=s', y => 'o', d => 'Only read default options from the given file' },
    { s => 'help',              y => 'o', d => 'Show this help message' },
+   { s => 'host|h=s',          y => 'o', d => 'Connect to host' },
    { s => 'or',                y => 'o', d => 'Combine tests with OR, not AND' },
    { s => 'password|p=s',      y => 'o', d => 'Password to use when connecting' },
    { s => 'port|P=i',          y => 'o', d => 'Port number to use for connection' },
