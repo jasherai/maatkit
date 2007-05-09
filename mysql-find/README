@@ -2,6 +2,10 @@ This package contains mysql-find.  Please view the perldoc for more details.
 
 Changelog:
 
+2007-05-09: version 0.9.1
+
+   * Added --host command-line option.  Oops.
+
 2007-05-08: version 0.9.0
 
    * Initial release.
