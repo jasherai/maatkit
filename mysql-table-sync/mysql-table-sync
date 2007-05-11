@@ -43,15 +43,12 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # is found, binary search within that chunk to find the first row and report it.
 # TODO: grouping strategy: first chars of char column.
 # TODO: grouping strategy: number modulo const (between is more easily optimized)
-# TODO: for safety's sake, don't use REPLACE if there's more than one unique
-# key.
+# TODO: for safety's sake, don't use REPLACE if there's more than one unique key.
 # TODO: save memory by using more efficient bind methods from DBI.
 # TODO: use trace methods to print out SQL executed.
-# TODO: turn off foreign key checks.
 # TODO: allow to disable keys on destination.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
 # TODO: add --where option.
-# TODO: InnoDB can do checksums as of 4.1.1
 # TODO: check the results of the following query:
 # set @CRC := null;
 # 
@@ -97,6 +94,7 @@ my @opt_spec = (
    { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
    { s => 'singletxn|1',      d => 'Do in a single transaction' },
    { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
+   { s => 'skipforeignkey|K', d => 'Turn off foreign key checks' },
    { s => 'strategy|s=s',     d => 'Query strategy when syncing (r=replace, s=ins/upd/del)' },
    { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm (default: no)' },
    { s => 'timeoutok|t',      d => 'Keep going if --wait fails' },
@@ -466,6 +464,14 @@ sub topdown {
    # Release locks/close transaction as soon as possible.
    if ( $opts{r} && $opts{f} && !$opts{1} ) {
       $dest->{dbh}->commit;
+   }
+
+   # Turn off foreign key checks.
+   if ( $opts{K} ) {
+      $source->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+      if ( !$opts{r} ) {
+         $dest->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+      }
    }
 
    td_handle_data_change('DELETE', @to_delete);
@@ -904,6 +910,14 @@ sub bu_merge_tree {
 
       $level--;
    } while ( $level >= 0 && @bad_parents );
+
+   # Turn off foreign key checks.
+   if ( $opts{K} ) {
+      $source->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+      if ( !$opts{r} ) {
+         $dest->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+      }
+   }
 
    bu_handle_data_change('DELETE', @to_delete);
    bu_handle_bulk_change('DELETE', $levels, $dest,   @bulk_delete);
