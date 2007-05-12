@@ -371,7 +371,8 @@ if ( $opts{pid} ) {
       die "--pid requires the PROCESS privilege for safety.\n";
    }
 
-   # Get the data
+   # Get the data.  TODO there are race conditions with this approach.  I should
+   # re-do this for every database.
    $this_pid    = $dbh->{mysql_thread_id};
    %connections = map { $_ => 1 }
       @{$dbh->selectcol_arrayref('SHOW FULL PROCESSLIST')};
