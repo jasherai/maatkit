@@ -504,7 +504,7 @@ sub interpolate {
    my @arg_names;
 
    # Replace % directives
-   $str =~ s/%(.)/(exists $arg_for{$1} && push @arg_names, $arg_for{$1} ) ? '\%s' : "%$1"/xge;
+   $str =~ s/%(.)/(exists $arg_for{$1} && push @arg_names, $arg_for{$1} ) ? '\%s' : "$1"/xge;
 
    # Get Perl to interpolate escape sequences
    $str =~ s/(?<!\\)"/\\"/g;
@@ -813,7 +813,8 @@ that).
 
 Here is a list of the directives.  Note that most of them simply come from
 columns of SHOW TABLE STATUS.  If the column is NULL or doesn't exist, you get
-an empty string in the output.
+an empty string in the output.  A % character followed by any character not in
+the following list is discarded (but the other character is printed).
 
    CHAR DATA SOURCE        NOTES
    ---- ------------------ ------------------------------------------
