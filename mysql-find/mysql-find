@@ -199,7 +199,6 @@ USAGE
 my %time_for;     # Holds time constants for mmin, mtime etc
 my %connections;  # Holds a list of thread IDs connected
 my $dbh;          # This program's $dbh
-my $this_pid;     # The thread ID of this program's $dbh
 
 # Functions to call while evaluating tests.
 my %test_for = (
@@ -279,7 +278,7 @@ my %test_for = (
       my ( $table ) = @_;
       my $test = $opts{'case-insensitive'} ? "(?i)$opts{pid}" : $opts{pid};
       my ( $pid ) = $table->{Name} =~ m/$test/;
-      return $pid && $pid < $this_pid && !exists $connections{$pid};
+      return $pid && !exists $connections{$pid};
    },
    rows => sub {
       my ( $table ) = @_;
@@ -370,12 +369,6 @@ if ( $opts{pid} ) {
    if ( !$proc ) {
       die "--pid requires the PROCESS privilege for safety.\n";
    }
-
-   # Get the data.  TODO there are race conditions with this approach.  I should
-   # re-do this for every database.
-   $this_pid    = $dbh->{mysql_thread_id};
-   %connections = map { $_ => 1 }
-      @{$dbh->selectcol_arrayref('SHOW FULL PROCESSLIST')};
 }
 
 # ############################################################################
@@ -397,6 +390,13 @@ foreach my $database ( @databases ) {
 
    $sth->execute($opts{tbllike} || ());
    my @tables = @{$sth->fetchall_arrayref({})};
+
+   # Must re-fetch every time; there are too many ways things can go wrong
+   # otherwise (for example, the counter wraps over the unsigned int boundary).
+   if ( $opts{pid} ) {
+      %connections = map { $_ => 1 }
+         @{$dbh->selectcol_arrayref('SHOW FULL PROCESSLIST')};
+   }
 
    # Make results uniform across MySQL versions, and generate additional
    # properties.
