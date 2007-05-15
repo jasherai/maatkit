@@ -41,6 +41,7 @@ $OUTPUT_AUTOFLUSH = 1;
 my @opt_spec = (
    { s => 'algorithm|a=s',     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
    { s => 'askpass',           d => 'Prompt for username and password for connections' },
+   { s => 'chunkcol=s',        d => 'Explicitly specifies a column to use for chunking' },
    { s => 'chunksize|C=s',     d => 'Number of rows to checksum at a time' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
@@ -59,6 +60,7 @@ my @opt_spec = (
    { s => 'replicate|R=s',     d => 'Replicate checksums in a table (disallows -a CHECKSUM)' },
    { s => 'slavelag|l',        d => 'Report how far slaves lag master' },
    { s => 'separator|s=s',     d => 'Separator for CONCAT_WS()' },
+   { s => 'sleep=i',           d => 'Sleep time between checksums' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'tab|b',             d => 'Output separated with tabs' },
    { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
@@ -67,8 +69,6 @@ my @opt_spec = (
    { s => 'wait|w=i',          d => 'How long to do MASTER_POS_WAI()T on slaves (implies -kl)' },
    { s => 'where|W=s',         d => 'Only do rows matching this WHERE clause (disallows -a CHECKSUM)' },
 );
-
-# TODO chunk disables CHECKSUM TABLE.
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -176,7 +176,7 @@ my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
 # Figure out what strategy to use
 my $strat;
 if ( (!$opts{a} || $opts{a} eq 'CHECKSUM')   # By default, use CHECKSUM TABLE
-   && !$opts{W}                              # CHECKSUM does whole table
+   && !$opts{W} && !$opts{C}                 # CHECKSUM does whole table
    && !$opts{R}                              # CHECKSUM can't be INSERT.. SELECTed
    && version_ge($main_dbh, '4.1.1') )       # CHECKSUM doesn't exist before this
 {
@@ -188,7 +188,8 @@ if ( (!$opts{a} || $opts{a} eq 'CHECKSUM')   # By default, use CHECKSUM TABLE
    }
    else {
       # Alas, the user wants me to be stupid and run two queries where one would
-      # suffice.
+      # suffice.  (This can actually be a good strategy on MyISAM, and is even
+      # better when MyISAM's live checksums are enabled).
       $strat = 'CHECKSUM';
    }
 }
@@ -413,7 +414,9 @@ foreach my $database ( @databases ) {
             $info->{chunk_max}++;
          }
 
-         # TODO sleep for a bit.
+         if ( $opts{sleep} ) {
+            sleep($opts{sleep});
+         }
 
       }
    }
@@ -490,8 +493,8 @@ sub checksum_query {
    my @tocrc = @cols;
 
    # See if there's a column that will support chunking.  Single col only.
-   my $chunk_col = ''; # TODO use $opts{chunk_col}
-   if ( $opts{C} ) {
+   my $chunk_col = $opts{chunkcol} || '';
+   if ( $opts{C} && !$chunk_col ) {
       if ( grep { $_ =~ m/AUTO_INCREMENT/ } @defs ) {
          ($chunk_col) = map { $_ =~ m/(`[^`]+`)/g } grep { $_ =~ m/AUTO_INCREMENT/ } @defs;
       }
