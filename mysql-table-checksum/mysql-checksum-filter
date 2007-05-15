@@ -31,8 +31,6 @@ our $VERSION = '@VERSION@';
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# TODO: --allatonce option or similar (see duplicate-key-checker)
-
 # ############################################################################
 # Get configuration information.
 # ############################################################################
@@ -73,16 +71,15 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-mysql-checksum-filter filters checksums so you only see ones that differ.  If
-you pass files on the command line it analyzes them; otherwise it reads from
-standard input.  For more details, please read the documentation:
+Filter checksums from mysql-table-checksum and print those that differ.  With
+no FILE, or when FILE is -, read standard input.  For more details, please
+read the documentation:
 
    perldoc mysql-checksum-filter
 
 USAGE
    exit(1);
 }
-# TODO: standard gnu language about when no file, or file is -, read stdin...
 
 # ############################################################################
 # Ready to work now.
@@ -93,18 +90,22 @@ my $one_file    = @ARGV < 2;
 
 my $DATABASE = 0;
 my $TABLE    = 1;
-my $HOST     = 2;
-my $ENGINE   = 3;
-my $COUNT    = 4;
-my $CRC      = 5;
-my $TIME     = 6;
-my $WAIT     = 7;
-my $STAT     = 8;
-my $LAG      = 9;
-my $ORIG     = 10;
+my $CHUNK    = 2;
+my $HOST     = 3;
+my $ENGINE   = 4;
+my $COUNT    = 5;
+my $CHECKSUM = 6;
+my $TIME     = 7;
+my $WAIT     = 8;
+my $STAT     = 9;
+my $LAG      = 10;
+
+my $ORIG     = 11; # Added during processing, not part of input.
+
+my $num_cols = 11;
 
 my %lines_for;    # All lines from all files, if > 1 file on cmdline
-my $last_tbl;     # db.tbl of last line read
+my $last_chunk;     # db.tbl.chunk of last line read
 my $current_set = [];    # working set of lines to process
 
 LINE:
@@ -118,12 +119,12 @@ while ( my $line = <> ) {    # Magically reads STDIN or files in @ARGV
    }
 
    my @cols = $line =~ m/(\S+)/g;
-   next unless @cols == 10;
+   next unless @cols == $num_cols;
    push @cols, $line;
-   my $tbl = $cols[$DATABASE] . '.' . $cols[$TABLE];
+   my $chunk = join('.', @cols[$DATABASE, $TABLE, $CHUNK]);
 
    if ($one_file) { # Process immediately.
-      if ( $last_tbl && $last_tbl ne $tbl ) {
+      if ( $last_chunk && $last_chunk ne $chunk ) {
          process_set($current_set);
          $current_set = [ \@cols ];
       }
@@ -132,10 +133,10 @@ while ( my $line = <> ) {    # Magically reads STDIN or files in @ARGV
       }
    }
    else { # Stash into %lines_for and process later.
-      $lines_for{$tbl} ||= [];
-      push @{ $lines_for{$tbl} }, \@cols;
+      $lines_for{$chunk} ||= [];
+      push @{ $lines_for{$chunk} }, \@cols;
    }
-   $last_tbl = $tbl;
+   $last_chunk = $chunk;
 }
 
 if ($one_file) {
@@ -162,8 +163,8 @@ sub process_set {
    my $first = $set->[0];
 
    my $print = $opts{v} || grep {
-            $_->[$CRC]   ne $first->[$CRC]
-         || $_->[$COUNT] ne $first->[$COUNT]
+            $_->[$CHECKSUM] ne $first->[$CHECKSUM]
+         || $_->[$COUNT]    ne $first->[$COUNT]
    } @{$set}[ 1 .. ( scalar(@$set) - 1 ) ];
 
    if ($print) {
@@ -187,7 +188,8 @@ mysql-checksum-filter - Filter checksums from mysql-table-checksum
 =head1 OVERVIEW
 
 This script takes the unsorted, verbose output from mysql-table-checksum and
-sorts it, then filters it so you only see tables that have different checksums.
+sorts it, then filters it so you only see lines that have different checksums
+or counts.
 
 You can pipe input directly into it from mysql-table-checksum, or you can save
 the output from that script and run this script on the resulting file(s).  If
