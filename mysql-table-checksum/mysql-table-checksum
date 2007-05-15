@@ -41,6 +41,7 @@ $OUTPUT_AUTOFLUSH = 1;
 my @opt_spec = (
    { s => 'algorithm|a=s',     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
    { s => 'askpass',           d => 'Prompt for username and password for connections' },
+   { s => 'chunksize|C=s',     d => 'Number of rows to checksum at a time' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'engine|e=s',        d => 'Only do this comma-separated list of storage engines' },
@@ -66,6 +67,8 @@ my @opt_spec = (
    { s => 'wait|w=i',          d => 'How long to do MASTER_POS_WAI()T on slaves (implies -kl)' },
    { s => 'where|W=s',         d => 'Only do rows matching this WHERE clause (disallows -a CHECKSUM)' },
 );
+
+# TODO chunk disables CHECKSUM TABLE.
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -277,9 +280,9 @@ if ( $opts{v} && @hosts > 1 ) {
 my ($fetch_sth, $update_sth);
 if ( $opts{R} ) {
    $fetch_sth = $main_dbh->prepare(
-      "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ?");
+      "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ? AND chunk = ?");
    $update_sth = $main_dbh->prepare(
-      "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? WHERE db = ? AND tbl = ?");
+      "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? WHERE db = ? AND tbl = ? AND chunk = ?");
 }
 
 DATABASE:
@@ -301,17 +304,18 @@ foreach my $database ( @databases ) {
          || exists $opts{n}->{$table};
 
       # Get the table type, and a query to generate a checksum for it.
-      my ( $engine, $query ) = checksum_query( $main_dbh, $database, $table );
+      my ( $engine, $query, $chunk_col ) = checksum_query( $main_dbh, $database, $table );
 
       # Skip views, and tables of the wrong engine.
       next TABLE if
          $engine eq 'VIEW'
          || ( $opts{e} && !exists $opts{e}->{lc($engine)});
       $info_for{$table} = {
-         database => $database,
-         table    => $table,
-         engine   => $engine,
-         query    => $query,
+         database  => $database,
+         table     => $table,
+         engine    => $engine,
+         query     => $query,
+         chunk_col => $chunk_col,
       };
 
    }
@@ -321,64 +325,97 @@ foreach my $database ( @databases ) {
    # Design and print header
    my $hdr;
    if ( $opts{b} ) {
-      $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
+      $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
    }
    else {
       my $max_tbl  = max(5, map { length($_) } keys %info_for);
       my $max_db   = max(8, length($database));
       my $max_host = max(4, map { length($_) } @hosts);
-      $hdr         = "%-${max_db}s %-${max_tbl}s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+      $hdr         = "%-${max_db}s %-${max_tbl}s %5s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
    }
-   my @hdr_args = qw(DATABASE TABLE HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
+   my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
    printf($hdr, @hdr_args);
 
    TABLE:
    foreach my $table ( sort keys %info_for ) {
 
-      if ( $opts{R} ) { # We're in --replicate mode.
-         eval {
-            do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
-         };
-         if ( $EVAL_ERROR ) {
-            print STDERR $EVAL_ERROR, "\n";
-            $exit_status = 1;
-         }
-         next TABLE;
+      my $info      = $info_for{$table};
+      my $table_min = 0;
+      my $table_max = 0;
+      if ( $info->{chunk_col} && $opts{C} ) {
+         # Determine the range of values for the chunk_col column on this table.
+         my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col}), 0), COALESCE(MAX($info->{chunk_col}), 0) "
+            . "FROM `$info->{database}`.`$info->{table}`$opts{W}";
+         ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
       }
 
-      # Lock table and get master position on the master, if applicable.
-      $main_dbh->do("LOCK TABLES `$database`.`$table` READ") if $opts{k};
-      if ( defined $opts{w} ) {
-         my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
-         @{$info_for{$table}}{keys %$master_status} = values %$master_status;
-      }
+      $info->{chunk_cur} = 0;
+      $info->{chunk_min} = $table_min;
+      $info->{chunk_max} = $info->{chunk_col} && $opts{C} ? $info->{chunk_min} + $opts{C} -1 : $table_max;
 
-      my %children;
-      foreach my $host ( @hosts ) {
-         my $pid = @hosts > 1 ? fork() : undef;
-         if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
+      # Do a chunk at a time.
+      while ( $info->{chunk_max} <= $table_max ) {
+         if ( $opts{R} ) { # We're in --replicate mode.
             eval {
-               do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
+               do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
             };
             if ( $EVAL_ERROR ) {
                print STDERR $EVAL_ERROR, "\n";
-               exit(1); # die, even if only a single host
+               $exit_status = 1;
             }
-            exit(0) if @hosts > 1; # exit only if I'm a child
          }
-         elsif ( @hosts > 1 && !defined($pid) ) {
-            die("Unable to fork!");
-         }
-         # I already exited if I'm a child, so I'm the parent.
-         $children{$host} = $pid if @hosts > 1;
-      }
 
-      # Wait for the children to exit.
-      foreach my $host ( keys %children ) {
-         my $pid = waitpid($children{$host}, 0);
-         $exit_status = $CHILD_ERROR;
+         else {
+
+            # Lock table and get master position on the master, if applicable.
+            $main_dbh->do("LOCK TABLES `$database`.`$table` READ") if $opts{k};
+            if ( defined $opts{w} ) {
+               my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
+               @{$info_for{$table}}{keys %$master_status} = values %$master_status;
+            }
+
+            my %children;
+            foreach my $host ( @hosts ) {
+               my $pid = @hosts > 1 ? fork() : undef;
+               if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
+                  eval {
+                     do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
+                  };
+                  if ( $EVAL_ERROR ) {
+                     print STDERR $EVAL_ERROR, "\n";
+                     exit(1); # die, even if only a single host
+                  }
+                  exit(0) if @hosts > 1; # exit only if I'm a child
+               }
+               elsif ( @hosts > 1 && !defined($pid) ) {
+                  die("Unable to fork!");
+               }
+               # I already exited if I'm a child, so I'm the parent.
+               $children{$host} = $pid if @hosts > 1;
+            }
+
+            # Wait for the children to exit.
+            foreach my $host ( keys %children ) {
+               my $pid = waitpid($children{$host}, 0);
+               $exit_status = $CHILD_ERROR;
+            }
+            $main_dbh->do("UNLOCK TABLES") if $opts{k};
+
+         }
+
+         if ( $info->{chunk_col} && $opts{C} ) {
+            $info->{chunk_min} = $info->{chunk_max} + 1;
+            $info->{chunk_max} = $info->{chunk_max} + $opts{C};
+            $info->{chunk_cur}++;
+         }
+         else {
+            # Break the loop
+            $info->{chunk_max}++;
+         }
+
+         # TODO sleep for a bit.
+
       }
-      $main_dbh->do("UNLOCK TABLES") if $opts{k};
    }
 }
 
@@ -389,12 +426,12 @@ sub do_tbl_replicate {
    my $crc = 'NULL';
    my $beg = time();
    $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
-   $dbh->do($info->{query});
-   $fetch_sth->execute($info->{database}, $info->{table});
+   $dbh->do($info->{query}, {}, $info->{chunk_col} && $opts{C} ? @{$info}{qw(chunk_cur chunk_min chunk_max)} : ());
+   $fetch_sth->execute(@{$info}{qw(database table chunk_cur)});
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
-   $update_sth->execute($crc, $cnt, $info->{database}, $info->{table});
+   $update_sth->execute($crc, $cnt, @{$info}{qw(database table chunk_cur)});
    my $end = time();
-   printf($hdr, $info->{database}, $info->{table}, $host, $info->{engine}, $cnt, $crc,
+   printf($hdr, @{$info}{qw(database table chunk_cur)}, $host, $info->{engine}, $cnt, $crc,
       $end - $beg, 'NULL', 'NULL', 'NULL');
 }
 
@@ -428,7 +465,7 @@ sub do_tbl {
       }
    }
    elsif ( $opts{c} ) {
-      ( $cnt, $crc ) = do_var_crc($dbh, $info->{query});
+      ( $cnt, $crc ) = do_var_crc($dbh, $info);
       $crc ||= 'NULL';
    }
    else {
@@ -436,14 +473,14 @@ sub do_tbl {
    }
    my $end = time();
    $dbh->disconnect();
-   printf($hdr, $info->{database}, $info->{table}, $host, $info->{engine}, $cnt, $crc,
+   printf($hdr, @{$info}{qw(database table chunk_cur)}, $host, $info->{engine}, $cnt, $crc,
       $end - $mid, $mid - $beg, $sta, $lag);
 }
 
 sub checksum_query {
    my ( $dbh, $db, $tbl ) = @_;
    my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$db`.`$tbl`"))[1];
-   return ( 'VIEW', '' ) if $ddl =~ m/^CREATE ALGORITHM/;
+   return ( 'VIEW', '', '' ) if $ddl =~ m/^CREATE ALGORITHM/;
 
    my ( $type ) = $ddl =~ m/^\) (?:ENGINE|TYPE)=(\S+)/m;
 
@@ -451,6 +488,24 @@ sub checksum_query {
    my @defs  = $ddl =~ m/^(\s+`.*)$/gm;
    my @cols  = map { $_ =~ m/(`[^`]+`)/g } @defs;
    my @tocrc = @cols;
+
+   # See if there's a column that will support chunking.  Single col only.
+   my $chunk_col = ''; # TODO use $opts{chunk_col}
+   if ( $opts{C} ) {
+      if ( grep { $_ =~ m/AUTO_INCREMENT/ } @defs ) {
+         ($chunk_col) = map { $_ =~ m/(`[^`]+`)/g } grep { $_ =~ m/AUTO_INCREMENT/ } @defs;
+      }
+      else {
+         my @candidates = $ddl =~ m/(?:PRIMARY|UNIQUE) KEY.*?\((`[^`]+`)\)/g;
+         @candidates = grep {
+            my $idx = $_;
+            grep { m/^  $idx (?:tiny|big|small|medium)?int/m } @defs;
+         } @candidates;
+         if ( @candidates ) {
+            $chunk_col = $candidates[0];
+         }
+      }
+   }
 
    # To detect when columns are NULL, make a bitmap of nullable columns.
    my @nulls = map { $_ =~ m/(`[^`]+`)/g } grep { $_ !~ m/NOT NULL/ } @defs;
@@ -467,21 +522,20 @@ sub checksum_query {
    my $query = '';
    if ( $strat eq 'BIT_XOR' ) {
 
-      # This checksum algorithm does not use any user variables, so its
-      # behavior should be completely deterministic.  It concatenates the
-      # columns in each row and checksums them, then slices this checksum up
-      # into 16-character chunks.  It then converts them BIGINTs with the
-      # CONV() function, and then groupwise XORs them to produce an
-      # order-independent checksum of the slice over all the rows.  It then
-      # converts these back to base 16 and puts them back together.  The
-      # effect is the same as XORing a very wide (32 characters = 128 bits for
-      # MD5, and SHA1 is even larger) unsigned integer over all the rows.
+      # This checksum algorithm concatenates the columns in each row and
+      # checksums them, then slices this checksum up into 16-character chunks.
+      # It then converts them BIGINTs with the CONV() function, and then
+      # groupwise XORs them to produce an order-independent checksum of the
+      # slice over all the rows.  It then converts these back to base 16 and
+      # puts them back together.  The effect is the same as XORing a very wide
+      # (32 characters = 128 bits for MD5, and SHA1 is even larger) unsigned
+      # integer over all the rows.
 
       my $slices = make_slices($chks);
 
       if ( $opts{R} ) {
-         $query = "REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, this_cnt, this_crc) "
-            . "SELECT '$db', '$tbl', COUNT(*), CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
+         $query = "REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
+            . "SELECT '$db', '$tbl', ?, COUNT(*), CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
       }
       else {
          $query = "SELECT /*$db.$tbl*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
@@ -506,8 +560,8 @@ sub checksum_query {
       # @cnt is not used for a row count, it is only used to make MAX() work
       # correctly.
       if ( $opts{R} ) {
-         $query = "REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, this_cnt, this_crc) "
-            . "SELECT '$db', '$tbl', COUNT(*) AS cnt, RIGHT(MAX("
+         $query = "REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
+            . "SELECT '$db', '$tbl', ?, COUNT(*) AS cnt, RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
             . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
       }
@@ -518,7 +572,12 @@ sub checksum_query {
       }
    }
 
-   return ( $type, $query );
+   if ( $chunk_col && $opts{C} ) {
+      $query .= ($opts{W} ? ' AND ' : ' WHERE ')
+             .  "$chunk_col BETWEEN ? AND ?";
+   }
+
+   return ( $type, $query, $chunk_col );
 }
 
 sub make_slices {
@@ -579,9 +638,11 @@ sub get_dbh {
 }
 
 sub do_var_crc {
-   my ( $dbh, $query ) = @_;
+   my ( $dbh, $info ) = @_;
    $dbh->do('set @crc := NULL, @cnt := 0');
-   my $res = $dbh->selectall_arrayref($query, { Slice => {} })->[0];
+   my $res = $dbh->selectall_arrayref( $info->{query}, { Slice => {} },
+      $info->{chunk_col} && $opts{C} ? ( @{$info}{qw(chunk_min chunk_max)}) : ()
+   )->[0];
    return ($res->{cnt}, $res->{crc});
 }
 
