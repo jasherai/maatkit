@@ -342,7 +342,7 @@ foreach my $database ( @databases ) {
 
       my $info      = $info_for{$table};
       my $table_min = 0;
-      my $table_max = 0;
+      my $table_max = undef;
       if ( $info->{chunk_col} && $opts{C} ) {
          # Determine the range of values for the chunk_col column on this table.
          my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col}), 0), COALESCE(MAX($info->{chunk_col}), 0) "
@@ -355,7 +355,7 @@ foreach my $database ( @databases ) {
       $info->{chunk_max} = $info->{chunk_col} && $opts{C} ? $info->{chunk_min} + $opts{C} -1 : $table_max;
 
       # Do a chunk at a time.
-      while ( $info->{chunk_max} <= $table_max ) {
+      do {
          if ( $opts{R} ) { # We're in --replicate mode.
             eval {
                do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
@@ -409,16 +409,12 @@ foreach my $database ( @databases ) {
             $info->{chunk_max} = $info->{chunk_max} + $opts{C};
             $info->{chunk_cur}++;
          }
-         else {
-            # Break the loop
-            $info->{chunk_max}++;
-         }
 
          if ( $opts{sleep} ) {
             sleep($opts{sleep});
          }
 
-      }
+      } while ( defined $table_max && $info->{chunk_min} <= $table_max );
    }
 }
 
