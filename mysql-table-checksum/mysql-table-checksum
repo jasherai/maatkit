@@ -1167,7 +1167,7 @@ How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 
 =head1 QUERIES
 
-If you are using innotop (see L<http://sourceforge.net/project/innotop>),
+If you are using innotop (see L<http://innotop.sourceforge.net/>),
 mytop, or another tool to watch currently running MySQL queries, you may see
 the checksum queries.  They look similar to this:
 
