@@ -26,6 +26,7 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(min max);
+use POSIX qw(ceil);
 use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
@@ -234,14 +235,22 @@ my $sanity    = '';
 if ( $opts{o} && $strat eq 'BIT_XOR' ) {
    my $desired = uc $main_dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
    my $result  = '';
-   for ( my $start = 1; $start < $crc_wid && $result ne $desired; $start += 16 && ++$crc_slice ) {
+   my $start   = 1;
+
+   do { # Try different positions till sliced result equals non-sliced.
       $main_dbh->do('SET @crc := NULL, @cnt := 0');
       my $slices = make_slices("\@crc := $func('a')");
       my $sanity = "SELECT CONCAT($slices) as test from (select null) as t";
       $result    = $main_dbh->selectall_arrayref($sanity)->[0]->[0];
-   }
+      if ( $result ne $desired ) {
+         $start += 16;
+         ++$crc_slice;
+      }
+   } while ( $start < $crc_wid && $result ne $desired );
+
    if ( $result ne $desired ) {
       # Disable the user-variable optimization.
+      warn "Cannot get good checksums with --optxor, disabling.\n";
       $opts{o} = 0;
    }
 }
@@ -352,7 +361,14 @@ foreach my $database ( @databases ) {
 
       $info->{chunk_cur} = 0;
       $info->{chunk_min} = $table_min;
-      $info->{chunk_max} = $info->{chunk_col} && $opts{C} ? $info->{chunk_min} + $opts{C} -1 : $table_max;
+      if ( $info->{chunk_col} && $opts{C} ) {
+         $info->{chunk_max} = $info->{chunk_min} + $opts{C} -1;
+         $info->{chunk_tot} = ceil(($table_max - $table_min)/$opts{C});
+      }
+      else {
+         $info->{chunk_max} = $table_max;
+         $info->{chunk_tot} = 0;
+      }
 
       # Do a chunk at a time.
       do {
@@ -425,9 +441,11 @@ sub do_tbl_replicate {
    my $crc = 'NULL';
    my $beg = time();
    $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
-   $dbh->do($info->{query}, {}, ($info->{chunk_col} && $opts{C})
-                                ? @{$info}{qw(chunk_cur chunk_min chunk_max)}
-                                : ($info->{chunk_cur}));
+   $dbh->do(
+      $info->{query}, {},
+      ( @{$info}{qw(chunk_cur chunk_tot chunk_cur)} ),
+      $info->{chunk_col} && $opts{C} ? @{$info}{qw(chunk_min chunk_max)} : ()
+   );
    $fetch_sth->execute(@{$info}{qw(database table chunk_cur)});
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
    $update_sth->execute($crc, $cnt, @{$info}{qw(database table chunk_cur)});
@@ -536,11 +554,11 @@ sub checksum_query {
       my $slices = make_slices($chks);
 
       if ( $opts{R} ) {
-         $query = "REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
+         $query = "REPLACE /*$db.$tbl:?/?*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
             . "SELECT '$db', '$tbl', ?, COUNT(*), CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
       }
       else {
-         $query = "SELECT /*$db.$tbl*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
+         $query = "SELECT /*$db.$tbl:?/?*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
       }
 
    }
@@ -562,13 +580,13 @@ sub checksum_query {
       # @cnt is not used for a row count, it is only used to make MAX() work
       # correctly.
       if ( $opts{R} ) {
-         $query = "REPLACE /*$db.$tbl*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
+         $query = "REPLACE /*$db.$tbl:?/?*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
             . "SELECT '$db', '$tbl', ?, COUNT(*) AS cnt, RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
             . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
       }
       else {
-         $query = "SELECT /*$db.$tbl*/ COUNT(*) AS cnt, RIGHT(MAX("
+         $query = "SELECT /*$db.$tbl:?/?*/ COUNT(*) AS cnt, RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
             . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
       }
@@ -595,11 +613,11 @@ sub make_slices {
          . ", 10, 16), $len, '0')";
    }
 
-   if ( $crc_slice >= @slices && $opts{o} ) {
-      map { s/\@crc/$chks/ } @slices;
+   if ( $crc_slice < @slices && $opts{o} ) {
+      $slices[$crc_slice] =~ s/\@crc/\@crc := $chks/;
    }
    else {
-      $slices[$crc_slice] =~ s/\@crc/$chks/;
+      map { s/\@crc/$chks/ } @slices;
    }
 
    return join(', ', @slices);
@@ -642,7 +660,9 @@ sub get_dbh {
 sub do_var_crc {
    my ( $dbh, $info ) = @_;
    $dbh->do('set @crc := NULL, @cnt := 0');
-   my $res = $dbh->selectall_arrayref( $info->{query}, { Slice => {} },
+   my $res = $dbh->selectall_arrayref(
+      $info->{query}, { Slice => {} },
+      ( @{$info}{qw(chunk_cur chunk_tot)} ),
       $info->{chunk_col} && $opts{C} ? ( @{$info}{qw(chunk_min chunk_max)}) : ()
    )->[0];
    return ($res->{cnt}, $res->{crc});
