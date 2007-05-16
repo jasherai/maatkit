@@ -3,6 +3,27 @@ view the perldoc for more details on them.
 
 Changelog:
 
+2007-05-16: version 1.1.5
+
+   Incompatible changes:
+   * Output includes a new CHUNK column.
+   * When using --replicate, the specified table structure needs a new 'chunk' column.
+
+   Changes:
+   * Added --chunksize and --chunkcol options to checksum tables in chunks.
+   * Added --sleep option to pause between checksum queries.
+   * Added --emptyrepltbl option to empty --replicate table before starting work.
+   * Added --defaults-file option to read a given MySQL options file.
+   * Check for existence of --replicate table before starting work.
+   * Updated mysql-checksum-filter to handle the new CHUNK column in the output.
+   * More documentation.
+   * More tests in the test suite.
+
+   Bugs fixed:
+   * The output in --replicate mode had an empty string in CHECKSUM when the
+     table had no rows (bad for scriptability).
+   * The --optxor optimization was broken and always disabled itself.
+
 2007-05-05: version 1.1.0
 
    * Added a way to do checksums on slaves via replication.
