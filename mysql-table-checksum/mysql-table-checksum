@@ -1165,6 +1165,22 @@ How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 
 =back
 
+=head1 QUERIES
+
+If you are using innotop (see L<http://sourceforge.net/project/innotop>),
+mytop, or another tool to watch currently running MySQL queries, you may see
+the checksum queries.  They look similar to this:
+
+  REPLACE /*test.test_tbl:'2'/'5'*/ INTO test.checksum(db, ...
+
+Since mysql-table-checksum's queries run for a long time and tend to be
+textually very long, and thus won't fit on one screen of these monitoring
+tools, I've been careful to place a comment at the beginning of the query so
+you can see what it is and what it's doing.  The comment contains the name of
+the table that's being checksummed, the chunk it is currently checksumming,
+and how many chunks will be checksummed.  In the case above, it is
+checksumming chunk 2 of 5 in table test.test_tbl.
+
 =head1 BUGS
 
 Please use the mailing lists, forums and other tools at
