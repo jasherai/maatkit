@@ -20,14 +20,17 @@ create table checksum_test_2(
 
 insert into checksum_test_2 select * from checksum_test;
 
-drop table if exists checksums;
-CREATE TABLE checksums (
- db         char(64)     NOT NULL,
- tbl        char(64)     NOT NULL,
- this_crc   char(40)     NOT NULL,
- this_cnt   int unsigned NOT NULL,
- master_crc char(40)         NULL,
- master_cnt int unsigned     NULL,
- ts         timestamp    NOT NULL,
- PRIMARY KEY (db,tbl)
-);
+drop table if exists checksum;
+
+  CREATE TABLE checksum (
+     db         char(64)     NOT NULL,
+     tbl        char(64)     NOT NULL,
+     chunk      int          NOT NULL,
+     this_crc   char(40)     NOT NULL,
+     this_cnt   int          NOT NULL,
+     master_crc char(40)         NULL,
+     master_cnt int              NULL,
+     ts         timestamp    NOT NULL,
+     PRIMARY KEY (db, tbl, chunk)
+  );
+
