@@ -36,7 +36,6 @@ $OUTPUT_AUTOFLUSH = 1;
 my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
 
 # TODO: prompt the user if the table names differ, as a sanity check.
-# TODO: where clauses need to use IS NULL instead of = NULL.
 # TODO: write a helper to analyze indexes and suggest a drilldown strategy.
 # TODO: CRC32 can be used for checksums.
 # TODO: another algorithm: binary search for where the corruption starts, say a
@@ -49,7 +48,6 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: use trace methods to print out SQL executed.
 # TODO: allow to disable keys on destination.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
-# TODO: add --where option.
 # TODO: check the results of the following query:
 # set @CRC := null;
 # 
@@ -102,6 +100,7 @@ my @opt_spec = (
    { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times' },
    { s => 'verify|V!',        d => 'Verify checksum compatibility across servers (default)' },
    { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
+   { s => 'where|W=s',        d => 'WHERE clause to restrict syncing to part of the table' },
 );
 
 # Generate a quasi-random string that's constant in a given day
@@ -336,7 +335,7 @@ sub topdown {
 
    # Queue of groups to drill into on next iteration.  Managing as a queue, not
    # stack, is breadth-first search, not depth-first.
-   my @to_examine = [ {}, $#groupings, 0 ]; # TODO --where applies here
+   my @to_examine = [ {}, $#groupings, 0 ];
 
    # Lists of rows that differ in the target tables.
    my (@to_update, @to_delete, @to_insert);
@@ -1245,6 +1244,7 @@ sub get_tbl_struct {
 # Can't use COUNT(*) because it might be optimized away and so 'rows' could be
 # null.  And in tables where there is no NULL column, again it could be
 # optimized away, so I must generate a WHERE clause that will defeat this.
+# TODO: add --where to this query.
 sub estimate_size {
    my ($info) = @_;
    my ( $pkcol ) = @{$info->{info}->{keys}->{$info->{k}}};
@@ -1269,6 +1269,12 @@ sub make_where_clause {
       $dbh->quote_identifier($_) . $sep . $dbh->quote($val);
    } keys %$where;
    my $clause = @clauses ? 'WHERE ' . join(' AND ', @clauses) : '';
+
+   # Add in the global WHERE clause from command-line arguments
+   if ( $opts{W} ) {
+      $clause .= $clause ? " AND $opts{W}" : "WHERE $opts{W}";
+   }
+
    return $clause;
 }
 
@@ -1565,6 +1571,15 @@ mysql-table-sync issues LOCK TABLES on the master, then finds the master's
 binlog position and waits for the slave to catch up to that position before
 comparing tables.  This is useful for guaranteeing a consistent comparision
 between the servers.
+
+=item --where
+
+Use this option to limit the portion of the table being synchronized.  The
+value will be added to queries in the WHERE clause .  Do not include the
+keyword WHERE in the option; that will be added automatically.  Be sure to
+quote and escape as required by your shell.  For example:
+
+  mysql-table-sync [OPTIONS...] --where "id between 5 and 10"
 
 =back
 
