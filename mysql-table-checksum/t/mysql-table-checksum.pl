@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 35;
+use Test::More tests => 38;
 
 my $opt_file = shift or die "Specify an option file.\n";
 my ($output, $output2);
@@ -129,3 +129,11 @@ like($output, qr/checksum_test/, 'The results row is there');
 like($output2, qr/^DATABASE/m, 'The header row is there');
 like($output2, qr/checksum_test/, 'The results row is there');
 is($output, $output2, "The two BIT_XOR methods gave the same results");
+
+# Test chunking
+$output = `perl ../mysql-table-checksum -C 2 --defaults-file=$opt_file -d test -t checksum_test_3 127.0.0.1 2>&1`;
+like($output, qr/^DATABASE/m, 'The header row is there');
+like($output, qr/checksum_test_3 *0 127.0.0.1 InnoDB *2/,
+   'The first chunked results row is there');
+like($output, qr/checksum_test_3 *1 127.0.0.1 InnoDB *1/,
+   'The second chunked results row is there');

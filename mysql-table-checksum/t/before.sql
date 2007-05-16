@@ -2,6 +2,7 @@ use test;
 
 drop table if exists checksum_test;
 drop table if exists checksum_test_2;
+drop table if exists checksum_test_3;
 
 create table checksum_test(
    a int not null primary key,
@@ -19,6 +20,17 @@ create table checksum_test_2(
 ) type=innodb;
 
 insert into checksum_test_2 select * from checksum_test;
+
+create table checksum_test_3(
+   a int not null primary key,
+   b int,
+   c int not null
+) type=innodb;
+
+insert into checksum_test_3 values
+   (1,3,8),
+   (3,238,1),
+   (2,38,147);
 
 drop table if exists checksum;
 
