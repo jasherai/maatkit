@@ -1,5 +1,3 @@
-GLOBAL: use pod USAGE section for folks who want to use pod2usage
-   use SEE ALSO to refer to other programs.
 Pipe output from duplicate-key-checker into another tool to graph structures 
    (check out dot for graphing)
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
