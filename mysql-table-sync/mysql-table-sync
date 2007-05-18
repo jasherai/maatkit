@@ -2251,41 +2251,14 @@ L<http://www.xaprb.com/blog/2007/04/05/mysql-table-sync-vs-sqlyog-job-agent/>
 
 Thanks to the following people and organizations for helping in many ways:
 
-=over
-
-=item *
-
-Fabien Coelho
-
-=item *
-
-Alan Rimm-Kaufman (The Rimm-Kaufman Group)
-
-=item *
-
-John Miller (The Rimm-Kaufman Group)
-
-=item *
-
-Giuseppe Maxia and others at MySQL AB
-
-=item *
-
-Rohit Nadhani (WebYog)
-
-=item *
-
-Travis Rodak
-
-=item *
-
-Dane Miller
-
-=item *
-
-The helpful monks at Perlmonks
-
-=back
+Alan Rimm-Kaufman and John Miller (The Rimm-Kaufman Group),
+Dane Miller,
+Fabien Coelho,
+Giuseppe Maxia and others at MySQL AB,
+Kristian Koehntopp (MySQL AB),
+Rohit Nadhani (WebYog),
+The helpful monks at Perlmonks,
+Travis Rodak,
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
