@@ -3,6 +3,17 @@ more details.
 
 Changelog:
 
+2007-05-17: version 0.9.3
+
+   New features:
+
+   * Added --where option to limit syncing to part of a table.
+   * Added --defaults-file option to mimic MySQL's tools better.
+   * Added --skipforeignkey option to disable foreign key checks.
+
+   Bug fixes:
+   * Server-side STRCMP comparisons were being done on an in-use connection.
+
 2007-04-12: version 0.9.2
 
    * Documentation (added OPTIONS section to perldoc).
