@@ -207,8 +207,14 @@ my %code_for_algorithm = (
 my $exit_status = 0;
 
 foreach my $table ( $source, $dest ) {
-   my $dbh = get_dbh($table);
-   $table->{dbh} = $dbh;
+
+   # It is necessary to get a $dbh to run the sync queries, and a $dbh to use
+   # while the main $dbh is in use (for checking collated string comparison).
+   my $dbh        = get_dbh($table);
+   my $dbh2       = get_dbh($table);
+   $table->{dbh}  = $dbh;
+   $table->{dbh2} = $dbh2;
+
    $table->{db_tbl} =
       join('.',
       map  { $dbh->quote_identifier($_) }
@@ -1095,7 +1101,7 @@ sub key_cmp {
 # sort order.  Without this, the algorithm may do a great deal of extra work.
 sub db_cmp {
    my ( $coll, $l, $r ) = @_;
-   $collation_sth{$coll} ||= $source->{dbh}->prepare(
+   $collation_sth{$coll} ||= $source->{dbh2}->prepare(
       "SELECT STRCMP(_$charset_for{$coll}? COLLATE $coll, _$charset_for{$coll}? COLLATE $coll) as res");
    $collation_sth{$coll}->execute($l, $r);
    return $collation_sth{$coll}->fetchall_arrayref()->[0]->[0];
