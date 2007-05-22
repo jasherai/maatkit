@@ -320,19 +320,25 @@ foreach my $database ( @databases ) {
          || exists $opts{n}->{$table};
 
       # Get the table type, and a query to generate a checksum for it.
-      my ( $engine, $query, $chunk_col ) = checksum_query( $main_dbh, $database, $table );
+      eval {
+         my ( $engine, $query, $chunk_col ) = checksum_query( $main_dbh, $database, $table );
 
-      # Skip views, and tables of the wrong engine.
-      next TABLE if
-         $engine eq 'VIEW'
-         || ( $opts{e} && !exists $opts{e}->{lc($engine)});
-      $info_for{$table} = {
-         database  => $database,
-         table     => $table,
-         engine    => $engine,
-         query     => $query,
-         chunk_col => $chunk_col,
+         # Skip views, and tables of the wrong engine.
+         if ( $engine ne 'VIEW' && !$opts{e} || $opts{e}->{lc($engine)} ) {
+            $info_for{$table} = {
+               database  => $database,
+               table     => $table,
+               engine    => $engine,
+               query     => $query,
+               chunk_col => $chunk_col,
+            };
+         }
+
       };
+      if ( $EVAL_ERROR ) {
+         $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line \d+.*$/$1/s;
+         print STDERR $EVAL_ERROR, "\n";
+      }
 
    }
 
@@ -362,7 +368,14 @@ foreach my $database ( @databases ) {
          # Determine the range of values for the chunk_col column on this table.
          my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col}), 0), COALESCE(MAX($info->{chunk_col}), 0) "
             . "FROM `$info->{database}`.`$info->{table}`$opts{W}";
-         ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
+         eval {
+            ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
+         };
+         if ( $EVAL_ERROR ) {
+            $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line \d+.*$/$1/s;
+            print STDERR $EVAL_ERROR, "\n";
+            next TABLE;
+         }
       }
 
       $info->{chunk_cur} = 1;
@@ -383,6 +396,7 @@ foreach my $database ( @databases ) {
                do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
             };
             if ( $EVAL_ERROR ) {
+               $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line \d+.*$/$1/s;
                print STDERR $EVAL_ERROR, "\n";
                $exit_status = 1;
             }
@@ -405,6 +419,7 @@ foreach my $database ( @databases ) {
                      do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
                   };
                   if ( $EVAL_ERROR ) {
+                     $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line \d+.*$/$1/s;
                      print STDERR $EVAL_ERROR, "\n";
                      exit(1); # die, even if only a single host
                   }
