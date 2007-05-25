@@ -59,6 +59,7 @@ my @opt_spec = (
    { s => 'optxor|o!',         d => 'Optimize BIT_XOR with user variables (default)'},
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'quiet|q',           d => 'Do not print checksum results' },
    { s => 'replicate|R=s',     d => 'Replicate checksums in a table (disallows -a CHECKSUM)' },
    { s => 'slavelag|l',        d => 'Report how far slaves lag master' },
    { s => 'separator|s=s',     d => 'Separator for CONCAT_WS()' },
@@ -356,7 +357,7 @@ foreach my $database ( @databases ) {
       $hdr         = "%-${max_db}s %-${max_tbl}s %5s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
    }
    my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
-   printf($hdr, @hdr_args);
+   printf($hdr, @hdr_args) unless $opts{q};
 
    TABLE:
    foreach my $table ( sort keys %info_for ) {
@@ -473,7 +474,7 @@ sub do_tbl_replicate {
    my $end = time();
    $crc  ||= 'NULL';
    printf($hdr, @{$info}{qw(database table chunk_cur)}, $host, $info->{engine}, $cnt, $crc,
-      $end - $beg, 'NULL', 'NULL', 'NULL');
+      $end - $beg, 'NULL', 'NULL', 'NULL') unless $opts{q};
 }
 
 sub do_tbl {
@@ -515,7 +516,7 @@ sub do_tbl {
    my $end = time();
    $dbh->disconnect();
    printf($hdr, @{$info}{qw(database table chunk_cur)}, $host, $info->{engine}, $cnt, $crc,
-      $end - $mid, $mid - $beg, $sta, $lag);
+      $end - $mid, $mid - $beg, $sta, $lag) unless $opts{q};
 }
 
 sub checksum_query {
