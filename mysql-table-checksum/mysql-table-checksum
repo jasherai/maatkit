@@ -337,8 +337,7 @@ foreach my $database ( @databases ) {
 
       };
       if ( $EVAL_ERROR ) {
-         $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line \d+.*$/$1/s;
-         print STDERR $EVAL_ERROR, "\n";
+         print_err($EVAL_ERROR);
       }
 
    }
@@ -373,8 +372,7 @@ foreach my $database ( @databases ) {
             ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
          };
          if ( $EVAL_ERROR ) {
-            $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line \d+.*$/$1/s;
-            print STDERR $EVAL_ERROR, "\n";
+            print_err($EVAL_ERROR);
             next TABLE;
          }
       }
@@ -397,9 +395,7 @@ foreach my $database ( @databases ) {
                do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
             };
             if ( $EVAL_ERROR ) {
-               $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line \d+.*$/$1/s;
-               print STDERR $EVAL_ERROR, "\n";
-               $exit_status = 1;
+               print_err($EVAL_ERROR);
             }
          }
 
@@ -420,8 +416,7 @@ foreach my $database ( @databases ) {
                      do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
                   };
                   if ( $EVAL_ERROR ) {
-                     $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line \d+.*$/$1/s;
-                     print STDERR $EVAL_ERROR, "\n";
+                     print_err($EVAL_ERROR);
                      exit(1); # die, even if only a single host
                   }
                   exit(0) if @hosts > 1; # exit only if I'm a child
@@ -707,6 +702,16 @@ sub version_ge {
    my ( $dbh, $target ) = @_;
    my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
    return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
+}
+
+# Tries to extract the MySQL error message and print it
+sub print_err {
+   my ( $msg ) = @_;
+   return if !defined $msg
+      # Honor --quiet in the (common?) event that a table went away
+      or ($opts{q} && $EVAL_ERROR =~ m/doesn't exist/);
+   $msg =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
+   print STDERR $msg, "\n";
 }
 
 # ############################################################################
