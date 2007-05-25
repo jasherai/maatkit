@@ -324,7 +324,7 @@ foreach my $database ( @databases ) {
          my ( $engine, $query, $chunk_col ) = checksum_query( $main_dbh, $database, $table );
 
          # Skip views, and tables of the wrong engine.
-         if ( $engine ne 'VIEW' && !$opts{e} || $opts{e}->{lc($engine)} ) {
+         if ( $engine ne 'VIEW' && (!$opts{e} || $opts{e}->{lc($engine)}) ) {
             $info_for{$table} = {
                database  => $database,
                table     => $table,
