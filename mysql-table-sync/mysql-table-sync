@@ -1316,12 +1316,13 @@ sub version_ge {
 }
 
 sub get_dbh {
+   my ( $info ) = @_;
    my $db_options = {
       AutoCommit => !$opts{k} && !$opts{f} && !$opts{1},
       RaiseError => 1,
       PrintError => 1,
    };
-   my ( $info ) = @_;
+   # TODO this doesn't read F from $opts
    my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
