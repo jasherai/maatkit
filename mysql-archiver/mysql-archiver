@@ -49,10 +49,11 @@ our $VERSION = '@VERSION@';
 # Define cmdline args.
 my @opt_spec = (
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-   # { s => 'dest|d=s',          d => 'Server in which to store info' },
+   { s => 'dest|d=s',          d => 'Table to archive to' },
+   { s => 'file|f=s',          d => 'File to archive to' },
+   { s => 'header',            d => 'Print column header at top of --file' },
    { s => 'help',              d => 'Show this help message' },
    { s => 'source|s=s',        d => 'Table to archive from' },
-   { s => 'file|f=s',          d => 'File to write' },
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -74,8 +75,11 @@ foreach my $spec ( @opt_spec ) {
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
-if ( $opts{help} ) {
-   print "Usage: mysql-archiver <options> batch-file\n\n";
+my $source = parse_dsn($opts{s});
+my $dest   = parse_dsn($opts{d}, $source) if $source;
+
+if ( $opts{help} || !$source || (!$dest && !$opts{f}) ) {
+   print "Usage: mysql-archiver <options>\n\n";
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
@@ -98,17 +102,28 @@ USAGE
 # ############################################################################
 my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
 
-# Connect to the database
-my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
-   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
-   . ';mysql_read_default_group=mysql';
-my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-   or die("Can't connect to DB: $OS_ERROR");
+foreach my $table ( $source, $dest ) {
+   my $dbh        = get_dbh($table);
+   $table->{dbh}  = $dbh;
+
+   $table->{db_tbl} =
+      join('.',
+      map  { $dbh->quote_identifier($_) }
+      grep { $_ }
+      map  { $_ =~ s/(^`|`$)//g; $_; }
+      grep { $_ }
+      ( $table->{D}, $table->{t} ));
+   $table->{info} = get_tbl_struct($table);
+}
 
 # TODO: catch signals and exit gracefully
 # Discover tbl structure
 # Design first-row, next-row, insert, delete stmts
 # notice if climbing a unique, single-column index
+
+# Design statements for finding and manipulating data
+my $sth;
+my %queries;
 
 my $get_first = $dbh->prepare(
    "select * from rkmain.ad use index(PRIMARY)
@@ -130,7 +145,7 @@ exit(0) unless $row;
 # Open the file and print the header to it.
 my $file;
 if ( $opts{f} ) {
-   my $need_hdr = !-f $opts{f};
+   my $need_hdr = $opts{header} && !-f $opts{f};
    $file = IO::File->new($opts{f}, ">>") or die $OS_ERROR;
    $file->autoflush(1);
    if ( $need_hdr ) {
@@ -154,3 +169,87 @@ sub escape {
       defined $_ ? $_ : '\N';             # NULL = \N
    } @$row);
 }
+
+# Compares versions like 5.0.27 and 4.1.15-standard-log
+sub version_ge {
+   my ( $dbh, $target ) = @_;
+   my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
+   return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
+}
+
+sub get_tbl_struct {
+   my ( $dbh, $db, $tbl ) = @_;
+   my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE $db.$tbl"))[1];
+   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
+   my %keys =
+      map {
+         my ($name) = $_ =~ m/(PRIMARY|`[^`]*`)/;
+         my ($cols) = $_ =~ m/\((.+)\),?$/;
+         $name =~ s/`//g;
+         ($name, [ grep { m/[^,]/ } split('`', $cols) ])
+      }
+      $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
+
+   return {
+      cols      => \@cols,
+      col_hash  => { map { $_ => 1 } @cols },
+      null      => \@null,
+      null_hash => { map { $_ => 1 } @null },
+      keys      => \%keys,
+      defs      => \%alldefs,
+   };
+}
+
+# Parses a DSN in login:pass@host:port/database.table:key format
+sub parse_dsn {
+   my ($dsn, $prev) = @_;
+   return unless $dsn;
+   $prev ||= {};
+
+   my ( $user, $pass, $host, $port, $database, $table, $key) = $dsn =~ m{
+      (?:
+         (.+?)       # Username
+         (?::(.+))?  # Optional password
+      @)?            # User-pass is optional
+      (?:
+         (.+?)       # Hostname
+         (?::(.+))?  # Optional port
+      /)?            # Host-port is optional
+      (?:
+         (.+?)       # Database
+      \.)?           # Database is optional
+      ([^:]+)        # Table is required
+      (?::
+         (.+)        # Key/index
+      )?             # Index is optional
+      }xsm or return undef;
+
+   return {
+      u => $user     || $prev->{u},
+      p => $pass     || $prev->{p},
+      h => $host     || $prev->{h},
+      P => $port     || $prev->{P},
+      D => $database || $prev->{D},
+      t => $table    || $prev->{t},
+      k => $key      || $prev->{k} || 'PRIMARY',
+      F => $opts{F},
+   };
+}
+
+sub get_dbh {
+   my ( $info ) = @_;
+   my $db_options = {
+      AutoCommit => 1, # TODO
+      RaiseError => 1,
+      PrintError => 1,
+   };
+   my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
+   my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
+      . ';mysql_read_default_group=mysql';
+   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
+      or die("Can't connect to DB: $OS_ERROR");
+}
+
