@@ -1,12 +1,156 @@
 #!/usr/bin/perl
 
+# This is mysql-archiver, a program to archive records from one MySQL table to
+# a file and/or another table.
+#
+# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+use List::Util qw(max);
+use IO::File;
+
 # Output to a file or to STDOUT
-# Specify where to archive to
+# Specify where to archive to (file, other DB)
 # specify table, index to use
-# specify eearliest date range
-# specify how many in a chunk
+# specify earliest date range
+# specify how many in a chunk, whether to use txn
 # specify maximum runtime
 # Allow to ANALYZE TABLE or OPTIMIZE TABLE after or before
 # whether to print progress to output, and how often (how many rows, how many
 # secs?)
-# \N is a null in a CSV file
+# Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
+
+our $VERSION = '@VERSION@';
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+# Define cmdline args.
+my @opt_spec = (
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   # { s => 'dest|d=s',          d => 'Server in which to store info' },
+   { s => 'help',              d => 'Show this help message' },
+   { s => 'source|s=s',        d => 'Table to archive from' },
+   { s => 'file|f=s',          d => 'File to write' },
+);
+
+# This is the container for the command-line options' values to be stored in
+# after processing.  Initial values are defaults.
+my %opts;
+
+# Post-process...
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+}
+
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{help} ) {
+   print "Usage: mysql-archiver <options> batch-file\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+   }
+   print <<USAGE;
+
+mysql-archiver nibbles records from a table.  Connection options are read from
+MySQL option files.  For more details, please read the documentation:
+
+   perldoc mysql-archiver
+
+USAGE
+   exit(1);
+}
+
+# ############################################################################
+# Get ready to do the main work.
+# ############################################################################
+my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
+
+# Connect to the database
+my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
+   . ';mysql_read_default_group=mysql';
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+   or die("Can't connect to DB: $OS_ERROR");
+
+# TODO: catch signals and exit gracefully
+# Discover tbl structure
+# Design first-row, next-row, insert, delete stmts
+# notice if climbing a unique, single-column index
+
+my $get_first = $dbh->prepare(
+   "select * from rkmain.ad use index(PRIMARY)
+      where not exists (
+         select * from rktrack2.adday where rkmain.ad.ad = rktrack2.adday.ad)
+      limit 1");
+
+my $get_next = $dbh->prepare(
+   "select * from rkmain.ad use index(PRIMARY)
+      where not exists (
+         select * from rktrack2.adday where rkmain.ad.ad = rktrack2.adday.ad)
+      and ad > ?
+      limit 1");
+
+$get_first->execute;
+my $row = $get_first->fetchrow_arrayref();
+exit(0) unless $row;
+
+# Open the file and print the header to it.
+my $file;
+if ( $opts{f} ) {
+   my $need_hdr = !-f $opts{f};
+   $file = IO::File->new($opts{f}, ">>") or die $OS_ERROR;
+   $file->autoflush(1);
+   if ( $need_hdr ) {
+      print $file escape($get_first->{NAME}), "\n";
+   }
+}
+
+while ( $row ) {
+   if ( $file ) {
+      print $file escape($row), "\n";
+   }
+}
+
+# Formats a row the same way SELECT INTO OUTFILE does by default.  This is
+# described in the LOAD DATA INFILE section of the MySQL manual,
+# http://dev.mysql.com/doc/refman/5.0/en/load-data.html
+sub escape {
+   my ($row) = @_;
+   return join("\t", map {
+      s/([\t\n\\])/\\$1/g if defined $_;  # Escape tabs etc
+      defined $_ ? $_ : '\N';             # NULL = \N
+   } @$row);
+}
