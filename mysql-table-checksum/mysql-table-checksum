@@ -669,6 +669,7 @@ sub get_dbh {
          my $pass = <STDIN>;
          chomp $pass;
          ReadMode('normal');
+         print "\n";
          $db_info{$host} = { u => $user, p => $pass };
       }
       $opts{u} = $db_info{$host}->{u};
