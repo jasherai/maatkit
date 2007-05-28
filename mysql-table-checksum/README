@@ -3,6 +3,19 @@ view the perldoc for more details on them.
 
 Changelog:
 
+2007-05-28: version 1.1.6
+
+   Changes:
+   * Added --quiet option, useful for cron jobs with --replicate.
+   * Error handling for tables that are dropped during checksumming.
+
+   Bugs fixed:
+   * There was a race condition between listing and checksumming tables.
+   * Perl's auto-vivify hashes could cause all tables to be skipped after the
+     first VIEW.
+   * Some DBIs did not consider ? inside a comment to be a placeholder.
+   * --askpass did not print a newline after reading password.
+
 2007-05-16: version 1.1.5
 
    Incompatible changes:
