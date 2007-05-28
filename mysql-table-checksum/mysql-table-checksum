@@ -451,6 +451,12 @@ foreach my $database ( @databases ) {
    }
 }
 
+sub add_progress_comment {
+   my ( $query, $info ) = @_;
+   $query =~ s/progress_comment/$info->{database}.$info->{table}:$info->{chunk_cur}\/$info->{chunk_tot}/;
+   return $query;
+}
+
 sub do_tbl_replicate {
    my ( $host, $info, $hdr ) = @_;
    my $dbh = $main_dbh;
@@ -459,8 +465,8 @@ sub do_tbl_replicate {
    my $beg = time();
    $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
    $dbh->do(
-      $info->{query}, {},
-      ( @{$info}{qw(chunk_cur chunk_tot chunk_cur)} ),
+      add_progress_comment($info->{query}, $info), {},
+      ( $info->{chunk_cur} ),
       $info->{chunk_col} && $opts{C} ? @{$info}{qw(chunk_min chunk_max)} : ()
    );
    $fetch_sth->execute(@{$info}{qw(database table chunk_cur)});
@@ -482,7 +488,10 @@ sub do_tbl {
    my $beg = time();
    if ( !$is_master && defined $opts{w} ) {
       $sta = $dbh->selectall_arrayref(
-         "SELECT /*$info->{database}.$info->{table}*/ MASTER_POS_WAIT('$info->{File}', $info->{Position}, $opts{w})")->[0]->[0];
+         add_progress_comment(
+            "SELECT /*progress_comment*/ MASTER_POS_WAIT('$info->{File}', $info->{Position}, $opts{w})",
+            $info
+         ))->[0]->[0];
       $sta = 'NULL' unless defined $sta;
    }
    if ( !$is_master && $opts{l} ) {
@@ -571,11 +580,11 @@ sub checksum_query {
       my $slices = make_slices($chks);
 
       if ( $opts{R} ) {
-         $query = "REPLACE /*$db.$tbl:?/?*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
+         $query = "REPLACE /*progress_comment*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
             . "SELECT '$db', '$tbl', ?, COUNT(*), CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
       }
       else {
-         $query = "SELECT /*$db.$tbl:?/?*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
+         $query = "SELECT /*progress_comment*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
       }
 
    }
@@ -597,13 +606,13 @@ sub checksum_query {
       # @cnt is not used for a row count, it is only used to make MAX() work
       # correctly.
       if ( $opts{R} ) {
-         $query = "REPLACE /*$db.$tbl:?/?*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
+         $query = "REPLACE /*progress_comment*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
             . "SELECT '$db', '$tbl', ?, COUNT(*) AS cnt, RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
             . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
       }
       else {
-         $query = "SELECT /*$db.$tbl:?/?*/ COUNT(*) AS cnt, RIGHT(MAX("
+         $query = "SELECT /*progress_comment*/ COUNT(*) AS cnt, RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
             . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
       }
@@ -678,8 +687,8 @@ sub do_var_crc {
    my ( $dbh, $info ) = @_;
    $dbh->do('set @crc := NULL, @cnt := 0');
    my $res = $dbh->selectall_arrayref(
-      $info->{query}, { Slice => {} },
-      ( @{$info}{qw(chunk_cur chunk_tot)} ),
+      add_progress_comment($info->{query}, $info),
+      { Slice => {} },
       $info->{chunk_col} && $opts{C} ? ( @{$info}{qw(chunk_min chunk_max)}) : ()
    )->[0];
    return ($res->{cnt}, $res->{crc});
