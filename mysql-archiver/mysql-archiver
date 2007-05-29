@@ -53,6 +53,7 @@ my @opt_spec = (
    { s => 'file|f=s',          d => 'File to archive to' },
    { s => 'header',            d => 'Print column header at top of --file' },
    { s => 'help',              d => 'Show this help message' },
+   { s => 'purge',             d => 'Purge instead of archive; allows to omit --file and --dest' },
    { s => 'source|s=s',        d => 'Table to archive from' },
 );
 
@@ -75,10 +76,29 @@ foreach my $spec ( @opt_spec ) {
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
+my %conn   = (
+   F => 'mysql_read_default_file',
+   h => 'host',
+   P => 'port',
+   S => 'socket',
+   u => 'user',
+   p => 'pass',
+   k => 'key',
+);
+
 my $source = parse_dsn($opts{s});
 my $dest   = parse_dsn($opts{d}, $source) if $source;
 
-if ( $opts{help} || !$source || (!$dest && !$opts{f}) ) {
+if ( !$source ) {
+   warn "Could not parse --source\n";
+   $opts{help} = 1;
+}
+elsif ( !($dest || $opts{f}) && !$opts{purge} ) {
+   warn "No --dest or --file; this would delete rows (override with --purge)\n";
+   $opts{help} = 1;
+}
+
+if ( $opts{help} ) {
    print "Usage: mysql-archiver <options>\n\n";
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
@@ -89,7 +109,8 @@ if ( $opts{help} || !$source || (!$dest && !$opts{f}) ) {
    print <<USAGE;
 
 mysql-archiver nibbles records from a table.  Connection options are read from
-MySQL option files.  For more details, please read the documentation:
+MySQL option files.  The --source and --dest arguments require a special format.
+For more details, please read the documentation:
 
    perldoc mysql-archiver
 
@@ -100,8 +121,6 @@ USAGE
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
-my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
-
 foreach my $table ( $source, $dest ) {
    my $dbh        = get_dbh($table);
    $table->{dbh}  = $dbh;
@@ -125,13 +144,13 @@ foreach my $table ( $source, $dest ) {
 my $sth;
 my %queries;
 
-my $get_first = $dbh->prepare(
+my $get_first = $source->{dbh}->prepare(
    "select * from rkmain.ad use index(PRIMARY)
       where not exists (
          select * from rktrack2.adday where rkmain.ad.ad = rktrack2.adday.ad)
       limit 1");
 
-my $get_next = $dbh->prepare(
+my $get_next = $source->{dbh}->prepare(
    "select * from rkmain.ad use index(PRIMARY)
       where not exists (
          select * from rktrack2.adday where rkmain.ad.ad = rktrack2.adday.ad)
@@ -198,44 +217,18 @@ sub get_tbl_struct {
       null      => \@null,
       null_hash => { map { $_ => 1 } @null },
       keys      => \%keys,
-      defs      => \%alldefs,
+      defs      => \@defs,
    };
 }
 
-# Parses a DSN in login:pass@host:port/database.table:key format
 sub parse_dsn {
    my ($dsn, $prev) = @_;
    return unless $dsn;
    $prev ||= {};
 
-   my ( $user, $pass, $host, $port, $database, $table, $key) = $dsn =~ m{
-      (?:
-         (.+?)       # Username
-         (?::(.+))?  # Optional password
-      @)?            # User-pass is optional
-      (?:
-         (.+?)       # Hostname
-         (?::(.+))?  # Optional port
-      /)?            # Host-port is optional
-      (?:
-         (.+?)       # Database
-      \.)?           # Database is optional
-      ([^:]+)        # Table is required
-      (?::
-         (.+)        # Key/index
-      )?             # Index is optional
-      }xsm or return undef;
-
-   return {
-      u => $user     || $prev->{u},
-      p => $pass     || $prev->{p},
-      h => $host     || $prev->{h},
-      P => $port     || $prev->{P},
-      D => $database || $prev->{D},
-      t => $table    || $prev->{t},
-      k => $key      || $prev->{k} || 'PRIMARY',
-      F => $opts{F},
-   };
+   my %hash = map { m/^(.)=(.*)$/g } split(/:/, $dsn);
+   my %vals = map { $_ => $hash{$_} || $prev->{$_} } keys %conn;
+   return \%vals;
 }
 
 sub get_dbh {
@@ -245,11 +238,9 @@ sub get_dbh {
       RaiseError => 1,
       PrintError => 1,
    };
-   my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
    return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
       or die("Can't connect to DB: $OS_ERROR");
 }
-
