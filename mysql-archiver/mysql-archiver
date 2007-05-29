@@ -48,18 +48,20 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args.
 my @opt_spec = (
-   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-   { s => 'dest|d=s',          d => 'Table to archive to' },
-   { s => 'file|f=s',          d => 'File to archive to' },
-   { s => 'header',            d => 'Print column header at top of --file' },
-   { s => 'help',              d => 'Show this help message' },
-   { s => 'purge',             d => 'Purge instead of archive; allows to omit --file and --dest' },
-   { s => 'source|s=s',        d => 'Table to archive from' },
+   { s => 'dest|d=s',   d => 'Table to archive to' },
+   { s => 'file|f=s',   d => 'File to archive to' },
+   { s => 'header',     d => 'Print column header at top of --file' },
+   { s => 'help',       d => 'Show this help message' },
+   { s => 'limit|l=i',  d => 'Number of rows to fetch, archive and delete at a time' },
+   { s => 'purge',      d => 'Purge instead of archive; allows to omit --file and --dest' },
+   { s => 'source|s=s', d => 'Table to archive from' },
+   { s => 'test|t',     d => 'Test: print queries and exit without doing anything' },
+   { s => 'where|W=s',  d => 'WHERE clause to limit which rows to archive' },
 );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
-my %opts;
+my %opts = ( l => 1 );
 
 # Post-process...
 my %opt_seen;
@@ -77,25 +79,43 @@ Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
 my %conn   = (
-   F => 'mysql_read_default_file',
    h => 'host',
    P => 'port',
    S => 'socket',
    u => 'user',
    p => 'pass',
-   k => 'key',
+   F => 'mysql_read_default_file',
+   D => 'database',
+   t => 'table',
+   i => 'index',
 );
 
 my $source = parse_dsn($opts{s});
-my $dest   = parse_dsn($opts{d}, $source) if $source;
+my $dest   = parse_dsn($opts{d}, $source) if $source && $opts{d};
 
-if ( !$source ) {
-   warn "Could not parse --source\n";
-   $opts{help} = 1;
-}
-elsif ( !($dest || $opts{f}) && !$opts{purge} ) {
-   warn "No --dest or --file; this would delete rows (override with --purge)\n";
-   $opts{help} = 1;
+if ( !$opts{help} ) {
+   if ( !$source || !$source->{t} ) {
+      warn "Invalid --source option\n";
+      $opts{help} = 1;
+   }
+   elsif ( !($dest || $opts{f}) && !$opts{purge} ) {
+      warn "No --dest or --file; this would delete rows (override with --purge)\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{d} ) { # Ensure --source and --dest don't point to the same place
+      my $same = 1;
+      foreach my $arg ( qw(h P D t S) ) {
+         if ( defined $source->{$arg} && defined $dest->{$arg} &&
+            $source->{$arg} ne $dest->{$arg} ) {
+            $same = 0;
+            last;
+         }
+      }
+      if ( $same ) {
+         warn "--source and --dest refer to the same table\n";
+         $opts{help} = 1;
+      }
+   }
 }
 
 if ( $opts{help} ) {
@@ -108,9 +128,9 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-mysql-archiver nibbles records from a table.  Connection options are read from
-MySQL option files.  The --source and --dest arguments require a special format.
-For more details, please read the documentation:
+mysql-archiver nibbles records from a single table.  Connection options are
+read from MySQL option files.  The --source and --dest arguments require a
+special format.  For more details, please read the documentation:
 
    perldoc mysql-archiver
 
@@ -121,7 +141,7 @@ USAGE
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
-foreach my $table ( $source, $dest ) {
+foreach my $table ( grep { $_ } ($source, $dest) ) {
    my $dbh        = get_dbh($table);
    $table->{dbh}  = $dbh;
 
@@ -136,29 +156,117 @@ foreach my $table ( $source, $dest ) {
 }
 
 # TODO: catch signals and exit gracefully
-# Discover tbl structure
-# Design first-row, next-row, insert, delete stmts
-# notice if climbing a unique, single-column index
+# TODO: allow ascending multi-col indexes, let user specify column names
 
-# Design statements for finding and manipulating data
+my $dbh = $source->{dbh};
 my $sth;
-my %queries;
 
-my $get_first = $source->{dbh}->prepare(
-   "select * from rkmain.ad use index(PRIMARY)
-      where not exists (
-         select * from rktrack2.adday where rkmain.ad.ad = rktrack2.adday.ad)
-      limit 1");
+# Do we have a unique single-column index to nibble?
+my $asc;
+if ( $source->{i} ) {
+   # Make sure the lettercase is right and find the index...
+   my ($ixname) = grep { uc $_ eq uc $source->{i} } keys %{$source->{info}->{keys}};
+   if ( $ixname ) {
+      $source->{i} = $ixname;
+   }
 
-my $get_next = $source->{dbh}->prepare(
-   "select * from rkmain.ad use index(PRIMARY)
-      where not exists (
-         select * from rktrack2.adday where rkmain.ad.ad = rktrack2.adday.ad)
-      and ad > ?
-      limit 1");
+   my $idx = $source->{info}->{keys}->{$ixname};
+   if (  $idx
+      && @$idx == 1
+      && (
+         $ixname eq 'PRIMARY'
+         || $source->{info}->{kdef}->{$ixname} =~ m/UNIQUE/ )
+      )
+   {
+      $asc = 1;
+   }
+}
 
-$get_first->execute;
-my $row = $get_first->fetchrow_arrayref();
+# ############################################################################
+# Design SQL statements.
+# ############################################################################
+my ($first_sql, $next_sql, $del_sql, $ins_sql);
+my (@next_slice, @pk_slice);
+my @cols = @{$source->{info}->{cols}};
+$first_sql
+   = 'SELECT'
+   . ( version_ge($dbh, '4.0.1') ? ' SQL_NO_CACHE' : '' )
+   . " * FROM $source->{db_tbl}"
+   . ( $source->{i}
+      ? ((version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX($source->{i})")
+      : '');
+if ( $opts{W} ) {
+   $first_sql .= " WHERE $opts{W}";
+}
+
+# At this point the fetch-first and fetch-next queries may diverge.
+$next_sql = $first_sql;
+if ( $asc ) {
+   my $col    = $source->{info}->{keys}->{$source->{i}}->[0];
+   $next_sql .= $opts{W} ? ' AND ' : ' WHERE ';
+   $next_sql .= $dbh->quote_identifier($col);
+   $next_sql .= ' >= ?';
+   # Find the position of the column in SELECT * for bind arguments later
+   my $pos    = 0;
+   foreach my $c ( @cols ) {
+      last if $c eq $col;
+      $pos++;
+   }
+   push @next_slice, $pos;
+}
+
+$first_sql .= " LIMIT $opts{l}";
+$next_sql  .= " LIMIT $opts{l}";
+
+# DELETE requires either a PK or all columns.  In theory, a UNIQUE index could
+# be used, but I am not going to fool with that.
+if ( $source->{info}->{keys}->{PRIMARY} ) {
+   @pk_slice = map {
+      my $pos = 0;
+      my $col = $_;
+      foreach my $c ( @cols ) {
+         last if $c eq $col;
+         $pos++;
+      }
+      $pos;
+   } @{$source->{info}->{keys}->{PRIMARY}};
+}
+else {
+   @pk_slice = (0 .. $#cols);
+}
+$del_sql = "DELETE FROM $source->{db_tbl} WHERE "
+   . join(' AND ', map { "`$cols[$_]` = ?" } @pk_slice)
+   . " LIMIT $opts{l}";
+
+# INSERT is all columns.  I can't think of why you'd want to archive to a
+# table with different columns than the source.
+if ( $dest ) {
+   $ins_sql = "INSERT INTO $dest->{db_tbl}("
+      . join(",", map { "`$_`" } @cols)
+      . ") VALUES ("
+      . join(",", map { "?" } @cols)
+      . ")";
+}
+else {
+   $ins_sql = '';
+}
+
+if ( $opts{t} ) {
+   print join("\n", $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
+   exit(0);
+}
+
+my $get_first = $dbh->prepare($first_sql);
+my $get_next  = $dbh->prepare($next_sql);
+my $del_row   = $dbh->prepare($del_sql);
+my $ins_row   = $dest->{dbh}->prepare($ins_sql) if $dest; # Different $dbh!
+my $get_sth   = $get_first;
+
+# ############################################################################
+# Start archiving.
+# ############################################################################
+$get_sth->execute;
+my $row = $get_sth->fetchrow_arrayref();
 exit(0) unless $row;
 
 # Open the file and print the header to it.
@@ -168,15 +276,36 @@ if ( $opts{f} ) {
    $file = IO::File->new($opts{f}, ">>") or die $OS_ERROR;
    $file->autoflush(1);
    if ( $need_hdr ) {
-      print $file escape($get_first->{NAME}), "\n";
+      print $file escape($get_sth->{NAME}), "\n";
    }
 }
 
 while ( $row ) {
+   my $lastrow = $row;
+
+   # Do the archiving.
    if ( $file ) {
       print $file escape($row), "\n";
    }
+   if ( $dest ) {
+      $ins_row->execute(@$row);
+   }
+   $del_row->execute(@{$row}[@pk_slice]);
+
+   # Get the next row.
+   if ( $get_sth->{Active} ) { # Fetch until exhausted
+      $row = $get_sth->fetchrow_arrayref();
+   }
+   if ( !$row ) {
+      $get_sth = $get_next;
+      $get_next->execute(@{$lastrow}[@next_slice]);
+      $row = $get_sth->fetchrow_arrayref();
+   }
 }
+
+# ############################################################################
+# Subroutines.
+# ############################################################################
 
 # Formats a row the same way SELECT INTO OUTFILE does by default.  This is
 # described in the LOAD DATA INFILE section of the MySQL manual,
@@ -197,16 +326,18 @@ sub version_ge {
 }
 
 sub get_tbl_struct {
-   my ( $dbh, $db, $tbl ) = @_;
-   my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE $db.$tbl"))[1];
+   my ( $info ) = @_;
+   my $ddl = ($info->{dbh}->selectrow_array("SHOW CREATE TABLE $info->{db_tbl}"))[1];
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
    my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
+   my %kdef = ();
    my %keys =
       map {
          my ($name) = $_ =~ m/(PRIMARY|`[^`]*`)/;
          my ($cols) = $_ =~ m/\((.+)\),?$/;
          $name =~ s/`//g;
+         $kdef{$name} = $_;
          ($name, [ grep { m/[^,]/ } split('`', $cols) ])
       }
       $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
@@ -217,7 +348,9 @@ sub get_tbl_struct {
       null      => \@null,
       null_hash => { map { $_ => 1 } @null },
       keys      => \%keys,
+      kdef      => \%kdef,
       defs      => \@defs,
+      ddl       => $ddl,
    };
 }
 
@@ -226,7 +359,7 @@ sub parse_dsn {
    return unless $dsn;
    $prev ||= {};
 
-   my %hash = map { m/^(.)=(.*)$/g } split(/:/, $dsn);
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
    my %vals = map { $_ => $hash{$_} || $prev->{$_} } keys %conn;
    return \%vals;
 }
@@ -244,3 +377,48 @@ sub get_dbh {
    return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
       or die("Can't connect to DB: $OS_ERROR");
 }
+
+# ############################################################################
+# Documentation.
+# ############################################################################
+
+=pod
+
+=head1 OPTIONS
+
+=over
+
+=item --dest
+
+This item specifies a table into which mysql-archiver will insert rows
+archived from --source.  It uses the same key=val argument format as --source.
+As a shortcut, any values not given default to the same values as --source, so
+you don't have to repeat everything.
+
+=item --source
+
+Specifies a table to archive from.  This argument is specially formatted as a
+key=value,key=value string.  Keys are a single letter, as follows:
+
+   KEY MEANING
+   === =======
+   h   Connect to host
+   P   Port number to use for connection
+   S   Socket file to use for connection
+   u   User for login if not current user
+   p   Password to use when connecting
+   D   Database to archive
+   t   Table to archive
+   F   Only read default options from the given file
+   i   Index to scan while archiving
+
+The only required part is the table; other parts may be read from various
+places in the environment (such as options files).  Here is an example:
+
+   --source h=my_server,D=my_database,t=my_tbl
+
+The --dest option uses the same format.
+
+=back
+
+=cut
