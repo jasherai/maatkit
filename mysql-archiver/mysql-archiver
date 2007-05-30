@@ -48,6 +48,7 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args.
 my @opt_spec = (
+   { s => 'asccols|a=s', d => 'Comma-separated list of columns to ascend' },
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
    { s => 'file|f=s',    d => 'File to archive to' },
@@ -55,13 +56,12 @@ my @opt_spec = (
    { s => 'help',        d => 'Show this help message' },
    { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
    { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
+   { s => 'progress|P=i',d => 'Print progress information every X rows' },
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
    { s => 'source|s=s',  d => 'Table to archive from' },
-# TODO: sentinel
-# TODO: print progress
+   { s => 'sentinel=s',  d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
    { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
-    # TODO
    { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
    { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive' },
@@ -70,9 +70,10 @@ my @opt_spec = (
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   l => 1,
-   u => 1,
-   z => 1,
+   l        => 1,
+   u        => 1,
+   z        => 1,
+   sentinel => '/tmp/mysql-archiver-sentinel',
 );
 
 # Post-process...
@@ -179,9 +180,9 @@ foreach my $table ( grep { $_ } ($source, $dest) ) {
    $table->{info} = get_tbl_struct($table);
 }
 
-# TODO: catch signals and exit gracefully
+# TODO: catch signals and exit gracefully (INT, TERM)
 # TODO: allow ascending multi-col indexes, let user specify column names
-# TODO: allow to specify IGNORE or REPLACE or ODKU option
+# TODO: allow to specify ODKU option?
 # TODO: allow multiple destination tables, each with own ODKU/etc
 
 my $dbh = $source->{dbh};
@@ -195,23 +196,29 @@ my (@pk_slice, @asc_slice);
 my @cols = @{$source->{info}->{cols}};
 
 # Do we have an index to ascend?  Use PRIMARY if nothing specified.
-if ( $source->{i} || $source->{info}->{keys}->{PRIMARY} ) {
-   # Make sure the lettercase is right and find the index...
-   my $ixname = $source->{i} || '';
-   if ( uc $ixname eq 'PRIMARY' || !$source->{i} ) {
-      $ixname = 'PRIMARY';
+if ( $opts{a} || $source->{i} || $source->{info}->{keys}->{PRIMARY} ) {
+   my @asc_cols;
+   if ( $opts{a} ) {
+      @asc_cols = [ split(',', $opts{a}) ];
    }
    else {
-      ($ixname) = grep { uc $_ eq uc $source->{i} } keys %{$source->{info}->{keys}};
+      # Make sure the lettercase is right and find the index...
+      my $ixname = $source->{i} || '';
+      if ( uc $ixname eq 'PRIMARY' || !$source->{i} ) {
+         $ixname = 'PRIMARY';
+      }
+      else {
+         ($ixname) = grep { uc $_ eq uc $source->{i} } keys %{$source->{info}->{keys}};
+      }
+
+      if ( $ixname ) {
+         $source->{i} = $ixname; # Corrects lettercase if it's wrong
+      }
+      @asc_cols = @{$source->{info}->{keys}->{$ixname}};
    }
 
-   if ( $ixname ) {
-      $source->{i} = $ixname; # Corrects lettercase if it's wrong
-   }
-   my $idx = $source->{info}->{keys}->{$ixname};
-
-   # We found the index, now find the position of its columns.
-   if ( $idx ) {
+   # We found the columns, now find their positions
+   if ( @asc_cols ) {
       @asc_slice = map {
          my $pos = 0;
          my $col = $_;
@@ -220,7 +227,7 @@ if ( $source->{i} || $source->{info}->{keys}->{PRIMARY} ) {
             $pos++;
          }
          $pos;
-      } @$idx;
+      } @asc_cols;
    }
 }
 
@@ -300,9 +307,13 @@ my $ins_row   = $dest->{dbh}->prepare($ins_sql) if $dest; # Different $dbh!
 # ############################################################################
 # Start archiving.
 # ############################################################################
-my $start   = time;
-my $end     = $start + ($opts{m} || 0);
-my $cur     = $start;
+my $start = time();
+my $end   = $start + ($opts{m} || 0); # When mysql-archiver should exit
+my $now   = $start;
+my $cnt   = 0;
+printf("%19s %7d %7d\n", 'TIME', 'ELAPSED', 'COUNT') if $opts{P};
+printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt) if $opts{P};
+
 my $get_sth = $get_first; # Later it may be assigned $get_next
 $get_sth->execute;
 my $row = $get_sth->fetchrow_arrayref();
@@ -321,10 +332,8 @@ if ( $opts{f} ) {
    }
 }
 
-my $cnt  = 0;
-while ( $row && (!$opts{m} || $cur < $end) ) {
+while ( $row && (!$opts{m} || $now < $end) && !-f $opts{sentinel} ) {
    my $lastrow = $row;
-   $cur        = time;
 
    # Do the archiving.
    if ( $file ) {
@@ -337,12 +346,17 @@ while ( $row && (!$opts{m} || $cur < $end) ) {
    $del_row->execute(@{$row}[@pk_slice]);
 
    # Possibly flush the file and commit the insert and delete.
-   if ( $cnt && $opts{z} && $cnt % $opts{z} == 0 ) {
+   $now = time();
+   $cnt++;
+   if ( $opts{z} && $cnt % $opts{z} == 0 ) {
       if ( $opts{b} && $file ) {
          $file->flush or die "Cannot flush $opts{f}: $OS_ERROR\n";
       }
       $dest->{dbh}->commit if $dest;
       $source->{dbh}->commit;
+   }
+   if ( $opts{P} && $cnt % $opts{P} == 0 ) {
+      printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
    }
 
    # Get the next row.
@@ -354,7 +368,6 @@ while ( $row && (!$opts{m} || $cur < $end) ) {
       $get_next->execute(@{$lastrow}[@asc_slice]);
       $row = $get_sth->fetchrow_arrayref();
    }
-   $cnt++;
 }
 
 # Transactions might still be open, etc
@@ -365,6 +378,9 @@ if ( $opts{f} && $file ) {
 if ( $opts{z} ) {
    $dest->{dbh}->commit if $dest;
    $source->{dbh}->commit;
+}
+if ( $opts{P} ) {
+   printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
 }
 
 # TODO:
@@ -445,6 +461,16 @@ sub get_dbh {
       . ';mysql_read_default_group=mysql';
    return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
       or die("Can't connect to DB: $OS_ERROR");
+}
+
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
 }
 
 # ############################################################################
