@@ -58,8 +58,9 @@ my @opt_spec = (
    { s => 'progress|P=i',d => 'Print progress information every X rows' },
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-   { s => 'source|s=s',  d => 'Table to archive from' },
    { s => 'sentinel=s',  d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
+   { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
+   { s => 'source|s=s',  d => 'Table to archive from' },
    { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
    { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
@@ -102,8 +103,8 @@ my %conn   = (
    i => 'index',
 );
 
-my $source = parse_dsn($opts{s});
-my $dest   = parse_dsn($opts{d}, $source) if $source && $opts{d};
+my $src = parse_dsn($opts{s});
+my $dst = parse_dsn($opts{d}, $src) if $src && $opts{d};
 
 # Generate a filename with sprintf-like formatting codes.
 if ( $opts{f} ) {
@@ -115,8 +116,8 @@ if ( $opts{f} ) {
       m => sprintf('%02d', $time[4] + 1),
       s => sprintf('%02d', $time[0]),
       Y => $time[5] + 1900,
-      D => $source && $source->{D} ? $source->{D} : '',
-      t => $source && $source->{t} ? $source->{t} : '',
+      D => $src && $src->{D} ? $src->{D} : '',
+      t => $src && $src->{t} ? $src->{t} : '',
    );
    $opts{f} =~ s/%([dHimsYDt])/$fmt{$1}/g;
 }
@@ -134,19 +135,19 @@ if ( !$opts{help} ) {
                    :             86400;   # Days
       }
    }
-   elsif ( !$source || !$source->{t} ) {
+   elsif ( !$src || !$src->{t} ) {
       warn "Invalid or missing --source argument\n";
       $opts{help} = 1;
    }
-   elsif ( !($dest || $opts{f}) && !$opts{p} ) {
+   elsif ( !($dst || $opts{f}) && !$opts{p} ) {
       warn "No --dest or --file; this would delete rows (override with --purge)\n";
       $opts{help} = 1;
    }
    elsif ( $opts{d} ) { # Ensure --source and --dest don't point to the same place
       my $same = 1;
       foreach my $arg ( qw(h P D t S) ) {
-         if ( defined $source->{$arg} && defined $dest->{$arg} &&
-            $source->{$arg} ne $dest->{$arg} ) {
+         if ( defined $src->{$arg} && defined $dst->{$arg} &&
+            $src->{$arg} ne $dst->{$arg} ) {
             $same = 0;
             last;
          }
@@ -181,9 +182,13 @@ USAGE
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
-foreach my $table ( grep { $_ } ($source, $dest) ) {
+my $can_retry = 1;
+foreach my $table ( grep { $_ } ($src, $dst) ) {
    my $dbh        = get_dbh($table);
    $table->{dbh}  = $dbh;
+   $table->{irot} = get_irot($dbh);
+
+   $can_retry = $can_retry && $table->{irot};
 
    $table->{db_tbl} =
       join('.',
@@ -202,7 +207,7 @@ foreach my $table ( grep { $_ } ($source, $dest) ) {
 # TODO: analyze tables
 
 
-my $dbh = $source->{dbh};
+my $dbh = $src->{dbh};
 my $sth;
 
 # ############################################################################
@@ -210,23 +215,23 @@ my $sth;
 # ############################################################################
 my ($first_sql, $next_sql, $del_sql, $ins_sql);
 my (@pk_slice, @asc_slice);
-my @cols = @{$source->{info}->{cols}};
+my @cols = @{$src->{info}->{cols}};
 
 # Do we have an index to ascend?  Use PRIMARY if nothing specified.
-if ( $source->{i} || $source->{info}->{keys}->{PRIMARY} ) {
+if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
    # Make sure the lettercase is right and find the index...
-   my $ixname = $source->{i} || '';
-   if ( uc $ixname eq 'PRIMARY' || !$source->{i} ) {
+   my $ixname = $src->{i} || '';
+   if ( uc $ixname eq 'PRIMARY' || !$src->{i} ) {
       $ixname = 'PRIMARY';
    }
    else {
-      ($ixname) = grep { uc $_ eq uc $source->{i} } keys %{$source->{info}->{keys}};
+      ($ixname) = grep { uc $_ eq uc $src->{i} } keys %{$src->{info}->{keys}};
    }
 
    if ( $ixname ) {
-      $source->{i} = $ixname; # Corrects lettercase if it's wrong
+      $src->{i} = $ixname; # Corrects lettercase if it's wrong
    }
-   my @asc_cols = @{$source->{info}->{keys}->{$ixname}};
+   my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
 
    # We found the columns, now find their positions
    if ( @asc_cols ) {
@@ -235,7 +240,7 @@ if ( $source->{i} || $source->{info}->{keys}->{PRIMARY} ) {
          my $col = $_;
          foreach my $c ( @cols ) {
             last if $c eq $col;
-            $pos++;
+            ++$pos;
          }
          $pos;
       } @asc_cols;
@@ -245,9 +250,9 @@ if ( $source->{i} || $source->{info}->{keys}->{PRIMARY} ) {
 $first_sql
    = 'SELECT'
    . ( version_ge($dbh, '4.0.1') ? ' SQL_NO_CACHE' : '' )
-   . " * FROM $source->{db_tbl}"
-   . ( $source->{i}
-      ? ((version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$source->{i}`)")
+   . " * FROM $src->{db_tbl}"
+   . ( $src->{i}
+      ? ((version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
       : '');
 if ( $opts{W} ) {
    $first_sql .= " WHERE $opts{W}";
@@ -265,16 +270,16 @@ $next_sql  .= " LIMIT $opts{l}";
 
 # DELETE requires either a PK or all columns.  In theory, a UNIQUE index could
 # be used, but I am not going to fool with that.
-if ( $source->{info}->{keys}->{PRIMARY} ) {
+if ( $src->{info}->{keys}->{PRIMARY} ) {
    @pk_slice = map {
       my $pos = 0;
       my $col = $_;
       foreach my $c ( @cols ) {
          last if $c eq $col;
-         $pos++;
+         ++$pos;
       }
       $pos;
-   } @{$source->{info}->{keys}->{PRIMARY}};
+   } @{$src->{info}->{keys}->{PRIMARY}};
 }
 else {
    @pk_slice = (0 .. $#cols);
@@ -285,17 +290,17 @@ else {
 # over a SELECT that was LIMIT-ed to 500 rows, read and INSERT one, and then
 # delete with a LIMIT of 500.  Only one row would be written to the file; only
 # one would be INSERT-ed at the destination.  Every DELETE must be LIMIT 1.
-$del_sql = "DELETE FROM $source->{db_tbl} WHERE "
+$del_sql = "DELETE FROM $src->{db_tbl} WHERE "
    . join(' AND ', map { "`$cols[$_]` = ?" } @pk_slice)
    . " LIMIT 1";
 
 # INSERT is all columns.  I can't think of why you'd want to archive to a
 # table with different columns than the source.
-if ( $dest ) {
+if ( $dst ) {
    $ins_sql = $opts{r} ? 'REPLACE'
             : $opts{i} ? 'INSERT IGNORE'
             :            'INSERT';
-   $ins_sql .= " INTO $dest->{db_tbl}("
+   $ins_sql .= " INTO $dst->{db_tbl}("
       . join(",", map { "`$_`" } @cols)
       . ") VALUES ("
       . join(",", map { "?" } @cols)
@@ -313,15 +318,16 @@ if ( $opts{t} ) {
 my $get_first = $dbh->prepare($first_sql);
 my $get_next  = $dbh->prepare($next_sql);
 my $del_row   = $dbh->prepare($del_sql);
-my $ins_row   = $dest->{dbh}->prepare($ins_sql) if $dest; # Different $dbh!
+my $ins_row   = $dst->{dbh}->prepare($ins_sql) if $dst; # Different $dbh!
 
 # ############################################################################
 # Start archiving.
 # ############################################################################
-my $start = time();
-my $end   = $start + ($opts{m} || 0); # When mysql-archiver should exit
-my $now   = $start;
-my $cnt   = 0;
+my $start   = time();
+my $end     = $start + ($opts{m} || 0); # When mysql-archiver should exit
+my $now     = $start;
+my $cnt     = 0;
+my $txn_cnt = 0;
 printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT') if $opts{P};
 printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt) if $opts{P};
 
@@ -330,8 +336,8 @@ $get_sth->execute;
 my $row = $get_sth->fetchrow_arrayref();
 if ( !$row ) {
    $get_sth->finish;
-   $source->{dbh}->disconnect();
-   $dest->{dbh}->disconnect() if $dest;
+   $src->{dbh}->disconnect();
+   $dst->{dbh}->disconnect() if $dst;
    exit(0);
 }
 
@@ -348,34 +354,45 @@ if ( $opts{f} ) {
    }
 }
 
+# Holds the arguments for the $sth's bind variables, so it can be re-tried
+# easily.
+my @beginning_of_txn;
+
+ROW:
 while ( $row && (!$opts{m} || $now < $end) && !-f $opts{sentinel} ) {
    my $lastrow = $row;
 
-   # Do the archiving.
+   # Do the archiving.  Write to the file first, since like the file, MyISAM
+   # and other tables cannot be rolled back etc.  If there is a problem,
+   # hopefully the data has at least made it to the file.
    if ( $file ) {
       print $file escape($row), "\n"
          or die "Cannot write to $opts{f}: $OS_ERROR\n";
    }
-   if ( $dest ) {
-      eval {
-         $ins_row->execute(@$row);
-      }; # TODO
+
+   if ( $dst ) {
+      # TODO: only retry a finite number of times.
+      next ROW unless do_with_retries( sub { $ins_row->execute(@$row) } );
    }
-   eval {
-      $del_row->execute(@{$row}[@pk_slice]);
-   }; # TODO
-# TODO look at version 5.0.13 and innodb_rollback_on_timeout
+
+   # DELETE must come after INSERT, to be as safe as possible.
+   next ROW unless do_with_retries( sub { $del_row->execute(@{$row}[@pk_slice]) } );
+
+   $now = time();
+   ++$cnt;
+   ++$txn_cnt;
 
    # Possibly flush the file and commit the insert and delete.
-   $now = time();
-   $cnt++;
    if ( $opts{z} && $cnt % $opts{z} == 0 ) {
       if ( $opts{b} && $file ) {
          $file->flush or die "Cannot flush $opts{f}: $OS_ERROR\n";
       }
-      $dest->{dbh}->commit if $dest;
-      $source->{dbh}->commit;
+      $dst->{dbh}->commit if $dst;
+      $src->{dbh}->commit;
+      $txn_cnt = 0;
    }
+
+   # Report on progress.
    if ( $opts{P} && $cnt % $opts{P} == 0 ) {
       printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
    }
@@ -385,9 +402,11 @@ while ( $row && (!$opts{m} || $now < $end) && !-f $opts{sentinel} ) {
       $row = $get_sth->fetchrow_arrayref();
    }
    if ( !$row ) {
-      $get_sth = $get_next;
+      sleep($opts{e})   if $opts{e};
+      $get_sth          = $get_next;
       $get_next->execute(@{$lastrow}[@asc_slice]);
-      $row = $get_sth->fetchrow_arrayref();
+      @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
+      $row              = $get_sth->fetchrow_arrayref();
    }
 }
 
@@ -397,8 +416,8 @@ if ( $opts{f} && $file ) {
       or die "Cannot close $opts{f}: $OS_ERROR\n";
 }
 if ( $opts{z} ) {
-   $dest->{dbh}->commit if $dest;
-   $source->{dbh}->commit;
+   $dst->{dbh}->commit if $dst;
+   $src->{dbh}->commit;
 }
 if ( $opts{P} ) {
    printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
@@ -407,6 +426,49 @@ if ( $opts{P} ) {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+
+# Repeatedly retries the code until retries runs out, a really bad error
+# happens, or it succeeds.  This sub uses lots of global variables; I only wrote
+# it to factor out some repeated code.
+sub do_with_retries {
+   my ( $code ) = @_;
+   my $retries = 1; # TODO
+   my $success = 0;
+   while ( !$success && $retries >= 0 ) {
+      eval {
+         $code->();
+         $success = 1;
+      };
+      if ( $EVAL_ERROR ) {
+         if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded|Deadlock found/ ) {
+            if (
+               $opts{z} > 1                                    # More than one row per txn
+               && $txn_cnt                                     # Not first row
+               && (!$can_retry || $EVAL_ERROR =~ m/Deadlock/)  # And it's not retry-able
+            ) {
+               # The whole txn, which is more than 1 statement, was rolled
+               # back.  Must throw away everything and start the transaction
+               # over.
+               $get_sth->finish;
+               $dst->{dbh}->rollback;
+               $src->{dbh}->rollback;
+               # I wish: $file->rollback
+               $get_sth->execute(@beginning_of_txn);
+               next ROW;
+            }
+            # else {
+            #  Only one statement had trouble, and the rest of the txn was not
+            #  rolled back.  The statement can be retried.
+            # }
+            --$retries;
+         }
+         else {
+            die;
+         }
+      }
+   }
+   return $success;
+}
 
 # Formats a row the same way SELECT INTO OUTFILE does by default.  This is
 # described in the LOAD DATA INFILE section of the MySQL manual,
@@ -487,6 +549,15 @@ sub ts {
    $year += 1900;
    return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
       $year, $mon, $mday, $hour, $min, $sec);
+}
+
+sub get_irot {
+   my ( $dbh ) = @_;
+   return 1 unless version_ge($dbh, '5.0.13');
+   my $rows = $dbh->selectall_arrayref(
+      "show variables like 'innodb_rollback_on_timeout'",
+      { Slice => {} });
+   return $rows && @$rows && $rows->[0]->{Value} ne 'OFF';
 }
 
 # ############################################################################
