@@ -48,7 +48,6 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args.
 my @opt_spec = (
-   { s => 'asccols|a=s', d => 'Comma-separated list of columns to ascend' },
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
    { s => 'file|f=s',    d => 'File to archive to' },
@@ -181,7 +180,6 @@ foreach my $table ( grep { $_ } ($source, $dest) ) {
 }
 
 # TODO: catch signals and exit gracefully (INT, TERM)
-# TODO: allow ascending multi-col indexes, let user specify column names
 # TODO: allow to specify ODKU option?
 # TODO: allow multiple destination tables, each with own ODKU/etc
 
@@ -196,26 +194,20 @@ my (@pk_slice, @asc_slice);
 my @cols = @{$source->{info}->{cols}};
 
 # Do we have an index to ascend?  Use PRIMARY if nothing specified.
-if ( $opts{a} || $source->{i} || $source->{info}->{keys}->{PRIMARY} ) {
-   my @asc_cols;
-   if ( $opts{a} ) {
-      @asc_cols = [ split(',', $opts{a}) ];
+if ( $source->{i} || $source->{info}->{keys}->{PRIMARY} ) {
+   # Make sure the lettercase is right and find the index...
+   my $ixname = $source->{i} || '';
+   if ( uc $ixname eq 'PRIMARY' || !$source->{i} ) {
+      $ixname = 'PRIMARY';
    }
    else {
-      # Make sure the lettercase is right and find the index...
-      my $ixname = $source->{i} || '';
-      if ( uc $ixname eq 'PRIMARY' || !$source->{i} ) {
-         $ixname = 'PRIMARY';
-      }
-      else {
-         ($ixname) = grep { uc $_ eq uc $source->{i} } keys %{$source->{info}->{keys}};
-      }
-
-      if ( $ixname ) {
-         $source->{i} = $ixname; # Corrects lettercase if it's wrong
-      }
-      @asc_cols = @{$source->{info}->{keys}->{$ixname}};
+      ($ixname) = grep { uc $_ eq uc $source->{i} } keys %{$source->{info}->{keys}};
    }
+
+   if ( $ixname ) {
+      $source->{i} = $ixname; # Corrects lettercase if it's wrong
+   }
+   my @asc_cols = @{$source->{info}->{keys}->{$ixname}};
 
    # We found the columns, now find their positions
    if ( @asc_cols ) {
