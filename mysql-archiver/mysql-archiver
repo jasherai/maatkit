@@ -322,13 +322,18 @@ my $start = time();
 my $end   = $start + ($opts{m} || 0); # When mysql-archiver should exit
 my $now   = $start;
 my $cnt   = 0;
-printf("%19s %7d %7d\n", 'TIME', 'ELAPSED', 'COUNT') if $opts{P};
+printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT') if $opts{P};
 printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt) if $opts{P};
 
 my $get_sth = $get_first; # Later it may be assigned $get_next
 $get_sth->execute;
 my $row = $get_sth->fetchrow_arrayref();
-exit(0) unless $row;
+if ( !$row ) {
+   $get_sth->finish;
+   $source->{dbh}->disconnect();
+   $dest->{dbh}->disconnect() if $dest;
+   exit(0);
+}
 
 # Open the file and print the header to it.
 my $file;
