@@ -198,6 +198,9 @@ foreach my $table ( grep { $_ } ($source, $dest) ) {
 # TODO: catch signals and exit gracefully (INT, TERM)
 # TODO: allow to specify ODKU option?
 # TODO: allow multiple destination tables, each with own ODKU/etc
+# TODO: wrap all in eval, retry deadlocks (find out when behavior changed)
+# TODO: analyze tables
+
 
 my $dbh = $source->{dbh};
 my $sth;
@@ -349,9 +352,14 @@ while ( $row && (!$opts{m} || $now < $end) && !-f $opts{sentinel} ) {
          or die "Cannot write to $opts{f}: $OS_ERROR\n";
    }
    if ( $dest ) {
-      $ins_row->execute(@$row);
+      eval {
+         $ins_row->execute(@$row);
+      }; # TODO
    }
-   $del_row->execute(@{$row}[@pk_slice]);
+   eval {
+      $del_row->execute(@{$row}[@pk_slice]);
+   }; # TODO
+# TODO look at version 5.0.13 and innodb_rollback_on_timeout
 
    # Possibly flush the file and commit the insert and delete.
    $now = time();
@@ -390,11 +398,6 @@ if ( $opts{z} ) {
 if ( $opts{P} ) {
    printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
 }
-
-# TODO:
-# wrap all in eval, retry deadlocks (find out when behavior changed)
-# print stats and reason for exit (time up, error, no more rows)
-# analyze tables
 
 # ############################################################################
 # Subroutines.
@@ -513,12 +516,13 @@ Example:
    --file '/var/log/archive/%Y-%m-%d-%D.%t'
 
 The file's contents are in the same format used by SELECT INTO OUTFILE, as
-documented in the MySQL manual: lines end with newlines, columns are separated
-with tabs, NULL characters are represented by \N, and special characters are
-escaped by \.
+documented in the MySQL manual: rows terminated by newlines, columns
+terminated by tabs, NULL characters are represented by \N, and special
+characters are escaped by \.  This lets you reload a file with LOAD DATA
+INFILE's default settings.
 
 If you want a column header at the top of the file, see --header.  The file is
-auto-flushed by default; to change this, see --buffer.
+auto-flushed by default; see --buffer.
 
 =item --dest
 
