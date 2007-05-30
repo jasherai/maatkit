@@ -48,6 +48,7 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args.
 my @opt_spec = (
+   { s => 'autofile=s',  d => 'Set --file to this value plus date.db.tbl' },
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
    { s => 'file|f=s',    d => 'File to archive to' },
@@ -104,6 +105,24 @@ my %conn   = (
 
 my $source = parse_dsn($opts{s});
 my $dest   = parse_dsn($opts{d}, $source) if $source && $opts{d};
+
+# Generate a filename with sprintf-like formatting codes.
+if ( $opts{autofile} && !$opts{f} && $source && $source->{D} && $source->{t} ) {
+   my @time = localtime();
+   my %fmt = (
+      d => sprintf('%02d', $time[3]),
+      H => sprintf('%02d', $time[2]),
+      i => sprintf('%02d', $time[1]),
+      m => sprintf('%02d', $time[4] + 1),
+      s => sprintf('%02d', $time[0]),
+      Y => $time[5] + 1900,
+      D => $source->{D},
+      t => $source->{t},
+   );
+   my $str = $opts{autofile};
+   $str =~ s/%([dHimsYDt])/$fmt{$1}/g;
+   $opts{f} = $str;
+}
 
 if ( !$opts{help} ) {
    if ( $opts{m} ) {
@@ -287,7 +306,7 @@ else {
 }
 
 if ( $opts{t} ) {
-   print join("\n", $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
+   print join("\n", ($opts{f} || ''), $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
    exit(0);
 }
 
@@ -474,6 +493,25 @@ sub ts {
 =head1 OPTIONS
 
 =over
+
+=item --autofile
+
+Auto-creates a filename for you, formatted similar to DATE_FORMAT().  The
+resulting filename is assigned to --file, but only if --file is not specified.
+The following subset of DATE_FORMAT() format codes are available:
+
+   %d    Day of the month, numeric (01..31)
+   %H    Hour (00..23)
+   %i    Minutes, numeric (00..59)
+   %m    Month, numeric (01..12)
+   %s    Seconds (00..59)
+   %Y    Year, numeric, four digits
+   %D    Database name
+   %t    Table name
+
+Example:
+
+   --autofile '/var/log/archive/%Y-%m-%d-%D.%t'
 
 =item --dest
 
