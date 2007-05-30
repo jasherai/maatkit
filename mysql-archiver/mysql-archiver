@@ -48,6 +48,7 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args.
 my @opt_spec = (
+   { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
    { s => 'file|f=s',    d => 'File to archive to' },
    { s => 'header|h',    d => 'Print column header at top of --file' },
@@ -57,9 +58,12 @@ my @opt_spec = (
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
    { s => 'source|s=s',  d => 'Table to archive from' },
+# TODO: sentinel
+# TODO: print progress
    { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
-   { s => 'txnsize|z=i', d => 'Transaction size, in number of rows (default 1)' },
-   { s => 'usetxn|u!',   d => 'Use transactional INSERTs and DELETEs (default yes)' },
+    # TODO
+   { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
+   { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
    { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive' },
 );
 
@@ -102,8 +106,20 @@ my $source = parse_dsn($opts{s});
 my $dest   = parse_dsn($opts{d}, $source) if $source && $opts{d};
 
 if ( !$opts{help} ) {
-   if ( !$source || !$source->{t} ) {
-      warn "Invalid --source option\n";
+   if ( $opts{m} ) {
+      if ( $opts{m} !~ m/^\d+[smhd]$/ ) {
+         warn "Invalid --time argument\n";
+         $opts{help} = 1;
+      }
+      elsif ( $opts{m} =~ m/([smhd])$/ ) {
+         $opts{m} *= $1 eq 's' ? 1        # Seconds
+                   : $1 eq 'm' ? 60       # Minutes
+                   : $1 eq 'h' ? 3600     # Hours
+                   :             86400;   # Days
+      }
+   }
+   elsif ( !$source || !$source->{t} ) {
+      warn "Invalid or missing --source argument\n";
       $opts{help} = 1;
    }
    elsif ( !($dest || $opts{f}) && !$opts{p} ) {
@@ -284,6 +300,9 @@ my $ins_row   = $dest->{dbh}->prepare($ins_sql) if $dest; # Different $dbh!
 # ############################################################################
 # Start archiving.
 # ############################################################################
+my $start   = time;
+my $end     = $start + ($opts{m} || 0);
+my $cur     = $start;
 my $get_sth = $get_first; # Later it may be assigned $get_next
 $get_sth->execute;
 my $row = $get_sth->fetchrow_arrayref();
@@ -293,24 +312,38 @@ exit(0) unless $row;
 my $file;
 if ( $opts{f} ) {
    my $need_hdr = $opts{h} && !-f $opts{f};
-   $file = IO::File->new($opts{f}, ">>") or die $OS_ERROR;
-   $file->autoflush(1);
+   $file = IO::File->new($opts{f}, ">>")
+      or die "Cannot open $opts{f}: $OS_ERROR\n";
+   $file->autoflush(1) unless $opts{b};
    if ( $need_hdr ) {
-      print $file escape(\@cols), "\n";
+      print $file escape(\@cols), "\n"
+         or die "Cannot write to $opts{f}: $OS_ERROR\n";
    }
 }
 
-while ( $row ) {
+my $cnt  = 0;
+while ( $row && (!$opts{m} || $cur < $end) ) {
    my $lastrow = $row;
+   $cur        = time;
 
    # Do the archiving.
    if ( $file ) {
-      print $file escape($row), "\n";
+      print $file escape($row), "\n"
+         or die "Cannot write to $opts{f}: $OS_ERROR\n";
    }
    if ( $dest ) {
       $ins_row->execute(@$row);
    }
    $del_row->execute(@{$row}[@pk_slice]);
+
+   # Possibly flush the file and commit the insert and delete.
+   if ( $cnt && $opts{z} && $cnt % $opts{z} == 0 ) {
+      if ( $opts{b} && $file ) {
+         $file->flush or die "Cannot flush $opts{f}: $OS_ERROR\n";
+      }
+      $dest->{dbh}->commit if $dest;
+      $source->{dbh}->commit;
+   }
 
    # Get the next row.
    if ( $get_sth->{Active} ) { # Fetch until exhausted
@@ -321,7 +354,23 @@ while ( $row ) {
       $get_next->execute(@{$lastrow}[@asc_slice]);
       $row = $get_sth->fetchrow_arrayref();
    }
+   $cnt++;
 }
+
+# Transactions might still be open, etc
+if ( $opts{f} && $file ) {
+   close $file
+      or die "Cannot close $opts{f}: $OS_ERROR\n";
+}
+if ( $opts{z} ) {
+   $dest->{dbh}->commit if $dest;
+   $source->{dbh}->commit;
+}
+
+# TODO:
+# wrap all in eval, retry deadlocks (find out when behavior changed)
+# print stats and reason for exit (time up, error, no more rows)
+# analyze tables
 
 # ############################################################################
 # Subroutines.
@@ -387,7 +436,7 @@ sub parse_dsn {
 sub get_dbh {
    my ( $info ) = @_;
    my $db_options = {
-      AutoCommit => !$opts{u},
+      AutoCommit => !$opts{z},
       RaiseError => 1,
       PrintError => 1,
    };
