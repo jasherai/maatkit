@@ -48,10 +48,9 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args.
 my @opt_spec = (
-   { s => 'autofile=s',  d => 'Set --file to this value plus date.db.tbl' },
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
-   { s => 'file|f=s',    d => 'File to archive to' },
+   { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
    { s => 'header|h',    d => 'Print column header at top of --file' },
    { s => 'help',        d => 'Show this help message' },
    { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
@@ -107,7 +106,7 @@ my $source = parse_dsn($opts{s});
 my $dest   = parse_dsn($opts{d}, $source) if $source && $opts{d};
 
 # Generate a filename with sprintf-like formatting codes.
-if ( $opts{autofile} && !$opts{f} && $source && $source->{D} && $source->{t} ) {
+if ( $opts{f} ) {
    my @time = localtime();
    my %fmt = (
       d => sprintf('%02d', $time[3]),
@@ -116,12 +115,10 @@ if ( $opts{autofile} && !$opts{f} && $source && $source->{D} && $source->{t} ) {
       m => sprintf('%02d', $time[4] + 1),
       s => sprintf('%02d', $time[0]),
       Y => $time[5] + 1900,
-      D => $source->{D},
-      t => $source->{t},
+      D => $source && $source->{D} ? $source->{D} : '',
+      t => $source && $source->{t} ? $source->{t} : '',
    );
-   my $str = $opts{autofile};
-   $str =~ s/%([dHimsYDt])/$fmt{$1}/g;
-   $opts{f} = $str;
+   $opts{f} =~ s/%([dHimsYDt])/$fmt{$1}/g;
 }
 
 if ( !$opts{help} ) {
@@ -494,11 +491,10 @@ sub ts {
 
 =over
 
-=item --autofile
+=item --file
 
-Auto-creates a filename for you, formatted similar to DATE_FORMAT().  The
-resulting filename is assigned to --file, but only if --file is not specified.
-The following subset of DATE_FORMAT() format codes are available:
+Filename to write archived rows to.  A subset of MySQL's DATE_FORMAT()
+formatting codes are allowed in the filename, as follows:
 
    %d    Day of the month, numeric (01..31)
    %H    Hour (00..23)
@@ -506,12 +502,23 @@ The following subset of DATE_FORMAT() format codes are available:
    %m    Month, numeric (01..12)
    %s    Seconds (00..59)
    %Y    Year, numeric, four digits
+
+You can use the following extra format codes too:
+
    %D    Database name
    %t    Table name
 
 Example:
 
-   --autofile '/var/log/archive/%Y-%m-%d-%D.%t'
+   --file '/var/log/archive/%Y-%m-%d-%D.%t'
+
+The file's contents are in the same format used by SELECT INTO OUTFILE, as
+documented in the MySQL manual: lines end with newlines, columns are separated
+with tabs, NULL characters are represented by \N, and special characters are
+escaped by \.
+
+If you want a column header at the top of the file, see --header.  The file is
+auto-flushed by default; to change this, see --buffer.
 
 =item --dest
 
