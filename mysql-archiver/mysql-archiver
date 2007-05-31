@@ -29,17 +29,6 @@ use Getopt::Long;
 use List::Util qw(max);
 use IO::File;
 
-# Output to a file or to STDOUT
-# Specify where to archive to (file, other DB)
-# specify table, index to use
-# specify earliest date range
-# specify how many in a chunk, whether to use txn
-# specify maximum runtime
-# Allow to ANALYZE TABLE or OPTIMIZE TABLE after or before
-# whether to print progress to output, and how often (how many rows, how many
-# secs?)
-# Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
-
 our $VERSION = '@VERSION@';
 
 # ############################################################################
@@ -202,13 +191,12 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
    $table->{info} = get_tbl_struct($table);
 }
 
-# TODO: catch signals and exit gracefully (INT, TERM)
 # TODO: allow to specify ODKU option?
 # TODO: allow multiple destination tables, each with own ODKU/etc
 # TODO: analyze tables
-# TODO: buffer results from the SELECT, and use a different $sth for the
-# DELETE?
-
+# TODO: buffer results from the SELECT, and use a different $sth for the DELETE?
+# TODO: Allow to ANALYZE TABLE or OPTIMIZE TABLE after or before
+# TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
 
 my $dbh = $src->{dbh};
 my $sth;
