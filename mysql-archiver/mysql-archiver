@@ -58,6 +58,7 @@ my @opt_spec = (
    { s => 'progress|P=i',d => 'Print progress information every X rows' },
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+   { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
    { s => 'sentinel=s',  d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
    { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
    { s => 'source|s=s',  d => 'Table to archive from' },
@@ -73,6 +74,7 @@ my %opts = (
    l        => 1,
    u        => 1,
    z        => 1,
+   R        => 1,
    sentinel => '/tmp/mysql-archiver-sentinel',
 );
 
@@ -203,7 +205,6 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
 # TODO: catch signals and exit gracefully (INT, TERM)
 # TODO: allow to specify ODKU option?
 # TODO: allow multiple destination tables, each with own ODKU/etc
-# TODO: wrap all in eval, retry deadlocks (find out when behavior changed)
 # TODO: analyze tables
 
 
@@ -328,6 +329,7 @@ my $end     = $start + ($opts{m} || 0); # When mysql-archiver should exit
 my $now     = $start;
 my $cnt     = 0;
 my $txn_cnt = 0;
+my $retries = $opts{R};
 printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT') if $opts{P};
 printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt) if $opts{P};
 
@@ -359,7 +361,7 @@ if ( $opts{f} ) {
 my @beginning_of_txn;
 
 ROW:
-while ( $row && (!$opts{m} || $now < $end) && !-f $opts{sentinel} ) {
+while ( $row && $retries >= 0 && (!$opts{m} || $now < $end) && !-f $opts{sentinel} ) {
    my $lastrow = $row;
 
    # Do the archiving.  Write to the file first, since like the file, MyISAM
@@ -371,16 +373,26 @@ while ( $row && (!$opts{m} || $now < $end) && !-f $opts{sentinel} ) {
    }
 
    if ( $dst ) {
-      # TODO: only retry a finite number of times.
-      next ROW unless do_with_retries( sub { $ins_row->execute(@$row) } );
+      if ( !do_with_retries( sub { $ins_row->execute(@$row) } ) ) {
+         # A deadlock or timeout couldn't be overcome, and I've been rolled
+         # back.
+         --$retries;
+         next ROW;
+      }
    }
 
    # DELETE must come after INSERT, to be as safe as possible.
-   next ROW unless do_with_retries( sub { $del_row->execute(@{$row}[@pk_slice]) } );
+   if ( !do_with_retries( sub { $del_row->execute(@{$row}[@pk_slice]) } ) ) {
+      # A deadlock or timeout couldn't be overcome, and I've been rolled
+      # back.
+      --$retries;
+      next ROW;
+   }
 
    $now = time();
    ++$cnt;
    ++$txn_cnt;
+   $retries = $opts{R};
 
    # Possibly flush the file and commit the insert and delete.
    if ( $opts{z} && $cnt % $opts{z} == 0 ) {
@@ -429,10 +441,12 @@ if ( $opts{P} ) {
 
 # Repeatedly retries the code until retries runs out, a really bad error
 # happens, or it succeeds.  This sub uses lots of global variables; I only wrote
-# it to factor out some repeated code.
+# it to factor out some repeated code.  If it returns false, it means it tried
+# and tried to get past a deadlock or timeout, and could not, so it threw away
+# the work done so far.
 sub do_with_retries {
    my ( $code ) = @_;
-   my $retries = 1; # TODO
+   my $retries = $opts{R};
    my $success = 0;
    while ( !$success && $retries >= 0 ) {
       eval {
