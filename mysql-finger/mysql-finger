@@ -1,0 +1,25 @@
+http://www.mysqlperformanceblog.com/2007/02/08/debugging-sleeping-connections-with-mysql/
+
+netstat -ntp | grep :port
+This only works if I'm root, otherwise it only shows me my own stuff.
+
+Sample:
+
+Active Internet connections (w/o servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name   
+tcp        0      0 192.168.0.5:57103       192.168.0.42:3306       ESTABLISHED 18046/perl          
+
+lsof -i -P
+COMMAND    PID  USER   FD   TYPE DEVICE SIZE NODE NAME
+mozilla-t 4892 baron   35u  IPv4  12386       TCP 192.168.0.229:2999->mail.cvillehosting.net:143 (ESTABLISHED)
+mozilla-t 4892 baron   36u  IPv4  12393       TCP 192.168.0.229:1528->xaprb.com:143 (ESTABLISHED)
+mozilla-t 4892 baron   38u  IPv4  12391       TCP 192.168.0.229:3274->sequent.org:143 (ESTABLISHED)
+mozilla-t 4892 baron   45u  IPv4  13485       TCP 192.168.0.229:3649->sequent.org:143 (ESTABLISHED)
+mozilla-t 4892 baron   46u  IPv4  13621       TCP 192.168.0.229:4635->mail.cvillehosting.net:143 (CLOSE_WAIT)
+ssh       5235 baron    3u  IPv4  13341       TCP 192.168.0.229:2582->keywest.rkgoffice:22 (ESTABLISHED)
+ssh       5304 baron    3u  IPv4  13499       TCP 192.168.0.229:1917->keywest.rkgoffice:22 (ESTABLISHED)
+
+ps -f -p 18461
+UID        PID  PPID  C STIME TTY          TIME CMD
+baron    18461 18456  0 09:06 pts/1    00:00:00 mysql -hfresno -uroot -p
+
