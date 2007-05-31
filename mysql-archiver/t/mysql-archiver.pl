@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 18;
+use Test::More tests => 20;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -22,8 +22,19 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 0, 'Purged ok');
 
 # Test an empty table
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `mysql --defaults-file=$opt_file -N -e "delete from test.table_1"`;
 $output = `perl ../mysql-archiver --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
 is($output, "", 'Empty table OK');
+
+# Test with a sentinel file
+`mysql --defaults-file=$opt_file < before.sql`;
+`touch sentinel`;
+$output = `perl ../mysql-archiver --sentinel sentinel --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
+is($output, "", 'No output');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
+is($output + 0, 4, 'No rows were deleted');
+`rm sentinel`;
 
 # Test ascending index (it should ascend the primary key, but there is
 # no way to really know; I just want to make sure it doesn't die)
