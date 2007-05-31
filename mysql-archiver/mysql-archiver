@@ -59,7 +59,7 @@ my @opt_spec = (
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
    { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
-   { s => 'sentinel=s',  d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
+   { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
    { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
    { s => 'source|s=s',  d => 'Table to archive from' },
    { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
@@ -71,11 +71,11 @@ my @opt_spec = (
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   l        => 1,
-   u        => 1,
-   z        => 1,
-   R        => 1,
-   sentinel => '/tmp/mysql-archiver-sentinel',
+   l => 1,
+   u => 1,
+   z => 1,
+   R => 1,
+   S => '/tmp/mysql-archiver-sentinel',
 );
 
 # Post-process...
@@ -361,7 +361,7 @@ if ( $opts{f} ) {
 my @beginning_of_txn;
 
 ROW:
-while ( $row && $retries >= 0 && (!$opts{m} || $now < $end) && !-f $opts{sentinel} ) {
+while ( $row && $retries >= 0 && (!$opts{m} || $now < $end) && !-f $opts{S} ) {
    my $lastrow = $row;
 
    # Do the archiving.  Write to the file first, since like the file, MyISAM
