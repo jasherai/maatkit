@@ -1,5 +1,7 @@
 #!/usr/bin/perl
 
+# TODO: the WHERE clauses are not correct if a column is NULL.
+
 # This is mysql-archiver, a program to archive records from one MySQL table to
 # a file and/or another table.
 #
@@ -576,7 +578,7 @@ mysql-archiver - nibble rows from a MySQL table into another table or a file.
 
 =head1 SYNOPSIS
 
- mysql-archiver --source h=oltp_server,D=test,t=tbl --dest=olap_server \
+ mysql-archiver --source h=oltp_server,D=test,t=tbl --dest h=olap_server \
     --file '/var/log/archive/%Y-%m-%d-%D.%t' --txnsize 1000
 
 =head1 DESCRIPTION
@@ -584,10 +586,10 @@ mysql-archiver - nibble rows from a MySQL table into another table or a file.
 mysql-archiver is the tool I use to archive tables as described in
 L<http://www.xaprb.com/blog/2006/05/02/how-to-write-efficient-archiving-and-purging-jobs-in-sql/>.
 The goal is a low-impact, forward-only job to nibble old data out of the table
-without impacting OLTP queries.  You can insert the data into another table,
-which need not be on the same server.  You can also write it to a file in a
-format suitable for LOAD DATA INFILE.  Or you can do neither, in which case
-it's just a slightly less efficient incremental DELETE.
+without impacting OLTP queries very much.  You can insert the data into
+another table, which need not be on the same server.  You can also write it to
+a file in a format suitable for LOAD DATA INFILE.  Or you can do neither, in
+which case it's just a slightly less efficient incremental DELETE.
 
 The strategy is to find the first row(s), then scan some index in a
 forward-only manner to find further rows efficiently.  Each subsequent query
@@ -597,6 +599,11 @@ until it finds another row that is archivable.  Specifying the index with the
 examine the generated queries and be sure to EXPLAIN them to see if they are
 efficient.
 
+If there is no PRIMARY KEY on the source table, DELETEs use every column in
+the WHERE clause.  This may not be very efficient, especially if there is a
+suitable UNIQUE index to use.  This limitation may be lifted in future
+versions.
+
 =head1 OPTIONS
 
 =over
@@ -604,15 +611,17 @@ efficient.
 =item --buffer
 
 The archive file given by --file is normally autoflushed, so every write to it
-is flushed to disk.  This option causes it to be flushed explicitly only when
-a transaction commits.
+is flushed to disk.  This option causes it to be flushed only when a
+transaction commits.  This typically means the file is block-flushed by the
+operating system, so there may be some implicit flushes to disk between
+commits as well.
 
 =item --dest
 
 This item specifies a table into which mysql-archiver will insert rows
 archived from --source.  It uses the same key=val argument format as --source.
-As a shortcut, any values not given default to the same values as --source, so
-you don't have to repeat everything.
+As a shortcut, missing values default to the same values as --source, so you
+don't have to repeat everything.
 
 =item --file
 
@@ -647,8 +656,8 @@ auto-flushed by default; see --buffer.
 =item --header
 
 Writes column names as the first line in the file given by --file.  If the
-file exists yet, does not write headers; this keeps the file loadable with
-LOAD DATA INFILE in case you append more output to it.
+file exists, does not write headers; this keeps the file loadable with LOAD
+DATA INFILE in case you append more output to it.
 
 =item --help
 
@@ -660,8 +669,11 @@ Causes INSERTs into --dest to be INSERT IGNORE.
 
 =item --limit
 
-Limits the SELECT statements that retrieve rows to archive.  Default is one
-row.
+Limits the number of rows returned by the SELECT statements that retrieve rows
+to archive.  Default is one row.  It may be more efficient to increase the
+limit, but be careful if you are archiving sparsely, skipping over many rows;
+this will place many locks on InnoDB tables, potentially causing more
+contention with other queries.
 
 =item --progress
 
