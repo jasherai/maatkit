@@ -601,6 +601,9 @@ another table, which need not be on the same server.  You can also write it to
 a file in a format suitable for LOAD DATA INFILE.  Or you can do neither, in
 which case it's just a slightly less efficient incremental DELETE.
 
+You need to choose values carefully for some options.  The most important are
+--limit, --retries, and --txnsize.
+
 The strategy is to find the first row(s), then scan some index in a
 forward-only manner to find further rows efficiently.  Each subsequent query
 should not scan the entire table; it should seek into the index, then scan
@@ -627,6 +630,9 @@ is flushed to disk.  This option causes it to be flushed only when a
 transaction commits.  This typically means the file is block-flushed by the
 operating system, so there may be some implicit flushes to disk between
 commits as well.
+
+The performance increase I have seen from using --buffer is not very
+significant; perhaps 5 to 15 percent.  Your mileage may vary.
 
 =item --dest
 
@@ -709,9 +715,11 @@ InnoDB lock wait timeout or deadlock.  If the table specified by either
 timeouts and deadlocks won't be rolled back.  Regardless, writes to --file can
 never be rolled back.
 
-At this time I have not written any code to handle such errors with
-transactional storage engines besides InnoDB.  Request that feature if you
-need it.
+The default value is 1, which means each timeout or deadlock will be retried
+once, and then mysql-archiver will exit with an error.
+
+At this time I have not written any code to handle errors with transactional
+storage engines other than InnoDB.  Request that feature if you need it.
 
 =item --sentinel
 
@@ -784,6 +792,17 @@ Specifies the size, in number of rows, of each transaction.  Default is one
 row.  Zero disables transactions altogether.  After mysql-archiver processes
 this many rows, it commits both the --source and the --dest if given, and
 flushes the file given by --file.
+
+This parameter is critical to performance.  If you are archiving from a live
+server, which for example is doing heavy OLTP work, you need to choose a good
+balance between transaction size and commit overhead.  Larger transactions
+create the possibility of more lock contention and deadlocks, but smaller
+transactions cause more frequent commit overhead, which can be significant.  To
+give an idea, on a small test set I worked with while writing mysql-archiver, a
+value of 500 caused archiving to take about 2 seconds per 1000 rows on an
+otherwise quiet MySQL instance on my desktop machine, archiving to disk and to
+another table.  Disabling transactions with a value of zero, which turns on
+autocommit, dropped performance to 38 seconds per thousand rows.
 
 =item --where
 
