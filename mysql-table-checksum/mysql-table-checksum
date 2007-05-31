@@ -283,6 +283,9 @@ if ( $opts{v} && @hosts > 1 ) {
             { host => 'HOST', sum => 'CHECKSUM', ver => 'VERSION'}, @verify_sums)
          . "\n\nYou can disable this check with --noverify.\n";
    }
+
+   # Also check @verify_vars (not @verify_sums... I almost deleted this as
+   # crap code till I noticed that it's not the same variable name).
    if ( unique(map { $_->{sum} } @verify_vars ) > 1 ) {
       # No need to die, just disable the variable optimization.
       $opts{o} = 0;
