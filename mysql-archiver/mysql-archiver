@@ -206,6 +206,8 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
 # TODO: allow to specify ODKU option?
 # TODO: allow multiple destination tables, each with own ODKU/etc
 # TODO: analyze tables
+# TODO: buffer results from the SELECT, and use a different $sth for the
+# DELETE?
 
 
 my $dbh = $src->{dbh};
@@ -580,9 +582,49 @@ sub get_irot {
 
 =pod
 
+=head1 NAME
+
+mysql-archiver - nibble rows from a MySQL table into another table or a file.
+
+=head1 SYNOPSIS
+
+ mysql-archiver --source h=oltp_server,D=test,t=tbl --dest=olap_server \
+    --file '/var/log/archive/%Y-%m-%d-%D.%t' --txnsize 1000
+
+=head1 DESCRIPTION
+
+mysql-archiver is the tool I use to archive tables as described in
+L<http://www.xaprb.com/blog/2006/05/02/how-to-write-efficient-archiving-and-purging-jobs-in-sql/>.
+The goal is a low-impact, forward-only job to nibble old data out of the table
+without impacting OLTP queries.  You can insert the data into another table,
+which need not be on the same server.  You can also write it to a file in a
+format suitable for LOAD DATA INFILE.  Or you can do neither, in which case
+it's just a slightly less efficient incremental DELETE.
+
+The strategy is to find the first row(s), then scan some index in a
+forward-only manner to find further rows efficiently.  Each subsequent query
+should not scan the entire table; it should seek into the index, then scan
+until it finds another row that is archivable.  Specifying the index with the
+'i' part of the --source argument can be crucial for this; use --test to
+examine the generated queries and be sure to EXPLAIN them to see if they are
+efficient.
+
 =head1 OPTIONS
 
 =over
+
+=item --buffer
+
+The archive file given by --file is normally autoflushed, so every write to it
+is flushed to disk.  This option causes it to be flushed explicitly only when
+a transaction commits.
+
+=item --dest
+
+This item specifies a table into which mysql-archiver will insert rows
+archived from --source.  It uses the same key=val argument format as --source.
+As a shortcut, any values not given default to the same values as --source, so
+you don't have to repeat everything.
 
 =item --file
 
@@ -614,17 +656,68 @@ INFILE's default settings.
 If you want a column header at the top of the file, see --header.  The file is
 auto-flushed by default; see --buffer.
 
-=item --dest
+=item --header
 
-This item specifies a table into which mysql-archiver will insert rows
-archived from --source.  It uses the same key=val argument format as --source.
-As a shortcut, any values not given default to the same values as --source, so
-you don't have to repeat everything.
+Writes column names as the first line in the file given by --file.  If the
+file exists yet, does not write headers; this keeps the file loadable with
+LOAD DATA INFILE in case you append more output to it.
+
+=item --help
+
+Displays a help message.
+
+=item --ignore
+
+Causes INSERTs into --dest to be INSERT IGNORE.
+
+=item --limit
+
+Limits the SELECT statements that retrieve rows to archive.  Default is one
+row.
+
+=item --progress
+
+Prints current time, elapsed time, and rows archived every X rows.
+
+=item --purge
+
+Allows archiving without a --file or --dest argument, which is effectively a
+purge since the rows are just deleted.  (Not the most efficient purge though,
+since the rows are still SELECTed and fetched).
+
+=item --replace
+
+Causes INSERTs into --dest to be written as REPLACE.
+
+=item --retries
+
+Specifies the number of times mysql-archiver should retry when there is an
+InnoDB lock wait timeout or deadlock.  If the table specified by either
+--source or --dest is not InnoDB, the results could be a little strange, since
+timeouts and deadlocks won't be rolled back.  Regardless, writes to --file can
+never be rolled back.
+
+At this time I have not written any code to handle such errors with
+transactional storage engines besides InnoDB.  Request that feature if you
+need it.
+
+=item --sentinel
+
+The presence of the file specified by --sentinel will cause mysql-archiver to
+stop archiving and exit.  The default is /tmp/mysql-archiver-sentinel.  You
+might find this handy to stop cron jobs gracefully if necessary.
+
+=item --sleep
+
+Specifies how long to sleep between SELECT statements.  Default is not to
+sleep at all.  Transactions are NOT committed, and the --file file is NOT
+flushed, before sleeping.  See --txnsize to control that.
 
 =item --source
 
 Specifies a table to archive from.  This argument is specially formatted as a
-key=value,key=value string.  Keys are a single letter, as follows:
+key=value,key=value string.  Keys are a single letter.  Most options control
+how mysql-archiver connects to MySQL:
 
    KEY MEANING
    === =======
@@ -633,18 +726,108 @@ key=value,key=value string.  Keys are a single letter, as follows:
    S   Socket file to use for connection
    u   User for login if not current user
    p   Password to use when connecting
+   F   Only read default options from the given file
+
+The following options select a table to archive:
+
+   KEY MEANING
+   === =======
    D   Database to archive
    t   Table to archive
-   F   Only read default options from the given file
-   i   Index to scan while archiving
+   i   Index to use
 
 The only required part is the table; other parts may be read from various
 places in the environment (such as options files).  Here is an example:
 
    --source h=my_server,D=my_database,t=my_tbl
 
-The --dest option uses the same format.
+The 'i' part deserves special mention.  This tells mysql-archiver which index
+it should scan to archive.  This appears in a FORCE INDEX or USE INDEX hint in
+the SELECT statements used to fetch archivable rows.  If you don't specify
+anything, mysql-archiver will try to use a PRIMARY KEY if one exists.  The
+index is also used to optimize repeated accesses to the table; mysql-archiver
+remembers the last row it retrieves from each SELECT statement, and uses it to
+construct a WHERE clause, using the columns in the specified index, that
+should allow MySQL to start the next SELECT where the last one ended, rather
+than potentially scanning from the beginning of the table with each successive
+SELECT.
+
+=item --test
+
+Causes mysql-archiver to exit after printing the filename and SQL statements
+it will use.
+
+=item --time
+
+Causes mysql-archiver to stop after the specified time has elapsed.  The
+argument can have a suffix of [smhd] indicating seconds, minutes, hours, or
+days.  The number is interpreted as seconds if there is no suffix.
+
+=item --txnsize
+
+Specifies the size, in number of rows, of each transaction.  Default is one
+row.  Zero disables transactions altogether.  After mysql-archiver processes
+this many rows, it commits both the --source and the --dest if given, and
+flushes the file given by --file.
+
+=item --where
+
+Specifies a WHERE clause to limit which rows are archived.  Do not include the
+word WHERE.  You may need to quote the argument to prevent your shell from
+interpreting it.  For example:
+
+   --where 'ts < current_date - interval 90 day'
 
 =back
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 OUTPUT
+
+If you specify --print, the output is a header row, plus status output at
+intervals.  Each row in the status output lists the current date and time, how
+many seconds mysql-archiver has been running, and how many rows it has
+archived.
+
+=head1 ACKNOWLEDGEMENTS
+
+Thanks to the following people:
+
+John Miller
+
+Special thanks to The Rimm-Kaufman Group for allowing me to rewrite and
+open-source this code, which I originally wrote there in a very different
+form.
+
+=head1 BUGS
+
+If you find bugs, need features, etc please use the bug tracker, forums, and
+mailing lists at http://sourceforge.net/projects/mysqltoolkit.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz, baron at xaprb dot com.
 
 =cut
