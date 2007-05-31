@@ -1,7 +1,5 @@
 #!/usr/bin/perl
 
-# TODO: the WHERE clauses are not correct if a column is NULL.
-
 # This is mysql-archiver, a program to archive records from one MySQL table to
 # a file and/or another table.
 #
@@ -223,21 +221,29 @@ if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
 
    if ( $ixname ) {
       $src->{i} = $ixname; # Corrects lettercase if it's wrong
-      # TODO: write tests for cases w/o ix
-   }
-   my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
+      my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
 
-   # We found the columns, now find their positions
-   if ( @asc_cols ) {
-      @asc_slice = map {
-         my $pos = 0;
-         my $col = $_;
-         foreach my $c ( @cols ) {
-            last if $c eq $col;
-            ++$pos;
-         }
-         $pos;
-      } @asc_cols;
+      # Check that each column is defined as NOT NULL.
+      my @not_null = grep { $src->{info}->{null_hash}->{$_} } @asc_cols;
+      if ( @not_null ) {
+         die "Some columns in index `$ixname` allow NULL.\n";
+      }
+
+      # We found the columns, now find their positions
+      if ( @asc_cols ) {
+         @asc_slice = map {
+            my $pos = 0;
+            my $col = $_;
+            foreach my $c ( @cols ) {
+               last if $c eq $col;
+               ++$pos;
+            }
+            $pos;
+         } @asc_cols;
+      }
+   }
+   else {
+      die "The specified index could not be found, or there is no PRIMARY key.\n";
    }
 }
 
@@ -601,10 +607,14 @@ should not scan the entire table; it should seek into the index, then scan
 until it finds another row that is archivable.  Specifying the index with the
 'i' part of the --source argument can be crucial for this; use --test to
 examine the generated queries and be sure to EXPLAIN them to see if they are
-efficient.
+efficient (most of the time you probably want to scan the PRIMARY key, which is
+the defalut).  Even better, profile mysql-archiver with mysql-query-profiler and
+make sure it is scanning only a few rows per query.
 
-The table must have a PRIMARY key.  This limitation may be removed in future
-versions.
+At the moment, there are some limitations to ease the task of working with NULLs
+and indexes.  The table must have a PRIMARY key, and any index you specify in
+--source must be composed entirely of non-NULL columns.  These restrictions may
+be removed in future versions.
 
 =head1 OPTIONS
 
@@ -746,12 +756,15 @@ places in the environment (such as options files).  Here is an example:
 The 'i' part deserves special mention.  This tells mysql-archiver which index
 it should scan to archive.  This appears in a FORCE INDEX or USE INDEX hint in
 the SELECT statements used to fetch archivable rows.  If you don't specify
-anything, mysql-archiver will try to use a PRIMARY KEY if one exists.  The
-index is also used to optimize repeated accesses to the table; mysql-archiver
+anything, mysql-archiver will try to use a PRIMARY KEY if one exists, which in
+my experience is a very good thing to do, so most of the time you can probably
+just omit this part.
+
+The index is used to optimize repeated accesses to the table; mysql-archiver
 remembers the last row it retrieves from each SELECT statement, and uses it to
-construct a WHERE clause, using the columns in the specified index, that
-should allow MySQL to start the next SELECT where the last one ended, rather
-than potentially scanning from the beginning of the table with each successive
+construct a WHERE clause, using the columns in the specified index, that should
+allow MySQL to start the next SELECT where the last one ended, rather than
+potentially scanning from the beginning of the table with each successive
 SELECT.
 
 =item --test
@@ -762,8 +775,8 @@ it will use.
 =item --time
 
 Causes mysql-archiver to stop after the specified time has elapsed.  The
-argument can have a suffix of [smhd] indicating seconds, minutes, hours, or
-days.  The number is interpreted as seconds if there is no suffix.
+argument can have a suffix of s, m, h, or d, indicating seconds, minutes, hours,
+or days.  The number is interpreted as seconds if there is no suffix.
 
 =item --txnsize
 

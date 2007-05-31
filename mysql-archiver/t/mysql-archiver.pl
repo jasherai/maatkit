@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 23;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -43,6 +43,21 @@ $output = `perl ../mysql-archiver --source D=test,t=table_3,F=$opt_file --purge 
 is($output, '', 'No output');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_3"`;
 is($output + 0, 0, 'Ascended key OK');
+
+# Test specifying a wrong index.
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver --source i=foo,D=test,t=table_3,F=$opt_file --purge 2>&1`;
+is($output, "The specified index could not be found, or there is no PRIMARY key.\n", 'Got bad-index error OK');
+
+# Test specifying a NULLable index.
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver --source i=b,D=test,t=table_1,F=$opt_file --purge 2>&1`;
+is($output, "Some columns in index `b` allow NULL.\n", 'Got NULL-index error');
+
+# Test table without a primary key
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver --source D=test,t=table_4,F=$opt_file --purge 2>&1`;
+is($output, "The source table does not have a primary key.  Cannot continue.\n", 'Got need-PK-error OK');
 
 # Test ascending index explicitly
 `mysql --defaults-file=$opt_file < before.sql`;
