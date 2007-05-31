@@ -223,6 +223,7 @@ if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
 
    if ( $ixname ) {
       $src->{i} = $ixname; # Corrects lettercase if it's wrong
+      # TODO: write tests for cases w/o ix
    }
    my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
 
@@ -275,6 +276,9 @@ if ( $src->{info}->{keys}->{PRIMARY} ) {
    } @{$src->{info}->{keys}->{PRIMARY}};
 }
 else {
+   # At this time, issues with NULLs (=null vs. IS NULL) will prevent DELETEs
+   # from working right without a PRIMARY key.
+   die "The source table does not have a primary key.  Cannot continue.\n";
    @pk_slice = (0 .. $#cols);
 }
 
@@ -599,9 +603,7 @@ until it finds another row that is archivable.  Specifying the index with the
 examine the generated queries and be sure to EXPLAIN them to see if they are
 efficient.
 
-If there is no PRIMARY KEY on the source table, DELETEs use every column in
-the WHERE clause.  This may not be very efficient, especially if there is a
-suitable UNIQUE index to use.  This limitation may be lifted in future
+The table must have a PRIMARY key.  This limitation may be removed in future
 versions.
 
 =head1 OPTIONS
