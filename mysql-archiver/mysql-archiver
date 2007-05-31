@@ -179,7 +179,7 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
    $table->{dbh}  = $dbh;
    $table->{irot} = get_irot($dbh);
 
-   $can_retry = $can_retry && $table->{irot};
+   $can_retry = $can_retry && !$table->{irot};
 
    $table->{db_tbl} =
       join('.',
@@ -379,6 +379,7 @@ while ( $row && $retries >= 0 && (!$opts{m} || $now < $end) && !-f $opts{S} ) {
          # A deadlock or timeout couldn't be overcome, and I've been rolled
          # back.
          --$retries;
+         print "I got rolled back, retries is $retries\n";
          next ROW;
       }
    }
@@ -388,6 +389,7 @@ while ( $row && $retries >= 0 && (!$opts{m} || $now < $end) && !-f $opts{S} ) {
       # A deadlock or timeout couldn't be overcome, and I've been rolled
       # back.
       --$retries;
+         print "I got rolled back in DELETE, retries is $retries\n";
       next ROW;
    }
 
@@ -470,12 +472,16 @@ sub do_with_retries {
                $src->{dbh}->rollback;
                # I wish: $file->rollback
                $get_sth->execute(@beginning_of_txn);
-               next ROW;
+               $cnt -= $txn_cnt;
+               $txn_cnt = 0;
+         print "I got deadlock, retries is $retries\n";
+               return 0;
             }
             # else {
             #  Only one statement had trouble, and the rest of the txn was not
             #  rolled back.  The statement can be retried.
             # }
+         print "I got lock wait, retries is $retries\n";
             --$retries;
          }
          else {
@@ -548,7 +554,7 @@ sub get_dbh {
    my $db_options = {
       AutoCommit => !$opts{z},
       RaiseError => 1,
-      PrintError => 1,
+      PrintError => 0,
    };
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
@@ -573,7 +579,8 @@ sub get_irot {
    my $rows = $dbh->selectall_arrayref(
       "show variables like 'innodb_rollback_on_timeout'",
       { Slice => {} });
-   return $rows && @$rows && $rows->[0]->{Value} ne 'OFF';
+   return 0 unless $rows;
+   return @$rows && $rows->[0]->{Value} ne 'OFF';
 }
 
 # ############################################################################
