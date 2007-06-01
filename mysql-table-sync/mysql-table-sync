@@ -35,6 +35,9 @@ $OUTPUT_AUTOFLUSH = 1;
 
 my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
 
+# TODO: account for difference in timestamp format between servers (can
+# SELECT CURRENT_TIMESTAMP to detect)
+
 # TODO: prompt the user if the table names differ, as a sanity check.
 # TODO: write a helper to analyze indexes and suggest a drilldown strategy.
 # TODO: CRC32 can be used for checksums.
