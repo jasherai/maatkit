@@ -19,10 +19,6 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: account for difference in timestamp format between servers (can
-# SELECT CURRENT_TIMESTAMP to detect)
-# TODO: chunking will fail if there are NULL in the chunk column.
-
 use strict;
 use warnings FATAL => 'all';
 
@@ -47,6 +43,7 @@ my @opt_spec = (
    { s => 'algorithm|a=s',     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
    { s => 'askpass',           d => 'Prompt for username and password for connections' },
    { s => 'chunkcol=s',        d => 'Explicitly specifies a column to use for chunking' },
+   # TODO: make it approximate by default, and exact optionally
    { s => 'chunksize-approx',  d => 'Allow approximate chunk sizes' },
    { s => 'chunksize|C=i',     d => 'Number of rows to checksum at a time (disallows -a CHECKSUM)' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
@@ -332,7 +329,8 @@ foreach my $database ( @databases ) {
 
       # Get the table type, and a query to generate a checksum for it.
       eval {
-         my ( $engine, $query, $chunk_col ) = checksum_query( $main_dbh, $database, $table );
+         my ( $engine, $query, $chunk_col, $chunk_null, $null_query )
+             = checksum_query( $main_dbh, $database, $table );
 
          # Skip views, and tables of the wrong engine.
          if ( $engine ne 'VIEW' && (!$opts{e} || $opts{e}->{lc($engine)}) ) {
@@ -342,6 +340,8 @@ foreach my $database ( @databases ) {
                engine    => $engine,
                query     => $query,
                chunk_col => $chunk_col,
+               chunk_null => $chunk_null,
+               null_query => $null_query,
             };
          }
 
@@ -377,7 +377,7 @@ foreach my $database ( @databases ) {
       my $chunk_size = $opts{C};
       if ( $info->{chunk_col} && $opts{C} ) {
          # Determine the range of values for the chunk_col column on this table.
-         my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col}), 0), COALESCE(MAX($info->{chunk_col}), 0) "
+         my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col} + 0), 0), COALESCE(MAX($info->{chunk_col} + 0), 0) "
             . "FROM `$info->{database}`.`$info->{table}`$opts{W}";
          eval {
             ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
@@ -386,7 +386,7 @@ foreach my $database ( @databases ) {
             print_err($EVAL_ERROR);
             next TABLE;
          }
-         if ( $opts{'chunksize-approx'} ) {
+         if ( !$opts{'chunksize-exact'} ) {
             my $expl = $main_dbh->selectrow_hashref(
                "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}`$opts{W}");
             if ( $expl && $expl->{rows} ) {
@@ -399,7 +399,8 @@ foreach my $database ( @databases ) {
       $info->{chunk_min} = $table_min;
       if ( $info->{chunk_col} && $opts{C} ) {
          $info->{chunk_max} = $info->{chunk_min} + $chunk_size - 1;
-         $info->{chunk_tot} = ceil(($table_max - $table_min)/$chunk_size);
+         $info->{chunk_tot} = min(1, ceil(($table_max - $table_min)/$chunk_size))
+                            + $info->{chunk_null} ? 1 : 0; # NULL is one chunk
       }
       else {
          $info->{chunk_max} = $table_max;
@@ -411,7 +412,7 @@ foreach my $database ( @databases ) {
          my $chunk_start_time = time;
          if ( $opts{R} ) { # We're in --replicate mode.
             eval {
-               do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
+               do_tbl_replicate($hosts[0], $info, $hdr);
             };
             if ( $EVAL_ERROR ) {
                print_err($EVAL_ERROR);
@@ -424,7 +425,7 @@ foreach my $database ( @databases ) {
             $main_dbh->do("LOCK TABLES `$database`.`$table` READ") if $opts{k};
             if ( defined $opts{w} ) {
                my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
-               @{$info_for{$table}}{keys %$master_status} = values %$master_status;
+               @{$info}{keys %$master_status} = values %$master_status;
             }
 
             my %children;
@@ -432,7 +433,7 @@ foreach my $database ( @databases ) {
                my $pid = @hosts > 1 ? fork() : undef;
                if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
                   eval {
-                     do_tbl($host, $info_for{$table}, $host eq $hosts[0], $hdr);
+                     do_tbl($host, $info, $host eq $hosts[0], $hdr);
                   };
                   if ( $EVAL_ERROR ) {
                      print_err($EVAL_ERROR);
@@ -457,8 +458,15 @@ foreach my $database ( @databases ) {
          }
 
          if ( $info->{chunk_col} && $opts{C} ) {
-            $info->{chunk_min} = $info->{chunk_max} + 1;
-            $info->{chunk_max} = $info->{chunk_max} + $chunk_size;
+            if ( $info->{chunk_null} ) {
+               # We just did the NULL chunk, so don't increment or anything.
+               # Just mark that it no longer needs to be done.
+               $info->{chunk_null} = 0;
+            }
+            else {
+               $info->{chunk_min} = $info->{chunk_max} + 1;
+               $info->{chunk_max} = $info->{chunk_max} + $chunk_size;
+            }
             $info->{chunk_cur}++;
          }
 
@@ -486,12 +494,20 @@ sub do_tbl_replicate {
    my $cnt = 'NULL';
    my $crc = 'NULL';
    my $beg = time();
+
+   # Figure out arguments to the query
+   my @arg = $info->{chunk_cur};
+   if ( $info->{chunk_col} && $opts{C} && !$info->{chunk_null} ) {
+      push @arg, @{$info}{qw(chunk_min chunk_max)};
+   }
+
+   my $sql = $info->{chunk_col} && $opts{C} && $info->{chunk_null}
+      ? add_progress_comment($info->{null_query}, $info)
+      : add_progress_comment($info->{query},      $info);
+
    $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
-   $dbh->do(
-      add_progress_comment($info->{query}, $info), {},
-      ( $info->{chunk_cur} ),
-      $info->{chunk_col} && $opts{C} ? @{$info}{qw(chunk_min chunk_max)} : ()
-   );
+   $dbh->do($sql, {}, @arg);
+
    $fetch_sth->execute(@{$info}{qw(database table chunk_cur)});
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
    $update_sth->execute($crc, $cnt, @{$info}{qw(database table chunk_cur)});
@@ -546,6 +562,7 @@ sub do_tbl {
       $end - $mid, $mid - $beg, $sta, $lag) unless $opts{q};
 }
 
+# Generates a checksum query for a given table.
 sub checksum_query {
    my ( $dbh, $db, $tbl ) = @_;
    my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$db`.`$tbl`"))[1];
@@ -565,23 +582,34 @@ sub checksum_query {
          :                                                        $name;
    }
 
-   # See if there's a column that will support chunking.  Single col only.
+   # See if there's an index that will support chunking.  It must have an integral
+   # (including temporal types) first column, and if chunksize-exact is specified,
+   # must be single column unique or primary.
    my $chunk_col = $opts{chunkcol} || '';
    if ( $opts{C} && !$chunk_col ) {
       if ( grep { $_ =~ m/AUTO_INCREMENT/ } @defs ) {
          ($chunk_col) = map { $_ =~ m/(`[^`]+`)/g } grep { $_ =~ m/AUTO_INCREMENT/ } @defs;
       }
       else {
+         # Find first column of indexes
          my @candidates;
-         if (!$opts{'chunksize-approx'}) {
+         if ($opts{'chunksize-exact'}) {
             @candidates = $ddl =~ m/(?:PRIMARY|UNIQUE) KEY .*?\((`[^`]+`)\)/g;
-         } else {
-            @candidates = $ddl =~ m/(?:PRIMARY |UNIQUE )?KEY .*?\((`[^`]+`)[^\)]*\)/g;
          }
+         else {
+            # We chunk only on the first column of multi-column indexes, so this
+            # regex extracts the first column of every index.  The optional
+            # PRIMARY or UNIQUE simply eliminates RTREE and HASH indexes, which
+            # are not usable for range queries.
+            @candidates = $ddl =~ m/^ *(?:PRIMARY|UNIQUE)? *KEY .*?\((`[^`]+`)/mg;
+         }
+
+         # Eliminate columns that are an unusable type
          @candidates = grep {
-            my $idx = $_;
-            grep { m/^  $idx (?:tiny|big|small|medium)?int/m } @defs;
+            my $col = $_;
+            grep { m/^  $col (?:(?:(?:tiny|big|small|medium)?int)|date(?:time)?|time(?:stamp)?|year)/m } @defs;
          } @candidates;
+
          if ( @candidates ) {
             $chunk_col = $candidates[0];
          }
@@ -592,6 +620,12 @@ sub checksum_query {
    my @nulls = map { $_ =~ m/(`[^`]+`)/g } grep { $_ !~ m/NOT NULL/ } @defs;
    if ( @nulls ) {
       push @tocrc, "CONCAT(" . join(', ', map { "ISNULL($_)" } @nulls) . ")";
+   }
+
+   # Is the chunk column nullable?
+   my ($chunk_null, $null_query);
+   if ( $chunk_col ) {
+      $chunk_null = grep { $_ eq $chunk_col } @nulls;
    }
 
    # Design the column checksum expression.
@@ -654,11 +688,15 @@ sub checksum_query {
    }
 
    if ( $chunk_col && $opts{C} ) {
+      if ( $chunk_null ) {
+         $null_query = $query . ($opts{W} ? ' AND ' : ' WHERE ')
+                     . "$chunk_col IS NULL";
+      }
       $query .= ($opts{W} ? ' AND ' : ' WHERE ')
              .  "$chunk_col BETWEEN ? AND ?";
    }
 
-   return ( $type, $query, $chunk_col );
+   return ( $type, $query, $chunk_col, $chunk_null, $null_query );
 }
 
 sub make_slices {
@@ -721,12 +759,19 @@ sub get_dbh {
 
 sub do_var_crc {
    my ( $dbh, $info ) = @_;
+
+   # Figure out arguments to the query
+   my @arg;
+   if ( $info->{chunk_col} && $opts{C} && !$info->{chunk_null} ) {
+      push @arg, @{$info}{qw(chunk_min chunk_max)};
+   }
+
+   my $sql = $info->{chunk_col} && $opts{C} && $info->{chunk_null}
+      ? add_progress_comment($info->{null_query}, $info)
+      : add_progress_comment($info->{query},      $info);
+
    $dbh->do('set @crc := NULL, @cnt := 0');
-   my $res = $dbh->selectall_arrayref(
-      add_progress_comment($info->{query}, $info),
-      { Slice => {} },
-      $info->{chunk_col} && $opts{C} ? ( @{$info}{qw(chunk_min chunk_max)}) : ()
-   )->[0];
+   my $res = $dbh->selectall_arrayref($sql, { Slice => {} }, @arg)->[0];
    return ($res->{cnt}, $res->{crc});
 }
 
