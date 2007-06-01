@@ -729,13 +729,16 @@ Causes INSERTs into --dest to be written as REPLACE.
 =item --retries
 
 Specifies the number of times mysql-archiver should retry when there is an
-InnoDB lock wait timeout or deadlock.  If the table specified by either
---source or --dest is not InnoDB, the results could be a little strange, since
-timeouts and deadlocks won't be rolled back.  Regardless, writes to --file can
-never be rolled back.
+InnoDB lock wait timeout or deadlock.  When retries are exhausted,
+mysql-archiver will exit with an error.
 
-The default value is 1, which means each timeout or deadlock will be retried
-once, and then mysql-archiver will exit with an error.
+Consider carefully what you want to happen when you are archiving between a
+mixture of transactional and non-transactional storage engines.  The INSERT to
+--dest and DELETE from --source are on separate connections, so they do not
+actually participate in the same transaction even if they're on the same
+server.  However, mysql-archiver implements simple distributed transactions in
+code, so commits and rollbacks should happen as desired across the two
+connections.
 
 At this time I have not written any code to handle errors with transactional
 storage engines other than InnoDB.  Request that feature if you need it.
@@ -822,6 +825,10 @@ value of 500 caused archiving to take about 2 seconds per 1000 rows on an
 otherwise quiet MySQL instance on my desktop machine, archiving to disk and to
 another table.  Disabling transactions with a value of zero, which turns on
 autocommit, dropped performance to 38 seconds per thousand rows.
+
+If you are not archiving from or to a transactional storage engine, you may
+want to disable transactions so mysql-archiver doesn't try to worry about
+committing and so forth.
 
 =item --where
 
