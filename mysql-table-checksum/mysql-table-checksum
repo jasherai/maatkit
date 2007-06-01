@@ -46,11 +46,13 @@ my @opt_spec = (
    { s => 'algorithm|a=s',     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
    { s => 'askpass',           d => 'Prompt for username and password for connections' },
    { s => 'chunkcol=s',        d => 'Explicitly specifies a column to use for chunking' },
-   { s => 'chunksize|C=s',     d => 'Number of rows to checksum at a time (disallows -a CHECKSUM)' },
+   { s => 'chunksize-approx',  d => 'Allow approximate chunk sizes' },
+   { s => 'chunksize|C=i',     d => 'Number of rows to checksum at a time (disallows -a CHECKSUM)' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'emptyrepltbl',      d => 'Empty table given by --replicate before starting' },
    { s => 'engine|e=s',        d => 'Only do this comma-separated list of storage engines' },
+   { s => 'float-precision=i', d => 'Precision for FLOAT and DOUBLE column comparisons' },
    { s => 'function|f=s',      d => 'Cryptographic hash function (SHA1, MD5...)' },
    { s => 'help',              d => 'Show this help message' },
    { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
@@ -67,6 +69,7 @@ my @opt_spec = (
    { s => 'slavelag|l',        d => 'Report how far slaves lag master' },
    { s => 'separator|s=s',     d => 'Separator for CONCAT_WS()' },
    { s => 'sleep=i',           d => 'Sleep time between checksums' },
+   { s => 'sleep-coef=f',      d => 'Sleep time as a multiple of last checksum time' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'tab|b',             d => 'Output separated with tabs' },
    { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
@@ -370,6 +373,7 @@ foreach my $database ( @databases ) {
       my $info      = $info_for{$table};
       my $table_min = 0;
       my $table_max = undef;
+      my $chunk_size = $opts{C};
       if ( $info->{chunk_col} && $opts{C} ) {
          # Determine the range of values for the chunk_col column on this table.
          my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col}), 0), COALESCE(MAX($info->{chunk_col}), 0) "
@@ -381,13 +385,20 @@ foreach my $database ( @databases ) {
             print_err($EVAL_ERROR);
             next TABLE;
          }
+         if ( $opts{'chunksize-approx'} ) {
+            my $expl = $main_dbh->selectrow_hashref(
+               "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}`$opts{W}");
+            if ( $expl && $expl->{rows} ) {
+               $chunk_size = ceil( $opts{C} * ( $table_max - $table_min ) / $expl->{rows} ) || $opts{C};
+            }
+         }
       }
 
       $info->{chunk_cur} = 1;
       $info->{chunk_min} = $table_min;
       if ( $info->{chunk_col} && $opts{C} ) {
-         $info->{chunk_max} = $info->{chunk_min} + $opts{C} -1;
-         $info->{chunk_tot} = ceil(($table_max - $table_min)/$opts{C});
+         $info->{chunk_max} = $info->{chunk_min} + $chunk_size - 1;
+         $info->{chunk_tot} = ceil(($table_max - $table_min)/$chunk_size);
       }
       else {
          $info->{chunk_max} = $table_max;
@@ -396,6 +407,7 @@ foreach my $database ( @databases ) {
 
       # Do a chunk at a time.
       do {
+         my $chunk_start_time = time;
          if ( $opts{R} ) { # We're in --replicate mode.
             eval {
                do_tbl_replicate($hosts[0], $info_for{$table}, $hdr);
@@ -445,12 +457,16 @@ foreach my $database ( @databases ) {
 
          if ( $info->{chunk_col} && $opts{C} ) {
             $info->{chunk_min} = $info->{chunk_max} + 1;
-            $info->{chunk_max} = $info->{chunk_max} + $opts{C};
+            $info->{chunk_max} = $info->{chunk_max} + $chunk_size;
             $info->{chunk_cur}++;
          }
 
          if ( $opts{sleep} ) {
             sleep($opts{sleep});
+         }
+         elsif ( $opts{'sleep-coef'} ) {
+            my $sleep_time = ceil( (time - $chunk_start_time) * $opts{'sleep-coef'} );
+            sleep($sleep_time);
          }
 
       } while ( defined $table_max && $info->{chunk_min} <= $table_max );
@@ -537,9 +553,15 @@ sub checksum_query {
    my ( $type ) = $ddl =~ m/^\) (?:ENGINE|TYPE)=(\S+)/m;
 
    # Make a list of all columns.
-   my @defs  = $ddl =~ m/^(\s+`.*)$/gm;
-   my @cols  = map { $_ =~ m/(`[^`]+`)/g } @defs;
-   my @tocrc = @cols;
+   my @defs = $ddl =~ m/^(\s+`.*)$/gm;
+   my @tocrc;
+   foreach my $def ( @defs ) {
+      my ($name, $type) = $def =~ m/(`[^`]+`)\s([a-z]+)/;
+      die "Can't parse column definition $def" unless $name;
+      push @tocrc,
+           $type =~ m/float|double/ && $opts{'float-precision'} ? "ROUND($name, $opts{'float-precision'})"
+         :                                                        $name;
+   }
 
    # See if there's a column that will support chunking.  Single col only.
    my $chunk_col = $opts{chunkcol} || '';
@@ -548,7 +570,12 @@ sub checksum_query {
          ($chunk_col) = map { $_ =~ m/(`[^`]+`)/g } grep { $_ =~ m/AUTO_INCREMENT/ } @defs;
       }
       else {
-         my @candidates = $ddl =~ m/(?:PRIMARY|UNIQUE) KEY.*?\((`[^`]+`)\)/g;
+         my @candidates;
+         if (!$opts{'chunksize-approx'}) {
+            @candidates = $ddl =~ m/(?:PRIMARY|UNIQUE) KEY .*?\((`[^`]+`)\)/g;
+         } else {
+            @candidates = $ddl =~ m/(?:PRIMARY |UNIQUE )?KEY .*?\((`[^`]+`)[^\)]*\)/g;
+         }
          @candidates = grep {
             my $idx = $_;
             grep { m/^  $idx (?:tiny|big|small|medium)?int/m } @defs;
@@ -858,6 +885,15 @@ You can override the checks for uniqueness and integer data type by specifying
 a column explicitly, but this may not do what you want.  See --chunkcol for more
 information.
 
+=item --chunksize-approx
+
+If this option is enabled, mysql-table-checksum will checksum the table in
+chunks similar to --chunksize, but the chunk sizes will be approximate, and
+may exceed the value you specify.  The chunk sizes are determined by
+estimating the number of rows and the density of the key values.  This also
+enables mysql-table-checksum to use the chunking algorithm with multi-column
+indexes, provided the first column is an integer type.
+
 =item --count
 
 Count the rows as well as taking their checksum. This is disabled by default to
@@ -890,6 +926,13 @@ related to tables that no longer exist.
 
 Only checksum tables whose storage engine is in this comma-separated list.
 You can use this to restrict the checksum to InnoDB, for example.
+
+=item --float-precision
+
+If you specify this option, FLOAT and DOUBLE columns will be rounded to the
+specified number of digits after the decimal point for the checksum.  This can
+avoid checksum mismatches due to different floating-point representations of
+the same values on different MySQL versions and hardware.
 
 =item --function
 
@@ -1017,6 +1060,12 @@ slave are due to slave lag instead of corrupt data.
 If this option is specified, mysql-table-checksum will sleep the specified
 number of seconds between checksums.  That is, it will sleep between every
 table, and if you specify --chunksize, it will also sleep between chunks.
+
+=item --sleep-coef
+
+If this option is specified, mysql-table-checksum will sleep the amount of
+time elapsed during the previous checksum, multiplied by the specified
+coefficient.  This option is ignored if --sleep is specified.
 
 =item --socket
 
