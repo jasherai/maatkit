@@ -21,6 +21,7 @@
 
 # TODO: account for difference in timestamp format between servers (can
 # SELECT CURRENT_TIMESTAMP to detect)
+# TODO: chunking will fail if there are NULL in the chunk column.
 
 use strict;
 use warnings FATAL => 'all';
@@ -560,6 +561,7 @@ sub checksum_query {
       die "Can't parse column definition $def" unless $name;
       push @tocrc,
            $type =~ m/float|double/ && $opts{'float-precision'} ? "ROUND($name, $opts{'float-precision'})"
+         : $type eq 'timestamp'                                 ? "$name + 0"
          :                                                        $name;
    }
 
