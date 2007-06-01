@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 38;
+use Test::More tests => 43;
 
 my $opt_file = shift or die "Specify an option file.\n";
 my ($output, $output2);
@@ -137,3 +137,17 @@ like($output, qr/checksum_test_3 *1 127.0.0.1 (MyISAM|InnoDB) *2/,
    'The first chunked results row is there');
 like($output, qr/checksum_test_3 *2 127.0.0.1 (MyISAM|InnoDB) *1/,
    'The second chunked results row is there');
+
+# Test chunking with a NULLable column.  There should be a chunk for the NULLs.
+$output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -t checksum_test_4 127.0.0.1 2>&1`;
+like($output, qr/^DATABASE/m, 'The header row is there');
+like($output, qr/checksum_test_4 *1 127.0.0.1 (MyISAM|InnoDB) *1/,
+   'NULL chunk got some rows');
+like($output, qr/checksum_test_4 *2 127.0.0.1 (MyISAM|InnoDB) *1/,
+   'NOT-NULL chunk got some rows');
+
+# Test chunking with a DATE column.
+$output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -t checksum_test_5 127.0.0.1 2>&1`;
+like($output, qr/^DATABASE/m, 'The header row is there');
+like($output, qr/checksum_test_5 *2/,
+   'chunking works with DATE columns');

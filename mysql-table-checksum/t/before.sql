@@ -3,6 +3,8 @@ use test;
 drop table if exists checksum_test;
 drop table if exists checksum_test_2;
 drop table if exists checksum_test_3;
+drop table if exists checksum_test_4;
+drop table if exists checksum_test_5;
 
 create table checksum_test(
    a int not null primary key,
@@ -31,6 +33,26 @@ insert into checksum_test_3 values
    (1,3,8),
    (3,238,1),
    (2,38,147);
+
+create table checksum_test_4(
+   a int,
+   b int,
+   c int not null,
+   unique key(a)
+) type=innodb;
+
+insert into checksum_test_4 values
+   (NULL,3,8),
+   (3,3,8);
+
+create table checksum_test_5(
+   a date not null primary key,
+   b int
+) type=innodb;
+
+insert into checksum_test_5 values
+   ('2000-01-01', 5),
+   ('2001-01-01', 5);
 
 drop table if exists checksum;
 
