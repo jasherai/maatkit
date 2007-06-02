@@ -43,9 +43,8 @@ my @opt_spec = (
    { s => 'algorithm|a=s',     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
    { s => 'askpass',           d => 'Prompt for username and password for connections' },
    { s => 'chunkcol=s',        d => 'Explicitly specifies a column to use for chunking' },
-   # TODO: make it approximate by default, and exact optionally
-   { s => 'chunksize-approx',  d => 'Allow approximate chunk sizes' },
    { s => 'chunksize|C=i',     d => 'Number of rows to checksum at a time (disallows -a CHECKSUM)' },
+   { s => 'chunksize-exact',   d => 'Use only exact chunk sizes and single-column UNIQUE indexes' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'emptyrepltbl',      d => 'Empty table given by --replicate before starting' },
@@ -390,6 +389,8 @@ foreach my $database ( @databases ) {
             my $expl = $main_dbh->selectrow_hashref(
                "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}`$opts{W}");
             if ( $expl && $expl->{rows} ) {
+               # $opts{C} is chunksize in rows; $chunk_size is how much to
+               # increment $chunk_min and $chunk_max each time.
                $chunk_size = ceil( $opts{C} * ( $table_max - $table_min ) / $expl->{rows} ) || $opts{C};
             }
          }
@@ -605,6 +606,7 @@ sub checksum_query {
          }
 
          # Eliminate columns that are an unusable type
+         # TODO: support all numeric and character types unless --chunksize-exact
          @candidates = grep {
             my $col = $_;
             grep { m/^  $col (?:(?:(?:tiny|big|small|medium)?int)|date(?:time)?|time(?:stamp)?|year)/m } @defs;
@@ -912,34 +914,39 @@ exists.  Be careful of using character columns, because mysql-table-checksum's
 chunking algorithm works only on numbers.  For instance, if you have a character
 column containing values 1 through 90 and you specify a chunksize of 50,
 mysql-table-checksum will checksum BETWEEN 1 AND 50, then BETWEEN 51 and 100.
-The second query will not match any rows because of character collations.
+The second query will not match any rows because 51 is stringwise greater than
+100.
 
 =item --chunksize
 
-If you specify a chunk size, mysql-table-checksum will look for an integer
-column that is a PRIMARY or UNIQUE key on each table, preferring AUTO_INCREMENT.
-The column must be the only column in the key.  If there is such a key,
-mysql-table-checksum will checksum the table in parts with a BETWEEN in the
-WHERE clause, and will do no more than the number of rows you specify in a
-single chunk.
+If you specify a chunk size, mysql-table-checksum will look for an index whose
+first colum is an integer or temporal data type.  It will estimate the number of
+rows to be checksummed and split them into ranges of approximately --chunksize
+rows, based on the table's index statistics.  It will checksum each range
+separately with a BETWEEN in the checksum query's WHERE clause.  The BETWEEN
+comparison will refer to the first column of the chosen index.
 
-If it cannot find a suitable column, it will do the entire table in one
-checksum just as though you had not specified --chunksize at all.  Each table is
-handled individually, so some tables may be chunked and others not, if it can't
-find a good column.
+If mysql-table-checksum cannot find a suitable index, it will do the entire
+table in one chunk as though you had not specified --chunksize at all.  Each
+table is handled individually, so some tables may be chunked and others not.
 
-You can override the checks for uniqueness and integer data type by specifying
-a column explicitly, but this may not do what you want.  See --chunkcol for more
-information.
+The chunks will be approximately sized, and depending on the distribution of
+values in the indexed column, some chunks may be larger than the value you
+specify.  If it is important for you to avoid this, you may be able to use
+--chunksize-exact.  Otherwise, perhaps you should just specify a smaller size,
+such as half the size you really want.
 
-=item --chunksize-approx
+You can override mysql-table-checksum's choice of column with --chunkcol.
 
-If this option is enabled, mysql-table-checksum will checksum the table in
-chunks similar to --chunksize, but the chunk sizes will be approximate, and
-may exceed the value you specify.  The chunk sizes are determined by
-estimating the number of rows and the density of the key values.  This also
-enables mysql-table-checksum to use the chunking algorithm with multi-column
-indexes, provided the first column is an integer type.
+=item --chunksize-exact
+
+If this option is given, mysql-table-checksum will checksum the table in chunks
+no larger than --chunksize.  This requires a single-column integral or date
+index.  The index must be UNIQUE or PRIMARY KEY, and mysql-table-checksum will
+prefer an AUTO_INCREMENT column if there is one.
+
+This will disable chunked checksums if the table doesn't have a suitable index.
+In this case the table will be done in one chunk.
 
 =item --count
 
