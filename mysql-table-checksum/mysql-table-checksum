@@ -547,8 +547,11 @@ sub do_tbl {
    my $mid = time();
    if ( $strat eq 'CHECKSUM' ) {
       if ( $opts{c} ) {
-         $crc = $dbh->selectall_arrayref("CHECKSUM TABLE `$info->{database}`.`$info->{table}`",
-            { Slice => {} })->[0]->{Checksum};
+         my $res = $dbh->selectrow_hashref(
+            "CHECKSUM TABLE `$info->{database}`.`$info->{table}`");
+         if ( $res ) {
+            $crc = $res->{Checksum};
+         }
       }
       if ( $opts{r} ) {
          $cnt = do_count($dbh, $info);
