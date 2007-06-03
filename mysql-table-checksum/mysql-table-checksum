@@ -1099,6 +1099,21 @@ need not be removed before running.  However, you may wish to do this anyway
 to remove rows related to tables that don't exist anymore.  The --emptyrepltbl
 option does this for you.
 
+Since mysql-table-checksum uses USE to select the table's database as its
+default database before executing the checksum query, the checksum queries
+should replicate to slaves even if --binlog-do-db settings on the master filter
+out the checksum table's database.  For more information on how --binlog-do-db
+works, see L<http://dev.mysql.com/doc/refman/5.0/en/binary-log.html>.
+
+If the slaves have any --replicate-do-X or replicate-ignore-X options, you
+should be careful not to checksum any databases or tables that exist on the
+master and not the slaves.  Changes to such tables may not normally be executed
+on the slaves because of the --replicate-X options, but the checksum queries
+change the checksum table, not the tables they checksum.  Therefore these
+queries will be executed on the slave, and if the table or database does not
+exist, they will cause replication to fail.  For more information on replication
+rules, see L<http://dev.mysql.com/doc/refman/5.0/en/replication-rules.html>.
+
 =item --separator
 
 This option controls the separator character used for CONCAT_WS() when taking
