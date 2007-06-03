@@ -3,18 +3,31 @@ view the perldoc for more details on them.
 
 Changelog:
 
-2007-05-28: version 1.1.6
+2007-06-03: version 1.1.6
+
+   Incompatible changes:
+   * The chunking functionality no longer guarantees chunks will be no larger
+     than the specified size.  Use --chunksize-exact for that.  Note that the
+     chunking functionality is still experimental and likely to change further.
 
    Changes:
+   * Chunking now works with multiple-column indexes.
    * Added --quiet option, useful for cron jobs with --replicate.
-   * Error handling for tables that are dropped during checksumming.
+   * Added --float-precision option; works around different floating-point formats.
+   * Added --sleep-coef option; sleeps a multiple of the time the last checksum took.
+   * Added error handling for tables that are dropped during checksumming.
+   * Added documentation on the finer points of --replicate-do and --binlog-do.
 
    Bugs fixed:
    * There was a race condition between listing and checksumming tables.
    * Perl's auto-vivify hashes could cause all tables to be skipped after the
      first VIEW.
    * Some DBIs did not consider ? inside a comment to be a placeholder.
+   * Systems that return nothing from CHECKSUM TABLE crashed mysql-table-checksum.
    * --askpass did not print a newline after reading password.
+   * Different TIMESTAMP display formatting could cause spurious checksum differences.
+   * Checksumming by chunks did not work when the chunk column contained NULL.
+   * --replicate did not always work correctly with binlog_do_db.
 
 2007-05-16: version 1.1.5
 
