@@ -37,6 +37,10 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
+# TODO: USE each database before querying
+# TODO: enable chunking on character columns and floating-points
+# TODO: must not treat chunks on date as numbers; deal with dates as dates
+
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
@@ -606,7 +610,6 @@ sub checksum_query {
          }
 
          # Eliminate columns that are an unusable type
-         # TODO: support all numeric and character types unless --chunksize-exact
          @candidates = grep {
             my $col = $_;
             grep { m/^  $col (?:(?:(?:tiny|big|small|medium)?int)|date(?:time)?|time(?:stamp)?|year)/m } @defs;
