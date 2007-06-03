@@ -37,7 +37,6 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-# TODO: USE each database before querying
 # TODO: enable chunking on character columns and floating-points
 # TODO: must not treat chunks on date as numbers; deal with dates as dates
 
@@ -510,6 +509,7 @@ sub do_tbl_replicate {
       ? add_progress_comment($info->{null_query}, $info)
       : add_progress_comment($info->{query},      $info);
 
+   $dbh->do("USE `$info->{database}`");
    $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
    $dbh->do($sql, {}, @arg);
 
