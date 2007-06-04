@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 24;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -112,3 +112,7 @@ COUNT
 4
 EOF
 ,'Progress output looks okay');
+
+# Test --columns
+$output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --columns=a,b --purge 2>&1`;
+like($output, qr/SELECT (?:SQL_NO_CACHE)? `a`,`b` FROM/, 'Only got specified columns');
