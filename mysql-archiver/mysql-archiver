@@ -38,6 +38,7 @@ our $VERSION = '@VERSION@';
 # Define cmdline args.
 my @opt_spec = (
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
+   { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
    { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
    { s => 'header|h',    d => 'Print column header at top of --file' },
@@ -206,7 +207,7 @@ my $sth;
 # ############################################################################
 my ($first_sql, $next_sql, $del_sql, $ins_sql);
 my (@pk_slice, @asc_slice);
-my @cols = @{$src->{info}->{cols}};
+my @cols = $opts{c} ? split(/,/, $opts{c}) : @{$src->{info}->{cols}};
 
 # Do we have an index to ascend?  Use PRIMARY if nothing specified.
 if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
@@ -234,10 +235,16 @@ if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
          @asc_slice = map {
             my $pos = 0;
             my $col = $_;
+            my $fnd = 0;
             foreach my $c ( @cols ) {
-               last if $c eq $col;
+               if ($c eq $col) {
+                  $fnd = 1;
+                  last;
+               }
                ++$pos;
             }
+            die "Cannot find ordinal position of column $col"
+               unless $fnd;
             $pos;
          } @asc_cols;
       }
@@ -250,7 +257,9 @@ if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
 $first_sql
    = 'SELECT'
    . ( version_ge($dbh, '4.0.1') ? ' SQL_NO_CACHE' : '' )
-   . " * FROM $src->{db_tbl}"
+   . ' '
+   . join(',', map {$dbh->quote_identifier($_)} @cols)
+   . " FROM $src->{db_tbl}"
    . ( $src->{i}
       ? ((version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
       : '');
@@ -274,10 +283,16 @@ if ( $src->{info}->{keys}->{PRIMARY} ) {
    @pk_slice = map {
       my $pos = 0;
       my $col = $_;
+      my $fnd = 0;
       foreach my $c ( @cols ) {
-         last if $c eq $col;
+         if ($c eq $col) {
+            $fnd = 1;
+            last;
+         }
          ++$pos;
       }
+      die "Cannot find ordinal position of column $col"
+         unless $fnd;
       $pos;
    } @{$src->{info}->{keys}->{PRIMARY}};
 }
@@ -650,8 +665,20 @@ transaction commits.  This typically means the file is block-flushed by the
 operating system, so there may be some implicit flushes to disk between
 commits as well.
 
+The danger is that a crash might cause lost data.
+
 The performance increase I have seen from using --buffer is not very
 significant; perhaps 5 to 15 percent.  Your mileage may vary.
+
+=item --columns
+
+Specify a comma-separated list of columns to fetch, write to the file, and
+insert into the destination table.  If you specify this option, mysql-archiver
+completely ignores every other column.  This can make purge jobs more
+efficient.
+
+If you specify this option, at present you need to at least specify the
+columns in the primary key and the index given in --source (if any).
 
 =item --dest
 
@@ -721,6 +748,10 @@ Prints current time, elapsed time, and rows archived every X rows.
 Allows archiving without a --file or --dest argument, which is effectively a
 purge since the rows are just deleted.  (Not the most efficient purge though,
 since the rows are still SELECTed and fetched).
+
+If you just want to purge rows, consider specifying the table's primary key
+columns with --columns.  This will prevent fetching all columns over the
+network for no reason.
 
 =item --replace
 
