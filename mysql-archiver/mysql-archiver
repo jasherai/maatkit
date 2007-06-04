@@ -56,6 +56,7 @@ my @opt_spec = (
    { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
    { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive' },
+   { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -378,7 +379,13 @@ if ( $opts{f} ) {
 my @beginning_of_txn;
 
 ROW:
-while ( $row && $retries >= 0 && (!$opts{m} || $now < $end) && !-f $opts{S} ) {
+while (                          # Quit if:
+   $row                          # There is no data
+   && $retries >= 0              # or retries are exceeded
+   && (!$opts{m} || $now < $end) # or time is exceeded
+   && !-f $opts{S}               # or the sentinel is set
+   )
+{
    my $lastrow = $row;
 
    # Do the archiving.  Write to the file first, since like the file, MyISAM
@@ -392,6 +399,7 @@ while ( $row && $retries >= 0 && (!$opts{m} || $now < $end) && !-f $opts{S} ) {
    if ( $dst ) {
       my $success = do_with_retries( 'inserting', sub { $ins_row->execute(@$row) } );
       if ( $success == 0 ) {
+         $retries = -1;
          last ROW;
       }
       elsif ( $success == -1 ) {
@@ -403,6 +411,7 @@ while ( $row && $retries >= 0 && (!$opts{m} || $now < $end) && !-f $opts{S} ) {
    # DELETE must come after INSERT, to be as safe as possible.
    my $success = do_with_retries( 'deleting', sub { $del_row->execute(@{$row}[@pk_slice]) } );
    if ( $success == 0 ) {
+      $retries = -1;
       last ROW;
    }
    elsif ( $success == -1 ) {
@@ -454,6 +463,19 @@ if ( $opts{z} ) {
 }
 if ( $opts{P} ) {
    printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
+}
+
+# Optionally print the reason for exiting
+if ( $opts{q} ) {
+   if ( $retries < 0 ) {
+      print "Exiting because retries exceeded.\n";
+   }
+   elsif ( $opts{m} && $now >= $end ) {
+      print "Exiting because time exceeded.\n";
+   }
+   elsif ( -f $opts{S} ) {
+      print "Exiting because sentinel set.\n";
+   }
 }
 
 # ############################################################################
@@ -868,6 +890,13 @@ word WHERE.  You may need to quote the argument to prevent your shell from
 interpreting it.  For example:
 
    --where 'ts < current_date - interval 90 day'
+
+=item --whyquit
+
+If this option is given, mysql-archiver will print a message if it exits for
+any reason other than running out of rows to archive.  This can be useful if
+you have a cron job with --time specified, for example, and you want to be
+sure mysql-archiver is finishing before running out of time.
 
 =back
 
