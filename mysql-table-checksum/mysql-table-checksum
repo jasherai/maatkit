@@ -39,6 +39,8 @@ $OUTPUT_AUTOFLUSH = 1;
 
 # TODO: enable chunking on character columns and floating-points
 # TODO: must not treat chunks on date as numbers; deal with dates as dates
+# TODO: add --ignorecol
+# TODO: add --ignoretype
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
