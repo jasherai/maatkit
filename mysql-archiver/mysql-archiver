@@ -120,11 +120,11 @@ if ( !$opts{help} ) {
          warn "Invalid --time argument\n";
          $opts{help} = 1;
       }
-      elsif ( $opts{m} =~ m/([smhd])$/ ) {
-         $opts{m} *= $1 eq 's' ? 1        # Seconds
-                   : $1 eq 'm' ? 60       # Minutes
-                   : $1 eq 'h' ? 3600     # Hours
-                   :             86400;   # Days
+      elsif ( $opts{m} =~ m/(\d+)([smhd])$/ ) {
+         $opts{m} = $2 eq 's' ? $1            # Seconds
+                  : $2 eq 'm' ? $1 * 60       # Minutes
+                  : $2 eq 'h' ? $1 * 3600     # Hours
+                  :             $1 * 86400;   # Days
       }
    }
    elsif ( !$src || !$src->{t} ) {
