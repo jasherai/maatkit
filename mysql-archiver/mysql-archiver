@@ -38,6 +38,7 @@ our $VERSION = '@VERSION@';
 # Define cmdline args.
 my @opt_spec = (
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
+   { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
    { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
    { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
@@ -62,6 +63,7 @@ my @opt_spec = (
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
+   C => 1,
    l => 1,
    u => 1,
    z => 1,
@@ -162,9 +164,9 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-mysql-archiver nibbles records from a single table.  Connection options are
-read from MySQL option files.  The --source and --dest arguments require a
-special format.  For more details, please read the documentation:
+mysql-archiver nibbles records from a MySQL table.  The --source and --dest
+arguments require a special format.  For more details, please read the
+documentation:
 
    perldoc mysql-archiver
 
@@ -193,6 +195,25 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
    $table->{info} = get_tbl_struct($table);
 }
 
+if ( $dst && $opts{C} ) {
+   my @not_in_src = grep {
+      !exists $src->{info}->{col_hash}->{$_}
+   } @{$dst->{info}->{cols}};
+   if ( @not_in_src ) {
+      die "The following columns exist in --dest but not --source: "
+         . join(', ', @not_in_src)
+         . "\n";
+   }
+   my @not_in_dst = grep {
+      !exists $dst->{info}->{col_hash}->{$_}
+   } @{$src->{info}->{cols}};
+   if ( @not_in_dst ) {
+      die "The following columns exist in --source but not --dest: "
+         . join(', ', @not_in_dst)
+         . "\n";
+   }
+}
+
 # TODO: ease the restrictions about primary keys and nullable columns.
 # TODO: allow to specify ODKU option?
 # TODO: allow multiple destination tables, each with own ODKU/etc
@@ -202,6 +223,8 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
 # TODO: support DELETE [LOW_PRIORITY] [QUICK]
 # TODO: support INSERT DELAYED
 # TODO: support SELECT HIGH_PRIORITY
+# TODO: support selecting count(*) first and saying how many approximately will be done
+# TODO: optionally die if src/dst have different columns.
 
 my $dbh = $src->{dbh};
 my $sth;
@@ -680,6 +703,9 @@ be removed in future versions.
 
 =head1 OPTIONS
 
+Some options are negatable by specifying them in their long form with a --no
+prefix.
+
 =over
 
 =item --buffer
@@ -694,6 +720,14 @@ The danger is that a crash might cause lost data.
 
 The performance increase I have seen from using --buffer is around 5 to 15
 percent.  Your mileage may vary.
+
+=item --chkcols
+
+This option is enabled by default.  It checks that the source and destination
+tables have the same columns.  It does not check column order, data type, etc.
+It just checks that all columns in the source exist in the destination and
+vice versa.  If there are any differences, mysql-archiver will exit with an
+error.
 
 =item --columns
 
