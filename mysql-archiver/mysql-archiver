@@ -352,7 +352,7 @@ $del_sql = "DELETE FROM $src->{db_tbl} WHERE "
 if ( $dst ) {
    $ins_sql = $opts{r} ? 'REPLACE'
             : $opts{i} ? 'INSERT IGNORE'
-            :            'INSERT';
+            :            'INSERT'; # TODO DELAYED
    $ins_sql .= " INTO $dst->{db_tbl}("
       . join(",", map { "`$_`" } @cols)
       . ") VALUES ("
