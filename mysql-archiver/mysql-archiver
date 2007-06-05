@@ -47,6 +47,7 @@ my @opt_spec = (
    { s => 'help',        d => 'Show this help message' },
    { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
    { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
+   { s => 'pkonly|k',    d => 'Primary key columns only' },
    { s => 'progress|P=i',d => 'Print progress information every X rows' },
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
@@ -227,7 +228,6 @@ if ( $dst && $opts{C} ) {
 # TODO: support SELECT HIGH_PRIORITY
 # TODO: support selecting count(*) first and saying how many approximately will be done
 # TODO: optionally die if src/dst have different columns.
-# TODO: add a --pkonly shortcut for --columns
 
 my $dbh = $src->{dbh};
 my $sth;
@@ -237,7 +237,9 @@ my $sth;
 # ############################################################################
 my ($first_sql, $next_sql, $del_sql, $ins_sql);
 my (@pk_slice, @asc_slice);
-my @cols = $opts{c} ? split(/,/, $opts{c}) : @{$src->{info}->{cols}};
+my @cols = $opts{c} ? split(/,/, $opts{c})               # Explicitly specified columns
+         : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}} # PK only
+         :            @{$src->{info}->{cols}};           # All columns
 
 # Do we have an index to ascend?  Use PRIMARY if nothing specified.
 if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
@@ -736,11 +738,12 @@ error.
 
 Specify a comma-separated list of columns to fetch, write to the file, and
 insert into the destination table.  If you specify this option, mysql-archiver
-completely ignores every other column.  This can make purge jobs more
-efficient.
+completely ignores every other column.
 
 If you specify this option, at present you need to at least specify the
 columns in the primary key and the index given in --source (if any).
+
+See also --pkonly.
 
 =item --dest
 
@@ -801,6 +804,11 @@ limit, but be careful if you are archiving sparsely, skipping over many rows;
 this will place many locks on InnoDB tables, potentially causing more
 contention with other queries.
 
+=item --pkonly
+
+This option is a shortcut for specifying --columns with the primary key
+columns.
+
 =item --progress
 
 Prints current time, elapsed time, and rows archived every X rows.
@@ -811,7 +819,7 @@ Allows archiving without a --file or --dest argument, which is effectively a
 purge since the rows are just deleted.
 
 If you just want to purge rows, consider specifying the table's primary key
-columns with --columns.  This will prevent fetching all columns over the
+columns with --pkonly.  This will prevent fetching all columns over the
 network for no reason.
 
 =item --replace
