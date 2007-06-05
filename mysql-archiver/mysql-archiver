@@ -3,8 +3,8 @@
 # This is mysql-archiver, a program to archive records from one MySQL table to
 # a file and/or another table.
 #
-# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
-# Feedback and improvements are welcome.
+# This program is copyright (c) 2007 Baron Schwartz.  Feedback and
+# improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -640,7 +640,7 @@ sub get_irot {
 
 =head1 NAME
 
-mysql-archiver - nibble rows from a MySQL table into another table or a file.
+mysql-archiver - archive rows from a MySQL table into another table or a file.
 
 =head1 SYNOPSIS
 
@@ -652,23 +652,23 @@ mysql-archiver - nibble rows from a MySQL table into another table or a file.
 mysql-archiver is the tool I use to archive tables as described in
 L<http://www.xaprb.com/blog/2006/05/02/how-to-write-efficient-archiving-and-purging-jobs-in-sql/>.
 The goal is a low-impact, forward-only job to nibble old data out of the table
-without impacting OLTP queries very much.  You can insert the data into
-another table, which need not be on the same server.  You can also write it to
-a file in a format suitable for LOAD DATA INFILE.  Or you can do neither, in
-which case it's just a slightly less efficient incremental DELETE.
+without impacting OLTP queries much.  You can insert the data into another
+table, which need not be on the same server.  You can also write it to a file
+in a format suitable for LOAD DATA INFILE.  Or you can do neither, in which
+case it's just a slightly less efficient incremental DELETE.
 
 You need to choose values carefully for some options.  The most important are
 --limit, --retries, and --txnsize.
 
-The strategy is to find the first row(s), then scan some index in a
-forward-only manner to find further rows efficiently.  Each subsequent query
-should not scan the entire table; it should seek into the index, then scan
-until it finds another row that is archivable.  Specifying the index with the
-'i' part of the --source argument can be crucial for this; use --test to
-examine the generated queries and be sure to EXPLAIN them to see if they are
-efficient (most of the time you probably want to scan the PRIMARY key, which is
-the defalut).  Even better, profile mysql-archiver with mysql-query-profiler and
-make sure it is scanning only a few rows per query.
+The strategy is to find the first row(s), then scan some index forward-only to
+find more rows efficiently.  Each subsequent query should not scan the entire
+table; it should seek into the index, then scan until it finds more archivable
+rows.  Specifying the index with the 'i' part of the --source argument can be
+crucial for this; use --test to examine the generated queries and be sure to
+EXPLAIN them to see if they are efficient (most of the time you probably want
+to scan the PRIMARY key, which is the default).  Even better, profile
+mysql-archiver with mysql-query-profiler and make sure it is not scanning the
+whole table every query.
 
 At the moment, there are some limitations to ease the task of working with NULLs
 and indexes.  The table must have a PRIMARY key, and any index you specify in
@@ -689,8 +689,8 @@ commits as well.
 
 The danger is that a crash might cause lost data.
 
-The performance increase I have seen from using --buffer is not very
-significant; perhaps 5 to 15 percent.  Your mileage may vary.
+The performance increase I have seen from using --buffer is around 5 to 15
+percent.  Your mileage may vary.
 
 =item --columns
 
@@ -706,8 +706,8 @@ columns in the primary key and the index given in --source (if any).
 
 This item specifies a table into which mysql-archiver will insert rows
 archived from --source.  It uses the same key=val argument format as --source.
-As a shortcut, missing values default to the same values as --source, so you
-don't have to repeat everything.
+Missing values default to the same values as --source, so you don't have to
+repeat options that are the same in --source and --dest.
 
 =item --file
 
@@ -768,8 +768,7 @@ Prints current time, elapsed time, and rows archived every X rows.
 =item --purge
 
 Allows archiving without a --file or --dest argument, which is effectively a
-purge since the rows are just deleted.  (Not the most efficient purge though,
-since the rows are still SELECTed and fetched).
+purge since the rows are just deleted.
 
 If you just want to purge rows, consider specifying the table's primary key
 columns with --columns.  This will prevent fetching all columns over the
@@ -839,9 +838,9 @@ places in the environment (such as options files).  Here is an example:
 The 'i' part deserves special mention.  This tells mysql-archiver which index
 it should scan to archive.  This appears in a FORCE INDEX or USE INDEX hint in
 the SELECT statements used to fetch archivable rows.  If you don't specify
-anything, mysql-archiver will try to use a PRIMARY KEY if one exists, which in
-my experience is a very good thing to do, so most of the time you can probably
-just omit this part.
+anything, mysql-archiver will try to use a PRIMARY KEY if one exists.  In my
+experience this usually works well, so most of the time you can probably just
+omit the 'i' part.
 
 The index is used to optimize repeated accesses to the table; mysql-archiver
 remembers the last row it retrieves from each SELECT statement, and uses it to
@@ -912,16 +911,6 @@ intervals.  Each row in the status output lists the current date and time, how
 many seconds mysql-archiver has been running, and how many rows it has
 archived.
 
-=head1 ACKNOWLEDGEMENTS
-
-Thanks to the following people:
-
-John Miller
-
-Special thanks to The Rimm-Kaufman Group for allowing me to rewrite and
-open-source this code, which I originally wrote there in a very different
-form.
-
 =head1 BUGS
 
 If you find bugs, need features, etc please use the bug tracker, forums, and
@@ -929,8 +918,8 @@ mailing lists at http://sourceforge.net/projects/mysqltoolkit.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright (c) 2007 Baron Schwartz.
-Feedback and improvements are welcome.
+This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
+are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -948,6 +937,6 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz, baron at xaprb dot com.
+Baron Schwartz
 
 =cut
