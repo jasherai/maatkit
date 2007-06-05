@@ -30,6 +30,7 @@ use List::Util qw(sum max);
 use POSIX qw(ceil);
 
 our $VERSION = '@VERSION@';
+# $Revision$
 
 $OUTPUT_AUTOFLUSH = 1;
 

@@ -28,6 +28,7 @@ use Getopt::Long;
 use List::Util qw(max);
 
 our $VERSION = '@VERSION@';
+# $Revision$
 
 $OUTPUT_AUTOFLUSH = 1;
 

@@ -30,6 +30,7 @@ use POSIX qw(ceil);
 use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
+# $Revision$
 
 $OUTPUT_AUTOFLUSH = 1;
 

@@ -30,6 +30,7 @@ use List::Util qw(max);
 use Socket qw(inet_aton);
 
 our $VERSION = '@VERSION@';
+# $Revision$
 
 # ############################################################################
 # Get configuration information.
