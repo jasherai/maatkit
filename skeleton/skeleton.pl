@@ -30,6 +30,7 @@ use Getopt::Long;
 # Make the file's Perl version the same as its CVS revision number.
 # our $VERSION = sprintf "%d.%03d", q$Revision$ =~ /(\d+)/g;
 our $VERSION = '@VERSION@';
+# $Revision$
 
 # ############################################################################
 # Get configuration information.

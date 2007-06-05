@@ -28,6 +28,7 @@ use Getopt::Long;
 use List::Util qw(min max);
 
 our $VERSION = '@VERSION@';
+# $Revision$
 
 # ############################################################################
 # Get configuration information.

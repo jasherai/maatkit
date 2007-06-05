@@ -29,6 +29,7 @@ use Time::HiRes qw(time);
 use List::Util qw(sum min max first);
 
 our $VERSION = '@VERSION@';
+# $Revision$
 
 $OUTPUT_AUTOFLUSH = 1;
 
