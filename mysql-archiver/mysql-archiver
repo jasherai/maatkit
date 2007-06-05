@@ -30,6 +30,7 @@ use List::Util qw(max);
 use IO::File;
 
 our $VERSION = '@VERSION@';
+# $Revision$
 
 # ############################################################################
 # Get configuration information.
