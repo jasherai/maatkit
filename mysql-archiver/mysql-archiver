@@ -199,6 +199,9 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
 # TODO: buffer results from the SELECT, and use a different $sth for the DELETE?
 # TODO: Allow to ANALYZE TABLE or OPTIMIZE TABLE after or before
 # TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
+# TODO: support DELETE [LOW_PRIORITY] [QUICK]
+# TODO: support INSERT DELAYED
+# TODO: support SELECT HIGH_PRIORITY
 
 my $dbh = $src->{dbh};
 my $sth;
