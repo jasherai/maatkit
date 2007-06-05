@@ -15,13 +15,13 @@ my $output;
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 4, 'Test data loaded ok');
 
-# Test --quick
-$output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --quick --purge 2>&1`;
-like($output, qr/DELETE QUICK/, 'quick works');
+# Test --quickdel
+$output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --quickdel --purge 2>&1`;
+like($output, qr/DELETE QUICK/, 'quickdel works');
 
-# Test --lowpriority
-$output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --lowpriority --purge 2>&1`;
-like($output, qr/DELETE LOW_PRIORITY/, 'lowpriority works');
+# Test --lpdel
+$output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --lpdel --purge 2>&1`;
+like($output, qr/DELETE LOW_PRIORITY/, 'lpdel works');
 
 # Test basic functionality with defaults
 $output = `perl ../mysql-archiver --source D=test,t=table_1,F=$opt_file --purge 2>&1`;

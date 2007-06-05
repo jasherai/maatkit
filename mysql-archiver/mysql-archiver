@@ -42,16 +42,17 @@ my @opt_spec = (
    { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
    { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
+   # { s => 'delayed',     d => 'Add the DELAYED modifier to INSERT statements' },
    { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
    { s => 'header|h',    d => 'Print column header at top of --file' },
    { s => 'help',        d => 'Show this help message' },
    { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
    { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
-   { s => 'lowpriority', d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
+   { s => 'lpdel',       d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
    { s => 'pkonly|k',    d => 'Primary key columns only' },
    { s => 'progress|P=i',d => 'Print progress information every X rows' },
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
-   { s => 'quick',       d => 'Add the QUICK modifier to DELETE statements' },
+   { s => 'quickdel',    d => 'Add the QUICK modifier to DELETE statements' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
    { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
    { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
@@ -346,8 +347,8 @@ else {
 # delete with a LIMIT of 500.  Only one row would be written to the file; only
 # one would be INSERT-ed at the destination.  Every DELETE must be LIMIT 1.
 $del_sql = 'DELETE'
-   . ($opts{lowpriority} ? ' LOW_PRIORITY' : '')
-   . ($opts{quick}       ? ' QUICK'        : '')
+   . ($opts{lpdel}    ? ' LOW_PRIORITY' : '')
+   . ($opts{quickdel} ? ' QUICK'        : '')
    . " FROM $src->{db_tbl} WHERE "
    . join(' AND ', map { "`$cols[$_]` = ?" } @pk_slice)
    . " LIMIT 1";
@@ -812,7 +813,7 @@ limit, but be careful if you are archiving sparsely, skipping over many rows;
 this will place many locks on InnoDB tables, potentially causing more
 contention with other queries.
 
-=item --lowpriority
+=item --lpdel
 
 This option adds the LOW_PRIORITY modifier to DELETE statements.  See
 L<http://dev.mysql.com/doc/en/delete.html> for more details.
@@ -835,7 +836,7 @@ If you just want to purge rows, consider specifying the table's primary key
 columns with --pkonly.  This will prevent fetching all columns over the
 network for no reason.
 
-=item --quick
+=item --quickdel
 
 This option adds the QUICK modifier to DELETE statements.  See
 L<http://dev.mysql.com/doc/en/delete.html> for more details.
