@@ -215,6 +215,7 @@ if ( $dst && $opts{C} ) {
    }
 }
 
+# TODO: don't allow -i and -r together.
 # TODO: ease the restrictions about primary keys and nullable columns.
 # TODO: allow to specify ODKU option?
 # TODO: allow multiple destination tables, each with own ODKU/etc
@@ -226,6 +227,7 @@ if ( $dst && $opts{C} ) {
 # TODO: support SELECT HIGH_PRIORITY
 # TODO: support selecting count(*) first and saying how many approximately will be done
 # TODO: optionally die if src/dst have different columns.
+# TODO: add a --pkonly shortcut for --columns
 
 my $dbh = $src->{dbh};
 my $sth;
