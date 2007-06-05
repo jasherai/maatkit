@@ -47,9 +47,11 @@ my @opt_spec = (
    { s => 'help',        d => 'Show this help message' },
    { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
    { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
+   { s => 'lowpriority', d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
    { s => 'pkonly|k',    d => 'Primary key columns only' },
    { s => 'progress|P=i',d => 'Print progress information every X rows' },
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
+   { s => 'quick',       d => 'Add the QUICK modifier to DELETE statements' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
    { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
    { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
@@ -221,12 +223,12 @@ if ( $dst && $opts{C} ) {
 }
 
 # TODO: ease the restrictions about primary keys and nullable columns.
+# TODO: support batched inserts
 # TODO: allow to specify ODKU option?
 # TODO: allow multiple destination tables, each with own ODKU/etc
 # TODO: buffer results from the SELECT, and use a different $sth for the DELETE?
 # TODO: Allow to ANALYZE TABLE or OPTIMIZE TABLE after or before
 # TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
-# TODO: support DELETE [LOW_PRIORITY] [QUICK]
 # TODO: support INSERT DELAYED
 # TODO: support SELECT HIGH_PRIORITY
 # TODO: support SELECT FOR UPDATE or SELECT LOCK IN SHARE MODE
@@ -343,7 +345,10 @@ else {
 # over a SELECT that was LIMIT-ed to 500 rows, read and INSERT one, and then
 # delete with a LIMIT of 500.  Only one row would be written to the file; only
 # one would be INSERT-ed at the destination.  Every DELETE must be LIMIT 1.
-$del_sql = "DELETE FROM $src->{db_tbl} WHERE "
+$del_sql = 'DELETE'
+   . ($opts{lowpriority} ? ' LOW_PRIORITY' : '')
+   . ($opts{quick}       ? ' QUICK'        : '')
+   . " FROM $src->{db_tbl} WHERE "
    . join(' AND ', map { "`$cols[$_]` = ?" } @pk_slice)
    . " LIMIT 1";
 
@@ -352,7 +357,7 @@ $del_sql = "DELETE FROM $src->{db_tbl} WHERE "
 if ( $dst ) {
    $ins_sql = $opts{r} ? 'REPLACE'
             : $opts{i} ? 'INSERT IGNORE'
-            :            'INSERT'; # TODO DELAYED
+            :            'INSERT';
    $ins_sql .= " INTO $dst->{db_tbl}("
       . join(",", map { "`$_`" } @cols)
       . ") VALUES ("
@@ -807,6 +812,11 @@ limit, but be careful if you are archiving sparsely, skipping over many rows;
 this will place many locks on InnoDB tables, potentially causing more
 contention with other queries.
 
+=item --lowpriority
+
+This option adds the LOW_PRIORITY modifier to DELETE statements.  See
+L<http://dev.mysql.com/doc/en/delete.html> for more details.
+
 =item --pkonly
 
 This option is a shortcut for specifying --columns with the primary key
@@ -824,6 +834,11 @@ purge since the rows are just deleted.
 If you just want to purge rows, consider specifying the table's primary key
 columns with --pkonly.  This will prevent fetching all columns over the
 network for no reason.
+
+=item --quick
+
+This option adds the QUICK modifier to DELETE statements.  See
+L<http://dev.mysql.com/doc/en/delete.html> for more details.
 
 =item --replace
 
