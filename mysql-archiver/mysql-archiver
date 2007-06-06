@@ -346,7 +346,9 @@ if ( @asc_slice ) {
          push @clause, "`$cols[$j]` = ?";
          push @new_asc_slice, $j;
       }
-      push @clause, "`$cols[$i]` >= ?";
+      # Only the very last clause should be >=, all others strictly >
+      my $op = ($i == $#asc_slice) ? '>=' : '>';
+      push @clause, "`$cols[$i]` $op ?";
       push @new_asc_slice, $i;
       push @clauses, '(' . join(' AND ', @clause) . ')';
    }
@@ -821,10 +823,10 @@ that this could actually be less efficient.  Consider for example a four-column
 PRIMARY KEY on (a, b, c, d).  The WHERE clause to start where the last query
 ended is as follows:
 
-   WHERE (a >= ?)
-      OR (a  = ? AND b >= ?)
-      OR (a  = ? AND b  = ? AND c >= ?)
-      OR (a  = ? AND b  = ? AND c  = ? AND d >= ?)
+   WHERE (a > ?)
+      OR (a = ? AND b > ?)
+      OR (a = ? AND b = ? AND c > ?)
+      OR (a = ? AND b = ? AND c = ? AND d >= ?)
 
 Populating the placeholders with values uses memory and CPU, adds network
 traffic and parsing overhead, and may make the query harder for MySQL to
