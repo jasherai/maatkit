@@ -46,6 +46,7 @@ my @opt_spec = (
    { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
    { s => 'header|h',    d => 'Print column header at top of --file' },
    { s => 'help',        d => 'Show this help message' },
+   { s => 'hpselect',    d => 'Adds the HIGH_PRIORITY modifier to SELECT statements' },
    { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
    { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
    { s => 'lpdel',       d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
@@ -235,7 +236,6 @@ if ( $dst && $opts{C} ) {
 # TODO: buffer results from the SELECT, and use a different $sth for the DELETE?
 # TODO: Allow to ANALYZE TABLE or OPTIMIZE TABLE after or before
 # TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
-# TODO: support INSERT DELAYED
 # TODO: support SELECT HIGH_PRIORITY
 # TODO: support SELECT FOR UPDATE or SELECT LOCK IN SHARE MODE
 # TODO: support selecting count(*) first and saying how many approximately will be done
@@ -299,7 +299,8 @@ if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
 
 $first_sql
    = 'SELECT'
-   . ( version_ge($dbh, '4.0.1') ? ' SQL_NO_CACHE' : '' )
+   . ( $opts{hpselect}           ? ' HIGH_PRIORITY' : '' )
+   . ( version_ge($dbh, '4.0.1') ? ' SQL_NO_CACHE'  : '' )
    . ' '
    . join(',', map {$dbh->quote_identifier($_)} @cols)
    . " FROM $src->{db_tbl}"
@@ -762,7 +763,7 @@ See also --pkonly.
 =item --delayedins
 
 Adds the DELAYED modifier to INSERT or REPLACE statements.  See
-L<http://dev.mysql.com/doc/en/insert.html> for more details.
+L<http://dev.mysql.com/doc/en/insert.html> for details.
 
 =item --dest
 
@@ -811,6 +812,11 @@ DATA INFILE in case you append more output to it.
 
 Displays a help message.
 
+=item --hpselect
+
+Adds the HIGH_PRIORITY modifier to SELECT statements.  See
+L<http://dev.mysql.com/doc/en/select.html> for details.
+
 =item --ignore
 
 Causes INSERTs into --dest to be INSERT IGNORE.
@@ -826,12 +832,12 @@ contention with other queries.
 =item --lpdel
 
 Adds the LOW_PRIORITY modifier to DELETE statements.  See
-L<http://dev.mysql.com/doc/en/delete.html> for more details.
+L<http://dev.mysql.com/doc/en/delete.html> for details.
 
 =item --lpins
 
 Adds the LOW_PRIORITY modifier to INSERT or REPLACE statements.  See
-L<http://dev.mysql.com/doc/en/insert.html> for more details.
+L<http://dev.mysql.com/doc/en/insert.html> for details.
 
 =item --pkonly
 
@@ -853,7 +859,7 @@ network for no reason.
 =item --quickdel
 
 Adds the QUICK modifier to DELETE statements.  See
-L<http://dev.mysql.com/doc/en/delete.html> for more details.
+L<http://dev.mysql.com/doc/en/delete.html> for details.
 
 =item --replace
 
