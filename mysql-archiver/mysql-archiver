@@ -242,6 +242,8 @@ if ( $dst && $opts{C} ) {
    }
 }
 
+# TODO: allow disabling @asc_slice optimization.
+# TODO: allow @asc_slice to only work on first column of key.
 # TODO: add --commit-before-fetch to alleviate the problem with long txns
 # TODO: ease the restrictions about primary keys and nullable columns.
 # TODO: support batched inserts and deletes
@@ -323,8 +325,21 @@ if ( $opts{W} ) {
 # At this point the fetch-first and fetch-next queries may diverge.
 $next_sql = $first_sql;
 if ( @asc_slice ) {
+   my @new_asc_slice;
+   my @clauses;
+   foreach my $i ( 0 .. $#asc_slice ) {
+      my @clause;
+      foreach my $j ( 0 .. $i - 1 ) {
+         push @clause, "`$cols[$j]` = ?";
+         push @new_asc_slice, $j;
+      }
+      push @clause, "`$cols[$i]` >= ?";
+      push @new_asc_slice, $i;
+      push @clauses, join(' AND ', @clause);
+   }
    $next_sql .= $opts{W} ? ' AND ' : ' WHERE ';
-   $next_sql .= join(' AND ', map { "`$cols[$_]` >= ?" } @asc_slice);
+   $next_sql .= '(' . join(') OR (', @clauses) . ')';
+   @asc_slice = @new_asc_slice;
 }
 
 $first_sql .= " LIMIT $opts{l}";
