@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 29;
+use Test::More tests => 32;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -22,6 +22,18 @@ like($output, qr/DELETE QUICK/, 'quickdel works');
 # Test --lpdel
 $output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --lpdel --purge 2>&1`;
 like($output, qr/DELETE LOW_PRIORITY/, 'lpdel works');
+
+# Test --lpins
+$output = `perl ../mysql-archiver -t -d t=table_2 --source D=test,t=table_1,F=$opt_file --lpins 2>&1`;
+like($output, qr/INSERT LOW_PRIORITY/, 'lpins works');
+
+# Test --delayedins
+$output = `perl ../mysql-archiver -t -d t=table_2 --source D=test,t=table_1,F=$opt_file --delayedins 2>&1`;
+like($output, qr/INSERT DELAYED/, 'delayedins works');
+
+# Test --replace
+$output = `perl ../mysql-archiver -t -d t=table_2 --source D=test,t=table_1,F=$opt_file --replace 2>&1`;
+like($output, qr/REPLACE/, 'replace works');
 
 # Test basic functionality with defaults
 $output = `perl ../mysql-archiver --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
