@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 33;
+use Test::More tests => 36;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -14,6 +14,14 @@ my $output;
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 4, 'Test data loaded ok');
+
+# Test --forupdate
+$output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --forupdate --purge 2>&1`;
+like($output, qr/SELECT .*? FOR UPDATE/, 'forupdate works');
+
+# Test --sharelock
+$output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --sharelock --purge 2>&1`;
+like($output, qr/SELECT .*? LOCK IN SHARE MODE/, 'sharelock works');
 
 # Test --quickdel
 $output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --quickdel --purge 2>&1`;
@@ -44,6 +52,11 @@ $output = `perl ../mysql-archiver --source D=test,t=table_1,F=$opt_file --purge 
 is($output, '', 'No output');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged ok');
+
+# Test basic functionality with OPTIMIZE
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -O ds --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
+is($output, '', 'OPTIMIZE did not fail');
 
 # Test an empty table
 `mysql --defaults-file=$opt_file < before.sql`;

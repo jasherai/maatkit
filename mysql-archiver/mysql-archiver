@@ -38,19 +38,23 @@ our $VERSION = '@VERSION@';
 
 # Define cmdline args.
 my @opt_spec = (
+   { s => 'analyze|A=s', d => 'Run ANALYZE TABLE afterwards on --source and/or --dest' },
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
    { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
    { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
    { s => 'delayedins',  d => 'Add the DELAYED modifier to INSERT statements' },
    { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
+   { s => 'forupdate',   d => 'Adds the FOR UPDATE modifier to SELECT statements' },
    { s => 'header|h',    d => 'Print column header at top of --file' },
    { s => 'help',        d => 'Show this help message' },
    { s => 'hpselect',    d => 'Adds the HIGH_PRIORITY modifier to SELECT statements' },
    { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
    { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
+   { s => 'local|L',     d => 'Do not write OPTIMIZE or ANALYZE queries to binlog' },
    { s => 'lpdel',       d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
    { s => 'lpins',       d => 'Add the LOW_PRIORITY modifier to INSERT statements' },
+   { s => 'optimize|O=s',d => 'Run OPTIMIZE TABLE afterwards on --source and/or --dest' },
    { s => 'pkonly|k',    d => 'Primary key columns only' },
    { s => 'progress|P=i',d => 'Print progress information every X rows' },
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
@@ -58,6 +62,7 @@ my @opt_spec = (
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
    { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
    { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
+   { s => 'sharelock',   d => 'Adds the LOCK IN SHARE MODE modifier to SELECT statements' },
    { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
    { s => 'source|s=s',  d => 'Table to archive from' },
    { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
@@ -167,6 +172,14 @@ if ( !$opts{help} ) {
       warn "--lpins and --delayedins are mutually exclusive\n";
       $opts{help} = 1;
    }
+   elsif ( $opts{sharelock} && $opts{forupdate} ) {
+      warn "--sharelock and --forupdate are mutually exclusive\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{A} && $opts{O} ) {
+      warn "--analyze and --optimize are mutually exclusive\n";
+      $opts{help} = 1;
+   }
 }
 
 if ( $opts{help} ) {
@@ -230,15 +243,10 @@ if ( $dst && $opts{C} ) {
 }
 
 # TODO: ease the restrictions about primary keys and nullable columns.
-# TODO: support batched inserts
-# TODO: allow to specify ODKU option?
-# TODO: allow multiple destination tables, each with own ODKU/etc
-# TODO: buffer results from the SELECT, and use a different $sth for the DELETE?
-# TODO: Allow to ANALYZE TABLE or OPTIMIZE TABLE after or before
+# TODO: support batched inserts and deletes
+# TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
+# TODO: buffer results from the SELECT, and use a different $sth for the DELETE
 # TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
-# TODO: support SELECT HIGH_PRIORITY
-# TODO: support SELECT FOR UPDATE or SELECT LOCK IN SHARE MODE
-# TODO: support selecting count(*) first and saying how many approximately will be done
 
 my $dbh = $src->{dbh};
 my $sth;
@@ -320,6 +328,15 @@ if ( @asc_slice ) {
 
 $first_sql .= " LIMIT $opts{l}";
 $next_sql  .= " LIMIT $opts{l}";
+
+if ( $opts{forupdate} ) {
+   $first_sql .= ' FOR UPDATE';
+   $next_sql  .= ' FOR UPDATE';
+}
+elsif ( $opts{sharelock} ) {
+   $first_sql .= ' LOCK IN SHARE MODE';
+   $next_sql  .= ' LOCK IN SHARE MODE';
+}
 
 # DELETE requires either a PK or all columns.  In theory, a UNIQUE index could
 # be used, but I am not going to fool with that.
@@ -510,6 +527,18 @@ if ( $opts{z} ) {
 }
 if ( $opts{P} ) {
    printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
+}
+
+# Run ANALYZE or OPTIMIZE.
+if ( my $action = $opts{A} || $opts{O} ) {
+   my $maint  = ($opts{A} ? 'ANALYZE'                        : 'OPTIMIZE')
+              . ($opts{L} ? ' /*!40101 NO_WRITE_TO_BINLOG*/' : '');
+   if ( $action =~ m/s/i ) {
+      $src->{dbh}->do("$maint TABLE $src->{db_tbl}");
+   }
+   if ( $action =~ m/d/i && $dst ) {
+      $dst->{dbh}->do("$maint TABLE $dst->{db_tbl}");
+   }
 }
 
 # Optionally print the reason for exiting
@@ -729,6 +758,18 @@ prefix.
 
 =over
 
+=item --analyze
+
+Runs ANALYZE TABLE after finishing.  The argument is an arbitrary string.  If it
+contains the letter 's', the source will be analyzed.  If it contains 'd', the
+destination will be analyzed.  You can specify either or both.  For example, the
+following will analyze both:
+
+  --analyze=ds
+
+See L<http://dev.mysql.com/doc/en/analyze-table.html> for details on ANALYZE
+TABLE.
+
 =item --buffer
 
 Disables autoflushing to --file and flushes --file to disk only when a
@@ -802,6 +843,11 @@ INFILE's default settings.
 If you want a column header at the top of the file, see --header.  The file is
 auto-flushed by default; see --buffer.
 
+=item --forupdate
+
+Adds the FOR UPDATE modifier to SELECT statements.  For details, see
+L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
+
 =item --header
 
 Writes column names as the first line in the file given by --file.  If the
@@ -829,6 +875,11 @@ limit, but be careful if you are archiving sparsely, skipping over many rows;
 this will place many locks on InnoDB tables, potentially causing more
 contention with other queries.
 
+=item --local
+
+Adds the NO_WRITE_TO_BINLOG modifier to ANALYZE and OPTIMIZE queries.  See
+--analyze for details.
+
 =item --lpdel
 
 Adds the LOW_PRIORITY modifier to DELETE statements.  See
@@ -838,6 +889,12 @@ L<http://dev.mysql.com/doc/en/delete.html> for details.
 
 Adds the LOW_PRIORITY modifier to INSERT or REPLACE statements.  See
 L<http://dev.mysql.com/doc/en/insert.html> for details.
+
+=item --optimize
+
+Runs OPTIMIZE TABLE after finishing.  See --analyze for the option syntax and
+L<http://dev.mysql.com/doc/en/optimize-table.html> for details on
+OPTIMIZE TABLE.
 
 =item --pkonly
 
@@ -859,7 +916,9 @@ network for no reason.
 =item --quickdel
 
 Adds the QUICK modifier to DELETE statements.  See
-L<http://dev.mysql.com/doc/en/delete.html> for details.
+L<http://dev.mysql.com/doc/en/delete.html> for details.  As stated in the
+documentation, in some cases it may be faster to use DELETE QUICK followed by
+OPTIMIZE TABLE.  You can use --optimize for this.
 
 =item --replace
 
@@ -887,6 +946,11 @@ storage engines other than InnoDB.  Request that feature if you need it.
 The presence of the file specified by --sentinel will cause mysql-archiver to
 stop archiving and exit.  The default is /tmp/mysql-archiver-sentinel.  You
 might find this handy to stop cron jobs gracefully if necessary.
+
+=item --sharelock
+
+Adds the LOCK IN SHARE MODE modifier to SELECT statements.  For details, see
+L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
 
 =item --sleep
 
