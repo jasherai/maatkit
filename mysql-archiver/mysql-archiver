@@ -255,6 +255,7 @@ if ( $dst && $opts{C} ) {
 }
 
 # TODO: ease the restrictions about primary keys and nullable columns.
+# TODO: add an option to disable foreign key checks.
 # TODO: support batched inserts and deletes
 # TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
 # TODO: buffer results from the SELECT, and use a different $sth for the DELETE
