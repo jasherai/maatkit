@@ -159,3 +159,18 @@ INSERT INTO `table_5` VALUES (current_date - interval 2 day,581,'m','ga',1,16,0,
 ,(current_date - interval 2 day,741,'c','dr',1,1,0,'0.00025','2007-03-10 18:00:33')
 ,(current_date - interval 2 day,741,'m','ga',1,3,0,'0.00075','2007-03-10 18:00:33')
 ,(current_date - interval 2 day,743,'b','yu',137,163,0,'0.04075','2007-03-10 18:00:33');
+
+drop table if exists table_6;
+create table table_6(
+   a int not null,
+   b int not null,
+   c int,
+   primary key(a, b)
+);
+
+-- This test data specifically designed to be ambiguous unless the
+-- ascending-index WHERE clause is carefully wrapped in parens.  If the archiver
+-- goes to 2 rows and doesn't wrap right, it will archive the 3rd row which it
+-- should not because it archives c=1.
+insert into table_6(a, b, c)
+   values(1, 1, 1), (1, 2, 1), (1, 3, 0);

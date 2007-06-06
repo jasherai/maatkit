@@ -347,10 +347,10 @@ if ( @asc_slice ) {
       }
       push @clause, "`$cols[$i]` >= ?";
       push @new_asc_slice, $i;
-      push @clauses, join(' AND ', @clause);
+      push @clauses, '(' . join(' AND ', @clause) . ')';
    }
    $next_sql .= $opts{W} ? ' AND ' : ' WHERE ';
-   $next_sql .= '(' . join(') OR (', @clauses) . ')';
+   $next_sql .= '(' . join(' OR ', @clauses) . ')';
    @asc_slice = @new_asc_slice;
 }
 
