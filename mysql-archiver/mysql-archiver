@@ -63,6 +63,7 @@ my @opt_spec = (
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
    { s => 'quickdel',    d => 'Add the QUICK modifier to DELETE statements' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+   # TODO { s => 'need-where!', d => 'Require a WHERE clause (default)' },
    { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
    { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
    { s => 'sharelock',   d => 'Adds the LOCK IN SHARE MODE modifier to SELECT statements' },
