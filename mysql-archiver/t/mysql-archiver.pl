@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 38;
+use Test::More tests => 40;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -165,14 +165,15 @@ $output = `perl ../mysql-archiver -t --nochkcols --dest t=table_4 --source D=tes
 like($output, qr/SELECT/, 'I can disable the check OK');
 
 # Test that ascending index check doesn't leave any holes
-$output = `perl ../mysql-archiver -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
+$output = `perl ../mysql-archiver -s D=test,t=table_5,F=$opt_file -p -l 50 -W 'a<current_date - interval 1 day' 2>&1`;
 is($output, '', 'No errors in larger table');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5"`;
 is($output + 0, 0, 'Purged completely');
 
-__DATA__
+# Make sure ascending index check can be disabled
+$output = `perl ../mysql-archiver -t --noascend -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
+like ( $output, qr/(^SELECT .*$)\n\1/m, '--noascend makes fetch-first and fetch-next identical' );
 
-mysql> select * from table_5 where a < current_date - interval 1 day and a >=
-
-'2007-06-04' and (b >= 587 or day > '2007-06-04') and (limit 5;
-
+# Check ascending only first column
+$output = `perl ../mysql-archiver -t --ascendfirst -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
+like ( $output, qr/WHERE \(`a` >= \?\) LIMIT/, 'Can ascend just first column');

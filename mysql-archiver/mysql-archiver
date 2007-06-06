@@ -39,6 +39,8 @@ our $VERSION = '@VERSION@';
 # Define cmdline args.
 my @opt_spec = (
    { s => 'analyze|A=s', d => 'Run ANALYZE TABLE afterwards on --source and/or --dest' },
+   { s => 'ascend|N!',   d => 'Use ascending index optimization (default)' },
+   { s => 'ascendfirst', d => 'Ascend only first column of index' },
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
    { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
    { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
@@ -77,6 +79,7 @@ my @opt_spec = (
 my %opts = (
    C => 1,
    l => 1,
+   N => 1,
    u => 1,
    z => 1,
    R => 1,
@@ -242,8 +245,6 @@ if ( $dst && $opts{C} ) {
    }
 }
 
-# TODO: allow disabling @asc_slice optimization.
-# TODO: allow @asc_slice to only work on first column of key.
 # TODO: add --commit-before-fetch to alleviate the problem with long txns
 # TODO: ease the restrictions about primary keys and nullable columns.
 # TODO: support batched inserts and deletes
@@ -264,7 +265,7 @@ my @cols = $opts{c} ? split(/,/, $opts{c})               # Explicitly specified 
          :            @{$src->{info}->{cols}};           # All columns
 
 # Do we have an index to ascend?  Use PRIMARY if nothing specified.
-if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
+if ( $opts{N} && ($src->{i} || $src->{info}->{keys}->{PRIMARY}) ) {
    # Make sure the lettercase is right and find the index...
    my $ixname = $src->{i} || '';
    if ( uc $ixname eq 'PRIMARY' || !$src->{i} ) {
@@ -277,15 +278,18 @@ if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
    if ( $ixname ) {
       $src->{i} = $ixname; # Corrects lettercase if it's wrong
       my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
-
-      # Check that each column is defined as NOT NULL.
-      my @not_null = grep { $src->{info}->{null_hash}->{$_} } @asc_cols;
-      if ( @not_null ) {
-         die "Some columns in index `$ixname` allow NULL.\n";
-      }
-
-      # We found the columns, now find their positions
       if ( @asc_cols ) {
+         if ( $opts{ascendfirst} ) {
+            @asc_cols = $asc_cols[0];
+         }
+
+         # Check that each column is defined as NOT NULL.
+         my @not_null = grep { $src->{info}->{null_hash}->{$_} } @asc_cols;
+         if ( @not_null ) {
+            die "Some columns in index `$ixname` allow NULL.\n";
+         }
+
+         # We found the columns, now find their positions
          @asc_slice = map {
             my $pos = 0;
             my $col = $_;
@@ -302,6 +306,7 @@ if ( $src->{i} || $src->{info}->{keys}->{PRIMARY} ) {
             $pos;
          } @asc_cols;
       }
+
    }
    else {
       die "The specified index could not be found, or there is no PRIMARY key.\n";
@@ -762,10 +767,15 @@ to scan the PRIMARY key, which is the default).  Even better, profile
 mysql-archiver with mysql-query-profiler and make sure it is not scanning the
 whole table every query.
 
+You can disable the seek-then-scan optimizations partially or wholly with
+--noascend and --ascendfirst.  Sometimes this may be more efficient for
+multi-column keys.
+
 At the moment, there are some limitations to ease the task of working with NULLs
 and indexes.  The table must have a PRIMARY key, and any index you specify in
---source must be composed entirely of non-NULL columns.  These restrictions may
-be removed in future versions.
+--source must be composed entirely of non-NULL columns (or, if you specify
+--ascendfirst, the first column must be non-NULL).  These restrictions may be
+removed in future versions.
 
 =head1 OPTIONS
 
@@ -785,6 +795,42 @@ following will analyze both:
 
 See L<http://dev.mysql.com/doc/en/analyze-table.html> for details on ANALYZE
 TABLE.
+
+=item --ascend
+
+Causes mysql-archiver to optimize repeated SELECT queries so they seek into the
+index where the previous query ended, then scan along it, rather than scanning
+from the beginning of the table every time.  This is enabled by default because
+it is generally a good strategy for repeated accesses.
+
+Large, multiple-column indexes may cause the WHERE clause to be complex enough
+that this could actually be less efficient.  Consider for example a four-column
+PRIMARY KEY on (a, b, c, d).  The WHERE clause to start where the last query
+ended is as follows:
+
+   WHERE (a >= ?)
+      OR (a  = ? AND b >= ?)
+      OR (a  = ? AND b  = ? AND c >= ?)
+      OR (a  = ? AND b  = ? AND c  = ? AND d >= ?)
+
+Populating the placeholders with values uses memory and CPU, adds network
+traffic and parsing overhead, and may make the query harder for MySQL to
+optimize.
+
+Ascending the index might not be necessary if you know you are simply removing
+rows from the beginning of the table in chunks, but not leaving any holes, so
+starting at the beginning of the table is actually the most efficient thing to
+do.
+
+See also --ascendfirst.
+
+=item --ascendfirst
+
+If you do want to use the ascending index optimization (see --ascend), but do
+not want to incur the overhead of ascending a large multi-column index, you can
+use this option to tell mysql-archiver to ascend only the leftmost column of the
+index.  This can provide a significant performance boost over not ascending the
+index at all, while avoiding the cost of ascending the whole index.
 
 =item --buffer
 
