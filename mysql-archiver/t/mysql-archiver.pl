@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 36;
+use Test::More tests => 38;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -163,3 +163,16 @@ $output = `perl ../mysql-archiver -t --dest t=table_4 --source D=test,t=table_1,
 like($output, qr/The following columns exist in --source /, 'Column check throws error');
 $output = `perl ../mysql-archiver -t --nochkcols --dest t=table_4 --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
 like($output, qr/SELECT/, 'I can disable the check OK');
+
+# Test that ascending index check doesn't leave any holes
+$output = `perl ../mysql-archiver -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
+is($output, '', 'No errors in larger table');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5"`;
+is($output + 0, 0, 'Purged completely');
+
+__DATA__
+
+mysql> select * from table_5 where a < current_date - interval 1 day and a >=
+
+'2007-06-04' and (b >= 587 or day > '2007-06-04') and (limit 5;
+
