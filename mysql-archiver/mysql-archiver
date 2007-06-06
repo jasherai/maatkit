@@ -42,13 +42,14 @@ my @opt_spec = (
    { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
    { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
-   # { s => 'delayed',     d => 'Add the DELAYED modifier to INSERT statements' },
+   { s => 'delayedins',  d => 'Add the DELAYED modifier to INSERT statements' },
    { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
    { s => 'header|h',    d => 'Print column header at top of --file' },
    { s => 'help',        d => 'Show this help message' },
    { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
    { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
    { s => 'lpdel',       d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
+   { s => 'lpins',       d => 'Add the LOW_PRIORITY modifier to INSERT statements' },
    { s => 'pkonly|k',    d => 'Primary key columns only' },
    { s => 'progress|P=i',d => 'Print progress information every X rows' },
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
@@ -159,6 +160,10 @@ if ( !$opts{help} ) {
    }
    elsif ( $opts{i} && $opts{r} ) {
       warn "--ignore and --replace are mutually exclusive\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{lpins} && $opts{delayedins} ) {
+      warn "--lpins and --delayedins are mutually exclusive\n";
       $opts{help} = 1;
    }
 }
@@ -356,9 +361,10 @@ $del_sql = 'DELETE'
 # INSERT is all columns.  I can't think of why you'd want to archive to a
 # table with different columns than the source.
 if ( $dst ) {
-   $ins_sql = $opts{r} ? 'REPLACE'
-            : $opts{i} ? 'INSERT IGNORE'
-            :            'INSERT';
+   $ins_sql = ($opts{r}          ? 'REPLACE'       : 'INSERT')
+            . ($opts{lpins}      ? ' LOW_PRIORITY' : '')
+            . ($opts{delayedins} ? ' DELAYED'      : '')
+            . ($opts{i}          ? ' IGNORE'       : '');
    $ins_sql .= " INTO $dst->{db_tbl}("
       . join(",", map { "`$_`" } @cols)
       . ") VALUES ("
@@ -724,11 +730,10 @@ prefix.
 
 =item --buffer
 
-The archive file given by --file is normally autoflushed, so every write to it
-is flushed to disk.  This option causes it to be flushed only when a
+Disables autoflushing to --file and flushes --file to disk only when a
 transaction commits.  This typically means the file is block-flushed by the
 operating system, so there may be some implicit flushes to disk between
-commits as well.
+commits as well.  The default is to flush --file to disk after every row.
 
 The danger is that a crash might cause lost data.
 
@@ -737,7 +742,7 @@ percent.  Your mileage may vary.
 
 =item --chkcols
 
-This option is enabled by default.  It checks that the source and destination
+Enabled by default; causes mysql-archiver to check that the source and destination
 tables have the same columns.  It does not check column order, data type, etc.
 It just checks that all columns in the source exist in the destination and
 vice versa.  If there are any differences, mysql-archiver will exit with an
@@ -746,13 +751,18 @@ error.
 =item --columns
 
 Specify a comma-separated list of columns to fetch, write to the file, and
-insert into the destination table.  If you specify this option, mysql-archiver
-completely ignores every other column.
+insert into the destination table.  If specified, mysql-archiver completely
+ignores every other column.
 
 If you specify this option, at present you need to at least specify the
 columns in the primary key and the index given in --source (if any).
 
 See also --pkonly.
+
+=item --delayedins
+
+Adds the DELAYED modifier to INSERT or REPLACE statements.  See
+L<http://dev.mysql.com/doc/en/insert.html> for more details.
 
 =item --dest
 
@@ -815,13 +825,17 @@ contention with other queries.
 
 =item --lpdel
 
-This option adds the LOW_PRIORITY modifier to DELETE statements.  See
+Adds the LOW_PRIORITY modifier to DELETE statements.  See
 L<http://dev.mysql.com/doc/en/delete.html> for more details.
+
+=item --lpins
+
+Adds the LOW_PRIORITY modifier to INSERT or REPLACE statements.  See
+L<http://dev.mysql.com/doc/en/insert.html> for more details.
 
 =item --pkonly
 
-This option is a shortcut for specifying --columns with the primary key
-columns.
+A shortcut for specifying --columns with the primary key columns.
 
 =item --progress
 
@@ -838,7 +852,7 @@ network for no reason.
 
 =item --quickdel
 
-This option adds the QUICK modifier to DELETE statements.  See
+Adds the QUICK modifier to DELETE statements.  See
 L<http://dev.mysql.com/doc/en/delete.html> for more details.
 
 =item --replace
@@ -959,10 +973,10 @@ interpreting it.  For example:
 
 =item --whyquit
 
-If this option is given, mysql-archiver will print a message if it exits for
-any reason other than running out of rows to archive.  This can be useful if
-you have a cron job with --time specified, for example, and you want to be
-sure mysql-archiver is finishing before running out of time.
+Causes mysql-archiver to print a message if it exits for any reason other than
+running out of rows to archive.  This can be useful if you have a cron job with
+--time specified, for example, and you want to be sure mysql-archiver is
+finishing before running out of time.
 
 =back
 
