@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 48;
+use Test::More tests => 50;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -189,6 +189,12 @@ like($output, qr/The following columns exist in --source /, 'Column check throws
 $output = `perl ../mysql-archiver -t --nochkcols --dest t=table_4 --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
 like($output, qr/SELECT/, 'I can disable the check OK');
 
+# Test that ascending index check WHERE clause can't be hijacked
+$output = `perl ../mysql-archiver -s D=test,t=table_6,F=$opt_file -p -l 2 -W 'c=1'`;
+is($output, '', 'No errors purging table_6');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_6"`;
+is($output + 0, 1, 'Did not purge last row');
+
 # Test that ascending index check doesn't leave any holes
 $output = `perl ../mysql-archiver -s D=test,t=table_5,F=$opt_file -p -l 50 -W 'a<current_date - interval 1 day' 2>&1`;
 is($output, '', 'No errors in larger table');
@@ -201,4 +207,4 @@ like ( $output, qr/(^SELECT .*$)\n\1/m, '--noascend makes fetch-first and fetch-
 
 # Check ascending only first column
 $output = `perl ../mysql-archiver -t --ascendfirst -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
-like ( $output, qr/WHERE \(`a` >= \?\) LIMIT/, 'Can ascend just first column');
+like ( $output, qr/WHERE \(\(`a` >= \?\)\) LIMIT/, 'Can ascend just first column');
