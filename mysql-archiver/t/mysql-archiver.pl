@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 40;
+use Test::More tests => 48;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -49,9 +49,16 @@ like($output, qr/SELECT HIGH_PRIORITY/, 'hpselect works');
 
 # Test basic functionality with defaults
 $output = `perl ../mysql-archiver --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
-is($output, '', 'No output');
+is($output, '', 'Basic test run did not die');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged ok');
+
+# Test basic functionality with --commit-each
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver --source D=test,t=table_1,F=$opt_file --commit-each --limit 1 --purge 2>&1`;
+is($output, '', 'Commit-each did not die');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
+is($output + 0, 0, 'Purged ok with --commit-each');
 
 # Test basic functionality with OPTIMIZE
 `mysql --defaults-file=$opt_file < before.sql`;
@@ -149,6 +156,24 @@ COUNT
 4
 EOF
 ,'Progress output looks okay');
+
+# Archive to another table with autocommit
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -z 0 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
+is($output, '', 'Commit every 0 rows worked OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
+is($output + 0, 0, 'Purged all rows ok');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_2"`;
+is($output + 0, 4, 'Found rows in new table OK');
+
+# Archive to another table with commit every 2 rows
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -z 2 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
+is($output, '', 'Commit every 2 rows worked OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
+is($output + 0, 0, 'Purged all rows ok');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_2"`;
+is($output + 0, 4, 'Found rows in new table OK');
 
 # Test --columns
 $output = `perl ../mysql-archiver -t --source D=test,t=table_1,F=$opt_file --columns=a,b --purge 2>&1`;
