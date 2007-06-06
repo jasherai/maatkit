@@ -44,6 +44,7 @@ my @opt_spec = (
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
    { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
    { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
+   { s => 'commit-each', d => 'Commit each group of fetched and archived rows' },
    { s => 'dest|d=s',    d => 'Table to archive to' },
    { s => 'delayedins',  d => 'Add the DELAYED modifier to INSERT statements' },
    { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
@@ -81,7 +82,6 @@ my %opts = (
    l => 1,
    N => 1,
    u => 1,
-   z => 1,
    R => 1,
    S => '/tmp/mysql-archiver-sentinel',
 );
@@ -167,6 +167,10 @@ if ( !$opts{help} ) {
          $opts{help} = 1;
       }
    }
+   elsif ( $opts{z} && $opts{'commit-each'} ) {
+      warn "--txnsize and --commit-each are mutually exclusive; use --limit\n";
+      $opts{help} = 1;
+   }
    elsif ( $opts{i} && $opts{r} ) {
       warn "--ignore and --replace are mutually exclusive\n";
       $opts{help} = 1;
@@ -183,6 +187,10 @@ if ( !$opts{help} ) {
       warn "--analyze and --optimize are mutually exclusive\n";
       $opts{help} = 1;
    }
+}
+
+if ( !defined $opts{z} && !$opts{'commit-each'} ) {
+   $opts{z} = 1;
 }
 
 if ( $opts{help} ) {
@@ -245,7 +253,6 @@ if ( $dst && $opts{C} ) {
    }
 }
 
-# TODO: add --commit-before-fetch to alleviate the problem with long txns
 # TODO: ease the restrictions about primary keys and nullable columns.
 # TODO: support batched inserts and deletes
 # TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
@@ -510,14 +517,7 @@ while (                          # Quit if:
    $retries = $opts{R};
 
    # Possibly flush the file and commit the insert and delete.
-   if ( $opts{z} && $cnt % $opts{z} == 0 ) {
-      if ( $opts{b} && $file ) {
-         $file->flush or die "Cannot flush $opts{f}: $OS_ERROR\n";
-      }
-      $dst->{dbh}->commit if $dst;
-      $src->{dbh}->commit;
-      $txn_cnt = 0;
-   }
+   commit() unless $opts{'commit-each'};
 
    # Report on progress.
    if ( $opts{P} && $cnt % $opts{P} == 0 ) {
@@ -529,6 +529,7 @@ while (                          # Quit if:
       $row = $get_sth->fetchrow_arrayref();
    }
    if ( !$row ) {
+      commit(1)         if $opts{'commit-each'};
       sleep($opts{e})   if $opts{e};
       $get_sth          = $get_next;
       $get_next->execute(@{$lastrow}[@asc_slice]);
@@ -538,14 +539,12 @@ while (                          # Quit if:
 }
 
 # Transactions might still be open, etc
+commit($opts{z} || $opts{'commit-each'});
 if ( $opts{f} && $file ) {
    close $file
       or die "Cannot close $opts{f}: $OS_ERROR\n";
 }
-if ( $opts{z} ) {
-   $dst->{dbh}->commit if $dst;
-   $src->{dbh}->commit;
-}
+
 if ( $opts{P} ) {
    printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
 }
@@ -578,6 +577,19 @@ if ( $opts{q} ) {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+
+# Accesses globals, but I wanted the code in one place.
+sub commit {
+   my ( $force ) = @_;
+   if ( $force || ($opts{z} && $txn_cnt && $cnt % $opts{z} == 0) ) {
+      if ( $opts{b} && $file ) {
+         $file->flush or die "Cannot flush $opts{f}: $OS_ERROR\n";
+      }
+      $dst->{dbh}->commit if $dst;
+      $src->{dbh}->commit;
+      $txn_cnt = 0;
+   }
+}
 
 # Repeatedly retries the code until retries runs out, a really bad error
 # happens, or it succeeds.  This sub uses lots of global variables; I only wrote
@@ -698,7 +710,7 @@ sub parse_dsn {
 sub get_dbh {
    my ( $info ) = @_;
    my $db_options = {
-      AutoCommit => !$opts{z},
+      AutoCommit => !$opts{z} && !$opts{'commit-each'},
       RaiseError => 1,
       PrintError => 0,
    };
@@ -742,7 +754,7 @@ mysql-archiver - archive rows from a MySQL table into another table or a file.
 =head1 SYNOPSIS
 
  mysql-archiver --source h=oltp_server,D=test,t=tbl --dest h=olap_server \
-    --file '/var/log/archive/%Y-%m-%d-%D.%t' --txnsize 1000
+    --file '/var/log/archive/%Y-%m-%d-%D.%t' --limit 1000 --commit-each
 
 =head1 DESCRIPTION
 
@@ -863,6 +875,23 @@ columns in the primary key and the index given in --source (if any).
 
 See also --pkonly.
 
+=item --commit-each
+
+Commits transactions and flushes --file after each set of rows has been
+archived, before fetching the next set of rows, and before sleeping if --sleep
+is specified.  Disables --txnsize; use --limit to control the transaction size
+with --commit-each.
+
+This option is useful as a shortcut to make --limit and --txnsize the same
+value, but more importantly it avoids transactions being held open while
+searching for more rows.  For example, imagine you are archiving old rows from
+the beginning of a very large table, with --limit 1000 and --txnsize 1000.
+After some period of finding and archiving 1000 rows at a time, mysql-archiver
+finds the last 999 rows and archives them, then executes the next SELECT to find
+more rows.  This scans the rest of the table, but never finds any more rows.  It
+has held open a transaction for a very long time, only to determine it is
+finished anyway.  You can use --commit-each to avoid this.
+
 =item --delayedins
 
 Adds the DELAYED modifier to INSERT or REPLACE statements.  See
@@ -934,8 +963,8 @@ Causes INSERTs into --dest to be INSERT IGNORE.
 Limits the number of rows returned by the SELECT statements that retrieve rows
 to archive.  Default is one row.  It may be more efficient to increase the
 limit, but be careful if you are archiving sparsely, skipping over many rows;
-this will place many locks on InnoDB tables, potentially causing more
-contention with other queries.
+this can potentially cause more contention with other queries, depending on the
+storage engine, transaction isolation level, and options such as --forupdate.
 
 =item --local
 
@@ -1019,6 +1048,8 @@ L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
 Specifies how long to sleep between SELECT statements.  Default is not to
 sleep at all.  Transactions are NOT committed, and the --file file is NOT
 flushed, before sleeping.  See --txnsize to control that.
+
+If --commit-each is specified, committing and flushing happens before sleeping.
 
 =item --source
 
