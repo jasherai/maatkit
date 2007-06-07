@@ -3,6 +3,18 @@ details.
 
 Changelog:
 
+2007-06-06: version 0.9.1
+
+   Changes:
+   * --where is now a required option.
+   * Command-line parsing is strict to help catch mis-quoted --where.
+   * Added --commit-each, --ascend and --ascendfirst options.
+
+   Bugs fixed:
+   * WHERE clause was not isolated in parentheses.
+   * The ascending index WHERE clause was not properly parenthesized.
+   * Rows could be skipped while ascending a multi-column primary key.
+
 2007-06-06: version 0.9.0
 
    * Initial release
