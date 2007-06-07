@@ -67,6 +67,7 @@ my @opt_spec = (
    { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
    { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
    { s => 'sharelock',   d => 'Adds the LOCK IN SHARE MODE modifier to SELECT statements' },
+   { s => 'skipfkchk|K', d => 'Turn off foreign key checks' },
    { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
    { s => 'source|s=s',  d => 'Table to archive from' },
    { s => 'stop',        d => 'Stop all running instances by creating the sentinel file' },
@@ -287,7 +288,6 @@ if ( $dst && $opts{C} ) {
 }
 
 # TODO: ease the restrictions about primary keys and nullable columns.
-# TODO: add an option to disable foreign key checks.
 # TODO: support batched inserts and deletes
 # TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
 # TODO: buffer results from the SELECT, and use a different $sth for the DELETE
@@ -467,6 +467,17 @@ my $get_first = $dbh->prepare($first_sql);
 my $get_next  = $dbh->prepare($next_sql);
 my $del_row   = $dbh->prepare($del_sql);
 my $ins_row   = $dst->{dbh}->prepare($ins_sql) if $dst; # Different $dbh!
+
+# ############################################################################
+# Set MySQL options.
+# ############################################################################
+
+if ( $opts{K} ) {
+   $src->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+   if ( $dst ) {
+      $dst->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+   }
+}
 
 # ############################################################################
 # Start archiving.
@@ -1079,6 +1090,10 @@ might find this handy to stop cron jobs gracefully if necessary.
 
 Adds the LOCK IN SHARE MODE modifier to SELECT statements.  For details, see
 L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
+
+=item --skipfkchk
+
+Disables foreign key checks with SET FOREIGN_KEY_CHECKS=0.
 
 =item --sleep
 
