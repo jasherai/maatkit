@@ -68,6 +68,7 @@ my @opt_spec = (
    { s => 'sharelock',   d => 'Adds the LOCK IN SHARE MODE modifier to SELECT statements' },
    { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
    { s => 'source|s=s',  d => 'Table to archive from' },
+   { s => 'stop',        d => 'Stop all running instances by creating the sentinel file' },
    { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
    { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
@@ -100,6 +101,18 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+# First things first: if --stop was given, create the sentinel file.
+if ( $opts{stop} ) {
+   my $file = IO::File->new($opts{S}, ">>")
+      or die "Cannot open $opts{S}: $OS_ERROR\n";
+   print $file "Remove this file to permit mysql-archiver to run\n"
+      or die "Cannot write to $opts{S}: $OS_ERROR\n";
+   close $file
+      or die "Cannot close $opts{S}: $OS_ERROR\n";
+   print STDOUT "Successfully created file $opts{S}\n";
+   exit(0);
+}
 
 my %conn   = (
    h => 'host',
@@ -137,10 +150,6 @@ if ( !$opts{help} ) {
       warn "Unrecognized options '@ARGV'.  Do you need to quote --where?\n";
       $opts{help} = 1;
    }
-   elsif ( !$opts{W} ) {
-      warn "--where is required; use 1=1 if you do not want a WHERE clause\n";
-      $opts{help} = 1;
-   }
    elsif ( $opts{m} ) {
       if ( $opts{m} !~ m/^\d+[smhd]$/ ) {
          warn "Invalid --time argument\n";
@@ -155,6 +164,10 @@ if ( !$opts{help} ) {
    }
    elsif ( !$src || !$src->{t} ) {
       warn "Invalid or missing --source argument\n";
+      $opts{help} = 1;
+   }
+   elsif ( !$opts{W} ) {
+      warn "--where is required; use 1=1 if you do not want a WHERE clause\n";
       $opts{help} = 1;
    }
    elsif ( !($dst || $opts{f}) && !$opts{p} ) {
@@ -202,7 +215,7 @@ if ( !defined $opts{z} && !$opts{'commit-each'} ) {
 }
 
 if ( $opts{help} ) {
-   print "Usage: mysql-archiver <options>\n\n";
+   print "Usage: mysql-archiver --source SOURCE --where WHERE <options>\n\n";
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
@@ -587,7 +600,7 @@ if ( $opts{q} ) {
       print "Exiting because time exceeded.\n";
    }
    elsif ( -f $opts{S} ) {
-      print "Exiting because sentinel set.\n";
+      print "Exiting because sentinel file $opts{S} exists.\n";
    }
 }
 
@@ -1109,6 +1122,12 @@ construct a WHERE clause, using the columns in the specified index, that should
 allow MySQL to start the next SELECT where the last one ended, rather than
 potentially scanning from the beginning of the table with each successive
 SELECT.
+
+=item --stop
+
+Causes mysql-archiver to create the sentinel file specified by --sentinel and
+exit.  This should have the effect of stopping all running instances which are
+watching the same sentinel file.
 
 =item --test
 
