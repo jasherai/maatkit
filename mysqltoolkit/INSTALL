@@ -1,0 +1,34 @@
+== INSTALLATION
+
+   To install mysqltoolkit, choose one of the following methods:
+
+   ===== INSTALL FROM A TARBALL
+
+      If you install from the tarball, extract the tarball and go into the resulting
+      directory:
+
+         tar zxvf <package>-<version>.tar.gz
+         cd <package>-<version>
+
+      Generate the makefile, which will check Perl module dependencies and so forth:
+
+         perl Makefile.PL
+
+      Install the program and man page:
+
+         make install
+
+      To remove the files, simply run:
+
+         make uninstall
+
+   ===== ON MICROSOFT WINDOWS
+
+      Simply unpack the zip or tarball file from Sourceforge and run the scripts from
+      within a command prompt.
+
+== DOCUMENTATION
+
+Documentation is embedded in each program in POD, the Perl documentation
+format.  To read the documentation, issue `perldoc <program>' where <program>
+is the Perl script itself.
