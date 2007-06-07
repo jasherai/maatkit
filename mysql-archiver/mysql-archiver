@@ -232,13 +232,18 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
 
    $can_retry = $can_retry && !$table->{irot};
 
-   $table->{db_tbl} =
-      join('.',
-      map  { $dbh->quote_identifier($_) }
-      grep { $_ }
+   $table->{db_tbl} = $dbh->quote_identifier(
       map  { $_ =~ s/(^`|`$)//g; $_; }
       grep { $_ }
-      ( $table->{D}, $table->{t} ));
+      ( $table->{D}, $table->{t} )
+   );
+   # TODO: possibly check $dbh->get_info(29) instead
+   # Quick hack for older DBD::mysql installations where
+   # quote_identifier() uses double quotes
+   if ( $DBD::mysql::VERSION < 3 ) {
+      $table->{db_tbl} =~ s/^"|"(?=\.)|(?<=\.)"|"$/`/g;
+   }
+
    $table->{info} = get_tbl_struct($table);
 }
 
@@ -294,6 +299,7 @@ if ( $opts{N} && ($src->{i} || $src->{info}->{keys}->{PRIMARY}) ) {
    if ( $ixname ) {
       $src->{i} = $ixname; # Corrects lettercase if it's wrong
       my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
+
       if ( @asc_cols ) {
          if ( $opts{ascendfirst} ) {
             @asc_cols = $asc_cols[0];
@@ -472,7 +478,7 @@ if ( $opts{f} ) {
       or die "Cannot open $opts{f}: $OS_ERROR\n";
    $file->autoflush(1) unless $opts{b};
    if ( $need_hdr ) {
-      print $file escape(\@cols), "\n"
+      print $file '', escape(\@cols), "\n"
          or die "Cannot write to $opts{f}: $OS_ERROR\n";
    }
 }
@@ -495,7 +501,7 @@ while (                          # Quit if:
    # and other tables cannot be rolled back etc.  If there is a problem,
    # hopefully the data has at least made it to the file.
    if ( $file ) {
-      print $file escape($row), "\n"
+      print $file '', escape($row), "\n"
          or die "Cannot write to $opts{f}: $OS_ERROR\n";
    }
 
@@ -692,7 +698,7 @@ sub get_tbl_struct {
          my ($cols) = $_ =~ m/\((.+)\),?$/;
          $name =~ s/`//g;
          $kdef{$name} = $_;
-         ($name, [ grep { m/[^,]/ } split('`', $cols) ])
+         ($name, [ $cols =~ m/`(.*?)`(?:\(\d+\))?,?/g ])
       }
       $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
 
@@ -1173,6 +1179,12 @@ archived.
 
 If you find bugs, need features, etc please use the bug tracker, forums, and
 mailing lists at http://sourceforge.net/projects/mysqltoolkit.
+
+=head1 ACKNOWLEDGEMENTS
+
+Thanks to the following people, and apologies to anyone I've omitted:
+
+Andrew O,
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
