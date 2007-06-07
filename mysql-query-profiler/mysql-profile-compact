@@ -30,7 +30,8 @@ use Time::HiRes qw(time);
 use List::Util qw(sum min max first);
 
 our $VERSION = '@VERSION@';
-# $Revision$
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -43,6 +44,7 @@ my @opt_spec = (
    { s => 'queries|q=s', d => 'Only do these queries (e.g. 2,4,6)' },
    { s => 'mode|m=s',    d => 'Mode: what type of reports to process' },
    { s => 'headers|h=i', d => 'Reprint headers every N queries' },
+   { s => 'version',     d => 'Output version information and exit' },
 );
 
 my %opts = (
@@ -63,6 +65,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "mysql-profile-compact  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
 
 # Post-post-process...
 if ( $opts{q} ) {

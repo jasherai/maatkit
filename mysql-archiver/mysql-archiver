@@ -30,7 +30,8 @@ use List::Util qw(max);
 use IO::File;
 
 our $VERSION = '@VERSION@';
-# $Revision$
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.
@@ -72,6 +73,7 @@ my @opt_spec = (
    { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
    { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
+   { s => 'version',     d => 'Output version information and exit' },
    { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive (required)' },
    { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
 );
@@ -101,6 +103,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "mysql-archiver  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
 
 # First things first: if --stop was given, create the sentinel file.
 if ( $opts{stop} ) {

@@ -30,7 +30,8 @@ use List::Util qw(max);
 use Socket qw(inet_aton);
 
 our $VERSION = '@VERSION@';
-# $Revision$
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.
@@ -48,6 +49,7 @@ my @opt_spec = (
    { s => 'print|p',      d => 'Print to STDOUT' },
    { s => 'source|s=s',   d => 'Server to check for deadlock' },
    { s => 'tab|t',        d => 'Output tab-separated' },
+   { s => 'version',      d => 'Output version information and exit' },
 );
 
 # This is the container for the command-line options' values to be stored in
@@ -71,6 +73,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "mysql-deadlock-logger  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
 
 # Process options...
 $opts{c} = $opts{p} unless defined $opts{c};

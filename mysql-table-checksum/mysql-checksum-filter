@@ -28,7 +28,8 @@ use Getopt::Long;
 use List::Util qw(max);
 
 our $VERSION = '@VERSION@';
-# $Revision$
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -43,6 +44,7 @@ my @opt_spec = (
    { s => 'help',       d => 'Show this help message' },
    { s => 'master|m=s', d => 'Name of the master server' },
    { s => 'verbose|v',  d => 'Output lines that have no differences' },
+   { s => 'version',    d => 'Output version information and exit' },
 );
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -61,6 +63,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "mysql-checksum-filter  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
 
 if ( $opts{help} ) {
    print "Usage: mysql-checksum-filter <options> FILE\n\n";
