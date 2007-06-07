@@ -29,7 +29,8 @@ use Time::HiRes qw(time);
 use List::Util qw(sum min max first);
 
 our $VERSION = '@VERSION@';
-# $Revision$
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -58,6 +59,7 @@ my @opt_spec = (
    { s => 'user|u=s',      d => 'User for login if not current user' },
    { s => 'verbose|v+',    d => 'Verbosity (specify multiple times for more detail)' },
    { s => 'verify|r',      d => 'Verify that nothing else is accessing the server' },
+   { s => 'version',       d => 'Output version information and exit' },
 );
 
 my %opts = (
@@ -79,6 +81,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "mysql-query-profiler  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
 
 $opts{n} = [ split(/,/, $opts{n} || '' ) ];
 $opts{v} = min(2, $opts{v});

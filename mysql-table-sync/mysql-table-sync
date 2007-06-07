@@ -30,7 +30,8 @@ use List::Util qw(sum max);
 use POSIX qw(ceil);
 
 our $VERSION = '@VERSION@';
-# $Revision$
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -103,6 +104,7 @@ my @opt_spec = (
    { s => 'timeoutok|t',      d => 'Keep going if --wait fails' },
    { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times' },
    { s => 'verify|V!',        d => 'Verify checksum compatibility across servers (default)' },
+   { s => 'version',          d => 'Output version information and exit' },
    { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
    { s => 'where|W=s',        d => 'WHERE clause to restrict syncing to part of the table' },
 );
@@ -147,6 +149,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "mysql-table-sync  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
 
 $opts{help} = 1 if $opts{s} && $opts{s} !~ m/^(s|r)/;
 $opts{k} ||= $opts{w} if !defined $opts{k};

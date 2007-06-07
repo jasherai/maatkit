@@ -29,29 +29,29 @@ use Getopt::Long;
 use List::Util qw(max);
 
 our $VERSION = '@VERSION@';
-# $Revision$
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.
 # ############################################################################
 
-# Define cmdline args; each is GetOpt::Long spec, whether required,
-# human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
-   { s => 'database|D=s', r => 0, d => 'Database to use' },
+   { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-   { s => 'drop|d',       d => 'Add DROP USER before each user' },
-   { s => 'flush|f',      d => 'Add FLUSH PRIVILEGES' },
-   { s => 'host|h=s',     r => 0, d => 'Connect to host' },
-   { s => 'ignore|i=s',   d => 'Ignore this comma-separated list of users' },
-   { s => 'help',         r => 0, d => 'Show this help message' },
-   { s => 'only|o=s',     d => 'Only show grants for this comma-separated list of users' },
-   { s => 'password|p=s', r => 0, d => 'Password to use when connecting' },
-   { s => 'port|P=i',     r => 0, d => 'Port number to use for connection' },
-   { s => 'revoke|r',     d => 'Add REVOKE statements' },
-   { s => 'separate|s',   d => 'List each GRANT or REVOKE separately' },
-   { s => 'socket|S=s',   r => 0, d => 'Socket file to use for connection' },
-   { s => 'user|u=s',     r => 0, d => 'User for login if not current user' },
+   { s => 'drop|d',            d => 'Add DROP USER before each user' },
+   { s => 'flush|f',           d => 'Add FLUSH PRIVILEGES' },
+   { s => 'host|h=s',          d => 'Connect to host' },
+   { s => 'ignore|i=s',        d => 'Ignore this comma-separated list of users' },
+   { s => 'help',              d => 'Show this help message' },
+   { s => 'only|o=s',          d => 'Only show grants for this comma-separated list of users' },
+   { s => 'password|p=s',      d => 'Password to use when connecting' },
+   { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'revoke|r',          d => 'Add REVOKE statements' },
+   { s => 'separate|s',        d => 'List each GRANT or REVOKE separately' },
+   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'user|u=s',          d => 'User for login if not current user' },
+   { s => 'version',           d => 'Output version information and exit' },
 );
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -70,6 +70,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "mysql-show-grants  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
 
 # Turn comma-separated lists into arrays and hashes
 if ( $opts{o} ) {

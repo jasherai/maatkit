@@ -27,10 +27,9 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 
-# Make the file's Perl version the same as its CVS revision number.
-# our $VERSION = sprintf "%d.%03d", q$Revision$ =~ /(\d+)/g;
 our $VERSION = '@VERSION@';
-# $Revision$
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.
@@ -47,6 +46,7 @@ my @opt_spec = (
    { s => 'port|P=i',     r => 0, d => 'Port number to use for connection' },
    { s => 'socket|S=s',   r => 0, d => 'Socket file to use for connection' },
    { s => 'user|u=s',     r => 0, d => 'User for login if not current user' },
+   { s => 'version',      r => 0, d => 'Output version information and exit' },
 );
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -65,6 +65,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "$PROGRAM_NAME  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
 
 # If a filename or other argument(s) is required after the other arguments,
 # add "|| !@ARGV" inside the parens on the next line.

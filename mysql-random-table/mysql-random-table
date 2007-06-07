@@ -28,7 +28,8 @@ use Getopt::Long;
 use List::Util qw(min max);
 
 our $VERSION = '@VERSION@';
-# $Revision$
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.
@@ -50,6 +51,7 @@ my @opt_spec = (
    { s => 'name|n=s',     d => 'Table name (default is test1)' },
    { s => 'dropfirst|d',  d => 'Drop the table before creating it' },
    { s => 'print|r',      d => 'Print SQL' },
+   { s => 'version',      d => 'Output version information and exit' },
    { s => 'words|w=s',    d => 'File of words for random text' },
 );
 
@@ -76,6 +78,11 @@ foreach my $spec ( @opt_spec ) {
 
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "mysql-random-table  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
 
 # If a filename or other argument(s) is required after the other arguments,
 # add "|| !@ARGV" inside the parens on the next line.
