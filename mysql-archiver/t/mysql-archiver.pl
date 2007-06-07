@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 50;
+use Test::More tests => 52;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -74,17 +74,23 @@ is($output, "", 'Empty table OK');
 # Test with a sentinel file
 `mysql --defaults-file=$opt_file < before.sql`;
 `touch sentinel`;
-$output = `perl ../mysql-archiver -W 1=1 --sentinel sentinel --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
-is($output, "", 'No output');
+$output = `perl ../mysql-archiver -W 1=1 -q --sentinel sentinel --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
+like($output, qr/because sentinel/, 'Exits because of sentinel');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 4, 'No rows were deleted');
 `rm sentinel`;
 
-# Test ascending index (it should ascend the primary key, but there is
-# no way to really know; I just want to make sure it doesn't die)
+# Test --stop, which sets the sentinel
+$output = `perl ../mysql-archiver --sentinel sentinel --stop`;
+like($output, qr/Successfully created file sentinel/, 'Created the sentinel OK');
+`rm sentinel`;
+
+# Test ascending index; it should ascend the primary key
 `mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -t -W 1=1 --source D=test,t=table_3,F=$opt_file --purge 2>&1`;
+like($output, qr/FORCE INDEX\(`PRIMARY`\)/, 'Uses PRIMARY index');
 $output = `perl ../mysql-archiver -W 1=1 --source D=test,t=table_3,F=$opt_file --purge 2>&1`;
-is($output, '', 'No output');
+is($output, '', 'Does not die with ascending index');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_3"`;
 is($output + 0, 0, 'Ascended key OK');
 
