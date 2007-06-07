@@ -63,7 +63,6 @@ my @opt_spec = (
    { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
    { s => 'quickdel',    d => 'Add the QUICK modifier to DELETE statements' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-   # TODO { s => 'need-where!', d => 'Require a WHERE clause (default)' },
    { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
    { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
    { s => 'sharelock',   d => 'Adds the LOCK IN SHARE MODE modifier to SELECT statements' },
@@ -72,7 +71,7 @@ my @opt_spec = (
    { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
    { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
-   { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive' },
+   { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive (required)' },
    { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
 );
 
@@ -134,7 +133,15 @@ if ( $opts{f} ) {
 }
 
 if ( !$opts{help} ) {
-   if ( $opts{m} ) {
+   if ( @ARGV ) {
+      warn "Unrecognized options '@ARGV'.  Do you need to quote --where?\n";
+      $opts{help} = 1;
+   }
+   elsif ( !$opts{W} ) {
+      warn "--where is required; use 1=1 if you do not want a WHERE clause\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{m} ) {
       if ( $opts{m} !~ m/^\d+[smhd]$/ ) {
          warn "Invalid --time argument\n";
          $opts{help} = 1;
@@ -331,10 +338,8 @@ $first_sql
    . " FROM $src->{db_tbl}"
    . ( $src->{i}
       ? ((version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
-      : '');
-if ( $opts{W} ) {
-   $first_sql .= " WHERE $opts{W}";
-}
+      : '')
+   . " WHERE ($opts{W})";
 
 # At this point the fetch-first and fetch-next queries may diverge.
 $next_sql = $first_sql;
@@ -353,8 +358,10 @@ if ( @asc_slice ) {
       push @new_asc_slice, $i;
       push @clauses, '(' . join(' AND ', @clause) . ')';
    }
-   $next_sql .= $opts{W} ? ' AND ' : ' WHERE ';
-   $next_sql .= '(' . join(' OR ', @clauses) . ')';
+   $next_sql .= ' AND '
+      . (@clauses > 1 ? '(' : '')
+      . join(' OR ', @clauses)
+      . (@clauses > 1 ? ')' : '');
    @asc_slice = @new_asc_slice;
 }
 
@@ -1137,6 +1144,9 @@ word WHERE.  You may need to quote the argument to prevent your shell from
 interpreting it.  For example:
 
    --where 'ts < current_date - interval 90 day'
+
+For safety, --where is required.  If you do not require a WHERE clause, use
+--where 1=1.
 
 =item --whyquit
 
