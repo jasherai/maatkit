@@ -261,4 +261,8 @@ these licenses, please issue `man perlartistic' or `man perlgpl'.
 
 Baron Schwartz, baron at xaprb dot com.
 
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision $.
+
 =cut
