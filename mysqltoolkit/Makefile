@@ -19,9 +19,14 @@ DISTFILES = COPYING \
 	README
 DISTDIR = $(NAME)-$(VERSION)
 
-all:
-	# Make a package list and difine variables
-	for a in ../../tags/mysql-*; do ls $a | sort -r | head -n 1; done | sort > packlist
+all: 
+
+packvers: packlist
+	sed -e 's/-(\d)/
+
+packlist:
+	# Make a package list
+	for dir in ../../tags/mysql-*; do ls $$dir | sort -r | head -n 1; done > packlist
 
 versions:
 	$(SED) -i -e s/@VERSION@/$(VERSION)/ $(DISTDIR)/$(NAME)
