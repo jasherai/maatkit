@@ -299,6 +299,7 @@ if ( $dst && $opts{C} ) {
 # TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
 # TODO: buffer results from the SELECT, and use a different $sth for the DELETE
 # TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
+# TODO: Add more plugin hooks for setup and tear-down.
 
 my $dbh = $src->{dbh};
 my $sth;
