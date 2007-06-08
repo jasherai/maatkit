@@ -258,11 +258,17 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
       grep { $_ }
       ( $table->{D}, $table->{t} )
    );
-   # TODO: possibly check $dbh->get_info(29) instead
-   # Quick hack for older DBD::mysql installations where
-   # quote_identifier() uses double quotes
-   if ( $DBD::mysql::VERSION < 3 ) {
-      $table->{db_tbl} =~ s/^"|"(?=\.)|(?<=\.)"|"$/`/g;
+   # Older DBD::mysql quote_identifier() uses double quotes
+   if ( (my $q = substr($table->{db_tbl}, 0, 1)) ne '`' ) {
+      $table->{db_tbl} =~ s{
+         ^$q         # Leading quote
+         |$q(?=\.)   # Quote before a dot
+         |(?<=\.)$q  # Quote after a dot
+         |$q$        # Trailing quote
+         }
+         {
+         `           # MySQL escape character
+         }gx;
    }
 
    $table->{info} = get_tbl_struct($table);
