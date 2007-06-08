@@ -132,6 +132,7 @@ my %conn   = (
    D => 'database',
    t => 'table',
    i => 'index',
+   m => 'plugin_module',
 );
 
 my $src = parse_dsn($opts{s});
@@ -243,7 +244,7 @@ USAGE
 }
 
 # ############################################################################
-# Get ready to do the main work.
+# Inspect DB servers and tables.
 # ############################################################################
 my $can_retry = 1;
 foreach my $table ( grep { $_ } ($src, $dst) ) {
@@ -384,8 +385,11 @@ if ( @asc_slice ) {
          push @clause, "`$cols[$j]` = ?";
          push @new_asc_slice, $j;
       }
-      # Only the very last clause should be >=, all others strictly >
-      my $op = ($i == $#asc_slice) ? '>=' : '>';
+      # Only the very last clause should be >=, all others strictly > UNLESS
+      # there is a chance the row will not be deleted, in which case everything
+      # must be strictly > and there is a chance some rows can be skipped in
+      # non-unique indexes.
+      my $op = ($i == $#asc_slice && !$src->{m}) ? '>=' : '>';
       push @clause, "`$cols[$i]` $op ?";
       push @new_asc_slice, $i;
       push @clauses, '(' . join(' AND ', @clause) . ')';
@@ -475,6 +479,30 @@ my $del_row   = $dbh->prepare($del_sql);
 my $ins_row   = $dst->{dbh}->prepare($ins_sql) if $dst; # Different $dbh!
 
 # ############################################################################
+# Create objects for archivable and dependency handling.
+# ############################################################################
+if ( $src->{m} ) {
+   eval "require $src->{m}";
+   die $EVAL_ERROR if $EVAL_ERROR;
+   $src->{plugin} = $src->{m}->new(
+      dbh       => $src->{dbh},
+      db        => $src->{D},
+      tbl       => $src->{t},
+      col_names => \@cols
+   );
+}
+if ( $dst && $dst->{m} ) {
+   eval "require $dst->{m}";
+   die $EVAL_ERROR if $EVAL_ERROR;
+   $dst->{plugin} = $dst->{m}->new(
+      dbh       => $dst->{dbh},
+      db        => $dst->{D},
+      tbl       => $dst->{t},
+      col_names => \@cols
+   );
+}
+
+# ############################################################################
 # Set MySQL options.
 # ############################################################################
 
@@ -534,16 +562,37 @@ while (                          # Quit if:
 {
    my $lastrow = $row;
 
-   # Do the archiving.  Write to the file first, since like the file, MyISAM
-   # and other tables cannot be rolled back etc.  If there is a problem,
-   # hopefully the data has at least made it to the file.
-   if ( $file ) {
-      print $file '', escape($row), "\n"
-         or die "Cannot write to $opts{f}: $OS_ERROR\n";
-   }
+   if ( !$src->{plugin} || $src->{plugin}->is_archivable(row => $row) ) {
 
-   if ( $dst ) {
-      my $success = do_with_retries( 'inserting', sub { $ins_row->execute(@$row) } );
+      # Do the archiving.  Write to the file first, since like the file, MyISAM
+      # and other tables cannot be rolled back etc.  If there is a problem,
+      # hopefully the data has at least made it to the file.
+      if ( $file ) {
+         print $file '', escape($row), "\n"
+            or die "Cannot write to $opts{f}: $OS_ERROR\n";
+      }
+
+      # INSERT must come first, to be as safe as possible.
+      if ( $dst ) {
+         if ( $dst->{plugin} ) {
+            $dst->{plugin}->before_insert(row => $row);
+         }
+         my $success = do_with_retries( 'inserting', sub { $ins_row->execute(@$row) } );
+         if ( $success == 0 ) {
+            $retries = -1;
+            last ROW;
+         }
+         elsif ( $success == -1 ) {
+            --$retries;
+            next ROW;
+         }
+      }
+
+      # DELETE comes after INSERT.
+      if ( $src->{plugin} ) {
+         $src->{plugin}->before_delete(row => $row);
+      }
+      my $success = do_with_retries( 'deleting', sub { $del_row->execute(@{$row}[@pk_slice]) } );
       if ( $success == 0 ) {
          $retries = -1;
          last ROW;
@@ -552,17 +601,7 @@ while (                          # Quit if:
          --$retries;
          next ROW;
       }
-   }
 
-   # DELETE must come after INSERT, to be as safe as possible.
-   my $success = do_with_retries( 'deleting', sub { $del_row->execute(@{$row}[@pk_slice]) } );
-   if ( $success == 0 ) {
-      $retries = -1;
-      last ROW;
-   }
-   elsif ( $success == -1 ) {
-      --$retries;
-      next ROW;
    }
 
    $now = time();
@@ -757,7 +796,10 @@ sub parse_dsn {
    $prev ||= {};
 
    my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-   my %vals = map { $_ => $hash{$_} || $prev->{$_} } keys %conn;
+   my %vals = map  { $_ => $hash{$_} || $prev->{$_} }
+              grep { $_ ne 'm' } # DO NOT copy the 'm' from --source to --dest
+              keys %conn;
+   $vals{m} = $hash{m}; # Add 'm'
    return \%vals;
 }
 
@@ -818,7 +860,12 @@ The goal is a low-impact, forward-only job to nibble old data out of the table
 without impacting OLTP queries much.  You can insert the data into another
 table, which need not be on the same server.  You can also write it to a file
 in a format suitable for LOAD DATA INFILE.  Or you can do neither, in which
-case it's just a slightly less efficient incremental DELETE.
+case it's just an incremental DELETE.
+
+mysql-archiver is extensible via a plugin mechanism.  You can inject your own
+code to add advanced archiving logic that could be useful for archiving
+dependencies, applying complex business rules, or building a data warehouse
+during the archiving process.
 
 You need to choose values carefully for some options.  The most important are
 --limit, --retries, and --txnsize.
@@ -888,7 +935,8 @@ rows from the beginning of the table in chunks, but not leaving any holes, so
 starting at the beginning of the table is actually the most efficient thing to
 do.
 
-See also --ascendfirst.
+See also --ascendfirst.  See L<"EXTENDING"> for a discussion of how this
+interacts with plugin modules.
 
 =item --ascendfirst
 
@@ -897,6 +945,8 @@ not want to incur the overhead of ascending a large multi-column index, you can
 use this option to tell mysql-archiver to ascend only the leftmost column of the
 index.  This can provide a significant performance boost over not ascending the
 index at all, while avoiding the cost of ascending the whole index.
+
+See L<"EXTENDING"> for a discussion of how this interacts with plugin modules.
 
 =item --buffer
 
@@ -956,7 +1006,8 @@ L<http://dev.mysql.com/doc/en/insert.html> for details.
 This item specifies a table into which mysql-archiver will insert rows
 archived from --source.  It uses the same key=val argument format as --source.
 Missing values default to the same values as --source, so you don't have to
-repeat options that are the same in --source and --dest.
+repeat options that are the same in --source and --dest.  The 'm' part is NOT
+defaulted from --source.
 
 =item --file
 
@@ -1090,7 +1141,8 @@ storage engines other than InnoDB.  Request that feature if you need it.
 
 The presence of the file specified by --sentinel will cause mysql-archiver to
 stop archiving and exit.  The default is /tmp/mysql-archiver-sentinel.  You
-might find this handy to stop cron jobs gracefully if necessary.
+might find this handy to stop cron jobs gracefully if necessary.  See also
+L<"--stop">.
 
 =item --sharelock
 
@@ -1132,6 +1184,13 @@ The following options select a table to archive:
    t   Table to archive
    i   Index to use
 
+The following options specify pluggable actions, which an external Perl module
+can provide:
+
+   KEY MEANING
+   === =======
+   m   Package name of an external Perl module (see L<"EXTENDING">).
+
 The only required part is the table; other parts may be read from various
 places in the environment (such as options files).  Here is an example:
 
@@ -1149,7 +1208,8 @@ remembers the last row it retrieves from each SELECT statement, and uses it to
 construct a WHERE clause, using the columns in the specified index, that should
 allow MySQL to start the next SELECT where the last one ended, rather than
 potentially scanning from the beginning of the table with each successive
-SELECT.
+SELECT.  If you are using external plugins, please see L<"EXTENDING"> for a
+discussion of how they interact with ascending indexes.
 
 =item --stop
 
@@ -1209,6 +1269,84 @@ running out of rows to archive.  This can be useful if you have a cron job with
 finishing before running out of time.
 
 =back
+
+=head1 EXTENDING
+
+mysql-archiver is extensible by plugging in external Perl modules to handle
+some logic and/or actions.  You can specify a module for both the --source and
+the --dest, with the 'm' part of the specification.  For example:
+
+   --source D=test,t=test1,m=My::Module1 --dest m=My::Module2,t=test2
+
+This will cause mysql-archiver to load the My::Module1 and My::Module2 packages,
+create instances of them, and then make calls to them during the archiving
+process.  The module must provide this interface:
+
+=over
+
+=item new(dbh => $dbh, db => $db_name, tbl => $tbl_name, col_names => \@col_names)
+
+The module's constructor will be passed a reference to the database handle,
+the database and table name, and an arrayref of column names.
+
+=item is_archivable(row => \@row)
+
+This method will be called for each row to determine whether it is archivable.
+This only applies to --source.  The argument is the row itself, as an arrayref.
+If the method returns true, the row will be archived; otherwise it will be
+skipped.
+
+Skipping a row adds complications for non-unique indexes.  Normally
+mysql-archiver uses a WHERE clause designed to target the last processed row as
+the place to start the scan for the next SELECT statement.  If you have skipped
+the row by returning false from is_archivable(), mysql-archiver could get into
+an infinite loop because the row still exists.  Therefore, when you specify a
+plugin for the --source argument, mysql-archiver will change its WHERE clause
+slightly.  Instead of starting at "greater than or equal to" the last processed
+row, it will start "strictly greater than."  This will work fine on unique
+indexes such as primary keys, but it may skip rows (leave holes) on non-unique
+indexes or when ascending only the first column of an index.
+
+=item before_delete(row => \@row)
+
+This method will be called for each row just before it is deleted.  This only
+applies to --source.  This is a good place for you to handle dependencies,
+such as deleting things that are foreign-keyed to the row you are about to
+delete.  You could also use this to recursively archive all dependent tables.
+
+=item before_insert(row => \@row)
+
+This method will be called for each row just before it is inserted.  This only
+applies to --dest.  You could use this to insert the row into multiple tables,
+perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a
+data warehouse.
+
+=back
+
+mysql-archiver assumes it controls transactions, and that the plugin module
+will NOT commit or roll back the database handle.  The database handle passed
+to the plugin module's constructor is the same handle mysql-archiver uses
+itself.  Remember that --source and --dest are separate handles.
+
+A sample module might look like this:
+
+   package My::Module;
+   
+   sub new {
+      my ( $class, %args ) = @_;
+      return bless(\%args, $class);
+   }
+   
+   sub is_archivable {
+      my ( $self, %args ) = @_;
+      # Do some advanced logic with $args{row}
+      return 1;
+   }
+   
+   sub before_delete {} # Take no action
+   sub before_insert {} # Take no action
+   
+   1;
 
 =head1 SYSTEM REQUIREMENTS
 

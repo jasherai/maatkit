@@ -3,10 +3,11 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 52;
+use Test::More tests => 64;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
+$ENV{PERL5LIB} .= ':t/';
 
 my $output;
 
@@ -205,7 +206,7 @@ is($output + 0, 1, 'Did not purge last row');
 $output = `perl ../mysql-archiver -s D=test,t=table_5,F=$opt_file -p -l 50 -W 'a<current_date - interval 1 day' 2>&1`;
 is($output, '', 'No errors in larger table');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5"`;
-is($output + 0, 0, 'Purged completely');
+is($output + 0, 0, 'Purged completely on multi-column ascending index');
 
 # Make sure ascending index check can be disabled
 $output = `perl ../mysql-archiver -W 1=1 -t --noascend -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
@@ -214,3 +215,40 @@ like ( $output, qr/(^SELECT .*$)\n\1/m, '--noascend makes fetch-first and fetch-
 # Check ascending only first column
 $output = `perl ../mysql-archiver -W 1=1 -t --ascendfirst -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
 like ( $output, qr/WHERE \(1=1\) AND \(`a` >= \?\) LIMIT/, 'Can ascend just first column');
+
+# Check plugin that does nothing
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -W 1=1 -s m=Plugin1,D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
+is($output, '', 'Loading a blank plugin worked OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
+is($output + 0, 4, 'Purged no rows ok b/c of blank plugin');
+
+# Test that ascending index check doesn't leave any holes on a unique index when
+# there is a plugin that always says rows are archivable
+$output = `perl ../mysql-archiver -s m=Plugin2,D=test,t=table_5,F=$opt_file -p -l 50 -W 'a<current_date - interval 1 day' 2>&1`;
+is($output, '', 'No errors with strictly ascending index');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5"`;
+is($output + 0, 0, 'Purged completely with strictly ascending index');
+
+# Check plugin that adds rows to another table (same thing as --dest, but on
+# same db handle)
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -W 1=1 -s m=Plugin3,D=test,t=table_1,F=$opt_file -p 2>&1`;
+is($output, '', 'Running with plugin did not die');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
+is($output + 0, 0, 'Purged all rows ok with plugin');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_2"`;
+is($output + 0, 4, 'Plugin archived all rows to table_2 OK');
+
+# Check plugin that does ON DUPLICATE KEY UPDATE on insert
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -W 1=1 -s D=test,t=table_7,F=$opt_file -d m=Plugin4,t=table_8 2>&1`;
+is($output, '', 'Loading a blank plugin worked OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_7"`;
+is($output + 0, 0, 'Purged all rows ok with plugin');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_8"`;
+is($output + 0, 2, 'Plugin archived all rows to table_8 OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_9"`;
+is($output + 0, 1, 'ODKU made one row');
+$output = `mysql --defaults-file=$opt_file -N -e "select a, b, c from test.table_9"`;
+like($output, qr/1\s+3\s+6/, 'ODKU added rows up');
