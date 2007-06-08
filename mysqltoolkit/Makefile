@@ -21,8 +21,7 @@ DISTDIR = $(NAME)-$(VERSION)
 
 all:
 	# Make a package list and difine variables
-	# for a in mysql-*; do ls $a | sort -r | head -n 1; done | sort
-	$(DISTFILES)
+	for a in ../../tags/mysql-*; do ls $a | sort -r | head -n 1; done | sort > packlist
 
 versions:
 	$(SED) -i -e s/@VERSION@/$(VERSION)/ $(DISTDIR)/$(NAME)
