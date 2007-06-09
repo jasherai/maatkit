@@ -15,7 +15,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-archiver
-VERSION = 0.9.1
+VERSION = 0.9.2
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \
@@ -28,6 +28,7 @@ all: $(DISTFILES)
 
 versions:
 	$(SED) -i -e s/@VERSION@/$(VERSION)/ $(DISTDIR)/$(NAME)
+	$(SED) -i -e s/@DISTRIB@/Standalone/ $(DISTDIR)/$(NAME)
 
 distdir: all
 	if test -d $(DISTDIR) ; then $(RM) -rf $(DISTDIR) ; fi
