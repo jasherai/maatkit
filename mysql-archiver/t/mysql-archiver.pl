@@ -243,7 +243,7 @@ is($output + 0, 4, 'Plugin archived all rows to table_2 OK');
 # Check plugin that does ON DUPLICATE KEY UPDATE on insert
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mysql-archiver -W 1=1 -s D=test,t=table_7,F=$opt_file -d m=Plugin4,t=table_8 2>&1`;
-is($output, '', 'Loading a blank plugin worked OK');
+is($output, '', 'Loading plugin worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_7"`;
 is($output + 0, 0, 'Purged all rows ok with plugin');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_8"`;
@@ -252,3 +252,10 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 1, 'ODKU made one row');
 $output = `mysql --defaults-file=$opt_file -N -e "select a, b, c from test.table_9"`;
 like($output, qr/1\s+3\s+6/, 'ODKU added rows up');
+
+# Check plugin that sets up and archives a temp table
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -W 1=1 -s m=Plugin5,D=test,t=tmp_table,F=$opt_file -d t=table_10 2>&1`;
+is($output, '', 'Loading plugin worked OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_10"`;
+is($output + 0, 2, 'Plugin archived all rows to table_10 OK');

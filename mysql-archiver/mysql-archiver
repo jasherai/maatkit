@@ -246,6 +246,7 @@ USAGE
 # ############################################################################
 # Inspect DB servers and tables.
 # ############################################################################
+
 my $can_retry = 1;
 foreach my $table ( grep { $_ } ($src, $dst) ) {
    my $dbh        = get_dbh($table);
@@ -270,6 +271,19 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
          {
          `           # MySQL escape character
          }gx;
+   }
+
+   # Create objects for archivable and dependency handling, BEFORE getting the
+   # tbl structure (because the object might do some setup, including creating
+   # the table to be archived).
+   if ( $table->{m} ) {
+      eval "require $table->{m}";
+      die $EVAL_ERROR if $EVAL_ERROR;
+      $table->{plugin} = $table->{m}->new(
+         dbh => $table->{dbh},
+         db  => $table->{D},
+         tbl => $table->{t},
+      );
    }
 
    $table->{info} = get_tbl_struct($table);
@@ -299,7 +313,6 @@ if ( $dst && $opts{C} ) {
 # TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
 # TODO: buffer results from the SELECT, and use a different $sth for the DELETE
 # TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
-# TODO: Add more plugin hooks for setup and tear-down.
 
 my $dbh = $src->{dbh};
 my $sth;
@@ -480,30 +493,6 @@ my $del_row   = $dbh->prepare($del_sql);
 my $ins_row   = $dst->{dbh}->prepare($ins_sql) if $dst; # Different $dbh!
 
 # ############################################################################
-# Create objects for archivable and dependency handling.
-# ############################################################################
-if ( $src->{m} ) {
-   eval "require $src->{m}";
-   die $EVAL_ERROR if $EVAL_ERROR;
-   $src->{plugin} = $src->{m}->new(
-      dbh       => $src->{dbh},
-      db        => $src->{D},
-      tbl       => $src->{t},
-      col_names => \@cols
-   );
-}
-if ( $dst && $dst->{m} ) {
-   eval "require $dst->{m}";
-   die $EVAL_ERROR if $EVAL_ERROR;
-   $dst->{plugin} = $dst->{m}->new(
-      dbh       => $dst->{dbh},
-      db        => $dst->{D},
-      tbl       => $dst->{t},
-      col_names => \@cols
-   );
-}
-
-# ############################################################################
 # Set MySQL options.
 # ############################################################################
 
@@ -512,6 +501,14 @@ if ( $opts{K} ) {
    if ( $dst ) {
       $dst->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
    }
+}
+
+# ############################################################################
+# Set up the plugins
+# ############################################################################
+foreach my $table ( $dst, $src ) {
+   next unless $table && $table->{plugin};
+   $table->{plugin}->before_begin(cols => \@cols) if $table->{plugin};
 }
 
 # ############################################################################
@@ -641,6 +638,12 @@ if ( $opts{f} && $file ) {
 
 if ( $opts{P} ) {
    printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
+}
+
+# Tear down the plugins.
+foreach my $table ( $dst, $src ) {
+   next unless $table && $table->{plugin};
+   $table->{plugin}->after_finish();
 }
 
 # Run ANALYZE or OPTIMIZE.
@@ -937,7 +940,7 @@ starting at the beginning of the table is actually the most efficient thing to
 do.
 
 See also --ascendfirst.  See L<"EXTENDING"> for a discussion of how this
-interacts with plugin modules.
+interacts with plugins.
 
 =item --ascendfirst
 
@@ -947,7 +950,7 @@ use this option to tell mysql-archiver to ascend only the leftmost column of the
 index.  This can provide a significant performance boost over not ascending the
 index at all, while avoiding the cost of ascending the whole index.
 
-See L<"EXTENDING"> for a discussion of how this interacts with plugin modules.
+See L<"EXTENDING"> for a discussion of how this interacts with plugins.
 
 =item --buffer
 
@@ -1285,17 +1288,27 @@ process.  The module must provide this interface:
 
 =over
 
-=item new(dbh => $dbh, db => $db_name, tbl => $tbl_name, col_names => \@col_names)
+=item new(dbh => $dbh, db => $db_name, tbl => $tbl_name)
 
-The module's constructor will be passed a reference to the database handle,
-the database and table name, and an arrayref of column names.
+The plugin's constructor is passed a reference to the database handle, the
+database name, and table name.  The plugin is created just after mysql-archiver
+opens the connection, and before it examines the table given in the arguments.
+This gives the plugin a chance to create and populate temporary tables, or do
+other setup work.
+
+=item before_begin(cols => \@cols)
+
+This method is called just before mysql-archiver begins iterating through rows
+and archiving them, but after it does all other setup work (examining table
+structures, designing SQL queries, and so on).  This is the only time
+mysql-archiver tells the plugin column names for the rows it will pass the
+plugin while archiving.
 
 =item is_archivable(row => \@row)
 
-This method will be called for each row to determine whether it is archivable.
-This only applies to --source.  The argument is the row itself, as an arrayref.
-If the method returns true, the row will be archived; otherwise it will be
-skipped.
+This method is called for each row to determine whether it is archivable.  This
+only applies to --source.  The argument is the row itself, as an arrayref.  If
+the method returns true, the row will be archived; otherwise it will be skipped.
 
 Skipping a row adds complications for non-unique indexes.  Normally
 mysql-archiver uses a WHERE clause designed to target the last processed row as
@@ -1310,24 +1323,34 @@ indexes or when ascending only the first column of an index.
 
 =item before_delete(row => \@row)
 
-This method will be called for each row just before it is deleted.  This only
-applies to --source.  This is a good place for you to handle dependencies,
-such as deleting things that are foreign-keyed to the row you are about to
-delete.  You could also use this to recursively archive all dependent tables.
+This method is called for each row just before it is deleted.  This only applies
+to --source.  This is a good place for you to handle dependencies, such as
+deleting things that are foreign-keyed to the row you are about to delete.  You
+could also use this to recursively archive all dependent tables.
 
 =item before_insert(row => \@row)
 
-This method will be called for each row just before it is inserted.  This only
+This method is called for each row just before it is inserted.  This only
 applies to --dest.  You could use this to insert the row into multiple tables,
-perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a
-data warehouse.
+perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a data
+warehouse.
+
+=item after_finish()
+
+This method is called after mysql-archiver exits the archiving loop, commits all
+database handles, closes --file, and prints the final statistics, but before
+mysql-archiver runs ANALYZE or OPTIMIZE.
 
 =back
 
-mysql-archiver assumes it controls transactions, and that the plugin module
-will NOT commit or roll back the database handle.  The database handle passed
-to the plugin module's constructor is the same handle mysql-archiver uses
-itself.  Remember that --source and --dest are separate handles.
+If you specify a plugin for both --source and --dest, mysql-archiver constructs,
+calls before_begin(), and calls after_finish() on the two plugins in the order
+--source, --dest.
+
+mysql-archiver assumes it controls transactions, and that the plugin will NOT
+commit or roll back the database handle.  The database handle passed to the
+plugin's constructor is the same handle mysql-archiver uses itself.  Remember
+that --source and --dest are separate handles.
 
 A sample module might look like this:
 
@@ -1338,6 +1361,12 @@ A sample module might look like this:
       return bless(\%args, $class);
    }
    
+   sub before_begin {
+      my ( $self, %args ) = @_;
+      # Save column names for later
+      $self->{cols} = $args{cols};
+   }
+   
    sub is_archivable {
       my ( $self, %args ) = @_;
       # Do some advanced logic with $args{row}
@@ -1346,6 +1375,7 @@ A sample module might look like this:
    
    sub before_delete {} # Take no action
    sub before_insert {} # Take no action
+   sub after_finish {}  # Take no action
    
    1;
 
