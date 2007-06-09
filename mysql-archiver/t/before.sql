@@ -199,3 +199,6 @@ create table table_9(
 insert into table_7(a, b, c) values
    (1, 2, 1),
    (1, 3, 5);
+
+drop table if exists table_10;
+create table table_10(a int not null primary key);

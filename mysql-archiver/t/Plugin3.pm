@@ -15,6 +15,8 @@ sub before_delete {
 }
 
 sub before_insert {} # Take no action
+sub before_begin {} # Take no action
+sub after_finish {} # Take no action
 
 1;
 
