@@ -3,6 +3,12 @@ details.
 
 Changelog:
 
+2007-06-10: version 1.1.1
+
+   * Added --defaults-file option.
+   * Added standard --version command-line option.
+   * Added --defaults-file option.
+
 2007-04-05: version 1.1.0
 
    * Profile "Potential filesorts".
