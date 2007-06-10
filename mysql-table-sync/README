@@ -3,6 +3,11 @@ more details.
 
 Changelog:
 
+2007-06-10: version 0.9.4
+
+   * Added --defaults-file option.
+   * Added standard --version command-line option.
+
 2007-05-17: version 0.9.3
 
    New features:

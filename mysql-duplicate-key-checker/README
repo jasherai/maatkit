@@ -3,6 +3,11 @@ more details.
 
 Changelog:
 
+2007-06-10: version 1.0.3
+
+   * Added --defaults-file option.
+   * Added standard --version command-line option.
+
 2007-03-25: version 1.0.2
 
    * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.

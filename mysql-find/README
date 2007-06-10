@@ -2,6 +2,13 @@ This package contains mysql-find.  Please view the perldoc for more details.
 
 Changelog:
 
+2007-06-10: version 0.9.2
+
+   * --pid had a race condition.
+   * Unrecognized --sprintf directives could cause crashes.
+   * Added --defaults-file option.
+   * Added standard --version command-line option.
+
 2007-05-09: version 0.9.1
 
    * Added --host command-line option.  Oops.
