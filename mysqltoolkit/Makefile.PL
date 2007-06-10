@@ -1,5 +1,4 @@
 use ExtUtils::MakeMaker;
-$program = 'mysql-table-checksum';
 
 WriteMakefile(
     NAME         => $program,
