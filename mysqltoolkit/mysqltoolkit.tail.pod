@@ -1,0 +1,47 @@
+
+=head1 INSTALLATION
+
+Strictly speaking these tools require no installation; you should be able to
+run them stand-alone.  However, on UNIX-ish systems you can use the standard
+Perl installation sequence:
+
+   cd <package directory>
+   perl Makefile.PL
+   make install
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 BUGS
+
+If you find bugs, need features, etc please use the bug tracker, forums, and
+mailing lists at http://sourceforge.net/projects/mysqltoolkit.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz and others.  Feedback and
+improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+See the individual program's documentation for details.
+
+=head1 VERSION
+
+This manual page documents Distrib @DISTRIB@ $Revision: 534 $.
