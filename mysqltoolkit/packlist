@@ -1,1 +1,10 @@
 $Revision$
+mysql-archiver-0.9.1
+mysql-deadlock-logger-1.0.0
+mysql-duplicate-key-checker-1.0.2
+mysql-find-0.9.1
+mysql-query-profiler-1.1.0
+mysql-show-grants-1.0.0
+mysql-table-checksum-1.1.6
+mysql-table-maintainer-0.9.0
+mysql-table-sync-0.9.3
