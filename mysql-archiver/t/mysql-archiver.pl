@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 64;
+use Test::More tests => 66;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
