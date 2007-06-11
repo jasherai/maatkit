@@ -1,0 +1,23 @@
+#!/bin/sh
+
+VERSION=`head -n 1 packlist | awk '{print $2}'`
+DEBIAN_FILES=`find debian -maxdepth 1 -type f`;
+
+if [ -f "mysqltoolkit-$VERSION.tar.gz" ]; then
+   echo "Tarball already exists"
+else
+   echo "Building version $VERSION"
+   perl ./package.pl
+fi
+
+cp "mysqltoolkit-$VERSION.tar.gz" "mysqltoolkit_$VERSION.orig.tar.gz" 
+
+if test -d mysqltoolkit-debian ; then rm -rf mysqltoolkit-debian ; fi
+tar xfz "mysqltoolkit_$VERSION.orig.tar.gz"
+mv "mysqltoolkit-$VERSION" mysqltoolkit-debian
+mkdir mysqltoolkit-debian/debian
+cp -a $DEBIAN_FILES mysqltoolkit-debian/debian
+cd mysqltoolkit-debian/
+debuild -S -sa -us -uc
+debuild -b -us -uc
+rm -rf mysqltoolkit-debian/
