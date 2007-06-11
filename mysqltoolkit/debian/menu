@@ -1,0 +1,2 @@
+?package(mysqltoolkit):needs="text" section="Apps/Databases"\
+  title="mysqltoolkit" command="/usr/bin/mysqltoolkit"
