@@ -14,7 +14,7 @@ cp "mysqltoolkit-$VERSION.tar.gz" "mysqltoolkit_$VERSION.orig.tar.gz"
 
 if test -d mysqltoolkit-debian ; then rm -rf mysqltoolkit-debian ; fi
 tar xfz "mysqltoolkit_$VERSION.orig.tar.gz"
-mv "mysqltoolkit-$VERSION" mysqltoolkit-debian
+cp -a "mysqltoolkit-$VERSION" mysqltoolkit-debian
 mkdir mysqltoolkit-debian/debian
 cp -a $DEBIAN_FILES mysqltoolkit-debian/debian
 cd mysqltoolkit-debian/
