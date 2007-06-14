@@ -308,6 +308,7 @@ if ( $dst && $opts{C} ) {
    }
 }
 
+# TODO: support finding archivable rows on either the source or dest.
 # TODO: ease the restrictions about primary keys and nullable columns.
 # TODO: support batched inserts and deletes
 # TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
