@@ -1,0 +1,159 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+use List::Util qw(min max);
+use Term::ReadKey;
+
+our $VERSION = '@VERSION@';
+
+# Define cmdline args
+my @opt_spec = (
+   {  s => 'askpass',     d => 'Prompt for username and password for connections' },
+   { s => 'delay|d=i',    d => 'Slave delay, in seconds' },
+   { s => 'help',         d => 'Show this help message' },
+   { s => 'password|p=s', d => 'Password to use when connecting' },
+   { s => 'port|P=i',     d => 'Port number to use for connection' },
+   { s => 'socket|S=s',   d => 'Socket file to use for connection' },
+   {  s => 'sleep|s=i',   d => 'Sleep between two inetarions (default: 60 seconds)' },
+   { s => 'user|u=s',     d => 'User for login if not current user' },
+);
+
+# This is the container for the command-line options' values to be stored in
+# after processing.  Initial values are defaults.
+my %opts = (
+   's' => 60,
+);
+
+my %opt_seen;
+foreach my $spec (@opt_spec) {
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{ $spec->{k} } = undef unless defined $opts{ $spec->{k} };
+   die "Duplicate option $spec->{k}" if $opt_seen{ $spec->{k} }++;
+}
+
+Getopt::Long::Configure( 'no_ignore_case', 'bundling' );
+GetOptions( map { $_->{s} => \$opts{ $_->{k} } } @opt_spec )
+   or $opts{help} = 1;
+
+# Post-process command-line options and arguments.
+if ( !defined $opts{d} ) {
+   die "Required option -d not specified";
+}
+elsif ( $opts{d} <= 0 ) {
+   die "Delay must be greater than 0";
+}
+
+if ( @ARGV != 2 ) {
+   $opts{help} = 1;
+}
+
+if ( $opts{help} ) {
+   print "Usage: mysql-slave-delay [OPTION]... MASTER-HOST SLAVE-HOST\n\n";
+   my $maxw
+      = max( map { length( $_->{l} ) + ( $_->{n} ? 4 : 0 ) } @opt_spec );
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}"    : '';
+      printf( "  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d} );
+   }
+   print <<USAGE;
+
+mysql-slave-delay TODO:
+
+   perldoc mysql-slave-delay
+
+USAGE
+   exit(1);
+}
+
+# ############################################################################
+# Ready to work now.
+# ############################################################################
+
+my $db_options = {
+   RaiseError => 1,
+   PrintError => 0,
+};
+
+my %db_info;    # holds user/pass etc for each host
+
+my $master_dbh = get_dbh( $ARGV[0] );
+my $slave_dbh  = get_dbh( $ARGV[1] );
+
+my @positions;
+while (1) {
+
+   # Get master position
+   my $master_status = $master_dbh->selectrow_hashref("SHOW MASTER STATUS");
+   push @positions,
+      {
+      ts      => time,
+      logfile => $master_status->{File},
+      logpos  => $master_status->{Position}
+      };
+
+   # Find suitable position to start slave
+   my $todo = [ grep { $_->{ts} < time - $opts{d} } @positions ]->[-1];
+   if ( defined $todo ) {
+      $slave_dbh->do("STOP SLAVE SQL_THREAD");
+      $slave_dbh->do(
+         "START SLAVE SQL_THREAD UNTIL MASTER_LOG_FILE = '$todo->{logfile}', MASTER_LOG_POS = $todo->{logpos}"
+      );
+
+      # Filter positions
+      @positions = grep { $_->{ts} >= time - $opts{d} } @positions;
+   }
+   else {
+
+      #print "Skip iteration - no enough data\n";
+   }
+   sleep( $opts{s} );
+}
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+
+sub get_dbh {
+   my ( $host, $db ) = @_;
+   my %conn = (
+      F => 'mysql_read_default_file',
+      h => 'host',
+      P => 'port',
+      S => 'socket'
+   );
+
+   if ( $opts{askpass} ) {
+      if ( !$db_info{$host} ) {
+         print "Username for $host: ";
+         my $user = <STDIN>;
+         chomp $user;
+         print "Password for $user on $host: ";
+         ReadMode('noecho');
+         my $pass = <STDIN>;
+         chomp $pass;
+         ReadMode('normal');
+         print "\n";
+         $db_info{$host} = { u => $user, p => $pass };
+      }
+      $opts{u} = $db_info{$host}->{u};
+      $opts{p} = $db_info{$host}->{p};
+   }
+
+   $db ||= '';
+   my $dsn = "DBI:mysql:$db;host=$host;"
+      . join( ';',
+      map {"$conn{$_}=$opts{$_}"} grep { defined $opts{$_} } qw(F h P S) )
+      . ';mysql_read_default_group=mysql';
+   return DBI->connect( $dsn, @opts{qw(u p)}, $db_options )
+      or die("Can't connect to DB: $OS_ERROR");
+}
