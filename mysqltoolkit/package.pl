@@ -45,13 +45,13 @@ foreach my $p ( keys %versions ) {
    `cp $base/$p/$versions{$p}/README $dist/README.$p`;
 }
 
-# Set the DISTRIB variable
-`grep DISTRIB -rl $dist | xargs sed -i -e 's/\@DISTRIB\@/$rev/'`;
-
 # Copy other files
-foreach my $file ( qw(Makefile.PL COPYING INSTALL) ) {
+foreach my $file ( qw(Makefile.PL COPYING INSTALL mysqltoolkit.spec) ) {
    `cp $file $dist`;
 }
+
+# Set the DISTRIB variable
+`grep DISTRIB -rl $dist | xargs sed -i -e 's/\@DISTRIB\@/$rev/'`;
 
 # Write the MANIFEST
 `find $dist -type f -print | sed -e 's/$dist.//' > $dist/MANIFEST`;

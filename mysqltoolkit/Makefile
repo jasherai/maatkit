@@ -1,10 +1,10 @@
-all: package debian doc
+dist:
+	./package.pl
 
-debian: package
+all: dist debian doc
+
+debian: dist
 	./debian-build
 
-doc: package
+doc: dist
 	./make-docs.pl
-
-package:
-	./package.pl
