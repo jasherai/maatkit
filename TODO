@@ -4,6 +4,4 @@ mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 query sniper:
    * http://www.stillhq.com/mysql/000008.html
 mysql-binlog-pipeliner: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
-* A tool to trace back to a port and see which application has a MySQL
-  connection open.
 http://www.mysqlperformanceblog.com/2007/05/22/wishes-for-mysqldump/
