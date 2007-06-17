@@ -5,6 +5,7 @@ use warnings FATAL => 'all';
 
 use Data::Dumper;
 use File::Basename;
+use Pod::Html;
 
 # Find list of packages
 my $base     = '../../tags';
@@ -59,7 +60,38 @@ foreach my $file ( qw(Makefile.PL COPYING INSTALL mysqltoolkit.spec) ) {
 
 # Do it!!!!
 print `tar zcf $dist.tar.gz $dist`;
-print `zip -r $dist.zip $dist`;
+print `zip -qr $dist.zip $dist`;
+
+# Make the documentation.  Requires two passes.
+my @module_files = map { basename $_ } <$dist/bin/mysql-*>;
+for ( 0 .. 1 ) {
+   foreach my $module ( @module_files ) {
+      pod2html(
+         "--backlink=Top",
+         "--cachedir=cache",
+         "--htmldir=html",
+         "--infile=$dist/bin/$module",
+         "--outfile=html/$module.html",
+         "--libpods=perlfunc:perlguts:perlvar:perlrun:perlop",
+         "--podpath=bin:lib",
+         "--podroot=$dist",
+         "--css=http://search.cpan.org/s/style.css",
+      );
+   }
+   pod2html(
+      "--backlink=Top",
+      "--cachedir=cache",
+      "--htmldir=html",
+      "--infile=$dist/lib/mysqltoolkit.pm",
+      "--outfile=html/mysqltoolkit.html",
+      "--libpods=perlfunc:perlguts:perlvar:perlrun:perlop",
+      "--podpath=bin:lib",
+      "--podroot=$dist",
+      "--css=http://search.cpan.org/s/style.css",
+   );
+}
+# Wow, Pod::HTML is a pain in the butt.  Fix links now.
+`for a in html/*; do sed -i -e 's/bin.//g' \$a; done`;
 
 # #####################################################################
 # Subroutines
