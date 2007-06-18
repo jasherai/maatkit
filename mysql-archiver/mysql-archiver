@@ -308,7 +308,6 @@ if ( $dst && $opts{C} ) {
    }
 }
 
-# TODO: support finding archivable rows on either the source or dest.
 # TODO: ease the restrictions about primary keys and nullable columns.
 # TODO: support batched inserts and deletes
 # TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
@@ -873,26 +872,26 @@ dependencies, applying complex business rules, or building a data warehouse
 during the archiving process.
 
 You need to choose values carefully for some options.  The most important are
---limit, --retries, and --txnsize.
+L<"--limit">, L<"--retries">, and L<"--txnsize">.
 
 The strategy is to find the first row(s), then scan some index forward-only to
 find more rows efficiently.  Each subsequent query should not scan the entire
 table; it should seek into the index, then scan until it finds more archivable
-rows.  Specifying the index with the 'i' part of the --source argument can be
-crucial for this; use --test to examine the generated queries and be sure to
+rows.  Specifying the index with the 'i' part of the L<"--source"> argument can be
+crucial for this; use L<"--test"> to examine the generated queries and be sure to
 EXPLAIN them to see if they are efficient (most of the time you probably want
 to scan the PRIMARY key, which is the default).  Even better, profile
 mysql-archiver with mysql-query-profiler and make sure it is not scanning the
 whole table every query.
 
 You can disable the seek-then-scan optimizations partially or wholly with
---noascend and --ascendfirst.  Sometimes this may be more efficient for
+L<"--noascend"> and L<"--ascendfirst">.  Sometimes this may be more efficient for
 multi-column keys.
 
 At the moment, there are some limitations to ease the task of working with NULLs
 and indexes.  The table must have a PRIMARY key, and any index you specify in
---source must be composed entirely of non-NULL columns (or, if you specify
---ascendfirst, the first column must be non-NULL).  These restrictions may be
+L<"--source"> must be composed entirely of non-NULL columns (or, if you specify
+L<"--ascendfirst">, the first column must be non-NULL).  These restrictions may be
 removed in future versions.
 
 =head1 OPTIONS
@@ -940,12 +939,12 @@ rows from the beginning of the table in chunks, but not leaving any holes, so
 starting at the beginning of the table is actually the most efficient thing to
 do.
 
-See also --ascendfirst.  See L<"EXTENDING"> for a discussion of how this
+See also L<"--ascendfirst">.  See L<"EXTENDING"> for a discussion of how this
 interacts with plugins.
 
 =item --ascendfirst
 
-If you do want to use the ascending index optimization (see --ascend), but do
+If you do want to use the ascending index optimization (see L<"--ascend">), but do
 not want to incur the overhead of ascending a large multi-column index, you can
 use this option to tell mysql-archiver to ascend only the leftmost column of the
 index.  This can provide a significant performance boost over not ascending the
@@ -955,14 +954,14 @@ See L<"EXTENDING"> for a discussion of how this interacts with plugins.
 
 =item --buffer
 
-Disables autoflushing to --file and flushes --file to disk only when a
+Disables autoflushing to L<"--file"> and flushes L<"--file"> to disk only when a
 transaction commits.  This typically means the file is block-flushed by the
 operating system, so there may be some implicit flushes to disk between
-commits as well.  The default is to flush --file to disk after every row.
+commits as well.  The default is to flush L<"--file"> to disk after every row.
 
 The danger is that a crash might cause lost data.
 
-The performance increase I have seen from using --buffer is around 5 to 15
+The performance increase I have seen from using L<"--buffer"> is around 5 to 15
 percent.  Your mileage may vary.
 
 =item --chkcols
@@ -980,26 +979,26 @@ insert into the destination table.  If specified, mysql-archiver completely
 ignores every other column.
 
 If you specify this option, at present you need to at least specify the
-columns in the primary key and the index given in --source (if any).
+columns in the primary key and the index given in L<"--source"> (if any).
 
 See also --pkonly.
 
 =item --commit-each
 
-Commits transactions and flushes --file after each set of rows has been
-archived, before fetching the next set of rows, and before sleeping if --sleep
-is specified.  Disables --txnsize; use --limit to control the transaction size
-with --commit-each.
+Commits transactions and flushes L<"--file"> after each set of rows has been
+archived, before fetching the next set of rows, and before sleeping if L<"--sleep">
+is specified.  Disables L<"--txnsize">; use L<"--limit"> to control the transaction size
+with L<"--commit-each">.
 
-This option is useful as a shortcut to make --limit and --txnsize the same
+This option is useful as a shortcut to make L<"--limit"> and L<"--txnsize"> the same
 value, but more importantly it avoids transactions being held open while
 searching for more rows.  For example, imagine you are archiving old rows from
-the beginning of a very large table, with --limit 1000 and --txnsize 1000.
+the beginning of a very large table, with L<"--limit"> 1000 and L<"--txnsize"> 1000.
 After some period of finding and archiving 1000 rows at a time, mysql-archiver
 finds the last 999 rows and archives them, then executes the next SELECT to find
 more rows.  This scans the rest of the table, but never finds any more rows.  It
 has held open a transaction for a very long time, only to determine it is
-finished anyway.  You can use --commit-each to avoid this.
+finished anyway.  You can use L<"--commit-each"> to avoid this.
 
 =item --delayedins
 
@@ -1009,10 +1008,10 @@ L<http://dev.mysql.com/doc/en/insert.html> for details.
 =item --dest
 
 This item specifies a table into which mysql-archiver will insert rows
-archived from --source.  It uses the same key=val argument format as --source.
-Missing values default to the same values as --source, so you don't have to
-repeat options that are the same in --source and --dest.  The 'm' part is NOT
-defaulted from --source.
+archived from L<"--source">.  It uses the same key=val argument format as L<"--source">.
+Missing values default to the same values as L<"--source">, so you don't have to
+repeat options that are the same in L<"--source"> and L<"--dest">.  The 'm' part is NOT
+defaulted from L<"--source">.
 
 =item --file
 
@@ -1041,17 +1040,17 @@ terminated by tabs, NULL characters are represented by \N, and special
 characters are escaped by \.  This lets you reload a file with LOAD DATA
 INFILE's default settings.
 
-If you want a column header at the top of the file, see --header.  The file is
-auto-flushed by default; see --buffer.
+If you want a column header at the top of the file, see L<"--header">.  The file is
+auto-flushed by default; see L<"--buffer">.
 
 =item --forupdate
 
 Adds the FOR UPDATE modifier to SELECT statements.  For details, see
-L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
+L<http://dev.mysql.com/doc/en/innodb-locking-reads.html>.
 
 =item --header
 
-Writes column names as the first line in the file given by --file.  If the
+Writes column names as the first line in the file given by L<"--file">.  If the
 file exists, does not write headers; this keeps the file loadable with LOAD
 DATA INFILE in case you append more output to it.
 
@@ -1066,7 +1065,7 @@ L<http://dev.mysql.com/doc/en/select.html> for details.
 
 =item --ignore
 
-Causes INSERTs into --dest to be INSERT IGNORE.
+Causes INSERTs into L<"--dest"> to be INSERT IGNORE.
 
 =item --limit
 
@@ -1074,12 +1073,12 @@ Limits the number of rows returned by the SELECT statements that retrieve rows
 to archive.  Default is one row.  It may be more efficient to increase the
 limit, but be careful if you are archiving sparsely, skipping over many rows;
 this can potentially cause more contention with other queries, depending on the
-storage engine, transaction isolation level, and options such as --forupdate.
+storage engine, transaction isolation level, and options such as L<"--forupdate">.
 
 =item --local
 
 Adds the NO_WRITE_TO_BINLOG modifier to ANALYZE and OPTIMIZE queries.  See
---analyze for details.
+L<"--analyze"> for details.
 
 =item --lpdel
 
@@ -1093,13 +1092,13 @@ L<http://dev.mysql.com/doc/en/insert.html> for details.
 
 =item --optimize
 
-Runs OPTIMIZE TABLE after finishing.  See --analyze for the option syntax and
+Runs OPTIMIZE TABLE after finishing.  See L<"--analyze"> for the option syntax and
 L<http://dev.mysql.com/doc/en/optimize-table.html> for details on
 OPTIMIZE TABLE.
 
 =item --pkonly
 
-A shortcut for specifying --columns with the primary key columns.
+A shortcut for specifying L<"--columns"> with the primary key columns.
 
 =item --progress
 
@@ -1107,23 +1106,23 @@ Prints current time, elapsed time, and rows archived every X rows.
 
 =item --purge
 
-Allows archiving without a --file or --dest argument, which is effectively a
+Allows archiving without a L<"--file"> or L<"--dest"> argument, which is effectively a
 purge since the rows are just deleted.
 
 If you just want to purge rows, consider specifying the table's primary key
-columns with --pkonly.  This will prevent fetching all columns over the
-network for no reason.
+columns with L<"--pkonly">.  This will prevent fetching all columns from the
+server for no reason.
 
 =item --quickdel
 
 Adds the QUICK modifier to DELETE statements.  See
 L<http://dev.mysql.com/doc/en/delete.html> for details.  As stated in the
 documentation, in some cases it may be faster to use DELETE QUICK followed by
-OPTIMIZE TABLE.  You can use --optimize for this.
+OPTIMIZE TABLE.  You can use L<"--optimize"> for this.
 
 =item --replace
 
-Causes INSERTs into --dest to be written as REPLACE.
+Causes INSERTs into L<"--dest"> to be written as REPLACE.
 
 =item --retries
 
@@ -1133,7 +1132,7 @@ mysql-archiver will exit with an error.
 
 Consider carefully what you want to happen when you are archiving between a
 mixture of transactional and non-transactional storage engines.  The INSERT to
---dest and DELETE from --source are on separate connections, so they do not
+L<"--dest"> and DELETE from L<"--source"> are on separate connections, so they do not
 actually participate in the same transaction even if they're on the same
 server.  However, mysql-archiver implements simple distributed transactions in
 code, so commits and rollbacks should happen as desired across the two
@@ -1144,7 +1143,7 @@ storage engines other than InnoDB.  Request that feature if you need it.
 
 =item --sentinel
 
-The presence of the file specified by --sentinel will cause mysql-archiver to
+The presence of the file specified by L<"--sentinel"> will cause mysql-archiver to
 stop archiving and exit.  The default is /tmp/mysql-archiver-sentinel.  You
 might find this handy to stop cron jobs gracefully if necessary.  See also
 L<"--stop">.
@@ -1152,7 +1151,7 @@ L<"--stop">.
 =item --sharelock
 
 Adds the LOCK IN SHARE MODE modifier to SELECT statements.  For details, see
-L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
+L<http://dev.mysql.com/doc/en/innodb-locking-reads.html>.
 
 =item --skipfkchk
 
@@ -1161,10 +1160,10 @@ Disables foreign key checks with SET FOREIGN_KEY_CHECKS=0.
 =item --sleep
 
 Specifies how long to sleep between SELECT statements.  Default is not to
-sleep at all.  Transactions are NOT committed, and the --file file is NOT
-flushed, before sleeping.  See --txnsize to control that.
+sleep at all.  Transactions are NOT committed, and the L<"--file"> file is NOT
+flushed, before sleeping.  See L<"--txnsize"> to control that.
 
-If --commit-each is specified, committing and flushing happens before sleeping.
+If L<"--commit-each"> is specified, committing and flushing happens before sleeping.
 
 =item --source
 
@@ -1194,7 +1193,7 @@ can provide:
 
    KEY MEANING
    === =======
-   m   Package name of an external Perl module (see L<"EXTENDING">).
+   m   Package name of an external Perl module (see EXTENDING).
 
 The only required part is the table; other parts may be read from various
 places in the environment (such as options files).  Here is an example:
@@ -1218,7 +1217,7 @@ discussion of how they interact with ascending indexes.
 
 =item --stop
 
-Causes mysql-archiver to create the sentinel file specified by --sentinel and
+Causes mysql-archiver to create the sentinel file specified by L<"--sentinel"> and
 exit.  This should have the effect of stopping all running instances which are
 watching the same sentinel file.
 
@@ -1237,8 +1236,8 @@ or days.  The number is interpreted as seconds if there is no suffix.
 
 Specifies the size, in number of rows, of each transaction.  Default is one
 row.  Zero disables transactions altogether.  After mysql-archiver processes
-this many rows, it commits both the --source and the --dest if given, and
-flushes the file given by --file.
+this many rows, it commits both the L<"--source"> and the L<"--dest"> if given, and
+flushes the file given by L<"--file">.
 
 This parameter is critical to performance.  If you are archiving from a live
 server, which for example is doing heavy OLTP work, you need to choose a good
@@ -1252,8 +1251,7 @@ another table.  Disabling transactions with a value of zero, which turns on
 autocommit, dropped performance to 38 seconds per thousand rows.
 
 If you are not archiving from or to a transactional storage engine, you may
-want to disable transactions so mysql-archiver doesn't try to worry about
-committing and so forth.
+want to disable transactions so mysql-archiver doesn't try to commit.
 
 =item --where
 
@@ -1263,14 +1261,14 @@ interpreting it.  For example:
 
    --where 'ts < current_date - interval 90 day'
 
-For safety, --where is required.  If you do not require a WHERE clause, use
---where 1=1.
+For safety, L<"--where"> is required.  If you do not require a WHERE clause, use
+L<"--where"> 1=1.
 
 =item --whyquit
 
 Causes mysql-archiver to print a message if it exits for any reason other than
 running out of rows to archive.  This can be useful if you have a cron job with
---time specified, for example, and you want to be sure mysql-archiver is
+L<"--time"> specified, for example, and you want to be sure mysql-archiver is
 finishing before running out of time.
 
 =back
@@ -1278,8 +1276,8 @@ finishing before running out of time.
 =head1 EXTENDING
 
 mysql-archiver is extensible by plugging in external Perl modules to handle
-some logic and/or actions.  You can specify a module for both the --source and
-the --dest, with the 'm' part of the specification.  For example:
+some logic and/or actions.  You can specify a module for both the L<"--source"> and
+the L<"--dest">, with the 'm' part of the specification.  For example:
 
    --source D=test,t=test1,m=My::Module1 --dest m=My::Module2,t=test2
 
@@ -1308,7 +1306,7 @@ plugin while archiving.
 =item is_archivable(row => \@row)
 
 This method is called for each row to determine whether it is archivable.  This
-only applies to --source.  The argument is the row itself, as an arrayref.  If
+only applies to L<"--source">.  The argument is the row itself, as an arrayref.  If
 the method returns true, the row will be archived; otherwise it will be skipped.
 
 Skipping a row adds complications for non-unique indexes.  Normally
@@ -1316,7 +1314,7 @@ mysql-archiver uses a WHERE clause designed to target the last processed row as
 the place to start the scan for the next SELECT statement.  If you have skipped
 the row by returning false from is_archivable(), mysql-archiver could get into
 an infinite loop because the row still exists.  Therefore, when you specify a
-plugin for the --source argument, mysql-archiver will change its WHERE clause
+plugin for the L<"--source"> argument, mysql-archiver will change its WHERE clause
 slightly.  Instead of starting at "greater than or equal to" the last processed
 row, it will start "strictly greater than."  This will work fine on unique
 indexes such as primary keys, but it may skip rows (leave holes) on non-unique
@@ -1325,33 +1323,33 @@ indexes or when ascending only the first column of an index.
 =item before_delete(row => \@row)
 
 This method is called for each row just before it is deleted.  This only applies
-to --source.  This is a good place for you to handle dependencies, such as
+to L<"--source">.  This is a good place for you to handle dependencies, such as
 deleting things that are foreign-keyed to the row you are about to delete.  You
 could also use this to recursively archive all dependent tables.
 
 =item before_insert(row => \@row)
 
 This method is called for each row just before it is inserted.  This only
-applies to --dest.  You could use this to insert the row into multiple tables,
+applies to L<"--dest">.  You could use this to insert the row into multiple tables,
 perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a data
 warehouse.
 
 =item after_finish()
 
 This method is called after mysql-archiver exits the archiving loop, commits all
-database handles, closes --file, and prints the final statistics, but before
-mysql-archiver runs ANALYZE or OPTIMIZE.
+database handles, closes L<"--file">, and prints the final statistics, but before
+mysql-archiver runs ANALYZE or OPTIMIZE (see L<"--analyze> and L<"--optimize>).
 
 =back
 
-If you specify a plugin for both --source and --dest, mysql-archiver constructs,
+If you specify a plugin for both L<"--source"> and L<"--dest">, mysql-archiver constructs,
 calls before_begin(), and calls after_finish() on the two plugins in the order
---source, --dest.
+L<"--source">, L<"--dest">.
 
 mysql-archiver assumes it controls transactions, and that the plugin will NOT
 commit or roll back the database handle.  The database handle passed to the
 plugin's constructor is the same handle mysql-archiver uses itself.  Remember
-that --source and --dest are separate handles.
+that L<"--source"> and L<"--dest"> are separate handles.
 
 A sample module might look like this:
 
@@ -1387,7 +1385,7 @@ installed in any reasonably new version of Perl.
 
 =head1 OUTPUT
 
-If you specify --print, the output is a header row, plus status output at
+If you specify L<"--print">, the output is a header row, plus status output at
 intervals.  Each row in the status output lists the current date and time, how
 many seconds mysql-archiver has been running, and how many rows it has
 archived.
