@@ -3,7 +3,7 @@
 # This is mysql-deadlock-logger, a program that extracts and saves a summary of
 # the last deadlock recorded in MySQL.
 #
-# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -40,7 +40,7 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
-   { s => 'collapse|c=i', d => 'Collapse whitespace in queries' },
+   { s => 'collapse|c!',  d => 'Collapse whitespace in queries' },
    { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'dest|d=s',     d => 'Server in which to store info' },
@@ -386,30 +386,52 @@ if ( $opts{p} ) {
 
 mysql-deadlock-logger - Extract and log MySQL deadlock information.
 
-=head1 SYSTEM REQUIREMENTS
+=head1 SYNOPSIS
 
-You need Perl, DBI, DBD::mysql, and some core packages that ought to be
-installed in any reasonably new version of Perl.
+   mysql-deadlock-logger --source u=user,p=pass,h=server --dest D=test,t=deadlocks
 
-=head1 OVERVIEW
+=head1 DESCRIPTION
 
-This program extracts deadlock data from a MySQL server (currently only InnoDB
-deadlock information is available).  You can print it to standard output or
-save it in a database table.  By default it does neither, and you need to tell
-it what to do.
+mysql-deadlock-logger extracts deadlock data from a MySQL server (currently only
+InnoDB deadlock information is available).  You can print it to standard output
+or save it in a database table.  By default it does neither.
 
-You specify a server to connect to with a URL-like argument to the --source
-option.  This argument takes the form user:pass@host:port/database.table.  All
-parts are optional, and in fact the table doesn't matter anyway.  If possible,
-values from your .my.cnf file will fill in missing bits, so you might be able to
-omit the whole argument.
+=head1 OPTIONS
 
-If you want to store the information into a MySQL database table, specify it
-with the --dest argument, which takes the same form as --source.  Missing bits
-in --dest are filled in with values from --source, so you can omit even more
-parts, but you must specify a table.  You should probably create a table before
-you try to store anything in it ;-)  This works for me, though you may need
-something different if you decide you don't want all the columns of output:
+Some options are negatable with --no.
+
+=over
+
+=item --collapse
+
+Makes mysql-deadlock-logger collapse all whitespace in queries to a single
+space.  This might make it easier to inspect on the command line or in a query.
+By default, whitespace is collapsed when printing with L<"--print">, but not
+modified when storing to L<"--dest">.  (That is, the default is different for
+each action).
+
+=item --columns
+
+Makes mysql-deadlock-logger only output and/or save certain columns.  See
+L<"OUTPUT"> for more details.
+
+=item --defaults-file
+
+Specifies a MySQL options file from which mysql-deadlock-logger will read
+options when connecting to MySQL.
+
+=item --dest
+
+Specifies a server, database and table in which to store deadlock information,
+in the same format as L<"--source">.  Missing values are filled in with the same
+values as L<"--source">, so you can usually omit most parts of this argument if
+you're storing deadlocks on the same server on which they happen.
+
+By default, whitespace in the query column is left intact; use L<"--collapse">
+if you want whitespace collapsed.
+
+The following table is suggested if you want to store all the information
+mysql-deadlock-logger can extract about deadlocks:
 
  CREATE TABLE `deadlocks` (
    `server` char(20) NOT NULL,
@@ -431,6 +453,50 @@ something different if you decide you don't want all the columns of output:
    PRIMARY KEY  (`server`,`ts`,`thread`)
  ) ENGINE=InnoDB
 
+If you use L<"--columns">, you can omit whichever columns you don't want to
+store.
+
+=item --numip
+
+Makes mysql-deadlock-logger express IP addresses as integers.
+
+=item --print
+
+Makes mysql-deadlock-logger print results on standard output.  See L<"OUTPUT">
+for more.  By default, enables L<"--collapse"> unless you explicitly disable it.
+
+=item --source
+
+Specifies a connection to a server to check for deadlocks.  
+This argument is specially formatted as a
+key=value,key=value string.  Keys are a single letter:
+
+   KEY MEANING
+   === =======
+   h   Connect to host
+   P   Port number to use for connection
+   S   Socket file to use for connection
+   u   User for login if not current user
+   p   Password to use when connecting
+   F   Only read default options from the given file
+   D   Database to connect to
+   t   Table in which to store deadlock information
+
+The 't' part only applies to L<"--dest">.  All parts are optional;
+mysql-deadlock-logger will try to read MySQL's option files to determine how to
+connect.
+
+=item --tab
+
+Makes mysql-deadlock-logger output tab-separated columns instead of
+whitespace-aligning them.  See L<"OUTPUT"> for more.
+
+=item --version
+
+Output version information and exit.
+
+=back
+
 =head1 INNODB CAVEATS AND DETAILS
 
 InnoDB's output is hard to parse and sometimes there's no way to do it right.
@@ -442,25 +508,19 @@ in those columns.  It may also be the case that the deadlock output is so long
 
 Though there are usually two transactions involved in a deadlock, there are more
 locks than that; at a minimum, one more lock than transactions is necessary to
-create a cycle in the waits-for graph.  This program prints the transactions
-(always two in the InnoDB output, even when there are more transactions in the
-waits-for graph than that) and fills in locks.  It prefers waited-for over held
-when choosing lock information to output, but you can figure out the rest with a
-moment's thought.  If you see one wait-for and one held lock, you're looking at
-the same lock, so of course you'd prefer to see both wait-for locks and get more
-information.  If the two waited-for locks are not on the same table, more than
-two transactions were involved in the deadlock.
+create a cycle in the waits-for graph.  mysql-deadlock-logger prints the
+transactions (always two in the InnoDB output, even when there are more
+transactions in the waits-for graph than that) and fills in locks.  It prefers
+waited-for over held when choosing lock information to output, but you can
+figure out the rest with a moment's thought.  If you see one wait-for and one
+held lock, you're looking at the same lock, so of course you'd prefer to see
+both wait-for locks and get more information.  If the two waited-for locks are
+not on the same table, more than two transactions were involved in the deadlock.
 
 =head1 OUTPUT
 
-If you print to standard output, query text whitespace is collapsed by default
-so there is one line per query that deadlocked.  You can disable this with
---collapse=0.  When saving the query to a database table, whitespace is not
-collapsed by default.  If you omit the --collapse argument altogether, the
-script will probably do what you want in all cases.
-
-You can choose which columns are output with the --columns argument.  The default
-columns are as follows:
+You can choose which columns are output and/or saved to L<"--dest"> with the
+L<"--columns"> argument.  The default columns are as follows:
 
 =over
 
@@ -497,8 +557,8 @@ The connection's host.
 
 =item ip
 
-The connection's IP address.  If you give the --numip argument, this is
-converted to an unsigned integer.
+The connection's IP address.  If you specify L<"--numip">, this is converted to
+an unsigned integer.
 
 =item db
 
@@ -535,6 +595,11 @@ The query that caused the deadlock.
 
 =back
 
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
 =head1 BUGS
 
 There must be bugs.  InnoDB's status information is a beast to parse.  I ripped
@@ -543,7 +608,7 @@ wrong.  Please tell me when you find them.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+This program is copyright (c) 2007 Baron Schwartz.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -562,7 +627,7 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz, baron at xaprb dot com.
+Baron Schwartz.
 
 =head1 VERSION
 

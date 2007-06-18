@@ -1,4 +1,2 @@
 
-For more information on each tool, please refer to its man page (if you are on
-a UNIX system), use "perldoc" to extract the documentation, or just open the
-script file in a text editor and scroll to the bottom.
+=over

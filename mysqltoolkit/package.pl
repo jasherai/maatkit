@@ -3,6 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
+use English qw(-no_match_vars);
 use Data::Dumper;
 use File::Basename;
 use Pod::Html;
@@ -33,11 +34,6 @@ my $dist = "mysqltoolkit-$rev";
 `find -type d -name 'mysqltoolkit-*' | xargs rm -rf`;
 `mkdir -p $dist/bin $dist/lib`;
 
-# Write mysqltoolkit.pod
-# TODO: include the NAME section from each one's POD between the 'mid' and
-# 'tail' files
-print `cat mysqltoolkit.head.pod packlist mysqltoolkit.mid.pod mysqltoolkit.tail.pod > $dist/lib/mysqltoolkit.pm`;
-
 # Copy the executables and their READMEs into the $dist dir, and set the
 # $VERSION variable correctly
 foreach my $p ( keys %versions ) {
@@ -45,6 +41,20 @@ foreach my $p ( keys %versions ) {
    print `for a in $base/$p/$versions{$p}/mysql-*; do b=\`basename \$a\`; cp \$a $dist/bin; sed -i -e 's/\@VERSION\@/$version/' $dist/bin/\$b; done`;
    `cp $base/$p/$versions{$p}/README $dist/README.$p`;
 }
+
+# Write mysqltoolkit.pod
+print `cat mysqltoolkit.head.pod packlist mysqltoolkit.mid.pod > $dist/lib/mysqltoolkit.pm`;
+open my $file, ">> $dist/lib/mysqltoolkit.pm" or die $OS_ERROR;
+foreach my $program ( <$dist/bin/mysql-*> ) {
+   my $line = `grep -A 6 NAME $program | tail -n 5`;
+   my @parts = split(/\n\n/, $line);
+   $line = $parts[0];
+   my ( $prog, $rest ) = $line =~ m/^([\w-]+) - (.+)/ms;
+   die "Can't parse $line\n" unless $rest;
+   print $file "\n\n=item $prog\n\n$rest See L<$prog>.";
+}
+close $file;
+print `cat mysqltoolkit.tail.pod >> $dist/lib/mysqltoolkit.pm`;
 
 # Copy other files
 foreach my $file ( qw(Makefile.PL COPYING INSTALL mysqltoolkit.spec) ) {
@@ -85,13 +95,13 @@ for ( 0 .. 1 ) {
       "--infile=$dist/lib/mysqltoolkit.pm",
       "--outfile=html/mysqltoolkit.html",
       "--libpods=perlfunc:perlguts:perlvar:perlrun:perlop",
-      "--podpath=bin:lib",
+      "--podpath=bin",
       "--podroot=$dist",
       "--css=http://search.cpan.org/s/style.css",
    );
 }
 # Wow, Pod::HTML is a pain in the butt.  Fix links now.
-`for a in html/*; do sed -i -e 's/bin.//g' \$a; done`;
+`for a in html/*; do sed -i -e 's/bin\\\///g' \$a; done`;
 
 # #####################################################################
 # Subroutines
