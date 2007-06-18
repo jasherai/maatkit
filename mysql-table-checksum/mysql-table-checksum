@@ -1012,6 +1012,10 @@ L<"--algorithm">=ACCUM or L<"--algorithm">=BIT_XOR.  The default is to use SHA1,
 is also a good choice.  Whatever function you specify is run in SQL, not in
 Perl, so it must be available to MySQL.
 
+=item --help
+
+Displays a help message.
+
 =item --ignoredb
 
 Use this option to skip a comma-separated list of databases.
@@ -1184,6 +1188,10 @@ checksum even on servers with different behavior.
 This option also checks all servers to be sure the L<"--optxor"> optimization will
 work correctly.  If not, it simply disables the optimization, rather than
 stopping with an error.
+
+=item --version
+
+Output version information and exit.
 
 =item --wait
 
@@ -1376,9 +1384,8 @@ See also L<mysql-checksum-filter>.
 
 =head1 BUGS
 
-Please use the mailing lists, forums and other tools at
-L<http://sourceforge.net/projects/mysqltoolkit> to discuss any bugs, feature
-requests, etc.
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 SYSTEM REQUIREMENTS
 

@@ -234,6 +234,10 @@ L<mysql-query-profiler> for the full list of types.
 
 =over
 
+=item --help
+
+Displays a help message.
+
 =item --queries
 
 Specify a comma-separated list of queries to process; others will be ignored.
@@ -251,6 +255,11 @@ Reprints the headers every N queries.
 Output version information and exit.
 
 =back
+
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 SEE ALSO
 

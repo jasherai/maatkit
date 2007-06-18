@@ -584,6 +584,14 @@ current time.
 If you specify this option, only this file is read for MySQL default options;
 otherwise all the default files will be read.
 
+=item --help
+
+Displays a help message.
+
+=item --host
+
+Connect to host.
+
 =item --or
 
 By default, tests are evaluated as though there were an AND between them.  This
@@ -613,6 +621,10 @@ The socket file to use for the connection.
 =item --user
 
 The user for login if not the current user.
+
+=item --version
+
+Output version information and exit.
 
 =back
 
@@ -887,8 +899,8 @@ As above, but this time, insert the data back into the database for posterity:
 
 =head1 BUGS
 
-Please report bugs, request features, discuss etc via the mailing lists, forums
-and other tools at http://sourceforge.net/projects/mysqltoolkit.
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 SYSTEM REQUIREMENTS
 

@@ -821,6 +821,10 @@ FLUSH TABLES between every query, not just once at the beginning.  Default is
 not to flush at all. See L<http://dev.mysql.com/doc/en/flush.html> for more
 information.
 
+=item --help
+
+Displays a help message.
+
 =item --host
 
 Connect to host.
@@ -1054,12 +1058,10 @@ This section only appears when you're querying MySQL 5.0.2 or newer.  None of
 the information is protected.  You'll see statistics about how many pages were
 affected, how many operations took place, and how many bytes were affected.
 
-=head1 CONFIGURATION
+=head1 BUGS
 
-No configuration file is needed.  If you specify arguments on the command
-line, they take precedence over other sources.  Otherwise,
-mysql-query-profiler will try to read standard MySQL options files for
-connection information.
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 SYSTEM REQUIREMENTS
 
