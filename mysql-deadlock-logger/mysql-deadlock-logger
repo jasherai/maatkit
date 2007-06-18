@@ -1,5 +1,7 @@
 #!/usr/bin/perl
 
+# TODO: update the url-argument-parsing to match the docs.
+
 # This is mysql-deadlock-logger, a program that extracts and saves a summary of
 # the last deadlock recorded in MySQL.
 #

@@ -3,7 +3,7 @@
 # This is mysql-duplicate-key-checker, a program to analyze MySQL tables for
 # duplicated or redundant indexes and foreign key constraints.
 # 
-# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -350,14 +350,14 @@ sub find_fks {
 
 =head1 NAME
 
-mysql-duplicate-index-checker - Find possible duplicate indexes and foreign keys on
+mysql-duplicate-key-checker - Find possible duplicate indexes and foreign keys on
 MySQL tables.
 
 =head1 DESCRIPTION
 
 This program examines the output of SHOW CREATE TABLE on MySQL tables, and if
-it finds indexes that a) cover the same columns as another index in the same
-order, or b) cover an exact leftmost prefix of another index, it prints out
+it finds indexes that cover the same columns as another index in the same
+order, or cover an exact leftmost prefix of another index, it prints out
 the suspicious indexes.  By default, indexes must be of the same type, so a
 BTREE index is not a duplicate of a FULLTEXT index, even if they have the same
 colums.  You can override this.
@@ -366,26 +366,87 @@ It also looks for duplicate foreign keys.  A duplicate foreign key covers the
 same columns as another in the same table, and references the same parent
 table.
 
-If possible, it will read your .my.cnf file so you don't have to specify
-username and password.
+=head1 OPTIONS
 
-By default it scans every table in every database, and prints out every
-duplicated index and foreign key.  You can specify only to check foreign keys
-or indexes.  You can also tell it to check only certain databases and tables,
-ignore databases and tables, and so on.
+=over
 
-You can specify to print out every index and/or foreign key without checking
-for duplicates.  This is an easy way to get a full listing, and it's pretty
-fast, since SHOW CREATE TABLE is very quick.
+=item --allatonce
+
+Prints everything it finds in one chunk.  The default is to print a database at
+a time.
+
+=item --allstruct
+
+Compare indexes with different structures.  By default this is disabled, because
+a BTREE index that covers the same columns as a FULLTEXT index is not really a
+duplicate, for example.
+
+=item --databases
+
+A comma-separated list of databases to examine.
+
+=item --defaults-file
+
+Only read default options from the given file.
+
+=item --function
+
+What to check: 'f' is foreign keys, 'k' is indexes.  The default is to check
+both.
+
+=item --host
+
+Connect to host.
+
+=item --ignoredb
+
+A comma-separated list of databases to ignore.
+
+=item --ignoretbl
+
+A comma-separated list of tables to ignore.
+
+=item --password
+
+Password to use when connecting.
+
+=item --port
+
+Port number to use for connection.
+
+=item --socket
+
+Socket file to use for connection.
+
+=item --tab
+
+Print output separated with tabs, instead of whitespace-aligned.  See
+L<"OUTPUT"> for details.
+
+=item --tables
+
+A comma-separated list of tables to check.
+
+=item --user
+
+User for login if not current user.
+
+=item --verbose
+
+Output all keys and/or foreign keys found, not just redundant ones.
+
+=item --version
+
+Output version information and exit.
+
+=back
 
 =head1 OUTPUT
 
 Output is to STDOUT, one line per server and table, with header lines for each
 database.  I tried to make the output easy to process with awk.  For this reason
 columns are always present.  If there's no value, the script prints 'NULL'.
-
-The default is column-aligned output for human readability, but you can change
-it to tab-separated.  Output is sorted by database and table.
+Output is sorted by database and table.
 
 The columns in the output are as follows.
 
@@ -437,7 +498,7 @@ You need the following Perl modules: DBI and DBD::mysql.
 
 =head1 LICENSE
 
-This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+This program is copyright (c) 2007 Baron Schwartz.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -456,7 +517,7 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz, baron at xaprb dot com.
+Baron Schwartz.
 
 =head1 VERSION
 
