@@ -287,6 +287,10 @@ Adds DROP USER before each user in the output.
 Adds FLUSH PRIVILEGES after output.  You might need this on pre-4.1.1 servers
 if you want to drop a user completely.
 
+=item --help
+
+Displays a help message.
+
 =item --host
 
 Connect to host.
@@ -376,6 +380,11 @@ all that complicated).  Visit http://www.futhark.ch/mysql/139.html for a simpler
 implementation of the same general concept, though without the canonicalization.
 I borrowed the idea of adding DROP USER from that script, and it inspired me
 to add the REVOKE functionality too.
+
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 SYSTEM REQUIREMENTS
 

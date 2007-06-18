@@ -1253,6 +1253,10 @@ autocommit, dropped performance to 38 seconds per thousand rows.
 If you are not archiving from or to a transactional storage engine, you may
 want to disable transactions so mysql-archiver doesn't try to commit.
 
+=item --version
+
+Output version information and exit.
+
 =item --where
 
 Specifies a WHERE clause to limit which rows are archived.  Do not include the
@@ -1392,8 +1396,8 @@ archived.
 
 =head1 BUGS
 
-If you find bugs, need features, etc please use the bug tracker, forums, and
-mailing lists at http://sourceforge.net/projects/mysqltoolkit.
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 ACKNOWLEDGEMENTS
 

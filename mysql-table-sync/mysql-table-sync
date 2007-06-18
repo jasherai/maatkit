@@ -1581,6 +1581,10 @@ mysql-table-checksum checks for this and aborts if the servers have different
 behavior.  If you know your columns will never contain the empty string, you can
 safely disable this check.
 
+=item --version
+
+Output version information and exit.
+
 =item --wait
 
 Make the slave wait to catch up to the master before comparing the tables.  The

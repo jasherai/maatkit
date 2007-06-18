@@ -3,7 +3,7 @@
 # This program sorts and filters table checksums output by mysql-table-checksum,
 # and only shows you ones that have problems.
 #
-# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -193,35 +193,54 @@ exit $exit_status;
 
 mysql-checksum-filter - Filter checksums from mysql-table-checksum.
 
+=head1 SYNOPSIS
+
+   mysql-checksum-filter checksums.txt
+   mysql-table-checksum host1 host2 | mysql-checksum-filter
+
 =head1 OVERVIEW
 
 This program takes the unsorted, verbose output from L<mysql-table-checksum> and
 sorts it, then filters it so you only see lines that have different checksums
 or counts.
 
-You can pipe input directly into it from L<mysql-table-checksum>, or you can save
-the mysql-table-checksum's output and run mysql-checksum-filter on the resulting file(s).  If
-you run it against just one file, or pipe output directly into it, it'll output
-results during processing.  Processing multiple files is slightly more
-expensive, and you won't see any output until they're all read.
+You can pipe input directly into it from L<mysql-table-checksum>, or you can
+save the mysql-table-checksum's output and run mysql-checksum-filter on the
+resulting file(s).  If you run it against just one file, or pipe output
+directly into it, it'll output results during processing.  Processing multiple
+files is slightly more expensive, and you won't see any output until they're
+all read.
 
-Of course, you could also process multiple files like this:
+=head1 OPTIONS
 
- cat file1 file2 file3 | sort -u | mysql-checksum-filter
+=over
 
-but that still doesn't output anything until all files are read.
+=item --header
 
-If you give the -m argument, mysql-checksum-filter will sort lines for that host first, so
-you can see the checksum values on the master server before the slave.
+Preserves headers output by MySQL Table Checksum.
 
-If you give the -v argument, mysql-checksum-filter will always output all lines (but not
-header lines).  You might want to do this in combination with -m.
+=item --help
+
+Displays a help message.
+
+=item --master
+
+Specifies which host is the replication master, and sorts lines for that host
+first, so you can see the checksum values on the master server before the
+slave.
+
+=item --verbose
+
+Output all lines except header lines.
+
+=item --version
+
+Output version information and exit.
 
 =head1 BUGS
 
-Please use the mailing lists, forums and other tools at
-L<http://sourceforge.net/projects/mysqltoolkit> to discuss any bugs, feature
-requests, etc.
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 AUTHOR
 

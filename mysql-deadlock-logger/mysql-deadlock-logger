@@ -458,6 +458,10 @@ mysql-deadlock-logger can extract about deadlocks:
 If you use L<"--columns">, you can omit whichever columns you don't want to
 store.
 
+=item --help
+
+Displays a help message.
+
 =item --numip
 
 Makes mysql-deadlock-logger express IP addresses as integers.
@@ -604,9 +608,8 @@ installed in any reasonably new version of Perl.
 
 =head1 BUGS
 
-There must be bugs.  InnoDB's status information is a beast to parse.  I ripped
-off some of the parsing code for innotop, but there still might be some things
-wrong.  Please tell me when you find them.
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 

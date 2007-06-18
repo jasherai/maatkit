@@ -394,6 +394,10 @@ Only read default options from the given file.
 What to check: 'f' is foreign keys, 'k' is indexes.  The default is to check
 both.
 
+=item --help
+
+Displays a help message.
+
 =item --host
 
 Connect to host.
@@ -495,6 +499,11 @@ duplicates, since column order in a foreign key is immaterial.
 =head1 SYSTEM REQUIREMENTS
 
 You need the following Perl modules: DBI and DBD::mysql.
+
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 LICENSE
 
