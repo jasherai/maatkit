@@ -3,7 +3,7 @@
 # This is mysql-find, a program that searches for MySQL tables and takes actions
 # like GNU find.
 #
-# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -36,6 +36,7 @@ $OUTPUT_AUTOFLUSH = 1;
 
 # TODO: Can I make % directives be replaced by %whatever while preserving
 # formatting instructions?
+# TODO: implement processes too; then it can be a stale query sniper.
 
 # ############################################################################
 # Get configuration information.
@@ -575,7 +576,7 @@ Specifies that all regular expression searches are case-insensitive.
 
 =item --daystart
 
-Measure times (for --mmin, etc) from the beginning of today rather than from the
+Measure times (for L<"--mmin">, etc) from the beginning of today rather than from the
 current time.
 
 =item --defaults-file
@@ -628,7 +629,7 @@ Dates and times are all measured relative to the same instant, when mysql-find
 first asks the database server what time it is.  All date and time manipulation
 is done in SQL, so if you say to find tables modified 5 days ago, that
 translates to SELECT DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 5 DAY).  If you
-specify --daystart, if course it's relative to CURRENT_DATE instead.
+specify L<"--daystart">, if course it's relative to CURRENT_DATE instead.
 
 However, table sizes and other metrics are not consistent at an instant in
 time.  It can take some time for MySQL to process all the SHOW queries, and
@@ -740,7 +741,7 @@ is a candidate for removal.
 This how I manage scratch tables, and that's why I included this test in
 mysql-find.
 
-The argument I use to --pid is "\D_(\d+)$".  That finds tables with a series of
+The argument I use to L<"--pid"> is "\D_(\d+)$".  That finds tables with a series of
 numbers at the end, preceded by an underscore and some non-number character (the
 latter criterion prevents me from examining tables with a date at the end, which
 people tend to do: baron_scratch_2007_05_07 for example).  It's better to keep
@@ -789,11 +790,11 @@ and I'll add this feature.
 =item --exec
 
 Execute this SQL with each item found.  The SQL can contain escapes and
-formatting directives (see --printf).
+formatting directives (see L<"--printf">).
 
 =item --exec_plus
 
-Execute this SQL with all items at once.  This option is unlike --exec.  There
+Execute this SQL with all items at once.  This option is unlike L<"--exec">.  There
 are no escaping or formatting directives; there is only one special placeholder
 for the list of database and table names, %s.  The list of tables found will be
 joined together with commas and substituted wherever you place %s.
@@ -895,7 +896,7 @@ You need the following Perl modules: DBI and DBD::mysql.
 
 =head1 LICENSE
 
-This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+This program is copyright (c) 2007 Baron Schwartz.
 Feedback and improvements are welcome (see L<"BUGS">).
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -914,7 +915,7 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz, baron at xaprb dot com.
+Baron Schwartz.
 
 =head1 VERSION
 
