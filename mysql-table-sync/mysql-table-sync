@@ -3,7 +3,7 @@
 # This program efficiently synchronizes data between two MySQL tables, which
 # can be on different servers.
 #
-# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -1373,11 +1373,11 @@ Or,
 
  mysql-table-sync -a bottomup -B 128 user:pass@host1/db.tbl user@host2/db.tbl
 
-To show the differences between the tables, use the --verbose option.  Issue
+To show the differences between the tables, use the L<"--verbose"> option.  Issue
 this option multiple times for more detail.  To see queries that will make the
-second table the same as the first, use the --print option.  To execute these
-queries, use the --execute option.  To see the queries issued while searching
-for differences, use the --debug option.
+second table the same as the first, use the L<"--print"> option.  To execute these
+queries, use the L<"--execute"> option.  To see the queries issued while searching
+for differences, use the L<"--debug"> option.
 
 =head1 OPTIONS
 
@@ -1499,7 +1499,7 @@ doing too much work.
 Only do INSERT, UPDATE, or DELETE queries while syncing tables.  The default is
 to do all three, but if you want to, you can specify any combination of actions.
 For example, if you want to do a two-way sync of rows that have been added to
-either table, one way to do it is specify '--onlydo iu' and then run
+either table, one way to do it is specify 'L<"--onlydo"> iu' and then run
 mysql-table-sync again the "other direction" with the same iu argument.  That
 will avoid deleting extra rows from the destination table, which the second
 invocation will then copy back to the source table.
@@ -1520,15 +1520,15 @@ and you can run them yourself if you want to sync the tables manually.
 
 =item --queries
 
-Output the --debug debugging output as SQL that can be executed.  By default
-it's commented out with SQL comments by default, so it won't interfere with the
-output of --print.  This option removes the comments.
+Output the L<"--debug"> debugging output as SQL that can be executed.  By
+default it's commented out with SQL comments, so it won't interfere with the
+output of L<"--print">.  This option removes the comments.
 
 =item --replicate
 
 Change the table on the master/source server, and let replication propagate the
 changes to the destination table.  If you're syncing a master and slave, this is
-almost certainly the option you should use.  Implies --strategy=r.
+almost certainly the option you should use.  Implies L<"--strategy">=r.
 
 =item --separator
 
@@ -1562,7 +1562,7 @@ Use temporary tables in bottom-up algorithm.  The default is to use real tables.
 
 =item --timeoutok
 
-Keep going if --wait fails.  If you specify --wait and the slave doesn't catch
+Keep going if L<"--wait"> fails.  If you specify L<"--wait"> and the slave doesn't catch
 up to the master's position before the wait times out, the default behavior is
 to abort.  This option makes mysql-table-sync keep going anyway.  Warning: if
 you are trying to get a consistent comparision between the two servers, you
@@ -1584,7 +1584,7 @@ safely disable this check.
 =item --wait
 
 Make the slave wait to catch up to the master before comparing the tables.  The
-value is the number of seconds to wait before timing out (see also --timeoutok).
+value is the number of seconds to wait before timing out (see also L<"--timeoutok">).
 mysql-table-sync issues LOCK TABLES on the master, then finds the master's
 binlog position and waits for the slave to catch up to that position before
 comparing tables.  This is useful for guaranteeing a consistent comparision
@@ -1980,11 +1980,11 @@ slave, you can't just INSERT it on the master, or you'll presumably get a
 duplicate key error.  You could do INSERT IGNORE or REPLACE instead.
 
 The tool uses REPLACE by default when you're using replication.  To tell it to
-use INSERT and UPDATE instead, use the --strategy=s option.  You can use
---strategy=s to use REPLACE even when you're not using replication to fix the
+use INSERT and UPDATE instead, use the L<"--strategy">=s option.  You can use
+L<"--strategy">=s to use REPLACE even when you're not using replication to fix the
 destination table.
 
-You can also use the --onlydo option to only issue some kinds of statements --
+You can also use the L<"--onlydo"> option to only issue some kinds of statements --
 for example, suppose you want to run the INSERT and UPDATE statements but not
 the DELETE.
 
@@ -2002,11 +2002,11 @@ sync these two tables with straightforward UPDATE statements:
  | 2 | 1 |  | 2 | 2 | 
  +---+---+  +---+---+
 
-If you run into this, you can use the --deleteinsert option to convert all
+If you run into this, you can use the L<"--deleteinsert"> option to convert all
 UPDATE statements into DELETE followed by INSERT.  The tool orders statements
 such that this will succeed.
 
-If necessary, you can use the --singletxn option to make sure sychronizing
+If necessary, you can use the L<"--singletxn"> option to make sure sychronizing
 either succeeds or rolls back entirely.  Of course this will have no effect on
 non-transactional tables such as MyISAM.  Running the entire sync in a single
 transaction causes extra overhead.
@@ -2019,7 +2019,7 @@ on the source server, so if the character set or collation differ between the
 tables being synced, it's hard to say what the results will be.  This feature
 will cause more network traffic between the servers as it compares the tables.
 This is a feature I don't have fully baked yet.  You can disable it with the
---nocollate option.
+L<"--nocollate"> option.
 
 =head1 GUARANTEEING CONSISTENCY
 
@@ -2027,7 +2027,7 @@ I wrote this tool to synchronize tables live, without stopping the servers
 they're on.  This requires some kind of locking to guarantee a consistent write
 after reading.  This tool supports several methods.
 
-The first is simple table locks.  If you specify the --lock option, it will lock
+The first is simple table locks.  If you specify the L<"--lock"> option, it will lock
 the table for reading or writing, depending on how you want to update.  If you
 want to update on a master and let replication propagate the changes, it locks
 for write on the master and read on the slave; if you want to make changes on
@@ -2036,26 +2036,26 @@ avoid blocking the replication thread on the slave.
 
 If you are using InnoDB tables, you can get consistency without locking the
 whole table.  This is especially useful if you're only trying to synchronize
-part of the table that you know to be bad.  Use the --forupdate option to make
+part of the table that you know to be bad.  Use the L<"--forupdate"> option to make
 the SELECT statements acquire locks.  As above, it gets either shared (LOCK IN
 SHARE MODE) or exclusive (FOR UPDATE) locks, depending on how you are syncing.
 This only applies to the top-down algorithm.  The bottom-up algorithm creates
 tables, which implicitly commits and releases locks unless you use temporary
-tables (the --temp option).  If you're using temporary tables with the bottom-up
+tables (the L<"--temp"> option).  If you're using temporary tables with the bottom-up
 algorithm, there are implicit shared locks on the target tables if they're
 InnoDB.
 
 Finally, if you're working on a master and slave server, you should probably
-specify the --wait option in conjunction with one of the above. This locks on
+specify the L<"--wait"> option in conjunction with one of the above. This locks on
 the master, finds the master's position, and then waits for the slave to catch
 up to that position.  The argument to the option is the number of seconds the
-slave should wait before timing out.  By default --wait implies --lock, but you
-can specify --nolock if you want to override this and use InnoDB's row-level
+slave should wait before timing out.  By default L<"--wait"> implies L<"--lock">, but you
+can specify L<"--nolock"> if you want to override this and use InnoDB's row-level
 locks.  Also by default, if the wait timeout is exceeded or another
 MASTER_POS_WAIT error occurs, the program will exit with an error, but you can
-use the --timeoutok option to control this.
+use the L<"--timeoutok"> option to control this.
 
-You can use the --singletxn option to make the entire sync run in one
+You can use the L<"--singletxn"> option to make the entire sync run in one
 transaction.
 
 =head1 OUTPUT
@@ -2065,17 +2065,17 @@ There are several different kinds of output: debugging, status, and query.  I
 have tried to ensure it will always be valid SQL, though much of it will be
 commented out.
 
-If you specify the --print option, the queries needed to sync the destination
+If you specify the L<"--print"> option, the queries needed to sync the destination
 table with the source table will be printed to STDOUT.
 
-If you specify the --debug option, the queries needed to discover the
+If you specify the L<"--debug"> option, the queries needed to discover the
 differences between source and destination will be printed to STDOUT, commented
 out.  You can use this to see how many queries are executed for a given
 strategy, or whatever other debugging you want.  If you remove the comment
-characters with the --queries option, you can also replay the process of finding
+characters with the L<"--queries"> option, you can also replay the process of finding
 the differences.
 
-If you specify the --verbose option, you'll see information about the process of
+If you specify the L<"--verbose"> option, you'll see information about the process of
 discovering the differences between the tables.  The output is quite different
 for top-down and bottom-up algorithms.  Specify this option multiple times to
 increase the amount of information you see.  This output is complex enough
@@ -2272,9 +2272,14 @@ Rohit Nadhani (WebYog),
 The helpful monks at Perlmonks,
 Travis Rodak,
 
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
+
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+This program is copyright (c) 2007 Baron Schwartz.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -2293,7 +2298,7 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz, baron at xaprb dot com.
+Baron Schwartz.
 
 =head1 VERSION
 
