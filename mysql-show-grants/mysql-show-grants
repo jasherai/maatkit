@@ -3,7 +3,7 @@
 # mysql-show-grants canonicalizes and prints MySQL grants so you can effectively
 # replicate, compare and version-control them.
 #
-# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -261,6 +261,77 @@ sub parse_user {
 mysql-show-grants - Canonicalize and print MySQL grants so you can effectively
 replicate, compare and version-control them.
 
+=head1 SYNOPSIS
+
+   mysql-show-grants
+   mysql-show-grants --separate --revoke | diff othergrants.sql -
+
+=head1 OPTIONS
+
+=over
+
+=item --database
+
+Database to use.
+
+=item --defaults-file
+
+Only read default options from the given file.
+
+=item --drop
+
+Adds DROP USER before each user in the output.
+
+=item --flush
+
+Adds FLUSH PRIVILEGES after output.  You might need this on pre-4.1.1 servers
+if you want to drop a user completely.
+
+=item --host
+
+Connect to host.
+
+=item --ignore
+
+Ignore this comma-separated list of users.
+
+=item --only
+
+Only print grants for this comma-separated list of users.
+
+=item --password
+
+Password to use when connecting.
+
+=item --port
+
+Port number to use for connection.
+
+=item --revoke
+
+Add REVOKE statements for each GRANT statement.
+
+=item --separate
+
+Lists each GRANT or REVOKE separately, instead of the default output from
+MySQL's SHOW GRANTS command, which may list many privileges on a single line.
+With L<"--flush">, places a FLUSH PRIVILEGES after each user, instead of once
+at the end of all the output.
+
+=item --socket
+
+Socket file to use for connection.
+
+=item --user
+
+User for login if not current user.
+
+=item --version
+
+Output version information and exit.
+
+=back
+
 =head1 DESCRIPTION
 
 mysql-show-grants extracts, orders, and then prints grants for MySQL user
@@ -291,44 +362,12 @@ you'll get from running SHOW GRANTS, and avoids spurious changesets in version
 control.
 
 Third, if you want to diff grants across servers, it will be hard without
-"canonicalizing" them, which this script does.  The output is fully diff-able.
+"canonicalizing" them, which mysql-show-grants does.  The output is fully
+diff-able.
 
-With the --revoke, --separate and other options, this script also makes it
-easy to revoke specific privileges from users.  This is tedious otherwise.
-
-=head1 OPTIONS
-
-The --only and --ignore options allow you to select or ignore users.  You need
-to fully qualify the user by host, as MySQL does.  If you omit the host part,
-the default is '%'.  For instance if you want to see grants for 'foo'@'%', do
-this:
-
-   mysql-show-grants -o foo
-
-Or
-   mysql-show-grants -o foo@%
-
-You can specify multiple values joined with a comma:
-
-   mysql-show-grants -i foo,root@localhost
-
-You can convert each GRANT statement into its corresponding REVOKE statement
-with the --revoke option.  This will allow you to easily revoke the
-privileges.  You can also specify the --drop option to automatically drop the
-user.  In MySQL pre-5.0.2, this only works if all grants have already been
-revoked.  For versions earlier than that, you will need to revoke all
-privileges separately, then issue DROP USER.  For versions pre-4.1.1, you need
-to revoke all the privileges, then DELETE from the mysql.user table.  The
-output helpfully includes all this for you.
-
-If you issue the --flush option, the script will also print FLUSH PRIVILEGES.
-You might need this on pre-4.1.1 servers if you want to drop a user
-completely.
-
-You can list each grant statement separately with the --separate option.  This
-also causes each revoke statement to be listed separately, and if you used the
---flush option, will cause a FLUSH PRIVILEGES after each user, instead of once
-at the end of all the output.
+With the L<"--revoke">, L<"--separate"> and other options, mysql-show-grants
+also makes it easy to revoke specific privileges from users.  This is tedious
+otherwise.
 
 =head1 SEE ALSO
 
@@ -344,7 +383,7 @@ You need the following Perl modules: DBI and DBD::mysql.
 
 =head1 LICENSE
 
-This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+This program is copyright (c) 2007 Baron Schwartz.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -363,7 +402,7 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz, baron at xaprb dot com.
+Baron Schwartz.
 
 =head1 VERSION
 

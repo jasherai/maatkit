@@ -3,7 +3,7 @@
 # This is mysql-profile-compact, a program to align results from
 # mysql-query-profiler side by side for comparison.
 # 
-# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -205,61 +205,79 @@ mysql-profile-compact - Compact the output from mysql-query-profiler.
 
 To view queries 2, 4 and 6 side by side:
 
- mysql-profile-compact -q 2,4,6 profile-results.txt
+   mysql-profile-compact -q 2,4,6 profile-results.txt
 
-To view the summaries of different profiling side by side, for example when you
-have profiled many queries and saved into one file, then changed something,
-re-run and saved into another file:
+To view summaries from two runs side by side:
 
- mysql-profile-compact -m SUMMARY results-1.txt results-2.txt
-
-If you have many queries, you might have to scroll horizontally a long way, and
-lose sight of the headers at the left.  To get the headers to repeat every 10
-queries:
-
- mysql-profile-compact -h 10 one-thousand-queries.txt
+   mysql-profile-compact -m SUMMARY results-1.txt results-2.txt
 
 =head1 DESCRIPTION
 
-mysql-profile-compact slices and aligns the output from mysql-query-profiler so
-you can compare profile results side by side easily.  It prints the first
-profile result intact, but each subsequent result is trimmed to be as narrow as
-possible, then aligned next to the first.
+mysql-profile-compact slices and aligns the output from mysql-query-profiler
+so you can compare profile results side by side easily.  It prints the first
+profile result intact, but each subsequent result is trimmed to be as narrow
+as possible, then aligned next to the first.
 
-You can also use this to examine only some profile results.  For example, if you
-have a set of queries to get a table into a known state, and then a query you
-want to profile, you can ignore the setup queries.  This is typically easy to do
-with a command-line option like -q 4,8,12,16,20 to view every 4th query.
+You can also use this to examine only some profile results.  For example, if
+you have a set of queries to get a table into a known state, and then a query
+you want to profile, you can ignore the setup queries.  This is typically easy
+to do with a command-line option like L<"--queries"> 4,8,12,16,20 to view
+every 4th query.
 
 If the first profile it sees is labeled QUERY X, it will only look at QUERY
 profiles from then on.  The same holds for SUMMARY profiles.  This is because
 there are different numbers of lines in QUERY and SUMMARY profiles.  You can
 specify which kind of profile result you want to process.  See
-mysql-query-profiler for the full list of types.
+L<mysql-query-profiler> for the full list of types.
+
+=head1 OPTIONS
+
+=over
+
+=item --queries
+
+Specify a comma-separated list of queries to process; others will be ignored.
+
+=item --mode
+
+Specifies what type of reports (EXTERNAL, QUERY, SUMMARY) to process.
+
+=item --headers
+
+Reprints the headers every N queries.
+
+=item --version
+
+Output version information and exit.
+
+=back
 
 =head1 SEE ALSO
 
-L<mysql-query-profiler>
+See also L<mysql-query-profiler>.
 
 =head1 LICENSE
 
-This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+This program is copyright (c) 2007 Baron Schwartz.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
 MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
-Copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.  All rights
-reserved, except for those granted under the license.
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
 
-This program is free software.  You may redistribute it under either the GNU
-GPL version 2, or the Perl Artistic License, at your option.  For details on
-these licenses, please issue `man perlartistic' or `man perlgpl'.
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz, baron at xaprb dot com.
+Baron Schwartz.
 
 =head1 VERSION
 
