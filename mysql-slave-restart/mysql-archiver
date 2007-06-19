@@ -1,0 +1,1433 @@
+#!/usr/bin/perl
+
+# This is mysql-archiver, a program to archive records from one MySQL table to
+# a file and/or another table.
+#
+# This program is copyright (c) 2007 Baron Schwartz.  Feedback and
+# improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+use List::Util qw(max);
+use IO::File;
+
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+# Define cmdline args.
+my @opt_spec = (
+   { s => 'analyze|A=s', d => 'Run ANALYZE TABLE afterwards on --source and/or --dest' },
+   { s => 'ascend|N!',   d => 'Use ascending index optimization (default)' },
+   { s => 'ascendfirst', d => 'Ascend only first column of index' },
+   { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
+   { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
+   { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
+   { s => 'commit-each', d => 'Commit each group of fetched and archived rows' },
+   { s => 'dest|d=s',    d => 'Table to archive to' },
+   { s => 'delayedins',  d => 'Add the DELAYED modifier to INSERT statements' },
+   { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
+   { s => 'forupdate',   d => 'Adds the FOR UPDATE modifier to SELECT statements' },
+   { s => 'header|h',    d => 'Print column header at top of --file' },
+   { s => 'help',        d => 'Show this help message' },
+   { s => 'hpselect',    d => 'Adds the HIGH_PRIORITY modifier to SELECT statements' },
+   { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
+   { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
+   { s => 'local|L',     d => 'Do not write OPTIMIZE or ANALYZE queries to binlog' },
+   { s => 'lpdel',       d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
+   { s => 'lpins',       d => 'Add the LOW_PRIORITY modifier to INSERT statements' },
+   { s => 'optimize|O=s',d => 'Run OPTIMIZE TABLE afterwards on --source and/or --dest' },
+   { s => 'pkonly|k',    d => 'Primary key columns only' },
+   { s => 'progress|P=i',d => 'Print progress information every X rows' },
+   { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
+   { s => 'quickdel',    d => 'Add the QUICK modifier to DELETE statements' },
+   { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+   { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
+   { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
+   { s => 'sharelock',   d => 'Adds the LOCK IN SHARE MODE modifier to SELECT statements' },
+   { s => 'skipfkchk|K', d => 'Turn off foreign key checks' },
+   { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
+   { s => 'source|s=s',  d => 'Table to archive from' },
+   { s => 'stop',        d => 'Stop all running instances by creating the sentinel file' },
+   { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
+   { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
+   { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
+   { s => 'version',     d => 'Output version information and exit' },
+   { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive (required)' },
+   { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
+);
+
+# This is the container for the command-line options' values to be stored in
+# after processing.  Initial values are defaults.
+my %opts = (
+   C => 1,
+   l => 1,
+   N => 1,
+   u => 1,
+   R => 1,
+   S => '/tmp/mysql-archiver-sentinel',
+);
+
+# Post-process...
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+}
+
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+if ( $opts{version} ) {
+   print "mysql-archiver  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
+
+# First things first: if --stop was given, create the sentinel file.
+if ( $opts{stop} ) {
+   my $file = IO::File->new($opts{S}, ">>")
+      or die "Cannot open $opts{S}: $OS_ERROR\n";
+   print $file "Remove this file to permit mysql-archiver to run\n"
+      or die "Cannot write to $opts{S}: $OS_ERROR\n";
+   close $file
+      or die "Cannot close $opts{S}: $OS_ERROR\n";
+   print STDOUT "Successfully created file $opts{S}\n";
+   exit(0);
+}
+
+my %conn   = (
+   h => 'host',
+   P => 'port',
+   S => 'socket',
+   u => 'user',
+   p => 'pass',
+   F => 'mysql_read_default_file',
+   D => 'database',
+   t => 'table',
+   i => 'index',
+   m => 'plugin_module',
+);
+
+my $src = parse_dsn($opts{s});
+my $dst = parse_dsn($opts{d}, $src) if $src && $opts{d};
+
+# Generate a filename with sprintf-like formatting codes.
+if ( $opts{f} ) {
+   my @time = localtime();
+   my %fmt = (
+      d => sprintf('%02d', $time[3]),
+      H => sprintf('%02d', $time[2]),
+      i => sprintf('%02d', $time[1]),
+      m => sprintf('%02d', $time[4] + 1),
+      s => sprintf('%02d', $time[0]),
+      Y => $time[5] + 1900,
+      D => $src && $src->{D} ? $src->{D} : '',
+      t => $src && $src->{t} ? $src->{t} : '',
+   );
+   $opts{f} =~ s/%([dHimsYDt])/$fmt{$1}/g;
+}
+
+if ( !$opts{help} ) {
+   if ( @ARGV ) {
+      warn "Unrecognized options '@ARGV'.  Do you need to quote --where?\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{m} ) {
+      if ( $opts{m} !~ m/^\d+[smhd]$/ ) {
+         warn "Invalid --time argument\n";
+         $opts{help} = 1;
+      }
+      elsif ( $opts{m} =~ m/(\d+)([smhd])$/ ) {
+         $opts{m} = $2 eq 's' ? $1            # Seconds
+                  : $2 eq 'm' ? $1 * 60       # Minutes
+                  : $2 eq 'h' ? $1 * 3600     # Hours
+                  :             $1 * 86400;   # Days
+      }
+   }
+   elsif ( !$src || !$src->{t} ) {
+      warn "Invalid or missing --source argument\n";
+      $opts{help} = 1;
+   }
+   elsif ( !$opts{W} ) {
+      warn "--where is required; use 1=1 if you do not want a WHERE clause\n";
+      $opts{help} = 1;
+   }
+   elsif ( !($dst || $opts{f}) && !$opts{p} ) {
+      warn "No --dest or --file; this would delete rows (override with --purge)\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{d} ) { # Ensure --source and --dest don't point to the same place
+      my $same = 1;
+      foreach my $arg ( qw(h P D t S) ) {
+         if ( defined $src->{$arg} && defined $dst->{$arg} &&
+            $src->{$arg} ne $dst->{$arg} ) {
+            $same = 0;
+            last;
+         }
+      }
+      if ( $same ) {
+         warn "--source and --dest refer to the same table\n";
+         $opts{help} = 1;
+      }
+   }
+   elsif ( $opts{z} && $opts{'commit-each'} ) {
+      warn "--txnsize and --commit-each are mutually exclusive; use --limit\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{i} && $opts{r} ) {
+      warn "--ignore and --replace are mutually exclusive\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{lpins} && $opts{delayedins} ) {
+      warn "--lpins and --delayedins are mutually exclusive\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{sharelock} && $opts{forupdate} ) {
+      warn "--sharelock and --forupdate are mutually exclusive\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{A} && $opts{O} ) {
+      warn "--analyze and --optimize are mutually exclusive\n";
+      $opts{help} = 1;
+   }
+}
+
+if ( !defined $opts{z} && !$opts{'commit-each'} ) {
+   $opts{z} = 1;
+}
+
+if ( $opts{help} ) {
+   print "Usage: mysql-archiver --source SOURCE --where WHERE <options>\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+   }
+   print <<USAGE;
+
+mysql-archiver nibbles records from a MySQL table.  The --source and --dest
+arguments require a special format.  For more details, please read the
+documentation:
+
+   perldoc mysql-archiver
+
+USAGE
+   exit(1);
+}
+
+# ############################################################################
+# Inspect DB servers and tables.
+# ############################################################################
+
+my $can_retry = 1;
+foreach my $table ( grep { $_ } ($src, $dst) ) {
+   my $dbh        = get_dbh($table);
+   $table->{dbh}  = $dbh;
+   $table->{irot} = get_irot($dbh);
+
+   $can_retry = $can_retry && !$table->{irot};
+
+   $table->{db_tbl} = $dbh->quote_identifier(
+      map  { $_ =~ s/(^`|`$)//g; $_; }
+      grep { $_ }
+      ( $table->{D}, $table->{t} )
+   );
+   # Older DBD::mysql quote_identifier() uses double quotes
+   if ( (my $q = substr($table->{db_tbl}, 0, 1)) ne '`' ) {
+      $table->{db_tbl} =~ s{
+         ^$q         # Leading quote
+         |$q(?=\.)   # Quote before a dot
+         |(?<=\.)$q  # Quote after a dot
+         |$q$        # Trailing quote
+         }
+         {
+         `           # MySQL escape character
+         }gx;
+   }
+
+   # Create objects for archivable and dependency handling, BEFORE getting the
+   # tbl structure (because the object might do some setup, including creating
+   # the table to be archived).
+   if ( $table->{m} ) {
+      eval "require $table->{m}";
+      die $EVAL_ERROR if $EVAL_ERROR;
+      $table->{plugin} = $table->{m}->new(
+         dbh => $table->{dbh},
+         db  => $table->{D},
+         tbl => $table->{t},
+      );
+   }
+
+   $table->{info} = get_tbl_struct($table);
+}
+
+if ( $dst && $opts{C} ) {
+   my @not_in_src = grep {
+      !exists $src->{info}->{col_hash}->{$_}
+   } @{$dst->{info}->{cols}};
+   if ( @not_in_src ) {
+      die "The following columns exist in --dest but not --source: "
+         . join(', ', @not_in_src)
+         . "\n";
+   }
+   my @not_in_dst = grep {
+      !exists $dst->{info}->{col_hash}->{$_}
+   } @{$src->{info}->{cols}};
+   if ( @not_in_dst ) {
+      die "The following columns exist in --source but not --dest: "
+         . join(', ', @not_in_dst)
+         . "\n";
+   }
+}
+
+# TODO: support finding archivable rows on either the source or dest.
+# TODO: ease the restrictions about primary keys and nullable columns.
+# TODO: support batched inserts and deletes
+# TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
+# TODO: buffer results from the SELECT, and use a different $sth for the DELETE
+# TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
+
+my $dbh = $src->{dbh};
+my $sth;
+
+# ############################################################################
+# Design SQL statements.
+# ############################################################################
+my ($first_sql, $next_sql, $del_sql, $ins_sql);
+my (@pk_slice, @asc_slice);
+my @cols = $opts{c} ? split(/,/, $opts{c})               # Explicitly specified columns
+         : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}} # PK only
+         :            @{$src->{info}->{cols}};           # All columns
+
+# Do we have an index to ascend?  Use PRIMARY if nothing specified.
+if ( $opts{N} && ($src->{i} || $src->{info}->{keys}->{PRIMARY}) ) {
+   # Make sure the lettercase is right and find the index...
+   my $ixname = $src->{i} || '';
+   if ( uc $ixname eq 'PRIMARY' || !$src->{i} ) {
+      $ixname = 'PRIMARY';
+   }
+   else {
+      ($ixname) = grep { uc $_ eq uc $src->{i} } keys %{$src->{info}->{keys}};
+   }
+
+   if ( $ixname ) {
+      $src->{i} = $ixname; # Corrects lettercase if it's wrong
+      my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
+
+      if ( @asc_cols ) {
+         if ( $opts{ascendfirst} ) {
+            @asc_cols = $asc_cols[0];
+         }
+
+         # Check that each column is defined as NOT NULL.
+         my @not_null = grep { $src->{info}->{null_hash}->{$_} } @asc_cols;
+         if ( @not_null ) {
+            die "Some columns in index `$ixname` allow NULL.\n";
+         }
+
+         # We found the columns, now find their positions
+         @asc_slice = map {
+            my $pos = 0;
+            my $col = $_;
+            my $fnd = 0;
+            foreach my $c ( @cols ) {
+               if ($c eq $col) {
+                  $fnd = 1;
+                  last;
+               }
+               ++$pos;
+            }
+            die "Cannot find ordinal position of column $col"
+               unless $fnd;
+            $pos;
+         } @asc_cols;
+      }
+
+   }
+   else {
+      die "The specified index could not be found, or there is no PRIMARY key.\n";
+   }
+}
+
+$first_sql
+   = 'SELECT'
+   . ( $opts{hpselect}           ? ' HIGH_PRIORITY' : '' )
+   . ( version_ge($dbh, '4.0.1') ? ' SQL_NO_CACHE'  : '' )
+   . ' '
+   . join(',', map {$dbh->quote_identifier($_)} @cols)
+   . " FROM $src->{db_tbl}"
+   . ( $src->{i}
+      ? ((version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
+      : '')
+   . " WHERE ($opts{W})";
+
+# At this point the fetch-first and fetch-next queries may diverge.
+$next_sql = $first_sql;
+if ( @asc_slice ) {
+   my @new_asc_slice;
+   my @clauses;
+   foreach my $i ( 0 .. $#asc_slice ) {
+      my @clause;
+      foreach my $j ( 0 .. $i - 1 ) {
+         push @clause, "`$cols[$j]` = ?";
+         push @new_asc_slice, $j;
+      }
+      # Only the very last clause should be >=, all others strictly > UNLESS
+      # there is a chance the row will not be deleted, in which case everything
+      # must be strictly > and there is a chance some rows can be skipped in
+      # non-unique indexes.
+      my $op = ($i == $#asc_slice && !$src->{m}) ? '>=' : '>';
+      push @clause, "`$cols[$i]` $op ?";
+      push @new_asc_slice, $i;
+      push @clauses, '(' . join(' AND ', @clause) . ')';
+   }
+   $next_sql .= ' AND '
+      . (@clauses > 1 ? '(' : '')
+      . join(' OR ', @clauses)
+      . (@clauses > 1 ? ')' : '');
+   @asc_slice = @new_asc_slice;
+}
+
+$first_sql .= " LIMIT $opts{l}";
+$next_sql  .= " LIMIT $opts{l}";
+
+if ( $opts{forupdate} ) {
+   $first_sql .= ' FOR UPDATE';
+   $next_sql  .= ' FOR UPDATE';
+}
+elsif ( $opts{sharelock} ) {
+   $first_sql .= ' LOCK IN SHARE MODE';
+   $next_sql  .= ' LOCK IN SHARE MODE';
+}
+
+# DELETE requires either a PK or all columns.  In theory, a UNIQUE index could
+# be used, but I am not going to fool with that.
+if ( $src->{info}->{keys}->{PRIMARY} ) {
+   @pk_slice = map {
+      my $pos = 0;
+      my $col = $_;
+      my $fnd = 0;
+      foreach my $c ( @cols ) {
+         if ($c eq $col) {
+            $fnd = 1;
+            last;
+         }
+         ++$pos;
+      }
+      die "Cannot find ordinal position of column $col"
+         unless $fnd;
+      $pos;
+   } @{$src->{info}->{keys}->{PRIMARY}};
+}
+else {
+   # At this time, issues with NULLs (=null vs. IS NULL) will prevent DELETEs
+   # from working right without a PRIMARY key.
+   die "The source table does not have a primary key.  Cannot continue.\n";
+   @pk_slice = (0 .. $#cols);
+}
+
+# The LIMIT is *always* 1 here, because even though a SELECT can return many
+# rows, an INSERT only does one at a time.  It would not be safe to iterate
+# over a SELECT that was LIMIT-ed to 500 rows, read and INSERT one, and then
+# delete with a LIMIT of 500.  Only one row would be written to the file; only
+# one would be INSERT-ed at the destination.  Every DELETE must be LIMIT 1.
+$del_sql = 'DELETE'
+   . ($opts{lpdel}    ? ' LOW_PRIORITY' : '')
+   . ($opts{quickdel} ? ' QUICK'        : '')
+   . " FROM $src->{db_tbl} WHERE "
+   . join(' AND ', map { "`$cols[$_]` = ?" } @pk_slice)
+   . " LIMIT 1";
+
+# INSERT is all columns.  I can't think of why you'd want to archive to a
+# table with different columns than the source.
+if ( $dst ) {
+   $ins_sql = ($opts{r}          ? 'REPLACE'       : 'INSERT')
+            . ($opts{lpins}      ? ' LOW_PRIORITY' : '')
+            . ($opts{delayedins} ? ' DELAYED'      : '')
+            . ($opts{i}          ? ' IGNORE'       : '');
+   $ins_sql .= " INTO $dst->{db_tbl}("
+      . join(",", map { "`$_`" } @cols)
+      . ") VALUES ("
+      . join(",", map { "?" } @cols)
+      . ")";
+}
+else {
+   $ins_sql = '';
+}
+
+if ( $opts{t} ) {
+   print join("\n", ($opts{f} || ''), $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
+   exit(0);
+}
+
+my $get_first = $dbh->prepare($first_sql);
+my $get_next  = $dbh->prepare($next_sql);
+my $del_row   = $dbh->prepare($del_sql);
+my $ins_row   = $dst->{dbh}->prepare($ins_sql) if $dst; # Different $dbh!
+
+# ############################################################################
+# Set MySQL options.
+# ############################################################################
+
+if ( $opts{K} ) {
+   $src->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+   if ( $dst ) {
+      $dst->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+   }
+}
+
+# ############################################################################
+# Set up the plugins
+# ############################################################################
+foreach my $table ( $dst, $src ) {
+   next unless $table && $table->{plugin};
+   $table->{plugin}->before_begin(cols => \@cols) if $table->{plugin};
+}
+
+# ############################################################################
+# Start archiving.
+# ############################################################################
+my $start   = time();
+my $end     = $start + ($opts{m} || 0); # When mysql-archiver should exit
+my $now     = $start;
+my $cnt     = 0;
+my $txn_cnt = 0;
+my $retries = $opts{R};
+printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT') if $opts{P};
+printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt) if $opts{P};
+
+my $get_sth = $get_first; # Later it may be assigned $get_next
+$get_sth->execute;
+my $row = $get_sth->fetchrow_arrayref();
+if ( !$row ) {
+   $get_sth->finish;
+   $src->{dbh}->disconnect();
+   $dst->{dbh}->disconnect() if $dst;
+   exit(0);
+}
+
+# Open the file and print the header to it.
+my $file;
+if ( $opts{f} ) {
+   my $need_hdr = $opts{h} && !-f $opts{f};
+   $file = IO::File->new($opts{f}, ">>")
+      or die "Cannot open $opts{f}: $OS_ERROR\n";
+   $file->autoflush(1) unless $opts{b};
+   if ( $need_hdr ) {
+      print $file '', escape(\@cols), "\n"
+         or die "Cannot write to $opts{f}: $OS_ERROR\n";
+   }
+}
+
+# Holds the arguments for the $sth's bind variables, so it can be re-tried
+# easily.
+my @beginning_of_txn;
+
+ROW:
+while (                          # Quit if:
+   $row                          # There is no data
+   && $retries >= 0              # or retries are exceeded
+   && (!$opts{m} || $now < $end) # or time is exceeded
+   && !-f $opts{S}               # or the sentinel is set
+   )
+{
+   my $lastrow = $row;
+
+   if ( !$src->{plugin} || $src->{plugin}->is_archivable(row => $row) ) {
+
+      # Do the archiving.  Write to the file first, since like the file, MyISAM
+      # and other tables cannot be rolled back etc.  If there is a problem,
+      # hopefully the data has at least made it to the file.
+      if ( $file ) {
+         print $file '', escape($row), "\n"
+            or die "Cannot write to $opts{f}: $OS_ERROR\n";
+      }
+
+      # INSERT must come first, to be as safe as possible.
+      if ( $dst ) {
+         if ( $dst->{plugin} ) {
+            $dst->{plugin}->before_insert(row => $row);
+         }
+         my $success = do_with_retries( 'inserting', sub { $ins_row->execute(@$row) } );
+         if ( $success == 0 ) {
+            $retries = -1;
+            last ROW;
+         }
+         elsif ( $success == -1 ) {
+            --$retries;
+            next ROW;
+         }
+      }
+
+      # DELETE comes after INSERT.
+      if ( $src->{plugin} ) {
+         $src->{plugin}->before_delete(row => $row);
+      }
+      my $success = do_with_retries( 'deleting', sub { $del_row->execute(@{$row}[@pk_slice]) } );
+      if ( $success == 0 ) {
+         $retries = -1;
+         last ROW;
+      }
+      elsif ( $success == -1 ) {
+         --$retries;
+         next ROW;
+      }
+
+   }
+
+   $now = time();
+   ++$cnt;
+   ++$txn_cnt;
+   $retries = $opts{R};
+
+   # Possibly flush the file and commit the insert and delete.
+   commit() unless $opts{'commit-each'};
+
+   # Report on progress.
+   if ( $opts{P} && $cnt % $opts{P} == 0 ) {
+      printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
+   }
+
+   # Get the next row.
+   if ( $get_sth->{Active} ) { # Fetch until exhausted
+      $row = $get_sth->fetchrow_arrayref();
+   }
+   if ( !$row ) {
+      commit(1)         if $opts{'commit-each'};
+      sleep($opts{e})   if $opts{e};
+      $get_sth          = $get_next;
+      $get_next->execute(@{$lastrow}[@asc_slice]);
+      @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
+      $row              = $get_sth->fetchrow_arrayref();
+   }
+}
+
+# Transactions might still be open, etc
+commit($opts{z} || $opts{'commit-each'});
+if ( $opts{f} && $file ) {
+   close $file
+      or die "Cannot close $opts{f}: $OS_ERROR\n";
+}
+
+if ( $opts{P} ) {
+   printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
+}
+
+# Tear down the plugins.
+foreach my $table ( $dst, $src ) {
+   next unless $table && $table->{plugin};
+   $table->{plugin}->after_finish();
+}
+
+# Run ANALYZE or OPTIMIZE.
+if ( my $action = $opts{A} || $opts{O} ) {
+   my $maint  = ($opts{A} ? 'ANALYZE'                        : 'OPTIMIZE')
+              . ($opts{L} ? ' /*!40101 NO_WRITE_TO_BINLOG*/' : '');
+   if ( $action =~ m/s/i ) {
+      $src->{dbh}->do("$maint TABLE $src->{db_tbl}");
+   }
+   if ( $action =~ m/d/i && $dst ) {
+      $dst->{dbh}->do("$maint TABLE $dst->{db_tbl}");
+   }
+}
+
+# Optionally print the reason for exiting
+if ( $opts{q} ) {
+   if ( $retries < 0 ) {
+      print "Exiting because retries exceeded.\n";
+   }
+   elsif ( $opts{m} && $now >= $end ) {
+      print "Exiting because time exceeded.\n";
+   }
+   elsif ( -f $opts{S} ) {
+      print "Exiting because sentinel file $opts{S} exists.\n";
+   }
+}
+
+# ############################################################################
+# Subroutines.
+# ############################################################################
+
+# Accesses globals, but I wanted the code in one place.
+sub commit {
+   my ( $force ) = @_;
+   if ( $force || ($opts{z} && $txn_cnt && $cnt % $opts{z} == 0) ) {
+      if ( $opts{b} && $file ) {
+         $file->flush or die "Cannot flush $opts{f}: $OS_ERROR\n";
+      }
+      $dst->{dbh}->commit if $dst;
+      $src->{dbh}->commit;
+      $txn_cnt = 0;
+   }
+}
+
+# Repeatedly retries the code until retries runs out, a really bad error
+# happens, or it succeeds.  This sub uses lots of global variables; I only wrote
+# it to factor out some repeated code.  If it returns 0, it exhausted retries
+# and rolled back; if it returns -1, it didn't retry, but rolled back; if it
+# returns 1, all is well.
+sub do_with_retries {
+   my ( $doing, $code ) = @_;
+   my $retries = $opts{R};
+   my $success = 0;
+
+   RETRY:
+   while ( !$success && $retries >= 0 ) {
+      eval {
+         $code->();
+         $success = 1;
+      };
+      if ( $EVAL_ERROR ) {
+         if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded|Deadlock found/ ) {
+            if (
+               $opts{z} && $opts{z} > 1                        # More than one row per txn
+               && $txn_cnt                                     # Not first row
+               && (!$can_retry || $EVAL_ERROR =~ m/Deadlock/)  # And it's not retry-able
+            ) {
+               # The txn, which is more than 1 statement, was rolled back.
+               last RETRY;
+            }
+            else {
+               #  Only one statement had trouble, and the rest of the txn was not
+               #  rolled back.  The statement can be retried.
+               --$retries;
+            }
+         }
+         else {
+            die;
+         }
+      }
+   }
+
+   if ( $success != 1 ) {
+      # Must throw away everything and start the transaction over.
+      if ( $retries >= 0 ) {
+         warn "Deadlock or non-retryable lock wait while $doing; rolling back $txn_cnt rows.\n";
+         $success = -1;
+      }
+      else {
+         warn "Exhausted retries while $doing; rolling back $txn_cnt rows.\n";
+         $success = 0;
+      }
+      $get_sth->finish;
+      $dst->{dbh}->rollback;
+      $src->{dbh}->rollback;
+      # I wish: $file->rollback
+      $get_sth->execute(@beginning_of_txn);
+      $cnt -= $txn_cnt;
+      $txn_cnt = 0;
+   }
+   return $success;
+}
+
+# Formats a row the same way SELECT INTO OUTFILE does by default.  This is
+# described in the LOAD DATA INFILE section of the MySQL manual,
+# http://dev.mysql.com/doc/refman/5.0/en/load-data.html
+sub escape {
+   my ($row) = @_;
+   return join("\t", map {
+      s/([\t\n\\])/\\$1/g if defined $_;  # Escape tabs etc
+      defined $_ ? $_ : '\N';             # NULL = \N
+   } @$row);
+}
+
+# Compares versions like 5.0.27 and 4.1.15-standard-log
+sub version_ge {
+   my ( $dbh, $target ) = @_;
+   my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
+   return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
+}
+
+sub get_tbl_struct {
+   my ( $info ) = @_;
+   my $ddl = ($info->{dbh}->selectrow_array("SHOW CREATE TABLE $info->{db_tbl}"))[1];
+   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
+   my %kdef = ();
+   my %keys =
+      map {
+         my ($name) = $_ =~ m/(PRIMARY|`[^`]*`)/;
+         my ($cols) = $_ =~ m/\((.+)\),?$/;
+         $name =~ s/`//g;
+         $kdef{$name} = $_;
+         ($name, [ $cols =~ m/`(.*?)`(?:\(\d+\))?,?/g ])
+      }
+      $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
+
+   return {
+      cols      => \@cols,
+      col_hash  => { map { $_ => 1 } @cols },
+      null      => \@null,
+      null_hash => { map { $_ => 1 } @null },
+      keys      => \%keys,
+      kdef      => \%kdef,
+      defs      => \@defs,
+      ddl       => $ddl,
+   };
+}
+
+sub parse_dsn {
+   my ($dsn, $prev) = @_;
+   return unless $dsn;
+   $prev ||= {};
+
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   my %vals = map  { $_ => $hash{$_} || $prev->{$_} }
+              grep { $_ ne 'm' } # DO NOT copy the 'm' from --source to --dest
+              keys %conn;
+   $vals{m} = $hash{m}; # Add 'm'
+   return \%vals;
+}
+
+sub get_dbh {
+   my ( $info ) = @_;
+   my $db_options = {
+      AutoCommit => !$opts{z} && !$opts{'commit-each'},
+      RaiseError => 1,
+      PrintError => 0,
+   };
+   my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
+      . ';mysql_read_default_group=mysql';
+   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
+      or die("Can't connect to DB: $OS_ERROR");
+}
+
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
+}
+
+sub get_irot {
+   my ( $dbh ) = @_;
+   return 1 unless version_ge($dbh, '5.0.13');
+   my $rows = $dbh->selectall_arrayref(
+      "show variables like 'innodb_rollback_on_timeout'",
+      { Slice => {} });
+   return 0 unless $rows;
+   return @$rows && $rows->[0]->{Value} ne 'OFF';
+}
+
+# ############################################################################
+# Documentation.
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+mysql-archiver - archive rows from a MySQL table into another table or a file.
+
+=head1 SYNOPSIS
+
+ mysql-archiver --source h=oltp_server,D=test,t=tbl --dest h=olap_server \
+    --file '/var/log/archive/%Y-%m-%d-%D.%t' --limit 1000 --commit-each
+
+=head1 DESCRIPTION
+
+mysql-archiver is the tool I use to archive tables as described in
+L<http://www.xaprb.com/blog/2006/05/02/how-to-write-efficient-archiving-and-purging-jobs-in-sql/>.
+The goal is a low-impact, forward-only job to nibble old data out of the table
+without impacting OLTP queries much.  You can insert the data into another
+table, which need not be on the same server.  You can also write it to a file
+in a format suitable for LOAD DATA INFILE.  Or you can do neither, in which
+case it's just an incremental DELETE.
+
+mysql-archiver is extensible via a plugin mechanism.  You can inject your own
+code to add advanced archiving logic that could be useful for archiving
+dependencies, applying complex business rules, or building a data warehouse
+during the archiving process.
+
+You need to choose values carefully for some options.  The most important are
+--limit, --retries, and --txnsize.
+
+The strategy is to find the first row(s), then scan some index forward-only to
+find more rows efficiently.  Each subsequent query should not scan the entire
+table; it should seek into the index, then scan until it finds more archivable
+rows.  Specifying the index with the 'i' part of the --source argument can be
+crucial for this; use --test to examine the generated queries and be sure to
+EXPLAIN them to see if they are efficient (most of the time you probably want
+to scan the PRIMARY key, which is the default).  Even better, profile
+mysql-archiver with mysql-query-profiler and make sure it is not scanning the
+whole table every query.
+
+You can disable the seek-then-scan optimizations partially or wholly with
+--noascend and --ascendfirst.  Sometimes this may be more efficient for
+multi-column keys.
+
+At the moment, there are some limitations to ease the task of working with NULLs
+and indexes.  The table must have a PRIMARY key, and any index you specify in
+--source must be composed entirely of non-NULL columns (or, if you specify
+--ascendfirst, the first column must be non-NULL).  These restrictions may be
+removed in future versions.
+
+=head1 OPTIONS
+
+Some options are negatable by specifying them in their long form with a --no
+prefix.
+
+=over
+
+=item --analyze
+
+Runs ANALYZE TABLE after finishing.  The argument is an arbitrary string.  If it
+contains the letter 's', the source will be analyzed.  If it contains 'd', the
+destination will be analyzed.  You can specify either or both.  For example, the
+following will analyze both:
+
+  --analyze=ds
+
+See L<http://dev.mysql.com/doc/en/analyze-table.html> for details on ANALYZE
+TABLE.
+
+=item --ascend
+
+Causes mysql-archiver to optimize repeated SELECT queries so they seek into the
+index where the previous query ended, then scan along it, rather than scanning
+from the beginning of the table every time.  This is enabled by default because
+it is generally a good strategy for repeated accesses.
+
+Large, multiple-column indexes may cause the WHERE clause to be complex enough
+that this could actually be less efficient.  Consider for example a four-column
+PRIMARY KEY on (a, b, c, d).  The WHERE clause to start where the last query
+ended is as follows:
+
+   WHERE (a > ?)
+      OR (a = ? AND b > ?)
+      OR (a = ? AND b = ? AND c > ?)
+      OR (a = ? AND b = ? AND c = ? AND d >= ?)
+
+Populating the placeholders with values uses memory and CPU, adds network
+traffic and parsing overhead, and may make the query harder for MySQL to
+optimize.
+
+Ascending the index might not be necessary if you know you are simply removing
+rows from the beginning of the table in chunks, but not leaving any holes, so
+starting at the beginning of the table is actually the most efficient thing to
+do.
+
+See also --ascendfirst.  See L<"EXTENDING"> for a discussion of how this
+interacts with plugins.
+
+=item --ascendfirst
+
+If you do want to use the ascending index optimization (see --ascend), but do
+not want to incur the overhead of ascending a large multi-column index, you can
+use this option to tell mysql-archiver to ascend only the leftmost column of the
+index.  This can provide a significant performance boost over not ascending the
+index at all, while avoiding the cost of ascending the whole index.
+
+See L<"EXTENDING"> for a discussion of how this interacts with plugins.
+
+=item --buffer
+
+Disables autoflushing to --file and flushes --file to disk only when a
+transaction commits.  This typically means the file is block-flushed by the
+operating system, so there may be some implicit flushes to disk between
+commits as well.  The default is to flush --file to disk after every row.
+
+The danger is that a crash might cause lost data.
+
+The performance increase I have seen from using --buffer is around 5 to 15
+percent.  Your mileage may vary.
+
+=item --chkcols
+
+Enabled by default; causes mysql-archiver to check that the source and destination
+tables have the same columns.  It does not check column order, data type, etc.
+It just checks that all columns in the source exist in the destination and
+vice versa.  If there are any differences, mysql-archiver will exit with an
+error.
+
+=item --columns
+
+Specify a comma-separated list of columns to fetch, write to the file, and
+insert into the destination table.  If specified, mysql-archiver completely
+ignores every other column.
+
+If you specify this option, at present you need to at least specify the
+columns in the primary key and the index given in --source (if any).
+
+See also --pkonly.
+
+=item --commit-each
+
+Commits transactions and flushes --file after each set of rows has been
+archived, before fetching the next set of rows, and before sleeping if --sleep
+is specified.  Disables --txnsize; use --limit to control the transaction size
+with --commit-each.
+
+This option is useful as a shortcut to make --limit and --txnsize the same
+value, but more importantly it avoids transactions being held open while
+searching for more rows.  For example, imagine you are archiving old rows from
+the beginning of a very large table, with --limit 1000 and --txnsize 1000.
+After some period of finding and archiving 1000 rows at a time, mysql-archiver
+finds the last 999 rows and archives them, then executes the next SELECT to find
+more rows.  This scans the rest of the table, but never finds any more rows.  It
+has held open a transaction for a very long time, only to determine it is
+finished anyway.  You can use --commit-each to avoid this.
+
+=item --delayedins
+
+Adds the DELAYED modifier to INSERT or REPLACE statements.  See
+L<http://dev.mysql.com/doc/en/insert.html> for details.
+
+=item --dest
+
+This item specifies a table into which mysql-archiver will insert rows
+archived from --source.  It uses the same key=val argument format as --source.
+Missing values default to the same values as --source, so you don't have to
+repeat options that are the same in --source and --dest.  The 'm' part is NOT
+defaulted from --source.
+
+=item --file
+
+Filename to write archived rows to.  A subset of MySQL's DATE_FORMAT()
+formatting codes are allowed in the filename, as follows:
+
+   %d    Day of the month, numeric (01..31)
+   %H    Hour (00..23)
+   %i    Minutes, numeric (00..59)
+   %m    Month, numeric (01..12)
+   %s    Seconds (00..59)
+   %Y    Year, numeric, four digits
+
+You can use the following extra format codes too:
+
+   %D    Database name
+   %t    Table name
+
+Example:
+
+   --file '/var/log/archive/%Y-%m-%d-%D.%t'
+
+The file's contents are in the same format used by SELECT INTO OUTFILE, as
+documented in the MySQL manual: rows terminated by newlines, columns
+terminated by tabs, NULL characters are represented by \N, and special
+characters are escaped by \.  This lets you reload a file with LOAD DATA
+INFILE's default settings.
+
+If you want a column header at the top of the file, see --header.  The file is
+auto-flushed by default; see --buffer.
+
+=item --forupdate
+
+Adds the FOR UPDATE modifier to SELECT statements.  For details, see
+L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
+
+=item --header
+
+Writes column names as the first line in the file given by --file.  If the
+file exists, does not write headers; this keeps the file loadable with LOAD
+DATA INFILE in case you append more output to it.
+
+=item --help
+
+Displays a help message.
+
+=item --hpselect
+
+Adds the HIGH_PRIORITY modifier to SELECT statements.  See
+L<http://dev.mysql.com/doc/en/select.html> for details.
+
+=item --ignore
+
+Causes INSERTs into --dest to be INSERT IGNORE.
+
+=item --limit
+
+Limits the number of rows returned by the SELECT statements that retrieve rows
+to archive.  Default is one row.  It may be more efficient to increase the
+limit, but be careful if you are archiving sparsely, skipping over many rows;
+this can potentially cause more contention with other queries, depending on the
+storage engine, transaction isolation level, and options such as --forupdate.
+
+=item --local
+
+Adds the NO_WRITE_TO_BINLOG modifier to ANALYZE and OPTIMIZE queries.  See
+--analyze for details.
+
+=item --lpdel
+
+Adds the LOW_PRIORITY modifier to DELETE statements.  See
+L<http://dev.mysql.com/doc/en/delete.html> for details.
+
+=item --lpins
+
+Adds the LOW_PRIORITY modifier to INSERT or REPLACE statements.  See
+L<http://dev.mysql.com/doc/en/insert.html> for details.
+
+=item --optimize
+
+Runs OPTIMIZE TABLE after finishing.  See --analyze for the option syntax and
+L<http://dev.mysql.com/doc/en/optimize-table.html> for details on
+OPTIMIZE TABLE.
+
+=item --pkonly
+
+A shortcut for specifying --columns with the primary key columns.
+
+=item --progress
+
+Prints current time, elapsed time, and rows archived every X rows.
+
+=item --purge
+
+Allows archiving without a --file or --dest argument, which is effectively a
+purge since the rows are just deleted.
+
+If you just want to purge rows, consider specifying the table's primary key
+columns with --pkonly.  This will prevent fetching all columns over the
+network for no reason.
+
+=item --quickdel
+
+Adds the QUICK modifier to DELETE statements.  See
+L<http://dev.mysql.com/doc/en/delete.html> for details.  As stated in the
+documentation, in some cases it may be faster to use DELETE QUICK followed by
+OPTIMIZE TABLE.  You can use --optimize for this.
+
+=item --replace
+
+Causes INSERTs into --dest to be written as REPLACE.
+
+=item --retries
+
+Specifies the number of times mysql-archiver should retry when there is an
+InnoDB lock wait timeout or deadlock.  When retries are exhausted,
+mysql-archiver will exit with an error.
+
+Consider carefully what you want to happen when you are archiving between a
+mixture of transactional and non-transactional storage engines.  The INSERT to
+--dest and DELETE from --source are on separate connections, so they do not
+actually participate in the same transaction even if they're on the same
+server.  However, mysql-archiver implements simple distributed transactions in
+code, so commits and rollbacks should happen as desired across the two
+connections.
+
+At this time I have not written any code to handle errors with transactional
+storage engines other than InnoDB.  Request that feature if you need it.
+
+=item --sentinel
+
+The presence of the file specified by --sentinel will cause mysql-archiver to
+stop archiving and exit.  The default is /tmp/mysql-archiver-sentinel.  You
+might find this handy to stop cron jobs gracefully if necessary.  See also
+L<"--stop">.
+
+=item --sharelock
+
+Adds the LOCK IN SHARE MODE modifier to SELECT statements.  For details, see
+L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
+
+=item --skipfkchk
+
+Disables foreign key checks with SET FOREIGN_KEY_CHECKS=0.
+
+=item --sleep
+
+Specifies how long to sleep between SELECT statements.  Default is not to
+sleep at all.  Transactions are NOT committed, and the --file file is NOT
+flushed, before sleeping.  See --txnsize to control that.
+
+If --commit-each is specified, committing and flushing happens before sleeping.
+
+=item --source
+
+Specifies a table to archive from.  This argument is specially formatted as a
+key=value,key=value string.  Keys are a single letter.  Most options control
+how mysql-archiver connects to MySQL:
+
+   KEY MEANING
+   === =======
+   h   Connect to host
+   P   Port number to use for connection
+   S   Socket file to use for connection
+   u   User for login if not current user
+   p   Password to use when connecting
+   F   Only read default options from the given file
+
+The following options select a table to archive:
+
+   KEY MEANING
+   === =======
+   D   Database to archive
+   t   Table to archive
+   i   Index to use
+
+The following options specify pluggable actions, which an external Perl module
+can provide:
+
+   KEY MEANING
+   === =======
+   m   Package name of an external Perl module (see L<"EXTENDING">).
+
+The only required part is the table; other parts may be read from various
+places in the environment (such as options files).  Here is an example:
+
+   --source h=my_server,D=my_database,t=my_tbl
+
+The 'i' part deserves special mention.  This tells mysql-archiver which index
+it should scan to archive.  This appears in a FORCE INDEX or USE INDEX hint in
+the SELECT statements used to fetch archivable rows.  If you don't specify
+anything, mysql-archiver will try to use a PRIMARY KEY if one exists.  In my
+experience this usually works well, so most of the time you can probably just
+omit the 'i' part.
+
+The index is used to optimize repeated accesses to the table; mysql-archiver
+remembers the last row it retrieves from each SELECT statement, and uses it to
+construct a WHERE clause, using the columns in the specified index, that should
+allow MySQL to start the next SELECT where the last one ended, rather than
+potentially scanning from the beginning of the table with each successive
+SELECT.  If you are using external plugins, please see L<"EXTENDING"> for a
+discussion of how they interact with ascending indexes.
+
+=item --stop
+
+Causes mysql-archiver to create the sentinel file specified by --sentinel and
+exit.  This should have the effect of stopping all running instances which are
+watching the same sentinel file.
+
+=item --test
+
+Causes mysql-archiver to exit after printing the filename and SQL statements
+it will use.
+
+=item --time
+
+Causes mysql-archiver to stop after the specified time has elapsed.  The
+argument can have a suffix of s, m, h, or d, indicating seconds, minutes, hours,
+or days.  The number is interpreted as seconds if there is no suffix.
+
+=item --txnsize
+
+Specifies the size, in number of rows, of each transaction.  Default is one
+row.  Zero disables transactions altogether.  After mysql-archiver processes
+this many rows, it commits both the --source and the --dest if given, and
+flushes the file given by --file.
+
+This parameter is critical to performance.  If you are archiving from a live
+server, which for example is doing heavy OLTP work, you need to choose a good
+balance between transaction size and commit overhead.  Larger transactions
+create the possibility of more lock contention and deadlocks, but smaller
+transactions cause more frequent commit overhead, which can be significant.  To
+give an idea, on a small test set I worked with while writing mysql-archiver, a
+value of 500 caused archiving to take about 2 seconds per 1000 rows on an
+otherwise quiet MySQL instance on my desktop machine, archiving to disk and to
+another table.  Disabling transactions with a value of zero, which turns on
+autocommit, dropped performance to 38 seconds per thousand rows.
+
+If you are not archiving from or to a transactional storage engine, you may
+want to disable transactions so mysql-archiver doesn't try to worry about
+committing and so forth.
+
+=item --where
+
+Specifies a WHERE clause to limit which rows are archived.  Do not include the
+word WHERE.  You may need to quote the argument to prevent your shell from
+interpreting it.  For example:
+
+   --where 'ts < current_date - interval 90 day'
+
+For safety, --where is required.  If you do not require a WHERE clause, use
+--where 1=1.
+
+=item --whyquit
+
+Causes mysql-archiver to print a message if it exits for any reason other than
+running out of rows to archive.  This can be useful if you have a cron job with
+--time specified, for example, and you want to be sure mysql-archiver is
+finishing before running out of time.
+
+=back
+
+=head1 EXTENDING
+
+mysql-archiver is extensible by plugging in external Perl modules to handle
+some logic and/or actions.  You can specify a module for both the --source and
+the --dest, with the 'm' part of the specification.  For example:
+
+   --source D=test,t=test1,m=My::Module1 --dest m=My::Module2,t=test2
+
+This will cause mysql-archiver to load the My::Module1 and My::Module2 packages,
+create instances of them, and then make calls to them during the archiving
+process.  The module must provide this interface:
+
+=over
+
+=item new(dbh => $dbh, db => $db_name, tbl => $tbl_name)
+
+The plugin's constructor is passed a reference to the database handle, the
+database name, and table name.  The plugin is created just after mysql-archiver
+opens the connection, and before it examines the table given in the arguments.
+This gives the plugin a chance to create and populate temporary tables, or do
+other setup work.
+
+=item before_begin(cols => \@cols)
+
+This method is called just before mysql-archiver begins iterating through rows
+and archiving them, but after it does all other setup work (examining table
+structures, designing SQL queries, and so on).  This is the only time
+mysql-archiver tells the plugin column names for the rows it will pass the
+plugin while archiving.
+
+=item is_archivable(row => \@row)
+
+This method is called for each row to determine whether it is archivable.  This
+only applies to --source.  The argument is the row itself, as an arrayref.  If
+the method returns true, the row will be archived; otherwise it will be skipped.
+
+Skipping a row adds complications for non-unique indexes.  Normally
+mysql-archiver uses a WHERE clause designed to target the last processed row as
+the place to start the scan for the next SELECT statement.  If you have skipped
+the row by returning false from is_archivable(), mysql-archiver could get into
+an infinite loop because the row still exists.  Therefore, when you specify a
+plugin for the --source argument, mysql-archiver will change its WHERE clause
+slightly.  Instead of starting at "greater than or equal to" the last processed
+row, it will start "strictly greater than."  This will work fine on unique
+indexes such as primary keys, but it may skip rows (leave holes) on non-unique
+indexes or when ascending only the first column of an index.
+
+=item before_delete(row => \@row)
+
+This method is called for each row just before it is deleted.  This only applies
+to --source.  This is a good place for you to handle dependencies, such as
+deleting things that are foreign-keyed to the row you are about to delete.  You
+could also use this to recursively archive all dependent tables.
+
+=item before_insert(row => \@row)
+
+This method is called for each row just before it is inserted.  This only
+applies to --dest.  You could use this to insert the row into multiple tables,
+perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a data
+warehouse.
+
+=item after_finish()
+
+This method is called after mysql-archiver exits the archiving loop, commits all
+database handles, closes --file, and prints the final statistics, but before
+mysql-archiver runs ANALYZE or OPTIMIZE.
+
+=back
+
+If you specify a plugin for both --source and --dest, mysql-archiver constructs,
+calls before_begin(), and calls after_finish() on the two plugins in the order
+--source, --dest.
+
+mysql-archiver assumes it controls transactions, and that the plugin will NOT
+commit or roll back the database handle.  The database handle passed to the
+plugin's constructor is the same handle mysql-archiver uses itself.  Remember
+that --source and --dest are separate handles.
+
+A sample module might look like this:
+
+   package My::Module;
+   
+   sub new {
+      my ( $class, %args ) = @_;
+      return bless(\%args, $class);
+   }
+   
+   sub before_begin {
+      my ( $self, %args ) = @_;
+      # Save column names for later
+      $self->{cols} = $args{cols};
+   }
+   
+   sub is_archivable {
+      my ( $self, %args ) = @_;
+      # Do some advanced logic with $args{row}
+      return 1;
+   }
+   
+   sub before_delete {} # Take no action
+   sub before_insert {} # Take no action
+   sub after_finish {}  # Take no action
+   
+   1;
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 OUTPUT
+
+If you specify --print, the output is a header row, plus status output at
+intervals.  Each row in the status output lists the current date and time, how
+many seconds mysql-archiver has been running, and how many rows it has
+archived.
+
+=head1 BUGS
+
+If you find bugs, need features, etc please use the bug tracker, forums, and
+mailing lists at http://sourceforge.net/projects/mysqltoolkit.
+
+=head1 ACKNOWLEDGEMENTS
+
+Thanks to the following people, and apologies to anyone I've omitted:
+
+Andrew O'Brien,
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
+are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
+
+=cut
