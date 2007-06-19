@@ -14,7 +14,7 @@ MKDIR = /bin/mkdir
 
 # define some variables
 
-NAME = mysql-archiver
+NAME = mysql-slave-restart
 VERSION = 0.9.2
 DISTFILES = COPYING \
 	INSTALL \

@@ -1,4 +1,4 @@
-mysql-archiver
+mysql-slave-restart
 Makefile.PL
 MANIFEST			This list of files
 README

@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
-# This is mysql-archiver, a program to archive records from one MySQL table to
-# a file and/or another table.
+# This is mysql-slave-restart, a program to watch replication and try to
+# restart the slave on errors.
 #
 # This program is copyright (c) 2007 Baron Schwartz.  Feedback and
 # improvements are welcome.
@@ -26,8 +26,8 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use List::Util qw(max);
-use IO::File;
+use List::Util qw(min max);
+use Time::HiRes qw(sleep);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -39,55 +39,33 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # Define cmdline args.
 my @opt_spec = (
-   { s => 'analyze|A=s', d => 'Run ANALYZE TABLE afterwards on --source and/or --dest' },
-   { s => 'ascend|N!',   d => 'Use ascending index optimization (default)' },
-   { s => 'ascendfirst', d => 'Ascend only first column of index' },
-   { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
-   { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
-   { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
-   { s => 'commit-each', d => 'Commit each group of fetched and archived rows' },
-   { s => 'dest|d=s',    d => 'Table to archive to' },
-   { s => 'delayedins',  d => 'Add the DELAYED modifier to INSERT statements' },
-   { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
-   { s => 'forupdate',   d => 'Adds the FOR UPDATE modifier to SELECT statements' },
-   { s => 'header|h',    d => 'Print column header at top of --file' },
-   { s => 'help',        d => 'Show this help message' },
-   { s => 'hpselect',    d => 'Adds the HIGH_PRIORITY modifier to SELECT statements' },
-   { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-   { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
-   { s => 'local|L',     d => 'Do not write OPTIMIZE or ANALYZE queries to binlog' },
-   { s => 'lpdel',       d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
-   { s => 'lpins',       d => 'Add the LOW_PRIORITY modifier to INSERT statements' },
-   { s => 'optimize|O=s',d => 'Run OPTIMIZE TABLE afterwards on --source and/or --dest' },
-   { s => 'pkonly|k',    d => 'Primary key columns only' },
-   { s => 'progress|P=i',d => 'Print progress information every X rows' },
-   { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
-   { s => 'quickdel',    d => 'Add the QUICK modifier to DELETE statements' },
-   { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-   { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
-   { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
-   { s => 'sharelock',   d => 'Adds the LOCK IN SHARE MODE modifier to SELECT statements' },
-   { s => 'skipfkchk|K', d => 'Turn off foreign key checks' },
-   { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
-   { s => 'source|s=s',  d => 'Table to archive from' },
-   { s => 'stop',        d => 'Stop all running instances by creating the sentinel file' },
-   { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
-   { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
-   { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
-   { s => 'version',     d => 'Output version information and exit' },
-   { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive (required)' },
-   { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
+   { s => 'database|D=s',      d => 'Database to use' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'error-numbers|e=s', d => 'Only restart this comma-separated list of errors' },
+   { s => 'error-text|E=s',    d => 'Only restart errors that match this pattern' },
+   { s => 'help',              d => 'Show this help message' },
+   { s => 'host|h=s',          d => 'Connect to host' },
+   { s => 'maxsleep|M=f',      d => 'Maximum sleep time (default 60 sec)'},
+   { s => 'minsleep|m=f',      d => 'Minimum sleep time (default .01 sec)'},
+   { s => 'password|p=s',      d => 'Password to use when connecting' },
+   { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'skipcount|k=i',     d => 'Number of statements to skip (default 1)' },
+   { s => 'sleep|s=f',         d => 'Initial sleep time (default 1 sec)' },
+   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'time|t=s',          d => 'Time to run before exiting (suffix: s/m/h/d)' },
+   { s => 'untilmaster=s',     d => 'Run until this master log file and position' },
+   { s => 'untilrelay=s',      d => 'Run until this relay log file and position' },
+   { s => 'user|u=s',          d => 'User for login if not current user' },
+   { s => 'version',           d => 'Output version information and exit' },
 );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   C => 1,
-   l => 1,
-   N => 1,
-   u => 1,
-   R => 1,
-   S => '/tmp/mysql-archiver-sentinel',
+   k => 1,
+   s => 1,
+   m => .01,
+   M => 60,
 );
 
 # Post-process...
@@ -106,125 +84,44 @@ Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
 if ( $opts{version} ) {
-   print "mysql-archiver  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   print "mysql-slave-restart  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
    exit(0);
-}
-
-# First things first: if --stop was given, create the sentinel file.
-if ( $opts{stop} ) {
-   my $file = IO::File->new($opts{S}, ">>")
-      or die "Cannot open $opts{S}: $OS_ERROR\n";
-   print $file "Remove this file to permit mysql-archiver to run\n"
-      or die "Cannot write to $opts{S}: $OS_ERROR\n";
-   close $file
-      or die "Cannot close $opts{S}: $OS_ERROR\n";
-   print STDOUT "Successfully created file $opts{S}\n";
-   exit(0);
-}
-
-my %conn   = (
-   h => 'host',
-   P => 'port',
-   S => 'socket',
-   u => 'user',
-   p => 'pass',
-   F => 'mysql_read_default_file',
-   D => 'database',
-   t => 'table',
-   i => 'index',
-   m => 'plugin_module',
-);
-
-my $src = parse_dsn($opts{s});
-my $dst = parse_dsn($opts{d}, $src) if $src && $opts{d};
-
-# Generate a filename with sprintf-like formatting codes.
-if ( $opts{f} ) {
-   my @time = localtime();
-   my %fmt = (
-      d => sprintf('%02d', $time[3]),
-      H => sprintf('%02d', $time[2]),
-      i => sprintf('%02d', $time[1]),
-      m => sprintf('%02d', $time[4] + 1),
-      s => sprintf('%02d', $time[0]),
-      Y => $time[5] + 1900,
-      D => $src && $src->{D} ? $src->{D} : '',
-      t => $src && $src->{t} ? $src->{t} : '',
-   );
-   $opts{f} =~ s/%([dHimsYDt])/$fmt{$1}/g;
 }
 
 if ( !$opts{help} ) {
-   if ( @ARGV ) {
-      warn "Unrecognized options '@ARGV'.  Do you need to quote --where?\n";
-      $opts{help} = 1;
-   }
-   elsif ( $opts{m} ) {
-      if ( $opts{m} !~ m/^\d+[smhd]$/ ) {
+   if ( $opts{t} ) {
+      if ( $opts{t} !~ m/^\d+[smhd]$/ ) {
          warn "Invalid --time argument\n";
          $opts{help} = 1;
       }
-      elsif ( $opts{m} =~ m/(\d+)([smhd])$/ ) {
-         $opts{m} = $2 eq 's' ? $1            # Seconds
+      elsif ( $opts{t} =~ m/(\d+)([smhd])$/ ) {
+         $opts{t} = $2 eq 's' ? $1            # Seconds
                   : $2 eq 'm' ? $1 * 60       # Minutes
                   : $2 eq 'h' ? $1 * 3600     # Hours
                   :             $1 * 86400;   # Days
       }
    }
-   elsif ( !$src || !$src->{t} ) {
-      warn "Invalid or missing --source argument\n";
-      $opts{help} = 1;
-   }
-   elsif ( !$opts{W} ) {
-      warn "--where is required; use 1=1 if you do not want a WHERE clause\n";
-      $opts{help} = 1;
-   }
-   elsif ( !($dst || $opts{f}) && !$opts{p} ) {
-      warn "No --dest or --file; this would delete rows (override with --purge)\n";
-      $opts{help} = 1;
-   }
-   elsif ( $opts{d} ) { # Ensure --source and --dest don't point to the same place
-      my $same = 1;
-      foreach my $arg ( qw(h P D t S) ) {
-         if ( defined $src->{$arg} && defined $dst->{$arg} &&
-            $src->{$arg} ne $dst->{$arg} ) {
-            $same = 0;
-            last;
-         }
-      }
-      if ( $same ) {
-         warn "--source and --dest refer to the same table\n";
+   if ( $opts{untilmaster} ) {
+      if ( $opts{untilmaster} !~ m/^[.\w-]+,\d+$/ ) {
+         warn "Invalid --untilmaster argument, must be file,pos\n";
          $opts{help} = 1;
       }
    }
-   elsif ( $opts{z} && $opts{'commit-each'} ) {
-      warn "--txnsize and --commit-each are mutually exclusive; use --limit\n";
-      $opts{help} = 1;
-   }
-   elsif ( $opts{i} && $opts{r} ) {
-      warn "--ignore and --replace are mutually exclusive\n";
-      $opts{help} = 1;
-   }
-   elsif ( $opts{lpins} && $opts{delayedins} ) {
-      warn "--lpins and --delayedins are mutually exclusive\n";
-      $opts{help} = 1;
-   }
-   elsif ( $opts{sharelock} && $opts{forupdate} ) {
-      warn "--sharelock and --forupdate are mutually exclusive\n";
-      $opts{help} = 1;
-   }
-   elsif ( $opts{A} && $opts{O} ) {
-      warn "--analyze and --optimize are mutually exclusive\n";
-      $opts{help} = 1;
+   if ( $opts{untilrelay} ) {
+      if ( $opts{untilrelay} !~ m/^[.\w-]+,\d+$/ ) {
+         warn "Invalid --untilrelay argument, must be file,pos\n";
+         $opts{help} = 1;
+      }
    }
 }
 
-if ( !defined $opts{z} && !$opts{'commit-each'} ) {
-   $opts{z} = 1;
+# Prepare the list of error numbers.
+if ( $opts{e} ) {
+   $opts{e} = { map { $_ => 1 } $opts{e} =~ m/(\d+)/g };
 }
 
 if ( $opts{help} ) {
-   print "Usage: mysql-archiver --source SOURCE --where WHERE <options>\n\n";
+   print "Usage: mysql-slave-restart <options>\n\n";
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
@@ -233,530 +130,109 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-mysql-archiver nibbles records from a MySQL table.  The --source and --dest
-arguments require a special format.  For more details, please read the
+mysql-slave-restart watches a MySQL replication slave for errors, and tries to
+restart replication if it stops.  For more details, please read the
 documentation:
 
-   perldoc mysql-archiver
+   perldoc mysql-slave-restart
 
 USAGE
    exit(1);
 }
 
 # ############################################################################
-# Inspect DB servers and tables.
+# Connect and go to work.
 # ############################################################################
 
-my $can_retry = 1;
-foreach my $table ( grep { $_ } ($src, $dst) ) {
-   my $dbh        = get_dbh($table);
-   $table->{dbh}  = $dbh;
-   $table->{irot} = get_irot($dbh);
+# Connect to the database
+my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
+my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
+   . ';mysql_read_default_group=mysql';
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } )
+   or die("Can't connect to DB: $OS_ERROR");
 
-   $can_retry = $can_retry && !$table->{irot};
+my $start_sql = version_ge($dbh, '4.0.5') ? 'START SLAVE' : 'SLAVE START';
+if ( $opts{untilmaster} ) {
+   my ( $file, $pos ) = split(',', $opts{untilmaster});
+   $start_sql .= " UNTIL MASTER_LOG_FILE = '$file', MASTER_LOG_POS = $pos";
+}
+elsif ( $opts{untilrelay} ) {
+   my ( $file, $pos ) = split(',', $opts{untilrelay});
+   $start_sql .= " UNTIL RELAY_LOG_FILE = '$file', RELAY_LOG_POS = $pos";
+}
 
-   $table->{db_tbl} = $dbh->quote_identifier(
-      map  { $_ =~ s/(^`|`$)//g; $_; }
-      grep { $_ }
-      ( $table->{D}, $table->{t} )
-   );
-   # Older DBD::mysql quote_identifier() uses double quotes
-   if ( (my $q = substr($table->{db_tbl}, 0, 1)) ne '`' ) {
-      $table->{db_tbl} =~ s{
-         ^$q         # Leading quote
-         |$q(?=\.)   # Quote before a dot
-         |(?<=\.)$q  # Quote after a dot
-         |$q$        # Trailing quote
-         }
-         {
-         `           # MySQL escape character
-         }gx;
+my $fetch_stat = $dbh->prepare('SHOW SLAVE STATUS');
+my $set_skip   = $dbh->prepare("SET GLOBAL SQL_SLAVE_SKIP_COUNTER = $opts{k}");
+my $start      = $dbh->prepare($start_sql);
+
+my $exit_time = time() + ($opts{t} || 0);
+my $sleep = $opts{s};
+while ( ( !$opts{t} || time() < $exit_time ) ) {
+   my $was_running = 1;
+   $fetch_stat->execute();
+   my $stat = $fetch_stat->fetchall_arrayref({})->[0];
+   die "No SLAVE STATUS output found\n" unless $stat;
+
+   $stat->{Slave_SQL_Running} ||= 'No';
+   $stat->{Last_Error}        ||= '';
+   $stat->{Last_Errno}        ||= 0;
+
+   if ( $opts{untilmaster} && pos_ge($stat, 'master') ) {
+      die "Slave has advanced past $opts{untilmaster}\n";
+   }
+   elsif ( $opts{untilrelay} && pos_ge($stat, 'relay') ) {
+      die "Slave has advanced past $opts{untilrelay}\n";
    }
 
-   # Create objects for archivable and dependency handling, BEFORE getting the
-   # tbl structure (because the object might do some setup, including creating
-   # the table to be archived).
-   if ( $table->{m} ) {
-      eval "require $table->{m}";
-      die $EVAL_ERROR if $EVAL_ERROR;
-      $table->{plugin} = $table->{m}->new(
-         dbh => $table->{dbh},
-         db  => $table->{D},
-         tbl => $table->{t},
+   if ( $stat->{Slave_SQL_Running} eq 'No' ) {
+      # Print the time, error, etc
+      (my $err = $stat->{Last_Error} ) =~ s/\s+/ /g;
+      printf("%s %5d %11d %s %s\n",
+         ts(time),
+         $stat->{Last_Errno} || 0,
+         $err
       );
+
+      if ( $opts{e} && !exists($opts{e}->{$stat->{Last_Errno}}) ) {
+         die "Error $stat->{Last_Errno} is not in --error-numbers\n";
+      }
+      elsif ( $opts{E} && $stat->{Last_Error} !~ m/$opts{E}/ ) {
+         die "Error does not match --error-text\n";
+      }
+      else {
+         $set_skip->execute();
+         $start->execute();
+         $was_running = 0;
+      }
    }
 
-   $table->{info} = get_tbl_struct($table);
-}
-
-if ( $dst && $opts{C} ) {
-   my @not_in_src = grep {
-      !exists $src->{info}->{col_hash}->{$_}
-   } @{$dst->{info}->{cols}};
-   if ( @not_in_src ) {
-      die "The following columns exist in --dest but not --source: "
-         . join(', ', @not_in_src)
-         . "\n";
-   }
-   my @not_in_dst = grep {
-      !exists $dst->{info}->{col_hash}->{$_}
-   } @{$src->{info}->{cols}};
-   if ( @not_in_dst ) {
-      die "The following columns exist in --source but not --dest: "
-         . join(', ', @not_in_dst)
-         . "\n";
-   }
-}
-
-# TODO: support finding archivable rows on either the source or dest.
-# TODO: ease the restrictions about primary keys and nullable columns.
-# TODO: support batched inserts and deletes
-# TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
-# TODO: buffer results from the SELECT, and use a different $sth for the DELETE
-# TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
-
-my $dbh = $src->{dbh};
-my $sth;
-
-# ############################################################################
-# Design SQL statements.
-# ############################################################################
-my ($first_sql, $next_sql, $del_sql, $ins_sql);
-my (@pk_slice, @asc_slice);
-my @cols = $opts{c} ? split(/,/, $opts{c})               # Explicitly specified columns
-         : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}} # PK only
-         :            @{$src->{info}->{cols}};           # All columns
-
-# Do we have an index to ascend?  Use PRIMARY if nothing specified.
-if ( $opts{N} && ($src->{i} || $src->{info}->{keys}->{PRIMARY}) ) {
-   # Make sure the lettercase is right and find the index...
-   my $ixname = $src->{i} || '';
-   if ( uc $ixname eq 'PRIMARY' || !$src->{i} ) {
-      $ixname = 'PRIMARY';
+   # Adjust sleep time
+   if ( $was_running ) {
+      $sleep = min($opts{M}, $sleep * 2);
    }
    else {
-      ($ixname) = grep { uc $_ eq uc $src->{i} } keys %{$src->{info}->{keys}};
+      $sleep = max($opts{m}, $sleep / 2);
    }
 
-   if ( $ixname ) {
-      $src->{i} = $ixname; # Corrects lettercase if it's wrong
-      my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
+   sleep($sleep);
 
-      if ( @asc_cols ) {
-         if ( $opts{ascendfirst} ) {
-            @asc_cols = $asc_cols[0];
-         }
-
-         # Check that each column is defined as NOT NULL.
-         my @not_null = grep { $src->{info}->{null_hash}->{$_} } @asc_cols;
-         if ( @not_null ) {
-            die "Some columns in index `$ixname` allow NULL.\n";
-         }
-
-         # We found the columns, now find their positions
-         @asc_slice = map {
-            my $pos = 0;
-            my $col = $_;
-            my $fnd = 0;
-            foreach my $c ( @cols ) {
-               if ($c eq $col) {
-                  $fnd = 1;
-                  last;
-               }
-               ++$pos;
-            }
-            die "Cannot find ordinal position of column $col"
-               unless $fnd;
-            $pos;
-         } @asc_cols;
-      }
-
-   }
-   else {
-      die "The specified index could not be found, or there is no PRIMARY key.\n";
-   }
-}
-
-$first_sql
-   = 'SELECT'
-   . ( $opts{hpselect}           ? ' HIGH_PRIORITY' : '' )
-   . ( version_ge($dbh, '4.0.1') ? ' SQL_NO_CACHE'  : '' )
-   . ' '
-   . join(',', map {$dbh->quote_identifier($_)} @cols)
-   . " FROM $src->{db_tbl}"
-   . ( $src->{i}
-      ? ((version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
-      : '')
-   . " WHERE ($opts{W})";
-
-# At this point the fetch-first and fetch-next queries may diverge.
-$next_sql = $first_sql;
-if ( @asc_slice ) {
-   my @new_asc_slice;
-   my @clauses;
-   foreach my $i ( 0 .. $#asc_slice ) {
-      my @clause;
-      foreach my $j ( 0 .. $i - 1 ) {
-         push @clause, "`$cols[$j]` = ?";
-         push @new_asc_slice, $j;
-      }
-      # Only the very last clause should be >=, all others strictly > UNLESS
-      # there is a chance the row will not be deleted, in which case everything
-      # must be strictly > and there is a chance some rows can be skipped in
-      # non-unique indexes.
-      my $op = ($i == $#asc_slice && !$src->{m}) ? '>=' : '>';
-      push @clause, "`$cols[$i]` $op ?";
-      push @new_asc_slice, $i;
-      push @clauses, '(' . join(' AND ', @clause) . ')';
-   }
-   $next_sql .= ' AND '
-      . (@clauses > 1 ? '(' : '')
-      . join(' OR ', @clauses)
-      . (@clauses > 1 ? ')' : '');
-   @asc_slice = @new_asc_slice;
-}
-
-$first_sql .= " LIMIT $opts{l}";
-$next_sql  .= " LIMIT $opts{l}";
-
-if ( $opts{forupdate} ) {
-   $first_sql .= ' FOR UPDATE';
-   $next_sql  .= ' FOR UPDATE';
-}
-elsif ( $opts{sharelock} ) {
-   $first_sql .= ' LOCK IN SHARE MODE';
-   $next_sql  .= ' LOCK IN SHARE MODE';
-}
-
-# DELETE requires either a PK or all columns.  In theory, a UNIQUE index could
-# be used, but I am not going to fool with that.
-if ( $src->{info}->{keys}->{PRIMARY} ) {
-   @pk_slice = map {
-      my $pos = 0;
-      my $col = $_;
-      my $fnd = 0;
-      foreach my $c ( @cols ) {
-         if ($c eq $col) {
-            $fnd = 1;
-            last;
-         }
-         ++$pos;
-      }
-      die "Cannot find ordinal position of column $col"
-         unless $fnd;
-      $pos;
-   } @{$src->{info}->{keys}->{PRIMARY}};
-}
-else {
-   # At this time, issues with NULLs (=null vs. IS NULL) will prevent DELETEs
-   # from working right without a PRIMARY key.
-   die "The source table does not have a primary key.  Cannot continue.\n";
-   @pk_slice = (0 .. $#cols);
-}
-
-# The LIMIT is *always* 1 here, because even though a SELECT can return many
-# rows, an INSERT only does one at a time.  It would not be safe to iterate
-# over a SELECT that was LIMIT-ed to 500 rows, read and INSERT one, and then
-# delete with a LIMIT of 500.  Only one row would be written to the file; only
-# one would be INSERT-ed at the destination.  Every DELETE must be LIMIT 1.
-$del_sql = 'DELETE'
-   . ($opts{lpdel}    ? ' LOW_PRIORITY' : '')
-   . ($opts{quickdel} ? ' QUICK'        : '')
-   . " FROM $src->{db_tbl} WHERE "
-   . join(' AND ', map { "`$cols[$_]` = ?" } @pk_slice)
-   . " LIMIT 1";
-
-# INSERT is all columns.  I can't think of why you'd want to archive to a
-# table with different columns than the source.
-if ( $dst ) {
-   $ins_sql = ($opts{r}          ? 'REPLACE'       : 'INSERT')
-            . ($opts{lpins}      ? ' LOW_PRIORITY' : '')
-            . ($opts{delayedins} ? ' DELAYED'      : '')
-            . ($opts{i}          ? ' IGNORE'       : '');
-   $ins_sql .= " INTO $dst->{db_tbl}("
-      . join(",", map { "`$_`" } @cols)
-      . ") VALUES ("
-      . join(",", map { "?" } @cols)
-      . ")";
-}
-else {
-   $ins_sql = '';
-}
-
-if ( $opts{t} ) {
-   print join("\n", ($opts{f} || ''), $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
-   exit(0);
-}
-
-my $get_first = $dbh->prepare($first_sql);
-my $get_next  = $dbh->prepare($next_sql);
-my $del_row   = $dbh->prepare($del_sql);
-my $ins_row   = $dst->{dbh}->prepare($ins_sql) if $dst; # Different $dbh!
-
-# ############################################################################
-# Set MySQL options.
-# ############################################################################
-
-if ( $opts{K} ) {
-   $src->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-   if ( $dst ) {
-      $dst->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-   }
-}
-
-# ############################################################################
-# Set up the plugins
-# ############################################################################
-foreach my $table ( $dst, $src ) {
-   next unless $table && $table->{plugin};
-   $table->{plugin}->before_begin(cols => \@cols) if $table->{plugin};
-}
-
-# ############################################################################
-# Start archiving.
-# ############################################################################
-my $start   = time();
-my $end     = $start + ($opts{m} || 0); # When mysql-archiver should exit
-my $now     = $start;
-my $cnt     = 0;
-my $txn_cnt = 0;
-my $retries = $opts{R};
-printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT') if $opts{P};
-printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt) if $opts{P};
-
-my $get_sth = $get_first; # Later it may be assigned $get_next
-$get_sth->execute;
-my $row = $get_sth->fetchrow_arrayref();
-if ( !$row ) {
-   $get_sth->finish;
-   $src->{dbh}->disconnect();
-   $dst->{dbh}->disconnect() if $dst;
-   exit(0);
-}
-
-# Open the file and print the header to it.
-my $file;
-if ( $opts{f} ) {
-   my $need_hdr = $opts{h} && !-f $opts{f};
-   $file = IO::File->new($opts{f}, ">>")
-      or die "Cannot open $opts{f}: $OS_ERROR\n";
-   $file->autoflush(1) unless $opts{b};
-   if ( $need_hdr ) {
-      print $file '', escape(\@cols), "\n"
-         or die "Cannot write to $opts{f}: $OS_ERROR\n";
-   }
-}
-
-# Holds the arguments for the $sth's bind variables, so it can be re-tried
-# easily.
-my @beginning_of_txn;
-
-ROW:
-while (                          # Quit if:
-   $row                          # There is no data
-   && $retries >= 0              # or retries are exceeded
-   && (!$opts{m} || $now < $end) # or time is exceeded
-   && !-f $opts{S}               # or the sentinel is set
-   )
-{
-   my $lastrow = $row;
-
-   if ( !$src->{plugin} || $src->{plugin}->is_archivable(row => $row) ) {
-
-      # Do the archiving.  Write to the file first, since like the file, MyISAM
-      # and other tables cannot be rolled back etc.  If there is a problem,
-      # hopefully the data has at least made it to the file.
-      if ( $file ) {
-         print $file '', escape($row), "\n"
-            or die "Cannot write to $opts{f}: $OS_ERROR\n";
-      }
-
-      # INSERT must come first, to be as safe as possible.
-      if ( $dst ) {
-         if ( $dst->{plugin} ) {
-            $dst->{plugin}->before_insert(row => $row);
-         }
-         my $success = do_with_retries( 'inserting', sub { $ins_row->execute(@$row) } );
-         if ( $success == 0 ) {
-            $retries = -1;
-            last ROW;
-         }
-         elsif ( $success == -1 ) {
-            --$retries;
-            next ROW;
-         }
-      }
-
-      # DELETE comes after INSERT.
-      if ( $src->{plugin} ) {
-         $src->{plugin}->before_delete(row => $row);
-      }
-      my $success = do_with_retries( 'deleting', sub { $del_row->execute(@{$row}[@pk_slice]) } );
-      if ( $success == 0 ) {
-         $retries = -1;
-         last ROW;
-      }
-      elsif ( $success == -1 ) {
-         --$retries;
-         next ROW;
-      }
-
-   }
-
-   $now = time();
-   ++$cnt;
-   ++$txn_cnt;
-   $retries = $opts{R};
-
-   # Possibly flush the file and commit the insert and delete.
-   commit() unless $opts{'commit-each'};
-
-   # Report on progress.
-   if ( $opts{P} && $cnt % $opts{P} == 0 ) {
-      printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
-   }
-
-   # Get the next row.
-   if ( $get_sth->{Active} ) { # Fetch until exhausted
-      $row = $get_sth->fetchrow_arrayref();
-   }
-   if ( !$row ) {
-      commit(1)         if $opts{'commit-each'};
-      sleep($opts{e})   if $opts{e};
-      $get_sth          = $get_next;
-      $get_next->execute(@{$lastrow}[@asc_slice]);
-      @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
-      $row              = $get_sth->fetchrow_arrayref();
-   }
-}
-
-# Transactions might still be open, etc
-commit($opts{z} || $opts{'commit-each'});
-if ( $opts{f} && $file ) {
-   close $file
-      or die "Cannot close $opts{f}: $OS_ERROR\n";
-}
-
-if ( $opts{P} ) {
-   printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
-}
-
-# Tear down the plugins.
-foreach my $table ( $dst, $src ) {
-   next unless $table && $table->{plugin};
-   $table->{plugin}->after_finish();
-}
-
-# Run ANALYZE or OPTIMIZE.
-if ( my $action = $opts{A} || $opts{O} ) {
-   my $maint  = ($opts{A} ? 'ANALYZE'                        : 'OPTIMIZE')
-              . ($opts{L} ? ' /*!40101 NO_WRITE_TO_BINLOG*/' : '');
-   if ( $action =~ m/s/i ) {
-      $src->{dbh}->do("$maint TABLE $src->{db_tbl}");
-   }
-   if ( $action =~ m/d/i && $dst ) {
-      $dst->{dbh}->do("$maint TABLE $dst->{db_tbl}");
-   }
-}
-
-# Optionally print the reason for exiting
-if ( $opts{q} ) {
-   if ( $retries < 0 ) {
-      print "Exiting because retries exceeded.\n";
-   }
-   elsif ( $opts{m} && $now >= $end ) {
-      print "Exiting because time exceeded.\n";
-   }
-   elsif ( -f $opts{S} ) {
-      print "Exiting because sentinel file $opts{S} exists.\n";
-   }
 }
 
 # ############################################################################
 # Subroutines.
 # ############################################################################
 
-# Accesses globals, but I wanted the code in one place.
-sub commit {
-   my ( $force ) = @_;
-   if ( $force || ($opts{z} && $txn_cnt && $cnt % $opts{z} == 0) ) {
-      if ( $opts{b} && $file ) {
-         $file->flush or die "Cannot flush $opts{f}: $OS_ERROR\n";
-      }
-      $dst->{dbh}->commit if $dst;
-      $src->{dbh}->commit;
-      $txn_cnt = 0;
-   }
-}
-
-# Repeatedly retries the code until retries runs out, a really bad error
-# happens, or it succeeds.  This sub uses lots of global variables; I only wrote
-# it to factor out some repeated code.  If it returns 0, it exhausted retries
-# and rolled back; if it returns -1, it didn't retry, but rolled back; if it
-# returns 1, all is well.
-sub do_with_retries {
-   my ( $doing, $code ) = @_;
-   my $retries = $opts{R};
-   my $success = 0;
-
-   RETRY:
-   while ( !$success && $retries >= 0 ) {
-      eval {
-         $code->();
-         $success = 1;
-      };
-      if ( $EVAL_ERROR ) {
-         if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded|Deadlock found/ ) {
-            if (
-               $opts{z} && $opts{z} > 1                        # More than one row per txn
-               && $txn_cnt                                     # Not first row
-               && (!$can_retry || $EVAL_ERROR =~ m/Deadlock/)  # And it's not retry-able
-            ) {
-               # The txn, which is more than 1 statement, was rolled back.
-               last RETRY;
-            }
-            else {
-               #  Only one statement had trouble, and the rest of the txn was not
-               #  rolled back.  The statement can be retried.
-               --$retries;
-            }
-         }
-         else {
-            die;
-         }
-      }
-   }
-
-   if ( $success != 1 ) {
-      # Must throw away everything and start the transaction over.
-      if ( $retries >= 0 ) {
-         warn "Deadlock or non-retryable lock wait while $doing; rolling back $txn_cnt rows.\n";
-         $success = -1;
-      }
-      else {
-         warn "Exhausted retries while $doing; rolling back $txn_cnt rows.\n";
-         $success = 0;
-      }
-      $get_sth->finish;
-      $dst->{dbh}->rollback;
-      $src->{dbh}->rollback;
-      # I wish: $file->rollback
-      $get_sth->execute(@beginning_of_txn);
-      $cnt -= $txn_cnt;
-      $txn_cnt = 0;
-   }
-   return $success;
-}
-
-# Formats a row the same way SELECT INTO OUTFILE does by default.  This is
-# described in the LOAD DATA INFILE section of the MySQL manual,
-# http://dev.mysql.com/doc/refman/5.0/en/load-data.html
-sub escape {
-   my ($row) = @_;
-   return join("\t", map {
-      s/([\t\n\\])/\\$1/g if defined $_;  # Escape tabs etc
-      defined $_ ? $_ : '\N';             # NULL = \N
-   } @$row);
+# Determines if the $stat's log coordinates are greater than or equal to the
+# desired coordinates. $which is 'master' or 'relay'
+sub pos_ge {
+   my ( $stat, $which ) = @_;
+   my $fmt  = '%s/%020d';
+   my $curr = $which eq 'master'
+      ? sprintf($fmt, @{$stat}{qw(Relay_Master_Log_File Exec_Master_Log_Pos)})
+      : sprintf($fmt, @{$stat}{qw(Relay_Log_File Relay_Log_Pos)});
+   my $stop = sprintf($fmt, split(',', $opts{"until$which"}));
+   return $curr ge $stop;
 }
 
 # Compares versions like 5.0.27 and 4.1.15-standard-log
@@ -764,62 +240,6 @@ sub version_ge {
    my ( $dbh, $target ) = @_;
    my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
    return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
-}
-
-sub get_tbl_struct {
-   my ( $info ) = @_;
-   my $ddl = ($info->{dbh}->selectrow_array("SHOW CREATE TABLE $info->{db_tbl}"))[1];
-   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
-   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
-   my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
-   my %kdef = ();
-   my %keys =
-      map {
-         my ($name) = $_ =~ m/(PRIMARY|`[^`]*`)/;
-         my ($cols) = $_ =~ m/\((.+)\),?$/;
-         $name =~ s/`//g;
-         $kdef{$name} = $_;
-         ($name, [ $cols =~ m/`(.*?)`(?:\(\d+\))?,?/g ])
-      }
-      $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
-
-   return {
-      cols      => \@cols,
-      col_hash  => { map { $_ => 1 } @cols },
-      null      => \@null,
-      null_hash => { map { $_ => 1 } @null },
-      keys      => \%keys,
-      kdef      => \%kdef,
-      defs      => \@defs,
-      ddl       => $ddl,
-   };
-}
-
-sub parse_dsn {
-   my ($dsn, $prev) = @_;
-   return unless $dsn;
-   $prev ||= {};
-
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-   my %vals = map  { $_ => $hash{$_} || $prev->{$_} }
-              grep { $_ ne 'm' } # DO NOT copy the 'm' from --source to --dest
-              keys %conn;
-   $vals{m} = $hash{m}; # Add 'm'
-   return \%vals;
-}
-
-sub get_dbh {
-   my ( $info ) = @_;
-   my $db_options = {
-      AutoCommit => !$opts{z} && !$opts{'commit-each'},
-      RaiseError => 1,
-      PrintError => 0,
-   };
-   my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
-      . ';mysql_read_default_group=mysql';
-   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
-      or die("Can't connect to DB: $OS_ERROR");
 }
 
 sub ts {
@@ -830,16 +250,6 @@ sub ts {
    $year += 1900;
    return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
       $year, $mon, $mday, $hour, $min, $sec);
-}
-
-sub get_irot {
-   my ( $dbh ) = @_;
-   return 1 unless version_ge($dbh, '5.0.13');
-   my $rows = $dbh->selectall_arrayref(
-      "show variables like 'innodb_rollback_on_timeout'",
-      { Slice => {} });
-   return 0 unless $rows;
-   return @$rows && $rows->[0]->{Value} ne 'OFF';
 }
 
 # ############################################################################
