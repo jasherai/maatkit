@@ -66,7 +66,7 @@ my @opt_spec = (
 my %opts = (
    k => 1,
    s => 1,
-   m => .01,
+   m => 0.01,
    M => 60,
 );
 
@@ -186,7 +186,6 @@ while ( ( !$opts{t} || time() < $exit_time ) ) {
       || $last_log ne $stat->{relay_log_file}
       || $last_pos != $stat->{relay_log_pos}
    ) {
-
       $stat->{slave_sql_running} ||= 'No';
       $stat->{last_error}        ||= '';
       $stat->{last_errno}        ||= 0;
@@ -233,7 +232,7 @@ while ( ( !$opts{t} || time() < $exit_time ) ) {
    $last_log = $stat->{relay_log_file};
    $last_pos = $stat->{relay_log_pos};
 
-   # Adjust sleep time
+   # Adjust sleep time.
    if ( $was_running ) {
       $sleep = min($opts{M}, $sleep * 2);
    }
@@ -241,8 +240,14 @@ while ( ( !$opts{t} || time() < $exit_time ) ) {
       $sleep = max($opts{m}, $sleep / 2);
    }
 
-   sleep($sleep);
-
+   # Errors are very likely to follow each other in quick succession.  NOTE:
+   # this policy has a side effect with respect to $sleep.  Suppose $sleep is
+   # 512 and MySQL Slave Restart finds an error; now $sleep is 256, but MySQL
+   # Slave Restart only sleeps 1 (the initial value of --sleep).  Suppose there
+   # is no error when it wakes up after 1 second, because 1 was too short.  Now
+   # it doubles $sleep, back to 512.  $sleep has the same value it did before
+   # the error was ever found.
+   sleep($was_running ? $sleep : min($sleep, $opts{s}));
 }
 
 # ############################################################################
@@ -286,535 +291,130 @@ sub ts {
 
 =head1 NAME
 
-mysql-archiver - archive rows from a MySQL table into another table or a file.
+MySQL Slave Restart - watch and restart MySQL replication after errors.
 
 =head1 SYNOPSIS
 
- mysql-archiver --source h=oltp_server,D=test,t=tbl --dest h=olap_server \
-    --file '/var/log/archive/%Y-%m-%d-%D.%t' --limit 1000 --commit-each
+ mysql-slave-restart --verbose
 
 =head1 DESCRIPTION
 
-mysql-archiver is the tool I use to archive tables as described in
-L<http://www.xaprb.com/blog/2006/05/02/how-to-write-efficient-archiving-and-purging-jobs-in-sql/>.
-The goal is a low-impact, forward-only job to nibble old data out of the table
-without impacting OLTP queries much.  You can insert the data into another
-table, which need not be on the same server.  You can also write it to a file
-in a format suitable for LOAD DATA INFILE.  Or you can do neither, in which
-case it's just an incremental DELETE.
-
-mysql-archiver is extensible via a plugin mechanism.  You can inject your own
-code to add advanced archiving logic that could be useful for archiving
-dependencies, applying complex business rules, or building a data warehouse
-during the archiving process.
-
-You need to choose values carefully for some options.  The most important are
---limit, --retries, and --txnsize.
-
-The strategy is to find the first row(s), then scan some index forward-only to
-find more rows efficiently.  Each subsequent query should not scan the entire
-table; it should seek into the index, then scan until it finds more archivable
-rows.  Specifying the index with the 'i' part of the --source argument can be
-crucial for this; use --test to examine the generated queries and be sure to
-EXPLAIN them to see if they are efficient (most of the time you probably want
-to scan the PRIMARY key, which is the default).  Even better, profile
-mysql-archiver with mysql-query-profiler and make sure it is not scanning the
-whole table every query.
-
-You can disable the seek-then-scan optimizations partially or wholly with
---noascend and --ascendfirst.  Sometimes this may be more efficient for
-multi-column keys.
-
-At the moment, there are some limitations to ease the task of working with NULLs
-and indexes.  The table must have a PRIMARY key, and any index you specify in
---source must be composed entirely of non-NULL columns (or, if you specify
---ascendfirst, the first column must be non-NULL).  These restrictions may be
-removed in future versions.
+MySQL Slave Restart watches a MySQL replication slave and tries to skip
+statements that cause errors.  It polls the slave intelligently with an
+exponentially varying sleep time.  You can specify errors to skip and run the
+slave until a certain binlog position.
 
 =head1 OPTIONS
 
-Some options are negatable by specifying them in their long form with a --no
-prefix.
-
 =over
 
-=item --analyze
+=item --database
 
-Runs ANALYZE TABLE after finishing.  The argument is an arbitrary string.  If it
-contains the letter 's', the source will be analyzed.  If it contains 'd', the
-destination will be analyzed.  You can specify either or both.  For example, the
-following will analyze both:
+Database to use.
 
-  --analyze=ds
+=item --defaults-file
 
-See L<http://dev.mysql.com/doc/en/analyze-table.html> for details on ANALYZE
-TABLE.
+Only read default options from the given file.
 
-=item --ascend
+=item --error-numbers
 
-Causes mysql-archiver to optimize repeated SELECT queries so they seek into the
-index where the previous query ended, then scan along it, rather than scanning
-from the beginning of the table every time.  This is enabled by default because
-it is generally a good strategy for repeated accesses.
+Makes MySQL Slave Restart only try to restart if the error number is in this
+comma-separated list of errors.  If it sees an error not in the list, it will
+exit.
 
-Large, multiple-column indexes may cause the WHERE clause to be complex enough
-that this could actually be less efficient.  Consider for example a four-column
-PRIMARY KEY on (a, b, c, d).  The WHERE clause to start where the last query
-ended is as follows:
+The error number is in the last_errno column of SHOW SLAVE STATUS.
 
-   WHERE (a > ?)
-      OR (a = ? AND b > ?)
-      OR (a = ? AND b = ? AND c > ?)
-      OR (a = ? AND b = ? AND c = ? AND d >= ?)
+=item --error-text
 
-Populating the placeholders with values uses memory and CPU, adds network
-traffic and parsing overhead, and may make the query harder for MySQL to
-optimize.
+A Perl regular expression against which the error text, if any, is matched.  If
+the error text exists and matches, MySQL Slave Restart will try to restart the
+slave.  If it exists but doesn't match, MySQL Slave Restart will exit.
 
-Ascending the index might not be necessary if you know you are simply removing
-rows from the beginning of the table in chunks, but not leaving any holes, so
-starting at the beginning of the table is actually the most efficient thing to
-do.
+The error text is in the last_error column of SHOW SLAVE STATUS.
 
-See also --ascendfirst.  See L<"EXTENDING"> for a discussion of how this
-interacts with plugins.
+=item --error-length
 
-=item --ascendfirst
-
-If you do want to use the ascending index optimization (see --ascend), but do
-not want to incur the overhead of ascending a large multi-column index, you can
-use this option to tell mysql-archiver to ascend only the leftmost column of the
-index.  This can provide a significant performance boost over not ascending the
-index at all, while avoiding the cost of ascending the whole index.
-
-See L<"EXTENDING"> for a discussion of how this interacts with plugins.
-
-=item --buffer
-
-Disables autoflushing to --file and flushes --file to disk only when a
-transaction commits.  This typically means the file is block-flushed by the
-operating system, so there may be some implicit flushes to disk between
-commits as well.  The default is to flush --file to disk after every row.
-
-The danger is that a crash might cause lost data.
-
-The performance increase I have seen from using --buffer is around 5 to 15
-percent.  Your mileage may vary.
-
-=item --chkcols
-
-Enabled by default; causes mysql-archiver to check that the source and destination
-tables have the same columns.  It does not check column order, data type, etc.
-It just checks that all columns in the source exist in the destination and
-vice versa.  If there are any differences, mysql-archiver will exit with an
-error.
-
-=item --columns
-
-Specify a comma-separated list of columns to fetch, write to the file, and
-insert into the destination table.  If specified, mysql-archiver completely
-ignores every other column.
-
-If you specify this option, at present you need to at least specify the
-columns in the primary key and the index given in --source (if any).
-
-See also --pkonly.
-
-=item --commit-each
-
-Commits transactions and flushes --file after each set of rows has been
-archived, before fetching the next set of rows, and before sleeping if --sleep
-is specified.  Disables --txnsize; use --limit to control the transaction size
-with --commit-each.
-
-This option is useful as a shortcut to make --limit and --txnsize the same
-value, but more importantly it avoids transactions being held open while
-searching for more rows.  For example, imagine you are archiving old rows from
-the beginning of a very large table, with --limit 1000 and --txnsize 1000.
-After some period of finding and archiving 1000 rows at a time, mysql-archiver
-finds the last 999 rows and archives them, then executes the next SELECT to find
-more rows.  This scans the rest of the table, but never finds any more rows.  It
-has held open a transaction for a very long time, only to determine it is
-finished anyway.  You can use --commit-each to avoid this.
-
-=item --delayedins
-
-Adds the DELAYED modifier to INSERT or REPLACE statements.  See
-L<http://dev.mysql.com/doc/en/insert.html> for details.
-
-=item --dest
-
-This item specifies a table into which mysql-archiver will insert rows
-archived from --source.  It uses the same key=val argument format as --source.
-Missing values default to the same values as --source, so you don't have to
-repeat options that are the same in --source and --dest.  The 'm' part is NOT
-defaulted from --source.
-
-=item --file
-
-Filename to write archived rows to.  A subset of MySQL's DATE_FORMAT()
-formatting codes are allowed in the filename, as follows:
-
-   %d    Day of the month, numeric (01..31)
-   %H    Hour (00..23)
-   %i    Minutes, numeric (00..59)
-   %m    Month, numeric (01..12)
-   %s    Seconds (00..59)
-   %Y    Year, numeric, four digits
-
-You can use the following extra format codes too:
-
-   %D    Database name
-   %t    Table name
-
-Example:
-
-   --file '/var/log/archive/%Y-%m-%d-%D.%t'
-
-The file's contents are in the same format used by SELECT INTO OUTFILE, as
-documented in the MySQL manual: rows terminated by newlines, columns
-terminated by tabs, NULL characters are represented by \N, and special
-characters are escaped by \.  This lets you reload a file with LOAD DATA
-INFILE's default settings.
-
-If you want a column header at the top of the file, see --header.  The file is
-auto-flushed by default; see --buffer.
-
-=item --forupdate
-
-Adds the FOR UPDATE modifier to SELECT statements.  For details, see
-L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
-
-=item --header
-
-Writes column names as the first line in the file given by --file.  If the
-file exists, does not write headers; this keeps the file loadable with LOAD
-DATA INFILE in case you append more output to it.
+When L<"--verbose"> is set high enough to print the error, this option will
+truncate the error text to the specified length.  This can be useful to prevent
+wrapping on the terminal.
 
 =item --help
 
-Displays a help message.
+Show a brief help message and exit.
 
-=item --hpselect
+=item --host
 
-Adds the HIGH_PRIORITY modifier to SELECT statements.  See
-L<http://dev.mysql.com/doc/en/select.html> for details.
+Connect to host.
 
-=item --ignore
+=item --maxsleep
 
-Causes INSERTs into --dest to be INSERT IGNORE.
+The maximum time MySQL Slave Restart will sleep before polling the slave again.
+See L<"SLEEP">.
 
-=item --limit
+=item --minsleep
 
-Limits the number of rows returned by the SELECT statements that retrieve rows
-to archive.  Default is one row.  It may be more efficient to increase the
-limit, but be careful if you are archiving sparsely, skipping over many rows;
-this can potentially cause more contention with other queries, depending on the
-storage engine, transaction isolation level, and options such as --forupdate.
+The minimum time MySQL Slave Restart will sleep before polling the slave again.
+See L<"SLEEP">.
 
-=item --local
+=item --password
 
-Adds the NO_WRITE_TO_BINLOG modifier to ANALYZE and OPTIMIZE queries.  See
---analyze for details.
+Password to use when connecting.
 
-=item --lpdel
+=item --port
 
-Adds the LOW_PRIORITY modifier to DELETE statements.  See
-L<http://dev.mysql.com/doc/en/delete.html> for details.
+Port number to use for connection.
 
-=item --lpins
+=item --skipcount
 
-Adds the LOW_PRIORITY modifier to INSERT or REPLACE statements.  See
-L<http://dev.mysql.com/doc/en/insert.html> for details.
-
-=item --optimize
-
-Runs OPTIMIZE TABLE after finishing.  See --analyze for the option syntax and
-L<http://dev.mysql.com/doc/en/optimize-table.html> for details on
-OPTIMIZE TABLE.
-
-=item --pkonly
-
-A shortcut for specifying --columns with the primary key columns.
-
-=item --progress
-
-Prints current time, elapsed time, and rows archived every X rows.
-
-=item --purge
-
-Allows archiving without a --file or --dest argument, which is effectively a
-purge since the rows are just deleted.
-
-If you just want to purge rows, consider specifying the table's primary key
-columns with --pkonly.  This will prevent fetching all columns over the
-network for no reason.
-
-=item --quickdel
-
-Adds the QUICK modifier to DELETE statements.  See
-L<http://dev.mysql.com/doc/en/delete.html> for details.  As stated in the
-documentation, in some cases it may be faster to use DELETE QUICK followed by
-OPTIMIZE TABLE.  You can use --optimize for this.
-
-=item --replace
-
-Causes INSERTs into --dest to be written as REPLACE.
-
-=item --retries
-
-Specifies the number of times mysql-archiver should retry when there is an
-InnoDB lock wait timeout or deadlock.  When retries are exhausted,
-mysql-archiver will exit with an error.
-
-Consider carefully what you want to happen when you are archiving between a
-mixture of transactional and non-transactional storage engines.  The INSERT to
---dest and DELETE from --source are on separate connections, so they do not
-actually participate in the same transaction even if they're on the same
-server.  However, mysql-archiver implements simple distributed transactions in
-code, so commits and rollbacks should happen as desired across the two
-connections.
-
-At this time I have not written any code to handle errors with transactional
-storage engines other than InnoDB.  Request that feature if you need it.
-
-=item --sentinel
-
-The presence of the file specified by --sentinel will cause mysql-archiver to
-stop archiving and exit.  The default is /tmp/mysql-archiver-sentinel.  You
-might find this handy to stop cron jobs gracefully if necessary.  See also
-L<"--stop">.
-
-=item --sharelock
-
-Adds the LOCK IN SHARE MODE modifier to SELECT statements.  For details, see
-L<http://dev.mysql.com/doc/refman/4.1/en/innodb-locking-reads.html>.
-
-=item --skipfkchk
-
-Disables foreign key checks with SET FOREIGN_KEY_CHECKS=0.
+The number of statements to skip when restarting the slave.
 
 =item --sleep
 
-Specifies how long to sleep between SELECT statements.  Default is not to
-sleep at all.  Transactions are NOT committed, and the --file file is NOT
-flushed, before sleeping.  See --txnsize to control that.
+The initial sleep time between checking the slave.  See L<"SLEEP">.
 
-If --commit-each is specified, committing and flushing happens before sleeping.
+=item --socket
 
-=item --source
-
-Specifies a table to archive from.  This argument is specially formatted as a
-key=value,key=value string.  Keys are a single letter.  Most options control
-how mysql-archiver connects to MySQL:
-
-   KEY MEANING
-   === =======
-   h   Connect to host
-   P   Port number to use for connection
-   S   Socket file to use for connection
-   u   User for login if not current user
-   p   Password to use when connecting
-   F   Only read default options from the given file
-
-The following options select a table to archive:
-
-   KEY MEANING
-   === =======
-   D   Database to archive
-   t   Table to archive
-   i   Index to use
-
-The following options specify pluggable actions, which an external Perl module
-can provide:
-
-   KEY MEANING
-   === =======
-   m   Package name of an external Perl module (see L<"EXTENDING">).
-
-The only required part is the table; other parts may be read from various
-places in the environment (such as options files).  Here is an example:
-
-   --source h=my_server,D=my_database,t=my_tbl
-
-The 'i' part deserves special mention.  This tells mysql-archiver which index
-it should scan to archive.  This appears in a FORCE INDEX or USE INDEX hint in
-the SELECT statements used to fetch archivable rows.  If you don't specify
-anything, mysql-archiver will try to use a PRIMARY KEY if one exists.  In my
-experience this usually works well, so most of the time you can probably just
-omit the 'i' part.
-
-The index is used to optimize repeated accesses to the table; mysql-archiver
-remembers the last row it retrieves from each SELECT statement, and uses it to
-construct a WHERE clause, using the columns in the specified index, that should
-allow MySQL to start the next SELECT where the last one ended, rather than
-potentially scanning from the beginning of the table with each successive
-SELECT.  If you are using external plugins, please see L<"EXTENDING"> for a
-discussion of how they interact with ascending indexes.
-
-=item --stop
-
-Causes mysql-archiver to create the sentinel file specified by --sentinel and
-exit.  This should have the effect of stopping all running instances which are
-watching the same sentinel file.
-
-=item --test
-
-Causes mysql-archiver to exit after printing the filename and SQL statements
-it will use.
+Socket file to use for connection.
 
 =item --time
 
-Causes mysql-archiver to stop after the specified time has elapsed.  The
+Causes MySQL Slave Restart to stop after the specified time has elapsed.  The
 argument can have a suffix of s, m, h, or d, indicating seconds, minutes, hours,
 or days.  The number is interpreted as seconds if there is no suffix.
 
-=item --txnsize
+=item --untilmaster
 
-Specifies the size, in number of rows, of each transaction.  Default is one
-row.  Zero disables transactions altogether.  After mysql-archiver processes
-this many rows, it commits both the --source and the --dest if given, and
-flushes the file given by --file.
+Start the slave, and retry if it fails, until it reaches the given replication
+coordinates.  The coordinates are the logfile and position on the master, given
+by relay_master_log_file, exec_master_log_pos.  The argument must be in the
+format "file,pos".  Separate the filename and position with a single comma and
+no space.
 
-This parameter is critical to performance.  If you are archiving from a live
-server, which for example is doing heavy OLTP work, you need to choose a good
-balance between transaction size and commit overhead.  Larger transactions
-create the possibility of more lock contention and deadlocks, but smaller
-transactions cause more frequent commit overhead, which can be significant.  To
-give an idea, on a small test set I worked with while writing mysql-archiver, a
-value of 500 caused archiving to take about 2 seconds per 1000 rows on an
-otherwise quiet MySQL instance on my desktop machine, archiving to disk and to
-another table.  Disabling transactions with a value of zero, which turns on
-autocommit, dropped performance to 38 seconds per thousand rows.
+This will also cause an UNTIL clause to be given to START SLAVE.
 
-If you are not archiving from or to a transactional storage engine, you may
-want to disable transactions so mysql-archiver doesn't try to worry about
-committing and so forth.
+After reaching this point, the slave should be stopped and MySQL Slave Restart
+will exit.
 
-=item --where
+=item --untilrelay
 
-Specifies a WHERE clause to limit which rows are archived.  Do not include the
-word WHERE.  You may need to quote the argument to prevent your shell from
-interpreting it.  For example:
+Like L<"--untilmaster">, but in the slave's relay logs instead.  The coordinates
+are given by relay_log_file, relay_log_pos.
 
-   --where 'ts < current_date - interval 90 day'
+=item --user
 
-For safety, --where is required.  If you do not require a WHERE clause, use
---where 1=1.
+User for login if not current user.
 
-=item --whyquit
+=item --verbose
 
-Causes mysql-archiver to print a message if it exits for any reason other than
-running out of rows to archive.  This can be useful if you have a cron job with
---time specified, for example, and you want to be sure mysql-archiver is
-finishing before running out of time.
+Verbosity; specify multiple times for more verbosity.  Default is no output.
+Verbosity 1 outputs a timestamp, relay_log_file, relay_log_pos, and last_errno.
+Verbosity 2 adds last_error.  See also L<"--error-length">.
+
+=item --version
+
+Output version information and exit.
 
 =back
-
-=head1 EXTENDING
-
-mysql-archiver is extensible by plugging in external Perl modules to handle
-some logic and/or actions.  You can specify a module for both the --source and
-the --dest, with the 'm' part of the specification.  For example:
-
-   --source D=test,t=test1,m=My::Module1 --dest m=My::Module2,t=test2
-
-This will cause mysql-archiver to load the My::Module1 and My::Module2 packages,
-create instances of them, and then make calls to them during the archiving
-process.  The module must provide this interface:
-
-=over
-
-=item new(dbh => $dbh, db => $db_name, tbl => $tbl_name)
-
-The plugin's constructor is passed a reference to the database handle, the
-database name, and table name.  The plugin is created just after mysql-archiver
-opens the connection, and before it examines the table given in the arguments.
-This gives the plugin a chance to create and populate temporary tables, or do
-other setup work.
-
-=item before_begin(cols => \@cols)
-
-This method is called just before mysql-archiver begins iterating through rows
-and archiving them, but after it does all other setup work (examining table
-structures, designing SQL queries, and so on).  This is the only time
-mysql-archiver tells the plugin column names for the rows it will pass the
-plugin while archiving.
-
-=item is_archivable(row => \@row)
-
-This method is called for each row to determine whether it is archivable.  This
-only applies to --source.  The argument is the row itself, as an arrayref.  If
-the method returns true, the row will be archived; otherwise it will be skipped.
-
-Skipping a row adds complications for non-unique indexes.  Normally
-mysql-archiver uses a WHERE clause designed to target the last processed row as
-the place to start the scan for the next SELECT statement.  If you have skipped
-the row by returning false from is_archivable(), mysql-archiver could get into
-an infinite loop because the row still exists.  Therefore, when you specify a
-plugin for the --source argument, mysql-archiver will change its WHERE clause
-slightly.  Instead of starting at "greater than or equal to" the last processed
-row, it will start "strictly greater than."  This will work fine on unique
-indexes such as primary keys, but it may skip rows (leave holes) on non-unique
-indexes or when ascending only the first column of an index.
-
-=item before_delete(row => \@row)
-
-This method is called for each row just before it is deleted.  This only applies
-to --source.  This is a good place for you to handle dependencies, such as
-deleting things that are foreign-keyed to the row you are about to delete.  You
-could also use this to recursively archive all dependent tables.
-
-=item before_insert(row => \@row)
-
-This method is called for each row just before it is inserted.  This only
-applies to --dest.  You could use this to insert the row into multiple tables,
-perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a data
-warehouse.
-
-=item after_finish()
-
-This method is called after mysql-archiver exits the archiving loop, commits all
-database handles, closes --file, and prints the final statistics, but before
-mysql-archiver runs ANALYZE or OPTIMIZE.
-
-=back
-
-If you specify a plugin for both --source and --dest, mysql-archiver constructs,
-calls before_begin(), and calls after_finish() on the two plugins in the order
---source, --dest.
-
-mysql-archiver assumes it controls transactions, and that the plugin will NOT
-commit or roll back the database handle.  The database handle passed to the
-plugin's constructor is the same handle mysql-archiver uses itself.  Remember
-that --source and --dest are separate handles.
-
-A sample module might look like this:
-
-   package My::Module;
-   
-   sub new {
-      my ( $class, %args ) = @_;
-      return bless(\%args, $class);
-   }
-   
-   sub before_begin {
-      my ( $self, %args ) = @_;
-      # Save column names for later
-      $self->{cols} = $args{cols};
-   }
-   
-   sub is_archivable {
-      my ( $self, %args ) = @_;
-      # Do some advanced logic with $args{row}
-      return 1;
-   }
-   
-   sub before_delete {} # Take no action
-   sub before_insert {} # Take no action
-   sub after_finish {}  # Take no action
-   
-   1;
 
 =head1 SYSTEM REQUIREMENTS
 
@@ -823,21 +423,44 @@ installed in any reasonably new version of Perl.
 
 =head1 OUTPUT
 
-If you specify --print, the output is a header row, plus status output at
-intervals.  Each row in the status output lists the current date and time, how
-many seconds mysql-archiver has been running, and how many rows it has
-archived.
+If you specify --verbose, MySQL Slave Restart prints a line every time it sees
+the slave has an error.  See L<"--verbose"> for details.
+
+=head1 SLEEP
+
+MySQL Slave Restart sleeps intelligently between polling the slave.  The current
+sleep time varies.
+
+=over
+
+=item *
+
+The initial sleep time is given by L<"--sleep">.
+
+=item *
+
+If it checks and finds an error, it halves the previous sleep time.
+
+=item *
+
+If it finds no error, it doubles the previous sleep time.
+
+=item *
+
+The sleep time is bounded below by L<"--minsleep"> and above by L<"--maxsleep">.
+
+=item *
+
+Immediately after finding an error, MySQL Slave Restart assumes another error is
+very likely to happen next, so it sleeps the current sleep time or the initial
+sleep time, whichever is less.
+
+=back
 
 =head1 BUGS
 
 If you find bugs, need features, etc please use the bug tracker, forums, and
 mailing lists at http://sourceforge.net/projects/mysqltoolkit.
-
-=head1 ACKNOWLEDGEMENTS
-
-Thanks to the following people, and apologies to anyone I've omitted:
-
-Andrew O'Brien,
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
