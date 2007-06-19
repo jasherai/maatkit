@@ -457,6 +457,12 @@ sleep time, whichever is less.
 
 =back
 
+=head1 COMPATIBILITY
+
+MySQL Slave Restart should work on many versions of MySQL.  Lettercase of many
+output columns from SHOW SLAVE STATUS has changed over time, so it treats them
+all as lowercase.
+
 =head1 BUGS
 
 If you find bugs, need features, etc please use the bug tracker, forums, and
