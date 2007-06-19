@@ -43,6 +43,7 @@ my @opt_spec = (
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'error-numbers|e=s', d => 'Only restart this comma-separated list of errors' },
    { s => 'error-text|E=s',    d => 'Only restart errors that match this pattern' },
+   { s => 'error-length|L=i',  d => 'Max length of error message to print' },
    { s => 'help',              d => 'Show this help message' },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'maxsleep|M=f',      d => 'Maximum sleep time (default 60 sec)'},
@@ -56,6 +57,7 @@ my @opt_spec = (
    { s => 'untilmaster=s',     d => 'Run until this master log file and position' },
    { s => 'untilrelay=s',      d => 'Run until this relay log file and position' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
+   { s => 'verbose|v+',        d => 'Verbosity (specify multiple times for more detail)' },
    { s => 'version',           d => 'Output version information and exit' },
 );
 
@@ -90,7 +92,7 @@ if ( $opts{version} ) {
 
 if ( !$opts{help} ) {
    if ( $opts{t} ) {
-      if ( $opts{t} !~ m/^\d+[smhd]$/ ) {
+      if ( $opts{t} !~ m/^\d+[smhd]?$/ ) {
          warn "Invalid --time argument\n";
          $opts{help} = 1;
       }
@@ -152,6 +154,10 @@ my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } )
    or die("Can't connect to DB: $OS_ERROR");
 
+# VERY IMPORTANT: Lowercases all column names for fetchrow_hashref.  This is
+# because different MySQL versions use different lettercase.
+$dbh->{FetchHashKeyName} = 'NAME_lc';
+
 my $start_sql = version_ge($dbh, '4.0.5') ? 'START SLAVE' : 'SLAVE START';
 if ( $opts{untilmaster} ) {
    my ( $file, $pos ) = split(',', $opts{untilmaster});
@@ -168,44 +174,64 @@ my $start      = $dbh->prepare($start_sql);
 
 my $exit_time = time() + ($opts{t} || 0);
 my $sleep = $opts{s};
+my ($last_log, $last_pos);
+
 while ( ( !$opts{t} || time() < $exit_time ) ) {
    my $was_running = 1;
    $fetch_stat->execute();
    my $stat = $fetch_stat->fetchall_arrayref({})->[0];
    die "No SLAVE STATUS output found\n" unless $stat;
 
-   $stat->{Slave_SQL_Running} ||= 'No';
-   $stat->{Last_Error}        ||= '';
-   $stat->{Last_Errno}        ||= 0;
+   if ( !$last_log
+      || $last_log ne $stat->{relay_log_file}
+      || $last_pos != $stat->{relay_log_pos}
+   ) {
 
-   if ( $opts{untilmaster} && pos_ge($stat, 'master') ) {
-      die "Slave has advanced past $opts{untilmaster}\n";
-   }
-   elsif ( $opts{untilrelay} && pos_ge($stat, 'relay') ) {
-      die "Slave has advanced past $opts{untilrelay}\n";
-   }
+      $stat->{slave_sql_running} ||= 'No';
+      $stat->{last_error}        ||= '';
+      $stat->{last_errno}        ||= 0;
 
-   if ( $stat->{Slave_SQL_Running} eq 'No' ) {
-      # Print the time, error, etc
-      (my $err = $stat->{Last_Error} ) =~ s/\s+/ /g;
-      printf("%s %5d %11d %s %s\n",
-         ts(time),
-         $stat->{Last_Errno} || 0,
-         $err
-      );
+      if ( $opts{untilmaster} && pos_ge($stat, 'master') ) {
+         die "Slave has advanced past $opts{untilmaster} on master.\n";
+      }
+      elsif ( $opts{untilrelay} && pos_ge($stat, 'relay') ) {
+         die "Slave has advanced past $opts{untilrelay} in relay logs.\n";
+      }
 
-      if ( $opts{e} && !exists($opts{e}->{$stat->{Last_Errno}}) ) {
-         die "Error $stat->{Last_Errno} is not in --error-numbers\n";
-      }
-      elsif ( $opts{E} && $stat->{Last_Error} !~ m/$opts{E}/ ) {
-         die "Error does not match --error-text\n";
-      }
-      else {
-         $set_skip->execute();
-         $start->execute();
-         $was_running = 0;
+      if ( $stat->{slave_sql_running} eq 'No' ) {
+         # Print the time, error, etc
+         if ( $opts{v} ) {
+            my $err = '';
+            if ( $opts{v} > 1 ) {
+               ($err = $stat->{last_error} ) =~ s/\s+/ /g;
+               if ( $opts{L} ) {
+                  $err = substr($err, 0, $opts{L});
+               }
+            }
+            printf("%s %s %11d %d %s\n",
+               ts(time),
+               $stat->{relay_log_file},
+               $stat->{relay_log_pos},
+               $stat->{last_errno} || 0,
+               $err
+            );
+         }
+
+         if ( $opts{e} && !exists($opts{e}->{$stat->{last_errno}}) ) {
+            die "Error $stat->{last_errno} is not in --error-numbers.\n";
+         }
+         elsif ( $opts{E} && $stat->{last_error} && $stat->{last_error} !~ m/$opts{E}/ ) {
+            die "Error does not match --error-text.\n";
+         }
+         else {
+            $set_skip->execute();
+            $start->execute();
+            $was_running = 0;
+         }
       }
    }
+   $last_log = $stat->{relay_log_file};
+   $last_pos = $stat->{relay_log_pos};
 
    # Adjust sleep time
    if ( $was_running ) {
@@ -229,8 +255,8 @@ sub pos_ge {
    my ( $stat, $which ) = @_;
    my $fmt  = '%s/%020d';
    my $curr = $which eq 'master'
-      ? sprintf($fmt, @{$stat}{qw(Relay_Master_Log_File Exec_Master_Log_Pos)})
-      : sprintf($fmt, @{$stat}{qw(Relay_Log_File Relay_Log_Pos)});
+      ? sprintf($fmt, @{$stat}{qw(relay_master_log_file exec_master_log_pos)})
+      : sprintf($fmt, @{$stat}{qw(relay_log_file relay_log_pos)});
    my $stop = sprintf($fmt, split(',', $opts{"until$which"}));
    return $curr ge $stop;
 }
