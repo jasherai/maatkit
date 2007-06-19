@@ -1,5 +1,5 @@
 use ExtUtils::MakeMaker;
-$program = 'mysql-archiver';
+$program = 'mysql-slave-restart';
 
 WriteMakefile(
     NAME         => $program,

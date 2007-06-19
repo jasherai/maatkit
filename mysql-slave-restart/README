@@ -1,33 +1,7 @@
-This package contains mysql-archiver.  Please view the perldoc for more
+This package contains mysql-slave-restart.  Please view the perldoc for more
 details.
 
 Changelog:
 
 2007-06-09: version 0.9.2
 
-   Changes:
-   * Added --stop option.
-   * Added standard --version command-line option.
-   * Added --skipfkchk.
-   * Added a plugin mechanism to give arbitrary Perl code hooks into the archiving process.
-
-   Bugs fixed:
-   * Old versions of DBD::mysql do not quote identifiers correctly.
-   * Old versions of Perl cannot handle the syntax "print $file func()".
-   * Indexes on column prefixes were not parsed correctly.
-
-2007-06-06: version 0.9.1
-
-   Changes:
-   * --where is now a required option.
-   * Command-line parsing is strict to help catch mis-quoted --where.
-   * Added --commit-each, --ascend and --ascendfirst options.
-
-   Bugs fixed:
-   * WHERE clause was not isolated in parentheses.
-   * The ascending index WHERE clause was not properly parenthesized.
-   * Rows could be skipped while ascending a multi-column primary key.
-
-2007-06-06: version 0.9.0
-
-   * Initial release
