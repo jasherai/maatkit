@@ -707,7 +707,7 @@ sub do_with_retries {
       if ( $EVAL_ERROR ) {
          if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded|Deadlock found/ ) {
             if (
-               $opts{z} > 1                                    # More than one row per txn
+               $opts{z} && $opts{z} > 1                        # More than one row per txn
                && $txn_cnt                                     # Not first row
                && (!$can_retry || $EVAL_ERROR =~ m/Deadlock/)  # And it's not retry-able
             ) {
