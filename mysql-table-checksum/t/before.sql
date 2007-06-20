@@ -64,12 +64,23 @@ insert into checksum_test_6 values
    ('1950-03-21 09:03:15', 88),
    ('2005-11:26 00:59:19', 234);
 
+drop table if exists checksum_test_7;
+create table checksum_test_7(
+   a time not null primary key,
+   b int
+) type=innodb;
+insert into checksum_test_7 values
+   ('05:18:23', 5),
+   ('09:03:15', 88),
+   ('00:59:19', 234);
+
 drop table if exists checksum;
 
   CREATE TABLE checksum (
      db         char(64)     NOT NULL,
      tbl        char(64)     NOT NULL,
      chunk      int          NOT NULL,
+     boundaries char(64)     NOT NULL,
      this_crc   char(40)     NOT NULL,
      this_cnt   int          NOT NULL,
      master_crc char(40)         NULL,
