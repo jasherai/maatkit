@@ -341,20 +341,14 @@ foreach my $database ( @databases ) {
 
       # Get the table type, and a query to generate a checksum for it.
       eval {
-         my ( $engine, $query, $chunk_col, $chunk_null, $null_query )
+         my ( $engine, $info ) 
+        #   $query, $chunk_col, $chunk_null, $null_query, $chunk_type )
              = checksum_query( $main_dbh, $database, $table );
 
          # Skip views, and tables of the wrong engine.
          if ( $engine ne 'VIEW' && (!$opts{e} || $opts{e}->{lc($engine)}) ) {
-            $info_for{$table} = {
-               database  => $database,
-               table     => $table,
-               engine    => $engine,
-               query     => $query,
-               chunk_col => $chunk_col,
-               chunk_null => $chunk_null,
-               null_query => $null_query,
-            };
+            $info_for{$table} = $info;
+            ;
          }
 
       };
@@ -382,47 +376,23 @@ foreach my $database ( @databases ) {
 
    TABLE:
    foreach my $table ( sort keys %info_for ) {
-
       my $info      = $info_for{$table};
-      my $table_min = 0;
-      my $table_max = undef;
-      my $chunk_size = $opts{C};
-      if ( $info->{chunk_col} && $opts{C} ) {
-         # Determine the range of values for the chunk_col column on this table.
-         my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col} + 0), 0), COALESCE(MAX($info->{chunk_col} + 0), 0) "
-            . "FROM `$info->{database}`.`$info->{table}`$opts{W}";
-         eval {
-            ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
-         };
-         if ( $EVAL_ERROR ) {
-            print_err($EVAL_ERROR);
-            next TABLE;
-         }
-         if ( !$opts{'chunksize-exact'} ) {
-            my $expl = $main_dbh->selectrow_hashref(
-               "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}`$opts{W}");
-            if ( $expl && $expl->{rows} ) {
-               # $opts{C} is chunksize in rows; $chunk_size is how much to
-               # increment $chunk_min and $chunk_max each time.
-               $chunk_size = ceil( $opts{C} * ( $table_max - $table_min ) / $expl->{rows} ) || $opts{C};
-            }
-         }
-      }
 
-      $info->{chunk_cur} = 1;
-      $info->{chunk_min} = $table_min;
+      # Chunking.  Gah.  Complicated bad stuff.  Put it off in a subroutine,
+      # it will make it all better.  Chunks are either arrayref of start/end,
+      # undef for the NULL chunk, or the string '' for a table that's not
+      # chunked.
       if ( $info->{chunk_col} && $opts{C} ) {
-         $info->{chunk_max} = $info->{chunk_min} + $chunk_size - 1;
-         $info->{chunk_tot} = min(1, ceil(($table_max - $table_min)/$chunk_size))
-                            + $info->{chunk_null} ? 1 : 0; # NULL is one chunk
+         calculate_chunks($info);
       }
       else {
-         $info->{chunk_max} = $table_max;
-         $info->{chunk_tot} = 0;
+         $info->{chunks}    = [ '' ];
+         $info->{chunk_tot} = 1;
       }
 
       # Do a chunk at a time.
-      do {
+      foreach my $chunk_num ( 0 .. scalar(@{$info->{chunks}}) - 1 ) {
+         $info->{chunk_cur} = $chunk_num + 1;
          my $chunk_start_time = time;
          if ( $opts{R} ) { # We're in --replicate mode.
             eval {
@@ -471,19 +441,6 @@ foreach my $database ( @databases ) {
 
          }
 
-         if ( $info->{chunk_col} && $opts{C} ) {
-            if ( $info->{chunk_null} ) {
-               # We just did the NULL chunk, so don't increment or anything.
-               # Just mark that it no longer needs to be done.
-               $info->{chunk_null} = 0;
-            }
-            else {
-               $info->{chunk_min} = $info->{chunk_max} + 1;
-               $info->{chunk_max} = $info->{chunk_max} + $chunk_size;
-            }
-            $info->{chunk_cur}++;
-         }
-
          if ( $opts{sleep} ) {
             sleep($opts{sleep});
          }
@@ -492,8 +449,110 @@ foreach my $database ( @databases ) {
             sleep($sleep_time);
          }
 
-      } while ( defined $table_max && $info->{chunk_min} <= $table_max );
+      }
    }
+}
+
+# Side effects: modifies $info.  I moved it here just to clear up the logic in
+# the main loop a bit.
+sub calculate_chunks {
+   my ( $info ) = @_;
+
+   my $table_min;
+   my $table_max;
+   my $num_rows;
+   my $chunk_size;
+   my @chunks = $info->{chunk_null} ? (undef) : ();
+
+   # Determine the range of values for the chunk_col column on this table.
+   my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col}), 0), "
+      . "COALESCE(MAX($info->{chunk_col}), 0) "
+      . "FROM `$info->{database}`.`$info->{table}`$opts{W}";
+   ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
+
+   my $expl = $main_dbh->selectrow_hashref(
+      "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}`$opts{W}");
+   $num_rows = $expl->{rows};
+
+   if ( $num_rows ) {
+
+      # Determine chunk size in "distance between endpoints" that will give
+      # approximately the right number of rows between the endpoints.  Also
+      # find the start/end points as a number that Perl can do + and <= on.
+      my ($chunk_range, $range_func, $start_point, $end_point);
+      if ( $info->{chunk_type} =~ m/(?:int|year)$/ ) {
+         $chunk_range = $table_max - $table_min;
+         $start_point = $table_min;
+         $end_point   = $table_max;
+         $range_func  = \&range_int;
+      }
+      elsif ( $info->{chunk_type} eq 'timestamp'
+            || ($info->{chunk_type} eq 'datetime' && $table_min ge '1970-01-02') )
+      {
+         # TODO: don't put DATETIME in here.
+         ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
+            "SELECT UNIX_TIMESTAMP('$table_min'), UNIX_TIMESTAMP('$table_max'), "
+            . "UNIX_TIMESTAMP('$table_max') - UNIX_TIMESTAMP('$table_min')");
+         $range_func  = \&range_timestamp;
+      }
+      elsif ( $info->{chunk_type} eq 'date' ) {
+         ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
+            "SELECT TO_DAYS('$table_min'), TO_DAYS('$table_max'), "
+            . "TO_DAYS('$table_max') - TO_DAYS('$table_min')");
+         $range_func  = \&range_date;
+      }
+      elsif ( $info->{chunk_type} eq 'time' ) {
+         ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
+            "SELECT TIME_TO_SEC('$table_min'), TIME_TO_SEC('$table_max'), "
+            . "TIME_TO_SEC('$table_max') - TIME_TO_SEC('$table_min')");
+         $range_func  = \&range_time;
+      }
+      elsif ( $info->{chunk_type} eq 'datetime' ) {
+         if ( version_ge($main_dbh, '5.0.0')) {
+            # 1970-01-01 is an arbitrary ref point so DATETIME values can be
+            # converted into integers.
+            # TODO: convert this into DATE_ADD binary search for the endpoints.
+            ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
+               "SELECT TIMESTAMPDIFF(SECOND, '1970-01-01', '$table_min'), "
+               . "TIMESTAMPDIFF(SECOND, '1970-01-01', '$table_max'), "
+               . "TIMESTAMPDIFF(SECOND, '$table_min', '$table_max')");
+            $range_func  = \&range_datetime;
+         }
+         else {
+            # TODO: if < 5.0.0, maybe do something crazy like
+            # (to_days(@d2)*86400 - time_to_sec(@d2)), (to_days(@d1)*86400 + time_to_sec(@d1));
+            # Or use binary search with DATE_ADD(NOW(), interval second)
+         }
+      }
+      else {
+         die "I don't know how to chunk $info->{chunk_type}\n";
+      }
+
+      # Calculate the chunk size, in terms of "distance between endpoints."  If
+      # possible and requested, forbid chunks from being any bigger than
+      # specified.  Add 1 to $chunk_range because the interval is half-open,
+      # that is, it is inclusive on the upper end.  (If the table's min value is
+      # 1 and the max is 100, that's 100 values to cover, not 99).
+      $chunk_size = ceil( $opts{C} * ($chunk_range + 1) / $num_rows ) || $opts{C};
+      if ( $opts{'chunksize-exact'} && $info->{chunk_exact} ) {
+         $chunk_size = $opts{C};
+      }
+
+      # Generate a list of chunk boundaries.  Because these will end up going
+      # into BETWEEN, which is inclusive on the upper end, subtract 1 from
+      # $chunk_size for every interval to make sure they are disjoint.
+      if ( $range_func ) {
+         for ( my $i = $start_point; $i <= $end_point; $i += $chunk_size ) {
+            push @chunks, [ $range_func->($main_dbh, $i, $chunk_size - 1, $end_point) ];
+         }
+      }
+      else {
+         die "Can't support chunking on type $info->{chunk_type}\n";
+      }
+   }
+
+   $info->{chunks}    = \@chunks;
+   $info->{chunk_tot} = scalar(@chunks);
 }
 
 sub add_progress_comment {
@@ -509,15 +568,18 @@ sub do_tbl_replicate {
    my $crc = 'NULL';
    my $beg = time();
 
+   my $chunk = $info->{chunks}->[$info->{chunk_cur} - 1];
+
    # Figure out arguments to the query
    my @arg = $info->{chunk_cur};
-   if ( $info->{chunk_col} && $opts{C} && !$info->{chunk_null} ) {
-      push @arg, @{$info}{qw(chunk_min chunk_max)};
+   if ( ref $chunk ) {
+      push @arg, @$chunk;
    }
 
-   my $sql = $info->{chunk_col} && $opts{C} && $info->{chunk_null}
-      ? add_progress_comment($info->{null_query}, $info)
-      : add_progress_comment($info->{query},      $info);
+   my $sql
+      = defined $chunk
+      ? add_progress_comment($info->{query},      $info)
+      : add_progress_comment($info->{null_query}, $info);
 
    $dbh->do("USE `$info->{database}`");
    $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
@@ -584,15 +646,21 @@ sub do_tbl {
 sub checksum_query {
    my ( $dbh, $db, $tbl ) = @_;
    my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$db`.`$tbl`"))[1];
-   return ( 'VIEW', '', '' ) if $ddl =~ m/^CREATE ALGORITHM/;
+   return ('VIEW', undef) if $ddl =~ m/^CREATE ALGORITHM/;
 
-   my ( $type ) = $ddl =~ m/^\) (?:ENGINE|TYPE)=(\S+)/m;
+   my ( $engine ) = $ddl =~ m/^\) (?:ENGINE|TYPE)=(\S+)/m;
 
    # Make a list of all columns.
    my @defs = $ddl =~ m/^(\s+`.*)$/gm;
    my @tocrc;
+   my %type_for;
+   my $chunk_exact = 0;
+
+   # Normalize query results: make sure floats stringify the same way, and
+   # disable different formatting for TIMESTAMP columns.
    foreach my $def ( @defs ) {
       my ($name, $type) = $def =~ m/(`[^`]+`)\s([a-z]+)/;
+      $type_for{$name} = $type;
       die "Can't parse column definition $def" unless $name;
       push @tocrc,
            $type =~ m/float|double/ && $opts{'float-precision'} ? "ROUND($name, $opts{'float-precision'})"
@@ -600,9 +668,8 @@ sub checksum_query {
          :                                                        $name;
    }
 
-   # See if there's an index that will support chunking.  It must have an integral
-   # (including temporal types) first column, and if chunksize-exact is specified,
-   # must be single column unique or primary.
+   # See if there's an index that will support chunking.  If chunksize-exact
+   # is specified, it must be single column unique or primary.
    my $chunk_col = $opts{chunkcol} || '';
    if ( $opts{C} && !$chunk_col ) {
       if ( grep { $_ =~ m/AUTO_INCREMENT/ } @defs ) {
@@ -611,22 +678,21 @@ sub checksum_query {
       else {
          # Find first column of indexes
          my @candidates;
+
          if ($opts{'chunksize-exact'}) {
-            @candidates = $ddl =~ m/(?:PRIMARY|UNIQUE) KEY .*?\((`[^`]+`)\)/g;
+            @candidates  = $ddl =~ m/(?:PRIMARY|UNIQUE) KEY .*?\((`[^`]+`)\)/g;
+            $chunk_exact = scalar @candidates;
          }
-         else {
+
+         # Even if chunksize-exact is specified, fall back to non-exact.  Better
+         # to go a little over spec than do the whole table in one chunk!
+         if ( !@candidates ) {
             # We chunk only on the first column of multi-column indexes, so this
             # regex extracts the first column of every index.  The optional
             # PRIMARY or UNIQUE simply eliminates RTREE and HASH indexes, which
             # are not usable for range queries.
             @candidates = $ddl =~ m/^ *(?:PRIMARY|UNIQUE)? *KEY .*?\((`[^`]+`)/mg;
          }
-
-         # Eliminate columns that are an unusable type
-         @candidates = grep {
-            my $col = $_;
-            grep { m/^  $col (?:(?:(?:tiny|big|small|medium)?int)|date(?:time)?|time(?:stamp)?|year)/m } @defs;
-         } @candidates;
 
          if ( @candidates ) {
             $chunk_col = $candidates[0];
@@ -640,10 +706,11 @@ sub checksum_query {
       push @tocrc, "CONCAT(" . join(', ', map { "ISNULL($_)" } @nulls) . ")";
    }
 
-   # Is the chunk column nullable?
-   my ($chunk_null, $null_query);
+   # Is the chunk column nullable?  What is the type of the chunk column?
+   my ($chunk_null, $null_query, $chunk_type);
    if ( $chunk_col ) {
       $chunk_null = grep { $_ eq $chunk_col } @nulls;
+      $chunk_type = $type_for{$chunk_col};
    }
 
    # Design the column checksum expression.
@@ -714,7 +781,19 @@ sub checksum_query {
              .  "$chunk_col BETWEEN ? AND ?";
    }
 
-   return ( $type, $query, $chunk_col, $chunk_null, $null_query );
+   my $info = {
+       database    => $db,
+       table       => $tbl,
+       engine      => $engine,
+       query       => $query,
+       chunk_col   => $chunk_col,
+       chunk_null  => $chunk_null,
+       chunk_type  => $chunk_type,
+       null_query  => $null_query,
+       chunk_exact => $chunk_exact,
+   };
+
+   return ($engine, $info);
 }
 
 sub make_slices {
@@ -745,6 +824,37 @@ exit $exit_status;
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+# Range functions.
+sub range_int {
+   my ( $dbh, $start, $interval, $max ) = @_;
+   return ( $start, min($max, $start + $interval) );
+}
+
+sub range_time {
+   my ( $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))");
+}
+
+sub range_date {
+   my ( $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))");
+}
+
+sub range_datetime {
+   my ( $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT DATE_ADD('1970-01-01', INTERVAL $start SECOND),
+       DATE_ADD('1970-01-01', INTERVAL LEAST($max, $start + $interval) SECOND)");
+}
+
+sub range_timestamp {
+   my ( $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))");
+}
 
 sub get_dbh {
    my ( $host, $db ) = @_;
@@ -778,15 +888,18 @@ sub get_dbh {
 sub do_var_crc {
    my ( $dbh, $info ) = @_;
 
+   my $chunk = $info->{chunks}->[$info->{chunk_cur} - 1];
+
    # Figure out arguments to the query
    my @arg;
-   if ( $info->{chunk_col} && $opts{C} && !$info->{chunk_null} ) {
-      push @arg, @{$info}{qw(chunk_min chunk_max)};
+   if ( ref $chunk ) {
+      push @arg, @$chunk;
    }
 
-   my $sql = $info->{chunk_col} && $opts{C} && $info->{chunk_null}
-      ? add_progress_comment($info->{null_query}, $info)
-      : add_progress_comment($info->{query},      $info);
+   my $sql
+      = defined $chunk
+      ? add_progress_comment($info->{query},      $info)
+      : add_progress_comment($info->{null_query}, $info);
 
    $dbh->do('set @crc := NULL, @cnt := 0');
    my $res = $dbh->selectall_arrayref($sql, { Slice => {} }, @arg)->[0];
