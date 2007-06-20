@@ -51,7 +51,7 @@ my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for username and password for connections' },
    { s => 'chunkcol=s',        d => 'Explicitly specifies a column to use for chunking' },
    { s => 'chunksize|C=i',     d => 'Number of rows to checksum at a time (disallows -a CHECKSUM)' },
-   { s => 'chunksize-exact',   d => 'Use only exact chunk sizes and single-column UNIQUE indexes' },
+   { s => 'chunksize-exact',   d => 'Try not to exceed chunk sizes' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'emptyrepltbl',      d => 'Empty table given by --replicate before starting' },
@@ -568,7 +568,10 @@ sub do_tbl_replicate {
    # Figure out arguments to the query
    my @arg = $info->{chunk_cur};
    if ( ref $chunk ) {
-      push @arg, @$chunk;
+      push @arg, join(' - ', @$chunk), @$chunk;
+   }
+   else {
+      push @arg, '(null)';
    }
 
    my $sql
@@ -667,31 +670,27 @@ sub checksum_query {
    # is specified, it must be single column unique or primary.
    my $chunk_col = $opts{chunkcol} || '';
    if ( $opts{C} && !$chunk_col ) {
-      if ( grep { $_ =~ m/AUTO_INCREMENT/ } @defs ) {
-         ($chunk_col) = map { $_ =~ m/(`[^`]+`)/g } grep { $_ =~ m/AUTO_INCREMENT/ } @defs;
+
+      my @candidates;
+
+      if ($opts{'chunksize-exact'}) {
+         # Extract only single-column unique indexes.
+         @candidates  = $ddl =~ m/(?:PRIMARY|UNIQUE) KEY .*?\((`[^`]+`)\)/g;
+         $chunk_exact = scalar @candidates;
       }
-      else {
-         # Find first column of indexes
-         my @candidates;
 
-         if ($opts{'chunksize-exact'}) {
-            @candidates  = $ddl =~ m/(?:PRIMARY|UNIQUE) KEY .*?\((`[^`]+`)\)/g;
-            $chunk_exact = scalar @candidates;
-         }
+      # Even if chunksize-exact is specified, fall back to non-exact.  Better
+      # to go a little over spec than do the whole table in one chunk!
+      if ( !@candidates ) {
+         # We chunk only on the first column of multi-column indexes, so this
+         # regex extracts the first column of every index.  The optional
+         # PRIMARY or UNIQUE simply eliminates RTREE and HASH indexes, which
+         # are not usable for range queries.
+         @candidates = $ddl =~ m/^ *(?:PRIMARY|UNIQUE)? *KEY .*?\((`[^`]+`)/mg;
+      }
 
-         # Even if chunksize-exact is specified, fall back to non-exact.  Better
-         # to go a little over spec than do the whole table in one chunk!
-         if ( !@candidates ) {
-            # We chunk only on the first column of multi-column indexes, so this
-            # regex extracts the first column of every index.  The optional
-            # PRIMARY or UNIQUE simply eliminates RTREE and HASH indexes, which
-            # are not usable for range queries.
-            @candidates = $ddl =~ m/^ *(?:PRIMARY|UNIQUE)? *KEY .*?\((`[^`]+`)/mg;
-         }
-
-         if ( @candidates ) {
-            $chunk_col = $candidates[0];
-         }
+      if ( @candidates ) {
+         $chunk_col = $candidates[0];
       }
    }
 
@@ -729,8 +728,10 @@ sub checksum_query {
       my $slices = make_slices($chks);
 
       if ( $opts{R} ) {
-         $query = "REPLACE /*progress_comment*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
-            . "SELECT '$db', '$tbl', ?, COUNT(*), CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
+         $query = "REPLACE /*progress_comment*/ INTO $opts{R}"
+            . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
+            . "SELECT '$db', '$tbl', ?, ?, COUNT(*), CONCAT($slices) AS crc "
+            . "FROM `$db`.`$tbl`$opts{W}";
       }
       else {
          $query = "SELECT /*progress_comment*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
@@ -755,8 +756,9 @@ sub checksum_query {
       # @cnt is not used for a row count, it is only used to make MAX() work
       # correctly.
       if ( $opts{R} ) {
-         $query = "REPLACE /*progress_comment*/ INTO $opts{R}(db, tbl, chunk, this_cnt, this_crc) "
-            . "SELECT '$db', '$tbl', ?, COUNT(*) AS cnt, RIGHT(MAX("
+         $query = "REPLACE /*progress_comment*/ INTO $opts{R}"
+            . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
+            . "SELECT '$db', '$tbl', ?, ?, COUNT(*) AS cnt, RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
             . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
       }
@@ -1087,11 +1089,10 @@ You can override mysql-table-checksum's choice of column with L<"--chunkcol">.
 
 If this option is given, mysql-table-checksum will checksum the table in chunks
 no larger than L<"--chunksize">.  This requires a single-column integral or date
-index.  The index must be UNIQUE or PRIMARY KEY, and mysql-table-checksum will
-prefer an AUTO_INCREMENT column if there is one.
+index.  The index must be a UNIQUE or PRIMARY KEY.
 
-This will disable chunked checksums if the table doesn't have a suitable index.
-In this case the table will be done in one chunk.
+If the table doesn't have a suitable index, mysql-table-checksum will try to
+chunk approximately instead of just doing the whole table in one chunk.
 
 =item --count
 
@@ -1216,14 +1217,16 @@ run it on the master.  You specify a table to insert the results into.  The
 query will insert directly into the table, so it will be replicated through the
 binlog to the slaves.
 
-The argument to the option is the table in which the checksums should be
-stored.  The table must have at least these columns: db, tbl, chunk, this_crc,
-master_crc, this_cnt, master_cnt.  Here is a suggested table structure:
+The argument to the option is the table in which the checksums should be stored.
+The table must have at least these columns: db, tbl, chunk, boundaries,
+this_crc, master_crc, this_cnt, master_cnt.  Here is a suggested table
+structure:
 
   CREATE TABLE checksum (
      db         char(64)     NOT NULL,
      tbl        char(64)     NOT NULL,
      chunk      int          NOT NULL,
+     boundaries char(64)     NOT NULL,
      this_crc   char(40)     NOT NULL,
      this_cnt   int          NOT NULL,
      master_crc char(40)         NULL,
@@ -1234,10 +1237,12 @@ master_crc, this_cnt, master_cnt.  Here is a suggested table structure:
 
 When the queries are finished replicating, you can run a simple query on each
 slave to see which tables have differences from the master.  See L<"CONSISTENT
-CHECKSUMS"> for details.
+CHECKSUMS"> for details.  If you find tables that have differences, you can use
+the chunk boundaries in a WHERE clause to MySQL Table Sync to help repair
+them more efficiently.  See L<mysql-table-sync> for details.
 
-This option eliminates the need to do complicated locking and unlocking,
-waiting for master binlog positions, and so on.  It disables L<"--lock">, L<"--wait">,
+This option eliminates the need to do complicated locking and unlocking, waiting
+for master binlog positions, and so on.  It disables L<"--lock">, L<"--wait">,
 and L<"--slavelag">.
 
 The checksum queries actually do a REPLACE into this table, so existing rows
@@ -1508,7 +1513,7 @@ checksumming chunk 2 of 5 in table test.test_tbl.
 
 =head1 SEE ALSO
 
-See also L<mysql-checksum-filter>.
+See also L<mysql-checksum-filter> and L<mysql-table-sync>.
 
 =head1 BUGS
 
