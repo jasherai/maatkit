@@ -136,7 +136,8 @@ if ( $opts{e} ) {
 $opts{s} =~ s/'//g;
 
 # Create a WHERE clause
-$opts{W} = $opts{W} ? " WHERE $opts{W}" : '';
+$opts{W} = $opts{W} ? " WHERE ($opts{W})" : '';
+my $ADD_WHERE = $opts{W} ? 'AND' : 'WHERE';
 
 if ( $opts{a} && $opts{a} !~ m/^(?:ACCUM|CHECKSUM|BIT_XOR)$/ ) {
    warn "--algorithm=$opts{a}: unknown algorithm.\n";
@@ -465,14 +466,19 @@ sub calculate_chunks {
    my $chunk_size;
    my @chunks = $info->{chunk_null} ? (undef) : ();
 
-   # Determine the range of values for the chunk_col column on this table.
+   # Determine the range of values for the chunk_col column on this table.  The
+   # AND NOT NULL check is there because MySQL 3.23 will return NULL as the
+   # minimum column value and break my test suite when there is a row with NULL
+   # in the chunk column.
    my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col}), 0), "
       . "COALESCE(MAX($info->{chunk_col}), 0) "
-      . "FROM `$info->{database}`.`$info->{table}`$opts{W}";
+      . "FROM `$info->{database}`.`$info->{table}`"
+      . "$opts{W} $ADD_WHERE $info->{chunk_col} IS NOT NULL";
    ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
 
    my $expl = $main_dbh->selectrow_hashref(
-      "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}`$opts{W}");
+      "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}"
+      . "`$opts{W} $ADD_WHERE $info->{chunk_col} IS NOT NULL");
    $num_rows = $expl->{rows};
 
    if ( $num_rows ) {
@@ -763,11 +769,9 @@ sub checksum_query {
 
    if ( $chunk_col && $opts{C} ) {
       if ( $chunk_null ) {
-         $null_query = $query . ($opts{W} ? ' AND ' : ' WHERE ')
-                     . "$chunk_col IS NULL";
+         $null_query = "$query $ADD_WHERE $chunk_col IS NULL";
       }
-      $query .= ($opts{W} ? ' AND ' : ' WHERE ')
-             .  "$chunk_col BETWEEN ? AND ?";
+      $query .= " $ADD_WHERE $chunk_col BETWEEN ? AND ?";
    }
 
    my $info = {
