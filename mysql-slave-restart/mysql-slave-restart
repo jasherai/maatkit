@@ -28,6 +28,7 @@ use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(min max);
 use Time::HiRes qw(sleep);
+use Term::ReadKey qw(ReadMode);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -39,6 +40,7 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # Define cmdline args.
 my @opt_spec = (
+   { s => 'askpass',           d => 'Prompt for a password for the connection' },
    { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'error-numbers|e=s', d => 'Only restart this comma-separated list of errors' },
@@ -46,8 +48,8 @@ my @opt_spec = (
    { s => 'error-length|L=i',  d => 'Max length of error message to print' },
    { s => 'help',              d => 'Show this help message' },
    { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'maxsleep|M=f',      d => 'Maximum sleep time (default 60 sec)'},
-   { s => 'minsleep|m=f',      d => 'Minimum sleep time (default .01 sec)'},
+   { s => 'maxsleep|M=f',      d => 'Maximum sleep time (default 64 sec)'},
+   { s => 'minsleep|m=f',      d => 'Minimum sleep time (default 1/64 sec)'},
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'skipcount|k=i',     d => 'Number of statements to skip (default 1)' },
@@ -66,8 +68,8 @@ my @opt_spec = (
 my %opts = (
    k => 1,
    s => 1,
-   m => 0.01,
-   M => 60,
+   m => 1/64,
+   M => 64,
 );
 
 # Post-process...
@@ -151,6 +153,15 @@ my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'soc
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
+if ( $opts{askpass} ) {
+   print "Enter password: ";
+   ReadMode('noecho');
+   my $pass = <STDIN>;
+   chomp $pass;
+   ReadMode('normal');
+   print "\n";
+   $opts{p} = $pass;
+}
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } )
    or die("Can't connect to DB: $OS_ERROR");
 
@@ -226,11 +237,18 @@ while ( ( !$opts{t} || time() < $exit_time ) ) {
             $set_skip->execute();
             $start->execute();
             $was_running = 0;
+            # Only set this on events I tried to restart.  Otherwise there
+            # could be a race condition: I see it, I record it, but it hasn't
+            # caused an error yet; so I won't try to restart it when it does.
+            # (The point of this is to avoid trying to restart the same event
+            # twice in case another race condition happens -- I restart it,
+            # then check the server and it hasn't yet cleared the error
+            # message and restarted the SQL thread).
+            $last_log = $stat->{relay_log_file};
+            $last_pos = $stat->{relay_log_pos};
          }
       }
    }
-   $last_log = $stat->{relay_log_file};
-   $last_pos = $stat->{relay_log_pos};
 
    # Adjust sleep time.
    if ( $was_running ) {
@@ -247,6 +265,7 @@ while ( ( !$opts{t} || time() < $exit_time ) ) {
    # is no error when it wakes up after 1 second, because 1 was too short.  Now
    # it doubles $sleep, back to 512.  $sleep has the same value it did before
    # the error was ever found.
+   print "sleeping $sleep\n" if $opts{v} > 2;
    sleep($was_running ? $sleep : min($sleep, $opts{s}));
 }
 
@@ -307,6 +326,10 @@ slave until a certain binlog position.
 =head1 OPTIONS
 
 =over
+
+=item --askpass
+
+Prompt for a password for the connection.
 
 =item --database
 
@@ -408,7 +431,8 @@ User for login if not current user.
 
 Verbosity; specify multiple times for more verbosity.  Default is no output.
 Verbosity 1 outputs a timestamp, relay_log_file, relay_log_pos, and last_errno.
-Verbosity 2 adds last_error.  See also L<"--error-length">.
+Verbosity 2 adds last_error.  See also L<"--error-length">.  Verbosity 3
+prints the current sleep time each time MySQL Slave Restart sleeps.
 
 =item --version
 
