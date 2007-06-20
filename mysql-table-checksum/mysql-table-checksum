@@ -179,6 +179,7 @@ USAGE
 # ############################################################################
 
 my $exit_status = 0;
+my $EPOCH       = '1970-01-01';
 
 my $db_options = {
    RaiseError => 1,
@@ -486,10 +487,7 @@ sub calculate_chunks {
          $end_point   = $table_max;
          $range_func  = \&range_int;
       }
-      elsif ( $info->{chunk_type} eq 'timestamp'
-            || ($info->{chunk_type} eq 'datetime' && $table_min ge '1970-01-02') )
-      {
-         # TODO: don't put DATETIME in here.
+      elsif ( $info->{chunk_type} eq 'timestamp' ) {
          ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
             "SELECT UNIX_TIMESTAMP('$table_min'), UNIX_TIMESTAMP('$table_max'), "
             . "UNIX_TIMESTAMP('$table_max') - UNIX_TIMESTAMP('$table_min')");
@@ -508,21 +506,12 @@ sub calculate_chunks {
          $range_func  = \&range_time;
       }
       elsif ( $info->{chunk_type} eq 'datetime' ) {
-         if ( version_ge($main_dbh, '5.0.0')) {
-            # 1970-01-01 is an arbitrary ref point so DATETIME values can be
-            # converted into integers.
-            # TODO: convert this into DATE_ADD binary search for the endpoints.
-            ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
-               "SELECT TIMESTAMPDIFF(SECOND, '1970-01-01', '$table_min'), "
-               . "TIMESTAMPDIFF(SECOND, '1970-01-01', '$table_max'), "
-               . "TIMESTAMPDIFF(SECOND, '$table_min', '$table_max')");
-            $range_func  = \&range_datetime;
-         }
-         else {
-            # TODO: if < 5.0.0, maybe do something crazy like
-            # (to_days(@d2)*86400 - time_to_sec(@d2)), (to_days(@d1)*86400 + time_to_sec(@d1));
-            # Or use binary search with DATE_ADD(NOW(), interval second)
-         }
+         # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
+         # to maintain just one kind of code, so I do it all with DATE_ADD().
+         $start_point = timestampdiff($main_dbh, $table_min);
+         $end_point   = timestampdiff($main_dbh, $table_max);
+         $chunk_range = $end_point - $start_point;
+         $range_func  = \&range_datetime;
       }
       else {
          die "I don't know how to chunk $info->{chunk_type}\n";
@@ -846,14 +835,36 @@ sub range_date {
 sub range_datetime {
    my ( $dbh, $start, $interval, $max ) = @_;
    return $dbh->selectrow_array(
-      "SELECT DATE_ADD('1970-01-01', INTERVAL $start SECOND),
-       DATE_ADD('1970-01-01', INTERVAL LEAST($max, $start + $interval) SECOND)");
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND),
+       DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)");
 }
 
 sub range_timestamp {
    my ( $dbh, $start, $interval, $max ) = @_;
    return $dbh->selectrow_array(
       "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))");
+}
+
+# Returns the number of seconds between $EPOCH and the value, according to
+# the MySQL server.  (The server can do no wrong).  I believe this code is right
+# after looking at the source of sql/time.cc but I am paranoid and add in an
+# extra check just to make sure.  Earlier versions overflow on large interval
+# values, such as on 3.23.58, '1970-01-01' - interval 58000000000 second is
+# 2037-06-25 11:29:04.  I know of no workaround.
+sub timestampdiff {
+   my ( $dbh, $time ) = @_;
+   my ( $diff ) = $dbh->selectrow_array(
+      "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+      . "- TO_DAYS('$EPOCH 00:00:00') * 86400");
+   my ( $check ) = $dbh->selectrow_array(
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)");
+   die <<"   EOF"
+   Incorrect datetime math: given $time, calculated $diff but checked to $check.
+   This is probably because you are using a version of MySQL that overflows on
+   large interval values.  If not, please report this as a bug.
+   EOF
+      unless $check eq $time;
+   return $diff;
 }
 
 sub get_dbh {

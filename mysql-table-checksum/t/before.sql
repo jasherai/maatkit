@@ -60,7 +60,7 @@ create table checksum_test_6(
    b int
 ) type=innodb;
 insert into checksum_test_6 values
-   ('1850-01-14 05:18:23', 5),
+   ('1922-01-14 05:18:23', 5),
    ('1950-03-21 09:03:15', 88),
    ('2005-11:26 00:59:19', 234);
 
