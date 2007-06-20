@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 43;
+use Test::More tests => 45;
 
 my $opt_file = shift or die "Specify an option file.\n";
 my ($output, $output2);
@@ -151,3 +151,9 @@ $output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -
 like($output, qr/^DATABASE/m, 'The header row is there');
 like($output, qr/checksum_test_5 *2/,
    'chunking works with DATE columns');
+
+# Test chunking with a DATETIME column, which has a large range of values.
+$output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -t checksum_test_6 127.0.0.1 2>&1`;
+like($output, qr/^DATABASE/m, 'The header row is there');
+like($output, qr/checksum_test_6 *2/,
+   'chunking works with DATETIME columns');
