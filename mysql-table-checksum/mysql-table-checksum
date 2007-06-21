@@ -40,9 +40,9 @@ $OUTPUT_AUTOFLUSH = 1;
 # ############################################################################
 
 # TODO: enable chunking on character columns and floating-points
-# TODO: must not treat chunks on date as numbers; deal with dates as dates
 # TODO: add --ignorecol
 # TODO: add --ignoretype
+# TODO: add --explain to print out queries and chunks for tables.
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
@@ -183,11 +183,12 @@ my $exit_status = 0;
 my $EPOCH       = '1970-01-01';
 
 my %int_types = map { $_ => 1 }
-   qw( bigint date datetime enum int mediumint smallint time timestamp tinyint year );
-my %num_types = map { $_ => 1 }
+   qw( bigint date datetime int mediumint smallint time timestamp tinyint year );
+my %real_types = map { $_ => 1 }
    qw( decimal double float );
 
-# BIT SET
+# TODO: Unsupported types:
+# BIT SET ENUM
 # BINARY BLOB CHAR CHAR BYTE LONGBLOB LONGTEXT MEDIUMBLOB
 # MEDIUMTEXT TEXT TINYBLOB TINYTEXT VARBINARY VARCHAR
 
@@ -680,7 +681,6 @@ sub checksum_query {
    # See if there's an index that will support chunking.  If chunksize-exact
    # is specified, it must be single column unique or primary.
    my $chunk_col = $opts{chunkcol} || '';
-   my $chunk_bin;
    if ( $opts{C} && !$chunk_col ) {
 
       my @candidates;
@@ -702,13 +702,11 @@ sub checksum_query {
       }
 
       # Eliminate types for which I can't choose endpoints.
-      @candidates = grep { $type_for{$_} =~ m/year|date|time|int/ } @candidates;
+      @candidates = grep { exists($int_types{$type_for{$_}}) } @candidates;
       # TODO: support decimal, double, enum, float
 
       if ( @candidates ) {
          $chunk_col = $candidates[0];
-         # $chunk_bin = $type_for{$chunk_col} eq 'binary'
-         #          || $def_for{$chunk_col} =~ m/char.*?\b(?:binary|collate.*?_bin)\b/;
       }
    }
 
@@ -800,7 +798,6 @@ sub checksum_query {
        engine      => $engine,
        query       => $query,
        chunk_col   => $chunk_col,
-       chunk_bin   => $chunk_bin,
        chunk_null  => $chunk_null,
        chunk_type  => $chunk_type,
        null_query  => $null_query,
