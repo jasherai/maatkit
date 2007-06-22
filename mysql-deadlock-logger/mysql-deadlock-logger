@@ -1,7 +1,5 @@
 #!/usr/bin/perl
 
-# TODO: update the url-argument-parsing to match the docs.
-
 # This is mysql-deadlock-logger, a program that extracts and saves a summary of
 # the last deadlock recorded in MySQL.
 #
@@ -44,7 +42,6 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 my @opt_spec = (
    { s => 'collapse|c!',  d => 'Collapse whitespace in queries' },
    { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
-   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'dest|d=s',     d => 'Server in which to store info' },
    { s => 'help',         d => 'Show this help message' },
    { s => 'numip|n',      d => 'Express IP addresses as integers' },
@@ -89,35 +86,24 @@ $opts{C} = $opts{C} ? { map { $_ => 1 } $opts{C} =~ m/(\w+)/g } : 0;
 # Parse arguments saying where to connect.  If the script doesn't have
 # everything it needs, show help text.
 # ############################################################################
-# Parses a DSN in login:pass@host:port/database.table format
+my %conn   = (
+   h => 'host',
+   P => 'port',
+   S => 'socket',
+   u => 'user',
+   p => 'pass',
+   F => 'mysql_read_default_file',
+   D => 'database',
+   t => 'table',
+);
+
 sub parse_dsn {
    my ($dsn, $prev) = @_;
-   $dsn  ||= '';
+   return unless $dsn;
    $prev ||= {};
-
-   my ( $user, $pass, $host, $port, $database, $table ) = $dsn =~ m{
-      (?:
-         (.*?)       # Username
-         (?::(.*))?  # Optional password
-      @)?            # User-pass is optional
-      (?:
-         (.*?)       # Hostname
-         (?::(.*))?  # Optional port
-      /)?            # Host-port is optional
-      (?:
-         (.*?)       # Database
-      \.)?           # Database is optional
-      (.*)?          # Table is optional
-      }x;
-
-   return {
-      u => $user     || $prev->{u},
-      p => $pass     || $prev->{p},
-      h => $host     || $prev->{h},
-      P => $port     || $prev->{P},
-      D => $database || $prev->{D},
-      t => $table    || $prev->{t},
-   };
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   my %vals = map  { $_ => $hash{$_} || $prev->{$_} } keys %conn;
+   return \%vals;
 }
 
 my $source = parse_dsn($opts{s}, {}      );
@@ -138,15 +124,9 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-mysql-deadlock-logger extracts and saves information about the most
-recent deadlock in a MySQL server.  You need to specify whether to
-print the output or save it in a database.
-
-The --source and --dest arguments take the form
-   user:pass\@host:port/database.table.
-All parts are optional, and default values are read from options files.
-Missing values to --dest are filled in from --source.
-
+mysql-deadlock-logger extracts and saves information about the most recent
+deadlock in a MySQL server.  You need to specify whether to print the output or
+save it in a database.  The --source and --dest arguments use a special format.
 For more details, please read the documentation:
 
    perldoc mysql-deadlock-logger
@@ -204,8 +184,6 @@ my %is_proc_info = (
 # ############################################################################
 # Start working.
 # ############################################################################
-my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
-
 # Connect to the database
 my $dsn = 'DBI:mysql:' . ( $source->{D} || '' ) . ';'
    . join(';', map  { "$conn{$_}=$source->{$_}" } grep { defined $source->{$_} } qw(F h P S))
@@ -417,11 +395,6 @@ each action).
 Makes mysql-deadlock-logger only output and/or save certain columns.  See
 L<"OUTPUT"> for more details.
 
-=item --defaults-file
-
-Specifies a MySQL options file from which mysql-deadlock-logger will read
-options when connecting to MySQL.
-
 =item --dest
 
 Specifies a server, database and table in which to store deadlock information,
@@ -473,9 +446,8 @@ for more.  By default, enables L<"--collapse"> unless you explicitly disable it.
 
 =item --source
 
-Specifies a connection to a server to check for deadlocks.  
-This argument is specially formatted as a
-key=value,key=value string.  Keys are a single letter:
+Specifies a connection to a server to check for deadlocks.  This argument is
+specially formatted as a key=value,key=value string.  Keys are a single letter:
 
    KEY MEANING
    === =======
