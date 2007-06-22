@@ -15,7 +15,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-table-sync
-VERSION = 0.9.4
+VERSION = 0.9.5
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \
