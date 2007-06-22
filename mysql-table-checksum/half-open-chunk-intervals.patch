@@ -1,0 +1,78 @@
+Index: mysql-table-checksum
+===================================================================
+--- mysql-table-checksum	(revision 584)
++++ mysql-table-checksum	(working copy)
+@@ -754,7 +754,7 @@
+    }
+ 
+    # Is the chunk column nullable?  What is the type of the chunk column?
+-   my ($chunk_null, $null_query, $chunk_type);
++   my ($chunk_null, $chunk_type);
+    if ( $chunk_col ) {
+       $chunk_null = grep { $_ eq $chunk_col } @nulls;
+       $chunk_type = $type_for{$chunk_col};
+@@ -765,8 +765,12 @@
+             ? "$func(CONCAT_WS('$opts{s}', " . join(',', @tocrc) . '))'
+             : "$func($tocrc[0])";
+ 
+-   # Make the query.
+-   my $query = '';
++   # Make the queries.  The queries are all similar, but there are three to
++   # cover all cases.  Chunks partition an open-ended interval.  Imagine
++   # values 1 to 100 in 10-row chunks.  The first chunk's WHERE clause is
++   # 'WHERE col <= 10'.  Each successive is 'WHERE col > ? and col <= ?', and
++   # the other case is 'WHERE col IS NULL'.
++   my ($chunk_query, $null_query, $query) = ( '', '', '' );
+    if ( $strat eq 'BIT_XOR' ) {
+ 
+       # This checksum algorithm concatenates the columns in each row and
+@@ -784,10 +788,10 @@
+          $query = "REPLACE /*progress_comment*/ INTO $opts{R}"
+             . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
+             . "SELECT '$db', '$tbl', ?, ?, COUNT(*), CONCAT($slices) AS crc "
+-            . "FROM `$db`.`$tbl`$opts{W}";
++            . "FROM `$db`.`$tbl`";
+       }
+       else {
+-         $query = "SELECT /*progress_comment*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
++         $query = "SELECT /*progress_comment*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`";
+       }
+ 
+    }
+@@ -813,20 +817,25 @@
+             . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
+             . "SELECT '$db', '$tbl', ?, ?, COUNT(*) AS cnt, RIGHT(MAX("
+             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
+-            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
++            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index";
+       }
+       else {
+          $query = "SELECT /*progress_comment*/ COUNT(*) AS cnt, RIGHT(MAX("
+             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
+-            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
++            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index";
+       }
+    }
+ 
++   # Add the WHERE clause
++   $query .= $opts{W};
++
++   # Generate variants for NULLs and the first chunk
+    if ( $chunk_col && $opts{C} ) {
+       if ( $chunk_null ) {
+          $null_query = "$query $ADD_WHERE $chunk_col IS NULL";
+       }
+-      $query .= " $ADD_WHERE $chunk_col BETWEEN ? AND ?";
++      $chunk_query = $query . " $ADD_WHERE $chunk_col > ? AND $chunk_col <= ?";
++      $query .= " $ADD_WHERE $chunk_col <= ?";
+    }
+ 
+    return {
+@@ -834,6 +843,7 @@
+        table       => $tbl,
+        engine      => $engine,
+        query       => $query,
++       chunk_query => $chunk_query,
+        chunk_col   => $chunk_col,
+        chunk_null  => $chunk_null,
+        chunk_type  => $chunk_type,
