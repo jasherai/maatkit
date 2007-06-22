@@ -56,6 +56,7 @@ my @opt_spec = (
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'emptyrepltbl',      d => 'Empty table given by --replicate before starting' },
    { s => 'engine|e=s',        d => 'Only do this comma-separated list of storage engines' },
+   { s => 'explain',           d => 'Show, but do not execute, checksum queries' },
    { s => 'explainhosts',      d => 'Print connection information and exit' },
    { s => 'float-precision=i', d => 'Precision for FLOAT and DOUBLE column comparisons' },
    { s => 'function|f=s',      d => 'Cryptographic hash function (SHA1, MD5...)' },
@@ -163,6 +164,10 @@ my %conn   = (
 my @hosts;
 foreach my $arg ( unique(@ARGV) ) {
    push @hosts, parse_dsn($arg, $hosts[0]);
+}
+
+if ( $opts{explain} ) {
+   @hosts = $hosts[0];
 }
 
 if ( $opts{explainhosts} ) {
@@ -377,14 +382,11 @@ foreach my $database ( @databases ) {
 
       # Get the table type, and a query to generate a checksum for it.
       eval {
-         my ( $engine, $info ) 
-        #   $query, $chunk_col, $chunk_null, $null_query, $chunk_type )
-             = checksum_query( $main_dbh, $database, $table );
+         my $info = checksum_query( $main_dbh, $database, $table );
 
          # Skip views, and tables of the wrong engine.
-         if ( $engine ne 'VIEW' && (!$opts{e} || $opts{e}->{lc($engine)}) ) {
+         if ( $info->{engine} ne 'VIEW' && (!$opts{e} || $opts{e}->{lc($info->{engine})}) ) {
             $info_for{$table} = $info;
-            ;
          }
 
       };
@@ -397,18 +399,20 @@ foreach my $database ( @databases ) {
    next DATABASE unless %info_for;
 
    # Design and print header
-   my $hdr;
+   my ($hdr, $explain);
    if ( $opts{b} ) {
       $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
+      $explain = "%s\t%s\t%s\n";
    }
    else {
       my $max_tbl  = max(5, map { length($_) } keys %info_for);
       my $max_db   = max(8, length($database));
       my $max_host = max(4, map { length($_->{h}) } @hosts);
       $hdr         = "%-${max_db}s %-${max_tbl}s %5s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+      $explain     = "%-${max_db}s %-${max_tbl}s %s\n";
    }
    my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
-   printf($hdr, @hdr_args) unless $opts{q};
+   printf($hdr, @hdr_args) unless ($opts{q} || $opts{explain});
 
    TABLE:
    foreach my $table ( sort keys %info_for ) {
@@ -432,7 +436,7 @@ foreach my $database ( @databases ) {
          my $chunk_start_time = time;
          if ( $opts{R} ) { # We're in --replicate mode.
             eval {
-               do_tbl_replicate($hosts[0], $info, $hdr);
+               do_tbl_replicate($hosts[0], $info, $hdr, $explain);
             };
             if ( $EVAL_ERROR ) {
                print_err($EVAL_ERROR);
@@ -442,8 +446,9 @@ foreach my $database ( @databases ) {
          else {
 
             # Lock table and get master position on the master, if applicable.
-            $main_dbh->do("LOCK TABLES `$database`.`$table` READ") if $opts{k};
-            if ( defined $opts{w} ) {
+            $main_dbh->do("LOCK TABLES `$database`.`$table` READ")
+               if ($opts{k} && !$opts{explain});
+            if ( defined $opts{w} && !$opts{explain} ) {
                my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
                @{$info}{keys %$master_status} = values %$master_status;
             }
@@ -454,7 +459,7 @@ foreach my $database ( @databases ) {
                my $pid = @hosts > 1 ? fork() : undef;
                if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
                   eval {
-                     do_tbl($host, $info, $i == 0, $hdr);
+                     do_tbl($host, $info, $i == 0, $hdr, $explain);
                   };
                   if ( $EVAL_ERROR ) {
                      print_err($EVAL_ERROR);
@@ -474,14 +479,14 @@ foreach my $database ( @databases ) {
                my $pid = waitpid($children{$host}, 0);
                $exit_status = $CHILD_ERROR;
             }
-            $main_dbh->do("UNLOCK TABLES") if $opts{k};
+            $main_dbh->do("UNLOCK TABLES") if ($opts{k} && !$opts{explain});
 
          }
 
-         if ( $opts{sleep} ) {
+         if ( $opts{sleep} && !$opts{explain} ) {
             sleep($opts{sleep});
          }
-         elsif ( $opts{'sleep-coef'} ) {
+         elsif ( $opts{'sleep-coef'} && !$opts{explain} ) {
             my $sleep_time = ceil( (time - $chunk_start_time) * $opts{'sleep-coef'} );
             sleep($sleep_time);
          }
@@ -592,7 +597,7 @@ sub add_progress_comment {
 }
 
 sub do_tbl_replicate {
-   my ( $host, $info, $hdr ) = @_;
+   my ( $host, $info, $hdr, $explain ) = @_;
    my $dbh = $main_dbh;
    my $cnt = 'NULL';
    my $crc = 'NULL';
@@ -602,7 +607,7 @@ sub do_tbl_replicate {
 
    # Figure out arguments to the query
    my @arg = $info->{chunk_cur};
-   if ( ref $chunk ) {
+   if ( $chunk ) {
       push @arg, join(' - ', @$chunk), @$chunk;
    }
    else {
@@ -614,6 +619,17 @@ sub do_tbl_replicate {
       ? add_progress_comment($info->{query},      $info)
       : add_progress_comment($info->{null_query}, $info);
 
+   if ( $opts{explain} ) {
+      if ( $info->{chunk_cur} == 1 ) {
+         printf($explain, @{$info}{qw(database table)}, $sql);
+      }
+      if ( !defined $chunk || ref $chunk ) {
+         printf($explain, @{$info}{qw(database table)},
+            (ref $chunk ? join(' - ', @$chunk) : '(null)'));
+      }
+      return;
+   }
+
    $dbh->do("USE `$info->{database}`");
    $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
    $dbh->do($sql, {}, @arg);
@@ -624,18 +640,18 @@ sub do_tbl_replicate {
    my $end = time();
    $crc  ||= 'NULL';
    printf($hdr, @{$info}{qw(database table chunk_cur)}, $host->{h}, $info->{engine}, $cnt, $crc,
-      $end - $beg, 'NULL', 'NULL', 'NULL') unless $opts{q};
+      $end - $beg, 'NULL', 'NULL', 'NULL') unless ($opts{q} || $opts{explain});
 }
 
 sub do_tbl {
-   my ( $host, $info, $is_master, $hdr ) = @_;
+   my ( $host, $info, $is_master, $hdr, $explain ) = @_;
    my $dbh = get_dbh($host, $info->{database});
    my $cnt = 'NULL';
    my $crc = 'NULL';
    my $sta = 'NULL';
    my $lag = 'NULL';
    my $beg = time();
-   if ( !$is_master && defined $opts{w} ) {
+   if ( !$is_master && defined $opts{w} && !$opts{explain} ) {
       $sta = $dbh->selectall_arrayref(
          add_progress_comment(
             "SELECT /*progress_comment*/ MASTER_POS_WAIT('$info->{File}', $info->{Position}, $opts{w})",
@@ -643,7 +659,7 @@ sub do_tbl {
          ))->[0]->[0];
       $sta = 'NULL' unless defined $sta;
    }
-   if ( !$is_master && $opts{l} ) {
+   if ( !$is_master && $opts{l} && !$opts{explain} ) {
       my $res = $dbh->selectrow_hashref("SHOW SLAVE STATUS");
       $lag = $res && defined $res->{Seconds_Behind_Master}
            ? $res->{Seconds_Behind_Master}
@@ -652,27 +668,23 @@ sub do_tbl {
    my $mid = time();
    if ( $strat eq 'CHECKSUM' ) {
       if ( $opts{c} ) {
-         my $res = $dbh->selectrow_hashref(
-            "CHECKSUM TABLE `$info->{database}`.`$info->{table}`");
-         if ( $res ) {
-            $crc = $res->{Checksum};
-         }
+         $crc = do_checksum($dbh, $info, $explain);
       }
       if ( $opts{r} ) {
-         $cnt = do_count($dbh, $info);
+         $cnt = do_count($dbh, $info, $explain);
       }
    }
    elsif ( $opts{c} ) {
-      ( $cnt, $crc ) = do_var_crc($dbh, $info);
+      ( $cnt, $crc ) = do_var_crc($dbh, $info, $explain);
       $crc ||= 'NULL';
    }
    else {
-      $cnt = do_count($dbh, $info);
+      $cnt = do_count($dbh, $info, $explain);
    }
    my $end = time();
    $dbh->disconnect();
    printf($hdr, @{$info}{qw(database table chunk_cur)}, $host->{h}, $info->{engine}, $cnt, $crc,
-      $end - $mid, $mid - $beg, $sta, $lag) unless $opts{q};
+      $end - $mid, $mid - $beg, $sta, $lag) unless ($opts{q} || $opts{explain});
 }
 
 # Generates a checksum query for a given table.
@@ -817,7 +829,7 @@ sub checksum_query {
       $query .= " $ADD_WHERE $chunk_col BETWEEN ? AND ?";
    }
 
-   my $info = {
+   return {
        database    => $db,
        table       => $tbl,
        engine      => $engine,
@@ -828,8 +840,6 @@ sub checksum_query {
        null_query  => $null_query,
        chunk_exact => $chunk_exact,
    };
-
-   return ($engine, $info);
 }
 
 sub make_slices {
@@ -954,7 +964,7 @@ sub get_dbh {
 }
 
 sub do_var_crc {
-   my ( $dbh, $info ) = @_;
+   my ( $dbh, $info, $explain ) = @_;
 
    my $chunk = $info->{chunks}->[$info->{chunk_cur} - 1];
 
@@ -969,16 +979,43 @@ sub do_var_crc {
       ? add_progress_comment($info->{query},      $info)
       : add_progress_comment($info->{null_query}, $info);
 
+   if ( $opts{explain} ) {
+      if ( $info->{chunk_cur} == 1 ) {
+         printf($explain, @{$info}{qw(database table)}, $sql);
+      }
+      if ( !defined $chunk || ref $chunk ) {
+         printf($explain, @{$info}{qw(database table)},
+            (ref $chunk ? join(' - ', @$chunk) : '(null)'));
+      }
+      return;
+   }
+
    $dbh->do('set @crc := NULL, @cnt := 0');
    my $res = $dbh->selectall_arrayref($sql, { Slice => {} }, @arg)->[0];
    return ($res->{cnt}, $res->{crc});
 }
 
+sub do_checksum {
+   my ( $dbh, $info, $explain ) = @_;
+   my $sql = "CHECKSUM TABLE `$info->{database}`.`$info->{table}`";
+   if ( $opts{explain} ) {
+      printf($explain, @{$info}{qw(database table)}, $sql);
+   }
+   else {
+      my $res = $dbh->selectrow_hashref($sql);
+      return $res->{Checksum} if $res;
+   }
+}
+
 sub do_count {
-   my ( $dbh, $info ) = @_;
-   return $dbh->selectall_arrayref(
-      "SELECT COUNT(*) FROM `$info->{database}`.`$info->{table}`$opts{W}"
-   )->[0]->[0];
+   my ( $dbh, $info, $explain ) = @_;
+   my $sql = "SELECT COUNT(*) FROM `$info->{database}`.`$info->{table}`$opts{W}";
+   if ( $opts{explain} ) {
+      printf($explain, @{$info}{qw(database table)}, $sql);
+   }
+   else {
+      return $dbh->selectall_arrayref($sql)->[0]->[0];
+   }
 }
 
 sub unique {
@@ -1239,6 +1276,11 @@ related to tables that no longer exist.
 
 Only checksum tables whose storage engine is in this comma-separated list.
 You can use this to restrict the checksum to InnoDB, for example.
+
+=item --explain
+
+Print checksum queries and chunk boundaries (if chunking is enabled) for each
+table, but do not execute the queries.
 
 =item --explainhosts
 
