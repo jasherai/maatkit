@@ -56,6 +56,7 @@ my @opt_spec = (
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'emptyrepltbl',      d => 'Empty table given by --replicate before starting' },
    { s => 'engine|e=s',        d => 'Only do this comma-separated list of storage engines' },
+   { s => 'explainhosts',      d => 'Print connection information and exit' },
    { s => 'float-precision=i', d => 'Precision for FLOAT and DOUBLE column comparisons' },
    { s => 'function|f=s',      d => 'Cryptographic hash function (SHA1, MD5...)' },
    { s => 'help',              d => 'Show this help message' },
@@ -149,7 +150,30 @@ if ( !@ARGV ) {
    $opts{help} = 1;
 }
 
-my @hosts = unique(@ARGV);
+my %conn   = (
+   h => 'host',
+   P => 'port',
+   S => 'socket',
+   u => 'user',
+   p => 'pass',
+   F => 'mysql_read_default_file',
+   D => 'database',
+);
+
+my @hosts;
+foreach my $arg ( unique(@ARGV) ) {
+   push @hosts, parse_dsn($arg, $hosts[0]);
+}
+
+if ( $opts{explainhosts} ) {
+   foreach my $host ( @hosts ) {
+      print "Server $host->{h}:\n" . join("   \n",
+         map { sprintf('%25s %s', $conn{$_}, (defined $host->{$_} ? $host->{$_} : '[null]') ) } sort keys %conn),
+         "\n";
+   }
+   exit(0);
+}
+
 if ( $opts{R} && @hosts > 1 ) {
    die "You can only specify one host with --replicate\n";
 }
@@ -293,16 +317,16 @@ if ( $opts{v} && @hosts > 1 ) {
    foreach my $host ( @hosts ) {
       my $dbh = get_dbh($host, ($opts{d} ? keys %{$opts{d}} : '' ));
       my $cks = $dbh->selectall_arrayref("SELECT MD5(CONCAT_WS(',', '1', ''))")->[0]->[0];
-      push @verify_sums, { host => $host, ver => $dbh->{mysql_serverinfo}, sum => $cks };
+      push @verify_sums, { host => $host->{h}, ver => $dbh->{mysql_serverinfo}, sum => $cks };
       if ( $sanity ) {
          # Also verify all servers treat user-variables the same way.
          $dbh->do('SET @crc := NULL, @cnt := 0');
          $cks = $dbh->selectall_arrayref($sanity)->[0]->[0];
-         push @verify_vars, { host => $host, ver => $dbh->{mysql_serverinfo}, sum => $cks };
+         push @verify_vars, { host => $host->{h}, ver => $dbh->{mysql_serverinfo}, sum => $cks };
       }
    }
    if ( unique(map { $_->{sum} } @verify_sums ) > 1 ) {
-      my $max = max(map { length($_) } @hosts);
+      my $max = max(map { length($_->{h}) } @hosts);
       die "Not all servers have compatible versions.  Some return different\n"
          . "checksum values for the same query, and cannot be compared.  This\n"
          . "behavior changed in MySQL 4.0.14.  Here is info on each host:\n\n"
@@ -380,7 +404,7 @@ foreach my $database ( @databases ) {
    else {
       my $max_tbl  = max(5, map { length($_) } keys %info_for);
       my $max_db   = max(8, length($database));
-      my $max_host = max(4, map { length($_) } @hosts);
+      my $max_host = max(4, map { length($_->{h}) } @hosts);
       $hdr         = "%-${max_db}s %-${max_tbl}s %5s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
    }
    my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
@@ -425,11 +449,12 @@ foreach my $database ( @databases ) {
             }
 
             my %children;
-            foreach my $host ( @hosts ) {
+            foreach my $i ( 0 .. $#hosts ) {
+               my $host = $hosts[$i];
                my $pid = @hosts > 1 ? fork() : undef;
                if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
                   eval {
-                     do_tbl($host, $info, $host eq $hosts[0], $hdr);
+                     do_tbl($host, $info, $i == 0, $hdr);
                   };
                   if ( $EVAL_ERROR ) {
                      print_err($EVAL_ERROR);
@@ -441,7 +466,7 @@ foreach my $database ( @databases ) {
                   die("Unable to fork!");
                }
                # I already exited if I'm a child, so I'm the parent.
-               $children{$host} = $pid if @hosts > 1;
+               $children{$host->{h}} = $pid if @hosts > 1;
             }
 
             # Wait for the children to exit.
@@ -598,7 +623,7 @@ sub do_tbl_replicate {
    $update_sth->execute($crc, $cnt, @{$info}{qw(database table chunk_cur)});
    my $end = time();
    $crc  ||= 'NULL';
-   printf($hdr, @{$info}{qw(database table chunk_cur)}, $host, $info->{engine}, $cnt, $crc,
+   printf($hdr, @{$info}{qw(database table chunk_cur)}, $host->{h}, $info->{engine}, $cnt, $crc,
       $end - $beg, 'NULL', 'NULL', 'NULL') unless $opts{q};
 }
 
@@ -646,7 +671,7 @@ sub do_tbl {
    }
    my $end = time();
    $dbh->disconnect();
-   printf($hdr, @{$info}{qw(database table chunk_cur)}, $host, $info->{engine}, $cnt, $crc,
+   printf($hdr, @{$info}{qw(database table chunk_cur)}, $host->{h}, $info->{engine}, $cnt, $crc,
       $end - $mid, $mid - $beg, $sta, $lag) unless $opts{q};
 }
 
@@ -836,6 +861,24 @@ exit $exit_status;
 # Subroutines
 # ############################################################################
 
+sub parse_dsn {
+   my ($dsn, $prev) = @_;
+   return unless $dsn;
+   $prev ||= {};
+
+   my %vals;
+   if ( $dsn =~ m/=/ ) {
+      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+      %vals = map  { $_ => $hash{$_} } keys %conn;
+   }
+   else {
+      $vals{h} = $dsn;
+   }
+   map { $vals{$_} ||= $prev->{$_} || $opts{$_} } keys %conn;
+   die "Missing host (h) part in $dsn\n" unless $vals{h};
+   return \%vals;
+}
+
 # Range functions.
 sub range_int {
    my ( $dbh, $start, $interval, $max ) = @_;
@@ -890,31 +933,23 @@ sub timestampdiff {
 }
 
 sub get_dbh {
-   my ( $host, $db ) = @_;
-   my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
+   my ( $info, $db ) = @_;
 
-   if ( $opts{askpass} ) {
-      if ( !$db_info{$host} ) {
-         print "Username for $host: ";
-         my $user = <STDIN>;
-         chomp $user;
-         print "Password for $user on $host: ";
-         ReadMode('noecho');
-         my $pass = <STDIN>;
-         chomp $pass;
-         ReadMode('normal');
-         print "\n";
-         $db_info{$host} = { u => $user, p => $pass };
-      }
-      $opts{u} = $db_info{$host}->{u};
-      $opts{p} = $db_info{$host}->{p};
+   if ( $opts{askpass} && !$info->{p} ) {
+      print "Enter password for $info->{h}: ";
+      ReadMode('noecho');
+      my $pass = <STDIN>;
+      chomp $pass;
+      ReadMode('normal');
+      print "\n";
+      $info->{p} = $pass;
    }
 
-   $db ||= '';
-   my $dsn = "DBI:mysql:$db;host=$host;"
-      . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
+   $db ||= $info->{D} || '';
+   my $dsn = "DBI:mysql:$db;host=$info->{h};"
+      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
-   return DBI->connect($dsn, @opts{qw(u p)}, $db_options )
+   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
       or die("Can't connect to DB: $OS_ERROR");
 }
 
@@ -984,7 +1019,13 @@ efficiently checksum MySQL tables on one or many servers.
 
 Or,
 
+   mysql-table-checksum h=host1,u=user,p=password h=host1 ...
+
+Or,
+
    mysql-table-checksum host host1 host2 ... hostN | mysql-checksum-filter
+
+See L<"SPECIFYING HOSTS"> for more on the syntax of the host arguments.
 
 =head1 OVERVIEW
 
@@ -1001,12 +1042,62 @@ If you specify more than one server, MySQL Table Checksum assumes the first
 server is the master and others are slaves.  Checksums are parallelized for
 speed, forking off a child process for each table.  Duplicate server names are
 ignored, but if you want to checksum a server against itself you can use two
-different forms of the hostname (for example, localhost and 127.0.0.1).
+different forms of the hostname (for example, "localhost 127.0.0.1", or
+"h=localhost,p=3306 h=localhost,p=3307")
 
 MySQL Table Checksum only examines table structure on the first host specified,
 so if anything differs on the others, it won't notice.  It ignores views.
 
 The checksums are tested on MySQL version 3.23.58 through 6.0-alpha.
+
+=head1 SPECIFYING HOSTS
+
+MySQL Table Checksum connects to a theoretically unlimited number of MySQL
+servers.  You specify a list of one or more host definitions on the command
+line, such as "host1 host2".  Each host definition can be just a hostname, or it
+can be a complex string that specifies connection options as well.  You can
+specify connection options two ways:
+
+=over
+
+=item #
+
+Format a host definition in a key=value,key=value form.  If an artument on the
+command line contains the letter '=', MySQL Table Checksum will parse it into
+its component parts.  The parts are as follows:
+
+   KEY MEANING
+   === =======
+   h   Connect to host
+   P   Port number to use for connection
+   S   Socket file to use for connection
+   u   User for login if not current user
+   p   Password to use when connecting
+   F   Only read default options from the given file
+
+With this in mind, consider that specifying a list of simple host definitions
+"host1 host2" is equivalent to the more complicated "h=host1 h=host2" format.
+
+=item #
+
+With the command-line options such as L<"--user"> and L<"--password">.  These
+options, if given, apply globally to all host definitions.
+
+=back
+
+In addition to specifying connection options this way, MySQL Table Checksum
+allows shortcuts.  Any options specified for the first host definition on the
+command line fill in missing values in subsequent ones.  Any options that are
+still missing after this are filled in from the command-line options if
+possible.
+
+In other words, the places you specify connection options have precedence:
+highest precedence is the option specified directly in the host definition, next
+is the option specified in the first host definition, and lowest is the
+command-line option.
+
+If you are confused about how MySQL Table Checksum will connect to your servers,
+give the L<"--explainhosts"> option and it will tell you.
 
 =head1 OPTIONS
 
@@ -1067,7 +1158,7 @@ CHECKSUM TABLE.
 
 =item --askpass
 
-Prompt for a username and password for each host.
+Prompt for a password for each host for which no password is given.
 
 =item --chunkcol
 
@@ -1142,6 +1233,11 @@ related to tables that no longer exist.
 
 Only checksum tables whose storage engine is in this comma-separated list.
 You can use this to restrict the checksum to InnoDB, for example.
+
+=item --explainhosts
+
+Print out a list of hosts to which MySQL Table Checksum will connect, with all
+the various connection options, and exit.  See L<"SPECIFYING HOSTS">.
 
 =item --float-precision
 
