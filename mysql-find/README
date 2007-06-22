@@ -2,6 +2,10 @@ This package contains mysql-find.  Please view the perldoc for more details.
 
 Changelog:
 
+2007-06-22: version 0.9.3
+
+   * Documentation.
+
 2007-06-10: version 0.9.2
 
    * --pid had a race condition.
