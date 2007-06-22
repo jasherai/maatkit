@@ -3,6 +3,14 @@ details.
 
 Changelog:
 
+2007-06-22: version 1.0.2
+
+   Incompatible changes:
+   * Changed the format of the --source and --dest options.
+
+   Changes:
+   * Documentation.
+
 2007-06-10: version 1.0.1
 
    * MySQL 5.1 shows tables in db.tbl format, not db/tbl in record locks.
