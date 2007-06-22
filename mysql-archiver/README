@@ -3,6 +3,16 @@ details.
 
 Changelog:
 
+2007-06-22: version 0.9.3
+
+   Changes:
+   * Added more hooks for plugins before and after archiving.
+   * Documentation.
+   * Made --time suffix optional.
+
+   Bugs fixed:
+   * MySQL Archiver could crash on a lock wait timeout when --txnsize was not set
+
 2007-06-09: version 0.9.2
 
    Changes:
