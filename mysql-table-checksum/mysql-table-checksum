@@ -506,14 +506,15 @@ sub calculate_chunks {
    my $chunk_size;
    my @chunks = $info->{chunk_null} ? (undef) : ();
 
-   # Determine the range of values for the chunk_col column on this table.  The
-   # AND NOT NULL check is there because MySQL 3.23 will return NULL as the
-   # minimum column value and break my test suite when there is a row with NULL
-   # in the chunk column.
-   my $chunk_sql = "SELECT COALESCE(MIN($info->{chunk_col}), 0), "
-      . "COALESCE(MAX($info->{chunk_col}), 0) "
-      . "FROM `$info->{database}`.`$info->{table}`"
-      . "$opts{W} $ADD_WHERE $info->{chunk_col} IS NOT NULL";
+   # Determine the range of values for the chunk_col column on this table.
+   my $chunk_sql = "SELECT MIN($info->{chunk_col}), MAX($info->{chunk_col}) "
+      . "FROM `$info->{database}`.`$info->{table}`$opts{W}";
+   if ( $info->{chunk_null} && !version_ge($main_dbh, '4.0.0') ) {
+      # MySQL 3.23 will return NULL as the minimum column value and break my
+      # test suite when there is a row with NULL in the chunk column.
+      $chunk_sql .= "$ADD_WHERE $info->{chunk_col} IS NOT NULL";
+   }
+
    ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
 
    my $expl = $main_dbh->selectrow_hashref(
@@ -691,7 +692,7 @@ sub do_tbl {
 sub checksum_query {
    my ( $dbh, $db, $tbl ) = @_;
    my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$db`.`$tbl`"))[1];
-   return ('VIEW', undef) if $ddl =~ m/^CREATE ALGORITHM/;
+   return {engine => 'VIEW'} if $ddl =~ m/^CREATE ALGORITHM/;
 
    my ( $engine ) = $ddl =~ m/^\) (?:ENGINE|TYPE)=(\S+)/m;
 
