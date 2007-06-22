@@ -3,6 +3,21 @@ view the perldoc for more details on them.
 
 Changelog:
 
+2007-06-22: version 1.1.8
+
+   Changes:
+   * Documentation.
+   * Support complex host definitions.
+   * Added --explainhosts option to debug host definitions.
+   * Added --explain option.
+   * When exact chunking is impossible, mysql-table-checksum will use approximate.
+
+   Incompatible changes:
+   * Added required 'boundaries' column to checksum table for --replicate.
+
+   Bugs fixed:
+   * Chunking on temporal types defeated indexes.
+
 2007-06-10: version 1.1.7
 
    * Added --defaults-file option.
