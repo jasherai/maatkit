@@ -160,7 +160,7 @@ if ( !$opts{help} ) {
       $opts{help} = 1;
    }
    elsif ( $opts{m} ) {
-      if ( $opts{m} !~ m/^\d+[smhd]$/ ) {
+      if ( $opts{m} !~ m/^\d+[smhd]?$/ ) {
          warn "Invalid --time argument\n";
          $opts{help} = 1;
       }
