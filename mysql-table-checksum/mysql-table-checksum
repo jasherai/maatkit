@@ -1019,11 +1019,11 @@ efficiently checksum MySQL tables on one or many servers.
 
 Or,
 
-   mysql-table-checksum h=host1,u=user,p=password h=host1 ...
+   mysql-table-checksum h=host1,u=user,p=password h=host2 ...
 
 Or,
 
-   mysql-table-checksum host host1 host2 ... hostN | mysql-checksum-filter
+   mysql-table-checksum host1 host2 ... hostN | mysql-checksum-filter
 
 See L<"SPECIFYING HOSTS"> for more on the syntax of the host arguments.
 
@@ -1060,9 +1060,9 @@ specify connection options two ways:
 
 =over
 
-=item #
+=item *
 
-Format a host definition in a key=value,key=value form.  If an artument on the
+Format a host definition in a key=value,key=value form.  If an argument on the
 command line contains the letter '=', MySQL Table Checksum will parse it into
 its component parts.  The parts are as follows:
 
@@ -1078,7 +1078,7 @@ its component parts.  The parts are as follows:
 With this in mind, consider that specifying a list of simple host definitions
 "host1 host2" is equivalent to the more complicated "h=host1 h=host2" format.
 
-=item #
+=item *
 
 With the command-line options such as L<"--user"> and L<"--password">.  These
 options, if given, apply globally to all host definitions.
@@ -1095,6 +1095,12 @@ In other words, the places you specify connection options have precedence:
 highest precedence is the option specified directly in the host definition, next
 is the option specified in the first host definition, and lowest is the
 command-line option.
+
+You can freely mix simple and complex host definitions and/or command-line
+arguments.  For example, if all your servers except one of your slaves uses a
+non-standard port number:
+
+   mysql-table-checksum --port 4500 master h=slave1,p=3306 slave2 slave3
 
 If you are confused about how MySQL Table Checksum will connect to your servers,
 give the L<"--explainhosts"> option and it will tell you.
