@@ -2,6 +2,7 @@ Source: mysqltoolkit
 Section: utils
 Priority: optional
 Maintainer: Baron Schwartz <bps7j@users.sourceforge.net>
+Uploaders: Christian Hammers <ch@debian.org>
 Build-Depends: debhelper (>= 4.2)
 Build-Depends-Indep: perl (>= 5.6.0-16), libdbi-perl (>= 1.13), libdbd-mysql-perl (>= 1.0), libterm-readkey-perl (>=2.10)
 Standards-Version: 3.7.2
@@ -9,7 +10,7 @@ Standards-Version: 3.7.2
 Package: mysqltoolkit
 Architecture: all
 Depends: ${perl:Depends}, libdbi-perl (>= 1.13), libdbd-mysql-perl (>= 1.0), libterm-readkey-perl (>=2.10)
-Description: Command-line utilities for MySQL.
+Description: Command-line utilities for MySQL
  Contains utilities to check replication slaves for consistency with the
  master, efficiently synchronize remote tables, archive rows from OLTP
  servers, log deadlocks, find duplicate indexes and foreign keys, profile
