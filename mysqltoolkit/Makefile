@@ -3,8 +3,11 @@ dist:
 
 all: dist debian doc
 
-debian: dist
+debian:
 	./debian-build
 
 doc: dist
 	./make-docs.pl
+
+clean:
+	rm -rf release release-debian

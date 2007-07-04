@@ -30,9 +30,10 @@ print `svn ci -m 'Bump version' packlist`;
 my $rev = `head -n 1 packlist | awk '{print \$2}'` + 0;
 
 # make the dist directory
-my $dist = "mysqltoolkit-$rev";
-`find -type d -name 'mysqltoolkit-*' | xargs rm -rf`;
-`mkdir -p $dist/bin $dist/lib`;
+my $distbase = "mysqltoolkit-$rev";
+my $dist = "release/$distbase";
+`rm -rf release html cache`;
+`mkdir -p html cache $dist/bin $dist/lib`;
 
 # Copy the executables and their READMEs into the $dist dir, and set the
 # $VERSION variable correctly
@@ -41,6 +42,7 @@ foreach my $p ( keys %versions ) {
    print `for a in $base/$p/$versions{$p}/mysql-*; do b=\`basename \$a\`; cp \$a $dist/bin; sed -i -e 's/\@VERSION\@/$version/' $dist/bin/\$b; done`;
    `cp $base/$p/$versions{$p}/README $dist/README.$p`;
 }
+`cp README $dist/`;
 
 # Write mysqltoolkit.pod
 print `cat mysqltoolkit.head.pod packlist mysqltoolkit.mid.pod > $dist/lib/mysqltoolkit.pm`;
@@ -69,8 +71,8 @@ foreach my $file ( qw(Makefile.PL COPYING INSTALL mysqltoolkit.spec) ) {
 `echo MANIFEST >> $dist/MANIFEST`;
 
 # Do it!!!!
-print `tar zcf $dist.tar.gz $dist`;
-print `zip -qr $dist.zip $dist`;
+print `cd release && tar zcf $distbase.tar.gz $distbase`;
+print `cd release && zip -qr $distbase.zip    $distbase`;
 
 # Make the documentation.  Requires two passes.
 my @module_files = map { basename $_ } <$dist/bin/mysql-*>;
@@ -101,7 +103,10 @@ for ( 0 .. 1 ) {
    );
 }
 # Wow, Pod::HTML is a pain in the butt.  Fix links now.
-`for a in html/*; do sed -i -e 's/bin\\\///g' \$a; done`;
+`for a in html/*; do sed -i -e 's~bin/~~g' \$a; done`;
+
+# Cleanup temporary directories
+`rm -rf cache $dist`;
 
 # #####################################################################
 # Subroutines
