@@ -1,23 +1,40 @@
-#!/bin/sh
+#!/bin/bash
+set -u
+set -e
+set -x
 
 VERSION=`head -n 1 packlist | awk '{print $2}'`
-DEBIAN_FILES=`find debian -maxdepth 1 -type f`;
 
-if [ -f "mysqltoolkit-$VERSION.tar.gz" ]; then
+RELEASE_TAR=release/mysqltoolkit-$VERSION.tar.gz
+
+# Build compilation
+if [ -f $RELEASE_TAR ]; then
    echo "Tarball already exists"
 else
    echo "Building version $VERSION"
    perl ./package.pl
 fi
 
-cp "mysqltoolkit-$VERSION.tar.gz" "mysqltoolkit_$VERSION.orig.tar.gz" 
+# Bring Debian changelog up to date
+if ! head -n 1 debian/changelog | grep -q "($VERSION)"; then
+    debchange -v $VERSION "New upstream release."
+fi
 
-if test -d mysqltoolkit-debian ; then rm -rf mysqltoolkit-debian ; fi
-tar xfz "mysqltoolkit_$VERSION.orig.tar.gz"
-cp -a "mysqltoolkit-$VERSION" mysqltoolkit-debian
-mkdir mysqltoolkit-debian/debian
-cp -a $DEBIAN_FILES mysqltoolkit-debian/debian
-cd mysqltoolkit-debian/
-debuild -S -sa -us -uc
-debuild -b -us -uc
-rm -rf mysqltoolkit-debian/
+# Create working directory for all the temporary cruft
+rm -rf release-debian
+mkdir -p release-debian/mysqltoolkit-$VERSION
+cd release-debian
+
+# Extract and debianize source folders
+cp ../$RELEASE_TAR mysqltoolkit_$VERSION.tar.gz
+tar xf mysqltoolkit_$VERSION.tar.gz
+rsync -a --exclude .svn ../debian/ mysqltoolkit-$VERSION/debian/
+
+# Build Debian source and binary packages
+cd mysqltoolkit-$VERSION
+debuild -us -uc
+
+# Clean up unnecessary stuff
+cd ..
+rm -rf mysqltoolkit-$VERSION
+cd ..

@@ -3,9 +3,11 @@ Sun, 10 Jun 2007 22:30:36 -0500
 
 It was downloaded from http://mysqltoolkit.sourceforge.net
 
+Debian Sponsor: Christian Hammers <ch@debian.org>
+
 Upstream Author: Baron Schwartz <bps7j@users.sourceforge.net>
 
-Copyright: "copyright(c) 2006-2007 Baron Schwartz"
+Copyright: "Copyright(c) 2006-2007 Baron Schwartz"
 
 License:
    This software is dual licensed, either GPL version 2 or Artistic License.
