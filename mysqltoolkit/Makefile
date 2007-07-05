@@ -3,6 +3,7 @@ dist:
 
 all: dist debian doc
 
+.PHONY: debian
 debian:
 	./debian-build
 
