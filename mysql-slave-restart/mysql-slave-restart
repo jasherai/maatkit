@@ -310,7 +310,7 @@ sub ts {
 
 =head1 NAME
 
-mysql-slave-restart - watch and restart MySQL replication after errors.
+mysql-slave-restart - Watch and restart MySQL replication after errors.
 
 =head1 SYNOPSIS
 
