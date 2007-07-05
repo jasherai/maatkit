@@ -21,7 +21,7 @@ DISTFILES = COPYING \
 	Makefile.PL \
 	$(NAME) \
 	MANIFEST \
-	README
+	Changelog
 DISTDIR = $(NAME)-$(VERSION)
 
 all: $(DISTFILES)

@@ -23,7 +23,7 @@ DISTFILES = COPYING \
 	$(NAME) \
 	$(HELPER) \
 	MANIFEST \
-	README
+	Changelog
 DISTDIR = $(NAME)-$(VERSION)
 
 all: $(DISTFILES)

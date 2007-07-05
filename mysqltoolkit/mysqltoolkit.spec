@@ -44,7 +44,7 @@ rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-%doc COPYING INSTALL README*
+%doc COPYING INSTALL Changelog*
 %{_bindir}/*
 %{_mandir}/man1/*.1*
 %{_mandir}/man3/*.3*
