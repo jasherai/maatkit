@@ -1,0 +1,20 @@
+INSTALLATION
+
+   tar -zxf mysqltoolkit-<version>.tar.gz
+   cd mysqltoolkit-<version>
+   perl Makefile.PL
+   make install
+
+WEB
+
+   http://mysqltoolkit.sourceforge.net/
+
+MAILING LIST, BUG REPORTS, FEEDBACK
+
+   http://sourceforge.net/projects/mysqltoolkit
+
+DOCUMENTATION
+
+   Issue `man program-name' or `perldoc program-name' to read the embedded
+   documentation for any tool.  You can also read the documentation online at
+   the web site (above).
