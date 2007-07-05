@@ -40,9 +40,10 @@ print `mkdir -p html cache $dist/bin $dist/lib`;
 
 # Copy the executables and their Changelog files into the $dist dir, and set the
 # $VERSION variable correctly
-foreach my $p ( keys %versions ) {
+foreach my $p ( sort keys %versions ) {
    my ($version) = $versions{$p} =~ m/([\d.]+)/;
    print `for a in $base/$p/$versions{$p}/mysql-*; do b=\`basename \$a\`; cp \$a $dist/bin; sed -i -e 's/\@VERSION\@/$version/' $dist/bin/\$b; done`;
+   print `echo "" >> $dist/Changelog`;
    print `cat $base/$p/$versions{$p}/Changelog >> $dist/Changelog`;
 }
 print `cp README $dist/`;
