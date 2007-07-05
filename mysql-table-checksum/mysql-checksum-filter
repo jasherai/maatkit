@@ -237,6 +237,8 @@ Output all lines except header lines.
 
 Output version information and exit.
 
+=back
+
 =head1 BUGS
 
 Please use the Sourceforge bug tracker, forums, and mailing lists to request
