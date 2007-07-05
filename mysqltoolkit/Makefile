@@ -1,7 +1,7 @@
 dist:
 	./package.pl
 
-all: dist debian doc
+all: dist debian doc individual
 
 .PHONY: debian
 debian:
@@ -12,3 +12,6 @@ doc: dist
 
 clean:
 	rm -rf release release-debian
+
+individual: dist
+	./make-individual.pl
