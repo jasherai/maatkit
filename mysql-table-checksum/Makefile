@@ -23,7 +23,7 @@ DISTFILES = COPYING \
 	$(NAME) \
 	$(FILTER) \
 	MANIFEST \
-	README
+	Changelog
 DISTDIR = $(NAME)-$(VERSION)
 
 all: $(DISTFILES)
