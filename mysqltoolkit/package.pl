@@ -8,6 +8,8 @@ use Data::Dumper;
 use File::Basename;
 use Pod::Html;
 
+print `svn up ../../`;
+
 # Find list of packages
 my $base     = '../../tags';
 my @packages = map { basename $_ } (split(/\s+/, `ls -d $base/mysql-*`));
@@ -43,13 +45,13 @@ foreach my $p ( keys %versions ) {
    print `for a in $base/$p/$versions{$p}/mysql-*; do b=\`basename \$a\`; cp \$a $dist/bin; sed -i -e 's/\@VERSION\@/$version/' $dist/bin/\$b; done`;
    print `cat $base/$p/$versions{$p}/Changelog >> $dist/Changelog`;
 }
-print `cp Changelog $dist/`;
+print `cp README $dist/`;
 
 # Write mysqltoolkit.pod
 print `cat mysqltoolkit.head.pod packlist mysqltoolkit.mid.pod > $dist/lib/mysqltoolkit.pm`;
 open my $file, ">> $dist/lib/mysqltoolkit.pm" or die $OS_ERROR;
 foreach my $program ( <$dist/bin/mysql-*> ) {
-   my $line = `grep -A 6 NAME $program | tail -n 5`;
+   my $line = `grep -A 6 head1.NAME $program | tail -n 5`;
    my @parts = split(/\n\n/, $line);
    $line = $parts[0];
    my ( $prog, $rest ) = $line =~ m/^([\w-]+) - (.+)/ms;
