@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -e
+
+if [ -z $2 ]; then
+   echo "Specify a package and a version"
+   exit 1
+fi
+
+PACK=$1
+VER=$2
+CWD=`pwd`
+cd ../../tags/$PACK/$VER
+make dist
+mv $VER.* $CWD/release
+make distclean
+cd $CWD

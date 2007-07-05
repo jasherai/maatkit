@@ -16,6 +16,10 @@ else
 fi
 
 # Bring Debian changelog up to date
+if [ `whoami` = 'baron' ]; then
+   export DEBEMAIL='bps7j@users.sourceforge.net'
+   export DEBFULLNAME='Baron Schwartz'
+fi
 if ! head -n 1 debian/changelog | grep -q "($VERSION)"; then
     debchange -v $VERSION "New upstream release."
 fi
