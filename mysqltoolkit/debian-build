@@ -7,7 +7,7 @@ VERSION=`head -n 1 packlist | awk '{print $2}'`
 
 RELEASE_TAR=release/mysqltoolkit-$VERSION.tar.gz
 
-# Build compilation
+# Build the source tarball if necessary
 if [ -f $RELEASE_TAR ]; then
    echo "Tarball already exists"
 else
@@ -20,23 +20,24 @@ if [ `whoami` = 'baron' ]; then
    export DEBEMAIL='bps7j@users.sourceforge.net'
    export DEBFULLNAME='Baron Schwartz'
 fi
-if ! head -n 1 debian/changelog | grep -q "($VERSION)"; then
-    debchange -v $VERSION "New upstream release."
+if ! head -n 1 debian/changelog | grep -q "($VERSION-1)"; then
+    debchange -v $VERSION-1 "New upstream release."
 fi
 
 # Create working directory for all the temporary cruft
 rm -rf release-debian
-mkdir -p release-debian/mysqltoolkit-$VERSION
+mkdir release-debian
 cd release-debian
 
 # Extract and debianize source folders
-cp ../$RELEASE_TAR mysqltoolkit_$VERSION.tar.gz
-tar xf mysqltoolkit_$VERSION.tar.gz
+cp ../$RELEASE_TAR mysqltoolkit_$VERSION.orig.tar.gz
+tar xzf mysqltoolkit_$VERSION.orig.tar.gz
 rsync -a --exclude .svn ../debian/ mysqltoolkit-$VERSION/debian/
 
 # Build Debian source and binary packages
 cd mysqltoolkit-$VERSION
-debuild -us -uc
+debuild -S -sa -us -uc
+debuild -b -us -uc
 
 # Clean up unnecessary stuff
 cd ..
