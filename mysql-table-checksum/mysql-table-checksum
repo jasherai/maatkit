@@ -520,9 +520,12 @@ sub calculate_chunks {
    my $expl = $main_dbh->selectrow_hashref(
       "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}"
       . "`$opts{W} $ADD_WHERE $info->{chunk_col} IS NOT NULL");
+
+   # This isn't always reliable.  Sometimes EXPLAIN will say there are rows
+   # when the table is empty.
    $num_rows = $expl->{rows};
 
-   if ( $num_rows ) {
+   if ( $num_rows && defined $table_min && defined $table_max ) { # $num_rows is unreliable
 
       # Determine chunk size in "distance between endpoints" that will give
       # approximately the right number of rows between the endpoints.  Also
@@ -585,6 +588,9 @@ sub calculate_chunks {
       else {
          die "Can't support chunking on type $info->{chunk_type}\n";
       }
+   }
+   else {
+      @chunks = [ 0, 0 ];
    }
 
    $info->{chunks}    = \@chunks;
