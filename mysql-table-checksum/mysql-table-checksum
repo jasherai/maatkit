@@ -138,8 +138,7 @@ if ( $opts{e} ) {
 $opts{s} =~ s/'//g;
 
 # Create a WHERE clause
-$opts{W} = $opts{W} ? " WHERE ($opts{W})" : '';
-my $ADD_WHERE = $opts{W} ? 'AND' : 'WHERE';
+$opts{W} = $opts{W} ? " WHERE ($opts{W})" : ' WHERE (1=1)';
 
 if ( $opts{a} && $opts{a} !~ m/^(?:ACCUM|CHECKSUM|BIT_XOR)$/ ) {
    warn "--algorithm=$opts{a}: unknown algorithm.\n";
@@ -504,7 +503,7 @@ sub calculate_chunks {
    my $table_max;
    my $num_rows;
    my $chunk_size;
-   my @chunks = $info->{chunk_null} ? (undef) : ();
+   my @chunks;
 
    # Determine the range of values for the chunk_col column on this table.
    my $chunk_sql = "SELECT MIN($info->{chunk_col}), MAX($info->{chunk_col}) "
@@ -512,14 +511,14 @@ sub calculate_chunks {
    if ( $info->{chunk_null} && !version_ge($main_dbh, '4.0.0') ) {
       # MySQL 3.23 will return NULL as the minimum column value and break my
       # test suite when there is a row with NULL in the chunk column.
-      $chunk_sql .= "$ADD_WHERE $info->{chunk_col} IS NOT NULL";
+      $chunk_sql .= "AND $info->{chunk_col} IS NOT NULL";
    }
 
    ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
 
    my $expl = $main_dbh->selectrow_hashref(
       "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}"
-      . "`$opts{W} $ADD_WHERE $info->{chunk_col} IS NOT NULL");
+      . "`$opts{W} AND $info->{chunk_col} IS NOT NULL");
 
    # This isn't always reliable.  Sometimes EXPLAIN will say there are rows
    # when the table is empty.
@@ -577,20 +576,34 @@ sub calculate_chunks {
          $chunk_size = $opts{C};
       }
 
-      # Generate a list of chunk boundaries.  Because these will end up going
-      # into BETWEEN, which is inclusive on the upper end, subtract 1 from
-      # $chunk_size for every interval to make sure they are disjoint.
-      if ( $range_func ) {
-         for ( my $i = $start_point; $i <= $end_point; $i += $chunk_size ) {
-            push @chunks, [ $range_func->($main_dbh, $i, $chunk_size - 1, $end_point) ];
-         }
+      # Generate a list of chunk boundaries.
+      for ( my $i = $start_point; $i < $end_point; $i += $chunk_size ) {
+         push @chunks, [ $range_func->($main_dbh, $i, $chunk_size, $end_point) ];
+      }
+
+      if ( $start_point < $end_point ) {
+         # A final chunk that matches the end of the range, and anything outside it
+         # on the upper end, which should not happen on the master but may on a
+         # slave that has extra rows.
+         push @chunks, [ $chunks[-1]->[1], undef ];
+
+         # Ditto for rows below the lower boundary, but this one should not match
+         # anything at all on the master, unlike the one above.
+         push @chunks, [ undef, $chunks[0]->[0] ];
       }
       else {
-         die "Can't support chunking on type $info->{chunk_type}\n";
+         # There are no chunks; just do the whole table in one chunk.
+         push @chunks, '';
       }
+
    }
    else {
-      @chunks = [ 0, 0 ];
+      push @chunks, '';
+   }
+
+   # If the chunk column is nullable, we need to do NULL separately.
+   if ( $info->{chunk_null} ) {
+      push @chunks, undef;
    }
 
    $info->{chunks}    = \@chunks;
@@ -609,37 +622,25 @@ sub do_tbl_replicate {
    my $cnt = 'NULL';
    my $crc = 'NULL';
    my $beg = time();
+   my $sql = add_progress_comment($info->{query}, $info);
 
    my $chunk = $info->{chunks}->[$info->{chunk_cur} - 1];
+   my $where = make_where_clause($main_dbh, $info, $chunk);
 
    # Figure out arguments to the query
-   my @arg = $info->{chunk_cur};
-   if ( $chunk ) {
-      push @arg, join(' - ', @$chunk), @$chunk;
-   }
-   else {
-      push @arg, '(null)';
-   }
-
-   my $sql
-      = defined $chunk
-      ? add_progress_comment($info->{query},      $info)
-      : add_progress_comment($info->{null_query}, $info);
+   my @arg = ($info->{chunk_cur}, $where);
 
    if ( $opts{explain} ) {
       if ( $info->{chunk_cur} == 1 ) {
          printf($explain, @{$info}{qw(database table)}, $sql);
       }
-      if ( !defined $chunk || ref $chunk ) {
-         printf($explain, @{$info}{qw(database table)},
-            (ref $chunk ? join(' - ', @$chunk) : '(null)'));
-      }
+      printf($explain, @{$info}{qw(database table)}, $where);
       return;
    }
 
    $dbh->do("USE `$info->{database}`");
    $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
-   $dbh->do($sql, {}, @arg);
+   $dbh->do("$sql AND $where", {}, @arg);
 
    $fetch_sth->execute(@{$info}{qw(database table chunk_cur)});
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
@@ -829,12 +830,15 @@ sub checksum_query {
       }
    }
 
+=pod
+TODO
    if ( $chunk_col && $opts{C} ) {
       if ( $chunk_null ) {
-         $null_query = "$query $ADD_WHERE $chunk_col IS NULL";
+         $null_query = "$query AND $chunk_col IS NULL";
       }
-      $query .= " $ADD_WHERE $chunk_col BETWEEN ? AND ?";
+      $chunk_query = $query . " AND $chunk_col BETWEEN ? AND ?";
    }
+=cut
 
    return {
        database    => $db,
@@ -844,9 +848,48 @@ sub checksum_query {
        chunk_col   => $chunk_col,
        chunk_null  => $chunk_null,
        chunk_type  => $chunk_type,
-       null_query  => $null_query,
        chunk_exact => $chunk_exact,
    };
+}
+
+# The WHERE clauses are tricky.  There are several cases:
+# Normal:      WHERE foo >= ? AND foo < ?
+# NULL slice:  WHERE foo IS NULL
+# Edge cases:  WHERE foo < ?
+#              WHERE foo >= ?
+sub make_where_clause {
+   my ( $dbh, $info, $chunk ) = @_;
+   my $is_first = $info->{chunk_cur} == 1;
+   my $col      = $info->{chunk_col};
+   my $sql;
+
+   return '1=1' if !$info->{chunk_col};
+
+   if ( !defined $chunk ) {
+      $sql = "$col IS NULL";
+   }
+   elsif ( !ref $chunk ) {
+      $sql = "$col IS NOT NULL";
+   }
+   else {
+      my ( $beg, $end ) = @$chunk;
+
+      # The normal case is a chunk in the middle of the range somewhere.
+      if ( defined $beg && defined $end ) {
+         $sql = "$col >= " . $dbh->quote($beg) . " AND $col < " . $dbh->quote($end);
+      }
+      elsif ( defined $beg ) {
+         $sql = "$col >= " . $dbh->quote($beg);
+      }
+      elsif ( defined $end ) {
+         $sql = "$col < " . $dbh->quote($end);
+      }
+      else {
+         die "This code should never run";
+      }
+   }
+
+   return $sql;
 }
 
 sub make_slices {
@@ -973,32 +1016,20 @@ sub get_dbh {
 sub do_var_crc {
    my ( $dbh, $info, $explain ) = @_;
 
+   my $sql   = add_progress_comment($info->{query}, $info);
    my $chunk = $info->{chunks}->[$info->{chunk_cur} - 1];
-
-   # Figure out arguments to the query
-   my @arg;
-   if ( ref $chunk ) {
-      push @arg, @$chunk;
-   }
-
-   my $sql
-      = defined $chunk
-      ? add_progress_comment($info->{query},      $info)
-      : add_progress_comment($info->{null_query}, $info);
+   my $where = make_where_clause($main_dbh, $info, $chunk);
 
    if ( $opts{explain} ) {
       if ( $info->{chunk_cur} == 1 ) {
          printf($explain, @{$info}{qw(database table)}, $sql);
       }
-      if ( !defined $chunk || ref $chunk ) {
-         printf($explain, @{$info}{qw(database table)},
-            (ref $chunk ? join(' - ', @$chunk) : '(null)'));
-      }
+      printf($explain, @{$info}{qw(database table)}, $where);
       return;
    }
 
    $dbh->do('set @crc := NULL, @cnt := 0');
-   my $res = $dbh->selectall_arrayref($sql, { Slice => {} }, @arg)->[0];
+   my $res = $dbh->selectall_arrayref("$sql AND $where", { Slice => {} })->[0];
    return ($res->{cnt}, $res->{crc});
 }
 
