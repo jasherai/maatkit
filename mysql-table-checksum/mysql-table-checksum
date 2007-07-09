@@ -39,10 +39,9 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-# TODO: enable chunking on character columns and floating-points
+# TODO: enable chunking on character columns.
 # TODO: add --ignorecol
 # TODO: add --ignoretype
-# TODO: add --explain to print out queries and chunks for tables.
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
@@ -219,6 +218,7 @@ my %real_types = map { $_ => 1 }
 # BIT SET ENUM
 # BINARY BLOB CHAR CHAR BYTE LONGBLOB LONGTEXT MEDIUMBLOB
 # MEDIUMTEXT TEXT TINYBLOB TINYTEXT VARBINARY VARCHAR
+# TODO: ENUM and SET can be treated as integers without defeating indexes.
 
 my $db_options = {
    RaiseError => 1,
@@ -528,13 +528,13 @@ sub calculate_chunks {
 
       # Determine chunk size in "distance between endpoints" that will give
       # approximately the right number of rows between the endpoints.  Also
-      # find the start/end points as a number that Perl can do + and <= on.
+      # find the start/end points as a number that Perl can do + and < on.
       my ($chunk_range, $range_func, $start_point, $end_point);
-      if ( $info->{chunk_type} =~ m/(?:int|year)$/ ) {
+      if ( $info->{chunk_type} =~ m/(?:int|year|float|double|decimal)$/ ) {
          $chunk_range = $table_max - $table_min;
          $start_point = $table_min;
          $end_point   = $table_max;
-         $range_func  = \&range_int;
+         $range_func  = \&range_num;
       }
       elsif ( $info->{chunk_type} eq 'timestamp' ) {
          ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
@@ -747,8 +747,10 @@ sub checksum_query {
       }
 
       # Eliminate types for which I can't choose endpoints.
-      @candidates = grep { exists($int_types{$type_for{$_}}) } @candidates;
-      # TODO: support decimal, double, enum, float
+      @candidates = grep {
+         exists($int_types{$type_for{$_}})
+         || exists($real_types{$type_for{$_}})
+      } @candidates;
 
       if ( @candidates ) {
          $chunk_col = $candidates[0];
@@ -930,7 +932,7 @@ sub parse_dsn {
 }
 
 # Range functions.
-sub range_int {
+sub range_num {
    my ( $dbh, $start, $interval, $max ) = @_;
    return ( $start, min($max, $start + $interval) );
 }
@@ -1245,11 +1247,11 @@ The second query will not match any rows because 51 is stringwise greater than
 =item --chunksize
 
 If you specify a chunk size, mysql-table-checksum will look for an index whose
-first colum is an integer or temporal data type.  It will estimate the number of
+first colum is a numeric or temporal data type.  It will estimate the number of
 rows to be checksummed and split them into ranges of approximately L<"--chunksize">
 rows, based on the table's index statistics.  It will checksum each range
-separately with a BETWEEN in the checksum query's WHERE clause.  The BETWEEN
-comparison will refer to the first column of the chosen index.
+separately with parameters in the checksum query's WHERE clause.  The WHERE
+comparisons will refer to the first column of the chosen index.
 
 If mysql-table-checksum cannot find a suitable index, it will do the entire
 table in one chunk as though you had not specified L<"--chunksize"> at all.  Each
@@ -1307,7 +1309,7 @@ You can use this to restrict the checksum to InnoDB, for example.
 
 =item --explain
 
-Print checksum queries and chunk boundaries (if chunking is enabled) for each
+Print checksum queries and WHERE clauses (if chunking is enabled) for each
 table, but do not execute the queries.
 
 =item --explainhosts
