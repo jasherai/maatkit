@@ -89,3 +89,20 @@ drop table if exists checksum;
      PRIMARY KEY (db, tbl, chunk)
   );
 
+drop table if exists checksum_test_8;
+create table checksum_test_8 (
+   a double not null primary key
+)type=myisam;
+insert into checksum_test_8 values(1), (3), (99.999);
+
+drop table if exists checksum_test_9;
+create table checksum_test_9 (
+   a float not null primary key
+)type=myisam;
+insert into checksum_test_9 values(1), (3), (99.999);
+
+drop table if exists checksum_test_10;
+create table checksum_test_10 (
+   a decimal not null primary key
+)type=myisam;
+insert into checksum_test_10 values(1), (3), (99.999);

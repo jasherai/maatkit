@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 50;
+use Test::More tests => 59;
 
 my $opt_file = shift or die "Specify an option file.\n";
 my ($output, $output2);
@@ -165,3 +165,24 @@ like($output, qr/^DATABASE/m, 'The header row is there');
 like($output, qr/checksum_test_7 *3/,
    'chunking works with TIME columns');
 unlike($output, qr/checksum_test_7 *6/, 'TIME chunking: right number of rows');
+
+# Test chunking with a DOUBLE column
+$output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -t checksum_test_8 127.0.0.1 2>&1`;
+like($output, qr/^DATABASE/m, 'The header row is there');
+like($output, qr/checksum_test_8 *5/,
+   'chunking works with DOUBLE columns');
+unlike($output, qr/checksum_test_8 *6/, 'DOUBLE chunking: right number of rows');
+
+# Test chunking with a FLOAT column
+$output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -t checksum_test_9 127.0.0.1 2>&1`;
+like($output, qr/^DATABASE/m, 'The header row is there');
+like($output, qr/checksum_test_9 *5/,
+   'chunking works with FLOAT columns');
+unlike($output, qr/checksum_test_9 *6/, 'FLOAT chunking: right number of rows');
+
+# Test chunking with a DECIMAL column
+$output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -t checksum_test_10 127.0.0.1 2>&1`;
+like($output, qr/^DATABASE/m, 'The header row is there');
+like($output, qr/checksum_test_10 *5/,
+   'chunking works with DECIMAL columns');
+unlike($output, qr/checksum_test_10 *6/, 'DECIMAL chunking: right number of rows');
