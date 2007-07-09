@@ -150,18 +150,18 @@ like($output, qr/checksum_test_4 *2 127.0.0.1 (MyISAM|InnoDB) *1/,
 $output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -t checksum_test_5 127.0.0.1 2>&1`;
 like($output, qr/^DATABASE/m, 'The header row is there');
 like($output, qr/checksum_test_5 *2/, 'chunking works with DATE columns');
-unlike($output, qr/checksum_test_5 *3/, 'DATE chunking: right number of rows');
+unlike($output, qr/checksum_test_5 *5/, 'DATE chunking: right number of rows');
 
 # Test chunking with a DATETIME column, which has a large range of values.
 $output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -t checksum_test_6 127.0.0.1 2>&1`;
 like($output, qr/^DATABASE/m, 'The header row is there');
 like($output, qr/checksum_test_6 *3/,
    'chunking works with DATETIME columns');
-unlike($output, qr/checksum_test_6 *4/, 'DATETIME chunking: right number of rows');
+unlike($output, qr/checksum_test_6 *6/, 'DATETIME chunking: right number of rows');
 
 # Test chunking with a TIME column
 $output = `perl ../mysql-table-checksum -C 1 --defaults-file=$opt_file -d test -t checksum_test_7 127.0.0.1 2>&1`;
 like($output, qr/^DATABASE/m, 'The header row is there');
 like($output, qr/checksum_test_7 *3/,
    'chunking works with TIME columns');
-unlike($output, qr/checksum_test_7 *4/, 'TIME chunking: right number of rows');
+unlike($output, qr/checksum_test_7 *6/, 'TIME chunking: right number of rows');
