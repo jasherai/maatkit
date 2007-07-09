@@ -830,16 +830,6 @@ sub checksum_query {
       }
    }
 
-=pod
-TODO
-   if ( $chunk_col && $opts{C} ) {
-      if ( $chunk_null ) {
-         $null_query = "$query AND $chunk_col IS NULL";
-      }
-      $chunk_query = $query . " AND $chunk_col BETWEEN ? AND ?";
-   }
-=cut
-
    return {
        database    => $db,
        table       => $tbl,
