@@ -849,7 +849,7 @@ sub get_irot {
 
 =head1 NAME
 
-mysql-archiver - archive rows from a MySQL table into another table or a file.
+mysql-archiver - Archive rows from a MySQL table into another table or a file.
 
 =head1 SYNOPSIS
 
