@@ -28,6 +28,7 @@ use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
 use IO::File;
+use sigtrap qw(handler finish untrapped normal-signals);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -70,6 +71,7 @@ my @opt_spec = (
    { s => 'skipfkchk|K', d => 'Turn off foreign key checks' },
    { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
    { s => 'source|s=s',  d => 'Table to archive from' },
+   { s => 'statistics',  d => 'Collect and print timing statistics' },
    { s => 'stop',        d => 'Stop all running instances by creating the sentinel file' },
    { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
    { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
@@ -244,6 +246,31 @@ USAGE
 }
 
 # ############################################################################
+# Set up statistics.
+# TODO: instrument all calls.  Print stats when done.
+# ############################################################################
+my %statistics = ();
+
+if ( $opts{statistics} ) {
+   require Time::Hires;
+   my $start = Time::Hires::gettimeofday();
+   my $obs_cost = Time::Hires::gettimeofday() - $start; # cost of observation
+   *trace = sub {
+      my ( $thing, $sub ) = @_;
+      my $start = Time::Hires::gettimeofday();
+      $sub->();
+      $statistics{$thing . '_time'} += (Time::Hires::gettimeofday() - $start - $obs_cost);
+      ++$statistics{$thing . '_count'};
+   }
+}
+else { # Generate a version that doesn't do any timing
+   *trace = sub {
+      my ( $thing, $sub ) = @_;
+      $sub->();
+   }
+}
+
+# ############################################################################
 # Inspect DB servers and tables.
 # ############################################################################
 
@@ -279,10 +306,15 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
    if ( $table->{m} ) {
       eval "require $table->{m}";
       die $EVAL_ERROR if $EVAL_ERROR;
-      $table->{plugin} = $table->{m}->new(
-         dbh => $table->{dbh},
-         db  => $table->{D},
-         tbl => $table->{t},
+
+      trace('plugin_start',
+         sub {
+            $table->{plugin} = $table->{m}->new(
+               dbh => $table->{dbh},
+               db  => $table->{D},
+               tbl => $table->{t},
+            );
+         }
       );
    }
 
@@ -514,6 +546,7 @@ foreach my $table ( $dst, $src ) {
 # ############################################################################
 # Start archiving.
 # ############################################################################
+my $oktorun = 1;
 my $start   = time();
 my $end     = $start + ($opts{m} || 0); # When mysql-archiver should exit
 my $now     = $start;
@@ -556,6 +589,7 @@ while (                          # Quit if:
    && $retries >= 0              # or retries are exceeded
    && (!$opts{m} || $now < $end) # or time is exceeded
    && !-f $opts{S}               # or the sentinel is set
+   && $oktorun                   # or instructed to quit
    )
 {
    my $lastrow = $row;
@@ -647,7 +681,8 @@ foreach my $table ( $dst, $src ) {
 }
 
 # Run ANALYZE or OPTIMIZE.
-if ( my $action = $opts{A} || $opts{O} ) {
+if ( $oktorun && ($opts{A} || $opts{O}) ) {
+   my $action = $opts{A} || $opts{O};
    my $maint  = ($opts{A} ? 'ANALYZE'                        : 'OPTIMIZE')
               . ($opts{L} ? ' /*!40101 NO_WRITE_TO_BINLOG*/' : '');
    if ( $action =~ m/s/i ) {
@@ -674,6 +709,13 @@ if ( $opts{q} ) {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+
+# Catches signals so mysql-archiver can exit gracefully.
+sub finish {
+   my ($signal) = @_;
+   print STDERR "Exiting on SIG$signal.\n";
+   $oktorun = 0;
+}
 
 # Accesses globals, but I wanted the code in one place.
 sub commit {
