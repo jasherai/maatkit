@@ -1,5 +1,16 @@
 Changelog for mysql-table-checksum and mysql-checksum-filter:
 
+2007-07-10: version 1.1.9
+
+   Changes:
+	* Enabled chunking on FLOAT, DOUBLE and DECIMAL columns.
+
+	Bugs fixed:
+	* mysql-table-checksum crashed when EXPLAIN said an empty table had rows.
+	* mysql-table-checksum failed to find rows on slaves that didn't exist
+	  on the master.
+	* Changed from BETWEEN to WHERE clauses.
+
 2007-06-22: version 1.1.8
 
    Changes:
