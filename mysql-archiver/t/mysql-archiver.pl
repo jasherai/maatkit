@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 66;
+use Test::More tests => 67;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -259,3 +259,8 @@ $output = `perl ../mysql-archiver -W 1=1 -s m=Plugin5,D=test,t=tmp_table,F=$opt_
 is($output, '', 'Loading plugin worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_10"`;
 is($output + 0, 2, 'Plugin archived all rows to table_10 OK');
+
+# Statistics
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver --statistics -W 1=1 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
+like($output, qr/commit *10/, 'Stats print OK');

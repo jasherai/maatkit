@@ -247,20 +247,22 @@ USAGE
 
 # ############################################################################
 # Set up statistics.
-# TODO: instrument all calls.  Print stats when done.
 # ############################################################################
 my %statistics = ();
+my $stat_start;
 
 if ( $opts{statistics} ) {
-   require Time::Hires;
-   my $start = Time::Hires::gettimeofday();
-   my $obs_cost = Time::Hires::gettimeofday() - $start; # cost of observation
+   require Time::HiRes;
+   my $start    = Time::HiRes::gettimeofday();
+   my $obs_cost = Time::HiRes::gettimeofday() - $start; # cost of observation
+
    *trace = sub {
       my ( $thing, $sub ) = @_;
-      my $start = Time::Hires::gettimeofday();
+      my $start = Time::HiRes::gettimeofday();
       $sub->();
-      $statistics{$thing . '_time'} += (Time::Hires::gettimeofday() - $start - $obs_cost);
+      $statistics{$thing . '_time'} += (Time::HiRes::gettimeofday() - $start - $obs_cost);
       ++$statistics{$thing . '_count'};
+      $stat_start ||= $start;
    }
 }
 else { # Generate a version that doesn't do any timing
@@ -307,15 +309,13 @@ foreach my $table ( grep { $_ } ($src, $dst) ) {
       eval "require $table->{m}";
       die $EVAL_ERROR if $EVAL_ERROR;
 
-      trace('plugin_start',
-         sub {
-            $table->{plugin} = $table->{m}->new(
-               dbh => $table->{dbh},
-               db  => $table->{D},
-               tbl => $table->{t},
-            );
-         }
-      );
+      trace('plugin_start', sub {
+         $table->{plugin} = $table->{m}->new(
+            dbh => $table->{dbh},
+            db  => $table->{D},
+            tbl => $table->{t},
+         );
+      });
    }
 
    $table->{info} = get_tbl_struct($table);
@@ -540,7 +540,9 @@ if ( $opts{K} ) {
 # ############################################################################
 foreach my $table ( $dst, $src ) {
    next unless $table && $table->{plugin};
-   $table->{plugin}->before_begin(cols => \@cols) if $table->{plugin};
+   trace ('before_begin', sub {
+      $table->{plugin}->before_begin(cols => \@cols) if $table->{plugin};
+   });
 }
 
 # ############################################################################
@@ -557,7 +559,9 @@ printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT') if $opts{P};
 printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt) if $opts{P};
 
 my $get_sth = $get_first; # Later it may be assigned $get_next
-$get_sth->execute;
+trace('select', sub {
+   $get_sth->execute;
+});
 my $row = $get_sth->fetchrow_arrayref();
 if ( !$row ) {
    $get_sth->finish;
@@ -594,20 +598,26 @@ while (                          # Quit if:
 {
    my $lastrow = $row;
 
-   if ( !$src->{plugin} || $src->{plugin}->is_archivable(row => $row) ) {
+   if ( !$src->{plugin}
+      || trace('is_archivable', sub { $src->{plugin}->is_archivable(row => $row)}) )
+   {
 
       # Do the archiving.  Write to the file first, since like the file, MyISAM
       # and other tables cannot be rolled back etc.  If there is a problem,
       # hopefully the data has at least made it to the file.
       if ( $file ) {
-         print $file '', escape($row), "\n"
-            or die "Cannot write to $opts{f}: $OS_ERROR\n";
+         trace('print_file', sub {
+            print $file '', escape($row), "\n"
+               or die "Cannot write to $opts{f}: $OS_ERROR\n";
+         });
       }
 
       # INSERT must come first, to be as safe as possible.
       if ( $dst ) {
          if ( $dst->{plugin} ) {
-            $dst->{plugin}->before_insert(row => $row);
+            trace('before_insert', sub {
+               $dst->{plugin}->before_insert(row => $row);
+            });
          }
          my $success = do_with_retries( 'inserting', sub { $ins_row->execute(@$row) } );
          if ( $success == 0 ) {
@@ -622,7 +632,9 @@ while (                          # Quit if:
 
       # DELETE comes after INSERT.
       if ( $src->{plugin} ) {
-         $src->{plugin}->before_delete(row => $row);
+         trace('before_delete', sub {
+            $src->{plugin}->before_delete(row => $row);
+         });
       }
       my $success = do_with_retries( 'deleting', sub { $del_row->execute(@{$row}[@pk_slice]) } );
       if ( $success == 0 ) {
@@ -654,10 +666,18 @@ while (                          # Quit if:
       $row = $get_sth->fetchrow_arrayref();
    }
    if ( !$row ) {
-      commit(1)         if $opts{'commit-each'};
-      sleep($opts{e})   if $opts{e};
-      $get_sth          = $get_next;
-      $get_next->execute(@{$lastrow}[@asc_slice]);
+      commit(1) if $opts{'commit-each'};
+      if( $opts{e} ) {
+         trace('sleep', sub {
+            sleep($opts{e});
+         });
+      }
+      $get_sth = $get_next;
+
+      trace('select', sub {
+         $get_next->execute(@{$lastrow}[@asc_slice]);
+      });
+
       @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
       $row              = $get_sth->fetchrow_arrayref();
    }
@@ -677,7 +697,9 @@ if ( $opts{P} ) {
 # Tear down the plugins.
 foreach my $table ( $dst, $src ) {
    next unless $table && $table->{plugin};
-   $table->{plugin}->after_finish();
+   trace('after_finish', sub {
+      $table->{plugin}->after_finish();
+   });
 }
 
 # Run ANALYZE or OPTIMIZE.
@@ -686,11 +708,39 @@ if ( $oktorun && ($opts{A} || $opts{O}) ) {
    my $maint  = ($opts{A} ? 'ANALYZE'                        : 'OPTIMIZE')
               . ($opts{L} ? ' /*!40101 NO_WRITE_TO_BINLOG*/' : '');
    if ( $action =~ m/s/i ) {
-      $src->{dbh}->do("$maint TABLE $src->{db_tbl}");
+      trace($maint, sub {
+         $src->{dbh}->do("$maint TABLE $src->{db_tbl}");
+      });
    }
    if ( $action =~ m/d/i && $dst ) {
-      $dst->{dbh}->do("$maint TABLE $dst->{db_tbl}");
+      trace($maint, sub {
+         $dst->{dbh}->do("$maint TABLE $dst->{db_tbl}");
+      });
    }
+}
+
+# Print statistics
+if ( $opts{statistics} ) {
+   my $stat_total = Time::HiRes::gettimeofday() - $stat_start;
+   my $total2     = 0;
+   my %summary;
+   my $maxlen = 0;
+   foreach my $thing ( keys %statistics ) {
+      my ( $action, $type ) = $thing =~ m/^(.*?)_(count|time)$/;
+      $summary{$action}->{$type}  = $statistics{$thing};
+      $summary{$action}->{action} = $action;
+      $maxlen                     = max($maxlen, length($action));
+   }
+   printf("%-${maxlen}s \%10s %10s %10s\n", qw(Action Count Time Pct));
+   my $fmt = "%-${maxlen}s \%10d %10.4f %10.2f\n";
+
+   foreach my $stat ( reverse sort { $a->{time} <=> $b->{time} } values %summary ) {
+      my $pct = $stat->{time} / $stat_total * 100;
+      printf($fmt, @{$stat}{qw(action count time)}, $pct);
+      $total2 += $stat->{time};
+   }
+   printf($fmt, 'other', 0, $stat_total - $total2,
+      ($stat_total - $total2) / $stat_total * 100);
 }
 
 # Optionally print the reason for exiting
@@ -722,10 +772,18 @@ sub commit {
    my ( $force ) = @_;
    if ( $force || ($opts{z} && $txn_cnt && $cnt % $opts{z} == 0) ) {
       if ( $opts{b} && $file ) {
-         $file->flush or die "Cannot flush $opts{f}: $OS_ERROR\n";
+         trace('flush', sub {
+            $file->flush or die "Cannot flush $opts{f}: $OS_ERROR\n";
+         });
       }
-      $dst->{dbh}->commit if $dst;
-      $src->{dbh}->commit;
+      if ( $dst ) {
+         trace('commit', sub {
+            $dst->{dbh}->commit;
+         });
+      }
+      trace('commit', sub {
+         $src->{dbh}->commit;
+      });
       $txn_cnt = 0;
    }
 }
@@ -743,7 +801,7 @@ sub do_with_retries {
    RETRY:
    while ( !$success && $retries >= 0 ) {
       eval {
-         $code->();
+         trace($doing, $code);
          $success = 1;
       };
       if ( $EVAL_ERROR ) {
@@ -779,10 +837,16 @@ sub do_with_retries {
          $success = 0;
       }
       $get_sth->finish;
-      $dst->{dbh}->rollback;
-      $src->{dbh}->rollback;
+      trace('rollback', sub {
+         $dst->{dbh}->rollback;
+      });
+      trace('rollback', sub {
+         $src->{dbh}->rollback;
+      });
       # I wish: $file->rollback
-      $get_sth->execute(@beginning_of_txn);
+      trace('select', sub {
+         $get_sth->execute(@beginning_of_txn);
+      });
       $cnt -= $txn_cnt;
       $txn_cnt = 0;
    }
@@ -1256,6 +1320,27 @@ allow MySQL to start the next SELECT where the last one ended, rather than
 potentially scanning from the beginning of the table with each successive
 SELECT.  If you are using external plugins, please see L<"EXTENDING"> for a
 discussion of how they interact with ascending indexes.
+
+=item --statistics
+
+Causes mysql-archiver to collect and print timing statistics about what it does.
+The statistics look like this:
+
+ Action         Count       Time        Pct
+ commit            10     0.1079      88.27
+ select             5     0.0047       3.87
+ deleting           4     0.0028       2.29
+ inserting          4     0.0028       2.28
+ other              0     0.0040       3.29
+
+The columns are the action, the total number of times that action was timed, the
+total time it took, and the percent of the program's total runtime.  The rows
+are sorted in order of descending total time.  The last row is the rest of the
+time not explicitly attributed to anything.  Actions will vary depending on
+command-line options.
+
+This option requires the standard Time::HiRes module, which is part of core Perl
+on reasonably new Perl releases.
 
 =item --stop
 
