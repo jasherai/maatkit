@@ -529,29 +529,25 @@ sub calculate_chunks {
       # Determine chunk size in "distance between endpoints" that will give
       # approximately the right number of rows between the endpoints.  Also
       # find the start/end points as a number that Perl can do + and < on.
-      my ($chunk_range, $range_func, $start_point, $end_point);
+      my ($range_func, $start_point, $end_point);
       if ( $info->{chunk_type} =~ m/(?:int|year|float|double|decimal)$/ ) {
-         $chunk_range = $table_max - $table_min;
          $start_point = $table_min;
          $end_point   = $table_max;
          $range_func  = \&range_num;
       }
       elsif ( $info->{chunk_type} eq 'timestamp' ) {
-         ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
-            "SELECT UNIX_TIMESTAMP('$table_min'), UNIX_TIMESTAMP('$table_max'), "
-            . "UNIX_TIMESTAMP('$table_max') - UNIX_TIMESTAMP('$table_min')");
+         ($start_point, $end_point) = $main_dbh->selectrow_array(
+            "SELECT UNIX_TIMESTAMP('$table_min'), UNIX_TIMESTAMP('$table_max')");
          $range_func  = \&range_timestamp;
       }
       elsif ( $info->{chunk_type} eq 'date' ) {
-         ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
-            "SELECT TO_DAYS('$table_min'), TO_DAYS('$table_max'), "
-            . "TO_DAYS('$table_max') - TO_DAYS('$table_min')");
+         ($start_point, $end_point) = $main_dbh->selectrow_array(
+            "SELECT TO_DAYS('$table_min'), TO_DAYS('$table_max')");
          $range_func  = \&range_date;
       }
       elsif ( $info->{chunk_type} eq 'time' ) {
-         ($start_point, $end_point, $chunk_range) = $main_dbh->selectrow_array(
-            "SELECT TIME_TO_SEC('$table_min'), TIME_TO_SEC('$table_max'), "
-            . "TIME_TO_SEC('$table_max') - TIME_TO_SEC('$table_min')");
+         ($start_point, $end_point) = $main_dbh->selectrow_array(
+            "SELECT TIME_TO_SEC('$table_min'), TIME_TO_SEC('$table_max')");
          $range_func  = \&range_time;
       }
       elsif ( $info->{chunk_type} eq 'datetime' ) {
@@ -559,19 +555,28 @@ sub calculate_chunks {
          # to maintain just one kind of code, so I do it all with DATE_ADD().
          $start_point = timestampdiff($main_dbh, $table_min);
          $end_point   = timestampdiff($main_dbh, $table_max);
-         $chunk_range = $end_point - $start_point;
          $range_func  = \&range_datetime;
       }
       else {
          die "I don't know how to chunk $info->{chunk_type}\n";
       }
 
+      # The endpoints could easily be undef, because of things like dates that
+      # are '0000-00-00'.  The only thing to do is make them zeroes and
+      # they'll be done in a single chunk then.
+      if ( !defined $start_point ) {
+         $start_point = 0;
+      }
+      if ( !defined $end_point || $end_point < $start_point ) {
+         $end_point = 0;
+      }
+
       # Calculate the chunk size, in terms of "distance between endpoints."  If
       # possible and requested, forbid chunks from being any bigger than
-      # specified.  Add 1 to $chunk_range because the interval is half-open,
+      # specified.  Add 1 to the range because the interval is half-open,
       # that is, it is inclusive on the upper end.  (If the table's min value is
       # 1 and the max is 100, that's 100 values to cover, not 99).
-      $chunk_size = ceil( $opts{C} * ($chunk_range + 1) / $num_rows ) || $opts{C};
+      $chunk_size = ceil( $opts{C} * (($end_point - $start_point) + 1) / $num_rows ) || $opts{C};
       if ( $opts{'chunksize-exact'} && $info->{chunk_exact} ) {
          $chunk_size = $opts{C};
       }
