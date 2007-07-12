@@ -1000,6 +1000,18 @@ L<"--source"> must be composed entirely of non-NULL columns (or, if you specify
 L<"--ascendfirst">, the first column must be non-NULL).  These restrictions may be
 removed in future versions.
 
+=head1 ERROR-HANDLING
+
+mysql-archiver tries to catch signals and exit gracefully; for example, if you
+send it SIGTERM (Ctrl-C on UNIX-ish systems), it will catch the signal, print a
+message about the signal, and exit fairly normally.  It will not execute
+L<"--analyze"> or L<"--optimize">, because these may take a long time to finish.
+It will run all other code normally, including calling after_finish() on any
+plugins (see L<"EXTENDING">).
+
+In other words, a signal, if caught, will only break out of the main archiving
+loop and skip optimize/analyze.
+
 =head1 OPTIONS
 
 Some options are negatable by specifying them in their long form with a --no
