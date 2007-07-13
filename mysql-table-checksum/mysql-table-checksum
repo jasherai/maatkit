@@ -1559,9 +1559,10 @@ slaves and issue SQL queries to see if any tables are different from the master.
 Try the following:
 
   SELECT db, tbl, chunk, this_cnt-master_cnt AS cnt_diff,
-     this_crc<>master_crc AS crc_diff
+     this_crc <> master_crc AS crc_diff
   FROM checksum
-  WHERE master_cnt <> this_cnt OR master_crc <> this_crc;
+  WHERE master_cnt <> this_cnt OR master_crc <> this_crc
+     OR ISNULL(master_crc) <> ISNULL(this_crc);
 
 If you can't use this method, try the following:
 
