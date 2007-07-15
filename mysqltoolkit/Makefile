@@ -15,3 +15,6 @@ individual: dist
 
 doc-upload:
 	scp html/*.html bps7j@shell.sourceforge.net:mysqltoolkit/htdocs/doc
+
+upload:
+	./upload
