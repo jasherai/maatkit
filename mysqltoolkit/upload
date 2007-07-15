@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -e
+set -u
+
+VER=`grep Revision packlist | head -n 1 | awk '{print $2}'`
+
+curl -T "release/mysqltoolkit-$VER{.tar.gz,.zip}" \
+   ftp://anonymous@upload.sourceforge.net/incoming/ \
+   -T release-debian/mysqltoolkit_$VER*.deb ftp://anonymous@upload.sourceforge.net/incoming/
