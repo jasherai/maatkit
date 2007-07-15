@@ -1,0 +1,33 @@
+#!/bin/sh
+
+set -e
+
+if [ -z $1 ]; then
+   echo "Specify a package to upload"
+   exit 1
+fi
+
+set -u
+PACK=$1
+
+if [ ! -d ../$PACK ]; then
+   echo "$PACK doesn't exist"
+   exit 1
+fi
+
+svn up ../../tags/$PACK
+
+VER=`ls -t ../../tags/$PACK/ | head -n 1`;
+
+if [ -z $VER ]; then
+   echo "I can't find the latest tagged version of $PACK"
+   exit 1
+fi
+
+cd ../../tags/$PACK/$VER
+
+make dist
+
+curl -T $VER{.tar.gz,.zip} ftp://anonymous@upload.sourceforge.net/incoming/
+
+make distclean
