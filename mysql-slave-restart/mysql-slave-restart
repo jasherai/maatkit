@@ -141,7 +141,7 @@ documentation:
    perldoc mysql-slave-restart
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################

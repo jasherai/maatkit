@@ -113,7 +113,7 @@ For more details, please read the documentation:
    perldoc mysql-query-profiler
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################

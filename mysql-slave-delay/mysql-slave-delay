@@ -72,7 +72,7 @@ mysql-slave-delay TODO:
    perldoc mysql-slave-delay
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################

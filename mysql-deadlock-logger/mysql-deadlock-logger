@@ -132,7 +132,7 @@ For more details, please read the documentation:
    perldoc mysql-deadlock-logger
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################
