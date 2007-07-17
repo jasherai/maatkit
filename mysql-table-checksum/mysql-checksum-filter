@@ -86,7 +86,7 @@ read the documentation:
    perldoc mysql-checksum-filter
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################

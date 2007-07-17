@@ -94,7 +94,7 @@ For more details, please read the documentation:
    perldoc mysql-profile-compact
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################

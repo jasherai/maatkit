@@ -103,7 +103,7 @@ read the documentation:
    perldoc mysql-random-table
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################

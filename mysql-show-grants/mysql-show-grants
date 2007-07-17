@@ -113,7 +113,7 @@ read the documentation:
    perldoc mysql-show-grants
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################

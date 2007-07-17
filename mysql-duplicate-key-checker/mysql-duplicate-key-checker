@@ -121,7 +121,7 @@ For more details, please read the documentation:
    perldoc mysql-duplicate-key-checker
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################
