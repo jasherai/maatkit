@@ -70,6 +70,7 @@ my @opt_spec = (
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print checksum results' },
+   { s => 'replcheck',         d => 'Connect to slaves and check --replicate results' },
    { s => 'replicate|R=s',     d => 'Replicate checksums in a table (disallows -a CHECKSUM)' },
    { s => 'slavelag|l',        d => 'Report how far slaves lag master' },
    { s => 'separator|s=s',     d => 'Separator for CONCAT_WS()' },
@@ -177,8 +178,15 @@ if ( $opts{explainhosts} ) {
    exit(0);
 }
 
-if ( $opts{R} && @hosts > 1 ) {
-   die "You can only specify one host with --replicate\n";
+if ( !$opts{help} ) {
+   if ( $opts{replcheck} && !$opts{R} ) {
+      warn "--replcheck requires --replicate.\n";
+      $opts{help} = 1;
+   }
+   elsif ( $opts{R} && @hosts > 1 ) {
+      warn "You can only specify one host with --replicate.\n";
+      $opts{help} = 1;
+   }
 }
 
 if ( $opts{help} ) {
@@ -229,6 +237,47 @@ my $db_options = {
 my %db_info; # holds user/pass etc for each host
 
 my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
+
+# ############################################################################
+# Check replication slaves if desired.
+# ############################################################################
+if ( $opts{replcheck} ) {
+   my $slaves = $main_dbh->selectall_arrayref(
+      "SHOW SLAVE HOSTS", { Slice => {} });
+   my $sql = "SELECT db, tbl, chunk, boundaries, this_cnt-master_cnt AS cnt_diff, "
+      . "this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc) AS crc_diff "
+      . "FROM $opts{R} "
+      . "WHERE master_cnt <> this_cnt OR master_crc <> this_crc "
+      . "OR ISNULL(master_crc) <> ISNULL(this_crc)";
+
+   foreach my $slave ( @$slaves ) {
+      my $dsn       = parse_dsn("h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
+      my $slave_dbh = get_dbh($dsn, ($opts{d} ? keys %{$opts{d}} : '' ));
+      my $chunks    = $slave_dbh->selectall_arrayref($sql, { Slice => {} });
+
+      print "\nResults on $slave->{Host}:$slave->{Port} ("
+         . join(',', map { "$_=$slave->{$_}" } keys %$slave)
+         . ")\n";
+
+      if ( $chunks && @$chunks ) {
+         # Design a header to align the results
+         my $max_db   = max(5, map { length($_->{db})  } @$chunks);
+         my $max_tbl  = max(5, map { length($_->{tbl}) } @$chunks);
+         my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
+
+         # Print the header and the rows
+         printf($fmt, qw(db tbl chunk cnt_diff crc_diff boundaries));
+         foreach my $chunk ( @$chunks ) {
+            printf($fmt, @{$chunk}{qw(db tbl chunk cnt_diff crc_diff boundaries)});
+         }
+      }
+   }
+   exit(0);
+}
+
+# ############################################################################
+# Otherwise do the checksums.
+# ############################################################################
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
 my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
 
@@ -1088,6 +1137,8 @@ efficiently checksum MySQL tables on one or many servers.
 =head1 SYNOPSIS
 
    mysql-table-checksum --replicate=mydb.checksum master-host
+   ... time passses, replication catches up ...
+   mysql-table-checksum --replicate=mydb.checksum --replcheck master-host
 
 Or,
 
@@ -1401,6 +1452,22 @@ The password to use when connecting.
 
 The port number to use for the connection.
 
+=item --replcheck
+
+Connects to the master and runs SHOW SLAVE HOSTS, then connects to each slave
+host and runs the query shown in L<"CONSISTENT CHECKSUMS"> and prints
+results.  Exits after printing.  This is just a convenient way of running the
+query so you don't have to do it manually.
+
+The output is one informational line per slave host, followed by the results
+of the query, if any.
+
+Requires L<"--replicate"> to be specified so it knows which table to query.
+Connection information for each slave is derived from the same
+default-and-override method described in L<"SPECIFYING HOSTS">.  The host and
+port from SHOW SLAVE HOSTS are combined into "h=host,P=port" and used as the
+argument.
+
 =item --replicate
 
 This option enables a completely different checksum strategy for a consistent,
@@ -1559,12 +1626,13 @@ slaves and issue SQL queries to see if any tables are different from the master.
 Try the following:
 
   SELECT db, tbl, chunk, this_cnt-master_cnt AS cnt_diff,
-     this_crc <> master_crc AS crc_diff
+     this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc) AS crc_diff
   FROM checksum
   WHERE master_cnt <> this_cnt OR master_crc <> this_crc
      OR ISNULL(master_crc) <> ISNULL(this_crc);
 
-If you can't use this method, try the following:
+The L<"--replcheck"> option can do this query for you.  If you can't use this
+method, try the following:
 
 =over
 
@@ -1641,6 +1709,8 @@ sort the output and/or avoid seeing output about tables that have no differences
 
 The columns in the output are as follows.  The database, table, and chunk come
 first so you can sort by them easily (they are the "primary key").
+
+Output from L<"--replcheck"> is different.
 
 =over
 
