@@ -40,6 +40,7 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: account for difference in timestamp format between servers (can
 # SELECT CURRENT_TIMESTAMP to detect)
 
+# TODO: make <src> and <dst> parameters use key=value syntax as in mysql-table-checksum
 # TODO: prompt the user if the table names differ, as a sanity check.
 # TODO: write a helper to analyze indexes and suggest a drilldown strategy.
 # TODO: CRC32 can be used for checksums.
@@ -94,7 +95,7 @@ my @opt_spec = (
    { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default: all)' },
    { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
    { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
-   { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r'},
+   { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r and --wait 60'},
    { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
    { s => 'singletxn|1',      d => 'Do in a single transaction' },
    { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
@@ -155,8 +156,9 @@ if ( $opts{version} ) {
    exit(0);
 }
 
-$opts{help} = 1 if $opts{s} && $opts{s} !~ m/^(s|r)/;
-$opts{k} ||= $opts{w} if !defined $opts{k};
+$opts{help} = 1        if $opts{s} && $opts{s} !~ m/^(s|r)/;
+$opts{k}    = $opts{w} if !defined $opts{k};
+$opts{w}    = 60       if $opts{r} && !defined $opts{w};
 
 # Make comma-separated lists into hashes.
 if ( $opts{c} ) {
@@ -200,7 +202,7 @@ more details, please read the documentation:
    perldoc mysql-table-sync
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################
@@ -274,7 +276,7 @@ if ( $opts{w} ) {
    debug_print($query);
    my $ms = $source->{dbh}->selectrow_hashref($query);
    if ( $opts{v} ) {
-      print "-- Waiting for destination to catch up in binlog\n";
+      print "-- Waiting $opts{w} sec for $ms->{File}, $ms->{Position}\n";
    }
    $query = "SELECT MASTER_POS_WAIT('$ms->{File}', $ms->{Position}, $opts{w})";
    debug_print($query);
@@ -1285,11 +1287,11 @@ sub make_where_clause {
       my $sep = defined $val ? ' = ' : ' IS ';
       $dbh->quote_identifier($_) . $sep . $dbh->quote($val);
    } keys %$where;
-   my $clause = @clauses ? 'WHERE ' . join(' AND ', @clauses) : '';
+   my $clause = @clauses ? 'WHERE (' . join(' AND ', @clauses) : ')';
 
    # Add in the global WHERE clause from command-line arguments
    if ( $opts{W} ) {
-      $clause .= $clause ? " AND $opts{W}" : "WHERE $opts{W}";
+      $clause .= $clause ? " AND ($opts{W})" : "WHERE ($opts{W})";
    }
 
    return $clause;
