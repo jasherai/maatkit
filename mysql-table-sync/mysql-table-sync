@@ -1287,11 +1287,15 @@ sub make_where_clause {
       my $sep = defined $val ? ' = ' : ' IS ';
       $dbh->quote_identifier($_) . $sep . $dbh->quote($val);
    } keys %$where;
-   my $clause = @clauses ? 'WHERE (' . join(' AND ', @clauses) : ')';
+   my $clause = @clauses 
+      ? 'WHERE (' . join(' AND ', @clauses) . ')'
+      : '';
 
    # Add in the global WHERE clause from command-line arguments
    if ( $opts{W} ) {
-      $clause .= $clause ? " AND ($opts{W})" : "WHERE ($opts{W})";
+      $clause .= @clauses
+         ? " AND ($opts{W})"
+         : "WHERE ($opts{W})";
    }
 
    return $clause;
