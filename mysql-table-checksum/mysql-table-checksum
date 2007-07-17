@@ -242,8 +242,13 @@ my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 # Check replication slaves if desired.
 # ############################################################################
 if ( $opts{replcheck} ) {
+   die "--replcheck requires MySQL 3.23.26 or newer.\n"
+      unless version_ge($main_dbh, '3.23.26');
+
+   my ($id)   = $main_dbh->selectrow_array('SELECT @@SERVER_ID');
    my $slaves = $main_dbh->selectall_arrayref(
       "SHOW SLAVE HOSTS", { Slice => {} });
+
    my $sql = "SELECT db, tbl, chunk, boundaries, this_cnt-master_cnt AS cnt_diff, "
       . "this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc) AS crc_diff "
       . "FROM $opts{R} "
@@ -251,6 +256,7 @@ if ( $opts{replcheck} ) {
       . "OR ISNULL(master_crc) <> ISNULL(this_crc)";
 
    foreach my $slave ( @$slaves ) {
+      next unless $slave->{Master_id} == $id;
       my $dsn       = parse_dsn("h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
       my $slave_dbh = get_dbh($dsn, ($opts{d} ? keys %{$opts{d}} : '' ));
       my $chunks    = $slave_dbh->selectall_arrayref($sql, { Slice => {} });
@@ -1467,6 +1473,9 @@ Connection information for each slave is derived from the same
 default-and-override method described in L<"SPECIFYING HOSTS">.  The host and
 port from SHOW SLAVE HOSTS are combined into "h=host,P=port" and used as the
 argument.
+
+This requires the @@SERVER_ID system variable, so it only works on MySQL
+3.23.26 or newer.
 
 =item --replicate
 
