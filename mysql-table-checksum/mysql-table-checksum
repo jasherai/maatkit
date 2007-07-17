@@ -70,6 +70,7 @@ my @opt_spec = (
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print checksum results' },
+   { s => 'recursecheck',      d => 'Do --replcheck recursively (implies --replcheck)' },
    { s => 'replcheck',         d => 'Connect to slaves and check --replicate results' },
    { s => 'replicate|R=s',     d => 'Replicate checksums in a table (disallows -a CHECKSUM)' },
    { s => 'slavelag|l',        d => 'Report how far slaves lag master' },
@@ -120,6 +121,7 @@ if ( $opts{version} ) {
 # Post-process command-line options and arguments.
 $opts{k} ||= defined $opts{w};
 $opts{l} ||= $opts{k};
+$opts{replcheck} ||= $opts{recursecheck};
 
 # Make comma-separated lists into hashes.
 if ( $opts{d} ) {
@@ -207,7 +209,7 @@ read the documentation:
    perldoc mysql-table-checksum
 
 USAGE
-   exit(1);
+   exit(0);
 }
 
 # ############################################################################
@@ -242,12 +244,21 @@ my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 # Check replication slaves if desired.
 # ############################################################################
 if ( $opts{replcheck} ) {
-   die "--replcheck requires MySQL 3.23.26 or newer.\n"
-      unless version_ge($main_dbh, '3.23.26');
+   my %seen;
+   my @hosts_to_do;
+   my $exit = 0;
 
-   my ($id)   = $main_dbh->selectrow_array('SELECT @@SERVER_ID');
-   my $slaves = $main_dbh->selectall_arrayref(
-      "SHOW SLAVE HOSTS", { Slice => {} });
+   # Start the checking.
+   if ( version_ge($main_dbh, '3.23.26') ) {
+      my ($id) = $main_dbh->selectrow_array('SELECT @@SERVER_ID');
+      $seen{$id}++;
+      push @hosts_to_do,
+         grep { $_->{Master_id} == $id } # Only its own slaves
+         @{$main_dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+   }
+   else {
+      print_err("Cannot check slaves; --replcheck requires MySQL 3.23.26 or newer.");
+   }
 
    my $sql = "SELECT db, tbl, chunk, boundaries, this_cnt-master_cnt AS cnt_diff, "
       . "this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc) AS crc_diff "
@@ -255,30 +266,68 @@ if ( $opts{replcheck} ) {
       . "WHERE master_cnt <> this_cnt OR master_crc <> this_crc "
       . "OR ISNULL(master_crc) <> ISNULL(this_crc)";
 
-   foreach my $slave ( @$slaves ) {
-      next unless $slave->{Master_id} == $id;
+   SLAVE:
+   do {
+      my $slave = shift @hosts_to_do;
+      next SLAVE if $seen{$slave->{Server_id}};
+
+      # Connect to that server
       my $dsn       = parse_dsn("h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
       my $slave_dbh = get_dbh($dsn, ($opts{d} ? keys %{$opts{d}} : '' ));
-      my $chunks    = $slave_dbh->selectall_arrayref($sql, { Slice => {} });
+      my $id;
 
-      print "\nResults on $slave->{Host}:$slave->{Port} ("
-         . join(',', map { "$_=$slave->{$_}" } keys %$slave)
-         . ")\n";
+      # SHOW SLAVE HOSTS is somewhat flakey.  Sometimes it shows obsolete
+      # information.  Verify that this instance has the server ID reported by
+      # its master.
+      if ( version_ge($main_dbh, '3.23.26') ) {
+         ($id) = $slave_dbh->selectrow_array('SELECT @@SERVER_ID');
+         $seen{$id}++;
+         next SLAVE unless $id == $slave->{Server_id};
+      }
+      else {
+         print_err("Cannot check $slave->{Host}:$slave->{Port}; requires MySQL 3.23.26 or newer.");
+         next SLAVE;
+      }
 
-      if ( $chunks && @$chunks ) {
-         # Design a header to align the results
-         my $max_db   = max(5, map { length($_->{db})  } @$chunks);
-         my $max_tbl  = max(5, map { length($_->{tbl}) } @$chunks);
-         my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
-
-         # Print the header and the rows
-         printf($fmt, qw(db tbl chunk cnt_diff crc_diff boundaries));
-         foreach my $chunk ( @$chunks ) {
-            printf($fmt, @{$chunk}{qw(db tbl chunk cnt_diff crc_diff boundaries)});
+      # Recurse to its slaves, if desired
+      if ( $opts{recursecheck} ) {
+         eval {
+            push @hosts_to_do,
+               grep { $_->{Master_id} == $id } # Only its own slaves
+               @{$slave_dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+         };
+         if ( $EVAL_ERROR ) {
+            print_err("Cannot recurse from $slave->{Host}:$slave->{Port}");
+            print_err($EVAL_ERROR);
          }
       }
-   }
-   exit(0);
+
+      my $chunks = $slave_dbh->selectall_arrayref($sql, { Slice => {} });
+
+      if ( !$opts{q} ) {
+         print "\nResults on $slave->{Host}:$slave->{Port} ("
+            . join(',', map { "$_=$slave->{$_}" } keys %$slave)
+            . ")\n";
+      }
+
+      if ( $chunks && @$chunks ) {
+         $exit = 1;
+         if ( !$opts{q} ) {
+            # Design a header to align the results
+            my $max_db   = max(5, map { length($_->{db})  } @$chunks);
+            my $max_tbl  = max(5, map { length($_->{tbl}) } @$chunks);
+            my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
+
+            # Print the header and the rows
+            printf($fmt, qw(db tbl chunk cnt_diff crc_diff boundaries));
+            foreach my $chunk ( @$chunks ) {
+               printf($fmt, @{$chunk}{qw(db tbl chunk cnt_diff crc_diff boundaries)});
+            }
+         }
+      }
+   } while ( @hosts_to_do );
+
+   exit($exit);
 }
 
 # ############################################################################
@@ -1458,15 +1507,20 @@ The password to use when connecting.
 
 The port number to use for the connection.
 
+=item --recursecheck
+
+Recursively runs L<"--replcheck"> to check the entire replication subtree
+rooted at the given master.
+
 =item --replcheck
 
 Connects to the master and runs SHOW SLAVE HOSTS, then connects to each slave
-host and runs the query shown in L<"CONSISTENT CHECKSUMS"> and prints
+of the master, runs the query shown in L<"CONSISTENT CHECKSUMS">, and prints
 results.  Exits after printing.  This is just a convenient way of running the
 query so you don't have to do it manually.
 
 The output is one informational line per slave host, followed by the results
-of the query, if any.
+of the query, if any.  If L<"--quiet"> is specified, there is no output.
 
 Requires L<"--replicate"> to be specified so it knows which table to query.
 Connection information for each slave is derived from the same
@@ -1476,6 +1530,9 @@ argument.
 
 This requires the @@SERVER_ID system variable, so it only works on MySQL
 3.23.26 or newer.
+
+If any slave has chunks that differ from the master, MySQL Table Checksum's
+exit status is 1; otherwise it is 0.
 
 =item --replicate
 
@@ -1769,6 +1826,14 @@ The return value of MASTER_POS_WAIT().
 How far the slave lags the master, as reported by SHOW SLAVE STATUS.
 
 =back
+
+=head1 EXIT STATUS
+
+A successful exit status is 0.  If there is an error checksumming any table,
+the exit status is 1.
+
+When running L<"--replcheck">, if any slave has chunks that differ from the
+master, the exit status is 1.
 
 =head1 QUERIES
 
