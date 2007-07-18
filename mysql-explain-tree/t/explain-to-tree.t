@@ -7,10 +7,9 @@ use Test::More tests => 1;
 
 require "../mysql-explain-tree";
 
-# Test that I can load 'explain' files and get an array of hashrefs from them.
-my $p = new ExplainParser;
+my $e = new ExplainTree;
 is_deeply(
-    $p->parse( load_file('samples/001.sql') ),
+    $e->parse( load_file('samples/001.sql') ),
     [{
         id            => 1,
         select_type   => 'SIMPLE',

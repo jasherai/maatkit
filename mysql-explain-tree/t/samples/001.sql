@@ -1,4 +1,4 @@
-explain select * from film;
+explain select * from sakila.film;
 +----+-------------+-------+------+---------------+------+---------+------+------+-------+
 | id | select_type | table | type | possible_keys | key  | key_len | ref  | rows | Extra |
 +----+-------------+-------+------+---------------+------+---------+------+------+-------+
