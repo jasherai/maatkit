@@ -1,4 +1,4 @@
-mysql> explain select film_id from film where film_id = 1;
+mysql> explain select film_id from sakila.film where film_id = 1;
 +----+-------------+-------+-------+---------------+---------+---------+-------+------+-------------+
 | id | select_type | table | type  | possible_keys | key     | key_len | ref   | rows | Extra       |
 +----+-------------+-------+-------+---------------+---------+---------+-------+------+-------------+
