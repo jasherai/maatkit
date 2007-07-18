@@ -10,7 +10,7 @@ require "../mysql-explain-tree";
 # Test that I can load 'explain' files and get an array of hashrefs from them.
 my $p = new ExplainParser;
 is_deeply(
-    $p->parse( load_file('samples/001.sql') ),
+    $p->parse( load_file('samples/full_scan_sakila_film.sql') ),
     [{
         id            => 1,
         select_type   => 'SIMPLE',
