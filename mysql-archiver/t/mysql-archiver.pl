@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 67;
+use Test::More tests => 69;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -116,6 +116,14 @@ $output = `perl ../mysql-archiver -W 1=1 --source D=test,t=table_3,F=$opt_file,i
 is($output, '', 'No output');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_3"`;
 is($output + 0, 0, 'Ascended explicit key OK');
+
+# Test that mysql-archiver gets column ordinals and such right when building the
+# ascending-index queries.
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -l 2 -W 1=1 --source D=test,t=table_11,F=$opt_file --purge 2>&1`;
+is($output, '', 'No output while dealing with out-of-order PK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_11"`;
+is($output + 0, 0, 'Ascended out-of-order PK OK');
 
 # Archive only part of the table
 `mysql --defaults-file=$opt_file < before.sql`;
