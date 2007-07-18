@@ -353,7 +353,17 @@ my $sth;
 # Design SQL statements.
 # ############################################################################
 my ($first_sql, $next_sql, $del_sql, $ins_sql);
-my (@pk_slice, @asc_slice);
+
+# These are lists of columns by ordinal position, not by name.  This is
+# necessary because the rows are fetched from the DB as arrays, not as hashes,
+# for efficiency, but for various statements I want one or the other subset of
+# columns.  @pk_slice is the slice that will extract the primary key columns
+# for DELETEs.  @asc_slice is only used to generate queries; it is the column
+# ordinals of the index the get_next query will ascend.  @get_next_slice
+# is the column ordinals in the order in which they appear in the get_next
+# query's WHERE clause.
+my (@pk_slice, @asc_slice, @get_next_slice);
+
 my @cols = $opts{c} ? split(/,/, $opts{c})               # Explicitly specified columns
          : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}} # PK only
          :            @{$src->{info}->{cols}};           # All columns
@@ -384,22 +394,11 @@ if ( $opts{N} && ($src->{i} || $src->{info}->{keys}->{PRIMARY}) ) {
             die "Some columns in index `$ixname` allow NULL.\n";
          }
 
-         # We found the columns, now find their positions
-         @asc_slice = map {
-            my $pos = 0;
-            my $col = $_;
-            my $fnd = 0;
-            foreach my $c ( @cols ) {
-               if ($c eq $col) {
-                  $fnd = 1;
-                  last;
-               }
-               ++$pos;
-            }
-            die "Cannot find ordinal position of column $col"
-               unless $fnd;
-            $pos;
-         } @asc_cols;
+         # We found the columns by name, now find their positions for use as
+         # array slices.
+         @asc_slice = map { $src->{info}->{col_posn}->{$_} } @asc_cols;
+         die "Can't find ordinal position of all columns"
+            if grep { !defined($_) } @asc_slice;
       }
 
    }
@@ -423,28 +422,26 @@ $first_sql
 # At this point the fetch-first and fetch-next queries may diverge.
 $next_sql = $first_sql;
 if ( @asc_slice ) {
-   my @new_asc_slice;
    my @clauses;
    foreach my $i ( 0 .. $#asc_slice ) {
       my @clause;
       foreach my $j ( 0 .. $i - 1 ) {
-         push @clause, "`$cols[$j]` = ?";
-         push @new_asc_slice, $j;
+         push @clause, "`$cols[$asc_slice[$j]]` = ?";
+         push @get_next_slice, $asc_slice[$j];
       }
       # Only the very last clause should be >=, all others strictly > UNLESS
       # there is a chance the row will not be deleted, in which case everything
       # must be strictly > and there is a chance some rows can be skipped in
       # non-unique indexes.
       my $op = ($i == $#asc_slice && !$src->{m}) ? '>=' : '>';
-      push @clause, "`$cols[$i]` $op ?";
-      push @new_asc_slice, $i;
+      push @clause, "`$cols[$asc_slice[$i]]` $op ?";
+      push @get_next_slice, $asc_slice[$i];
       push @clauses, '(' . join(' AND ', @clause) . ')';
    }
    $next_sql .= ' AND '
       . (@clauses > 1 ? '(' : '')
       . join(' OR ', @clauses)
       . (@clauses > 1 ? ')' : '');
-   @asc_slice = @new_asc_slice;
 }
 
 $first_sql .= " LIMIT $opts{l}";
@@ -463,20 +460,10 @@ elsif ( $opts{sharelock} ) {
 # be used, but I am not going to fool with that.
 if ( $src->{info}->{keys}->{PRIMARY} ) {
    @pk_slice = map {
-      my $pos = 0;
-      my $col = $_;
-      my $fnd = 0;
-      foreach my $c ( @cols ) {
-         if ($c eq $col) {
-            $fnd = 1;
-            last;
-         }
-         ++$pos;
-      }
-      die "Cannot find ordinal position of column $col"
-         unless $fnd;
-      $pos;
+      $src->{info}->{col_posn}->{$_}
    } @{$src->{info}->{keys}->{PRIMARY}};
+   die "Can't find ordinal position of all columns"
+      if grep { !defined($_) } @pk_slice;
 }
 else {
    # At this time, issues with NULLs (=null vs. IS NULL) will prevent DELETEs
@@ -675,10 +662,10 @@ while (                          # Quit if:
       $get_sth = $get_next;
 
       trace('select', sub {
-         $get_next->execute(@{$lastrow}[@asc_slice]);
+         $get_next->execute(@{$lastrow}[@get_next_slice]);
       });
 
-      @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
+      @beginning_of_txn = @{$lastrow}[@get_next_slice] unless $txn_cnt;
       $row              = $get_sth->fetchrow_arrayref();
    }
 }
@@ -897,6 +884,7 @@ sub get_tbl_struct {
       kdef      => \%kdef,
       defs      => \@defs,
       ddl       => $ddl,
+      col_posn  => { map { $cols[$_] => $_ } 0..$#cols },
    };
 }
 
