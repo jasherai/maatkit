@@ -7,9 +7,17 @@ use Test::More tests => 1;
 
 require "../mysql-explain-tree";
 
+sub load_file {
+    my ($file) = @_;
+    open my $fh, "<", $file or die $!;
+    my $contents = do { local $/ = undef; <$fh> };
+    close $fh;
+    return $contents;
+}
 my $e = new ExplainTree;
+
 is_deeply(
-    $e->parse( load_file('samples/001.sql') ),
+    $e->parse( load_file('samples/full_scan_sakila_film.sql') ),
     [{
         id            => 1,
         select_type   => 'SIMPLE',
@@ -22,13 +30,5 @@ is_deeply(
         rows          => 935,
         Extra         => '',
     }],
-    'Loaded and parsed file correctly'
+    'simple scan worked OK',
 );
-
-sub load_file {
-    my ($file) = @_;
-    open my $fh, "<", $file or die $!;
-    my $contents = do { local $/ = undef; <$fh> };
-    close $fh;
-    return $contents;
-}
