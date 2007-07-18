@@ -6,6 +6,16 @@ use warnings FATAL => 'all';
 # http://dev.mysql.com/doc/refman/5.0/en/explain.html
 # http://dev.mysql.com/doc/sakila/en/sakila.html
 
+# explain select film_id from sakila.film where exists(select * from
+# sakila.film_actor where sakila.film.film_id = sakila.film_actor.film_id);
+# explain select film_id, (select count(*) from sakila.film) as foo from
+# sakila.film;
+# explain select film_id from sakila.film where exists(select * from
+# sakila.film_actor where sakila.film.film_id = sakila.film_actor.film_id and
+# @foo is null);
+# explain select film_id, (select @foo:=count(*) from sakila.film) as foo from
+# sakila.film;
+
 # ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
