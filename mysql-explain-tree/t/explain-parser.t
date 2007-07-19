@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 1;
+use Test::More tests => 2;
 
 require "../mysql-explain-tree";
 
@@ -23,7 +23,35 @@ is_deeply(
         rows          => 935,
         Extra         => '',
     }],
-    'Loaded and parsed file correctly'
+    'Loaded and parsed file with one line correctly'
+);
+
+is_deeply(
+   $p->parse( load_file('samples/actor_join_film_ref.sql') ),
+   [  {  id            => 1,
+         select_type   => 'SIMPLE',
+         table         => 'film',
+         type          => 'ALL',
+         possible_keys => 'PRIMARY',
+         key           => undef,
+         key_len       => undef,
+         'ref'         => undef,
+         rows          => 952,
+         Extra         => '',
+      },
+      {  id            => 1,
+         select_type   => 'SIMPLE',
+         table         => 'film_actor',
+         type          => 'ref',
+         possible_keys => 'idx_fk_film_id',
+         key           => 'idx_fk_film_id',
+         key_len       => 2,
+         'ref'         => 'sakila.film.film_id',
+         rows          => 2,
+         Extra         => '',
+      },
+   ],
+   'simple join worked OK',
 );
 
 sub load_file {
