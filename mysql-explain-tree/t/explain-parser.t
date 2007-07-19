@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 3;
+use Test::More tests => 4;
 
 require "../mysql-explain-tree";
 
@@ -71,6 +71,24 @@ is_deeply(
       }
    ],
    'Vertical output',
+);
+
+is_deeply(
+   $p->parse( load_file('samples/index_merge_union_intersect.sql') ),
+   [  {  id            => 1,
+         select_type   => 'SIMPLE',
+         table         => 't1',
+         type          => 'index_merge',
+         possible_keys => 'key1,key2,key3,key4',
+         key           => 'key1,key2,key3,key4',
+         key_len       => '5,5,5,5',
+         'ref'         => undef,
+         rows          => 154,
+         Extra         =>
+            'Using union(intersect(key1,key2),intersect(key3,key4)); Using where',
+      }
+   ],
+   'Tab-separated output',
 );
 
 sub load_file {
