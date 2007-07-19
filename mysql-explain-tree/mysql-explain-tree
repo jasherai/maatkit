@@ -39,7 +39,7 @@ sub parse {
    my @result  = ();
    foreach my $line ( $text =~ m/^(.*)[\r\n]+/gm ) {
       $started ||= $line =~ m/^\+[+-]+$/;
-      if ( $started && $line =~ m/[^+-]/ ) {
+      if ( $started && $line =~ m/^\| / ) {
          my @vals = $line  =~ m/\| +(.*?)(?= +\|)/g;
          if ( $lines++ ) {
             my %row;
@@ -68,9 +68,66 @@ sub parse {
    return $self->process(ExplainParser->new->parse($text));
 }
 
+# The main method that turns a result set into a tree.
 sub process {
    my ( $self, $rows ) = @_;
-   return $rows;
+   my $tree;
+   foreach my $row ( @$rows ) {
+      my $sub = $row->{type};
+      my $node = $self->$sub($row);
+      if ( $tree ) {
+         $tree = {
+            type => 'JOIN',
+            left => $tree,
+            right => $node,
+         };
+      }
+      else {
+         $tree = $node;
+      }
+   }
+   return $tree;
+}
+
+#############################################################################
+# Each method in this section corresponds to a value you will find in the 'type'
+# column in EXPLAIN.
+#############################################################################
+sub ALL {
+   my ( $self, $row ) = @_;
+   return {
+      type  => 'Table scan',
+      rows  => $row->{rows},
+      table => $self->table($row),
+   };
+}
+
+sub ref {
+   my ( $self, $row ) = @_;
+   my $node = {
+      type    => 'Index lookup',
+      key     => $row->{key},
+      key_len => 2,
+      'ref'   => 'sakila.film.film_id',
+      rows    => 2,
+   };
+   if ( $row->{Extra} !~ m/Using index/ ) {
+      $node->{table} = $self->table($row);
+   }
+   return $node;
+}
+
+# ###########################################################################
+# Here are some helper subroutines for the ones that correspond to values in the
+# 'type' column.
+# ###########################################################################
+sub table {
+   my ( $self, $row ) = @_;
+   return {
+      type          => 'Table',
+      table         => $row->{table},
+      possible_keys => $row->{possible_keys},
+   };
 }
 
 # ###########################################################################
