@@ -107,15 +107,14 @@ sub process {
       if ( $row->{Extra} =~ m/Using where/ ) {
          $node = {
             type  => 'Filter with WHERE',
-            child => $node,
+            children => [$node],
          };
       }
 
       if ( $tree ) {
          $tree = {
-            type => 'JOIN',
-            left => $tree,
-            right => $node,
+            type     => 'JOIN',
+            children => [ $tree, $node ],
          };
       }
       else {
@@ -136,7 +135,7 @@ sub ALL {
    return {
       type  => 'Table scan',
       rows  => $row->{rows},
-      child => $self->table($row),
+      children => [$self->table($row)],
    };
 }
 
@@ -170,6 +169,28 @@ sub const {
    return $self->index_access($row, 'Constant index lookup');
 }
 
+# From the manual: "The Index Merge method is used to retrieve rows with several
+# range scans and to merge their results into one."  Therefore each index access
+# should be shown as an index range scan.
+sub index_merge {
+   my ( $self, $row ) = @_;
+   my ( $merge_type, $merge_stuff )
+      = $row->{Extra} =~ m/Using (intersect|union|sort_union)\((.*?)\)(?=;|$)/;
+   my @indexes = split(/,/, $merge_stuff);
+   my @lens = $row->{key_len} =~ m/(\d+)/g;
+   my @nodes = map {
+      my $node = $self->index_access($row, 'Index range scan', $indexes[$_]);
+      $node->{key_len} = $lens[$_];
+      $node;
+   } ( 0 .. $#indexes );
+   return {
+      type     => 'Index merge',
+      method   => $merge_type,
+      rows     => $row->{rows},
+      children => \@nodes,
+   };
+}
+
 # ###########################################################################
 # Here are helper subroutines for the ones that correspond to values in the
 # 'type' column.
@@ -184,16 +205,16 @@ sub table {
 }
 
 sub index_access {
-   my ( $self, $row, $type ) = @_;
+   my ( $self, $row, $type, $key ) = @_;
    my $node = {
       type    => $type,
-      key     => $row->{table} . '->' . $row->{key},
+      key     => $row->{table} . '->' . ($key || $row->{key}),
       key_len => $row->{key_len},
       'ref'   => $row->{ref},
       rows    => $row->{rows},
    };
    if ( $row->{Extra} !~ m/Using index/ ) {
-      $node->{child} = $self->table($row);
+      $node->{children} = [$self->table($row)];
    }
    return $node;
 }
