@@ -16,6 +16,10 @@ use warnings FATAL => 'all';
 # explain select film_id, (select @foo:=count(*) from sakila.film) as foo from
 # sakila.film;
 
+# Is sakila.film a const in this query?
+# explain select * from sakila.film join sakila.film_actor using(film_id) where
+# sakila.film.film_id = 1
+
 # ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
@@ -74,7 +78,16 @@ sub process {
    my $tree;
    foreach my $row ( @$rows ) {
       my $sub = $row->{type};
+
       my $node = $self->$sub($row);
+
+      if ( $row->{Extra} =~ m/Using where/ ) {
+         $node = {
+            type  => 'Filter with WHERE',
+            child => $node,
+         };
+      }
+
       if ( $tree ) {
          $tree = {
             type => 'JOIN',
@@ -85,6 +98,7 @@ sub process {
       else {
          $tree = $node;
       }
+
    }
    return $tree;
 }
@@ -93,32 +107,38 @@ sub process {
 # Each method in this section corresponds to a value you will find in the 'type'
 # column in EXPLAIN.
 #############################################################################
+
 sub ALL {
    my ( $self, $row ) = @_;
    return {
       type  => 'Table scan',
       rows  => $row->{rows},
-      table => $self->table($row),
+      child => $self->table($row),
    };
+}
+
+sub index {
+   my ( $self, $row ) = @_;
+   return $self->index_access($row, 'Index scan');
+}
+
+sub eq_ref {
+   my ( $self, $row ) = @_;
+   return $self->index_access($row, 'Unique index lookup');
 }
 
 sub ref {
    my ( $self, $row ) = @_;
-   my $node = {
-      type    => 'Index lookup',
-      key     => $row->{key},
-      key_len => 2,
-      'ref'   => 'sakila.film.film_id',
-      rows    => 2,
-   };
-   if ( $row->{Extra} !~ m/Using index/ ) {
-      $node->{table} = $self->table($row);
-   }
-   return $node;
+   return $self->index_access($row, 'Index lookup');
+}
+
+sub const {
+   my ( $self, $row ) = @_;
+   return $self->index_access($row, 'Constant index lookup');
 }
 
 # ###########################################################################
-# Here are some helper subroutines for the ones that correspond to values in the
+# Here are helper subroutines for the ones that correspond to values in the
 # 'type' column.
 # ###########################################################################
 sub table {
@@ -128,6 +148,21 @@ sub table {
       table         => $row->{table},
       possible_keys => $row->{possible_keys},
    };
+}
+
+sub index_access {
+   my ( $self, $row, $type ) = @_;
+   my $node = {
+      type    => $type,
+      key     => $row->{table} . '->' . $row->{key},
+      key_len => $row->{key_len},
+      'ref'   => $row->{ref},
+      rows    => $row->{rows},
+   };
+   if ( $row->{Extra} !~ m/Using index/ ) {
+      $node->{child} = $self->table($row);
+   }
+   return $node;
 }
 
 # ###########################################################################
