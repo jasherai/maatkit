@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 11;
 
 require "../mysql-explain-tree";
 
@@ -145,4 +145,113 @@ is_deeply(
       rows    => 1,
    },
    'PK lookup with covering index',
+);
+
+is_deeply(
+   $e->parse( load_file('samples/film_join_actor_const.sql') ),
+   {  type => 'JOIN',
+      left => {
+         type    => 'Constant index lookup',
+         key     => 'film->PRIMARY',
+         key_len => 2,
+         'ref'   => 'const',
+         rows    => 1,
+         child => {
+            type  => 'Table',
+            table => 'film',
+            possible_keys => 'PRIMARY',
+         },
+      },
+      right => {
+         type    => 'Index lookup',
+         key     => 'film_actor->idx_fk_film_id',
+         key_len => 2,
+         'ref'   => 'const',
+         rows    => 10,
+         child => {
+            type  => 'Table',
+            table => 'film_actor',
+            possible_keys => 'idx_fk_film_id',
+         },
+      },
+   },
+   'Join from constant lookup in film to const ref in film_actor',
+);
+
+is_deeply(
+   $e->parse( load_file('samples/film_join_actor_const_using_index.sql') ),
+   {  type => 'JOIN',
+      left => {
+         type    => 'Constant index lookup',
+         key     => 'film->PRIMARY',
+         key_len => 2,
+         'ref'   => 'const',
+         rows    => 1,
+      },
+      right => {
+         type    => 'Index lookup',
+         key     => 'film_actor->idx_fk_film_id',
+         key_len => 2,
+         'ref'   => 'const',
+         rows    => 10,
+      },
+   },
+   'Join from const film to const ref film_actor with covering index',
+);
+
+is_deeply(
+   $e->parse( load_file('samples/film_range_on_pk.sql') ),
+   {  type  => 'Filter with WHERE',
+      child => {
+         type    => 'Index range scan',
+         key     => 'film->PRIMARY',
+         key_len => 2,
+         'ref'   => undef,
+         rows    => 20,
+         child   => {
+            type          => 'Table',
+            table         => 'film',
+            possible_keys => 'PRIMARY',
+         },
+      },
+   },
+   'Index range scan with WHERE clause',
+);
+
+is_deeply(
+   $e->parse( load_file('samples/film_ref_or_null_on_original_language_id.sql') ),
+   {  type  => 'Filter with WHERE',
+      child => {
+         type    => 'Index lookup with extra null lookup',
+         key     => 'film->idx_fk_original_language_id',
+         key_len => 2,
+         'ref'   => 'const',
+         rows    => 512,
+         child   => {
+            type          => 'Table',
+            table         => 'film',
+            possible_keys => 'idx_fk_original_language_id',
+         },
+      },
+   },
+   'Index ref_or_null scan',
+);
+
+is_deeply(
+   $e->parse( load_file('samples/rental_index_merge_intersect.sql') ),
+   {  type  => 'Filter with WHERE',
+      child => {
+         type    => 'Index lookup with extra null lookup',
+         key     => 'film->idx_fk_original_language_id',
+         key_len => 2,
+         'ref'   => 'const',
+         rows    => 512,
+         child   => {
+            type          => 'Table',
+            table         => 'film',
+            possible_keys => 'idx_fk_original_language_id',
+         },
+      },
+   },
+   'Index ref_or_null scan',
 );

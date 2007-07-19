@@ -5,6 +5,7 @@ use warnings FATAL => 'all';
 
 # http://dev.mysql.com/doc/refman/5.0/en/explain.html
 # http://dev.mysql.com/doc/sakila/en/sakila.html
+# http://dev.mysql.com/doc/refman/5.0/en/in-subquery-optimization.html
 
 # explain select film_id from sakila.film where exists(select * from
 # sakila.film_actor where sakila.film.film_id = sakila.film_actor.film_id);
@@ -15,10 +16,6 @@ use warnings FATAL => 'all';
 # @foo is null);
 # explain select film_id, (select @foo:=count(*) from sakila.film) as foo from
 # sakila.film;
-
-# Is sakila.film a const in this query?
-# explain select * from sakila.film join sakila.film_actor using(film_id) where
-# sakila.film.film_id = 1
 
 # ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
@@ -41,13 +38,38 @@ sub parse {
    my $lines   = 0;
    my @cols    = ();
    my @result  = ();
-   foreach my $line ( $text =~ m/^(.*)[\r\n]+/gm ) {
-      $started ||= $line =~ m/^\+[+-]+$/;
-      if ( $started && $line =~ m/^\| / ) {
-         my @vals = $line  =~ m/\| +(.*?)(?= +\|)/g;
-         if ( $lines++ ) {
+
+   # Detect which kind of input it is
+   my ( $start_re, $line_re, $vals_re, $has_hdr, $is_horiz );
+   if ( $text =~ m/^\+---/m ) { # standard "tabular" output
+      $start_re = qr/^\+[+-]+$/m;
+      $line_re  = qr/^(\| .*)[\r\n]+/m;
+      $vals_re  = qr/\| +(.*?)(?= +\|)/ms;
+      $has_hdr  = 1;
+   }
+   elsif ( $text =~ m/\*\*\* 1. row/ ) { # "vertical" output
+      $start_re = qr/\*\*\* 1. row/m;
+      $line_re  = qr/^( *.*?^ *Extra:[^\n]*$)/ms;
+      $vals_re  = qr/^ *(\w+): ([^\n]*) *$/ms;
+      $is_horiz = 1;
+   }
+
+   if ( $start_re ) {
+      # Pull it apart into lines and parse them.
+      LINE:
+      foreach my $line ( $text =~ m/$line_re/g ) {
+         my @vals = $line =~ m/$vals_re/g;
+         if ( !$has_hdr || $lines++ ) {
             my %row;
-            @row{@cols} = map { $_ eq 'NULL' ? undef : $_ } @vals;
+            if ( $has_hdr ) {
+               @row{@cols} = @vals;
+            }
+            elsif ( $is_horiz ) {
+               %row = @vals;
+            }
+            foreach my $key ( keys %row ) {
+               $row{$key} = undef if $row{$key} eq 'NULL';
+            }
             push @result, \%row;
          }
          else { # header row
@@ -55,6 +77,7 @@ sub parse {
          }
       }
    }
+
    return \@result;
 }
 
@@ -117,6 +140,11 @@ sub ALL {
    };
 }
 
+sub range {
+   my ( $self, $row ) = @_;
+   return $self->index_access($row, 'Index range scan');
+}
+
 sub index {
    my ( $self, $row ) = @_;
    return $self->index_access($row, 'Index scan');
@@ -130,6 +158,11 @@ sub eq_ref {
 sub ref {
    my ( $self, $row ) = @_;
    return $self->index_access($row, 'Index lookup');
+}
+
+sub ref_or_null {
+   my ( $self, $row ) = @_;
+   return $self->index_access($row, 'Index lookup with extra null lookup');
 }
 
 sub const {
