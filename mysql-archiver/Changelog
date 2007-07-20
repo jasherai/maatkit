@@ -1,5 +1,13 @@
 Changelog for mysql-archiver:
 
+2007-07-20: version 0.9.4
+
+   * Made --time suffix optional.
+   * Added --statistics option to gather and print timing statistics.
+   * Added signal handling so mysql-archiver exits cleanly when it can.
+   * Changed exit status to 0 when --help is given.
+   * Out-of-column-order primary keys were not ascended correctly.
+
 2007-06-22: version 0.9.3
 
    Changes:
