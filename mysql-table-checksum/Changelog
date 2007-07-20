@@ -1,21 +1,26 @@
 Changelog for mysql-table-checksum and mysql-checksum-filter:
 
+2007-07-20: version 1.1.11
+
+   * Added --replcheck option to check --replicate results on slaves.
+   * Added --recursecheck option to do --replcheck recursively.
+
 2007-07-10: version 1.1.10
 
-	* Handle malformed values that will return undef start and end points in
-	  chunking.
-	* Updated documentation's example query to be run on the slave.
+   * Handle malformed values that will return undef start and end points in
+     chunking.
+   * Updated documentation's example query to be run on the slave.
 
 2007-07-10: version 1.1.9
 
    Changes:
-	* Enabled chunking on FLOAT, DOUBLE and DECIMAL columns.
+   * Enabled chunking on FLOAT, DOUBLE and DECIMAL columns.
 
-	Bugs fixed:
-	* mysql-table-checksum crashed when EXPLAIN said an empty table had rows.
-	* mysql-table-checksum failed to find rows on slaves that didn't exist
-	  on the master.
-	* Changed from BETWEEN to WHERE clauses.
+   Bugs fixed:
+   * mysql-table-checksum crashed when EXPLAIN said an empty table had rows.
+   * mysql-table-checksum failed to find rows on slaves that didn't exist
+     on the master.
+   * Changed from BETWEEN to WHERE clauses.
 
 2007-06-22: version 1.1.8
 
