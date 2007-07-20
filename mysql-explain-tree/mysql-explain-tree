@@ -103,6 +103,8 @@ sub parse {
 # ###########################################################################
 package ExplainTree;
 
+use Regexp::Common;
+
 sub new {
    bless {}, shift;
 }
@@ -186,32 +188,83 @@ sub const {
    return $self->index_access($row, 'Constant index lookup');
 }
 
-# From the manual: "The Index Merge method is used to retrieve rows with several
-# range scans and to merge their results into one."  Therefore each index access
-# should be shown as an index range scan.
+# From the manual: "The Index Merge method is used to retrieve rows with
+# several range scans and to merge their results into one."  Therefore each
+# index access should be shown as an index range scan.  The unions and
+# intersections can be recursive, as in
+# union(intersect(key1,key2),intersect(key3,key4))
 sub index_merge {
    my ( $self, $row ) = @_;
-   my ( $merge_type, $merge_stuff )
-      = $row->{Extra} =~ m/Using (intersect|union|sort_union)\((.*?)\)(?=;|$)/;
-   my @indexes = split(/,/, $merge_stuff);
-   my @lens = $row->{key_len} =~ m/(\d+)/g;
-   my @nodes = map {
-      my $node = $self->index_access($row, 'Index range scan', $indexes[$_]);
-      $node->{key_len} = $lens[$_];
-      $node;
-   } ( 0 .. $#indexes );
-   return {
-      type     => 'Index merge',
-      method   => $merge_type,
-      rows     => $row->{rows},
-      children => \@nodes,
-   };
+   my ( $merge_spec )
+      = $row->{Extra} =~ m/Using ((?:intersect|union|sort_union)\(.*?\))(?=;|$)/;
+   my ($merge, $num) = $self->recurse_index_merge($row, $merge_spec, 0);
+
+   # index_merge_bookmark_lookup note:
+   # From the manual, "If the used indexes don't cover all columns used in the
+   # query, full rows are retrieved only when the range conditions for all
+   # used keys are satisfied."  So a bookmark lookup shouldn't be shown for
+   # all indexes; it should be shown from the merge results.
+   if ( $row->{Extra} !~ m/Using index/ ) {
+      return {
+         type     => 'Bookmark lookup',
+         rows     => $row->{rows},
+         children => [
+            $merge,
+            $self->table($row),
+         ],
+      };
+   }
+
+   return $merge;
 }
 
 # ###########################################################################
 # Here are helper subroutines for the ones that correspond to values in the
 # 'type' column.
 # ###########################################################################
+
+# TODO: get rid of Regexp::Common dependency with a re like this:
+# my $bal;
+# $bal = qr /[(]
+# [^()]*
+# (?:(??{ $bal }) [^()]* )*
+# [)]/x;
+# see http://www.perlmonks.org/?node_id=308039
+# $num is the number of nodes to the left of this node in a depth-first
+# traversal.  It lets me figure out which value goes in key_len.
+sub recurse_index_merge {
+   my ( $self, $row, $spec, $num ) = @_;
+   my ($type, $args) = $spec =~ m/(intersect|union|sort_union)\((.*)\)$/;
+
+   my @children;
+
+   # Extract a thing, followed by balanced parentheses.
+   my $bal = qr/(\w+$RE{balanced}{-parens=>'()'})/;
+   foreach my $child ( $args =~ m/$bal/g ) {
+      my ( $subtree, $num ) = $self->recurse_index_merge($row, $child, $num);
+      push @children, $subtree;
+   }
+
+   if ( !@children ) { # Recursion base case; $args is an index list
+      foreach my $idx ( split(/,/, $args) ) {
+         my $index_scan = $self->index_access($row, 'Index range scan', $idx);
+         $index_scan->{key_len} = ($row->{key_len} =~ m/(\d+)/g)[$num++];
+         push @children, $index_scan;
+      }
+   }
+
+   return (
+      {
+         type     => 'Index merge',
+         method   => $type,
+         rows     => $row->{rows},
+         children => \@children,
+      },
+      $num
+   );
+
+}
+
 sub table {
    my ( $self, $row ) = @_;
    return {
@@ -230,7 +283,8 @@ sub index_access {
       'ref'   => $row->{ref},
       rows    => $row->{rows},
    };
-   if ( $row->{Extra} !~ m/Using index/ ) {
+   # See index_merge_bookmark_lookup note above.
+   if ( $row->{Extra} !~ m/Using index/ && $row->{type} ne 'index_merge' ) {
       $node->{children} = [$self->table($row)];
    }
    return $node;
