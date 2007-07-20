@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 require "../mysql-explain-tree";
 
@@ -89,6 +89,46 @@ is_deeply(
       }
    ],
    'Tab-separated output',
+);
+
+is_deeply(
+   $p->parse( load_file('samples/simple_union.sql') ),
+   [
+   {  id            => 1,
+         select_type   => 'PRIMARY',
+         table         => 'actor_1',
+         type          => 'index',
+         possible_keys => undef,
+         key           => 'PRIMARY',
+         key_len       => 2,
+         'ref'         => undef,
+         rows          => 200,
+         Extra         => 'Using index',
+      },
+   {  id            => 2,
+         select_type   => 'UNION',
+         table         => 'actor_2',
+         type          => 'index',
+         possible_keys => undef,
+         key           => 'PRIMARY',
+         key_len       => 2,
+         'ref'         => undef,
+         rows          => 200,
+         Extra         => 'Using index',
+      },
+   {  id            => '',
+         select_type   => 'UNION RESULT',
+         table         => '<union1,2>',
+         type          => 'ALL',
+         possible_keys => undef,
+         key           => undef,
+         key_len       => undef,
+         'ref'         => undef,
+         rows          => undef,
+         Extra         => '',
+      },
+   ],
+   'Tabular format with an empty cell',
 );
 
 sub load_file {
