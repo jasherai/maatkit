@@ -35,7 +35,7 @@ sub new {
 sub parse_tabular {
    my ( $text, @cols ) = @_;
    my %row;
-   my @vals = $text =~ m/\| +(.*?)(?= +\|)/msg;
+   my @vals = $text =~ m/\| +([^\|]*?)(?= +\|)/msg;
    return (undef, \@vals) unless @cols;
    @row{@cols} = @vals;
    return (\%row, undef);
@@ -104,6 +104,7 @@ sub parse {
 package ExplainTree;
 
 use Regexp::Common;
+use Data::Dumper;
 
 sub new {
    bless {}, shift;
@@ -117,12 +118,30 @@ sub parse {
 # The main method that turns a result set into a tree.
 sub process {
    my ( $self, $rows ) = @_;
-   my $tree;
+   my @nodes;
+   my %node_for;
+
+   # ##################################################################
+   # EXPLAIN output has forward references, so this requires two passes,
+   # one to generate subtrees from each row and one to resolve the refs.
+   # ##################################################################
+
+   my $rowid = 0;
+
    foreach my $row ( @$rows ) {
       my $sub = $row->{type};
 
-      my $node = $self->$sub($row);
+      # ##################################################################
+      # Dispatch to a class method to generate the tree.
+      # ##################################################################
+      my $node
+         = $sub                          ? $self->$sub($row)
+         : $row->{Extra} =~ m/No tables/ ? { type => 'DUAL' }
+         :                                 die "Can't handle " . Dumper($row);
 
+      # ##################################################################
+      # Apply other tree transformations.
+      # ##################################################################
       if ( $row->{Extra} =~ m/Using where/ ) {
          $node = {
             type  => 'Filter with WHERE',
@@ -130,17 +149,62 @@ sub process {
          };
       }
 
-      if ( $tree ) {
+      # Add some data that will help me keep track of nodes as I manipulate
+      # them later
+      $node->{id}    = $row->{id};
+      $node->{rowid} = $rowid;
+      $node->{row}   = $row;
+
+      $node_for{$rowid} = $node;
+      push @nodes, $node;
+
+      $rowid++;
+   }
+
+   # Find nodes whose table references need to be resolved.  Remove the
+   # referenced nodes from the flat list and make them children.
+   foreach my $node (
+      grep { $_->{row}->{table} && $_->{row}->{table} =~ m/^<.*>$/ } @nodes
+   ) {
+      my @ids = $node->{row}->{table} =~ m/(\d+)/g;
+      my @kids;
+      foreach my $id ( @ids ) {
+         push @kids, grep { $_->{id} && $_->{id} == $id } @nodes;
+      }
+      $node->{children} = [@kids];
+
+      # Now remove the children from the main list.
+      my %child_row_ids = map { $_->{rowid} => 1 } @kids;
+      @nodes = grep { !$child_row_ids{$_->{rowid}} } @nodes;
+   }
+
+   # Iterate the main list again and resolve joins.
+   my $tree;
+   foreach my $node ( @nodes ) {
+      if ( !$tree ) {
+         $tree = $node;
+      }
+      else {
          $tree = {
             type     => 'JOIN',
             children => [ $tree, $node ],
          };
       }
-      else {
-         $tree = $node;
-      }
-
    }
+
+   # Massage some kinds of nodes.
+   foreach my $node ( values %node_for ) {
+      if ( $node->{row}->{select_type} eq 'UNION RESULT' ) {
+         $node->{type} = 'UNION';
+         $node->{table} = $node->{row}->{table};
+      }
+   }
+
+   # Get rid of temp variables.
+   foreach my $node ( values %node_for ) {
+      delete @{$node}{qw(row)};
+   }
+         
    return $tree;
 }
 
@@ -152,8 +216,8 @@ sub process {
 sub ALL {
    my ( $self, $row ) = @_;
    return {
-      type  => 'Table scan',
-      rows  => $row->{rows},
+      type     => 'Table scan',
+      rows     => $row->{rows},
       children => [$self->table($row)],
    };
 }
