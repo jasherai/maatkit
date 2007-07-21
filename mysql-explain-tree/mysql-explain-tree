@@ -184,9 +184,11 @@ sub process {
    # Massage some kinds of nodes.
    foreach my $node ( values %node_for ) {
       if ( $node->{row}->{table} && $node->{row}->{table} =~ m/^<derived(\d+,?)+>$/ ) {
-         $node->{type} = 'DERIVED';
-         $node->{table} = $node->{row}->{table};
-         $node->{children} = [ $self->build_join_tree(@{$node->{children}}) ];
+         # Lift the join out and put a temporary table with a table scan in its
+         # place
+         my $child = $self->table($node->{row}, 'DERIVED');
+         $child->{children} = [ $self->build_join_tree(@{$node->{children}}) ];
+         $node->{children} = [ $child ];
       }
       elsif ( $node->{row}->{select_type} eq 'UNION RESULT' ) {
          $node->{type} = 'UNION';
@@ -341,9 +343,9 @@ sub recurse_index_merge {
 }
 
 sub table {
-   my ( $self, $row ) = @_;
+   my ( $self, $row, $type ) = @_;
    return {
-      type          => 'Table',
+      type          => $type || 'Table',
       table         => $row->{table},
       possible_keys => $row->{possible_keys},
    };
