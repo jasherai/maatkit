@@ -178,23 +178,17 @@ sub process {
       @nodes = grep { !$child_row_ids{$_->{rowid}} } @nodes;
    }
 
-   # Iterate the main list again and resolve joins.
-   my $tree;
-   foreach my $node ( @nodes ) {
-      if ( !$tree ) {
-         $tree = $node;
-      }
-      else {
-         $tree = {
-            type     => 'JOIN',
-            children => [ $tree, $node ],
-         };
-      }
-   }
+   # Resolve joins in the main node list.
+   my $tree = $self->build_join_tree(@nodes);
 
    # Massage some kinds of nodes.
    foreach my $node ( values %node_for ) {
-      if ( $node->{row}->{select_type} eq 'UNION RESULT' ) {
+      if ( $node->{row}->{table} && $node->{row}->{table} =~ m/^<derived(\d+,?)+>$/ ) {
+         $node->{type} = 'DERIVED';
+         $node->{table} = $node->{row}->{table};
+         $node->{children} = [ $self->build_join_tree(@{$node->{children}}) ];
+      }
+      elsif ( $node->{row}->{select_type} eq 'UNION RESULT' ) {
          $node->{type} = 'UNION';
          $node->{table} = $node->{row}->{table};
       }
@@ -204,7 +198,7 @@ sub process {
    foreach my $node ( values %node_for ) {
       delete @{$node}{qw(row)};
    }
-         
+
    return $tree;
 }
 
@@ -286,6 +280,23 @@ sub index_merge {
 # Here are helper subroutines for the ones that correspond to values in the
 # 'type' column.
 # ###########################################################################
+
+sub build_join_tree {
+   my ( $self, @nodes ) = @_;
+   my $tree;
+   foreach my $node ( @nodes ) {
+      if ( !$tree ) {
+         $tree = $node;
+      }
+      else {
+         $tree = {
+            type     => 'JOIN',
+            children => [ $tree, $node ],
+         };
+      }
+   }
+   return $tree;
+}
 
 # TODO: get rid of Regexp::Common dependency with a re like this:
 # my $bal;
