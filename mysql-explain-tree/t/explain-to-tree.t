@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 20;
 
 require "../mysql-explain-tree";
 
@@ -67,6 +67,44 @@ is_deeply(
       ]
    },
    'Simple join',
+);
+
+$t = $e->parse( load_file('samples/simple_join_three_tables.sql') );
+is_deeply(
+   $t,
+   {  type     => 'JOIN',
+      children => [
+         {  type     => 'JOIN',
+            children => [
+               {  type     => 'Index scan',
+                  key      => 'actor_1->PRIMARY',
+                  key_len  => 2,
+                  'ref'    => undef,
+                  rows     => 200,
+                  id       => 1,
+                  rowid    => 0,
+               },
+               {  type     => 'Unique index lookup',
+                  key      => 'actor_2->PRIMARY',
+                  key_len  => 2,
+                  'ref'    => 'sakila.actor_1.actor_id',
+                  rows     => 1,
+                  id       => 1,
+                  rowid    => 1,
+               },
+            ],
+         },
+         {  type     => 'Unique index lookup',
+            key      => 'actor_3->PRIMARY',
+            key_len  => 2,
+            'ref'    => 'sakila.actor_1.actor_id',
+            rows     => 1,
+            id       => 1,
+            rowid    => 2,
+         },
+      ],
+   },
+   'Simple join over three tables',
 );
 
 $t = $e->parse( load_file('samples/film_join_actor_eq_ref.sql') );
@@ -516,5 +554,61 @@ is_deeply(
       ],
    },
    'Simple union',
+);
+
+$t = $e->parse( load_file('samples/simple_derived.sql') );
+is_deeply(
+   $t,
+   {  type     => 'DERIVED',
+      table    => '<derived2>',
+      rows     => 200,
+      id       => 1,
+      rowid    => 0,
+      children => [
+         {  type    => 'Index scan',
+            key     => 'actor->PRIMARY',
+            key_len => 2,
+            'ref'   => undef,
+            rows    => 200,
+            id      => 2,
+            rowid   => 1,
+         },
+      ],
+   },
+   'Simple derived table',
+);
+
+$t = $e->parse( load_file('samples/derived_over_join.sql') );
+is_deeply(
+   $t,
+   {  type     => 'DERIVED',
+      table    => '<derived2>',
+      rows     => 40000,
+      id       => 1,
+      rowid    => 0,
+      children => [
+         {  type     => 'JOIN',
+            children => [
+               {  type    => 'Index scan',
+                  key     => 'actor_1->PRIMARY',
+                  key_len => 2,
+                  'ref'   => undef,
+                  rows    => 200,
+                  id      => 2,
+                  rowid   => 1,
+               },
+               {  type    => 'Index scan',
+                  key     => 'actor_2->PRIMARY',
+                  key_len => 2,
+                  'ref'   => undef,
+                  rows    => 200,
+                  id      => 2,
+                  rowid   => 2,
+               },
+            ],
+         },
+      ],
+   },
+   'Simple derived table over a simple join',
 );
 
