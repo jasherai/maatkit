@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 26;
+use Test::More tests => 28;
 
 require "../mysql-explain-tree";
 
@@ -930,5 +930,65 @@ is_deeply(
       ],
    },
    'Join inside a subquery',
+);
+
+$t = $e->parse( load_file('samples/unique_subquery_in_where_clause.sql') );
+is_deeply(
+   $t,
+   {  type     => 'DEPENDENT SUBQUERY',
+      children => [
+         {  type     => 'Filter with WHERE',
+            id       => 1,
+            rowid    => 0,
+            children => [
+               {  type     => 'Index scan',
+                  rows     => 5143,
+                  key_len  => 2,
+                  key      => 'film_actor->idx_fk_film_id',
+                  'ref'    => undef,
+               },
+            ],
+         },
+         {  type     => 'Unique subquery',
+            rows     => 1,
+            id       => 2,
+            rowid    => 1,
+            key_len  => 2,
+            key      => 'actor->PRIMARY',
+            'ref'    => 'func',
+         },
+      ],
+   },
+   'Unique subquery',
+);
+
+$t = $e->parse( load_file('samples/index_subquery_in_where_clause.sql') );
+is_deeply(
+   $t,
+   {  type     => 'DEPENDENT SUBQUERY',
+      children => [
+         {  type     => 'Filter with WHERE',
+            id       => 1,
+            rowid    => 0,
+            children => [
+               {  type     => 'Index scan',
+                  rows     => 200,
+                  key_len  => 2,
+                  key      => 'actor->PRIMARY',
+                  'ref'    => undef,
+               },
+            ],
+         },
+         {  type     => 'Index subquery',
+            rows     => 13,
+            id       => 2,
+            rowid    => 1,
+            key_len  => 2,
+            key      => 'film_actor->PRIMARY',
+            'ref'    => 'func',
+         },
+      ],
+   },
+   'Index subquery',
 );
 

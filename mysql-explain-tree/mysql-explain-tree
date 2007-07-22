@@ -103,6 +103,7 @@ sub parse {
 # ###########################################################################
 package ExplainTree;
 
+use List::Util qw(max);
 use Regexp::Common;
 use Data::Dumper;
 
@@ -119,7 +120,6 @@ sub parse {
 sub process {
    my ( $self, $rows ) = @_;
    my @nodes;
-   my %node_for;
 
    # ##################################################################
    # EXPLAIN output has forward references, so this requires two passes,
@@ -155,34 +155,43 @@ sub process {
       $node->{rowid} = $rowid;
       $node->{row}   = $row;
 
-      $node_for{$rowid} = $node;
       push @nodes, $node;
 
       $rowid++;
    }
 
-   # Fix nodes whose table references need to be resolved.  Remove the
-   # referenced nodes from the flat list and make them children of their
-   # parents.
-   my @stack = @nodes;
-   while ( @stack ) { # Recurse depth-first with shift/unshift stack
-      my $node = shift @stack;
-      if ( $node->{children} ) {
-         unshift @stack, @{$node->{children}};
-      }
+   # Build a tree from the node list by fixing nodes whose table references need
+   # to be resolved.  Remove the referenced nodes from the flat list and make
+   # them children of their parents ("push them down").  Because of the way
+   # unions and derived tables can be nested (study the EXPLAIN of a union of
+   # derived tables of unions), this process has to alternate between unions and
+   # derived tables, resolving union results first, and resolving things that
+   # don't refer to unresolved things first.
+   #
+   # Therefore, when a union is resolved I "pull up" information from its child
+   # nodes: its id and select_type come from its first child, and its table
+   # becomes the concatenation of its child tables.  This convoluted process is
+   # necessary because there are both forward and backward references.
+   #
+   # Strict alternation between union and derived is necessary because a) there
+   # is no such thing as a union of unions and b) I can't try to resolve derived
+   # tables twice in a row without resolving potential unions within them.
 
-      if ( $node->{table} && $node->{table} =~ m/^<.*>$/ )
-      {
-         my @ids = $node->{table} =~ m/(\d+)/g;
-         my @kids;
-         foreach my $id ( @ids ) {
-            push @kids, grep { $_->{id} && $_->{id} == $id } @nodes;
+   my $op        = 'UNION';
+   my $i         = 0;
+   my $this_time = 0;
+   my $last_time = 1; # Don't quit if first run doesn't do anything
+   while ( $i < @nodes ) {
+      my $result = $self->resolve_dependencies(\@nodes, $nodes[$i], $nodes[$i], $op);
+      $this_time ||= $result;
+      $i = max(0, $i - $result + 1); # May redo nodes, but won't skip any.
+      if ( $i >= @nodes ) {
+         if ( $this_time || $last_time ) {
+            $op = $op eq 'UNION' ? 'DERIVED' : 'UNION';
+            $i  = 0;
          }
-         $node->{children} = [@kids];
-
-         # Now remove the children from the main list.
-         my %child_row_ids = map { $_->{rowid} => 1 } @kids;
-         @nodes = grep { !$child_row_ids{$_->{rowid}} } @nodes;
+         $last_time = $this_time;
+         $this_time = 0;
       }
    }
 
@@ -190,7 +199,7 @@ sub process {
    my $tree = $self->build_join_tree(@nodes);
 
    # Recurse the tree again for more tree transformations.
-   @stack = $tree;
+   my @stack = $tree;
    while ( @stack ) {
       my $node = shift @stack;
 
@@ -253,6 +262,25 @@ sub const {
    return $self->index_access($row, 'Constant index lookup');
 }
 
+sub system {
+   my ( $self, $row ) = @_;
+   return {
+      type => 'Constant table access',
+      rows     => $row->{rows},
+      children => [$self->table($row)],
+   };
+}
+
+sub unique_subquery {
+   my ( $self, $row ) = @_;
+   return $self->index_access($row, 'Unique subquery');
+}
+
+sub index_subquery {
+   my ( $self, $row ) = @_;
+   return $self->index_access($row, 'Index subquery');
+}
+
 # From the manual: "The Index Merge method is used to retrieve rows with
 # several range scans and to merge their results into one."  Therefore each
 # index access should be shown as an index range scan.  The unions and
@@ -284,24 +312,107 @@ sub index_merge {
 }
 
 # ###########################################################################
-# Here are helper subroutines for the ones that correspond to values in the
-# 'type' column.
+# Helper subroutines.
 # ###########################################################################
 
+sub has_unresolved_dependencies {
+   my ( $self, $node ) = @_;
+   if ( $node->{table} && $node->{table} =~ m/^<(?:union|derived)(?:\d+,?)+>$/ ) {
+      return 1;
+   }
+   if ( $node->{children} ) {
+      foreach my $child ( @{$node->{children}} ) {
+         if ( $self->has_unresolved_dependencies($child) ) {
+            return 1;
+         }
+      }
+   }
+}
+
+# Takes all nodes, a top-level node, a node, and a kind (union/derived), and
+# returns the number of rows it moved.  Does not resolve dependencies if it
+# would change something that has dependencies in turn.
+
+sub resolve_dependencies {
+   my ( $self, $nodes, $tl, $node, $kind ) = @_;
+   my $changes = 0;
+   if ( $node->{type} eq $kind && !$node->{children}
+         && $self->has_unresolved_dependencies($node) )
+   {
+      my @ids = $node->{table} =~ m/(\d+)/g;
+      my @kids;
+      foreach my $id ( @ids ) {
+         push @kids, grep { $_->{id} && $_->{id} == $id } @$nodes;
+      }
+
+      # Check that kids don't contain any references themselves.
+      if ( !grep { $self->has_unresolved_dependencies($_) } @kids ) {
+
+         # "Push down" children.
+         $node->{children} = [@kids];
+         my %child_row_ids = map { $_->{rowid} => 1 } @kids;
+         my $before = scalar @$nodes;
+         @$nodes = grep { !$child_row_ids{$_->{rowid}} } @$nodes;
+
+         # "Pull up" information from the children.
+         if ( $kind eq 'UNION' ) {
+            # UNION RESULT rows don't have a value for the 'id' column, so derived
+            # tables over the union won't be able to find their children unless
+            # I pull this info up.  They also need a select_type for the
+            # build_join_tree() method.
+            $tl->{id}          = $kids[0]->{row}->{id};
+            $tl->{row}->{select_type} = $kids[0]->{row}->{select_type};
+         }
+         $node->{table}
+            = lc($kind) . '(' . join(',', map { $_->{row}->{table} } @kids) . ')';
+         $tl->{row}->{table} = $node->{table};
+         return $before - scalar @$nodes;
+      }
+
+   }
+
+   if ( $node->{children} ) {
+      foreach my $child ( @{$node->{children}} ) {
+         $changes += $self->resolve_dependencies($nodes, $tl, $child, $kind);
+      }
+   }
+
+   return $changes;
+}
+
+# The rules seem to be that all rows with the same 'id' value are JOINED.  After
+# that, adjacent rows are 'join'ed with some other kind of join, like a
+# subquery.
 sub build_join_tree {
    my ( $self, @nodes ) = @_;
-   my $tree;
-   foreach my $node ( @nodes ) {
-      if ( !$tree ) {
-         $tree = $node;
-      }
-      else {
+
+   # Grab the first row for each 'id' value.
+   my %seen;
+   my @top_level = grep { !$seen{$_->{id}}++ } @nodes;
+
+   # Build a tree for each 'id' value.
+   my @subtrees;
+   foreach my $id ( map { $_->{id} } @top_level ) {
+      my ($tree, @sub_nodes) = grep { $_->{id} eq $id } @nodes;
+      foreach my $node ( @sub_nodes ) {
          $tree = {
             type     => 'JOIN',
             children => [ $tree, $node ],
          };
       }
+      push @subtrees, $tree;
    }
+
+   # Now join the list of subtrees together with the specified join type.
+   my $tree = shift @subtrees;
+   shift @top_level;
+   foreach my $i ( 0 .. $#subtrees ) {
+      $tree = {
+         type     => $top_level[$i]->{row}->{select_type},
+         children => [ $tree, $subtrees[$i] ],
+      };
+   }
+
    return $tree;
 }
 
