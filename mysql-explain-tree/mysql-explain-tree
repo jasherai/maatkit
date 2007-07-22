@@ -144,7 +144,7 @@ sub process {
       # ##################################################################
       if ( $row->{Extra} =~ m/Using where/ ) {
          $node = {
-            type  => 'Filter with WHERE',
+            type     => 'Filter with WHERE',
             children => [$node],
          };
       }
@@ -161,44 +161,49 @@ sub process {
       $rowid++;
    }
 
-   # Find nodes whose table references need to be resolved.  Remove the
-   # referenced nodes from the flat list and make them children.
-   foreach my $node (
-      grep { $_->{row}->{table} && $_->{row}->{table} =~ m/^<.*>$/ } @nodes
-   ) {
-      my @ids = $node->{row}->{table} =~ m/(\d+)/g;
-      my @kids;
-      foreach my $id ( @ids ) {
-         push @kids, grep { $_->{id} && $_->{id} == $id } @nodes;
+   # Fix nodes whose table references need to be resolved.  Remove the
+   # referenced nodes from the flat list and make them children of their
+   # parents.
+   my @stack = @nodes;
+   while ( @stack ) { # Recurse depth-first with shift/unshift stack
+      my $node = shift @stack;
+      if ( $node->{children} ) {
+         unshift @stack, @{$node->{children}};
       }
-      $node->{children} = [@kids];
 
-      # Now remove the children from the main list.
-      my %child_row_ids = map { $_->{rowid} => 1 } @kids;
-      @nodes = grep { !$child_row_ids{$_->{rowid}} } @nodes;
+      if ( $node->{table} && $node->{table} =~ m/^<.*>$/ )
+      {
+         my @ids = $node->{table} =~ m/(\d+)/g;
+         my @kids;
+         foreach my $id ( @ids ) {
+            push @kids, grep { $_->{id} && $_->{id} == $id } @nodes;
+         }
+         $node->{children} = [@kids];
+
+         # Now remove the children from the main list.
+         my %child_row_ids = map { $_->{rowid} => 1 } @kids;
+         @nodes = grep { !$child_row_ids{$_->{rowid}} } @nodes;
+      }
    }
 
    # Resolve joins in the main node list.
    my $tree = $self->build_join_tree(@nodes);
 
-   # Massage some kinds of nodes.
-   foreach my $node ( values %node_for ) {
-      if ( $node->{row}->{table} && $node->{row}->{table} =~ m/^<derived(\d+,?)+>$/ ) {
-         # Lift the join out and put a temporary table with a table scan in its
-         # place
-         my $child = $self->table($node->{row}, 'DERIVED');
-         $child->{children} = [ $self->build_join_tree(@{$node->{children}}) ];
-         $node->{children} = [ $child ];
-      }
-      elsif ( $node->{row}->{select_type} eq 'UNION RESULT' ) {
-         $node->{type} = 'UNION';
-         $node->{table} = $node->{row}->{table};
-      }
-   }
+   # Recurse the tree again for more tree transformations.
+   @stack = $tree;
+   while ( @stack ) {
+      my $node = shift @stack;
 
-   # Get rid of temp variables.
-   foreach my $node ( values %node_for ) {
-      delete @{$node}{qw(row)};
+      if ( $node->{children} ) {
+         unshift @stack, @{$node->{children}};
+      }
+
+      if ( $node->{type} eq 'DERIVED' ) {
+         $node->{children} = [ $self->build_join_tree(@{$node->{children}}) ];
+      }
+      
+      # Get rid of temp variables.
+      delete $node->{row};
    }
 
    return $tree;
@@ -343,9 +348,11 @@ sub recurse_index_merge {
 }
 
 sub table {
-   my ( $self, $row, $type ) = @_;
+   my ( $self, $row ) = @_;
    return {
-      type          => $type || 'Table',
+      type          => ($row->{table} && $row->{table} =~ m/^<(derived|union)/)
+                       ? uc $1
+                       : 'Table',
       table         => $row->{table},
       possible_keys => $row->{possible_keys},
    };
