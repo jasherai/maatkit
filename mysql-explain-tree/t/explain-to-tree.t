@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 21;
 
 require "../mysql-explain-tree";
 
@@ -529,27 +529,32 @@ is_deeply(
 $t = $e->parse( load_file('samples/simple_union.sql') );
 is_deeply(
    $t,
-   {  type     => 'UNION',
-      table    => '<union1,2>',
+   {  type     => 'Table scan',
       rows     => undef,
       id       => '',
       rowid    => 2,
       children => [
-         {  type    => 'Index scan',
-            key     => 'actor_1->PRIMARY',
-            key_len => 2,
-            'ref'   => undef,
-            rows    => 200,
-            id      => 1,
-            rowid   => 0,
-         },
-         {  type    => 'Index scan',
-            key     => 'actor_2->PRIMARY',
-            key_len => 2,
-            'ref'   => undef,
-            rows    => 200,
-            id      => 2,
-            rowid   => 1,
+         {  type    => 'UNION',
+            possible_keys => undef,
+            table => '<union1,2>',
+            children => [
+               {  type    => 'Index scan',
+                  key     => 'actor_1->PRIMARY',
+                  key_len => 2,
+                  'ref'   => undef,
+                  rows    => 200,
+                  id      => 1,
+                  rowid   => 0,
+               },
+               {  type    => 'Index scan',
+                  key     => 'actor_2->PRIMARY',
+                  key_len => 2,
+                  'ref'   => undef,
+                  rows    => 200,
+                  id      => 2,
+                  rowid   => 1,
+               },
+            ],
          },
       ],
    },
@@ -622,3 +627,82 @@ is_deeply(
    'Simple derived table over a simple join',
 );
 
+$t = $e->parse( load_file('samples/join_two_derived_tables_of_joins.sql') );
+is_deeply(
+   $t,
+   {  type     => 'JOIN',
+      children => [
+         {  type     => 'Table scan',
+            rows     => 40000,
+            id       => 1,
+            rowid    => 0,
+            children => [
+               {  type     => 'DERIVED',
+                  table    => '<derived2>',
+                  possible_keys => undef,
+                  children => [
+                     {  type     => 'JOIN',
+                        children => [
+                           {  type    => 'Index scan',
+                              key     => 'actor_1->PRIMARY',
+                              key_len => 2,
+                              'ref'   => undef,
+                              rows    => 200,
+                              id      => 2,
+                              rowid   => 4,
+                           },
+                           {  type    => 'Index scan',
+                              key     => 'actor_2->PRIMARY',
+                              key_len => 2,
+                              'ref'   => undef,
+                              rows    => 200,
+                              id      => 2,
+                              rowid   => 5,
+                           },
+                        ],
+                     },
+                  ],
+               },
+            ],
+         },
+         {  type     => 'Filter with WHERE',
+            id       => 1,
+            rowid    => 1,
+            children => [
+               {  type     => 'Table scan',
+                  rows     => 40000,
+                  children => [
+                     {  type     => 'DERIVED',
+                        table    => '<derived3>',
+                        possible_keys => undef,
+                        children => [
+                           {  type     => 'JOIN',
+                              children => [
+                                 {  type    => 'Index scan',
+                                    key     => 'actor_3->PRIMARY',
+                                    key_len => 2,
+                                    'ref'   => undef,
+                                    rows    => 200,
+                                    id      => 3,
+                                    rowid   => 2,
+                                 },
+                                 {  type    => 'Index scan',
+                                    key     => 'actor_4->PRIMARY',
+                                    key_len => 2,
+                                    'ref'   => undef,
+                                    rows    => 200,
+                                    id      => 3,
+                                    rowid   => 3,
+                                 },
+                              ],
+                           },
+                        ],
+                     },
+                  ],
+               },
+            ],
+         },
+      ],
+   },
+   'Join two derived tables which each contain a join',
+);
