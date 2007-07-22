@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 26;
 
 require "../mysql-explain-tree";
 
@@ -531,12 +531,12 @@ is_deeply(
    $t,
    {  type     => 'Table scan',
       rows     => undef,
-      id       => '',
+      id       => 1,
       rowid    => 2,
       children => [
          {  type    => 'UNION',
             possible_keys => undef,
-            table => '<union1,2>',
+            table => 'union(actor_1,actor_2)',
             children => [
                {  type    => 'Index scan',
                   key     => 'actor_1->PRIMARY',
@@ -570,7 +570,7 @@ is_deeply(
       rowid    => 0,
       children => [
          {  type     => 'DERIVED',
-            table    => '<derived2>',
+            table    => 'derived(actor)',
             possible_keys => undef,
             children => [
                {  type    => 'Index scan',
@@ -597,7 +597,7 @@ is_deeply(
       rowid    => 0,
       children => [
          {  type     => 'DERIVED',
-            table    => '<derived2>',
+            table    => 'derived(actor_1,actor_2)',
             possible_keys => undef,
             children => [
                {  type     => 'JOIN',
@@ -638,7 +638,7 @@ is_deeply(
             rowid    => 0,
             children => [
                {  type     => 'DERIVED',
-                  table    => '<derived2>',
+                  table    => 'derived(actor_1,actor_2)',
                   possible_keys => undef,
                   children => [
                      {  type     => 'JOIN',
@@ -673,7 +673,7 @@ is_deeply(
                   rows     => 40000,
                   children => [
                      {  type     => 'DERIVED',
-                        table    => '<derived3>',
+                        table    => 'derived(actor_3,actor_4)',
                         possible_keys => undef,
                         children => [
                            {  type     => 'JOIN',
@@ -706,3 +706,229 @@ is_deeply(
    },
    'Join two derived tables which each contain a join',
 );
+
+$t = $e->parse( load_file('samples/union_of_derived_unions.sql') );
+is_deeply(
+   $t,
+   {  type     => 'Table scan',
+      rows     => undef,
+      id       => 1,
+      rowid    => 8,
+      children => [
+         {
+            type     => 'UNION',
+            table    => 'union(derived(union(actor_1,actor_2)),derived(union(actor_3,actor_4)))',
+            possible_keys => undef,
+            children => [
+               {  type     => 'Constant table access',
+                  id       => 1,
+                  rowid    => 0,
+                  rows     => 1,
+                  children => [
+                     {  type     => 'DERIVED',
+                        table    => 'derived(union(actor_1,actor_2))',
+                        possible_keys => undef,
+                        children => [
+                           {  type        => 'Table scan',
+                              id       => 2,
+                              rowid    => 3,
+                              rows     => undef,
+                              children => [
+                                 {  type          => 'UNION',
+                                    possible_keys => undef,
+                                    table         => 'union(actor_1,actor_2)',
+                                    children      => [
+                                       {  type    => 'Index scan',
+                                          key     => 'actor_1->PRIMARY',
+                                          key_len => 2,
+                                          'ref'   => undef,
+                                          rows    => 200,
+                                          id      => 2,
+                                          rowid   => 1,
+                                       },
+                                       {  type    => 'Index scan',
+                                          key     => 'actor_2->PRIMARY',
+                                          key_len => 2,
+                                          'ref'   => undef,
+                                          rows    => 200,
+                                          id      => 3,
+                                          rowid   => 2,
+                                       },
+                                    ],
+                                 },
+                              ],
+                           }
+                        ],
+                     },
+                  ],
+               },
+               {
+                  type     => 'Table scan',
+                  id => 4,
+                  rowid => 4,
+                  rows => 400,
+                  children => [
+                     {  type     => 'DERIVED',
+                        table    => 'derived(union(actor_3,actor_4))',
+                        possible_keys => undef,
+                        children => [
+                           {  type     => 'Table scan',
+                              rows     => undef,
+                              id       => 5,
+                              rowid    => 7,
+                              children => [
+                                 {  type          => 'UNION',
+                                    possible_keys => undef,
+                                    table         => 'union(actor_3,actor_4)',
+                                    children      => [
+                                       {  type    => 'Index scan',
+                                          key     => 'actor_3->PRIMARY',
+                                          key_len => 2,
+                                          'ref'   => undef,
+                                          rows    => 200,
+                                          id      => 5,
+                                          rowid   => 5,
+                                       },
+                                       {  type    => 'Index scan',
+                                          key     => 'actor_4->PRIMARY',
+                                          key_len => 2,
+                                          'ref'   => undef,
+                                          rows    => 200,
+                                          id      => 6,
+                                          rowid   => 6,
+                                       },
+                                    ],
+                                 },
+                              ]
+                           },
+                        ],
+                     },
+                  ],
+               }
+            ],
+         },
+      ],
+   },
+   'Union over two derived tables of unions',
+);
+
+$t = $e->parse( load_file('samples/simple_subquery.sql') );
+is_deeply(
+   $t,
+   {  type     => 'SUBQUERY',
+      children => [
+         {  type     => 'Index scan',
+            rows     => 200,
+            id       => 1,
+            rowid    => 0,
+            key_len  => 2,
+            key      => 'actor->PRIMARY',
+            'ref'    => undef,
+         },
+         {  type     => 'Index scan',
+            key      => 'film->idx_fk_language_id',
+            key_len  => 1,
+            'ref'    => undef,
+            rows     => 951,
+            id       => 2,
+            rowid    => 1,
+         },
+      ]
+   },
+   'Simple subquery',
+);
+
+$t = $e->parse( load_file('samples/dependent_subquery.sql') );
+is_deeply(
+   $t,
+   {  type     => 'DEPENDENT SUBQUERY',
+      children => [
+         {  type     => 'Index scan',
+            rows     => 200,
+            id       => 1,
+            rowid    => 0,
+            key_len  => 2,
+            key      => 'actor->PRIMARY',
+            'ref'    => undef,
+         },
+         {  type     => 'Filter with WHERE',
+            id       => 2,
+            rowid    => 1,
+            children => [
+               {  type     => 'Index lookup',
+                  key      => 'film_actor->PRIMARY',
+                  key_len  => 2,
+                  'ref'    => 'actor.actor_id',
+                  rows     => 13,
+               },
+            ],
+         },
+      ],
+   },
+   'Dependent subquery',
+);
+
+$t = $e->parse( load_file('samples/uncacheable_subquery.sql') );
+is_deeply(
+   $t,
+   {  type     => 'UNCACHEABLE SUBQUERY',
+      children => [
+         {  type     => 'Index scan',
+            rows     => 200,
+            id       => 1,
+            rowid    => 0,
+            key_len  => 2,
+            key      => 'actor->PRIMARY',
+            'ref'    => undef,
+         },
+         {  type     => 'Index scan',
+            key      => 'actor->PRIMARY',
+            key_len  => 2,
+            'ref'    => undef,
+            rows     => 200,
+            id       => 2,
+            rowid    => 1,
+         },
+      ],
+   },
+   'Dependent subquery',
+);
+
+$t = $e->parse( load_file('samples/join_in_subquery.sql') );
+is_deeply(
+   $t,
+   {  type     => 'SUBQUERY',
+      children => [
+         {  type     => 'Index scan',
+            rows     => 200,
+            id       => 1,
+            rowid    => 0,
+            key_len  => 2,
+            key      => 'actor->PRIMARY',
+            'ref'    => undef,
+         },
+         {  type     => 'JOIN',
+            children => [
+               {  type     => 'Index scan',
+                  key      => 'film->idx_fk_language_id',
+                  key_len  => 1,
+                  'ref'    => undef,
+                  rows     => 951,
+                  id       => 2,
+                  rowid    => 1,
+               },
+               {  type     => 'Index lookup',
+                  key      => 'film_actor->idx_fk_film_id',
+                  key_len  => 2,
+                  'ref'    => 'sakila.film.film_id',
+                  rows     => 2,
+                  id       => 2,
+                  rowid    => 2,
+               },
+            ],
+         },
+      ],
+   },
+   'Join inside a subquery',
+);
+
