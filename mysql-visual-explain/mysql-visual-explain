@@ -1,5 +1,25 @@
 #!/usr/bin/perl
 
+# This is mysql-visual-explain, a program to transform MySQL's EXPLAIN output
+# into a query execution plan formatted as a tree.
+#
+# This program is copyright (c) 2007 Baron Schwartz.  Feedback and
+# improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
 use strict;
 use warnings FATAL => 'all';
 
@@ -224,7 +244,7 @@ sub process {
       if ( $node->{type} eq 'DERIVED' ) {
          $node->{children} = [ $self->build_join_tree(@{$node->{children}}) ];
       }
-      
+
       # Get rid of temp variables.
       delete $node->{row};
    }
@@ -546,14 +566,107 @@ sub index_access {
 # ###########################################################################
 package main;
 
+use DBI;
 use English qw(-no_match_vars);
-use Data::Dumper;
+use List::Util qw(max);
+use Getopt::Long;
+
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 if ( !caller ) {
+
+   # ############################################################################
+   # Get configuration information.
+   # ############################################################################
+
+   # Define cmdline args.
+   my @opt_spec = (
+      { s => 'connect|c',         d => 'Connect and EXPLAIN the input, then transform' },
+      { s => 'database|D=s',      d => 'Database to use' },
+      { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+      { s => 'help',              d => 'Show this help message' },
+      { s => 'host|h=s',          d => 'Connect to host' },
+      { s => 'password|p=s',      d => 'Password to use when connecting' },
+      { s => 'port|P=i',          d => 'Port number to use for connection' },
+      { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+      { s => 'user|u=s',          d => 'User for login if not current user' },
+      { s => 'version',           d => 'Output version information and exit' },
+   );
+
+   # This is the container for the command-line options' values to be stored in
+   # after processing.  Initial values are defaults.
+   my %opts = (
+   );
+
+   # Post-process...
+   my %opt_seen;
+   foreach my $spec ( @opt_spec ) {
+      my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+      $spec->{k} = $short || $long;
+      $spec->{l} = $long;
+      $spec->{t} = $short;
+      $spec->{n} = $spec->{s} =~ m/!/;
+      $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+      die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+   if ( $opts{version} ) {
+      print "mysql-visual-explain  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+      exit(0);
+   }
+
+   if ( $opts{help} || (!@ARGV && !$opts{c} )) {
+      print "Usage: mysql-visual-explain <options> [FILE]...\n\n";
+      my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
+      foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t} ? "-$spec->{t}" : '';
+         printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+      }
+      (my $usage = <<"      USAGE") =~ s/^      //mg;
+
+      mysql-visual-explain transforms EXPLAIN output into a tree
+      representation of the query plan.  If FILE is given, input is read from
+      the file(s).  With no FILE, or when FILE is -, read standard input.
+      For more details, please read the documentation:
+
+         perldoc mysql-visual-explain
+
+      USAGE
+      print $usage;
+      exit(0);
+   }
+
+   # ############################################################################
+   # Do the main work.
+   # ############################################################################
    # Magically read STDIN or files in @ARGV
    my $text = do { local $INPUT_RECORD_SEPARATOR = undef; <>; };
-   my $e    = ExplainTree->new();
-   print $e->as_string($e->parse($text));
+   my $rows;
+
+   if ( $opts{c} ) { # Connect to the database
+      my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
+
+      my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+         . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
+         . ';mysql_read_default_group=mysql';
+      my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+         or die("Can't connect to DB: $OS_ERROR");
+      $rows = $dbh->selectall_arrayref('EXPLAIN ' . $text, { Slice => {} } );
+      $dbh->disconnect;
+   }
+   else {
+      $rows = ExplainParser->new->parse($text);
+   }
+
+   my $et   = ExplainTree->new();
+   my $tree = $et->process($rows);
+   print $et->as_string($tree);
 }
 
 1; # Because this is a module as well as a script.
