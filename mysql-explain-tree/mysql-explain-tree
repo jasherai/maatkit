@@ -3,23 +3,10 @@
 use strict;
 use warnings FATAL => 'all';
 
-# http://dev.mysql.com/doc/refman/5.0/en/explain.html
-# http://dev.mysql.com/doc/sakila/en/sakila.html
-# http://dev.mysql.com/doc/refman/5.0/en/in-subquery-optimization.html
-
-# explain select film_id from sakila.film where exists(select * from
-# sakila.film_actor where sakila.film.film_id = sakila.film_actor.film_id);
-# explain select film_id, (select count(*) from sakila.film) as foo from
-# sakila.film;
-# explain select film_id from sakila.film where exists(select * from
-# sakila.film_actor where sakila.film.film_id = sakila.film_actor.film_id and
-# @foo is null);
-# explain select film_id, (select @foo:=count(*) from sakila.film) as foo from
-# sakila.film;
-
 # ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book (TODO).
 # ###########################################################################
 
 # ###########################################################################
@@ -119,6 +106,7 @@ sub parse {
 # The main method that turns a result set into a tree.
 sub process {
    my ( $self, $rows ) = @_;
+   return unless ref $rows eq 'ARRAY' && @$rows;
    my @nodes;
 
    # ##################################################################
@@ -243,6 +231,10 @@ sub process {
    }
 
    return $tree;
+}
+
+sub as_string {
+   my ( $self, $tree ) = @_;
 }
 
 #############################################################################
@@ -527,8 +519,13 @@ sub index_access {
 # ###########################################################################
 package main;
 
+use English qw(-no_match_vars);
+use Data::Dumper;
+
 if ( !caller ) {
-   print "hi there\n";
+   # Magically read STDIN or files in @ARGV
+   my $text = do { local $INPUT_RECORD_SEPARATOR = undef; <>; };
+   print Dumper(ExplainTree->new->parse($text));
 }
 
 1; # Because this is a module as well as a script.

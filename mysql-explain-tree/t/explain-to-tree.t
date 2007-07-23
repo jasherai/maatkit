@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 39;
+use Test::More tests => 40;
 
 require "../mysql-explain-tree";
 
@@ -16,6 +16,9 @@ sub load_file {
 }
 my $e = new ExplainTree;
 my $t;
+
+$t = $e->parse('');
+is_deeply($t, undef, 'No valid input');
 
 $t = $e->parse( load_file('samples/impossible_where.sql') );
 is_deeply(
