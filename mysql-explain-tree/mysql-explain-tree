@@ -234,7 +234,31 @@ sub process {
 }
 
 sub as_string {
-   my ( $self, $tree ) = @_;
+   my ( $self, $node, $prefix ) = @_;
+   $prefix ||= '';
+   my $branch = $prefix ? substr($prefix, 0, length($prefix) -3) . '+- ' : '';
+   my $output = $branch . $node->{type} . "\n";
+
+   my @kids;
+   if ( $node->{children} ) {
+      @kids   = reverse @{$node->{children}};
+   }
+   my $suffix = (@kids > 1) ? '|  ' : '   ';
+
+   foreach my $thing ( qw(key key_len ref rows) ) {
+      if ( defined $node->{$thing} ) {
+         $output .= $prefix . sprintf('%-14s %s', $thing, $node->{$thing}) . "\n";
+      }
+   }
+
+   my $last_child = pop @kids;
+   foreach my $child ( @kids ) {
+      $output .= $self->as_string($child, $prefix . $suffix);
+   }
+   if ( $last_child ) {
+      $output .= $self->as_string($last_child, $prefix . '   ');
+   }
+   return $output;
 }
 
 #############################################################################
@@ -525,7 +549,8 @@ use Data::Dumper;
 if ( !caller ) {
    # Magically read STDIN or files in @ARGV
    my $text = do { local $INPUT_RECORD_SEPARATOR = undef; <>; };
-   print Dumper(ExplainTree->new->parse($text));
+   my $e    = ExplainTree->new();
+   print $e->as_string($e->parse($text));
 }
 
 1; # Because this is a module as well as a script.
