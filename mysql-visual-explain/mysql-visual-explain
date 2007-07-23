@@ -114,17 +114,31 @@ use List::Util qw(max);
 use Data::Dumper;
 
 sub new {
-   bless {}, shift;
+   my ( $class, $options ) = @_;
+   my $self = bless {}, $class;
+   $self->load_options($options);
+   return $self;
+}
+
+sub load_options {
+   my ( $self, $options ) = @_;
+   if ( $options && ref $options eq 'HASH' ) {
+      @{$self}{keys %$options} = values %$options;
+   }
+   else {
+      delete @{$self}{keys %$self};
+   }
 }
 
 sub parse {
-   my ( $self, $text ) = @_;
-   return $self->process(ExplainParser->new->parse($text));
+   my ( $self, $text, $options ) = @_;
+   return $self->process(ExplainParser->new->parse($text), $options);
 }
 
 # The main method that turns a result set into a tree.
 sub process {
-   my ( $self, $rows ) = @_;
+   my ( $self, $rows, $options ) = @_;
+   $self->load_options($options);
    return unless ref $rows eq 'ARRAY' && @$rows;
    my @nodes;
 
@@ -359,17 +373,7 @@ sub index_merge {
    # query, full rows are retrieved only when the range conditions for all
    # used keys are satisfied."  So a bookmark lookup shouldn't be shown for
    # all indexes; it should be shown from the merge results.
-   if ( $row->{Extra} !~ m/Using index/ ) {
-      return {
-         type     => 'Bookmark lookup',
-         children => [
-            $merge,
-            $self->table($row),
-         ],
-      };
-   }
-
-   return $merge;
+   return $self->bookmark_lookup($merge, $row);
 }
 
 # ###########################################################################
@@ -538,6 +542,19 @@ sub table {
    return $node;
 }
 
+sub bookmark_lookup {
+   my ( $self, $node, $row ) = @_;
+   if ( $row->{Extra} =~ m/Using index/
+         || ( $self->{clustered} && $row->{key} && $row->{key} eq 'PRIMARY' ))
+   {
+      return $node;
+   }
+   return {
+      type     => 'Bookmark lookup',
+      children => [ $node, $self->table($row) ],
+   };
+}
+
 sub index_access {
    my ( $self, $row, $type, $key ) = @_;
    my $node = {
@@ -554,11 +571,8 @@ sub index_access {
       $node->{type} = 'Loose index scan';
    }
    # See index_merge_bookmark_lookup note above.
-   if ( $row->{Extra} !~ m/Using index/ && $row->{type} ne 'index_merge' ) {
-      $node = {
-         type     => 'Bookmark lookup',
-         children => [$node, $self->table($row)],
-      };
+   if ( $row->{type} ne 'index_merge' ) {
+      $node = $self->bookmark_lookup($node, $row);
    }
    return $node;
 }
@@ -585,6 +599,7 @@ if ( !caller ) {
 
    # Define cmdline args.
    my @opt_spec = (
+      { s => 'clusterpk|C',       d => 'Assume clustered PK, as for InnoDB' },
       { s => 'connect|c',         d => 'Connect and EXPLAIN the input, then transform' },
       { s => 'database|D=s',      d => 'Database to use' },
       { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
@@ -668,7 +683,7 @@ if ( !caller ) {
    }
 
    my $et   = ExplainTree->new();
-   my $tree = $et->process($rows);
+   my $tree = $et->process($rows, { clustered => $opts{C} });
    if ( $tree ) {
       print $et->as_string($tree);
    }

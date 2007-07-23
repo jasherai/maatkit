@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 40;
+use Test::More tests => 41;
 
 require "../mysql-visual-explain";
 
@@ -282,6 +282,38 @@ is_deeply(
       ],
    },
    'Straight join',
+);
+
+$t = $e->parse(
+   load_file('samples/film_join_actor_eq_ref.sql'),
+   { clustered => 1 },
+);
+is_deeply(
+   $t,
+   {  type     => 'JOIN',
+      children => [
+         {  type     => 'Table scan',
+            rows     => 5143,
+            id       => 1,
+            rowid    => 0,
+            children => [
+               {  type          => 'Table',
+                  table         => 'film_actor',
+                  possible_keys => 'idx_fk_film_id',
+               },
+            ]
+         },
+         {  type     => 'Unique index lookup',
+            id       => 1,
+            rowid    => 1,
+            key      => 'film->PRIMARY',
+            key_len  => 2,
+            'ref'    => 'sakila.film_actor.film_id',
+            rows     => 1,
+         },
+      ],
+   },
+   'Straight join assuming clustered PK',
 );
 
 $t = $e->parse( load_file('samples/full_row_pk_lookup_sakila_film.sql') );
