@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 28;
+use Test::More tests => 30;
 
 require "../mysql-explain-tree";
 
@@ -705,6 +705,163 @@ is_deeply(
       ],
    },
    'Join two derived tables which each contain a join',
+);
+
+$t = $e->parse( load_file('samples/union_of_derived_tables.sql') );
+is_deeply(
+   $t,
+   {  type     => 'Table scan',
+      rows     => undef,
+      id       => 1,
+      rowid    => 4,
+      children => [
+         {
+            type     => 'UNION',
+            table    => 'union(derived(actor),derived(film))',
+            possible_keys => undef,
+            children => [
+               {  type     => 'Table scan',
+                  id       => 1,
+                  rowid    => 0,
+                  rows     => 200,
+                  children => [
+                     {  type     => 'DERIVED',
+                        table    => 'derived(actor)',
+                        possible_keys => undef,
+                        children => [
+                           {  type    => 'Index scan',
+                              key     => 'actor->PRIMARY',
+                              key_len => 2,
+                              'ref'   => undef,
+                              rows    => 200,
+                              id      => 2,
+                              rowid   => 1,
+                           },
+                        ],
+                     },
+                  ],
+               },
+               {  type     => 'Table scan',
+                  id       => 3,
+                  rowid    => 2,
+                  rows     => 1000,
+                  children => [
+                     {  type     => 'DERIVED',
+                        table    => 'derived(film)',
+                        possible_keys => undef,
+                        children => [
+                           {  type    => 'Index scan',
+                              key     => 'film->idx_fk_language_id',
+                              key_len => 1,
+                              'ref'   => undef,
+                              rows    => 951,
+                              id      => 4,
+                              rowid   => 3,
+                           },
+                        ],
+                     },
+                  ],
+               },
+            ],
+         },
+      ],
+   },
+   'Union over two derived tables',
+);
+
+$t = $e->parse( load_file('samples/join_two_derived_tables_of_unions.sql') );
+is_deeply(
+   $t,
+   {
+      type     => 'JOIN',
+      children => [
+         {  type     => 'Constant table access',
+            id       => 1,
+            rowid    => 0,
+            rows     => 1,
+            children => [
+               {  type     => 'DERIVED',
+                  table    => 'derived(union(actor_1,actor_2))',
+                  possible_keys => undef,
+                  children => [
+                     {  type        => 'Table scan',
+                        id       => 2,
+                        rowid    => 7,
+                        rows     => undef,
+                        children => [
+                           {  type          => 'UNION',
+                              possible_keys => undef,
+                              table         => 'union(actor_1,actor_2)',
+                              children      => [
+                                 {  type    => 'Index scan',
+                                    key     => 'actor_1->PRIMARY',
+                                    key_len => 2,
+                                    'ref'   => undef,
+                                    rows    => 200,
+                                    id      => 2,
+                                    rowid   => 5,
+                                 },
+                                 {  type    => 'Index scan',
+                                    key     => 'actor_2->PRIMARY',
+                                    key_len => 2,
+                                    'ref'   => undef,
+                                    rows    => 200,
+                                    id      => 3,
+                                    rowid   => 6,
+                                 },
+                              ],
+                           },
+                        ],
+                     }
+                  ],
+               },
+            ],
+         },
+         {  type     => 'Constant table access',
+            id       => 1,
+            rowid    => 1,
+            rows     => 1,
+            children => [
+               {  type     => 'DERIVED',
+                  table    => 'derived(union(actor_3,actor_4))',
+                  possible_keys => undef,
+                  children => [
+                     {  type        => 'Table scan',
+                        id       => 4,
+                        rowid    => 4,
+                        rows     => undef,
+                        children => [
+                           {  type          => 'UNION',
+                              possible_keys => undef,
+                              table         => 'union(actor_3,actor_4)',
+                              children      => [
+                                 {  type    => 'Index scan',
+                                    key     => 'actor_3->PRIMARY',
+                                    key_len => 2,
+                                    'ref'   => undef,
+                                    rows    => 200,
+                                    id      => 4,
+                                    rowid   => 2,
+                                 },
+                                 {  type    => 'Index scan',
+                                    key     => 'actor_4->PRIMARY',
+                                    key_len => 2,
+                                    'ref'   => undef,
+                                    rows    => 200,
+                                    id      => 5,
+                                    rowid   => 3,
+                                 },
+                              ],
+                           },
+                        ],
+                     }
+                  ],
+               },
+            ],
+         },
+      ],
+   },
+   'Join over two derived tables of unions',
 );
 
 $t = $e->parse( load_file('samples/union_of_derived_unions.sql') );
