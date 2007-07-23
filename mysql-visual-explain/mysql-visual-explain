@@ -362,7 +362,6 @@ sub index_merge {
    if ( $row->{Extra} !~ m/Using index/ ) {
       return {
          type     => 'Bookmark lookup',
-         rows     => $row->{rows},
          children => [
             $merge,
             $self->table($row),
@@ -548,15 +547,18 @@ sub index_access {
       'ref'   => $row->{ref},
       rows    => $row->{rows},
    };
-   # See index_merge_bookmark_lookup note above.
-   if ( $row->{Extra} !~ m/Using index/ && $row->{type} ne 'index_merge' ) {
-      $node->{children} = [$self->table($row)];
-   }
    if ( $row->{Extra} =~ m/Full scan on NULL key/ ) {
       $node->{warning} = 'Full scan on NULL key';
    }
    if ( $row->{Extra} =~ m/Using index for group-by/ ) {
       $node->{type} = 'Loose index scan';
+   }
+   # See index_merge_bookmark_lookup note above.
+   if ( $row->{Extra} !~ m/Using index/ && $row->{type} ne 'index_merge' ) {
+      $node = {
+         type     => 'Bookmark lookup',
+         children => [$node, $self->table($row)],
+      };
    }
    return $node;
 }
