@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 30;
+use Test::More tests => 31;
 
 require "../mysql-explain-tree";
 
@@ -67,6 +67,54 @@ is_deeply(
       ]
    },
    'Simple join',
+);
+
+$t = $e->parse( load_file('samples/join_temporary_with_where_distinct.sql') );
+is_deeply(
+   $t,
+   {  type     => 'JOIN',
+      children => [
+         {  type     => 'Table scan',
+            rows     => 951,
+            id       => 1,
+            rowid    => 0,
+            children => [
+               {  type          => 'TEMPORARY',
+                  table         => 'temporary(film)',
+                  possible_keys => undef,
+                  children      => [
+                     {  type     => 'Filter with WHERE',
+                        children => [
+                           {  type     => 'Table scan',
+                              rows     => 951,
+                              children => [
+                                 {  type     => 'Table',
+                                    table    => 'film',
+                                    possible_keys => 'PRIMARY',
+                                 },
+                              ],
+                           },
+                        ],
+                     },
+                  ],
+               },
+            ],
+         },
+         {  type     => 'Distinct',
+            id       => 1,
+            rowid    => 1,
+            children => [
+               {  type     => 'Index lookup',
+                  key      => 'film_actor->idx_fk_film_id',
+                  key_len  => 2,
+                  'ref'    => 'sakila.film.film_id',
+                  rows     => 2,
+               },
+            ],
+         },
+      ],
+   },
+   'Join that uses a temp table, WHERE, and Distinct',
 );
 
 $t = $e->parse( load_file('samples/simple_join_three_tables.sql') );

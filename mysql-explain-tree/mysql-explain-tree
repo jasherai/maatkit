@@ -148,6 +148,25 @@ sub process {
             children => [$node],
          };
       }
+      if ( $row->{Extra} =~ m/Using temporary/ ) {
+         $node = {
+            type     => 'Table scan',
+            rows     => $row->{rows},
+            children => [
+               {  type          => 'TEMPORARY',
+                  table         => "temporary($row->{table})",
+                  possible_keys => undef,
+                  children      => [$node],
+               }
+            ],
+         };
+      }
+      if ( $row->{Extra} =~ m/Distinct/ ) {
+         $node = {
+            type     => 'Distinct',
+            children => [$node],
+         };
+      }
 
       # Add some data that will help me keep track of nodes as I manipulate
       # them later
