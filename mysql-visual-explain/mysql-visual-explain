@@ -657,7 +657,8 @@ if ( !caller ) {
          . ';mysql_read_default_group=mysql';
       my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
          or die("Can't connect to DB: $OS_ERROR");
-      $rows = $dbh->selectall_arrayref('EXPLAIN ' . $text, { Slice => {} } );
+      $text =~ s/^.*?select/EXPLAIN SELECT/is;
+      $rows = $dbh->selectall_arrayref($text, { Slice => {} } );
       $dbh->disconnect;
    }
    else {
