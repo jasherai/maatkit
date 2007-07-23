@@ -92,7 +92,9 @@ sub parse {
          my ($row, $cols) = $vals_sub->($line, @cols);
          if ( $row ) {
             foreach my $key ( keys %$row ) {
-               $row->{$key} = undef if $row->{$key} eq 'NULL';
+               if ( !$row->{$key} || $row->{$key} eq 'NULL' ) {
+                  $row->{$key} = undef;
+               }
             }
             push @result, $row;
          }
@@ -150,6 +152,7 @@ sub process {
    my $rowid = 0;
 
    foreach my $row ( @$rows ) {
+      $row->{Extra} ||= '';
       my $sub = $row->{type};
 
       # ##################################################################
@@ -638,7 +641,7 @@ if ( !caller ) {
       exit(0);
    }
 
-   if ( $opts{help} || (!@ARGV && !$opts{c} )) {
+   if ( $opts{help} ) {
       print "Usage: mysql-visual-explain <options> [FILE]...\n\n";
       my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
       foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
@@ -648,10 +651,10 @@ if ( !caller ) {
       }
       (my $usage = <<"      USAGE") =~ s/^      //mg;
 
-      mysql-visual-explain transforms EXPLAIN output into a tree
-      representation of the query plan.  If FILE is given, input is read from
-      the file(s).  With no FILE, or when FILE is -, read standard input.
-      For more details, please read the documentation:
+      mysql-visual-explain transforms EXPLAIN output into a tree representation
+      of the query plan.  If FILE is given, input is read from the file(s).
+      With no FILE, or when FILE is -, read standard input.  For more details,
+      please read the documentation:
 
          perldoc mysql-visual-explain
 
@@ -691,3 +694,189 @@ if ( !caller ) {
 }
 
 1; # Because this is a module as well as a script.
+
+# ############################################################################
+# Documentation.
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+mysql-visual-explain - Format EXPLAIN output as a tree.
+
+=head1 SYNOPSIS
+
+ mysql-visual-explain <file_containing_explain_output>
+ mysql-visual-explain -c <file_containing_query>
+ mysql -e "explain select * from mysql.user" | mysql-visual-explain
+
+=head1 DESCRIPTION
+
+MySQL Visual Explain reverse-engineers MySQL's EXPLAIN output into a query
+execution plan, which it then formats as a left-deep tree -- the same way the
+plan is represented inside MySQL.  It is possible to do this by hand, or to read
+EXPLAIN's output directly, but it requires patience and expertise.  Many people
+find a tree representation more understandable.
+
+You can pipe input into MySQL Visual Explain or specify a filename at the
+command line, including the magical '-' filename, which will read from standard
+input.  It can do two things with the input: parse it for something that looks
+like EXPLAIN output, or connect to a MySQL instance and run EXPLAIN on the
+input.
+
+When parsing its input, MySQL Visual Explain understands three formats: tabular
+like that shown in the mysql command-line client, vertical like that created by
+using the \G line terminator in the mysql command-line client, and tab
+separated.  It ignores any lines it doesn't know how to parse.
+
+When executing the input, MySQL Visual Explain replaces everything in the input
+up to the first SELECT keyword with 'EXPLAIN SELECT,' and then executes the
+result.  You must specify L<"--connect"> to execute the input as a query.
+
+Either way, it builds a tree from the result set and prints it to standard
+output.  For the following query,
+
+ select * from sakila.film_actor join sakila.film using(film_id);
+
+MySQL Visual Explain generates this query plan:
+
+ JOIN
+ +- Bookmark lookup
+ |  +- Table
+ |  |  table          film_actor
+ |  |  possible_keys  idx_fk_film_id
+ |  +- Index lookup
+ |     key            film_actor->idx_fk_film_id
+ |     possible_keys  idx_fk_film_id
+ |     key_len        2
+ |     ref            sakila.film.film_id
+ |     rows           2
+ +- Table scan
+    rows           952
+    +- Table
+       table          film
+       possible_keys  PRIMARY
+
+The query plan is left-deep, depth-first search, and the tree's root is the
+output node -- the last step in the execution plan.  In other words, read it
+like this:
+
+=over
+
+=item 1.
+
+Table scan the 'film' table, which accesses an estimated 952 rows.
+
+=item 2.
+
+For each row, find matching rows by doing an index lookup into the
+film_actor->idx_fk_film_id index with the value from sakila.film.film_id, then a
+bookmark lookup into the film_actor table.
+
+=back
+
+For more information on how to read EXPLAIN output, please see
+L<http://dev.mysql.com/doc/en/explain.html>, and this talk titled "Query
+Optimizer Internals and What's New in the MySQL 5.2 Optimizer," from Timour
+Katchaounov, one of the MySQL developers:
+L<http://conferences.oreillynet.com/presentations/mysql07/katchaounov_timour.pdf>.
+
+=head1 OPTIONS
+
+=over
+
+=item --clusterpk
+
+Assume that PRIMARY KEY index accesses don't need to do a bookmark lookup to
+retrieve rows.  This is the case for InnoDB.
+
+=item --connect
+
+Treat input as a query, and obtain EXPLAIN output by connecting to a MySQL
+instance and running EXPLAIN on the query.  When this option is given, MySQL
+Visual Explain uses the other connection-specific options such as L<"--user"> to
+connect to the MySQL instance.  If you have a .my.cnf file, it will read it, so
+you may not need to specify any connection-specific options.
+
+=item --database
+
+Connect to this database.
+
+=item --defaults-file
+
+If you specify this option, only this file is read for MySQL default options;
+otherwise all the default files will be read.
+
+=item --help
+
+Displays a help message.
+
+=item --host
+
+MySQL host to connect to.
+
+=item --password
+
+The password to use when connecting.
+
+=item --port
+
+The port number to use for the connection.
+
+=item --socket
+
+The socket file to use for the connection.
+
+=item --user
+
+MySQL user account to use for the connection.
+
+=item --version
+
+Output version information and exit.
+
+=back
+
+=head1 SEE ALSO
+
+See also L<mysql-query-profiler>.
+
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 AUTHOR
+
+Baron "Xaprb" Schwartz.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
+
+=cut
