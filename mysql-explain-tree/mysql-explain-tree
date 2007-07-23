@@ -516,6 +516,9 @@ sub index_access {
    if ( $row->{Extra} =~ m/Full scan on NULL key/ ) {
       $node->{warning} = 'Full scan on NULL key';
    }
+   if ( $row->{Extra} =~ m/Using index for group-by/ ) {
+      $node->{type} = 'Loose index scan';
+   }
    return $node;
 }
 
