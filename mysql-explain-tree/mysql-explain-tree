@@ -245,7 +245,7 @@ sub as_string {
    }
    my $suffix = (@kids > 1) ? '|  ' : '   ';
 
-   foreach my $thing ( qw(key key_len ref rows) ) {
+   foreach my $thing ( qw(table possible_keys key method key_len ref rows warning) ) {
       if ( defined $node->{$thing} ) {
          $output .= $prefix . sprintf('%-14s %s', $thing, $node->{$thing}) . "\n";
       }
