@@ -63,21 +63,24 @@ is_deeply(
                }
             ],
          },
-         {  type     => 'Index lookup',
-            key      => 'film_actor->idx_fk_film_id',
-            key_len  => 2,
-            'ref'    => 'sakila.film.film_id',
-            rows     => 2,
+         {
+            type     => 'Bookmark lookup',
             id       => 1,
             rowid    => 1,
             children => [
+               {  type     => 'Index lookup',
+                  key      => 'film_actor->idx_fk_film_id',
+                  key_len  => 2,
+                  'ref'    => 'sakila.film.film_id',
+                  rows     => 2,
+               },
                {  type          => 'Table',
                   table         => 'film_actor',
                   possible_keys => 'idx_fk_film_id',
                },
-            ]
+            ],
          },
-      ]
+      ],
    },
    'Simple join',
 );
@@ -91,12 +94,14 @@ is_deeply(
             id       => 1,
             rowid    => 0,
             children => [
-               {  type     => 'Index lookup',
-                  rows     => 5,
-                  key      => 'v->OXROOTID',
-                  key_len  => 32,
-                  'ref'    => 'const',
+               {  type     => 'Bookmark lookup',
                   children => [
+                     {  type     => 'Index lookup',
+                        rows     => 5,
+                        key      => 'v->OXROOTID',
+                        key_len  => 32,
+                        'ref'    => 'const',
+                     },
                      {  type          => 'Table',
                         table         => 'v',
                         possible_keys => 'OXLEFT,OXRIGHT,OXROOTID',
@@ -258,21 +263,23 @@ is_deeply(
                },
             ]
          },
-         {  type     => 'Unique index lookup',
-            key      => 'film->PRIMARY',
-            key_len  => 2,
-            'ref'    => 'sakila.film_actor.film_id',
-            rows     => 1,
+         {  type     => 'Bookmark lookup',
             id       => 1,
             rowid    => 1,
             children => [
+               {  type     => 'Unique index lookup',
+                  key      => 'film->PRIMARY',
+                  key_len  => 2,
+                  'ref'    => 'sakila.film_actor.film_id',
+                  rows     => 1,
+               },
                {  type          => 'Table',
                   table         => 'film',
                   possible_keys => 'PRIMARY',
                },
-            ]
+            ],
          },
-      ]
+      ],
    },
    'Straight join',
 );
@@ -280,19 +287,21 @@ is_deeply(
 $t = $e->parse( load_file('samples/full_row_pk_lookup_sakila_film.sql') );
 is_deeply(
    $t,
-   {  type     => 'Constant index lookup',
-      key      => 'film->PRIMARY',
-      key_len  => 2,
-      'ref'    => 'const',
-      rows     => 1,
+   {  type     => 'Bookmark lookup',
       id       => 1,
       rowid    => 0,
       children => [
+         {  type     => 'Constant index lookup',
+            key      => 'film->PRIMARY',
+            key_len  => 2,
+            'ref'    => 'const',
+            rows     => 1,
+         },
          {  type          => 'Table',
             table         => 'film',
             possible_keys => 'PRIMARY',
          },
-      ]
+      ],
    },
    'Constant lookup',
 );
@@ -300,19 +309,21 @@ is_deeply(
 $t = $e->parse( load_file('samples/index_scan_sakila_film.sql') );
 is_deeply(
    $t,
-   {  type     => 'Index scan',
-      key      => 'film->idx_title',
-      key_len  => 767,
-      'ref'    => undef,
-      rows     => 952,
+   {  type     => 'Bookmark lookup',
       id       => 1,
       rowid    => 0,
       children => [
+         {  type     => 'Index scan',
+            key      => 'film->idx_title',
+            key_len  => 767,
+            'ref'    => undef,
+            rows     => 952,
+         },
          {  type          => 'Table',
             table         => 'film',
             possible_keys => undef,
          },
-      ]
+      ],
    },
    'Index scan',
 );
@@ -324,19 +335,21 @@ is_deeply(
       id       => 1,
       rowid    => 0,
       children => [
-         {  type     => 'Index scan',
-            key      => 'film->idx_title',
-            key_len  => 767,
-            'ref'    => undef,
-            rows     => 952,
+         {  type     => 'Bookmark lookup',
             children => [
+               {  type     => 'Index scan',
+                  key      => 'film->idx_title',
+                  key_len  => 767,
+                  'ref'    => undef,
+                  rows     => 952,
+               },
                {  type          => 'Table',
                   table         => 'film',
                   possible_keys => undef,
                },
-            ]
+            ],
          },
-      ]
+      ],
    },
    'Index scan with WHERE clause',
 );
@@ -360,28 +373,32 @@ is_deeply(
    $t,
    {  type     => 'JOIN',
       children => [
-         {  type     => 'Constant index lookup',
-            key      => 'film->PRIMARY',
-            key_len  => 2,
-            'ref'    => 'const',
-            rows     => 1,
+         {  type     => 'Bookmark lookup',
             id       => 1,
             rowid    => 0,
             children => [
+               {  type     => 'Constant index lookup',
+                  key      => 'film->PRIMARY',
+                  key_len  => 2,
+                  'ref'    => 'const',
+                  rows     => 1,
+               },
                {  type          => 'Table',
                   table         => 'film',
                   possible_keys => 'PRIMARY',
                },
             ],
          },
-         {  type     => 'Index lookup',
-            key      => 'film_actor->idx_fk_film_id',
-            key_len  => 2,
-            'ref'    => 'const',
-            rows     => 10,
+         {  type     => 'Bookmark lookup',
             id       => 1,
             rowid    => 1,
             children => [
+               {  type     => 'Index lookup',
+                  key      => 'film_actor->idx_fk_film_id',
+                  key_len  => 2,
+                  'ref'    => 'const',
+                  rows     => 10,
+               },
                {  type          => 'Table',
                   table         => 'film_actor',
                   possible_keys => 'idx_fk_film_id',
@@ -426,12 +443,14 @@ is_deeply(
       id       => 1,
       rowid    => 0,
       children => [
-         {  type     => 'Index range scan',
-            key      => 'film->PRIMARY',
-            key_len  => 2,
-            'ref'    => undef,
-            rows     => 20,
+         {  type     => 'Bookmark lookup',
             children => [
+               {  type     => 'Index range scan',
+                  key      => 'film->PRIMARY',
+                  key_len  => 2,
+                  'ref'    => undef,
+                  rows     => 20,
+               },
                {  type          => 'Table',
                   table         => 'film',
                   possible_keys => 'PRIMARY',
@@ -464,12 +483,14 @@ is_deeply(
       id       => 1,
       rowid    => 0,
       children => [
-         {  type     => 'Index lookup with extra null lookup',
-            key      => 'film->idx_fk_original_language_id',
-            key_len  => 2,
-            'ref'    => 'const',
-            rows     => 512,
+         {  type     => 'Bookmark lookup',
             children => [
+               {  type     => 'Index lookup with extra null lookup',
+                  key      => 'film->idx_fk_original_language_id',
+                  key_len  => 2,
+                  'ref'    => 'const',
+                  rows     => 512,
+               },
                {  type          => 'Table',
                   table         => 'film',
                   possible_keys => 'idx_fk_original_language_id',
@@ -489,7 +510,6 @@ is_deeply(
       rowid    => 0,
       children => [
          {  type     => 'Bookmark lookup',
-            rows     => 1,
             children => [
                {  type     => 'Index merge',
                   method   => 'intersect',
@@ -564,13 +584,11 @@ is_deeply(
       rowid    => 0,
       children => [
          {  type     => 'Bookmark lookup',
-            rows     => 154,
             children => [
                {  type     => 'Index merge',
                   method   => 'union',
                   rows     => 154,
                   children => [
-
                      {  type     => 'Index merge',
                         method   => 'intersect',
                         rows     => 154,
@@ -589,7 +607,6 @@ is_deeply(
                            },
                         ],
                      },
-
                      {  type     => 'Index merge',
                         method   => 'intersect',
                         rows     => 154,
@@ -608,10 +625,8 @@ is_deeply(
                            },
                         ],
                      },
-
                   ],
                },
-
                {  type          => 'Table',
                   table         => 't1',
                   possible_keys => 'key1,key2,key3,key4',
@@ -631,13 +646,11 @@ is_deeply(
       rowid    => 0,
       children => [
          {  type     => 'Bookmark lookup',
-            rows     => 45,
             children => [
                {  type     => 'Index merge',
                   method   => 'sort_union',
                   rows     => 45,
                   children => [
-
                      {  type    => 'Index range scan',
                         key     => 't0->i1',
                         key_len => 4,
@@ -650,10 +663,8 @@ is_deeply(
                         'ref'   => undef,
                         rows    => 45,
                      },
-
                   ],
                },
-
                {  type          => 'Table',
                   table         => 't0',
                   possible_keys => 'i1,i2',
@@ -1397,13 +1408,15 @@ is_deeply(
                   id       => 2,
                   rowid    => 2,
                   children => [
-                     {  type    => 'Unique index lookup',
-                        rows    => 1,
-                        key_len => 4,
-                        key     => 't3->PRIMARY',
-                        'ref'   => 'func',
-                        warning => 'Full scan on NULL key',
+                     {  type     => 'Bookmark lookup',
                         children => [
+                           {  type    => 'Unique index lookup',
+                              rows    => 1,
+                              key_len => 4,
+                              key     => 't3->PRIMARY',
+                              'ref'   => 'func',
+                              warning => 'Full scan on NULL key',
+                           },
                            {  type          => 'Table',
                               table         => 't3',
                               possible_keys => 'PRIMARY',
