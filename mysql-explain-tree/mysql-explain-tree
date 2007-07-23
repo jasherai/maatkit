@@ -135,9 +135,11 @@ sub process {
       # Dispatch to a class method to generate the tree.
       # ##################################################################
       my $node
-         = $sub                          ? $self->$sub($row)
-         : $row->{Extra} =~ m/No tables/ ? { type => 'DUAL' }
-         :                                 die "Can't handle " . Dumper($row);
+         = $sub                                 ? $self->$sub($row)
+         : $row->{Extra} =~ m/No tables/        ? { type => 'DUAL' }
+         : $row->{Extra} =~ m/Impossible WHERE/ ? { type => 'IMPOSSIBLE' }
+         : $row->{Extra} =~ m/optimized away/   ? { type => 'CONSTANT' }
+         :                                      die "Can't handle " . Dumper($row);
 
       # ##################################################################
       # Apply other tree transformations.
@@ -151,7 +153,7 @@ sub process {
       if ( $row->{Extra} =~ m/Using temporary/ ) {
          $node = {
             type     => 'Table scan',
-            rows     => $row->{rows},
+            rows     => undef,
             children => [
                {  type          => 'TEMPORARY',
                   table         => "temporary($row->{table})",
@@ -161,9 +163,15 @@ sub process {
             ],
          };
       }
-      if ( $row->{Extra} =~ m/Distinct/ ) {
+      if ( $row->{Extra} =~ m/Distinct|Not exists/ ) {
          $node = {
-            type     => 'Distinct',
+            type     => 'Distinct/Not-Exists',
+            children => [$node],
+         };
+      }
+      if ( $row->{Extra} =~ m/Using filesort/ ) {
+         $node = {
+            type     => 'Filesort',
             children => [$node],
          };
       }
@@ -479,13 +487,17 @@ sub recurse_index_merge {
 
 sub table {
    my ( $self, $row ) = @_;
-   return {
+   my $node = {
       type          => ($row->{table} && $row->{table} =~ m/^<(derived|union)/)
                        ? uc $1
                        : 'Table',
       table         => $row->{table},
       possible_keys => $row->{possible_keys},
    };
+   if ( $row->{Extra} =~ m/(Range checked [^)]*\))/ ) {
+      $node->{warning} = $1;
+   }
+   return $node;
 }
 
 sub index_access {
@@ -500,6 +512,9 @@ sub index_access {
    # See index_merge_bookmark_lookup note above.
    if ( $row->{Extra} !~ m/Using index/ && $row->{type} ne 'index_merge' ) {
       $node->{children} = [$self->table($row)];
+   }
+   if ( $row->{Extra} =~ m/Full scan on NULL key/ ) {
+      $node->{warning} = 'Full scan on NULL key';
    }
    return $node;
 }
