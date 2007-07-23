@@ -666,7 +666,9 @@ if ( !caller ) {
 
    my $et   = ExplainTree->new();
    my $tree = $et->process($rows);
-   print $et->as_string($tree);
+   if ( $tree ) {
+      print $et->as_string($tree);
+   }
 }
 
 1; # Because this is a module as well as a script.
