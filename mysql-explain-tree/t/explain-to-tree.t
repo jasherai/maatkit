@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 31;
+use Test::More tests => 38;
 
 require "../mysql-explain-tree";
 
@@ -16,6 +16,16 @@ sub load_file {
 }
 my $e = new ExplainTree;
 my $t;
+
+$t = $e->parse( load_file('samples/impossible_where.sql') );
+is_deeply(
+   $t,
+   {  type     => 'IMPOSSIBLE',
+      id       => 1,
+      rowid    => 0,
+   },
+   'Imposible WHERE',
+);
 
 $t = $e->parse( load_file('samples/full_scan_sakila_film.sql') );
 is_deeply(
@@ -69,13 +79,87 @@ is_deeply(
    'Simple join',
 );
 
+$t = $e->parse( load_file('samples/range_check.sql') );
+is_deeply(
+   $t,
+   {  type     => 'JOIN',
+      children => [
+         {  type     => 'Filter with WHERE',
+            id       => 1,
+            rowid    => 0,
+            children => [
+               {  type     => 'Index lookup',
+                  rows     => 5,
+                  key      => 'v->OXROOTID',
+                  key_len  => 32,
+                  'ref'    => 'const',
+                  children => [
+                     {  type          => 'Table',
+                        table         => 'v',
+                        possible_keys => 'OXLEFT,OXRIGHT,OXROOTID',
+                     },
+                  ],
+               },
+            ],
+         },
+         {  type     => 'Table scan',
+            id       => 1,
+            rowid    => 1,
+            rows     => 5,
+            children => [
+               {  type           => 'Table',
+                  table          => 's',
+                  possible_keys  => 'OXLEFT',
+                  warning        => 'Range checked for each record (index map: 0x4)',
+               },
+            ],
+         },
+      ],
+   },
+   'Join that uses a range check',
+);
+
+$t = $e->parse( load_file('samples/not_exists.sql') );
+is_deeply(
+   $t,
+   {  type     => 'JOIN',
+      children => [
+         {  type     => 'Index scan',
+            rows     => 951,
+            id       => 1,
+            rowid    => 0,
+            key      => 'film->idx_fk_language_id',
+            key_len  => 1,
+            'ref'    => undef,
+         },
+         {  type     => 'Distinct/Not-Exists',
+            id       => 1,
+            rowid    => 1,
+            children => [
+               {  type     => 'Filter with WHERE',
+                  children => [
+                     {  type     => 'Index lookup',
+                        key      => 'film_actor->idx_fk_film_id',
+                        key_len  => 2,
+                        'ref'    => 'sakila.film.film_id',
+                        rows     => 2,
+                     },
+                  ],
+               },
+            ],
+         },
+      ],
+   },
+   'Join that uses Not exists',
+);
+
 $t = $e->parse( load_file('samples/join_temporary_with_where_distinct.sql') );
 is_deeply(
    $t,
    {  type     => 'JOIN',
       children => [
          {  type     => 'Table scan',
-            rows     => 951,
+            rows     => undef,
             id       => 1,
             rowid    => 0,
             children => [
@@ -100,7 +184,7 @@ is_deeply(
                },
             ],
          },
-         {  type     => 'Distinct',
+         {  type     => 'Distinct/Not-Exists',
             id       => 1,
             rowid    => 1,
             children => [
@@ -564,6 +648,16 @@ is_deeply(
    'Index merge sort_union',
 );
 
+$t = $e->parse( load_file('samples/optimized_away.sql') );
+is_deeply(
+   $t,
+   {  type  => 'CONSTANT',
+      id    => 1,
+      rowid => 0,
+   },
+   'No tables used',
+);
+
 $t = $e->parse( load_file('samples/no_from.sql') );
 is_deeply(
    $t,
@@ -572,6 +666,56 @@ is_deeply(
       rowid => 0,
    },
    'No tables used',
+);
+
+$t = $e->parse( load_file('samples/filesort.sql') );
+is_deeply(
+   $t,
+   {  type     => 'Filesort',
+      id       => 1,
+      rowid    => 0,
+      children => [
+         {  type     => 'Table scan',
+            rows     => 951,
+            children => [
+               {  type          => 'Table',
+                  table         => 'film',
+                  possible_keys => undef,
+               },
+            ],
+         },
+      ],
+   },
+   'Filesort',
+);
+
+$t = $e->parse( load_file('samples/temporary_filesort.sql') );
+is_deeply(
+   $t,
+   {  type     => 'Filesort',
+      id       => 1,
+      rowid    => 0,
+      children => [
+         {  type     => 'Table scan',
+            rows     => undef,
+            children => [
+               {  type     => 'TEMPORARY',
+                  table    => 'temporary(film)',
+                  possible_keys => undef,
+                  children => [
+                     {  type    => 'Index scan',
+                        key     => 'film->PRIMARY',
+                        key_len => 2,
+                        'ref'   => undef,
+                        rows    => 951,
+                     },
+                  ],
+               },
+            ],
+         },
+      ],
+   },
+   'Filesort',
 );
 
 $t = $e->parse( load_file('samples/simple_union.sql') );
@@ -1195,5 +1339,66 @@ is_deeply(
       ],
    },
    'Index subquery',
+);
+
+$t = $e->parse( load_file('samples/full_scan_on_null_key.sql') );
+is_deeply(
+   $t,
+   {  type     => 'DEPENDENT SUBQUERY',
+      children => [
+         {  type     => 'Filter with WHERE',
+            id       => 1,
+            rowid    => 0,
+            children => [
+               {  type     => 'Table scan',
+                  rows     => 4,
+                  children => [
+                     {  type          => 'Table',
+                        table         => 't1',
+                        possible_keys => undef,
+                     },
+                  ],
+               },
+            ],
+         },
+         {  type     => 'JOIN',
+            children => [
+               {  type     => 'Filter with WHERE',
+                  id       => 2,
+                  rowid    => 1,
+                  children => [
+                     {  type     => 'Unique index lookup',
+                        rows     => 1,
+                        key_len  => 4,
+                        key      => 't2->PRIMARY',
+                        'ref'    => 'func',
+                        warning  => 'Full scan on NULL key',
+                     },
+                  ],
+               },
+               {  type     => 'Filter with WHERE',
+                  id       => 2,
+                  rowid    => 2,
+                  children => [
+                     {  type    => 'Unique index lookup',
+                        rows    => 1,
+                        key_len => 4,
+                        key     => 't3->PRIMARY',
+                        'ref'   => 'func',
+                        warning => 'Full scan on NULL key',
+                        children => [
+                           {  type          => 'Table',
+                              table         => 't3',
+                              possible_keys => 'PRIMARY',
+                           },
+                        ],
+                     },
+                  ],
+               },
+            ],
+         },
+      ],
+   },
+   'Subqueries that do a full scan on a NULL key',
 );
 
