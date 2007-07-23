@@ -278,7 +278,7 @@ sub as_string {
    }
    my $suffix = (@kids > 1) ? '|  ' : '   ';
 
-   foreach my $thing ( qw(table possible_keys key method key_len ref rows warning) ) {
+   foreach my $thing ( qw(table key possible_keys method key_len ref rows warning) ) {
       if ( defined $node->{$thing} ) {
          $output .= $prefix . sprintf('%-14s %s', $thing, $node->{$thing}) . "\n";
       }
@@ -558,11 +558,12 @@ sub bookmark_lookup {
 sub index_access {
    my ( $self, $row, $type, $key ) = @_;
    my $node = {
-      type    => $type,
-      key     => $row->{table} . '->' . ($key || $row->{key}),
-      key_len => $row->{key_len},
-      'ref'   => $row->{ref},
-      rows    => $row->{rows},
+      type          => $type,
+      key           => $row->{table} . '->' . ( $key || $row->{key} ),
+      possible_keys => $row->{possible_keys},
+      key_len       => $row->{key_len},
+      'ref'         => $row->{ref},
+      rows          => $row->{rows},
    };
    if ( $row->{Extra} =~ m/Full scan on NULL key/ ) {
       $node->{warning} = 'Full scan on NULL key';
