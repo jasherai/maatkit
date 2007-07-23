@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 38;
+use Test::More tests => 39;
 
 require "../mysql-explain-tree";
 
@@ -438,6 +438,20 @@ is_deeply(
       ],
    },
    'Index range scan with WHERE clause',
+);
+
+$t = $e->parse( load_file('samples/loose_index_scan.sql') );
+is_deeply(
+   $t,
+   {  type     => 'Loose index scan',
+      key      => 'film->idx_fk_language_id',
+      key_len  => 1,
+      'ref'    => undef,
+      rows     => 2,
+      id       => 1,
+      rowid    => 0,
+   },
+   'Loose index scan',
 );
 
 $t = $e->parse( load_file('samples/film_ref_or_null_on_original_language_id.sql') );
