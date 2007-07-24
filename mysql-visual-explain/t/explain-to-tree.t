@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 42;
+use Test::More tests => 43;
 
 require "../mysql-visual-explain";
 
@@ -109,6 +109,82 @@ is_deeply(
       ],
    },
    'Simple join',
+);
+
+$t = $e->parse( load_file('samples/join_buffer.sql') );
+is_deeply(
+   $t,
+   {  type     => 'JOIN',
+      children => [
+         {  type     => 'JOIN',
+            children => [
+               {  type     => 'Table scan',
+                  rows     => 10,
+                  id       => 1,
+                  rowid    => 0,
+                  children => [
+                     {  type          => 'Table',
+                        table         => 't1',
+                        possible_keys => undef,
+                        partitions    => undef,
+                     }
+                  ],
+               },
+               {  type     => 'Filter with WHERE',
+                  id       => 1,
+                  rowid    => 1,
+                  children => [
+                     {  type     => 'Bookmark lookup',
+                        children => [
+                           {  type          => 'Index lookup',
+                              key           => 't2->key1',
+                              key_len       => 5,
+                              'ref'         => 'test.t1.col1',
+                              rows          => 2,
+                              possible_keys => 'key1',
+                              partitions    => undef,
+                           },
+                           {  type          => 'Table',
+                              table         => 't2',
+                              possible_keys => 'key1',
+                              partitions    => undef,
+                           },
+                        ],
+                     },
+                  ],
+               },
+            ],
+         },
+         {  type     => 'Join buffer',
+            id       => 1,
+            rowid    => 2,
+            children => [
+               {  type     => 'Filter with WHERE',
+                  children => [
+                     {  type     => 'Bookmark lookup',
+                        children => [
+                           {  type          => 'Index range scan',
+                              key           => 't3->key1',
+                              key_len       => 5,
+                              'ref'         => undef,
+                              rows          => 40,
+                              possible_keys => 'key1',
+                              partitions    => undef,
+                           },
+                           {  type          => 'Table',
+                              table         => 't3',
+                              possible_keys => 'key1',
+                              partitions    => undef,
+                           },
+                        ],
+                     },
+                  ],
+               },
+            ],
+         },
+      ],
+   },
+   'Three-way join with buffer',
 );
 
 $t = $e->parse( load_file('samples/range_check.sql') );
