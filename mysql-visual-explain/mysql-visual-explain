@@ -21,7 +21,6 @@
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
 # TODO: http://s.petrunia.net/blog/?p=22
-# TODO: partitioning
 # TODO: document this program's module-ness
 
 use strict;
@@ -186,6 +185,7 @@ sub process {
                {  type          => 'TEMPORARY',
                   table         => "temporary($row->{table})",
                   possible_keys => undef,
+                  partitions    => undef,
                   children      => [$node],
                }
             ],
@@ -285,7 +285,7 @@ sub as_string {
    }
    my $suffix = (@kids > 1) ? '|  ' : '   ';
 
-   foreach my $thing ( qw(table key possible_keys method key_len ref rows warning) ) {
+   foreach my $thing ( qw(table key partitions possible_keys method key_len ref rows warning) ) {
       if ( defined $node->{$thing} ) {
          $output .= $prefix . sprintf('%-14s %s', $thing, $node->{$thing}) . "\n";
       }
@@ -542,6 +542,7 @@ sub table {
                        : 'Table',
       table         => $row->{table},
       possible_keys => $row->{possible_keys},
+      partitions    => $row->{partitions},
    };
    if ( $row->{Extra} =~ m/(Range checked [^)]*\))/ ) {
       $node->{warning} = $1;
@@ -568,6 +569,7 @@ sub index_access {
       type          => $type,
       key           => $row->{table} . '->' . ( $key || $row->{key} ),
       possible_keys => $row->{possible_keys},
+      partitions    => $row->{partitions},
       key_len       => $row->{key_len},
       'ref'         => $row->{ref},
       rows          => $row->{rows},
@@ -682,7 +684,7 @@ if ( !caller ) {
          . ';mysql_read_default_group=mysql';
       my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
          or die("Can't connect to DB: $OS_ERROR");
-      $text =~ s/^.*?select/EXPLAIN SELECT/is;
+      $text =~ s{^.*?select}{EXPLAIN /*!50115 PARTITIONS*/ SELECT}is;
       $rows = $dbh->selectall_arrayref($text, { Slice => {} } );
       $dbh->disconnect;
    }
@@ -768,11 +770,11 @@ like this:
 
 =over
 
-=item 1.
+=item 1
 
 Table scan the 'film' table, which accesses an estimated 952 rows.
 
-=item 2.
+=item 2
 
 For each row, find matching rows by doing an index lookup into the
 film_actor->idx_fk_film_id index with the value from sakila.film.film_id, then a

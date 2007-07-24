@@ -21,7 +21,7 @@ is_deeply(
          key_len       => undef,
          'ref'         => undef,
          rows          => 935,
-         Extra         => '',
+         Extra         => undef,
       }
    ],
    'One line horizontal',
@@ -38,7 +38,7 @@ is_deeply(
          key_len       => undef,
          'ref'         => undef,
          rows          => 952,
-         Extra         => '',
+         Extra         => undef,
       },
       {  id            => 1,
          select_type   => 'SIMPLE',
@@ -49,7 +49,7 @@ is_deeply(
          key_len       => 2,
          'ref'         => 'sakila.film.film_id',
          rows          => 2,
-         Extra         => '',
+         Extra         => undef,
       },
    ],
    'Simple join',
@@ -66,7 +66,7 @@ is_deeply(
          key_len       => '3,2',
          'ref'         => undef,
          rows          => 1,
-         Extra         =>
+         Extra =>
             'Using intersect(idx_fk_inventory_id,idx_fk_customer_id); Using where',
       }
    ],
@@ -84,7 +84,7 @@ is_deeply(
          key_len       => '5,5,5,5',
          'ref'         => undef,
          rows          => 154,
-         Extra         =>
+         Extra =>
             'Using union(intersect(key1,key2),intersect(key3,key4)); Using where',
       }
    ],
@@ -93,8 +93,7 @@ is_deeply(
 
 is_deeply(
    $p->parse( load_file('samples/simple_union.sql') ),
-   [
-   {  id            => 1,
+   [  {  id            => 1,
          select_type   => 'PRIMARY',
          table         => 'actor_1',
          type          => 'index',
@@ -105,7 +104,7 @@ is_deeply(
          rows          => 200,
          Extra         => 'Using index',
       },
-   {  id            => 2,
+      {  id            => 2,
          select_type   => 'UNION',
          table         => 'actor_2',
          type          => 'index',
@@ -116,7 +115,7 @@ is_deeply(
          rows          => 200,
          Extra         => 'Using index',
       },
-   {  id            => '',
+      {  id            => undef,
          select_type   => 'UNION RESULT',
          table         => '<union1,2>',
          type          => 'ALL',
@@ -125,7 +124,7 @@ is_deeply(
          key_len       => undef,
          'ref'         => undef,
          rows          => undef,
-         Extra         => '',
+         Extra         => undef,
       },
    ],
    'Tabular format with an empty cell',
