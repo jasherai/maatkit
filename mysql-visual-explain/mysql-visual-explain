@@ -20,8 +20,6 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: document this program's module-ness
-
 use strict;
 use warnings FATAL => 'all';
 
@@ -278,7 +276,7 @@ sub process {
    return $tree;
 }
 
-sub as_string {
+sub pretty_print {
    my ( $self, $node, $prefix ) = @_;
    $prefix ||= '';
    my $branch = $prefix ? substr($prefix, 0, length($prefix) -3) . '+- ' : '';
@@ -298,10 +296,10 @@ sub as_string {
 
    my $last_child = pop @kids;
    foreach my $child ( @kids ) {
-      $output .= $self->as_string($child, $prefix . $suffix);
+      $output .= $self->pretty_print($child, $prefix . $suffix);
    }
    if ( $last_child ) {
-      $output .= $self->as_string($last_child, $prefix . '   ');
+      $output .= $self->pretty_print($last_child, $prefix . '   ');
    }
    return $output;
 }
@@ -700,7 +698,7 @@ if ( !caller ) {
    my $et   = ExplainTree->new();
    my $tree = $et->process($rows, { clustered => $opts{C} });
    if ( $tree ) {
-      print $et->as_string($tree);
+      print $et->pretty_print($tree);
    }
 }
 
@@ -848,6 +846,31 @@ MySQL user account to use for the connection.
 Output version information and exit.
 
 =back
+
+=head1 MODULES
+
+This program is actually a runnable module, not just an ordinary Perl script.
+In fact, there are two modules embedded in it.  This makes unit testing easy,
+but it also makes it easy for you to use the parsing and tree-building
+functionality if you want.
+
+The ExplainParser package accepts a string and parses whatever it thinks looks
+like EXPLAIN output from it.  The synopsis is as follows:
+
+ require "mysql-visual-explain";
+ my $p    = ExplainParser->new();
+ my $rows = $p->parse("some text");
+ # $rows is an arrayref of hashrefs.
+
+The ExplainTree package accepts a set of rows and turns it into a tree.  For
+convenience, you can also have it delegate to ExplainParser and parse text for
+you.  Here's the synopsis:
+
+ require "mysql-visual-explain";
+ my $e      = ExplainTree->new();
+ my $tree   = $e->parse("some text", \%options);
+ my $output = $e->pretty_print($tree);
+ print $tree;
 
 =head1 SEE ALSO
 
