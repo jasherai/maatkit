@@ -21,7 +21,7 @@ my $o;
 $t = $e->parse( load_file('samples/dependent_subquery.sql') );
 $o = load_file('samples/dependent_subquery.txt');
 is_deeply(
-   $e->as_string($t),
+   $e->pretty_print($t),
    $o,
    'Output formats correctly',
 );
