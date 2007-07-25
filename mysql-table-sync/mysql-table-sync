@@ -40,7 +40,7 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: account for difference in timestamp format between servers (can
 # SELECT CURRENT_TIMESTAMP to detect)
 
-# TODO: make <src> and <dst> parameters use key=value syntax as in mysql-table-checksum
+# TODO: add --askpass
 # TODO: prompt the user if the table names differ, as a sanity check.
 # TODO: write a helper to analyze indexes and suggest a drilldown strategy.
 # TODO: CRC32 can be used for checksums.
@@ -177,6 +177,18 @@ $opts{o} = lc(join('|', $opts{o} =~ m/(\w{3})/g));
 # Parse arguments saying which tables.  If the script doesn't have everything
 # it needs, show help text.
 # ############################################################################
+my %conn   = (
+   h => 'host',
+   P => 'port',
+   S => 'socket',
+   u => 'user',
+   p => 'pass',
+   F => 'mysql_read_default_file',
+   D => 'database',
+   t => 'table',
+   i => 'index',
+);
+
 my $source = parse_dsn(shift(@ARGV), {}     );
 my $dest   = parse_dsn(shift(@ARGV), $source);
 
@@ -191,9 +203,9 @@ if ( $opts{help} || !$dest ) {
    print <<USAGE;
 
 mysql-table-sync finds and resolves data differences between two MySQL tables.
-<source> and <dest> are data sources in the format
+<source> and <dest> are specially formatted in the format
 
-   user:pass\@host:port/database.table:key
+   h=host,D=database,t=table,...
 
 Everything but the table name is optional.  Values for <dest> default to the
 values for <source>.  Connection options are read from MySQL option files.  For
@@ -340,7 +352,7 @@ exit $exit_status;
 sub topdown {
 
    # Design a grouping strategy: user-defined, then finally primary key.
-   my @groupings = { cols => $source->{info}->{keys}->{$source->{k}} };
+   my @groupings = { cols => $source->{info}->{keys}->{$source->{i}} };
    if ( $opts{d} ) {
       push @groupings, reverse map { { cols => [$_] } } $opts{d} =~ m/(\w+)/g;
    }
@@ -654,7 +666,7 @@ sub bottomup {
       # do the comparison.
       find_collation($source->{dbh},
          "$source->{prefix}_0",
-         $source->{info}->{keys}->{$source->{k}});
+         $source->{info}->{keys}->{$source->{i}});
       $finished_work = bu_merge_tree($dest,   $source, $levels);
    }
    bu_cleanup_tree($dest, $source) if $finished_work && $opts{C};
@@ -669,10 +681,10 @@ sub bu_build_checksum {
    my ($info, $levels) = @_;
    my $dbh    = $info->{dbh};
    my $tbl    = $info->{info};
-   my $pk     = col_list( @{ $tbl->{keys}->{$info->{k}} } );
+   my $pk     = col_list( @{ $tbl->{keys}->{$info->{i}} } );
    my @cols   = @{ $tbl->{cols} };
    my $cols   = col_list(@cols);
-   my $pks    = join( ',', @{ $tbl->{defs} }{ @{ $tbl->{keys}->{$info->{k}} } } );
+   my $pks    = join( ',', @{ $tbl->{defs} }{ @{ $tbl->{keys}->{$info->{i}} } } );
    my @null   = grep { $tbl->{null_hash}->{$_} } @cols;
    my $null = @null
             ? ( ", CONCAT(" . join( ', ', map {"ISNULL(`$_`)"} @null ) . ")" ) : '';
@@ -711,7 +723,7 @@ sub bu_build_checksum {
 
 sub bu_rebuild_remainder {
    my ( $info, $levels ) = @_;
-   my $pk   = col_list( @{ $info->{info}->{keys}->{$info->{k}} } );
+   my $pk   = col_list( @{ $info->{info}->{keys}->{$info->{i}} } );
    my $mask = ($opts{B} ** ($levels - 1)) - 1;
    my $name = "$info->{prefix}_0";
    my $query = "UPDATE `$name` SET __rem = "
@@ -802,7 +814,7 @@ sub bu_merge_tree {
       @bad_parents = ();
       $rows_in_src = $rows_in_dst = 0;
 
-      my @key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{k}}};
+      my @key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{i}}};
       my ($sr, $dr); # Source row, dest row
 
       # The statements fetch in order, so use a 'merge' algorithm of advancing
@@ -972,7 +984,7 @@ sub bu_cleanup_tree {
 sub bu_handle_bulk_change {
    my ( $action, $levels, $info, @rows ) = @_;
    return unless $action =~ m/$opts{o}/i;
-   my $pk = col_list( @{ $info->{info}->{keys}->{$info->{k}} } );
+   my $pk = col_list( @{ $info->{info}->{keys}->{$info->{i}} } );
    my @rows_to_do;
    my $mask = ($opts{B} ** ($levels - 1)) - 1;
 
@@ -1031,13 +1043,13 @@ sub bu_fetch_level {
 
    my $cols  = $level
              ? '__par, __cnt'
-             : col_list( @{ $info->{info}->{keys}->{$info->{k}} } );
+             : col_list( @{ $info->{info}->{keys}->{$info->{i}} } );
    my $where = @bad_parents
              ? "WHERE __rem IN(" . join(',', map { $_->{__par} } @bad_parents) . ")"
              : '';
    my $order = $level
              ? '__par'
-             : col_list( @{ $info->{info}->{keys}->{$info->{k}} } );
+             : col_list( @{ $info->{info}->{keys}->{$info->{i}} } );
 
    my $query = "SELECT $cols, __crc FROM $tbl $where ORDER BY $order";
    debug_print($query);
@@ -1183,39 +1195,14 @@ sub handle_data_change {
    }
 }
 
-# Parses a DSN in login:pass@host:port/database.table:key format
 sub parse_dsn {
    my ($dsn, $prev) = @_;
    return unless $dsn;
    $prev ||= {};
-
-   my ( $user, $pass, $host, $port, $database, $table, $key) = $dsn =~ m{
-      (?:
-         (.+?)       # Username
-         (?::(.+))?  # Optional password
-      @)?            # User-pass is optional
-      (?:
-         (.+?)       # Hostname
-         (?::(.+))?  # Optional port
-      /)?            # Host-port is optional
-      (?:
-         (.+?)       # Database
-      \.)?           # Database is optional
-      ([^:]+)        # Table is required
-      (?::
-         (.+)        # Key/index
-      )?             # Index is optional
-      }xsm or return undef;
-
-   return {
-      u => $user     || $prev->{u},
-      p => $pass     || $prev->{p},
-      h => $host     || $prev->{h},
-      P => $port     || $prev->{P},
-      D => $database || $prev->{D},
-      t => $table    || $prev->{t},
-      k => $key      || $prev->{k} || 'PRIMARY',
-   };
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   my %vals = map  { $_ => $hash{$_} || $prev->{$_} } keys %conn;
+   $vals{i} ||= 'PRIMARY';
+   return \%vals;
 }
 
 sub get_tbl_struct {
@@ -1243,8 +1230,8 @@ sub get_tbl_struct {
    my %alldefs;
    @alldefs{@cols} = @defs;
 
-   if ( !exists $keys{$info->{k}} ) {
-      die "No such key $info->{k} in table $info->{h}/$info->{db_tbl}";
+   if ( !exists $keys{$info->{i}} ) {
+      die "No such key $info->{i} in table $info->{h}/$info->{db_tbl}";
    }
 
    return {
@@ -1266,7 +1253,7 @@ sub get_tbl_struct {
 # TODO: add --where to this query.
 sub estimate_size {
    my ($info) = @_;
-   my ( $pkcol ) = @{$info->{info}->{keys}->{$info->{k}}};
+   my ( $pkcol ) = @{$info->{info}->{keys}->{$info->{i}}};
    my $query = "EXPLAIN SELECT COUNT("
       . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
       . ") FROM $info->{db_tbl} "
