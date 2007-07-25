@@ -1324,7 +1324,7 @@ sub get_dbh {
    my $db_options = {
       AutoCommit => !$opts{k} && !$opts{f} && !$opts{1},
       RaiseError => 1,
-      PrintError => 1,
+      PrintError => 0,
    };
    # TODO this doesn't read F from $opts
    my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
