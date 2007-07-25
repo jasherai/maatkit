@@ -519,81 +519,81 @@ foreach my $database ( @databases ) {
 
    TABLE:
    foreach my $table ( sort keys %info_for ) {
-      my $info      = $info_for{$table};
+      eval {
+         my $info      = $info_for{$table};
 
-      # Chunking.  Gah.  Complicated bad stuff.  Put it off in a subroutine,
-      # it will make it all better.  Chunks are either arrayref of start/end,
-      # undef for the NULL chunk, or the string '' for a table that's not
-      # chunked.
-      if ( $info->{chunk_col} && $opts{C} ) {
-         calculate_chunks($info);
-      }
-      else {
-         $info->{chunks}    = [ '' ];
-         $info->{chunk_tot} = 1;
-      }
-
-      # Do a chunk at a time.
-      foreach my $chunk_num ( 0 .. scalar(@{$info->{chunks}}) - 1 ) {
-         $info->{chunk_cur} = $chunk_num + 1;
-         my $chunk_start_time = time;
-         if ( $opts{R} ) { # We're in --replicate mode.
-            eval {
-               do_tbl_replicate($hosts[0], $info, $hdr, $explain);
-            };
-            if ( $EVAL_ERROR ) {
-               print_err($EVAL_ERROR);
-            }
+         # Chunking.  Gah.  Complicated bad stuff.  Put it off in a subroutine,
+         # it will make it all better.  Chunks are either arrayref of start/end,
+         # undef for the NULL chunk, or the string '' for a table that's not
+         # chunked.
+         if ( $info->{chunk_col} && $opts{C} ) {
+            calculate_chunks($info);
          }
-
          else {
+            $info->{chunks}    = [ '' ];
+            $info->{chunk_tot} = 1;
+         }
 
-            # Lock table and get master position on the master, if applicable.
-            $main_dbh->do("LOCK TABLES `$database`.`$table` READ")
-               if ($opts{k} && !$opts{explain});
-            if ( defined $opts{w} && !$opts{explain} ) {
-               my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
-               @{$info}{keys %$master_status} = values %$master_status;
+         # Do a chunk at a time.
+         foreach my $chunk_num ( 0 .. scalar(@{$info->{chunks}}) - 1 ) {
+            $info->{chunk_cur} = $chunk_num + 1;
+            my $chunk_start_time = time;
+            if ( $opts{R} ) { # We're in --replicate mode.
+               do_tbl_replicate($hosts[0], $info, $hdr, $explain);
             }
 
-            my %children;
-            foreach my $i ( 0 .. $#hosts ) {
-               my $host = $hosts[$i];
-               my $pid = @hosts > 1 ? fork() : undef;
-               if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
-                  eval {
-                     do_tbl($host, $info, $i == 0, $hdr, $explain);
-                  };
-                  if ( $EVAL_ERROR ) {
-                     print_err($EVAL_ERROR);
-                     exit(1); # die, even if only a single host
+            else {
+
+               # Lock table and get master position on the master, if applicable.
+               $main_dbh->do("LOCK TABLES `$database`.`$table` READ")
+                  if ($opts{k} && !$opts{explain});
+               if ( defined $opts{w} && !$opts{explain} ) {
+                  my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
+                  @{$info}{keys %$master_status} = values %$master_status;
+               }
+
+               my %children;
+               foreach my $i ( 0 .. $#hosts ) {
+                  my $host = $hosts[$i];
+                  my $pid = @hosts > 1 ? fork() : undef;
+                  if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
+                     eval {
+                        do_tbl($host, $info, $i == 0, $hdr, $explain);
+                     };
+                     if ( $EVAL_ERROR ) {
+                        print_err($EVAL_ERROR);
+                        exit(1) if @hosts > 1; # exit only if I'm a child
+                     }
+                     exit(0) if @hosts > 1; # exit only if I'm a child
                   }
-                  exit(0) if @hosts > 1; # exit only if I'm a child
+                  elsif ( @hosts > 1 && !defined($pid) ) {
+                     die("Unable to fork!");
+                  }
+                  # I already exited if I'm a child, so I'm the parent.
+                  $children{$host->{h}} = $pid if @hosts > 1;
                }
-               elsif ( @hosts > 1 && !defined($pid) ) {
-                  die("Unable to fork!");
+
+               # Wait for the children to exit.
+               foreach my $host ( keys %children ) {
+                  my $pid = waitpid($children{$host}, 0);
+                  $exit_status = $CHILD_ERROR;
                }
-               # I already exited if I'm a child, so I'm the parent.
-               $children{$host->{h}} = $pid if @hosts > 1;
+               $main_dbh->do("UNLOCK TABLES") if ($opts{k} && !$opts{explain});
+
             }
 
-            # Wait for the children to exit.
-            foreach my $host ( keys %children ) {
-               my $pid = waitpid($children{$host}, 0);
-               $exit_status = $CHILD_ERROR;
+            if ( $opts{sleep} && !$opts{explain} ) {
+               sleep($opts{sleep});
             }
-            $main_dbh->do("UNLOCK TABLES") if ($opts{k} && !$opts{explain});
+            elsif ( $opts{'sleep-coef'} && !$opts{explain} ) {
+               my $sleep_time = ceil( (time - $chunk_start_time) * $opts{'sleep-coef'} );
+               sleep($sleep_time);
+            }
 
          }
-
-         if ( $opts{sleep} && !$opts{explain} ) {
-            sleep($opts{sleep});
-         }
-         elsif ( $opts{'sleep-coef'} && !$opts{explain} ) {
-            my $sleep_time = ceil( (time - $chunk_start_time) * $opts{'sleep-coef'} );
-            sleep($sleep_time);
-         }
-
+      };
+      if ( $EVAL_ERROR ) {
+         print_err($EVAL_ERROR);
       }
    }
 }
@@ -1174,7 +1174,7 @@ sub print_err {
    my ( $msg ) = @_;
    return if !defined $msg
       # Honor --quiet in the (common?) event that a table went away
-      or ($opts{q} && $EVAL_ERROR =~ m/doesn't exist/);
+      or ($opts{q} && $EVAL_ERROR =~ m/: Table .*? doesn't exist/);
    $msg =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
    print STDERR $msg, "\n";
 }
