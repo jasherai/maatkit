@@ -66,6 +66,7 @@ my @opt_spec = (
    { s => 'quickdel',    d => 'Add the QUICK modifier to DELETE statements' },
    { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
    { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
+   { s => 'safeautoinc!',d => 'Do not archive row with max AUTO_INCREMENT (default)'},
    { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
    { s => 'sharelock',   d => 'Adds the LOCK IN SHARE MODE modifier to SELECT statements' },
    { s => 'skipfkchk|K', d => 'Turn off foreign key checks' },
@@ -90,6 +91,7 @@ my %opts = (
    u => 1,
    R => 1,
    S => '/tmp/mysql-archiver-sentinel',
+   safeautoinc => 1,
 );
 
 # Post-process...
@@ -361,8 +363,9 @@ my ($first_sql, $next_sql, $del_sql, $ins_sql);
 # for DELETEs.  @asc_slice is only used to generate queries; it is the column
 # ordinals of the index the get_next query will ascend.  @get_next_slice
 # is the column ordinals in the order in which they appear in the get_next
-# query's WHERE clause.
-my (@pk_slice, @asc_slice, @get_next_slice);
+# query's WHERE clause.  $key_is_ai is set true if the key is a single-column,
+# non-nullable, AUTO_INCREMENT.
+my (@pk_slice, @asc_slice, @get_next_slice, $key_is_ai);
 
 my @cols = $opts{c} ? split(/,/, $opts{c})               # Explicitly specified columns
          : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}} # PK only
@@ -384,6 +387,12 @@ if ( $opts{N} && ($src->{i} || $src->{info}->{keys}->{PRIMARY}) ) {
       my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
 
       if ( @asc_cols ) {
+         # Determine $key_is_ai; must come before the ascendfirst stmt below.
+         if ( @asc_cols == 1 ) {
+            my $def = $src->{info}->{def_hash}->{$asc_cols[0]};
+            $key_is_ai = ($def =~ m/AUTO_INCREMENT/i && $def =~ m/NOT NULL/);
+         }
+
          if ( $opts{ascendfirst} ) {
             @asc_cols = $asc_cols[0];
          }
@@ -418,6 +427,14 @@ $first_sql
       ? ((version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
       : '')
    . " WHERE ($opts{W})";
+
+if ( $opts{safeautoinc} && $key_is_ai ) {
+   if ( !version_ge($dbh, '4.1.0') ) {
+      die "--safeautoinc requires subqueries and thus MySQL >= 4.1.0\n";
+   }
+   my $col = "`$cols[$asc_slice[0]]`";
+   $first_sql .= " AND ($col<(SELECT MAX($col) FROM $src->{db_tbl}))";
+}
 
 # At this point the fetch-first and fetch-next queries may diverge.
 $next_sql = $first_sql;
@@ -875,6 +892,9 @@ sub get_tbl_struct {
       }
       $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
 
+   my %def_hash;
+   @def_hash{@cols} = @defs;
+
    return {
       cols      => \@cols,
       col_hash  => { map { $_ => 1 } @cols },
@@ -883,6 +903,7 @@ sub get_tbl_struct {
       keys      => \%keys,
       kdef      => \%kdef,
       defs      => \@defs,
+      def_hash  => \%def_hash,
       ddl       => $ddl,
       col_posn  => { map { $cols[$_] => $_ } 0..$#cols },
    };
@@ -1246,6 +1267,19 @@ connections.
 
 At this time I have not written any code to handle errors with transactional
 storage engines other than InnoDB.  Request that feature if you need it.
+
+=item --safeautoinc
+
+Adds an extra WHERE clause to prevent MySQL Archiver from removing the newest
+row when ascending a single-column AUTO_INCREMENT key.  This guards against
+re-using AUTO_INCREMENT values if the server restarts, and is enabled by
+default.
+
+The extra WHERE clause uses a non-correlated subquery, which MySQL should
+optimize into a constant when compiling the query, and should therefore be
+very efficient.  If you are worried about this, use L<"--test"> and EXPLAIN to
+examine the generated queries.  You should see the subquery's plan as
+"SUBQUERY... Select tables optimized away".
 
 =item --sentinel
 
