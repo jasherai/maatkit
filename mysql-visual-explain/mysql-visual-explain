@@ -253,6 +253,15 @@ sub process {
       }
    }
 
+   # All NULL values of 'id' should have been resolved by now.  Re-sort the list
+   # and continue.
+   if ( grep { !defined $_->{id} } @nodes ) {
+      die "Error: all NULL ids should be removed at this point.  Please report this as a bug.";
+   }
+   # TODO: I think the subquery nodes have already been left behind by the
+   # derived table nodes above.
+   @nodes = sort { $a->{id} <=> $b->{id} } @nodes;
+
    # Resolve joins in the main node list.
    my $tree = $self->build_join_tree(@nodes);
 
