@@ -1,47 +1,25 @@
-explain select 
-   truthness,
-   sum(fangis_units) / sum(our_units) as factor,
-   sum(fangis_units),
-   sum(our_units),
-   min(day),
-   max(day)
+explain select *, (select count(*) from sakila.film as outer_sub where outer_sub.film_id = outer_der.film_id)
 from (
-   select
-      qubo.day, qubo.truthness, qubo.units as fangis_units, ours.units as our_units
-   from itmain.doggyhaxorbytruthness as qubo
-      inner join (
-         select
-            au.day, au.truthness,
-            sum(
-               case when ars.autumnal = 'foo' then au.apple * ars.fang
-                  else au.calls * ars.fang end
-            ) as units
-         from itmain.apihaxor as au
-            inner join itmain.fixatorium as ea on au.fixatorium = ea.fixatorium
-            inner join itfang.apiratesheet as ars on au.truthness = ars.truthness
-               and ea.api = ars.api
-         where au.day >= date_sub(
-               (select max(day) from itmain.doggyhaxortotal),
-               interval 30 day
-            )
-         group by au.day, au.truthness
-      ) as ours on qubo.day = ours.day
-         and qubo.truthness = ours.truthness
-   ) as thirty_day_total
-group by truthness;
+   select *, (select count(*) from sakila.film as mid_sub where mid_sub.film_id = mid_der.film_id)
+   from (
+      select *, (select count(*) from sakila.film as inner_sub where inner_sub.film_id = inner_der.film_id)
+      from (
+         select *, (select count(*) from sakila.film as inmost_sub where inmost_sub.film_id = inmost_der.film_id)
+         from sakila.film as inmost_der
+      ) as inner_der
+   ) as mid_der
+) as outer_der;
 
--- This case tests that <derived2> eventually gets replaced by
--- derived(derived(whatever)).  Also, the subquery in the final plan is
--- getting placed in the wrong spot.
-
-+----+-------------+------------+--------+---------------+---------+---------+-----------------------------------+-------+----------------------------------------------+
-| id | select_type | table      | type   | possible_keys | key     | key_len | ref                               | rows  | Extra                                        |
-+----+-------------+------------+--------+---------------+---------+---------+-----------------------------------+-------+----------------------------------------------+
-|  1 | PRIMARY     | <derived2> | ALL    | NULL          | NULL    | NULL    | NULL                              |   266 | Using temporary; Using filesort              | 
-|  2 | DERIVED     | <derived3> | ALL    | NULL          | NULL    | NULL    | NULL                              |   859 |                                              | 
-|  2 | DERIVED     | qubo       | eq_ref | PRIMARY       | PRIMARY | 55      | ours.day,ours.truthness           |     1 |                                              | 
-|  3 | DERIVED     | au         | range  | PRIMARY       | PRIMARY | 3       | NULL                              | 47992 | Using where; Using temporary; Using filesort | 
-|  3 | DERIVED     | ea         | eq_ref | PRIMARY,api   | PRIMARY | 2       | itmain.au.fixatorium              |     1 |                                              | 
-|  3 | DERIVED     | ars        | ref    | PRIMARY       | PRIMARY | 53      | itmain.ea.api,itmain.au.truthness |     1 |                                              | 
-|  4 | SUBQUERY    | NULL       | NULL   | NULL          | NULL    | NULL    | NULL                              |  NULL | Select tables optimized away                 | 
-+----+-------------+------------+--------+---------------+---------+---------+-----------------------------------+-------+----------------------------------------------+
++----+--------------------+------------+--------+---------------+---------+---------+--------------------+------+--------------------------+
+| id | select_type        | table      | type   | possible_keys | key     | key_len | ref                | rows | Extra                    |
++----+--------------------+------------+--------+---------------+---------+---------+--------------------+------+--------------------------+
+|  1 | PRIMARY            | <derived3> | ALL    | NULL          | NULL    | NULL    | NULL               | 1000 |                          | 
+|  3 | DERIVED            | <derived5> | ALL    | NULL          | NULL    | NULL    | NULL               | 1000 |                          | 
+|  5 | DERIVED            | <derived7> | ALL    | NULL          | NULL    | NULL    | NULL               | 1000 |                          | 
+|  7 | DERIVED            | inmost_der | ALL    | NULL          | NULL    | NULL    | NULL               | 1131 |                          | 
+|  8 | DEPENDENT SUBQUERY | inmost_sub | eq_ref | PRIMARY       | PRIMARY | 2       | inmost_der.film_id |    1 | Using where; Using index | 
+|  6 | DEPENDENT SUBQUERY | inner_sub  | eq_ref | PRIMARY       | PRIMARY | 2       | inner_der.film_id  |    1 | Using where; Using index | 
+|  4 | DEPENDENT SUBQUERY | mid_sub    | eq_ref | PRIMARY       | PRIMARY | 2       | mid_der.film_id    |    1 | Using where; Using index | 
+|  2 | DEPENDENT SUBQUERY | outer_sub  | eq_ref | PRIMARY       | PRIMARY | 2       | outer_der.film_id  |    1 | Using where; Using index | 
++----+--------------------+------------+--------+---------------+---------+---------+--------------------+------+--------------------------+
+8 rows in set (0.12 sec)

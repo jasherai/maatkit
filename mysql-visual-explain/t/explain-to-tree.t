@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 43;
+use Test::More tests => 45;
 
 require "../mysql-visual-explain";
 
@@ -1735,3 +1735,26 @@ is_deeply(
    },
    'Subqueries that do a full scan on a NULL key',
 );
+
+$t = $e->parse( load_file('samples/nested_derived_tables.sql') );
+is_deeply(
+   $t,
+   {  type     => 'Table scan',
+      rows     => 1000,
+      id       => 1,
+      rowid    => 0,
+      children => [
+         {  type     => 'DERIVED',
+            table         => 'derived()',
+            possible_keys => undef,
+            partitions    => undef,
+            children => [
+               # TODO
+            ],
+         },
+      ],
+   },
+   'Nested derived tables and subqueries',
+);
+
+# TODO: t/samples/nested_derived_under_filesort_temporary.sql
