@@ -21,7 +21,7 @@ if [ `whoami` = 'baron' ]; then
    export DEBFULLNAME='Baron Schwartz'
 fi
 if ! head -n 1 debian/changelog | grep -q "($VERSION-1)"; then
-    debchange -v $VERSION-1 "New upstream release."
+    debchange -D unstable -v $VERSION-1 "New upstream release."
     svn ci -m 'Changelog' debian/changelog
 fi
 
