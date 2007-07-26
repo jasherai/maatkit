@@ -15,7 +15,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-archiver
-VERSION = 0.9.4
+VERSION = 1.0.0
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \
