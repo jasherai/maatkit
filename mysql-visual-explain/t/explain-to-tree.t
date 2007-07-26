@@ -1837,3 +1837,5 @@ is_deeply(
 );
 
 # TODO: t/samples/nested_derived_under_filesort_temporary.sql
+# TODO:      t/samples/derived_union_join_derived_inside_derived.sql
+# TODO:      t/samples/unions_derived_subqueries_big_mess.sql
