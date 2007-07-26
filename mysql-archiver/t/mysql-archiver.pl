@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 69;
+use Test::More tests => 73;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -272,3 +272,17 @@ is($output + 0, 2, 'Plugin archived all rows to table_10 OK');
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mysql-archiver --statistics -W 1=1 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
 like($output, qr/commit *10/, 'Stats print OK');
+
+# Safe auto-increment behavior.
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver --purge -W 1=1 --source D=test,t=table_12,F=$opt_file 2>&1`;
+is($output, '', 'Purge worked OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select min(a),count(*) from test.table_12"`;
+like($output, qr/^3\t1$/, 'Did not touch the max auto_increment');
+
+# Safe auto-increment behavior, disabled.
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver --nosafeautoinc --purge -W 1=1 --source D=test,t=table_12,F=$opt_file 2>&1`;
+is($output, '', 'Disabled safeautoinc worked OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_12"`;
+is($output + 0, 0, "Disabled safeautoinc purged whole table");
