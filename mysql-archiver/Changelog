@@ -1,5 +1,10 @@
 Changelog for mysql-archiver:
 
+2007-07-26: version 1.0.0
+
+   * Added --safeautoinc option, enabled by default, to protect against re-using
+     auto-increment values.
+
 2007-07-20: version 0.9.4
 
    * Made --time suffix optional.
