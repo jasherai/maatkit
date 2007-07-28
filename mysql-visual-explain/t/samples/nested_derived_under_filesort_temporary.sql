@@ -1,6 +1,7 @@
 explain select outer_der.film_id, count(*)
 from (
-   select *, (select count(*) from sakila.film as mid_sub where mid_sub.film_id = mid_der.film_id)
+   select *,
+      (select count(*) from sakila.film as mid_sub where mid_sub.film_id = mid_der.film_id)
    from (
       select * from sakila.film as inmost
    ) as mid_der
@@ -8,7 +9,6 @@ from (
 ) as outer_der
 group by outer_der.film_id
 order by count(*) desc
-mysql> source t/samples/nested_derived_tables_with_subqueries.sql
 +----+--------------------+------------+--------+---------------+---------+---------+-----------------+------+---------------------------------+
 | id | select_type        | table      | type   | possible_keys | key     | key_len | ref             | rows | Extra                           |
 +----+--------------------+------------+--------+---------------+---------+---------+-----------------+------+---------------------------------+
@@ -17,6 +17,3 @@ mysql> source t/samples/nested_derived_tables_with_subqueries.sql
 |  4 | DERIVED            | inmost     | ALL    | NULL          | NULL    | NULL    | NULL            | 1131 |                                 | 
 |  3 | DEPENDENT SUBQUERY | mid_sub    | eq_ref | PRIMARY       | PRIMARY | 2       | mid_der.film_id |    1 | Using where; Using index        | 
 +----+--------------------+------------+--------+---------------+---------+---------+-----------------+------+---------------------------------+
-4 rows in set (0.08 sec)
-
-mysql> 

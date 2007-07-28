@@ -1,4 +1,18 @@
-mysql> explain select (select count(*) from sakila.actor as sub_1 where sub_1.actor_id = der_3.foo) from (select (select count(*) from sakila.actor as sub_2 where sub_2.actor_id = der_2.foo) as foo from(select 1 as foo from sakila.actor as actor_1 union select (select count(*) from sakila.actor as sub_3 where sub_3.actor_id = actor_2.actor_id) from sakila.actor as actor_2) as der_1 join (select 1 as foo from sakila.actor as actor_3) as der_2 using(foo)) as der_3;
+explain
+select
+   (select count(*) from sakila.actor as sub_1 where sub_1.actor_id = der_3.foo)
+from (
+   select (select count(*) from sakila.actor as sub_2 where sub_2.actor_id = der_2.foo) as foo
+   from(
+      select 1 as foo from sakila.actor as actor_1
+      union
+      select (select count(*) from sakila.actor as sub_3 where sub_3.actor_id = actor_2.actor_id)
+      from sakila.actor as actor_2
+   ) as der_1
+   join (
+      select 1 as foo from sakila.actor as actor_3)
+   as der_2 using(foo)
+) as der_3;
 +----+--------------------+------------+--------+---------------+---------+---------+-------------------------+------+--------------------------+
 | id | select_type        | table      | type   | possible_keys | key     | key_len | ref                     | rows | Extra                    |
 +----+--------------------+------------+--------+---------------+---------+---------+-------------------------+------+--------------------------+
@@ -13,6 +27,3 @@ mysql> explain select (select count(*) from sakila.actor as sub_1 where sub_1.ac
 |  4 | DEPENDENT SUBQUERY | sub_2      | eq_ref | PRIMARY       | PRIMARY | 2       | der_2.foo               |    1 | Using where; Using index | 
 |  2 | DEPENDENT SUBQUERY | sub_1      | eq_ref | PRIMARY       | PRIMARY | 2       | der_3.foo               |    1 | Using where; Using index | 
 +----+--------------------+------------+--------+---------------+---------+---------+-------------------------+------+--------------------------+
-10 rows in set (0.01 sec)
-
-mysql> notee

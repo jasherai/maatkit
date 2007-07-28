@@ -1,8 +1,11 @@
-explain select *, (select count(*) from sakila.film as outer_sub where outer_sub.film_id = outer_der.film_id)
+explain select *,
+   (select count(*) from sakila.film as outer_sub where outer_sub.film_id = outer_der.film_id)
 from (
-   select *, (select count(*) from sakila.film as mid_sub where mid_sub.film_id = mid_der.film_id)
+   select *,
+      (select count(*) from sakila.film as mid_sub where mid_sub.film_id = mid_der.film_id)
    from (
-      select *, (select count(*) from sakila.film as inner_sub where inner_sub.film_id = inner_der.film_id)
+      select *,
+         (select count(*) from sakila.film as inner_sub where inner_sub.film_id = inner_der.film_id)
       from sakila.film as inner_der
    ) as mid_der
 ) as outer_der;
