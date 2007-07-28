@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 45;
+use Test::More tests => 46;
 
 require "../mysql-visual-explain";
 
@@ -1843,6 +1843,50 @@ is_deeply(
    'Nested derived tables and subqueries',
 );
 
-# TODO: t/samples/nested_derived_under_filesort_temporary.sql
-# TODO:      t/samples/derived_union_join_derived_inside_derived.sql
-# TODO:      t/samples/unions_derived_subqueries_big_mess.sql
+$t = $e->parse( load_file('samples/adjacent_subqueries.sql') );
+is_deeply(
+   $t,
+   {  type     => 'DEPENDENT SUBQUERY',
+      children => [
+         {  type     => 'SUBQUERY',
+            children => [
+               {  type    => 'Index scan',
+                  key     => 'actor->PRIMARY',
+                  key_len => 2,
+                  rows    => 200,
+                  'ref'   => undef,
+                  partitions => undef,
+                  possible_keys => undef,
+                  id       => 1,
+                  rowid    => 0,
+               },
+               {  type    => 'Index scan',
+                  key     => 'f->idx_fk_language_id',
+                  key_len => 1,
+                  rows    => 951,
+                  'ref'   => undef,
+                  partitions => undef,
+                  possible_keys => undef,
+                  id       => 3,
+                  rowid    => 1,
+               },
+            ],
+         },
+         {  type     => 'Filter with WHERE',
+            id       => 2,
+            rowid    => 2,
+            children => [
+               {  type          => 'Index lookup',
+                  key           => 'film_actor->PRIMARY',
+                  possible_keys => 'PRIMARY',
+                  partitions => undef,
+                  key_len       => 2,
+                  'ref'         => 'actor.actor_id',
+                  rows          => 13,
+               },
+            ],
+         },
+      ],
+   },
+   'Adjacent subqueries',
+);
