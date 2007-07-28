@@ -1754,7 +1754,7 @@ is_deeply(
             rowid    => 0,
             children => [
                {  type     => 'DERIVED',
-                  table         => 'derived()',
+                  table         => 'derived(derived(inner_der,inner_sub),mid_sub)',
                   possible_keys => undef,
                   partitions    => undef,
                   children => [
@@ -1766,7 +1766,7 @@ is_deeply(
                               rowid    => 1,
                               children => [
                                  {  type     => 'DERIVED',
-                                    table         => 'derived()',
+                                    table         => 'derived(inner_der,inner_sub)',
                                     possible_keys => undef,
                                     partitions    => undef,
                                     children => [
@@ -1826,7 +1826,7 @@ is_deeply(
          },
          {  type     => 'Filter with WHERE',
             id       => 2,
-            rowid    => 7,
+            rowid    => 5,
             children => [
                {  type          => 'Unique index lookup',
                   rows          => 1,
