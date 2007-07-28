@@ -3,6 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
+use English qw(-no_match_vars);
 use Test::More tests => 45;
 
 require "../mysql-visual-explain";
@@ -965,6 +966,12 @@ is_deeply(
    },
    'Filesort',
 );
+
+eval {
+   $t = $e->parse( load_file('samples/too_many_unions.sql') );
+};
+like($EVAL_ERROR, qr/UNION has too many tables/, 'Too many unions');
+
 
 $t = $e->parse( load_file('samples/simple_union.sql') );
 is_deeply(

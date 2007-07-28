@@ -1,4 +1,14 @@
-mysql> explain select * from (select 1 as foo from sakila.actor as actor_1 union select 1 from sakila.actor as actor_2) as der_1 join (select 1 as foo from sakila.actor as actor_3 union select 1 from sakila.actor as actor_4) as der_2 using(foo);
+explain
+select * from (
+   select 1 as foo from sakila.actor as actor_1
+   union
+   select 1 from sakila.actor as actor_2
+) as der_1
+join (
+   select 1 as foo from sakila.actor as actor_3
+   union
+   select 1 from sakila.actor as actor_
+) as der_2 using(foo);
 +----+--------------+------------+--------+---------------+---------+---------+------+------+-------------+
 | id | select_type  | table      | type   | possible_keys | key     | key_len | ref  | rows | Extra       |
 +----+--------------+------------+--------+---------------+---------+---------+------+------+-------------+
@@ -11,6 +21,3 @@ mysql> explain select * from (select 1 as foo from sakila.actor as actor_1 union
 |  3 | UNION        | actor_2    | index  | NULL          | PRIMARY | 2       | NULL |  200 | Using index | 
 | NULL | UNION RESULT | <union2,3> | ALL    | NULL          | NULL    | NULL    | NULL | NULL |             | 
 +----+--------------+------------+--------+---------------+---------+---------+------+------+-------------+
-8 rows in set (0.01 sec)
-
-mysql> notee

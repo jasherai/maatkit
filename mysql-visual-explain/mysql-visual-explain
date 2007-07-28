@@ -137,152 +137,203 @@ sub parse {
    return $self->process(ExplainParser->new->parse($text), $options);
 }
 
-# The main method that turns a result set into a tree.
+# The main method that turns a result set into a tree.  Accepts an arrayref of
+# hashrefs which correspond to the rows in EXPLAIN.  See the ALGORITHM in the
+# documentation for a small novel about this process.
 sub process {
    my ( $self, $rows, $options ) = @_;
    $self->load_options($options);
    return unless ref $rows eq 'ARRAY' && @$rows;
-   my @nodes;
 
-   # ##################################################################
-   # EXPLAIN output has forward references, so this requires two passes,
-   # one to generate subtrees from each row and one to resolve the refs.
-   # ##################################################################
-
-   my $rowid = 0;
-
-   foreach my $row ( @$rows ) {
+   # Pre-process and sanity check the rows.
+   my @rows = @$rows;
+   foreach my $i ( 0 .. $#rows ) {
+      my $row = $rows[$i];
+      $row->{rowid} = $i;
       $row->{Extra} ||= '';
-      my $sub = $row->{type};
 
-      # ##################################################################
-      # Dispatch to a class method to generate the tree.
-      # ##################################################################
-      my $node
-         = $sub                                 ? $self->$sub($row)
-         : $row->{Extra} =~ m/No tables/        ? { type => 'DUAL' }
-         : $row->{Extra} =~ m/Impossible WHERE/ ? { type => 'IMPOSSIBLE' }
-         : $row->{Extra} =~ m/optimized away/   ? { type => 'CONSTANT' }
-         :                                      die "Can't handle " . Dumper($row);
+      # The source code says if there are too many tables unioned together, the
+      # table column will get truncated, like "<union1,2,3,4...>".  If this
+      # happens, I've got to bail out.  I'm not going to check all the source
+      # code for all versions, but in 5.0 it looks like I can get this to happen
+      # around table 20.
+      die "UNION has too many tables: $row->{table}"
+         if $row->{table} && $row->{table} =~ m/\./;
 
-      # ##################################################################
-      # Apply other tree transformations.
-      # ##################################################################
-      if ( $row->{Extra} =~ m/Using where/ ) {
-         $node = {
-            type     => 'Filter with WHERE',
-            children => [$node],
-         };
-      }
-      if ( $row->{Extra} =~ m/Using temporary/ ) {
-         $node = {
-            type     => 'Table scan',
-            rows     => undef,
-            children => [
-               {  type          => 'TEMPORARY',
-                  table         => "temporary($row->{table})",
-                  possible_keys => undef,
-                  partitions    => undef,
-                  children      => [$node],
-               }
-            ],
-         };
-      }
-      if ( $row->{Extra} =~ m/Distinct|Not exists/ ) {
-         $node = {
-            type     => 'Distinct/Not-Exists',
-            children => [$node],
-         };
-      }
-      if ( $row->{Extra} =~ m/Using filesort/ ) {
-         $node = {
-            type     => 'Filesort',
-            children => [$node],
-         };
-      }
-      if ( $row->{Extra} =~ m/Using join buffer/ ) {
-         $node = {
-            type     => 'Join buffer',
-            children => [$node],
-         };
-      }
-
-      # Add some data that will help me keep track of nodes as I manipulate
-      # them later
-      $node->{id}    = $row->{id};
-      $node->{rowid} = $rowid;
-      $node->{row}   = $row;
-
-      push @nodes, $node;
-
-      $rowid++;
-   }
-
-   # Build a tree from the node list by fixing nodes whose table references need
-   # to be resolved.  Remove the referenced nodes from the flat list and make
-   # them children of their parents ("push them down").  Because of the way
-   # unions and derived tables can be nested (study the EXPLAIN of a union of
-   # derived tables of unions), this process has to alternate between unions and
-   # derived tables, resolving union results first, and resolving things that
-   # don't refer to unresolved things first.
-   #
-   # Therefore, when a union is resolved I "pull up" information from its child
-   # nodes: its id and select_type come from its first child, and its table
-   # becomes the concatenation of its child tables.  This convoluted process is
-   # necessary because there are both forward and backward references.
-   #
-   # Strict alternation between union and derived is necessary because a) there
-   # is no such thing as a union of unions and b) I can't try to resolve derived
-   # tables twice in a row without resolving potential unions within them.
-
-   my $op        = 'UNION';
-   my $i         = 0;
-   my $this_time = 0;
-   my $last_time = 1; # Don't quit if first run doesn't do anything
-   while ( $i < @nodes ) {
-      my $result = $self->resolve_dependencies(\@nodes, $nodes[$i], $nodes[$i], $op);
-      $this_time ||= $result;
-      $i = max(0, $i - $result + 1); # May redo nodes, but won't skip any.
-      if ( $i >= @nodes ) {
-         if ( $this_time || $last_time ) {
-            $op = $op eq 'UNION' ? 'DERIVED' : 'UNION';
-            $i  = 0;
+      if ( !defined $row->{id} ) {
+         if ( $row->{table} && (my ($id) = $row->{table} =~ m/^<union(\d+)/) ) {
+            $row->{id} = $id;
          }
-         $last_time = $this_time;
-         $this_time = 0;
+         else {
+            die "Unexpected NULL in id column, please report as a bug";
+         }
       }
    }
 
-   # All NULL values of 'id' should have been resolved by now.  Re-sort the list
-   # and continue.
-   if ( grep { !defined $_->{id} } @nodes ) {
-      die "Error: all NULL ids should be removed at this point.  Please report this as a bug.";
+   # Re-order the rows so all references are forward.
+   my %union_for
+      = map  { $_->{id} => $_ }
+        grep { $_->{select_type} eq 'UNION RESULT' }
+        @rows;
+   
+   my $last_id = 0;
+   my @reordered;
+   foreach my $row ( grep { $_->{select_type} ne 'UNION RESULT' } @rows ) {
+      if ( $last_id != $row->{id} && $union_for{$row->{id}} ) {
+         push @reordered, $union_for{$row->{id}};
+      }
+      push @reordered, $row;
+      $last_id = $row->{id};
    }
-   # TODO: I think the subquery nodes have already been left behind by the
-   # derived table nodes above.
-   @nodes = sort { $a->{id} <=> $b->{id} } @nodes;
 
-   # Resolve joins in the main node list.
-   my $tree = $self->build_join_tree(@nodes);
+   # Process the rows recursively.
+   my $tree = $self->build_query_plan(@reordered);
 
-   # Recurse the tree again for more tree transformations.
-   my @stack = $tree;
-   while ( @stack ) {
-      my $node = shift @stack;
+   return $tree;
+}
 
-      if ( $node->{children} ) {
-         unshift @stack, @{$node->{children}};
+sub build_query_plan {
+   my ( $self, @rows ) = @_;
+
+   if ( !@rows ) {
+      die "I got no rows";
+   }
+
+   # Is it a UNION RESULT?  Split it up into sub-scopes and recurse.
+   if ( $rows[0]->{select_type} eq 'UNION RESULT' ) {
+      my $row = shift @rows;
+      my @kids;
+      my @ids   = $row->{table} =~ m/(\d+)/g;
+      foreach my $i ( 0 .. $#ids ) {
+         my $start = $self->index_of($ids[$i], @rows);
+         my $end   = $i < $#ids ? $self->index_of($ids[$i + 1], @rows) : @rows;
+         push @kids, $self->build_query_plan(splice(@rows, $start, $end - $start));
       }
+      $row->{children} = [ @kids ];
+      $row->{table}    = "union("
+         . join(',', map { $self->recursive_table_name($_) } @kids)
+         . ")";
+      return $self->transform($row);
+   }
 
-      if ( $node->{type} eq 'DERIVED' ) {
-         $node->{children} = [ $self->build_join_tree(@{$node->{children}}) ];
+   # Are there DERIVED tables?  If so, find its children and pull them out of the
+   # list under it.
+   while ( my ($der) = grep { $_->{table} && $_->{table} =~ m/^<derived\d+>$/ } @rows ) {
+      my ($der_id) = $der->{table} =~ m/^<derived(\d+)>$/;
+      my $max_sib = max(
+         map  { $_->{table} =~ m/^<derived(\d+)>$/g }
+         grep {
+            $_->{id} == $der->{id}                # Siblings
+            && $_->{table} =~ m/^<derived(\d+)>$/ # Derived siblings
+            && $1 > $der_id                       # Next siblings
+         } @rows
+      );
+
+      my $start = $self->index_of($der_id, @rows);
+      my $end   = @rows;
+      if ( $max_sib ) {
+         foreach my $i ( 0 .. $#rows ) {
+            if ( $rows[$i]->{id} >= $der_id && $rows[$i]->{id} < $max_sib ) {
+               $end = $i;
+            }
+         }
       }
+      my $kids = $self->build_query_plan(splice(@rows, $start, $end - $start));
+      $der->{children} = [$kids];
+      $der->{table}    = "derived(" . $self->recursive_table_name($kids) . ")";
+   }
 
-      # Get rid of temp variables.
-      delete $node->{row};
+   # Handle the "normal case."
+   my @join_types = map { $_->{select_type} } @rows;
+   my $tree       = $self->transform($rows[0]);
+   foreach my $i ( 1..$#rows) {
+      my $row       = $rows[$i];
+      my $join_type = $row->{id} == $rows[$i-1]->{id} ? 'JOIN' : $row->{select_type};
+      $tree = {
+         type     => $join_type,
+         children => [ $tree, $self->transform($row) ],
+      };
    }
 
    return $tree;
+}
+
+sub transform {
+   my ( $self, $row ) = @_;
+
+   my $sub = $row->{type};
+
+   # ##################################################################
+   # Dispatch to a class method to generate the tree.
+   # ##################################################################
+   my $node
+      = $sub                                 ? $self->$sub($row)
+      : $row->{Extra} =~ m/No tables/        ? { type => 'DUAL' }
+      : $row->{Extra} =~ m/Impossible WHERE/ ? { type => 'IMPOSSIBLE' }
+      : $row->{Extra} =~ m/optimized away/   ? { type => 'CONSTANT' }
+      :                                      die "Can't handle " . Dumper($row);
+
+   # ##################################################################
+   # Apply other tree transformations.
+   # ##################################################################
+   if ( $row->{Extra} =~ m/Using where/ ) {
+      $node = {
+         type     => 'Filter with WHERE',
+         children => [$node],
+      };
+   }
+   if ( $row->{Extra} =~ m/Using temporary/ ) {
+      $node = {
+         type     => 'Table scan',
+         rows     => undef,
+         children => [
+            {  type          => 'TEMPORARY',
+               table         => "temporary($row->{table})",
+               possible_keys => undef,
+               partitions    => undef,
+               children      => [$node],
+            }
+         ],
+      };
+   }
+   if ( $row->{Extra} =~ m/Distinct|Not exists/ ) {
+      $node = {
+         type     => 'Distinct/Not-Exists',
+         children => [$node],
+      };
+   }
+   if ( $row->{Extra} =~ m/Using filesort/ ) {
+      $node = {
+         type     => 'Filesort',
+         children => [$node],
+      };
+   }
+   if ( $row->{Extra} =~ m/Using join buffer/ ) {
+      $node = {
+         type     => 'Join buffer',
+         children => [$node],
+      };
+   }
+
+   # Add some data that will help me keep track of nodes as I manipulate
+   # them later
+   $node->{id}    = $row->{id};
+   $node->{rowid} = $row->{rowid};
+
+   return $node;
+}
+
+sub index_of {
+   my ( $self, $id, @rows ) = @_;
+   my $i = 0;
+   foreach my $row ( @rows ) {
+      if ( $row->{id} && $row->{id} == $id ) {
+         return $i;
+      }
+      $i++;
+   }
+   die "Can't find row $id in "
+      . join(',', map { $_->{id} || '' } @rows);
 }
 
 sub pretty_print {
@@ -399,105 +450,21 @@ sub index_merge {
 # Helper subroutines.
 # ###########################################################################
 
-sub has_unresolved_dependencies {
+sub recursive_table_name {
    my ( $self, $node ) = @_;
-   if ( $node->{table} && $node->{table} =~ m/^<(?:union|derived)(?:\d+,?)+>$/ ) {
-      return 1;
+   if ( $node->{table} ) {
+      return $node->{table};
+   }
+   if ( $node->{key} ) {
+      my ( $table ) = $node->{key} =~ m/(.*?)->/;
+      return $table;
    }
    if ( $node->{children} ) {
-      foreach my $child ( @{$node->{children}} ) {
-         if ( $self->has_unresolved_dependencies($child) ) {
-            return 1;
-         }
-      }
+      return join(',',
+         grep { $_ }
+         map  { $self->recursive_table_name($_) }
+              @{$node->{children}});
    }
-}
-
-# Takes all nodes, a top-level node, a node, and a kind (union/derived), and
-# returns the number of rows it moved.  Does not resolve dependencies if it
-# would change something that has dependencies in turn.
-
-sub resolve_dependencies {
-   my ( $self, $nodes, $tl, $node, $kind ) = @_;
-   my $changes = 0;
-   if ( $node->{type} eq $kind && !$node->{children}
-         && $self->has_unresolved_dependencies($node) )
-   {
-      my @ids = $node->{table} =~ m/(\d+)/g;
-      my @kids;
-      foreach my $id ( @ids ) {
-         push @kids, grep { $_->{id} && $_->{id} == $id } @$nodes;
-      }
-
-      # Check that kids don't contain any references themselves.
-      if ( !grep { $self->has_unresolved_dependencies($_) } @kids ) {
-
-         # "Push down" children.
-         $node->{children} = [@kids];
-         my %child_row_ids = map { $_->{rowid} => 1 } @kids;
-         my $before = scalar @$nodes;
-         @$nodes = grep { !$child_row_ids{$_->{rowid}} } @$nodes;
-
-         # "Pull up" information from the children.
-         if ( $kind eq 'UNION' ) {
-            # UNION RESULT rows don't have a value for the 'id' column, so derived
-            # tables over the union won't be able to find their children unless
-            # I pull this info up.  They also need a select_type for the
-            # build_join_tree() method.
-            $tl->{id}          = $kids[0]->{row}->{id};
-            $tl->{row}->{select_type} = $kids[0]->{row}->{select_type};
-         }
-         $node->{table}
-            = lc($kind) . '(' . join(',', map { $_->{row}->{table} } @kids) . ')';
-         $tl->{row}->{table} = $node->{table};
-         return $before - scalar @$nodes;
-      }
-
-   }
-
-   if ( $node->{children} ) {
-      foreach my $child ( @{$node->{children}} ) {
-         $changes += $self->resolve_dependencies($nodes, $tl, $child, $kind);
-      }
-   }
-
-   return $changes;
-}
-
-# The rules seem to be that all rows with the same 'id' value are JOINED.  After
-# that, adjacent rows are 'join'ed with some other kind of join, like a
-# subquery.
-sub build_join_tree {
-   my ( $self, @nodes ) = @_;
-
-   # Grab the first row for each 'id' value.
-   my %seen;
-   my @top_level = grep { !$seen{$_->{id}}++ } @nodes;
-
-   # Build a tree for each 'id' value.
-   my @subtrees;
-   foreach my $id ( map { $_->{id} } @top_level ) {
-      my ($tree, @sub_nodes) = grep { $_->{id} eq $id } @nodes;
-      foreach my $node ( @sub_nodes ) {
-         $tree = {
-            type     => 'JOIN',
-            children => [ $tree, $node ],
-         };
-      }
-      push @subtrees, $tree;
-   }
-
-   # Now join the list of subtrees together with the specified join type.
-   my $tree = shift @subtrees;
-   shift @top_level;
-   foreach my $i ( 0 .. $#subtrees ) {
-      $tree = {
-         type     => $top_level[$i]->{row}->{select_type},
-         children => [ $tree, $subtrees[$i] ],
-      };
-   }
-
-   return $tree;
 }
 
 # $num is the number of nodes to the left of this node in a depth-first
@@ -549,7 +516,7 @@ sub recurse_index_merge {
 sub table {
    my ( $self, $row ) = @_;
    my $node = {
-      type          => ($row->{table} && $row->{table} =~ m/^<(derived|union)/)
+      type          => ($row->{table} && $row->{table} =~ m/^(derived|union)\(/)
                        ? uc $1
                        : 'Table',
       table         => $row->{table},
@@ -558,6 +525,9 @@ sub table {
    };
    if ( $row->{Extra} =~ m/(Range checked [^)]*\))/ ) {
       $node->{warning} = $1;
+   }
+   if ( $row->{children} ) {
+      $node->{children} = $row->{children};
    }
    return $node;
 }
@@ -880,6 +850,255 @@ you.  Here's the synopsis:
  my $tree   = $e->parse("some text", \%options);
  my $output = $e->pretty_print($tree);
  print $tree;
+
+=head1 ALGORITHM
+
+This section explains the algorithm that converts EXPLAIN into a tree.  You may
+be interested in reading this if you want to understand EXPLAIN more fully, or
+trying to figure out how this works, but otherwise this section will probably
+not make your life richer.
+
+The tree can be built by examining the id, select_type, and table columns of
+each row.  Here's what I know about them:
+
+The id column is the sequential number of the select.  This does not indicate
+nesting; it just comes from counting SELECT from the left of the SQL statement.
+It's like capturing parentheses in a regular expression.  A UNION RESULT row
+doesn't have an id, because it isn't a SELECT.  The source code actually refers
+to UNIONs as a fake_lex, as I recall.
+
+If two adjacent rows have the same id value, they are joined with the standard
+single-sweep multi-join method.
+
+The select_type column tells a) that a new sub-scope has opened b) what kind
+of relationship the row has to the previous row c) what kind of operation the
+row represents.
+
+=over
+
+=item *
+
+SIMPLE means there are no subqueries or unions in the whole query.
+
+=item *
+
+PRIMARY means there are, but this is the outermost SELECT.
+
+=item  *
+
+[DEPENDENT] UNION means this result is UNIONed with the previous result (not
+row; a result might encompass more than one row).
+
+=item *
+
+UNION RESULT terminates a set of UNIONed results.
+
+=item *
+
+[DEPENDENT|UNCACHEABLE] SUBQUERY means a new sub-scope is opening.  This is the
+kind of subquery that happens in a WHERE clause, SELECT list or whatnot; it does
+not return a so-called "derived table."
+
+=item *
+
+DERIVED is a subquery in the FROM clause.  Tables that are JOINed all have the
+same select_type.  For example, if you JOIN three tables inside a dependent
+subquery, they'll all say the same thing: DEPENDENT SUBQUERY.
+
+=back
+
+The table column usually specifies the table name or alias, but may also say
+<derivedN> or <unionN,N...N>.  If it says <derivedN>, the row represents an
+access to the temporary table that holds the result of the subquery whose id is
+N.  If it says <unionN,..N> it's the same thing, but it refers to the results it
+UNIONs together.
+
+Finally, order matters.  If a row's id is less than the one before it, I think
+that means it is dependent on something other than the one before it.  For
+example,
+
+ explain select
+    (select 1 from sakila.film),
+    (select 2 from sakila.film_actor),
+    (select 3 from sakila.actor);
+
+ | id | select_type | table      |
+ +----+-------------+------------+
+ |  1 | PRIMARY     | NULL       |
+ |  4 | SUBQUERY    | actor      |
+ |  3 | SUBQUERY    | film_actor |
+ |  2 | SUBQUERY    | film       |
+
+If the results were in order 2-3-4, I think that would mean 3 is a subquery of
+2, 4 is a subquery of 3.  As it is, this means 4 is a subquery of the neares
+previous recent row with a smaller id, which is 1.  Likewise for 3 and 2.
+
+This structure is hard to programatically build into a tree for the same reason
+it's hard to understand by inspection: there are both forward and backward
+references.  <derivedN> is a forward reference to selectN, while <unionM,N> is a
+backward reference to selectM and selectN.  That makes recursion and other
+sensible tree-building algorithms a bitch.  Consider the following:
+
+ select * from (
+    select 1 from sakila.actor as actor_1
+    union
+    select 1 from sakila.actor as actor_2
+ ) as der_1
+ union
+ select * from (
+    select 1 from sakila.actor as actor_3
+    union all
+    select 1 from sakila.actor as actor_4
+ ) as der_2;
+
+ | id   | select_type  | table      |
+ +------+--------------+------------+
+ |  1   | PRIMARY      | <derived2> |
+ |  2   | DERIVED      | actor_1    |
+ |  3   | UNION        | actor_2    |
+ | NULL | UNION RESULT | <union2,3> |
+ |  4   | UNION        | <derived5> |
+ |  5   | DERIVED      | actor_3    |
+ |  6   | UNION        | actor_4    |
+ | NULL | UNION RESULT | <union5,6> |
+ | NULL | UNION RESULT | <union1,4> |
+
+This would be a lot easier to work with if it looked like this (I've
+bracketed the id on rows I moved):
+
+ | id   | select_type  | table      |
+ +------+--------------+------------+
+ | [1]  | UNION RESULT | <union1,4> |
+ |  1   | PRIMARY      | <derived2> |
+ | [2]  | UNION RESULT | <union2,3> |
+ |  2   | DERIVED      | actor_1    |
+ |  3   | UNION        | actor_2    |
+ |  4   | UNION        | <derived5> |
+ | [5]  | UNION RESULT | <union5,6> |
+ |  5   | DERIVED      | actor_3    |
+ |  6   | UNION        | actor_4    |
+
+In fact, why not re-number all the ids, so the PRIMARY row becomes 2, and so on?
+That would make it even easier to read.  Unfortunately that would also have the
+effect of destroying the meaning of the id column, which I think is important to
+preserve in the final tree.  Also, though it makes it easier to read, it doesn't
+make it easier to manipulate programmatically; so it's fine to leave them
+numbered as they are.
+
+The goal of re-ordering is to make it easier to figure out which rows are
+children of which rows in the execution plan.  Given the reordered list and some
+row whose table is <union...> or <derived>, it is easy to find the beginning of
+the slice of rows that should be child nodes in the tree: you just look for the
+first row whose ID is the same as the first number in the table.
+
+The next question is how to find the last row that should be a child node of a
+UNION or DERIVED.   I'll start with DERIVED, because the solution makes UNION
+easy.
+
+Consider how MySQL numbers the SELECTs sequentially according to their position
+in the SQL, left-to-right.  Since a DERIVED table encloses everything within it
+in a scope, which becomes a temporary table, there are only two things to think
+about: its child subqueries and unions (if any), and its next siblings in the
+scope that encloses it.  Its children will all have an id greater than it does,
+by definition, so certainly any later rows with a smaller id terminate the
+scope.
+
+If it has no siblings, then it's easy; every row with a greater id is a child.
+But if it does have siblings, that won't work.  Previous siblings are no
+problem; their children's IDs will all be lower.  Next siblings will be referred
+to by the parent, so the next greatest sibling id is the upper limit for this
+scope.
+
+Here's an example.  The middle derived table here has a subquery and a UNION to
+make it a little more complex for the example.  Here's the output of EXPLAIN:
+
+ explain select 1
+ from (
+    select film_id from sakila.film limit 1
+ ) as der_1
+ join (
+    select film_id, actor_id, (select count(*) from sakila.rental) as r
+    from sakila.film_actor limit 1
+    union all
+    select 1, 1, 1 from sakila.film_actor as dummy
+ ) as der_2 using (film_id)
+ join (
+    select actor_id from sakila.actor limit 1
+ ) as der_3 using (actor_id);
+
+ | id   | select_type  | table      |
+ |  1   | PRIMARY      | <derived2> |
+ |  1   | PRIMARY      | <derived6> |
+ |  1   | PRIMARY      | <derived3> |
+ |  6   | DERIVED      | actor      |
+ |  3   | DERIVED      | film_actor |
+ |  4   | SUBQUERY     | rental     |
+ |  5   | UNION        | dummy      |
+ | NULL | UNION RESULT | <union3,5> |
+ |  2   | DERIVED      | film       |
+
+The siblings all have id 1, and the middle one I care about is derived3.
+(Notice MySQL doesn't execute them in the order I defined them, which is fine).
+Now notice something: MySQL prints out the rows in the opposite order I defined
+the subqueries: 6, 3, 2.  It always seems to do this, and this may be a good
+enough heuristic, but I am nervous of it relying on the lexer or being
+version-specific or something.  Instead, I'd rather find my desired reference to
+the derived table, <derived3>, and then find the next larger one in the sibling
+list.  This is <derived6>, so everything whose id is between 3 and 5, inclusive,
+belongs to the middle derived table.
+
+The rule for UNION is simple: they consume the entire enclosing scope, and to
+find the component parts of each one, you find each part's beginning as referred
+to in the <unionN,...> definition, and its end is either just before the next
+one, or if it's the last part, the end is the end of the scope.
+
+This is only simple because UNION consumes the entire scope, which is either the
+entire statement, or the scope of a DERIVED table.  This is because a UNION
+cannot be a sibling of another UNION or a table, DERIVED or not.  (Try writing
+such a statement if you don't see it intuitively).  Therefore, you can just find
+the enclosing scope's boundaries, and the rest is easy.  Notice in the example
+above, the UNION is over <union3,5>, which includes the row with id 4 -- it
+includes every row between 3 and 5.
+
+Armed with this knowledge, it's possible to use recursion to turn the
+parent-child relationship between all the rows into a tree representing the
+execution plan.
+
+MySQL prints the rows in execution order, except for the forward and backward
+references.  At any given scope, the rows are processed as a left-deep tree.
+MySQL does not do "bushy" execution plans.  It begins with a table, finds a
+matching row in the next table, and continues till the last table, when it emits
+a row.  When it runs out, it backtracks till it can find the next row and
+repeats.  There are subtleties of course, but this is the basic plan.  This is
+why MySQL transforms all RIGHT OUTER JOINs into LEFT OUTER JOINs and cannot do
+FULL OUTER JOIN.
+
+This means in any given scope, say
+
+ | id   | select_type  | table      |
+ |  1   | SIMPLE       | tbl1       |
+ |  1   | SIMPLE       | tbl2       |
+ |  1   | SIMPLE       | tbl3       |
+
+The execution plan looks like a depth-first traversal of this tree:
+
+       JOIN
+      /    \
+    JOIN  tbl3
+   /    \
+ tbl1   tbl2
+
+The JOIN might not be a JOIN.  It might be a subquery, for example.  This comes
+from the type column of EXPLAIN.  The documentation says this is a "join type,"
+but I think "access type" is more accurate, because it's "how MySQL accesses
+rows."
+
+This program decorates the tree significantly more than just turning rows into
+nodes.  Each node may get a series of transformations that turn it into a
+subtree of more than one node.  For example, an index scan not marked with
+'Using index' must do a bookmark lookup into the table rows; that is a
+three-node subtree.  However, after the above node-ordering and scoping stuff,
+the rest of the process is pretty simple.
 
 =head1 SEE ALSO
 
