@@ -900,7 +900,7 @@ is_deeply(
       id    => 1,
       rowid => 0,
    },
-   'No tables used',
+   'No tables used - constant',
 );
 
 $t = $e->parse( load_file('samples/no_from.sql') );
@@ -910,7 +910,7 @@ is_deeply(
       id    => 1,
       rowid => 0,
    },
-   'No tables used',
+   'No tables used - no FROM',
 );
 
 $t = $e->parse( load_file('samples/filesort.sql') );
@@ -964,7 +964,7 @@ is_deeply(
          },
       ],
    },
-   'Filesort',
+   'Filesort with temporary',
 );
 
 eval {
@@ -1559,7 +1559,7 @@ is_deeply(
          },
       ],
    },
-   'Dependent subquery',
+   'Dependent uncacheable subquery',
 );
 
 $t = $e->parse( load_file('samples/join_in_subquery.sql') );

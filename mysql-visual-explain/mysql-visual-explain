@@ -219,6 +219,8 @@ sub build_query_plan {
    # Are there DERIVED tables?  If so, find its children and pull them out of the
    # list under it.
    while ( my ($der) = grep { $_->{table} && $_->{table} =~ m/^<derived\d+>$/ } @rows ) {
+
+      # Figure out whether there's a next sibling in this scope.
       my ($der_id) = $der->{table} =~ m/^<derived(\d+)>$/;
       my $max_sib = max(
          map  { $_->{table} =~ m/^<derived(\d+)>$/g }
@@ -229,30 +231,54 @@ sub build_query_plan {
          } @rows
       );
 
+      # Figure out the start and end of the derived scope.
       my $start = $self->index_of($der_id, @rows);
       my $end   = @rows;
       if ( $max_sib ) {
-         foreach my $i ( 0 .. $#rows ) {
+         foreach my $i ( $start .. $#rows ) {
             if ( $rows[$i]->{id} >= $der_id && $rows[$i]->{id} < $max_sib ) {
-               $end = $i;
+               $end = $i + 1;
             }
          }
       }
+
+      # Get the rows that belong to this scope and recurse.
       my $kids = $self->build_query_plan(splice(@rows, $start, $end - $start));
       $der->{children} = [$kids];
       $der->{table}    = "derived(" . $self->recursive_table_name($kids) . ")";
    }
 
-   # Handle the "normal case."
+   # Handle the "normal case."  For each node, if the id is the same as the last
+   # one, JOIN and continue.  If the id is greater, it's a subquery, so should
+   # be recursed.
    my @join_types = map { $_->{select_type} } @rows;
-   my $tree       = $self->transform($rows[0]);
-   foreach my $i ( 1..$#rows) {
-      my $row       = $rows[$i];
-      my $join_type = $row->{id} == $rows[$i-1]->{id} ? 'JOIN' : $row->{select_type};
-      $tree = {
-         type     => $join_type,
-         children => [ $tree, $self->transform($row) ],
-      };
+   my $scope      = $rows[0]->{id};
+   my $tree       = $self->transform(shift(@rows));
+   my $i          = 0;
+   while ( $i < @rows ) {
+      my $row = $rows[$i];
+      if ( $row->{id} == $scope ) {
+         $tree = {
+            type     => 'JOIN',
+            children => [ $tree, $self->transform($row) ],
+         };
+         $i++;
+      }
+      else {
+         # It's another kind of "join".  Find the enclosing scope boundaries and
+         # recurse.  The scope starts at $i.
+         my $end = $i;
+         while ( $end < @rows && $rows[$end]->{id} >= $row->{id} ) {
+            $end++;
+         }
+         my @enclosed_scope = splice(@rows, $i, $end - $i);
+         $tree = {
+            type     => $row->{select_type},
+            children => [ $tree, $self->build_query_plan(@enclosed_scope) ],
+         };
+         # Don't increment the pointer because I just removed rows from @rows.
+         # $i++
+      }
    }
 
    return $tree;
@@ -1059,6 +1085,66 @@ such a statement if you don't see it intuitively).  Therefore, you can just find
 the enclosing scope's boundaries, and the rest is easy.  Notice in the example
 above, the UNION is over <union3,5>, which includes the row with id 4 -- it
 includes every row between 3 and 5.
+
+Finally, there are non-derived subqueries to deal with as well.  In this case I
+can't look at siblings to find the end of the scope as I did for DERIVED.  I
+have to trust that MySQL executes depth-first.  Here's an example:
+
+ explain
+ select actor_id, 
+ (
+    select count(film_id)
+    + (select count(*) from sakila.film)
+    from sakila.film join sakila.film_actor using(film_id)
+    where exists(
+       select * from sakila.actor
+       where sakila.actor.actor_id = sakila.film_actor.actor_id
+    )
+ )
+ from sakila.actor;
+
+ | id | select_type        | table      |
+ |  1 | PRIMARY            | actor      |
+ |  2 | SUBQUERY           | film       |
+ |  2 | SUBQUERY           | film_actor |
+ |  4 | DEPENDENT SUBQUERY | actor      |
+ |  3 | SUBQUERY           | film       |
+
+In order, the tree should be built like this:
+
+=over
+
+=item *
+
+See row 1.
+
+=item *
+
+See row 2.  It's a higher id than 1, so it's a subquery, along with every other
+row whose id is greater than 2.
+
+=item *
+
+Inside this scope, see 2 and 2 and JOIN them.  See 4.  It's a higher id than 2,
+so it's again a subquery; recurse.  After that, see 3, which is also higher;
+recurse.
+
+=back
+
+But the only reason the nested subquery didn't include select 3 is because
+select 4 came first.  In other words, if EXPLAIN looked like this,
+
+ | id | select_type        | table      |
+ |  1 | PRIMARY            | actor      |
+ |  2 | SUBQUERY           | film       |
+ |  2 | SUBQUERY           | film_actor |
+ |  3 | SUBQUERY           | film       |
+ |  4 | DEPENDENT SUBQUERY | actor      |
+
+I would be forced to assume upon seeing select 3 that select 4 is a subquery
+of it, rather than just being the next sibling in the enclosing scope.  If this
+is ever wrong, then the algorithm is wrong, and I don't see what could be done
+about it.
 
 Armed with this knowledge, it's possible to use recursion to turn the
 parent-child relationship between all the rows into a tree representing the
