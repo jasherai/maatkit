@@ -220,32 +220,19 @@ sub build_query_plan {
    # list under it.
    while ( my ($der) = grep { $_->{table} && $_->{table} =~ m/^<derived\d+>$/ } @rows ) {
 
-      # Figure out whether there's a next sibling in this scope.
-      my ($der_id) = $der->{table} =~ m/^<derived(\d+)>$/;
-      my $max_sib = max(
-         map  { $_->{table} =~ m/^<derived(\d+)>$/g }
-         grep {
-            $_->{id} == $der->{id}                # Siblings
-            && $_->{table} =~ m/^<derived(\d+)>$/ # Derived siblings
-            && $1 > $der_id                       # Next siblings
-         } @rows
-      );
-
       # Figure out the start and end of the derived scope.
-      my $start = $self->index_of($der_id, @rows);
-      my $end   = @rows;
-      if ( $max_sib ) {
-         foreach my $i ( $start .. $#rows ) {
-            if ( $rows[$i]->{id} >= $der_id && $rows[$i]->{id} < $max_sib ) {
-               $end = $i + 1;
-            }
-         }
+      my ($der_id) = $der->{table} =~ m/^<derived(\d+)>$/;
+      my $start    = $self->index_of($der_id, @rows);
+      my $end      = $start;
+      while ( $end < @rows && $rows[$end]->{id} >= $der_id ) {
+         $end++;
       }
 
       # Get the rows that belong to this scope and recurse.
-      my $kids = $self->build_query_plan(splice(@rows, $start, $end - $start));
-      $der->{children} = [$kids];
-      $der->{table}    = "derived(" . $self->recursive_table_name($kids) . ")";
+      my @enclosed_scope = splice(@rows, $start, $end - $start);
+      my $kids           = $self->build_query_plan(@enclosed_scope);
+      $der->{children}   = [$kids];
+      $der->{table}      = "derived(" . $self->recursive_table_name($kids) . ")";
    }
 
    # Handle the "normal case."  For each node, if the id is the same as the last
@@ -1026,14 +1013,7 @@ in the SQL, left-to-right.  Since a DERIVED table encloses everything within it
 in a scope, which becomes a temporary table, there are only two things to think
 about: its child subqueries and unions (if any), and its next siblings in the
 scope that encloses it.  Its children will all have an id greater than it does,
-by definition, so certainly any later rows with a smaller id terminate the
-scope.
-
-If it has no siblings, then it's easy; every row with a greater id is a child.
-But if it does have siblings, that won't work.  Previous siblings are no
-problem; their children's IDs will all be lower.  Next siblings will be referred
-to by the parent, so the next greatest sibling id is the upper limit for this
-scope.
+by definition, so any later rows with a smaller id terminate the scope.
 
 Here's an example.  The middle derived table here has a subquery and a UNION to
 make it a little more complex for the example.  Here's the output of EXPLAIN:
@@ -1066,12 +1046,12 @@ make it a little more complex for the example.  Here's the output of EXPLAIN:
 The siblings all have id 1, and the middle one I care about is derived3.
 (Notice MySQL doesn't execute them in the order I defined them, which is fine).
 Now notice something: MySQL prints out the rows in the opposite order I defined
-the subqueries: 6, 3, 2.  It always seems to do this, and this may be a good
-enough heuristic, but I am nervous of it relying on the lexer or being
-version-specific or something.  Instead, I'd rather find my desired reference to
-the derived table, <derived3>, and then find the next larger one in the sibling
-list.  This is <derived6>, so everything whose id is between 3 and 5, inclusive,
-belongs to the middle derived table.
+the subqueries: 6, 3, 2.  It always seems to do this, and there might be other
+methods of finding the scope boundaries including looking for the lower boundary
+of the next largest sibling, but this is a good enough heuristic.  I am forced
+to rely on it for non-DERIVED subqueries, so I rely on it here too.  Therefore,
+I decide that everything greater than or equal to 3 belongs to the DERIVED
+scope.
 
 The rule for UNION is simple: they consume the entire enclosing scope, and to
 find the component parts of each one, you find each part's beginning as referred
