@@ -914,11 +914,13 @@ not return a so-called "derived table."
 
 =item *
 
-DERIVED is a subquery in the FROM clause.  Tables that are JOINed all have the
-same select_type.  For example, if you JOIN three tables inside a dependent
-subquery, they'll all say the same thing: DEPENDENT SUBQUERY.
+DERIVED is a subquery in the FROM clause.
 
 =back
+
+Tables that are JOINed all have the same select_type.  For example, if you JOIN
+three tables inside a dependent subquery, they'll all say the same thing:
+DEPENDENT SUBQUERY.
 
 The table column usually specifies the table name or alias, but may also say
 <derivedN> or <unionN,N...N>.  If it says <derivedN>, the row represents an
@@ -950,7 +952,10 @@ This structure is hard to programatically build into a tree for the same reason
 it's hard to understand by inspection: there are both forward and backward
 references.  <derivedN> is a forward reference to selectN, while <unionM,N> is a
 backward reference to selectM and selectN.  That makes recursion and other
-sensible tree-building algorithms a bitch.  Consider the following:
+tree-building algorithms hard to get right (NOTE: after implementation, I now
+see how it would be possible to deal with both forward and backward references,
+but I have no motivation to change something that works).  Consider the
+following:
 
  select * from (
     select 1 from sakila.actor as actor_1
@@ -1016,7 +1021,7 @@ scope that encloses it.  Its children will all have an id greater than it does,
 by definition, so any later rows with a smaller id terminate the scope.
 
 Here's an example.  The middle derived table here has a subquery and a UNION to
-make it a little more complex for the example.  Here's the output of EXPLAIN:
+make it a little more complex for the example.
 
  explain select 1
  from (
@@ -1032,6 +1037,8 @@ make it a little more complex for the example.  Here's the output of EXPLAIN:
     select actor_id from sakila.actor limit 1
  ) as der_3 using (actor_id);
 
+Here's the output of EXPLAIN:
+
  | id   | select_type  | table      |
  |  1   | PRIMARY      | <derived2> |
  |  1   | PRIMARY      | <derived6> |
@@ -1045,8 +1052,8 @@ make it a little more complex for the example.  Here's the output of EXPLAIN:
 
 The siblings all have id 1, and the middle one I care about is derived3.
 (Notice MySQL doesn't execute them in the order I defined them, which is fine).
-Now notice something: MySQL prints out the rows in the opposite order I defined
-the subqueries: 6, 3, 2.  It always seems to do this, and there might be other
+Now notice that MySQL prints out the rows in the opposite order I defined the
+subqueries: 6, 3, 2.  It always seems to do this, and there might be other
 methods of finding the scope boundaries including looking for the lower boundary
 of the next largest sibling, but this is a good enough heuristic.  I am forced
 to rely on it for non-DERIVED subqueries, so I rely on it here too.  Therefore,
@@ -1130,7 +1137,7 @@ Armed with this knowledge, it's possible to use recursion to turn the
 parent-child relationship between all the rows into a tree representing the
 execution plan.
 
-MySQL prints the rows in execution order, except for the forward and backward
+MySQL prints the rows in execution order, even the forward and backward
 references.  At any given scope, the rows are processed as a left-deep tree.
 MySQL does not do "bushy" execution plans.  It begins with a table, finds a
 matching row in the next table, and continues till the last table, when it emits
@@ -1159,10 +1166,10 @@ from the type column of EXPLAIN.  The documentation says this is a "join type,"
 but I think "access type" is more accurate, because it's "how MySQL accesses
 rows."
 
-This program decorates the tree significantly more than just turning rows into
-nodes.  Each node may get a series of transformations that turn it into a
-subtree of more than one node.  For example, an index scan not marked with
-'Using index' must do a bookmark lookup into the table rows; that is a
+MySQL Visual Explain decorates the tree significantly more than just turning
+rows into nodes.  Each node may get a series of transformations that turn it
+into a subtree of more than one node.  For example, an index scan not marked
+with 'Using index' must do a bookmark lookup into the table rows; that is a
 three-node subtree.  However, after the above node-ordering and scoping stuff,
 the rest of the process is pretty simple.
 
