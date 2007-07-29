@@ -1,3 +1,9 @@
+mysqltoolkit (738-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Baron Schwartz <bps7j@users.sourceforge.net>  Sat, 28 Jul 2007 20:04:12 -0400
+
 mysqltoolkit (725-1) unstable; urgency=low
 
   * New upstream release.
