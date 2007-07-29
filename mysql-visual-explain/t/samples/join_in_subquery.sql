@@ -1,12 +1,6 @@
 explain
 select actor_id, 
-(
-   select count(film_id) from sakila.film join sakila.film_actor using(film_id)
-   where exists(
-      select * from sakila.actor
-      where sakila.actor.actor_id = sakila.film_actor.actor_id
-   )
-)
+   (select count(film_id) from sakila.film join sakila.film_actor using(film_id))
 from sakila.actor;
 +----+-------------+------------+-------+----------------+--------------------+---------+---------------------+------+-------------+
 | id | select_type | table      | type  | possible_keys  | key                | key_len | ref                 | rows | Extra       |
