@@ -5,7 +5,5 @@ query sniper:
    * http://www.stillhq.com/mysql/000008.html
 mysql-binlog-pipeliner: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
 http://www.mysqlperformanceblog.com/2007/05/22/wishes-for-mysqldump/
-* visual EXPLAIN
 * mysql-slave-delay
 * read binlogs from many servers and apply them to one.
-* Change exit status to 0 in --help.
