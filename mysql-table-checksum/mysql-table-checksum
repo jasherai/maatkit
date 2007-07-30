@@ -305,6 +305,7 @@ if ( $opts{replcheck} ) {
       my $chunks = $slave_dbh->selectall_arrayref($sql, { Slice => {} });
 
       if ( !$opts{q} ) {
+         delete $slave->{Rpl_recovery_rank};
          print "\nResults on $slave->{Host}:$slave->{Port} ("
             . join(',', map { "$_=$slave->{$_}" } keys %$slave)
             . ")\n";
