@@ -1,32 +1,57 @@
 #!/usr/bin/perl
 
+# This is mysql-slave-delay, a program that makes a slave server lag its master
+# by a specified amount.
+#
+# This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
+# are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use List::Util qw(min max);
+use List::Util qw(max);
 use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # Define cmdline args
 my @opt_spec = (
-   {  s => 'askpass',     d => 'Prompt for username and password for connections' },
-   { s => 'delay|d=i',    d => 'Slave delay, in seconds' },
-   { s => 'help',         d => 'Show this help message' },
-   { s => 'password|p=s', d => 'Password to use when connecting' },
-   { s => 'port|P=i',     d => 'Port number to use for connection' },
-   { s => 'socket|S=s',   d => 'Socket file to use for connection' },
-   {  s => 'sleep|s=i',   d => 'Sleep between two inetarions (default: 60 seconds)' },
-   { s => 'user|u=s',     d => 'User for login if not current user' },
+   { s => 'askpass',           d => 'Prompt for username and password for connections' },
+   # { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'delay|d=s',         d => 'Slave delay (default 1h); suffix: s/m/h/d' },
+   { s => 'help',              d => 'Show this help message' },
+   # { s => 'password|p=s',      d => 'Password to use when connecting' },
+   # { s => 'port|P=i',          d => 'Port number to use for connection' },
+   # { s => 'sleep|s=i',         d => 'Sleep between two inetarions (default: 60 seconds)' },
+   # { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   # { s => 'user|u=s',          d => 'User for login if not current user' },
+   # TODO: 'tolerance' or 'max-sleep'?
+   { s => 'version',           d => 'Output version information and exit' },
 );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   's' => 60,
+   d => '1h',
 );
 
 my %opt_seen;
@@ -44,22 +69,49 @@ Getopt::Long::Configure( 'no_ignore_case', 'bundling' );
 GetOptions( map { $_->{s} => \$opts{ $_->{k} } } @opt_spec )
    or $opts{help} = 1;
 
-# Post-process command-line options and arguments.
-if ( !defined $opts{d} ) {
-   die "Required option -d not specified";
-}
-elsif ( $opts{d} <= 0 ) {
-   die "Delay must be greater than 0";
+if ( $opts{version} ) {
+   print "mysql-slave-delay  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
 }
 
-if ( @ARGV != 2 ) {
-   $opts{help} = 1;
+my %conn = (
+   h => 'host',
+   P => 'port',
+   S => 'socket',
+   u => 'user',
+   p => 'pass',
+   F => 'mysql_read_default_file',
+   D => 'database',
+);
+
+my ($slave, $master);
+if ( @ARGV ) {
+   $slave  = parse_dsn(shift @ARGV);
+   $master = parse_dsn(shift(@ARGV), $slave) if $slave && @ARGV;
+}
+
+if ( !$opts{help} ) {
+   if ( !$slave ) {
+      warn "Missing or invalid slave host\n";
+      $opts{help} = 1;
+   }
+
+   my ($num, $suf ) = $opts{d} =~ m/(\d+)([smhd])$/;
+   if ( !defined $num || $num <= 0 ) {
+      warn "Invalid --delay argument\n";
+      $opts{help} = 1;
+   }
+   else {
+      $opts{d} = $suf eq 's' ? $num            # Seconds
+               : $suf eq 'm' ? $num * 60       # Minutes
+               : $suf eq 'h' ? $num * 3600     # Hours
+               :               $num * 86400;   # Days
+   }
 }
 
 if ( $opts{help} ) {
-   print "Usage: mysql-slave-delay [OPTION]... MASTER-HOST SLAVE-HOST\n\n";
-   my $maxw
-      = max( map { length( $_->{l} ) + ( $_->{n} ? 4 : 0 ) } @opt_spec );
+   print "Usage: mysql-slave-delay [OPTION]... SLAVE-HOST [MASTER-HOST]\n\n";
+   my $maxw = max( map { length( $_->{l} ) + ( $_->{n} ? 4 : 0 ) } @opt_spec );
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}"    : '';
@@ -67,7 +119,10 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-mysql-slave-delay TODO:
+mysql-slave-delay starts and stops a slave server as needed to make it delay its
+master a specified amount.  There is a special key=value,key=value syntax for
+specifying how to connect to the host (and optionally the master).  For more
+information, please read the documentation:
 
    perldoc mysql-slave-delay
 
@@ -78,82 +133,109 @@ USAGE
 # ############################################################################
 # Ready to work now.
 # ############################################################################
-
-my $db_options = {
-   RaiseError => 1,
-   PrintError => 0,
-};
-
-my %db_info;    # holds user/pass etc for each host
-
-my $master_dbh = get_dbh( $ARGV[0] );
-my $slave_dbh  = get_dbh( $ARGV[1] );
+my ( $TS, $FILE, $POS ) = ( 0, 1, 2 );
+# TODO: if --no-trust-master is given, connect to master also.
 
 my @positions;
 while (1) {
 
-   # Get master position
-   my $master_status = $master_dbh->selectrow_hashref("SHOW MASTER STATUS");
-   push @positions,
-      {
-      ts      => time,
-      logfile => $master_status->{File},
-      logpos  => $master_status->{Position}
-      };
-
-   # Find suitable position to start slave
-   my $todo = [ grep { $_->{ts} < time - $opts{d} } @positions ]->[-1];
-   if ( defined $todo ) {
-      $slave_dbh->do("STOP SLAVE SQL_THREAD");
-      $slave_dbh->do(
-         "START SLAVE SQL_THREAD UNTIL MASTER_LOG_FILE = '$todo->{logfile}', MASTER_LOG_POS = $todo->{logpos}"
-      );
-
-      # Filter positions
-      @positions = grep { $_->{ts} >= time - $opts{d} } @positions;
+   # Get binlog position.
+   if ( $master ) {
+      my $res = $master->selectrow_hashref("SHOW MASTER STATUS");
+      push @positions,
+         [ time, $res->{file}, $res->{position} ];
    }
    else {
-
-      #print "Skip iteration - no enough data\n";
+      # Use the position on master at which the I/O thread is reading.  If the
+      # I/O thread is not far behind, which it usually is not, this is basically
+      # the same as the master's File/Position.
+      my $res = $slave->selectrow_hashref("SHOW SLAVE STATUS");
+      push @positions,
+         [ time, $res->{master_log_file}, $res->{read_master_log_pos} ];
    }
-   sleep( $opts{s} );
+
+   # Find the most recent binlog position that's older than the delay amount.
+   my $pos;
+   my $i = $#positions;
+   while ( $i >= 0 ) {
+      if ( $positions[$i]->[$TS] < time - $opts{d} ) {
+         $pos = $i;
+         last;
+      }
+      $i--;
+   }
+
+   # Make the slave server delay if possible; otherwise sleep and check again.
+   if ( defined $pos ) {
+      my $position = $positions[$pos];
+      $slave->do("STOP SLAVE SQL_THREAD");
+      $slave->do(
+         "START SLAVE SQL_THREAD UNTIL /*$position->[$TS]*/ "
+            . "MASTER_LOG_FILE = '$position->[$FILE]', "
+            . "MASTER_LOG_POS = $position->[$POS]"
+      );
+
+      # Throw away positions we're going to replicate past.
+      @positions = @positions[$pos + 1, $#positions];
+      # TODO: print some debugging output
+      sleep( $opts{s} ); # TODO: tolerance.
+   }
+   else {
+      # There wasn't a position old enough; sleep until the oldest position
+      # becomes old enough.
+      sleep(max(1, ($opts{d} - (time - $positions[0]->[$TS]))));
+       # TODO: sleep max of 'tolerance'
+   }
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
 
+sub parse_dsn {
+   my ( $dsn, $prev ) = @_;
+   return unless $dsn;
+   $prev ||= {};
+
+   my %vals;
+   if ( $dsn =~ m/=/ ) {
+      my %hash = map {m/^(.)=(.*)$/g} split( /,/, $dsn );
+      %vals = map { $_ => $hash{$_} } keys %conn;
+   }
+   else {
+      $vals{h} = $dsn;
+   }
+   map { $vals{$_} ||= $prev->{$_} || $opts{$_} } keys %conn;
+   die "Missing host (h) part in $dsn\n" unless $vals{h};
+   return \%vals;
+}
+
 sub get_dbh {
-   my ( $host, $db ) = @_;
-   my %conn = (
-      F => 'mysql_read_default_file',
-      h => 'host',
-      P => 'port',
-      S => 'socket'
-   );
+   my ( $info, $db ) = @_;
 
    if ( $opts{askpass} ) {
-      if ( !$db_info{$host} ) {
-         print "Username for $host: ";
-         my $user = <STDIN>;
-         chomp $user;
-         print "Password for $user on $host: ";
-         ReadMode('noecho');
-         my $pass = <STDIN>;
-         chomp $pass;
-         ReadMode('normal');
-         print "\n";
-         $db_info{$host} = { u => $user, p => $pass };
-      }
-      $opts{u} = $db_info{$host}->{u};
-      $opts{p} = $db_info{$host}->{p};
+      print "Enter password for $info->{h}: ";
+      ReadMode('noecho');
+      my $pass = <STDIN>;
+      chomp $pass;
+      ReadMode('normal');
+      print "\n";
+      $info->{p} = $pass;
    }
 
-   $db ||= '';
-   my $dsn = "DBI:mysql:$db;host=$host;"
+   my $db_options = {
+      RaiseError => 1,
+      PrintError => 0,
+   };
+
+   $info->{D} ||= '';
+   my $dsn = "DBI:mysql:$info->{D};host=$info->{h};"
       . join( ';',
-      map {"$conn{$_}=$opts{$_}"} grep { defined $opts{$_} } qw(F h P S) )
+      map     {"$conn{$_}=$info->{$_}"}
+         grep { defined $info->{$_} } qw(F h P S) )
       . ';mysql_read_default_group=mysql';
-   return DBI->connect( $dsn, @opts{qw(u p)}, $db_options )
+   my $dbh = DBI->connect( $dsn, @{$info}{qw(u p)}, $db_options )
       or die("Can't connect to DB: $OS_ERROR");
+   $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref
+   return $dbh;
 }
