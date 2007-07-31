@@ -152,7 +152,7 @@ USAGE
 # Ready to work now.
 # ############################################################################
 my ( $TS, $FILE, $POS ) = ( 0, 1, 2 );
-my $fmt = "%6s %s %s %-25s %-10s %4s\n";
+my $fmt = "%-6s %s %s %-25s %-10s %4s\n";
 
 printf($fmt, qw(ACTION TIME UNTIL LOG POS LAG));
 
