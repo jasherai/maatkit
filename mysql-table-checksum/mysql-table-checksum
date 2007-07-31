@@ -459,7 +459,16 @@ if ( $opts{R} ) {
    # Check for the existence of, and optionally clean out, the replication table before starting.
    $main_dbh->do("DESCRIBE $opts{R}"); # Ignore the result; this is a no-op
    if ( $opts{emptyrepltbl} ) {
-      $main_dbh->do("DELETE FROM $opts{R}");
+      my $del_sql = "DELETE FROM $opts{R}";
+      if ( $opts{d} ) {
+         $del_sql .= " WHERE ";
+         $del_sql .= "db IN(" . join(',', $main_dbh->quote(keys %{$opts{d}})) . ')';
+      }
+      if ( $opts{t} ) {
+         $del_sql .= $opts{d} ? ' AND ' : ' WHERE ';
+         $del_sql .= "tbl IN(" . join(',', $main_dbh->quote(keys %{$opts{t}})) . ')';
+      }
+      $main_dbh->do($del_sql);
    }
    $fetch_sth = $main_dbh->prepare(
       "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ? AND chunk = ?");
@@ -1417,7 +1426,12 @@ otherwise all the default files will be read.
 
 Issues a DELETE against the table given by L<"--replicate"> before beginning work.
 Ignored if L<"--replicate"> is not specified.  This can be useful to remove entries
-related to tables that no longer exist.
+related to tables that no longer exist, or just to clean out the results of a
+previous run.
+
+If you specify L<"--databases"> or L<"--tables">, MySLQ Table Checksum will
+construct a WHERE clause for the DELETE statement, so only matching rows will
+be deleted.
 
 =item --engine
 
