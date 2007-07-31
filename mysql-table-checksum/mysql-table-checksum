@@ -462,11 +462,11 @@ if ( $opts{R} ) {
       my $del_sql = "DELETE FROM $opts{R}";
       if ( $opts{d} ) {
          $del_sql .= " WHERE ";
-         $del_sql .= "db IN(" . join(',', $main_dbh->quote(keys %{$opts{d}})) . ')';
+         $del_sql .= "db IN(" . join(',', map { $main_dbh->quote($_) } keys %{$opts{d}}) . ')';
       }
       if ( $opts{t} ) {
          $del_sql .= $opts{d} ? ' AND ' : ' WHERE ';
-         $del_sql .= "tbl IN(" . join(',', $main_dbh->quote(keys %{$opts{t}})) . ')';
+         $del_sql .= "tbl IN(" . join(',', map { $main_dbh->quote($_) } keys %{$opts{t}}) . ')';
       }
       $main_dbh->do($del_sql);
    }
