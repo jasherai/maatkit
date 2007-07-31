@@ -35,23 +35,20 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # Define cmdline args
 my @opt_spec = (
-   { s => 'askpass',           d => 'Prompt for username and password for connections' },
-   # { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-   { s => 'delay|d=s',         d => 'Slave delay (default 1h); suffix: s/m/h/d' },
-   { s => 'help',              d => 'Show this help message' },
-   # { s => 'password|p=s',      d => 'Password to use when connecting' },
-   # { s => 'port|P=i',          d => 'Port number to use for connection' },
-   # { s => 'sleep|s=i',         d => 'Sleep between two inetarions (default: 60 seconds)' },
-   # { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   # { s => 'user|u=s',          d => 'User for login if not current user' },
-   # TODO: 'tolerance' or 'max-sleep'?
-   { s => 'version',           d => 'Output version information and exit' },
+   { s => 'askpass',       d => 'Prompt for username and password for connections' },
+   { s => 'delay|d=s',     d => 'Slave delay (default 1h); suffix: s/m/h/d' },
+   { s => 'help',          d => 'Show this help message' },
+   { s => 'tolerance|t=s', d => 'Lag tolerance (default 5%); suffix: s/m/h/d/%' },
+   { s => 'usemaster|u',   d => 'Get binlog positions from master, not slave' },
+   { s => 'verbose|v',     d => 'Verbose output' },
+   { s => 'version',       d => 'Output version information and exit' },
 );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
    d => '1h',
+   t => '5%',
 );
 
 my %opt_seen;
@@ -84,10 +81,12 @@ my %conn = (
    D => 'database',
 );
 
-my ($slave, $master);
+my ($slave, $slave_dsn, $master, $master_dsn);
 if ( @ARGV ) {
-   $slave  = parse_dsn(shift @ARGV);
-   $master = parse_dsn(shift(@ARGV), $slave) if $slave && @ARGV;
+   $slave_dsn  = parse_dsn(shift @ARGV);
+   $slave      = get_dbh($slave_dsn);
+   $master_dsn = parse_dsn(shift(@ARGV), $slave_dsn) if $slave && @ARGV;
+   $master     = get_dbh($master_dsn) if $master_dsn;
 }
 
 if ( !$opts{help} ) {
@@ -96,17 +95,36 @@ if ( !$opts{help} ) {
       $opts{help} = 1;
    }
 
-   my ($num, $suf ) = $opts{d} =~ m/(\d+)([smhd])$/;
-   if ( !defined $num || $num <= 0 ) {
-      warn "Invalid --delay argument\n";
-      $opts{help} = 1;
+   if ( !$opts{help} ) {
+      my ($num, $suf ) = $opts{d} =~ m/(\d+)([smhd])$/;
+      if ( !defined $num || $num <= 0 ) {
+         warn "Invalid --delay argument\n";
+         $opts{help} = 1;
+      }
+      else {
+         $opts{d} = $suf eq 's' ? $num            # Seconds
+                  : $suf eq 'm' ? $num * 60       # Minutes
+                  : $suf eq 'h' ? $num * 3600     # Hours
+                  :               $num * 86400;   # Days
+      }
    }
-   else {
-      $opts{d} = $suf eq 's' ? $num            # Seconds
-               : $suf eq 'm' ? $num * 60       # Minutes
-               : $suf eq 'h' ? $num * 3600     # Hours
-               :               $num * 86400;   # Days
+
+   if ( !$opts{help} ) {
+      my ($num, $suf ) = $opts{t} =~ m/(\d+)([smhd%])$/;
+      if ( !defined $num || $num <= 0 ) {
+         warn "Invalid --tolerance argument\n";
+         $opts{help} = 1;
+      }
+      else {
+         $opts{t} = $suf eq 's' ? $num                         # Seconds
+                  : $suf eq 'm' ? $num * 60                    # Minutes
+                  : $suf eq 'h' ? $num * 3600                  # Hours
+                  : $suf eq 'd' ? $num * 86400                 # Days
+                  :               int($opts{d} * $num / 100);  # pct of delay
+         $opts{t} = max($opts{t}, 1);
+      }
    }
+
 }
 
 if ( $opts{help} ) {
@@ -119,10 +137,10 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-mysql-slave-delay starts and stops a slave server as needed to make it delay its
-master a specified amount.  There is a special key=value,key=value syntax for
-specifying how to connect to the host (and optionally the master).  For more
-information, please read the documentation:
+mysql-slave-delay starts and stops a slave server as needed to make it delay
+its master a specified amount.  There is a special key=value,key=value syntax
+for specifying how to connect to the slave (and optionally the master).  For
+more information, please read the documentation:
 
    perldoc mysql-slave-delay
 
@@ -134,10 +152,20 @@ USAGE
 # Ready to work now.
 # ############################################################################
 my ( $TS, $FILE, $POS ) = ( 0, 1, 2 );
-# TODO: if --no-trust-master is given, connect to master also.
+my $fmt = "%6s %s %s %-25s %-10s %4s\n";
+
+printf($fmt, qw(ACTION TIME UNTIL LOG POS LAG));
 
 my @positions;
 while (1) {
+
+   my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
+
+   if ( $opts{u} && !$master ) {
+      # Try to connect to the slave's master just by looking at its SLAVE STATUS.
+      my $spec = "h=$status->{master_host},P=$status->{master_port}";
+      $master  = get_dbh(parse_dsn($spec, $slave_dsn));
+   }
 
    # Get binlog position.
    if ( $master ) {
@@ -149,48 +177,72 @@ while (1) {
       # Use the position on master at which the I/O thread is reading.  If the
       # I/O thread is not far behind, which it usually is not, this is basically
       # the same as the master's File/Position.
-      my $res = $slave->selectrow_hashref("SHOW SLAVE STATUS");
       push @positions,
-         [ time, $res->{master_log_file}, $res->{read_master_log_pos} ];
+         [ time, $status->{master_log_file}, $status->{read_master_log_pos} ];
    }
 
-   # Find the most recent binlog position that's older than the delay amount.
-   my $pos;
-   my $i = $#positions;
-   while ( $i >= 0 ) {
-      if ( $positions[$i]->[$TS] < time - $opts{d} ) {
-         $pos = $i;
-         last;
+   if ( ( $status->{slave_sql_running} || '' ) eq 'No' ) {
+
+      # Find the most recent binlog position that's older than the delay amount.
+      my $pos; # TODO: don't traverse backwards
+      my $i = $#positions;
+      while ( $i >= 0 ) {
+         if ( $positions[$i]->[$TS] < time - $opts{d} ) {
+            $pos = $i;
+            last;
+         }
+         $i--;
       }
-      $i--;
+
+      # Make the slave server delay if possible; otherwise sleep and check
+      # again.
+      my $time = time();
+      if ( defined $pos ) {
+         my $position = $positions[$pos];
+         $slave->do(
+            "START SLAVE SQL_THREAD UNTIL /*$position->[$TS]*/ "
+               . "MASTER_LOG_FILE = '$position->[$FILE]', "
+               . "MASTER_LOG_POS = $position->[$POS]"
+         );
+
+         printf($fmt, 'start', ts($time), ts($position->[$TS]),
+                $position->[$FILE], $position->[$POS], 'NULL');
+
+         # Throw away positions we're going to replicate past.
+         @positions = @positions[$pos + 1, $#positions];
+      }
    }
-
-   # Make the slave server delay if possible; otherwise sleep and check again.
-   if ( defined $pos ) {
-      my $position = $positions[$pos];
+   elsif ( ($status->{seconds_behind_master} || 0) < $opts{d} ) {
+      my $behind = defined $status->{seconds_behind_master}
+                 ? $status->{seconds_behind_master}
+                 : 'NULL';
+      printf($fmt, 'stop!', ts(time), '', $status->{relay_master_log_file},
+             $status->{exec_master_log_pos}, $behind);
       $slave->do("STOP SLAVE SQL_THREAD");
-      $slave->do(
-         "START SLAVE SQL_THREAD UNTIL /*$position->[$TS]*/ "
-            . "MASTER_LOG_FILE = '$position->[$FILE]', "
-            . "MASTER_LOG_POS = $position->[$POS]"
-      );
-
-      # Throw away positions we're going to replicate past.
-      @positions = @positions[$pos + 1, $#positions];
-      # TODO: print some debugging output
-      sleep( $opts{s} ); # TODO: tolerance.
    }
    else {
-      # There wasn't a position old enough; sleep until the oldest position
-      # becomes old enough.
-      sleep(max(1, ($opts{d} - (time - $positions[0]->[$TS]))));
-       # TODO: sleep max of 'tolerance'
+      my $behind = defined $status->{seconds_behind_master}
+                 ? $status->{seconds_behind_master}
+                 : 'NULL';
+      printf($fmt, 'check', ts(time), '', '', '', $behind);
    }
+
+   sleep($opts{t});
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
+}
 
 sub parse_dsn {
    my ( $dsn, $prev ) = @_;
