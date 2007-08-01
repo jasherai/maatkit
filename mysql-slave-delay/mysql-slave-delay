@@ -2,8 +2,8 @@
 
 # This is mysql-slave-delay, a program that makes a MySQL slave lag its master.
 #
-# This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
-# are welcome.
+# This program is copyright (c) 2007 Sergey Zhuravlev and Baron Schwartz.
+# Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -51,7 +51,7 @@ my @opt_spec = (
 my %opts = (
    c => 1,
    d => '1h',
-   t => '1m',
+   i => '1m',
 );
 
 my %opt_seen;
@@ -184,6 +184,10 @@ while (                       # Quit if:
 
    my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
 
+   if ( defined $status->{seconds_behind_master} ) {
+      info("slave running $status->{seconds_behind_master} seconds behind");
+   }
+
    if ( $opts{u} && !$master ) {
       # Try to connect to the slave's master just by looking at its SLAVE STATUS.
       my $spec = "h=$status->{master_host},P=$status->{master_port}";
@@ -225,49 +229,53 @@ while (                       # Quit if:
       # again.
       if ( $now >= $next_start && defined $pos ) {
          my $position = $positions[$pos];
-         $slave->do(
-            "START SLAVE SQL_THREAD UNTIL /*$position->[$TS]*/ "
-               . "MASTER_LOG_FILE = '$position->[$FILE]', "
-               . "MASTER_LOG_POS = $position->[$POS]"
-         );
+         if ( $position->[$FILE] ne $status->{master_log_file}
+            || $position->[$POS] != $status->{read_master_log_pos} )
+         {
+            $slave->do(
+               "START SLAVE SQL_THREAD UNTIL /*$position->[$TS]*/ "
+                  . "MASTER_LOG_FILE = '$position->[$FILE]', "
+                  . "MASTER_LOG_POS = $position->[$POS]"
+            );
 
-         message "START SLAVE until master "
-            . ts($position->[$TS])
-            . " $position->[$FILE]/$position->[$POS]";
+            info("START SLAVE until master "
+               . ts($position->[$TS])
+               . " $position->[$FILE]/$position->[$POS]");
+         }
+         else {
+            info("no new binlog events");
+         }
 
          # Throw away positions we're going to replicate past.
          @positions = @positions[$pos + 1 .. $#positions];
-         die "Same!"
-            if $positions[-1]->[$POS] == $position->[$POS];
       }
       else {
          my $position = $positions[-1];
-         message "slave stopped at master position $position->[$FILE]/$position->[$POS]";
+         info("slave stopped at master position $position->[$FILE]/$position->[$POS]");
       }
    }
-   elsif ( $status->{seconds_behind_master} < $opts{d} ) {
+   elsif ( ($status->{seconds_behind_master} || 0) < $opts{d} ) {
       my $position = $positions[-1];
-      my $behind = $status->{seconds_behind_master};
+      my $behind = $status->{seconds_behind_master} || 0;
       $next_start = $now + $opts{d} - $behind;
-      message "STOP SLAVE until "
+      info("STOP SLAVE until "
          . ts($next_start)
-         . " at master position $position->[$FILE]/$position->[$POS]";
+         . " at master position $position->[$FILE]/$position->[$POS]");
 
       $slave->do("STOP SLAVE SQL_THREAD");
    }
    else {
       my $position = $positions[-1];
-      my $behind = $status->{seconds_behind_master};
-      message 
-         . "slave running $behind seconds behind at"
-         . " master position $position->[$FILE]/$position->[$POS]";
+      my $behind = $status->{seconds_behind_master} || 0;
+      info("slave running $behind seconds behind at"
+         . " master position $position->[$FILE]/$position->[$POS]");
    }
 
    sleep($opts{i});
 }
 
 if ( $slave && $opts{c} ) {
-   message "Setting slave to run normally";
+   info("Setting slave to run normally");
    $slave->do("START SLAVE SQL_THREAD");
 }
 
@@ -310,7 +318,7 @@ sub parse_dsn {
    else {
       $vals{h} = $dsn;
    }
-   map { $vals{$_} ||= $prev->{$_} || $opts{$_} } keys %conn;
+   map { $vals{$_} ||= $prev->{$_} } keys %conn;
    die "Missing host (h) part in $dsn\n" unless $vals{h};
    return \%vals;
 }
@@ -322,8 +330,8 @@ sub get_dbh {
       print "Enter password for $info->{h}: ";
       ReadMode('noecho');
       my $pass = <STDIN>;
-      chomp $pass;
       ReadMode('normal');
+      chomp $pass;
       print "\n";
       $info->{p} = $pass;
    }
@@ -419,7 +427,7 @@ Prompts the user for a password when connecting to MySQL.
 
 After exiting, restart the slave's SQL thread with no UNTIL condition, so it
 will run as usual and catch up to the master.  This is enabled by default and
-works even if you terminate MySQL Slave Delay with a control signal.
+works even if you terminate MySQL Slave Delay with Control-C.
 
 =item --delay
 
@@ -452,6 +460,12 @@ giving a MASTER-HOST on the command line, MySQL Slave Delay examines the
 slave's SHOW SLAVE STATUS to determine the hostname and port for connecting to
 the master.
 
+MySQL Slave Delay only uses the MASTER_HOST and MASTER_PORT values from SHOW
+SLAVE STATUS for the master connection.  It does not use the MASTER_USER
+value.  If you want to specify a different username for the master than the
+one you use to connect to the slave, you should specify the MASTER-HOST option
+explicitly on the command line.
+
 =item --version
 
 Output version information and exit.
@@ -477,8 +491,8 @@ support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
-are welcome.
+This program is copyright (c) 2007 Sergey Zhuravlev and Baron Schwartz.
+Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
