@@ -40,9 +40,9 @@ my @opt_spec = (
    { s => 'delay|d=s',     d => 'Slave delay (default 1h); suffix: s/m/h/d' },
    { s => 'help',          d => 'Show this help message' },
    { s => 'interval|i=s',  d => 'Sleep interval (default 1m); suffix: s/m/h/d' },
+   { s => 'quiet|q',       d => 'Suppress normal output' },
    { s => 'time|t=s',      d => 'Time to run before exiting; suffix: s/m/h/d' },
    { s => 'usemaster|u',   d => 'Get binlog positions from master, not slave' },
-   { s => 'verbose|v',     d => 'Verbose output' },
    { s => 'version',       d => 'Output version information and exit' },
 );
 
@@ -231,10 +231,9 @@ while (                       # Quit if:
                . "MASTER_LOG_POS = $position->[$POS]"
          );
 
-         print ts($now)
-            . " START SLAVE until master "
+         message "START SLAVE until master "
             . ts($position->[$TS])
-            . " $position->[$FILE]/$position->[$POS]\n";
+            . " $position->[$FILE]/$position->[$POS]";
 
          # Throw away positions we're going to replicate past.
          @positions = @positions[$pos + 1 .. $#positions];
@@ -243,40 +242,43 @@ while (                       # Quit if:
       }
       else {
          my $position = $positions[-1];
-         print ts($now)
-            . " slave stopped at master position $position->[$FILE]/$position->[$POS]\n";
+         message "slave stopped at master position $position->[$FILE]/$position->[$POS]";
       }
    }
    elsif ( $status->{seconds_behind_master} < $opts{d} ) {
       my $position = $positions[-1];
       my $behind = $status->{seconds_behind_master};
       $next_start = $now + $opts{d} - $behind;
-      print ts($now)
-         . " STOP SLAVE until "
+      message "STOP SLAVE until "
          . ts($next_start)
-         . " at master position $position->[$FILE]/$position->[$POS]\n";
+         . " at master position $position->[$FILE]/$position->[$POS]";
 
       $slave->do("STOP SLAVE SQL_THREAD");
    }
    else {
       my $position = $positions[-1];
       my $behind = $status->{seconds_behind_master};
-      print ts($now)
-         . " slave running $behind seconds behind at"
-         . " master position $position->[$FILE]/$position->[$POS]\n";
+      message 
+         . "slave running $behind seconds behind at"
+         . " master position $position->[$FILE]/$position->[$POS]";
    }
 
    sleep($opts{i});
 }
 
 if ( $slave && $opts{c} ) {
-   print STDERR "Setting slave to run normally\n";
+   message "Setting slave to run normally";
    $slave->do("START SLAVE SQL_THREAD");
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub info {
+   my ( $message ) = @_;
+   print ts($now), " ", $message, "\n" unless $opts{q};
+}
 
 # Catches signals so mysql-slave-delay can exit gracefully.
 sub finish {
@@ -342,3 +344,162 @@ sub get_dbh {
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref
    return $dbh;
 }
+
+# ############################################################################
+# Documentation.
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+mysql-slave-delay - Make a MySQL slave server lag behind its master.
+
+=head1 SYNOPSIS
+
+To hold slavehost one minute behind its master for ten minutes:
+
+ mysql-slave-delay --delay 1m --interval 15s --time 10m slavehost
+
+=head1 DESCRIPTION
+
+MySQL Slave Delay watches a slave and starts and stops its replication SQL
+thread as necessary to hold it at least as far behind the master as you
+request.  In practice, it will typically cause the slave to lag between
+L<"--delay"> and L<"--delay">+L<"--interval"> behind the master.
+
+It bases the delay on binlog positions in the slave's relay logs by default,
+so there is no need to connect to the master.  This works well if the IO
+thread doesn't lag the master much, which is typical in most replication
+setups; the IO thread lag is usually milliseconds on a fast network.  If your
+IO thread's lag is too large for your purposes, MySQL Slave Delay can also
+connect to the master for information about binlog positions.
+
+Note that since MySQL Slave Delay starts and stops the SQL thread, monitoring
+systems may think the slave is having trouble when it's just being held back
+intentionally.
+
+There is a special syntax for connecting to MySQL servers.  Each server name
+on the command line can be either just a hostname, or a key=value,key=value
+string.  Keys are a single letter:
+
+   KEY MEANING
+   === =======
+   h   Connect to host
+   P   Port number to use for connection
+   S   Socket file to use for connection
+   u   User for login if not current user
+   p   Password to use when connecting
+   F   Only read default options from the given file
+
+If you omit any values in MASTER-HOST, they are filled in with defaults from
+SLAVE-HOST, so you don't need to specify them in both places.  MySQL Slave
+Delay reads all normal MySQL option files, such as ~/.my.cnf, so you may not
+need to specify username, password and other common options at all.
+
+MySQL Slave Delay tries to exit gracefully by trapping signals such as Ctrl-C.
+You cannot bypass L<"--continue"> with a trappable signal.
+
+=head1 OPTIONS
+
+Some options are negatable by specifying them in their long form with a --no
+prefix.
+
+Some options have a special suffix syntax.  These options accept a number
+suffixed with s, m, h, or d.  The suffixes mean seconds, minutes, hours and
+days respectively.
+
+=over
+
+=item --askpass
+
+Prompts the user for a password when connecting to MySQL.
+
+=item --continue
+
+After exiting, restart the slave's SQL thread with no UNTIL condition, so it
+will run as usual and catch up to the master.  This is enabled by default and
+works even if you terminate MySQL Slave Delay with a control signal.
+
+=item --delay
+
+How far the slave should lag its master.  This value is a number with a
+suffix; see above for suffix syntax.
+
+=item --help
+
+Displays a help message.
+
+=item --interval
+
+How frequently MySQL Slave Delay should check whether the slave needs to be
+started or stopped.  See above for suffix syntax.
+
+=item --quiet
+
+Do not output regular status messages.
+
+=item --time
+
+How long MySQL Slave Delay should run before exiting.  Default is to run
+forever.  See above for suffix syntax.
+
+=item --usemaster
+
+Don't trust the binlog positions in the slave's relay log.  Connect to the
+master and get binlog positions instead.  If you specify this option without
+giving a MASTER-HOST on the command line, MySQL Slave Delay examines the
+slave's SHOW SLAVE STATUS to determine the hostname and port for connecting to
+the master.
+
+=item --version
+
+Output version information and exit.
+
+=back
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 OUTPUT
+
+If you specify L<"--quiet">, there is no output.  Otherwise, the normal output
+is a status message consisting of a timestamp and information about what MySQL
+Slave Delay is doing: starting the slave, stopping the slave, or just
+observing.
+
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
+are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Sergey Zhuravlev and Baron Schwartz.
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
+
+=cut
