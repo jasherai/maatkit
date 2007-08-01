@@ -152,12 +152,14 @@ USAGE
 # Ready to work now.
 # ############################################################################
 my ( $TS, $FILE, $POS ) = ( 0, 1, 2 );
-my $fmt = "%-6s %19s %19s %-25s %-10s %4s\n";
-
-printf($fmt, qw(ACTION TIME UNTIL LOG POS LAG));
 
 my @positions;
+my $next_start = 0;
+my $now;
+
 while (1) {
+
+   $now = time();
 
    my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
 
@@ -171,33 +173,28 @@ while (1) {
    if ( $master ) {
       my $res = $master->selectrow_hashref("SHOW MASTER STATUS");
       push @positions,
-         [ time, $res->{file}, $res->{position} ];
+         [ $now, $res->{file}, $res->{position} ];
    }
    else {
       # Use the position on master at which the I/O thread is reading.  If the
       # I/O thread is not far behind, which it usually is not, this is basically
       # the same as the master's File/Position.
       push @positions,
-         [ time, $status->{master_log_file}, $status->{read_master_log_pos} ];
+         [ $now, $status->{master_log_file}, $status->{read_master_log_pos} ];
    }
 
    if ( ( $status->{slave_sql_running} || '' ) eq 'No' ) {
-
       # Find the most recent binlog position that's older than the delay amount.
-      my $pos; # TODO: don't traverse backwards
-      my $i = $#positions;
-      while ( $i >= 0 ) {
-         if ( $positions[$i]->[$TS] < time - $opts{d} ) {
-            $pos = $i;
-            last;
-         }
-         $i--;
+      my $pos;
+      my $i = 0;
+      while ( $i < @positions && $positions[$i]->[$TS] <= $now - $opts{d} ) {
+         $pos = $i;
+         $i++;
       }
 
       # Make the slave server delay if possible; otherwise sleep and check
       # again.
-      my $time = time();
-      if ( defined $pos ) {
+      if ( $now >= $next_start && defined $pos ) {
          my $position = $positions[$pos];
          $slave->do(
             "START SLAVE SQL_THREAD UNTIL /*$position->[$TS]*/ "
@@ -205,26 +202,37 @@ while (1) {
                . "MASTER_LOG_POS = $position->[$POS]"
          );
 
-         printf($fmt, 'start', ts($time), ts($position->[$TS]),
-                $position->[$FILE], $position->[$POS], 'NULL');
+         print ts($now)
+            . " START SLAVE until master "
+            . ts($position->[$TS])
+            . " $position->[$FILE]/$position->[$POS]\n";
 
          # Throw away positions we're going to replicate past.
-         @positions = @positions[$pos + 1, $#positions];
+         @positions = @positions[$pos + 1 .. $#positions];
+      }
+      else {
+         my $position = $positions[-1];
+         print ts($now)
+            . " slave stopped at master position $position->[$FILE]/$position->[$POS]\n";
       }
    }
-   elsif ( ($status->{seconds_behind_master} || 0) < $opts{d} ) {
-      my $behind = defined $status->{seconds_behind_master}
-                 ? $status->{seconds_behind_master}
-                 : 'NULL';
-      printf($fmt, 'stop!', ts(time), '', $status->{relay_master_log_file},
-             $status->{exec_master_log_pos}, $behind);
+   elsif ( $status->{seconds_behind_master} < $opts{d} ) {
+      my $position = $positions[-1];
+      my $behind = $status->{seconds_behind_master};
+      $next_start = $now + $opts{d} - $behind;
+      print ts($now)
+         . " STOP SLAVE until "
+         . ts($next_start)
+         . " at master position $position->[$FILE]/$position->[$POS]\n";
+
       $slave->do("STOP SLAVE SQL_THREAD");
    }
    else {
-      my $behind = defined $status->{seconds_behind_master}
-                 ? $status->{seconds_behind_master}
-                 : 'NULL';
-      printf($fmt, 'check', ts(time), '', '', '', $behind);
+      my $position = $positions[-1];
+      my $behind = $status->{seconds_behind_master};
+      print ts($now)
+         . " slave running $behind seconds behind at"
+         . " master position $position->[$FILE]/$position->[$POS]\n";
    }
 
    sleep($opts{t});
