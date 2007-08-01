@@ -1,7 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-slave-delay, a program that makes a slave server lag its master
-# by a specified amount.
+# This is mysql-slave-delay, a program that makes a MySQL slave lag its master.
 #
 # This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
 # are welcome.
@@ -28,6 +27,7 @@ use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
 use Term::ReadKey;
+use sigtrap qw(handler finish untrapped normal-signals);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -35,10 +35,12 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # Define cmdline args
 my @opt_spec = (
-   { s => 'askpass',       d => 'Prompt for username and password for connections' },
+   { s => 'askpass',       d => 'Prompt for password for connections' },
+   { s => 'continue|c!',   d => 'Continue replication normally on exit (default)' },
    { s => 'delay|d=s',     d => 'Slave delay (default 1h); suffix: s/m/h/d' },
    { s => 'help',          d => 'Show this help message' },
-   { s => 'tolerance|t=s', d => 'Lag tolerance (default 5%); suffix: s/m/h/d/%' },
+   { s => 'interval|i=s',  d => 'Sleep interval (default 1m); suffix: s/m/h/d' },
+   { s => 'time|t=s',      d => 'Time to run before exiting; suffix: s/m/h/d' },
    { s => 'usemaster|u',   d => 'Get binlog positions from master, not slave' },
    { s => 'verbose|v',     d => 'Verbose output' },
    { s => 'version',       d => 'Output version information and exit' },
@@ -47,8 +49,9 @@ my @opt_spec = (
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
+   c => 1,
    d => '1h',
-   t => '5%',
+   t => '1m',
 );
 
 my %opt_seen;
@@ -110,21 +113,34 @@ if ( !$opts{help} ) {
    }
 
    if ( !$opts{help} ) {
-      my ($num, $suf ) = $opts{t} =~ m/(\d+)([smhd%])$/;
+      my ($num, $suf ) = $opts{i} =~ m/(\d+)([smhd])$/;
       if ( !defined $num || $num <= 0 ) {
-         warn "Invalid --tolerance argument\n";
+         warn "Invalid --interval argument\n";
          $opts{help} = 1;
       }
       else {
-         $opts{t} = $suf eq 's' ? $num                         # Seconds
-                  : $suf eq 'm' ? $num * 60                    # Minutes
-                  : $suf eq 'h' ? $num * 3600                  # Hours
-                  : $suf eq 'd' ? $num * 86400                 # Days
-                  :               int($opts{d} * $num / 100);  # pct of delay
-         $opts{t} = max($opts{t}, 1);
+         $opts{i} = $suf eq 's' ? $num           # Seconds
+                  : $suf eq 'm' ? $num * 60      # Minutes
+                  : $suf eq 'h' ? $num * 3600    # Hours
+                  :               $num * 86400;  # Days
+         $opts{i} = max($opts{i}, 1);
       }
    }
 
+   if ( !$opts{help} && $opts{t} ) {
+      my ($num, $suf ) = $opts{t} =~ m/(\d+)([smhd])$/;
+      if ( !defined $num || $num <= 0 ) {
+         warn "Invalid --time argument\n";
+         $opts{help} = 1;
+      }
+      else {
+         $opts{t} = $suf eq 's' ? $num           # Seconds
+                  : $suf eq 'm' ? $num * 60      # Minutes
+                  : $suf eq 'h' ? $num * 3600    # Hours
+                  :               $num * 86400;  # Days
+         $opts{t} = max($opts{t}, 1);
+      }
+   }
 }
 
 if ( $opts{help} ) {
@@ -137,10 +153,10 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-mysql-slave-delay starts and stops a slave server as needed to make it delay
-its master a specified amount.  There is a special key=value,key=value syntax
-for specifying how to connect to the slave (and optionally the master).  For
-more information, please read the documentation:
+mysql-slave-delay starts and stops a slave server as needed to make it lag
+behind the master.  There is a special key=value,key=value syntax for
+specifying how to connect to the slave (and optionally the master).  For more
+information, please read the documentation:
 
    perldoc mysql-slave-delay
 
@@ -154,10 +170,15 @@ USAGE
 my ( $TS, $FILE, $POS ) = ( 0, 1, 2 );
 
 my @positions;
+my $now        = time();
 my $next_start = 0;
-my $now;
+my $end        = $now + ( $opts{t} || 0 );    # When we should exit
+my $oktorun    = 1;
 
-while (1) {
+while (                       # Quit if:
+   (!$opts{t} || $now < $end) # time is exceeded
+   && $oktorun                # or instructed to quit
+) {
 
    $now = time();
 
@@ -172,15 +193,23 @@ while (1) {
    # Get binlog position.
    if ( $master ) {
       my $res = $master->selectrow_hashref("SHOW MASTER STATUS");
-      push @positions,
-         [ $now, $res->{file}, $res->{position} ];
+      my $pos = $positions[-1];
+      if ( !@positions || $pos->[$FILE] ne $res->{file} || $pos->[$POS] != $res->{position} ) {
+         push @positions,
+            [ $now, $res->{file}, $res->{position} ];
+      }
    }
    else {
       # Use the position on master at which the I/O thread is reading.  If the
       # I/O thread is not far behind, which it usually is not, this is basically
       # the same as the master's File/Position.
-      push @positions,
-         [ $now, $status->{master_log_file}, $status->{read_master_log_pos} ];
+      my $pos = $positions[-1];
+      if ( !@positions
+         || $pos->[$FILE] ne $status->{master_log_file} || $pos->[$POS] != $status->{read_master_log_pos} )
+      {
+         push @positions,
+            [ $now, $status->{master_log_file}, $status->{read_master_log_pos} ];
+      }
    }
 
    if ( ( $status->{slave_sql_running} || '' ) eq 'No' ) {
@@ -209,6 +238,8 @@ while (1) {
 
          # Throw away positions we're going to replicate past.
          @positions = @positions[$pos + 1 .. $#positions];
+         die "Same!"
+            if $positions[-1]->[$POS] == $position->[$POS];
       }
       else {
          my $position = $positions[-1];
@@ -235,12 +266,24 @@ while (1) {
          . " master position $position->[$FILE]/$position->[$POS]\n";
    }
 
-   sleep($opts{t});
+   sleep($opts{i});
+}
+
+if ( $slave && $opts{c} ) {
+   print STDERR "Setting slave to run normally\n";
+   $slave->do("START SLAVE SQL_THREAD");
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+# Catches signals so mysql-slave-delay can exit gracefully.
+sub finish {
+   my ($signal) = @_;
+   print STDERR "Exiting on SIG$signal.\n";
+   $oktorun = 0;
+}
 
 sub ts {
    my ( $time ) = @_;
