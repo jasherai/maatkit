@@ -70,6 +70,7 @@ my %opts = (
    s => 1,
    m => 1/64,
    M => 64,
+   v => 0,
 );
 
 # Post-process...
