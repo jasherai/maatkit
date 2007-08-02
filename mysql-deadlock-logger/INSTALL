@@ -20,6 +20,11 @@ To remove the files, simply run:
 
    make uninstall
 
+To install to a directory other than your system's default, such as your home
+directory, generate the Makefile with a prefix:
+
+   perl Makefile.PL PREFIX=~
+
 ===== ON MICROSOFT WINDOWS
 
 Simply unpack the zip or tarball file from Sourceforge and run the scripts from
