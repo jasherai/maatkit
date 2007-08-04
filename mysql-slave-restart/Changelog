@@ -3,6 +3,7 @@ Changelog for mysql-slave-restart:
 2007-08-04: version 0.9.3
 
    * Fixed a crash caused by omitting --verbose.
+	* Changed exit status to 0 when --help is given.
 
 2007-07-05: version 0.9.2
 
