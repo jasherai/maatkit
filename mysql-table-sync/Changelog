@@ -1,6 +1,15 @@
 Changelog for mysql-table-sync:
 
+   * Added --askpass option.
+   * Changed --replicate option to --synctomaster.
+   * Fixed the MySQL socket option.
+   * Made --synctomaster able to connect to the master from SHOW SLAVE STATUS.
    * MySQL socket connection option didn't work.
+   * Suppress duplicated error messages from MySQL.
+   * Changed DSN from URL-ish format to key=value format.
+   * Generated WHERE clauses weren't properly isolated in parentheses.
+   * Changed exit status to 0 when --help is given.
+   * Made --replicate imply --wait 60.
 
 2007-06-22: version 0.9.5
 
