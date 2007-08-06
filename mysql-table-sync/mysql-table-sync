@@ -28,6 +28,7 @@ use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(sum max);
 use POSIX qw(ceil);
+use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -37,21 +38,15 @@ $OUTPUT_AUTOFLUSH = 1;
 
 my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
 
-# TODO: account for difference in timestamp format between servers (can
-# SELECT CURRENT_TIMESTAMP to detect)
+# TODO: unify timestamp format: add a 0 to the timestamp.
+# TODO: must add a slice for rows greater/less in drilldown mode.
 
-# TODO: add --askpass
-# TODO: prompt the user if the table names differ, as a sanity check.
 # TODO: write a helper to analyze indexes and suggest a drilldown strategy.
 # TODO: CRC32 can be used for checksums.
-# TODO: another algorithm: binary search for where the corruption starts, say a
-# chunk at a time of 10000 from start/end of table, then when a different chunk
-# is found, binary search within that chunk to find the first row and report it.
 # TODO: grouping strategy: first chars of char column.
 # TODO: grouping strategy: number modulo const (between is more easily optimized)
 # TODO: for safety's sake, don't use REPLACE if there's more than one unique key.
 # TODO: save memory by using more efficient bind methods from DBI.
-# TODO: use trace methods to print out SQL executed.
 # TODO: allow to disable keys on destination.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
 # TODO: check the results of the following query:
@@ -75,6 +70,7 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 my @opt_spec = (
    { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
    { s => 'analyze|A!',       d => 'Analyze (find/fix/print) in bottom-up algorithm (default)' },
+   { s => 'askpass',          d => 'Prompt for password for connections' },
    { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm (default 128)' },
    { s => 'bufferresults',    d => 'Fetch all rows from MySQL before comparing' },
    { s => 'build|U!',         d => 'Build tables for bottom-up algorithm (default)' },
@@ -95,12 +91,12 @@ my @opt_spec = (
    { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default: all)' },
    { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
    { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
-   { s => 'replicate|r',      d => 'Change on master. Implies --strategy=r and --wait 60'},
    { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
    { s => 'singletxn|1',      d => 'Do in a single transaction' },
    { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
    { s => 'skipforeignkey|K', d => 'Turn off foreign key checks' },
    { s => 'strategy|s=s',     d => 'Query strategy when syncing (r=replace, s=ins/upd/del)' },
+   { s => 'synctomaster|r',   d => 'Sync a slave to its master. Implies --strategy=r and --wait 60'},
    { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm (default: no)' },
    { s => 'timeoutok|t',      d => 'Keep going if --wait fails' },
    { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times' },
@@ -180,7 +176,7 @@ $opts{o} = lc(join('|', $opts{o} =~ m/(\w{3})/g));
 my %conn   = (
    h => 'host',
    P => 'port',
-   S => 'socket',
+   S => 'mysql_socket',
    u => 'user',
    p => 'pass',
    F => 'mysql_read_default_file',
@@ -192,28 +188,30 @@ my %conn   = (
 my $source = parse_dsn(shift(@ARGV), {}     );
 my $dest   = parse_dsn(shift(@ARGV), $source);
 
-if ( $opts{help} || !$dest ) {
-   print "Usage: mysql-table-sync [OPTION].. <source> <dest>\n\n";
+if ( $opts{help} || !$source || (!$dest && !$opts{r}) ) {
+   print "Usage: mysql-table-sync [OPTION].. [SOURCE] DEST\n\n";
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
       printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
-   print <<USAGE;
+   (my $usage = <<"   USAGE") =~ s/^      //gm;
 
-mysql-table-sync finds and resolves data differences between two MySQL tables.
-<source> and <dest> are specially formatted in the format
+      mysql-table-sync finds and resolves data differences between two MySQL tables.
+      SOURCE and DEST are specially formatted in the format
 
-   h=host,D=database,t=table,...
+       h=host,D=database,t=table,i=index,...
 
-Everything but the table name is optional.  Values for <dest> default to the
-values for <source>.  Connection options are read from MySQL option files.  For
-more details, please read the documentation:
+      Everything but the table name is optional; see the documentation for the
+      full list of possible keys.  Values for DEST default to the values for
+      SOURCE.  Connection options are read from MySQL option files.  For more
+      details, please read the documentation:
 
-   perldoc mysql-table-sync
+         perldoc mysql-table-sync
 
-USAGE
+   USAGE
+   print $usage;
    exit(0);
 }
 
@@ -231,18 +229,42 @@ my %code_for_algorithm = (
 # ############################################################################
 my $exit_status = 0;
 
+if ( !$dest ) {
+   # The user specified --synctomaster and no master, so the argument is the
+   # slave, and master info comes from SHOW SLAVE STATUS.
+   $dest = $source;
+   undef $source;
+   $dest->{dbh} = get_dbh($dest);
+
+   # I want column names to be lowercased for just this one statement.
+   $dest->{dbh}->{FetchHashKeyName} = 'NAME_lc';
+   my $sth = $dest->{dbh}->prepare('SHOW SLAVE STATUS', { FetchHashKeyName => 'NAME_lc' } );
+   $dest->{dbh}->{FetchHashKeyName} = 'NAME';
+
+   $sth->execute();
+   my $status = $sth->fetchrow_hashref();
+   my $spec   = "h=$status->{master_host},P=$status->{master_port}";
+   $source    = parse_dsn($spec, $dest);
+}
+
+if ( $source->{t} ne $dest->{t} && -t STDIN && -t STDOUT ) {
+   print "Source and destination table have different names.  Continue?  y/n: ";
+   my $answer = <STDIN>;
+   if ( $answer !~ m/y/i ) {
+      exit(1);
+   }
+}
+
 foreach my $table ( $source, $dest ) {
 
    # It is necessary to get a $dbh to run the sync queries, and a $dbh to use
    # while the main $dbh is in use (for checking collated string comparison).
-   my $dbh        = get_dbh($table);
-   my $dbh2       = get_dbh($table);
-   $table->{dbh}  = $dbh;
-   $table->{dbh2} = $dbh2;
+   $table->{dbh}  ||= get_dbh($table);
+   $table->{dbh2} ||= get_dbh($table);
 
    $table->{db_tbl} =
       join('.',
-      map  { $dbh->quote_identifier($_) }
+      map  { $table->{dbh}->quote_identifier($_) }
       grep { $_ }
       map  { $_ =~ s/(^`|`$)//g; $_; }
       grep { $_ }
@@ -539,6 +561,7 @@ sub td_fetch_level {
    my $tbl = $info->{info};
 
    # Columns that need to be in the checksum list.
+   # TODO: why remove columns that are in the WHERE clause?
    my @cols = grep { !exists($where->{$_}) } @{$tbl->{cols}};
    my $cols = col_list(@cols);
 
@@ -1200,9 +1223,9 @@ sub parse_dsn {
    return unless $dsn;
    $prev ||= {};
    my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-   my %vals = map  { $_ => $hash{$_} || $prev->{$_} } keys %conn;
+   my %vals = map { $_ => $hash{$_} || $prev->{$_} } keys %conn;
    $vals{i} ||= 'PRIMARY';
-   return \%vals;
+   return \%vals if $vals{t};
 }
 
 sub get_tbl_struct {
@@ -1326,8 +1349,17 @@ sub get_dbh {
       RaiseError => 1,
       PrintError => 0,
    };
-   # TODO this doesn't read F from $opts
-   my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'mysql_socket');
+
+   if ( !$info->{p} && $opts{askpass} ) {
+      print "Enter password for $info->{h}: ";
+      ReadMode('noecho');
+      my $pass = <STDIN>;
+      ReadMode('normal');
+      chomp $pass;
+      print "\n";
+      $info->{p} = $pass;
+   }
+
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
@@ -1372,6 +1404,22 @@ second table the same as the first, use the L<"--print"> option.  To execute the
 queries, use the L<"--execute"> option.  To see the queries issued while searching
 for differences, use the L<"--debug"> option.
 
+TODO: There is a special syntax for connecting to MySQL servers.  Each server name
+on the command line can be either just a hostname, or a key=value,key=value
+string.  Keys are a single letter:
+
+   KEY MEANING
+   === =======
+   h   Connect to host
+   P   Port number to use for connection
+   S   Socket file to use for connection
+   u   User for login if not current user
+   p   Password to use when connecting
+   F   Only read default options from the given file
+   D   Database containing the table to be synced
+   t   Table to be synced
+   i   Index to drill into when syncing
+
 =head1 OPTIONS
 
 Many options are enabled by default and can be disabled by prefixing with --no.
@@ -1392,6 +1440,10 @@ Only applies to bottom-up search.  Specifies that mysql-table-sync should examin
 summary tables and find table differences, and if desired, issue queries to
 resolve them.  This is the default behavior, but you can disable it if you just
 want to build the summary tables.
+
+=item --askpass
+
+Prompts the user for a password when connecting to MySQL.
 
 =item --branchfactor
 
@@ -1517,12 +1569,6 @@ Output the L<"--debug"> debugging output as SQL that can be executed.  By
 default it's commented out with SQL comments, so it won't interfere with the
 output of L<"--print">.  This option removes the comments.
 
-=item --replicate
-
-Change the table on the master/source server, and let replication propagate the
-changes to the destination table.  If you're syncing a master and slave, this is
-almost certainly the option you should use.  Implies L<"--strategy">=r.
-
 =item --separator
 
 Separator for CONCAT_WS, which is used to concatenate all columns in each row
@@ -1547,7 +1593,14 @@ COUNT() queries that aren't needed.
 
 Query strategy when syncing (r=replace, s=ins/upd/del).  If you specify r,
 INSERT and UPDATE queries will be issued as REPLACE.  This is most useful when
-you're syncing by writing to the master.
+you're syncing a slave to its master via replication (see
+L<"--synctomaster">).
+
+=item --synctomaster
+
+Change the table on the master/source server, and let replication propagate the
+changes to the destination table.  If you're syncing a master and slave, this is
+almost certainly the option you should use.  Implies L<"--strategy">=r.
 
 =item --temp
 
