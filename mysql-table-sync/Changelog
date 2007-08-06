@@ -1,5 +1,7 @@
 Changelog for mysql-table-sync:
 
+   * MySQL socket connection option didn't work.
+
 2007-06-22: version 0.9.5
 
    * Documentation.

@@ -1,5 +1,7 @@
 Changelog for mysql-slave-restart:
 
+   * MySQL socket connection option didn't work.
+
 2007-08-04: version 0.9.3
 
    * Fixed a crash caused by omitting --verbose.

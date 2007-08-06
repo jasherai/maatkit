@@ -129,7 +129,7 @@ if ( $opts{stop} ) {
 my %conn   = (
    h => 'host',
    P => 'port',
-   S => 'socket',
+   S => 'mysql_socket',
    u => 'user',
    p => 'pass',
    F => 'mysql_read_default_file',
