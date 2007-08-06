@@ -672,7 +672,12 @@ if ( !caller ) {
    my $rows;
 
    if ( $opts{c} ) { # Connect to the database
-      my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
+      my %conn = (
+         F => 'mysql_read_default_file',
+         h => 'host',
+         P => 'port',
+         S => 'mysql_socket'
+      );
 
       my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
          . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))

@@ -95,7 +95,7 @@ USAGE
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
-my %conn = ( h => 'host', P => 'port', S => 'socket');
+my %conn = ( h => 'host', P => 'port', S => 'mysql_socket');
 
 # Connect to the database
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'

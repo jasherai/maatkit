@@ -1327,7 +1327,7 @@ sub get_dbh {
       PrintError => 0,
    };
    # TODO this doesn't read F from $opts
-   my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'socket');
+   my %conn = ( F => 'mysql_read_default_file', h => 'host', P => 'port', S => 'mysql_socket');
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';

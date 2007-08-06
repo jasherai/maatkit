@@ -1,5 +1,7 @@
 Changelog for mysql-archiver:
 
+   * MySQL socket connection option didn't work.
+
 2007-07-26: version 1.0.0
 
    * Added --safeautoinc option, enabled by default, to protect against re-using

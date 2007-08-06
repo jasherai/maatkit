@@ -1,5 +1,7 @@
 Changelog for mysql-duplicate-key-checker:
 
+   * MySQL socket connection option didn't work.
+
 2007-06-22: version 1.0.4
 
    * Documentation.

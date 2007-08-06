@@ -1,5 +1,7 @@
 Changelog for mysql-table-checksum and mysql-checksum-filter:
 
+   * MySQL socket connection option didn't work.
+
 2007-07-26: version 1.1.12
 
    * MySQL Table Checksum could crash when it tried to checksum on a table that

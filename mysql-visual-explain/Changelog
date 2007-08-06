@@ -1,5 +1,7 @@
 Changelog for mysql-visual-explain:
 
+   * MySQL socket connection option didn't work.
+
 2007-07-28: version 1.0.0
 
    * Initial release.
