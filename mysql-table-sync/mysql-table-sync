@@ -46,7 +46,6 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: grouping strategy: first chars of char column.
 # TODO: grouping strategy: number modulo const (between is more easily optimized)
 # TODO: save memory by using more efficient bind methods from DBI.
-# TODO: allow to disable keys on destination.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
 # TODO: check the results of the following query:
 # set @CRC := null;
@@ -92,7 +91,9 @@ my @opt_spec = (
    { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
    { s => 'singletxn|1',      d => 'Do in a single transaction' },
    { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
+   { s => 'skipbinlog',       d => 'Do not log to the binary log' },
    { s => 'skipforeignkey|K', d => 'Turn off foreign key checks' },
+   { s => 'skipuniquekey',    d => 'Turn off UNIQUE key checks' },
    { s => 'strategy|s=s',     d => 'Query strategy when syncing (r=replace, s=ins/upd/del)' },
    { s => 'synctomaster|r',   d => 'Sync a slave to its master. Implies --strategy=r and --wait 60'},
    { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm (default: no)' },
@@ -197,7 +198,7 @@ if ( $opts{help} || !$source || (!$dest && !$opts{r}) ) {
    (my $usage = <<"   USAGE") =~ s/^      //gm;
 
       mysql-table-sync finds and resolves data differences between two MySQL tables.
-      SOURCE and DEST are specially formatted in the format
+      SOURCE and DEST are specially formatted as
 
        h=host,D=database,t=table,i=index,...
 
@@ -346,6 +347,20 @@ if ( $opts{O} && version_ge($source->{dbh}, '4.1.0') ) {
    foreach my $collation ( @collations ) {
       $charset_for{$collation->{Collation}} = $collation->{Charset};
    }
+}
+
+# Set some SQL options as requested.
+if ( $opts{skipbinlog} ) {
+   $source->{dbh}->do("/*!32316 SET SQL_LOG_BIN=0 */");
+   $dest->{dbh}->do("/*!32316 SET SQL_LOG_BIN=0 */");
+}
+if ( $opts{skipuniquekey} ) {
+   $source->{dbh}->do("/*!40014 SET UNIQUE_CHECKS=0 */");
+   $dest->{dbh}->do("/*!40014 SET UNIQUE_CHECKS=0 */");
+}
+if ( $opts{K} ) {
+   $source->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+   $dest->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
 }
 
 if ( $code_for_algorithm{$opts{a}} ) {
@@ -515,14 +530,6 @@ sub topdown {
    # Release locks/close transaction as soon as possible.
    if ( $opts{r} && $opts{f} && !$opts{1} ) {
       $dest->{dbh}->commit;
-   }
-
-   # Turn off foreign key checks.
-   if ( $opts{K} ) {
-      $source->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-      if ( !$opts{r} ) {
-         $dest->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-      }
    }
 
    td_handle_data_change('DELETE', @to_delete);
@@ -962,14 +969,6 @@ sub bu_merge_tree {
 
       $level--;
    } while ( $level >= 0 && @bad_parents );
-
-   # Turn off foreign key checks.
-   if ( $opts{K} ) {
-      $source->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-      if ( !$opts{r} ) {
-         $dest->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-      }
-   }
 
    bu_handle_data_change('DELETE', @to_delete);
    bu_handle_bulk_change('DELETE', $levels, $dest,   @bulk_delete);
