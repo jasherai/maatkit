@@ -78,7 +78,6 @@ my @opt_spec = (
    { s => 'collate|O!',       d => 'Use MySQL to compare strings if necessary (default)' },
    { s => 'columns|c=s',      d => 'Comma-separated column list' },
    { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
-   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'deleteinsert|l',   d => 'Convert all UPDATES to DELETE and INSERT' },
    { s => 'queries|q',        d => 'Make debugging output executable SQL' },
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
@@ -1392,11 +1391,11 @@ mysql-table-sync - Efficiently synchronize data between two MySQL tables.
 
 To compare two tables,
 
- mysql-table-sync -a topdown -d col1,col2 user:pass@host1/db.tbl user@host2/db.tbl
+ mysql-table-sync -a topdown -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
 
 Or,
 
- mysql-table-sync -a bottomup -B 128 user:pass@host1/db.tbl user@host2/db.tbl
+ mysql-table-sync -a bottomup -B 128 u=user,p=pass,h=host1,D=db,t=tbl host2
 
 To show the differences between the tables, use the L<"--verbose"> option.  Issue
 this option multiple times for more detail.  To see queries that will make the
@@ -1404,7 +1403,7 @@ second table the same as the first, use the L<"--print"> option.  To execute the
 queries, use the L<"--execute"> option.  To see the queries issued while searching
 for differences, use the L<"--debug"> option.
 
-TODO: There is a special syntax for connecting to MySQL servers.  Each server name
+There is a special syntax for connecting to MySQL servers.  Each server name
 on the command line can be either just a hostname, or a key=value,key=value
 string.  Keys are a single letter:
 
