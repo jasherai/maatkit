@@ -45,7 +45,6 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: CRC32 can be used for checksums.
 # TODO: grouping strategy: first chars of char column.
 # TODO: grouping strategy: number modulo const (between is more easily optimized)
-# TODO: for safety's sake, don't use REPLACE if there's more than one unique key.
 # TODO: save memory by using more efficient bind methods from DBI.
 # TODO: allow to disable keys on destination.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
@@ -68,7 +67,7 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # ############################################################################
 
 my @opt_spec = (
-   { s => 'algorithm|a=s',    d => 'Algorithm to use (topdown, bottomup)' },
+   { s => 'algorithm|a=s',    d => 'Algorithm to use: topdown (default) or bottomup'},
    { s => 'analyze|A!',       d => 'Analyze (find/fix/print) in bottom-up algorithm (default)' },
    { s => 'askpass',          d => 'Prompt for password for connections' },
    { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm (default 128)' },
@@ -1247,6 +1246,14 @@ sub get_tbl_struct {
       }
       $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
 
+   # Die if REPLACE is in use and there's more than one unique key.
+   if ( $opts{s} eq 'r' ) {
+      my @matches = $ddl =~ m/(UNIQUE|PRIMARY)/g;
+      if ( @matches > 1 ) {
+         die "It isn't safe to use --strategy=r when the table has multiple unique keys";
+      }
+   }
+
    # Save the column definitions *exactly* for use when calculating summary
    # tables.
    my %alldefs;
@@ -1389,19 +1396,20 @@ mysql-table-sync - Efficiently synchronize data between two MySQL tables.
 
 =head1 SYNOPSIS
 
-To compare two tables,
+To compare two tables, try one of these:
 
- mysql-table-sync -a topdown -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
-
-Or,
-
+ mysql-table-sync -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
  mysql-table-sync -a bottomup -B 128 u=user,p=pass,h=host1,D=db,t=tbl host2
 
-To show the differences between the tables, use the L<"--verbose"> option.  Issue
-this option multiple times for more detail.  To see queries that will make the
-second table the same as the first, use the L<"--print"> option.  To execute these
-queries, use the L<"--execute"> option.  To see the queries issued while searching
-for differences, use the L<"--debug"> option.
+To sync the destination to the source, try
+
+ mysql-table-sync -x -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
+
+To show the differences between the tables, use the L<"--verbose"> option.
+Issue this option multiple times for more detail.  To see queries that will
+make the second table the same as the first, use the L<"--print"> option.  To
+see the queries issued while searching for differences, use the L<"--debug">
+option.
 
 There is a special syntax for connecting to MySQL servers.  Each server name
 on the command line can be either just a hostname, or a key=value,key=value
