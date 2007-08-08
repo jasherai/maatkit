@@ -26,7 +26,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use List::Util qw(sum max);
+use List::Util qw(sum max min);
 use POSIX qw(ceil);
 use Term::ReadKey;
 
@@ -44,7 +44,6 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # TODO: write a helper to analyze indexes and suggest a drilldown strategy.
 # TODO: CRC32 can be used for checksums.
 # TODO: grouping strategy: first chars of char column.
-# TODO: grouping strategy: number modulo const (between is more easily optimized)
 # TODO: save memory by using more efficient bind methods from DBI.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
 # TODO: check the results of the following query:
@@ -81,7 +80,8 @@ my @opt_spec = (
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
    { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
    { s => 'execute|x',        d => 'Execute queries required to sync' },
-   { s => 'forupdate|f',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
+   { s => 'forupdate|F',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
+   { s => 'function|f=s',     d => 'Cryptographic hash function (SHA1, MD5...)' },
    { s => 'help',             d => 'Show this help message' },
    { s => 'lock|k!',          d => 'Lock tables when beginning work' },
    { s => 'maxcost|m=i',      d => 'Maximum rowcount before aborting' },
@@ -272,6 +272,46 @@ foreach my $table ( $source, $dest ) {
    $table->{cols} = col_list(@{$table->{info}->{cols}});
 }
 
+# Decide what hash function to use.
+my $func = $opts{f} || 'MD5';
+{
+   my $res = eval { $source->{dbh}->do("SELECT $func('test-string')") };
+   if ( !$res ) {
+      my $err = '';
+      if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
+         $err = qq{ because "$1"};
+      }
+      if ( lc $func eq 'md5' ) {  # There's nothing to fall back to
+         die "Cryptographic function $func cannot be used$err\n";
+      }
+      warn "Cryptographic function $func cannot be used$err; falling back to MD5()\n";
+      $func = 'MD5';
+   }
+}
+
+my $crc_wid   = max(16, length(($source->{dbh}->selectrow_array("SELECT $func('a')"))[0]));
+my $crc_slice = 0;
+my $sanity    = '';
+
+# Figure out which slice in a sliced BIT_XOR checksum should have the actual
+# concat-columns-and-checksum, and which should just get variable references.
+{
+   my $desired = uc $source->{dbh}->selectall_arrayref("SELECT $func('a')")->[0]->[0];
+   my $result  = '';
+   my $start   = 1;
+
+   do { # Try different positions till sliced result equals non-sliced.
+      $source->{dbh}->do('SET @crc := NULL, @cnt := 0');
+      my $slices = make_slices("\@crc := $func('a')");
+      my $sanity = "SELECT CONCAT($slices) as test from (select null) as t";
+      $result    = $source->{dbh}->selectall_arrayref($sanity)->[0]->[0];
+      if ( $result ne $desired ) {
+         $start += 16;
+         ++$crc_slice;
+      }
+   } while ( $start < $crc_wid && $result ne $desired );
+}
+
 if ( $opts{V} ) {
    # Verify that CONCAT_WS is compatible across all servers.  On older versions
    # of MySQL it skips both empty strings and NULL; on newer just NULL.
@@ -374,7 +414,7 @@ else {
 map { $_->finish() } values %collation_sth; # Keep it from complaining
 foreach my $table ( $source, $dest ) {
    my $dbh = $table->{dbh};
-   $dbh->commit if $opts{k} || $opts{f} || $opts{1};
+   $dbh->commit if $opts{k} || $opts{F} || $opts{1};
    $dbh->disconnect;
 }
 
@@ -447,10 +487,9 @@ sub topdown {
          my %new_where = %$where;  # Will get more cols added and used below.
 
          # If the current row is the "same row" on both sides...
-         # TODO: must check for identical row-count too.
          if ( $sr && $dr && defined $cmp && $cmp == 0 ) {
             # The "same" row descends from parents that differ.
-            if ( $sr->{__crc} ne $dr->{__crc} ) {
+            if ( $sr->{__crc} ne $dr->{__crc} || ($level && ($sr->{__cnt} != $dr->{__cnt})) ) {
                @new_where{@$grouping} = @{$sr}{@$grouping};
                if ( $level ) {
                   # Special case: push $level - 1 because this will be processed
@@ -528,7 +567,7 @@ sub topdown {
    } while ( @to_examine );
 
    # Release locks/close transaction as soon as possible.
-   if ( $opts{r} && $opts{f} && !$opts{1} ) {
+   if ( $opts{r} && $opts{F} && !$opts{1} ) {
       $dest->{dbh}->commit;
    }
 
@@ -545,11 +584,6 @@ sub topdown {
    td_handle_data_change('INSERT', @to_insert);
 }
 
-# TODO: group together UPDATE/DELETE whose first key is the same, e.g.
-# DELETE FROM tbl WHERE `account` = '733' AND `ikey` = '332286601';
-# DELETE FROM tbl WHERE `account` = '733' AND `ikey` = '332286661';
-# DELETE FROM tbl WHERE `account` = '733' AND `ikey` = '332287681';
-# can be grouped with AND ikey in(....)
 sub td_handle_data_change {
    my ( $action, @rows ) = @_;
    return unless $action =~ m/$opts{o}/i;
@@ -580,7 +614,7 @@ sub td_fetch_level {
    my $crit = make_where_clause($dbh, $where);
    my $lock = '';
 
-   if ( $opts{f} && !$opts{k} ) { # User wants us to lock for consistency.
+   if ( $opts{F} && !$opts{k} ) { # User wants us to lock for consistency.
       # Is this the server where changes will happen?
       my $is_target = $opts{r} ? $which eq 'source' : $which eq 'dest';
       $lock = $is_target ? ' FOR UPDATE' : ' LOCK IN SHARE MODE';
@@ -592,27 +626,14 @@ sub td_fetch_level {
    # BIT_XOR() is really just a bitwise parity.  It is also order-independent,
    # but you expect any given bit in the result to be essentially a random coin
    # flip over the group.
-   # TODO: the CRC doesn't work right.  Try a table with single column, three
-   # rows with integer 1; right part of CRC is all zeroes.
+
    my $query;
+   # Design the column checksum expression.
    if ( $level ) {
-      ( $query = <<"      END" ) =~ s/\s+/ /g;
-         SELECT /*$which:$info->{db_tbl}*/
-            $grp,
-            COUNT(*) AS __cnt,
-            CONCAT(
-               LPAD(CONV(BIT_XOR(
-                  CAST(CONV(LEFT(\@CRC := MD5(CONCAT_WS('$opts{e}', $cols$null)), 16), 16, 10) AS UNSIGNED)
-                  ), 10, 16), 16, '0'),
-               LPAD(CONV(BIT_XOR(
-                  CAST(CONV(RIGHT(\@CRC, 16), 16, 10) AS UNSIGNED)
-                  ), 10, 16), 16, '0')
-            ) AS __crc
-         FROM $info->{db_tbl}
-         $crit
-         GROUP BY $grp
-         ORDER BY $grp$lock
-      END
+      my $slices = make_slices("$func(CONCAT_WS('$opts{e}', $cols$null))");
+      $query = "SELECT /*$which:$info->{db_tbl}*/ $grp, COUNT(*) AS __cnt, "
+         . "CONCAT($slices) AS __crc "
+         . "FROM $info->{db_tbl} $crit GROUP BY $grp ORDER BY $grp$lock";
    }
    else {
       $query = "SELECT /*$which:$info->{db_tbl}*/ $grp, "
@@ -1215,6 +1236,29 @@ sub handle_data_change {
    }
 }
 
+sub make_slices {
+   my ( $chks ) = @_;
+
+   # Split the CRC result up into slices and glue them together.
+   my @slices;
+   for ( my $start = 1; $start < $crc_wid; $start += 16 ) {
+      my $len = min(16, $crc_wid - $start + 1);
+      push @slices,
+         "LPAD(CONV(BIT_XOR("
+         . "CAST(CONV(SUBSTRING(\@crc, $start, $len), 16, 10) AS UNSIGNED))"
+         . ", 10, 16), $len, '0')";
+   }
+
+   if ( $crc_slice < @slices ) {
+      $slices[$crc_slice] =~ s/\@crc/\@crc := $chks/;
+   }
+   else {
+      map { s/\@crc/$chks/ } @slices;
+   }
+
+   return join(', ', @slices);
+}
+
 sub parse_dsn {
    my ($dsn, $prev) = @_;
    return unless $dsn;
@@ -1350,7 +1394,7 @@ sub version_ge {
 sub get_dbh {
    my ( $info ) = @_;
    my $db_options = {
-      AutoCommit => !$opts{k} && !$opts{f} && !$opts{1},
+      AutoCommit => !$opts{k} && !$opts{F} && !$opts{1},
       RaiseError => 1,
       PrintError => 0,
    };
