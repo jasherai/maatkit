@@ -107,7 +107,12 @@ for ( 0 .. 1 ) {
    );
 }
 # Wow, Pod::HTML is a pain in the butt.  Fix links now.
+my $img = '<a href="http://sourceforge.net/projects/mysqltoolkit/"><img '
+   . 'alt="SourceForge.net Logo" height="62" width="210" '
+   . 'src="http://sflogo.sourceforge.net/sflogo.php?group_id=189154\&amp;type=5" '
+   . 'style="float:right"/>';
 print `for a in html/*; do sed -i -e 's~bin/~~g' \$a; done`;
+print `for a in html/*; do sed -i -e 's~body>~body>$img~' \$a; done`;
 
 # Cleanup temporary directories
 print `rm -rf cache $dist`;
