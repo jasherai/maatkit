@@ -280,11 +280,15 @@ sub transform {
    # Dispatch to a class method to generate the tree.
    # ##################################################################
    my $node
-      = $sub                                 ? $self->$sub($row)
-      : $row->{Extra} =~ m/No tables/        ? { type => 'DUAL' }
-      : $row->{Extra} =~ m/Impossible WHERE/ ? { type => 'IMPOSSIBLE' }
-      : $row->{Extra} =~ m/optimized away/   ? { type => 'CONSTANT' }
-      :                                      die "Can't handle " . Dumper($row);
+      = $sub
+         ? $self->$sub($row)
+      : $row->{Extra} =~ m/No tables/
+         ? { type => 'DUAL' }
+      : $row->{Extra} =~ m/(?:Impossible (?:WHERE|HAVING)|No matching.*row)/i
+         ? { type => 'IMPOSSIBLE', warning => $row->{Extra} }
+      : $row->{Extra} =~ m/optimized away/
+         ? { type => 'CONSTANT' }
+      : die "Can't handle " . Dumper($row);
 
    # ##################################################################
    # Apply other tree transformations.
@@ -471,6 +475,9 @@ sub recursive_table_name {
    if ( $node->{key} ) {
       my ( $table ) = $node->{key} =~ m/(.*?)->/;
       return $table;
+   }
+   if ( $node->{type} eq 'Bookmark lookup' ) {
+      return $node->{children}->[1]->{table};
    }
    if ( $node->{children} ) {
       return join(',',
