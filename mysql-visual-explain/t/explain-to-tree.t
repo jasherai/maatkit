@@ -39,6 +39,11 @@ is_deeply(
    'Const row not found',
 );
 
+# TODO:
+# ?      t/samples/no_const_row.sql
+# ?      t/samples/unique_row_not_found.sql
+# ?      t/samples/no_min_max_row.sql
+
 $t = $e->parse( load_file('samples/simple_partition.sql') );
 is_deeply(
    $t,
