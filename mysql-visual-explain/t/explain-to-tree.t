@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 46;
+use Test::More tests => 48;
 
 require "../mysql-visual-explain";
 
@@ -27,8 +27,16 @@ is_deeply(
    {  type  => 'IMPOSSIBLE',
       id    => 1,
       rowid => 0,
+      warning => 'Impossible WHERE noticed after reading const tables',
    },
    'Impossible WHERE',
+);
+
+$t = $e->parse( load_file('samples/const_row_not_found.sql') );
+is_deeply(
+   $t,
+   'TODO', # TODO
+   'Const row not found',
 );
 
 $t = $e->parse( load_file('samples/simple_partition.sql') );
@@ -1011,6 +1019,45 @@ is_deeply(
       ],
    },
    'Simple union',
+);
+
+$t = $e->parse( load_file('samples/derived_over_bookmark_lookup.sql') );
+is_deeply(
+   $t,
+   {  type     => 'Table scan',
+      rows     => 10,
+      id       => 1,
+      rowid    => 0,
+      children => [
+         {  type          => 'DERIVED',
+            table         => 'derived(film_actor)',
+            possible_keys => undef,
+            partitions    => undef,
+            children      => [
+               {  type          => 'Bookmark lookup',
+                  id            => 2,
+                  rowid         => 1,
+                  children      => [
+                     {  type          => 'Index lookup',
+                        key           => 'film_actor->idx_fk_film_id',
+                        possible_keys => 'idx_fk_film_id',
+                        partitions    => undef,
+                        key_len       => 2,
+                        'ref'         => undef,
+                        rows          => 10,
+                     },
+                     {  type          => 'Table',
+                        table         => 'film_actor',
+                        possible_keys => 'idx_fk_film_id',
+                        partitions    => undef,
+                     },
+                  ],
+               },
+            ],
+         },
+      ],
+   },
+   'Derived table over a bookmark lookup',
 );
 
 $t = $e->parse( load_file('samples/simple_derived.sql') );
