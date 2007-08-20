@@ -1,6 +1,10 @@
 Changelog for mysql-deadlock-logger:
 
    * MySQL socket connection option didn't work.
+   * Added --askpass option.
+   * Truncated output could crash on an undefined regex result.
+   * Made --source and --dest accept bareword hostnames.
+   * Made DBI errors only print once.
 
 2007-06-22: version 1.0.2
 
