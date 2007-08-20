@@ -28,6 +28,7 @@ use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
 use Socket qw(inet_aton);
+use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -40,6 +41,7 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
+   { s => 'askpass',      d => 'Prompt for password for connections' },
    { s => 'collapse|c!',  d => 'Collapse whitespace in queries' },
    { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
    { s => 'dest|d=s',     d => 'Server in which to store info' },
@@ -96,15 +98,6 @@ my %conn   = (
    D => 'database',
    t => 'table',
 );
-
-sub parse_dsn {
-   my ($dsn, $prev) = @_;
-   return unless $dsn;
-   $prev ||= {};
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-   my %vals = map  { $_ => $hash{$_} || $prev->{$_} } keys %conn;
-   return \%vals;
-}
 
 my $source = parse_dsn($opts{s}, {}      );
 my $dest   = parse_dsn($opts{d}, $source );
@@ -184,12 +177,7 @@ my %is_proc_info = (
 # ############################################################################
 # Start working.
 # ############################################################################
-# Connect to the database
-my $dsn = 'DBI:mysql:' . ( $source->{D} || '' ) . ';'
-   . join(';', map  { "$conn{$_}=$source->{$_}" } grep { defined $source->{$_} } qw(F h P S))
-   . ';mysql_read_default_group=mysql';
-my $dbh = DBI->connect($dsn, @{$source}{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-   or die("Can't connect to DB: $OS_ERROR");
+my $dbh = get_dbh($source);
 
 # Since the user might not have specified hostname for connection, try to
 # extract it from $dbh
@@ -286,13 +274,14 @@ while ( my ($header, $body) = splice(@sections, 0, 2) ) {
    else {
       # Prefer information about locks waited-for over locks-held.
       if ( $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' || !$hash->{lock_type} ) {
+         $hash->{wait_hold} = $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' ? 'w' : 'h';
          @{$hash}{ qw(lock_type idx db tbl txn_id lock_mode) }
             = $body
             =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n(?:/|`\.`)$n` trx id $t lock.mode (\S+)}m;
-         my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
-         $hash->{txn_id} = $high ? ( $low + $high * $MAX_ULONG ) : $low;
-         $hash->{wait_hold}
-            = $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' ? 'w' : 'h';
+         if ( $hash->{txn_id} ) {
+            my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
+            $hash->{txn_id} = $high ? ( $low + $high * $MAX_ULONG ) : $low;
+         }
       }
    }
 
@@ -331,11 +320,7 @@ if ( $dest && $dest->{t} ) {
       grep { $_ }
       ( $dest->{D}, $dest->{t} ));
 
-   $dsn = 'DBI:mysql:' . ( $dest->{D} || '' ) . ';'
-      . join(';', map  { "$conn{$_}=$dest->{$_}" } grep { defined $dest->{$_} } qw(h P S))
-   . ';mysql_read_default_group=mysql';
-   my $dbh2 = DBI->connect($dsn, @{$dest}{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-      or die("Can't connect to DB: $OS_ERROR");
+   my $dbh2  = get_dbh($dest);
    my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
    my $parms = join(',', map { '?' } @cols);
    my $query = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
@@ -355,6 +340,52 @@ if ( $opts{p} ) {
       }
       print join($sep, map { $txn->{$_} } @cols), "\n";
    }
+}
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+sub parse_dsn {
+   my ($dsn, $prev) = @_;
+   return unless $dsn;
+   $prev ||= {};
+
+   my %vals;
+   if ( $dsn =~ m/=/ ) {
+      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+      %vals = map  { $_ => $hash{$_} } keys %conn;
+   }
+   else {
+      $vals{h} = $dsn;
+   }
+   map { $vals{$_} ||= $prev->{$_} } keys %conn;
+   die "Missing host (h) part in $dsn\n" unless $vals{h};
+   return \%vals;
+}
+
+sub get_dbh {
+   my ( $info ) = @_;
+   my $db_options = {
+      AutoCommit => !$opts{k} && !$opts{F} && !$opts{1},
+      RaiseError => 1,
+      PrintError => 0,
+   };
+
+   if ( !$info->{p} && $opts{askpass} ) {
+      print "Enter password for $info->{h}: ";
+      ReadMode('noecho');
+      my $pass = <STDIN>;
+      ReadMode('normal');
+      chomp $pass;
+      print "\n";
+      $info->{p} = $pass;
+   }
+
+   my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
+      . ';mysql_read_default_group=mysql';
+   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
+      or die("Can't connect to DB: $OS_ERROR");
 }
 
 # ############################################################################
@@ -408,24 +439,24 @@ if you want whitespace collapsed.
 The following table is suggested if you want to store all the information
 mysql-deadlock-logger can extract about deadlocks:
 
- CREATE TABLE `deadlocks` (
-   `server` char(20) NOT NULL,
-   `ts` datetime NOT NULL,
-   `thread` int unsigned NOT NULL,
-   `txn_id` bigint unsigned NOT NULL,
-   `txn_time` smallint unsigned NOT NULL,
-   `user` char(16) NOT NULL,
-   `hostname` char(20) NOT NULL,
-   `ip` char(15) NOT NULL, -- alternatively, `ip` int unsigned NOT NULL
-   `db` char(64) NOT NULL,
-   `tbl` char(64) NOT NULL,
-   `idx` char(64) NOT NULL,
-   `lock_type` char(16) NOT NULL,
-   `lock_mode` char(1) NOT NULL,
-   `wait_hold` char(1) NOT NULL,
-   `victim` tinyint unsigned NOT NULL,
-   `query` text NOT NULL,
-   PRIMARY KEY  (`server`,`ts`,`thread`)
+ CREATE TABLE deadlocks (
+   server char(20) NOT NULL,
+   ts datetime NOT NULL,
+   thread int unsigned NOT NULL,
+   txn_id bigint unsigned NOT NULL,
+   txn_time smallint unsigned NOT NULL,
+   user char(16) NOT NULL,
+   hostname char(20) NOT NULL,
+   ip char(15) NOT NULL, -- alternatively, ip int unsigned NOT NULL
+   db char(64) NOT NULL,
+   tbl char(64) NOT NULL,
+   idx char(64) NOT NULL,
+   lock_type char(16) NOT NULL,
+   lock_mode char(1) NOT NULL,
+   wait_hold char(1) NOT NULL,
+   victim tinyint unsigned NOT NULL,
+   query text NOT NULL,
+   PRIMARY KEY  (server,ts,thread)
  ) ENGINE=InnoDB
 
 If you use L<"--columns">, you can omit whichever columns you don't want to
@@ -461,8 +492,9 @@ specially formatted as a key=value,key=value string.  Keys are a single letter:
    t   Table in which to store deadlock information
 
 The 't' part only applies to L<"--dest">.  All parts are optional;
-mysql-deadlock-logger will try to read MySQL's option files to determine how to
-connect.
+mysql-deadlock-logger will try to read MySQL's option files to determine how
+to connect.  If you specify a value without an '=' character,
+mysql-deadlock-logger will interpret this as a hostname.
 
 =item --tab
 
