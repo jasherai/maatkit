@@ -1,6 +1,7 @@
 Changelog for mysql-query-profiler and mysql-profile-compact:
 
    * MySQL socket connection option didn't work.
+   * Large queries overflowed the formatting room available.
 
 2007-06-22: version 1.1.2
 

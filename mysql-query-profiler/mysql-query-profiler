@@ -25,8 +25,9 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use Time::HiRes qw(time);
 use List::Util qw(sum min max first);
+use Term::ReadKey;
+use Time::HiRes qw(time);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -42,6 +43,7 @@ use constant MAX_ULONG => 4294967295; # 2^32-1
 
 my @opt_spec = (
    { s => 'allowcache|a',  d => 'Enable query cache (default is disabled)' },
+   { s => 'askpass',       d => 'Prompt for password for connection' },
    { s => 'calibrate|c!',  d => "Try to compensate for SHOW STATUS (default)" },
    { s => 'database|D=s',  d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
@@ -58,6 +60,7 @@ my @opt_spec = (
    { s => 'tab|t',         d => 'Print tab-separated values (for a spreadsheet)' },
    { s => 'user|u=s',      d => 'User for login if not current user' },
    { s => 'verbose|v+',    d => 'Verbosity (specify multiple times for more detail)' },
+    #TODO: might not be working right
    { s => 'verify|r',      d => 'Verify nothing else is accessing the server' },
    { s => 'version',       d => 'Output version information and exit' },
 );
@@ -127,10 +130,18 @@ my %conn = (
 );
 
 # Connect to the database
+if ( !$opts{p} && $opts{askpass} ) {
+   print "Enter password: ";
+   ReadMode('noecho');
+   chomp($opts{p} = <STDIN>);
+   ReadMode('normal');
+   print "\n";
+}
+
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
-my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } )
    or die("Can't connect to DB: $OS_ERROR");
 
 my $variables    = get_variables($dbh);
@@ -707,17 +718,17 @@ $ch->{Innodb_log_waits}
 format INNODB_DATA_OPS =
 
 __ InnoDB Data Operations ____ Pages _____ Ops _______ Bytes
-   Reads                       @####   @######    @#########
+   Reads                   @######## @########    @#########
 $ch->{Innodb_pages_read}, $ch->{Innodb_data_reads}, $ch->{Innodb_data_read}
-   Writes                      @####   @######    @#########
+   Writes                  @######## @########    @#########
 $ch->{Innodb_pages_written}, $ch->{Innodb_data_writes}, $ch->{Innodb_data_written}
-   Doublewrites                @####   @######
+   Doublewrites            @######## @########
 $ch->{Innodb_dblwr_pages_written}, $ch->{Innodb_dblwr_writes}
-   Creates                     @####
+   Creates                 @########
 $ch->{Innodb_pages_created}
-   Fsyncs                              @######
+   Fsyncs                            @########
 $ch->{Innodb_data_fsyncs}
-   OS fsyncs                           @######    @#########
+   OS fsyncs                         @########    @#########
 $ch->{Innodb_os_log_fsyncs}, $ch->{Innodb_os_log_written}
 .
 
@@ -788,6 +799,10 @@ Allows the MySQL query cache to cache the queries executed.  By default this
 is disabled.  When enabled, cache profiling information is added to the
 printout.  See L<http://dev.mysql.com/doc/en/query-cache.html> for more
 information about the query cache.
+
+=item --askpass
+
+Prompt for password for connections.
 
 =item --calibrate
 
