@@ -413,6 +413,10 @@ Some options are negatable with --no.
 
 =over
 
+=item --askpass
+
+Prompt for password for connections.
+
 =item --collapse
 
 Makes mysql-deadlock-logger collapse all whitespace in queries to a single
