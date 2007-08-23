@@ -1107,22 +1107,19 @@ sub timestampdiff {
 sub get_dbh {
    my ( $info, $db ) = @_;
 
-   if ( $opts{askpass} && !$info->{p} ) {
+   if ( $opts{askpass} && !defined $info->{p} ) {
       print "Enter password for $info->{h}: ";
       ReadMode('noecho');
-      my $pass = <STDIN>;
-      chomp $pass;
+      chomp($info->{p} = <STDIN>);
       ReadMode('normal');
       print "\n";
-      $info->{p} = $pass;
    }
 
    $db ||= $info->{D} || '';
    my $dsn = "DBI:mysql:$db;host=$info->{h};"
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
-   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
-      or die("Can't connect to DB: $OS_ERROR");
+   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options);
 }
 
 sub do_var_crc {
