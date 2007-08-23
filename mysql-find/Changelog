@@ -1,5 +1,7 @@
 Changelog for mysql-find:
 
+2007-08-23: version 0.9.4
+
    * MySQL socket connection option didn't work.
    * Added --askpass option.
 
