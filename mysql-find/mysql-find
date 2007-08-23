@@ -27,6 +27,7 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
+use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -45,6 +46,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # 'y' is the 'tYpe' of the option ('t' is generated later and used for something
 # else).
 my @opt_spec = (
+   { s => 'askpass',           y => 'o', d => 'Prompt for password for connections' },
    { s => 'case-insensitive',  y => 'o', d => 'Regular expression patterns ignore case' },
    { s => 'daystart',          y => 'o', d => 'Measure times from the beginning of the day' },
    { s => 'defaults-file|F=s', y => 'o', d => 'Only read default options from the given file' },
@@ -342,6 +344,14 @@ foreach my $test ( keys %test_for, keys %action_for ) {
 # ############################################################################
 
 # Connect to the database
+if ( !$opts{p} && $opts{askpass} ) {
+   print "Enter password: ";
+   ReadMode('noecho');
+   chomp($opts{p} = <STDIN>);
+   ReadMode('normal');
+   print "\n";
+}
+
 my %conn = (
    F => 'mysql_read_default_file',
    h => 'host',
@@ -352,8 +362,7 @@ my %conn = (
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
-$dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-   or die("Can't connect to DB: $OS_ERROR");
+$dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
 
 # If no other action was given, the default action is to print.
 if ( !grep { $opts{$_} } qw( exec exec_plus print printf ) ) {
@@ -575,6 +584,10 @@ dashes in front of long option names, unlike GNU find.
 =head2 OPTIONS
 
 =over
+
+=item --askpass
+
+Prompt for password for connections.
 
 =item --case-insensitive
 
