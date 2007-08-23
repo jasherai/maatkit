@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 48;
+use Test::More tests => 52;
 
 require "../mysql-visual-explain";
 
@@ -35,14 +35,215 @@ is_deeply(
 $t = $e->parse( load_file('samples/const_row_not_found.sql') );
 is_deeply(
    $t,
-   'TODO', # TODO
+   {  type     => 'UNION RESULT',
+      children => [
+         {  type     => 'Constant table access',
+            id       => 1,
+            rowid    => 0,
+            rows     => undef,
+            warning  => 'const row not found',
+            children => [
+               {  type          => 'Table',
+                  partitions    => undef,
+                  possible_keys => undef,
+                  table         => 't1',
+               },
+            ],
+         },
+         {  type     => 'SUBQUERY',
+            id       => 2,
+            rowid    => 1,
+            children => [
+               {  type     => 'Table scan',
+                  id       => 2,
+                  rowid    => 4,
+                  rows     => undef,
+                  children => [
+                     {  type          => 'UNION',
+                        table         => 'union(<none>,t12)',
+                        possible_keys => undef,
+                        partitions    => undef,
+                        children      => [
+                           {  type     => 'SUBQUERY',
+                              children => [
+                                 {  type  => 'SUBQUERY',
+                                    id    => 2,
+                                    rowid => 1,
+                                 },
+                                 {  type    => 'IMPOSSIBLE',
+                                    id      => 3,
+                                    rowid   => 2,
+                                 },
+                              ],
+                           },
+                           {  type     => 'Constant table access',
+                              warning  => 'const row not found',
+                              id       => 4,
+                              rowid    => 3,
+                              rows     => undef,
+                              children => [
+                                 {  type          => 'Table',
+                                    table         => 't12',
+                                    partitions    => undef,
+                                    possible_keys => undef,
+                                 },
+                              ],
+                           },
+                        ],
+                     },
+                  ],
+               },
+            ],
+         },
+      ],
+   },
    'Const row not found',
 );
 
-# TODO:
-# ?      t/samples/no_const_row.sql
-# ?      t/samples/unique_row_not_found.sql
-# ?      t/samples/no_min_max_row.sql
+$t = $e->parse( load_file('samples/dual_union_in_subquery.sql') );
+is_deeply(
+   $t,
+   {  type     => 'UNION RESULT',
+      children => [
+         {  id    => 1,
+            type  => 'DUAL',
+            rowid => 0,
+         },
+         {  id       => 2,
+            type     => 'DEPENDENT SUBQUERY',
+            rowid    => 1,
+            children => [
+               {  type     => 'Table scan',
+                  rows     => undef,
+                  rowid    => 3,
+                  id       => 2,
+                  children => [
+                     {  type          => 'UNION',
+                        partitions    => undef,
+                        possible_keys => undef,
+                        table         => 'union(<none>,<none>)',
+                        children      => [
+                           {  id    => 2,
+                              type  => 'DEPENDENT SUBQUERY',
+                              rowid => 1
+                           },
+                           {  id    => 3,
+                              type  => 'DEPENDENT UNION',
+                              rowid => 2
+                           }
+                        ],
+                     }
+                  ],
+               }
+            ],
+         }
+      ],
+   },
+   'UNION of DUAL in a subquery',
+);
+
+$t = $e->parse( load_file('samples/no_const_row.sql') );
+is_deeply(
+   $t,
+   {  type     => 'Constant table access',
+      id       => 1,
+      rowid    => 0,
+      rows     => undef,
+      warning  => 'const row not found',
+      children => [
+         {  type          => 'Table',
+            table         => 't1',
+            possible_keys => undef,
+            partitions    => undef,
+         },
+      ],
+   },
+   'No constant row found',
+);
+
+$t = $e->parse( load_file('samples/unique_row_not_found.sql') );
+is_deeply(
+   $t,
+   {  type     => 'JOIN',
+      children => [
+         {  type     => 'JOIN',
+            children => [
+               {  type     => 'Bookmark lookup',
+                  rowid    => 0,
+                  id       => 1,
+                  children => [
+                     {  key_len       => '4',
+                        possible_keys => 'PRIMARY',
+                        ref           => 'const',
+                        type          => 'Constant index lookup',
+                        rows          => '1',
+                        partitions    => undef,
+                        key           => 'user->PRIMARY'
+                     },
+                     {  possible_keys => 'PRIMARY',
+                        table         => 'user',
+                        type          => 'Table',
+                        partitions    => undef
+                     }
+                  ],
+               },
+               {  type     => 'Bookmark lookup',
+                  rowid    => 1,
+                  warning  => 'unique row not found',
+                  id       => 1,
+                  children => [
+                     {  key_len       => '2',
+                        possible_keys => 'PRIMARY',
+                        ref           => 'const',
+                        type          => 'Constant index lookup',
+                        rows          => undef,
+                        partitions    => undef,
+                        key           => 'avatar->PRIMARY'
+                     },
+                     {  possible_keys => 'PRIMARY',
+                        table         => 'avatar',
+                        type          => 'Table',
+                        partitions    => undef
+                     }
+                  ],
+               }
+            ],
+         },
+         {  type     => 'Bookmark lookup',
+            rowid    => 2,
+            warning  => 'unique row not found',
+            id       => 1,
+            children => [
+               {  key_len       => '4',
+                  possible_keys => 'PRIMARY',
+                  ref           => 'const',
+                  type          => 'Constant index lookup',
+                  rows          => undef,
+                  partitions    => undef,
+                  key           => 'customavatar->PRIMARY'
+               },
+               {  possible_keys => 'PRIMARY',
+                  table         => 'customavatar',
+                  type          => 'Table',
+                  partitions    => undef
+               }
+            ],
+         }
+      ],
+   },
+   'Unique row not found',
+);
+
+$t = $e->parse( load_file('samples/no_min_max_row.sql') );
+is_deeply(
+   $t,
+   {  type    => 'IMPOSSIBLE',
+      warning => 'No matching min/max row',
+      id      => 1,
+      rowid   => 0,
+   },
+   'No min/max row',
+);
 
 $t = $e->parse( load_file('samples/simple_partition.sql') );
 is_deeply(

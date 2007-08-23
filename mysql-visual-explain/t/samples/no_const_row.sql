@@ -10,12 +10,3 @@ mysql> explain select c from test.v1;
 +----+-------------+-------+--------+---------------+------+---------+------+------+---------------------+
 |  1 | SIMPLE      | t1    | system | NULL          | NULL | NULL    | NULL |    0 | const row not found | 
 +----+-------------+-------+--------+---------------+------+---------+------+------+---------------------+
-1 row in set (0.00 sec)
-
-mysql> drop view test.v1;
-Query OK, 0 rows affected (0.00 sec)
-
-mysql> drop table test.t1;
-Query OK, 0 rows affected (0.00 sec)
-
-mysql> notee
