@@ -8,5 +8,5 @@ ISNULL(customavatar.userid) AS hascustom, customavatar.dateline,
 
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	user	const	PRIMARY	PRIMARY	4	const	1	
-1	SIMPLE	avatar	const	PRIMARY	PRIMARY	2	const	0	unique	row	not	found
-1	SIMPLE	customavatar	const	PRIMARY	PRIMARY	4	const	0	unique	row	not	found
+1	SIMPLE	avatar	const	PRIMARY	PRIMARY	2	const	0	unique row not found
+1	SIMPLE	customavatar	const	PRIMARY	PRIMARY	4	const	0	unique row not found
