@@ -1,5 +1,7 @@
 Changelog for mysql-slave-restart:
 
+2007-08-23: version 1.0.0
+
    * MySQL socket connection option didn't work.
    * Added --askpass option.
 
