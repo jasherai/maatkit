@@ -14,7 +14,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-find
-VERSION = 0.9.3
+VERSION = 0.9.4
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \
