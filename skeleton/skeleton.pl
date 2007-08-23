@@ -26,6 +26,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -38,15 +39,16 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
-   { s => 'database|D=s', r => 0, d => 'Database to use' },
+   { s => 'askpass',      d => 'Prompt for password for connections' },
+   { s => 'database|D=s', d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-   { s => 'host|h=s',     r => 0, d => 'Connect to host' },
-   { s => 'help',         r => 0, d => 'Show this help message' },
-   { s => 'password|p=s', r => 0, d => 'Password to use when connecting' },
-   { s => 'port|P=i',     r => 0, d => 'Port number to use for connection' },
-   { s => 'socket|S=s',   r => 0, d => 'Socket file to use for connection' },
-   { s => 'user|u=s',     r => 0, d => 'User for login if not current user' },
-   { s => 'version',      r => 0, d => 'Output version information and exit' },
+   { s => 'host|h=s',     d => 'Connect to host' },
+   { s => 'help',         d => 'Show this help message' },
+   { s => 'password|p=s', d => 'Password to use when connecting' },
+   { s => 'port|P=i',     d => 'Port number to use for connection' },
+   { s => 'socket|S=s',   d => 'Socket file to use for connection' },
+   { s => 'user|u=s',     d => 'User for login if not current user' },
+   { s => 'version',      d => 'Output version information and exit' },
 );
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
@@ -105,8 +107,15 @@ my %conn = (
 );
 
 # Connect to the database
+if ( !$opts{p} && $opts{askpass} ) {
+   print "Enter password: ";
+   ReadMode('noecho');
+   chomp($opts{p} = <STDIN>);
+   ReadMode('normal');
+   print "\n";
+}
+
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
-my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-   or die("Can't connect to DB: $OS_ERROR");
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
