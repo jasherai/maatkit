@@ -1,6 +1,9 @@
 Changelog for mysql-visual-explain:
 
    * MySQL socket connection option didn't work.
+   * Added --askpass option.
+   * UNIONs inside a SUBQUERY weren't correctly nested.
+   * Some types of impossible queries weren't handled.
 
 2007-07-28: version 1.0.0
 
