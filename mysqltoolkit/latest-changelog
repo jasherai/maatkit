@@ -1,0 +1,25 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings FATAL => 'all';
+
+my @packages = @ARGV;
+if ( !@packages ) {
+  @packages =
+     map { m/(mysql-.*)/g }
+     grep { -f "$_/Changelog" }  <../mysql-*>;
+}
+
+foreach my $package ( @packages ) {
+   # Find the desired version number and changelog.
+   my $file;
+   open($file, "<", "../$package/Changelog")
+      or die $!;
+   my $contents = do { local $/ = undef; <$file>; };
+   close $file;
+   my ($log) = $contents =~ m/^(200.*?)^200/sm;
+   if ( @packages > 1 ) {
+      print "Changelog for $package:\n\n";
+   }
+   print $log;
+}
