@@ -1,5 +1,7 @@
 Changelog for mysql-deadlock-logger:
 
+2007-08-23: version 1.0.3
+
    * MySQL socket connection option didn't work.
    * Added --askpass option.
    * Truncated output could crash on an undefined regex result.
