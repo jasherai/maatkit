@@ -184,6 +184,11 @@ while (                       # Quit if:
 
    my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
 
+   if ( !$status || ! %$status ) {
+      print "No SLAVE STATUS found\n";
+      exit(1);
+   }
+
    if ( defined $status->{seconds_behind_master} ) {
       info("slave running $status->{seconds_behind_master} seconds behind");
    }
@@ -347,8 +352,7 @@ sub get_dbh {
       map     {"$conn{$_}=$info->{$_}"}
          grep { defined $info->{$_} } qw(F h P S) )
       . ';mysql_read_default_group=mysql';
-   my $dbh = DBI->connect( $dsn, @{$info}{qw(u p)}, $db_options )
-      or die("Can't connect to DB: $OS_ERROR");
+   my $dbh = DBI->connect( $dsn, @{$info}{qw(u p)}, $db_options);
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref
    return $dbh;
 }
