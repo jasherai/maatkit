@@ -30,6 +30,7 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
+use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -44,6 +45,7 @@ $OUTPUT_AUTOFLUSH = 1;
 my @opt_spec = (
    { s => 'allatonce|s',    d => 'Print only once, instead of one DB at a time' },
    { s => 'allstruct|a',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
+   { s => 'askpass',        d => 'Prompt for password for connections' },
    { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'function|f=s',   d => 'Do f=foreign keys, k=keys.  Default is do both.' },
@@ -138,11 +140,18 @@ my %conn = (
 );
 
 # Connect to the database
+if ( !defined $opts{p} && $opts{askpass} ) {
+   print "Enter password: ";
+   ReadMode('noecho');
+   chomp($opts{p} = <STDIN>);
+   ReadMode('normal');
+   print "\n";
+}
+
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
-my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-   or die("Can't connect to DB: $OS_ERROR");
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
 
 my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 my @whole_batch;
@@ -388,6 +397,10 @@ a time.
 Compare indexes with different structures.  By default this is disabled, because
 a BTREE index that covers the same columns as a FULLTEXT index is not really a
 duplicate, for example.
+
+=item --askpass
+
+Prompt for password for connections.
 
 =item --databases
 
