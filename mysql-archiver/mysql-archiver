@@ -28,6 +28,7 @@ use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
 use IO::File;
+use Term::ReadKey;
 use sigtrap qw(handler finish untrapped normal-signals);
 
 our $VERSION = '@VERSION@';
@@ -43,6 +44,7 @@ my @opt_spec = (
    { s => 'analyze|A=s', d => 'Run ANALYZE TABLE afterwards on --source and/or --dest' },
    { s => 'ascend|N!',   d => 'Use ascending index optimization (default)' },
    { s => 'ascendfirst', d => 'Ascend only first column of index' },
+   { s => 'askpass',     d => 'Prompt for password for connections' },
    { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
    { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
    { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
@@ -929,11 +931,19 @@ sub get_dbh {
       RaiseError => 1,
       PrintError => 0,
    };
+
+   if ( !$info->{p} && $opts{askpass} ) {
+      print "Enter password for $info->{h}: ";
+      ReadMode('noecho');
+      chomp($info->{p} = <STDIN>);
+      ReadMode('normal');
+      print "\n";
+   }
+
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
-   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
-      or die("Can't connect to DB: $OS_ERROR");
+   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options);
 }
 
 sub ts {
@@ -1078,6 +1088,10 @@ index.  This can provide a significant performance boost over not ascending the
 index at all, while avoiding the cost of ascending the whole index.
 
 See L<"EXTENDING"> for a discussion of how this interacts with plugins.
+
+=item --askpass
+
+Prompt for password for connections.
 
 =item --buffer
 
