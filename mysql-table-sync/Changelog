@@ -1,5 +1,7 @@
 Changelog for mysql-table-sync:
 
+2007-08-23: version 0.9.6
+
    * Added --askpass option.
    * Changed --replicate option to --synctomaster.
    * Fixed the MySQL socket option.
