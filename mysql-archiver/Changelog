@@ -1,5 +1,7 @@
 Changelog for mysql-archiver:
 
+2007-08-23: version 1.0.1
+
    * MySQL socket connection option didn't work.
    * Added --askpass option.
 
