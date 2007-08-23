@@ -27,6 +27,7 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
+use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -37,6 +38,7 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 # ############################################################################
 
 my @opt_spec = (
+   { s => 'askpass',           d => 'Prompt for password for connections' },
    { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'drop|d',            d => 'Add DROP USER before each user' },
@@ -127,11 +129,18 @@ my %conn = (
 );
 
 # Connect to the database
+if ( !$opts{p} && $opts{askpass} ) {
+   print "Enter password: ";
+   ReadMode('noecho');
+   chomp($opts{p} = <STDIN>);
+   ReadMode('normal');
+   print "\n";
+}
+
 my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
-my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 1 } )
-   or die("Can't connect to DB: $OS_ERROR");
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
 
 my ( $version, $ts ) = $dbh->selectrow_array("SELECT VERSION(), NOW()");
 print join("\n",
@@ -274,6 +283,10 @@ replicate, compare and version-control them.
 =head1 OPTIONS
 
 =over
+
+=item --askpass
+
+Prompt for password for connections.
 
 =item --database
 
