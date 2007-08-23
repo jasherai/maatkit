@@ -372,20 +372,17 @@ sub get_dbh {
    };
 
    if ( !$info->{p} && $opts{askpass} ) {
-      print "Enter password for $info->{h}: ";
+      print "Enter password: ";
       ReadMode('noecho');
-      my $pass = <STDIN>;
+      chomp($info->{p} = <STDIN>);
       ReadMode('normal');
-      chomp $pass;
       print "\n";
-      $info->{p} = $pass;
    }
 
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
-   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options )
-      or die("Can't connect to DB: $OS_ERROR");
+   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options);
 }
 
 # ############################################################################
