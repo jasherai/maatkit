@@ -60,7 +60,6 @@ my @opt_spec = (
    { s => 'tab|t',         d => 'Print tab-separated values (for a spreadsheet)' },
    { s => 'user|u=s',      d => 'User for login if not current user' },
    { s => 'verbose|v+',    d => 'Verbosity (specify multiple times for more detail)' },
-    #TODO: might not be working right
    { s => 'verify|r',      d => 'Verify nothing else is accessing the server' },
    { s => 'version',       d => 'Output version information and exit' },
 );
@@ -251,6 +250,7 @@ my %non_monotonic_vars = (
    Last_query_cost         => 1,
 );
 
+get_status_info($dbh); # Throwaway to prime caches after FLUSH
 my $status_0 = get_status_info($dbh);
 my $status_1 = get_status_info($dbh);
 
