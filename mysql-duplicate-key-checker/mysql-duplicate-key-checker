@@ -275,7 +275,7 @@ sub print_batch {
       $hdr = ( "%s\t" x 8 ) . "\n";
    }
    else {
-      my $max_idx  = max(5, map { length($_->{name}) } @batch);
+      my $max_idx  = max(6, map { length($_->{name}) } @batch);
       my $max_tbl  = max(5, map { length($_->{table}) } @batch);
       my $max_db   = max(8, map { length($_->{database}) } @batch);
       my $max_par  = max(6, map { length($_->{parent} || '') } @batch);

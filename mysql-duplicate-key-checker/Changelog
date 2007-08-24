@@ -1,5 +1,7 @@
 Changelog for mysql-duplicate-key-checker:
 
+   * Column printout was misaligned one space.
+
 2007-08-23: version 1.0.5
 
    * MySQL socket connection option didn't work.
