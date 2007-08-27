@@ -1,5 +1,8 @@
 #!/usr/bin/perl
 
+use strict;
+use warnings FATAL => 'all';
+
 # This is mysql-duplicate-key-checker, a program to analyze MySQL tables for
 # duplicated or redundant indexes and foreign key constraints.
 # 
@@ -20,11 +23,136 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: add an option to regard PK columns appended to a secondary index as
-# duplicates for InnoDB.
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+# ###########################################################################
+package IndexChecker;
 
-use strict;
-use warnings FATAL => 'all';
+use List::Util qw(min);
+
+sub new {
+   bless {}, shift;
+}
+
+sub find_engine {
+   my ( $self, $ddl, $options ) = @_;
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   return $engine || undef;
+}
+
+# The general format of a key is
+# [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
+sub find_keys {
+   my ( $self, $ddl, $options ) = @_;
+
+   # Find and filter the indexes.
+   my @indexes = 
+      grep { $_ !~ m/FOREIGN/ }
+      $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
+
+   # Make allowances for HASH bugs in SHOW CREATE TABLE
+   # (http://bugs.mysql.com/bug.php?id=22632).
+# TODO: I think this makes it assume all MEMORY indexes are HASH
+   my $engine = $self->find_engine($ddl);
+   if ( $engine !~ m/MEMORY|HEAP/ ) {
+      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
+   }
+
+   my @keys = map {
+      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
+      $struct = $struct || $special || 'BTREE';
+      if ( $engine =~ m/HEAP|MEMORY/i ) {
+         $struct = 'HASH';
+      }
+      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
+      {
+         struct   => $struct,
+         cols     => $cols,
+         name     => $name || 'PRIMARY',
+      }
+   } @indexes;
+   return \@keys;
+}
+
+sub find_fks {
+   my ( $self, $ddl, $options ) = @_;
+
+   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
+
+   my @result = map {
+      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
+      my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
+      my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
+      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
+      if ( $parent !~ m/\./ ) {
+         $parent = "`$options->{database}`.$parent";
+      }
+      {  name   => $name,
+         parent => $parent,
+         cols   => $cols,
+         fkcols => $fkcols,
+      };
+   } @fks;
+   return \@result;
+}
+
+sub find_duplicate_keys {
+   my ( $self, $keys, $opts ) = @_;
+   my @keys = @$keys;
+   my %seen; # Avoid outputting a key more than once.
+   my @result;
+   foreach my $i ( 0..$#keys - 1 ) {
+      foreach my $j ( $i+1..$#keys ) {
+         my $i_cols = $keys[$i]->{cols};
+         my $j_cols = $keys[$j]->{cols};
+         my $len    = min(length($i_cols), length($j_cols));
+         if ( $opts->{ignore_order} ) {
+            $i_cols = join(',', sort(split(/`/, $i_cols)));
+            $j_cols = join(',', sort(split(/`/, $j_cols)));
+         }
+         if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
+            && substr($i_cols, 0, $len) eq substr($j_cols, 0, $len))
+         {
+            push @result, $keys[$i] unless $seen{$i}++;
+            push @result, $keys[$j] unless $seen{$j}++;
+         }
+      }
+   }
+   return \@result;
+}
+
+sub find_duplicate_fks {
+   my ( $self, $fks, $opts ) = @_;
+   my @fks = @$fks;
+   my %seen; # Avoid outputting a fk more than once.
+   my @result;
+   foreach my $i ( 0..$#fks - 1 ) {
+      foreach my $j ( $i+1..$#fks ) {
+         # A foreign key is a duplicate no matter what order the columns are in, so
+         # re-order them alphabetically so they can be compared.
+         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
+         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
+         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
+         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
+               && $i_cols eq $j_cols
+               && $i_fkcols eq $j_fkcols
+         ) {
+            push @result, $fks[$i] unless $seen{$i}++;
+            push @result, $fks[$j] unless $seen{$j}++;
+         }
+      }
+   }
+   return \@result;
+}
+
+# ###########################################################################
+# And now for the "program".
+# ###########################################################################
+package main;
 
 use DBI;
 use English qw(-no_match_vars);
@@ -38,326 +166,268 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# ############################################################################
-# Get configuration information.
-# ############################################################################
+if ( !caller ) {
 
-my @opt_spec = (
-   { s => 'allatonce|s',    d => 'Print only once, instead of one DB at a time' },
-   { s => 'allstruct|a',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
-   { s => 'askpass',        d => 'Prompt for password for connections' },
-   { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
-   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-   { s => 'function|f=s',   d => 'Do f=foreign keys, k=keys.  Default is do both.' },
-   { s => 'help',           d => 'Show this help message' },
-   { s => 'host|h=s',       d => 'Connect to host' },
-   { s => 'ignoredb|g=s',   d => 'Ignore this comma-separated list of databases' },
-   { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
-   { s => 'password|p=s',   d => 'Password to use when connecting' },
-   { s => 'port|P=i',       d => 'Port number to use for connection' },
-   { s => 'socket|S=s',     d => 'Socket file to use for connection' },
-   { s => 'tab|b',          d => 'Output separated with tabs' },
-   { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
-   { s => 'user|u=s',       d => 'User for login if not current user' },
-   { s => 'verbose|v',      d => 'Output everything, not just dupes' },
-   { s => 'version',        d => 'Output version information and exit' },
-);
+   # ############################################################################
+   # Get configuration information.
+   # ############################################################################
 
-# This is the container for the command-line options' values to be stored in
-# after processing.  Initial values are defaults.
-my %opts = (
-   d => '',
-   g => '',
-   t => '',
-   n => '',
-   f => 'fk',
-   v => 0,
-   b => 0,
-   a => 0,
-   s => 0,
-);
-# Post-process...
-my %opt_seen;
-foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-   $spec->{k} = $short || $long;
-   $spec->{l} = $long;
-   $spec->{t} = $short;
-   $spec->{n} = $spec->{s} =~ m/!/;
-   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
-   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
-}
+   my @opt_spec = (
+      { s => 'allatonce|s',    d => 'Print only once, instead of one DB at a time' },
+      { s => 'allstruct|a',    d => 'Compare indexes with different structs (BTREE, HASH, etc)' },
+      { s => 'askpass',        d => 'Prompt for password for connections' },
+      { s => 'databases|d=s',  d => 'Only do this comma-separated list of databases' },
+      { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+      { s => 'function|f=s',   d => 'Do f=foreign keys, k=keys.  Default is do both.' },
+      { s => 'help',           d => 'Show this help message' },
+      { s => 'host|h=s',       d => 'Connect to host' },
+      { s => 'ignoredb|g=s',   d => 'Ignore this comma-separated list of databases' },
+      { s => 'ignoreorder',    d => 'Ignore index order so KEY(a,b) duplicates KEY(b,a)' },
+      { s => 'ignoretbl|n=s',  d => 'Ignore this comma-separated list of tables' },
+      { s => 'password|p=s',   d => 'Password to use when connecting' },
+      { s => 'port|P=i',       d => 'Port number to use for connection' },
+      { s => 'socket|S=s',     d => 'Socket file to use for connection' },
+      { s => 'tab|b',          d => 'Output separated with tabs' },
+      { s => 'tables|t=s',     d => 'Only do this comma-separated list of tables' },
+      { s => 'user|u=s',       d => 'User for login if not current user' },
+      { s => 'verbose|v',      d => 'Output everything, not just dupes' },
+      { s => 'version',        d => 'Output version information and exit' },
+   );
 
-Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
-
-if ( $opts{version} ) {
-   print "mysql-duplicate-key-checker  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
-   exit(0);
-}
-
-# Make comma-separated lists into hashes.
-if ( $opts{d} ) {
-   $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
-}
-$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g}) };
-if ( $opts{t} ) {
-   $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
-}
-$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n}) };
-if ( $opts{e} ) {
-   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
-}
-
-if ( $opts{help} ) {
-   print "Usage: mysql-duplicate-key-checker <options>\n\n";
-   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
-      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+   # This is the container for the command-line options' values to be stored in
+   # after processing.  Initial values are defaults.
+   my %opts = (
+      d => '',
+      g => '',
+      t => '',
+      n => '',
+      f => 'fk',
+      v => 0,
+      b => 0,
+      a => 0,
+      s => 0,
+   );
+   # Post-process...
+   my %opt_seen;
+   foreach my $spec ( @opt_spec ) {
+      my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+      $spec->{k} = $short || $long;
+      $spec->{l} = $long;
+      $spec->{t} = $short;
+      $spec->{n} = $spec->{s} =~ m/!/;
+      $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+      die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
    }
-   print <<USAGE;
 
-mysql-duplicate-key-checker examines MySQL tables for duplicate or redundant
-indexes and foreign keys.  Connection options are read from MySQL option files.
-For more details, please read the documentation:
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
-   perldoc mysql-duplicate-key-checker
+   if ( $opts{version} ) {
+      print "mysql-duplicate-key-checker  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+      exit(0);
+   }
 
-USAGE
-   exit(0);
-}
+   # Make comma-separated lists into hashes.
+   if ( $opts{d} ) {
+      $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
+   }
+   $opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g}) };
+   if ( $opts{t} ) {
+      $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
+   }
+   $opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n}) };
+   if ( $opts{e} ) {
+      $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
+   }
 
-# ############################################################################
-# Get ready to do the main work.
-# ############################################################################
-my %conn = (
-   F => 'mysql_read_default_file',
-   h => 'host',
-   P => 'port',
-   S => 'mysql_socket'
-);
-
-# Connect to the database
-if ( !defined $opts{p} && $opts{askpass} ) {
-   print "Enter password: ";
-   ReadMode('noecho');
-   chomp($opts{p} = <STDIN>);
-   ReadMode('normal');
-   print "\n";
-}
-
-my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
-   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
-   . ';mysql_read_default_group=mysql';
-my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
-
-my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
-my @whole_batch;
-my $exit_code;
-
-DATABASE:
-foreach my $database ( @databases ) {
-
-   # Ignore databases as instructed.  Also ignore INFORMATION_SCHEMA and skip
-   # databases caused by lost+found directories created in the root of ext3
-   # filesystems; they are not really databases.
-   next DATABASE if
-      ( $opts{d} && !exists($opts{d}->{$database}) )
-      || $database =~ m/^(information_schema|lost\+found)$/mi
-      || exists $opts{g}->{$database};
-
-   my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
-   next DATABASE unless @tables;
-
-   my %info_for;
-
-   TABLE:
-   foreach my $table ( @tables ) {
-      next TABLE if
-         ( $opts{t} && !exists($opts{t}->{$table}) )
-         || exists $opts{n}->{$table};
-
-      $exit_code = 1;
-      my $ddl;
-      eval {
-         $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$database`.`$table`"))[1];
-         $exit_code = 0;
-      };
-      next TABLE if !$ddl || $ddl =~ m/^CREATE ALGORITHM/;
-
-      my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
-      my $hash = {
-         engine   => $engine,
-         database => $database,
-         table    => $table,
-         engine   => $engine,
-      };
-      $hash->{keys} = $opts{f} =~ m/k/ ? [ find_keys($hash, $ddl) ] : [];
-      $hash->{fks}  = $opts{f} =~ m/f/ ? [ find_fks($hash, $ddl) ]  : [];
-      if ( @{$hash->{keys}} || @{$hash->{fks}} ) {
-         $info_for{$table} = $hash;
+   if ( $opts{help} ) {
+      print "Usage: mysql-duplicate-key-checker <options>\n\n";
+      my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
+      foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t} ? "-$spec->{t}" : '';
+         printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
       }
+      ( my $usage = <<"      USAGE" ) =~ s/^         //gm;
+
+         mysql-duplicate-key-checker examines MySQL tables for duplicate or redundant
+         indexes and foreign keys.  Connection options are read from MySQL option files.
+         For more details, please read the documentation:
+
+            perldoc mysql-duplicate-key-checker
+
+      USAGE
+      exit(0);
    }
 
-   my @to_print;
-   foreach my $table ( sort keys %info_for ) {
-      my $hash = $info_for{$table};
+   # ############################################################################
+   # Get ready to do the main work.
+   # ############################################################################
+   my %conn = (
+      F => 'mysql_read_default_file',
+      h => 'host',
+      P => 'port',
+      S => 'mysql_socket'
+   );
 
-      # Prepare indexes
-      if ( $opts{f} =~ m/k/ ) {
-         my @keys = sort { $a->{cols} cmp $b->{cols} } @{$hash->{keys}};
-         if ( $opts{v} ) { # Print all
-            push @to_print, map { make_hash($database, $table, 'KEY', $_) } @keys;
-         }
-         else { # Find duplicate/redundant by prefix matching.
-            my %seen; # Avoid outputting a key more than once.
-            foreach my $i ( 0..$#keys - 1 ) {
-               my $pat = quotemeta($keys[$i]->{cols});
-               foreach my $j ( $i+1..$#keys ) {
-                  if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts{a})
-                     && $keys[$j]->{cols} =~ m/^$pat/ )
-                  {
-                     push @to_print, make_hash($database, $table, 'KEY', $keys[$i]) if !$seen{$i}++;
-                     push @to_print, make_hash($database, $table, 'KEY', $keys[$j]) if !$seen{$j}++;
-                  }
-               }
-            }
-         }
-      }
-
-      # Prepare foreign keys
-      if ( $opts{f} =~ m/f/ ) {
-         my @fks = sort { $a->{cols} cmp $b->{cols} } @{$hash->{fks}};
-         if ( $opts{v} ) { # Print all
-            push @to_print, map { make_hash($database, $table, 'FK', $_) } @fks;
-         }
-         else { # Otherwise output duplicates.  $i $j avoids backtracking.
-            my %seen;
-            foreach my $i ( 0..$#fks - 1 ) {
-               foreach my $j ( $i+1..$#fks ) {
-                  if ( $fks[$i]->{parent} eq $fks[$j]->{parent} && $fks[$i]->{cols} eq $fks[$j]->{cols} ) {
-                     push @to_print, make_hash($database, $table, 'FK', $fks[$i]) if !$seen{$i}++;
-                     push @to_print, make_hash($database, $table, 'FK', $fks[$j]) if !$seen{$j}++;
-                  }
-               }
-            }
-         }
-      }
+   # Connect to the database
+   if ( !defined $opts{p} && $opts{askpass} ) {
+      print "Enter password: ";
+      ReadMode('noecho');
+      chomp($opts{p} = <STDIN>);
+      ReadMode('normal');
+      print "\n";
    }
 
-   next DATABASE unless @to_print;
+   my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+      . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
+      . ';mysql_read_default_group=mysql';
+   my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
 
-   if ( $opts{s} ) {
-      push @whole_batch, @to_print;
-   }
-   else {
-      print_batch(@to_print);
-   }
-}
+   my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+   my @whole_batch;
+   my $exit_code;
 
-if ( @whole_batch && $opts{s} ) {
-   print_batch(@whole_batch);
-}
-
-exit($exit_code);
-
-# ############################################################################
-# Subroutines
-# ############################################################################
-
-sub print_batch {
-   my ( @batch ) = @_;
-
-   my $hdr;
-   if ( $opts{b} ) {
-      $hdr = ( "%s\t" x 8 ) . "\n";
-   }
-   else {
-      my $max_idx  = max(6, map { length($_->{name}) } @batch);
-      my $max_tbl  = max(5, map { length($_->{table}) } @batch);
-      my $max_db   = max(8, map { length($_->{database}) } @batch);
-      my $max_par  = max(6, map { length($_->{parent} || '') } @batch);
-      $hdr         = "%-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %-4s %-8s %-${max_par}s %s\n";
-   }
-
-   printf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT PARENT COLUMNS));
-   foreach my $thing ( @batch ) {
-      printf($hdr, @{$thing}{qw(database table engine name type struct parent cols)});
-   }
-
-}
-
-sub make_hash {
-   my ( $database, $table, $type, $hash ) = @_;
-   return {
-      database => $database,
-      table    => $table,
-      engine   => $hash->{engine},
-      name     => $hash->{name},
-      type     => $type,
-      struct   => $hash->{struct} || 'NULL',
-      parent   => $hash->{parent} || 'NULL',
-      cols     => $hash->{cols},
+   my $ic = new IndexChecker;
+   my $ic_opts = {
+      ignore_type  => $opts{a},
+      ignore_order => $opts{ignoreorder},
    };
-}
 
-# The general format of a key is
-# [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
-sub find_keys {
-   my ( $info, $ddl ) = @_;
+   DATABASE:
+   foreach my $database ( @databases ) {
 
-   # Find and filter the indexes.
-   my @indexes = $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
-   @indexes = grep { $_ !~ m/FOREIGN/ } @indexes;
+      # Ignore databases as instructed.  Also ignore INFORMATION_SCHEMA and skip
+      # databases caused by lost+found directories created in the root of ext3
+      # filesystems; they are not really databases.
+      next DATABASE if
+         ( $opts{d} && !exists($opts{d}->{$database}) )
+         || $database =~ m/^(information_schema|lost\+found)$/mi
+         || exists $opts{g}->{$database};
 
-   # Make allowances for HASH bugs in SHOW CREATE TABLE
-   # (http://bugs.mysql.com/bug.php?id=22632).
-   if ( $info->{engine} !~ m/MEMORY|HEAP/ ) {
-      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
+      my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
+      next DATABASE unless @tables;
+
+      my %info_for;
+
+      TABLE:
+      foreach my $table ( @tables ) {
+         next TABLE if
+            ( $opts{t} && !exists($opts{t}->{$table}) )
+            || exists $opts{n}->{$table};
+
+         $exit_code = 1;
+         my $ddl;
+         eval {
+            $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$database`.`$table`"))[1];
+            $exit_code = 0;
+         };
+         next TABLE if !$ddl;
+         my $engine = $ic->find_engine($ddl) || next TABLE;
+
+         my $keys = $opts{f} =~ m/k/ ? $ic->find_keys($ddl) : [];
+         my $fks  = $opts{f} =~ m/f/ ? $ic->find_fks($ddl, {database => $database}) : [];
+
+         if ( @$keys || @$fks ) {
+            $info_for{$table} = {
+               database => $database,
+               table    => $table,
+               engine   => $engine,
+               keys     => $keys,
+               fks      => $fks,
+            };
+         }
+      }
+
+      my @to_print;
+      foreach my $table ( sort keys %info_for ) {
+         my $hash   = $info_for{$table};
+         my $engine = $hash->{engine};
+
+         # Prepare indexes
+         if ( $opts{f} =~ m/k/ ) {
+            if ( $opts{v} ) { # Print all
+               push @to_print, map { make_hash($hash, 'KEY', $_) }
+                  @{$hash->{keys}};
+            }
+            else { # Find duplicate/redundant by prefix matching.
+               push @to_print, map { make_hash($hash, 'KEY', $_) }
+                  @{$ic->find_duplicate_keys($hash->{keys}, $ic_opts)};
+            }
+         }
+
+         # Prepare foreign keys
+         if ( $opts{f} =~ m/f/ ) {
+            if ( $opts{v} ) { # Print all
+               push @to_print, map { make_hash($hash, 'FK', $_) }
+                  @{$hash->{fks}};
+            }
+            else { # Otherwise output duplicates.
+               push @to_print, map { make_hash($hash, 'FK', $_) }
+                  @{$ic->find_duplicate_fks($hash->{fks})};
+            }
+         }
+      }
+
+      next DATABASE unless @to_print;
+
+      if ( $opts{s} ) {
+         push @whole_batch, @to_print;
+      }
+      else {
+         print_batch(@to_print);
+      }
    }
 
-   my @keys = map {
-      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
-      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
-      $struct = $struct || $special || 'BTREE';
-      if ( $info->{engine} =~ m/HEAP|MEMORY/i ) {
-         $struct = 'HASH';
-      }
-      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
-      {
+   if ( @whole_batch && $opts{s} ) {
+      print_batch(@whole_batch);
+   }
+
+   exit($exit_code);
+
+   # ############################################################################
+   # Subroutines
+   # ############################################################################
+
+   sub make_hash {
+      my ( $info, $type, $hash ) = @_;
+      return {
+         database => $info->{database},
+         table    => $info->{table},
          engine   => $info->{engine},
-         struct   => $struct,
-         cols     => $cols,
-         name     => $name || 'PRIMARY',
-      }
-   } @indexes;
-   return @keys;
-}
-
-sub find_fks {
-   my ( $info, $ddl ) = @_;
-
-   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
-
-   # A foreign key is a duplicate no matter what order the columns are in, so
-   # re-order them alphabetically so they can be compared.
-   my @result = map {
-      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
-      my ( $cols ) = $_ =~ m/\(([^\)]+)\)/;
-      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
-      if ( $parent !~ m/\./ ) {
-         $parent = "`$info->{database}`.$parent";
-      }
-      {  name   => $name,
-         engine => $info->{engine},
-         parent => $parent,
-         cols   => join(',', sort(split(/`, `/, $cols))),
+         name     => $hash->{name},
+         type     => $type,
+         struct   => $hash->{struct} || 'NULL',
+         parent   => $hash->{parent} || 'NULL',
+         cols     => $hash->{cols},
       };
-   } @fks;
-   return @result;
+   }
+
+   sub print_batch {
+      my ( @batch ) = @_;
+
+      my $hdr;
+      if ( $opts{b} ) {
+         $hdr = ( "%s\t" x 8 ) . "\n";
+      }
+      else {
+         my $max_idx  = max(6, map { length($_->{name}) } @batch);
+         my $max_tbl  = max(5, map { length($_->{table}) } @batch);
+         my $max_db   = max(8, map { length($_->{database}) } @batch);
+         my $max_par  = max(6, map { length($_->{parent} || '') } @batch);
+         $hdr         = "%-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %-4s %-8s %-${max_par}s %s\n";
+      }
+
+      printf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT PARENT COLUMNS));
+      foreach my $thing ( @batch ) {
+         printf($hdr, @{$thing}{qw(database table engine name type struct parent cols)});
+      }
+
+   }
+
 }
+
+1; # Because this is a module as well as a script.
 
 # ############################################################################
 # Documentation
@@ -426,6 +496,11 @@ Connect to host.
 =item --ignoredb
 
 A comma-separated list of databases to ignore.
+
+=item --ignoretype
+
+Ignore column ordering, so an index on columns (a,b) is considered a duplicate
+of an index on columns (b,a).
 
 =item --ignoretbl
 
