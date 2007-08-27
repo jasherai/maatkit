@@ -7,3 +7,17 @@ mysql-binlog-pipeliner: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrit
 http://www.mysqlperformanceblog.com/2007/05/22/wishes-for-mysqldump/
 * mysql-slave-delay
 * read binlogs from many servers and apply them to one.
+
+* Allow daemonization:
+
+use POSIX 'setsid';
+
+sub daemonize {
+   chdir '/' or die "Can't chdir to /: $!";
+   open STDIN, '/dev/null' or die "Can't read /dev/null: $!";
+   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $!";
+   defined( my $pid = fork ) or die "Can't fork: $!";
+   exit if $pid;
+   setsid or die "Can't start a new session: $!";
+   open STDERR, '>&STDOUT' or die "Can't dup stdout: $!";
+}
