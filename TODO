@@ -3,9 +3,8 @@ Pipe output from duplicate-key-checker into another tool to graph structures
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 query sniper:
    * http://www.stillhq.com/mysql/000008.html
-mysql-binlog-pipeliner: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
+mysql-relay-prefetch: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
 http://www.mysqlperformanceblog.com/2007/05/22/wishes-for-mysqldump/
-* mysql-slave-delay
 * read binlogs from many servers and apply them to one.
 
 * Allow daemonization:
