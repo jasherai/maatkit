@@ -43,6 +43,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # TODO: add --ignorecol
 # TODO: add --ignoretype
 # TODO: retry on deadlocks
+# TODO: make replcheck just check each server specified.
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
