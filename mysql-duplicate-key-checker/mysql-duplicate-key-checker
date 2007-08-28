@@ -4,7 +4,8 @@ use strict;
 use warnings FATAL => 'all';
 
 # This is mysql-duplicate-key-checker, a program to analyze MySQL tables for
-# duplicated or redundant indexes and foreign key constraints.
+# duplicated or redundant indexes and foreign key constraints.  It is part of
+# MySQL Toolkit (http://mysqltoolkit.sourceforge.net).
 # 
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
@@ -37,7 +38,7 @@ sub new {
 }
 
 sub find_engine {
-   my ( $self, $ddl, $options ) = @_;
+   my ( $self, $ddl, $opts ) = @_;
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
    return $engine || undef;
 }
@@ -45,16 +46,16 @@ sub find_engine {
 # The general format of a key is
 # [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
 sub find_keys {
-   my ( $self, $ddl, $options ) = @_;
+   my ( $self, $ddl, $opts ) = @_;
 
    # Find and filter the indexes.
    my @indexes = 
       grep { $_ !~ m/FOREIGN/ }
       $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
 
-   # Make allowances for HASH bugs in SHOW CREATE TABLE
-   # (http://bugs.mysql.com/bug.php?id=22632).
-# TODO: I think this makes it assume all MEMORY indexes are HASH
+   # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
+   # will report its index as USING HASH even when this is not supported.  The
+   # true type should be BTREE.  See http://bugs.mysql.com/bug.php?id=22632
    my $engine = $self->find_engine($ddl);
    if ( $engine !~ m/MEMORY|HEAP/ ) {
       @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
@@ -64,10 +65,13 @@ sub find_keys {
       my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
       my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
       $struct = $struct || $special || 'BTREE';
-      if ( $engine =~ m/HEAP|MEMORY/i ) {
+      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
+
+      # MySQL pre-4.1 supports only HASH indexes.
+      if ( $opts->{version} lt '004001000' && $engine =~ m/HEAP|MEMORY/i ) {
          $struct = 'HASH';
       }
-      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
+
       {
          struct   => $struct,
          cols     => $cols,
@@ -78,7 +82,7 @@ sub find_keys {
 }
 
 sub find_fks {
-   my ( $self, $ddl, $options ) = @_;
+   my ( $self, $ddl, $opts ) = @_;
 
    my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
 
@@ -88,7 +92,7 @@ sub find_fks {
       my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
       my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
       if ( $parent !~ m/\./ ) {
-         $parent = "`$options->{database}`.$parent";
+         $parent = "`$opts->{database}`.$parent";
       }
       {  name   => $name,
          parent => $parent,
@@ -287,6 +291,7 @@ if ( !caller ) {
    my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
    my @whole_batch;
    my $exit_code;
+   my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
 
    my $ic = new IndexChecker;
    my $ic_opts = {
@@ -325,7 +330,7 @@ if ( !caller ) {
          next TABLE if !$ddl;
          my $engine = $ic->find_engine($ddl) || next TABLE;
 
-         my $keys = $opts{f} =~ m/k/ ? $ic->find_keys($ddl) : [];
+         my $keys = $opts{f} =~ m/k/ ? $ic->find_keys($ddl, {version => $version }) : [];
          my $fks  = $opts{f} =~ m/f/ ? $ic->find_fks($ddl, {database => $database}) : [];
 
          if ( @$keys || @$fks ) {
@@ -452,6 +457,8 @@ colums.  You can override this.
 It also looks for duplicate foreign keys.  A duplicate foreign key covers the
 same columns as another in the same table, and references the same parent
 table.
+
+This tool is part of MySQL Toolkit L<http://mysqltoolkit.sourceforge.net>.
 
 =head1 OPTIONS
 

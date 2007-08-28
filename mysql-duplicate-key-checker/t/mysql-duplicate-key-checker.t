@@ -17,16 +17,17 @@ sub load_file {
 }
 my $c = new IndexChecker;
 my $ddl;
+my $opt = { version => '004001000' };
 
 $ddl = load_file('samples/no_keys.sql');
 is($c->find_engine($ddl), 'MyISAM', 'Right engine');
-is_deeply($c->find_keys($ddl),   [],       'No keys');
+is_deeply($c->find_keys($ddl, $opt),   [],       'No keys');
 is_deeply($c->find_fks($ddl),    [],       'No foreign keys');
 
 $ddl = load_file('samples/one_key.sql');
 is_deeply($c->find_fks($ddl),    [],       'No foreign keys, again');
 is_deeply(
-   $c->find_keys($ddl),
+   $c->find_keys($ddl, $opt),
    [
       {
          struct => 'BTREE',
@@ -39,7 +40,7 @@ is_deeply(
 
 $ddl = load_file('samples/one_fk.sql');
 is_deeply(
-   $c->find_keys($ddl),
+   $c->find_keys($ddl, $opt),
    [
       {
          struct => 'BTREE',
@@ -64,7 +65,7 @@ is_deeply(
 
 $ddl = load_file('samples/dupe_key.sql');
 is_deeply(
-   $c->find_keys($ddl),
+   $c->find_keys($ddl, $opt),
    [
       {
          struct => 'BTREE',
@@ -80,7 +81,7 @@ is_deeply(
    'Two keys on table dupe_key'
 );
 is_deeply(
-   $c->find_duplicate_keys($c->find_keys($ddl)),
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt)),
    [
       {
          struct => 'BTREE',
@@ -98,7 +99,7 @@ is_deeply(
 
 $ddl = load_file('samples/dupe_key_reversed.sql');
 is_deeply(
-   $c->find_keys($ddl),
+   $c->find_keys($ddl, $opt),
    [
       {
          struct => 'BTREE',
@@ -114,7 +115,7 @@ is_deeply(
    'Two keys on table dupe_key in reverse'
 );
 is_deeply(
-   $c->find_duplicate_keys($c->find_keys($ddl)),
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt)),
    [
       {
          struct => 'BTREE',
@@ -132,7 +133,7 @@ is_deeply(
 
 $ddl = load_file('samples/dupe_keys_thrice.sql');
 is_deeply(
-   $c->find_keys($ddl),
+   $c->find_keys($ddl, $opt),
    [
       {
          struct => 'BTREE',
@@ -153,7 +154,7 @@ is_deeply(
    'Three keys on table dupe_key'
 );
 is_deeply(
-   $c->find_duplicate_keys($c->find_keys($ddl)),
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt)),
    [
       {
          struct => 'BTREE',
@@ -176,7 +177,7 @@ is_deeply(
 
 $ddl = load_file('samples/nondupe_fulltext.sql');
 is_deeply(
-   $c->find_keys($ddl),
+   $c->find_keys($ddl, $opt),
    [
       {
          struct => 'BTREE',
@@ -192,13 +193,13 @@ is_deeply(
    'Fulltext keys on table dupe_key'
 );
 is_deeply(
-   $c->find_duplicate_keys($c->find_keys($ddl)),
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt)),
    [
    ],
    'No dupe keys b/c of fulltext'
 );
 is_deeply(
-   $c->find_duplicate_keys($c->find_keys($ddl),
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt),
       { ignore_type => 1 }),
    [
       {
@@ -217,13 +218,13 @@ is_deeply(
 
 $ddl = load_file('samples/dupe_key_unordered.sql');
 is_deeply(
-   $c->find_duplicate_keys($c->find_keys($ddl)),
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt)),
    [
    ],
    'No dupe keys because of order'
 );
 is_deeply(
-   $c->find_duplicate_keys($c->find_keys($ddl),
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt),
       { ignore_order => 1 }),
    [
       {
