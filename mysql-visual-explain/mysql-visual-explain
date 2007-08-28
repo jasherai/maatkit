@@ -418,6 +418,11 @@ sub ALL {
    };
 }
 
+sub fulltext {
+   my ( $self, $row ) = @_;
+   return $self->index_access($row, 'Fulltext scan');
+}
+
 sub range {
    my ( $self, $row ) = @_;
    return $self->index_access($row, 'Index range scan');

@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 52;
+use Test::More tests => 53;
 
 require "../mysql-visual-explain";
 
@@ -20,6 +20,36 @@ my $t;
 
 $t = $e->parse('');
 is_deeply( $t, undef, 'No valid input' );
+
+$t = $e->parse( load_file('samples/fulltext.sql') );
+## Please see file perltidy.ERR
+is_deeply(
+   $t,
+   {  type     => 'Filter with WHERE',
+      id       => 1,
+      rowid    => 0,
+      children => [
+         {  type     => 'Bookmark lookup',
+            children => [
+               {  type          => 'Fulltext scan',
+                  key_len       => undef,
+                  possible_keys => 'a',
+                  ref           => undef,
+                  rows          => '1',
+                  partitions    => undef,
+                  key           => 'foo->a'
+               },
+               {  type          => 'Table',
+                  table         => 'foo',
+                  partitions    => undef,
+                  possible_keys => 'a',
+               },
+            ],
+         },
+      ],
+   },
+   'Fulltext query',
+);
 
 $t = $e->parse( load_file('samples/impossible_where.sql') );
 is_deeply(
