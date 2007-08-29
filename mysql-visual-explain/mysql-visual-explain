@@ -342,6 +342,9 @@ sub transform {
          children => [$node],
       };
    }
+   # TODO: the filesort node may need to go elsewhere depending on whether
+   # there is a filesort on the first table or last table in the JOIN.
+   # See http://s.petrunia.net/blog/?p=24
    if ( $row->{Extra} =~ m/Using filesort/ ) {
       $node = {
          type     => 'Filesort',
