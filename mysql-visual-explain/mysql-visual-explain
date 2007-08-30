@@ -20,6 +20,8 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
+# TODO: "Using index condition" see http://bugs.mysql.com/bug.php?id=30659
+
 use strict;
 use warnings FATAL => 'all';
 
@@ -156,8 +158,7 @@ sub process {
       # table column will get truncated, like "<union1,2,3,4...>".  If this
       # happens, I've got to bail out.  I'm not going to check all the source
       # code for all versions, but in 5.0 it looks like I can get this to happen
-      # around table 20.  TODO: submit a bug report on this and ask for the last
-      # one to be mentioned so at least the extrema are known.
+      # around table 20.
       die "UNION has too many tables: $row->{table}"
          if $row->{table} && $row->{table} =~ m/\./;
 
