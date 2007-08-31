@@ -1581,6 +1581,14 @@ structure:
      PRIMARY KEY (db, tbl, chunk)
   );
 
+Be sure to choose an appropriate storage engine for the checksum table.  If you
+are checksumming InnoDB tables, for instance, a deadlock will break replication
+if the checksum table is non-transactional, because the transaction will still
+be written to the binlog.  It will then replay without a deadlock on the
+slave and break replication with "different error on master and slave."  This
+is not a problem with MySQL Table Checksum, it's a problem with MySQL
+replication, and you can read more about it in the MySQL manual.
+
 When the queries are finished replicating, you can run a simple query on each
 slave to see which tables have differences from the master.  See L<"CONSISTENT
 CHECKSUMS"> for details.  If you find tables that have differences, you can use
