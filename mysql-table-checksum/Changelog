@@ -1,5 +1,7 @@
 Changelog for mysql-table-checksum and mysql-checksum-filter:
 
+   * Added documentation about the storage engine for the checksum table.
+
 2007-08-23: version 1.1.13
 
    * MySQL socket connection option didn't work.
