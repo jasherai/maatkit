@@ -253,10 +253,18 @@ if ( $opts{replcheck} ) {
    # Start the checking.
    if ( version_ge($main_dbh, '3.23.26') ) {
       my ($id) = $main_dbh->selectrow_array('SELECT @@SERVER_ID');
-      $seen{$id}++;
       push @hosts_to_do,
          grep { $_->{Master_id} == $id } # Only its own slaves
          @{$main_dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+      # Add the specified server (the master) as well.  This way the server
+      # will get checked if someone specifies the root of some sub-tree in the
+      # replication topology.
+      push @hosts_to_do, {
+         Server_id => $id,
+         dbh       => $main_dbh,
+         Host      => $hosts[0]->{h},
+         Port      => $hosts[0]->{P},
+      };
    }
    else {
       print_err("Cannot check slaves; --replcheck requires MySQL 3.23.26 or newer.");
@@ -269,13 +277,20 @@ if ( $opts{replcheck} ) {
       . "OR ISNULL(master_crc) <> ISNULL(this_crc)";
 
    SLAVE:
-   do {
+   while ( @hosts_to_do ) {
       my $slave = shift @hosts_to_do;
       next SLAVE if $seen{$slave->{Server_id}};
 
-      # Connect to that server
-      my $dsn       = parse_dsn("h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
-      my $slave_dbh = get_dbh($dsn, ($opts{d} ? keys %{$opts{d}} : '' ));
+      # Connect to that server (if needed)
+      my $slave_dbh;
+      if ( !$slave->{dbh} ) {
+         my $dsn    = parse_dsn("h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
+         $slave_dbh = get_dbh($dsn, ($opts{d} ? keys %{$opts{d}} : '' ));
+         $slave->{dbh} = $slave_dbh;
+      }
+      else {
+         $slave_dbh = $slave->{dbh};
+      }
       my $id;
 
       # SHOW SLAVE HOSTS is somewhat flakey.  Sometimes it shows obsolete
@@ -308,8 +323,16 @@ if ( $opts{replcheck} ) {
 
       if ( !$opts{q} ) {
          delete $slave->{Rpl_recovery_rank};
-         print "\nResults on $slave->{Host}:$slave->{Port} ("
-            . join(',', map { "$_=$slave->{$_}" } keys %$slave)
+         print "\nResults on "
+            . join(':', map  { "$slave->{$_}" }
+                        grep { $slave->{$_} }
+                             qw(Host Port)
+               )
+            . " ("
+            . join(',', map  { "$_=$slave->{$_}" }
+                        grep { $_ ne 'dbh' && $slave->{$_} }
+                             keys %$slave
+               )
             . ")\n";
       }
 
@@ -328,7 +351,7 @@ if ( $opts{replcheck} ) {
             }
          }
       }
-   } while ( @hosts_to_do );
+   }
 
    exit($exit);
 }
