@@ -1,6 +1,8 @@
 Changelog for mysql-visual-explain:
 
    * FULLTEXT indexes were not recognized (type=fulltext in EXPLAIN).
+   * Temporary/filesort were not added to the right node in the tree.
+   * Added a new node type for "Range checked for each record."
 
 2007-08-23: version 1.0.1
 

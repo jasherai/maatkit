@@ -20,8 +20,6 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: "Using index condition" see http://bugs.mysql.com/bug.php?id=30659
-
 use strict;
 use warnings FATAL => 'all';
 
@@ -194,6 +192,7 @@ sub process {
    return $tree;
 }
 
+# TODO: split up the 'extra' to ensure pattern matching doesn't have any bugs
 sub build_query_plan {
    my ( $self, @rows ) = @_;
 
@@ -250,10 +249,38 @@ sub build_query_plan {
    # Handle the "normal case."  For each node, if the id is the same as the last
    # one, JOIN and continue.  If the id is greater, it's a subquery, so should
    # be recursed.
-   my @join_types = map { $_->{select_type} } @rows;
-   my $scope      = $rows[0]->{id};
-   my $tree       = $self->transform(shift(@rows));
-   my $i          = 0;
+
+   # But, filesort/temporary have to be handled specially, because they appear
+   # in the first row, even if they are done later.  Here are the cases,
+   # according to http://s.petrunia.net/blog/?p=24:
+
+   # ... MySQL has three ways to run a join and produce ordered output:
+   # Method                               EXPLAIN output
+   # ----------------------------------   ------------------------------------
+   # Use index-based access method that   no mention of filesort
+   # produces ordered output
+   # ----------------------------------   ------------------------------------
+   # Use filesort() on 1st non-constant   "Using filesort" in the first row
+   # table
+   # ----------------------------------   ------------------------------------
+   # Put join result into a temporary     "Using temporary; Using filesort" in
+   # table and use filesort() on it       the first row
+   # ----------------------------------   ------------------------------------
+
+   my $first = shift(@rows);
+   my $is_temp_filesort;
+   if ( $first->{Extra} =~ m/Using temporary; Using filesort/ ) {
+      # The entire join is being placed into a temporary table and filesorted,
+      # so I'll make a note of that and apply it afterwards.  In the meantime I
+      # must remove mention of it from the node so the node doesn't get extra
+      # transformations in transform().
+      $is_temp_filesort = 1;
+      $first->{Extra} =~ s/Using temporary; Using filesort(?:; )?//;
+   }
+
+   my $scope = $first->{id};
+   my $tree  = $self->transform($first);
+   my $i     = 0;
    while ( $i < @rows ) {
       my $row = $rows[$i];
       if ( $row->{id} == $scope ) {
@@ -280,9 +307,15 @@ sub build_query_plan {
       }
    }
 
+   if ( $is_temp_filesort ) {
+      $tree = $self->filesort(
+         $self->temporary($tree, $self->recursive_table_name($tree)));
+   }
+
    return $tree;
 }
 
+# TODO: "Using index condition" see http://bugs.mysql.com/bug.php?id=30659
 sub transform {
    my ( $self, $row ) = @_;
 
@@ -323,39 +356,41 @@ sub transform {
          children => [$node],
       };
    }
-   if ( $row->{Extra} =~ m/Using temporary/ ) {
-      $node = {
-         type     => 'Table scan',
-         rows     => undef,
-         children => [
-            {  type          => 'TEMPORARY',
-               table         => "temporary($row->{table})",
-               possible_keys => undef,
-               partitions    => undef,
-               children      => [$node],
-            }
-         ],
-      };
+
+   if ( $row->{Extra} =~ m/Using filesort/ ) {
+      $node = $self->filesort($node);
    }
+
+   if ( $row->{Extra} =~ m/Using temporary/ ) {
+      $node = $self->temporary($node, $row->{table}, 1);
+   }
+
    if ( $row->{Extra} =~ m/Distinct|Not exists/ ) {
       $node = {
          type     => 'Distinct/Not-Exists',
          children => [$node],
       };
    }
-   # TODO: the filesort node may need to go elsewhere depending on whether
-   # there is a filesort on the first table or last table in the JOIN.
-   # See http://s.petrunia.net/blog/?p=24
-   if ( $row->{Extra} =~ m/Using filesort/ ) {
-      $node = {
-         type     => 'Filesort',
-         children => [$node],
-      };
-   }
+
    if ( $row->{Extra} =~ m/Using join buffer/ ) {
       $node = {
          type     => 'Join buffer',
          children => [$node],
+      };
+   }
+
+   if ( $row->{Extra} =~ m/Range checked for each record \(\w+ map: ([^\)]+)\)/ ) {
+      my $bitmap = eval "int($1)";                    # Hex to decimal if it begins with '0x'
+      $bitmap    = unpack("B32", pack("N", $bitmap)); # Convert into binary string of 1/0
+      $bitmap    =~ s/^0+//;                          # Remove leading zeros
+      $bitmap    = reverse $bitmap;                   # Iterate from left-to-right
+      my $possible_keys = join(',',
+         grep { substr($bitmap, $_ - 1, 1) }
+        ( 1 .. length($bitmap) ));
+      $node = {
+         type          => 'Re-evaluate indexes each row',
+         possible_keys => $possible_keys,
+         children      => [$node],
       };
    }
 
@@ -578,9 +613,6 @@ sub table {
       possible_keys => $row->{possible_keys},
       partitions    => $row->{partitions},
    };
-   if ( $row->{Extra} =~ m/(Range checked [^)]*\))/ ) {
-      $node->{warning} = $1;
-   }
    if ( $row->{children} ) {
       $node->{children} = $row->{children};
    }
@@ -598,6 +630,33 @@ sub bookmark_lookup {
       type     => 'Bookmark lookup',
       children => [ $node, $self->table($row) ],
    };
+}
+
+sub filesort {
+   my ( $self, $node ) = @_;
+   return {
+      type     => 'Filesort',
+      children => [$node],
+   };
+}
+
+sub temporary {
+   my ( $self, $node, $table_name, $is_scan ) = @_;
+   $node = {
+      type          => 'TEMPORARY',
+      table         => "temporary($table_name)",
+      possible_keys => undef,
+      partitions    => undef,
+      children      => [$node],
+   };
+   if ( $is_scan ) {
+      $node = {
+         type     => 'Table scan',
+         rows     => undef,
+         children => [ $node ],
+      };
+   }
+   return $node;
 }
 
 sub index_access {
@@ -1215,8 +1274,6 @@ indicated by the first item inside the UNION.  There are only three kinds of
 enclosing scopes: UNION, DERIVED, and SUBQUERY.  A UNION can't enclose a UNION,
 and a DERIVED has its own "scope markers," but a SUBQUERY can wholly enclose a
 UNION, like this strange example on the empty table t1:
-
-TODO: this query breaks the server with EXPLAIN EXTENDED.
 
  explain select * from t1 where not exists(
     (select t11.i from t1 t11) union (select t12.i from t1 t12));
