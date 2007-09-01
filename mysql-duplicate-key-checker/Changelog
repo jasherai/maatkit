@@ -1,5 +1,7 @@
 Changelog for mysql-duplicate-key-checker:
 
+2007-09-01: version 1.1.0
+
    * Column printout was misaligned one space.
    * Refactored into a runnable module and added tests.
    * Redundant indexes were only detected if the shorter index was first.
