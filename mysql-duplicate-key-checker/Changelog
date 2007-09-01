@@ -5,6 +5,7 @@ Changelog for mysql-duplicate-key-checker:
    * Redundant indexes were only detected if the shorter index was first.
    * Redundant foreign keys sometimes weren't detected.
    * All indexes on MEMORY tables were reported as HASH.
+   * Added --clustered option to report appended PK columns as dupes for InnoDB and solidDB.
 
 2007-08-23: version 1.0.5
 

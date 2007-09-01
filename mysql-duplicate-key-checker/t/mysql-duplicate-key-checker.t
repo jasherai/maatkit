@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 26;
 
 require "../mysql-duplicate-key-checker";
 
@@ -303,4 +303,43 @@ is_deeply(
    [
    ],
    'No duplicate foreign keys'
+);
+
+$ddl = load_file('samples/innodb_dupe.sql');
+is_deeply(
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt)),
+   [],
+   'No duplicate keys with ordinary options'
+);
+is_deeply(
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt), { clustered => 1, engine => 'InnoDB' }),
+   [
+      {
+         struct => 'BTREE',
+         name   => 'PRIMARY',
+         cols   => '`a`',
+      },
+      {
+         struct => 'BTREE',
+         name   => 'b',
+         cols   => '`b`,`a`',
+      },
+   ],
+   'Duplicate keys with cluster options'
+);
+
+$ddl = load_file('samples/dupe_if_it_were_innodb.sql');
+is_deeply(
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt), { clustered => 1, engine => 'MyISAM' }),
+   [ ],
+   'No cluster-duplicate keys because not InnoDB'
+);
+
+# This table is a test case for an infinite loop I ran into while writing the
+# cluster stuff
+$ddl = load_file('samples/mysql_db.sql');
+is_deeply(
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt), { clustered => 1, engine => 'InnoDB' }),
+   [],
+   'No cluster-duplicate keys in mysql.db'
 );
