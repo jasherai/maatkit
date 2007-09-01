@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 53;
+use Test::More tests => 54;
 
 require "../mysql-visual-explain";
 
@@ -460,16 +460,21 @@ is_deeply(
                },
             ],
          },
-         {  type     => 'Table scan',
-            id       => 1,
-            rowid    => 1,
-            rows     => 5,
-            children => [
-               {  type          => 'Table',
-                  table         => 's',
-                  possible_keys => 'OXLEFT',
-                  partitions    => undef,
-                  warning => 'Range checked for each record (index map: 0x4)',
+         {
+            type => 'Re-evaluate indexes each row',
+            id            => 1,
+            rowid         => 1,
+            possible_keys => '3',
+            children      => [
+               {  type     => 'Table scan',
+                  rows     => 5,
+                  children => [
+                     {  type          => 'Table',
+                        table         => 's',
+                        possible_keys => 'OXLEFT',
+                        partitions    => undef,
+                     },
+                  ],
                },
             ],
          },
@@ -1183,29 +1188,79 @@ $t = $e->parse( load_file('samples/temporary_filesort.sql') );
 is_deeply(
    $t,
    {  type     => 'Filesort',
-      id       => 1,
-      rowid    => 0,
       children => [
-         {  type     => 'Table scan',
-            rows     => undef,
-            children => [
-               {  type          => 'TEMPORARY',
-                  table         => 'temporary(film)',
+         {  type          => 'TEMPORARY',
+            table         => 'temporary(film)',
+            possible_keys => undef,
+            partitions    => undef,
+            children      => [
+               {  type          => 'Index scan',
+                  key           => 'film->PRIMARY',
                   possible_keys => undef,
                   partitions    => undef,
-                  children      => [
-                     {  type          => 'Index scan',
-                        key           => 'film->PRIMARY',
-                        possible_keys => undef,
-                        partitions    => undef,
-                        key_len       => 2,
-                        'ref'         => undef,
-                        rows          => 951,
-                     },
-                  ],
+                  key_len       => 2,
+                  'ref'         => undef,
+                  rows          => 951,
+                  rowid         => 0,
+                  id            => 1,
                },
             ],
          },
+      ],
+   },
+   'Filesort with temporary',
+);
+
+$t = $e->parse( load_file('samples/three_table_join_with_temp_filesort.sql') );
+is_deeply(
+   $t,
+   {  type     => 'Filesort',
+      children => [
+         {  type          => 'TEMPORARY',
+            partitions    => undef,
+            possible_keys => undef,
+            table         => 'temporary(actor,film_actor,film)',
+            children      => [
+               {  type     => 'JOIN',
+                  children => [
+                     {  type     => 'JOIN',
+                        children => [
+                           {  type          => 'Index scan',
+                              key           => 'actor->PRIMARY',
+                              possible_keys => 'PRIMARY',
+                              key_len       => '2',
+                              ref           => undef,
+                              rows          => '200',
+                              partitions    => undef,
+                              rowid         => 0,
+                              id            => 1,
+                           },
+                           {  type          => 'Index lookup',
+                              key           => 'film_actor->PRIMARY',
+                              key_len       => '2',
+                              ref           => 'sakila.actor.actor_id',
+                              rows          => '13',
+                              partitions    => undef,
+                              possible_keys => 'PRIMARY,idx_fk_film_id',
+                              rowid         => 1,
+                              id            => 1
+                           }
+                        ],
+                     },
+                     {  type          => 'Unique index lookup',
+                        key           => 'film->PRIMARY',
+                        possible_keys => 'PRIMARY',
+                        key_len       => '2',
+                        ref           => 'sakila.film_actor.film_id',
+                        rows          => '1',
+                        partitions    => undef,
+                        rowid         => 2,
+                        id            => 1,
+                     }
+                  ],
+               }
+            ],
+         }
       ],
    },
    'Filesort with temporary',
