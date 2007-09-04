@@ -39,20 +39,20 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 # Get configuration information.
 # ############################################################################
 
-# Define cmdline args; each is GetOpt::Long spec, whether required,
-# human-readable description.  Add more hash entries as needed.
+# Each cmdline arg is GetOpt::Long spec and human-readable description.
 my @opt_spec = (
    { s => 'askpass',      d => 'Prompt for password for connections' },
    { s => 'collapse|c!',  d => 'Collapse whitespace in queries' },
    { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
    { s => 'daemonize',    d => 'Fork to background and detach (POSIX only)' },
-   { s => 'dest|d=s',     d => 'Server in which to store info' },
+   { s => 'dest|d=s',     d => 'Server in which to store deadlocks' },
    { s => 'help',         d => 'Show this help message' },
-   { s => 'interval|i=s', d => 'Sleep interval (default none); suffix: s/m/h/d' },
+   { s => 'interval|i=s', d => 'Sleep interval, default none (suffix: s/m/h/d)' },
    { s => 'numip|n',      d => 'Express IP addresses as integers' },
    { s => 'print|p',      d => 'Print to STDOUT' },
-   { s => 'source|s=s',   d => 'Server to check for deadlock' },
+   { s => 'source|s=s',   d => 'Server to check for deadlocks' },
    { s => 'tab|t',        d => 'Output tab-separated' },
+   { s => 'time|m=s',     d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'version',      d => 'Output version information and exit' },
 );
 
@@ -126,6 +126,22 @@ if ( !$opts{help} ) {
          $opts{i} = max($opts{i}, 1);
       }
    }
+
+   if ( $opts{m} ) {
+      my ($num, $suf ) = $opts{m} =~ m/(\d+)([smhd])$/;
+      if ( !defined $num || $num <= 0 ) {
+         warn "Invalid --time argument\n";
+         $opts{help} = 1;
+      }
+      else {
+         $opts{m} = $suf eq 's' ? $num           # Seconds
+                  : $suf eq 'm' ? $num * 60      # Minutes
+                  : $suf eq 'h' ? $num * 3600    # Hours
+                  :               $num * 86400;  # Days
+         $opts{m} = max($opts{m}, 1);
+      }
+   }
+
 }
 
 if ( $opts{help} ) {
@@ -147,17 +163,6 @@ For more details, please read the documentation:
 
 USAGE
    exit(0);
-}
-
-if ( $opts{daemonize} ) {
-   require POSIX;
-   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
-   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
-   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
-   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
-   exit if $pid;
-   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
-   open STDERR, '>&STDOUT'   or die "Can't dup stdout: $OS_ERROR";
 }
 
 # ############################################################################
@@ -209,7 +214,13 @@ my %is_proc_info = (
 # ############################################################################
 # Start working.
 # ############################################################################
-my $dbh = get_dbh($source);
+my $dbh   = get_dbh($source, 1);
+my $start = time();
+my $end   = $start + ($opts{m} || 0); # When we should exit
+my $now   = $start;
+my $dbh2;
+my $sth;
+my $ins_sth;
 
 # Since the user might not have specified a hostname for the connection, try to
 # extract it from the $dbh
@@ -217,8 +228,43 @@ if ( !$source->{h} ) {
    ($source->{h}) = $dbh->{mysql_hostinfo} =~ m/(\w+) via/;
 }
 
+my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
+               lock_type lock_mode wait_hold victim query );
+if ( $opts{C} ) {
+   @cols = grep { $opts{C}->{$_} } @cols;
+}
+
+if ( $dest && $dest->{t} ) {
+   my $db_tbl = 
+      join('.',
+      map  {  $dbh->quote_identifier($_) }
+      grep { $_ }
+      ( $dest->{D}, $dest->{t} ));
+
+   $dbh2     = get_dbh($dest, 0);
+   my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
+   my $parms = join(',', map { '?' } @cols);
+   $ins_sth  = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
+}
+
+# Daemonize only after (potentially) asking for passwords for --askpass.
+if ( $opts{daemonize} ) {
+   require POSIX;
+   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
+   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
+   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
+   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
+   exit if $pid;
+   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
+   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+}
+
 my $oktorun = 1;
-while ( $oktorun ) {
+while (                       # Quit if:
+   (!$opts{m} || $now < $end) # time is exceeded
+   && $oktorun                # or instructed to quit
+   )
+{
 
    my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
 
@@ -327,12 +373,6 @@ while ( $oktorun ) {
          qw(user hostname db tbl idx lock_type lock_mode query);
    }
 
-   my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
-                  lock_type lock_mode wait_hold victim query );
-   if ( $opts{C} ) {
-      @cols = grep { $opts{C}->{$_} } @cols;
-   }
-
    # Extract some miscellaneous data from the deadlock.
    my ( $ts ) = $dl_text =~ m/^$s$/m;
    my ( $year, $mon, $day, $hour, $min, $sec ) = $ts =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/;
@@ -348,22 +388,11 @@ while ( $oktorun ) {
       $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
    }
 
-# TODO: need to do this outof the loop.  check the loop for things to do outside
-# it.
-   if ( $dest && $dest->{t} ) {
-      my $db_tbl = 
-         join('.',
-         map  {  $dbh->quote_identifier($_) }
-         grep { $_ }
-         ( $dest->{D}, $dest->{t} ));
-
-      my $dbh2  = get_dbh($dest);
-      my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
-      my $parms = join(',', map { '?' } @cols);
-      my $query = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
+   if ( $ins_sth ) {
       foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-         $query->execute(@{$txn}{@cols});
+         $ins_sth->execute(@{$txn}{@cols});
       }
+      $dbh2->commit;
    }
 
    if ( $opts{p} ) {
@@ -379,9 +408,10 @@ while ( $oktorun ) {
       }
    }
 
-   # If there's a --interval argument, run forever.  Otherwise just run once.
+   # If there's a --interval argument, run forever or till specified.  Otherwise just run once.
    if ( $opts{i} ) {
       sleep($opts{i});
+      $now = time();
    }
    else {
       $oktorun = 0;
@@ -417,14 +447,14 @@ sub parse_dsn {
 }
 
 sub get_dbh {
-   my ( $info ) = @_;
+   my ( $info, $ac ) = @_;
    my $db_options = {
-      AutoCommit => !$opts{k} && !$opts{F} && !$opts{1},
+      AutoCommit => $ac,
       RaiseError => 1,
       PrintError => 0,
    };
 
-   if ( !$info->{p} && $opts{askpass} ) {
+   if ( $opts{askpass} ) {
       print "Enter password: ";
       ReadMode('noecho');
       chomp($info->{p} = <STDIN>);
@@ -449,7 +479,13 @@ mysql-deadlock-logger - Extract and log MySQL deadlock information.
 
 =head1 SYNOPSIS
 
-   mysql-deadlock-logger --source u=user,p=pass,h=server --dest D=test,t=deadlocks
+The following examples will print deadlocks, store deadlocks in a database
+table, and daemonize and check once every 30 seconds for 4 hours,
+respectively:
+
+ mysql-deadlock-logger --print
+ mysql-deadlock-logger --source u=user,p=pass,h=server --dest D=test,t=deadlocks
+ mysql-deadlock-logger --dest D=test,t=deadlocks --daemonize -m 4h -i 30s
 
 =head1 DESCRIPTION
 
@@ -482,7 +518,8 @@ L<"OUTPUT"> for more details.
 
 =item --daemonize
 
-TODO
+Fork to the background and detach from the shell.  This probably doesn't work
+on Microsoft Windows.
 
 =item --dest
 
@@ -526,7 +563,9 @@ Displays a help message.
 
 =item --interval
 
-TODO
+How frequently MySQL Deadlock Logger should check for deadlocks.  The argument
+must have a suffix of s, m, h, or d, indicating seconds, minutes, hours, or
+days.
 
 =item --numip
 
@@ -562,6 +601,12 @@ mysql-deadlock-logger will interpret this as a hostname.
 
 Makes mysql-deadlock-logger output tab-separated columns instead of
 whitespace-aligning them.  See L<"OUTPUT"> for more.
+
+=item --time
+
+Causes MySQL Deadlock Logger to stop after the specified time has elapsed.
+The argument must have a suffix of s, m, h, or d, indicating seconds, minutes,
+hours, or days.
 
 =item --version
 
