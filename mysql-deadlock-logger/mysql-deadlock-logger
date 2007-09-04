@@ -29,6 +29,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use Socket qw(inet_aton);
 use Term::ReadKey;
+use sigtrap qw(handler finish untrapped normal-signals);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -44,8 +45,10 @@ my @opt_spec = (
    { s => 'askpass',      d => 'Prompt for password for connections' },
    { s => 'collapse|c!',  d => 'Collapse whitespace in queries' },
    { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
+   { s => 'daemonize',    d => 'Fork to background and detach (POSIX only)' },
    { s => 'dest|d=s',     d => 'Server in which to store info' },
    { s => 'help',         d => 'Show this help message' },
+   { s => 'interval|i=s', d => 'Sleep interval (default none); suffix: s/m/h/d' },
    { s => 'numip|n',      d => 'Express IP addresses as integers' },
    { s => 'print|p',      d => 'Print to STDOUT' },
    { s => 'source|s=s',   d => 'Server to check for deadlock' },
@@ -60,6 +63,7 @@ my %opts = (
    d => '',
    C => '',
 );
+
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
@@ -102,9 +106,26 @@ my %conn   = (
 my $source = parse_dsn($opts{s}, {}      );
 my $dest   = parse_dsn($opts{d}, $source );
 
-if (!$opts{p} && !$dest->{t}) {
-   warn "You need to specify what to do (print or save).\n";
-   $opts{help} = 1;
+if ( !$opts{help} ) {
+   if (!$opts{p} && !$dest->{t}) {
+      warn "You need to specify what to do (print or save).\n";
+      $opts{help} = 1;
+   }
+
+   if ( $opts{i} ) {
+      my ($num, $suf ) = $opts{i} =~ m/(\d+)([smhd])$/;
+      if ( !defined $num || $num <= 0 ) {
+         warn "Invalid --interval argument\n";
+         $opts{help} = 1;
+      }
+      else {
+         $opts{i} = $suf eq 's' ? $num           # Seconds
+                  : $suf eq 'm' ? $num * 60      # Minutes
+                  : $suf eq 'h' ? $num * 3600    # Hours
+                  :               $num * 86400;  # Days
+         $opts{i} = max($opts{i}, 1);
+      }
+   }
 }
 
 if ( $opts{help} ) {
@@ -126,6 +147,17 @@ For more details, please read the documentation:
 
 USAGE
    exit(0);
+}
+
+if ( $opts{daemonize} ) {
+   require POSIX;
+   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
+   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
+   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
+   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
+   exit if $pid;
+   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
+   open STDERR, '>&STDOUT'   or die "Can't dup stdout: $OS_ERROR";
 }
 
 # ############################################################################
@@ -179,172 +211,193 @@ my %is_proc_info = (
 # ############################################################################
 my $dbh = get_dbh($source);
 
-# Since the user might not have specified hostname for connection, try to
-# extract it from $dbh
+# Since the user might not have specified a hostname for the connection, try to
+# extract it from the $dbh
 if ( !$source->{h} ) {
    ($source->{h}) = $dbh->{mysql_hostinfo} =~ m/(\w+) via/;
 }
 
-my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
+my $oktorun = 1;
+while ( $oktorun ) {
 
-# Pull out the deadlock section
-my $dl_text;
-my @matches = $text =~ m#\n(---+)\n([A-Z /]+)\n\1\n(.*?)(?=\n(---+)\n[A-Z /]+\n\4\n|$)#gs;
-while ( my ( $start, $name, $text, $end ) = splice(@matches, 0, 4) ) {
-   next unless $name eq 'LATEST DETECTED DEADLOCK';
-   $dl_text = $text;
-}
+   my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
 
-exit(0) unless $dl_text;
+   # Pull out the deadlock section
+   my $dl_text;
+   my @matches = $text =~ m#\n(---+)\n([A-Z /]+)\n\1\n(.*?)(?=\n(---+)\n[A-Z /]+\n\4\n|$)#gs;
+   while ( my ( $start, $name, $text, $end ) = splice(@matches, 0, 4) ) {
+      next unless $name eq 'LATEST DETECTED DEADLOCK';
+      $dl_text = $text;
+   }
 
-my @sections
-   = $dl_text
-   =~ m{
-      ^\*{3}\s([^\n]*)  # *** (1) WAITING FOR THIS...
-      (.*?)             # Followed by anything, non-greedy
-      (?=(?:^\*{3})|\z) # Followed by another three-stars or EOF
-   }gmsx;
+   exit(1) unless $dl_text;
 
-# Loop through each section.  There are no assumptions about how many
-# there are, who holds and wants what locks, and who gets rolled back.
-my %txns;
-while ( my ($header, $body) = splice(@sections, 0, 2) ) {
-   my ( $txn_id, $what ) = $header =~ m/^\($d\) (.*):$/m;
-   next unless $txn_id;
-   $txns{$txn_id} ||= { id => $txn_id };
-   my $hash = $txns{$txn_id};
+   my @sections
+      = $dl_text
+      =~ m{
+         ^\*{3}\s([^\n]*)  # *** (1) WAITING FOR THIS...
+         (.*?)             # Followed by anything, non-greedy
+         (?=(?:^\*{3})|\z) # Followed by another three-stars or EOF
+      }gmsx;
 
-   if ( $what eq 'TRANSACTION' ) {
-      @{$hash}{qw(txn_time)} = $body =~ m/ACTIVE $d sec/;
+   # Loop through each section.  There are no assumptions about how many
+   # there are, who holds and wants what locks, and who gets rolled back.
+   my %txns;
+   while ( my ($header, $body) = splice(@sections, 0, 2) ) {
+      my ( $txn_id, $what ) = $header =~ m/^\($d\) (.*):$/m;
+      next unless $txn_id;
+      $txns{$txn_id} ||= { id => $txn_id };
+      my $hash = $txns{$txn_id};
 
-      # Parsing the line that begins 'MySQL thread id' is complicated.  The only
-      # thing always in the line is the thread and query id.  See function
-      # innobase_mysql_print_thd in InnoDB source file sql/ha_innodb.cc.
-      my ( $thread_line ) = $body =~ m/^(MySQL thread id .*)$/m;
-      my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
+      if ( $what eq 'TRANSACTION' ) {
+         @{$hash}{qw(txn_time)} = $body =~ m/ACTIVE $d sec/;
 
-      if ( $thread_line ) {
-         # These parts can always be gotten.
-         ( $mysql_thread_id, $query_id ) = $thread_line =~ m/^MySQL thread id $d, query id $d/m;
+         # Parsing the line that begins 'MySQL thread id' is complicated.  The only
+         # thing always in the line is the thread and query id.  See function
+         # innobase_mysql_print_thd in InnoDB source file sql/ha_innodb.cc.
+         my ( $thread_line ) = $body =~ m/^(MySQL thread id .*)$/m;
+         my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
 
-         # If it's a master/slave thread, "Has (read|sent) all" may be the thread's
-         # proc_info.  In these cases, there won't be any host/ip/user info
-         ( $query_status ) = $thread_line =~ m/(Has (?:read|sent) all .*$)/m;
-         if ( defined($query_status) ) {
-            $user = 'system user';
+         if ( $thread_line ) {
+            # These parts can always be gotten.
+            ( $mysql_thread_id, $query_id ) = $thread_line =~ m/^MySQL thread id $d, query id $d/m;
+
+            # If it's a master/slave thread, "Has (read|sent) all" may be the thread's
+            # proc_info.  In these cases, there won't be any host/ip/user info
+            ( $query_status ) = $thread_line =~ m/(Has (?:read|sent) all .*$)/m;
+            if ( defined($query_status) ) {
+               $user = 'system user';
+            }
+
+            # It may be the case that the query id is the last thing in the line.
+            elsif ( $thread_line =~ m/query id \d+ / ) {
+               # The IP address is the only non-word thing left, so it's the most
+               # useful marker for where I have to start guessing.
+               ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
+               if ( defined $ip ) {
+                  ( $user, $query_status ) = $thread_line =~ m/$ip $w(?: (.*))?$/;
+               }
+               else { # OK, there wasn't an IP address.
+                  # There might not be ANYTHING except the query status.
+                  ( $query_status ) = $thread_line =~ m/query id \d+ (.*)$/;
+                  if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
+                     # The remaining tokens are, in order: hostname, user, query_status.
+                     # It's basically impossible to know which is which.
+                     ( $hostname, $user, $query_status ) = $thread_line
+                        =~ m/query id \d+(?: ([A-Za-z]\S+))?(?: $w(?: (.*))?)?$/m;
+                  }
+                  else {
+                     $user = 'system user';
+                  }
+               }
+            }
          }
 
-         # It may be the case that the query id is the last thing in the line.
-         elsif ( $thread_line =~ m/query id \d+ / ) {
-            # The IP address is the only non-word thing left, so it's the most
-            # useful marker for where I have to start guessing.
-            ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
-            if ( defined $ip ) {
-               ( $user, $query_status ) = $thread_line =~ m/$ip $w(?: (.*))?$/;
+         my ( $query_text ) = $body =~ m/\nMySQL thread id .*\n((?s).*)/;
+         $query_text =~ s/\s+$//;
+         $query_text =~ s/\s+/ /g if $opts{c};
+
+         @{$hash}{qw(thread hostname ip user query)}
+            = ($mysql_thread_id, $hostname, $ip, $user, $query_text);
+         foreach my $key ( keys %$hash ) {
+            if ( !defined $hash->{$key} ) {
+               $hash->{$key} = '';
             }
-            else { # OK, there wasn't an IP address.
-               # There might not be ANYTHING except the query status.
-               ( $query_status ) = $thread_line =~ m/query id \d+ (.*)$/;
-               if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
-                  # The remaining tokens are, in order: hostname, user, query_status.
-                  # It's basically impossible to know which is which.
-                  ( $hostname, $user, $query_status ) = $thread_line
-                     =~ m/query id \d+(?: ([A-Za-z]\S+))?(?: $w(?: (.*))?)?$/m;
-               }
-               else {
-                  $user = 'system user';
-               }
+         }
+
+      }
+      else {
+         # Prefer information about locks waited-for over locks-held.
+         if ( $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' || !$hash->{lock_type} ) {
+            $hash->{wait_hold} = $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' ? 'w' : 'h';
+            @{$hash}{ qw(lock_type idx db tbl txn_id lock_mode) }
+               = $body
+               =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n(?:/|`\.`)$n` trx id $t lock.mode (\S+)}m;
+            if ( $hash->{txn_id} ) {
+               my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
+               $hash->{txn_id} = $high ? ( $low + $high * $MAX_ULONG ) : $low;
             }
          }
       }
 
-      my ( $query_text ) = $body =~ m/\nMySQL thread id .*\n((?s).*)/;
-      $query_text =~ s/\s+$//;
-      $query_text =~ s/\s+/ /g if $opts{c};
+      # Ensure all values are defined
+      map { $hash->{$_} = 0 unless defined $hash->{$_} }
+         qw(thread txn_id txn_time);
+      map { $hash->{$_} = '' unless defined $hash->{$_} }
+         qw(user hostname db tbl idx lock_type lock_mode query);
+   }
 
-      @{$hash}{qw(thread hostname ip user query)}
-         = ($mysql_thread_id, $hostname, $ip, $user, $query_text);
-      foreach my $key ( keys %$hash ) {
-         if ( !defined $hash->{$key} ) {
-            $hash->{$key} = '';
-         }
+   my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
+                  lock_type lock_mode wait_hold victim query );
+   if ( $opts{C} ) {
+      @cols = grep { $opts{C}->{$_} } @cols;
+   }
+
+   # Extract some miscellaneous data from the deadlock.
+   my ( $ts ) = $dl_text =~ m/^$s$/m;
+   my ( $year, $mon, $day, $hour, $min, $sec ) = $ts =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/;
+   $ts = sprintf('%02d-%02d-%02dT%02d:%02d:%02d', $year + 2000, $mon, $day, $hour, $min, $sec);
+   my ( $victim ) = $dl_text =~ m/^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)$/m;
+   $victim ||= 0;
+
+   # Stick the misc data into the transactions.
+   foreach my $txn ( values %txns ) {
+      $txn->{victim} = $txn->{id} == $victim ? 1 : 0;
+      $txn->{ts}     = $ts;
+      $txn->{server} = $source->{h} || '';
+      $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
+   }
+
+# TODO: need to do this outof the loop.  check the loop for things to do outside
+# it.
+   if ( $dest && $dest->{t} ) {
+      my $db_tbl = 
+         join('.',
+         map  {  $dbh->quote_identifier($_) }
+         grep { $_ }
+         ( $dest->{D}, $dest->{t} ));
+
+      my $dbh2  = get_dbh($dest);
+      my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
+      my $parms = join(',', map { '?' } @cols);
+      my $query = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
+      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
+         $query->execute(@{$txn}{@cols});
       }
+   }
 
+   if ( $opts{p} ) {
+      my $sep = $opts{t} ? "\t" : ' ';
+      print join($sep, @cols), "\n";
+      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
+         # If $opts{c} is on, it's already been taken care of, but if it's unset,
+         # by default strip whitespace.
+         if ( !defined $opts{c} ) {
+            $txn->{query} =~ s/\s+/ /g;
+         }
+         print join($sep, map { $txn->{$_} } @cols), "\n";
+      }
+   }
+
+   # If there's a --interval argument, run forever.  Otherwise just run once.
+   if ( $opts{i} ) {
+      sleep($opts{i});
    }
    else {
-      # Prefer information about locks waited-for over locks-held.
-      if ( $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' || !$hash->{lock_type} ) {
-         $hash->{wait_hold} = $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' ? 'w' : 'h';
-         @{$hash}{ qw(lock_type idx db tbl txn_id lock_mode) }
-            = $body
-            =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n(?:/|`\.`)$n` trx id $t lock.mode (\S+)}m;
-         if ( $hash->{txn_id} ) {
-            my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
-            $hash->{txn_id} = $high ? ( $low + $high * $MAX_ULONG ) : $low;
-         }
-      }
-   }
-
-   # Ensure all values are defined
-   map { $hash->{$_} = 0 unless defined $hash->{$_} }
-      qw(thread txn_id txn_time);
-   map { $hash->{$_} = '' unless defined $hash->{$_} }
-      qw(user hostname db tbl idx lock_type lock_mode query);
-}
-
-my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
-               lock_type lock_mode wait_hold victim query );
-if ( $opts{C} ) {
-   @cols = grep { $opts{C}->{$_} } @cols;
-}
-
-# Extract some miscellaneous data from the deadlock.
-my ( $ts ) = $dl_text =~ m/^$s$/m;
-my ( $year, $mon, $day, $hour, $min, $sec ) = $ts =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/;
-$ts = sprintf('%02d-%02d-%02dT%02d:%02d:%02d', $year + 2000, $mon, $day, $hour, $min, $sec);
-my ( $victim ) = $dl_text =~ m/^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)$/m;
-$victim ||= 0;
-
-# Stick the misc data into the transactions.
-foreach my $txn ( values %txns ) {
-   $txn->{victim} = $txn->{id} == $victim ? 1 : 0;
-   $txn->{ts}     = $ts;
-   $txn->{server} = $source->{h} || '';
-   $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
-}
-
-if ( $dest && $dest->{t} ) {
-   my $db_tbl = 
-      join('.',
-      map  {  $dbh->quote_identifier($_) }
-      grep { $_ }
-      ( $dest->{D}, $dest->{t} ));
-
-   my $dbh2  = get_dbh($dest);
-   my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
-   my $parms = join(',', map { '?' } @cols);
-   my $query = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
-   foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-      $query->execute(@{$txn}{@cols});
-   }
-}
-
-if ( $opts{p} ) {
-   my $sep = $opts{t} ? "\t" : ' ';
-   print join($sep, @cols), "\n";
-   foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-      # If $opts{c} is on, it's already been taken care of, but if it's unset,
-      # by default strip whitespace.
-      if ( !defined $opts{c} ) {
-         $txn->{query} =~ s/\s+/ /g;
-      }
-      print join($sep, map { $txn->{$_} } @cols), "\n";
+      $oktorun = 0;
    }
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
+# Catches signals so the program can exit gracefully.
+sub finish {
+   my ($signal) = @_;
+   print STDERR "Exiting on SIG$signal.\n";
+   $oktorun = 0;
+}
+
 sub parse_dsn {
    my ($dsn, $prev) = @_;
    return unless $dsn;
@@ -427,6 +480,10 @@ each action).
 Makes mysql-deadlock-logger only output and/or save certain columns.  See
 L<"OUTPUT"> for more details.
 
+=item --daemonize
+
+TODO
+
 =item --dest
 
 Specifies a server, database and table in which to store deadlock information,
@@ -466,6 +523,10 @@ store.
 =item --help
 
 Displays a help message.
+
+=item --interval
+
+TODO
 
 =item --numip
 
