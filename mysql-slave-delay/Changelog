@@ -1,5 +1,7 @@
 Changelog for mysql-slave-delay:
 
+   * Added a --daemonize option to detach from the shell and run in the background.
+
 2007-08-23: version 1.0.0
 
    * MySQL socket connection option didn't work.
