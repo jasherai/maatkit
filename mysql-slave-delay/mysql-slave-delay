@@ -33,10 +33,11 @@ our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
-# Define cmdline args
+# Each cmdline arg is GetOpt::Long spec and human-readable description.
 my @opt_spec = (
    { s => 'askpass',       d => 'Prompt for password for connections' },
    { s => 'continue|c!',   d => 'Continue replication normally on exit (default)' },
+   { s => 'daemonize',     d => 'Fork to background and detach (POSIX only)' },
    { s => 'delay|d=s',     d => 'Slave delay (default 1h); suffix: s/m/h/d' },
    { s => 'help',          d => 'Show this help message' },
    { s => 'interval|i=s',  d => 'Sleep interval (default 1m); suffix: s/m/h/d' },
@@ -174,6 +175,18 @@ my $now        = time();
 my $next_start = 0;
 my $end        = $now + ( $opts{t} || 0 );    # When we should exit
 my $oktorun    = 1;
+
+# Daemonize
+if ( $opts{daemonize} ) {
+   require POSIX;
+   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
+   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
+   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
+   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
+   exit if $pid;
+   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
+   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+}
 
 while (                       # Quit if:
    (!$opts{t} || $now < $end) # time is exceeded
@@ -344,6 +357,7 @@ sub get_dbh {
    my $db_options = {
       RaiseError => 1,
       PrintError => 0,
+      AutoCommit => 1,
    };
 
    $info->{D} ||= '';
@@ -432,6 +446,11 @@ Prompts the user for a password when connecting to MySQL.
 After exiting, restart the slave's SQL thread with no UNTIL condition, so it
 will run as usual and catch up to the master.  This is enabled by default and
 works even if you terminate MySQL Slave Delay with Control-C.
+
+=item --daemonize
+
+Fork to the background and detach from the shell.  This probably doesn't work
+on Microsoft Windows.
 
 =item --delay
 
