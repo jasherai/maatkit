@@ -224,7 +224,8 @@ while (                       # Quit if:
    else {
       # Use the position on master at which the I/O thread is reading.  If the
       # I/O thread is not far behind, which it usually is not, this is basically
-      # the same as the master's File/Position.
+      # the same as the master's File/Position, but it's more efficient -- one
+      # fewer connections to keep open.
       my $pos = $positions[-1];
       if ( !@positions
          || $pos->[$FILE] ne $status->{master_log_file} || $pos->[$POS] != $status->{read_master_log_pos} )
@@ -276,6 +277,7 @@ while (                       # Quit if:
       my $position = $positions[-1];
       my $behind = $status->{seconds_behind_master} || 0;
       $next_start = $now + $opts{d} - $behind;
+      # TODO: under what conditions is something here undef?
       info("STOP SLAVE until "
          . ts($next_start)
          . " at master position $position->[$FILE]/$position->[$POS]");
