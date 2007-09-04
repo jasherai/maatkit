@@ -1,3 +1,4 @@
+* quote_identifier doesn't work right.  See mysql-archiver (I think).
 Pipe output from duplicate-key-checker into another tool to graph structures 
    (check out dot for graphing)
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
@@ -6,6 +7,7 @@ query sniper:
 mysql-relay-prefetch: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
 http://www.mysqlperformanceblog.com/2007/05/22/wishes-for-mysqldump/
 * read binlogs from many servers and apply them to one.
+* Jeremy's replication-delay script.
 
 * Allow daemonization:
 
