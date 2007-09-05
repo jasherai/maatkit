@@ -85,16 +85,14 @@ my %conn = (
    D => 'database',
 );
 
-my ($slave, $slave_dsn, $master, $master_dsn);
+my ($slave_dsn, $master_dsn);
 if ( @ARGV ) {
    $slave_dsn  = parse_dsn(shift @ARGV);
-   $slave      = get_dbh($slave_dsn);
-   $master_dsn = parse_dsn(shift(@ARGV), $slave_dsn) if $slave && @ARGV;
-   $master     = get_dbh($master_dsn) if $master_dsn;
+   $master_dsn = parse_dsn(shift(@ARGV), $slave_dsn) if @ARGV;
 }
 
 if ( !$opts{help} ) {
-   if ( !$slave ) {
+   if ( !$slave_dsn ) {
       warn "Missing or invalid slave host\n";
       $opts{help} = 1;
    }
@@ -176,7 +174,24 @@ my $next_start = 0;
 my $end        = $now + ( $opts{t} || 0 );    # When we should exit
 my $oktorun    = 1;
 
-# Daemonize
+# Connect before daemonizing, in case --askpass is needed.
+my ( $slave, $master );
+$slave  = get_dbh($slave_dsn);
+if ( $master_dsn ) {
+   $master = get_dbh($master_dsn);
+}
+elsif ( $opts{u} ) {
+   # Try to connect to the slave's master just by looking at its SLAVE STATUS.
+   my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
+   if ( !$status || ! %$status ) {
+      die "No SLAVE STATUS found while trying to connect to master.\n";
+   }
+
+   my $spec = "h=$status->{master_host},P=$status->{master_port}";
+   $master  = get_dbh(parse_dsn($spec, $slave_dsn));
+}
+
+# Daemonize only after (potentially) asking for passwords for --askpass.
 if ( $opts{daemonize} ) {
    require POSIX;
    chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
@@ -196,20 +211,12 @@ while (                       # Quit if:
    $now = time();
 
    my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
-
    if ( !$status || ! %$status ) {
-      print "No SLAVE STATUS found\n";
-      exit(1);
+      die "No SLAVE STATUS found.\n";
    }
 
    if ( defined $status->{seconds_behind_master} ) {
       info("slave running $status->{seconds_behind_master} seconds behind");
-   }
-
-   if ( $opts{u} && !$master ) {
-      # Try to connect to the slave's master just by looking at its SLAVE STATUS.
-      my $spec = "h=$status->{master_host},P=$status->{master_port}";
-      $master  = get_dbh(parse_dsn($spec, $slave_dsn));
    }
 
    # Get binlog position.
@@ -370,6 +377,7 @@ sub get_dbh {
       . ';mysql_read_default_group=mysql';
    my $dbh = DBI->connect( $dsn, @{$info}{qw(u p)}, $db_options);
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref
+   $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork
    return $dbh;
 }
 
