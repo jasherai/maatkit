@@ -1,5 +1,7 @@
 Changelog for mysql-visual-explain:
 
+   * filesort wasn't applied to the first non-constant table.
+
 2007-09-01: version 1.0.2
 
    * FULLTEXT indexes were not recognized (type=fulltext in EXPLAIN).
