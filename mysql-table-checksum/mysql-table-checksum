@@ -43,7 +43,6 @@ $OUTPUT_AUTOFLUSH = 1;
 # TODO: add --ignorecol
 # TODO: add --ignoretype
 # TODO: retry on deadlocks
-# TODO: make replcheck just check each server specified.
 
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
@@ -140,9 +139,6 @@ if ( $opts{e} ) {
 
 # Don't let someone put a ' in the separator
 $opts{s} =~ s/'//g;
-
-# Create a WHERE clause
-$opts{W} = $opts{W} ? " WHERE ($opts{W})" : ' WHERE (1=1)';
 
 if ( $opts{a} && $opts{a} !~ m/^(?:ACCUM|CHECKSUM|BIT_XOR)$/ ) {
    warn "--algorithm=$opts{a}: unknown algorithm.\n";
@@ -413,6 +409,11 @@ if ( $strat =~ m/ACCUM|BIT_XOR/ ) {
       $func = 'MD5';
    }
 }
+
+# If using a cryptographic hash strategy, ensure there's a WHERE clause.  Do
+# this after the above checks, because otherwise it would disable the CHECKSUM
+# strategy.
+$opts{W} = $opts{W} ? " WHERE ($opts{W})" : ' WHERE (1=1)';
 
 my $crc_wid   = max(16, length(($main_dbh->selectrow_array("SELECT $func('a')"))[0]));
 my $crc_slice = 0;
