@@ -26,6 +26,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
+use List::Util qw(max);
 use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
@@ -39,17 +40,18 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
-   { s => 'askpass',      d => 'Prompt for password for connections' },
-   { s => 'database|D=s', d => 'Database to use' },
+   { s => 'askpass',           d => 'Prompt for password for connections' },
+   { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-   { s => 'host|h=s',     d => 'Connect to host' },
-   { s => 'help',         d => 'Show this help message' },
-   { s => 'password|p=s', d => 'Password to use when connecting' },
-   { s => 'port|P=i',     d => 'Port number to use for connection' },
-   { s => 'socket|S=s',   d => 'Socket file to use for connection' },
-   { s => 'user|u=s',     d => 'User for login if not current user' },
-   { s => 'version',      d => 'Output version information and exit' },
+   { s => 'host|h=s',          d => 'Connect to host' },
+   { s => 'help',              d => 'Show this help message' },
+   { s => 'password|p=s',      d => 'Password to use when connecting' },
+   { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'user|u=s',          d => 'User for login if not current user' },
+   { s => 'version',           d => 'Output version information and exit' },
 );
+
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts;
@@ -83,17 +85,18 @@ if ( $opts{help} ) {
       my $short = $spec->{t} ? "-$spec->{t}" : '';
       printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
-   print <<USAGE;
+   (my $usage = <<"   USAGE") =~ s/^      //gm;
 
-$PROGRAM_NAME does something or other.
+      $PROGRAM_NAME does something or other.
 
-If possible, database options are read from your .my.cnf file.
-For more details, please read the documentation:
+      If possible, database options are read from your .my.cnf file.
+      For more details, please read the documentation:
 
-   perldoc $PROGRAM_NAME
+         perldoc $PROGRAM_NAME
 
-USAGE
-   exit(1);
+   USAGE
+   print $usage;
+   exit(0);
 }
 
 # ############################################################################
