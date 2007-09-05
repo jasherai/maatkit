@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 54;
+use Test::More tests => 55;
 
 require "../mysql-visual-explain";
 
@@ -1209,6 +1209,75 @@ is_deeply(
       ],
    },
    'Filesort with temporary',
+);
+
+$t = $e->parse( load_file('samples/filesort_on_subsequent_tbl.sql') );
+is_deeply(
+   $t,
+   {  type     => 'JOIN',
+      children => [
+         {  type     => 'JOIN',
+            children => [
+               {  type     => 'Constant table access',
+                  rows     => '1',
+                  rowid    => 0,
+                  id       => 1,
+                  children => [
+                     {  type          => 'Table',
+                        table         => 'const_tbl',
+                        possible_keys => undef,
+                        partitions    => undef,
+                     },
+                  ],
+               },
+               {  type     => 'Filesort',
+                  rowid    => 1,
+                  id       => 1,
+                  children => [
+                     {  type     => 'Filter with WHERE',
+                        children => [
+                           {  type     => 'Table scan',
+                              rows     => '10',
+                              children => [
+                                 {  type          => 'Table',
+                                    table         => 't1',
+                                    partitions    => undef,
+                                    possible_keys => undef,
+                                 },
+                              ],
+                           },
+                        ],
+                     },
+                  ],
+               },
+            ],
+         },
+         {  type     => 'Filter with WHERE',
+            rowid    => 2,
+            id       => 1,
+            children => [
+               {  type     => 'Bookmark lookup',
+                  children => [
+                     {  type          => 'Index lookup',
+                        key           => 't2->a',
+                        key_len       => '5',
+                        possible_keys => 'a',
+                        ref           => 'test4.t1.a',
+                        rows          => '11',
+                        partitions    => undef,
+                     },
+                     {  type          => 'Table',
+                        table         => 't2',
+                        possible_keys => 'a',
+                        partitions    => undef,
+                     },
+                  ],
+               },
+            ],
+         },
+      ],
+   },
+   'Filesort on first non-constant table',
 );
 
 $t = $e->parse( load_file('samples/three_table_join_with_temp_filesort.sql') );

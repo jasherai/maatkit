@@ -256,7 +256,7 @@ sub build_query_plan {
 
    # ... MySQL has three ways to run a join and produce ordered output:
    # Method                               EXPLAIN output
-   # ----------------------------------   ------------------------------------
+   # ##################################   ####################################
    # Use index-based access method that   no mention of filesort
    # produces ordered output
    # ----------------------------------   ------------------------------------
@@ -268,6 +268,8 @@ sub build_query_plan {
    # ----------------------------------   ------------------------------------
 
    my $first = shift(@rows);
+
+   # This is "case three" above.
    my $is_temp_filesort;
    if ( $first->{Extra} =~ m/Using temporary; Using filesort/ ) {
       # The entire join is being placed into a temporary table and filesorted,
@@ -276,6 +278,16 @@ sub build_query_plan {
       # transformations in transform().
       $is_temp_filesort = 1;
       $first->{Extra} =~ s/Using temporary; Using filesort(?:; )?//;
+   }
+
+   # This is "case two" above.  Must find first non-constant table and move
+   # the filesort() there.
+   elsif ( $first->{Extra} =~ m/Using filesort/ && $first->{type} =~ m/^(?:system|const)$/ ) {
+      my ( $first_non_const ) = grep { $_->{type} !~ m/^(?:system|const)$/ } @rows;
+      if ( $first_non_const ) {
+         $first->{Extra} =~ s/Using filesort(?:; )?//;
+         $first_non_const->{Extra} .= '; Using filesort';
+      }
    }
 
    my $scope = $first->{id};
@@ -357,24 +369,16 @@ sub transform {
       };
    }
 
-   if ( $row->{Extra} =~ m/Using filesort/ ) {
-      $node = $self->filesort($node);
-   }
-
-   if ( $row->{Extra} =~ m/Using temporary/ ) {
-      $node = $self->temporary($node, $row->{table}, 1);
+   if ( $row->{Extra} =~ m/Using join buffer/ ) {
+      $node = {
+         type     => 'Join buffer',
+         children => [$node],
+      };
    }
 
    if ( $row->{Extra} =~ m/Distinct|Not exists/ ) {
       $node = {
          type     => 'Distinct/Not-Exists',
-         children => [$node],
-      };
-   }
-
-   if ( $row->{Extra} =~ m/Using join buffer/ ) {
-      $node = {
-         type     => 'Join buffer',
          children => [$node],
       };
    }
@@ -392,6 +396,14 @@ sub transform {
          possible_keys => $possible_keys,
          children      => [$node],
       };
+   }
+
+   if ( $row->{Extra} =~ m/Using filesort/ ) {
+      $node = $self->filesort($node);
+   }
+
+   if ( $row->{Extra} =~ m/Using temporary/ ) {
+      $node = $self->temporary($node, $row->{table}, 1);
    }
 
    # Add some data that will help me keep track of nodes as I manipulate
