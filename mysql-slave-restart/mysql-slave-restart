@@ -41,6 +41,7 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 # Define cmdline args.
 my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for a password for the connection' },
+   { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'error-numbers|e=s', d => 'Only restart this comma-separated list of errors' },
@@ -163,17 +164,29 @@ my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
 if ( $opts{askpass} ) {
    print "Enter password: ";
    ReadMode('noecho');
-   my $pass = <STDIN>;
-   chomp $pass;
+   chomp ($opts{p} = <STDIN>);
    ReadMode('normal');
    print "\n";
-   $opts{p} = $pass;
 }
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
 
 # VERY IMPORTANT: Lowercases all column names for fetchrow_hashref.  This is
-# because different MySQL versions use different lettercase.
+# because different MySQL versions use different lettercase in SHOW SLAVE
+# STATUS.
 $dbh->{FetchHashKeyName} = 'NAME_lc';
+$dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork/daemonize
+
+# Daemonize only after connectiong and doing --askpass.
+if ( $opts{daemonize} ) {
+   require POSIX;
+   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
+   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
+   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
+   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
+   exit if $pid;
+   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
+   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+}
 
 my $start_sql = version_ge($dbh, '4.0.5') ? 'START SLAVE' : 'SLAVE START';
 if ( $opts{untilmaster} ) {
@@ -329,6 +342,16 @@ statements that cause errors.  It polls the slave intelligently with an
 exponentially varying sleep time.  You can specify errors to skip and run the
 slave until a certain binlog position.
 
+Note: it has come to my attention that Yahoo! had or has an internal tool
+called fix_repl, described to me by a past Yahoo! employee and mentioned in
+the first edition of High Performance MySQL.  Apparently this tool does the
+same thing.  Make no mistake, though: this is not a way to "fix replication."
+In fact I would not even encourage its use on a regular basis; I only use it
+when I have an error I know I just need to skip past.
+
+Indiscriminate use of this tool can easily screw up a server you might have
+had a chance to truly fix.  You have been warned.
+
 =head1 OPTIONS
 
 =over
@@ -336,6 +359,11 @@ slave until a certain binlog position.
 =item --askpass
 
 Prompt for a password for the connection.
+
+=item --daemonize
+
+Fork to the background and detach from the shell.  This probably doesn't work
+on Microsoft Windows.
 
 =item --database
 
@@ -497,6 +525,10 @@ all as lowercase.
 
 If you find bugs, need features, etc please use the bug tracker, forums, and
 mailing lists at http://sourceforge.net/projects/mysqltoolkit.
+
+=head1 SEE ALSO
+
+See also L<mysql-table-checksum>, L<mysql-table-sync>, L<mysql-slave-delay>.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
