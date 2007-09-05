@@ -108,7 +108,7 @@ my $dest   = parse_dsn($opts{d}, $source );
 
 if ( !$opts{help} ) {
    if (!$opts{p} && !$dest->{t}) {
-      warn "You need to specify what to do (print or save).\n";
+      warn "You need to specify what to do with --print or --dest.\n";
       $opts{help} = 1;
    }
 
@@ -268,6 +268,45 @@ while (                       # Quit if:
 
    my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
 
+   my %txns = %{parse_deadlocks($text)};
+
+   if ( $ins_sth ) {
+      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
+         $ins_sth->execute(@{$txn}{@cols});
+      }
+      $dbh2->commit;
+   }
+
+   if ( $opts{p} ) {
+      my $sep = $opts{t} ? "\t" : ' ';
+      print join($sep, @cols), "\n";
+      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
+         # If $opts{c} is on, it's already been taken care of, but if it's unset,
+         # by default strip whitespace.
+         if ( !defined $opts{c} ) {
+            $txn->{query} =~ s/\s+/ /g;
+         }
+         print join($sep, map { $txn->{$_} } @cols), "\n";
+      }
+   }
+
+   # If there's an --interval argument, run forever or till specified.
+   # Otherwise just run once.
+   if ( $opts{i} ) {
+      sleep($opts{i});
+      $now = time();
+   }
+   else {
+      $oktorun = 0;
+   }
+}
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+
+sub parse_deadlocks {
+   my ( $text ) = @_;
    # Pull out the deadlock section
    my $dl_text;
    my @matches = $text =~ m#\n(---+)\n([A-Z /]+)\n\1\n(.*?)(?=\n(---+)\n[A-Z /]+\n\4\n|$)#gs;
@@ -276,7 +315,7 @@ while (                       # Quit if:
       $dl_text = $text;
    }
 
-   exit(1) unless $dl_text;
+   return {} unless $dl_text;
 
    my @sections
       = $dl_text
@@ -388,39 +427,9 @@ while (                       # Quit if:
       $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
    }
 
-   if ( $ins_sth ) {
-      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-         $ins_sth->execute(@{$txn}{@cols});
-      }
-      $dbh2->commit;
-   }
-
-   if ( $opts{p} ) {
-      my $sep = $opts{t} ? "\t" : ' ';
-      print join($sep, @cols), "\n";
-      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-         # If $opts{c} is on, it's already been taken care of, but if it's unset,
-         # by default strip whitespace.
-         if ( !defined $opts{c} ) {
-            $txn->{query} =~ s/\s+/ /g;
-         }
-         print join($sep, map { $txn->{$_} } @cols), "\n";
-      }
-   }
-
-   # If there's a --interval argument, run forever or till specified.  Otherwise just run once.
-   if ( $opts{i} ) {
-      sleep($opts{i});
-      $now = time();
-   }
-   else {
-      $oktorun = 0;
-   }
+   return \%txns;
 }
 
-# ############################################################################
-# Subroutines
-# ############################################################################
 # Catches signals so the program can exit gracefully.
 sub finish {
    my ($signal) = @_;
@@ -442,7 +451,7 @@ sub parse_dsn {
       $vals{h} = $dsn;
    }
    map { $vals{$_} ||= $prev->{$_} } keys %conn;
-   die "Missing host (h) part in $dsn\n" unless $vals{h};
+   die "Missing host (h) part in $dsn.\n" unless $vals{h};
    return \%vals;
 }
 
@@ -465,7 +474,9 @@ sub get_dbh {
    my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
       . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
-   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options);
+   my $dbh = DBI->connect($dsn, @{$info}{qw(u p)}, $db_options);
+   $dbh->{InactiveDestroy} = 1; # Because of forking.
+   return $dbh;
 }
 
 # ############################################################################
