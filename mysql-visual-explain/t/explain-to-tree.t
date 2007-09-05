@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 55;
+use Test::More tests => 57;
 
 require "../mysql-visual-explain";
 
@@ -481,6 +481,18 @@ is_deeply(
       ],
    },
    'Join that uses a range check',
+);
+
+is_deeply(
+   $e->parse( load_file('samples/range_check_3.sql') ),
+   $t,
+   'Key map same when decimal as when hex',
+);
+
+is_deeply(
+   $e->parse( load_file('samples/range_check_2.sql') ),
+   $t,
+   'Key map same as index map',
 );
 
 $t = $e->parse( load_file('samples/not_exists.sql') );
