@@ -192,7 +192,6 @@ sub process {
    return $tree;
 }
 
-# TODO: split up the 'extra' to ensure pattern matching doesn't have any bugs
 sub build_query_plan {
    my ( $self, @rows ) = @_;
 
