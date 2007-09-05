@@ -1,0 +1,178 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings FATAL => 'all';
+
+use Getopt::Long;
+use DBI;
+use Time::HiRes qw(ualarm gettimeofday);
+
+my $VERSION = "0.1";
+
+my ($dbh, $hb);
+
+my $opt_help    = 0;
+my $opt_version = 0;
+
+my $opt_update = 0;
+my $opt_monitor = 0;
+my $opt_check = 0;
+
+my $opt_host = "localhost";
+my $opt_user = "";
+my $opt_password = "";
+my $opt_port = 3306;
+my $opt_socket = "";
+my $opt_database = "";
+my $opt_table = "heartbeat";
+
+my %options = (
+  'help|?'            => \$opt_help,
+  'version|v'         => \$opt_version,
+  
+  'update'            => \$opt_update,
+  'monitor'           => \$opt_monitor,
+  'check'             => \$opt_check,
+  
+  'host|h=s'          => \$opt_host,
+  'user|u=s'          => \$opt_user,
+  'password|p=s'      => \$opt_password,
+  'port|P=s'          => \$opt_port,
+  'socket|S=s'        => \$opt_socket,
+  'database|d=s'      => \$opt_database,
+  'table|t=s'         => \$opt_table,
+);
+
+sub read_options {
+  Getopt::Long::Configure("bundling");
+  GetOptions(%options);
+  
+  &usage() and exit if($opt_help);
+  &version() and exit if($opt_version);
+};
+
+sub usage {
+  my $errmsg = shift;
+
+  if($errmsg) {
+    print "ERROR: $errmsg\n\n";
+  }
+
+  &version;
+  print <<END_OF_USAGE;
+Usage: mysql-heartbeat.pl [options]
+
+Options:
+  --help, -h, -?      Show this help and exit
+  --version, -V       Display version and exit
+
+  --update            Run in update mode
+  --monitor           Run in monitor mode
+  --check             Run in check mode
+
+  --host, -h          MySQL host
+  --user, -u          MySQL user
+  --password, -p      MySQL password
+  --port, -P          MySQL port
+  --socket, -S        MySQL socket
+  --database, -d      MySQL database
+  --table, -t         Table name
+
+END_OF_USAGE
+}
+
+sub version {
+  print <<END_OF_VERSION;
+mysql-heartbeat ($0) version $VERSION
+
+Copyright (C) 2006 Proven Scaling LLC and SixApart Ltd.
+
+This software comes with ABSOLUTELY NO WARRANTY. This is free software,
+and you are welcome to modify and redistribute it under the GPL license.
+
+END_OF_VERSION
+};
+
+sub connect {
+  my $dbh = DBI->connect("DBI:mysql:"
+                          ."database=$opt_database;"
+                          ."host=$opt_host;"
+                          ."mysql_port=$opt_port;"
+                          ."mysql_socket=$opt_socket",
+                          $opt_user, $opt_password);
+  unless($dbh) {
+    print STDERR "Couldn't connect to MySQL server: ".$DBI::err."\n";
+    return;
+  }
+  my $sth = $dbh->prepare("UPDATE $opt_table SET ts=NOW() WHERE id=1");
+
+  return ($dbh, $sth);
+}
+
+sub reconnect {
+  print "oops, got disconnected!\n";
+  return &connect;
+}
+
+sub update {
+  $hb->execute if $hb;
+}
+
+sub avg {
+  my @list = @_;
+  my ($count, $total) = (0, 0);
+  foreach(@list) { $total += $_; $count++; }
+  return $count?($total / $count):0;
+}
+
+my (@one, @five, @fifteen);
+foreach(1..60) { push @one, 0; }
+foreach(1..300) { push @five, 0; }
+foreach(1..900) { push @fifteen, 0; }
+
+sub averages {
+  my $val = shift;
+  push @one, $val; shift @one if(scalar(@one) > 60);
+  push @five, $val; shift @five if(scalar(@five) > 300);
+  push @fifteen, $val; shift @fifteen if(scalar(@fifteen) > 900);
+  return (&avg(@one), &avg(@five), &avg(@fifteen));
+}
+
+sub monitor {
+  my $sth = $dbh->prepare("SELECT UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ts) AS delay FROM $opt_table WHERE id=1");
+  $sth->execute;
+  my ($delay) = $sth->fetchrow_array;
+  my @a = &averages($delay);
+  printf "%4is [ %5.2fs, %5.2fs, %5.2fs ]\n", $delay, $a[0], $a[1], $a[2];
+}
+
+sub check {
+  my $sth = $dbh->prepare("SELECT UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ts) AS delay FROM $opt_table WHERE id=1");
+  $sth->execute;
+  my ($delay) = $sth->fetchrow_array;
+  printf "%i\n", $delay;
+}
+
+&read_options;
+
+if($opt_update + $opt_monitor + $opt_check != 1) {
+  &usage("You must use one and only one of --update, --monitor, and --check") and exit;
+}
+
+($dbh, $hb) = &connect;
+
+# default SIGALRM handler bails
+$SIG{ALRM} = sub {};
+
+# set up an alarm on the edge of the next second, and each second after
+ualarm((($opt_update?1_000_000:1_500_000) - (gettimeofday)[1]), 1_000_000);
+
+while(1) {
+  sleep; # wait for the alarm
+
+  ($dbh, $hb) = &reconnect unless($hb);
+
+  &update  if($opt_update);
+  &monitor if($opt_monitor);
+  &check and exit if($opt_check);
+}
