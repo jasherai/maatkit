@@ -175,7 +175,7 @@ sub process {
       = map  { $_->{id} => $_ }
         grep { $_->{select_type} eq 'UNION RESULT' }
         @rows;
-   
+
    my $last_id = 0;
    my @reordered;
    foreach my $row ( grep { $_->{select_type} ne 'UNION RESULT' } @rows ) {
@@ -384,6 +384,11 @@ sub transform {
    }
 
    if ( $row->{Extra} =~ m/Range checked for each record \(\w+ map: ([^\)]+)\)/ ) {
+      # (index map: N) is a bitmap of which indexes are used.  For example:
+      #  0x5  base 16 (or base 10)
+      # 0101  base 2
+      # 4321  position of bits
+      #  3 1  indexes used
       my $bitmap = eval "int($1)";                    # Hex to decimal if it begins with '0x'
       $bitmap    = unpack("B32", pack("N", $bitmap)); # Convert into binary string of 1/0
       $bitmap    =~ s/^0+//;                          # Remove leading zeros
@@ -1225,7 +1230,7 @@ can't look at siblings to find the end of the scope as I did for DERIVED.  I
 have to trust that MySQL executes depth-first.  Here's an example:
 
  explain
- select actor_id, 
+ select actor_id,
  (
     select count(film_id)
     + (select count(*) from sakila.film)
@@ -1292,11 +1297,11 @@ UNION, like this strange example on the empty table t1:
 
  |   id | select_type  | table      | Extra                          |
  +------+--------------+------------+--------------------------------+
- |    1 | PRIMARY      | t1         | const row not found            | 
- |    2 | SUBQUERY     | NULL       | No tables used                 | 
- |    3 | SUBQUERY     | NULL       | no matching row in const table | 
- |    4 | UNION        | t12        | const row not found            | 
- | NULL | UNION RESULT | <union2,4> |                                | 
+ |    1 | PRIMARY      | t1         | const row not found            |
+ |    2 | SUBQUERY     | NULL       | No tables used                 |
+ |    3 | SUBQUERY     | NULL       | no matching row in const table |
+ |    4 | UNION        | t12        | const row not found            |
+ | NULL | UNION RESULT | <union2,4> |                                |
 
 The UNION's backward references might make it look like the UNION encloses the
 subquery, but studying the query makes it clear this isn't the case.  So when a
