@@ -356,11 +356,9 @@ sub get_dbh {
    if ( $opts{askpass} ) {
       print "Enter password for $info->{h}: ";
       ReadMode('noecho');
-      my $pass = <STDIN>;
+      chomp ($info->{p} = <STDIN>);
       ReadMode('normal');
-      chomp $pass;
       print "\n";
-      $info->{p} = $pass;
    }
 
    my $db_options = {
