@@ -346,9 +346,8 @@ if ( $dst && $opts{C} ) {
 
 # TODO: ease the restrictions about primary keys and nullable columns.
 # TODO: support batched inserts and deletes
-# TODO: allow to specify ODKU option, multiple destination tables, each with own ODKU/etc
-# TODO: buffer results from the SELECT, and use a different $sth for the DELETE
 # TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
+# TODO: use prepared statements.
 
 my $dbh = $src->{dbh};
 my $sth;
