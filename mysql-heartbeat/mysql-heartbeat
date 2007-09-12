@@ -3,7 +3,7 @@
 # This is mysql-heartbeat, a script to measure replication lag.
 #
 # This program is copyright (c) 2006 Proven Scaling LLC and SixApart Ltd, and
-# 2007 Baron Schwartz.  Feedback and improvements are welcome.
+# (c) 2007 Baron Schwartz.  Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -25,7 +25,7 @@ use warnings FATAL => 'all';
 use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
-use List::Util qw(max sum);
+use List::Util qw(min max sum);
 use Term::ReadKey;
 use Time::HiRes qw(ualarm gettimeofday);
 
@@ -45,6 +45,7 @@ my @opt_spec = (
    { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'frames=s',          d => 'Timeframes for averages (default 1m,5m,15m)' },
    { s => 'help',              d => 'Show this help message' },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'monitor',           d => 'Monitor slave delay continuously' },
@@ -58,7 +59,11 @@ my @opt_spec = (
 );
 
 my %opts = (
-   t => 'heartbeat',
+   t       => 'heartbeat',
+   update  => 0,
+   check   => 0,
+   monitor => 0,
+   frames  => '1m,5m,15m',
 );
 
 # Post-process...
@@ -84,6 +89,30 @@ if ( $opts{version} ) {
 if ( !$opts{help} ) {
    if ( $opts{monitor} + $opts{update} + $opts{check} != 1 ) {
       warn "You must use one and only one of --update, --monitor, or --check\n";
+      $opts{help} = 1;
+   }
+
+   # Parse the timeframe specification
+   my @frames = $opts{frames} =~ m/(\d+[smhd])/g;
+   if ( @frames ) {
+      $opts{frames} = [];
+      foreach my $frame ( @frames ) {
+         my ($num, $suf ) = $frame =~ m/(\d+)([smhd])$/;
+         if ( !defined $num || $num <= 0 ) {
+            warn "Invalid --frames argument\n";
+            $opts{help} = 1;
+         }
+         else {
+            push @{$opts{frames}}, 
+                 $suf eq 's' ? $num            # Seconds
+               : $suf eq 'm' ? $num * 60       # Minutes
+               : $suf eq 'h' ? $num * 3600     # Hours
+               :               $num * 86400;   # Days
+         }
+      }
+   }
+   else {
+      warn "Invalid --frames argument\n";
       $opts{help} = 1;
    }
 }
@@ -128,10 +157,10 @@ if ( $opts{daemonize} ) {
    open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
 }
 
-# Container for moving averages: 15 minutes worth of seconds.  The first 60
-# are one-minute, the first 300 are five-minute, and the whole array is the
-# 15-minute.
-my @samples = map { 0 } (1..900);
+# Setup for moving averages.
+my @samples;
+my $limit  = $opts{frames}->[-1];
+my $format = "%4ds [ " . join(", ", map { "%5.2fs" } @{$opts{frames}}) . " ]\n";
 
 # This handler will do nothing but wake us up from sleep();
 $SIG{ALRM} = sub {};
@@ -139,8 +168,8 @@ $SIG{ALRM} = sub {};
 # Set up an alarm on the edge of the next second, and each second after.
 ualarm(( ($opts{update} ? 1_000_000 : 1_500_000) - (gettimeofday)[1] ), 1_000_000);
 
-LOOP:
-while ( 1 ) {
+my $count = 0;
+while ( ++$count ) {
 
    # Normally it is not safe to use sleep and alarm together, but since we're
    # sleeping an infinite time and waiting for the alarm to wake us up,
@@ -157,11 +186,11 @@ while ( 1 ) {
 
       # Get the data
       $sth ||= $dbh->prepare(
-         "SELECT UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ts) AS delay FROM `$opts{t}` WHERE id=1");
+         "SELECT UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ts) AS delay FROM $opts{t} WHERE id=1");
       $sth->execute;
       my ( $delay ) = $sth->fetchrow_array;
       unshift @samples, $delay;
-      pop @samples;
+      pop @samples if @samples > $limit;
 
       # Calculate and print results
       if ( $opts{check} ) {
@@ -169,15 +198,16 @@ while ( 1 ) {
          exit(0);
       }
       else {
-         my $one     = sum(@samples[0..59])  / 60;
-         my $five    = sum(@samples[0..299]) / 300;
-         my $fifteen = sum(@samples)         / 900;
-         printf("%4ds [ %5.2fs, %5.2fs, %5.2fs ]\n", $delay, $one, $five, $fifteen);
+         my @vals = map {
+            my $bound = min($_, $count);
+            sum(@samples[0 .. $bound-1]) / $_;
+         } @{$opts{frames}};
+         printf($format, $delay, @vals);
       }
    }
 
    else { # --update mode
-      $sth ||= $dbh->prepare("UPDATE $opt_table SET ts=NOW() WHERE id=1");
+      $sth ||= $dbh->prepare("UPDATE $opts{t} SET ts=NOW() WHERE id=1");
       $sth->execute;
    }
 }
@@ -301,7 +331,7 @@ support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
 This program is copyright (c) 2006 Proven Scaling LLC and SixApart Ltd, and
-2007 Baron Schwartz.  Feedback and improvements are welcome.
+(c) 2007 Baron Schwartz.  Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
