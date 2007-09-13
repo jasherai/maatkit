@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-heartbeat, a script to measure replication lag.
+# This is mysql-heartbeat, a script to measure replication delay.
 #
 # This program is copyright (c) 2006 Proven Scaling LLC and SixApart Ltd, and
 # (c) 2007 Baron Schwartz.  Feedback and improvements are welcome.
@@ -38,13 +38,13 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # ############################################################################
 
 # Define cmdline args; each is GetOpt::Long spec and human-readable description.
-# TODO: add a --file
 my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for password for connections' },
    { s => 'check',             d => 'Check slave delay once and exit' },
    { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'file=s',            d => 'Print latest --monitor output to this file' },
    { s => 'frames=s',          d => 'Timeframes for averages (default 1m,5m,15m)' },
    { s => 'help',              d => 'Show this help message' },
    { s => 'host|h=s',          d => 'Connect to host' },
@@ -98,7 +98,7 @@ if ( !$opts{help} ) {
       $opts{frames} = [];
       foreach my $frame ( @frames ) {
          my ($num, $suf ) = $frame =~ m/(\d+)([smhd])$/;
-         if ( !defined $num || $num <= 0 ) {
+         if ( !$num ) {
             warn "Invalid --frames argument\n";
             $opts{help} = 1;
          }
@@ -159,7 +159,7 @@ if ( $opts{daemonize} ) {
 
 # Setup for moving averages.
 my @samples;
-my $limit  = $opts{frames}->[-1];
+my $limit  = max(@{$opts{frames}});
 my $format = "%4ds [ " . join(", ", map { "%5.2fs" } @{$opts{frames}}) . " ]\n";
 
 # This handler will do nothing but wake us up from sleep();
@@ -176,7 +176,7 @@ while ( ++$count ) {
    # there's no harm in it.
    sleep;
 
-   # Connect or reconnect if necessary.
+   # Connect or reconnect if necessary. TODO: test this.
    if ( !$dbh->ping ) {
       $dbh = get_dbh();
       $sth = undef;
@@ -202,7 +202,17 @@ while ( ++$count ) {
             my $bound = min($_, $count);
             sum(@samples[0 .. $bound-1]) / $_;
          } @{$opts{frames}};
-         printf($format, $delay, @vals);
+         my $output = sprintf($format, $delay, @vals);
+         if ( $opts{file} ) {
+            open my $file, ">", $opts{file}
+               or die "Can't open $opts{file}: $OS_ERROR";
+            print $file $output
+               or die "Can't print to  $opts{file}: $OS_ERROR";
+            close $file or die "Can't close $opts{file}: $OS_ERROR";
+         }
+         else {
+            print $output;
+         }
       }
    }
 
@@ -248,11 +258,38 @@ sub get_dbh {
 
 =head1 NAME
 
-mysql-heartbeat - Accurately monitor MySQL replication delay.
+mysql-heartbeat - Precisely monitor MySQL replication delay.
 
 =head1 SYNOPSIS
 
+ mysql-heartbeat -h master-server -D test --update
+ mysql-heartbeat -h slave-server -D test --monitor
+
 =head1 DESCRIPTION
+
+MySQL Heartbeat is a two-part MySQL replication delay monitoring system.  The
+first part updates a timestamp every second on the master.  You must create a
+table on the master as follows:
+
+ CREATE TABLE heartbeat (
+   id int NOT NULL PRIMARY KEY,
+   -- Notice it's a DATETIME not a TIMESTAMP
+   ts datetime NOT NULL
+ );
+ INSERT INTO heartbeat(id) VALUES(1);
+
+Now you connect MySQL Heartbeat to the master and run it in L<"--update"> mode
+to generate the heartbeat.  This completes the first part.
+
+The second part is to monitor the slave's delay with L<"--monitor"> or
+L<"--check">.  This works even on daisy-chained slaves to any depth.
+
+MySQL Heartbeat depends on the clocks on all involved servers being closely
+synchronized via NTP.  It can measure replication delay with high precision on
+MySQL 5.0.8 and newer (see
+L<http://dev.mysql.com/doc/refman/5.0/en/datetime.html>).
+
+TODO: check with Jeremy on this.
 
 =head1 OPTIONS
 
@@ -277,7 +314,24 @@ The database to use for the connection.
 
 =item --defaults-file
 
-Only read default options from the given file.
+Only read default options from the given file.  You must give an absolute
+pathname.
+
+=item --file
+
+When L<"--monitor"> is given, prints output to the specified file instead of to
+STDOUT.  The file is opened, truncated, and closed every second, so it will only
+contain the most recent statistics.  Useful when L<"--daemonize"> is given.
+
+=item --frames
+
+Specifies the timeframes over which to calculate moving averages when
+L<"--monitor"> is given.  The default value is one, five and fifteen minutes.
+Specify as a comma-separated list of numbers with suffixes.  The suffix can be s
+for seconds, m for minutes, h for hours, or d for days.  The size of the largest
+frame determines the maximum memory usage, as the specified number of
+per-second samples are kept in memory to calculate the averages.  You can
+specify as many timeframes as you like.
 
 =item --help
 
@@ -286,6 +340,15 @@ Displays a help message.
 =item --host
 
 Connect to host.
+
+=item --monitor
+
+Specifies that mysql-heartbeat should check the slave's delay every second and
+report to STDOUT (or if L<"--file"> is given, to the file instead).  The output
+is the current delay followed by moving averages over the timeframe given in
+L<"--frames">.  For example,
+
+ 5s [  0.25s,  0.05s,  0.02s ]
 
 =item --password
 
@@ -304,6 +367,10 @@ Socket file to use for connection.
 The table to use for the heartbeat.  The default is 'heartbeat'.  Don't
 specify database.table; use L<"--database"> to specify the database.
 
+=item --update
+
+Assumes the server is a master and updates the heartbeat every second.
+
 =item --user
 
 User for login if not current user.
@@ -319,9 +386,9 @@ Output version information and exit.
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
 
-=head1 OUTPUT
-
 =head1 SEE ALSO
+
+See also L<mysql-slave-delay> and L<mysql-slave-restart>.
 
 =head1 BUGS
 
