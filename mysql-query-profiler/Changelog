@@ -1,5 +1,7 @@
 Changelog for mysql-query-profiler and mysql-profile-compact:
 
+   * Documentation didn't specify how queries in FILE are separated.
+
 2007-09-01: version 1.1.4
 
    * SHOW STATUS inconsistencies after a FLUSH were skewing status.
