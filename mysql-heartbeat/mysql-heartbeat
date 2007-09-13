@@ -31,7 +31,7 @@ use Time::HiRes qw(ualarm gettimeofday);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.
@@ -420,6 +420,6 @@ Proven Scaling LLC, SixApart Ltd, and Baron Schwartz.
 
 =head1 VERSION
 
-This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 864 $.
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 =cut
