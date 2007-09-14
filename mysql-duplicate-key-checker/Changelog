@@ -1,5 +1,7 @@
 Changelog for mysql-duplicate-key-checker:
 
+   * Exit code wasn't always defined.
+
 2007-09-01: version 1.1.0
 
    * Column printout was misaligned one space.
