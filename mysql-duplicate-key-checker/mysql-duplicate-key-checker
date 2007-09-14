@@ -325,7 +325,7 @@ if ( !caller ) {
 
    my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
    my @whole_batch;
-   my $exit_code;
+   my $exit_code = 0;
    my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
 
    my $ic = new IndexChecker;
