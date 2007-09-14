@@ -127,10 +127,9 @@ if ( $opts{help} ) {
    }
    (my $usage = <<"   USAGE") =~ s/^      //gm;
 
-      mysql-heartbeat measures replication lag precisely.  You can use it to
-      update a master or monitor a slave.  If possible, connection options are
-      read from your .my.cnf file.  For more details, please read the
-      documentation:
+      mysql-heartbeat measures replication lag.  You can use it to update a
+      master or monitor a slave.  If possible, connection options are read from
+      your .my.cnf file.  For more details, please read the documentation:
 
          perldoc mysql-heartbeat
 
@@ -272,12 +271,12 @@ sub get_dbh {
 
 =head1 NAME
 
-mysql-heartbeat - Precisely monitor MySQL replication delay.
+mysql-heartbeat - Monitor MySQL replication delay.
 
 =head1 SYNOPSIS
 
- mysql-heartbeat -h master-server -D test --update
- mysql-heartbeat -h slave-server -D test --monitor
+ mysql-heartbeat -D test --update -h master-server
+ mysql-heartbeat -D test --monitor -h slave-server
 
 =head1 DESCRIPTION
 
@@ -347,7 +346,7 @@ Specifies the timeframes over which to calculate moving averages when
 L<"--monitor"> is given.  The default value is one, five and fifteen minutes.
 Specify as a comma-separated list of numbers with suffixes.  The suffix can be s
 for seconds, m for minutes, h for hours, or d for days.  The size of the largest
-frame determines the maximum memory usage, as the specified number of
+frame determines the maximum memory usage, as up the specified number of
 per-second samples are kept in memory to calculate the averages.  You can
 specify as many timeframes as you like.
 
