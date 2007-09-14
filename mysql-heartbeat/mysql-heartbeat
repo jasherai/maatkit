@@ -171,58 +171,68 @@ if ( $opts{update} || $opts{monitor} ) {
    ualarm(( ($opts{update} ? 1_000_000 : 1_500_000) - (gettimeofday)[1] ), 1_000_000);
 }
 
-my $count = 0;
-while ( ++$count ) {
+while ( 1 ) {
 
-   # Normally it is not safe to use sleep and alarm together, but since we're
-   # sleeping an infinite time and waiting for the alarm to wake us up,
-   # there's no harm in it.  In other words, infinite sleep isn't implemented
-   # with alarm.
-   sleep;
+      eval {
+      # Normally it is not safe to use sleep and alarm together, but since we're
+      # sleeping an infinite time and waiting for the alarm to wake us up,
+      # there's no harm in it.  In other words, infinite sleep isn't implemented
+      # with alarm.
+      sleep;
 
-   # Connect or reconnect if necessary. TODO: test this.
-   if ( !$dbh->ping ) {
-      $dbh = get_dbh();
-      $sth = undef;
-   }
-
-   if ( $opts{monitor} || $opts{check} ) {
-
-      # Get the data
-      $sth ||= $dbh->prepare(
-         "SELECT UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ts) AS delay FROM $opts{t} WHERE id=1");
-      $sth->execute;
-      my ( $delay ) = $sth->fetchrow_array;
-      unshift @samples, $delay;
-      pop @samples if @samples > $limit;
-
-      # Calculate and print results
-      if ( $opts{check} ) {
-         print "$delay\n";
-         exit(0);
+      # Connect or reconnect if necessary.
+      if ( !$dbh->ping ) {
+         $dbh = get_dbh();
+         $sth = undef;
       }
-      else {
-         my @vals = map {
-            my $bound = min($_, $count);
-            sum(@samples[0 .. $bound-1]) / $_;
-         } @{$opts{frames}};
-         my $output = sprintf($format, $delay, @vals);
-         if ( $opts{file} ) {
-            open my $file, ">", $opts{file}
-               or die "Can't open $opts{file}: $OS_ERROR";
-            print $file $output
-               or die "Can't print to  $opts{file}: $OS_ERROR";
-            close $file or die "Can't close $opts{file}: $OS_ERROR";
+
+      if ( $opts{monitor} || $opts{check} ) {
+
+         # Get the data
+         $sth ||= $dbh->prepare(
+            "SELECT UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ts) AS delay FROM $opts{t} WHERE id=1");
+         $sth->execute;
+         my ( $delay ) = $sth->fetchrow_array;
+         unshift @samples, $delay;
+         pop @samples if @samples > $limit;
+
+         # Calculate and print results
+         if ( $opts{check} ) {
+            print "$delay\n";
+            exit(0);
          }
          else {
-            print $output;
+            my @vals = map {
+               my $bound = min($_, scalar(@samples));
+               sum(@samples[0 .. $bound-1]) / $_;
+            } @{$opts{frames}};
+            my $output = sprintf($format, $delay, @vals);
+            if ( $opts{file} ) {
+               open my $file, ">", $opts{file}
+                  or die "Can't open $opts{file}: $OS_ERROR";
+               print $file $output
+                  or die "Can't print to  $opts{file}: $OS_ERROR";
+               close $file or die "Can't close $opts{file}: $OS_ERROR";
+            }
+            else {
+               print $output;
+            }
          }
       }
-   }
 
-   else { # --update mode
-      $sth ||= $dbh->prepare("UPDATE $opts{t} SET ts=NOW() WHERE id=1");
-      $sth->execute;
+      else { # --update mode
+         $sth ||= $dbh->prepare("UPDATE $opts{t} SET ts=NOW() WHERE id=1");
+         $sth->execute;
+      }
+   };
+   if ( $EVAL_ERROR ) {
+      if ( $EVAL_ERROR =~ m/Can't connect/ ) {
+         $EVAL_ERROR =~ s/^(?:DBI|DBD).*failed: (.*?)\s*at \S+ line .*/$1/s;
+         print STDERR $EVAL_ERROR, "\n";
+      }
+      else {
+         die $EVAL_ERROR;
+      }
    }
 }
 
@@ -295,6 +305,9 @@ checks happen on the edge of the second, and L<"--monitor"> checks happen
 halfway between seconds.  As long as the servers' clocks aren't skewed much
 and the replication events are propagating in less than half a second, MySQL
 Heartbeat will report zero seconds of delay.
+
+MySQL Heartbeat will try to reconnect if the connection has an error, but will
+not retry if it can't get a connection when it first starts.
 
 =head1 OPTIONS
 
