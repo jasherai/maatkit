@@ -141,8 +141,15 @@ if ( $opts{help} ) {
 # ############################################################################
 # Work.
 # ############################################################################
+my $update_sql = "UPDATE $opts{t} SET ts=NOW() WHERE id=1";
+my $select_sql = "SELECT UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ts) AS delay FROM $opts{t} WHERE id=1";
 my $dbh = get_dbh(); # Connect before daemonizing so --askpass works.
-my $sth;
+my $sth = $dbh->prepare($opts{update} ? $update_sql : $select_sql);
+
+# Do a little check just to make sure the table is there, so there's one last
+# chance to catch errors before daemonizing.
+$sth->execute();
+$sth->finish();
 
 # Daemonize only after (potentially) asking for passwords for --askpass.
 if ( $opts{daemonize} ) {
@@ -188,8 +195,7 @@ while ( 1 ) {
       if ( $opts{monitor} || $opts{check} ) {
 
          # Get the data
-         $sth ||= $dbh->prepare(
-            "SELECT UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ts) AS delay FROM $opts{t} WHERE id=1");
+         $sth ||= $dbh->prepare($select_sql);
          $sth->execute;
          my ( $delay ) = $sth->fetchrow_array;
          unshift @samples, $delay;
@@ -220,14 +226,14 @@ while ( 1 ) {
       }
 
       else { # --update mode
-         $sth ||= $dbh->prepare("UPDATE $opts{t} SET ts=NOW() WHERE id=1");
+         $sth ||= $dbh->prepare($update_sql);
          $sth->execute;
       }
    };
    if ( $EVAL_ERROR ) {
-      if ( $EVAL_ERROR =~ m/Can't connect/ ) {
-         $EVAL_ERROR =~ s/^(?:DBI|DBD).*failed: (.*?)\s*at \S+ line .*/$1/s;
-         print STDERR $EVAL_ERROR, "\n";
+      my ( $err ) = $EVAL_ERROR =~ m/^(?:DBI|DBD).*failed: (.*?)\s*at \S+ line .*/;
+      if ( $err ) {
+         print STDERR $err, "\n";
       }
       else {
          die $EVAL_ERROR;
