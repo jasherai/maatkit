@@ -293,7 +293,6 @@ as follows:
 
  CREATE TABLE heartbeat (
    id int NOT NULL PRIMARY KEY,
-   -- Notice it's a DATETIME not a TIMESTAMP
    ts datetime NOT NULL
  );
  INSERT INTO heartbeat(id) VALUES(1);
