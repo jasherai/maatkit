@@ -5,20 +5,13 @@ mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 query sniper:
    * http://www.stillhq.com/mysql/000008.html
 mysql-relay-prefetch: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
-http://www.mysqlperformanceblog.com/2007/05/22/wishes-for-mysqldump/
 * read binlogs from many servers and apply them to one.
-* Jeremy's replication-delay script.
 
-* Allow daemonization:
+Parallel dump and restore:
+http://www.mysqlperformanceblog.com/2007/05/22/wishes-for-mysqldump/
+http://www.fr3nd.net/projects/mysqlpdump
+http://mysql-ha.com/2007/09/13/mysqlprestore-for-parallel-restores/
 
-use POSIX 'setsid';
-
-sub daemonize {
-   chdir '/' or die "Can't chdir to /: $!";
-   open STDIN, '/dev/null' or die "Can't read /dev/null: $!";
-   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $!";
-   defined( my $pid = fork ) or die "Can't fork: $!";
-   exit if $pid;
-   setsid or die "Can't start a new session: $!";
-   open STDERR, '>&STDOUT' or die "Can't dup stdout: $!";
-}
+Wrapper around netcat file copies
+wrapper to discover LVM and take/release snapshots
+Selectively back up sets of tables (specify sets in the DB itself)
