@@ -15,12 +15,12 @@ if [ ! -d ../$PACK ]; then
    exit 1
 fi
 
-if [ ! grep -q "version $VER" ../$PACK/Changelog ]; then
+VER=`grep VERSION ../$PACK/Makefile | head -n 1 | awk '{print $3}'`
+
+if ! grep -q "version $VER" ../$PACK/Changelog; then
    echo "There's no Changelog entry for version $VER in $PACK";
    exit 1;
 fi
-
-VER=`grep VERSION ../$PACK/Makefile | head -n 1 | awk '{print $3}'`
 
 if [ -z $VER ]; then
    echo "I can't find the version in $PACK"
