@@ -15,7 +15,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-duplicate-key-checker
-VERSION = 1.1.0
+VERSION = 1.1.1
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \
