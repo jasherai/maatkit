@@ -1,12 +1,13 @@
    $Revision$
    mysql-archiver-1.0.1
-   mysql-deadlock-logger-1.0.3
-   mysql-duplicate-key-checker-1.1.0
+   mysql-deadlock-logger-1.0.4
+   mysql-duplicate-key-checker-1.1.1
    mysql-find-0.9.4
-   mysql-query-profiler-1.1.4
+   mysql-heartbeat-1.0.0
+   mysql-query-profiler-1.1.5
    mysql-show-grants-1.0.3
-   mysql-slave-delay-1.0.0
-   mysql-slave-restart-1.0.0
-   mysql-table-checksum-1.1.14
+   mysql-slave-delay-1.0.1
+   mysql-slave-restart-1.0.1
+   mysql-table-checksum-1.1.15
    mysql-table-sync-0.9.6
-   mysql-visual-explain-1.0.2
+   mysql-visual-explain-1.0.3
