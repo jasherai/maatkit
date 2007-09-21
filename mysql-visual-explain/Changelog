@@ -1,5 +1,7 @@
 Changelog for mysql-visual-explain:
 
+2007-09-20: version 1.0.3
+
    * filesort wasn't applied to the first non-constant table.
 
 2007-09-01: version 1.0.2
