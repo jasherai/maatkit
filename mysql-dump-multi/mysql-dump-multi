@@ -26,6 +26,7 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
+use POSIX;
 use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
@@ -37,20 +38,28 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # ############################################################################
 
 my @opt_spec = (
-   { s => 'database|D=s',      d => 'Database to use' },
+   { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
+   { s => 'dbregex=s',         d => 'Database name matches this pattern' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'help',              d => 'Show this help message' },
-   { s => 'numthread|n=i',     d => 'Number of threads (default #CPUs on Linux)' },
+   { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
+   { s => 'numthread|m=i',     d => 'Number of threads (default 2, or #CPUs on Linux)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'quiet|q',           d => 'Do not print checksum results' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
+   { s => 'tblregex=s',        d => 'Table name matches this pattern' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'version',           d => 'Output version information and exit' },
 );
 
 # Holds command-line options.
-my %opts;
+my %opts = (
+   m => 2,
+);
 
 # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This only
 # works on Linux.
@@ -58,10 +67,9 @@ eval {
    open my $file, "<", "/proc/cpuinfo"
       or die $OS_ERROR;
    local $INPUT_RECORD_SEPARATOR = undef;
-   my $contents = <$file>
-      or die $OS_ERROR;
+   my $contents = <$file>;
    close $file;
-   $opts{n} = scalar( map { $_ } $contents =~ m/(processor)/g );
+   $opts{m} = scalar( map { $_ } $contents =~ m/(processor)/g );
 };
 
 # Post-process...
@@ -124,6 +132,19 @@ if ( $opts{help} ) {
    exit(0);
 }
 
+# Make comma-separated lists into hashes.
+if ( $opts{d} ) {
+   $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
+}
+$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
+if ( $opts{t} ) {
+   $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
+}
+$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
+if ( $opts{e} ) {
+   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
+}
+
 # ############################################################################
 # Get ready to do the main work.
 # ############################################################################
@@ -134,9 +155,114 @@ my %conn = (
    S => 'mysql_socket'
 );
 
-my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+my $dsn = 'DBI:mysql:;'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
+$dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
 
-print join('/', @mysqldump_args);
+my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+my @work_to_do;
+
+# Collect the list of databases and tables to do.
+DATABASE:
+foreach my $database ( @databases ) {
+   next DATABASE if
+      ( $opts{d} && !exists($opts{d}->{$database}) )
+      || ( $opts{dbregex} && $database !~ m/$opts{dbregex}/ )
+      || $database =~ m/^(information_schema|lost\+found)$/mi
+      || exists $opts{g}->{$database};
+
+   my @tables = @{$dbh->selectcol_arrayref("SHOW TABLES FROM `$database`")};
+   next DATABASE unless @tables;
+
+   TABLE:
+   foreach my $table ( @tables ) {
+      next TABLE if
+         ( $opts{t} && !exists($opts{t}->{$table}) )
+         || ( $opts{tblregex} && $table !~ m/$opts{tblregex}/ )
+         || ( $opts{R} && $opts{R} eq "$database.$table" )
+         || exists $opts{n}->{$table};
+      push @work_to_do, { D => $database, N => $table };
+   }
+}
+
+# Design header
+my ( $maxdb, $maxtbl );
+$maxdb  = max(8, map { length($_->{D}) } @work_to_do);
+$maxtbl = max(5, map { length($_->{N}) } @work_to_do);
+my $header = "%-${maxdb}s %-${maxtbl}s %5s %6s\n";
+printf($header, qw(DATABASE TABLE TIME STATUS));
+
+# This signal handler will do nothing but wake up the sleeping parent process.
+$SIG{CHLD} = sub {};
+
+# Assign the work to child processes.  Initially just start --numthreads number
+# of children.  Each child that exits will trigger a new one to start after
+# that.  This is really a terrible hack -- I wish Perl had decent threading
+# support so I could just queue work for a fixed pool of worker threads!
+my %kids;
+while ( @work_to_do || %kids ) {
+   if ( @work_to_do && $opts{m} > keys %kids ) {
+      my $todo = shift @work_to_do;
+      $todo->{time} = time;
+      my $pid = fork();
+      die "Can't fork: $OS_ERROR" unless defined $pid;
+      if ( $pid ) {
+         # I'm the parent
+         $kids{$pid} = $todo;
+      }
+      else {
+         # I'm the child
+         do_table($todo);
+         exit(0);
+      }
+   }
+
+   # Possibly wait for child, or just skip and start another
+   if ( keys %kids == $opts{m} || !@work_to_do ) {
+      my $kid = 0;
+      foreach my $pid ( keys %kids ) {
+         $kid = waitpid(-1, POSIX::WNOHANG);
+         last if $kid;
+      }
+
+      if ( $kid ) { # I reaped a child.
+         my $stat = $CHILD_ERROR;
+         my $todo = $kids{$kid};
+         delete $kids{$kid};
+         printf($header, $todo->{D}, $todo->{N}, (time - $todo->{time}), $stat)
+            unless $opts{q};
+      }
+      else {
+         # Don't busy-wait.  But don't wait forever either, as a child may exit
+         # and signal while we're not sleeping, so if we sleep forever we may
+         # not get the signal.
+         sleep(1);
+      }
+   }
+}
+
+sub do_table {
+   my ( $todo ) = @_;
+   my @args = map { s/%([DN])/$todo->{$1}/g; $_; } @mysqldump_args;
+   if ( @args && $args[0] !~ m/mysqldump/ ) {
+      unshift @args, 'mysqldump';
+   }
+   system(join(' ', @args));
+}
+
+=pod
+
+=head1 SYNOPSIS
+
+  mysql-dump-multi -- '%D' '%N' \| gzip -c - \> '%D.%N.gz'
+
+=head1 OUTPUT
+
+  DATABASE TABLE                       TIME STATUS
+  mysql    db                             0      0
+  mysql    columns_priv                   0      0
+  mysql    help_category                  0      0
+
+=cut
