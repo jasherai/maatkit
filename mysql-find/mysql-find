@@ -35,8 +35,6 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# TODO: Can I make % directives be replaced by %whatever while preserving
-# formatting instructions?
 # TODO: implement processes too; then it can be a stale query sniper.
 
 # ############################################################################
@@ -255,7 +253,7 @@ my %test_for = (
    },
    dbregex => sub {
       my ( $table ) = @_;
-      return test_regex($table, 'Database', $opts{dblike});
+      return test_regex($table, 'Database', $opts{dbregex});
    },
    empty => sub {
       my ( $table ) = @_;
