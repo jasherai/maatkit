@@ -3,7 +3,7 @@
 # This is a skeleton file for a Perl script that uses MySQL.  You are welcome
 # to base your own scripts on it.
 #
-# This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
+# This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
