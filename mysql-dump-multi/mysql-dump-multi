@@ -1,0 +1,142 @@
+#!/usr/bin/perl
+
+# This is a program to run more than one thread of mysqldump in parallel.
+#
+# This program is copyright (c) 2007 Baron Schwartz.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+use DBI;
+use English qw(-no_match_vars);
+use Getopt::Long;
+use List::Util qw(max);
+use Term::ReadKey;
+
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+my @opt_spec = (
+   { s => 'database|D=s',      d => 'Database to use' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'host|h=s',          d => 'Connect to host' },
+   { s => 'help',              d => 'Show this help message' },
+   { s => 'numthread|n=i',     d => 'Number of threads (default #CPUs on Linux)' },
+   { s => 'password|p=s',      d => 'Password to use when connecting' },
+   { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'user|u=s',          d => 'User for login if not current user' },
+   { s => 'version',           d => 'Output version information and exit' },
+);
+
+# Holds command-line options.
+my %opts;
+
+# Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This only
+# works on Linux.
+eval {
+   open my $file, "<", "/proc/cpuinfo"
+      or die $OS_ERROR;
+   local $INPUT_RECORD_SEPARATOR = undef;
+   my $contents = <$file>
+      or die $OS_ERROR;
+   close $file;
+   $opts{n} = scalar( map { $_ } $contents =~ m/(processor)/g );
+};
+
+# Post-process...
+my %opt_seen;
+foreach my $spec ( @opt_spec ) {
+   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+   $spec->{k} = $short || $long;
+   $spec->{l} = $long;
+   $spec->{t} = $short;
+   $spec->{n} = $spec->{s} =~ m/!/;
+   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
+   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+}
+
+# Remove options we DO NOT want THIS program to interpret.
+my @mysqldump_args;
+if ( grep { $_ eq '--' } @ARGV ) {
+   my $i = 0;
+   while ( $i < @ARGV ) {
+      last if $ARGV[$i++] eq '--';
+   }
+
+   @mysqldump_args = @ARGV[$i .. $#ARGV];
+   pop @ARGV;
+}
+
+Getopt::Long::Configure('no_ignore_case', 'bundling');
+GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+# If there was no -- marker in the arguments, whatever arguments are left go
+# to mysqldump.
+if ( !@mysqldump_args ) {
+   @mysqldump_args = @ARGV;
+}
+
+if ( $opts{version} ) {
+   print "mysql-dump-multi  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
+
+if ( $opts{help} ) {
+   print "Usage: mysql-dump-multi <options> [--] <mysqldump args>\n\n";
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+   }
+   (my $usage = <<"   USAGE") =~ s/^      //gm;
+
+      mysql-dump-multi does something or other.
+
+      If possible, database options are read from your .my.cnf file.
+      For more details, please read the documentation:
+
+         perldoc mysql-dump-multi
+
+   USAGE
+   print $usage;
+   exit(0);
+}
+
+# ############################################################################
+# Get ready to do the main work.
+# ############################################################################
+my %conn = (
+   F => 'mysql_read_default_file',
+   h => 'host',
+   P => 'port',
+   S => 'mysql_socket'
+);
+
+my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
+   . ';mysql_read_default_group=mysql';
+my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
+
+print join('/', @mysqldump_args);
