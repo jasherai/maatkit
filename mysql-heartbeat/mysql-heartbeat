@@ -173,9 +173,7 @@ $SIG{ALRM} = sub {};
 
 # Set up an alarm.  --update alarms happen on the second boundary, and
 # --monitor alarms happen halfway between seconds.
-if ( $opts{update} || $opts{monitor} ) {
-   ualarm(( ($opts{update} ? 1_000_000 : 1_500_000) - (gettimeofday)[1] ), 1_000_000);
-}
+ualarm(( ($opts{update} ? 1_000_000 : 1_500_000) - (gettimeofday)[1] ), 1_000_000);
 
 while ( 1 ) {
 
