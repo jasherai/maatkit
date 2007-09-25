@@ -43,7 +43,8 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # Magical syntax for dumping each to a file in tab-sep and schema both.
 
 my @opt_spec = (
-   { s => 'binlogpos|b!',      d => 'Print the master/slave position (default)' },
+   { s => 'basedir=s',         d => 'Base directory for files (default ./)' },
+   { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Database name matches this pattern' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
@@ -58,8 +59,12 @@ my @opt_spec = (
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print checksum results' },
+   { s => 'schema',            d => 'Dump schema separately' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   # TODO
+   { s => 'tab',               d => 'Dump data in tab-separated format' },
    { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
+   { s => 'test',     ,        d => 'Print commands instead of executing them' },
    { s => 'tblregex=s',        d => 'Table name matches this pattern' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'version',           d => 'Output version information and exit' },
@@ -67,11 +72,12 @@ my @opt_spec = (
 
 # Holds command-line options.
 my %opts = (
-   m    => 2,
-   k    => 1,
-   b    => 1,
-   opt  => 1,
-   gzip => $OSNAME !~ m/Win32/,
+   m       => 2,
+   k       => 1,
+   b       => 1,
+   opt     => 1,
+   gzip    => $OSNAME !~ m/Win32/,
+   basedir => './',
 );
 
 # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This only
@@ -97,35 +103,8 @@ foreach my $spec ( @opt_spec ) {
    die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
 }
 
-# Decide on options to mysqldump.
 my @mysqldump_args;
-if ( $opts{opt} ) {
-   # Sensible defaults.
-   @mysqldump_args = qw(
-      --compact
-      --add-locks
-      --allow-keywords
-      --comments
-      --complete-insert
-      --create-options
-      --disable-keys
-      --extended-insert
-      --quick
-      --quote-names
-      --skip-lock-tables
-   );
-   if ( $opts{gzip} ) {
-      push @mysqldump_args, qw( | gzip -c - > %D.%N.gz );
-   }
-   else {
-      push @mysqldump_args, qw(
-         --result-file=%D.%N.txt
-         %D
-         %N
-      );
-   }
-}
-elsif ( grep { $_ eq '--' } @ARGV ) {
+if ( grep { $_ eq '--' } @ARGV ) {
    # Remove options we DO NOT want THIS program to interpret.
    my $i = 0;
    while ( $i < @ARGV ) {
@@ -139,9 +118,37 @@ elsif ( grep { $_ eq '--' } @ARGV ) {
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
-# If there was no -- marker in the arguments, whatever arguments are left go
-# to mysqldump.
-if ( !@mysqldump_args ) {
+# Decide on options to mysqldump.
+if ( $opts{opt} && !@mysqldump_args ) {
+   # Sensible defaults.
+   @mysqldump_args = qw(
+      --add-drop-table
+      --add-locks
+      --allow-keywords
+      --comments
+      --complete-insert
+      --create-options
+      --disable-keys
+      --extended-insert
+      --quick
+      --quote-names
+      --set-charset
+      --skip-lock-tables
+      --triggers
+      --tz-utc
+      %D
+      %N
+   );
+   if ( $opts{gzip} ) {
+      push @mysqldump_args, qw( | gzip -c - > ), "$opts{basedir}%D.%N.sql.gz";
+   }
+   else {
+      push @mysqldump_args, "--result-file=$opts{basedir}%D.%N.sql";
+   }
+}
+elsif ( !@mysqldump_args ) {
+   # If there was no -- marker in the arguments, whatever arguments are left go
+   # to mysqldump.
    @mysqldump_args = @ARGV;
 }
 
@@ -205,14 +212,16 @@ $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow
 # ############################################################################
 # Lock the whole server.
 # ############################################################################
-if ( $opts{k} ) {
+if ( $opts{k} && !$opts{test} ) {
    $dbh->do('FLUSH TABLES WITH READ LOCK');
 }
 
 # ############################################################################
 # Get the master position.
 # ############################################################################
-if ( $opts{b} ) {
+if ( $opts{b} && !$opts{test} ) {
+   open my $file, ">", "$opts{basedir}00_master_data.sql"
+      or die $OS_ERROR;
    my %wanted = map { $_ => 1 }
       qw(file position master_host master_port master_log_file
       read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
@@ -224,24 +233,30 @@ if ( $opts{b} ) {
    };
    eval {
       $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
+      print $file "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
+                . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
+                . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n";
    };
    my %hash;
    foreach my $thing ( $master_pos, $slave_pos ) {
       next unless $thing;
       foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
-         print "$key $thing->{$key}\n";
+         print $file "-- $key $thing->{$key}\n";
       }
    }
+   close $file or die $OS_ERROR;
 }
 
 my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 my @work_to_do;
+my %tables_for;
 
 # ############################################################################
 # Collect the list of databases and tables to do.
 # ############################################################################
 DATABASE:
 foreach my $database ( @databases ) {
+   $tables_for{$database} = [];
    next DATABASE if
       ( $opts{d} && !exists($opts{d}->{$database}) )
       || ( $opts{dbregex} && $database !~ m/$opts{dbregex}/ )
@@ -259,6 +274,7 @@ foreach my $database ( @databases ) {
          || ( $opts{R} && $opts{R} eq "$database.$table" )
          || exists $opts{n}->{$table};
       push @work_to_do, { D => $database, N => $table };
+      push @{$tables_for{$database}}, $table;
    }
 }
 
@@ -268,10 +284,52 @@ $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
 $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
 my $header = "%-${maxdb}s %-${maxtbl}s %5s %6s\n";
 printf($header, qw(DATABASE TABLE TIME STATUS))
-   unless $opts{q};
+   unless $opts{q} || $opts{test};
 
 # This signal handler will do nothing but wake up the sleeping parent process.
 $SIG{CHLD} = sub {};
+
+if ( $opts{schema} ) {
+   # Dump the schema separately
+   foreach my $database ( @databases ) {
+      my @tables = @{$tables_for{$database}};
+      next unless @tables;
+      my @cmd = qw(
+         mysqldump
+         --no-data
+         --add-drop-table
+         --allow-keywords
+         --comments
+         --complete-insert
+         --create-options
+         --disable-keys
+         --extended-insert
+         --quick
+         --quote-names
+         --routines
+         --set-charset
+         --skip-lock-tables
+         --triggers
+         --tz-utc
+      );
+      push @cmd, $database, @tables;
+      if ( $opts{gzip} ) {
+         push @cmd, qw( | gzip -c - > );
+         push @cmd, "$opts{basedir}01_schema_$database.sql.gz";
+      }
+      else {
+         push @cmd, "--result-file=$opts{basedir}01_schema_$database.sql";
+      }
+
+      if ( $opts{test} ) {
+         print join(' ', @cmd), "\n";
+      }
+      else {
+         system(join(' ', @cmd));
+      }
+
+   }
+}
 
 # ############################################################################
 # Assign the work to child processes.  Initially just start --numthreads number
@@ -306,7 +364,7 @@ while ( @work_to_do || %kids ) {
          my $todo = $kids{$kid};
          delete $kids{$kid};
          printf($header, $todo->{D}, $todo->{N}, (time - $todo->{time}), $stat)
-            unless $opts{q};
+            unless $opts{q} || $opts{test};
          $reaped = 1;
       }
    }
@@ -328,7 +386,12 @@ sub do_table {
    if ( @args && $args[0] !~ m/mysqldump/ ) {
       unshift @args, 'mysqldump';
    }
-   system(join(' ', @args));
+   if ( $opts{test} ) {
+      print join(' ', @args), "\n";
+   }
+   else {
+      system(join(' ', @args));
+   }
 }
 
 =pod
