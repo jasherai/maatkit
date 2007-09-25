@@ -37,15 +37,24 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # Get configuration information.
 # ############################################################################
 
+# TODO:
+# flush-logs
+# read sets of tables together from a table.
+# Magical syntax for dumping each to a file in tab-sep and schema both.
+
 my @opt_spec = (
+   { s => 'binlogpos|b!',      d => 'Print the master/slave position (default)' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Database name matches this pattern' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'gzip!',             d => 'Compress files with gzip (default on non-Win32)' },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'help',              d => 'Show this help message' },
    { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
    { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
+   { s => 'lock|k!',           d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
    { s => 'numthread|m=i',     d => 'Number of threads (default 2, or #CPUs on Linux)' },
+   { s => 'opt!',              d => 'Use sensible mysqldump options (enabled by default)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print checksum results' },
@@ -58,7 +67,11 @@ my @opt_spec = (
 
 # Holds command-line options.
 my %opts = (
-   m => 2,
+   m    => 2,
+   k    => 1,
+   b    => 1,
+   opt  => 1,
+   gzip => $OSNAME !~ m/Win32/,
 );
 
 # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This only
@@ -84,9 +97,36 @@ foreach my $spec ( @opt_spec ) {
    die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
 }
 
-# Remove options we DO NOT want THIS program to interpret.
+# Decide on options to mysqldump.
 my @mysqldump_args;
-if ( grep { $_ eq '--' } @ARGV ) {
+if ( $opts{opt} ) {
+   # Sensible defaults.
+   @mysqldump_args = qw(
+      --compact
+      --add-locks
+      --allow-keywords
+      --comments
+      --complete-insert
+      --create-options
+      --disable-keys
+      --extended-insert
+      --quick
+      --quote-names
+      --skip-lock-tables
+   );
+   if ( $opts{gzip} ) {
+      push @mysqldump_args, qw( | gzip -c - > %D.%N.gz );
+   }
+   else {
+      push @mysqldump_args, qw(
+         --result-file=%D.%N.txt
+         %D
+         %N
+      );
+   }
+}
+elsif ( grep { $_ eq '--' } @ARGV ) {
+   # Remove options we DO NOT want THIS program to interpret.
    my $i = 0;
    while ( $i < @ARGV ) {
       last if $ARGV[$i++] eq '--';
@@ -146,7 +186,7 @@ if ( $opts{e} ) {
 }
 
 # ############################################################################
-# Get ready to do the main work.
+# Connect.
 # ############################################################################
 my %conn = (
    F => 'mysql_read_default_file',
@@ -160,11 +200,46 @@ my $dsn = 'DBI:mysql:;'
    . ';mysql_read_default_group=mysql';
 my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
 $dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
+$dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref
+
+# ############################################################################
+# Lock the whole server.
+# ############################################################################
+if ( $opts{k} ) {
+   $dbh->do('FLUSH TABLES WITH READ LOCK');
+}
+
+# ############################################################################
+# Get the master position.
+# ############################################################################
+if ( $opts{b} ) {
+   my %wanted = map { $_ => 1 }
+      qw(file position master_host master_port master_log_file
+      read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
+      exec_master_log_pos);
+
+   my ( $master_pos, $slave_pos );
+   eval {
+      $master_pos = $dbh->selectrow_hashref('SHOW MASTER STATUS');
+   };
+   eval {
+      $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
+   };
+   my %hash;
+   foreach my $thing ( $master_pos, $slave_pos ) {
+      next unless $thing;
+      foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
+         print "$key $thing->{$key}\n";
+      }
+   }
+}
 
 my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 my @work_to_do;
 
+# ############################################################################
 # Collect the list of databases and tables to do.
+# ############################################################################
 DATABASE:
 foreach my $database ( @databases ) {
    next DATABASE if
@@ -192,18 +267,21 @@ my ( $maxdb, $maxtbl );
 $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
 $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
 my $header = "%-${maxdb}s %-${maxtbl}s %5s %6s\n";
-printf($header, qw(DATABASE TABLE TIME STATUS));
+printf($header, qw(DATABASE TABLE TIME STATUS))
+   unless $opts{q};
 
 # This signal handler will do nothing but wake up the sleeping parent process.
 $SIG{CHLD} = sub {};
 
+# ############################################################################
 # Assign the work to child processes.  Initially just start --numthreads number
 # of children.  Each child that exits will trigger a new one to start after
 # that.  This is really a terrible hack -- I wish Perl had decent threading
 # support so I could just queue work for a fixed pool of worker threads!
+# ############################################################################
 my %kids;
 while ( @work_to_do || %kids ) {
-   if ( @work_to_do && $opts{m} > keys %kids ) {
+   while ( @work_to_do && $opts{m} > keys %kids ) {
       my $todo = shift @work_to_do;
       $todo->{time} = time;
       my $pid = fork();
@@ -220,29 +298,30 @@ while ( @work_to_do || %kids ) {
    }
 
    # Possibly wait for child, or just skip and start another
-   if ( keys %kids == $opts{m} || !@work_to_do ) {
-      my $kid = 0;
-      foreach my $pid ( keys %kids ) {
-         $kid = waitpid(-1, POSIX::WNOHANG);
-         last if $kid;
-      }
-
+   my $reaped = 0;
+   foreach my $pid ( keys %kids ) {
+      my $kid = waitpid($pid, POSIX::WNOHANG);
       if ( $kid ) { # I reaped a child.
          my $stat = $CHILD_ERROR;
          my $todo = $kids{$kid};
          delete $kids{$kid};
          printf($header, $todo->{D}, $todo->{N}, (time - $todo->{time}), $stat)
             unless $opts{q};
+         $reaped = 1;
       }
-      else {
-         # Don't busy-wait.  But don't wait forever either, as a child may exit
-         # and signal while we're not sleeping, so if we sleep forever we may
-         # not get the signal.
-         sleep(1);
-      }
+   }
+
+   if ( !$reaped ) {
+      # Don't busy-wait.  But don't wait forever either, as a child may exit
+      # and signal while we're not sleeping, so if we sleep forever we may
+      # not get the signal.
+      sleep(1);
    }
 }
 
+# ############################################################################
+# Dump a table.
+# ############################################################################
 sub do_table {
    my ( $todo ) = @_;
    my @args = map { s/%([DN])/$todo->{$1}/g; $_; } @mysqldump_args;
