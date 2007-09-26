@@ -43,6 +43,9 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # flush-logs
 # read sets of tables together from a table.
 # Check a table for last-modified for each table.
+# Report status for each child process
+# Safe dump: if DB server goes away, wait for it to come back.
+# Dump a single table in multiple process with WHERE clause on PK.
 
 my @opt_spec = (
    { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
