@@ -24,6 +24,7 @@ use warnings FATAL => 'all';
 
 use DBI;
 use English qw(-no_match_vars);
+use File::Basename qw(dirname);
 use File::Spec;
 use Getopt::Long;
 use List::Util qw(max);
@@ -46,7 +47,7 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 my @opt_spec = (
    { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
    { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
-   { s => 'csv',               d => 'Dump data in CSV format (implies --schema)' },
+   { s => 'csv',               d => 'Dump data in CSV format (implies --schema --umask 0)' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Database name matches this pattern' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
@@ -66,6 +67,7 @@ my @opt_spec = (
    { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
    { s => 'test',     ,        d => 'Print commands instead of executing them' },
    { s => 'tblregex=s',        d => 'Table name matches this pattern' },
+   { s => 'umask=s',           d => 'Umask value, in octal' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'version',           d => 'Output version information and exit' },
 );
@@ -120,8 +122,17 @@ GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
 $opts{basedir} = File::Spec->rel2abs($opts{basedir});
 
-if ( $opts{csv} && !defined $opts{schema} ) {
-   $opts{schema} = 1;
+if ( $opts{csv} ) {
+   if ( !defined $opts{schema} ) {
+      $opts{schema} = 1;
+   }
+   if ( !defined $opts{umask} ) {
+      $opts{umask} = 0;
+   }
+}
+
+if ( defined $opts{umask} ) {
+   umask oct($opts{umask});
 }
 
 # Decide on options to mysqldump.
@@ -147,11 +158,11 @@ if ( $opts{opt} && !@mysqldump_args ) {
    );
    if ( $opts{gzip} ) {
       push @mysqldump_args, qw( | gzip -c - > ),
-         filename("%D.%N.sql.gz");
+         filename('%D', "%N.sql.gz");
    }
    else {
       push @mysqldump_args,
-         '--result-file=' . filename("%D.%N.sql");
+         '--result-file=' . filename('%D', "%N.sql");
    }
 }
 elsif ( !@mysqldump_args ) {
@@ -225,8 +236,9 @@ if ( $opts{k} && !$opts{test} ) {
 # Get the master position.
 # ############################################################################
 if ( $opts{b} && !$opts{test} ) {
-   open my $file, ">", filename('00_master_data.sql')
-      or die $OS_ERROR;
+   my $filename = filename('00_master_data.sql');
+   makedir($filename);
+   open my $file, ">", $filename or die $OS_ERROR;
    my %wanted = map { $_ => 1 }
       qw(file position master_host master_port master_log_file
       read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
@@ -320,10 +332,14 @@ if ( $opts{schema} ) {
       push @cmd, $database, @tables;
       if ( $opts{gzip} ) {
          push @cmd, qw( | gzip -c - > );
-         push @cmd, filename("01_schema_$database.sql.gz");
+         my $filename = filename($database, '00_schema.sql.gz');
+         makedir($filename);
+         push @cmd, $filename;
       }
       else {
-         push @cmd, "--result-file=" . filename("01_schema_$database.sql");
+         my $filename = filename($database, '00_schema.sql');
+         makedir($filename);
+         push @cmd, "--result-file=$filename";
       }
 
       if ( $opts{test} ) {
@@ -389,20 +405,21 @@ sub do_table {
    my ( $todo ) = @_;
    if ( $opts{csv} ) {
       my $dbh  = get_dbh();
-      my $file = filename("$todo->{D}.$todo->{N}.sql");
-      my $sql  = qq{SELECT * INTO OUTFILE '$file' }
+      my $filename = filename($todo->{D}, "$todo->{N}.csv");
+      makedir($filename);
+      my $sql  = qq{SELECT * INTO OUTFILE '$filename' }
                . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
                . qq{LINES TERMINATED BY '\\n' FROM $todo->{D}.$todo->{N}};
       if ( $opts{test} ) {
          print $sql, "\n";
          if ( $opts{gzip} ) {
-            print "gzip $file\n";
+            print "gzip $filename\n";
          }
       }
       else {
          $dbh->do($sql);
          if ( $opts{gzip} ) {
-            system("gzip $file");
+            system("gzip $filename");
          }
       }
    }
@@ -420,8 +437,30 @@ sub do_table {
    }
 }
 
+# Makes a filename.
 sub filename {
-   return File::Spec->catfile($opts{basedir}, @_);
+   my $filename = File::Spec->catfile($opts{basedir}, @_);
+   return $filename;
+}
+
+{
+   # Memoize...
+   my %dirs;
+
+   # If the directory doesn't exist, makes the directory.
+   sub makedir {
+      my ( $filename ) = @_;
+      my @dirs = File::Spec->splitdir(dirname($filename));
+      foreach my $i ( 0 .. $#dirs ) {
+         my $dir = File::Spec->catdir(@dirs[0 .. $i]);
+         if ( !$dirs{$dir} ) {
+            if ( ! -d $dir ) {
+               mkdir($dir, 0777);
+            }
+            $dirs{$dir}++;
+         }
+      }
+   }
 }
 
 sub get_dbh {
