@@ -45,7 +45,6 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # Check a table for last-modified for each table.
 # Dump a single table in multiple process with WHERE clause on PK.
 # Pass connection parameters to mysqldump.
-# Add no-data option
 
 my @opt_spec = (
    { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
@@ -64,7 +63,7 @@ my @opt_spec = (
    { s => 'locktables',        d => 'Use LOCK TABLES (implies --no-flushlock)' },
    { s => 'numthread|m=i',     d => 'Number of threads (default 2, or #CPUs on Linux)' },
    { s => 'opt!',              d => 'Use sensible mysqldump options (enabled by default)' },
-   { s => 'outfile',           d => 'Dump via SELECT INTO OUTFILE (implies --schema --umask 0)' },
+   { s => 'outfile',           d => 'Do SELECT INTO OUTFILE (sets --schema --umask 0 --no-views)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print checksum results' },
@@ -76,6 +75,7 @@ my @opt_spec = (
    { s => 'umask=s',           d => 'Umask value, in octal' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'version',           d => 'Output version information and exit' },
+   { s => 'views!',            d => 'Dump views also (default)' },
    { s => 'wait|w=s',          d => 'Wait limit when server is down (default 5m)' },
 );
 
@@ -89,6 +89,7 @@ my %opts = (
    basedir  => File::Spec->curdir(),
    flushlog => 1,
    w        => '5m',
+   views    => 1,
 );
 
 # Post-process...
@@ -171,6 +172,10 @@ if ( $opts{outfile} ) {
 
 if ( $opts{locktables} ) {
    $opts{k} = 0;
+}
+
+if ( $opts{outfile} ) {
+   $opts{views} = 0;
 }
 
 if ( defined $opts{umask} ) {
@@ -288,18 +293,20 @@ foreach my $database ( @databases ) {
       || $database =~ m/^(information_schema|lost\+found)$/mi
       || exists $opts{g}->{$database};
 
-   my @tables = @{$dbh->selectcol_arrayref("SHOW TABLES FROM `$database`")};
-   next DATABASE unless @tables;
+   my $tables = $dbh->selectall_arrayref(
+      "SHOW /*!50002 FULL*/ TABLES FROM `$database`");
+   next DATABASE unless @$tables;
 
    TABLE:
-   foreach my $table ( @tables ) {
+   foreach my $table ( @$tables ) {
+      my $tblname = $table->[0];
       next TABLE if
-         ( $opts{t} && !exists($opts{t}->{$table}) )
-         || ( $opts{tblregex} && $table !~ m/$opts{tblregex}/ )
-         || ( $opts{R} && $opts{R} eq "$database.$table" )
-         || exists $opts{n}->{$table};
-      push @work_to_do, { D => $database, N => $table };
-      push @{$tables_for{$database}}, $table;
+         ( $opts{t} && !exists($opts{t}->{$tblname}) )
+         || ( $opts{tblregex} && $tblname !~ m/$opts{tblregex}/ )
+         || ( !$opts{views} && @$table == 2 && $table->[1] eq 'VIEW' )
+         || exists $opts{n}->{$tblname};
+      push @work_to_do, { D => $database, N => $tblname };
+      push @{$tables_for{$database}}, $tblname;
    }
 }
 
@@ -770,6 +777,11 @@ mysqldump options are as follows:
 --create-options --disable-keys --extended-insert --quick --quote-names
 --routines --set-charset --skip-lock-tables --triggers --tz-utc
 
+This dumps the entire database's schema, which may not be what you expected if
+you specified to only dump certain tables.  C'est la vie.  Normal SQL dumps,
+the kind done by default, dump only the specified tables (schema and data) to
+individual files.
+
 =item --socket
 
 Socket file to use for connection.
@@ -799,6 +811,11 @@ User for login if not current user.
 =item --version
 
 Output version information and exit.
+
+=item --views
+
+Dumps views as well as base tables.  This is disabled when L<"--outfile"> is
+specified.
 
 =item --wait
 
