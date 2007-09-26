@@ -44,7 +44,6 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # read sets of tables together from a table.
 # Check a table for last-modified for each table.
 # Dump a single table in multiple process with WHERE clause on PK.
-# Pass connection parameters to mysqldump.
 
 my @opt_spec = (
    { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
@@ -63,10 +62,10 @@ my @opt_spec = (
    { s => 'locktables',        d => 'Use LOCK TABLES (implies --no-flushlock)' },
    { s => 'numthread|m=i',     d => 'Number of threads (default 2, or #CPUs on Linux)' },
    { s => 'opt!',              d => 'Use sensible mysqldump options (enabled by default)' },
-   { s => 'outfile',           d => 'Do SELECT INTO OUTFILE (sets --schema --umask 0 --no-views)' },
+   { s => 'outfile',           d => 'Dump tab-separated (sets --schema --umask 0 --no-views)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'quiet|q',           d => 'Do not print checksum results' },
+   { s => 'quiet|q',           d => 'Do not print normal output' },
    { s => 'schema!',           d => 'Dump schema separately' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
@@ -75,7 +74,7 @@ my @opt_spec = (
    { s => 'umask=s',           d => 'Umask value, in octal' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'version',           d => 'Output version information and exit' },
-   { s => 'views!',            d => 'Dump views also (default)' },
+   { s => 'views!',            d => 'Dump views also (enabled by default)' },
    { s => 'wait|w=s',          d => 'Wait limit when server is down (default 5m)' },
 );
 
@@ -182,13 +181,24 @@ if ( defined $opts{umask} ) {
    umask oct($opts{umask});
 }
 
+# Gather connection parameters to pass to mysqldump.  Order matters; mysqldump
+# will have a problem if --defaults-file isn't first.
+my @conn_params = (
+   [qw(--defaults-file F)],
+   [qw(--host          h)],
+   [qw(--password      p)],
+   [qw(--port          P)],
+   [qw(--socket        S)],
+   [qw(--user          u)],
+);
+@conn_params = map { "$_->[0]='$opts{$_->[1]}'" } grep { defined $opts{$_->[1]} } @conn_params;
+
 # Decide on options to mysqldump.
 my $default_dir;
 if ( $opts{opt} && !@mysqldump_args ) {
    # Sensible defaults.
    $default_dir = 1;
-   @mysqldump_args = qw(
-      mysqldump
+   @mysqldump_args = (qw(mysqldump), @conn_params, qw(
       --add-drop-table
       --add-locks
       --allow-keywords
@@ -205,7 +215,7 @@ if ( $opts{opt} && !@mysqldump_args ) {
       --tz-utc
       %D
       %N
-   );
+   ));
    if ( $opts{gzip} ) {
       push @mysqldump_args, qw( | gzip -c - > ),
          filename('%D', "%N.sql.gz");
@@ -373,8 +383,7 @@ if ( $opts{schema} ) {
    foreach my $database ( @databases ) {
       my @tables = @{$tables_for{$database}};
       next unless @tables;
-      my @cmd = qw(
-         mysqldump
+      my @cmd = (qw(mysqldump), @conn_params, qw(
          --no-data
          --add-drop-table
          --allow-keywords
@@ -390,7 +399,7 @@ if ( $opts{schema} ) {
          --skip-lock-tables
          --triggers
          --tz-utc
-      );
+      ));
       push @cmd, $database, @tables;
       if ( $opts{gzip} ) {
          push @cmd, qw( | gzip -c - > );
@@ -536,6 +545,7 @@ sub filename {
    # If the directory doesn't exist, makes the directory.
    sub makedir {
       my ( $filename ) = @_;
+      return if $opts{test};
       my @dirs = File::Spec->splitdir(dirname($filename));
       foreach my $i ( 0 .. $#dirs ) {
          my $dir = File::Spec->catdir(@dirs[0 .. $i]);
@@ -598,22 +608,30 @@ To dump databases and tables elsewhere:
 
   mysql-parallel-dump --basedir /path/to/elsewhere
 
-To dump to tab-separated files with SELECT INTO OUTFILE, each table with its own data
-and each database with a single file for creating tables and other schema
-objects:
+To dump to tab-separated files with SELECT INTO OUTFILE, each table with its
+own data and each database with a single file for creating tables and other
+schema objects:
 
   mysql-parallel-dump --outfile
 
 To "write your own command line," use -- to indicate where the arguments for
 MySQL Parallel Dump stop and where the arguments for mysqldump (or any other
-program) begin:
+program) begin.  The following example shows mysqldump, and aside from simpler
+options to mysqldump, is basically what happens when you specify no arguments
+at all:
 
   mysql-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \| gzip -c - \> '%D.%N.gz'
 
 The % modifiers are macros (see L<"MACROS">).  The --skip-lock-tables argument
 is very important in that last example, because otherwise both MySQL Parallel
 Dump and mysqldump will lock tables, so mysqldump will hang, waiting for the
-locks.
+locks.  Notice the shell metacharacters | and > are escaped so the shell won't
+interpret them, and they'll get passed through to the generated command-line.
+
+When you use built-in defaults, MySQL Parallel Dump will relay these arguments
+on to every forked copy of mysqldump: --defaults-file, --host, --port,
+--socket, --user, --password.  If you write your own command-line, you will
+need to specify them manually.
 
 =head1 MACROS
 
