@@ -543,11 +543,30 @@ sub system_call {
    }
 }
 
+# ############################################################################
+# Documentation.
+# ############################################################################
+
 =pod
+
+=head1 NAME
+
+mysql-dump-multi - Dump MySQL tables in parallel.
 
 =head1 SYNOPSIS
 
+MySQL Dump Multi
+
   mysql-dump-multi -- mysqldump --skip-lock-tables '%D' '%N' \| gzip -c - \> '%D.%N.gz'
+
+=head1 DESCRIPTION
+=head1 OPTIONS
+=head1 SYSTEM REQUIREMENTS
+=head1 SEE ALSO
+=head1 BUGS
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+=head1 AUTHOR
+=head1 VERSION
 
 =head1 OUTPUT
 
