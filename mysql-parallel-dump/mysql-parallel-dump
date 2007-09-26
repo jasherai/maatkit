@@ -370,8 +370,8 @@ if ( $opts{b} && !$opts{test} ) {
 my ( $maxdb, $maxtbl );
 $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
 $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
-my $header = "%-${maxdb}s %-${maxtbl}s %5s %6s %4s\n";
-printf($header, qw(DATABASE TABLE TIME STATUS KIDS))
+my $header = "%-${maxdb}s %-${maxtbl}s %5s %6s %7s\n";
+printf($header, qw(DATABASE TABLE TIME STATUS THREADS))
    unless $opts{q} || $opts{test};
 
 # This signal handler will do nothing but wake up the sleeping parent process.
@@ -462,9 +462,9 @@ while ( @work_to_do || %kids ) {
       if ( $kid ) { # I reaped a child.
          my $stat = $CHILD_ERROR;
          my $todo = $kids{$kid};
-         delete $kids{$kid};
          printf($header, $todo->{D}, $todo->{N}, (time - $todo->{time}), $stat, scalar keys %kids)
             unless $opts{q} || $opts{test};
+         delete $kids{$kid};
          $reaped = 1;
       }
    }
@@ -642,12 +642,13 @@ arguments.  The available macros are %D for the database and %N for the table.
 Each line of output is printed when a forked "child" process ends and is
 removed from the list of children.  The output shows the database, table,
 seconds spent dumping, the exit status of the forked dump process, and number
-of processes currently forked.  A status of 0 indicates success:
+of current processes (including the one just reaped; so this typically shows
+"how many are running in parallel").  A status of 0 indicates success:
 
-  DATABASE TABLE         TIME STATUS KIDS
-  mysql    db               0      0    3
-  mysql    columns_priv     0      0    3
-  mysql    help_category    0      0    2
+  DATABASE TABLE         TIME STATUS THREADS
+  mysql    db               0      0       4
+  mysql    columns_priv     0      0       4
+  mysql    help_category    0      0       3
 
 =head1 OPTIONS
 
