@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
-# This is a program to run more than one thread of mysqldump in parallel.
+# This is a program to dump MySQL in parallel via mysqldump or SELECT INTO
+# OUTFILE.
 #
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
@@ -43,23 +44,27 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # read sets of tables together from a table.
 # Check a table for last-modified for each table.
 # Dump a single table in multiple process with WHERE clause on PK.
+# Pass connection parameters to mysqldump.
+# Add no-data option
 
 my @opt_spec = (
    { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
    { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
-   { s => 'csv=s',             d => 'Dump CSV to this file (implies --schema --umask 0)' },
+   { s => 'csv',               d => 'Do --outfile dump in CSV format' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
-   { s => 'dbregex=s',         d => 'Database name matches this pattern' },
+   { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-   { s => 'flush!',            d => 'Execute FLUSH LOGS (default)' },
+   { s => 'flushlock|k!',      d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
+   { s => 'flushlog!',         d => 'Execute FLUSH LOGS (default)' },
    { s => 'gzip!',             d => 'Compress files with gzip (default on non-Win32)' },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'help',              d => 'Show this help message' },
    { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
    { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
-   { s => 'lock|k!',           d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
+   { s => 'locktables',        d => 'Use LOCK TABLES (implies --no-flushlock)' },
    { s => 'numthread|m=i',     d => 'Number of threads (default 2, or #CPUs on Linux)' },
    { s => 'opt!',              d => 'Use sensible mysqldump options (enabled by default)' },
+   { s => 'outfile',           d => 'Dump via SELECT INTO OUTFILE (implies --schema --umask 0)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print checksum results' },
@@ -67,7 +72,7 @@ my @opt_spec = (
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
    { s => 'test',     ,        d => 'Print commands instead of executing them' },
-   { s => 'tblregex=s',        d => 'Table name matches this pattern' },
+   { s => 'tblregex=s',        d => 'Dump only tables whose names match this pattern' },
    { s => 'umask=s',           d => 'Umask value, in octal' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'version',           d => 'Output version information and exit' },
@@ -76,14 +81,14 @@ my @opt_spec = (
 
 # Holds command-line options.
 my %opts = (
-   m       => 2,
-   k       => 1,
-   b       => 1,
-   opt     => 1,
-   gzip    => $OSNAME !~ m/Win32/,
-   basedir => File::Spec->curdir(),
-   flush   => 1,
-   w       => '5m',
+   m        => 2,
+   k        => 1,
+   b        => 1,
+   opt      => 1,
+   gzip     => $OSNAME !~ m/Win32/,
+   basedir  => File::Spec->curdir(),
+   flushlog => 1,
+   w        => '5m',
 );
 
 # Post-process...
@@ -155,13 +160,17 @@ if ( !$opts{help} ) {
    }
 }
 
-if ( $opts{csv} ) {
+if ( $opts{outfile} ) {
    if ( !defined $opts{schema} ) {
       $opts{schema} = 1;
    }
    if ( !defined $opts{umask} ) {
       $opts{umask} = 0;
    }
+}
+
+if ( $opts{locktables} ) {
+   $opts{k} = 0;
 }
 
 if ( defined $opts{umask} ) {
@@ -174,6 +183,7 @@ if ( $opts{opt} && !@mysqldump_args ) {
    # Sensible defaults.
    $default_dir = 1;
    @mysqldump_args = qw(
+      mysqldump
       --add-drop-table
       --add-locks
       --allow-keywords
@@ -200,19 +210,14 @@ if ( $opts{opt} && !@mysqldump_args ) {
          '--result-file=' . filename('%D', "%N.sql");
    }
 }
-elsif ( !@mysqldump_args ) {
-   # If there was no -- marker in the arguments, whatever arguments are left go
-   # to mysqldump.
-   @mysqldump_args = @ARGV;
-}
 
 if ( $opts{version} ) {
-   print "mysql-dump-multi  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   print "mysql-parallel-dump  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
    exit(0);
 }
 
 if ( $opts{help} ) {
-   print "Usage: mysql-dump-multi <options> [--] <mysqldump args>\n\n";
+   print "Usage: mysql-parallel-dump <options> [--] <mysqldump args>\n\n";
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
@@ -221,11 +226,12 @@ if ( $opts{help} ) {
    }
    (my $usage = <<"   USAGE") =~ s/^      //gm;
 
-      mysql-dump-multi dumps MySQL tables in parallel.  If possible, database
-      options are read from your .my.cnf file.  For more details, please read
-      the documentation:
+      mysql-parallel-dump dumps MySQL tables in parallel via mysqldump or
+      SELECT INTO OUTFILE.  If possible, database connection options are read
+      from your .my.cnf file.  For more details, please read the
+      documentation:
 
-         perldoc mysql-dump-multi
+         perldoc mysql-parallel-dump
 
    USAGE
    print $usage;
@@ -266,10 +272,49 @@ if ( $opts{k} && !$opts{test} ) {
    $dbh->do('FLUSH TABLES WITH READ LOCK');
 }
 
+my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+my @work_to_do;
+my %tables_for;
+
+# ############################################################################
+# Collect the list of databases and tables to do.
+# ############################################################################
+DATABASE:
+foreach my $database ( @databases ) {
+   $tables_for{$database} = [];
+   next DATABASE if
+      ( $opts{d} && !exists($opts{d}->{$database}) )
+      || ( $opts{dbregex} && $database !~ m/$opts{dbregex}/ )
+      || $database =~ m/^(information_schema|lost\+found)$/mi
+      || exists $opts{g}->{$database};
+
+   my @tables = @{$dbh->selectcol_arrayref("SHOW TABLES FROM `$database`")};
+   next DATABASE unless @tables;
+
+   TABLE:
+   foreach my $table ( @tables ) {
+      next TABLE if
+         ( $opts{t} && !exists($opts{t}->{$table}) )
+         || ( $opts{tblregex} && $table !~ m/$opts{tblregex}/ )
+         || ( $opts{R} && $opts{R} eq "$database.$table" )
+         || exists $opts{n}->{$table};
+      push @work_to_do, { D => $database, N => $table };
+      push @{$tables_for{$database}}, $table;
+   }
+}
+
+# ############################################################################
+# Lock tables if needed.
+# ############################################################################
+if ( $opts{locktables} && !$opts{test} ) {
+   $dbh->do('LOCK TABLES '
+      . join(', ', map { "`$_->{D}`.`$_->{N}` READ" } @work_to_do));
+}
+
 # ############################################################################
 # Flush logs.
 # ############################################################################
-if ( $opts{flush} && !$opts{test} ) {
+if ( $opts{flushlog} && !$opts{test} ) {
    $dbh->do('FLUSH LOGS');
 }
 
@@ -305,43 +350,12 @@ if ( $opts{b} && !$opts{test} ) {
    close $file or die $OS_ERROR;
 }
 
-my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
-my @work_to_do;
-my %tables_for;
-
-# ############################################################################
-# Collect the list of databases and tables to do.
-# ############################################################################
-DATABASE:
-foreach my $database ( @databases ) {
-   $tables_for{$database} = [];
-   next DATABASE if
-      ( $opts{d} && !exists($opts{d}->{$database}) )
-      || ( $opts{dbregex} && $database !~ m/$opts{dbregex}/ )
-      || $database =~ m/^(information_schema|lost\+found)$/mi
-      || exists $opts{g}->{$database};
-
-   my @tables = @{$dbh->selectcol_arrayref("SHOW TABLES FROM `$database`")};
-   next DATABASE unless @tables;
-
-   TABLE:
-   foreach my $table ( @tables ) {
-      next TABLE if
-         ( $opts{t} && !exists($opts{t}->{$table}) )
-         || ( $opts{tblregex} && $table !~ m/$opts{tblregex}/ )
-         || ( $opts{R} && $opts{R} eq "$database.$table" )
-         || exists $opts{n}->{$table};
-      push @work_to_do, { D => $database, N => $table };
-      push @{$tables_for{$database}}, $table;
-   }
-}
-
 # Design header
 my ( $maxdb, $maxtbl );
 $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
 $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
-my $header = "%-${maxdb}s %-${maxtbl}s %5s %6s\n";
-printf($header, qw(DATABASE TABLE TIME STATUS))
+my $header = "%-${maxdb}s %-${maxtbl}s %5s %6s %4s\n";
+printf($header, qw(DATABASE TABLE TIME STATUS KIDS))
    unless $opts{q} || $opts{test};
 
 # This signal handler will do nothing but wake up the sleeping parent process.
@@ -434,7 +448,7 @@ while ( @work_to_do || %kids ) {
          my $stat = $CHILD_ERROR;
          my $todo = $kids{$kid};
          delete $kids{$kid};
-         printf($header, $todo->{D}, $todo->{N}, (time - $todo->{time}), $stat)
+         printf($header, $todo->{D}, $todo->{N}, (time - $todo->{time}), $stat, scalar keys %kids)
             unless $opts{q} || $opts{test};
          $reaped = 1;
       }
@@ -454,9 +468,9 @@ while ( @work_to_do || %kids ) {
 
 # Interpolates % directives from a db/tbl hashref.
 sub interp {
-   my ( $todo, $string ) = @_;
-   $string =~ s/%([DN])/$todo->{$1}/g; 
-   return $string;
+   my ( $todo, @strings ) = @_;
+   map { $_ =~ s/%([DN])/$todo->{$1}/g } @strings;
+   return @strings;
 }
 
 # Actually dumps a table.
@@ -464,13 +478,19 @@ sub do_table {
    my ( $todo ) = @_;
 
    # CSV-formatted dump.
-   if ( $opts{csv} ) {
+   if ( $opts{outfile} ) {
       my $dbh  = get_dbh();
-      my $filename = filename(interp($todo, $opts{csv}));
+      my $filename = filename(interp($todo, '%D', '%N.txt'));
       makedir($filename);
-      my $sql  = qq{SELECT * INTO OUTFILE '$filename' }
+      my $sql;
+      if ( $opts{csv} ) {
+         $sql  = qq{SELECT * INTO OUTFILE '$filename' }
                . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
-               . qq{LINES TERMINATED BY '\\n' FROM $todo->{D}.$todo->{N}};
+               . qq{LINES TERMINATED BY '\\n' FROM `$todo->{D}`.`$todo->{N}`};
+      }
+      else {
+         $sql = "SELECT * INTO OUTFILE '$filename' FROM `$todo->{D}`.`$todo->{N}`";
+      }
       if ( $opts{test} ) {
          print $sql, "\n";
       }
@@ -492,9 +512,6 @@ sub do_table {
       }
 
       my @args = map { interp($todo, $_) } @mysqldump_args;
-      if ( @args && $args[0] !~ m/mysqldump/ ) {
-         unshift @args, 'mysqldump';
-      }
       return system_call( @args );
    }
 }
@@ -551,28 +568,291 @@ sub system_call {
 
 =head1 NAME
 
-mysql-dump-multi - Dump MySQL tables in parallel.
+mysql-parallel-dump - Dump MySQL tables in parallel.
 
 =head1 SYNOPSIS
 
-MySQL Dump Multi
-
-  mysql-dump-multi -- mysqldump --skip-lock-tables '%D' '%N' \| gzip -c - \> '%D.%N.gz'
+  mysql-parallel-dump
 
 =head1 DESCRIPTION
-=head1 OPTIONS
-=head1 SYSTEM REQUIREMENTS
-=head1 SEE ALSO
-=head1 BUGS
-=head1 COPYRIGHT, LICENSE AND WARRANTY
-=head1 AUTHOR
-=head1 VERSION
+
+MySQL Parallel Dump connects to a MySQL server, finds database and table
+names, and does parallel dumps on them.  It can be used in several
+pre-packaged ways, or as a generic wrapper to apply your parameters to tables
+and databases.
+
+To dump all databases and tables to gzipped files in the current directory,
+each database with its own directory, with locks, flushing the binary log,
+and recording binary log positions:
+
+  mysql-parallel-dump
+
+To dump databases and tables elsewhere:
+
+  mysql-parallel-dump --basedir /path/to/elsewhere
+
+To dump to tab-separated files with SELECT INTO OUTFILE, each table with its own data
+and each database with a single file for creating tables and other schema
+objects:
+
+  mysql-parallel-dump --outfile
+
+To "write your own command line," use -- to indicate where the arguments for
+MySQL Parallel Dump stop and where the arguments for mysqldump (or any other
+program) begin:
+
+  mysql-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \| gzip -c - \> '%D.%N.gz'
+
+The % modifiers are macros (see L<"MACROS">).  The --skip-lock-tables argument
+is very important in that last example, because otherwise both MySQL Parallel
+Dump and mysqldump will lock tables, so mysqldump will hang, waiting for the
+locks.
+
+=head1 MACROS
+
+MySQL Parallel Dump can interpolate the database and table name into
+arguments.  The available macros are %D for the database and %N for the table.  
 
 =head1 OUTPUT
 
-  DATABASE TABLE                       TIME STATUS
-  mysql    db                             0      0
-  mysql    columns_priv                   0      0
-  mysql    help_category                  0      0
+Each line of output is printed when a forked "child" process ends and is
+removed from the list of children.  The output shows the database, table,
+seconds spent dumping, the exit status of the forked dump process, and number
+of processes currently forked.  A status of 0 indicates success:
+
+  DATABASE TABLE         TIME STATUS KIDS
+  mysql    db               0      0    3
+  mysql    columns_priv     0      0    3
+  mysql    help_category    0      0    2
+
+=head1 OPTIONS
+
+Some options can be disabled by prefixing them with --no, such as --no-gzip.
+
+=over
+
+=item --basedir
+
+The directory in which files will be stored.  If you use pre-canned options,
+such as L<"--outfile">, MySQL Parallel Dump knows what the eventual filenames will
+be, and can place all the files in this directory.  It will also create any
+parent directories that don't exist, if needed (see also L<"--umask">).
+
+The default is the current working directory.
+
+If you write your own command line, MySQL Parallel Dump cannot know which
+arguments in the command line are filenames, and thus doesn't know the
+eventual destination of the dump files.  It does not try to create parent
+directories in this case.
+
+=item --binlogpos
+
+Dump binary log positions from both SHOW MASTER STATUS and SHOW SLAVE STATUS,
+whichever can be retrieved from the server.  The data is dumped to a file
+named 00_master_data.sql.
+
+=item --csv
+
+Changes L<"--outfile"> options so the dump file is in comma-separated values
+(CSV) format.  The SELECT INTO OUTFILE statement looks like the following, and
+can be re-loaded with the same options:
+
+   SELECT * INTO OUTFILE %D.%N.txt
+   FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"'
+   LINES TERMINATED BY '\n' FROM %D.%N;
+
+=item --databases
+
+Dump this comma-separated list of databases.
+
+=item dbregex
+
+Dump only databases whose names match this Perl regular expression.
+
+=item --defaults-file
+
+Only read default options from the given file.  You must give an absolute
+pathname.
+
+=item --flushlock
+
+Lock all tables globally with FLUSH TABLES WITH READ LOCK.  This is enabled by
+default.  If you only want to lock the tables you're dumping, use
+L<"--locktables">.
+
+=item --flushlog
+
+Execute FLUSH LOGS after locking and before dumping master/slave binary log
+positions.  Enabled by default.
+
+=item --gzip
+
+Compresses files with gzip.  This is enabled by default unless your platform
+is Win32.  By default, this causes the standard SQL dumps to be piped to
+gzip's STDIN and the result is redirected to the destination file.  If this
+option isn't enabled, by default mysqldump's --result-file parameter is used
+to direct the dump to the destination file.  When using L<"--outfile">, this
+option causes gzip to be called separately on each resulting file after it is
+dumped (because SELECT INTO OUTFILE cannot be directed to a pipe).
+
+=item --help
+
+Displays a help message.
+
+=item --host
+
+Connect to host.
+
+=item --ignoredb
+
+Do not dump this comma-separated list of databases.
+
+=item --ignoretbl
+
+Do not dump this comma-separated list of table (not database.table) names.
+
+=item --locktables
+
+Disables L<"--flushlock"> and locks tables with LOCK TABLES READ.
+
+=item --numthread
+
+Specifies the number of parallel processes to run.  The default is 2 (this is
+MySQL Parallel Dump, after all -- 1 is not parallel).  On Linux machines,
+the default is the number of times 'processor' appears in /proc/cpuinfo.
+
+=item --opt
+
+This is sort of related to mysqldump's --opt argument, BUT NOT THE SAME.  It
+does NOT pass --opt to mysqldump.  Instead, it passes the following:
+
+--add-drop-table --add-locks --allow-keywords --comments --complete-insert
+--create-options --disable-keys --extended-insert --quick --quote-names
+--set-charset --skip-lock-tables --triggers --tz-utc
+
+These are what I consider to be sensible default options.
+
+=item --outfile
+
+Dump via SELECT INTO OUTFILE, which is similar to what mysqldump does with the
+--tab option, with the following differences: you're not constrained to a
+single database at a time, the dump files are in CSV format, and schema is
+dumped to a single file, not one file per table (you can disable this; see
+L<"--schema">).
+
+Before you use this option, make sure you know what SELECT INTO OUTFILE does!
+I recommend only using it if you're running MySQL Parallel Dump on the same
+machine as the MySQL server, but there is no protection if you don't.
+
+The files will be gzipped after dumping if L<"--gzip"> is enabled.  This
+option automatically enables L<"--schema"> unless you override it; it also
+sets L<"--umask"> to zero so auto-created directories are writable by the
+MySQL server.
+
+=item --password
+
+Password to use when connecting.
+
+=item --port
+
+Port number to use for connection.
+
+=item --quiet
+
+Suppresses the normal output (see L<"OUTPUT">).
+
+=item --schema
+
+Dumps each database's schema to a file called 00_schema.sql.  The
+mysqldump options are as follows:
+
+--no-data --add-drop-table --allow-keywords --comments --complete-insert
+--create-options --disable-keys --extended-insert --quick --quote-names
+--routines --set-charset --skip-lock-tables --triggers --tz-utc
+
+=item --socket
+
+Socket file to use for connection.
+
+=item --tables
+
+Dump this comma-separated list of table (not database.table) names.
+
+=item --tblregex
+
+Dump only tables whose names match this Perl regular expression.
+
+=item --test
+
+Print commands instead of executing them.
+
+=item --umask
+
+Set the program's umask to this octal value.  This is useful when you want
+created files and directories to be readable or writable by other users (for
+example, the MySQL server itself).
+
+=item --user
+
+User for login if not current user.
+
+=item --version
+
+Output version information and exit.
+
+=item --wait
+
+If the MySQL server crashes during dumping, waits until the server comes back
+and then continues with the rest of the tables.  The value is a number with a
+suffix (s=seconds, m=minutes, h=hours, d=days).  MySQL Parallel Dump will
+check the server every second until this time is exhausted, at which point it
+will give up and exit.
+
+This implements Peter Zaitsev's "safe dump" request: sometimes a dump on a
+server that has corrupt data will kill the server, and this will just wait for
+the server to restart, then keep going without retrying the table that killed
+the server.  It's hard to say which table killed the server, so no tables will
+be retried.  No additional locks will be taken after the server restarts; it's
+assumed this behavior is only useful on a server you're not trying to dump
+while it's in production.
+
+=back
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
+are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz.
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 905 $.
 
 =cut
