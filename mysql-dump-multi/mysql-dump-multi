@@ -40,20 +40,18 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # ############################################################################
 
 # TODO:
-# flush-logs
 # read sets of tables together from a table.
 # Check a table for last-modified for each table.
-# Report status for each child process
-# Safe dump: if DB server goes away, wait for it to come back.
 # Dump a single table in multiple process with WHERE clause on PK.
 
 my @opt_spec = (
    { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
    { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
-   { s => 'csv',               d => 'Dump data in CSV format (implies --schema --umask 0)' },
+   { s => 'csv=s',             d => 'Dump CSV to this file (implies --schema --umask 0)' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Database name matches this pattern' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'flush!',            d => 'Execute FLUSH LOGS (default)' },
    { s => 'gzip!',             d => 'Compress files with gzip (default on non-Win32)' },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'help',              d => 'Show this help message' },
@@ -73,6 +71,7 @@ my @opt_spec = (
    { s => 'umask=s',           d => 'Umask value, in octal' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'version',           d => 'Output version information and exit' },
+   { s => 'wait|w=s',          d => 'Wait limit when server is down (default 5m)' },
 );
 
 # Holds command-line options.
@@ -83,18 +82,9 @@ my %opts = (
    opt     => 1,
    gzip    => $OSNAME !~ m/Win32/,
    basedir => File::Spec->curdir(),
+   flush   => 1,
+   w       => '5m',
 );
-
-# Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This only
-# works on Linux.
-eval {
-   open my $file, "<", "/proc/cpuinfo"
-      or die $OS_ERROR;
-   local $INPUT_RECORD_SEPARATOR = undef;
-   my $contents = <$file>;
-   close $file;
-   $opts{m} = scalar( map { $_ } $contents =~ m/(processor)/g );
-};
 
 # Post-process...
 my %opt_seen;
@@ -120,10 +110,50 @@ if ( grep { $_ eq '--' } @ARGV ) {
    pop @ARGV;
 }
 
+# ############################################################################
+# Get options.
+# ############################################################################
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
+# ############################################################################
+# Process options.
+# ############################################################################
 $opts{basedir} = File::Spec->rel2abs($opts{basedir});
+
+# Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This only
+# works on Linux.
+if ( !$opts{m} ) {
+   eval {
+      open my $file, "<", "/proc/cpuinfo"
+         or die $OS_ERROR;
+      local $INPUT_RECORD_SEPARATOR = undef;
+      my $contents = <$file>;
+      close $file;
+      $opts{m} = scalar( map { $_ } $contents =~ m/(processor)/g );
+   };
+}
+
+if ( !$opts{help} ) {
+   if ( !$opts{m} ) {
+      warn "You must specify --numthread\n";
+      $opts{help} = 1;
+   }
+
+   if ( !$opts{help} ) {
+      my ($num, $suf ) = $opts{w} =~ m/(\d+)([smhd])$/;
+      if ( !defined $num || $num <= 0 ) {
+         warn "Invalid --wait argument\n";
+         $opts{help} = 1;
+      }
+      else {
+         $opts{w} = $suf eq 's' ? $num            # Seconds
+                  : $suf eq 'm' ? $num * 60       # Minutes
+                  : $suf eq 'h' ? $num * 3600     # Hours
+                  :               $num * 86400;   # Days
+      }
+   }
+}
 
 if ( $opts{csv} ) {
    if ( !defined $opts{schema} ) {
@@ -139,8 +169,10 @@ if ( defined $opts{umask} ) {
 }
 
 # Decide on options to mysqldump.
+my $default_dir;
 if ( $opts{opt} && !@mysqldump_args ) {
    # Sensible defaults.
+   $default_dir = 1;
    @mysqldump_args = qw(
       --add-drop-table
       --add-locks
@@ -189,10 +221,9 @@ if ( $opts{help} ) {
    }
    (my $usage = <<"   USAGE") =~ s/^      //gm;
 
-      mysql-dump-multi does something or other.
-
-      If possible, database options are read from your .my.cnf file.
-      For more details, please read the documentation:
+      mysql-dump-multi dumps MySQL tables in parallel.  If possible, database
+      options are read from your .my.cnf file.  For more details, please read
+      the documentation:
 
          perldoc mysql-dump-multi
 
@@ -233,6 +264,13 @@ $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow
 # ############################################################################
 if ( $opts{k} && !$opts{test} ) {
    $dbh->do('FLUSH TABLES WITH READ LOCK');
+}
+
+# ############################################################################
+# Flush logs.
+# ############################################################################
+if ( $opts{flush} && !$opts{test} ) {
+   $dbh->do('FLUSH LOGS');
 }
 
 # ############################################################################
@@ -345,13 +383,7 @@ if ( $opts{schema} ) {
          push @cmd, "--result-file=$filename";
       }
 
-      if ( $opts{test} ) {
-         print join(' ', @cmd), "\n";
-      }
-      else {
-         system(join(' ', @cmd));
-      }
-
+      system_call(@cmd);
    }
 }
 
@@ -363,23 +395,38 @@ if ( $opts{schema} ) {
 # ############################################################################
 my %kids;
 while ( @work_to_do || %kids ) {
+
+   # Wait for the MySQL server to become responsive.
+   my $tries = 0;
+   while ( !$dbh->ping && $tries++ < $opts{w} ) {
+      sleep(1);
+      eval {
+         $dbh = get_dbh();
+      };
+      if ( $EVAL_ERROR ) {
+         $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
+         print "$EVAL_ERROR\n";
+      }
+   }
+   if ( $tries >= $opts{w} ) {
+      die "Too many retries, exiting.\n";
+   }
+
+   # Start a new child process.
    while ( @work_to_do && $opts{m} > keys %kids ) {
       my $todo = shift @work_to_do;
       $todo->{time} = time;
       my $pid = fork();
       die "Can't fork: $OS_ERROR" unless defined $pid;
-      if ( $pid ) {
-         # I'm the parent
+      if ( $pid ) {              # I'm the parent
          $kids{$pid} = $todo;
       }
-      else {
-         # I'm the child
-         do_table($todo);
-         exit(0);
+      else {                     # I'm the child
+         exit(do_table($todo));
       }
    }
 
-   # Possibly wait for child, or just skip and start another
+   # Possibly wait for child.
    my $reaped = 0;
    foreach my $pid ( keys %kids ) {
       my $kid = waitpid($pid, POSIX::WNOHANG);
@@ -404,39 +451,51 @@ while ( @work_to_do || %kids ) {
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+# Interpolates % directives from a db/tbl hashref.
+sub interp {
+   my ( $todo, $string ) = @_;
+   $string =~ s/%([DN])/$todo->{$1}/g; 
+   return $string;
+}
+
+# Actually dumps a table.
 sub do_table {
    my ( $todo ) = @_;
+
+   # CSV-formatted dump.
    if ( $opts{csv} ) {
       my $dbh  = get_dbh();
-      my $filename = filename($todo->{D}, "$todo->{N}.csv");
+      my $filename = filename(interp($todo, $opts{csv}));
       makedir($filename);
       my $sql  = qq{SELECT * INTO OUTFILE '$filename' }
                . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
                . qq{LINES TERMINATED BY '\\n' FROM $todo->{D}.$todo->{N}};
       if ( $opts{test} ) {
          print $sql, "\n";
-         if ( $opts{gzip} ) {
-            print "gzip $filename\n";
-         }
       }
-      else {
-         $dbh->do($sql);
-         if ( $opts{gzip} ) {
-            system("gzip $filename");
-         }
+      $dbh->do($sql) unless $opts{test};
+      if ( $opts{gzip} ) {
+         return system_call('gzip', $filename);
       }
    }
+
+   # Normal dump using mysqldump.
    else {
-      my @args = map { s/%([DN])/$todo->{$1}/g; $_; } @mysqldump_args;
+
+      # If the user left the options alone, we can predict the filename and
+      # directory naming convention, and ensure the directiories exist.
+      # Otherwise the user must ensure the directories exist, because it's a
+      # hard job to figure out which argument in the array is a filename.
+      if ( $default_dir ) {
+         makedir(interp($todo, filename('%D', '%N.sql')));
+      }
+
+      my @args = map { interp($todo, $_) } @mysqldump_args;
       if ( @args && $args[0] !~ m/mysqldump/ ) {
          unshift @args, 'mysqldump';
       }
-      if ( $opts{test} ) {
-         print join(' ', @args), "\n";
-      }
-      else {
-         system(join(' ', @args));
-      }
+      return system_call( @args );
    }
 }
 
@@ -474,11 +533,21 @@ sub get_dbh {
    return $dbh;
 }
 
+sub system_call {
+   my ( @cmd ) = @_;
+   if ( $opts{test} ) {
+      print join(' ', @cmd), "\n";
+   }
+   else {
+      return system(join(' ', @cmd));
+   }
+}
+
 =pod
 
 =head1 SYNOPSIS
 
-  mysql-dump-multi -- '%D' '%N' \| gzip -c - \> '%D.%N.gz'
+  mysql-dump-multi -- mysqldump --skip-lock-tables '%D' '%N' \| gzip -c - \> '%D.%N.gz'
 
 =head1 OUTPUT
 
