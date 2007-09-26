@@ -40,6 +40,7 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # ############################################################################
 
 # TODO:
+# detect # processors on Windows.
 # read sets of tables together from a table.
 # Check a table for last-modified for each table.
 # Dump a single table in multiple process with WHERE clause on PK.
@@ -65,6 +66,8 @@ my @opt_spec = (
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print normal output' },
    { s => 'schema!',           d => 'Dump schema separately' },
+   { s => 'sets=s',            d => 'Backup this comma-separated list of sets' },
+   { s => 'settable=s',        d => 'DB.Table where backup sets are stored' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'tab|T',             d => 'Dump tab-separated (sets --schema --umask 0 --no-views)' },
    { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
@@ -80,7 +83,6 @@ my @opt_spec = (
 # Holds command-line options.
 my %opts = (
    m        => 2,
-   k        => 1,
    b        => 1,
    opt      => 1,
    gzip     => $OSNAME !~ m/Win32/,
@@ -100,18 +102,6 @@ foreach my $spec ( @opt_spec ) {
    $spec->{n} = $spec->{s} =~ m/!/;
    $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
    die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
-}
-
-my @mysqldump_args;
-if ( grep { $_ eq '--' } @ARGV ) {
-   # Remove options we DO NOT want THIS program to interpret.
-   my $i = 0;
-   while ( $i < @ARGV ) {
-      last if $ARGV[$i++] eq '--';
-   }
-
-   @mysqldump_args = @ARGV[$i .. $#ARGV];
-   pop @ARGV;
 }
 
 # ############################################################################
@@ -138,9 +128,19 @@ if ( !$opts{m} ) {
    };
 }
 
+# Set locking options.
+my $lock_all      = $opts{set} || $opts{locktables} ? 0 : 1;
+$opts{k}          = $lock_all unless defined $opts{k};
+$opts{locktables} = !$lock_all unless defined $opts{locktables};
+
 if ( !$opts{help} ) {
    if ( !$opts{m} ) {
       warn "You must specify --numthread\n";
+      $opts{help} = 1;
+   }
+
+   if ( !$opts{help} && $opts{k} && $opts{locktables} ) {
+      warn "--locktables and --flushlock are mutually exclusive\n";
       $opts{help} = 1;
    }
 
@@ -157,6 +157,11 @@ if ( !$opts{help} ) {
                   :               $num * 86400;   # Days
       }
    }
+
+   if ( !$opts{help} && $opts{set} && !$opts{settable} ) {
+      warn "--set requires --settable\n";
+      $opts{help} = 1;
+   }
 }
 
 if ( $opts{T} ) {
@@ -166,13 +171,6 @@ if ( $opts{T} ) {
    if ( !defined $opts{umask} ) {
       $opts{umask} = 0;
    }
-}
-
-if ( $opts{locktables} ) {
-   $opts{k} = 0;
-}
-
-if ( $opts{T} ) {
    $opts{views} = 0;
 }
 
@@ -194,7 +192,8 @@ my @conn_params = (
 
 # Decide on options to mysqldump.
 my $default_dir;
-if ( $opts{opt} && !@mysqldump_args ) {
+my @mysqldump_args;
+if ( $opts{opt} && !@ARGV ) {
    # Sensible defaults.
    $default_dir = 1;
    @mysqldump_args = (qw(mysqldump), @conn_params, qw(
@@ -276,16 +275,20 @@ my %conn = (
 );
 
 my $dbh = get_dbh();
-$dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
-$dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref
+$dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
+$dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 
 # ############################################################################
-# Lock the whole server.
+# Lock the whole server if desired.
 # ############################################################################
 if ( $opts{k} && !$opts{test} ) {
    $dbh->do('FLUSH TABLES WITH READ LOCK');
 }
 
+# ############################################################################
+# Iterate over "sets" of tables.  If --set is not given, iterate over all
+# tables. TODO
+# ############################################################################
 my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 my @work_to_do;
 my %tables_for;
@@ -594,8 +597,8 @@ mysql-parallel-dump - Dump MySQL tables in parallel.
 
 MySQL Parallel Dump connects to a MySQL server, finds database and table
 names, and does parallel dumps on them.  It can be used in several
-pre-packaged ways, or as a generic wrapper to apply your parameters to tables
-and databases.
+pre-packaged ways, or as a generic wrapper to call some program in parallel,
+passing it parameters for each table.
 
 To dump all databases and tables to gzipped files in the current directory,
 each database with its own directory, with locks, flushing the binary log,
@@ -607,35 +610,37 @@ To dump databases and tables elsewhere:
 
   mysql-parallel-dump --basedir /path/to/elsewhere
 
-To dump to tab-separated files with SELECT INTO OUTFILE, each table with its
+To dump to tab-separated files with C<SELECT INTO OUTFILE>, each table with its
 own data and each database with a single file for creating tables and other
 schema objects:
 
   mysql-parallel-dump --tab
 
-To "write your own command line," use -- to indicate where the arguments for
-MySQL Parallel Dump stop and where the arguments for mysqldump (or any other
-program) begin.  The following example shows mysqldump, and aside from simpler
-options to mysqldump, is basically what happens when you specify no arguments
+To "write your own command line," use C<--> to indicate where the arguments for
+MySQL Parallel Dump stop and where the arguments for C<mysqldump> (or any other
+program) begin.  The following example shows C<mysqldump>, and aside from simpler
+options to C<mysqldump>, is basically what happens when you specify no arguments
 at all:
 
-  mysql-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \| gzip --fast -c - \> '%D.%N.gz'
+  mysql-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \
+     \| gzip --fast -c - \> '%D.%N.gz'
 
-The % modifiers are macros (see L<"MACROS">).  The --skip-lock-tables argument
-is very important in that last example, because otherwise both MySQL Parallel
-Dump and mysqldump will lock tables, so mysqldump will hang, waiting for the
-locks.  Notice the shell metacharacters | and > are escaped so the shell won't
-interpret them, and they'll get passed through to the generated command-line.
+The C<%> modifiers are macros (see L<"MACROS">).  The C<--skip-lock-tables>
+argument is very important in that last example, because otherwise both MySQL
+Parallel Dump and C<mysqldump> will lock tables, so C<mysqldump> will hang,
+waiting for the locks.  Notice the shell metacharacters C<|> and C<E<gt>> are escaped
+so the shell won't interpret them, and they'll get passed through to the
+generated command-line.
 
 When you use built-in defaults, MySQL Parallel Dump will relay these arguments
-on to every forked copy of mysqldump: --defaults-file, --host, --port,
---socket, --user, --password.  If you write your own command-line, you will
-need to specify them manually.
+on to every forked copy of mysqldump: L<"--defaults-file">, L<"--host">,
+L<"--port">, L<"--socket">, L<"--user">, L<"--password">.  If you write your
+own command-line, you will need to specify them manually.
 
 =head1 MACROS
 
 MySQL Parallel Dump can interpolate the database and table name into
-arguments.  The available macros are %D for the database and %N for the table.  
+arguments.  The available macros are C<%D> for the database and C<%N> for the table.  
 
 =head1 OUTPUT
 
@@ -652,7 +657,8 @@ of current processes (including the one just reaped; so this typically shows
 
 =head1 OPTIONS
 
-Some options can be disabled by prefixing them with --no, such as --no-gzip.
+Some options can be disabled by prefixing them with C<--no>, such as
+C<--no-gzip>.
 
 =over
 
@@ -672,9 +678,9 @@ directories in this case.
 
 =item --binlogpos
 
-Dump binary log positions from both SHOW MASTER STATUS and SHOW SLAVE STATUS,
-whichever can be retrieved from the server.  The data is dumped to a file
-named 00_master_data.sql.
+Dump binary log positions from both C<SHOW MASTER STATUS> and C<SHOW SLAVE
+STATUS>, whichever can be retrieved from the server.  The data is dumped to a
+file named F<00_master_data.sql>.
 
 =item --csv
 
@@ -701,24 +707,25 @@ pathname.
 
 =item --flushlock
 
-Lock all tables globally with FLUSH TABLES WITH READ LOCK.  This is enabled by
-default.  If you only want to lock the tables you're dumping, use
-L<"--locktables">.
+Lock all tables globally with C<FLUSH TABLES WITH READ LOCK>.  This is enabled
+by default, unless you're dumping sets (see L<"--sets">).  If you only want to
+lock the tables you're dumping, use L<"--locktables">.  This lock is taken
+once, at the beginning of the whole process, and is never released.
 
 =item --flushlog
 
-Execute FLUSH LOGS after locking and before dumping master/slave binary log
+Execute C<FLUSH LOGS> after locking and before dumping master/slave binary log
 positions.  Enabled by default.
 
 =item --gzip
 
 Compresses files with gzip.  This is enabled by default unless your platform
 is Win32.  By default, this causes the standard SQL dumps to be piped to
-gzip's STDIN and the result is redirected to the destination file.  If this
-option isn't enabled, by default mysqldump's --result-file parameter is used
+gzip's C<STDIN> and the result is redirected to the destination file.  If this
+option isn't enabled, by default mysqldump's C<--result-file> parameter is used
 to direct the dump to the destination file.  When using L<"--tab">, this
 option causes gzip to be called separately on each resulting file after it is
-dumped (because SELECT INTO OUTFILE cannot be directed to a pipe).
+dumped (because C<SELECT INTO OUTFILE> cannot be directed to a pipe).
 
 =item --help
 
@@ -738,22 +745,25 @@ Do not dump this comma-separated list of table (not database.table) names.
 
 =item --locktables
 
-Disables L<"--flushlock"> and locks tables with LOCK TABLES READ.
+Disables L<"--flushlock"> (unless it was explicitly set) and locks tables with
+C<LOCK TABLES READ>.  Enabled by default when L<"--set"> is specified.  The
+lock is taken and released with every set of tables dumped.
 
 =item --numthread
 
 Specifies the number of parallel processes to run.  The default is 2 (this is
 MySQL Parallel Dump, after all -- 1 is not parallel).  On Linux machines,
-the default is the number of times 'processor' appears in /proc/cpuinfo.
+the default is the number of times 'processor' appears in F</proc/cpuinfo>.
 
 =item --opt
 
-This is sort of related to mysqldump's --opt argument, BUT NOT THE SAME.  It
-does NOT pass --opt to mysqldump.  Instead, it passes the following:
+This is sort of related to mysqldump's C<--opt> argument, I<but not the same>.  It
+does NOT pass C<--opt> to mysqldump.  Instead, it passes the following:
 
---add-drop-table --add-locks --allow-keywords --comments --complete-insert
---create-options --disable-keys --extended-insert --quick --quote-names
---set-charset --skip-lock-tables --triggers --tz-utc
+C<--add-drop-table> C<--add-locks> C<--allow-keywords> C<--comments>
+C<--complete-insert> C<--create-options> C<--disable-keys>
+C<--extended-insert> C<--quick> C<--quote-names> C<--set-charset>
+C<--skip-lock-tables> C<--triggers> C<--tz-utc>
 
 These are what I consider to be sensible default options.
 
@@ -771,12 +781,13 @@ Suppresses the normal output (see L<"OUTPUT">).
 
 =item --schema
 
-Dumps each database's schema to a file called 00_schema.sql.  The
+Dumps each database's schema to a file called F<00_schema.sql>.  The
 mysqldump options are as follows:
 
---no-data --add-drop-table --allow-keywords --comments --complete-insert
---create-options --disable-keys --extended-insert --quick --quote-names
---routines --set-charset --skip-lock-tables --triggers --tz-utc
+C<--no-data> C<--add-drop-table> C<--allow-keywords> C<--comments>
+C<--complete-insert> C<--create-options> C<--disable-keys>
+C<--extended-insert> C<--quick> C<--quote-names> C<--routines>
+C<--set-charset> C<--skip-lock-tables> C<--triggers> C<--tz-utc>
 
 This dumps the entire database's schema, which may not be what you expected if
 you specified to only dump certain tables.  C'est la vie.  Normal SQL dumps,
@@ -789,12 +800,12 @@ Socket file to use for connection.
 
 =item --tab
 
-Dump via SELECT INTO OUTFILE, which is similar to what mysqldump does with the
---tab option, with the following differences: you're not constrained to a
+Dump via C<SELECT INTO OUTFILE>, which is similar to what mysqldump does with the
+C<--tab> option, with the following differences: you're not constrained to a
 single database at a time, and schema is dumped to a single file, not one file
 per table (you can disable this; see L<"--schema">).
 
-Before you use this option, make sure you know what SELECT INTO OUTFILE does!
+Before you use this option, make sure you know what C<SELECT INTO OUTFILE> does!
 I recommend only using it if you're running MySQL Parallel Dump on the same
 machine as the MySQL server, but there is no protection if you don't.
 
