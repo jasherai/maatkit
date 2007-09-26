@@ -24,6 +24,7 @@ use warnings FATAL => 'all';
 
 use DBI;
 use English qw(-no_match_vars);
+use File::Spec;
 use Getopt::Long;
 use List::Util qw(max);
 use POSIX;
@@ -40,11 +41,12 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # TODO:
 # flush-logs
 # read sets of tables together from a table.
-# Magical syntax for dumping each to a file in tab-sep and schema both.
+# Check a table for last-modified for each table.
 
 my @opt_spec = (
-   { s => 'basedir=s',         d => 'Base directory for files (default ./)' },
+   { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
    { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
+   { s => 'csv',               d => 'Dump data in CSV format (implies --schema)' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Database name matches this pattern' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
@@ -59,10 +61,8 @@ my @opt_spec = (
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print checksum results' },
-   { s => 'schema',            d => 'Dump schema separately' },
+   { s => 'schema!',           d => 'Dump schema separately' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   # TODO
-   { s => 'tab',               d => 'Dump data in tab-separated format' },
    { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
    { s => 'test',     ,        d => 'Print commands instead of executing them' },
    { s => 'tblregex=s',        d => 'Table name matches this pattern' },
@@ -77,7 +77,7 @@ my %opts = (
    b       => 1,
    opt     => 1,
    gzip    => $OSNAME !~ m/Win32/,
-   basedir => './',
+   basedir => File::Spec->curdir(),
 );
 
 # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This only
@@ -118,6 +118,12 @@ if ( grep { $_ eq '--' } @ARGV ) {
 Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 
+$opts{basedir} = File::Spec->rel2abs($opts{basedir});
+
+if ( $opts{csv} && !defined $opts{schema} ) {
+   $opts{schema} = 1;
+}
+
 # Decide on options to mysqldump.
 if ( $opts{opt} && !@mysqldump_args ) {
    # Sensible defaults.
@@ -140,10 +146,12 @@ if ( $opts{opt} && !@mysqldump_args ) {
       %N
    );
    if ( $opts{gzip} ) {
-      push @mysqldump_args, qw( | gzip -c - > ), "$opts{basedir}%D.%N.sql.gz";
+      push @mysqldump_args, qw( | gzip -c - > ),
+         filename("%D.%N.sql.gz");
    }
    else {
-      push @mysqldump_args, "--result-file=$opts{basedir}%D.%N.sql";
+      push @mysqldump_args,
+         '--result-file=' . filename("%D.%N.sql");
    }
 }
 elsif ( !@mysqldump_args ) {
@@ -202,10 +210,7 @@ my %conn = (
    S => 'mysql_socket'
 );
 
-my $dsn = 'DBI:mysql:;'
-   . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
-   . ';mysql_read_default_group=mysql';
-my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
+my $dbh = get_dbh();
 $dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref
 
@@ -220,7 +225,7 @@ if ( $opts{k} && !$opts{test} ) {
 # Get the master position.
 # ############################################################################
 if ( $opts{b} && !$opts{test} ) {
-   open my $file, ">", "$opts{basedir}00_master_data.sql"
+   open my $file, ">", filename('00_master_data.sql')
       or die $OS_ERROR;
    my %wanted = map { $_ => 1 }
       qw(file position master_host master_port master_log_file
@@ -315,10 +320,10 @@ if ( $opts{schema} ) {
       push @cmd, $database, @tables;
       if ( $opts{gzip} ) {
          push @cmd, qw( | gzip -c - > );
-         push @cmd, "$opts{basedir}01_schema_$database.sql.gz";
+         push @cmd, filename("01_schema_$database.sql.gz");
       }
       else {
-         push @cmd, "--result-file=$opts{basedir}01_schema_$database.sql";
+         push @cmd, "--result-file=" . filename("01_schema_$database.sql");
       }
 
       if ( $opts{test} ) {
@@ -378,20 +383,53 @@ while ( @work_to_do || %kids ) {
 }
 
 # ############################################################################
-# Dump a table.
+# Subroutines
 # ############################################################################
 sub do_table {
    my ( $todo ) = @_;
-   my @args = map { s/%([DN])/$todo->{$1}/g; $_; } @mysqldump_args;
-   if ( @args && $args[0] !~ m/mysqldump/ ) {
-      unshift @args, 'mysqldump';
-   }
-   if ( $opts{test} ) {
-      print join(' ', @args), "\n";
+   if ( $opts{csv} ) {
+      my $dbh  = get_dbh();
+      my $file = filename("$todo->{D}.$todo->{N}.sql");
+      my $sql  = qq{SELECT * INTO OUTFILE '$file' }
+               . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
+               . qq{LINES TERMINATED BY '\\n' FROM $todo->{D}.$todo->{N}};
+      if ( $opts{test} ) {
+         print $sql, "\n";
+         if ( $opts{gzip} ) {
+            print "gzip $file\n";
+         }
+      }
+      else {
+         $dbh->do($sql);
+         if ( $opts{gzip} ) {
+            system("gzip $file");
+         }
+      }
    }
    else {
-      system(join(' ', @args));
+      my @args = map { s/%([DN])/$todo->{$1}/g; $_; } @mysqldump_args;
+      if ( @args && $args[0] !~ m/mysqldump/ ) {
+         unshift @args, 'mysqldump';
+      }
+      if ( $opts{test} ) {
+         print join(' ', @args), "\n";
+      }
+      else {
+         system(join(' ', @args));
+      }
    }
+}
+
+sub filename {
+   return File::Spec->catfile($opts{basedir}, @_);
+}
+
+sub get_dbh {
+   my $dsn = 'DBI:mysql:;'
+      . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
+      . ';mysql_read_default_group=mysql';
+   my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
+   return $dbh;
 }
 
 =pod
