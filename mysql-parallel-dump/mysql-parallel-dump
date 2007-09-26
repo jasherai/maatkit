@@ -791,9 +791,8 @@ Socket file to use for connection.
 
 Dump via SELECT INTO OUTFILE, which is similar to what mysqldump does with the
 --tab option, with the following differences: you're not constrained to a
-single database at a time, the dump files are in CSV format, and schema is
-dumped to a single file, not one file per table (you can disable this; see
-L<"--schema">).
+single database at a time, and schema is dumped to a single file, not one file
+per table (you can disable this; see L<"--schema">).
 
 Before you use this option, make sure you know what SELECT INTO OUTFILE does!
 I recommend only using it if you're running MySQL Parallel Dump on the same
