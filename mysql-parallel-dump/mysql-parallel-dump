@@ -47,7 +47,7 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 my @opt_spec = (
    { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
    { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
-   { s => 'csv',               d => 'Do --outfile dump in CSV format' },
+   { s => 'csv',               d => 'Do --tab dump in CSV format' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
@@ -61,12 +61,12 @@ my @opt_spec = (
    { s => 'locktables',        d => 'Use LOCK TABLES (implies --no-flushlock)' },
    { s => 'numthread|m=i',     d => 'Number of threads (default 2, or #CPUs on Linux)' },
    { s => 'opt!',              d => 'Use sensible mysqldump options (enabled by default)' },
-   { s => 'outfile',           d => 'Dump tab-separated (sets --schema --umask 0 --no-views)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print normal output' },
    { s => 'schema!',           d => 'Dump schema separately' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'tab|T',             d => 'Dump tab-separated (sets --schema --umask 0 --no-views)' },
    { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
    { s => 'test',     ,        d => 'Print commands instead of executing them' },
    { s => 'tblregex=s',        d => 'Dump only tables whose names match this pattern' },
@@ -159,7 +159,7 @@ if ( !$opts{help} ) {
    }
 }
 
-if ( $opts{outfile} ) {
+if ( $opts{T} ) {
    if ( !defined $opts{schema} ) {
       $opts{schema} = 1;
    }
@@ -172,7 +172,7 @@ if ( $opts{locktables} ) {
    $opts{k} = 0;
 }
 
-if ( $opts{outfile} ) {
+if ( $opts{T} ) {
    $opts{views} = 0;
 }
 
@@ -216,7 +216,7 @@ if ( $opts{opt} && !@mysqldump_args ) {
       %N
    ));
    if ( $opts{gzip} ) {
-      push @mysqldump_args, qw( | gzip -c - > ),
+      push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
          filename('%D', "%N.sql.gz");
    }
    else {
@@ -374,9 +374,6 @@ my $header = "%-${maxdb}s %-${maxtbl}s %5s %6s %7s\n";
 printf($header, qw(DATABASE TABLE TIME STATUS THREADS))
    unless $opts{q} || $opts{test};
 
-# This signal handler will do nothing but wake up the sleeping parent process.
-$SIG{CHLD} = sub {};
-
 if ( $opts{schema} ) {
    # Dump the schema separately
    foreach my $database ( @databases ) {
@@ -401,7 +398,7 @@ if ( $opts{schema} ) {
       ));
       push @cmd, $database, @tables;
       if ( $opts{gzip} ) {
-         push @cmd, qw( | gzip -c - > );
+         push @cmd, qw( | gzip --force --fast --stdout - > );
          my $filename = filename($database, '00_schema.sql.gz');
          makedir($filename);
          push @cmd, $filename;
@@ -422,6 +419,9 @@ if ( $opts{schema} ) {
 # that.  This is really a terrible hack -- I wish Perl had decent threading
 # support so I could just queue work for a fixed pool of worker threads!
 # ############################################################################
+# This signal handler will do nothing but wake up the sleeping parent process.
+$SIG{CHLD} = sub {};
+
 my %kids;
 while ( @work_to_do || %kids ) {
 
@@ -492,8 +492,8 @@ sub interp {
 sub do_table {
    my ( $todo ) = @_;
 
-   # CSV-formatted dump.
-   if ( $opts{outfile} ) {
+   # Dump via SELECT INTO OUTFILE.
+   if ( $opts{T} ) {
       my $dbh  = get_dbh();
       my $filename = filename(interp($todo, '%D', '%N.txt'));
       makedir($filename);
@@ -511,7 +511,7 @@ sub do_table {
       }
       $dbh->do($sql) unless $opts{test};
       if ( $opts{gzip} ) {
-         return system_call('gzip', $filename);
+         return system_call('gzip', '--force', '--fast', $filename);
       }
    }
 
@@ -611,7 +611,7 @@ To dump to tab-separated files with SELECT INTO OUTFILE, each table with its
 own data and each database with a single file for creating tables and other
 schema objects:
 
-  mysql-parallel-dump --outfile
+  mysql-parallel-dump --tab
 
 To "write your own command line," use -- to indicate where the arguments for
 MySQL Parallel Dump stop and where the arguments for mysqldump (or any other
@@ -619,7 +619,7 @@ program) begin.  The following example shows mysqldump, and aside from simpler
 options to mysqldump, is basically what happens when you specify no arguments
 at all:
 
-  mysql-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \| gzip -c - \> '%D.%N.gz'
+  mysql-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \| gzip --fast -c - \> '%D.%N.gz'
 
 The % modifiers are macros (see L<"MACROS">).  The --skip-lock-tables argument
 is very important in that last example, because otherwise both MySQL Parallel
@@ -659,7 +659,7 @@ Some options can be disabled by prefixing them with --no, such as --no-gzip.
 =item --basedir
 
 The directory in which files will be stored.  If you use pre-canned options,
-such as L<"--outfile">, MySQL Parallel Dump knows what the eventual filenames will
+such as L<"--tab">, MySQL Parallel Dump knows what the eventual filenames will
 be, and can place all the files in this directory.  It will also create any
 parent directories that don't exist, if needed (see also L<"--umask">).
 
@@ -678,7 +678,7 @@ named 00_master_data.sql.
 
 =item --csv
 
-Changes L<"--outfile"> options so the dump file is in comma-separated values
+Changes L<"--tab"> options so the dump file is in comma-separated values
 (CSV) format.  The SELECT INTO OUTFILE statement looks like the following, and
 can be re-loaded with the same options:
 
@@ -716,7 +716,7 @@ Compresses files with gzip.  This is enabled by default unless your platform
 is Win32.  By default, this causes the standard SQL dumps to be piped to
 gzip's STDIN and the result is redirected to the destination file.  If this
 option isn't enabled, by default mysqldump's --result-file parameter is used
-to direct the dump to the destination file.  When using L<"--outfile">, this
+to direct the dump to the destination file.  When using L<"--tab">, this
 option causes gzip to be called separately on each resulting file after it is
 dumped (because SELECT INTO OUTFILE cannot be directed to a pipe).
 
@@ -757,23 +757,6 @@ does NOT pass --opt to mysqldump.  Instead, it passes the following:
 
 These are what I consider to be sensible default options.
 
-=item --outfile
-
-Dump via SELECT INTO OUTFILE, which is similar to what mysqldump does with the
---tab option, with the following differences: you're not constrained to a
-single database at a time, the dump files are in CSV format, and schema is
-dumped to a single file, not one file per table (you can disable this; see
-L<"--schema">).
-
-Before you use this option, make sure you know what SELECT INTO OUTFILE does!
-I recommend only using it if you're running MySQL Parallel Dump on the same
-machine as the MySQL server, but there is no protection if you don't.
-
-The files will be gzipped after dumping if L<"--gzip"> is enabled.  This
-option automatically enables L<"--schema"> unless you override it; it also
-sets L<"--umask"> to zero so auto-created directories are writable by the
-MySQL server.
-
 =item --password
 
 Password to use when connecting.
@@ -804,6 +787,23 @@ individual files.
 
 Socket file to use for connection.
 
+=item --tab
+
+Dump via SELECT INTO OUTFILE, which is similar to what mysqldump does with the
+--tab option, with the following differences: you're not constrained to a
+single database at a time, the dump files are in CSV format, and schema is
+dumped to a single file, not one file per table (you can disable this; see
+L<"--schema">).
+
+Before you use this option, make sure you know what SELECT INTO OUTFILE does!
+I recommend only using it if you're running MySQL Parallel Dump on the same
+machine as the MySQL server, but there is no protection if you don't.
+
+The files will be gzipped after dumping if L<"--gzip"> is enabled.  This
+option automatically enables L<"--schema"> unless you override it; it also
+sets L<"--umask"> to zero so auto-created directories are writable by the
+MySQL server.
+
 =item --tables
 
 Dump this comma-separated list of table (not database.table) names.
@@ -832,7 +832,7 @@ Output version information and exit.
 
 =item --views
 
-Dumps views as well as base tables.  This is disabled when L<"--outfile"> is
+Dumps views as well as base tables.  This is disabled when L<"--tab"> is
 specified.
 
 =item --wait
