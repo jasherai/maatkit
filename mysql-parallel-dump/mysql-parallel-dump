@@ -30,7 +30,6 @@ use File::Spec;
 use Getopt::Long;
 use List::Util qw(max);
 use POSIX;
-use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
