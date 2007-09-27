@@ -1,0 +1,11 @@
+ChangeLog
+Database.pm
+Diff.pm
+INSTALL
+MANIFEST
+Makefile.PL
+README
+Table.pm
+Utils.pm
+mysqldiff
+t/all.t
