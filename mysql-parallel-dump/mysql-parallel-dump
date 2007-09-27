@@ -213,11 +213,11 @@ if ( $opts{opt} && !@ARGV ) {
    );
    if ( $opts{gzip} ) {
       push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
-         filename('%D', '%N.sql.gz');
+         filename('%S', '%D', '%N.sql.gz');
    }
    else {
       push @mysqldump_args,
-         '--result-file=' . filename('%D', '%N.sql');
+         '--result-file=' . filename('%S', '%D', '%N.sql');
    }
 }
 
@@ -275,6 +275,9 @@ my $dbh = get_dbh();
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 
+# This signal handler will do nothing but wake up the sleeping parent process.
+$SIG{CHLD} = sub {};
+
 # ############################################################################
 # Lock the whole server if desired.
 # ############################################################################
@@ -283,159 +286,189 @@ if ( $opts{k} && !$opts{test} ) {
 }
 
 # ############################################################################
-# Iterate over "sets" of tables.  If --set is not given, iterate over all
-# tables. TODO
+# Iterate over "sets" of tables.
 # ############################################################################
-my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
-my @work_to_do;
-my %tables_for;
+my %sets;
 
-# ############################################################################
-# Collect the list of databases and tables to do.
-# ############################################################################
-DATABASE:
-foreach my $database ( @databases ) {
-   $tables_for{$database} = [];
-   next DATABASE if
-      ( $opts{d} && !exists($opts{d}->{$database}) )
-      || ( $opts{dbregex} && $database !~ m/$opts{dbregex}/ )
-      || $database =~ m/^(information_schema|lost\+found)$/mi
-      || exists $opts{g}->{$database};
-
-   my $tables = $dbh->selectall_arrayref(
-      "SHOW /*!50002 FULL*/ TABLES FROM `$database`");
-   next DATABASE unless @$tables;
-
-   TABLE:
-   foreach my $table ( @$tables ) {
-      my $tblname = $table->[0];
-      next TABLE if
-         ( $opts{t} && !exists($opts{t}->{$tblname}) )
-         || ( $opts{tblregex} && $tblname !~ m/$opts{tblregex}/ )
-         || ( @$table == 2 && $table->[1] eq 'VIEW' )
-         || exists $opts{n}->{$tblname};
-      push @work_to_do, { D => $database, N => $tblname };
-      push @{$tables_for{$database}}, $tblname;
+# Fetch backup sets from the database.
+if ( $opts{sets} ) {
+   my $setnames = "'" . join("', '", $opts{set} =~ m/(\w+)/g) . "'";
+   my $sql = "SELECT `setname`, `priority`, `db`, `tbl` "
+           . "FROM $opts{settable} WHERE `setname` IN($setnames) "
+           . "ORDER BY `setname`, `priority`, `db`, `tbl`";
+   my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
+   foreach my $row ( @$result ) {
+      push @{$sets{$row->{setname}}},
+         {  D => $row->{db},
+            N => $row->{tbl},
+            S => $row->{setname}
+         };
    }
 }
 
-# ############################################################################
-# Lock tables if needed.
-# ############################################################################
-if ( $opts{locktables} && !$opts{test} ) {
-   $dbh->do('LOCK TABLES '
-      . join(', ', map { "`$_->{D}`.`$_->{N}` READ" } @work_to_do));
-}
+# Do all databases and tables in a 'default' set.
+else {
+   my @work_to_do;
+   my @databases
+      = grep {
+         ( !$opts{d} || exists($opts{d}->{$_}) )
+         && ( !$opts{dbregex} || $_ =~ m/$opts{dbregex}/ )
+         && ( $_ !~ m/^(information_schema|lost\+found)$/mi )
+         && ( !exists $opts{g}->{$_} )
+      } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
 
-# ############################################################################
-# Flush logs.
-# ############################################################################
-if ( $opts{flushlog} && !$opts{test} ) {
-   $dbh->do('FLUSH LOGS');
-}
-
-# ############################################################################
-# Get the master position.
-# ############################################################################
-if ( $opts{b} && !$opts{test} ) {
-   my $filename = filename('00_master_data.sql');
-   makedir($filename);
-   open my $file, ">", $filename or die $OS_ERROR;
-   my %wanted = map { $_ => 1 }
-      qw(file position master_host master_port master_log_file
-      read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
-      exec_master_log_pos);
-
-   my ( $master_pos, $slave_pos );
-   eval {
-      $master_pos = $dbh->selectrow_hashref('SHOW MASTER STATUS');
-   };
-   eval {
-      $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
-      print $file "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
-                . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
-                . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n";
-   };
-   my %hash;
-   foreach my $thing ( $master_pos, $slave_pos ) {
-      next unless $thing;
-      foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
-         print $file "-- $key $thing->{$key}\n";
+   DATABASE:
+   foreach my $database ( @databases ) {
+      my $tables = $dbh->selectall_arrayref(
+         "SHOW /*!50002 FULL*/ TABLES FROM `$database`");
+      if ( @$tables ) {
+         TABLE:
+         foreach my $table ( @$tables ) {
+            my $tblname = $table->[0];
+            next TABLE if
+               ( $opts{t} && !exists($opts{t}->{$tblname}) )
+               || ( $opts{tblregex} && $tblname !~ m/$opts{tblregex}/ )
+               || ( @$table == 2 && $table->[1] eq 'VIEW' )
+               || exists $opts{n}->{$tblname};
+            push @work_to_do,
+               {  D => $database,
+                  N => $tblname,
+                  S => 'default',
+               };
+         }
       }
    }
-   close $file or die $OS_ERROR;
+   $opts{set}     = 'default';
+   $sets{default} = \@work_to_do;
 }
 
-# Design header
-my ( $maxdb, $maxtbl );
-$maxdb  = max(8, map { length($_->{D}) } @work_to_do);
-$maxtbl = max(5, map { length($_->{N}) } @work_to_do);
-my $header = "%-${maxdb}s %-${maxtbl}s %5s %6s %7s\n";
-printf($header, qw(DATABASE TABLE TIME STATUS THREADS))
-   unless $opts{q} || $opts{test};
-
 # ############################################################################
-# Assign the work to child processes.  Initially just start --numthreads number
-# of children.  Each child that exits will trigger a new one to start after
-# that.  This is really a terrible hack -- I wish Perl had decent threading
-# support so I could just queue work for a fixed pool of worker threads!
+# Do each backup set.
 # ############################################################################
-# This signal handler will do nothing but wake up the sleeping parent process.
-$SIG{CHLD} = sub {};
+foreach my $set ( $opts{set} =~ m/(\w+)/g ) {
+   my @work_to_do = @{$sets{$set}};
 
-my %kids;
-while ( @work_to_do || %kids ) {
+   # #########################################################################
+   # Lock tables if needed (automatically releases any earlier locks).
+   # #########################################################################
+   if ( $opts{locktables} && !$opts{test} ) {
+      $dbh->do('LOCK TABLES '
+         . join(', ', map { "`$_->{D}`.`$_->{N}` READ" } @work_to_do));
+   }
 
-   # Wait for the MySQL server to become responsive.
-   my $tries = 0;
-   while ( !$dbh->ping && $tries++ < $opts{w} ) {
-      sleep(1);
+   # #########################################################################
+   # Flush logs.
+   # #########################################################################
+   if ( $opts{flushlog} && !$opts{test} ) {
+      $dbh->do('FLUSH LOGS');
+   }
+
+   # #########################################################################
+   # Get the master position.
+   # #########################################################################
+   if ( $opts{b} && !$opts{test} ) {
+      my $filename = filename($set, '00_master_data.sql');
+      makedir($filename);
+      open my $file, ">", $filename or die $OS_ERROR;
+      my %wanted = map { $_ => 1 }
+         qw(file position master_host master_port master_log_file
+         read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
+         exec_master_log_pos);
+
+      my ( $master_pos, $slave_pos );
       eval {
-         $dbh = get_dbh();
+         $master_pos = $dbh->selectrow_hashref('SHOW MASTER STATUS');
       };
-      if ( $EVAL_ERROR ) {
-         $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
-         print "$EVAL_ERROR\n";
+      eval {
+         $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
+         print $file "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
+                   . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
+                   . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n";
+      };
+      my %hash;
+      foreach my $thing ( $master_pos, $slave_pos ) {
+         next unless $thing;
+         foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
+            print $file "-- $key $thing->{$key}\n";
+         }
       }
-   }
-   if ( $tries >= $opts{w} ) {
-      die "Too many retries, exiting.\n";
+      close $file or die $OS_ERROR;
    }
 
-   # Start a new child process.
-   while ( @work_to_do && $opts{m} > keys %kids ) {
-      my $todo = shift @work_to_do;
-      $todo->{time} = time;
-      my $pid = fork();
-      die "Can't fork: $OS_ERROR" unless defined $pid;
-      if ( $pid ) {              # I'm the parent
-         $kids{$pid} = $todo;
+   # #########################################################################
+   # Design the format for printing out.
+   # #########################################################################
+   my ( $maxdb, $maxtbl, $maxset);
+   $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
+   $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
+   $maxset = max(3, length($set));
+   my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %6s %7s\n";
+   printf($format, qw(SET DATABASE TABLE TIME STATUS THREADS))
+      unless $opts{q} || $opts{test};
+
+   # #########################################################################
+   # Assign the work to child processes.  Initially just start --numthreads
+   # number of children.  Each child that exits will trigger a new one to start
+   # after that.  This is really a terrible hack -- I wish Perl had decent
+   # threading support so I could just queue work for a fixed pool of worker
+   # threads!
+   # #########################################################################
+
+   my %kids;
+   while ( @work_to_do || %kids ) {
+
+      # Wait for the MySQL server to become responsive.
+      my $tries = 0;
+      while ( !$dbh->ping && $tries++ < $opts{w} ) {
+         sleep(1);
+         eval {
+            $dbh = get_dbh();
+         };
+         if ( $EVAL_ERROR ) {
+            $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
+            print "$EVAL_ERROR\n";
+         }
       }
-      else {                     # I'm the child
-         exit(do_table($todo));
+      if ( $tries >= $opts{w} ) {
+         die "Too many retries, exiting.\n";
+      }
+
+      # Start a new child process.
+      while ( @work_to_do && $opts{m} > keys %kids ) {
+         my $todo = shift @work_to_do;
+         $todo->{time} = time;
+         my $pid = fork();
+         die "Can't fork: $OS_ERROR" unless defined $pid;
+         if ( $pid ) {              # I'm the parent
+            $kids{$pid} = $todo;
+         }
+         else {                     # I'm the child
+            exit(do_table($todo));
+         }
+      }
+
+      # Possibly wait for child.
+      my $reaped = 0;
+      foreach my $pid ( keys %kids ) {
+         my $kid = waitpid($pid, POSIX::WNOHANG);
+         if ( $kid ) { # I reaped a child.
+            my $stat = $CHILD_ERROR;
+            my $todo = $kids{$kid};
+            printf($format, @{$todo}{qw(S D N)}, (time - $todo->{time}), $stat, scalar keys %kids)
+               unless $opts{q} || $opts{test};
+            delete $kids{$kid};
+            $reaped = 1;
+         }
+      }
+
+      if ( !$reaped ) {
+         # Don't busy-wait.  But don't wait forever either, as a child may exit
+         # and signal while we're not sleeping, so if we sleep forever we may
+         # not get the signal.
+         sleep(1);
       }
    }
 
-   # Possibly wait for child.
-   my $reaped = 0;
-   foreach my $pid ( keys %kids ) {
-      my $kid = waitpid($pid, POSIX::WNOHANG);
-      if ( $kid ) { # I reaped a child.
-         my $stat = $CHILD_ERROR;
-         my $todo = $kids{$kid};
-         printf($header, $todo->{D}, $todo->{N}, (time - $todo->{time}), $stat, scalar keys %kids)
-            unless $opts{q} || $opts{test};
-         delete $kids{$kid};
-         $reaped = 1;
-      }
-   }
-
-   if ( !$reaped ) {
-      # Don't busy-wait.  But don't wait forever either, as a child may exit
-      # and signal while we're not sleeping, so if we sleep forever we may
-      # not get the signal.
-      sleep(1);
-   }
 }
 
 # ############################################################################
@@ -445,7 +478,7 @@ while ( @work_to_do || %kids ) {
 # Interpolates % directives from a db/tbl hashref.
 sub interp {
    my ( $todo, @strings ) = @_;
-   map { $_ =~ s/%([DN])/$todo->{$1}/g } @strings;
+   map { $_ =~ s/%([SDN])/$todo->{$1}/g } @strings;
    return @strings;
 }
 
@@ -457,7 +490,7 @@ sub do_table {
    # Dump via SELECT INTO OUTFILE.
    if ( $opts{T} ) {
       my $dbh  = get_dbh();
-      my $filename = filename(interp($todo, '%D', '%N'));
+      my $filename = filename(interp($todo, '%S', '%D', '%N'));
       makedir($filename);
       my $sql;
       if ( $opts{csv} ) {
@@ -483,7 +516,7 @@ sub do_table {
    # Otherwise the user must ensure the directories exist, because it's a hard
    # job to figure out which argument in the array is a filename.
    if ( $default_dir ) {
-      makedir(interp($todo, filename('%D', '%N.sql')));
+      makedir(interp($todo, filename('%S', '%D', '%N.sql')));
    }
 
    my @args = map { interp($todo, $_) } @mysqldump_args;
@@ -545,11 +578,13 @@ sub system_call {
 
 =head1 NAME
 
-mysql-parallel-dump - Dump MySQL tables in parallel.
+mysql-parallel-dump - Dump sets of MySQL tables in parallel.
 
 =head1 SYNOPSIS
 
   mysql-parallel-dump
+  mysql-parallel-dump --tab
+  mysql-parallel-dump --sets order,profile,session
 
 =head1 DESCRIPTION
 
@@ -572,6 +607,10 @@ To dump to tab-separated files with C<SELECT INTO OUTFILE>, each table with
 separate data and SQL files:
 
   mysql-parallel-dump --tab
+
+To dump one or more backup sets (see L<"BACKUP SETS">):
+
+  mysql-parallel-dump --sets set1,set2,set3
 
 To "write your own command line," use C<--> to indicate where the arguments for
 MySQL Parallel Dump stop and where the arguments for C<mysqldump> (or any other
@@ -599,23 +638,49 @@ data I<only>.  It does not dump view definitions or stored routines.  However,
 if you dump the C<mysql> database, you'll be dumping the views and stored
 routines by default.
 
+=head1 BACKUP SETS
+
+Backup sets are groups of logically related tables you want to backup together.
+You specify a set by inserting the table names into a table in the MySQL server
+from which you're dumping, and then naming it in the L<"--set"> option.  MySQL
+Parallel Dump always works a set at a time; if you don't specify a set, it
+auto-discovers tables and considers them the default set.
+
+The table that stores backup sets should have at least these columns: setname,
+priority, db, tbl.  The following is a suggested table structure:
+
+  CREATE TABLE backupset (
+    setname  CHAR(64) NOT NULL,
+    priority INT      NOT NULL DEFAULT 0,
+    db       CHAR(64) NOT NULL,
+    tbl      CHAR(64) NOT NULL,
+    PRIMARY KEY(setname, priority, db, tbl),
+    UNIQUE  KEY(setname, db, tbl)
+  );
+
 =head1 MACROS
 
-MySQL Parallel Dump can interpolate the database and table name into
-arguments.  The available macros are C<%D> for the database and C<%N> for the table.  
+MySQL Parallel Dump can insert % variables into arguments.  The available macros
+are as follows:
+
+  MACRO  MEANING
+  =====  =================
+  %S     The backup set
+  %D     The database name
+  %N     The table name
 
 =head1 OUTPUT
 
-Each line of output is printed when a forked "child" process ends and is
-removed from the list of children.  The output shows the database, table,
-seconds spent dumping, the exit status of the forked dump process, and number
-of current processes (including the one just reaped; so this typically shows
-"how many are running in parallel").  A status of 0 indicates success:
+Each line of output is printed when a forked "child" process ends and is removed
+from the list of children.  The output shows the backup set, database, table,
+seconds spent dumping, the exit status of the forked dump process, and number of
+current processes (including the one just reaped; so this typically shows "how
+many are running in parallel").  A status of 0 indicates success:
 
-  DATABASE TABLE         TIME STATUS THREADS
-  mysql    db               0      0       4
-  mysql    columns_priv     0      0       4
-  mysql    help_category    0      0       3
+  SET     DATABASE TABLE         TIME STATUS THREADS
+  default mysql    db               0      0       4
+  default mysql    columns_priv     0      0       4
+  default mysql    help_category    0      0       3
 
 =head1 OPTIONS
 
@@ -642,7 +707,7 @@ directories in this case.
 
 Dump binary log positions from both C<SHOW MASTER STATUS> and C<SHOW SLAVE
 STATUS>, whichever can be retrieved from the server.  The data is dumped to a
-file named F<00_master_data.sql>.
+file named F<00_master_data.sql>.  This is done for each backup set.
 
 =item --csv
 
@@ -656,11 +721,13 @@ can be re-loaded with the same options:
 
 =item --databases
 
-Dump this comma-separated list of databases.
+Dump this comma-separated list of databases.  Only applies when L<"--set"> is
+not given.
 
 =item dbregex
 
-Dump only databases whose names match this Perl regular expression.
+Dump only databases whose names match this Perl regular expression.  Only
+applies when L<"--set"> is not given.
 
 =item --defaults-file
 
@@ -677,7 +744,7 @@ once, at the beginning of the whole process, and is never released.
 =item --flushlog
 
 Execute C<FLUSH LOGS> after locking and before dumping master/slave binary log
-positions.  Enabled by default.
+positions.  Enabled by default.  This is done for each backup set.
 
 =item --gzip
 
@@ -699,11 +766,13 @@ Connect to host.
 
 =item --ignoredb
 
-Do not dump this comma-separated list of databases.
+Do not dump this comma-separated list of databases.  Only applies when
+L<"--set"> is not given.
 
 =item --ignoretbl
 
-Do not dump this comma-separated list of table (not database.table) names.
+Do not dump this comma-separated list of table (not database.table) names.  Only
+applies when L<"--set"> is not given.
 
 =item --locktables
 
@@ -743,6 +812,16 @@ Port number to use for connection.
 
 Suppresses the normal output (see L<"OUTPUT">).
 
+=item --sets
+
+Dump this comma-separated list of backup sets, in order.  Requires
+L<"--settable">.  See L<"BACKUP SETS">.
+
+=item --settable
+
+Specifies the table in which backup sets are kept.  It may be given in
+database.table form.
+
 =item --socket
 
 Socket file to use for connection.
@@ -762,11 +841,13 @@ server.
 
 =item --tables
 
-Dump this comma-separated list of table (not database.table) names.
+Dump this comma-separated list of table (not database.table) names.  Only
+applies when L<"--set"> is not given.
 
 =item --tblregex
 
-Dump only tables whose names match this Perl regular expression.
+Dump only tables whose names match this Perl regular expression.  Only applies
+when L<"--set"> is not given.
 
 =item --test
 
