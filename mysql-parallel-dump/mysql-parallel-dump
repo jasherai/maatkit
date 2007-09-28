@@ -33,7 +33,7 @@ use POSIX;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 # ############################################################################
 # Get configuration information.
@@ -216,11 +216,11 @@ if ( $opts{opt} && !@ARGV ) {
    );
    if ( $opts{gzip} ) {
       push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
-         filename('%S', '%D', '%N.sql.gz');
+         '"' . filename('%S', '%D', '%N.sql.gz') . '"';
    }
    else {
       push @mysqldump_args,
-         '--result-file=' . filename('%S', '%D', '%N.sql');
+         '--result-file="' . filename('%S', '%D', '%N.sql') . '"';
    }
 }
 
@@ -509,7 +509,8 @@ sub do_table {
       }
       $dbh->do($sql) unless $opts{test};
       if ( $opts{gzip} ) {
-         $exit_status = system_call('gzip', '--force', '--fast', "$filename.txt");
+         $exit_status = system_call(
+            'gzip', '--force', '--fast', qq{"$filename.txt"});
       }
    }
 
