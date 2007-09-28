@@ -40,7 +40,6 @@ our $SVN_REV = sprintf("%d", q$Revision: 859 $ =~ m/(\d+)/g);
 # ############################################################################
 
 # TODO:
-# read sets of tables together from a table.
 # Check a table for last-modified for each table.
 
 my @opt_spec = (
@@ -125,7 +124,7 @@ if ( !$opts{m} ) {
 }
 
 # Set locking options.
-my $lock_all      = $opts{set} || $opts{locktables} ? 0 : 1;
+my $lock_all      = $opts{sets} || $opts{locktables} ? 0 : 1;
 $opts{k}          = $lock_all unless defined $opts{k};
 $opts{locktables} = !$lock_all unless defined $opts{locktables};
 
@@ -154,10 +153,14 @@ if ( !$opts{help} ) {
       }
    }
 
-   if ( !$opts{help} && $opts{set} && !$opts{settable} ) {
-      warn "--set requires --settable\n";
+   if ( !$opts{help} && $opts{sets} && !$opts{settable} ) {
+      warn "--sets requires --settable\n";
       $opts{help} = 1;
    }
+}
+
+if ( $opts{csv} ) {
+   $opts{T} = 1;
 }
 
 if ( $opts{T} ) {
@@ -292,7 +295,7 @@ my %sets;
 
 # Fetch backup sets from the database.
 if ( $opts{sets} ) {
-   my $setnames = "'" . join("', '", $opts{set} =~ m/(\w+)/g) . "'";
+   my $setnames = "'" . join("', '", $opts{sets} =~ m/(\w+)/g) . "'";
    my $sql = "SELECT `setname`, `priority`, `db`, `tbl` "
            . "FROM $opts{settable} WHERE `setname` IN($setnames) "
            . "ORDER BY `setname`, `priority`, `db`, `tbl`";
@@ -338,14 +341,14 @@ else {
          }
       }
    }
-   $opts{set}     = 'default';
+   $opts{sets}    = 'default';
    $sets{default} = \@work_to_do;
 }
 
 # ############################################################################
 # Do each backup set.
 # ############################################################################
-foreach my $set ( $opts{set} =~ m/(\w+)/g ) {
+foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
    my @work_to_do = @{$sets{$set}};
 
    # #########################################################################
@@ -584,7 +587,7 @@ mysql-parallel-dump - Dump sets of MySQL tables in parallel.
 
   mysql-parallel-dump
   mysql-parallel-dump --tab
-  mysql-parallel-dump --sets order,profile,session
+  mysql-parallel-dump --sets order,profile,session --settable meta.backupset
 
 =head1 DESCRIPTION
 
@@ -610,7 +613,7 @@ separate data and SQL files:
 
 To dump one or more backup sets (see L<"BACKUP SETS">):
 
-  mysql-parallel-dump --sets set1,set2,set3
+  mysql-parallel-dump --sets set1,set2,set3 --settable meta.backupset
 
 To "write your own command line," use C<--> to indicate where the arguments for
 MySQL Parallel Dump stop and where the arguments for C<mysqldump> (or any other
@@ -633,18 +636,19 @@ on to every forked copy of mysqldump: L<"--defaults-file">, L<"--host">,
 L<"--port">, L<"--socket">, L<"--user">, L<"--password">.  If you write your own
 command-line, you will need to specify them manually.
 
-MySQL Parallel Dump does I<not> back up your entire database.  It dumps tables and
-data I<only>.  It does not dump view definitions or stored routines.  However,
-if you dump the C<mysql> database, you'll be dumping the views and stored
-routines by default.
+MySQL Parallel Dump does I<not> back up your entire database.  It dumps tables
+and data I<only>.  It does not dump view definitions or stored routines.
+However, if you dump the C<mysql> database, you'll be dumping the views and
+stored routines by default.
 
 =head1 BACKUP SETS
 
 Backup sets are groups of logically related tables you want to backup together.
 You specify a set by inserting the table names into a table in the MySQL server
-from which you're dumping, and then naming it in the L<"--set"> option.  MySQL
+from which you're dumping, and then naming it in the L<"--sets"> option.  MySQL
 Parallel Dump always works a set at a time; if you don't specify a set, it
-auto-discovers tables and considers them the default set.
+auto-discovers tables, filters them with the various command-line options
+(L<"--databases">, etc) and considers them the default set.
 
 The table that stores backup sets should have at least these columns: setname,
 priority, db, tbl.  The following is a suggested table structure:
@@ -657,6 +661,11 @@ priority, db, tbl.  The following is a suggested table structure:
     PRIMARY KEY(setname, priority, db, tbl),
     UNIQUE  KEY(setname, db, tbl)
   );
+
+Entries are ordered by priority, db, and tbl.  Priority 0 tables are dumped
+first, not last.  If it looks like tables are dumped in the wrong order, it's
+probably because they're being dumped asynchronously.  The output is printed
+when the dump finishes, not when it starts.
 
 =head1 MACROS
 
@@ -709,6 +718,8 @@ Dump binary log positions from both C<SHOW MASTER STATUS> and C<SHOW SLAVE
 STATUS>, whichever can be retrieved from the server.  The data is dumped to a
 file named F<00_master_data.sql>.  This is done for each backup set.
 
+This option is enabled by default.
+
 =item --csv
 
 Changes L<"--tab"> options so the dump file is in comma-separated values
@@ -719,15 +730,17 @@ can be re-loaded with the same options:
    FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"'
    LINES TERMINATED BY '\n' FROM %D.%N;
 
+This option implies L<"--tab">.
+
 =item --databases
 
-Dump this comma-separated list of databases.  Only applies when L<"--set"> is
+Dump this comma-separated list of databases.  Only applies when L<"--sets"> is
 not given.
 
 =item dbregex
 
 Dump only databases whose names match this Perl regular expression.  Only
-applies when L<"--set"> is not given.
+applies when L<"--sets"> is not given.
 
 =item --defaults-file
 
@@ -744,7 +757,9 @@ once, at the beginning of the whole process, and is never released.
 =item --flushlog
 
 Execute C<FLUSH LOGS> after locking and before dumping master/slave binary log
-positions.  Enabled by default.  This is done for each backup set.
+positions.  This is done for each backup set.
+
+This option is enabled by default.
 
 =item --gzip
 
@@ -767,17 +782,17 @@ Connect to host.
 =item --ignoredb
 
 Do not dump this comma-separated list of databases.  Only applies when
-L<"--set"> is not given.
+L<"--sets"> is not given.
 
 =item --ignoretbl
 
 Do not dump this comma-separated list of table (not database.table) names.  Only
-applies when L<"--set"> is not given.
+applies when L<"--sets"> is not given.
 
 =item --locktables
 
 Disables L<"--flushlock"> (unless it was explicitly set) and locks tables with
-C<LOCK TABLES READ>.  Enabled by default when L<"--set"> is specified.  The
+C<LOCK TABLES READ>.  Enabled by default when L<"--sets"> is specified.  The
 lock is taken and released with every set of tables dumped.
 
 =item --numthread
@@ -790,8 +805,8 @@ at least 2, even when there's only a single processor.
 
 =item --opt
 
-This is sort of related to mysqldump's C<--opt> argument, I<but not the same>.  It
-does NOT pass C<--opt> to mysqldump.  Instead, it passes the following:
+This is sort of related to mysqldump's C<--opt> argument, I<but not the same>.
+It does I<not> pass C<--opt> to mysqldump.  Instead, it passes the following:
 
 C<--add-drop-table> C<--add-locks> C<--allow-keywords> C<--comments>
 C<--complete-insert> C<--create-options> C<--disable-keys>
@@ -828,8 +843,8 @@ Socket file to use for connection.
 
 =item --tab
 
-Dump via C<SELECT INTO OUTFILE>, which is similar to what mysqldump does with the
-C<--tab> option, but you're not constrained to a single database at a time.
+Dump via C<SELECT INTO OUTFILE>, which is similar to what mysqldump does with
+the C<--tab> option, but you're not constrained to a single database at a time.
 
 Before you use this option, make sure you know what C<SELECT INTO OUTFILE> does!
 I recommend only using it if you're running MySQL Parallel Dump on the same
@@ -842,12 +857,12 @@ server.
 =item --tables
 
 Dump this comma-separated list of table (not database.table) names.  Only
-applies when L<"--set"> is not given.
+applies when L<"--sets"> is not given.
 
 =item --tblregex
 
 Dump only tables whose names match this Perl regular expression.  Only applies
-when L<"--set"> is not given.
+when L<"--sets"> is not given.
 
 =item --test
 
@@ -876,12 +891,12 @@ check the server every second until this time is exhausted, at which point it
 will give up and exit.
 
 This implements Peter Zaitsev's "safe dump" request: sometimes a dump on a
-server that has corrupt data will kill the server, and this will just wait for
-the server to restart, then keep going without retrying the table that killed
-the server.  It's hard to say which table killed the server, so no tables will
-be retried.  No additional locks will be taken after the server restarts; it's
-assumed this behavior is only useful on a server you're not trying to dump
-while it's in production.
+server that has corrupt data will kill the server.  MySQL Parallel Dump will
+wait for the server to restart, then keep going.  It's hard to say which table
+killed the server, so no tables will be retried.  Tables that were being
+concurrently dumped when the crash happened will not be retried.  No additional
+locks will be taken after the server restarts; it's assumed this behavior is
+only useful on a server you're not trying to dump while it's in production.
 
 =back
 
