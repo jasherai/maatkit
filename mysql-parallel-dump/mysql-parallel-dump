@@ -1,10 +1,10 @@
 #!/usr/bin/perl
 
-# This is a program to dump MySQL tables in parallel, via mysqldump or SELECT
-# INTO OUTFILE.
+# This is a program to dump sets of MySQL tables in parallel, via mysqldump or
+# SELECT INTO OUTFILE.
 #
-# This program is copyright (c) 2007 Baron Schwartz.
-# Feedback and improvements are welcome.
+# This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
+# are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -239,9 +239,8 @@ if ( $opts{help} ) {
    }
    (my $usage = <<"   USAGE") =~ s/^      //gm;
 
-      mysql-parallel-dump dumps MySQL tables in parallel via mysqldump or
-      SELECT INTO OUTFILE.  If possible, database connection options are read
-      from your .my.cnf file.  For more details, please read the
+      mysql-parallel-dump dumps sets of MySQL tables simultaneously via
+      mysqldump or SELECT INTO OUTFILE.  For more details, please read the
       documentation:
 
          perldoc mysql-parallel-dump
@@ -587,23 +586,23 @@ mysql-parallel-dump - Dump sets of MySQL tables in parallel.
 =head1 SYNOPSIS
 
   mysql-parallel-dump
-  mysql-parallel-dump --tab
+  mysql-parallel-dump --tab --basedir /path/to/backups/
   mysql-parallel-dump --sets order,profile,session --settable meta.backupset
 
 =head1 DESCRIPTION
 
 MySQL Parallel Dump connects to a MySQL server, finds database and table names,
-and does parallel dumps on them.  It can be used in several pre-packaged ways,
-or as a generic wrapper to call some program in parallel, passing it parameters
-for each table.
+and dumps them in parallel for speed.  It can be used in several pre-packaged
+ways, or as a generic wrapper to call some program in parallel, passing it
+parameters for each table.
 
 To dump all tables to gzipped files in the current directory, each database with
-its own directory, with locks, flushing the binary log, and recording binary log
+its own directory, with a global read lock, flushing and recording binary log
 positions, each table in a single file:
 
   mysql-parallel-dump
 
-To dump databases and tables elsewhere:
+To dump tables elsewhere:
 
   mysql-parallel-dump --basedir /path/to/elsewhere
 
