@@ -39,10 +39,8 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 # Get configuration information.
 # ############################################################################
 
-# TODO:
-# Check a table for last-modified for each table.
-
 my @opt_spec = (
+   { s => 'age=s',             d => 'Dump only modified or not recently dumped tables' },
    { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
    { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
    { s => 'csv',               d => 'Do --tab dump in CSV format' },
@@ -137,6 +135,21 @@ if ( !$opts{help} ) {
    if ( !$opts{help} && $opts{k} && $opts{locktables} ) {
       warn "--locktables and --flushlock are mutually exclusive\n";
       $opts{help} = 1;
+   }
+
+   if ( !$opts{help} && $opts{age} ) {
+      my ($num, $suf ) = $opts{age} =~ m/(\d+)([smhd])$/;
+      if ( !defined $num || $num <= 0 ) {
+         warn "Invalid --age argument\n";
+         $opts{help} = 1;
+      }
+      else {
+         $opts{age}
+            = $suf eq 's' ? $num            # Seconds
+            : $suf eq 'm' ? $num * 60       # Minutes
+            : $suf eq 'h' ? $num * 3600     # Hours
+            :               $num * 86400;   # Days
+      }
    }
 
    if ( !$opts{help} ) {
@@ -281,6 +294,14 @@ $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow
 $SIG{CHLD} = sub {};
 
 # ############################################################################
+# Derive a last-modified timestamp
+# ############################################################################
+my ( $age )
+   = $opts{age}
+   ? $dbh->selectrow_array("SELECT DATE_SUB(NOW(), INTERVAL $opts{age} SECOND)")
+   : undef;
+
+# ############################################################################
 # Lock the whole server if desired.
 # ############################################################################
 if ( $opts{k} && !$opts{test} ) {
@@ -293,18 +314,29 @@ if ( $opts{k} && !$opts{test} ) {
 my %sets;
 
 # Fetch backup sets from the database.
+my $backedup_sth;
 if ( $opts{sets} ) {
-   my $setnames = "'" . join("', '", $opts{sets} =~ m/(\w+)/g) . "'";
-   my $sql = "SELECT `setname`, `priority`, `db`, `tbl` "
-           . "FROM $opts{settable} WHERE `setname` IN($setnames) "
-           . "ORDER BY `setname`, `priority`, `db`, `tbl`";
-   my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
-   foreach my $row ( @$result ) {
-      push @{$sets{$row->{setname}}},
-         {  D => $row->{db},
-            N => $row->{tbl},
-            S => $row->{setname}
-         };
+   foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
+      $sets{$set} = [];
+      my $sql = "SELECT `db`, `tbl` "
+              . "FROM $opts{settable} "
+              . "WHERE `setname` = '$set' "
+              . ($age ? "AND `ts` <= '$age' " : '')
+              . "ORDER BY `priority`, `db`, `tbl`";
+      print $sql, "\n" if $opts{test};
+      my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
+      foreach my $row ( @$result ) {
+         push @{$sets{$set}},
+            {  D => $row->{db},
+               N => $row->{tbl},
+               S => $set,
+            };
+      }
+   }
+   if ( $age ) {
+      $backedup_sth = $dbh->prepare(
+         "UPDATE $opts{settable} AS `mysql_parallel_dump_writable` SET `ts` = NOW() "
+         . " WHERE `setname` = ? AND `db` = ? AND `tbl` = ?");
    }
 }
 
@@ -321,16 +353,29 @@ else {
 
    DATABASE:
    foreach my $database ( @databases ) {
+
       my $tables = $dbh->selectall_arrayref(
-         "SHOW /*!50002 FULL*/ TABLES FROM `$database`");
+         $age
+            ? "SHOW TABLE STATUS FROM `$database`"
+            : "SHOW /*!50002 FULL*/ TABLES FROM `$database`",
+         { Slice => {} });
+
       if ( @$tables ) {
+
+         my ( $name_key )
+            = $age
+            ? ( qw(name) )
+            : ( grep { $_ ne 'table_type' } keys %{$tables->[0]} );
+         my $type_key = $age ? 'comment' : 'table_type';
+
          TABLE:
          foreach my $table ( @$tables ) {
-            my $tblname = $table->[0];
+            my $tblname = $table->{$name_key};
             next TABLE if
                ( $opts{t} && !exists($opts{t}->{$tblname}) )
                || ( $opts{tblregex} && $tblname !~ m/$opts{tblregex}/ )
-               || ( @$table == 2 && $table->[1] eq 'VIEW' )
+               || ( $table->{$type_key} && $table->{$type_key} eq 'VIEW' )
+               || ( $table->{update_time} && $age && $table->{update_time} lt $age )
                || exists $opts{n}->{$tblname};
             push @work_to_do,
                {  D => $database,
@@ -347,15 +392,25 @@ else {
 # ############################################################################
 # Do each backup set.
 # ############################################################################
+SET:
 foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
    my @work_to_do = @{$sets{$set}};
+   if ( !@work_to_do ) {
+      print "Nothing to do for set $set\n" unless $opts{q};
+      next SET;
+   }
 
    # #########################################################################
    # Lock tables if needed (automatically releases any earlier locks).
    # #########################################################################
    if ( $opts{locktables} && !$opts{test} ) {
-      $dbh->do('LOCK TABLES '
-         . join(', ', map { "`$_->{D}`.`$_->{N}` READ" } @work_to_do));
+      my @to_lock = map { "`$_->{D}`.`$_->{N}` READ" } @work_to_do;
+      if ( $backedup_sth ) {
+         push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
+      }
+      if ( @to_lock ) {
+         $dbh->do('LOCK TABLES ' . join(', ', @to_lock));
+      }
    }
 
    # #########################################################################
@@ -456,6 +511,9 @@ foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
          if ( $kid ) { # I reaped a child.
             my $stat = $CHILD_ERROR;
             my $todo = $kids{$kid};
+            if ( !$opts{test} && !$stat && $backedup_sth ) {
+               $backedup_sth->execute(@{$todo}{qw(S D N)});
+            }
             printf($format, @{$todo}{qw(S D N)}, (time - $todo->{time}), $stat, scalar keys %kids)
                unless $opts{q} || $opts{test};
             delete $kids{$kid};
@@ -491,7 +549,7 @@ sub do_table {
 
    # Dump via SELECT INTO OUTFILE.
    if ( $opts{T} ) {
-      my $dbh  = get_dbh();
+      my $dbh = get_dbh();
       my $filename = filename(interp($todo, '%S', '%D', '%N'));
       makedir($filename);
       my $sql;
@@ -594,7 +652,8 @@ mysql-parallel-dump - Dump sets of MySQL tables in parallel.
 MySQL Parallel Dump connects to a MySQL server, finds database and table names,
 and dumps them in parallel for speed.  It can be used in several pre-packaged
 ways, or as a generic wrapper to call some program in parallel, passing it
-parameters for each table.
+parameters for each table.  It supports backup sets and dumping only tables that
+have changed since the last dump.
 
 To dump all tables to gzipped files in the current directory, each database with
 its own directory, with a global read lock, flushing and recording binary log
@@ -654,18 +713,23 @@ The table that stores backup sets should have at least these columns: setname,
 priority, db, tbl.  The following is a suggested table structure:
 
   CREATE TABLE backupset (
-    setname  CHAR(64) NOT NULL,
-    priority INT      NOT NULL DEFAULT 0,
-    db       CHAR(64) NOT NULL,
-    tbl      CHAR(64) NOT NULL,
-    PRIMARY KEY(setname, priority, db, tbl),
-    UNIQUE  KEY(setname, db, tbl)
+    setname  CHAR(64)  NOT NULL,
+    priority INT       NOT NULL DEFAULT 0,
+    db       CHAR(64)  NOT NULL,
+    tbl      CHAR(64)  NOT NULL,
+    ts       TIMESTAMP NOT NULL,
+    PRIMARY KEY(setname, db, tbl),
+    KEY(setname, priority, db, tbl)
   );
 
 Entries are ordered by priority, db, and tbl.  Priority 0 tables are dumped
 first, not last.  If it looks like tables are dumped in the wrong order, it's
 probably because they're being dumped asynchronously.  The output is printed
 when the dump finishes, not when it starts.
+
+If you specify L<"--age">, MySQL Parallel Dump expects the C<ts> column to
+exist, and will update the column to the current date and time when it
+successfully dumps a table.
 
 =head1 MACROS
 
@@ -697,6 +761,25 @@ Some options can be disabled by prefixing them with C<--no>, such as
 C<--no-gzip>.
 
 =over
+
+=item --age
+
+Specifies how old a table must be modified before MySQL Parallel Dump will
+consider it.  The argument is a number with a suffix (s=seconds, m=minutes,
+h=hours, d=days).
+
+When L<"--sets"> is not specified, MySQL Parallel Dump uses C<SHOW TABLE STATUS>
+instead of C<SHOW TABLES> to get a list of tables in each database, and compares
+the time to the C<Update_time> column in the output.  If the C<Update_time>
+column is not C<NULL> and is older than the specified interval ago, it will not
+be dumped.  Thus, it means "dump tables that have changed since X amount of
+time" (presumably the last regular backup).  This means the table will always be
+dumped if it uses InnoDB or another storage engine that doesn't report the
+C<Update_time>.
+
+When L<"--sets"> is specified, the L<"--settable"> table determines when a table
+was last dumped, and the meaning of C<--age> reverses; it becomes "dump tables
+not dumped in X amount of time."
 
 =item --basedir
 
