@@ -16,3 +16,6 @@ wrapper to discover LVM and take/release snapshots
 
 Swallow a log file and output only the selected fields.  This could be piped
 to a colorizer or pushed into mysql-query-profiler.
+
+Log parsing and coloring:
+

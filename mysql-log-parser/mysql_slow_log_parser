@@ -1,0 +1,150 @@
+#!/usr/bin/perl 
+#
+# Nathanial Hendler
+# http://retards.org/
+#
+# 2001-06-26 v1.0
+#
+# This perl script parses a MySQL slow_queries log file
+# ignoring all queries less than $min_time and prints
+# out how many times a query was greater than $min_time
+# with the seconds it took each time to run.  The queries
+# are sorted by number of times it took; the most often
+# query appearing at the bottom of the output.
+#
+# Usage: mysql_slow_log_parser logfile
+#
+# ------------------------
+# SOMETHING TO THINK ABOUT (aka: how to read output)
+# ------------------------
+#
+# Also, it does to regex substitutions to normalize
+# the queries...
+#
+#   $query_string =~ s/\d+/XXX/g;
+#   $query_string =~ s/([\'\"]).+?([\'\"])/$1XXX$2/g;
+#
+# These replace numbers with XXX and strings found in
+# quotes with XXX so that the same select statement
+# with different WHERE clauses will be considered
+# as the same query.
+#
+# so these...
+#
+#   SELECT * FROM offices WHERE office_id = 3;
+#   SELECT * FROM offices WHERE office_id = 19;
+#
+# become...
+#
+#   SELECT * FROM offices WHERE office_id = XXX;
+#
+#
+# And these...
+#
+#   SELECT * FROM photos WHERE camera_model LIKE 'Nikon%';
+#   SELECT * FROM photos WHERE camera_model LIKE '%Olympus';
+#
+# become...
+#
+#   SELECT * FROM photos WHERE camera_model LIKE 'XXX';
+#
+#
+# ---------------------
+# THIS MAY BE IMPORTANT (aka: Probably Not)
+# --------------------- 
+#
+# *SO* if you use numbers in your table names, or column
+# names, you might get some oddities, but I doubt it.
+# I mean, how different should the following queries be
+# considered?
+#
+#   SELECT car1 FROM autos_10;
+#   SELECT car54 FROM autos_11;
+#
+# I don't think so.
+#
+
+
+$min_time       = 25;	# Skip queries less than $min_time
+$max_display    = 10;	# Truncate display if more than $max_display occurances of a query
+
+print "\n Starting... \n";
+
+$query_string   = '';
+$time           = 0;
+$new_sql        = 0;
+
+
+##############################################
+# Loop Through The Logfile
+##############################################
+
+while (<>) {
+
+	# Skip Bogus Lines
+
+	next if ( m|/.*mysqld, Version:.+, started with:| );
+	next if ( m|Tcp port: \d+  Unix socket: .*mysql.sock| );
+	next if ( m|Time\s+Id\s+Command\s+Argument| );
+
+
+	if ( /Time:\s+(\d+)\s+Lock_time:\s+(\d+)/ ) {
+
+		$time    = $1;
+		$new_sql = 1;
+		next;
+
+	}
+
+
+	if ( /^\#/ && $query_string ) {
+
+			if ($time > $min_time) {
+
+				$query_string =~ s/\d+/XXX/g;
+				$query_string =~ s/([\'\"]).+?([\'\"])/$1XXX$2/g;
+				#$query_string =~ s/\s+/ /g;
+				#$query_string =~ s/\n+/\n/g;
+
+				push @{$queries{$query_string}}, $time;
+				$query_string = '';
+
+			}
+
+	} else {
+		
+		if ($new_sql) {
+			$query_string = $_;
+			$new_sql = 0;
+		} else {
+			$query_string .= $_;
+		}
+	}
+
+}
+
+
+##############################################
+# Display Output
+##############################################
+
+foreach my $query (sort { @{$queries{$a}} <=> @{$queries{$b}} } keys %queries) {
+
+	my @seconds = sort { $a <=> $b } @{$queries{$query}};
+
+	print "### " . @{$queries{$query}} . " Quer" . ((@{$queries{$query}} > 1)?"ies ":"y ") . "\n";
+	print "### Taking ";
+	print @seconds > $max_display ? "$seconds[0] to $seconds[-1]" : sec_joiner(\@seconds);
+	print " seconds to complete\n\n";
+	print "$query\n\n";
+}
+
+
+sub sec_joiner {
+	my ($seconds) = @_;
+	$string = join(", ", @{$seconds});
+	$string =~ s/, (\d+)$/ and $1/;
+	return $string;
+}
+
+exit(0);

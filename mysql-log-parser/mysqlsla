@@ -1,0 +1,1099 @@
+#!/usr/bin/perl -w
+
+# mysqlsla v1.5 Apr 5 2007
+# http://hackmysql.com/mysqlsla
+
+# mysqlsla (MySQL Statement Log Analyzer) analyzes slow, general, and raw MySQL query logs.
+# Copyright (C) 2007  Daniel Nichter
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# The GNU General Public License is available at:
+# http://www.gnu.org/copyleft/gpl.html
+
+use strict;
+use Time::HiRes qw(gettimeofday tv_interval);
+use DBI;
+use Getopt::Long;
+eval { require Term::ReadKey; };
+my $RK = ($@ ? 0 : 1);
+
+$|=1;
+
+my $WIN = ($^O eq 'MSWin32' ? 1 : 0);
+my %op;
+my %mycnf; # ~/.my.cnf
+my ($dbh, $query);
+my (@q_a, %q_h);
+my ($stmt, $q); # Used by parse_ and abstract_stmt subs
+my $total_queries;
+my %slow_users;
+my ($t0, $t1, $t, @t);
+my %filter = qw(DELETE 0 DO 0 INSERT 0 REPLACE 0 SELECT 0 TRUNCATE 0 UPDATE 0 USE 0 CALL 0 SET 0 START 0 SHOW 0 ROLLBACK 0 COMMIT 0);
+my %sort = qw(c 1 rp 1 rr 1 e 1 ce 1 t 2 at 2 l 2 al 2 rs 2 re 2 rs_max 2 re_max 2);
+my %dbs;
+
+GetOptions(
+   \%op,
+   "user=s",
+   "password:s",
+   "host=s",
+   "port=s",
+   "socket=s",
+   "no-mycnf",
+   "db|databases=s",
+   "help|?",
+   "general|g=s",
+   "slow|s=s",
+   "raw|r=s",
+   "flat",
+   "examples",
+   "sort=s",
+   "flush-qc",
+   "avg|n=i",
+   "percent",
+   "top=n",
+   "filter=s",
+   "grep=s",
+   "mp=i",
+   "np=i",
+   "pd|distribution",
+   "nthp|nth-percent=i",
+   "pq|print-queries",
+   "ex|explain",
+   "te|time-each-query",
+   "ta|time-all-queries",
+   "nr|no-report",
+   "debug"
+);
+
+if((!$op{general} && !$op{slow} && !$op{raw}) || $op{help}) {
+   show_help_and_exit();
+}
+
+option_sanity_check();
+
+get_user_mycnf() unless $op{'no-mycnf'};
+
+# Command line options override ~/.my.cnf
+$mycnf{host}   = $op{host}   if $op{host};
+$mycnf{port}   = $op{port}   if $op{port};
+$mycnf{socket} = $op{socket} if $op{socket};
+$mycnf{user}   = $op{user}   if $op{user};
+
+# Default values if nothing else
+$mycnf{host}   ||= 'localhost';
+$mycnf{port}   ||= 3306;
+$mycnf{socket} ||= '/var/run/mysqld/mysqld.sock';
+$mycnf{user}   ||= $ENV{USER};
+$op{avg}       ||= 1;
+$op{top}       ||= 10;
+$op{mp}        ||= 5;
+$op{np}        ||= 10;
+$op{nthp}      ||= 95;
+
+if(($op{te} || $op{ta}))
+{
+   if(!$op{filter})
+   {
+      print "Safety for time-each/time-all safety is enabled.\n";
+      $op{filter} = "-*,+SELECT,+USE";
+   }
+   else
+   {
+      print "Safety for time-each/time-all safety is DISABLED!\n";
+   }
+}
+
+if($op{filter}) { set_filter(); }
+if($op{flat} && $op{examples}) { $op{flat} = 0; }
+
+if(exists $op{password})
+{
+   if($op{password} eq '') # Prompt for password
+   {
+      Term::ReadKey::ReadMode(2) if $RK;
+      print "Password for database user $mycnf{user}: ";
+      chomp($mycnf{pass} = <STDIN>);
+      Term::ReadKey::ReadMode(0), print "\n" if $RK;
+   }
+   else { $mycnf{pass} = $op{password}; } # Use password given on command line
+}
+
+# Connect to MySQL if needed
+if( $op{ex} || $op{te} || $op{ta} ||
+    ($op{sort} && ($op{sort} eq 'rp' || $op{sort} eq 'rr' || $op{sort} eq 'e' || $op{sort} eq 'ce'))
+  )
+{
+   my $dsn;
+
+   if(-S $mycnf{socket} && !$op{host})
+   {
+      $dsn = "DBI:mysql:mysql_socket=$mycnf{socket}";
+   }
+   else
+   {
+      $dsn = "DBI:mysql:host=$mycnf{host};port=$mycnf{port}";
+   }
+
+   $dbh = DBI->connect($dsn, $mycnf{'user'}, $mycnf{'pass'}, { PrintError => 0 });
+}
+
+if($DBI::err)
+{
+   print "Cannot connect to MySQL.\n";
+   print "MySQL error message: $DBI::errstr\n";
+   exit;
+}
+
+# Build @q_a and/or %q_h from log files
+parse_logs();
+
+$total_queries = 0;
+if($op{ta} || $op{pq}) { $total_queries = scalar @q_a; }
+else { for(keys %q_h) { $total_queries += $q_h{$_}->{c}; } }
+
+print "$total_queries total queries, " , scalar keys %q_h , " unique.\n";
+
+exit if !$total_queries;
+
+if($op{db})
+{
+   print "Databases for Unknown: ";
+   for(split ',', $op{db})
+   {
+      print "$_ ";
+      $dbs{$_} = 1;
+   }
+   print "\n";
+}
+
+print "grep pattern: \'$op{grep}\'\n" if $op{grep};
+
+$op{'sort'} ||= ($op{slow} ? 't' : 'c');
+print "Sorting by '$op{sort}'.\n";
+
+if($op{'flush-qc'})
+{
+   $dbh->do("FLUSH QUERY CACHE;");
+   print "Flushed query cache.";
+}
+
+print_queries()    if $op{pq};
+time_all_queries() if $op{ta};
+
+do_reports() unless $op{nr};
+
+exit;
+
+
+#
+# Subroutines
+#
+
+sub show_help_and_exit
+{
+   print <<"HELP";
+mysqlsla v1.5 Apr 5 2007
+MySQL Statement Log Analyzer analyzes slow, general, and raw MySQL query logs.
+
+Command line options (abbreviations work):
+   --user USER      Connect to MySQL as USER
+   --password PASS  Use PASS or prompt for MySQL user's password
+   --host ADDRESS   Connect to MySQL at ADDRESS
+   --port PORT      Connect to MySQL at PORT
+   --socket SOCKET  Connect to MySQL at SOCKET
+   --no-mycnf       Don't read ~/.my.cnf
+   --help           Prints this
+   --debug          Print debug information
+   --general LOG    Read queries from general LOG | These options are mutually
+   --slow LOG       Read queries from slow LOG    | exclusive. Multiple logs
+   --raw LOG        Read queries from LOG         | can be given like
+                                                  | file1;file2;...
+   --flat           Don't capitalize key words in abstracted SQL statements
+   --examples       Show example queries, not abstracted SQL statements
+
+   --print-queries     Print all valid queries from all logs
+   --explain           EXPLAIN a sample of each unique query
+   --time-each-query   Time a sample of each unique query executed individually
+   --time-all-queries  Time all queries executed in sequence (general/raw logs)
+
+   --sort VALUE     Sort queries in descending order by VALUE:
+                    With --general or --raw:
+                       c    (count--default),
+                       rp   (rows produced from EXPLAIN),
+                       rr   (rows read from EXPLAIN),
+                       e    (query execution time)
+                       ce   (aprox. total query execution time {c * e})
+                    With --slow:
+                       The above VALUES (c, rp, rr, e, ce) and,
+                       t      (total query exection time from slow log--default)
+                       at     (average query exection time)
+                       l      (total query lock time from slow log)
+                       al     (average query lock time)
+                       rs     (average rows sent)
+                       rs_max (max rows sent)
+                       re     (average rows examined)
+                       re_max (max rows examined)
+   --avg N          Average execution time over N runs (default 1)
+   --databases D    Try using databases D for queries with Unknown database
+   --distribution   Show distribution of slow times (not show by default)
+   --filter S       Allow (+)/discard (-) statements S (default -*,+SELECT,+USE)
+   --flush-qc       Execute a FLUSH QUERY CACHE; before timing queries
+   --grep P         grep for statements that match Perl regex pattern P
+   --mp N           Don't show distributions less then N percent (default 5)
+   --no-report      Don't show usual report (useful with --time-all-queries)
+   --np N           Show at most N percentage distributions (default 10)
+   --nth-percent N  Show Nth percentage for slow times (default 95) 
+   --percent        Don't count each time run, show percentage complete
+   --top N          Show only the top N queries (default 10)
+
+Visit http://hackmysql.com/mysqlsla for a lot more information.
+HELP
+
+   exit;
+}
+
+sub get_user_mycnf
+{
+   return if $WIN;
+   open MYCNF, "$ENV{HOME}/.my.cnf" or return;
+   while(<MYCNF>) { $mycnf{$1} = $2 if /^(.+?)\s*=\s*"?(.+?)"?\s*$/; }
+   $mycnf{pass} ||= $mycnf{password} if exists $mycnf{password};
+   close MYCNF;
+}
+
+sub option_sanity_check
+{
+   goto OPT_ERR if ($op{general} && ($op{slow}    || $op{raw}));
+   goto OPT_ERR if ($op{slow}    && ($op{general} || $op{raw}));
+   goto OPT_ERR if ($op{raw}     && ($op{slow}    || $op{general}));
+
+   if($op{sort})
+   {
+      if(!exists $sort{$op{sort}})
+      {
+         print "Invalid sort option '$op{sort}'. \n";
+         exit;
+      }
+
+      if(($op{general} || $op{raw}) && $sort{$op{sort}} != 1)
+      {
+         print "Cannot sort by '$op{sort}' with --general or --raw.\n";
+         exit;
+      }
+   }
+
+   if($op{ta} && $op{slow})
+   {
+      print "Option --time-all-queries only works with general and raw logs.\n";
+      exit;
+   }
+
+   return;
+
+   OPT_ERR:
+      print "Options --general, --slow, and --raw are mutually exclusive.\n";
+   exit;
+}
+
+sub parse_logs 
+{
+   my @l;
+
+   if($op{general}) { @l = split ',', $op{general}; parse_general_logs(@l); }
+   if($op{slow})    { @l = split ',', $op{slow};    parse_slow_logs(@l);    }
+   if($op{raw})     { @l = split ',', $op{raw};     parse_raw_logs(@l);     }
+}
+
+sub parse_general_logs
+{
+   my @logs = @_;
+   my $valid_stmt;
+   my $have_stmt;
+   my $match;
+   my %use_db;
+   my $cid;
+
+   $use_db{0} = 0;
+
+   for(@logs)
+   {
+      open LOG, "< $_" or warn "Couldn't open general log '$_': $!\n" and next;
+      print "Reading general log '$_'.\n";
+
+      $have_stmt = 0;
+      $valid_stmt = 0;
+      $cid = 0;
+
+      while(<LOG>)
+      {
+         next if /^$/;
+
+         if(!$have_stmt)
+         {
+            next unless /^[\s\t\d:]+ (\d+) (Query|Execute|Connect|Init)/;
+
+            $cid = $1;
+            $use_db{$cid} = 0 unless exists $use_db{$cid};
+
+#            d("parse_general_logs: cid = $cid, cmd = $2"); # D
+
+            if($2 eq "Connect")
+            {
+               /Connect\s+.+ on (\w*)/;
+               if($1 ne "")
+               {
+                  $use_db{$cid} = $1;
+#                  d("parse_general_logs: Connect w/ db = $1"); # D
+                  push @q_a, "USE $use_db{$cid};" if ($op{ta} || $op{pq});
+               }
+#               else { d("parse_general_logs: cid = $cid, Connect w/ no db"); } # D
+
+               next;
+            }
+
+            if($2 eq "Init")
+            {
+               /Init DB\s+(\w+)/;
+               $use_db{$cid} = $1;
+#               d("parse_general_logs: cid = $cid, Init db = $1"); # D
+               push @q_a, "USE $use_db{$cid};" if ($op{ta} || $op{pq});
+               next;
+            }
+
+            $have_stmt = 1;
+
+            if($2 eq "Query")      { /Query\s+(.+)/;             $match = $1; }
+            elsif($2 eq "Execute") { /Execute\s+\[\d+\]\s+(.+)/; $match = $1; }
+
+            $stmt = $match . "\n";
+            $stmt =~ /^(\w+)/;
+
+            if(exists $filter{uc $1} && !$filter{uc $1}) { $valid_stmt = 1; }
+            else { $valid_stmt = 0; }
+
+#            d("parse_general_logs: h = $have_stmt, v = $valid_stmt, cid = $cid, db = $use_db{$cid}, matched '$stmt'"); # D
+         }
+         else
+         {
+            if(/^[\s\t\d:]+\d [A-Z]/)  # New CMD so the stmt we have now is done
+            {
+#               d("parse_general_logs: h = $have_stmt, v = $valid_stmt, NEW stmt"); # D
+
+               $have_stmt = 0;
+
+               if($valid_stmt)
+               {
+                  if($op{grep} && ($stmt !~ /$op{grep}/io)) { $valid_stmt = 0; }
+
+                  if($valid_stmt)
+                  {
+                     if($op{ta} || $op{pq}) { push @q_a, $stmt; }
+
+                     if(!$op{nr})
+                     {
+                        abstract_stmt(); # Sets $q to abstracted form of $stmt
+
+                        my $x = $q_h{$q} ||= { sample => $stmt };
+                        $x->{c} += 1;
+                        $x->{db} = $use_db{$cid} if $x->{c} == 1;
+
+#                        d("parse_general_logs: c = $x->{c}, cid = $cid, db = $x->{db}, SAVED previous stmt '$stmt'"); # D
+                     }
+                  }
+               }
+#               else { d("parse_general_logs: v = $valid_stmt, previous stmt INVALID (fails filter or grep)"); } # D
+               redo; # Re-read the new CMD; it may be another Query
+            }
+            else { $stmt .= $_ unless !$valid_stmt; }
+        }
+      }
+      close LOG;
+   }
+}
+
+sub parse_slow_logs
+{
+   my @logs = @_;
+   my ($valid_stmt, $n_stmts);
+   my ($user, $host, $IP);
+   my ($time, $lock, $rows_sent, $rows_examined);
+   my $use_db;
+
+   for(@logs)
+   {
+      open LOG, "< $_" or warn "Couldn't open slow log '$_': $!\n" and next;
+      print "Reading slow log '$_'.\n";
+
+      while(<LOG>)
+      {
+         last if !defined $_;
+         next until /^# User/;
+
+         ($user, $host, $IP) =
+            /^# User\@Host: (.+?) \@ (.*?) \[(.*?)\]/ ? ($1,$2,$3) : ('','','');
+
+         $_ = <LOG>;
+         ($time, $lock, $rows_sent, $rows_examined) =
+            /^# Query_time: (.*?)\s+Lock_time: (.*?)\s+Rows_sent: (\d+)\s+Rows_examined: (\d+)/;
+
+         $stmt = '';
+
+         while(<LOG>)
+         {
+            last if /^#/;
+            last if /^\//;
+            next if /^$/;
+
+            $stmt .= $_;
+         }
+
+         chomp $stmt;
+
+         $valid_stmt = 0;
+         $use_db = 0;
+
+#         d("parse_slow_logs: v = $valid_stmt, read stmt '$stmt'"); # D
+
+         # Check for compound statements
+         $n_stmts = 1;
+         $n_stmts++ while $stmt =~ /;\n/g;
+
+         if($n_stmts > 1)
+         {
+#            d("parse_slow_logs: v = $valid_stmt, compound stmt"); # D
+
+            my @s = split(/;\n/, $stmt);
+            my $grep_matches = 0;
+
+            for(@s)
+            {
+               $_ .= ";\n" if $_ !~ /;\s*$/; # Put ; back that split removed
+
+               /^\s*(\w+)/;
+               $q = $1;
+
+               if(lc($1) eq "use")
+               {
+                  /use (\w+)/i;
+                  $use_db = $1;
+                  $_ = '';
+               }
+               else
+               {
+                  if($op{grep} && ($_ =~ /$op{grep}/io))      { $grep_matches = 1; }
+                  if(exists $filter{uc $q} && $filter{uc $q}) { $_ = ''; }
+               }
+            }
+
+            if(!$op{grep} || ($op{grep} && $grep_matches))
+            {
+               $stmt = join '', @s;
+               $valid_stmt = 1 if $stmt ne '';
+            }
+         }
+         else
+         {
+            $valid_stmt = 1;
+
+            $stmt =~ /^\s*(\w+)/;
+            $q = $1;
+
+            if($op{grep} && ($stmt !~ /$op{grep}/io))   { $valid_stmt = 0; }
+            if(exists $filter{uc $q} && $filter{uc $q}) { $valid_stmt = 0; }
+         }
+
+         if($valid_stmt)
+         {
+            if($op{ta} || $op{pq}) { push @q_a, $stmt; }
+
+            if(!$op{nr})
+            {
+               abstract_stmt(); # Sets $q to abstracted form of $stmt
+
+               my $x = $q_h{$q} ||= { sample => $stmt,
+                                      t_min  => $time,
+                                      t_max  => $time,
+                                      l_min  => $lock,
+                                      l_max  => $lock,
+                                      rs_min => $rows_sent,
+                                      rs_max => $rows_sent,
+                                      re_min => $rows_examined,
+                                      re_max => $rows_examined,
+                                      db     => 0
+                                    };
+
+               # Totals and averages
+               $x->{c}  += 1;
+               $x->{t}  += $time;
+               $x->{l}  += $lock;
+               $x->{rs} += $rows_sent;
+               $x->{re} += $rows_examined;
+
+               # Distribution of values
+               push @{$x->{t_a}}, $time;
+               push @{$x->{l_a}}, $lock;
+
+               # min-max values
+               $x->{t_min}  = $time if $time < $x->{t_min};
+               $x->{t_max}  = $time if $time > $x->{t_max};
+               $x->{l_min}  = $lock if $lock < $x->{l_min};
+               $x->{l_max}  = $lock if $lock > $x->{l_max};
+               $x->{rs_min} = $rows_sent if $rows_sent < $x->{rs_min};
+               $x->{rs_max} = $rows_sent if $rows_sent > $x->{rs_max};
+               $x->{re_min} = $rows_examined if $rows_examined < $x->{re_min};
+               $x->{re_max} = $rows_examined if $rows_examined > $x->{re_max};
+
+               $x->{user} = "$user\@$host/$IP";
+               $slow_users{$x->{user}} += 1;
+
+               $x->{db} = $use_db if !$x->{db};
+
+#               d("parse_slow_logs: c = $x->{c}, db = $x->{db}, SAVED stmt '$stmt'"); # D
+            }
+#            else { d("parse_slow_logs: v = $valid_stmt, INVALID stmt (fails filter or grep)"); } # D
+         }
+
+         redo;
+      }
+      close LOG;
+   }
+}
+
+sub parse_raw_logs
+{
+   my @logs = @_;
+   my $valid_stmt;
+   my $use_db;
+
+   $/ = ";\n";
+
+   for(@logs)
+   {
+      open LOG, "< $_" or warn "Could not open raw log '$_': $!\n" and next;
+      print "Reading raw log '$_'.\n";
+
+      $use_db = 0;
+
+      while(<LOG>)
+      {
+         s/^\n//;   # Remove leading \n
+         chomp;     # Remove trailing \n
+         $_ .= ';'; # Put ; back
+
+#         d("parse_raw_logs: read stmt '$_'"); # D
+
+         $valid_stmt = 1;
+         /^\s*(\w+)/;
+         $q = $1;
+
+         if(lc($q) eq "use")
+         {
+            /use (\w+)/i;
+            $use_db = $1;
+            push @q_a, "USE $1;" if ($op{ta} || $op{pq});
+            next;
+         }
+         else
+         {
+            if($op{grep} && (! /$op{grep}/io))          { $valid_stmt = 0; }
+            if(exists $filter{uc $q} && $filter{uc $q}) { $valid_stmt = 0; }
+         }
+
+         if($valid_stmt)
+         {
+            $stmt = $_;
+
+            if($op{ta} || $op{pq}) { push @q_a, $stmt; }
+
+            if(!$op{nr})
+            {
+               abstract_stmt(); # Sets $q to abstracted form of $stmt
+
+               my $x = $q_h{$q} ||= { sample => $stmt };
+               $x->{c} += 1;
+               $x->{db} = $use_db if $x->{c} == 1;
+
+#               d("parse_raw_logs: c = $x->{c}, db = $x->{db}, SAVED stmt '$stmt'"); # D
+            }
+         }
+#         else { d("parse_raw_logs: INVALID stmt (fails filter or grep)"); } # D
+      }
+      close LOG;
+   }
+}
+
+sub abstract_stmt
+{
+   $q = lc $stmt;
+
+   # --- Regex copied from mysqldumpslow
+   $q =~ s/\b\d+\b/N/g;
+   $q =~ s/\b0x[0-9A-Fa-f]+\b/N/g;
+   $q =~ s/''/'S'/g;
+   $q =~ s/""/"S"/g;
+   $q =~ s/(\\')//g;
+   $q =~ s/(\\")//g;
+   $q =~ s/'[^']+'/'S'/g;
+   $q =~ s/"[^"]+"/"S"/g;
+   # ---
+
+   $q =~ s/^\s+//g;
+   $q =~ s/\s{2,}/ /g;
+   $q =~ s/\n/ /g;
+   $q =~ s/; (\w+) /;\n$1 /g; # \n between compound statements
+
+   # Normalize IN ()
+   while($q =~ /( IN\s*\((?![NS]{1}\d+)(.+?)\))/i)
+   {
+      my $in = $2;
+      my $N = ($in =~ tr/N//);
+
+      if($N) { $q =~ s/ IN\s*\((?!N\d+)(.+?)\)/ IN (N$N)/i; } # IN (N, N) --> IN (N2)
+      else {
+         $N = ($in =~ tr/S//) ;
+         $q =~ s/ IN\s*\((?!S\d+)(.+?)\)/ IN (S$N)/i;         # IN ('S', 'S') --> IN (S2)
+      }
+   }
+}
+
+sub print_beautifully
+{
+   s!^(\w+) !uc "$1 "!eg;
+   s!\n(\w+) !uc "\n$1 "!eg;
+   s! (from|join|where|order by|limit|as|having|like|null|exists|union) !uc " $1 "!eg;
+   s! (select|inner|cross|outer|on|using|between|is) !uc " $1 "!eg;
+   s! (into|set|left|right|not) !uc " $1 "!eg;
+   s! (values|natural|and|or) !uc " $1 "!eg;
+   s! (asc[,;]*|desc[,;]*) !uc " $1 "!eg;
+   s! (low_priority|delayed|high_priority|straight_join|sql_no_cache|sql_cache) !uc " $1 "!eg;
+   s! \(select !\(SELECT !g;
+   s! (count\(|min\(|max\(|sum\(|now\()!uc " $1"!eg;
+
+   print;
+}
+
+sub do_reports
+{
+   my $i = $op{top};
+   my $x;
+
+   if($op{te} || $op{sort} eq 'e' || $op{sort} eq 'ce')
+      { for(keys %q_h) { time_query($_); } }
+
+   if($op{sort} eq 'ce')
+      { for(keys %q_h) { $q_h{$_}->{ce} = $q_h{$_}->{c} * $q_h{$_}->{e}; } }
+
+   if($op{ex} || $op{sort} eq 'rp' || $op{sort} eq 'rr')
+      { for(keys %q_h) { EXPLAIN($_); } }
+
+   if($op{slow})
+   {
+      for(keys %q_h)
+      {
+         $q_h{$_}->{at} = mnp($q_h{$_}->{t} / $q_h{$_}->{c});
+         $q_h{$_}->{al} = mnp($q_h{$_}->{l} / $q_h{$_}->{c});
+      }
+   }
+
+   for(sort { $q_h{$b}->{$op{sort}} <=> $q_h{$a}->{$op{sort}} } keys(%q_h))
+   {
+      print_report_marker($op{top} - $i + 1);
+
+      $x = $q_h{$_};
+
+      printf "Count         : %d (%d%%)\n", $x->{c}, perc($x->{c}, $total_queries);
+
+      if($op{slow})
+      {
+         $x->{t}     = mnp($x->{t});
+         $x->{t_min} = mnp($x->{t_min});
+         $x->{t_max} = mnp($x->{t_max});
+         $x->{l}     = mnp($x->{l});
+         $x->{l_min} = mnp($x->{l_min});
+         $x->{l_max} = mnp($x->{l_max});
+
+         print "Time (seconds): $x->{t} total, $x->{at} avg, $x->{t_min} to $x->{t_max} max\n";
+         print_nth_vals($x->{t_a});
+         print_dist($x->{t_a}) if $op{pd};
+
+         printf "Lock (seconds): $x->{l} total, $x->{al} avg, $x->{l_min} to $x->{l_max} max\n";
+
+         printf "Rows sent     : %d avg, %d to %d max\n",
+            $x->{rs} / $x->{c}, $x->{rs_min}, $x->{rs_max};
+
+         printf "Rows examined : %d avg, %d to %d max\n",
+            $x->{re} / $x->{c}, $x->{re_min}, $x->{re_max};
+
+         printf "User          : %s (%d%%)\n",
+            $x->{user}, perc($slow_users{$x->{user}}, $total_queries);
+      }
+
+      print "Database      : " . ($x->{db} ? $x->{db} : 'Unknown') . "\n";
+
+      if($op{te} || $op{sort} eq 'e' || $op{sort} eq 'ce')
+      {
+         $x->{e} = mnp($x->{e});
+         print "Execution time: $x->{e}\n";
+      }
+
+      if($op{sort} eq 'ce')
+      {
+         $x->{ce} = mnp($x->{ce});
+         printf "Count * Exec  : $x->{ce} ";
+
+         if($op{ta}) { printf "(%d%%)\n", perc($x->{ce}, $op{ta}); }
+         else { print "\n"; }
+      }
+
+      if($op{ex} || $op{sort} eq 'rp' || $op{sort} eq 'rr')
+      {
+         print "Rows (EXPLAIN): ";
+
+         if(!$x->{EXPLAIN_err}) { print "$x->{rp} produced, $x->{rr} read\n"; }
+         else { print "EXPLAIN error: $x->{EXPLAIN_err}\n"; }
+      }
+
+      if($op{ex})
+      {
+         print "EXPLAIN       : ";
+
+         if($x->{EXPLAIN_err})
+         {
+            print "EXPLAIN error: $x->{EXPLAIN_err}\n";
+         }
+         else
+         {
+            my $j;
+
+            print "\n";
+
+            for($j = 0; $j < (scalar @{$x->{EXPLAIN}}); $j += 2)
+            {
+               print "\t$x->{EXPLAIN}[$j]: $x->{EXPLAIN}[$j + 1]\n";
+               if($x->{EXPLAIN}[$j] eq "Extra") { print "\n"; }
+            }
+         }
+      }
+
+      print "\n";
+
+      if($op{examples}) { print $x->{sample}; }
+      else
+      {
+         if(!$op{flat}) { print_beautifully(); } # Beautifies and prints $_
+         else { print $_; }
+      }
+
+      print "\n";
+
+      last if !--$i;
+   }
+}
+
+sub avg
+{
+   my $avg = shift;
+   my @x = @_;
+   my $sum = 0;
+
+   $avg = scalar @x if $avg == 0;
+   for(@x) { $sum += $_; }
+   return sprintf "%.3f", $sum / $avg;
+}
+
+sub perc
+{
+   my($is, $of) = @_;
+   return sprintf "%d", ($is * 100) / ($of ||= 1);
+}
+
+sub print_dist
+{
+   my $x = shift; # Ref to array of values
+   my %y;
+   my $z;
+   my $t;
+   my $n;
+
+   $z = scalar @$x;
+   for(@$x) { $y{$_} ||= 0; $y{$_} += 1; } # Count occurances of each unique value
+   for(keys %y) { $y{$_} = perc($y{$_}, $z); } # Save percentage of each unqiue value
+
+   print "Dist. of Time :\n";
+   for( sort { $y{$b} <=> $y{$a} } keys %y ) # Sort desc by percentage of each unqiue value
+   {
+      $t += $y{$_};
+      last if ++$n > $op{np};   # Stop if printed number of percentages > max allowed
+      last if $y{$_} < $op{mp}; # Stop if percentage < minimum percentage
+      print "\t\t$y{$_}\%: $_\n";
+   }
+   print "\t\t$t\% of total\n"; # Total percentage all the printed percentages account for
+}
+
+sub print_nth_vals
+{
+   my $x = shift; # Ref to array of values
+   my @s;
+   my $n;
+   my $avg;
+   my $min;
+   my $max;
+   my $sum;
+
+   return if scalar @$x == 1;
+
+   @s = sort { $a <=> $b } @$x;
+   $n = ((scalar @$x) * $op{nthp}) / 100;
+   @s = splice(@s, 0, $n);
+
+   $avg = mnp(avg(0, @s));
+   $min = mnp($s[0]);
+   $max = mnp($s[$n - 1]);
+   for(@s) { $sum += $_ };
+   $sum = mnp($sum);
+
+   print "$op{nthp}\% of Time   : $sum total, $avg avg, ${min} to ${max} max\n";
+}
+
+sub print_queries
+{
+   print "\n__ All Queries _________________________________________________________\n\n";
+   for(@q_a) { print "$_\n\n"; }
+}
+
+sub EXPLAIN
+{
+   my $k = shift;
+   my $row;
+   my @rows;
+   my $col;
+   my ($i, $j);
+   my $x;
+
+   $x = $q_h{$k};
+
+   $x->{EXPLAIN_err} = 0;
+   $x->{rp} = -1;
+   $x->{rr} = -1;
+
+   if($x->{sample} !~ /^SELECT/i)
+   {
+      $x->{EXPLAIN_err} = "Not a SELECT statement.";
+      return;
+   }
+
+   if(!$x->{db})
+   {
+      if(!$op{db})
+      {
+         $x->{EXPLAIN_err} = "Unknown database.";
+         return;
+      }
+      else
+      {
+         for(keys %dbs)
+         {
+            $dbh->do("USE $_;");
+            
+            $query = $dbh->prepare("EXPLAIN $x->{sample};");
+            $query->execute();
+            next if $DBI::err;
+
+            $x->{db} = $_;
+            last;
+         }
+
+         if(!$x->{db})
+         {
+            $x->{EXPLAIN_err} = "Unknown database and no given databases work.";
+            return;
+         }
+      }
+   }
+
+   $query = $dbh->prepare("USE $x->{db};");
+   $query->execute();
+   if($DBI::err)
+   {
+      $x->{EXPLAIN_err} = $DBI::errstr;
+      return;
+   }
+
+   $query = $dbh->prepare("EXPLAIN $x->{sample};");
+   $query->execute();
+   if($DBI::err)
+   {
+      $x->{EXPLAIN_err} = $DBI::errstr;
+      return;
+   }
+
+   $x->{EXPLAIN} = [];
+
+   while($row = $query->fetchrow_hashref())
+   {
+      push @rows, $row->{rows};
+
+      for($j = 0; $j < $query->{NUM_OF_FIELDS}; $j++)
+      {
+         $col = $query->{NAME}->[$j];
+
+         push @{$x->{EXPLAIN}}, $col;
+         push @{$x->{EXPLAIN}}, ($row->{$col} ? $row->{$col} : '');
+      }
+   }
+
+   for($i = 0, $j = 1; $i < $query->rows; $i++) { $j *= $rows[$i]; }
+   $x->{rp} = $j; # Rows produced
+   $x->{rr} = calc_rows_read(@rows);
+}
+
+sub time_all_queries
+{
+   print "\n__ All Queries Execution Time_________________________________________________\n";
+   print "Averaging over $op{avg} runs: ";
+   time_profile(1, @q_a);
+   $op{ta} = avg($op{avg}, @t);
+   print "\nAverage: $op{ta} seconds\n";
+}
+
+
+sub time_query
+{
+   my $k = shift;
+   my @x;
+
+   $x[0] = $q_h{$k}->{sample};
+   time_profile(0, @x);
+   $q_h{$k}->{e} = avg($op{avg}, @t);
+}
+
+sub time_profile
+{
+   my $print = shift;
+   my @q = @_;
+   my $n = $op{avg} ||= 1; # Number of time runs
+   my $perc = 0;
+   my ($i, $j);
+   my $r;
+
+   $i = 1;
+   $j = '25', $perc = int $n / 4 if $op{percent} || $n >= 20; # Percentage interval
+   @t = ();
+
+   while($i++ <= $n)
+   {
+      if($print) {
+         if($perc) {
+            if($i == $perc) {
+               print "$j\% ";
+               $j += 25;
+               $perc += $perc;
+            }
+         }
+         else { print $i - 1 . ' '; }
+      }
+
+      $t0 = [gettimeofday];
+      for(@q)
+      {
+         $r = $dbh->do($_);
+         print "\ntime_profile: '$_'\nMySQL error: $DBI::errstr\n" if (!defined $r && $op{debug});
+      }
+      $t1 = [gettimeofday];
+      $t  = tv_interval($t0, $t1);
+      push(@t, $t);
+   }
+}
+
+sub calc_rows_read
+{
+   my @rows = @_;
+
+   my ($n_rows, $total);
+   my ($i, $j, $x);
+
+   $n_rows = scalar @rows;
+   $total  = $rows[0];
+
+   for($i = 1; $i < $n_rows; $i++) {
+      for($j = 1, $x = $rows[0]; $j <= $i; $j++) { $x *= $rows[$j]; }
+      $total += $x;
+   }
+
+   return $total;
+}
+
+sub set_filter
+{
+   my @f = split ',', $op{filter};
+   my ($x, $s);
+
+   for(@f)
+   {
+      ($x, $s) = /(.)(.*)/;
+      if($x ne "+" && $x ne "-") { print "Ignoring invalid filter set '$x'.\n" and next; }
+      $s = uc $s;
+      if($s eq "*") {
+         for(keys %filter) {
+            $filter{$_} = 1 if $x eq "-";
+            $filter{$_} = 0 if $x eq "+";
+         }
+         next;
+      }
+
+      if(not exists $filter{$s}) { print "Ignorning invalid filter '$s'.\n" and next; }
+      else {
+         $filter{$s} = 1 if $x eq "-";
+         $filter{$s} = 0 if $x eq "+";
+      }
+   }
+
+   print "Allowed SQL statements: ";
+   for(keys %filter) { print "$_ " if $filter{$_} == 0; }
+   print "\n";
+}
+
+sub print_report_marker
+{
+   my $val = shift;
+   printf "\n__ %03d _______________________________________________________________________\n\n", $val;
+}
+
+# make number pretty
+sub mnp
+{
+   my $n = shift;
+
+   return $n if $n !~ /\./;
+
+   $n = sprintf "%.2f", $n;
+
+   if(!($n % 1))
+   {
+      $n =~ s/(.\d\d).*/$1/;
+   }
+
+   return $n;
+}
+
+# debug
+sub d
+{
+   return unless $op{debug};
+
+   my $debug_msg = shift;
+
+   $debug_msg =~ s/\n\'$/'/;
+
+   print "$debug_msg\n";
+}
