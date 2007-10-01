@@ -9,9 +9,10 @@ mysql-relay-prefetch: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite 
 
 Parallel dump and restore:
 http://www.mysqlperformanceblog.com/2007/05/22/wishes-for-mysqldump/
-http://www.fr3nd.net/projects/mysqlpdump
 http://mysql-ha.com/2007/09/13/mysqlprestore-for-parallel-restores/
 
 Wrapper around netcat file copies
 wrapper to discover LVM and take/release snapshots
-Selectively back up sets of tables (specify sets in the DB itself)
+
+Swallow a log file and output only the selected fields.  This could be piped
+to a colorizer or pushed into mysql-query-profiler.
