@@ -19,7 +19,12 @@ my %versions;
 foreach my $p ( @packages ) {
    my @vers = map { basename $_ } (split(/\s+/, `ls -d $base/$p/mysql-*`));
    @vers = reverse sort { x($a) cmp x($b) } @vers;
-   $versions{$p} = $vers[0];
+   if ( @vers ) {
+      $versions{$p} = $vers[0];
+   }
+   else {
+      warn "No version found for $p";
+   }
 }
 
 # Commit the list of files and get the resulting version number.
@@ -113,6 +118,8 @@ my $img = '<a href="http://sourceforge.net/projects/mysqltoolkit/"><img '
    . 'style="float:right"/>';
 print `for a in html/*; do sed -i -e 's~bin/~~g' \$a; done`;
 print `for a in html/*; do sed -i -e 's~body>~body>$img~' \$a; done`;
+print `for a in html/*; do sed -i -e 's~\`\`~"~g' \$a; done`;
+print `for a in html/*; do sed -i -e "s~\\\`~\\\'~g" \$a; done`;
 
 # Cleanup temporary directories
 print `rm -rf cache $dist`;
