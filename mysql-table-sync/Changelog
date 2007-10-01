@@ -1,5 +1,8 @@
 Changelog for mysql-table-sync:
 
+   * The special command-line syntax didn't allow a bare hostname.
+   * Added an informative printout of what is being synced.
+
 2007-08-23: version 0.9.6
 
    * Added --askpass option.
