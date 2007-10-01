@@ -21,5 +21,6 @@ foreach my $package ( @packages ) {
    if ( @packages > 1 ) {
       print "Changelog for $package:\n\n";
    }
-   print $log;
+   $log =~ s/\s*$//gs;
+   print $log, "\n\n";
 }
