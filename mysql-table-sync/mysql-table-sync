@@ -32,7 +32,7 @@ use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 $OUTPUT_AUTOFLUSH = 1;
 

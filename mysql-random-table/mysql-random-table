@@ -29,7 +29,7 @@ use List::Util qw(min max);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 # ############################################################################
 # Get configuration information.

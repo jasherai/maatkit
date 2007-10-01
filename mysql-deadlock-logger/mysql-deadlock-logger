@@ -33,7 +33,7 @@ use sigtrap qw(handler finish untrapped normal-signals);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g);
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 # ############################################################################
 # Get configuration information.
