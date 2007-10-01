@@ -1,5 +1,7 @@
 Changelog for mysql-table-checksum and mysql-checksum-filter:
 
+   * Made mysql-checksum-filter able to compare tables in different databases.
+
 2007-09-20: version 1.1.15
 
    * The CHECKSUM strategy was always disabled.
