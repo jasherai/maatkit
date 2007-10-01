@@ -1013,6 +1013,12 @@ only useful on a server you're not trying to dump while it's in production.
 
 =back
 
+=head1 TODO
+
+Dumping tables in chunks would be useful so they can be restored in chunks.
+It is no fun for InnoDB to try to roll back 50GB of data.  The chunking
+functionality in MySQL Table Checksum is appropriate for this.
+
 =head1 SYSTEM REQUIREMENTS
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
