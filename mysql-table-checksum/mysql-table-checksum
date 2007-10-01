@@ -1342,8 +1342,8 @@ command.  It cannot be used before MySQL 4.1.1, and various options disable it
 as well.  It does not simultaneously count rows; that requires an extra COUNT(*)
 query.  This is a good option when you are using MyISAM tables with live
 checksums enabled; in this case both the COUNT(*) and CHECKSUM queries will run
-very quickly.  CHECKSUM TABLE is a little faster than the other two
-algorithms, but not very much.
+very quickly.  CHECKSUM TABLE is about 20% faster than the other two
+algorithms, even on InnoDB tables, if you are not doing COUNT(*).
 
 The BIT_XOR algorithm is available for MySQL 4.1.1 and newer.  It uses
 BIT_XOR(), which is order-independent, to reduce all the rows to a single
