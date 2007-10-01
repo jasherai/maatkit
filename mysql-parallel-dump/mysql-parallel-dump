@@ -46,6 +46,7 @@ my @opt_spec = (
    { s => 'csv',               d => 'Do --tab dump in CSV format' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
+   { s => 'defaultset!',       d => 'When --sets given, dump tables not in any set' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'flushlock|k!',      d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
    { s => 'flushlog!',         d => 'Execute FLUSH LOGS (default)' },
@@ -81,6 +82,7 @@ my %opts = (
    basedir  => File::Spec->curdir(),
    flushlog => 1,
    w        => '5m',
+   sets     => '',
 );
 
 # Post-process...
@@ -127,6 +129,11 @@ $opts{k}          = $lock_all unless defined $opts{k};
 $opts{locktables} = !$lock_all unless defined $opts{locktables};
 
 if ( !$opts{help} ) {
+   if ( $opts{defaultset} && !$opts{sets} ) {
+      warn "--defaultset has no effect without --sets\n";
+      $opts{help} = 1;
+   }
+
    if ( !$opts{m} ) {
       warn "You must specify --numthread\n";
       $opts{help} = 1;
@@ -312,11 +319,13 @@ if ( $opts{k} && !$opts{test} ) {
 # Iterate over "sets" of tables.
 # ############################################################################
 my %sets;
+my %tables_in_sets;
 
 # Fetch backup sets from the database.
 my $backedup_sth;
 if ( $opts{sets} ) {
    foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
+      die "'default' is a reserved set; don't use it\n" if lc $set eq 'default';
       $sets{$set} = [];
       my $sql = "SELECT `db`, `tbl` "
               . "FROM $opts{settable} "
@@ -331,6 +340,7 @@ if ( $opts{sets} ) {
                N => $row->{tbl},
                S => $set,
             };
+         $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
       }
    }
    if ( $age ) {
@@ -340,16 +350,21 @@ if ( $opts{sets} ) {
    }
 }
 
-# Do all databases and tables in a 'default' set.
-else {
+# Do all databases and tables in a 'default' set, possibly excluding those
+# that have been included in named sets above.
+if ( !$opts{sets} || $opts{defaultset} ) {
    my @work_to_do;
-   my @databases
-      = grep {
+
+   my @databases = grep {
+      $_ !~ m/^(information_schema|lost\+found)$/mi
+   } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+   if ( !$opts{sets} ) {
+      @databases = grep {
          ( !$opts{d} || exists($opts{d}->{$_}) )
          && ( !$opts{dbregex} || $_ =~ m/$opts{dbregex}/ )
-         && ( $_ !~ m/^(information_schema|lost\+found)$/mi )
          && ( !exists $opts{g}->{$_} )
-      } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+      } @databases;
+   }
 
    DATABASE:
    foreach my $database ( @databases ) {
@@ -371,12 +386,17 @@ else {
          TABLE:
          foreach my $table ( @$tables ) {
             my $tblname = $table->{$name_key};
+            if ( !$opts{sets} ) {
+               next TABLE if
+                  ( $opts{t} && !exists($opts{t}->{$tblname}) )
+                  || ( $opts{tblregex} && $tblname !~ m/$opts{tblregex}/ )
+                  || exists $opts{n}->{$tblname};
+            }
             next TABLE if
-               ( $opts{t} && !exists($opts{t}->{$tblname}) )
-               || ( $opts{tblregex} && $tblname !~ m/$opts{tblregex}/ )
+               ( $tables_in_sets{$database}->{$tblname} )
                || ( $table->{$type_key} && $table->{$type_key} eq 'VIEW' )
-               || ( $table->{update_time} && $age && $table->{update_time} lt $age )
-               || exists $opts{n}->{$tblname};
+               || ( $table->{update_time} && $age && $table->{update_time} lt $age );
+
             push @work_to_do,
                {  D => $database,
                   N => $tblname,
@@ -385,7 +405,7 @@ else {
          }
       }
    }
-   $opts{sets}    = 'default';
+   $opts{sets}    = join(',', $opts{sets} =~ m/(\w+)/g, 'default');
    $sets{default} = \@work_to_do;
 }
 
@@ -731,6 +751,10 @@ If you specify L<"--age">, MySQL Parallel Dump expects the C<ts> column to
 exist, and will update the column to the current date and time when it
 successfully dumps a table.
 
+Don't use C<default> as a set name.  It is used when you don't specify any
+sets and when you want all tables not explicitly assigned to a set to be
+dumped (see L<"--defaultset">).
+
 =head1 MACROS
 
 MySQL Parallel Dump can insert % variables into arguments.  The available macros
@@ -825,6 +849,11 @@ not given.
 Dump only databases whose names match this Perl regular expression.  Only
 applies when L<"--sets"> is not given.
 
+=item --defaultset
+
+When L<"--sets"> is given, this option makes MySQL Parallel Dump dump a
+C<default> set consisting of tables not explicitly included in any set.
+
 =item --defaults-file
 
 Only read default options from the given file.  You must give an absolute
@@ -913,7 +942,8 @@ Suppresses the normal output (see L<"OUTPUT">).
 =item --sets
 
 Dump this comma-separated list of backup sets, in order.  Requires
-L<"--settable">.  See L<"BACKUP SETS">.
+L<"--settable">.  See L<"BACKUP SETS">.  The special C<default> set is
+reserved; don't use it as a set name.
 
 =item --settable
 
