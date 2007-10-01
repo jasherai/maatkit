@@ -40,15 +40,21 @@ $OUTPUT_AUTOFLUSH = 1;
 # Define cmdline args; each is GetOpt::Long spec, whether required,
 # human-readable description.  Add more hash entries as needed.
 my @opt_spec = (
-   { s => 'header|h',   d => 'Keep the headers' },
-   { s => 'help',       d => 'Show this help message' },
-   { s => 'master|m=s', d => 'Name of the master server' },
-   { s => 'verbose|v',  d => 'Output lines that have no differences' },
-   { s => 'version',    d => 'Output version information and exit' },
+   { s => 'equaldbs|d=s', d => 'This comma-separated list of DBs are equal' },
+   { s => 'header|h',     d => 'Keep the headers' },
+   { s => 'ignoredb|i',   d => 'Do comparisons on table name only' },
+   { s => 'help',         d => 'Show this help message' },
+   { s => 'master|m=s',   d => 'Name of the master server' },
+   { s => 'verbose|v',    d => 'Output lines that have no differences' },
+   { s => 'version',      d => 'Output version information and exit' },
 );
-# This is the container for the command-line options' values to be stored in
-# after processing.  Initial values are defaults.
-my %opts = ( m => '' );
+
+# Defaults
+my %opts = (
+   m => '',
+   d => '',
+);
+
 # Post-process...
 my %opt_seen;
 foreach my $spec ( @opt_spec ) {
@@ -68,6 +74,15 @@ if ( $opts{version} ) {
    print "mysql-checksum-filter  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
    exit(0);
 }
+
+if ( !$opts{help} ) {
+   if ( $opts{d} && $opts{i} ) {
+      warn "--ignoredb and --equaldbs are mutually exclusive\n";
+      $opts{help} = 1;
+   }
+}
+
+$opts{d} = { map { $_ => 1 } split(',', $opts{d}) };
 
 if ( $opts{help} ) {
    print "Usage: mysql-checksum-filter <options> FILE\n\n";
@@ -129,7 +144,10 @@ while ( my $line = <> ) {    # Magically reads STDIN or files in @ARGV
    my @cols = $line =~ m/(\S+)/g;
    next unless @cols == $num_cols;
    push @cols, $line;
-   my $chunk = join('.', @cols[$DATABASE, $TABLE, $CHUNK]);
+   my $chunk
+      = $opts{i} || $opts{d}->{$cols[$DATABASE]}
+      ? join('.', '-------', @cols[$TABLE, $CHUNK])
+      : join('.', @cols[$DATABASE, $TABLE, $CHUNK]);
 
    if ($one_file) { # Process immediately.
       if ( $last_chunk && $last_chunk ne $chunk ) {
@@ -197,6 +215,7 @@ mysql-checksum-filter - Filter checksums from mysql-table-checksum.
 
    mysql-checksum-filter checksums.txt
    mysql-table-checksum host1 host2 | mysql-checksum-filter
+   mysql-checksum-filter db1-checksums.txt db2-checksums.txt --ignoredb
 
 =head1 OVERVIEW
 
@@ -215,6 +234,12 @@ all read.
 
 =over
 
+=item --equaldbs
+
+This comma-separated list of database names is always considered to have the
+same tables.  In other words, this makes C<database1.table1.chunk1> equal to
+C<database2.table1.chunk1> if they have the same checksum.
+
 =item --header
 
 Preserves headers output by MySQL Table Checksum.
@@ -222,6 +247,10 @@ Preserves headers output by MySQL Table Checksum.
 =item --help
 
 Displays a help message.
+
+=item --ignoredb
+
+Ignore the database entirely when comparing lines.
 
 =item --master
 
