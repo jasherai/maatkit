@@ -403,6 +403,10 @@ if ( $opts{K} ) {
    $dest->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
 }
 
+if ( $opts{v} ) {
+   print '-- Syncing ' . dsn_to_string($source) . ' with ' . dsn_to_string($dest) . "\n";
+}
+
 if ( $code_for_algorithm{$opts{a}} ) {
    $code_for_algorithm{$opts{a}}->();
 }
@@ -1259,13 +1263,32 @@ sub make_slices {
    return join(', ', @slices);
 }
 
+sub dsn_to_string {
+   my ( $dsn ) = @_;
+   my $str = join(',',
+      map  { "$_=$dsn->{$_}" }
+      grep { exists $dsn->{$_} && defined $dsn->{$_} && $_ ne 'p' }
+      sort keys %conn
+   );
+   return $str;
+}
+
 sub parse_dsn {
    my ($dsn, $prev) = @_;
    return unless $dsn;
    $prev ||= {};
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-   my %vals = map { $_ => $hash{$_} || $prev->{$_} } keys %conn;
+
+   my %vals;
+   if ( $dsn =~ m/=/ ) {
+      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+      %vals = map { $_ => $hash{$_} } keys %conn;
+   }
+   else {
+      $vals{h} = $dsn;
+   }
+   map { $vals{$_} ||= $prev->{$_} } keys %conn;
    $vals{i} ||= 'PRIMARY';
+   die "Missing host (h) part in $dsn.\n" unless $vals{h};
    return \%vals if $vals{t};
 }
 
