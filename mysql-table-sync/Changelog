@@ -1,5 +1,7 @@
 Changelog for mysql-table-sync:
 
+2007-10-01: version 0.9.7
+
    * The special command-line syntax didn't allow a bare hostname.
    * Added an informative printout of what is being synced.
 
