@@ -65,7 +65,8 @@
 #
 
 
-$min_time       = 25;	# Skip queries less than $min_time
+$min_time       = 0;	# Skip queries less than $min_time
+$min_rows	= 0;
 $max_display    = 10;	# Truncate display if more than $max_display occurances of a query
 
 print "\n Starting... \n";
@@ -83,15 +84,21 @@ while (<>) {
 
 	# Skip Bogus Lines
 
-	next if ( m|/.*mysqld, Version:.+, started with:| );
+	next if ( m|/.*mysqld, Version:.+ started with:| );
 	next if ( m|Tcp port: \d+  Unix socket: .*mysql.sock| );
 	next if ( m|Time\s+Id\s+Command\s+Argument| );
+	next if ( m|administrator\s+command:| );
 
 
-	if ( /Time:\s+(\d+)\s+Lock_time:\s+(\d+)/ ) {
+	# print $_;
+	# if ( /Query_time:\s+(.*)\s+Lock_time:\s+(.*)\s/ ) {
+	#if ( /Query_time:\s+(.*)\s+Lock_time:\s+(.*)\s+Rows_examined:\s+(\d+)/ ) {
+	if ( /Query_time:\s+(.*)\s+Lock_time:\s+(.*)\s+Rows_examined:\s+(.*)/ ) {
 
 		$time    = $1;
+		$rows	 = $3;
 		$new_sql = 1;
+		# print "found $1 $3\n";
 		next;
 
 	}
@@ -99,14 +106,20 @@ while (<>) {
 
 	if ( /^\#/ && $query_string ) {
 
-			if ($time > $min_time) {
+			if (($time > $min_time) && ($rows >= $min_rows)) {
+				$orig_query = $query_string;
 
 				$query_string =~ s/\d+/XXX/g;
-				$query_string =~ s/([\'\"]).+?([\'\"])/$1XXX$2/g;
+				$query_string =~ s/'([^'\\]*(\\.[^'\\]*)*)'/'XXX'/g;
+				$query_string =~ s/"([^"\\]*(\\.[^"\\]*)*)"/"XXX"/g;
+				#$query_string =~ s/([\'\"]).+?([\'\"])/$1XXX$2/g;
 				#$query_string =~ s/\s+/ /g;
 				#$query_string =~ s/\n+/\n/g;
 
 				push @{$queries{$query_string}}, $time;
+				push @{$queries_rows{$query_string}}, $rows;
+				$queries_tot{$query_string} += $time;
+				$queries_orig{$query_string} = $orig_query;
 				$query_string = '';
 
 			}
@@ -128,15 +141,25 @@ while (<>) {
 # Display Output
 ##############################################
 
-foreach my $query (sort { @{$queries{$a}} <=> @{$queries{$b}} } keys %queries) {
-
+foreach my $query ( sort { $queries_tot{$b} <=> $queries_tot{$a} } keys %queries_tot )  {
+	my $total = 0; 
+	my $cnt = 0;
 	my @seconds = sort { $a <=> $b } @{$queries{$query}};
+	my @rows    = sort { $a <=> $b } @{$queries_rows{$query}};
+	($total+=$_) for @seconds;
+	($cnt++) for @seconds;
 
 	print "### " . @{$queries{$query}} . " Quer" . ((@{$queries{$query}} > 1)?"ies ":"y ") . "\n";
+	print "### Total time: " . $total .", Average time: ".($total/$cnt)."\n";
 	print "### Taking ";
 	print @seconds > $max_display ? "$seconds[0] to $seconds[-1]" : sec_joiner(\@seconds);
-	print " seconds to complete\n\n";
-	print "$query\n\n";
+	print " seconds to complete\n";
+	print "### Rows analyzed ";
+        print @rows > $max_display ? "$rows[0] - $rows[-1]": sec_joiner(\@rows);
+	print "\n";
+	
+	print "$query\n";
+	print $queries_orig{$query}."\n\n";
 }
 
 
