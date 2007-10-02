@@ -1,5 +1,7 @@
 Changelog for mysql-parallel-dump:
 
+   * Changed default output to be less verbose and added --verbose option.
+
 2007-10-01: version 0.9.5
 
    * Initial release.

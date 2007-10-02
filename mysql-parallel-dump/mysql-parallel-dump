@@ -28,8 +28,9 @@ use English qw(-no_match_vars);
 use File::Basename qw(dirname);
 use File::Spec;
 use Getopt::Long;
-use List::Util qw(max);
+use List::Util qw(max sum);
 use POSIX;
+use Time::HiRes qw(time);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -70,6 +71,7 @@ my @opt_spec = (
    { s => 'tblregex=s',        d => 'Dump only tables whose names match this pattern' },
    { s => 'umask=s',           d => 'Umask value, in octal' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
+   { s => 'verbose|v+',        d => 'Verbosity (default 1, can specify multiple times)' },
    { s => 'version',           d => 'Output version information and exit' },
    { s => 'wait|w=s',          d => 'Wait limit when server is down (default 5m)' },
 );
@@ -83,6 +85,7 @@ my %opts = (
    flushlog => 1,
    w        => '5m',
    sets     => '',
+   v        => 1,
 );
 
 # Post-process...
@@ -107,6 +110,10 @@ GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
 # Process options.
 # ############################################################################
 $opts{basedir} = File::Spec->rel2abs($opts{basedir});
+
+if ( $opts{q} ) {
+   $opts{v} = 0;
+}
 
 if ( !$opts{m} ) {
    eval {
@@ -320,6 +327,7 @@ if ( $opts{k} && !$opts{test} ) {
 # ############################################################################
 my %sets;
 my %tables_in_sets;
+my %stats_for_set;
 
 # Fetch backup sets from the database.
 my $backedup_sth;
@@ -341,6 +349,7 @@ if ( $opts{sets} ) {
                S => $set,
             };
          $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
+         $stats_for_set{$set}->{tables}++;
       }
    }
    if ( $age ) {
@@ -402,6 +411,7 @@ if ( !$opts{sets} || $opts{defaultset} ) {
                   N => $tblname,
                   S => 'default',
                };
+            $stats_for_set{default}->{tables}++;
          }
       }
    }
@@ -414,9 +424,11 @@ if ( !$opts{sets} || $opts{defaultset} ) {
 # ############################################################################
 SET:
 foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
+   my $start = time();
+   my $stats = $stats_for_set{$set};
    my @work_to_do = @{$sets{$set}};
    if ( !@work_to_do ) {
-      print "Nothing to do for set $set\n" unless $opts{q};
+      info(2, "Nothing to do for set $set");
       next SET;
    }
 
@@ -479,9 +491,8 @@ foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
    $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
    $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
    $maxset = max(3, length($set));
-   my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %6s %7s\n";
-   printf($format, qw(SET DATABASE TABLE TIME STATUS THREADS))
-      unless $opts{q} || $opts{test};
+   my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %6s %7s";
+   info(2, sprintf($format, qw(SET DATABASE TABLE TIME STATUS THREADS)));
 
    # #########################################################################
    # Assign the work to child processes.  Initially just start --numthreads
@@ -503,7 +514,7 @@ foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
          };
          if ( $EVAL_ERROR ) {
             $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
-            print "$EVAL_ERROR\n";
+            info(0, $EVAL_ERROR);
          }
       }
       if ( $tries >= $opts{w} ) {
@@ -534,8 +545,11 @@ foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
             if ( !$opts{test} && !$stat && $backedup_sth ) {
                $backedup_sth->execute(@{$todo}{qw(S D N)});
             }
-            printf($format, @{$todo}{qw(S D N)}, (time - $todo->{time}), $stat, scalar keys %kids)
-               unless $opts{q} || $opts{test};
+            my $time = (time - $todo->{time});
+            info(2, sprintf($format, @{$todo}{qw(S D N)},
+               sprintf('%.2f', $time), $stat, scalar(keys %kids)));
+            $stats->{ $stat ? 'failure' : 'success' }++;
+            $stats->{time} += $time;
             delete $kids{$kid};
             $reaped = 1;
          }
@@ -549,11 +563,37 @@ foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
       }
    }
 
+   $stats->{wallclock} = time() - $start;
+   info(1, sprintf('%12s:          %5d tables, %5d successes, %2d failures, '
+                   . '%5.2f wall-clock time, %5.2f dump time',
+                   $set, $stats->{tables}, $stats->{success} || 0,
+                   $stats->{failure} || 0, $stats->{time},
+                   $stats->{wallclock}));
+}
+
+if ( scalar keys %sets > 1 ) {
+   info(1, sprintf(
+      'Final result: %2d sets, %5d tables, %5d successes, %2d failures, '
+      . '%5.2f wall-clock time, %5.2f dump time',
+      scalar(keys %sets),
+         map {
+            my $thing = $_;
+            sum(0, map { $_->{$thing} || 0 } values %stats_for_set);
+         } qw(tables success failure time wallclock)
+      ));
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+# Prints a message.
+sub info {
+   my ( $level, $msg ) = @_;
+   if ( $level <= $opts{v} ) {
+      print $msg, "\n";
+   }
+}
 
 # Interpolates % directives from a db/tbl hashref.
 sub interp {
@@ -768,11 +808,22 @@ are as follows:
 
 =head1 OUTPUT
 
-Each line of output is printed when a forked "child" process ends and is removed
-from the list of children.  The output shows the backup set, database, table,
-seconds spent dumping, the exit status of the forked dump process, and number of
-current processes (including the one just reaped; so this typically shows "how
-many are running in parallel").  A status of 0 indicates success:
+Output depends on verbosity.  When L<"--test"> is given, output includes
+commands that would be executed.
+
+When L<"--verbose"> is 0, there is normally no output unless there's an error.
+
+When L<"--verbose"> is 1, there is one line of output for each backup set,
+showing the set, how many tables were dumped with what status, how much time
+elapsed, and how much time the parallel dump jobs added up to.  A final line
+shows sums for all sets, unless there is only one set.
+
+When L<"--verbose"> is 2, there is also one line of output for each table.
+Each line is printed when a forked "child" process ends and is removed from
+the list of children.  The output shows the backup set, database, table,
+seconds spent dumping, the exit status of the forked dump process, and number
+of current processes (including the one just reaped; so this typically shows
+"how many are running in parallel").  A status of 0 indicates success:
 
   SET     DATABASE TABLE         TIME STATUS THREADS
   default mysql    db               0      0       4
@@ -937,7 +988,7 @@ Port number to use for connection.
 
 =item --quiet
 
-Suppresses the normal output (see L<"OUTPUT">).
+Sets L<"--verbose"> to 0.
 
 =item --sets
 
@@ -990,6 +1041,11 @@ example, the MySQL server itself).
 =item --user
 
 User for login if not current user.
+
+=item --verbose
+
+Sets the verbosity; repeatedly specifying it increments the verbosity.
+Default is 1 if not specified.  See L<"OUTPUT">.
 
 =item --version
 
