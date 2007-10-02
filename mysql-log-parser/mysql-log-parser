@@ -59,56 +59,60 @@ sub parse_event {
 
       # These can appear in the log file when it's opened -- for example, when
       # someone runs FLUSH LOGS.
-      if ( $line !~ m/^Time\s+Id\s+Command\s+Argument|Version:.*?started with:|Tcp port:|Unix socket:/ ) {
+      if ( $line =~ m/started with/ ) {
+         <$fh>; # Tcp port: etc
+         <$fh>; # Column headers
+         $line = <$fh>;
+         redo LINE;
+      }
 
-         # Match the beginning of an event
-         my ( $ts, $id, $rest ) = $line =~ m{
-               \A
-               (?:(\d{6}\s+\d{1,2}:\d\d:\d\d)|\t)?
-               \t
-               (?:\s*(\d+))
-               \s
-               (.*)
-               \Z
-            }xs;
-         if ( defined $id ) {
-            $self->{last_line} = undef;
-            if ( $i == 0 ) {
-               my ( $cmd, $arg ) = $rest =~ m{
-                     \A(
-                        Connect
-                        |Field\sList
-                        |Init\sDB
-                        |Query
-                        |Quit
-                     )
-                     (?:\s+(.*\Z))?
-                  }xs;
-               $event = {
-                  ts  => $ts || '',
-                  id  => $id,
-                  cmd => $cmd,
-                  arg => $arg || '',
-               };
-               if ( $cmd ne 'Query' ) {
-                  $done = 1;
-                  chomp $event->{arg};
-               }
-            }
-            else {
-               # The last line was the end of the query; this is the beginning of
-               # the next.  Save it for the next round.
-               $self->{last_line} = $line;
+      # Match the beginning of an event
+      my ( $ts, $id, $rest ) = $line =~ m{
+            \A
+            (?:(\d{6}\s+\d{1,2}:\d\d:\d\d)|\t)?
+            \t
+            (?:\s*(\d+))
+            \s
+            (.*)
+            \Z
+         }xs;
+      if ( defined $id ) {
+         $self->{last_line} = undef;
+         if ( $i == 0 ) {
+            my ( $cmd, $arg ) = $rest =~ m{
+                  \A(
+                     Connect
+                     |Field\sList
+                     |Init\sDB
+                     |Query
+                     |Quit
+                  )
+                  (?:\s+(.*\Z))?
+               }xs;
+            $event = {
+               ts  => $ts || '',
+               id  => $id,
+               cmd => $cmd,
+               arg => $arg || '',
+            };
+            if ( $cmd ne 'Query' ) {
                $done = 1;
                chomp $event->{arg};
             }
          }
          else {
-            $event->{arg} .= $line;
+            # The last line was the end of the query; this is the beginning of
+            # the next.  Save it for the next round.
+            $self->{last_line} = $line;
+            $done = 1;
+            chomp $event->{arg};
          }
-
-         $i++;
       }
+      else {
+         $event->{arg} .= $line;
+      }
+
+      $i++;
       $line = <$fh> unless $done;
    }
 
