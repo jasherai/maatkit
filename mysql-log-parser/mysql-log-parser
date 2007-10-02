@@ -34,44 +34,86 @@ sub new {
    bless {}, shift;
 }
 
+# This method accepts an open filehandle and a callback function.  It reads an
+# event from the filehandle and calls the callback with it.
+#
+# Each event looks like this:
+#  my $event = {
+#     ts  => '',    # Timestamp
+#     id  => '',    # Connection ID
+#     cmd => '',    # Command (type of event)
+#     arg => '',    # Argument to the command
+#  };
+#
+# Returns true if it was able to find an event.
 sub parse_event {
    my ( $self, $fh, $code ) = @_;
-   my $event = { ts => '', id => '', cmd => '', arg => '' };
-   my ($line, $done);
-   while ( !$done && defined($line = <$fh>) ) {
+   my $event;
 
-      # Match the beginning of an event
-      my ( $ts, $id, $rest ) = $line =~ m{
-            ^
-            (?:(\d{6}\s+\d{1,2}:\d\d:\d\d)|\t)?
-            \t
-            (?:\s*(\d+))
-            \s
-            (.*)
-            $
-         }x;
-      if ( defined $id ) {
-         my ( $cmd, $arg ) = $rest =~ m{
-               ^(
-                  Connect
-                  Field\sList
-                  Init\sDB
-                  Query
-                  Quit
-               )
-               (?:\s+(.*))?
-            }x;
-         $event = {
-            ts  => $ts || '',
-            id  => $id,
-            cmd => $cmd,
-            arg => $arg || '',
-         };
-         $done = 1;
+   my $done = 0;
+   my $i    = 0;
+   my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
+
+   LINE:
+   while ( !$done && defined $line ) {
+
+      # These can appear in the log file when it's opened -- for example, when
+      # someone runs FLUSH LOGS.
+      if ( $line !~ m/^Time\s+Id\s+Command\s+Argument|Version:.*?started with:|Tcp port:|Unix socket:/ ) {
+
+         # Match the beginning of an event
+         my ( $ts, $id, $rest ) = $line =~ m{
+               \A
+               (?:(\d{6}\s+\d{1,2}:\d\d:\d\d)|\t)?
+               \t
+               (?:\s*(\d+))
+               \s
+               (.*)
+               \Z
+            }xs;
+         if ( defined $id ) {
+            $self->{last_line} = undef;
+            if ( $i == 0 ) {
+               my ( $cmd, $arg ) = $rest =~ m{
+                     \A(
+                        Connect
+                        |Field\sList
+                        |Init\sDB
+                        |Query
+                        |Quit
+                     )
+                     (?:\s+(.*\Z))?
+                  }xs;
+               $event = {
+                  ts  => $ts || '',
+                  id  => $id,
+                  cmd => $cmd,
+                  arg => $arg || '',
+               };
+               if ( $cmd ne 'Query' ) {
+                  $done = 1;
+                  chomp $event->{arg};
+               }
+            }
+            else {
+               # The last line was the end of the query; this is the beginning of
+               # the next.  Save it for the next round.
+               $self->{last_line} = $line;
+               $done = 1;
+               chomp $event->{arg};
+            }
+         }
+         else {
+            $event->{arg} .= $line;
+         }
+
+         $i++;
       }
-
+      $line = <$fh> unless $done;
    }
-   $code->($event);
+
+   $code->($event) if $event;
+   return $event;
 }
 
 # ###########################################################################

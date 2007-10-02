@@ -8,10 +8,9 @@ Time                 Id Command    Argument
 071002  8:08:25	      9 Connect     baron@localhost on test
 		      9 Query       show databases
 		      9 Query       show tables
-		      9 Field List  backupset 
-		      9 Field List  t1 
 		      9 Field List  transport_backup 
-		      9 Query       select @@version_comment limit 1
-071002  8:08:32	      9 Query       SELECT DATABASE()
 		      9 Init DB     test
+		      9 Query       CREATE TABLE `t1` (
+  `a` int(11) default NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
 071002  8:08:53	      9 Quit       
