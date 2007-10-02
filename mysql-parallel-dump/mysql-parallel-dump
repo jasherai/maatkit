@@ -44,7 +44,9 @@ my @opt_spec = (
    { s => 'age=s',             d => 'Dump only modified or not recently dumped tables' },
    { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
    { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
-   { s => 'csv',               d => 'Do --tab dump in CSV format' },
+   # TODO
+   #{ s => 'chunksize|C=i',     d => 'Number of rows to dump at a time (implies --tab)' },
+   { s => 'csv',               d => 'Do --tab dump in CSV format (implies --tab)' },
    { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
    { s => 'defaultset!',       d => 'When --sets given, dump tables not in any set' },
@@ -186,6 +188,7 @@ if ( !$opts{help} ) {
    }
 }
 
+# TODO if ( $opts{csv} || $opts{C} ) {
 if ( $opts{csv} ) {
    $opts{T} = 1;
 }
@@ -257,7 +260,7 @@ if ( $opts{version} ) {
 }
 
 if ( $opts{help} ) {
-   print "Usage: mysql-parallel-dump <options> [--] <mysqldump args>\n\n";
+   print "Usage: mysql-parallel-dump <options> [--] <external args>\n\n";
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
@@ -567,8 +570,8 @@ foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
    info(1, sprintf('%12s:          %5d tables, %5d successes, %2d failures, '
                    . '%5.2f wall-clock time, %5.2f dump time',
                    $set, $stats->{tables}, $stats->{success} || 0,
-                   $stats->{failure} || 0, $stats->{time},
-                   $stats->{wallclock}));
+                   $stats->{failure} || 0, $stats->{wallclock},
+                   $stats->{time}));
 }
 
 if ( scalar keys %sets > 1 ) {
@@ -579,7 +582,7 @@ if ( scalar keys %sets > 1 ) {
          map {
             my $thing = $_;
             sum(0, map { $_->{$thing} || 0 } values %stats_for_set);
-         } qw(tables success failure time wallclock)
+         } qw(tables success failure wallclock time)
       ));
 }
 
@@ -829,6 +832,28 @@ of current processes (including the one just reaped; so this typically shows
   default mysql    db               0      0       4
   default mysql    columns_priv     0      0       4
   default mysql    help_category    0      0       3
+
+=head1 SPEED OF PARALLEL DUMPS
+
+How much faster is it to dump in parallel?  That depends on your hardware and
+data.  On a dual 2.80GHz CPU Xeon Dell server with 2MB cache and a RAID-5
+array of three 7200RPM SATA disk drives running MySQL 5.0.38 on GNU/Linux, I
+achieved the following dump times:
+
+  COMMAND                    SIZE(GB)  TIME (sec)
+  mysql-parallel-dump             3.0        2596
+
+  COMMAND                    SIZE(MB)  TIME (sec)
+  mysql-parallel-dump             117         120
+  mysql-parallel-dump --tab       114          82
+  mysqldump | gzip --fast         116         123
+
+While dumping two threads in parallel, this machine was at an average of 74%
+CPU utilization and 12% I/O wait.  This machine doesn't benefit much from
+parallel dumps.
+
+Of course, there are other reasons to use this tool besides speed; its ability
+to handle failure, including MySQL itself crashing completely, is one.
 
 =head1 OPTIONS
 
