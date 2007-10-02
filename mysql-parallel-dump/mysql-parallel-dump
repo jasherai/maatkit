@@ -836,24 +836,44 @@ of current processes (including the one just reaped; so this typically shows
 =head1 SPEED OF PARALLEL DUMPS
 
 How much faster is it to dump in parallel?  That depends on your hardware and
-data.  On a dual 2.80GHz CPU Xeon Dell server with 2MB cache and a RAID-5
-array of three 7200RPM SATA disk drives running MySQL 5.0.38 on GNU/Linux, I
-achieved the following dump times:
+data.  You may be able dump files twice as fast, or more if you have lots of
+disks and CPUs.  Here are some user-contributed figures.
 
-  COMMAND                    SIZE(GB)  TIME (sec)
-  mysql-parallel-dump             3.0        2596
+The following table is for a 3.6GHz Xeon machine with 4 processors and a RAID
+10 array of 15k speed disks, directly attached to the server with a fibre
+channel.  Most of the space is in one huge table that wasn't dumped in
+parallel:
 
-  COMMAND                    SIZE(MB)  TIME (sec)
-  mysql-parallel-dump             117         120
-  mysql-parallel-dump --tab       114          82
-  mysqldump | gzip --fast         116         123
+  COMMAND                      SIZE  TIME
+  --------------------------  -----  ----
+  mysql-parallel-dump         1.4GB   269
+  mysqldump                   1.4GB   345
+
+On the same machine, in a database with lots of roughly equal-sized tables:
+
+  COMMAND                      SIZE  TIME
+  --------------------------  -----  ----
+  mysql-parallel-dump         117MB     7
+  mysqldump                   117MB    37
+
+It doesn't always work that well.  A dual 2.80GHz CPU Xeon server with 2MB
+cache and a RAID-5 array of three 7200RPM SATA disk drives running MySQL
+5.0.38 on GNU/Linux achieved the following dump times:
+
+  COMMAND                      SIZE  TIME
+  --------------------------  -----  ----
+  mysql-parallel-dump         3.0GB  2596
+  mysqldump | gzip --fast     3.0GB  3195
 
 While dumping two threads in parallel, this machine was at an average of 74%
-CPU utilization and 12% I/O wait.  This machine doesn't benefit much from
-parallel dumps.
+CPU utilization and 12% I/O wait.  This machine doesn't have enough disks and
+CPUs to do that many things at once.
 
-Of course, there are other reasons to use this tool besides speed; its ability
-to handle failure, including MySQL itself crashing completely, is one.
+Dumping lots of tiny tables by forking of lots of mysqldump processes isn't
+usually much faster, because of the overhead of starting mysqldump,
+connecting, inspecting the table, and dumping it.  Note that tab-separated
+dumps are typically much faster and don't suffer as much from the effects of
+many tiny tables.
 
 =head1 OPTIONS
 
