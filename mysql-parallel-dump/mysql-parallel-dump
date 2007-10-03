@@ -49,6 +49,17 @@ our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
+# Globals -- as few as possible.
+my %opts;
+my $default_dir;
+my @mysqldump_args;
+my %conn = (
+   F => 'mysql_read_default_file',
+   h => 'host',
+   P => 'port',
+   S => 'mysql_socket'
+);
+
 if ( !caller ) {
 
    # ############################################################################
@@ -94,7 +105,7 @@ if ( !caller ) {
    );
    
    # Holds command-line options.
-   my %opts = (
+   %opts = (
       b        => 1,
       opt      => 1,
       gzip     => $OSNAME !~ m/Win32/,
@@ -231,8 +242,6 @@ if ( !caller ) {
    @conn_params = map { "$_->[0]='$opts{$_->[1]}'" } grep { defined $opts{$_->[1]} } @conn_params;
    
    # Decide on options to mysqldump.
-   my $default_dir;
-   my @mysqldump_args;
    if ( $opts{opt} && !@ARGV ) {
       # Sensible defaults.
       $default_dir = 1;
@@ -311,13 +320,6 @@ if ( !caller ) {
    # ############################################################################
    # Connect.
    # ############################################################################
-   my %conn = (
-      F => 'mysql_read_default_file',
-      h => 'host',
-      P => 'port',
-      S => 'mysql_socket'
-   );
-   
    my $dbh = get_dbh();
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
