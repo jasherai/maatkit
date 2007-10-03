@@ -31,6 +31,7 @@ is_deeply(
       numeric_cols => [qw(a)],
       is_numeric   => { a => 1 },
       engine       => 'MyISAM',
+      type_for     => { a => 'int' },
    },
    'Basic table is OK',
 );
@@ -110,11 +111,10 @@ is_deeply(
             "  `original_language_id` tinyint(3) unsigned default NULL",
          rental_duration =>
             "  `rental_duration` tinyint(3) unsigned NOT NULL default '3'",
-         rental_rate => "  `rental_rate` decimal(4,2) NOT NULL default '4.99'",
-         length      => "  `length` smallint(5) unsigned default NULL",
-         replacement_cost =>
-            "  `replacement_cost` decimal(5,2) NOT NULL default '19.99'",
-         rating => "  `rating` enum('G','PG','PG-13','R','NC-17') default 'G'",
+         rental_rate      => "  `rental_rate` decimal(4,2) NOT NULL default '4.99'",
+         length           => "  `length` smallint(5) unsigned default NULL",
+         replacement_cost => "  `replacement_cost` decimal(5,2) NOT NULL default '19.99'",
+         rating           => "  `rating` enum('G','PG','PG-13','R','NC-17') default 'G'",
          special_features =>
             "  `special_features` set('Trailers','Commentaries','Deleted Scenes','Behind the Scenes') default NULL",
          last_update =>
@@ -134,7 +134,22 @@ is_deeply(
          length               => 1,
          replacement_cost     => 1,
       },
-      engine => 'InnoDB',
+      engine   => 'InnoDB',
+      type_for => {
+         film_id              => 'smallint',
+         title                => 'varchar',
+         description          => 'text',
+         release_year         => 'year',
+         language_id          => 'tinyint',
+         original_language_id => 'tinyint',
+         rental_duration      => 'tinyint',
+         rental_rate          => 'decimal',
+         length               => 'smallint',
+         replacement_cost     => 'decimal',
+         rating               => 'enum',
+         special_features     => 'set',
+         last_update          => 'timestamp',
+      },
    },
    'sakila.film is OK',
 );
