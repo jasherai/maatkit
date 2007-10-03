@@ -29,9 +29,6 @@ use warnings FATAL => 'all';
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
 # ###########################################################################
 
-# TODO: package-ify the following:
-# table definition parser, including chunk-ifier
-
 # ###########################################################################
 # OptionParser package
 # ###########################################################################
@@ -76,17 +73,333 @@ sub usage {
    my ( $self ) = @_;
    my @specs = @{$self->{specs}};
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+   my $usage = '';
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+      $usage .= sprintf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
+   return $usage;
 }
 
 1;
 
 # ###########################################################################
 # End OptionParser package
+# ###########################################################################
+
+# ###########################################################################
+# TableParser package
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableParser;
+
+sub new {
+   bless {}, shift;
+}
+
+sub parse {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+
+   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+
+   my %def_for;
+   @def_for{@cols} = @defs;
+
+   my @nums =
+      map  { $_ =~ m/`([^`]+)`/g }
+      grep { $_ =~ m/`[^`]+` (?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ } @defs;
+   my %is_numeric = map { $_ => 1 } @nums;
+
+   my %type_for;
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
+      die "Can't determine column type for $def" unless $type;
+      $type_for{$col} = $type;
+   }
+
+   my @null;
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      next if $def =~ m/NOT NULL/ || $def =~ m/text$/;
+      next if $def =~ m/enum\(|set\(/ && $def !~ m/default NULL/;
+      push @null, $col;
+   }
+   my %is_nullable = map { $_ => 1 } @null;
+
+   my %keys;
+   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
+
+      if ( $engine !~ m/MEMORY|HEAP/ ) {
+         $key =~ s/USING HASH/USING BTREE/;
+      }
+
+      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
+      $type = $type || $special || 'BTREE';
+      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
+         && $engine =~ m/HEAP|MEMORY/i )
+      {
+         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
+      }
+
+      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
+      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
+      my @cols   = grep { m/[^,]/ } split('`', $cols);
+      $name      =~ s/`//g;
+
+      $keys{$name} = {
+         colnames    => $cols,
+         cols        => \@cols,
+         unique      => $unique,
+         is_col      => { map { $_ => 1 } @cols },
+         is_nullable => scalar(grep { $is_nullable{$_} } @cols),
+         type        => $type,
+      };
+   }
+
+   return {
+      cols           => \@cols,
+      is_col         => { map { $_ => 1 } @cols },
+      null_cols      => \@null,
+      is_nullable    => \%is_nullable,
+      keys           => \%keys,
+      defs           => \%def_for,
+      numeric_cols   => \@nums,
+      is_numeric     => \%is_numeric,
+      engine         => $engine,
+      type_for       => \%type_for,
+   };
+}
+
+1;
+
+# ###########################################################################
+# End TableParser package
+# ###########################################################################
+
+# ###########################################################################
+# TableChunker package
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableChunker;
+
+use POSIX qw(ceil);
+use List::Util qw(min max);
+
+sub new {
+   bless {}, shift;
+}
+
+my $EPOCH      = '1970-01-01';
+my %int_types  = map { $_ => 1 }
+   qw( bigint date datetime int mediumint smallint time timestamp tinyint year );
+my %real_types = map { $_ => 1 }
+   qw( decimal double float );
+
+sub find_chunk_columns {
+   my ( $self, $table, $opts ) = @_;
+   $opts ||= {};
+
+   my @candidate_cols;
+
+   my @possible_keys = grep { $_->{type} eq 'BTREE' } values %{$table->{keys}};
+
+   my $can_chunk_exact = 0;
+   if ($opts->{exact}) {
+      @candidate_cols =
+         grep {
+            $int_types{$table->{type_for}->{$_}}
+            || $real_types{$table->{type_for}->{$_}}
+         }
+         map  { $_->{cols}->[0] }
+         grep { $_->{unique} && @{$_->{cols}} == 1 }
+              @possible_keys;
+      if ( @candidate_cols ) {
+         $can_chunk_exact = 1;
+      }
+   }
+
+   if ( !@candidate_cols ) {
+      @candidate_cols =
+         grep {
+            $int_types{$table->{type_for}->{$_}}
+            || $real_types{$table->{type_for}->{$_}}
+         }
+         map { $_->{cols}->[0] }
+         @possible_keys;
+   }
+
+   my $i = 0;
+   my %col_pos = map { $_ => $i++ } @{$table->{cols}};
+   @candidate_cols = sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
+
+   return ($can_chunk_exact, \@candidate_cols);
+}
+
+sub calculate_chunks {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(table col min max rows_in_range size dbh) ) {
+      die "Required argument $arg not given or undefined"
+         unless defined $args{$arg};
+   }
+
+   my @chunks;
+   my ($range_func, $start_point, $end_point);
+   my $col_type = $args{table}->{type_for}->{$args{col}};
+
+
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $start_point = $args{min};
+      $end_point   = $args{max};
+      $range_func  = 'range_num';
+   }
+   elsif ( $col_type eq 'timestamp' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')");
+      $range_func  = 'range_timestamp';
+   }
+   elsif ( $col_type eq 'date' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')");
+      $range_func  = 'range_date';
+   }
+   elsif ( $col_type eq 'time' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')");
+      $range_func  = 'range_time';
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      $start_point = $self->timestampdiff($args{dbh}, $args{min});
+      $end_point   = $self->timestampdiff($args{dbh}, $args{max});
+      $range_func  = 'range_datetime';
+   }
+   else {
+      die "I don't know how to chunk $col_type\n";
+   }
+
+   if ( !defined $start_point ) {
+      $start_point = 0;
+   }
+   if ( !defined $end_point || $end_point < $start_point ) {
+      $end_point = 0;
+   }
+
+   my $interval = $args{size} * ($end_point - $start_point) / $args{rows_in_range};
+   if ( $int_types{$col_type} ) {
+      $interval = ceil($interval);
+   }
+   $interval ||= $args{size};
+   if ( $args{exact} ) {
+      $interval = $args{size};
+   }
+
+   my $col = "`$args{col}`";
+   if ( $start_point < $end_point ) {
+      my ( $beg, $end );
+      my $iter = 0;
+      for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
+         ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $interval, $end_point);
+
+         if ( $iter++ == 0 ) {
+            push @chunks, "$col < " . $self->quote($end);
+         }
+         else {
+            push @chunks, "$col >= " . $self->quote($beg) . " AND $col < " . $self->quote($end);
+         }
+      }
+
+      my $nullable = $args{table}->{is_nullable}->{$args{col}};
+      pop @chunks;
+      if ( @chunks ) {
+         push @chunks, "$col >= " . $self->quote($beg);
+      }
+      else {
+         push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
+      }
+      if ( $nullable ) {
+         push @chunks, "$col IS NULL";
+      }
+
+   }
+   else {
+      push @chunks, '1=1';
+   }
+
+   return @chunks;
+}
+
+sub quote {
+   my ( $self, $val ) = @_;
+   return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
+}
+
+sub range_num {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   my $end = min($max, $start + $interval);
+   $start =~ s/\.(\d{5}).*$/.$1/;
+   $end   =~ s/\.(\d{5}).*$/.$1/;
+   if ( $end > $start ) {
+      return ( $start, $end );
+   }
+   else {
+      die "Chunk size is too small: $end !> $start\n";
+   }
+}
+
+sub range_time {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))");
+}
+
+sub range_date {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))");
+}
+
+sub range_datetime {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND),
+       DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)");
+}
+
+sub range_timestamp {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))");
+}
+
+sub timestampdiff {
+   my ( $self, $dbh, $time ) = @_;
+   my ( $diff ) = $dbh->selectrow_array(
+      "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+      . "- TO_DAYS('$EPOCH 00:00:00') * 86400");
+   my ( $check ) = $dbh->selectrow_array(
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)");
+   die <<"   EOF"
+   Incorrect datetime math: given $time, calculated $diff but checked to $check.
+   This is probably because you are using a version of MySQL that overflows on
+   large interval values to DATE_ADD().  If not, please report this as a bug.
+   EOF
+      unless $check eq $time;
+   return $diff;
+}
+
+1;
+
+# ###########################################################################
+# End TableChunker package
 # ###########################################################################
 
 package main;
@@ -119,13 +432,12 @@ if ( !caller ) {
    # ############################################################################
    # Get configuration information.
    # ############################################################################
-   
+
    my @opt_spec = (
       { s => 'age=s',             d => 'Dump only modified or not recently dumped tables' },
       { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
       { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
-      # TODO
-      #{ s => 'chunksize|C=i',     d => 'Number of rows to dump at a time (implies --tab)' },
+      { s => 'chunksize|C=s',     d => 'Number of rows or data size to dump per file' },
       { s => 'csv',               d => 'Do --tab dump in CSV format (implies --tab)' },
       { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
       { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
@@ -157,7 +469,7 @@ if ( !caller ) {
       { s => 'version',           d => 'Output version information and exit' },
       { s => 'wait|w=s',          d => 'Wait limit when server is down (default 5m)' },
    );
-   
+
    # Holds command-line options.
    %opts = (
       b        => 1,
@@ -172,16 +484,16 @@ if ( !caller ) {
 
    my $opt_parser = OptionParser->new(@opt_spec);
    %opts = $opt_parser->parse(%opts);
-   
+
    # ############################################################################
    # Process options.
    # ############################################################################
    $opts{basedir} = File::Spec->rel2abs($opts{basedir});
-   
+
    if ( $opts{q} ) {
       $opts{v} = 0;
    }
-   
+
    if ( !$opts{m} ) {
       eval {
          # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This
@@ -196,28 +508,28 @@ if ( !caller ) {
       $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
       $opts{m} = max(2, $opts{m} || 0);
    }
-   
+
    # Set locking options.
    my $lock_all      = $opts{sets} || $opts{locktables} ? 0 : 1;
    $opts{k}          = $lock_all unless defined $opts{k};
    $opts{locktables} = !$lock_all unless defined $opts{locktables};
-   
+
    if ( !$opts{help} ) {
       if ( $opts{defaultset} && !$opts{sets} ) {
          warn "--defaultset has no effect without --sets\n";
          $opts{help} = 1;
       }
-   
+
       if ( !$opts{m} ) {
          warn "You must specify --numthread\n";
          $opts{help} = 1;
       }
-   
+
       if ( !$opts{help} && $opts{k} && $opts{locktables} ) {
          warn "--locktables and --flushlock are mutually exclusive\n";
          $opts{help} = 1;
       }
-   
+
       if ( !$opts{help} && $opts{age} ) {
          my ($num, $suf ) = $opts{age} =~ m/(\d+)([smhd])$/;
          if ( !defined $num || $num <= 0 ) {
@@ -232,7 +544,7 @@ if ( !caller ) {
                :               $num * 86400;   # Days
          }
       }
-   
+
       if ( !$opts{help} ) {
          my ($num, $suf ) = $opts{w} =~ m/(\d+)([smhd])$/;
          if ( !defined $num || $num <= 0 ) {
@@ -246,28 +558,27 @@ if ( !caller ) {
                      :               $num * 86400;   # Days
          }
       }
-   
+
       if ( !$opts{help} && $opts{sets} && !$opts{settable} ) {
          warn "--sets requires --settable\n";
          $opts{help} = 1;
       }
    }
-   
-   # TODO if ( $opts{csv} || $opts{C} ) {
+
    if ( $opts{csv} ) {
       $opts{T} = 1;
    }
-   
+
    if ( $opts{T} ) {
       if ( !defined $opts{umask} ) {
          $opts{umask} = 0;
       }
    }
-   
+
    if ( defined $opts{umask} ) {
       umask oct($opts{umask});
    }
-   
+
    # Gather connection parameters to pass to mysqldump.  Order matters; mysqldump
    # will have a problem if --defaults-file isn't first.
    my @conn_params = (
@@ -279,7 +590,7 @@ if ( !caller ) {
       [qw(--user          u)],
    );
    @conn_params = map { "$_->[0]='$opts{$_->[1]}'" } grep { defined $opts{$_->[1]} } @conn_params;
-   
+
    # Decide on options to mysqldump.
    if ( $opts{opt} && !@ARGV ) {
       # Sensible defaults.
@@ -316,28 +627,28 @@ if ( !caller ) {
             '--result-file="' . filename('%S', '%D', '%N.sql') . '"';
       }
    }
-   
+
    if ( $opts{version} ) {
       print "mysql-parallel-dump  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
       exit(0);
    }
-   
+
    if ( $opts{help} ) {
       print "Usage: mysql-parallel-dump <options> [--] <external args>\n\n";
       print $opt_parser->usage();
       (my $usage = <<"      USAGE") =~ s/^         //gm;
-   
+
          mysql-parallel-dump dumps sets of MySQL tables simultaneously via
          mysqldump or SELECT INTO OUTFILE.  For more details, please read the
          documentation:
-   
+
             perldoc mysql-parallel-dump
-   
+
       USAGE
       print $usage;
       exit(0);
    }
-   
+
    # Make comma-separated lists into hashes.
    if ( $opts{d} ) {
       $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
@@ -350,17 +661,17 @@ if ( !caller ) {
    if ( $opts{e} ) {
       $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
    }
-   
+
    # ############################################################################
    # Connect.
    # ############################################################################
    my $dbh = get_dbh();
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
-   
+
    # This signal handler will do nothing but wake up the sleeping parent process.
    $SIG{CHLD} = sub {};
-   
+
    # ############################################################################
    # Derive a last-modified timestamp
    # ############################################################################
@@ -368,21 +679,21 @@ if ( !caller ) {
       = $opts{age}
       ? $dbh->selectrow_array("SELECT DATE_SUB(NOW(), INTERVAL $opts{age} SECOND)")
       : undef;
-   
+
    # ############################################################################
    # Lock the whole server if desired.
    # ############################################################################
    if ( $opts{k} && !$opts{test} ) {
       $dbh->do('FLUSH TABLES WITH READ LOCK');
    }
-   
+
    # ############################################################################
    # Iterate over "sets" of tables.
    # ############################################################################
    my %sets;
    my %tables_in_sets;
    my %stats_for_set;
-   
+
    # Fetch backup sets from the database.
    my $backedup_sth;
    if ( $opts{sets} ) {
@@ -397,13 +708,20 @@ if ( !caller ) {
          print $sql, "\n" if $opts{test};
          my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
          foreach my $row ( @$result ) {
-            push @{$sets{$set}},
-               {  D => $row->{db},
-                  N => $row->{tbl},
-                  S => $set,
+            my @chunks = get_chunks($dbh, $opts{C}, $set, $row->{db}, $row->{tbl});
+            my $i = 0;
+            foreach my $chunk ( @chunks ) {
+               push @{$sets{$set}}, {
+                  D => $chunk->{D},
+                  N => $chunk->{N},
+                  S => $chunk->{S},
+                  C => $i++,
+                  W => $chunk->{W},
                };
-            $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
+               $stats_for_set{$set}->{chunks}++;
+            }
             $stats_for_set{$set}->{tables}++;
+            $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
          }
       }
       if ( $age ) {
@@ -412,12 +730,12 @@ if ( !caller ) {
             . " WHERE `setname` = ? AND `db` = ? AND `tbl` = ?");
       }
    }
-   
+
    # Do all databases and tables in a 'default' set, possibly excluding those
    # that have been included in named sets above.
    if ( !$opts{sets} || $opts{defaultset} ) {
-      my @work_to_do;
-   
+      my $set = 'default';
+
       my @databases = grep {
          $_ !~ m/^(information_schema|lost\+found)$/mi
       } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
@@ -428,24 +746,24 @@ if ( !caller ) {
             && ( !exists $opts{g}->{$_} )
          } @databases;
       }
-   
+
       DATABASE:
       foreach my $database ( @databases ) {
-   
+
          my $tables = $dbh->selectall_arrayref(
             $age
                ? "SHOW TABLE STATUS FROM `$database`"
                : "SHOW /*!50002 FULL*/ TABLES FROM `$database`",
             { Slice => {} });
-   
+
          if ( @$tables ) {
-   
+
             my ( $name_key )
                = $age
                ? ( qw(name) )
                : ( grep { $_ ne 'table_type' } keys %{$tables->[0]} );
             my $type_key = $age ? 'comment' : 'table_type';
-   
+
             TABLE:
             foreach my $table ( @$tables ) {
                my $tblname = $table->{$name_key};
@@ -459,20 +777,27 @@ if ( !caller ) {
                   ( $tables_in_sets{$database}->{$tblname} )
                   || ( $table->{$type_key} && $table->{$type_key} eq 'VIEW' )
                   || ( $table->{update_time} && $age && $table->{update_time} lt $age );
-   
-               push @work_to_do,
-                  {  D => $database,
-                     N => $tblname,
-                     S => 'default',
+
+               my @chunks = get_chunks($dbh, $opts{C}, $set, $database, $tblname);
+               my $i = 0;
+               foreach my $chunk ( @chunks ) {
+                  push @{$sets{$set}}, {
+                     D => $chunk->{D},
+                     N => $chunk->{N},
+                     S => $chunk->{S},
+                     C => $i++,
+                     W => $chunk->{W},
                   };
-               $stats_for_set{default}->{tables}++;
+                  $stats_for_set{$set}->{chunks}++;
+               }
+               $stats_for_set{$set}->{tables}++;
+               $tables_in_sets{$database}->{$tblname}++;
             }
          }
       }
-      $opts{sets}    = join(',', $opts{sets} =~ m/(\w+)/g, 'default');
-      $sets{default} = \@work_to_do;
+      $opts{sets}    = join(',', $opts{sets} =~ m/(\w+)/g, $set);
    }
-   
+
    # ############################################################################
    # Do each backup set.
    # ############################################################################
@@ -485,7 +810,7 @@ if ( !caller ) {
          info(2, "Nothing to do for set $set");
          next SET;
       }
-   
+
       # #########################################################################
       # Lock tables if needed (automatically releases any earlier locks).
       # #########################################################################
@@ -498,14 +823,14 @@ if ( !caller ) {
             $dbh->do('LOCK TABLES ' . join(', ', @to_lock));
          }
       }
-   
+
       # #########################################################################
       # Flush logs.
       # #########################################################################
       if ( $opts{flushlog} && !$opts{test} ) {
          $dbh->do('FLUSH LOGS');
       }
-   
+
       # #########################################################################
       # Get the master position.
       # #########################################################################
@@ -517,7 +842,7 @@ if ( !caller ) {
             qw(file position master_host master_port master_log_file
             read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
             exec_master_log_pos);
-   
+
          my ( $master_pos, $slave_pos );
          eval {
             $master_pos = $dbh->selectrow_hashref('SHOW MASTER STATUS');
@@ -537,7 +862,7 @@ if ( !caller ) {
          }
          close $file or die $OS_ERROR;
       }
-   
+
       # #########################################################################
       # Design the format for printing out.
       # #########################################################################
@@ -545,9 +870,9 @@ if ( !caller ) {
       $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
       $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
       $maxset = max(3, length($set));
-      my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %6s %7s";
-      info(2, sprintf($format, qw(SET DATABASE TABLE TIME STATUS THREADS)));
-   
+      my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
+      info(2, sprintf($format, qw(SET DATABASE TABLE CHUNK TIME STATUS THREADS)));
+
       # #########################################################################
       # Assign the work to child processes.  Initially just start --numthreads
       # number of children.  Each child that exits will trigger a new one to start
@@ -555,10 +880,10 @@ if ( !caller ) {
       # threading support so I could just queue work for a fixed pool of worker
       # threads!
       # #########################################################################
-   
+
       my %kids;
       while ( @work_to_do || %kids ) {
-   
+
          # Wait for the MySQL server to become responsive.
          my $tries = 0;
          while ( !$dbh->ping && $tries++ < $opts{w} ) {
@@ -574,7 +899,7 @@ if ( !caller ) {
          if ( $tries >= $opts{w} ) {
             die "Too many retries, exiting.\n";
          }
-   
+
          # Start a new child process.
          while ( @work_to_do && $opts{m} > keys %kids ) {
             my $todo = shift @work_to_do;
@@ -588,7 +913,7 @@ if ( !caller ) {
                exit(do_table($todo));
             }
          }
-   
+
          # Possibly wait for child.
          my $reaped = 0;
          foreach my $pid ( keys %kids ) {
@@ -600,7 +925,7 @@ if ( !caller ) {
                   $backedup_sth->execute(@{$todo}{qw(S D N)});
                }
                my $time = (time - $todo->{time});
-               info(2, sprintf($format, @{$todo}{qw(S D N)},
+               info(2, sprintf($format, @{$todo}{qw(S D N C)},
                   sprintf('%.2f', $time), $stat, scalar(keys %kids)));
                $stats->{ $stat ? 'failure' : 'success' }++;
                $stats->{time} += $time;
@@ -608,7 +933,7 @@ if ( !caller ) {
                $reaped = 1;
             }
          }
-   
+
          if ( !$reaped ) {
             # Don't busy-wait.  But don't wait forever either, as a child may exit
             # and signal while we're not sleeping, so if we sleep forever we may
@@ -616,7 +941,7 @@ if ( !caller ) {
             sleep(1);
          }
       }
-   
+
       $stats->{wallclock} = time() - $start;
       info(1, sprintf('%12s:          %5d tables, %5d successes, %2d failures, '
                       . '%5.2f wall-clock time, %5.2f dump time',
@@ -624,7 +949,7 @@ if ( !caller ) {
                       $stats->{failure} || 0, $stats->{wallclock},
                       $stats->{time}));
    }
-   
+
    if ( scalar keys %sets > 1 ) {
       info(1, sprintf(
          'Final result: %2d sets, %5d tables, %5d successes, %2d failures, '
@@ -636,12 +961,67 @@ if ( !caller ) {
             } qw(tables success failure wallclock time)
          ));
    }
-   
+
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub get_chunks {
+   my ( $dbh, $spec, $set, $db, $tbl ) = @_;
+   my $rows_per_chunk;
+   my $cant_chunk = {
+      D => $db,
+      N => $tbl,
+      S => $set,
+      W => undef,
+   };
+   return $cant_chunk unless $spec;
+
+   my $tc = TableChunker->new;
+
+   # Figure out whether the chunksize is a number of rows or a data size.
+   my ( $num, $suffix ) = $spec =~ m/^(\d+)([MGk])$/;
+   # TODO: check this in opt parsing
+   if ( $suffix ) {
+      # Figure out how many rows fit into this many bytes
+      my $size = $suffix eq 'k' ? 1_024
+               : $suffix eq 'M' ? 1_024 * 1_024
+               :                  1_024 * 1_024 * 1_024;
+      $rows_per_chunk = $tc->size_to_rows($dbh, $db, $tbl, $size * $num);
+      return $cant_chunk unless $rows_per_chunk;
+   }
+   else {
+      $rows_per_chunk = $spec;
+   }
+
+   # Get the chunk column candidates
+   my $tp = TableParser->new;
+   my $table = $tp->parse($dbh->selectrow_hashref(
+      "SHOW CREATE TABLE `$db`.`$tbl`")->{'create table'});
+   my $col = $tc->get_first_chunkable_column($table);
+   return $cant_chunk unless $col;
+   my %params = $tc->get_range_statistics($dbh, $db, $tbl, $col);
+   return $cant_chunk
+      if grep { !defined $params{$_} } qw(min max rows_in_range);
+
+   my @chunks = $tc->calculate_chunks(
+      dbh      => $dbh,
+      table    => $table,
+      col      => $col,
+      size     => $rows_per_chunk,
+      %params,
+   );
+   return map {
+      {
+         D => $db,
+         N => $tbl,
+         S => $set,
+         W => $_,
+      }
+   } @chunks;
+}
 
 # Prints a message.
 sub info {
@@ -1168,12 +1548,6 @@ locks will be taken after the server restarts; it's assumed this behavior is
 only useful on a server you're not trying to dump while it's in production.
 
 =back
-
-=head1 TODO
-
-Dumping tables in chunks would be useful so they can be restored in chunks.
-It is no fun for InnoDB to try to roll back 50GB of data.  The chunking
-functionality in MySQL Table Checksum is appropriate for this.
 
 =head1 SYSTEM REQUIREMENTS
 
