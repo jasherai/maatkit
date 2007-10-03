@@ -63,7 +63,8 @@ sub find_chunk_columns {
          @possible_keys;
    }
 
-   # Order the candidates by their original column order.
+   # Order the candidates by their original column order.  TODO: put the PK's
+   # first column first, if it's a candidate.
    my $i = 0;
    my %col_pos = map { $_ => $i++ } @{$table->{cols}};
    @candidate_cols = sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
@@ -200,6 +201,38 @@ sub calculate_chunks {
    return @chunks;
 }
 
+sub get_first_chunkable_column {
+   my ( $self, $table, $opts ) = @_;
+   my ($exact, $cols) = $self->find_chunk_columns($table, $opts);
+   return $cols->[0];
+}
+
+sub size_to_rows {
+   my ( $self, $dbh, $db, $tbl, $size ) = @_;
+   $tbl =~ s/_/\\_/g;
+   my $sth = $dbh->prepare(
+      "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'");
+   $sth->execute;
+   my @row = $sth->fetchrow_array();
+   my $avg_row_length = $row[ $sth->{NAME_lc_hash}{avg_row_length} ];
+   $sth->finish;
+   return $avg_row_length ? ceil($size / $avg_row_length) : undef;
+}
+
+# Determine the range of values for the chunk_col column on this table.
+sub get_range_statistics {
+   my ( $self, $dbh, $db, $tbl, $col, $opts ) = @_;
+   my ( $min, $max ) = $dbh->selectrow_array(
+      "SELECT MIN(`$col`), MAX(`$col`) FROM `$db`.`$tbl`");
+   my $expl = $dbh->selectrow_hashref(
+      "EXPLAIN SELECT * FROM `$db`.`$tbl");
+   return (
+      min           => $min,
+      max           => $max,
+      rows_in_range => $expl->{rows},
+   );
+}
+
 sub quote {
    my ( $self, $val ) = @_;
    return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
@@ -275,4 +308,3 @@ sub timestampdiff {
 # ###########################################################################
 # End TableChunker package
 # ###########################################################################
-
