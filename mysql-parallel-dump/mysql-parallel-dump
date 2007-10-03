@@ -476,7 +476,7 @@ if ( !caller ) {
       { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
       { s => 'chunksize|C=s',     d => 'Number of rows or data size to dump per file' },
       { s => 'csv',               d => 'Do --tab dump in CSV format (implies --tab)' },
-      { s => 'databases|d=s',     d => 'Only do this comma-separated list of databases' },
+      { s => 'databases|d=s',     d => 'Dump only this comma-separated list of databases' },
       { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
       { s => 'defaultset!',       d => 'When --sets given, dump tables not in any set' },
       { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
@@ -494,10 +494,10 @@ if ( !caller ) {
       { s => 'port|P=i',          d => 'Port number to use for connection' },
       { s => 'quiet|q',           d => 'Do not print normal output' },
       { s => 'sets=s',            d => 'Backup this comma-separated list of sets' },
-      { s => 'settable=s',        d => 'DB.Table where backup sets are stored' },
+      { s => 'settable=s',        d => 'database.table where backup sets are stored' },
       { s => 'socket|S=s',        d => 'Socket file to use for connection' },
       { s => 'tab|T',             d => 'Dump tab-separated (sets --umask 0)' },
-      { s => 'tables|t=s',        d => 'Only do this comma-separated list of tables' },
+      { s => 'tables|t=s',        d => 'Dump only this comma-separated list of tables' },
       { s => 'test',     ,        d => 'Print commands instead of executing them' },
       { s => 'tblregex=s',        d => 'Dump only tables whose names match this pattern' },
       { s => 'umask=s',           d => 'Umask value, in octal' },
@@ -671,6 +671,10 @@ if ( !caller ) {
          push @mysqldump_args,
             '--result-file="' . filename('%S', '%D', '%N.%3C.sql') . '"';
       }
+   }
+
+   else {
+      @mysqldump_args = @ARGV;
    }
 
    if ( $opts{version} ) {
@@ -959,7 +963,9 @@ if ( !caller ) {
                $kids{$pid} = $todo;
             }
             else {                     # I'm the child
-               exit(do_table($todo));
+               my $exit_status = 0;
+               $exit_status = do_table($todo);
+               exit($exit_status);
             }
          }
 
@@ -969,6 +975,7 @@ if ( !caller ) {
             my $kid = waitpid($pid, POSIX::WNOHANG);
             if ( $kid ) { # I reaped a child.
                my $stat = $CHILD_ERROR;
+               print STDERR $CHILD_ERROR, "\n";
                my $todo = $kids{$kid};
                if ( !$opts{test} && !$stat && $backedup_sth ) {
                   $backedup_sth->execute(@{$todo}{qw(S D N)});
@@ -1175,13 +1182,14 @@ sub get_dbh {
 
 sub system_call {
    my ( @cmd ) = @_;
+   my $exit_status = 0;
    if ( $opts{test} ) {
       print join(' ', @cmd), "\n";
-      return 0;
    }
    else {
-      return system(join(' ', @cmd));
+      $exit_status = system(join(' ', @cmd));
    }
+   return $exit_status;
 }
 
 1; # Because this is a runnable module.
@@ -1237,6 +1245,11 @@ at all:
 
   mysql-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \
      \| gzip --fast -c - \> '%D.%N.gz'
+
+There's no reason you can't use MySQL Parallel Dump to do other tasks in
+parallel, such as C<OPTIMIZE TABLE>:
+
+  mysql-parallel-dump --noflushlock --nolocktables -- mysqlcheck --optimize '%D' '%N'
 
 The C<%> modifiers are macros (see L<"MACROS">).  The C<--skip-lock-tables>
 argument is very important in that last example, because otherwise both MySQL
