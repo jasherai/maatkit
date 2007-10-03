@@ -6,11 +6,15 @@ use warnings FATAL => 'all';
 
 package TableChunker;
 
+use POSIX qw(ceil);
+use List::Util qw(min max);
+
 sub new {
    bless {}, shift;
 }
 
-my %int_types = map { $_ => 1 }
+my $EPOCH      = '1970-01-01';
+my %int_types  = map { $_ => 1 }
    qw( bigint date datetime int mediumint smallint time timestamp tinyint year );
 my %real_types = map { $_ => 1 }
    qw( decimal double float );
@@ -18,6 +22,9 @@ my %real_types = map { $_ => 1 }
 # $table  hashref returned from TableParser::parse
 # $opts   hashref of options
 #         exact: try to support exact chunk sizes (may still chunk fuzzily)
+# Returns an array:
+#   whether the table can be chunked exactly, if requested (zero otherwise)
+#   arrayref of columns that support chunking
 sub find_chunk_columns {
    my ( $self, $table, $opts ) = @_;
    $opts ||= {};
@@ -29,6 +36,7 @@ sub find_chunk_columns {
    # Only BTREE are good for range queries.
    my @possible_keys = grep { $_->{type} eq 'BTREE' } values %{$table->{keys}};
 
+   my $can_chunk_exact = 0;
    if ($opts->{exact}) {
       # Find the first column of every single-column unique index.
       @candidate_cols =
@@ -39,6 +47,9 @@ sub find_chunk_columns {
          map  { $_->{cols}->[0] }
          grep { $_->{unique} && @{$_->{cols}} == 1 }
               @possible_keys;
+      if ( @candidate_cols ) {
+         $can_chunk_exact = 1;
+      }
    }
 
    # If an exactly chunk-able index was not found, fall back to non-exact.
@@ -57,130 +68,194 @@ sub find_chunk_columns {
    my %col_pos = map { $_ => $i++ } @{$table->{cols}};
    @candidate_cols = sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
 
-   return @candidate_cols;
+   return ($can_chunk_exact, \@candidate_cols);
 }
 
+# table:         output from TableParser::parse
+# col:           which column to chunk on
+# min:           min value of col
+# max:           max value of col
+# rows_in_range: how many rows are in the table between min and max
+# size:          how large each chunk should be
+# dbh:           a DBI connection to MySQL
+# exact:         whether to chunk exactly (optional)
+# Returns a list of WHERE clauses, one for each chunk.
 sub calculate_chunks {
-   my ( $self, $table, $opts ) = @_;
-   $opts ||= {};
-
-   my $table_min;
-   my $table_max;
-   my $num_rows;
-   my $chunk_size;
-   my @chunks;
-
-=pod
-   # Determine the range of values for the chunk_col column on this table.
-   my $chunk_sql = "SELECT MIN($table->{chunk_col}), MAX($table->{chunk_col}) "
-      . "FROM `$table->{database}`.`$table->{table}`$opts{W}";
-   if ( $table->{chunk_null} && !version_ge($main_dbh, '4.0.0') ) {
-      # MySQL 3.23 will return NULL as the minimum column value and break my
-      # test suite when there is a row with NULL in the chunk column.
-      $chunk_sql .= "AND $table->{chunk_col} IS NOT NULL";
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(table col min max rows_in_range size dbh) ) {
+      die "Required argument $arg not given or undefined"
+         unless defined $args{$arg};
    }
 
-   ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
+   my @chunks;
+   my ($range_func, $start_point, $end_point);
+   my $col_type = $args{table}->{type_for}->{$args{col}};
 
-   my $expl = $main_dbh->selectrow_hashref(
-      "EXPLAIN SELECT * FROM `$table->{database}`.`$table->{table}"
-      . "`$opts{W} AND $table->{chunk_col} IS NOT NULL");
+   # Determine chunk size in "distance between endpoints" that will give
+   # approximately the right number of rows between the endpoints.  Also
+   # find the start/end points as a number that Perl can do + and < on.
 
-   # This isn't always reliable.  Sometimes EXPLAIN will say there are rows
-   # when the table is empty.
-   $num_rows = $expl->{rows};
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $start_point = $args{min};
+      $end_point   = $args{max};
+      $range_func  = 'range_num';
+   }
+   elsif ( $col_type eq 'timestamp' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')");
+      $range_func  = 'range_timestamp';
+   }
+   elsif ( $col_type eq 'date' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')");
+      $range_func  = 'range_date';
+   }
+   elsif ( $col_type eq 'time' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')");
+      $range_func  = 'range_time';
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
+      # to maintain just one kind of code, so I do it all with DATE_ADD().
+      $start_point = $self->timestampdiff($args{dbh}, $args{min});
+      $end_point   = $self->timestampdiff($args{dbh}, $args{max});
+      $range_func  = 'range_datetime';
+   }
+   else {
+      die "I don't know how to chunk $col_type\n";
+   }
 
-   if ( $num_rows && defined $table_min && defined $table_max ) { # $num_rows is unreliable
+   # The endpoints could easily be undef, because of things like dates that
+   # are '0000-00-00'.  The only thing to do is make them zeroes and
+   # they'll be done in a single chunk then.
+   if ( !defined $start_point ) {
+      $start_point = 0;
+   }
+   if ( !defined $end_point || $end_point < $start_point ) {
+      $end_point = 0;
+   }
 
-      # Determine chunk size in "distance between endpoints" that will give
-      # approximately the right number of rows between the endpoints.  Also
-      # find the start/end points as a number that Perl can do + and < on.
-      my ($range_func, $start_point, $end_point);
-      if ( $table->{chunk_type} =~ m/(?:int|year|float|double|decimal)$/ ) {
-         $start_point = $table_min;
-         $end_point   = $table_max;
-         $range_func  = \&range_num;
-      }
-      elsif ( $table->{chunk_type} eq 'timestamp' ) {
-         ($start_point, $end_point) = $main_dbh->selectrow_array(
-            "SELECT UNIX_TIMESTAMP('$table_min'), UNIX_TIMESTAMP('$table_max')");
-         $range_func  = \&range_timestamp;
-      }
-      elsif ( $table->{chunk_type} eq 'date' ) {
-         ($start_point, $end_point) = $main_dbh->selectrow_array(
-            "SELECT TO_DAYS('$table_min'), TO_DAYS('$table_max')");
-         $range_func  = \&range_date;
-      }
-      elsif ( $table->{chunk_type} eq 'time' ) {
-         ($start_point, $end_point) = $main_dbh->selectrow_array(
-            "SELECT TIME_TO_SEC('$table_min'), TIME_TO_SEC('$table_max')");
-         $range_func  = \&range_time;
-      }
-      elsif ( $table->{chunk_type} eq 'datetime' ) {
-         # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
-         # to maintain just one kind of code, so I do it all with DATE_ADD().
-         $start_point = timestampdiff($main_dbh, $table_min);
-         $end_point   = timestampdiff($main_dbh, $table_max);
-         $range_func  = \&range_datetime;
-      }
-      else {
-         die "I don't know how to chunk $table->{chunk_type}\n";
-      }
+   # Calculate the chunk size, in terms of "distance between endpoints."  If
+   # possible and requested, forbid chunks from being any bigger than
+   # specified.  Add 1 to the range because the interval is half-open, that
+   # is, it is inclusive on the upper end.  (If the table's min value is 1 and
+   # the max is 100, that's 100 values to cover, not 99).
+   my $chunk_size = ceil( $args{size} * (($end_point - $start_point) + 1) / $args{rows_in_range} );
+   $chunk_size  ||= $args{size};
+   if ( $args{exact} ) {
+      $chunk_size = $args{size};
+   }
 
-      # The endpoints could easily be undef, because of things like dates that
-      # are '0000-00-00'.  The only thing to do is make them zeroes and
-      # they'll be done in a single chunk then.
-      if ( !defined $start_point ) {
-         $start_point = 0;
-      }
-      if ( !defined $end_point || $end_point < $start_point ) {
-         $end_point = 0;
-      }
-
-      # Calculate the chunk size, in terms of "distance between endpoints."  If
-      # possible and requested, forbid chunks from being any bigger than
-      # specified.  Add 1 to the range because the interval is half-open,
-      # that is, it is inclusive on the upper end.  (If the table's min value is
-      # 1 and the max is 100, that's 100 values to cover, not 99).
-      $chunk_size = ceil( $opts{C} * (($end_point - $start_point) + 1) / $num_rows ) || $opts{C};
-      if ( $opts{'chunksize-exact'} && $table->{chunk_exact} ) {
-         $chunk_size = $opts{C};
-      }
-
-      # Generate a list of chunk boundaries.
+   # Generate a list of chunk boundaries.  The first and last chunks are
+   # inclusive, and will catch any rows before or after the end of the
+   # supposed range.  So 1-100 divided into chunks of 30 should actually end
+   # up with chunks like this:
+   #           < 30
+   # >= 30 AND < 60
+   # >= 60 AND < 90
+   # >= 90
+   my $col = "`$args{col}`";
+   if ( $start_point < $end_point && $args{rows_in_range} > $chunk_size ) {
+      my ( $beg, $end );
+      my $iter = 0;
       for ( my $i = $start_point; $i < $end_point; $i += $chunk_size ) {
-         push @chunks, [ $range_func->($main_dbh, $i, $chunk_size, $end_point) ];
+         ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $chunk_size, $end_point);
+
+         # The first chunk.
+         if ( $iter++ == 0 ) {
+            push @chunks, "$col < " . $self->quote($end);
+         }
+         else {
+            # The normal case is a chunk in the middle of the range somewhere.
+            push @chunks, "$col >= " . $self->quote($beg) . " AND $col < " . $self->quote($end);
+         }
       }
 
-      if ( $start_point < $end_point ) {
-         # A final chunk that matches the end of the range, and anything outside it
-         # on the upper end, which should not happen on the master but may on a
-         # slave that has extra rows.
-         push @chunks, [ $chunks[-1]->[1], undef ];
-
-         # Ditto for rows below the lower boundary, but this one should not match
-         # anything at all on the master, unlike the one above.
-         push @chunks, [ undef, $chunks[0]->[0] ];
+      # Remove the last chunk and replace it with one that matches everything
+      # from the beginning of the last chunk to infinity.  If the chunk column
+      # is nullable, do NULL separately.
+      my $nullable = $args{table}->{is_nullable}->{$args{col}};
+      pop @chunks;
+      if ( @chunks ) {
+         push @chunks, "$col >= " . $self->quote($beg);
       }
       else {
-         # There are no chunks; just do the whole table in one chunk.
-         push @chunks, '';
+         push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
+      }
+      if ( $nullable ) {
+         push @chunks, "$col IS NULL";
       }
 
    }
    else {
-      push @chunks, '';
+      # There are no chunks; just do the whole table in one chunk.
+      push @chunks, '1=1';
    }
 
-   # If the chunk column is nullable, we need to do NULL separately.
-   if ( $table->{chunk_null} ) {
-      push @chunks, undef;
-   }
-
-   $table->{chunks}    = \@chunks;
-   $table->{chunk_tot} = scalar(@chunks);
-=cut
+   return @chunks;
 }
+
+sub quote {
+   my ( $self, $val ) = @_;
+   return $val =~ m/\d-/ ? qq{"$val"} : $val;
+}
+
+# ###########################################################################
+# Range functions.
+# ###########################################################################
+sub range_num {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return ( $start, min($max, $start + $interval) );
+}
+
+sub range_time {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))");
+}
+
+sub range_date {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))");
+}
+
+sub range_datetime {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND),
+       DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)");
+}
+
+sub range_timestamp {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))");
+}
+
+# Returns the number of seconds between $EPOCH and the value, according to
+# the MySQL server.  (The server can do no wrong).  I believe this code is right
+# after looking at the source of sql/time.cc but I am paranoid and add in an
+# extra check just to make sure.  Earlier versions overflow on large interval
+# values, such as on 3.23.58, '1970-01-01' - interval 58000000000 second is
+# 2037-06-25 11:29:04.  I know of no workaround.
+sub timestampdiff {
+   my ( $self, $dbh, $time ) = @_;
+   my ( $diff ) = $dbh->selectrow_array(
+      "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+      . "- TO_DAYS('$EPOCH 00:00:00') * 86400");
+   my ( $check ) = $dbh->selectrow_array(
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)");
+   die <<"   EOF"
+   Incorrect datetime math: given $time, calculated $diff but checked to $check.
+   This is probably because you are using a version of MySQL that overflows on
+   large interval values.  If not, please report this as a bug.
+   EOF
+      unless $check eq $time;
+   return $diff;
+}
+
 1;
 
 # ###########################################################################
