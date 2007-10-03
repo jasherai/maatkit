@@ -141,10 +141,10 @@ sub calculate_chunks {
    # specified.  Add 1 to the range because the interval is half-open, that
    # is, it is inclusive on the upper end.  (If the table's min value is 1 and
    # the max is 100, that's 100 values to cover, not 99).
-   my $chunk_size = ceil( $args{size} * (($end_point - $start_point) + 1) / $args{rows_in_range} );
-   $chunk_size  ||= $args{size};
+   my $interval = ceil( $args{size} * (($end_point - $start_point) + 1) / $args{rows_in_range} );
+   $interval ||= $args{size};
    if ( $args{exact} ) {
-      $chunk_size = $args{size};
+      $interval = $args{size};
    }
 
    # Generate a list of chunk boundaries.  The first and last chunks are
@@ -156,11 +156,11 @@ sub calculate_chunks {
    # >= 60 AND < 90
    # >= 90
    my $col = "`$args{col}`";
-   if ( $start_point < $end_point && $args{rows_in_range} > $chunk_size ) {
+   if ( $start_point < $end_point ) {
       my ( $beg, $end );
       my $iter = 0;
-      for ( my $i = $start_point; $i < $end_point; $i += $chunk_size ) {
-         ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $chunk_size, $end_point);
+      for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
+         ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $interval, $end_point);
 
          # The first chunk.
          if ( $iter++ == 0 ) {
@@ -250,7 +250,7 @@ sub timestampdiff {
    die <<"   EOF"
    Incorrect datetime math: given $time, calculated $diff but checked to $check.
    This is probably because you are using a version of MySQL that overflows on
-   large interval values.  If not, please report this as a bug.
+   large interval values to DATE_ADD().  If not, please report this as a bug.
    EOF
       unless $check eq $time;
    return $diff;

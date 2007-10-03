@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 6;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -80,6 +80,86 @@ SKIP: {
          '1=1',
       ],
       'Got the right chunks from dividing 100 rows into 300-row chunks',
+   );
+
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'film_id',
+      min           => 0,
+      max           => 0,
+      rows_in_range => 100,
+      size          => 300,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '1=1',
+      ],
+      'No rows, so one chunk',
+   );
+
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'original_language_id',
+      min           => 0,
+      max           => 99,
+      rows_in_range => 100,
+      size          => 50,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`original_language_id` < 50',
+         '`original_language_id` >= 50',
+         '`original_language_id` IS NULL',
+      ],
+      'Nullable column adds IS NULL chunk',
+   );
+
+   $t = $p->parse( load_file('samples/daycol.sql') );
+
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '2001-01-01',
+      max           => '2002-01-01',
+      rows_in_range => 365,
+      size          => 90,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < "2001-04-02"',
+         '`a` >= "2001-04-02" AND `a` < "2001-07-02"',
+         '`a` >= "2001-07-02" AND `a` < "2001-10-01"',
+         '`a` >= "2001-10-01" AND `a` < "2001-12-31"',
+         '`a` >= "2001-12-31"',
+      ],
+      'Date column chunks OK',
+   );
+
+   $t = $p->parse( load_file('samples/datetime.sql') );
+
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '1922-01-14 05:18:23',
+      max           => '2005-11-26 00:59:19',
+      rows_in_range => 3,
+      size          => 1,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < "1949-12-28 19:52:02"',
+         '`a` >= "1949-12-28 19:52:02" AND `a` < "1977-12-12 10:25:41"',
+         '`a` >= "1977-12-12 10:25:41"',
+      ],
+      'Datetime column chunks OK',
    );
 
 }
