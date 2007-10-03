@@ -1,0 +1,22 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+
+# Read in the standard input, and replace the desired module by the contents of
+# the most recent version of the module.
+
+$INPUT_RECORD_SEPARATOR = undef;
+my $input = <STDIN>;
+my $module = shift @ARGV;
+open my $file, "<", "../common/$module.pm"
+   or die $OS_ERROR;
+my $text = <$file>;
+$text =~ s/^ *#.*\n//gm; # strip comments out
+close $file;
+my $line = "# ###########################################################################\n";
+my $marker = qr/($line# (?:End )?$module package\n$line)/;
+$input =~ s/$marker.*?$marker/$1$text$2/s;
+print $input;
