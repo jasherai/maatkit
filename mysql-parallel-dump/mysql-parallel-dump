@@ -30,9 +30,64 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # TODO: package-ify the following:
-# option parser
 # table definition parser, including chunk-ifier
-# DBH parser
+
+# ###########################################################################
+# OptionParser package
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package OptionParser;
+
+use Getopt::Long;
+use List::Util qw(max);
+
+sub new {
+   my ( $class, @opts ) = @_;
+   bless { specs => \@opts }, $class;
+}
+
+sub parse {
+   my ( $self, %defaults ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my %opt_seen;
+   foreach my $spec ( @specs ) {
+      my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+      $spec->{k} = $short || $long;
+      $spec->{l} = $long;
+      $spec->{t} = $short;
+      $spec->{n} = $spec->{s} =~ m/!/;
+      $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
+      die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+   }
+
+   foreach my $key ( keys %defaults ) {
+      die "No such option '$key'\n" unless exists $opt_seen{$key};
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs ) or $defaults{help} = 1;
+   return %defaults;
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my @specs = @{$self->{specs}};
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+   }
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
 
 package main;
 
@@ -40,7 +95,6 @@ use DBI;
 use English qw(-no_match_vars);
 use File::Basename qw(dirname);
 use File::Spec;
-use Getopt::Long;
 use List::Util qw(max sum);
 use POSIX;
 use Time::HiRes qw(time);
@@ -115,24 +169,9 @@ if ( !caller ) {
       sets     => '',
       v        => 1,
    );
-   
-   # Post-process...
-   my %opt_seen;
-   foreach my $spec ( @opt_spec ) {
-      my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-      $spec->{k} = $short || $long;
-      $spec->{l} = $long;
-      $spec->{t} = $short;
-      $spec->{n} = $spec->{s} =~ m/!/;
-      $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
-      die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
-   }
-   
-   # ############################################################################
-   # Get options.
-   # ############################################################################
-   Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+
+   my $opt_parser = OptionParser->new(@opt_spec);
+   %opts = $opt_parser->parse(%opts);
    
    # ############################################################################
    # Process options.
@@ -285,12 +324,7 @@ if ( !caller ) {
    
    if ( $opts{help} ) {
       print "Usage: mysql-parallel-dump <options> [--] <external args>\n\n";
-      my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
-      foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
-         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-         my $short = $spec->{t} ? "-$spec->{t}" : '';
-         printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
-      }
+      print $opt_parser->usage();
       (my $usage = <<"      USAGE") =~ s/^         //gm;
    
          mysql-parallel-dump dumps sets of MySQL tables simultaneously via
