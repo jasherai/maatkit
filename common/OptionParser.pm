@@ -1,3 +1,6 @@
+# ###########################################################################
+# OptionParser package
+# ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
@@ -46,11 +49,18 @@ sub usage {
    my ( $self ) = @_;
    my @specs = @{$self->{specs}};
    my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+   my $usage = '';
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+      $usage .= sprintf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
    }
+   return $usage;
 }
 
 1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+

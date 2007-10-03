@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 6;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -11,6 +11,7 @@ require "../OptionParser.pm";
 my @specs = (
    { s => 'foo!',    d => 'Foo' },
    { s => 'dog|D=s', d => 'Dogs are fun' },
+   { s => 'love|l+', d => 'And peace' },
 );
 
 my $p = new OptionParser(@specs);
@@ -20,7 +21,7 @@ my %opts;
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 1, D => undef },
+   { foo => 1, D => undef, l => undef },
    'Basics works'
 );
 
@@ -28,7 +29,7 @@ is_deeply(
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 0, D => undef },
+   { foo => 0, D => undef, l => undef },
    'Negated foo'
 );
 
@@ -36,7 +37,7 @@ is_deeply(
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 1, D => undef, help => 1 },
+   { foo => 1, D => undef, help => 1, l => undef },
    'Bad dog'
 );
 
@@ -45,3 +46,20 @@ eval {
    %opts = $p->parse(%defaults);
 };
 is ($EVAL_ERROR, "No such option 'bone'\n", 'No bone');
+
+delete $defaults{bone};
+@ARGV = qw(--love -l -l);
+%opts = $p->parse(%defaults);
+is_deeply(
+   \%opts,
+   { foo => 1, D => undef, l => 3 },
+   'More love'
+);
+
+is($p->usage,
+'  --dog     -D   Dogs are fun
+  --[no]foo      Foo
+  --love    -l   And peace
+',
+   'Use me'
+);
