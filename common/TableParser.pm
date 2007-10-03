@@ -10,12 +10,19 @@ sub new {
    bless {}, shift;
 }
 
+# $ddl:  the output of SHOW CREATE TABLE
+# $opts: hashref of options
+#        ignorecols: hashref of columns to ignore
+#        mysql_version: MySQL version, zero-padded so 4.1.0 => 004001000
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
 
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
-   if ( $opts->{ignorecols} ) { # Eliminate columns the user said to ignore
+   if ( $opts->{ignorecols} ) {
+      # Eliminate columns the user said to ignore
       @cols = grep { exists($opts->{ignorecols}->{$_}) } @cols;
    }
 
@@ -37,17 +44,36 @@ sub parse {
 
    my %keys;
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
+
+      # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
+      # will report its index as USING HASH even when this is not supported.  The
+      # true type should be BTREE.  See http://bugs.mysql.com/bug.php?id=22632
+      if ( $engine !~ m/MEMORY|HEAP/ ) {
+         $key =~ s/USING HASH/USING BTREE/;
+      }
+
+      # Determine index type
+      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
+      $type = $type || $special || 'BTREE';
+      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
+         && $engine =~ m/HEAP|MEMORY/i )
+      {
+         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
+      }
+
       my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
-      my ($cols) = $key =~ m/\((.+)\),?$/;
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
       my @cols   = grep { m/[^,]/ } split('`', $cols);
       $name      =~ s/`//g;
+
       $keys{$name} = {
          colnames    => $cols,
          cols        => \@cols,
          unique      => $unique,
          is_col      => { map { $_ => 1 } @cols },
          is_nullable => scalar(grep { $is_nullable{$_} } @cols),
+         type        => $type,
       };
    }
 
@@ -60,6 +86,7 @@ sub parse {
       defs           => \%def_for,
       numeric_cols   => \@nums,
       is_numeric     => { map { $_ => 1 } @nums },
+      engine         => $engine,
    };
 }
 
