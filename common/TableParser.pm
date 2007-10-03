@@ -19,9 +19,20 @@ sub parse {
       @cols = grep { exists($opts->{ignorecols}->{$_}) } @cols;
    }
 
-   my @nums = map  { $_ =~ m/`([^`]+)`/g }
-              grep { $_ =~ m/`[^`]+` (?:(?:tiny|big|medium|small)?int|float|double|decimal)/ } @defs;
-   my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
+   # Save the column definitions *exactly*
+   my %def_for;
+   @def_for{@cols} = @defs;
+
+   my @nums =
+      map  { $_ =~ m/`([^`]+)`/g }
+      grep { $_ =~ m/`[^`]+` (?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ } @defs;
+   my @null;
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      next if $def =~ m/NOT NULL/ || $def =~ m/text$/;
+      next if $def =~ m/enum\(|set\(/ && $def !~ m/default NULL/;
+      push @null, $col;
+   }
    my %is_nullable = map { $_ => 1 } @null;
 
    my %keys;
@@ -40,17 +51,13 @@ sub parse {
       };
    }
 
-   # Save the column definitions *exactly*
-   my %alldefs;
-   @alldefs{@cols} = @defs;
-
    return {
       cols           => \@cols,
       is_col         => { map { $_ => 1 } @cols },
       null_cols      => \@null,
       is_nullable    => \%is_nullable,
       keys           => \%keys,
-      defs           => \%alldefs,
+      defs           => \%def_for,
       numeric_cols   => \@nums,
       is_numeric     => { map { $_ => 1 } @nums },
    };
