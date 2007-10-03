@@ -12,7 +12,6 @@ sub new {
 
 # $ddl:  the output of SHOW CREATE TABLE
 # $opts: hashref of options
-#        ignorecols: hashref of columns to ignore
 #        mysql_version: MySQL version, zero-padded so 4.1.0 => 004001000
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -21,10 +20,6 @@ sub parse {
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
-   if ( $opts->{ignorecols} ) {
-      # Eliminate columns the user said to ignore
-      @cols = grep { exists($opts->{ignorecols}->{$_}) } @cols;
-   }
 
    # Save the column definitions *exactly*
    my %def_for;
@@ -33,6 +28,17 @@ sub parse {
    my @nums =
       map  { $_ =~ m/`([^`]+)`/g }
       grep { $_ =~ m/`[^`]+` (?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ } @defs;
+   my %is_numeric = map { $_ => 1 } @nums;
+
+   # Find column types.
+   my %type_for;
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
+      die "Can't determine column type for $def" unless $type;
+      $type_for{$col} = $type;
+   }
+
    my @null;
    foreach my $col ( @cols ) {
       my $def = $def_for{$col};
@@ -85,8 +91,9 @@ sub parse {
       keys           => \%keys,
       defs           => \%def_for,
       numeric_cols   => \@nums,
-      is_numeric     => { map { $_ => 1 } @nums },
+      is_numeric     => \%is_numeric,
       engine         => $engine,
+      type_for       => \%type_for,
    };
 }
 
