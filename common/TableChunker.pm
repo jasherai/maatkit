@@ -79,7 +79,10 @@ sub find_chunk_columns {
 # size:          how large each chunk should be
 # dbh:           a DBI connection to MySQL
 # exact:         whether to chunk exactly (optional)
-# Returns a list of WHERE clauses, one for each chunk.
+#
+# Returns a list of WHERE clauses, one for each chunk.  Each is quoted with
+# double-quotes, so it'll be easy to enclose them in single-quotes when used as
+# command-line arguments.
 sub calculate_chunks {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(table col min max rows_in_range size dbh) ) {
@@ -138,10 +141,11 @@ sub calculate_chunks {
 
    # Calculate the chunk size, in terms of "distance between endpoints."  If
    # possible and requested, forbid chunks from being any bigger than
-   # specified.  Add 1 to the range because the interval is half-open, that
-   # is, it is inclusive on the upper end.  (If the table's min value is 1 and
-   # the max is 100, that's 100 values to cover, not 99).
-   my $interval = ceil( $args{size} * (($end_point - $start_point) + 1) / $args{rows_in_range} );
+   # specified.
+   my $interval = $args{size} * ($end_point - $start_point) / $args{rows_in_range};
+   if ( $int_types{$col_type} ) {
+      $interval = ceil($interval);
+   }
    $interval ||= $args{size};
    if ( $args{exact} ) {
       $interval = $args{size};
@@ -198,7 +202,7 @@ sub calculate_chunks {
 
 sub quote {
    my ( $self, $val ) = @_;
-   return $val =~ m/\d-/ ? qq{"$val"} : $val;
+   return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
 }
 
 # ###########################################################################
@@ -206,7 +210,17 @@ sub quote {
 # ###########################################################################
 sub range_num {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   return ( $start, min($max, $start + $interval) );
+   my $end = min($max, $start + $interval);
+   # Trim decimal places, if needed.  This helps avoid issues with float
+   # precision differing on different platforms.
+   $start =~ s/\.(\d{5}).*$/.$1/;
+   $end   =~ s/\.(\d{5}).*$/.$1/;
+   if ( $end > $start ) {
+      return ( $start, $end );
+   }
+   else {
+      die "Chunk size is too small: $end !> $start\n";
+   }
 }
 
 sub range_time {
