@@ -30,6 +30,7 @@ is_deeply(
       defs         => { a => '  `a` int(11) default NULL' },
       numeric_cols => [qw(a)],
       is_numeric   => { a => 1 },
+      engine       => 'MyISAM',
    },
    'Basic table is OK',
 );
@@ -72,6 +73,7 @@ is_deeply(
             is_col      => { film_id => 1 },
             is_nullable => 0,
             unique      => 1,
+            type        => 'BTREE',
          },
          idx_title => {
             colnames    => '`title`',
@@ -79,6 +81,7 @@ is_deeply(
             is_col      => { title => 1, },
             is_nullable => 0,
             unique      => 0,
+            type        => 'BTREE',
          },
          idx_fk_language_id => {
             colnames    => '`language_id`',
@@ -86,6 +89,7 @@ is_deeply(
             unique      => 0,
             is_col      => { language_id => 1 },
             is_nullable => 0,
+            type        => 'BTREE',
          },
          idx_fk_original_language_id => {
             colnames    => '`original_language_id`',
@@ -93,6 +97,7 @@ is_deeply(
             unique      => 0,
             is_col      => { original_language_id => 1 },
             is_nullable => 1,
+            type        => 'BTREE',
          },
       },
       defs => {
@@ -129,6 +134,7 @@ is_deeply(
          length               => 1,
          replacement_cost     => 1,
       },
+      engine => 'InnoDB',
    },
    'sakila.film is OK',
 );
