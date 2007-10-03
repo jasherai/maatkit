@@ -487,7 +487,7 @@ if ( !caller ) {
       { s => 'help',              d => 'Show this help message' },
       { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
       { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
-      { s => 'locktables',        d => 'Use LOCK TABLES (implies --no-flushlock)' },
+      { s => 'locktables!',       d => 'Use LOCK TABLES (implies --no-flushlock)' },
       { s => 'numthread|m=i',     d => 'Number of threads (default 2, or #CPUs on Linux)' },
       { s => 'opt!',              d => 'Use sensible mysqldump options (enabled by default)' },
       { s => 'password|p=s',      d => 'Password to use when connecting' },
@@ -552,6 +552,11 @@ if ( !caller ) {
    $opts{locktables} = !$lock_all unless defined $opts{locktables};
 
    if ( !$opts{help} ) {
+      if ( $opts{C} && $opts{C} !~ m/^\d+[kGM]$/ ) {
+         warn "Invalid --chunksize argument\n";
+         $opts{help} = 1;
+      }
+
       if ( $opts{defaultset} && !$opts{sets} ) {
          warn "--defaultset has no effect without --sets\n";
          $opts{help} = 1;
@@ -655,13 +660,16 @@ if ( !caller ) {
             %N
          ),
       );
+      if ( $opts{C} ) {
+         push @mysqldump_args, qw( --where '%W' );
+      }
       if ( $opts{gzip} ) {
          push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
-            '"' . filename('%S', '%D', '%N.sql.gz') . '"';
+            '"' . filename('%S', '%D', '%N.%3C.sql.gz') . '"';
       }
       else {
          push @mysqldump_args,
-            '--result-file="' . filename('%S', '%D', '%N.sql') . '"';
+            '--result-file="' . filename('%S', '%D', '%N.%3C.sql') . '"';
       }
    }
 
@@ -852,7 +860,11 @@ if ( !caller ) {
       # Lock tables if needed (automatically releases any earlier locks).
       # #########################################################################
       if ( $opts{locktables} && !$opts{test} ) {
-         my @to_lock = map { "`$_->{D}`.`$_->{N}` READ" } @work_to_do;
+         my %seen;
+         my @to_lock =
+            grep { !$seen{$_}++               } # Unique-ify
+            map  { "`$_->{D}`.`$_->{N}` READ" }
+            @work_to_do;
          if ( $backedup_sth ) {
             push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
          }
@@ -980,22 +992,23 @@ if ( !caller ) {
       }
 
       $stats->{wallclock} = time() - $start;
-      info(1, sprintf('%12s:          %5d tables, %5d successes, %2d failures, '
+      info(1, sprintf( (scalar(keys %sets > 1) ? '%12s:          ' : '%s:')
+                      . '%5d tables, %5d chunks, %5d successes, %2d failures, '
                       . '%5.2f wall-clock time, %5.2f dump time',
-                      $set, $stats->{tables}, $stats->{success} || 0,
+                      $set, $stats->{tables}, $stats->{chunks}, $stats->{success} || 0,
                       $stats->{failure} || 0, $stats->{wallclock},
                       $stats->{time}));
    }
 
    if ( scalar keys %sets > 1 ) {
       info(1, sprintf(
-         'Final result: %2d sets, %5d tables, %5d successes, %2d failures, '
+         'Final result: %2d sets, %5d tables, %5d chunks, %5d successes, %2d failures, '
          . '%5.2f wall-clock time, %5.2f dump time',
          scalar(keys %sets),
             map {
                my $thing = $_;
                sum(0, map { $_->{$thing} || 0 } values %stats_for_set);
-            } qw(tables success failure wallclock time)
+            } qw(tables chunks success failure wallclock time)
          ));
    }
 
@@ -1012,7 +1025,7 @@ sub get_chunks {
       D => $db,
       N => $tbl,
       S => $set,
-      W => undef,
+      W => '1=1',
    };
    return $cant_chunk unless $spec;
 
@@ -1020,7 +1033,6 @@ sub get_chunks {
 
    # Figure out whether the chunksize is a number of rows or a data size.
    my ( $num, $suffix ) = $spec =~ m/^(\d+)([MGk])$/;
-   # TODO: check this in opt parsing
    if ( $suffix ) {
       # Figure out how many rows fit into this many bytes
       my $size = $suffix eq 'k' ? 1_024
@@ -1071,7 +1083,7 @@ sub info {
 # Interpolates % directives from a db/tbl hashref.
 sub interp {
    my ( $todo, @strings ) = @_;
-   map { $_ =~ s/%([SDN])/$todo->{$1}/g } @strings;
+   map { $_ =~ s/%(\d+)?([SDNCW])/$1 ? sprintf("%0$1d", $todo->{$2}) : $todo->{$2}/ge } @strings;
    return @strings;
 }
 
@@ -1083,7 +1095,7 @@ sub do_table {
    # Dump via SELECT INTO OUTFILE.
    if ( $opts{T} ) {
       my $dbh = get_dbh();
-      my $filename = filename(interp($todo, '%S', '%D', '%N'));
+      my $filename = filename(interp($todo, '%S', '%D', '%N.%3C'));
       makedir($filename);
       my $sql;
       if ( $opts{csv} ) {
@@ -1092,7 +1104,7 @@ sub do_table {
                . qq{LINES TERMINATED BY '\\n' FROM `$todo->{D}`.`$todo->{N}`};
       }
       else {
-         $sql = "SELECT * INTO OUTFILE '$filename.txt' FROM `$todo->{D}`.`$todo->{N}`";
+         $sql = "SELECT * INTO OUTFILE '$filename.txt' FROM `$todo->{D}`.`$todo->{N}` WHERE $todo->{W}";
       }
       if ( $opts{test} ) {
          print $sql, "\n";
@@ -1105,16 +1117,24 @@ sub do_table {
    }
 
    # Normal dump using mysqldump.  If $opts{T} was set, the following won't dump
-   # the data.  If the user left the options alone, we can predict the filename
-   # and directory naming convention, and ensure the directiories exist.
-   # Otherwise the user must ensure the directories exist, because it's a hard
-   # job to figure out which argument in the array is a filename.
-   if ( $default_dir ) {
-      makedir(interp($todo, filename('%S', '%D', '%N.sql')));
+   # the data because --no-data is in @mysqldump_args.  If the user left the
+   # options alone, we can predict the filename and directory naming convention,
+   # and ensure the directiories exist.  Otherwise the user must ensure the
+   # directories exist, because it's a hard job to figure out which argument in
+   # the array is a filename.  We only do this on the first chunk for each
+   # table.
+   if ( $default_dir && !$todo->{C} ) {
+      makedir(interp($todo, filename('%S', '%D', '%N.%3C.sql')));
    }
 
-   my @args = map { interp($todo, $_) } @mysqldump_args;
-   $exit_status = system_call( @args ) || $exit_status;
+   if ( !$default_dir || !$todo->{C} || !$opts{T} ) {
+      # It's either a custom command, or it's the first chunk for a
+      # tab-separated table and we're going to dump the schema, or it's a
+      # regular SQL dump and we're going to dump data.
+      my @args = map { interp($todo, $_) } @mysqldump_args;
+      $exit_status = system_call( @args ) || $exit_status;
+   }
+
    return $exit_status;
 }
 
@@ -1226,7 +1246,7 @@ escaped so the shell won't interpret them, and they'll get passed through to the
 generated command-line.
 
 When you use built-in defaults, MySQL Parallel Dump will relay these arguments
-on to every forked copy of mysqldump: L<"--defaults-file">, L<"--host">,
+on to every forked copy of C<mysqldump>: L<"--defaults-file">, L<"--host">,
 L<"--port">, L<"--socket">, L<"--user">, L<"--password">.  If you write your own
 command-line, you will need to specify them manually.
 
@@ -1270,9 +1290,41 @@ Don't use C<default> as a set name.  It is used when you don't specify any
 sets and when you want all tables not explicitly assigned to a set to be
 dumped (see L<"--defaultset">).
 
+=head1 CHUNKS
+
+MySQL Parallel Dump can break your tables into chunks when dumping, and put
+approximately the amount of data you specify into each chunk.  This is useful to
+avoid enormous files for restoration, which can not only take a long time but
+may be a lot of extra work for transactional storage engines like InnoDB.  It
+can create a huge rollback segment in your tablespace.
+
+To dump in chunks, specify the L<"--chunksize"> option.  This option is an
+integer with an optional suffix.  Without the suffix, it's the number of rows
+you want in each chunk.  With the suffix, it's the approximate size of the data.
+
+MySQL Parallel Dump tries to use index statistics to calculate where the
+boundaries between chunks should be.  If the values are not evenly distributed,
+some chunks can have a lot of rows, and others may have very few or even none.
+Some chunks can exceed the size you want.
+
+When you specify the size with a suffix, the allowed suffixes are k, M and G,
+for kibibytes, mebibytes, and gibibytes, respectively.  MySQL Parallel Dump
+doesn't know anything about data size.  It asks MySQL (via SHOW TABLE STATUS)
+how long an average row is in the table, and converts your option to a number
+of rows.
+
+Not all tables can be broken into chunks.  MySQL Parallel Dump looks for an
+index whose leading column is numeric (integers, real numbers, and date and time
+types).  It prefers the primary key if its first column is chunk-able.
+Otherwise it chooses the first chunk-able column in the table.
+
+Generating a series of C<WHERE> clauses to divide a table into evenly-sized
+chunks is difficult.  If you have any ideas on how to improve the algorithm,
+please write to the author (see L<"BUGS">).
+
 =head1 MACROS
 
-MySQL Parallel Dump can insert % variables into arguments.  The available macros
+MySQL Parallel Dump can insert C<%> variables into arguments.  The available macros
 are as follows:
 
   MACRO  MEANING
@@ -1280,6 +1332,12 @@ are as follows:
   %S     The backup set
   %D     The database name
   %N     The table name
+  %C     The chunk number
+  %W     The WHERE clause
+
+You can place a number between the C<%> and the letter.  The macro replacement
+then assumes it's a digit and pads it with leading zeroes (in practice, this is
+only useful for C<%C>).
 
 =head1 OUTPUT
 
@@ -1289,9 +1347,9 @@ commands that would be executed.
 When L<"--verbose"> is 0, there is normally no output unless there's an error.
 
 When L<"--verbose"> is 1, there is one line of output for each backup set,
-showing the set, how many tables were dumped with what status, how much time
-elapsed, and how much time the parallel dump jobs added up to.  A final line
-shows sums for all sets, unless there is only one set.
+showing the set, how many tables and chunks were dumped with what status, how
+much time elapsed, and how much time the parallel dump jobs added up to.  A
+final line shows sums for all sets, unless there is only one set.
 
 When L<"--verbose"> is 2, there is also one line of output for each table.
 Each line is printed when a forked "child" process ends and is removed from
@@ -1311,10 +1369,9 @@ How much faster is it to dump in parallel?  That depends on your hardware and
 data.  You may be able dump files twice as fast, or more if you have lots of
 disks and CPUs.  Here are some user-contributed figures.
 
-The following table is for a 3.6GHz Xeon machine with 4 processors and a RAID
-10 array of 15k speed disks, directly attached to the server with a fibre
-channel.  Most of the space is in one huge table that wasn't dumped in
-parallel:
+The following table is for a 3.6GHz Xeon machine with 4 processors and a RAID-10
+array of 15k disks, directly attached to the server with a fibre channel.  Most
+of the space is in one huge table that wasn't dumped in parallel:
 
   COMMAND                      SIZE  TIME
   --------------------------  -----  ----
@@ -1328,9 +1385,9 @@ On the same machine, in a database with lots of roughly equal-sized tables:
   mysql-parallel-dump         117MB     7
   mysqldump                   117MB    37
 
-It doesn't always work that well.  A dual 2.80GHz CPU Xeon server with 2MB
-cache and a RAID-5 array of three 7200RPM SATA disk drives running MySQL
-5.0.38 on GNU/Linux achieved the following dump times:
+It doesn't always work that well.  A dual 2.80GHz Xeon server with a RAID-5
+array of three 7200RPM SATA disk drives running MySQL 5.0.38 on GNU/Linux
+achieved the following dump times:
 
   COMMAND                      SIZE  TIME
   --------------------------  -----  ----
@@ -1339,13 +1396,13 @@ cache and a RAID-5 array of three 7200RPM SATA disk drives running MySQL
 
 While dumping two threads in parallel, this machine was at an average of 74%
 CPU utilization and 12% I/O wait.  This machine doesn't have enough disks and
-CPUs to do that many things at once.
+CPUs to do that many things at once, so it's not going to speed up much.
 
-Dumping lots of tiny tables by forking of lots of mysqldump processes isn't
-usually much faster, because of the overhead of starting mysqldump,
+Dumping lots of tiny tables by forking of lots of C<mysqldump> processes isn't
+usually much faster, because of the overhead of starting C<mysqldump>,
 connecting, inspecting the table, and dumping it.  Note that tab-separated
 dumps are typically much faster and don't suffer as much from the effects of
-many tiny tables.
+many tiny tables, because they're not done via C<mysqldump>.
 
 =head1 OPTIONS
 
@@ -1395,13 +1452,21 @@ file named F<00_master_data.sql>.  This is done for each backup set.
 
 This option is enabled by default.
 
+=item --chunksize
+
+Specifies that the table should be dumped in segments of approximately the size
+given.  The syntax is either a plain integer, which is interpreted as a number
+of rows per chunk, or an integer with a suffix of G, M, or k, which is
+interpreted as the size of the data to be dumped in each chunk.  See L<"CHUNKS">
+for more details.
+
 =item --csv
 
 Changes L<"--tab"> options so the dump file is in comma-separated values
 (CSV) format.  The SELECT INTO OUTFILE statement looks like the following, and
 can be re-loaded with the same options:
 
-   SELECT * INTO OUTFILE %D.%N.txt
+   SELECT * INTO OUTFILE %D.%N.%3C.txt
    FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"'
    LINES TERMINATED BY '\n' FROM %D.%N;
 
@@ -1446,7 +1511,7 @@ This option is enabled by default.
 Compresses files with gzip.  This is enabled by default unless your platform
 is Win32.  By default, this causes the standard SQL dumps to be piped to
 gzip's C<STDIN> and the result is redirected to the destination file.  If this
-option isn't enabled, by default mysqldump's C<--result-file> parameter is used
+option isn't enabled, by default C<mysqldump>'s C<--result-file> parameter is used
 to direct the dump to the destination file.  When using L<"--tab">, this
 option causes gzip to be called separately on each resulting file after it is
 dumped (because C<SELECT INTO OUTFILE> cannot be directed to a pipe).
@@ -1485,8 +1550,8 @@ at least 2, even when there's only a single processor.
 
 =item --opt
 
-This is sort of related to mysqldump's C<--opt> argument, I<but not the same>.
-It does I<not> pass C<--opt> to mysqldump.  Instead, it passes the following:
+This is sort of related to C<mysqldump>'s C<--opt> argument, I<but not the same>.
+It does I<not> pass C<--opt> to C<mysqldump>.  Instead, it passes the following:
 
 C<--add-drop-table> C<--add-locks> C<--allow-keywords> C<--comments>
 C<--complete-insert> C<--create-options> C<--disable-keys>
@@ -1524,7 +1589,7 @@ Socket file to use for connection.
 
 =item --tab
 
-Dump via C<SELECT INTO OUTFILE>, which is similar to what mysqldump does with
+Dump via C<SELECT INTO OUTFILE>, which is similar to what C<mysqldump> does with
 the C<--tab> option, but you're not constrained to a single database at a time.
 
 Before you use this option, make sure you know what C<SELECT INTO OUTFILE> does!
