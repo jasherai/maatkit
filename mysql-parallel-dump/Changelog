@@ -1,6 +1,11 @@
 Changelog for mysql-parallel-dump:
 
+   * Added chunking.
+   * Modularized and tested.
+   * Added documentation.
+   * Made --locktables negatable.
    * Changed default output to be less verbose and added --verbose option.
+   * Added summary output.
 
 2007-10-01: version 0.9.5
 
