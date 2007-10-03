@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 14;
+use Test::More tests => 15;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -33,6 +33,13 @@ is_deeply(
    [ $c->find_chunk_columns($t, { exact => 1 }) ],
    [ 1, [qw(film_id)]],
    'Found exact chunkable columns on sakila.film',
+);
+
+$t = $p->parse( load_file('samples/pk_not_first.sql') );
+is_deeply(
+   [ $c->find_chunk_columns($t) ],
+   [ 0, [qw(film_id language_id original_language_id)]],
+   'PK column is first',
 );
 
 # Open a connection to MySQL, or skip the rest of the tests.

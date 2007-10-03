@@ -63,13 +63,19 @@ sub find_chunk_columns {
          @possible_keys;
    }
 
-   # Order the candidates by their original column order.  TODO: put the PK's
+   # Order the candidates by their original column order.  Put the PK's
    # first column first, if it's a candidate.
+   my @result;
+   if ( $table->{keys}->{PRIMARY} ) {
+      my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
+      @result = grep { $_ eq $pk_first_col } @candidate_cols;
+      @candidate_cols = grep { $_ ne $pk_first_col } @candidate_cols;
+   }
    my $i = 0;
    my %col_pos = map { $_ => $i++ } @{$table->{cols}};
-   @candidate_cols = sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
+   push @result, sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
 
-   return ($can_chunk_exact, \@candidate_cols);
+   return ($can_chunk_exact, \@result);
 }
 
 # table:         output from TableParser::parse
