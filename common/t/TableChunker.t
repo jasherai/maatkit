@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 6;
+use Test::More tests => 14;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -132,17 +132,16 @@ SKIP: {
    is_deeply(
       \@chunks,
       [
-         '`a` < "2001-04-02"',
-         '`a` >= "2001-04-02" AND `a` < "2001-07-02"',
-         '`a` >= "2001-07-02" AND `a` < "2001-10-01"',
-         '`a` >= "2001-10-01" AND `a` < "2001-12-31"',
-         '`a` >= "2001-12-31"',
+         '`a` < "2001-04-01"',
+         '`a` >= "2001-04-01" AND `a` < "2001-06-30"',
+         '`a` >= "2001-06-30" AND `a` < "2001-09-28"',
+         '`a` >= "2001-09-28" AND `a` < "2001-12-27"',
+         '`a` >= "2001-12-27"',
       ],
       'Date column chunks OK',
    );
 
    $t = $p->parse( load_file('samples/datetime.sql') );
-
    @chunks = $c->calculate_chunks(
       table         => $t,
       col           => 'a',
@@ -160,6 +159,121 @@ SKIP: {
          '`a` >= "1977-12-12 10:25:41"',
       ],
       'Datetime column chunks OK',
+   );
+
+   $t = $p->parse( load_file('samples/timecol.sql') );
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '00:59:19',
+      max           => '09:03:15',
+      rows_in_range => 3,
+      size          => 1,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < "03:40:38"',
+         '`a` >= "03:40:38" AND `a` < "06:21:57"',
+         '`a` >= "06:21:57"',
+      ],
+      'Time column chunks OK',
+   );
+
+   $t = $p->parse( load_file('samples/doublecol.sql') );
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '1',
+      max           => '99.999',
+      rows_in_range => 3,
+      size          => 1,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < 33.99966',
+         '`a` >= 33.99966 AND `a` < 66.99933',
+         '`a` >= 66.99933',
+      ],
+      'Double column chunks OK',
+   );
+
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '1',
+      max           => '2',
+      rows_in_range => 5,
+      size          => 3,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < 1.6',
+         '`a` >= 1.6',
+      ],
+      'Double column chunks OK with smaller-than-int values',
+   );
+
+   eval {
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '1',
+      max           => '2',
+      rows_in_range => 50000000,
+      size          => 3,
+      dbh           => $dbh,
+   );
+   };
+   is(
+      $EVAL_ERROR,
+      "Chunk size is too small: 1.00000 !> 1\n",
+      'Throws OK when too many chunks',
+   );
+
+   $t = $p->parse( load_file('samples/floatcol.sql') );
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '1',
+      max           => '99.999',
+      rows_in_range => 3,
+      size          => 1,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < 33.99966',
+         '`a` >= 33.99966 AND `a` < 66.99933',
+         '`a` >= 66.99933',
+      ],
+      'Float column chunks OK',
+   );
+
+   $t = $p->parse( load_file('samples/decimalcol.sql') );
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '1',
+      max           => '99.999',
+      rows_in_range => 3,
+      size          => 1,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < 33.99966',
+         '`a` >= 33.99966 AND `a` < 66.99933',
+         '`a` >= 66.99933',
+      ],
+      'Decimal column chunks OK',
    );
 
 }
