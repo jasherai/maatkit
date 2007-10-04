@@ -213,15 +213,25 @@ sub get_first_chunkable_column {
    return $cols->[0];
 }
 
+# Convert a size in bytes to a number of rows in the table, using SHOW TABLE
+# STATUS.  The $cache may hold the table's status already; if so we use it
+# (because it's expensive).
 sub size_to_rows {
-   my ( $self, $dbh, $db, $tbl, $size ) = @_;
-   $tbl =~ s/_/\\_/g;
-   my $sth = $dbh->prepare(
-      "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'");
-   $sth->execute;
-   my @row = $sth->fetchrow_array();
-   my $avg_row_length = $row[ $sth->{NAME_lc_hash}{avg_row_length} ];
-   $sth->finish;
+   my ( $self, $dbh, $db, $tbl, $size, $cache ) = @_;
+   my $avg_row_length;
+   my $status;
+   if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
+      $tbl =~ s/_/\\_/g;
+      my $sth = $dbh->prepare(
+         "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'");
+      $sth->execute;
+      $status = $sth->fetchrow_hashref();
+      if ( $cache ) {
+         $cache->{$db}->{$tbl} = $status;
+      }
+   }
+   my ($key) = grep { /avg_row_length/i } keys %$status;
+   $avg_row_length = $status->{$key};
    return $avg_row_length ? ceil($size / $avg_row_length) : undef;
 }
 
