@@ -1,5 +1,7 @@
 Changelog for mysql-find:
 
+2007-10-03: version 0.9.5
+
    * The --dbregex parameter didn't work right.
 
 2007-08-23: version 0.9.4
