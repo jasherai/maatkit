@@ -552,7 +552,7 @@ if ( !caller ) {
    $opts{locktables} = !$lock_all unless defined $opts{locktables};
 
    if ( !$opts{help} ) {
-      if ( $opts{C} && $opts{C} !~ m/^\d+[kGM]$/ ) {
+      if ( $opts{C} && $opts{C} !~ m/^\d+[kGM]?$/ ) {
          warn "Invalid --chunksize argument\n";
          $opts{help} = 1;
       }
@@ -1119,12 +1119,19 @@ sub do_table {
                . qq{LINES TERMINATED BY '\\n' FROM `$todo->{D}`.`$todo->{N}`};
       }
       else {
-         $sql = "SELECT * INTO OUTFILE '$filename.txt' FROM `$todo->{D}`.`$todo->{N}` WHERE $todo->{W}";
+         $sql = "SELECT * INTO OUTFILE '$filename.txt' "
+              . "FROM `$todo->{D}`.`$todo->{N}` WHERE $todo->{W}";
       }
       if ( $opts{test} ) {
          print $sql, "\n";
       }
-      $dbh->do($sql) unless $opts{test};
+      eval {
+         $dbh->do($sql) unless $opts{test};
+      };
+      if ( $EVAL_ERROR ) {
+         $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
+         die "$EVAL_ERROR\n";
+      }
       if ( $opts{gzip} ) {
          $exit_status = system_call(
             'gzip', '--force', '--fast', qq{"$filename.txt"});
