@@ -1341,7 +1341,7 @@ Some chunks can exceed the size you want.
 
 When you specify the size with a suffix, the allowed suffixes are k, M and G,
 for kibibytes, mebibytes, and gibibytes, respectively.  MySQL Parallel Dump
-doesn't know anything about data size.  It asks MySQL (via SHOW TABLE STATUS)
+doesn't know anything about data size.  It asks MySQL (via C<SHOW TABLE STATUS>)
 how long an average row is in the table, and converts your option to a number
 of rows.
 
