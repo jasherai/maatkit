@@ -718,8 +718,18 @@ if ( !caller ) {
    $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 
-   # This signal handler will do nothing but wake up the sleeping parent process.
-   $SIG{CHLD} = sub {};
+   # This signal handler will do nothing but wake up the sleeping parent process
+   # and record the exit status and time of the child that exited (as a side
+   # effect of not discarding the signal).
+   my %exited_children;
+   $SIG{CHLD} = sub {
+      my $kid;
+      while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+         # Must right-shift to get the actual exit status of the child.
+         $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
+         $exited_children{$kid}->{exit_time}   = time();
+      }
+   };
 
    # ############################################################################
    # Derive a last-modified timestamp
@@ -964,30 +974,28 @@ if ( !caller ) {
             }
             else {                     # I'm the child
                my $exit_status = 0;
-               $exit_status = do_table($todo);
+               $exit_status = do_table($todo) || $exit_status;
                exit($exit_status);
             }
          }
 
          # Possibly wait for child.
          my $reaped = 0;
-         foreach my $pid ( keys %kids ) {
-            my $kid = waitpid($pid, POSIX::WNOHANG);
-            if ( $kid ) { # I reaped a child.
-               my $stat = $CHILD_ERROR;
-               print STDERR $CHILD_ERROR, "\n";
-               my $todo = $kids{$kid};
-               if ( !$opts{test} && !$stat && $backedup_sth ) {
-                  $backedup_sth->execute(@{$todo}{qw(S D N)});
-               }
-               my $time = (time - $todo->{time});
-               info(2, sprintf($format, @{$todo}{qw(S D N C)},
-                  sprintf('%.2f', $time), $stat, scalar(keys %kids)));
-               $stats->{ $stat ? 'failure' : 'success' }++;
-               $stats->{time} += $time;
-               delete $kids{$kid};
-               $reaped = 1;
+         foreach my $kid ( keys %exited_children ) {
+            my $status = $exited_children{$kid};
+            my $todo   = $kids{$kid};
+            my $stat   = $status->{exit_status};
+            if ( !$opts{test} && !$stat && $backedup_sth ) {
+               $backedup_sth->execute(@{$todo}{qw(S D N)});
             }
+            my $time = $status->{exit_time} - $todo->{time};
+            info(2, sprintf($format, @{$todo}{qw(S D N C)},
+               sprintf('%.2f', $time), $stat, scalar(keys %kids)));
+            $stats->{ $stat ? 'failure' : 'success' }++;
+            $stats->{time} += $time;
+            delete $kids{$kid};
+            delete $exited_children{$kid};
+            $reaped = 1;
          }
 
          if ( !$reaped ) {
@@ -1188,6 +1196,10 @@ sub system_call {
    }
    else {
       $exit_status = system(join(' ', @cmd));
+      # Must right-shift to get the actual exit status of the command.
+      # Otherwise the upstream exit() call that's about to happen will get a
+      # larger value than it likes, and will just report zero to waitpid().
+      $exit_status = $exit_status >> 8;
    }
    return $exit_status;
 }
