@@ -1,5 +1,7 @@
 Changelog for mysql-heartbeat:
 
+2007-10-03: version 1.0.1
+
    * --check hung forever.
 
 2007-09-20: version 1.0.0
