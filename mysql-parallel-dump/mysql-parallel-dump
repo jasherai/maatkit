@@ -494,6 +494,7 @@ if ( !caller ) {
       { s => 'port|P=i',          d => 'Port number to use for connection' },
       { s => 'quiet|q',           d => 'Do not print normal output' },
       { s => 'sets=s',            d => 'Backup this comma-separated list of sets' },
+      { s => 'setperdb',          d => 'Dump each database as a separate set' },
       { s => 'settable=s',        d => 'database.table where backup sets are stored' },
       { s => 'socket|S=s',        d => 'Socket file to use for connection' },
       { s => 'tab|T',             d => 'Dump tab-separated (sets --umask 0)' },
@@ -603,6 +604,11 @@ if ( !caller ) {
 
       if ( !$opts{help} && $opts{sets} && !$opts{settable} ) {
          warn "--sets requires --settable\n";
+         $opts{help} = 1;
+      }
+
+      if ( !$opts{help} && $opts{setperdb} && $opts{sets} ) {
+         warn "--sets and --setperdb are mutually exclusive\n";
          $opts{help} = 1;
       }
    }
@@ -791,9 +797,9 @@ if ( !caller ) {
    }
 
    # Do all databases and tables in a 'default' set, possibly excluding those
-   # that have been included in named sets above.
+   # that have been included in named sets above.  Or, if --setperdb is
+   # specified, place each into its own set.
    if ( !$opts{sets} || $opts{defaultset} ) {
-      my $set = 'default';
 
       my @databases = grep {
          $_ !~ m/^(information_schema|lost\+found)$/mi
@@ -808,6 +814,7 @@ if ( !caller ) {
 
       DATABASE:
       foreach my $database ( @databases ) {
+         my $set = $opts{setperdb} ? $database : 'default';
 
          my $tables = $dbh->selectall_arrayref(
             $age
@@ -853,8 +860,8 @@ if ( !caller ) {
                $tables_in_sets{$database}->{$tblname}++;
             }
          }
+         $opts{sets} = join(',', unique($opts{sets} =~ m/(\w+)/g, $set));
       }
-      $opts{sets}    = join(',', $opts{sets} =~ m/(\w+)/g, $set);
    }
 
    # ############################################################################
@@ -874,11 +881,7 @@ if ( !caller ) {
       # Lock tables if needed (automatically releases any earlier locks).
       # #########################################################################
       if ( $opts{locktables} && !$opts{test} ) {
-         my %seen;
-         my @to_lock =
-            grep { !$seen{$_}++               } # Unique-ify
-            map  { "`$_->{D}`.`$_->{N}` READ" }
-            @work_to_do;
+         my @to_lock = unique( map  { "`$_->{D}`.`$_->{N}` READ" } @work_to_do);
          if ( $backedup_sth ) {
             push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
          }
@@ -1093,6 +1096,11 @@ sub info {
    if ( $level <= $opts{v} ) {
       print $msg, "\n";
    }
+}
+
+sub unique {
+   my %seen;
+   grep { !$seen{$_}++ } @_;
 }
 
 # Interpolates % directives from a db/tbl hashref.
@@ -1321,6 +1329,8 @@ successfully dumps a table.
 Don't use C<default> as a set name.  It is used when you don't specify any
 sets and when you want all tables not explicitly assigned to a set to be
 dumped (see L<"--defaultset">).
+
+Set names may contain only lowercase letters, numbers, and underscores.
 
 =head1 CHUNKS
 
@@ -1609,6 +1619,11 @@ Sets L<"--verbose"> to 0.
 Dump this comma-separated list of backup sets, in order.  Requires
 L<"--settable">.  See L<"BACKUP SETS">.  The special C<default> set is
 reserved; don't use it as a set name.
+
+=item --setperdb
+
+Specifies that each database is a separate backup set.  Each set is named the
+same as the database.
 
 =item --settable
 
