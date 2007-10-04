@@ -518,6 +518,7 @@ if ( !caller ) {
       w        => '5m',
       sets     => '',
       v        => 1,
+      C        => '',
    );
 
    my $opt_parser = OptionParser->new(@opt_spec);
@@ -548,7 +549,7 @@ if ( !caller ) {
    }
 
    # Set locking options.
-   my $lock_all      = $opts{sets} || $opts{locktables} ? 0 : 1;
+   my $lock_all      = $opts{sets} || $opts{locktables} || $opts{setperdb} ? 0 : 1;
    $opts{k}          = $lock_all unless defined $opts{k};
    $opts{locktables} = !$lock_all unless defined $opts{locktables};
 
@@ -755,16 +756,16 @@ if ( !caller ) {
    # ############################################################################
    # Iterate over "sets" of tables.
    # ############################################################################
-   my %sets;
    my %tables_in_sets;
+   my %tables_for_set;
    my %stats_for_set;
+   my @sets_to_do = unique($opts{sets} =~ m/(\w+)/g);
 
    # Fetch backup sets from the database.
    my $backedup_sth;
    if ( $opts{sets} ) {
-      foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
+      foreach my $set ( @sets_to_do ) {
          die "'default' is a reserved set; don't use it\n" if lc $set eq 'default';
-         $sets{$set} = [];
          my $sql = "SELECT `db`, `tbl` "
                  . "FROM $opts{settable} "
                  . "WHERE `setname` = '$set' "
@@ -773,20 +774,9 @@ if ( !caller ) {
          print $sql, "\n" if $opts{test};
          my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
          foreach my $row ( @$result ) {
-            my @chunks = get_chunks($dbh, $opts{C}, $set, $row->{db}, $row->{tbl});
-            my $i = 0;
-            foreach my $chunk ( @chunks ) {
-               push @{$sets{$set}}, {
-                  D => $chunk->{D},
-                  N => $chunk->{N},
-                  S => $chunk->{S},
-                  C => $i++,
-                  W => $chunk->{W},
-               };
-               $stats_for_set{$set}->{chunks}++;
-            }
             $stats_for_set{$set}->{tables}++;
             $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
+            push @{$tables_for_set{$set}}, [ $row->{db}, $row->{tbl} ];
          }
       }
       if ( $age ) {
@@ -796,13 +786,15 @@ if ( !caller ) {
       }
    }
 
-   # TODO: don't do all this in advance, do it once per set
+   my %databases_for;
+   my @databases;
+   my %table_status;
+
    # Do all databases and tables in a 'default' set, possibly excluding those
    # that have been included in named sets above.  Or, if --setperdb is
    # specified, place each into its own set.
    if ( !$opts{sets} || $opts{defaultset} ) {
-
-      my @databases = grep {
+      @databases = grep {
          $_ !~ m/^(information_schema|lost\+found)$/mi
       } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
       if ( !$opts{sets} ) {
@@ -812,56 +804,11 @@ if ( !caller ) {
             && ( !exists $opts{g}->{$_} )
          } @databases;
       }
-
       DATABASE:
       foreach my $database ( @databases ) {
          my $set = $opts{setperdb} ? $database : 'default';
-
-         my $tables = $dbh->selectall_arrayref(
-            $age
-               ? "SHOW TABLE STATUS FROM `$database`"
-               : "SHOW /*!50002 FULL*/ TABLES FROM `$database`",
-            { Slice => {} });
-
-         if ( @$tables ) {
-
-            my ( $name_key )
-               = $age
-               ? ( qw(name) )
-               : ( grep { $_ ne 'table_type' } keys %{$tables->[0]} );
-            my $type_key = $age ? 'comment' : 'table_type';
-
-            TABLE:
-            foreach my $table ( @$tables ) {
-               my $tblname = $table->{$name_key};
-               if ( !$opts{sets} ) {
-                  next TABLE if
-                     ( $opts{t} && !exists($opts{t}->{$tblname}) )
-                     || ( $opts{tblregex} && $tblname !~ m/$opts{tblregex}/ )
-                     || exists $opts{n}->{$tblname};
-               }
-               next TABLE if
-                  ( $tables_in_sets{$database}->{$tblname} )
-                  || ( $table->{$type_key} && $table->{$type_key} eq 'VIEW' )
-                  || ( $table->{update_time} && $age && $table->{update_time} lt $age );
-
-               my @chunks = get_chunks($dbh, $opts{C}, $set, $database, $tblname);
-               my $i = 0;
-               foreach my $chunk ( @chunks ) {
-                  push @{$sets{$set}}, {
-                     D => $chunk->{D},
-                     N => $chunk->{N},
-                     S => $chunk->{S},
-                     C => $i++,
-                     W => $chunk->{W},
-                  };
-                  $stats_for_set{$set}->{chunks}++;
-               }
-               $stats_for_set{$set}->{tables}++;
-               $tables_in_sets{$database}->{$tblname}++;
-            }
-         }
-         $opts{sets} = join(',', unique($opts{sets} =~ m/(\w+)/g, $set));
+         push @{$databases_for{$set}}, $database;
+         @sets_to_do = unique(@sets_to_do, $set);
       }
    }
 
@@ -869,9 +816,26 @@ if ( !caller ) {
    # Do each backup set.
    # ############################################################################
    SET:
-   foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
-      my @work_to_do;
-      if ( !$sets{$set} || !(@work_to_do = @{$sets{$set}}) ) {
+   foreach my $set ( @sets_to_do ) {
+
+      if ( !$opts{sets} ) {
+         # Must fetch tables.
+         foreach my $database ( @{$databases_for{$set}} ) {
+            get_tables_in_database(
+               dbh            => $dbh,
+               set            => $set,
+               database       => $database,
+               age            => $age,
+               opts           => \%opts,
+               tables_in_sets => \%tables_in_sets,
+               stats_for_set  => \%stats_for_set,
+               table_status   => \%table_status,
+               tables_for_set => \%tables_for_set,
+            );
+         }
+      }
+
+      if ( !$tables_for_set{$set} || !@{$tables_for_set{$set}} ) {
          info(2, "Nothing to do for set $set");
          next SET;
       }
@@ -879,17 +843,38 @@ if ( !caller ) {
       my $stats = $stats_for_set{$set};
 
       # #########################################################################
-      # Lock tables if needed (automatically releases any earlier locks).
-      # TODO: major weakness here, some tables could have gone away.
+      # Lock tables if needed; automatically releases any earlier locks.  Cycle
+      # until there are none to lock or we get the lock (some tables could have
+      # been dropped between the time we got the list and now).
       # #########################################################################
       if ( $opts{locktables} && !$opts{test} ) {
-         my @to_lock = unique( map  { "`$_->{D}`.`$_->{N}` READ" } @work_to_do);
-         if ( $backedup_sth ) {
-            push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
-         }
-         if ( @to_lock ) {
-            $dbh->do('LOCK TABLES ' . join(', ', @to_lock));
-         }
+         my @to_lock;
+         my $done;
+         do {
+            @to_lock = unique(
+               map { "`$_->[0]`.`$_->[1]` READ" } @{$tables_for_set{$set}} );
+            if ( $backedup_sth ) {
+               push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
+            }
+            eval {
+               $dbh->do('LOCK TABLES ' . join(', ', @to_lock));
+               $done = 1;
+            };
+            if ( $EVAL_ERROR ) {
+               my $err = mysql_error_msg($EVAL_ERROR);
+               my ($db, $tbl) = $err =~ m/Table '([^.]+)\.([^.]+)' doesn't exist/;
+               if ( $db && $tbl ) {
+                  # Remove the nonexistent table and try again.
+                  $tables_for_set{$set} = [
+                     grep { $_->[0] ne $db || $_->[1] ne $tbl } @{$tables_for_set{$set}}
+                  ];
+                  info(0, $err);
+               }
+               else {
+                  die $EVAL_ERROR;
+               }
+            }
+         } while ( @to_lock && !$done );
       }
 
       # #########################################################################
@@ -897,6 +882,22 @@ if ( !caller ) {
       # #########################################################################
       if ( $opts{flushlog} && !$opts{test} ) {
          $dbh->do('FLUSH LOGS');
+      }
+
+      my @work_to_do;
+      foreach my $db_tbl ( @{$tables_for_set{$set}} ) {
+         my @chunks = get_chunks($dbh, $opts{C}, $set, @$db_tbl);
+         my $i = 0;
+         foreach my $chunk ( @chunks ) {
+            push @work_to_do, {
+               D => $chunk->{D},
+               N => $chunk->{N},
+               S => $chunk->{S},
+               C => $i++,
+               W => $chunk->{W},
+            };
+            $stats_for_set{$set}->{chunks}++;
+         }
       }
 
       # #########################################################################
@@ -931,7 +932,7 @@ if ( !caller ) {
 
          # Put the details of the chunks into the file.
          foreach my $chunk ( @work_to_do ) {
-            print $file "-- $chunk->{D}.$chunk->{N}/$chunk->{C}: $chunk->{W}\n";
+            print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n";
          }
 
          close $file or die $OS_ERROR;
@@ -966,8 +967,7 @@ if ( !caller ) {
                $dbh = get_dbh();
             };
             if ( $EVAL_ERROR ) {
-               $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
-               info(0, $EVAL_ERROR);
+               info(0, mysql_error_msg($EVAL_ERROR));
             }
          }
          if ( $tries >= $opts{w} ) {
@@ -1018,7 +1018,7 @@ if ( !caller ) {
       }
 
       $stats->{wallclock} = time() - $start;
-      info(1, sprintf( (scalar(keys %sets > 1) ? '%12s:          ' : '%s:')
+      info(1, sprintf( (@sets_to_do ? '%12s:          ' : '%s:')
                       . '%5d tables, %5d chunks, %5d successes, %2d failures, '
                       . '%5.2f wall-clock time, %5.2f dump time',
                       $set, $stats->{tables}, $stats->{chunks}, $stats->{success} || 0,
@@ -1026,11 +1026,11 @@ if ( !caller ) {
                       $stats->{time}));
    }
 
-   if ( scalar keys %sets > 1 ) {
+   if ( @sets_to_do > 1 ) {
       info(1, sprintf(
          'Final result: %2d sets, %5d tables, %5d chunks, %5d successes, %2d failures, '
          . '%5.2f wall-clock time, %5.2f dump time',
-         scalar(keys %sets),
+         scalar(@sets_to_do),
             map {
                my $thing = $_;
                sum(0, map { $_->{$thing} || 0 } values %stats_for_set);
@@ -1043,6 +1043,67 @@ if ( !caller ) {
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub mysql_error_msg {
+   my ( $text ) = @_;
+   $text =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
+   return $text;
+}
+
+# Called when sets aren't retrieved from the settbl or when --defaultset is
+# given.
+sub get_tables_in_database {
+   my ( %args ) = @_;
+   my $dbh            = $args{dbh};
+   my $set            = $args{set};
+   my $database       = $args{database};
+   my $age            = $args{age};
+   my %opts           = %{$args{opts}};
+   my $tables_in_sets = $args{tables_in_sets};
+   my $tables_for_set = $args{tables_for_set};
+   my $stats_for_set  = $args{stats_for_set};
+   my $table_status   = $args{table_status};
+
+   my $need_table_status = $age || $opts{C} =~ m/\D/;
+
+   my $tables = $dbh->selectall_arrayref(
+      $need_table_status
+         ? "SHOW TABLE STATUS FROM `$database`"
+         : "SHOW /*!50002 FULL*/ TABLES FROM `$database`",
+      { Slice => {} });
+
+   if ( @$tables ) {
+
+      my ( $name_key )
+         = $age
+         ? ( qw(name) )
+         : ( grep { $_ ne 'table_type' } keys %{$tables->[0]} );
+      my $type_key = $age ? 'comment' : 'table_type';
+
+      TABLE:
+      foreach my $table ( @$tables ) {
+         my $tblname = $table->{$name_key};
+         if ( !$opts{sets} ) {
+            next TABLE if
+               ( $opts{t} && !exists($opts{t}->{$tblname}) )
+               || ( $opts{tblregex} && $tblname !~ m/$opts{tblregex}/ )
+               || exists $opts{n}->{$tblname};
+         }
+         next TABLE if
+            ( $tables_in_sets->{$database}->{$tblname} )
+            || ( $table->{$type_key} && $table->{$type_key} eq 'VIEW' )
+            || ( $table->{update_time} && $age && $table->{update_time} lt $age );
+
+         if ( $need_table_status ) {
+            $table_status->{$database}->{$tblname} = $table;
+         }
+
+         $stats_for_set->{$set}->{tables}++;
+         $tables_in_sets->{$database}->{$tblname}++;
+         push @{$tables_for_set->{$set}}, [ $database, $tblname ];
+      }
+   }
+}
 
 sub get_chunks {
    my ( $dbh, $spec, $set, $db, $tbl ) = @_;
@@ -1145,8 +1206,7 @@ sub do_table {
          $dbh->do($sql) unless $opts{test};
       };
       if ( $EVAL_ERROR ) {
-         $EVAL_ERROR =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
-         die "$EVAL_ERROR\n";
+         die mysql_error_msg($EVAL_ERROR) . "\n";
       }
       if ( $opts{gzip} ) {
          $exit_status = system_call(
@@ -1500,6 +1560,9 @@ Dump binary log positions from both C<SHOW MASTER STATUS> and C<SHOW SLAVE
 STATUS>, whichever can be retrieved from the server.  The data is dumped to a
 file named F<00_master_data.sql>.  This is done for each backup set.
 
+The file also contains details of each table dumped, including the WHERE clauses
+used to dump it in chunks.
+
 This option is enabled by default.
 
 =item --chunksize
@@ -1631,7 +1694,7 @@ reserved; don't use it as a set name.
 =item --setperdb
 
 Specifies that each database is a separate backup set.  Each set is named the
-same as the database.
+same as the database.  Implies L<"--locktables">.
 
 =item --settable
 
