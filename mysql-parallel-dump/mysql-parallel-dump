@@ -796,6 +796,7 @@ if ( !caller ) {
       }
    }
 
+   # TODO: don't do all this in advance, do it once per set
    # Do all databases and tables in a 'default' set, possibly excluding those
    # that have been included in named sets above.  Or, if --setperdb is
    # specified, place each into its own set.
@@ -869,16 +870,17 @@ if ( !caller ) {
    # ############################################################################
    SET:
    foreach my $set ( $opts{sets} =~ m/(\w+)/g ) {
-      my $start = time();
-      my $stats = $stats_for_set{$set};
-      my @work_to_do = @{$sets{$set}};
-      if ( !@work_to_do ) {
+      my @work_to_do;
+      if ( !$sets{$set} || !(@work_to_do = @{$sets{$set}}) ) {
          info(2, "Nothing to do for set $set");
          next SET;
       }
+      my $start = time();
+      my $stats = $stats_for_set{$set};
 
       # #########################################################################
       # Lock tables if needed (automatically releases any earlier locks).
+      # TODO: major weakness here, some tables could have gone away.
       # #########################################################################
       if ( $opts{locktables} && !$opts{test} ) {
          my @to_lock = unique( map  { "`$_->{D}`.`$_->{N}` READ" } @work_to_do);
@@ -926,6 +928,12 @@ if ( !caller ) {
                print $file "-- $key $thing->{$key}\n";
             }
          }
+
+         # Put the details of the chunks into the file.
+         foreach my $chunk ( @work_to_do ) {
+            print $file "-- $chunk->{D}.$chunk->{N}/$chunk->{C}: $chunk->{W}\n";
+         }
+
          close $file or die $OS_ERROR;
       }
 
