@@ -1,5 +1,6 @@
 Changelog for mysql-parallel-dump:
 
+   * System exit codes were lost, so errors weren't reported.
    * Added chunking.
    * Modularized and tested.
    * Added documentation.
