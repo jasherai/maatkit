@@ -1265,17 +1265,17 @@ at all:
   mysql-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \
      \| gzip --fast -c - \> '%D.%N.gz'
 
-There's no reason you can't use MySQL Parallel Dump to do other tasks in
-parallel, such as C<OPTIMIZE TABLE>:
-
-  mysql-parallel-dump --noflushlock --nolocktables -- mysqlcheck --optimize '%D' '%N'
-
 The C<%> modifiers are macros (see L<"MACROS">).  The C<--skip-lock-tables>
 argument is very important in that last example, because otherwise both MySQL
 Parallel Dump and C<mysqldump> will lock tables, so C<mysqldump> will hang,
 waiting for the locks.  Notice the shell metacharacters C<|> and C<E<gt>> are
 escaped so the shell won't interpret them, and they'll get passed through to the
 generated command-line.
+
+There's no reason you can't use MySQL Parallel Dump to do other tasks in
+parallel, such as C<OPTIMIZE TABLE>:
+
+  mysql-parallel-dump --noflushlock --nolocktables -- mysqlcheck --optimize '%D' '%N'
 
 When you use built-in defaults, MySQL Parallel Dump will relay these arguments
 on to every forked copy of C<mysqldump>: L<"--defaults-file">, L<"--host">,
@@ -1284,8 +1284,8 @@ command-line, you will need to specify them manually.
 
 MySQL Parallel Dump does I<not> back up your entire database.  It dumps tables
 and data I<only>.  It does not dump view definitions or stored routines.
-However, if you dump the C<mysql> database, you'll be dumping the views and
-stored routines by default.
+However, if you dump the C<mysql> database, you'll be dumping the stored
+routines anyway.
 
 =head1 BACKUP SETS
 
