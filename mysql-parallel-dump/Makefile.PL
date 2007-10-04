@@ -8,6 +8,7 @@ WriteMakefile(
     PREREQ_PM    => {
         DBI           => 1.13,
         DBD::mysql    => 1.0,
+        Time::HiRes   => 1.1,
     },
     LIBS   => [''],
     DEFINE => '',
