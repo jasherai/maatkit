@@ -878,7 +878,7 @@ if ( !caller ) {
                   info(0, $err);
                }
                else {
-                  die $EVAL_ERROR;
+                  die "Cannot lock tables: $err";
                }
             }
          } while ( @to_lock && !$done );
