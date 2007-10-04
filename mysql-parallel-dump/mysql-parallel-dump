@@ -350,14 +350,21 @@ sub get_first_chunkable_column {
 }
 
 sub size_to_rows {
-   my ( $self, $dbh, $db, $tbl, $size ) = @_;
-   $tbl =~ s/_/\\_/g;
-   my $sth = $dbh->prepare(
-      "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'");
-   $sth->execute;
-   my @row = $sth->fetchrow_array();
-   my $avg_row_length = $row[ $sth->{NAME_lc_hash}{avg_row_length} ];
-   $sth->finish;
+   my ( $self, $dbh, $db, $tbl, $size, $cache ) = @_;
+   my $avg_row_length;
+   my $status;
+   if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
+      $tbl =~ s/_/\\_/g;
+      my $sth = $dbh->prepare(
+         "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'");
+      $sth->execute;
+      $status = $sth->fetchrow_hashref();
+      if ( $cache ) {
+         $cache->{$db}->{$tbl} = $status;
+      }
+   }
+   my ($key) = grep { /avg_row_length/i } keys %$status;
+   $avg_row_length = $status->{$key};
    return $avg_row_length ? ceil($size / $avg_row_length) : undef;
 }
 
@@ -886,7 +893,7 @@ if ( !caller ) {
 
       my @work_to_do;
       foreach my $db_tbl ( @{$tables_for_set{$set}} ) {
-         my @chunks = get_chunks($dbh, $opts{C}, $set, @$db_tbl);
+         my @chunks = get_chunks($dbh, $opts{C}, $set, @$db_tbl, \%table_status);
          my $i = 0;
          foreach my $chunk ( @chunks ) {
             push @work_to_do, {
@@ -1075,10 +1082,10 @@ sub get_tables_in_database {
    if ( @$tables ) {
 
       my ( $name_key )
-         = $age
+         = $need_table_status
          ? ( qw(name) )
          : ( grep { $_ ne 'table_type' } keys %{$tables->[0]} );
-      my $type_key = $age ? 'comment' : 'table_type';
+      my $type_key = $need_table_status ? 'comment' : 'table_type';
 
       TABLE:
       foreach my $table ( @$tables ) {
@@ -1106,7 +1113,7 @@ sub get_tables_in_database {
 }
 
 sub get_chunks {
-   my ( $dbh, $spec, $set, $db, $tbl ) = @_;
+   my ( $dbh, $spec, $set, $db, $tbl, $cache ) = @_;
    my $rows_per_chunk;
    my $cant_chunk = {
       D => $db,
@@ -1125,7 +1132,7 @@ sub get_chunks {
       my $size = $suffix eq 'k' ? 1_024
                : $suffix eq 'M' ? 1_024 * 1_024
                :                  1_024 * 1_024 * 1_024;
-      $rows_per_chunk = $tc->size_to_rows($dbh, $db, $tbl, $size * $num);
+      $rows_per_chunk = $tc->size_to_rows($dbh, $db, $tbl, $size * $num, $cache);
       return $cant_chunk unless $rows_per_chunk;
    }
    else {
