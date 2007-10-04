@@ -1,5 +1,7 @@
 Changelog for mysql-parallel-dump:
 
+   * Added --setperdb option.
+
 2007-10-03: version 0.9.6
 
    * Arguments to external program weren't honored.
