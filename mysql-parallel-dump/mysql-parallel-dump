@@ -1300,7 +1300,7 @@ The table that stores backup sets should have at least these columns: setname,
 priority, db, tbl.  The following is a suggested table structure:
 
   CREATE TABLE backupset (
-    setname  CHAR(64)  NOT NULL,
+    setname  CHAR(10)  NOT NULL,
     priority INT       NOT NULL DEFAULT 0,
     db       CHAR(64)  NOT NULL,
     tbl      CHAR(64)  NOT NULL,
