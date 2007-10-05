@@ -1741,7 +1741,7 @@ Print commands instead of executing them.
 
 =item --umask
 
-Set the program's umask to this octal value.  This is useful when you want
+Set the program's C<umask> to this octal value.  This is useful when you want
 created files and directories to be readable or writable by other users (for
 example, the MySQL server itself).
 
