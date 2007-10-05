@@ -500,7 +500,6 @@ if ( !caller ) {
       { s => 'password|p=s',      d => 'Password to use when connecting' },
       { s => 'port|P=i',          d => 'Port number to use for connection' },
       { s => 'quiet|q',           d => 'Set --verbose to 0' },
-      # TODO: randomize?
       { s => 'sets=s',            d => 'Dump this comma-separated list of sets' },
       { s => 'setperdb',          d => 'Dump each database as a separate set' },
       { s => 'settable=s',        d => 'database.table where backup sets are stored' },
