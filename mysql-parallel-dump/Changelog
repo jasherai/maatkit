@@ -1,6 +1,6 @@
 Changelog for mysql-parallel-dump:
 
-2007-10-04: version 0.9.7
+2007-10-05: version 0.9.8
 
    * Added --setperdb option.
    * Print each chunk's details to 00_master_data.sql file.
