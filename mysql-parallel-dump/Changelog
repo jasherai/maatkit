@@ -1,9 +1,11 @@
 Changelog for mysql-parallel-dump:
 
+2007-10-04: version 0.9.7
+
    * Added --setperdb option.
    * Print each chunk's details to 00_master_data.sql file.
-   * An empty set (empty database) caused a crash.
-   * Moved locking and list-building for efficiency and resiliency.
+   * Do locking and list-building as late as possible for efficiency.
+   * Error handling.
 
 2007-10-03: version 0.9.6
 
