@@ -1032,7 +1032,7 @@ if ( !caller ) {
       $stats->{wallclock} = time() - $start;
       info(1, sprintf( (@sets_to_do ? '%12s:          ' : '%s:')
                       . '%5d tables, %5d chunks, %5d successes, %2d failures, '
-                      . '%5.2f wall-clock time, %5.2f dump time',
+                      . '%6.2f wall-clock time, %6.2f dump time',
                       $set, $stats->{tables}, $stats->{chunks}, $stats->{success} || 0,
                       $stats->{failure} || 0, $stats->{wallclock},
                       $stats->{time}));
@@ -1043,7 +1043,7 @@ if ( !caller ) {
    if ( @sets_to_do > 1 ) {
       info(1, sprintf(
          'Final result: %2d sets, %5d tables, %5d chunks, %5d successes, %2d failures, '
-         . '%5.2f wall-clock time, %5.2f dump time',
+         . '%6.2f wall-clock time, %6.2f dump time',
          scalar(@sets_to_do),
             map {
                my $thing = $_;
