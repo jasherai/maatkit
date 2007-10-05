@@ -500,6 +500,7 @@ if ( !caller ) {
       { s => 'password|p=s',      d => 'Password to use when connecting' },
       { s => 'port|P=i',          d => 'Port number to use for connection' },
       { s => 'quiet|q',           d => 'Set --verbose to 0' },
+      # TODO: randomize?
       { s => 'sets=s',            d => 'Dump this comma-separated list of sets' },
       { s => 'setperdb',          d => 'Dump each database as a separate set' },
       { s => 'settable=s',        d => 'database.table where backup sets are stored' },
@@ -850,9 +851,9 @@ if ( !caller ) {
       my $stats = $stats_for_set{$set};
 
       # #########################################################################
-      # Lock tables if needed; automatically releases any earlier locks.  Cycle
-      # until there are none to lock or we get the lock (some tables could have
-      # been dropped between the time we got the list and now).
+      # Lock tables if needed.  Cycle until there are none to lock or we get the
+      # lock (some tables could have been dropped between the time we got the
+      # list and now).
       # #########################################################################
       if ( $opts{locktables} && !$opts{test} ) {
          my @to_lock;
@@ -1024,6 +1025,10 @@ if ( !caller ) {
          }
       }
 
+      if ( $opts{locktables} && !$opts{test} ) {
+         $dbh->do('UNLOCK TABLES')
+      }
+
       $stats->{wallclock} = time() - $start;
       info(1, sprintf( (@sets_to_do ? '%12s:          ' : '%s:')
                       . '%5d tables, %5d chunks, %5d successes, %2d failures, '
@@ -1032,6 +1037,8 @@ if ( !caller ) {
                       $stats->{failure} || 0, $stats->{wallclock},
                       $stats->{time}));
    }
+
+   $dbh->do('UNLOCK TABLES') unless $opts{test};
 
    if ( @sets_to_do > 1 ) {
       info(1, sprintf(
