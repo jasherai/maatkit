@@ -60,12 +60,13 @@ is_deeply(
          special_features     => 1,
          last_update          => 1,
       },
-      null_cols   => [qw( release_year original_language_id length special_features )],
+      null_cols   => [qw( release_year original_language_id length rating special_features )],
       is_nullable => {
          release_year         => 1,
          original_language_id => 1,
          length               => 1,
          special_features     => 1,
+         rating               => 1,
       },
       keys => {
          PRIMARY => {

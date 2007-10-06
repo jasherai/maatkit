@@ -43,7 +43,6 @@ sub parse {
    foreach my $col ( @cols ) {
       my $def = $def_for{$col};
       next if $def =~ m/NOT NULL/ || $def =~ m/text$/;
-      next if $def =~ m/enum\(|set\(/ && $def !~ m/default NULL/;
       push @null, $col;
    }
    my %is_nullable = map { $_ => 1 } @null;
