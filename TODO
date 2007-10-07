@@ -4,6 +4,8 @@ Pipe output from duplicate-key-checker into another tool to graph structures
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 query sniper:
    * http://www.stillhq.com/mysql/000008.html
+   * Allow up to max_connections-X connections
+   * Specify users/hosts NOT to kill (by default root/localhost)
 mysql-relay-prefetch: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
 * read binlogs from many servers and apply them to one.
 
