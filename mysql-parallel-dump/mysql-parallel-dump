@@ -1382,6 +1382,22 @@ routines anyway.
 Exit status is 0 if everything went well, 1 if any chunks failed, and any
 other value indicates an internal error.
 
+MySQL Parallel Dump doesn't clean out any destination directories before
+dumping into them.  You can move away the old destination, then remove it
+after a successful dump, with a shell script like the following:
+
+   #!/bin/sh
+   CNT=`ls | grep -c old`;
+   if [ -d default ]; then mv default default.old.$CNT;
+   mysql-parallel-dump
+   if [ $? != 0 ]
+   then
+      echo "There were errors, not purging old sets."
+   else
+      echo "No errors during dump, purging old sets."
+      rm -rf default.old.*
+   fi
+
 =head1 BACKUP SETS
 
 Backup sets are groups of logically related tables you want to backup together.
