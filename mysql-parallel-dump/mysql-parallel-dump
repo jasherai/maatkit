@@ -1627,9 +1627,10 @@ pathname.
 =item --flushlock
 
 Lock all tables globally with C<FLUSH TABLES WITH READ LOCK>.  This is enabled
-by default, unless you're dumping sets (see L<"--sets">).  If you only want to
-lock the tables you're dumping, use L<"--locktables">.  This lock is taken
+by default, unless you're dumping sets (see L<"--sets">).  This lock is taken
 once, at the beginning of the whole process, and is never released.
+
+If you want to lock only the tables you're dumping, use L<"--locktables">.  
 
 =item --flushlog
 
@@ -1730,7 +1731,7 @@ Dump via C<SELECT INTO OUTFILE>, which is similar to what C<mysqldump> does with
 the C<--tab> option, but you're not constrained to a single database at a time.
 
 Before you use this option, make sure you know what C<SELECT INTO OUTFILE> does!
-I recommend only using it if you're running MySQL Parallel Dump on the same
+I recommend using it only if you're running MySQL Parallel Dump on the same
 machine as the MySQL server, but there is no protection if you don't.
 
 The files will be gzipped after dumping if L<"--gzip"> is enabled.  This option
@@ -1784,7 +1785,7 @@ wait for the server to restart, then keep going.  It's hard to say which table
 killed the server, so no tables will be retried.  Tables that were being
 concurrently dumped when the crash happened will not be retried.  No additional
 locks will be taken after the server restarts; it's assumed this behavior is
-only useful on a server you're not trying to dump while it's in production.
+useful only on a server you're not trying to dump while it's in production.
 
 =back
 
