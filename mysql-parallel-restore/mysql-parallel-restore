@@ -1,3 +1,1209 @@
+#!/usr/bin/perl
+
+# This is a program to restore data dumped by MySQL Parallel Dump.
+#
+# This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
+# are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+# ###########################################################################
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+# ###########################################################################
+
+# ###########################################################################
+# OptionParser package
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package OptionParser;
+
+use Getopt::Long;
+use List::Util qw(max);
+
+sub new {
+   my ( $class, @opts ) = @_;
+   bless { specs => \@opts }, $class;
+}
+
+sub parse {
+   my ( $self, %defaults ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my %opt_seen;
+   foreach my $spec ( @specs ) {
+      my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+      $spec->{k} = $short || $long;
+      $spec->{l} = $long;
+      $spec->{t} = $short;
+      $spec->{n} = $spec->{s} =~ m/!/;
+      $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
+      die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+   }
+
+   foreach my $key ( keys %defaults ) {
+      die "No such option '$key'\n" unless exists $opt_seen{$key};
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs ) or $defaults{help} = 1;
+   return %defaults;
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my @specs = @{$self->{specs}};
+   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+   my $usage = '';
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t} ? "-$spec->{t}" : '';
+      $usage .= sprintf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+   }
+   return $usage;
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+
+package main;
+
+use DBI;
+use English qw(-no_match_vars);
+use File::Basename qw(dirname);
+use File::Find;
+use File::Spec;
+use List::Util qw(max sum);
+use POSIX;
+use Time::HiRes qw(time);
+
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision: 1021 $ =~ m/(\d+)/g || 0);
+
+# Globals -- as few as possible.
+my %opts;
+
+if ( !caller ) {
+
+   # ############################################################################
+   # Get configuration information.
+   # ############################################################################
+
+   my @opt_spec = (
+      { s => 'csv',               d => 'Files are in in CSV format (implies --tab)' },
+      { s => 'databases|d=s',     d => 'Restore only this comma-separated list of databases' },
+      { s => 'dbregex=s',         d => 'Restore only databases whose names match this pattern' },
+      { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+      { s => 'fifo!',             d => 'Stream files into a FIFO for --tab (sets --mask 0)' },
+      { s => 'host|h=s',          d => 'Connect to host' },
+      { s => 'help',              d => 'Show this help message' },
+      { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
+      { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
+      { s => 'locktables!',       d => 'Use LOCK TABLES (default)' },
+      { s => 'numthread|m=i',     d => 'Number of threads (default #CPUs or 2)' },
+      { s => 'password|p=s',      d => 'Password to use when connecting' },
+      { s => 'port|P=i',          d => 'Port number to use for connection' },
+      { s => 'quiet|q',           d => 'Set --verbose to 0' },
+      { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+      { s => 'tab|T',             d => 'Restore tab-separated' },
+      { s => 'tables|t=s',        d => 'Restore only this comma-separated list of tables' },
+      { s => 'test',     ,        d => 'Print commands instead of executing them' },
+      { s => 'tblregex=s',        d => 'Restore only tables whose names match this pattern' },
+      { s => 'umask=s',           d => 'Set umask to this value, in octal' },
+      { s => 'user|u=s',          d => 'User for login if not current user' },
+      { s => 'verbose|v+',        d => 'Verbosity (default 1, can specify multiple times)' },
+      { s => 'version',           d => 'Output version information and exit' },
+      { s => 'wait|w=s',          d => 'Wait limit when server is down (default 5m)' },
+   );
+
+   # Holds command-line options.
+   %opts = (
+      w => '5m',
+      v => 1,
+   );
+
+   my $opt_parser = OptionParser->new(@opt_spec);
+   %opts = $opt_parser->parse(%opts);
+
+   # ############################################################################
+   # Process options.
+   # ############################################################################
+
+   if ( $opts{q} ) {
+      $opts{v} = 0;
+   }
+
+   if ( !$opts{m} ) {
+      eval {
+         # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This
+         # only works on GNU/Linux.
+         open my $file, "<", "/proc/cpuinfo"
+            or die $OS_ERROR;
+         local $INPUT_RECORD_SEPARATOR = undef;
+         my $contents = <$file>;
+         close $file;
+         $opts{m} = scalar( map { $_ } $contents =~ m/(processor)/g );
+      };
+      $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
+      $opts{m} = max(2, $opts{m} || 0);
+   }
+
+   if ( !$opts{help} ) {
+      if ( !$opts{m} ) {
+         warn "You must specify --numthread\n";
+         $opts{help} = 1;
+      }
+
+      if ( !$opts{help} ) {
+         my ($num, $suf ) = $opts{w} =~ m/(\d+)([smhd])$/;
+         if ( !defined $num || $num <= 0 ) {
+            warn "Invalid --wait argument\n";
+            $opts{help} = 1;
+         }
+         else {
+            $opts{w} = $suf eq 's' ? $num            # Seconds
+                     : $suf eq 'm' ? $num * 60       # Minutes
+                     : $suf eq 'h' ? $num * 3600     # Hours
+                     :               $num * 86400;   # Days
+         }
+      }
+
+      if ( !$opts{help} && !@ARGV ) {
+         warn "You did not specify any files to restore\n";
+         $opts{help} = 1;
+      }
+   }
+
+   if ( $opts{csv} ) {
+      $opts{T} = 1;
+   }
+
+   if ( $opts{fifo} ) {
+      if ( !defined $opts{umask} ) {
+         $opts{umask} = 0;
+      }
+   }
+
+   if ( defined $opts{umask} ) {
+      umask oct($opts{umask});
+   }
+
+   # Gather connection parameters to pass to mysql.  Order matters; mysql
+   # will have a problem if --defaults-file isn't first.
+   my @conn_params = (
+      [qw(--defaults-file F)],
+      [qw(--host          h)],
+      [qw(--password      p)],
+      [qw(--port          P)],
+      [qw(--socket        S)],
+      [qw(--user          u)],
+   );
+   @conn_params = map { "$_->[0]='$opts{$_->[1]}'" } grep { defined $opts{$_->[1]} } @conn_params;
+
+   if ( $opts{version} ) {
+      print "mysql-parallel-restore  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+      exit(0);
+   }
+
+   if ( $opts{help} ) {
+      print "Usage: mysql-parallel-restore <options>\n\n";
+      print $opt_parser->usage();
+      (my $usage = <<"      USAGE") =~ s/^         //gm;
+
+         mysql-parallel-restore loads files dumped by mysql-parallel-dump.
+         For more details, please read the documentation:
+
+            perldoc mysql-parallel-restore
+
+      USAGE
+      print $usage;
+      exit(0);
+   }
+
+   # Make comma-separated lists into hashes.
+   if ( $opts{d} ) {
+      $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
+   }
+   $opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
+   if ( $opts{t} ) {
+      $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
+   }
+   $opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
+   if ( $opts{e} ) {
+      $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
+   }
+
+   # ############################################################################
+   # Connect.
+   # ############################################################################
+   my $dbh = get_dbh();
+   $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
+   $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
+
+   # This signal handler will do nothing but wake up the sleeping parent process
+   # and record the exit status and time of the child that exited (as a side
+   # effect of not discarding the signal).
+   my %exited_children;
+   $SIG{CHLD} = sub {
+      my $kid;
+      while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+         # Must right-shift to get the actual exit status of the child.
+         $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
+         $exited_children{$kid}->{exit_time}   = time();
+      }
+   };
+
+   # ############################################################################
+   # Iterate over "sets" of tables.
+   # ############################################################################
+   my %tables_for_set;
+   my %files_for_table;
+   my %stats_for_set;
+
+   # Find directories and files and save them.
+   File::Find::find(
+      {  no_chdir => 1,
+         wanted   => sub {
+            my ( $dir, $file ) = ($File::Find::dir, $File::Find::name);
+            if ( -f $file && $file !~ m/00_master_data.sql$/ ) {
+               my ($vol, $dirs, $file) = File::Spec->splitpath( $File::Find::name );
+               if ( $file =~ m/\.(?:sql|txt|csv)(?:\.\d+)?(?:\.gz)?$/ ) {
+                  my @dirs = grep { $_ } File::Spec->splitdir($dir);
+                  my $db = $dirs[-1];
+                  my ($tbl) = $file =~ m/^([^.]+)/;
+                  push @{$files_for_table{$db}->{$tbl}}, $File::Find::name;
+               }
+            }
+         },
+      },
+      map { File::Spec->rel2abs($_) } @ARGV
+   );
+
+   use Data::Dumper;
+   print Dumper(\%files_for_table);
+   exit(0);
+
+=pod
+   # Do all databases and tables in a 'default' set, possibly excluding those
+   # that have been included in named sets above.  Or, if --setperdb is
+   # specified, place each into its own set.
+   if ( !$opts{sets} || $opts{defaultset} ) {
+      @databases = grep {
+         $_ !~ m/^(information_schema|lost\+found)$/mi
+      } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+      if ( !$opts{sets} ) {
+         @databases = grep {
+            ( !$opts{d} || exists($opts{d}->{$_}) )
+            && ( !$opts{dbregex} || $_ =~ m/$opts{dbregex}/ )
+            && ( !exists $opts{g}->{$_} )
+         } @databases;
+      }
+      DATABASE:
+      foreach my $database ( @databases ) {
+         my $set = $opts{setperdb} ? $database : 'default';
+         push @{$databases_for{$set}}, $database;
+         @sets_to_do = unique(@sets_to_do, $set);
+      }
+   }
+
+   # ############################################################################
+   # Do each backup set.
+   # ############################################################################
+   SET:
+   foreach my $set ( @sets_to_do ) {
+
+      if ( !$opts{sets} ) {
+         # Must fetch tables.
+         foreach my $database ( @{$databases_for{$set}} ) {
+            get_tables_in_database(
+               dbh            => $dbh,
+               set            => $set,
+               database       => $database,
+               age            => $age,
+               opts           => \%opts,
+               tables_in_sets => \%tables_in_sets,
+               stats_for_set  => \%stats_for_set,
+               table_status   => \%table_status,
+               tables_for_set => \%tables_for_set,
+            );
+         }
+      }
+
+      if ( !$tables_for_set{$set} || !@{$tables_for_set{$set}} ) {
+         info(2, "Nothing to do for set $set");
+         next SET;
+      }
+      my $start = time();
+      my $stats = $stats_for_set{$set};
+
+      # #########################################################################
+      # Lock tables if needed.  Cycle until there are none to lock or we get the
+      # lock (some tables could have been dropped between the time we got the
+      # list and now).
+      # #########################################################################
+      if ( $opts{locktables} && !$opts{test} ) {
+         my @to_lock;
+         my $done;
+         do {
+            @to_lock = unique(
+               map { "`$_->[0]`.`$_->[1]` READ" } @{$tables_for_set{$set}} );
+            if ( $backedup_sth ) {
+               push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
+            }
+            eval {
+               $dbh->do('LOCK TABLES ' . join(', ', @to_lock));
+               $done = 1;
+            };
+            if ( $EVAL_ERROR ) {
+               my $err = mysql_error_msg($EVAL_ERROR);
+               my ($db, $tbl) = $err =~ m/Table '([^.]+)\.([^.]+)' doesn't exist/;
+               if ( $db && $tbl ) {
+                  # Remove the nonexistent table and try again.
+                  $tables_for_set{$set} = [
+                     grep { $_->[0] ne $db || $_->[1] ne $tbl } @{$tables_for_set{$set}}
+                  ];
+                  info(0, $err);
+               }
+               else {
+                  die "Cannot lock tables: $err";
+               }
+            }
+         } while ( @to_lock && !$done );
+      }
+
+      # #########################################################################
+      # Flush logs.
+      # #########################################################################
+      if ( $opts{flushlog} && !$opts{test} ) {
+         $dbh->do('FLUSH LOGS');
+      }
+
+      my @work_to_do;
+      foreach my $db_tbl ( @{$tables_for_set{$set}} ) {
+         my @chunks = get_chunks($dbh, $opts{C}, $set, @$db_tbl, \%table_status);
+         my $i = 0;
+         foreach my $chunk ( @chunks ) {
+            push @work_to_do, {
+               D => $chunk->{D},
+               N => $chunk->{N},
+               S => $chunk->{S},
+               C => $i++,
+               W => $chunk->{W},
+            };
+            $stats_for_set{$set}->{chunks}++;
+         }
+      }
+
+      # #########################################################################
+      # Get the master position.
+      # #########################################################################
+      if ( $opts{b} && !$opts{test} ) {
+         my $filename = filename($set, '00_master_data.sql');
+         makedir($filename);
+         open my $file, ">", $filename or die $OS_ERROR;
+         my %wanted = map { $_ => 1 }
+            qw(file position master_host master_port master_log_file
+            read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
+            exec_master_log_pos);
+
+         my ( $master_pos, $slave_pos );
+         eval {
+            $master_pos = $dbh->selectrow_hashref('SHOW MASTER STATUS');
+         };
+         eval {
+            $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
+            print $file "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
+                      . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
+                      . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n";
+         };
+         my %hash;
+         foreach my $thing ( $master_pos, $slave_pos ) {
+            next unless $thing;
+            foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
+               print $file "-- $key $thing->{$key}\n";
+            }
+         }
+
+         # Put the details of the chunks into the file.
+         foreach my $chunk ( @work_to_do ) {
+            print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n";
+         }
+
+         close $file or die $OS_ERROR;
+      }
+
+      # #########################################################################
+      # Design the format for printing out.
+      # #########################################################################
+      my ( $maxdb, $maxtbl, $maxset);
+      $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
+      $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
+      $maxset = max(3, length($set));
+      my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
+      info(2, sprintf($format, qw(SET DATABASE TABLE CHUNK TIME STATUS THREADS)));
+
+      # #########################################################################
+      # Assign the work to child processes.  Initially just start --numthreads
+      # number of children.  Each child that exits will trigger a new one to start
+      # after that.  This is really a terrible hack -- I wish Perl had decent
+      # threading support so I could just queue work for a fixed pool of worker
+      # threads!
+      # #########################################################################
+
+      my %kids;
+      while ( @work_to_do || %kids ) {
+
+         # Wait for the MySQL server to become responsive.
+         my $tries = 0;
+         while ( !$dbh->ping && $tries++ < $opts{w} ) {
+            sleep(1);
+            eval {
+               $dbh = get_dbh();
+            };
+            if ( $EVAL_ERROR ) {
+               info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
+            }
+         }
+         if ( $tries >= $opts{w} ) {
+            die "Too many retries, exiting.\n";
+         }
+
+         # Start a new child process.
+         while ( @work_to_do && $opts{m} > keys %kids ) {
+            my $todo = shift @work_to_do;
+            $todo->{time} = time;
+            my $pid = fork();
+            die "Can't fork: $OS_ERROR" unless defined $pid;
+            if ( $pid ) {              # I'm the parent
+               $kids{$pid} = $todo;
+            }
+            else {                     # I'm the child
+               my $exit_status = 0;
+               $exit_status = do_table($todo) || $exit_status;
+               exit($exit_status);
+            }
+         }
+
+         # Possibly wait for child.
+         my $reaped = 0;
+         foreach my $kid ( keys %exited_children ) {
+            my $status = $exited_children{$kid};
+            my $todo   = $kids{$kid};
+            my $stat   = $status->{exit_status};
+            if ( !$opts{test} && !$stat && $backedup_sth ) {
+               $backedup_sth->execute(@{$todo}{qw(S D N)});
+            }
+            my $time = $status->{exit_time} - $todo->{time};
+            info(2, sprintf($format, @{$todo}{qw(S D N C)},
+               sprintf('%.2f', $time), $stat, scalar(keys %kids)));
+            $stats->{ $stat ? 'failure' : 'success' }++;
+            $stats->{time} += $time;
+            delete $kids{$kid};
+            delete $exited_children{$kid};
+            $reaped = 1;
+         }
+
+         if ( !$reaped ) {
+            # Don't busy-wait.  But don't wait forever either, as a child may exit
+            # and signal while we're not sleeping, so if we sleep forever we may
+            # not get the signal.
+            sleep(1);
+         }
+      }
+
+      if ( $opts{locktables} && !$opts{test} ) {
+         $dbh->do('UNLOCK TABLES')
+      }
+
+      $stats->{wallclock} = time() - $start;
+      info(1, sprintf( (@sets_to_do ? '%12s:          ' : '%s:')
+                      . '%5d tables, %5d chunks, %5d successes, %2d failures, '
+                      . '%6.2f wall-clock time, %6.2f dump time',
+                      $set, $stats->{tables}, $stats->{chunks}, $stats->{success} || 0,
+                      $stats->{failure} || 0, $stats->{wallclock},
+                      $stats->{time}));
+   }
+
+   $dbh->do('UNLOCK TABLES') unless $opts{test};
+
+   if ( @sets_to_do > 1 ) {
+      info(1, sprintf(
+         'Final result: %2d sets, %5d tables, %5d chunks, %5d successes, %2d failures, '
+         . '%6.2f wall-clock time, %6.2f dump time',
+         scalar(@sets_to_do),
+            map {
+               my $thing = $_;
+               sum(0, map { $_->{$thing} || 0 } values %stats_for_set);
+            } qw(tables chunks success failure wallclock time)
+         ));
+   }
+
+   # Exit status is 1 if there were any failures.
+   exit( sum(0, map { $_->{failure} || 0 } values %stats_for_set) ? 1 : 0 );
+
+=cut
+}
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+
+sub mysql_error_msg {
+   my ( $text ) = @_;
+   $text =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
+   return $text;
+}
+
+# Prints a message.
+sub info {
+   my ( $level, $msg ) = @_;
+   if ( $level <= $opts{v} ) {
+      print $msg, "\n";
+   }
+}
+
+sub unique {
+   my %seen;
+   grep { !$seen{$_}++ } @_;
+}
+
+# Interpolates % directives from a db/tbl hashref.
+sub interp {
+   my ( $todo, @strings ) = @_;
+   map { $_ =~ s/%(\d+)?([SDNCW])/$1 ? sprintf("%0$1d", $todo->{$2}) : $todo->{$2}/ge } @strings;
+   return @strings;
+}
+
+# Actually dumps a table.
+sub do_table {
+   my ( $todo ) = @_;
+   my $exit_status = 0;
+
+   # Dump via SELECT INTO OUTFILE.
+   if ( $opts{T} ) {
+      my $dbh = get_dbh();
+      my $filename = filename(interp($todo, '%S', '%D', '%N.%3C'));
+      makedir($filename);
+      my $sql;
+      if ( $opts{csv} ) {
+         $sql  = qq{SELECT * INTO OUTFILE '$filename.txt' }
+               . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
+               . qq{LINES TERMINATED BY '\\n' FROM `$todo->{D}`.`$todo->{N}`};
+      }
+      else {
+         $sql = "SELECT * INTO OUTFILE '$filename.txt' "
+              . "FROM `$todo->{D}`.`$todo->{N}` WHERE $todo->{W}";
+      }
+      if ( $opts{test} ) {
+         print $sql, "\n";
+      }
+      eval {
+         $dbh->do($sql) unless $opts{test};
+      };
+      if ( $EVAL_ERROR ) {
+         die mysql_error_msg($EVAL_ERROR) . "\n";
+      }
+      if ( $opts{gzip} ) {
+         $exit_status = system_call(
+            'gzip', '--force', '--fast', qq{"$filename.txt"});
+      }
+   }
+
+   # Normal dump using mysqldump.  If $opts{T} was set, the following won't dump
+   # the data because --no-data is in @mysqldump_args.  If the user left the
+   # options alone, we can predict the filename and directory naming convention,
+   # and ensure the directiories exist.  Otherwise the user must ensure the
+   # directories exist, because it's a hard job to figure out which argument in
+   # the array is a filename.  We only do this on the first chunk for each
+   # table.
+
+   if ( !$opts{T} ) {
+      # It's either a custom command, or it's the first chunk for a
+      # tab-separated table and we're going to dump the schema, or it's a
+      # regular SQL dump and we're going to dump data.
+      # my @args = map { interp($todo, $_) } @mysqldump_args;
+      # $exit_status = system_call( @args ) || $exit_status;
+   }
+
+   return $exit_status;
+}
+
+sub get_dbh {
+   my %conn = (
+      F => 'mysql_read_default_file',
+      h => 'host',
+      P => 'port',
+      S => 'mysql_socket'
+   );
+   my $dsn = 'DBI:mysql:;'
+      . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
+      . ';mysql_read_default_group=mysql';
+   my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 0, RaiseError => 1, PrintError => 0 } );
+   return $dbh;
+}
+
+sub system_call {
+   my ( @cmd ) = @_;
+   my $exit_status = 0;
+   if ( $opts{test} ) {
+      print join(' ', @cmd), "\n";
+   }
+   else {
+      $exit_status = system(join(' ', @cmd));
+      # Must right-shift to get the actual exit status of the command.
+      # Otherwise the upstream exit() call that's about to happen will get a
+      # larger value than it likes, and will just report zero to waitpid().
+      $exit_status = $exit_status >> 8;
+   }
+   return $exit_status;
+}
+
+1; # Because this is a runnable module.
+
+# ############################################################################
+# Documentation.
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+mysql-parallel-restore - Dump sets of MySQL tables in parallel.
+
+=head1 SYNOPSIS
+
+  mysql-parallel-restore
+  mysql-parallel-restore --tab
+  mysql-parallel-restore --sets order,profile,session --settable meta.backupset
+
+=head1 DESCRIPTION
+
+MySQL Parallel Dump connects to a MySQL server, finds database and table names,
+and dumps them in parallel for speed.  It can be used in several pre-packaged
+ways, or as a generic wrapper to call some program in parallel, passing it
+parameters for each table.  It supports backup sets and dumping only tables that
+have changed since the last dump.
+
+To dump all tables to gzipped files in the current directory, each database with
+its own directory, with a global read lock, flushing and recording binary log
+positions, each table in a single file:
+
+  mysql-parallel-restore
+
+To dump to tab-separated files with C<SELECT INTO OUTFILE>, each table with
+separate data and SQL files:
+
+  mysql-parallel-restore --tab
+
+To dump one or more backup sets (see L<"BACKUP SETS">):
+
+  mysql-parallel-restore --sets set1,set2,set3 --settable meta.backupset
+
+To "write your own command line," use C<--> to indicate where the arguments for
+MySQL Parallel Dump stop and where the arguments for C<mysqldump> (or any other
+program) begin.  The following example shows C<mysqldump>, and aside from simpler
+options to C<mysqldump>, is basically what happens when you specify no arguments
+at all:
+
+  mysql-parallel-restore -- mysqldump --skip-lock-tables '%D' '%N' \
+     \| gzip --fast -c - \> '%D.%N.gz'
+
+The C<%> modifiers are macros (see L<"MACROS">).  The C<--skip-lock-tables>
+argument is very important in that last example, because otherwise both MySQL
+Parallel Dump and C<mysqldump> will lock tables, so C<mysqldump> will hang,
+waiting for the locks.  Notice the shell metacharacters C<|> and C<E<gt>> are
+escaped so the shell won't interpret them, and they'll get passed through to the
+generated command-line.
+
+There's no reason you can't use MySQL Parallel Dump to do other tasks in
+parallel, such as C<OPTIMIZE TABLE>:
+
+  mysql-parallel-restore --noflushlock --nolocktables -- mysqlcheck --optimize '%D' '%N'
+
+When you use built-in defaults, MySQL Parallel Dump will relay these arguments
+on to every forked copy of C<mysqldump>: L<"--defaults-file">, L<"--host">,
+L<"--port">, L<"--socket">, L<"--user">, L<"--password">.  If you write your own
+command-line, you will need to specify them manually.
+
+MySQL Parallel Dump does I<not> back up your entire database.  It dumps tables
+and data I<only>.  It does not dump view definitions or stored routines.
+However, if you dump the C<mysql> database, you'll be dumping the stored
+routines anyway.
+
+Exit status is 0 if everything went well, 1 if any chunks failed, and any
+other value indicates an internal error.
+
+MySQL Parallel Dump doesn't clean out any destination directories before
+dumping into them.  You can move away the old destination, then remove it
+after a successful dump, with a shell script like the following:
+
+   #!/bin/sh
+   CNT=`ls | grep -c old`;
+   if [ -d default ]; then mv default default.old.$CNT;
+   mysql-parallel-restore
+   if [ $? != 0 ]
+   then
+      echo "There were errors, not purging old sets."
+   else
+      echo "No errors during dump, purging old sets."
+      rm -rf default.old.*
+   fi
+
+=head1 BACKUP SETS
+
+Backup sets are groups of logically related tables you want to backup together.
+You specify a set by inserting the table names into a table in the MySQL server
+from which you're dumping, and then naming it in the L<"--sets"> option.  MySQL
+Parallel Dump always works a set at a time; if you don't specify a set, it
+auto-discovers tables, filters them with the various command-line options
+(L<"--databases">, etc) and considers them the default set.
+
+The table that stores backup sets should have at least these columns: setname,
+priority, db, tbl.  The following is a suggested table structure:
+
+  CREATE TABLE backupset (
+    setname  CHAR(10)  NOT NULL,
+    priority INT       NOT NULL DEFAULT 0,
+    db       CHAR(64)  NOT NULL,
+    tbl      CHAR(64)  NOT NULL,
+    ts       TIMESTAMP NOT NULL,
+    PRIMARY KEY(setname, db, tbl),
+    KEY(setname, priority, db, tbl)
+  );
+
+Entries are ordered by priority, db, and tbl.  Priority 0 tables are dumped
+first, not last.  If it looks like tables are dumped in the wrong order, it's
+probably because they're being dumped asynchronously.  The output is printed
+when the dump finishes, not when it starts.
+
+If you specify L<"--age">, MySQL Parallel Dump expects the C<ts> column to
+exist, and will update the column to the current date and time when it
+successfully dumps a table.
+
+Don't use C<default> as a set name.  It is used when you don't specify any
+sets and when you want all tables not explicitly assigned to a set to be
+dumped (see L<"--defaultset">).
+
+Set names may contain only lowercase letters, numbers, and underscores.
+
+=head1 CHUNKS
+
+MySQL Parallel Dump can break your tables into chunks when dumping, and put
+approximately the amount of data you specify into each chunk.  This is useful to
+avoid enormous files for restoration, which can not only take a long time but
+may be a lot of extra work for transactional storage engines like InnoDB.  It
+can create a huge rollback segment in your tablespace.
+
+To dump in chunks, specify the L<"--chunksize"> option.  This option is an
+integer with an optional suffix.  Without the suffix, it's the number of rows
+you want in each chunk.  With the suffix, it's the approximate size of the data.
+
+MySQL Parallel Dump tries to use index statistics to calculate where the
+boundaries between chunks should be.  If the values are not evenly distributed,
+some chunks can have a lot of rows, and others may have very few or even none.
+Some chunks can exceed the size you want.
+
+When you specify the size with a suffix, the allowed suffixes are k, M and G,
+for kibibytes, mebibytes, and gibibytes, respectively.  MySQL Parallel Dump
+doesn't know anything about data size.  It asks MySQL (via C<SHOW TABLE STATUS>)
+how long an average row is in the table, and converts your option to a number
+of rows.
+
+Not all tables can be broken into chunks.  MySQL Parallel Dump looks for an
+index whose leading column is numeric (integers, real numbers, and date and time
+types).  It prefers the primary key if its first column is chunk-able.
+Otherwise it chooses the first chunk-able column in the table.
+
+Generating a series of C<WHERE> clauses to divide a table into evenly-sized
+chunks is difficult.  If you have any ideas on how to improve the algorithm,
+please write to the author (see L<"BUGS">).
+
+=head1 MACROS
+
+MySQL Parallel Dump can insert C<%> variables into arguments.  The available macros
+are as follows:
+
+  MACRO  MEANING
+  =====  =================
+  %S     The backup set
+  %D     The database name
+  %N     The table name
+  %C     The chunk number
+  %W     The WHERE clause
+
+You can place a number between the C<%> and the letter.  The macro replacement
+then assumes it's a digit and pads it with leading zeroes (in practice, this is
+only useful for C<%C>).
+
+=head1 OUTPUT
+
+Output depends on verbosity.  When L<"--test"> is given, output includes
+commands that would be executed.
+
+When L<"--verbose"> is 0, there is normally no output unless there's an error.
+
+When L<"--verbose"> is 1, there is one line of output for each backup set,
+showing the set, how many tables and chunks were dumped with what status, how
+much time elapsed, and how much time the parallel dump jobs added up to.  A
+final line shows sums for all sets, unless there is only one set.
+
+When L<"--verbose"> is 2, there is also one line of output for each table.
+Each line is printed when a forked "child" process ends and is removed from
+the list of children.  The output shows the backup set, database, table,
+seconds spent dumping, the exit status of the forked dump process, and number
+of current processes (including the one just reaped; so this typically shows
+"how many are running in parallel").  A status of 0 indicates success:
+
+  SET     DATABASE TABLE         TIME STATUS THREADS
+  default mysql    db               0      0       4
+  default mysql    columns_priv     0      0       4
+  default mysql    help_category    0      0       3
+
+=head1 SPEED OF PARALLEL DUMPS
+
+How much faster is it to dump in parallel?  That depends on your hardware and
+data.  You may be able dump files twice as fast, or more if you have lots of
+disks and CPUs.  Here are some user-contributed figures.
+
+The following table is for a 3.6GHz Xeon machine with 4 processors and a RAID-10
+array of 15k disks, directly attached to the server with a fibre channel.  Most
+of the space is in one huge table that wasn't dumped in parallel:
+
+  COMMAND                      SIZE  TIME
+  --------------------------  -----  ----
+  mysql-parallel-restore         1.4GB   269
+  mysqldump                   1.4GB   345
+
+On the same machine, in a database with lots of roughly equal-sized tables:
+
+  COMMAND                      SIZE  TIME
+  --------------------------  -----  ----
+  mysql-parallel-restore         117MB     7
+  mysqldump                   117MB    37
+
+It doesn't always work that well.  A dual 2.80GHz Xeon server with a RAID-5
+array of three 7200RPM SATA disk drives running MySQL 5.0.38 on GNU/Linux
+achieved the following dump times:
+
+  COMMAND                      SIZE  TIME
+  --------------------------  -----  ----
+  mysql-parallel-restore         3.0GB  2596
+  mysqldump | gzip --fast     3.0GB  3195
+
+While dumping two threads in parallel, this machine was at an average of 74%
+CPU utilization and 12% I/O wait.  This machine doesn't have enough disks and
+CPUs to do that many things at once, so it's not going to speed up much.
+
+Dumping lots of tiny tables by forking of lots of C<mysqldump> processes isn't
+usually much faster, because of the overhead of starting C<mysqldump>,
+connecting, inspecting the table, and dumping it.  Note that tab-separated
+dumps are typically much faster and don't suffer as much from the effects of
+many tiny tables, because they're not done via C<mysqldump>.
+
+=head1 OPTIONS
+
+Some options can be disabled by prefixing them with C<--no>, such as
+C<--no-gzip>.
+
+=over
+
+=item --age
+
+Specifies how old a table must be modified before MySQL Parallel Dump will
+consider it.  The argument is a number with a suffix (s=seconds, m=minutes,
+h=hours, d=days).
+
+When L<"--sets"> is not specified, MySQL Parallel Dump uses C<SHOW TABLE STATUS>
+instead of C<SHOW TABLES> to get a list of tables in each database, and compares
+the time to the C<Update_time> column in the output.  If the C<Update_time>
+column is not C<NULL> and is older than the specified interval ago, it will not
+be dumped.  Thus, it means "dump tables that have changed since X amount of
+time" (presumably the last regular backup).  This means the table will always be
+dumped if it uses InnoDB or another storage engine that doesn't report the
+C<Update_time>.
+
+When L<"--sets"> is specified, the L<"--settable"> table determines when a table
+was last dumped, and the meaning of C<--age> reverses; it becomes "dump tables
+not dumped in X amount of time."
+
+=item --binlogpos
+
+Dump binary log positions from both C<SHOW MASTER STATUS> and C<SHOW SLAVE
+STATUS>, whichever can be retrieved from the server.  The data is dumped to a
+file named F<00_master_data.sql>.  This is done for each backup set.
+
+The file also contains details of each table dumped, including the WHERE clauses
+used to dump it in chunks.
+
+This option is enabled by default.
+
+=item --chunksize
+
+Specifies that the table should be dumped in segments of approximately the size
+given.  The syntax is either a plain integer, which is interpreted as a number
+of rows per chunk, or an integer with a suffix of G, M, or k, which is
+interpreted as the size of the data to be dumped in each chunk.  See L<"CHUNKS">
+for more details.
+
+=item --csv
+
+Changes L<"--tab"> options so the dump file is in comma-separated values
+(CSV) format.  The SELECT INTO OUTFILE statement looks like the following, and
+can be re-loaded with the same options:
+
+   SELECT * INTO OUTFILE %D.%N.%3C.txt
+   FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"'
+   LINES TERMINATED BY '\n' FROM %D.%N;
+
+This option implies L<"--tab">.
+
+=item --databases
+
+Dump this comma-separated list of databases.  Only applies when L<"--sets"> is
+not given.
+
+=item dbregex
+
+Dump only databases whose names match this Perl regular expression.  Only
+applies when L<"--sets"> is not given.
+
+=item --defaultset
+
+When L<"--sets"> is given, this option makes MySQL Parallel Dump dump a
+C<default> set consisting of tables not explicitly included in any set.
+
+=item --defaults-file
+
+Only read default options from the given file.  You must give an absolute
+pathname.
+
+=item --flushlock
+
+Lock all tables globally with C<FLUSH TABLES WITH READ LOCK>.  This is enabled
+by default, unless you're dumping sets (see L<"--sets">).  This lock is taken
+once, at the beginning of the whole process, and is never released.
+
+If you want to lock only the tables you're dumping, use L<"--locktables">.  
+
+=item --flushlog
+
+Execute C<FLUSH LOGS> after locking and before dumping master/slave binary log
+positions.  This is done for each backup set.
+
+This option is enabled by default.
+
+=item --gzip
+
+Compresses files with gzip.  This is enabled by default unless your platform
+is Win32.  By default, this causes the standard SQL dumps to be piped to
+gzip's C<STDIN> and the result is redirected to the destination file.  If this
+option isn't enabled, by default C<mysqldump>'s C<--result-file> parameter is used
+to direct the dump to the destination file.  When using L<"--tab">, this
+option causes gzip to be called separately on each resulting file after it is
+dumped (because C<SELECT INTO OUTFILE> cannot be directed to a pipe).
+
+=item --help
+
+Displays a help message.
+
+=item --host
+
+Connect to host.
+
+=item --ignoredb
+
+Do not dump this comma-separated list of databases.  Only applies when
+L<"--sets"> is not given.
+
+=item --ignoretbl
+
+Do not dump this comma-separated list of table (not database.table) names.  Only
+applies when L<"--sets"> is not given.
+
+=item --locktables
+
+Disables L<"--flushlock"> (unless it was explicitly set) and locks tables with
+C<LOCK TABLES READ>.  Enabled by default when L<"--sets"> is specified.  The
+lock is taken and released with every set of tables dumped.
+
+=item --numthread
+
+Specifies the number of parallel processes to run.  The default is 2 (this is
+MySQL Parallel Dump, after all -- 1 is not parallel).  On GNU/Linux machines,
+the default is the number of times 'processor' appears in F</proc/cpuinfo>.  On
+Windows, the default is read from the environment.  In any case, the default is
+at least 2, even when there's only a single processor.
+
+=item --opt
+
+This is sort of related to C<mysqldump>'s C<--opt> argument, I<but not the same>.
+It does I<not> pass C<--opt> to C<mysqldump>.  Instead, it passes the following:
+
+C<--add-drop-table> C<--add-locks> C<--allow-keywords> C<--comments>
+C<--complete-insert> C<--create-options> C<--disable-keys>
+C<--extended-insert> C<--quick> C<--quote-names> C<--set-charset>
+C<--skip-lock-tables> C<--triggers> C<--tz-utc>
+
+These are what I consider to be sensible default options.
+
+=item --password
+
+Password to use when connecting.
+
+=item --port
+
+Port number to use for connection.
+
+=item --quiet
+
+Sets L<"--verbose"> to 0.
+
+=item --sets
+
+Dump this comma-separated list of backup sets, in order.  Requires
+L<"--settable">.  See L<"BACKUP SETS">.  The special C<default> set is
+reserved; don't use it as a set name.
+
+=item --setperdb
+
+Specifies that each database is a separate backup set.  Each set is named the
+same as the database.  Implies L<"--locktables">.
+
+=item --settable
+
+Specifies the table in which backup sets are kept.  It may be given in
+database.table form.
+
+=item --socket
+
+Socket file to use for connection.
+
+=item --tab
+
+Dump via C<SELECT INTO OUTFILE>, which is similar to what C<mysqldump> does with
+the C<--tab> option, but you're not constrained to a single database at a time.
+
+Before you use this option, make sure you know what C<SELECT INTO OUTFILE> does!
+I recommend using it only if you're running MySQL Parallel Dump on the same
+machine as the MySQL server, but there is no protection if you don't.
+
+The files will be gzipped after dumping if L<"--gzip"> is enabled.  This option
+sets L<"--umask"> to zero so auto-created directories are writable by the MySQL
+server.
+
+=item --tables
+
+Dump this comma-separated list of table (not database.table) names.  Only
+applies when L<"--sets"> is not given.
+
+=item --tblregex
+
+Dump only tables whose names match this Perl regular expression.  Only applies
+when L<"--sets"> is not given.
+
+=item --test
+
+Print commands instead of executing them.
+
+=item --umask
+
+Set the program's C<umask> to this octal value.  This is useful when you want
+created files and directories to be readable or writable by other users (for
+example, the MySQL server itself).
+
+=item --user
+
+User for login if not current user.
+
+=item --verbose
+
+Sets the verbosity; repeatedly specifying it increments the verbosity.
+Default is 1 if not specified.  See L<"OUTPUT">.
+
+=item --version
+
+Output version information and exit.
+
+=item --wait
+
+If the MySQL server crashes during dumping, waits until the server comes back
+and then continues with the rest of the tables.  The value is a number with a
+suffix (s=seconds, m=minutes, h=hours, d=days).  MySQL Parallel Dump will
+check the server every second until this time is exhausted, at which point it
+will give up and exit.
+
+This implements Peter Zaitsev's "safe dump" request: sometimes a dump on a
+server that has corrupt data will kill the server.  MySQL Parallel Dump will
+wait for the server to restart, then keep going.  It's hard to say which table
+killed the server, so no tables will be retried.  Tables that were being
+concurrently dumped when the crash happened will not be retried.  No additional
+locks will be taken after the server restarts; it's assumed this behavior is
+useful only on a server you're not trying to dump while it's in production.
+
+=back
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
+are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz.
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 1021 $.
+
+=cut
+
+__END__
 #!/bin/bash
 
 EXENAME=`basename $0`
