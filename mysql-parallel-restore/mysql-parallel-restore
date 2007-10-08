@@ -1,0 +1,188 @@
+#!/bin/bash
+
+EXENAME=`basename $0`
+
+# Set some default values
+DB_THREADS=1
+MYSQL_BASEDIR=/usr/local/mysql
+DROP_DATABASES=FALSE
+BACKUP_DIR=`pwd`
+ENABLE_BINLOG=0
+WORKDIR=/tmp
+GZIP=TRUE
+VERBOSE=FALSE
+
+Pause()
+{
+    key=""
+    echo -n Hit any key to continue....
+    stty -icanon
+    key=`dd count=1 2>/dev/null`
+    stty icanon
+}
+
+if [ $# -eq 0 ]  # Script invoked with no command-line args?
+then
+  echo "Usage: $EXENAME -b backupdir [-w workdir] [-z use gzip] [-v verbose]"
+  echo "[-d drop databases before import] [-h host] [-P port] [-S socket] [-u user] "
+  echo "[-p password] [-t threads] [-l binlog on, default is off]"
+  echo "[-m mysql/base/dir, default /usr/local/mysql]"
+  exit 1 # Exit and explain usage, if no argument(s) given.
+fi  
+
+while getopts ":h:P:S:u:p:t:b:dm:lw:zv" Option
+do
+  case $Option in
+        h ) DB_HOST=$OPTARG;;
+        P ) DB_PORT=$OPTARG;;
+        S ) DB_SOCKET=$OPTARG;;
+        u ) DB_USER=$OPTARG;;
+        p ) DB_PASSWORD=$OPTARG;;
+        t ) DB_THREADS=$OPTARG;;
+        b ) BACKUP_DIR=$OPTARG;;
+        d ) DROP_DATABASES=TRUE;;
+        m ) MYSQL_BASEDIR=$OPTARG;;
+        l ) ENABLE_BINLOG=1;;
+        w ) WORKDIR=$OPTARG;;
+        z ) GZIP=TRUE;;
+        v ) VERBOSE=TRUE;;
+  esac
+done
+
+shift $(($OPTIND - 1))
+
+mkdir -p $WORKDIR/db_restore_$$
+export WORKDIR=$WORKDIR/db_restore_$$
+
+# Create the arguments for mysql
+MYSQL_ARGS=""
+
+[ ! -z $DB_USER ] && MYSQL_ARGS="$MYSQL_ARGS --user=$DB_USER"
+[ ! -z $DB_HOST ] && MYSQL_ARGS="$MYSQL_ARGS --host=$DB_HOST"
+[ ! -z $DB_PORT ] && MYSQL_ARGS="$MYSQL_ARGS --port=$DB_PORT"
+[ ! -z $DB_SOCKET ] && MYSQL_ARGS="$MYSQL_ARGS --socket=$DB_SOCKET"
+[ ! -z $DB_PASSWORD ] && MYSQL_ARGS="$MYSQL_ARGS --password=$DB_PASSWORD"
+
+MYSQL=$MYSQL_BASEDIR/bin/mysql
+
+[ -f `find $BACKUP_DIR -name 00_master_data.sql` ] 
+if [ $? -eq 1 ] ; then echo "No valid backup dir specified, specify with -b option" ; exit 1 ; fi
+
+# Did not have energy to fix backups sets, just goes for default for now
+export BACKUP_DIR=$BACKUP_DIR/default
+
+export now=`date +%Y%m%d%H%M%S`
+export LOGFILE=$BACKUP_DIR/$now.restore_log
+
+# Review options and pause, so we can abort if something is wrong
+echo "Review the options you've set and abort if you find an error"
+echo "MySQL basedir			= $MYSQL_BASEDIR"
+echo "MySQL arguments			= $MYSQL_ARGS"
+echo "Drop databases before import	= $DROP_DATABASES"
+echo "Number of threads		= $DB_THREADS"
+echo "Backup dir			= $BACKUP_DIR"
+echo "Work-directory			= $WORKDIR"
+echo "Binlog enabled (0 or 1)		= $ENABLE_BINLOG"
+echo "Use gzip			= $GZIP"
+echo "Logfile 			= $LOGFILE"
+Pause
+
+echo "Restore starting."
+
+# Change to the $BACKUP_DIR, because a lot of this is relative
+cd $BACKUP_DIR
+
+# Let's get going with the actual script
+
+# Test for a valid mysql connection string
+if [ ! `$MYSQL $MYSQL_ARGS --batch --skip-column-names -e "SELECT 0"` = 0 ] ; then echo "Your MySQL connection is not properly set up, exiting" ; exit 1 ; fi
+
+# Initiate logfile
+echo "`date +%Y%m%d%H%M%S` : Starting run, initiating logfile" > $LOGFILE
+
+# Create databases
+for DB in `find . -type d -mindepth 1 | sed -e 's/\.\///' | grep -v 'lost+found'` ; do 
+	if [ $DROP_DATABASES = TRUE ]; then	
+		echo "`date +%Y%m%d%H%M%S` : Dropping databases" >> $LOGFILE ; 
+		$MYSQL $MYSQL_ARGS --batch -e"DROP DATABASE IF EXISTS $DB" ; 
+	fi
+	$MYSQL $MYSQL_ARGS --batch -e"CREATE DATABASE IF NOT EXISTS $DB" 
+	mkdir -p $WORKDIR/$DB 
+done
+echo "`date +%Y%m%d%H%M%S` : Databases prepared" >> $LOGFILE 
+
+
+# Create/get worklist
+echo "`date +%Y%m%d%H%M%S` : Creating worklist in $WORKDIR" >> $LOGFILE
+
+for x in `find . -type f -name *.sql.gz` ; do 
+	DB=`echo $x | sed -e 's/\.\/\([a-zA-Z0-9_]*\)\/\([a-zA-Z0-9_]*\).*/\1/'` 
+	TABLE=`echo $x | sed -e 's/\.\/\([a-zA-Z0-9_]*\)\/\([a-zA-Z0-9_]*\).*/\2/'` 
+	touch $WORKDIR/$DB/restore.$TABLE.sql 
+done
+
+# Ugly way to let mysql read from the workfiles, should be done in a cleaner way
+chmod -R 777 $WORKDIR
+
+# Create the control file (used later to signal when the backup is completed)
+touch $WORKDIR/database.work
+
+echo "`date +%Y%m%d%H%M%S` : Worklist complete, creating import script" >> $LOGFILE
+
+# Make a script with all the connect variables we need
+
+cat > $WORKDIR/i_restore_data.sh << EOF 
+#!/bin/bash
+# Find restore.*-files (tables tagged for restoring) and restore the respective table
+
+while [ \`find . -type f -name restore.*.sql | wc -l || echo 0 \` -gt 0 ] ; do
+		GET_FILE=\`find . -type f -name restore.*.sql | head -1\` 
+		if [ $VERBOSE = TRUE ] ; then 
+			echo "`date +%Y%m%d%H%M%S` : Importing \$GET_FILE" >> $LOGFILE  
+		fi
+		# "tag" table as being-restored, ugly but works
+		mv \$GET_FILE $WORKDIR/\$$.working.sql
+		if [ $? -eq 0 ] ; then
+			DB=\`echo \$GET_FILE | sed -e 's/\.\///' -e 's/\/restore\..*\.sql//'\`
+			TABLE=\`echo \$GET_FILE | sed -e 's/\.\/[a-z0-9_]*//' -e 's/\/restore\.//' -e 's/\.sql//'\`
+			gunzip -c $BACKUP_DIR/\$DB/\$TABLE.[0-9][0-9][0-9].sql.gz | $MYSQL $MYSQL_ARGS \$DB 2>&1 1>> $LOGFILE
+			rm -f $WORKDIR/\$$.working.sql 
+		fi
+		if [ $VERBOSE = TRUE ] ; then 
+			echo "`date +%Y%m%d%H%M%S` : Import of \$GET_FILE completed" >> $LOGFILE 
+		fi
+done
+
+echo "Thread done" >> $WORKDIR/database.work
+EOF
+chmod +x $WORKDIR/i_restore_data.sh
+
+cd $WORKDIR
+
+COUNTER=$DB_THREADS
+# Start as many threads as we need (with sleep so they don't try to get the same table)
+echo "`date +%Y%m%d%H%M%S` : Preparations complete, starting threads"
+echo "`date +%Y%m%d%H%M%S` : Preparations complete, starting threads" >> $LOGFILE
+while [ $COUNTER -gt 0 ] ; do 
+	echo "`date +%Y%m%d%H%M%S` : Starting thread $COUNTER " >> $LOGFILE
+	$WORKDIR/i_restore_data.sh & 
+	let COUNTER=COUNTER-1 
+	sleep 1
+done
+
+echo "`date +%Y%m%d%H%M%S` : Wating for threads to finish."
+echo "`date +%Y%m%d%H%M%S` : Wating for threads to finish." >> $LOGFILE
+
+# Check if all the threads are done, might be done a bit cleaner
+while [ ! `grep done $WORKDIR/database.work | wc -l` -eq $DB_THREADS ] ; do 
+	sleep 3
+done
+
+echo "`date +%Y%m%d%H%M%S` : Removing $WORKDIR"
+echo "`date +%Y%m%d%H%M%S` : Removing $WORKDIR" >> $LOGFILE
+
+rm -rf $WORKDIR
+
+echo "`date +%Y%m%d%H%M%S` : Done!"
+exit 0
+
