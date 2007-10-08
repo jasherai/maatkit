@@ -974,7 +974,7 @@ if ( !caller ) {
                $dbh = get_dbh();
             };
             if ( $EVAL_ERROR ) {
-               info(0, mysql_error_msg($EVAL_ERROR));
+               info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
             }
          }
          if ( $tries >= $opts{w} ) {
@@ -1050,6 +1050,9 @@ if ( !caller ) {
             } qw(tables chunks success failure wallclock time)
          ));
    }
+
+   # Exit status is 1 if there were any failures.
+   exit( sum(0, map { $_->{failure} || 0 } values %stats_for_set) ? 1 : 0 );
 
 }
 
@@ -1375,6 +1378,9 @@ MySQL Parallel Dump does I<not> back up your entire database.  It dumps tables
 and data I<only>.  It does not dump view definitions or stored routines.
 However, if you dump the C<mysql> database, you'll be dumping the stored
 routines anyway.
+
+Exit status is 0 if everything went well, 1 if any chunks failed, and any
+other value indicates an internal error.
 
 =head1 BACKUP SETS
 
