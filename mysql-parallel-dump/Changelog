@@ -1,5 +1,7 @@
 Changelog for mysql-parallel-dump:
 
+   * Made exit status 1 if any errors.
+
 2007-10-05: version 0.9.8
 
    * Added --setperdb option.
