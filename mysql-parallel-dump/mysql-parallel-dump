@@ -1025,7 +1025,8 @@ if ( !caller ) {
       }
 
       if ( $opts{locktables} && !$opts{test} ) {
-         $dbh->do('UNLOCK TABLES')
+         $dbh->do('UNLOCK TABLES');
+         $dbh->commit;
       }
 
       $stats->{wallclock} = time() - $start;
@@ -1038,6 +1039,8 @@ if ( !caller ) {
    }
 
    $dbh->do('UNLOCK TABLES') unless $opts{test};
+   $dbh->commit;
+   $dbh->disconnect;
 
    if ( @sets_to_do > 1 ) {
       info(1, sprintf(
@@ -1220,6 +1223,7 @@ sub do_table {
       }
       eval {
          $dbh->do($sql) unless $opts{test};
+         $dbh->disconnect;
       };
       if ( $EVAL_ERROR ) {
          die mysql_error_msg($EVAL_ERROR) . "\n";
@@ -1283,7 +1287,7 @@ sub get_dbh {
    my $dsn = 'DBI:mysql:;'
       . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
-   my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
+   my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 0, RaiseError => 1, PrintError => 0 } );
    return $dbh;
 }
 
