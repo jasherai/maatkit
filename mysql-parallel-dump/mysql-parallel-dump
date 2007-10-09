@@ -670,8 +670,8 @@ if ( !caller ) {
             --skip-lock-tables
             --triggers
             --tz-utc
-            %D
-            %N
+            '%D'
+            '%N'
          ),
       );
       if ( $opts{C} ) {
