@@ -1,6 +1,7 @@
 Changelog for mysql-parallel-dump:
 
-   * Made exit status 1 if any errors.
+   * LOCK TABLES not inside transaction caused infinite wait (see http://bugs.mysql.com/31479)
+   * Made exit status 1 if any errors, 0 if successful.
 
 2007-10-05: version 0.9.8
 
