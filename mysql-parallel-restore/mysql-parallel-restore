@@ -120,13 +120,15 @@ if ( !caller ) {
       { s => 'fifo!',             d => 'Stream files into a FIFO for --tab (sets --mask 0)' },
       { s => 'host|h=s',          d => 'Connect to host' },
       { s => 'help',              d => 'Show this help message' },
+      { s => 'ignore|i',          d => 'Use the IGNORE option to LOAD DATA INFILE' },
       { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
       { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
-      { s => 'locktables!',       d => 'Use LOCK TABLES (default)' },
+      { s => 'local|L',           d => 'Use LOAD DATA LOCAL INFILE' },
       { s => 'numthread|m=i',     d => 'Number of threads (default #CPUs or 2)' },
       { s => 'password|p=s',      d => 'Password to use when connecting' },
       { s => 'port|P=i',          d => 'Port number to use for connection' },
       { s => 'quiet|q',           d => 'Set --verbose to 0' },
+      { s => 'replace|r',         d => 'Use the REPLACE option to LOAD DATA INFILE' },
       { s => 'socket|S=s',        d => 'Socket file to use for connection' },
       { s => 'tab|T',             d => 'Restore tab-separated' },
       { s => 'tables|t=s',        d => 'Restore only this comma-separated list of tables' },
@@ -454,6 +456,8 @@ sub do_table {
       is_sql_file($a) <=> is_sql_file($b)
    } @files;
 
+   my $fifo;
+
    foreach my $file ( @files ) {
       if ( is_sql_file($file) ) {
          my @args;
@@ -466,7 +470,37 @@ sub do_table {
          $exit_status = system_call( @args ) || $exit_status;
       }
       else {
-         # TODO
+
+         my $sql;
+         my $LOCAL = $opts{L} ? ' LOCAL' : '';
+         my $OPT   = $opts{i} ? 'IGNORE' : $opts{r} ? 'REPLACE' : '';
+         if ( $opts{csv} ) {
+            $sql  = qq{LOAD DATA$LOCAL INFILE '$file.txt' }
+                  . qq{$OPT INTO TABLE `$db`.`$tbl` }
+                  . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
+                  . qq{LINES TERMINATED BY '\\n'};
+         }
+         elsif ( $opts{T} ) {
+            $sql  = qq{LOAD DATA$LOCAL INFILE '$file.txt' }
+                  . qq{$OPT INTO TABLE `$db`.`$tbl` };
+         }
+
+         if ( $sql ) {
+            if ( $opts{test} ) {
+               print $sql, "\n";
+            }
+            else {
+               eval {
+                  $dbh->do($sql) unless $opts{test};
+               };
+               if ( $EVAL_ERROR ) {
+                  die mysql_error_msg($EVAL_ERROR) . "\n";
+               }
+            }
+         }
+         else {
+            die "I don't understand how to load file $file\n";
+         }
       }
    }
 
