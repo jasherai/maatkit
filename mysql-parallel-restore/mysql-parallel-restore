@@ -104,6 +104,7 @@ our $SVN_REV = sprintf("%d", q$Revision: 1021 $ =~ m/(\d+)/g || 0);
 
 # Globals -- as few as possible.
 my %opts;
+my @conn_params;
 
 if ( !caller ) {
 
@@ -212,7 +213,7 @@ if ( !caller ) {
 
    # Gather connection parameters to pass to mysql.  Order matters; mysql
    # will have a problem if --defaults-file isn't first.
-   my @conn_params = (
+   @conn_params = (
       [qw(--defaults-file F)],
       [qw(--host          h)],
       [qw(--password      p)],
@@ -276,11 +277,11 @@ if ( !caller ) {
    };
 
    # ############################################################################
-   # Iterate over "sets" of tables.
+   # Discover files to be restored.
    # ############################################################################
-   my %tables_for_set;
+   my @tables_to_do;
    my %files_for_table;
-   my %stats_for_set;
+   my %stats;
 
    # Find directories and files and save them.
    File::Find::find(
@@ -293,7 +294,12 @@ if ( !caller ) {
                   my @dirs = grep { $_ } File::Spec->splitdir($dir);
                   my $db = $dirs[-1];
                   my ($tbl) = $file =~ m/^([^.]+)/;
+                  $stats{files}++;
                   push @{$files_for_table{$db}->{$tbl}}, $File::Find::name;
+                  push @tables_to_do, {
+                     D => $db,
+                     N => $tbl,
+                  };
                }
             }
          },
@@ -301,269 +307,111 @@ if ( !caller ) {
       map { File::Spec->rel2abs($_) } @ARGV
    );
 
-   use Data::Dumper;
-   print Dumper(\%files_for_table);
-   exit(0);
-
-=pod
-   # Do all databases and tables in a 'default' set, possibly excluding those
-   # that have been included in named sets above.  Or, if --setperdb is
-   # specified, place each into its own set.
-   if ( !$opts{sets} || $opts{defaultset} ) {
-      @databases = grep {
-         $_ !~ m/^(information_schema|lost\+found)$/mi
-      } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
-      if ( !$opts{sets} ) {
-         @databases = grep {
-            ( !$opts{d} || exists($opts{d}->{$_}) )
-            && ( !$opts{dbregex} || $_ =~ m/$opts{dbregex}/ )
-            && ( !exists $opts{g}->{$_} )
-         } @databases;
-      }
-      DATABASE:
-      foreach my $database ( @databases ) {
-         my $set = $opts{setperdb} ? $database : 'default';
-         push @{$databases_for{$set}}, $database;
-         @sets_to_do = unique(@sets_to_do, $set);
-      }
-   }
-
    # ############################################################################
-   # Do each backup set.
+   # Canonicalize table list in the order they were discovered, filtering out
+   # tables that should not be done.
    # ############################################################################
-   SET:
-   foreach my $set ( @sets_to_do ) {
-
-      if ( !$opts{sets} ) {
-         # Must fetch tables.
-         foreach my $database ( @{$databases_for{$set}} ) {
-            get_tables_in_database(
-               dbh            => $dbh,
-               set            => $set,
-               database       => $database,
-               age            => $age,
-               opts           => \%opts,
-               tables_in_sets => \%tables_in_sets,
-               stats_for_set  => \%stats_for_set,
-               table_status   => \%table_status,
-               tables_for_set => \%tables_for_set,
-            );
-         }
-      }
-
-      if ( !$tables_for_set{$set} || !@{$tables_for_set{$set}} ) {
-         info(2, "Nothing to do for set $set");
-         next SET;
-      }
-      my $start = time();
-      my $stats = $stats_for_set{$set};
-
-      # #########################################################################
-      # Lock tables if needed.  Cycle until there are none to lock or we get the
-      # lock (some tables could have been dropped between the time we got the
-      # list and now).
-      # #########################################################################
-      if ( $opts{locktables} && !$opts{test} ) {
-         my @to_lock;
-         my $done;
-         do {
-            @to_lock = unique(
-               map { "`$_->[0]`.`$_->[1]` READ" } @{$tables_for_set{$set}} );
-            if ( $backedup_sth ) {
-               push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
-            }
-            eval {
-               $dbh->do('LOCK TABLES ' . join(', ', @to_lock));
-               $done = 1;
-            };
-            if ( $EVAL_ERROR ) {
-               my $err = mysql_error_msg($EVAL_ERROR);
-               my ($db, $tbl) = $err =~ m/Table '([^.]+)\.([^.]+)' doesn't exist/;
-               if ( $db && $tbl ) {
-                  # Remove the nonexistent table and try again.
-                  $tables_for_set{$set} = [
-                     grep { $_->[0] ne $db || $_->[1] ne $tbl } @{$tables_for_set{$set}}
-                  ];
-                  info(0, $err);
-               }
-               else {
-                  die "Cannot lock tables: $err";
-               }
-            }
-         } while ( @to_lock && !$done );
-      }
-
-      # #########################################################################
-      # Flush logs.
-      # #########################################################################
-      if ( $opts{flushlog} && !$opts{test} ) {
-         $dbh->do('FLUSH LOGS');
-      }
-
-      my @work_to_do;
-      foreach my $db_tbl ( @{$tables_for_set{$set}} ) {
-         my @chunks = get_chunks($dbh, $opts{C}, $set, @$db_tbl, \%table_status);
-         my $i = 0;
-         foreach my $chunk ( @chunks ) {
-            push @work_to_do, {
-               D => $chunk->{D},
-               N => $chunk->{N},
-               S => $chunk->{S},
-               C => $i++,
-               W => $chunk->{W},
-            };
-            $stats_for_set{$set}->{chunks}++;
-         }
-      }
-
-      # #########################################################################
-      # Get the master position.
-      # #########################################################################
-      if ( $opts{b} && !$opts{test} ) {
-         my $filename = filename($set, '00_master_data.sql');
-         makedir($filename);
-         open my $file, ">", $filename or die $OS_ERROR;
-         my %wanted = map { $_ => 1 }
-            qw(file position master_host master_port master_log_file
-            read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
-            exec_master_log_pos);
-
-         my ( $master_pos, $slave_pos );
-         eval {
-            $master_pos = $dbh->selectrow_hashref('SHOW MASTER STATUS');
-         };
-         eval {
-            $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
-            print $file "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
-                      . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
-                      . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n";
-         };
-         my %hash;
-         foreach my $thing ( $master_pos, $slave_pos ) {
-            next unless $thing;
-            foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
-               print $file "-- $key $thing->{$key}\n";
-            }
-         }
-
-         # Put the details of the chunks into the file.
-         foreach my $chunk ( @work_to_do ) {
-            print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n";
-         }
-
-         close $file or die $OS_ERROR;
-      }
-
-      # #########################################################################
-      # Design the format for printing out.
-      # #########################################################################
-      my ( $maxdb, $maxtbl, $maxset);
-      $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
-      $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
-      $maxset = max(3, length($set));
-      my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
-      info(2, sprintf($format, qw(SET DATABASE TABLE CHUNK TIME STATUS THREADS)));
-
-      # #########################################################################
-      # Assign the work to child processes.  Initially just start --numthreads
-      # number of children.  Each child that exits will trigger a new one to start
-      # after that.  This is really a terrible hack -- I wish Perl had decent
-      # threading support so I could just queue work for a fixed pool of worker
-      # threads!
-      # #########################################################################
-
-      my %kids;
-      while ( @work_to_do || %kids ) {
-
-         # Wait for the MySQL server to become responsive.
-         my $tries = 0;
-         while ( !$dbh->ping && $tries++ < $opts{w} ) {
-            sleep(1);
-            eval {
-               $dbh = get_dbh();
-            };
-            if ( $EVAL_ERROR ) {
-               info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
-            }
-         }
-         if ( $tries >= $opts{w} ) {
-            die "Too many retries, exiting.\n";
-         }
-
-         # Start a new child process.
-         while ( @work_to_do && $opts{m} > keys %kids ) {
-            my $todo = shift @work_to_do;
-            $todo->{time} = time;
-            my $pid = fork();
-            die "Can't fork: $OS_ERROR" unless defined $pid;
-            if ( $pid ) {              # I'm the parent
-               $kids{$pid} = $todo;
-            }
-            else {                     # I'm the child
-               my $exit_status = 0;
-               $exit_status = do_table($todo) || $exit_status;
-               exit($exit_status);
-            }
-         }
-
-         # Possibly wait for child.
-         my $reaped = 0;
-         foreach my $kid ( keys %exited_children ) {
-            my $status = $exited_children{$kid};
-            my $todo   = $kids{$kid};
-            my $stat   = $status->{exit_status};
-            if ( !$opts{test} && !$stat && $backedup_sth ) {
-               $backedup_sth->execute(@{$todo}{qw(S D N)});
-            }
-            my $time = $status->{exit_time} - $todo->{time};
-            info(2, sprintf($format, @{$todo}{qw(S D N C)},
-               sprintf('%.2f', $time), $stat, scalar(keys %kids)));
-            $stats->{ $stat ? 'failure' : 'success' }++;
-            $stats->{time} += $time;
-            delete $kids{$kid};
-            delete $exited_children{$kid};
-            $reaped = 1;
-         }
-
-         if ( !$reaped ) {
-            # Don't busy-wait.  But don't wait forever either, as a child may exit
-            # and signal while we're not sleeping, so if we sleep forever we may
-            # not get the signal.
-            sleep(1);
-         }
-      }
-
-      if ( $opts{locktables} && !$opts{test} ) {
-         $dbh->do('UNLOCK TABLES')
-      }
-
-      $stats->{wallclock} = time() - $start;
-      info(1, sprintf( (@sets_to_do ? '%12s:          ' : '%s:')
-                      . '%5d tables, %5d chunks, %5d successes, %2d failures, '
-                      . '%6.2f wall-clock time, %6.2f dump time',
-                      $set, $stats->{tables}, $stats->{chunks}, $stats->{success} || 0,
-                      $stats->{failure} || 0, $stats->{wallclock},
-                      $stats->{time}));
+   {
+      my %seen;
+      @tables_to_do = grep {
+         my ( $db, $tbl ) = @{$_}{qw(D N)};
+            !$seen{$db}->{$tbl}++
+            && ( !$opts{d} || exists($opts{d}->{$db}) )
+            && ( !$opts{dbregex} || $db =~ m/$opts{dbregex}/ )
+            && ( !exists $opts{g}->{$db} )
+            && ( !$opts{t} || exists($opts{t}->{$tbl}) )
+            && ( !$opts{tblregex} || $tbl =~ m/$opts{tblregex}/ )
+         } @tables_to_do;
    }
 
-   $dbh->do('UNLOCK TABLES') unless $opts{test};
+   # #########################################################################
+   # Design the format for printing out.
+   # #########################################################################
+   my ( $maxdb, $maxtbl);
+   $maxdb  = max(8, map { length($_->{D}) } @tables_to_do);
+   $maxtbl = max(5, map { length($_->{N}) } @tables_to_do);
+   my $format = "%-${maxdb}s %-${maxtbl}s %5s %6s %7s";
+   info(2, sprintf($format, qw(DATABASE TABLE TIME STATUS THREADS)));
 
-   if ( @sets_to_do > 1 ) {
-      info(1, sprintf(
-         'Final result: %2d sets, %5d tables, %5d chunks, %5d successes, %2d failures, '
-         . '%6.2f wall-clock time, %6.2f dump time',
-         scalar(@sets_to_do),
-            map {
-               my $thing = $_;
-               sum(0, map { $_->{$thing} || 0 } values %stats_for_set);
-            } qw(tables chunks success failure wallclock time)
-         ));
+   # #########################################################################
+   # Assign the work to child processes.  Initially just start --numthreads
+   # number of children.  Each child that exits will trigger a new one to start
+   # after that.
+   # #########################################################################
+   my $start = time();
+   my %kids;
+   while ( @tables_to_do || %kids ) {
+
+      # Wait for the MySQL server to become responsive.
+      my $tries = 0;
+      while ( !$dbh->ping && $tries++ < $opts{w} ) {
+         sleep(1);
+         eval {
+            $dbh = get_dbh();
+         };
+         if ( $EVAL_ERROR ) {
+            info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
+         }
+      }
+      if ( $tries >= $opts{w} ) {
+         die "Too many retries, exiting.\n";
+      }
+
+      # Start a new child process.
+      while ( @tables_to_do && $opts{m} > keys %kids ) {
+         my $todo = shift @tables_to_do;
+         $todo->{time} = time;
+         my $pid = fork();
+         die "Can't fork: $OS_ERROR" unless defined $pid;
+         if ( $pid ) {              # I'm the parent
+            $kids{$pid} = $todo;
+         }
+         else {                     # I'm the child
+            my $exit_status = 0;
+            $exit_status = do_table(
+               @{$todo}{qw(D N)},
+               @{$files_for_table{$todo->{D}}->{$todo->{N}}}
+            ) || $exit_status;
+            exit($exit_status);
+         }
+      }
+
+      # Possibly wait for child.
+      my $reaped = 0;
+      foreach my $kid ( keys %exited_children ) {
+         my $status = $exited_children{$kid};
+         my $todo   = $kids{$kid};
+         my $stat   = $status->{exit_status};
+         my $time   = $status->{exit_time} - $todo->{time};
+         info(2, sprintf($format, @{$todo}{qw(D N)},
+            sprintf('%.2f', $time), $stat, scalar(keys %kids)));
+         $stats{ $stat ? 'failure' : 'success' }++;
+         $stats{time} += $time;
+         delete $kids{$kid};
+         delete $exited_children{$kid};
+         $reaped = 1;
+      }
+
+      if ( !$reaped ) {
+         # Don't busy-wait.  But don't wait forever either, as a child may exit
+         # and signal while we're not sleeping, so if we sleep forever we may
+         # not get the signal.
+         sleep(1);
+      }
    }
+
+   info(1, sprintf(
+      'Final result: %5d tables, %5d files, %5d successes, %2d failures, '
+      . '%6.2f wall-clock time, %6.2f load time',
+      scalar(@tables_to_do),
+         map {
+            $stats{$_} || 0
+         } qw(files success failure wallclock time)
+      ));
 
    # Exit status is 1 if there were any failures.
-   exit( sum(0, map { $_->{failure} || 0 } values %stats_for_set) ? 1 : 0 );
+   exit( $stats{failure} ? 1 : 0 );
 
-=cut
 }
 
 # ############################################################################
@@ -592,62 +440,42 @@ sub unique {
 # Interpolates % directives from a db/tbl hashref.
 sub interp {
    my ( $todo, @strings ) = @_;
-   map { $_ =~ s/%(\d+)?([SDNCW])/$1 ? sprintf("%0$1d", $todo->{$2}) : $todo->{$2}/ge } @strings;
+   map { $_ =~ s/%([DNC])/$todo->{$2}/g } @strings;
    return @strings;
 }
 
-# Actually dumps a table.
+# Actually restores a table.
 sub do_table {
-   my ( $todo ) = @_;
+   my ( $db, $tbl, @files ) = @_;
    my $exit_status = 0;
 
-   # Dump via SELECT INTO OUTFILE.
-   if ( $opts{T} ) {
-      my $dbh = get_dbh();
-      my $filename = filename(interp($todo, '%S', '%D', '%N.%3C'));
-      makedir($filename);
-      my $sql;
-      if ( $opts{csv} ) {
-         $sql  = qq{SELECT * INTO OUTFILE '$filename.txt' }
-               . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
-               . qq{LINES TERMINATED BY '\\n' FROM `$todo->{D}`.`$todo->{N}`};
+   # Sort sql files first.
+   @files = reverse sort {
+      is_sql_file($a) <=> is_sql_file($b)
+   } @files;
+
+   foreach my $file ( @files ) {
+      if ( is_sql_file($file) ) {
+         my @args;
+         if ( $file =~ m/\.gz/ ) {
+            @args = (qw(gunzip --stdout), $file, qw(| mysql), $db, @conn_params);
+         }
+         else {
+            @args = (qw(mysql), $db, @conn_params, '<', $file);
+         }
+         $exit_status = system_call( @args ) || $exit_status;
       }
       else {
-         $sql = "SELECT * INTO OUTFILE '$filename.txt' "
-              . "FROM `$todo->{D}`.`$todo->{N}` WHERE $todo->{W}";
+         # TODO
       }
-      if ( $opts{test} ) {
-         print $sql, "\n";
-      }
-      eval {
-         $dbh->do($sql) unless $opts{test};
-      };
-      if ( $EVAL_ERROR ) {
-         die mysql_error_msg($EVAL_ERROR) . "\n";
-      }
-      if ( $opts{gzip} ) {
-         $exit_status = system_call(
-            'gzip', '--force', '--fast', qq{"$filename.txt"});
-      }
-   }
-
-   # Normal dump using mysqldump.  If $opts{T} was set, the following won't dump
-   # the data because --no-data is in @mysqldump_args.  If the user left the
-   # options alone, we can predict the filename and directory naming convention,
-   # and ensure the directiories exist.  Otherwise the user must ensure the
-   # directories exist, because it's a hard job to figure out which argument in
-   # the array is a filename.  We only do this on the first chunk for each
-   # table.
-
-   if ( !$opts{T} ) {
-      # It's either a custom command, or it's the first chunk for a
-      # tab-separated table and we're going to dump the schema, or it's a
-      # regular SQL dump and we're going to dump data.
-      # my @args = map { interp($todo, $_) } @mysqldump_args;
-      # $exit_status = system_call( @args ) || $exit_status;
    }
 
    return $exit_status;
+}
+
+sub is_sql_file {
+   my ( $filename ) = @_;
+   return $filename =~ m/\.sql(?:\.gz)?$/ ? 1 : 0;
 }
 
 sub get_dbh {
