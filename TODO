@@ -2,6 +2,7 @@
 Pipe output from duplicate-key-checker into another tool to graph structures 
    (check out dot for graphing)
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
+http://www.mysqldiff.org/
 query sniper:
    * http://www.stillhq.com/mysql/000008.html
    * Allow up to max_connections-X connections
