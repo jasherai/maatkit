@@ -113,6 +113,7 @@ if ( !caller ) {
    # ############################################################################
 
    my @opt_spec = (
+      { s => 'commit',            d => 'Commit betwen loading each tab-separated file' },
       { s => 'csv',               d => 'Files are in in CSV format (implies --tab)' },
       { s => 'databases|d=s',     d => 'Restore only this comma-separated list of databases' },
       { s => 'dbregex=s',         d => 'Restore only databases whose names match this pattern' },
@@ -123,7 +124,7 @@ if ( !caller ) {
       { s => 'ignore|i',          d => 'Use the IGNORE option to LOAD DATA INFILE' },
       { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
       { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
-      { s => 'local|L',           d => 'Use LOAD DATA LOCAL INFILE' },
+      { s => 'local|L',           d => 'Use the LOCAL option to LOAD DATA INFILE' },
       { s => 'numthread|m=i',     d => 'Number of threads (default #CPUs or 2)' },
       { s => 'password|p=s',      d => 'Password to use when connecting' },
       { s => 'port|P=i',          d => 'Port number to use for connection' },
@@ -456,7 +457,11 @@ sub do_table {
       is_sql_file($a) <=> is_sql_file($b)
    } @files;
 
-   my $fifo;
+   # TODO create database if not exists?
+   # TODO truncate table
+   # TODO allow to not load the SQL file if it exists
+
+   my $fifo; # TODO make the fifo
 
    foreach my $file ( @files ) {
       if ( is_sql_file($file) ) {
@@ -491,7 +496,8 @@ sub do_table {
             }
             else {
                eval {
-                  $dbh->do($sql) unless $opts{test};
+                  $dbh->do($sql);
+                  $dbh->commit if $opts{commit};
                };
                if ( $EVAL_ERROR ) {
                   die mysql_error_msg($EVAL_ERROR) . "\n";
@@ -504,6 +510,7 @@ sub do_table {
       }
    }
 
+   # TODO remove the fifo
    return $exit_status;
 }
 
