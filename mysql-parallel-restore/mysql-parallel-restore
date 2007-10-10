@@ -100,7 +100,7 @@ use Time::HiRes qw(time);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision: 1021 $ =~ m/(\d+)/g || 0);
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 # Globals -- as few as possible.
 my %opts;
@@ -113,7 +113,8 @@ if ( !caller ) {
    # ############################################################################
 
    my @opt_spec = (
-      { s => 'commit',            d => 'Commit betwen loading each tab-separated file' },
+      { s => 'commit',            d => 'Commit after loading each tab-separated file' },
+      { s => 'createdb',          d => 'Create databases that do not exist' },
       { s => 'csv',               d => 'Files are in in CSV format (implies --tab)' },
       { s => 'databases|d=s',     d => 'Restore only this comma-separated list of databases' },
       { s => 'dbregex=s',         d => 'Restore only databases whose names match this pattern' },
@@ -131,10 +132,12 @@ if ( !caller ) {
       { s => 'quiet|q',           d => 'Set --verbose to 0' },
       { s => 'replace|r',         d => 'Use the REPLACE option to LOAD DATA INFILE' },
       { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-      { s => 'tab|T',             d => 'Restore tab-separated' },
+      { s => 'sql!',              d => 'Load SQL files first with mysqldump (default)' },
+      { s => 'tab|T',             d => 'Restore tab-separated files with LOAD DATA INFILE' },
       { s => 'tables|t=s',        d => 'Restore only this comma-separated list of tables' },
       { s => 'test',     ,        d => 'Print commands instead of executing them' },
       { s => 'tblregex=s',        d => 'Restore only tables whose names match this pattern' },
+      { s => 'truncate',          d => 'Delete (TRUNCATE) all rows before importing' },
       { s => 'umask=s',           d => 'Set umask to this value, in octal' },
       { s => 'user|u=s',          d => 'User for login if not current user' },
       { s => 'verbose|v+',        d => 'Verbosity (default 1, can specify multiple times)' },
@@ -435,18 +438,6 @@ sub info {
    }
 }
 
-sub unique {
-   my %seen;
-   grep { !$seen{$_}++ } @_;
-}
-
-# Interpolates % directives from a db/tbl hashref.
-sub interp {
-   my ( $todo, @strings ) = @_;
-   map { $_ =~ s/%([DNC])/$todo->{$2}/g } @strings;
-   return @strings;
-}
-
 # Actually restores a table.
 sub do_table {
    my ( $db, $tbl, @files ) = @_;
@@ -457,11 +448,17 @@ sub do_table {
       is_sql_file($a) <=> is_sql_file($b)
    } @files;
 
-   # TODO create database if not exists?
-   # TODO truncate table
-   # TODO allow to not load the SQL file if it exists
+   my $dbh = get_dbh();
 
-   my $fifo; # TODO make the fifo
+   if ( $opts{createdb} ) {
+      $dbh->do("CREATE DATABASE IF NOT EXISTS `$db`");
+   }
+
+   if ( $opts{truncate} ) {
+      $dbh->do("TRUNCATE TABLE `$db`.`$tbl`");
+   }
+
+   my $fifo;
 
    foreach my $file ( @files ) {
       if ( is_sql_file($file) ) {
@@ -1068,7 +1065,7 @@ Baron Schwartz.
 
 =head1 VERSION
 
-This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 1021 $.
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 =cut
 
