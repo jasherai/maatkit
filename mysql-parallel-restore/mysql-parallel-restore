@@ -240,7 +240,7 @@ if ( !caller ) {
    }
 
    if ( $opts{help} ) {
-      print "Usage: mysql-parallel-restore <options>\n\n";
+      print "Usage: mysql-parallel-restore <options> PATH [PATH...]\n\n";
       print $opt_parser->usage();
       (my $usage = <<"      USAGE") =~ s/^         //gm;
 
