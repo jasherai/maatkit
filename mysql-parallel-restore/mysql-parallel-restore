@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is a program to restore data dumped by MySQL Parallel Dump.
+# This is a program to load data into MySQL at high speed.
 #
 # This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
 # are welcome.
@@ -244,8 +244,8 @@ if ( !caller ) {
       print $opt_parser->usage();
       (my $usage = <<"      USAGE") =~ s/^         //gm;
 
-         mysql-parallel-restore loads files dumped by mysql-parallel-dump.
-         For more details, please read the documentation:
+         mysql-parallel-restore loads files into MySQL at high speed.  For
+         more details, please read the documentation:
 
             perldoc mysql-parallel-restore
 
@@ -601,179 +601,54 @@ sub system_call {
 
 # ############################################################################
 # Documentation.
-# TODO
+# TODO: checksum a server before and after!
+# TODO: add --database option
+# TODO: documentation is only done up to OPTIONS.
 # ############################################################################
 
 =pod
 
 =head1 NAME
 
-mysql-parallel-restore - Dump sets of MySQL tables in parallel.
+mysql-parallel-restore - Load data into MySQL at high speed.
 
 =head1 SYNOPSIS
 
-  mysql-parallel-restore
-  mysql-parallel-restore --tab
-  mysql-parallel-restore --sets order,profile,session --settable meta.backupset
+  mysql-parallel-restore /path/to/files
 
 =head1 DESCRIPTION
 
-MySQL Parallel Dump connects to a MySQL server, finds database and table names,
-and dumps them in parallel for speed.  It can be used in several pre-packaged
-ways, or as a generic wrapper to call some program in parallel, passing it
-parameters for each table.  It supports backup sets and dumping only tables that
-have changed since the last dump.
+MySQL Parallel Restore is a way to load SQL or delimited-file dumps into MySQL
+in parallel at high speed.  It is especially designed for restoring files
+dumped by MySQL Parallel Dump (see L<mysql-parallel-dump>).  It automatically
+detects whether a file contains SQL or delimited data from the filename
+extension, and either shells out to C<mysql> or executes C<LOAD DATA INFILE>
+with the file.  On UNIX-like systems, it will even make a FIFO to decompress
+gzipped files for C<LOAD DATA INFILE>.
 
-To dump all tables to gzipped files in the current directory, each database with
-its own directory, with a global read lock, flushing and recording binary log
-positions, each table in a single file:
+By default it discovers all files in the directory you specify on the command
+line.  It uses the file's parent directory as the database name and the file's
+name (up to the first dot) as the table name.  It can deal with files named
+like the following:
 
-  mysql-parallel-restore
+  dir/tbl.sql
+  dir/tbl.txt
+  dir/tbl.csv
 
-To dump to tab-separated files with C<SELECT INTO OUTFILE>, each table with
-separate data and SQL files:
+It is also happy with files that look like this, where C<EXT> is one of the
+extensions just listed.
 
-  mysql-parallel-restore --tab
+  dir/tbl.EXT.000
+  dir/tbl.EXT.000.gz
 
-To dump one or more backup sets (see L<"BACKUP SETS">):
+By default, it loads C<SQL> files first, if they exist, then loads C<CSV> or
+C<TXT> files next, in order of the numbers in the filename extension as just
+shown.  This makes it easy for you to reload a table's definition followed by
+its data, in case you dumped them into separate files (as happens with
+C<mysqldump>'s C<--tab> option).
 
-  mysql-parallel-restore --sets set1,set2,set3 --settable meta.backupset
-
-To "write your own command line," use C<--> to indicate where the arguments for
-MySQL Parallel Dump stop and where the arguments for C<mysqldump> (or any other
-program) begin.  The following example shows C<mysqldump>, and aside from simpler
-options to C<mysqldump>, is basically what happens when you specify no arguments
-at all:
-
-  mysql-parallel-restore -- mysqldump --skip-lock-tables '%D' '%N' \
-     \| gzip --fast -c - \> '%D.%N.gz'
-
-The C<%> modifiers are macros (see L<"MACROS">).  The C<--skip-lock-tables>
-argument is very important in that last example, because otherwise both MySQL
-Parallel Dump and C<mysqldump> will lock tables, so C<mysqldump> will hang,
-waiting for the locks.  Notice the shell metacharacters C<|> and C<E<gt>> are
-escaped so the shell won't interpret them, and they'll get passed through to the
-generated command-line.
-
-There's no reason you can't use MySQL Parallel Dump to do other tasks in
-parallel, such as C<OPTIMIZE TABLE>:
-
-  mysql-parallel-restore --noflushlock --nolocktables -- mysqlcheck --optimize '%D' '%N'
-
-When you use built-in defaults, MySQL Parallel Dump will relay these arguments
-on to every forked copy of C<mysqldump>: L<"--defaults-file">, L<"--host">,
-L<"--port">, L<"--socket">, L<"--user">, L<"--password">.  If you write your own
-command-line, you will need to specify them manually.
-
-MySQL Parallel Dump does I<not> back up your entire database.  It dumps tables
-and data I<only>.  It does not dump view definitions or stored routines.
-However, if you dump the C<mysql> database, you'll be dumping the stored
-routines anyway.
-
-Exit status is 0 if everything went well, 1 if any chunks failed, and any
+Exit status is 0 if everything went well, 1 if any files failed, and any
 other value indicates an internal error.
-
-MySQL Parallel Dump doesn't clean out any destination directories before
-dumping into them.  You can move away the old destination, then remove it
-after a successful dump, with a shell script like the following:
-
-   #!/bin/sh
-   CNT=`ls | grep -c old`;
-   if [ -d default ]; then mv default default.old.$CNT;
-   mysql-parallel-restore
-   if [ $? != 0 ]
-   then
-      echo "There were errors, not purging old sets."
-   else
-      echo "No errors during dump, purging old sets."
-      rm -rf default.old.*
-   fi
-
-=head1 BACKUP SETS
-
-Backup sets are groups of logically related tables you want to backup together.
-You specify a set by inserting the table names into a table in the MySQL server
-from which you're dumping, and then naming it in the L<"--sets"> option.  MySQL
-Parallel Dump always works a set at a time; if you don't specify a set, it
-auto-discovers tables, filters them with the various command-line options
-(L<"--databases">, etc) and considers them the default set.
-
-The table that stores backup sets should have at least these columns: setname,
-priority, db, tbl.  The following is a suggested table structure:
-
-  CREATE TABLE backupset (
-    setname  CHAR(10)  NOT NULL,
-    priority INT       NOT NULL DEFAULT 0,
-    db       CHAR(64)  NOT NULL,
-    tbl      CHAR(64)  NOT NULL,
-    ts       TIMESTAMP NOT NULL,
-    PRIMARY KEY(setname, db, tbl),
-    KEY(setname, priority, db, tbl)
-  );
-
-Entries are ordered by priority, db, and tbl.  Priority 0 tables are dumped
-first, not last.  If it looks like tables are dumped in the wrong order, it's
-probably because they're being dumped asynchronously.  The output is printed
-when the dump finishes, not when it starts.
-
-If you specify L<"--age">, MySQL Parallel Dump expects the C<ts> column to
-exist, and will update the column to the current date and time when it
-successfully dumps a table.
-
-Don't use C<default> as a set name.  It is used when you don't specify any
-sets and when you want all tables not explicitly assigned to a set to be
-dumped (see L<"--defaultset">).
-
-Set names may contain only lowercase letters, numbers, and underscores.
-
-=head1 CHUNKS
-
-MySQL Parallel Dump can break your tables into chunks when dumping, and put
-approximately the amount of data you specify into each chunk.  This is useful to
-avoid enormous files for restoration, which can not only take a long time but
-may be a lot of extra work for transactional storage engines like InnoDB.  It
-can create a huge rollback segment in your tablespace.
-
-To dump in chunks, specify the L<"--chunksize"> option.  This option is an
-integer with an optional suffix.  Without the suffix, it's the number of rows
-you want in each chunk.  With the suffix, it's the approximate size of the data.
-
-MySQL Parallel Dump tries to use index statistics to calculate where the
-boundaries between chunks should be.  If the values are not evenly distributed,
-some chunks can have a lot of rows, and others may have very few or even none.
-Some chunks can exceed the size you want.
-
-When you specify the size with a suffix, the allowed suffixes are k, M and G,
-for kibibytes, mebibytes, and gibibytes, respectively.  MySQL Parallel Dump
-doesn't know anything about data size.  It asks MySQL (via C<SHOW TABLE STATUS>)
-how long an average row is in the table, and converts your option to a number
-of rows.
-
-Not all tables can be broken into chunks.  MySQL Parallel Dump looks for an
-index whose leading column is numeric (integers, real numbers, and date and time
-types).  It prefers the primary key if its first column is chunk-able.
-Otherwise it chooses the first chunk-able column in the table.
-
-Generating a series of C<WHERE> clauses to divide a table into evenly-sized
-chunks is difficult.  If you have any ideas on how to improve the algorithm,
-please write to the author (see L<"BUGS">).
-
-=head1 MACROS
-
-MySQL Parallel Dump can insert C<%> variables into arguments.  The available macros
-are as follows:
-
-  MACRO  MEANING
-  =====  =================
-  %S     The backup set
-  %D     The database name
-  %N     The table name
-  %C     The chunk number
-  %W     The WHERE clause
-
-You can place a number between the C<%> and the letter.  The macro replacement
-then assumes it's a digit and pads it with leading zeroes (in practice, this is
-only useful for C<%C>).
 
 =head1 OUTPUT
 
@@ -782,68 +657,31 @@ commands that would be executed.
 
 When L<"--verbose"> is 0, there is normally no output unless there's an error.
 
-When L<"--verbose"> is 1, there is one line of output for each backup set,
-showing the set, how many tables and chunks were dumped with what status, how
-much time elapsed, and how much time the parallel dump jobs added up to.  A
-final line shows sums for all sets, unless there is only one set.
+When L<"--verbose"> is 1, there is one line of output for the entire job,
+showing how many tables were processed, how many files were loaded with what
+status, how much time elapsed, and how much time the parallel load jobs added
+up to.
 
-When L<"--verbose"> is 2, there is also one line of output for each table.
-Each line is printed when a forked "child" process ends and is removed from
-the list of children.  The output shows the backup set, database, table,
-seconds spent dumping, the exit status of the forked dump process, and number
-of current processes (including the one just reaped; so this typically shows
-"how many are running in parallel").  A status of 0 indicates success:
+When L<"--verbose"> is 2, there's one line of output per table, showing extra
+data such as how many threads were running when each table finished loading:
 
-  SET     DATABASE TABLE         TIME STATUS THREADS
-  default mysql    db               0      0       4
-  default mysql    columns_priv     0      0       4
-  default mysql    help_category    0      0       3
+  DATABASE TABLE            FILES  TIME STATUS THREADS
+  sakila   language             2  0.07      0       2
+  sakila   film_actor           2  0.07      0       2
+  sakila   actor                2  0.06      0       2
+  sakila   payment              2  0.07      0       2
+  sakila   transport_backup     2  0.05      0       2
+  sakila   country              2  0.08      0       2
+  sakila   film                 2  0.05      0       2
+  sakila   rental               2  0.07      0       2
 
-=head1 SPEED OF PARALLEL DUMPS
+=head1 SPEED OF PARALLEL LOADING
 
-How much faster is it to dump in parallel?  That depends on your hardware and
-data.  You may be able dump files twice as fast, or more if you have lots of
-disks and CPUs.  Here are some user-contributed figures.
-
-The following table is for a 3.6GHz Xeon machine with 4 processors and a RAID-10
-array of 15k disks, directly attached to the server with a fibre channel.  Most
-of the space is in one huge table that wasn't dumped in parallel:
-
-  COMMAND                      SIZE  TIME
-  --------------------------  -----  ----
-  mysql-parallel-restore         1.4GB   269
-  mysqldump                   1.4GB   345
-
-On the same machine, in a database with lots of roughly equal-sized tables:
-
-  COMMAND                      SIZE  TIME
-  --------------------------  -----  ----
-  mysql-parallel-restore         117MB     7
-  mysqldump                   117MB    37
-
-It doesn't always work that well.  A dual 2.80GHz Xeon server with a RAID-5
-array of three 7200RPM SATA disk drives running MySQL 5.0.38 on GNU/Linux
-achieved the following dump times:
-
-  COMMAND                      SIZE  TIME
-  --------------------------  -----  ----
-  mysql-parallel-restore         3.0GB  2596
-  mysqldump | gzip --fast     3.0GB  3195
-
-While dumping two threads in parallel, this machine was at an average of 74%
-CPU utilization and 12% I/O wait.  This machine doesn't have enough disks and
-CPUs to do that many things at once, so it's not going to speed up much.
-
-Dumping lots of tiny tables by forking of lots of C<mysqldump> processes isn't
-usually much faster, because of the overhead of starting C<mysqldump>,
-connecting, inspecting the table, and dumping it.  Note that tab-separated
-dumps are typically much faster and don't suffer as much from the effects of
-many tiny tables, because they're not done via C<mysqldump>.
+User-contributed benchmarks are welcome.
 
 =head1 OPTIONS
 
-Some options can be disabled by prefixing them with C<--no>, such as
-C<--no-gzip>.
+Some options can be disabled by prefixing them with C<--no>.
 
 =over
 
