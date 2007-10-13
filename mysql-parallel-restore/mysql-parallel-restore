@@ -134,7 +134,7 @@ if ( !caller ) {
       { s => 'quiet|q',           d => 'Set --verbose to 0' },
       { s => 'replace|r',         d => 'Use the REPLACE option to LOAD DATA INFILE' },
       { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-      { s => 'sql!',              d => 'Load SQL files first with mysqldump (default)' },
+      { s => 'sql!',              d => 'Load SQL files first with mysql (default)' },
       { s => 'tab|T',             d => 'Restore tab-separated files with LOAD DATA INFILE' },
       { s => 'tables|t=s',        d => 'Restore only this comma-separated list of tables' },
       { s => 'test',     ,        d => 'Print commands instead of executing them' },
@@ -153,6 +153,9 @@ if ( !caller ) {
       v        => 1,
       basedir  => File::Spec->curdir(),
       opt      => 1,
+      commit   => 1,
+      fifo     => 1,
+      sql      => 1,
    );
 
    my $opt_parser = OptionParser->new(@opt_spec);
@@ -416,7 +419,7 @@ if ( !caller ) {
    $stats{wallclock} = time() - $start;
 
    info(1, sprintf(
-      'Final result: %5d tables, %5d files, %5d successes, %2d failures, '
+      '%5d tables, %5d files, %5d successes, %2d failures, '
       . '%6.2f wall-clock time, %6.2f load time',
          map {
             $stats{$_} || 0
@@ -468,9 +471,11 @@ sub do_table {
    my $exit_status = 0;
 
    # Sort sql files first.
-   @files = reverse sort {
-      is_sql_file($a) <=> is_sql_file($b)
-   } @files;
+   if ( $opts{sql} ) {
+      @files = reverse sort {
+         is_sql_file($a) <=> is_sql_file($b)
+      } @files;
+   }
 
    my $dbh;
 
@@ -496,9 +501,16 @@ sub do_table {
       else {
 
          if ( $file =~ m/\.gz$/ ) {
-            $fifo ||= makefifo();
-            system_call(qq{gunzip --stdout "$file" > "$fifo" &});
-            $load_from = $fifo;
+            if ( $opts{fifo} ) {
+               $fifo ||= makefifo();
+               $exit_status
+                  = system_call(qq{gunzip --stdout '$file' > '$fifo' &}) || $exit_status;
+               $load_from = $fifo;
+            }
+            else {
+               $exit_status = system_call(qq{gunzip '$file'}) || $exit_status;
+               ( $load_from = $file ) =~ s/\.gz$//;
+            }
          }
          else {
             $load_from = $file;
@@ -508,13 +520,13 @@ sub do_table {
          my $LOCAL = $opts{L} ? ' LOCAL' : '';
          my $OPT   = $opts{i} ? 'IGNORE' : $opts{r} ? 'REPLACE' : '';
          if ( $opts{csv} ) {
-            $sql  = qq{LOAD DATA$LOCAL INFILE '$load_from' }
+            $sql  = qq{LOAD DATA$LOCAL INFILE ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
                   . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
                   . qq{LINES TERMINATED BY '\\n'};
          }
          elsif ( $opts{T} ) {
-            $sql  = qq{LOAD DATA$LOCAL INFILE '$load_from' }
+            $sql  = qq{LOAD DATA$LOCAL INFILE ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` };
          }
 
@@ -528,6 +540,7 @@ sub do_table {
                if ( !$loaded++ ) {
                   $dbh ||= get_dbh();
                   if ( $opts{opt} ) {
+                     # TODO: split these out.
                      $dbh->do('/*!40101 SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO" */;');
                      $dbh->do('SET UNIQUE_CHECKS=0');
                      $dbh->do('SET FOREIGN_KEY_CHECKS=0');
@@ -540,7 +553,7 @@ sub do_table {
                }
 
                eval {
-                  $dbh->do($sql);
+                  $dbh->do($sql, {}, $load_from);
                   $dbh->commit if $opts{commit};
                };
                if ( $EVAL_ERROR ) {
@@ -603,7 +616,6 @@ sub system_call {
 # Documentation.
 # TODO: checksum a server before and after!
 # TODO: add --database option
-# TODO: documentation is only done up to OPTIONS.
 # ############################################################################
 
 =pod
@@ -685,100 +697,48 @@ Some options can be disabled by prefixing them with C<--no>.
 
 =over
 
-=item --age
+=item --basedir
 
-Specifies how old a table must be modified before MySQL Parallel Dump will
-consider it.  The argument is a number with a suffix (s=seconds, m=minutes,
-h=hours, d=days).
+Directory in which temporary files, such as FIFO files (see L<"--fifo">) will be
+created.
 
-When L<"--sets"> is not specified, MySQL Parallel Dump uses C<SHOW TABLE STATUS>
-instead of C<SHOW TABLES> to get a list of tables in each database, and compares
-the time to the C<Update_time> column in the output.  If the C<Update_time>
-column is not C<NULL> and is older than the specified interval ago, it will not
-be dumped.  Thus, it means "dump tables that have changed since X amount of
-time" (presumably the last regular backup).  This means the table will always be
-dumped if it uses InnoDB or another storage engine that doesn't report the
-C<Update_time>.
+=item --commit
 
-When L<"--sets"> is specified, the L<"--settable"> table determines when a table
-was last dumped, and the meaning of C<--age> reverses; it becomes "dump tables
-not dumped in X amount of time."
+Commit between each file it loads via C<LOAD DATA INFILE>.  This is enabled by
+default.
 
-=item --binlogpos
+=item --createdb
 
-Dump binary log positions from both C<SHOW MASTER STATUS> and C<SHOW SLAVE
-STATUS>, whichever can be retrieved from the server.  The data is dumped to a
-file named F<00_master_data.sql>.  This is done for each backup set.
-
-The file also contains details of each table dumped, including the WHERE clauses
-used to dump it in chunks.
-
-This option is enabled by default.
-
-=item --chunksize
-
-Specifies that the table should be dumped in segments of approximately the size
-given.  The syntax is either a plain integer, which is interpreted as a number
-of rows per chunk, or an integer with a suffix of G, M, or k, which is
-interpreted as the size of the data to be dumped in each chunk.  See L<"CHUNKS">
-for more details.
+Create databases if they don't exist.  Disabled by default.
 
 =item --csv
 
-Changes L<"--tab"> options so the dump file is in comma-separated values
-(CSV) format.  The SELECT INTO OUTFILE statement looks like the following, and
-can be re-loaded with the same options:
+Changes L<"--tab"> options so the following LOAD DATA INFILE statement is used:
 
-   SELECT * INTO OUTFILE %D.%N.%3C.txt
+   LOAD DATA INFILE <filename> INTO TABLE <table>
    FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"'
-   LINES TERMINATED BY '\n' FROM %D.%N;
+   LINES TERMINATED BY '\n';
 
 This option implies L<"--tab">.
 
 =item --databases
 
-Dump this comma-separated list of databases.  Only applies when L<"--sets"> is
-not given.
+Load only this comma-separated list of databases.
 
 =item dbregex
 
-Dump only databases whose names match this Perl regular expression.  Only
-applies when L<"--sets"> is not given.
-
-=item --defaultset
-
-When L<"--sets"> is given, this option makes MySQL Parallel Dump dump a
-C<default> set consisting of tables not explicitly included in any set.
+Load only databases whose names match this Perl regular expression.
 
 =item --defaults-file
 
 Only read default options from the given file.  You must give an absolute
 pathname.
 
-=item --flushlock
+=item --fifo
 
-Lock all tables globally with C<FLUSH TABLES WITH READ LOCK>.  This is enabled
-by default, unless you're dumping sets (see L<"--sets">).  This lock is taken
-once, at the beginning of the whole process, and is never released.
-
-If you want to lock only the tables you're dumping, use L<"--locktables">.  
-
-=item --flushlog
-
-Execute C<FLUSH LOGS> after locking and before dumping master/slave binary log
-positions.  This is done for each backup set.
-
-This option is enabled by default.
-
-=item --gzip
-
-Compresses files with gzip.  This is enabled by default unless your platform
-is Win32.  By default, this causes the standard SQL dumps to be piped to
-gzip's C<STDIN> and the result is redirected to the destination file.  If this
-option isn't enabled, by default C<mysqldump>'s C<--result-file> parameter is used
-to direct the dump to the destination file.  When using L<"--tab">, this
-option causes gzip to be called separately on each resulting file after it is
-dumped (because C<SELECT INTO OUTFILE> cannot be directed to a pipe).
+Load compressed tab-separated files by piping them into a FIFO and using the
+FIFO with C<LOAD DATA INFILE>, instead of by decompressing the files on disk.
+Sets L<"--umask"> to 0.
 
 =item --help
 
@@ -788,41 +748,36 @@ Displays a help message.
 
 Connect to host.
 
+=item --ignore
+
+Adds the C<IGNORE> modifier to C<LOAD DATA INFILE>.
+
 =item --ignoredb
 
-Do not dump this comma-separated list of databases.  Only applies when
-L<"--sets"> is not given.
+Do not load this comma-separated list of databases.
 
 =item --ignoretbl
 
-Do not dump this comma-separated list of table (not database.table) names.  Only
-applies when L<"--sets"> is not given.
+Do not load this comma-separated list of table (not database.table) names.
 
-=item --locktables
+=item --local
 
-Disables L<"--flushlock"> (unless it was explicitly set) and locks tables with
-C<LOCK TABLES READ>.  Enabled by default when L<"--sets"> is specified.  The
-lock is taken and released with every set of tables dumped.
+Uses the C<LOCAL> modifier to C<LOAD DATA INFILE>, so the files are read locally
+by the client library, not by the server.
 
 =item --numthread
 
 Specifies the number of parallel processes to run.  The default is 2 (this is
-MySQL Parallel Dump, after all -- 1 is not parallel).  On GNU/Linux machines,
+MySQL Parallel Restore, after all -- 1 is not parallel).  On GNU/Linux machines,
 the default is the number of times 'processor' appears in F</proc/cpuinfo>.  On
 Windows, the default is read from the environment.  In any case, the default is
 at least 2, even when there's only a single processor.
 
 =item --opt
 
-This is sort of related to C<mysqldump>'s C<--opt> argument, I<but not the same>.
-It does I<not> pass C<--opt> to C<mysqldump>.  Instead, it passes the following:
-
-C<--add-drop-table> C<--add-locks> C<--allow-keywords> C<--comments>
-C<--complete-insert> C<--create-options> C<--disable-keys>
-C<--extended-insert> C<--quick> C<--quote-names> C<--set-charset>
-C<--skip-lock-tables> C<--triggers> C<--tz-utc>
-
-These are what I consider to be sensible default options.
+Sets what I consider to be sensible defaults when loading via C<LOAD DATA
+INFILE>.  This includes disabling foreign keys and unique index checks and not
+logging to the binary log.
 
 =item --password
 
@@ -836,48 +791,31 @@ Port number to use for connection.
 
 Sets L<"--verbose"> to 0.
 
-=item --sets
+=item --replace
 
-Dump this comma-separated list of backup sets, in order.  Requires
-L<"--settable">.  See L<"BACKUP SETS">.  The special C<default> set is
-reserved; don't use it as a set name.
-
-=item --setperdb
-
-Specifies that each database is a separate backup set.  Each set is named the
-same as the database.  Implies L<"--locktables">.
-
-=item --settable
-
-Specifies the table in which backup sets are kept.  It may be given in
-database.table form.
+Adds the C<REPLACE> modifier to C<LOAD DATA INFILE>.
 
 =item --socket
 
 Socket file to use for connection.
 
+=item --sql
+
+Causes files with a .sql extension to be loaded (via C<mysql>) before
+loading .txt and .csv files via C<LOAD DATA INFILE>.  Enabled by default.
+
 =item --tab
 
-Dump via C<SELECT INTO OUTFILE>, which is similar to what C<mysqldump> does with
-the C<--tab> option, but you're not constrained to a single database at a time.
-
-Before you use this option, make sure you know what C<SELECT INTO OUTFILE> does!
-I recommend using it only if you're running MySQL Parallel Dump on the same
-machine as the MySQL server, but there is no protection if you don't.
-
-The files will be gzipped after dumping if L<"--gzip"> is enabled.  This option
-sets L<"--umask"> to zero so auto-created directories are writable by the MySQL
-server.
+Load via C<LOAD DATA INFILE>, which is similar to what C<mysqlimport> does, but
+more flexibly.
 
 =item --tables
 
-Dump this comma-separated list of table (not database.table) names.  Only
-applies when L<"--sets"> is not given.
+Restore this comma-separated list of table (not database.table) names.
 
 =item --tblregex
 
-Dump only tables whose names match this Perl regular expression.  Only applies
-when L<"--sets"> is not given.
+Restore only tables whose names match this Perl regular expression.
 
 =item --test
 
@@ -886,8 +824,8 @@ Print commands instead of executing them.
 =item --umask
 
 Set the program's C<umask> to this octal value.  This is useful when you want
-created files and directories to be readable or writable by other users (for
-example, the MySQL server itself).
+created files (such as FIFO files) to be readable or writable by other users
+(for example, the MySQL server itself).
 
 =item --user
 
@@ -904,19 +842,11 @@ Output version information and exit.
 
 =item --wait
 
-If the MySQL server crashes during dumping, waits until the server comes back
-and then continues with the rest of the tables.  The value is a number with a
-suffix (s=seconds, m=minutes, h=hours, d=days).  MySQL Parallel Dump will
+If the MySQL server crashes during loading, waits until the server comes back
+and then continues with the rest of the files.  The value is a number with a
+suffix (s=seconds, m=minutes, h=hours, d=days).  MySQL Parallel Restore will
 check the server every second until this time is exhausted, at which point it
 will give up and exit.
-
-This implements Peter Zaitsev's "safe dump" request: sometimes a dump on a
-server that has corrupt data will kill the server.  MySQL Parallel Dump will
-wait for the server to restart, then keep going.  It's hard to say which table
-killed the server, so no tables will be retried.  Tables that were being
-concurrently dumped when the crash happened will not be retried.  No additional
-locks will be taken after the server restarts; it's assumed this behavior is
-useful only on a server you're not trying to dump while it's in production.
 
 =back
 
