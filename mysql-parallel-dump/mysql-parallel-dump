@@ -488,7 +488,7 @@ if ( !caller ) {
       { s => 'defaultset!',       d => 'When --sets given, dump tables not in any set' },
       { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
       { s => 'flushlock|k!',      d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
-      { s => 'flushlog!',         d => 'Execute FLUSH LOGS (default)' },
+      { s => 'flushlog!',         d => 'Execute FLUSH LOGS when getting binlog positions' },
       { s => 'gzip!',             d => 'Compress files with gzip (default on non-Win32)' },
       { s => 'host|h=s',          d => 'Connect to host' },
       { s => 'help',              d => 'Show this help message' },
@@ -521,7 +521,6 @@ if ( !caller ) {
       opt      => 1,
       gzip     => $OSNAME !~ m/Win32/,
       basedir  => File::Spec->curdir(),
-      flushlog => 1,
       w        => '5m',
       sets     => '',
       v        => 1,
@@ -1657,7 +1656,8 @@ If you want to lock only the tables you're dumping, use L<"--locktables">.
 Execute C<FLUSH LOGS> after locking and before dumping master/slave binary log
 positions.  This is done for each backup set.
 
-This option is enabled by default.
+This option is NOT enabled by default because it causes the MySQL server to
+rotate its error log, potentially overwriting error messages.
 
 =item --gzip
 
