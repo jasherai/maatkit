@@ -1,5 +1,7 @@
 Changelog for mysql-parallel-dump:
 
+   * Disabled --flushlog by default so error log doesn't get trashed.
+
 2007-10-09: version 0.9.9
 
    * Table and database names were not quoted in arguments to mysqldump.
