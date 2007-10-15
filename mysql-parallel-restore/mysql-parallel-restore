@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is a program to load data into MySQL at high speed.
+# This is a program to load files into MySQL in parallel.
 #
 # This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
 # are welcome.
@@ -272,7 +272,7 @@ if ( !caller ) {
       print $opt_parser->usage();
       (my $usage = <<"      USAGE") =~ s/^         //gm;
 
-         mysql-parallel-restore loads files into MySQL at high speed.  For
+         mysql-parallel-restore loads files into MySQL in parallel.  For
          more details, please read the documentation:
 
             perldoc mysql-parallel-restore
