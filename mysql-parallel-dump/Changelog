@@ -1,5 +1,8 @@
 Changelog for mysql-parallel-dump:
 
+2007-10-15: version 0.9.10
+
+   * ANSI_QUOTES SQL_MODE or SQL_QUOTE_SHOW_CREATE0= could cause an error.
    * Disabled --flushlog by default so error log doesn't get trashed.
 
 2007-10-09: version 0.9.9
