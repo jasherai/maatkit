@@ -114,21 +114,29 @@ if ( !caller ) {
 
    my @opt_spec = (
       { s => 'basedir=s',         d => 'Base directory for creating files (default cwd)' },
+      { s => 'bulkinsbufsize=i',  d => 'Set bulk_insert_buffer_size before LOAD DATA INFILE' },
       { s => 'commit',            d => 'Commit after loading each tab-separated file' },
       { s => 'createdb',          d => 'Create databases that do not exist' },
       { s => 'csv',               d => 'Files are in in CSV format (implies --tab)' },
+      { s => 'database|D=s',      d => 'Specify the database for all tables' },
       { s => 'databases|d=s',     d => 'Restore only this comma-separated list of databases' },
       { s => 'dbregex=s',         d => 'Restore only databases whose names match this pattern' },
       { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-      { s => 'fifo!',             d => 'Stream files into a FIFO for --tab (sets --mask 0)' },
+      { s => 'disablekeys!',      d => 'Set DISABLE KEYS before loading files' },
+      { s => 'fifo!',             d => 'Stream files into a FIFO for --tab (sets --umask 0)' },
       { s => 'host|h=s',          d => 'Connect to host' },
       { s => 'help',              d => 'Show this help message' },
       { s => 'ignore|i',          d => 'Use the IGNORE option to LOAD DATA INFILE' },
       { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
       { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
       { s => 'local|L',           d => 'Use the LOCAL option to LOAD DATA INFILE' },
+      { s => 'locktables!',       d => 'Lock tables before LOAD DATA INFILE' },
       { s => 'numthread|m=i',     d => 'Number of threads (default #CPUs or 2)' },
-      { s => 'opt!',              d => 'Disable foreign key checks, binlog etc (default)' },
+      { s => 'noautovalon0!',     d => 'Set NO_AUTO_VALUE_ON_ZERO before LOAD DATA INFILE' },
+      { s => 'nobinlog!',         d => 'Set SQL_LOG_BIN=0 before LOAD DATA INFILE' },
+      { s => 'nouniquechecks!',   d => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
+      { s => 'noforeignkeys!',    d => 'Set FOREIGN_KEY_CHECKS=0 before LOAD DATA INFILE' },
+      { s => 'opt!',              d => 'Sensible defaults for fast loading' },
       { s => 'password|p=s',      d => 'Password to use when connecting' },
       { s => 'port|P=i',          d => 'Port number to use for connection' },
       { s => 'quiet|q',           d => 'Set --verbose to 0' },
@@ -139,7 +147,7 @@ if ( !caller ) {
       { s => 'tables|t=s',        d => 'Restore only this comma-separated list of tables' },
       { s => 'test',     ,        d => 'Print commands instead of executing them' },
       { s => 'tblregex=s',        d => 'Restore only tables whose names match this pattern' },
-      { s => 'truncate',          d => 'Delete (TRUNCATE) all rows before importing' },
+      { s => 'truncate',          d => 'TRUNCATE TABLE before LOAD DATA INFILE' },
       { s => 'umask=s',           d => 'Set umask to this value, in octal' },
       { s => 'user|u=s',          d => 'User for login if not current user' },
       { s => 'verbose|v+',        d => 'Verbosity (default 1, can specify multiple times)' },
@@ -168,6 +176,14 @@ if ( !caller ) {
 
    if ( $opts{q} ) {
       $opts{v} = 0;
+   }
+
+   if ( $opts{opt} ) {
+      $opts{disablekeys}    = 1 unless defined $opts{disablekeys};
+      $opts{noautovalon0}   = 1 unless defined $opts{noautovalon0};
+      $opts{nobinlog}       = 1 unless defined $opts{nobinlog};
+      $opts{nouniquechecks} = 1 unless defined $opts{nouniquechecks};
+      $opts{noforeignkeys}  = 1 unless defined $opts{noforeignkeys};
    }
 
    if ( !$opts{m} ) {
@@ -305,8 +321,8 @@ if ( !caller ) {
             if ( -f $file && $file !~ m/00_master_data.sql$/ ) {
                my ($vol, $dirs, $file) = File::Spec->splitpath( $File::Find::name );
                if ( $file =~ m/\.(?:sql|txt|csv)(?:\.\d+)?(?:\.gz)?$/ ) {
-                  my @dirs = grep { $_ } File::Spec->splitdir($dir);
-                  my $db = $dirs[-1];
+                  my @dirs  = grep { $_ } File::Spec->splitdir($dir);
+                  my $db    = $opts{D} || $dirs[-1];
                   my ($tbl) = $file =~ m/^([^.]+)/;
 
                   if ( ( !$opts{d} || exists($opts{d}->{$db}) )
@@ -539,17 +555,33 @@ sub do_table {
                # First loop through.
                if ( !$loaded++ ) {
                   $dbh ||= get_dbh();
-                  if ( $opts{opt} ) {
-                     # TODO: split these out.
-                     $dbh->do('/*!40101 SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO" */;');
-                     $dbh->do('SET UNIQUE_CHECKS=0');
-                     $dbh->do('SET FOREIGN_KEY_CHECKS=0');
-                     $dbh->do('SET SQL_LOG_BIN=0');
-                     $dbh->do('/*!40014 SET SQL_NOTES=0 */');
+                  if ( $opts{locktables} ) {
+                     $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
                   }
                   if ( $opts{truncate} ) {
                      $dbh->do("TRUNCATE TABLE `$db`.`$tbl`");
                   }
+               }
+
+               # Every loop through, set options.
+               $dbh ||= get_dbh();
+               if ( $opts{disablekeys} ) {
+                  $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` DISABLE KEYS */");
+               }
+               if ( $opts{noautovalon0} ) {
+                  $dbh->do('/*!40101 SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO" */');
+               }
+               if ( $opts{nouniquechecks} ) {
+                  $dbh->do('SET UNIQUE_CHECKS=0');
+               }
+               if ( $opts{noforeignkeys} ) {
+                  $dbh->do('SET FOREIGN_KEY_CHECKS=0');
+               }
+               if ( $opts{nobinlog} ) {
+                  $dbh->do('SET SQL_LOG_BIN=0');
+               }
+               if ( $opts{bulkinsbufsize} ) {
+                  $dbh->do("SET SESSION bulk_insert_buffer_size=$opts{bulkinsbufsize}");
                }
 
                eval {
@@ -565,6 +597,13 @@ sub do_table {
             die "I don't understand how to load file $file\n";
          }
       }
+   }
+
+   if ( $opts{disablekeys} ) {
+      $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` ENABLE KEYS */");
+   }
+   if ( $opts{locktables} ) {
+      $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
    }
 
    if ( !$opts{test} && $fifo ) {
@@ -615,7 +654,6 @@ sub system_call {
 # ############################################################################
 # Documentation.
 # TODO: checksum a server before and after!
-# TODO: add --database option
 # ############################################################################
 
 =pod
