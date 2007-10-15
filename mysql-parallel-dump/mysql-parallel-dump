@@ -479,7 +479,7 @@ if ( !caller ) {
 
    my @opt_spec = (
       { s => 'age=s',             d => 'Dump only modified or not recently dumped tables' },
-      { s => 'basedir=s',         d => 'Base directory for files (default cwd)' },
+      { s => 'basedir=s',         d => 'Base directory for creating files (default cwd)' },
       { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
       { s => 'chunksize|C=s',     d => 'Number of rows or data size to dump per file' },
       { s => 'csv',               d => 'Do --tab dump in CSV format (implies --tab)' },
