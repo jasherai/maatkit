@@ -115,7 +115,8 @@ if ( !caller ) {
    my @opt_spec = (
       { s => 'basedir=s',         d => 'Base directory for creating files (default cwd)' },
       { s => 'bulkinsbufsize=i',  d => 'Set bulk_insert_buffer_size before LOAD DATA INFILE' },
-      { s => 'commit',            d => 'Commit after loading each tab-separated file' },
+      { s => 'charset=s',         d => 'Set the character set (default=binary)' },
+      { s => 'commit',            d => 'Commit after each LOAD DATA INFILE' },
       { s => 'createdb',          d => 'Create databases that do not exist' },
       { s => 'csv',               d => 'Files are in in CSV format (implies --tab)' },
       { s => 'database|D=s',      d => 'Specify the database for all tables' },
@@ -124,29 +125,28 @@ if ( !caller ) {
       { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
       { s => 'disablekeys!',      d => 'Set DISABLE KEYS before loading files' },
       { s => 'fifo!',             d => 'Stream files into a FIFO for --tab (sets --umask 0)' },
-      { s => 'host|h=s',          d => 'Connect to host' },
       { s => 'help',              d => 'Show this help message' },
-      { s => 'ignore|i',          d => 'Use the IGNORE option to LOAD DATA INFILE' },
+      { s => 'host|h=s',          d => 'Connect to host' },
       { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
+      { s => 'ignore|i',          d => 'Use the IGNORE option to LOAD DATA INFILE' },
       { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
       { s => 'local|L',           d => 'Use the LOCAL option to LOAD DATA INFILE' },
       { s => 'locktables!',       d => 'Lock tables before LOAD DATA INFILE' },
-      { s => 'numthread|m=i',     d => 'Number of threads (default #CPUs or 2)' },
       { s => 'noautovalon0!',     d => 'Set NO_AUTO_VALUE_ON_ZERO before LOAD DATA INFILE' },
       { s => 'nobinlog!',         d => 'Set SQL_LOG_BIN=0 before LOAD DATA INFILE' },
-      { s => 'nouniquechecks!',   d => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
       { s => 'noforeignkeys!',    d => 'Set FOREIGN_KEY_CHECKS=0 before LOAD DATA INFILE' },
-      { s => 'opt!',              d => 'Sensible defaults for fast loading' },
+      { s => 'nouniquechecks!',   d => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
+      { s => 'numthread|m=i',     d => 'Number of threads (default #CPUs or 2)' },
       { s => 'password|p=s',      d => 'Password to use when connecting' },
       { s => 'port|P=i',          d => 'Port number to use for connection' },
       { s => 'quiet|q',           d => 'Set --verbose to 0' },
       { s => 'replace|r',         d => 'Use the REPLACE option to LOAD DATA INFILE' },
       { s => 'socket|S=s',        d => 'Socket file to use for connection' },
       { s => 'sql!',              d => 'Load SQL files first with mysql (default)' },
-      { s => 'tab|T',             d => 'Restore tab-separated files with LOAD DATA INFILE' },
       { s => 'tables|t=s',        d => 'Restore only this comma-separated list of tables' },
-      { s => 'test',     ,        d => 'Print commands instead of executing them' },
+      { s => 'tab|T',             d => 'Restore tab-separated files with LOAD DATA INFILE' },
       { s => 'tblregex=s',        d => 'Restore only tables whose names match this pattern' },
+      { s => 'test',     ,        d => 'Print commands instead of executing them' },
       { s => 'truncate',          d => 'TRUNCATE TABLE before LOAD DATA INFILE' },
       { s => 'umask=s',           d => 'Set umask to this value, in octal' },
       { s => 'user|u=s',          d => 'User for login if not current user' },
@@ -160,10 +160,9 @@ if ( !caller ) {
       w        => '5m',
       v        => 1,
       basedir  => File::Spec->curdir(),
-      opt      => 1,
-      commit   => 1,
       fifo     => 1,
       sql      => 1,
+      charset  => 'BINARY',
    );
 
    my $opt_parser = OptionParser->new(@opt_spec);
@@ -178,7 +177,11 @@ if ( !caller ) {
       $opts{v} = 0;
    }
 
-   if ( $opts{opt} ) {
+   if ( $opts{csv} ) {
+      $opts{T} = 1;
+   }
+
+   if ( $opts{T} ) {
       $opts{disablekeys}    = 1 unless defined $opts{disablekeys};
       $opts{noautovalon0}   = 1 unless defined $opts{noautovalon0};
       $opts{nobinlog}       = 1 unless defined $opts{nobinlog};
@@ -225,10 +228,16 @@ if ( !caller ) {
          warn "You did not specify any files to restore\n";
          $opts{help} = 1;
       }
-   }
 
-   if ( $opts{csv} ) {
-      $opts{T} = 1;
+      foreach my $opt ( qw(locktables truncate disablekeys noautovalon0
+                           nouniquechecks noforeignkeys nobinlog
+                           bulkinsbufsize commit L i r) ) {
+         if ( defined $opts{$opt} && !$opts{T} ) {
+            warn 'Option ' . (length($opt) > 1 ? '--' : '-')
+               . "$opt is ineffective without --tab or --csv\n";
+            $opts{help} = 1;
+         }
+      }
    }
 
    if ( $opts{fifo} ) {
@@ -539,11 +548,13 @@ sub do_table {
             $sql  = qq{LOAD DATA$LOCAL INFILE ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
                   . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
-                  . qq{LINES TERMINATED BY '\\n'};
+                  . qq{LINES TERMINATED BY '\\n' }
+                  . qq{CHARACTER SET $opts{charset}};
          }
          elsif ( $opts{T} ) {
             $sql  = qq{LOAD DATA$LOCAL INFILE ? }
-                  . qq{$OPT INTO TABLE `$db`.`$tbl` };
+                  . qq{$OPT INTO TABLE `$db`.`$tbl` }
+                  . qq{CHARACTER SET $opts{charset}};
          }
 
          if ( $sql ) {
@@ -565,6 +576,7 @@ sub do_table {
 
                # Every loop through, set options.
                $dbh ||= get_dbh();
+               $dbh->do("USE `$db`"); # For binary logging.
                if ( $opts{disablekeys} ) {
                   $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` DISABLE KEYS */");
                }
@@ -594,16 +606,19 @@ sub do_table {
             }
          }
          else {
+            unlink $fifo if $fifo;
             die "I don't understand how to load file $file\n";
          }
       }
    }
 
-   if ( $opts{disablekeys} ) {
-      $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` ENABLE KEYS */");
-   }
-   if ( $opts{locktables} ) {
-      $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
+   if ( $dbh && $opts{T} ) {
+      if ( $opts{disablekeys} ) {
+         $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` ENABLE KEYS */");
+      }
+      if ( $opts{locktables} ) {
+         $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
+      }
    }
 
    if ( !$opts{test} && $fifo ) {
@@ -630,6 +645,10 @@ sub get_dbh {
       . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
       . ';mysql_read_default_group=mysql';
    my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 0, RaiseError => 1, PrintError => 0 } );
+   if ( $opts{charset} ) {
+      $dbh->do("SET NAMES $opts{charset}");
+      $dbh->do("/*!40101 SET character_set_database=$opts{charset} */");
+   }
    return $dbh;
 }
 
@@ -653,7 +672,6 @@ sub system_call {
 
 # ############################################################################
 # Documentation.
-# TODO: checksum a server before and after!
 # ############################################################################
 
 =pod
@@ -740,24 +758,40 @@ Some options can be disabled by prefixing them with C<--no>.
 Directory in which temporary files, such as FIFO files (see L<"--fifo">) will be
 created.
 
+=item --bulkinsbufsize
+
+Sets the bulk_insert_buffer_size variable before each C<LOAD DATA INFILE>.
+Has no effect without L<"--tab">.
+
+=item --charset
+
+Sets the connection, database, and C<LOAD DATA INFILE> character set.  The
+default is C<BINARY>, which is the safest value to use for C<LOAD DATA
+INFILE>.  Has no effect without L<"--tab">.
+
 =item --commit
 
-Commit between each file it loads via C<LOAD DATA INFILE>.  This is enabled by
-default.
+Commit between each file it loads via C<LOAD DATA INFILE>.
 
 =item --createdb
 
-Create databases if they don't exist.  Disabled by default.
+Create databases if they don't exist.
 
 =item --csv
 
-Changes L<"--tab"> options so the following LOAD DATA INFILE statement is used:
+Changes L<"--tab"> options so the following C<LOAD DATA INFILE> statement is used:
 
    LOAD DATA INFILE <filename> INTO TABLE <table>
    FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"'
    LINES TERMINATED BY '\n';
 
 This option implies L<"--tab">.
+
+=item --database
+
+Specifies a database into which all files should be loaded.  Overrides the
+database which is normally specified by the directory in which the files live.
+Does I<not> specify a default database for the connection.
 
 =item --databases
 
@@ -771,6 +805,10 @@ Load only databases whose names match this Perl regular expression.
 
 Only read default options from the given file.  You must give an absolute
 pathname.
+
+=item --disablekeys
+
+Use C<ALTER TABLE DISABLE KEYS> before loading files into a table.
 
 =item --fifo
 
@@ -803,6 +841,27 @@ Do not load this comma-separated list of table (not database.table) names.
 Uses the C<LOCAL> modifier to C<LOAD DATA INFILE>, so the files are read locally
 by the client library, not by the server.
 
+=item --locktables
+
+Lock tables before C<LOAD DATA INFILE> (disabled by default).
+
+=item --noautovalon0
+
+Set the SQL mode to C<NO_AUTO_VALUE_ON_ZERO> before C<LOAD DATA INFILE>.
+
+=item --nobinlog
+
+Set C<SQL_LOG_BIN=0> before C<LOAD DATA INFILE>.  This prevents large loads
+from being logged to the server's binary log.
+
+=item --noforeignkeys
+
+Set C<FOREIGN_KEY_CHECKS=0 before C<LOAD DATA INFILE>.
+
+=item --nouniquechecks
+
+Set C<UNIQUE_CHECKS=0 before C<LOAD DATA INFILE>.
+
 =item --numthread
 
 Specifies the number of parallel processes to run.  The default is 2 (this is
@@ -810,12 +869,6 @@ MySQL Parallel Restore, after all -- 1 is not parallel).  On GNU/Linux machines,
 the default is the number of times 'processor' appears in F</proc/cpuinfo>.  On
 Windows, the default is read from the environment.  In any case, the default is
 at least 2, even when there's only a single processor.
-
-=item --opt
-
-Sets what I consider to be sensible defaults when loading via C<LOAD DATA
-INFILE>.  This includes disabling foreign keys and unique index checks and not
-logging to the binary log.
 
 =item --password
 
@@ -847,6 +900,10 @@ loading .txt and .csv files via C<LOAD DATA INFILE>.  Enabled by default.
 Load via C<LOAD DATA INFILE>, which is similar to what C<mysqlimport> does, but
 more flexibly.
 
+Enables the following options, unless they are specifically disabled:
+L<"--commit">, L<"--disablekeys">, L<"--noautovalon0">, L<"--nobinlog">,
+L<"--nouniquechecks">, L<"--noforeignkeys">.
+
 =item --tables
 
 Restore this comma-separated list of table (not database.table) names.
@@ -858,6 +915,11 @@ Restore only tables whose names match this Perl regular expression.
 =item --test
 
 Print commands instead of executing them.
+
+=item --truncate
+
+Issues C<TRUNCATE TABLE> to delete all rows from a table before loading the
+first tab-delimited file into it with C<LOAD DATA INFILE>.
 
 =item --umask
 
