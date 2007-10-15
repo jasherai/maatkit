@@ -4,7 +4,8 @@
    mysql-duplicate-key-checker-1.1.1
    mysql-find-0.9.5
    mysql-heartbeat-1.0.1
-   mysql-parallel-dump-0.9.9
+   mysql-parallel-dump-0.9.10
+   mysql-parallel-restore-0.9.0
    mysql-query-profiler-1.1.5
    mysql-show-grants-1.0.3
    mysql-slave-delay-1.0.1
