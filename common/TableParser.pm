@@ -100,6 +100,19 @@ sub parse {
    };
 }
 
+sub get_ddl {
+   my ( $self, $dbh, $db, $tbl ) = @_;
+   $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+      . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+      . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+   my $href = $dbh->selectrow_hashref("SHOW CREATE TABLE `$db`.`$tbl`");
+   $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+      . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+   my ($key) = grep { m/create table/i } keys %$href;
+   return $href->{$key};
+}
+
 1;
 
 # ###########################################################################
