@@ -103,6 +103,10 @@ sub new {
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
 
+   if ( $ddl !~ m/CREATE TABLE `/ ) {
+      die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+   }
+
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
@@ -128,7 +132,6 @@ sub parse {
    foreach my $col ( @cols ) {
       my $def = $def_for{$col};
       next if $def =~ m/NOT NULL/ || $def =~ m/text$/;
-      next if $def =~ m/enum\(|set\(/ && $def !~ m/default NULL/;
       push @null, $col;
    }
    my %is_nullable = map { $_ => 1 } @null;
@@ -176,6 +179,19 @@ sub parse {
       engine         => $engine,
       type_for       => \%type_for,
    };
+}
+
+sub get_ddl {
+   my ( $self, $dbh, $db, $tbl ) = @_;
+   $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+      . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+      . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+   my $href = $dbh->selectrow_hashref("SHOW CREATE TABLE `$db`.`$tbl`");
+   $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+      . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+   my ($key) = grep { m/create table/i } keys %$href;
+   return $href->{$key};
 }
 
 1;
@@ -1151,10 +1167,9 @@ sub get_chunks {
    }
 
    # Get the chunk column candidates
-   my $tp = TableParser->new;
-   my $table = $tp->parse($dbh->selectrow_hashref(
-      "SHOW CREATE TABLE `$db`.`$tbl`")->{'create table'});
-   my $col = $tc->get_first_chunkable_column($table);
+   my $tp    = TableParser->new;
+   my $table = $tp->parse($tp->get_ddl($dbh, $db, $tbl));
+   my $col   = $tc->get_first_chunkable_column($table);
    return $cant_chunk unless $col;
    my %params = $tc->get_range_statistics($dbh, $db, $tbl, $col);
    return $cant_chunk
