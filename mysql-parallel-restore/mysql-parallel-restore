@@ -326,9 +326,9 @@ if ( !caller ) {
    File::Find::find(
       {  no_chdir => 1,
          wanted   => sub {
-            my ( $dir, $file ) = ($File::Find::dir, $File::Find::name);
-            if ( -f $file && $file !~ m/00_master_data.sql$/ ) {
-               my ($vol, $dirs, $file) = File::Spec->splitpath( $File::Find::name );
+            my ( $dir, $filename ) = ($File::Find::dir, $File::Find::name);
+            if ( -f $filename && $filename !~ m/00_master_data.sql$/ ) {
+               my ($vol, $dirs, $file) = File::Spec->splitpath( $filename );
                if ( $file =~ m/\.(?:sql|txt|csv)(?:\.\d+)?(?:\.gz)?$/ ) {
                   my @dirs  = grep { $_ } File::Spec->splitdir($dir);
                   my $db    = $opts{D} || $dirs[-1];
@@ -340,13 +340,17 @@ if ( !caller ) {
                      && ( !$opts{t} || exists($opts{t}->{$tbl}) )
                      && ( !$opts{tblregex} || $tbl =~ m/$opts{tblregex}/ )
                   ) {
+                     if ( !is_sql_file($file) && !$opts{T} ) {
+                        die "$filename isn't a SQL file and you didn't tell me "
+                           . "to load tab-delimited files.  Maybe you should "
+                           . "specify the --tab option.\n";
+                     }
                      $stats{files}++;
                      push @{$files_for_table{$db}->{$tbl}}, $File::Find::name;
                      push @tables_to_do, {
                         D => $db,
                         N => $tbl,
                      };
-                     $stats{tables}++;
                   }
                }
             }
@@ -362,6 +366,7 @@ if ( !caller ) {
    {
       my %seen;
       @tables_to_do = grep { !$seen{$_->{D}}->{$_->{N}}++ } @tables_to_do;
+      $stats{tables} = scalar(@tables_to_do);
    }
 
    # #########################################################################
@@ -516,10 +521,10 @@ sub do_table {
       if ( is_sql_file($file) ) {
          my @args;
          if ( $file =~ m/\.gz/ ) {
-            @args = (qw(gunzip --stdout), $file, qw(| mysql), $db, @conn_params);
+            @args = (qw(gunzip --stdout), qq{'$file'}, qw(| mysql), $db, @conn_params);
          }
          else {
-            @args = (qw(mysql), $db, @conn_params, '<', $file);
+            @args = (qw(mysql), $db, @conn_params, '<', qq{'$file'});
          }
          $exit_status = system_call( @args ) || $exit_status;
       }
@@ -678,11 +683,12 @@ sub system_call {
 
 =head1 NAME
 
-mysql-parallel-restore - Load data into MySQL at high speed.
+mysql-parallel-restore - Load files into MySQL in parallel.
 
 =head1 SYNOPSIS
 
   mysql-parallel-restore /path/to/files
+  mysql-parallel-restore --tab /path/to/files
 
 =head1 DESCRIPTION
 
@@ -982,6 +988,10 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 =head1 AUTHOR
 
 Baron Schwartz.
+
+=head1 SEE ALSO
+
+See also L<mysql-parallel-dump>.
 
 =head1 VERSION
 
