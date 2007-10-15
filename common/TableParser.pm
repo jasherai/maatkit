@@ -16,6 +16,10 @@ sub new {
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
 
+   if ( $ddl !~ m/CREATE TABLE `/ ) {
+      die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+   }
+
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;

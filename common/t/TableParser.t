@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 
 require "../TableParser.pm";
@@ -18,6 +18,16 @@ sub load_file {
    close $fh;
    return $contents;
 }
+
+eval {
+   $p->parse( load_file('samples/noquotes.sql') );
+};
+like($EVAL_ERROR, qr/quoting/, 'No quoting');
+
+eval {
+   $p->parse( load_file('samples/ansi_quotes.sql') );
+};
+like($EVAL_ERROR, qr/quoting/, 'ANSI quoting');
 
 $t = $p->parse( load_file('samples/t1.sql') );
 is_deeply(
