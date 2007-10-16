@@ -1,0 +1,14 @@
+use test;
+drop table if exists table_1;
+drop table if exists table_2;
+drop table if exists table_3;
+drop table if exists table_4;
+DROP TABLE IF EXISTS `table_5`;
+drop table if exists table_6;
+drop table if exists table_7;
+drop table if exists table_8;
+drop table if exists table_9;
+drop table if exists table_10;
+drop table if exists table_11;
+drop table if exists table_12;
+drop table if exists table_13, table_odd, table_even;

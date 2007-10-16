@@ -296,3 +296,6 @@ $output = `perl ../mysql-archiver --nosafeautoinc --purge -W 1=1 --source D=test
 is($output, '', 'Disabled safeautoinc worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_12"`;
 is($output + 0, 0, "Disabled safeautoinc purged whole table");
+
+# Clean up.
+`mysql --defaults-file=$opt_file < after.sql`;
