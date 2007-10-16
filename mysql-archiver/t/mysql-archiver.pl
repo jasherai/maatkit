@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 73;
+use Test::More tests => 76;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -267,6 +267,16 @@ $output = `perl ../mysql-archiver -W 1=1 -s m=Plugin5,D=test,t=tmp_table,F=$opt_
 is($output, '', 'Loading plugin worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_10"`;
 is($output + 0, 2, 'Plugin archived all rows to table_10 OK');
+
+# Check plugin that sets up and archives to one or the other table depending
+# on even/odd
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -W 1=1 -s D=test,t=table_13,F=$opt_file -d m=Plugin6,t=table_10 2>&1`;
+is($output, '', 'Loading plugin worked OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_even"`;
+is($output + 0, 1, 'Plugin archived all rows to table_even OK');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_odd"`;
+is($output + 0, 2, 'Plugin archived all rows to table_odd OK');
 
 # Statistics
 `mysql --defaults-file=$opt_file < before.sql`;
