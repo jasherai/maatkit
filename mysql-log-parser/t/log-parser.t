@@ -3,24 +3,25 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 11;
+use Test::More tests => 2;
 use English qw(-no_match_vars);
 
 require "../mysql-log-parser";
 
 my $p = new LogParser;
-my $e;
+my @e;
 my $i;
+my $events;
+my $file;
 
 sub simple_callback {
    my ( $event ) = @_;
-   $e = $event;
+   push @e, $event;
 }
 
 # Check that I can parse a simple log with defaults (the general query log
 # format).
-open my $file, "<", 'samples/log001.txt' or die $OS_ERROR;
-my @events = (
+$events = [
    {
       ts  => '071002  7:11:56',
       id  => 7,
@@ -89,15 +90,76 @@ my @events = (
       cmd => 'Quit',
       arg => '',
    },
+];
+
+@e = ();
+open $file, "<", 'samples/log001.txt' or die $OS_ERROR;
+1 while ( $p->parse_event($file, \&simple_callback) );
+close $file;
+is_deeply(
+   \@e,
+   $events,
+   "Got events from the simple log file",
 );
 
-$i = 0;
-foreach my $event(@events) {
-   $p->parse_event($file, \&simple_callback);
-   is_deeply(
-      $e,
-      $event,
-      "Got event $i from the file",
-   );
-   $i++;
-}
+# Check that I can parse a slow log in the default slow log format.
+$events = [
+   {
+      ts  => '071015 21:43:52',
+      cmd => 'Init DB',
+      user => 'root',
+      host => 'localhost',
+      ip   => '',
+      arg => 'test',
+      query_time => 2,
+      lock_time => 0,
+      rows_sent => 1,
+      rows_exam => 0,
+   },
+   {
+      ts  => '071015 21:43:52',
+      cmd => 'Query',
+      user => 'root',
+      host => 'localhost',
+      ip   => '',
+      arg => 'select sleep(2) from n',
+      query_time => 2,
+      lock_time => 0,
+      rows_sent => 1,
+      rows_exam => 0,
+   },
+   {
+      ts  => '071015 21:45:10',
+      cmd => 'Init DB',
+      user => 'root',
+      host => 'localhost',
+      ip   => '',
+      arg => 'sakila',
+      query_time => 2,
+      lock_time => 0,
+      rows_sent => 1,
+      rows_exam => 0,
+   },
+   {
+      ts  => '071015 21:45:10',
+      cmd => 'Query',
+      user => 'root',
+      host => 'localhost',
+      ip   => '',
+      arg => 'select sleep(2) from test.n',
+      query_time => 2,
+      lock_time => 0,
+      rows_sent => 1,
+      rows_exam => 0,
+   },
+];
+
+open $file, "<", 'samples/slow001.txt' or die $OS_ERROR;
+@e = ();
+1 while ( $p->parse_event($file, \&simple_callback) );
+close $file;
+is_deeply(
+   \@e,
+   $events,
+   "Got events from the slow log",
+);
