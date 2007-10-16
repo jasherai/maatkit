@@ -18,6 +18,7 @@ sub before_insert {
    $self->{sth}->execute(@{$args{row}});
 }
 
+sub custom_sth {} # no action
 sub before_begin {} # Take no action
 sub after_finish {} # Take no action
 

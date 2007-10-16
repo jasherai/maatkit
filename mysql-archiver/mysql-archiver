@@ -619,12 +619,17 @@ while (                          # Quit if:
 
       # INSERT must come first, to be as safe as possible.
       if ( $dst ) {
+         my $ins_sth; # Allow the plugin to change which sth is used for the INSERT.
          if ( $dst->{plugin} ) {
             trace('before_insert', sub {
                $dst->{plugin}->before_insert(row => $row);
             });
+            trace('custom_sth', sub {
+               $ins_sth = $dst->{plugin}->custom_sth(row => $row, sql => $ins_sql);
+            });
          }
-         my $success = do_with_retries( 'inserting', sub { $ins_row->execute(@$row) } );
+         $ins_sth ||= $ins_row; # Default to the sth decided before.
+         my $success = do_with_retries( 'inserting', sub { $ins_sth->execute(@$row) } );
          if ( $success == 0 ) {
             $retries = -1;
             last ROW;
@@ -1512,6 +1517,20 @@ applies to L<"--dest">.  You could use this to insert the row into multiple tabl
 perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a data
 warehouse.
 
+=item custom_sth(row => \@row, sql => $sql)
+
+This method is called just before inserting the row, but after
+L<"before_insert()">.  It allows the plugin to specify different C<INSERT>
+statement if desired.  The return value (if any) should be a DBI statement
+handle.  The C<sql> parameter is the SQL text used to prepare the default
+C<INSERT> statement.
+
+If no value is returned, the default C<INSERT> statement handle is used.
+
+This method only applies to the plugin specified for L<"--dest">, so if your
+plugin isn't doing what you expect, check that you've specified it for the
+destination and not the source.
+
 =item after_finish()
 
 This method is called after mysql-archiver exits the archiving loop, commits all
@@ -1552,7 +1571,8 @@ A sample module might look like this:
    
    sub before_delete {} # Take no action
    sub before_insert {} # Take no action
-   sub after_finish {}  # Take no action
+   sub custom_sth    {} # Take no action
+   sub after_finish  {} # Take no action
    
    1;
 
