@@ -1644,6 +1644,8 @@ queries will be executed on the slave, and if the table or database does not
 exist, they will cause replication to fail.  For more information on replication
 rules, see L<http://dev.mysql.com/doc/en/replication-rules.html>.
 
+The table specified by L<"--replicate"> will never be checksummed itself.
+
 =item --separator
 
 This option controls the separator character used for CONCAT_WS() when taking
