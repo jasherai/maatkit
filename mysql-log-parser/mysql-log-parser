@@ -169,6 +169,12 @@ sub parse_event {
       $line = <$fh> unless $done;
    }
 
+   # If it was EOF, discard the last line so statefulness doesn't interfere with
+   # the next log file.
+   if ( !defined $line ) {
+      $self->{last_line} = undef;
+   }
+
    if ( $mode eq 'slow' ) {
       $event->{arg} =~ s/;\s*//g;
    }
