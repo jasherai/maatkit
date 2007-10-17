@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 3;
 use English qw(-no_match_vars);
 
 require "../mysql-log-parser";
@@ -162,4 +162,42 @@ is_deeply(
    \@e,
    $events,
    "Got events from the slow log",
+);
+
+# Check that I can parse a slow log in the micro-second slow log format.
+$events = [
+   {
+      ts  => '071015 21:43:52',
+      cmd => 'Query',
+      user => 'root',
+      host => 'localhost',
+      ip   => '',
+      arg => "SELECT id FROM users WHERE name='baouong'",
+      query_time => '0.000652',
+      lock_time => '0.000109',
+      rows_sent => 1,
+      rows_exam => 1,
+   },
+   {
+      ts  => '071015 21:43:52',
+      cmd => 'Query',
+      user => 'root',
+      host => 'localhost',
+      ip   => '',
+      arg => "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
+      query_time => '0.001943',
+      lock_time => '0.000145',
+      rows_sent => 0,
+      rows_exam => 0,
+   },
+];
+
+open $file, "<", 'samples/microslow001.txt' or die $OS_ERROR;
+@e = ();
+1 while ( $p->parse_event($file, \&simple_callback) );
+close $file;
+is_deeply(
+   \@e,
+   $events,
+   "Got events from the micro slow log",
 );
