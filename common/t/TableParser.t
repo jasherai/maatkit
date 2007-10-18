@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 
 require "../TableParser.pm";
@@ -196,3 +196,23 @@ is_deeply(
    },
    'sakila.film is OK',
 );
+
+$t = $p->parse( load_file('samples/temporary_table.sql') );
+is_deeply(
+   $t,
+   {  cols         => [qw(a)],
+      col_posn     => { a => 0 },
+      is_col       => { a => 1 },
+      is_autoinc   => { a => 0 },
+      null_cols    => [qw(a)],
+      is_nullable  => { a => 1 },
+      keys         => {},
+      defs         => { a => '  `a` int(11) default NULL' },
+      numeric_cols => [qw(a)],
+      is_numeric   => { a => 1 },
+      engine       => 'MyISAM',
+      type_for     => { a => 'int' },
+   },
+   'Temporary table is OK',
+);
+
