@@ -103,7 +103,7 @@ is($output, "The specified index could not be found, or there is no PRIMARY key.
 # Test specifying a NULLable index.
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mysql-archiver -W 1=1 --source i=b,D=test,t=table_1,F=$opt_file --purge 2>&1`;
-is($output, "Some columns in index `b` allow NULL.\n", 'Got NULL-index error');
+is($output, "Column 'b' in index 'b' is NULLable.\n", 'Got NULL-index error');
 
 # Test table without a primary key
 `mysql --defaults-file=$opt_file < before.sql`;
@@ -192,11 +192,11 @@ is($output + 0, 4, 'Found rows in new table OK');
 
 # Test --columns
 $output = `perl ../mysql-archiver -W 1=1 -t --source D=test,t=table_1,F=$opt_file --columns=a,b --purge 2>&1`;
-like($output, qr/SELECT (?:SQL_NO_CACHE)? `a`,`b` FROM/, 'Only got specified columns');
+like($output, qr{SELECT /\*!40001 SQL_NO_CACHE \*/ `a`,`b` FROM}, 'Only got specified columns');
 
 # Test --pkonly
 $output = `perl ../mysql-archiver -W 1=1 -t --source D=test,t=table_1,F=$opt_file --pkonly --purge 2>&1`;
-like($output, qr/SELECT (?:SQL_NO_CACHE)? `a` FROM/, '--pkonly works');
+like($output, qr{SELECT /\*!40001 SQL_NO_CACHE \*/ `a` FROM}, '--pkonly works');
 
 # Test that tables must have same columns
 $output = `perl ../mysql-archiver -W 1=1 -t --dest t=table_4 --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
