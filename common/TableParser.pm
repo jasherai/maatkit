@@ -29,27 +29,25 @@ sub parse {
    my %def_for;
    @def_for{@cols} = @defs;
 
-   my @nums =
-      map  { $_ =~ m/`([^`]+)`/g }
-      grep { $_ =~ m/`[^`]+` (?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ } @defs;
-   my %is_numeric = map { $_ => 1 } @nums;
-
-   # Find column types.
-   my %type_for;
+   # Find column types, whether numeric, whether nullable, whether
+   # auto-increment.
+   my (@nums, @null);
+   my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
    foreach my $col ( @cols ) {
       my $def = $def_for{$col};
       my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
       die "Can't determine column type for $def" unless $type;
       $type_for{$col} = $type;
+      if ( $type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ) {
+         push @nums, $col;
+         $is_numeric{$col} = 1;
+      }
+      if ( $def !~ m/NOT NULL/ && $def !~ m/text$/ ) {
+         push @null, $col;
+         $is_nullable{$col} = 1;
+      }
+      $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
    }
-
-   my @null;
-   foreach my $col ( @cols ) {
-      my $def = $def_for{$col};
-      next if $def =~ m/NOT NULL/ || $def =~ m/text$/;
-      push @null, $col;
-   }
-   my %is_nullable = map { $_ => 1 } @null;
 
    my %keys;
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
@@ -88,9 +86,11 @@ sub parse {
 
    return {
       cols           => \@cols,
+      col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
       is_col         => { map { $_ => 1 } @cols },
       null_cols      => \@null,
       is_nullable    => \%is_nullable,
+      is_autoinc     => \%is_autoinc,
       keys           => \%keys,
       defs           => \%def_for,
       numeric_cols   => \@nums,
