@@ -89,6 +89,117 @@ sub usage {
 # ###########################################################################
 
 # ###########################################################################
+# TableParser package
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableParser;
+
+sub new {
+   bless {}, shift;
+}
+
+sub parse {
+   my ( $self, $ddl, $opts ) = @_;
+
+   if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
+      die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+   }
+
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+
+   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+
+   my %def_for;
+   @def_for{@cols} = @defs;
+
+   my (@nums, @null);
+   my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
+      die "Can't determine column type for $def" unless $type;
+      $type_for{$col} = $type;
+      if ( $type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ) {
+         push @nums, $col;
+         $is_numeric{$col} = 1;
+      }
+      if ( $def !~ m/NOT NULL/ && $def !~ m/text$/ ) {
+         push @null, $col;
+         $is_nullable{$col} = 1;
+      }
+      $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
+   }
+
+   my %keys;
+   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
+
+      if ( $engine !~ m/MEMORY|HEAP/ ) {
+         $key =~ s/USING HASH/USING BTREE/;
+      }
+
+      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
+      $type = $type || $special || 'BTREE';
+      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
+         && $engine =~ m/HEAP|MEMORY/i )
+      {
+         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
+      }
+
+      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
+      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
+      my @cols   = grep { m/[^,]/ } split('`', $cols);
+      $name      =~ s/`//g;
+
+      $keys{$name} = {
+         colnames    => $cols,
+         cols        => \@cols,
+         unique      => $unique,
+         is_col      => { map { $_ => 1 } @cols },
+         is_nullable => scalar(grep { $is_nullable{$_} } @cols),
+         type        => $type,
+      };
+   }
+
+   return {
+      cols           => \@cols,
+      col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
+      is_col         => { map { $_ => 1 } @cols },
+      null_cols      => \@null,
+      is_nullable    => \%is_nullable,
+      is_autoinc     => \%is_autoinc,
+      keys           => \%keys,
+      defs           => \%def_for,
+      numeric_cols   => \@nums,
+      is_numeric     => \%is_numeric,
+      engine         => $engine,
+      type_for       => \%type_for,
+   };
+}
+
+sub get_ddl {
+   my ( $self, $dbh, $db, $tbl ) = @_;
+   $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+      . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+      . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+   my $href = $dbh->selectrow_hashref("SHOW CREATE TABLE `$db`.`$tbl`");
+   $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+      . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+   my ($key) = grep { m/create table/i } keys %$href;
+   return $href->{$key};
+}
+
+1;
+
+# ###########################################################################
+# End TableParser package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -348,6 +459,7 @@ if ( !caller ) {
    # Inspect DB servers and tables.
    # ############################################################################
 
+   my $tp = new TableParser;
    foreach my $table ( grep { $_ } ($src, $dst) ) {
       my $dbh        = get_dbh($table);
       $table->{dbh}  = $dbh;
@@ -361,6 +473,7 @@ if ( !caller ) {
          ( $table->{D}, $table->{t} )
       );
       # Older DBD::mysql quote_identifier() uses double quotes
+      # TODO: build a quoter module.
       if ( (my $q = substr($table->{db_tbl}, 0, 1)) ne '`' ) {
          $table->{db_tbl} =~ s{
             ^$q         # Leading quote
@@ -389,12 +502,13 @@ if ( !caller ) {
          });
       }
 
-      $table->{info} = get_tbl_struct($table);
+      $table->{info} = $tp->parse(
+         $tp->get_ddl($dbh, $table->{D}, $table->{t}));
    }
 
    if ( $dst && $opts{C} ) {
       my @not_in_src = grep {
-         !exists $src->{info}->{col_hash}->{$_}
+         !$src->{info}->{is_col}->{$_}
       } @{$dst->{info}->{cols}};
       if ( @not_in_src ) {
          die "The following columns exist in --dest but not --source: "
@@ -402,7 +516,7 @@ if ( !caller ) {
             . "\n";
       }
       my @not_in_dst = grep {
-         !exists $dst->{info}->{col_hash}->{$_}
+         !$dst->{info}->{is_col}->{$_}
       } @{$src->{info}->{cols}};
       if ( @not_in_dst ) {
          die "The following columns exist in --source but not --dest: "
@@ -431,13 +545,13 @@ if ( !caller ) {
    # for DELETEs.  @asc_slice is only used to generate queries; it is the column
    # ordinals of the index the get_next query will ascend.  @get_next_slice
    # is the column ordinals in the order in which they appear in the get_next
-   # query's WHERE clause.  $key_is_ai is set true if the key is a single-column,
-   # non-nullable, AUTO_INCREMENT.
+   # query's WHERE clause.  $key_is_ai is true if the key is a single-column
+   # AUTO_INCREMENT.
    my (@pk_slice, @asc_slice, @get_next_slice, $key_is_ai);
 
-   my @cols = $opts{c} ? split(/,/, $opts{c})               # Explicitly specified columns
-            : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}} # PK only
-            :            @{$src->{info}->{cols}};           # All columns
+   my @cols = $opts{c} ? split(/,/, $opts{c})                       # Explicitly specified columns
+            : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
+            :            @{$src->{info}->{cols}};                   # All columns
 
    # Do we have an index to ascend?  Use PRIMARY if nothing specified.
    if ( $opts{N} && ($src->{i} || $src->{info}->{keys}->{PRIMARY}) ) {
@@ -452,13 +566,12 @@ if ( !caller ) {
 
       if ( $ixname ) {
          $src->{i} = $ixname; # Corrects lettercase if it's wrong
-         my @asc_cols = @{$src->{info}->{keys}->{$ixname}};
+         my @asc_cols = @{$src->{info}->{keys}->{$ixname}->{cols}};
 
          if ( @asc_cols ) {
             # Determine $key_is_ai; must come before the ascendfirst stmt below.
             if ( @asc_cols == 1 ) {
-               my $def = $src->{info}->{def_hash}->{$asc_cols[0]};
-               $key_is_ai = ($def =~ m/AUTO_INCREMENT/i && $def =~ m/NOT NULL/);
+               $key_is_ai = $src->{info}->{is_autoinc}->{$asc_cols[0]};
             }
 
             if ( $opts{ascendfirst} ) {
@@ -466,9 +579,10 @@ if ( !caller ) {
             }
 
             # Check that each column is defined as NOT NULL.
-            my @not_null = grep { $src->{info}->{null_hash}->{$_} } @asc_cols;
-            if ( @not_null ) {
-               die "Some columns in index `$ixname` allow NULL.\n";
+            foreach my $col ( @asc_cols ) {
+               if ( $src->{info}->{is_nullable}->{$col} ) {
+                  die "Column '$col' in index '$ixname' is NULLable.\n";
+               }
             }
 
             # We found the columns by name, now find their positions for use as
@@ -487,8 +601,7 @@ if ( !caller ) {
    $first_sql
       = 'SELECT'
       . ( $opts{hpselect}           ? ' HIGH_PRIORITY' : '' )
-      . ( version_ge($dbh, '4.0.1') ? ' SQL_NO_CACHE'  : '' )
-      . ' '
+      . ' /*!40001 SQL_NO_CACHE */ '
       . join(',', map {$dbh->quote_identifier($_)} @cols)
       . " FROM $src->{db_tbl}"
       . ( $src->{i}
@@ -546,7 +659,7 @@ if ( !caller ) {
    if ( $src->{info}->{keys}->{PRIMARY} ) {
       @pk_slice = map {
          $src->{info}->{col_posn}->{$_}
-      } @{$src->{info}->{keys}->{PRIMARY}};
+      } @{$src->{info}->{keys}->{PRIMARY}->{cols}};
       die "Can't find ordinal position of all columns"
          if grep { !defined($_) } @pk_slice;
    }
@@ -939,40 +1052,6 @@ sub version_ge {
    my ( $dbh, $target ) = @_;
    my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
    return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
-}
-
-sub get_tbl_struct {
-   my ( $info ) = @_;
-   my $ddl = ($info->{dbh}->selectrow_array("SHOW CREATE TABLE $info->{db_tbl}"))[1];
-   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
-   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
-   my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
-   my %kdef = ();
-   my %keys =
-      map {
-         my ($name) = $_ =~ m/(PRIMARY|`[^`]*`)/;
-         my ($cols) = $_ =~ m/\((.+)\),?$/;
-         $name =~ s/`//g;
-         $kdef{$name} = $_;
-         ($name, [ $cols =~ m/`(.*?)`(?:\(\d+\))?,?/g ])
-      }
-      $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
-
-   my %def_hash;
-   @def_hash{@cols} = @defs;
-
-   return {
-      cols      => \@cols,
-      col_hash  => { map { $_ => 1 } @cols },
-      null      => \@null,
-      null_hash => { map { $_ => 1 } @null },
-      keys      => \%keys,
-      kdef      => \%kdef,
-      defs      => \@defs,
-      def_hash  => \%def_hash,
-      ddl       => $ddl,
-      col_posn  => { map { $cols[$_] => $_ } 0..$#cols },
-   };
 }
 
 sub parse_dsn {
