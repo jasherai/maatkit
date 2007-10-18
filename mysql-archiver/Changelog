@@ -1,6 +1,6 @@
 Changelog for mysql-archiver:
 
-   * Destination plugins can now influence the INSERT statement.
+   * Destination plugins can now rewrite the INSERT statement.
 
 2007-08-23: version 1.0.1
 
