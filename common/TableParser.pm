@@ -16,7 +16,7 @@ sub new {
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
 
-   if ( $ddl !~ m/CREATE TABLE `/ ) {
+   if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
       die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
 
