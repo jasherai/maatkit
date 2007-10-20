@@ -319,6 +319,37 @@ sub get_cxn_params {
 # ###########################################################################
 
 # ###########################################################################
+# VersionParser package
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package VersionParser;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub parse {
+   my ( $self, $str ) = @_;
+   return sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+}
+
+sub version_ge {
+   my ( $self, $dbh, $target ) = @_;
+   $self->{$dbh} ||= $self->parse(
+      $dbh->selectrow_array('SELECT VERSION()'));
+   return $self->{$dbh} ge $self->parse($target);
+}
+
+1;
+
+# ###########################################################################
+# End VersionParser package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -352,6 +383,7 @@ my $dp = new DSNParser(
    { key => 'i', copy => 1, desc => 'Index to use' },
    { key => 'm', copy => 0, desc => 'Plugin module name' },
 );
+my $vp = new VersionParser;
 
 if ( !caller ) {
 
@@ -715,12 +747,12 @@ if ( !caller ) {
       . join(',', map {$dbh->quote_identifier($_)} @cols)
       . " FROM $src->{db_tbl}"
       . ( $src->{i}
-         ? ((version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
+         ? (($vp->version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
          : '')
       . " WHERE ($opts{W})";
 
    if ( $opts{safeautoinc} && $key_is_ai ) {
-      if ( !version_ge($dbh, '4.1.0') ) {
+      if ( !$vp->version_ge($dbh, '4.1.0') ) {
          die "--safeautoinc requires subqueries and thus MySQL >= 4.1.0\n";
       }
       my $col = "`$cols[$asc_slice[0]]`";
@@ -1157,13 +1189,6 @@ sub escape {
    } @$row);
 }
 
-# Compares versions like 5.0.27 and 4.1.15-standard-log
-sub version_ge {
-   my ( $dbh, $target ) = @_;
-   my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
-   return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
-}
-
 sub get_dbh {
    my ( $info ) = @_;
    my $db_options = {
@@ -1195,7 +1220,7 @@ sub ts {
 
 sub get_irot {
    my ( $dbh ) = @_;
-   return 1 unless version_ge($dbh, '5.0.13');
+   return 1 unless $vp->version_ge($dbh, '5.0.13');
    my $rows = $dbh->selectall_arrayref(
       "show variables like 'innodb_rollback_on_timeout'",
       { Slice => {} });
