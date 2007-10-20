@@ -16,7 +16,7 @@ sub quote {
    foreach my $val ( @vals ) {
       $val =~ s/`/``/g;
    }
-   map { '`' . $_ . '`' } @vals;
+   return join('.', map { '`' . $_ . '`' } @vals);
 }
 
 1;
