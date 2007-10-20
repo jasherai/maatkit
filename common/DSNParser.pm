@@ -86,6 +86,17 @@ sub usage {
    return $usage;
 }
 
+sub get_cxn_params {
+   my ( $self, $info ) = @_;
+   my $dsn
+      = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+      . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+                  grep { defined $info->{$_} }
+                  qw(F h P S))
+      . ';mysql_read_default_group=mysql';
+   return ($dsn, $info->{u}, $info->{p});
+}
+
 1;
 
 # ###########################################################################
