@@ -21,6 +21,11 @@ sub new {
    bless { specs => \@opts }, $class;
 }
 
+# Expands the compact specs into their full form and gets options.
+# k is the option's key
+# l is the option's long name
+# t is the option's short name
+# n is whether the option is negatable
 sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
@@ -41,19 +46,47 @@ sub parse {
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs ) or $defaults{help} = 1;
+   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs )
+      or $defaults{help} = 1;
    return %defaults;
 }
 
+# Prints out command-line help.  The format is like this:
+# --foo  -F   Description of --foo
+# --bars -B   Description of --bar
+# --longopt   Description of --longopt
+# Note that the short options are aligned along the right edge of their longest
+# long option, but long options that don't have a short option are allowed to
+# protrude past that.
 sub usage {
    my ( $self ) = @_;
    my @specs = @{$self->{specs}};
-   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   # Find how long the longest option is.
+   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   # Find how long the longest option with a short option is.
+   my $maxs = max(
+      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
+      grep { $_->{t} } @specs);
+
+   # Find how wide the 'left column' (long + short opts) is, and therefore how
+   # much space to give long options that have a short option.
+   my $lcol = max($maxl, ($maxs + 3));
+   my $lws  = $lcol - 3;
+
+   # Format and return the options.
    my $usage = '';
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t} ? "-$spec->{t}" : '';
-      $usage .= sprintf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+      my $short = $spec->{t};
+      my $desc  = $spec->{d};
+      if ( $short ) {
+         $usage .= sprintf("  --%-${lws}s -%s  %s\n", $long, $short, $desc);
+      }
+      else {
+         $usage .= sprintf("  --%-${maxl}s  %s\n", $long, $desc);
+      }
    }
    return $usage;
 }
