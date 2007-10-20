@@ -57,9 +57,10 @@ is_deeply(
 );
 
 is($p->usage,
-'  --dog     -D   Dogs are fun
-  --[no]foo      Foo
-  --love    -l   And peace
-',
-   'Use me'
+<<EOF
+  --dog  -D  Dogs are fun
+  --[no]foo  Foo
+  --love -l  And peace
+EOF
+, 'Use me'
 );
