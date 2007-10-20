@@ -350,6 +350,33 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
+# Quoter package
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -384,6 +411,7 @@ my $dp = new DSNParser(
    { key => 'm', copy => 0, desc => 'Plugin module name' },
 );
 my $vp = new VersionParser;
+my $q  = new Quoter;
 
 if ( !caller ) {
 
@@ -609,24 +637,11 @@ if ( !caller ) {
 
       $can_retry = $can_retry && !$table->{irot};
 
-      $table->{db_tbl} = $dbh->quote_identifier(
+      $table->{db_tbl} = $q->quote(
          map  { $_ =~ s/(^`|`$)//g; $_; }
          grep { $_ }
          ( $table->{D}, $table->{t} )
       );
-      # Older DBD::mysql quote_identifier() uses double quotes
-      # TODO: build a quoter module.
-      if ( (my $q = substr($table->{db_tbl}, 0, 1)) ne '`' ) {
-         $table->{db_tbl} =~ s{
-            ^$q         # Leading quote
-            |$q(?=\.)   # Quote before a dot
-            |(?<=\.)$q  # Quote after a dot
-            |$q$        # Trailing quote
-            }
-            {
-            `           # MySQL escape character
-            }gx;
-      }
 
       # Create objects for archivable and dependency handling, BEFORE getting the
       # tbl structure (because the object might do some setup, including creating
@@ -744,7 +759,7 @@ if ( !caller ) {
       = 'SELECT'
       . ( $opts{hpselect}           ? ' HIGH_PRIORITY' : '' )
       . ' /*!40001 SQL_NO_CACHE */ '
-      . join(',', map {$dbh->quote_identifier($_)} @cols)
+      . join(',', map { $q->quote($_) } @cols)
       . " FROM $src->{db_tbl}"
       . ( $src->{i}
          ? (($vp->version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
