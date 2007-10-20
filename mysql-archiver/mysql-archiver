@@ -200,6 +200,109 @@ sub get_ddl {
 # ###########################################################################
 
 # ###########################################################################
+# DSNParser package
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package DSNParser;
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my $self = {
+      D => {
+         desc => 'Database to use',
+         dsn  => 'database',
+         copy => 1,
+      },
+      F => {
+         desc => 'Only read default options from the given file',
+         dsn  => 'mysql_read_default_file',
+         copy => 1,
+      },
+      h => {
+         desc => 'Connect to host',
+         dsn  => 'host',
+         copy => 1,
+      },
+      p => {
+         desc => 'Password to use when connecting',
+         dsn  => 'password',
+         copy => 1,
+      },
+      P => {
+         desc => 'Port number to use for connection',
+         dsn  => 'port',
+         copy => 1,
+      },
+      S => {
+         desc => 'Socket file to use for connection',
+         dsn  => 'mysql_socket',
+         copy => 1,
+      },
+      u => {
+         desc => 'User for login if not current user',
+         dsn  => 'user',
+         copy => 1,
+      },
+   };
+   foreach my $opt ( @opts ) {
+      $self->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   }
+   return bless $self, $class;
+}
+
+sub parse {
+   my ( $self, $dsn, $prev, $defaults ) = @_;
+   return unless $dsn;
+   $prev     ||= {};
+   $defaults ||= {};
+   my %hash    = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   my %vals;
+   foreach my $key ( keys %$self ) {
+      $vals{$key} = $hash{$key};
+      if ( !defined $vals{$key} && defined $prev->{$key} && $self->{$key}->{copy} ) {
+         $vals{$key} = $prev->{$key};
+      }
+      if ( !defined $vals{$key} ) {
+         $vals{$key} = $defaults->{$key};
+      }
+   }
+   return \%vals;
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my $usage
+      = "  DSN syntax: key=value[,key=value...] Allowable DSN keys:\n"
+      . "  KEY  MEANING\n"
+      . "  ===  =============================================\n";
+   foreach my $key ( sort keys %$self ) {
+      $usage .= "  $key    "
+             .  ($self->{$key}->{desc} || '[No description]')
+             . "\n";
+   }
+   return $usage;
+}
+
+sub get_cxn_params {
+   my ( $self, $info ) = @_;
+   my $dsn
+      = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+      . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+                  grep { defined $info->{$_} }
+                  qw(F h P S))
+      . ';mysql_read_default_group=mysql';
+   return ($dsn, $info->{u}, $info->{p});
+}
+
+1;
+
+# ###########################################################################
+# End DSNParser package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -228,18 +331,10 @@ my $get_sth;
 # Holds the arguments for the $sth's bind variables, so it can be re-tried
 # easily.
 my @beginning_of_txn;
-
-my %conn   = (
-   h => 'host',
-   P => 'port',
-   S => 'mysql_socket',
-   u => 'user',
-   p => 'pass',
-   F => 'mysql_read_default_file',
-   D => 'database',
-   t => 'table',
-   i => 'index',
-   m => 'plugin_module',
+my $dp = new DSNParser(
+   { key => 't', copy => 1, desc => 'Table to use' },
+   { key => 'i', copy => 1, desc => 'Index to use' },
+   { key => 'm', copy => 0, desc => 'Plugin module name' },
 );
 
 if ( !caller ) {
@@ -255,7 +350,7 @@ if ( !caller ) {
       { s => 'ascendfirst', d => 'Ascend only first column of index' },
       { s => 'askpass',     d => 'Prompt for password for connections' },
       { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
-      { s => 'chkcols|C!',  d => 'Check that --source and --dest have same columns (default)' },
+      { s => 'chkcols|C!',  d => 'Ensure --source and --dest have same columns (default)' },
       { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
       { s => 'commit-each', d => 'Commit each group of fetched and archived rows' },
       { s => 'dest|d=s',    d => 'Table to archive to' },
@@ -273,21 +368,21 @@ if ( !caller ) {
       { s => 'optimize|O=s',d => 'Run OPTIMIZE TABLE afterwards on --source and/or --dest' },
       { s => 'pkonly|k',    d => 'Primary key columns only' },
       { s => 'progress|P=i',d => 'Print progress information every X rows' },
-      { s => 'purge|p',     d => 'Purge instead of archive; allows to omit --file and --dest' },
+      { s => 'purge|p',     d => 'Purge, not archive; allows to omit --file and --dest' },
       { s => 'quickdel',    d => 'Add the QUICK modifier to DELETE statements' },
       { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
       { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
       { s => 'safeautoinc!',d => 'Do not archive row with max AUTO_INCREMENT (default)'},
       { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
-      { s => 'sharelock',   d => 'Adds the LOCK IN SHARE MODE modifier to SELECT statements' },
+      { s => 'sharelock',   d => 'Adds LOCK IN SHARE MODE to SELECT statements' },
       { s => 'skipfkchk|K', d => 'Turn off foreign key checks' },
       { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
       { s => 'source|s=s',  d => 'Table to archive from' },
       { s => 'statistics',  d => 'Collect and print timing statistics' },
-      { s => 'stop',        d => 'Stop all running instances by creating the sentinel file' },
+      { s => 'stop',        d => 'Stop running instances by creating the sentinel file' },
       { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
       { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
-      { s => 'txnsize|z=i', d => 'Transaction size in number of rows (default 1; 0 disables)' },
+      { s => 'txnsize|z=i', d => 'Number of rows per transaction (default 1; 0 disables)' },
       { s => 'version',     d => 'Output version information and exit' },
       { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive (required)' },
       { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
@@ -324,8 +419,8 @@ if ( !caller ) {
       exit(0);
    }
 
-   $src = parse_dsn($opts{s});
-   $dst = parse_dsn($opts{d}, $src) if $src && $opts{d};
+   $src = $dp->parse($opts{s});
+   $dst = $dp->parse($opts{d}, $src) if $src && $opts{d};
 
    # Generate a filename with sprintf-like formatting codes.
    if ( $opts{f} ) {
@@ -414,12 +509,11 @@ if ( !caller ) {
 
    if ( $opts{help} ) {
       print "Usage: mysql-archiver --source SOURCE --where WHERE <options>\n\n";
-      print $opt_parser->usage();
+      print $opt_parser->usage(), "\n", $dp->usage();
       (my $usage = <<"      USAGE") =~ s/^         //gm;
 
          mysql-archiver nibbles records from a MySQL table.  The --source and --dest
-         arguments require a special format.  For more details, please read the
-         documentation:
+         arguments use DSN syntax.  For more details, please read the documentation:
 
             perldoc mysql-archiver
 
@@ -1054,19 +1148,6 @@ sub version_ge {
    return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
 }
 
-sub parse_dsn {
-   my ($dsn, $prev) = @_;
-   return unless $dsn;
-   $prev ||= {};
-
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-   my %vals = map  { $_ => $hash{$_} || $prev->{$_} }
-              grep { $_ ne 'm' } # DO NOT copy the 'm' from --source to --dest
-              keys %conn;
-   $vals{m} = $hash{m}; # Add 'm'
-   return \%vals;
-}
-
 sub get_dbh {
    my ( $info ) = @_;
    my $db_options = {
@@ -1075,7 +1156,7 @@ sub get_dbh {
       PrintError => 0,
    };
 
-   if ( !$info->{p} && $opts{askpass} ) {
+   if ( !defined $info->{p} && $opts{askpass} ) {
       print "Enter password for $info->{h}: ";
       ReadMode('noecho');
       chomp($info->{p} = <STDIN>);
@@ -1083,10 +1164,7 @@ sub get_dbh {
       print "\n";
    }
 
-   my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
-      . ';mysql_read_default_group=mysql';
-   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options);
+   return DBI->connect($dp->get_cxn_params($info), $db_options);
 }
 
 sub ts {
