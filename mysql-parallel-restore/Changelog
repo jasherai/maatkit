@@ -1,5 +1,7 @@
 Changelog for mysql-parallel-restore:
 
+   * Fixed documentation formatting errors.
+
 2007-10-15: version 0.9.0
 
    * Initial release.
