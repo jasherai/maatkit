@@ -862,11 +862,11 @@ from being logged to the server's binary log.
 
 =item --noforeignkeys
 
-Set C<FOREIGN_KEY_CHECKS=0 before C<LOAD DATA INFILE>.
+Set C<FOREIGN_KEY_CHECKS=0> before C<LOAD DATA INFILE>.
 
 =item --nouniquechecks
 
-Set C<UNIQUE_CHECKS=0 before C<LOAD DATA INFILE>.
+Set C<UNIQUE_CHECKS=0> before C<LOAD DATA INFILE>.
 
 =item --numthread
 
