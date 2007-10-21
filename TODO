@@ -22,3 +22,8 @@ to a colorizer or pushed into mysql-query-profiler.
 
 Log parsing and coloring:
 
+Promoting masters:
+   * compare positions
+   * choose slave that's most up-to-date
+   * use SHOW BINARY LOG EVENTS and some math to find the corresponding
+     positions and issue CHANGE MASTER TO on each slave.
