@@ -42,7 +42,16 @@ use List::Util qw(max);
 
 sub new {
    my ( $class, @opts ) = @_;
-   bless { specs => \@opts }, $class;
+   my %opt_seen;
+   foreach my $opt ( @opts ) {
+      my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+      $opt->{k} = $short || $long;
+      $opt->{l} = $long;
+      $opt->{t} = $short;
+      $opt->{n} = $opt->{s} =~ m/!/;
+      die "Duplicate option $opt->{k}" if $opt_seen{$opt->{k}}++;
+   }
+   return bless { specs => \@opts }, $class;
 }
 
 sub parse {
@@ -51,17 +60,13 @@ sub parse {
 
    my %opt_seen;
    foreach my $spec ( @specs ) {
-      my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-      $spec->{k} = $short || $long;
-      $spec->{l} = $long;
-      $spec->{t} = $short;
-      $spec->{n} = $spec->{s} =~ m/!/;
       $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
-      die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+      $opt_seen{$spec->{k}} = 1;
    }
 
    foreach my $key ( keys %defaults ) {
-      die "No such option '$key'\n" unless exists $opt_seen{$key};
+      die "Cannot set default for non-existent option '$key'\n"
+         unless $opt_seen{$key};
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -81,6 +86,8 @@ sub usage {
       grep { $_->{t} } @specs);
 
    my $lcol = max($maxl, ($maxs + 3));
+
+   $maxs = max($lcol - 3, $maxs);
 
    my $usage = '';
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
