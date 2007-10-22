@@ -9,9 +9,11 @@ use English qw(-no_match_vars);
 require "../OptionParser.pm";
 
 my @specs = (
-   { s => 'foo!',    d => 'Foo' },
-   { s => 'dog|D=s', d => 'Dogs are fun' },
-   { s => 'love|l+', d => 'And peace' },
+   { s => 'defaultset!',       d => 'alignment test' },
+   { s => 'defaults-file|F=s', d => 'alignment test' },
+   { s => 'dog|D=s',           d => 'Dogs are fun' },
+   { s => 'foo!',              d => 'Foo' },
+   { s => 'love|l+',           d => 'And peace' },
 );
 
 my $p = new OptionParser(@specs);
@@ -21,7 +23,7 @@ my %opts;
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 1, D => undef, l => undef },
+   { foo => 1, D => undef, l => undef, F => undef, defaultset => undef },
    'Basics works'
 );
 
@@ -29,7 +31,7 @@ is_deeply(
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 0, D => undef, l => undef },
+   { foo => 0, D => undef, l => undef, F => undef, defaultset => undef },
    'Negated foo'
 );
 
@@ -37,7 +39,8 @@ is_deeply(
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 1, D => undef, help => 1, l => undef },
+   { foo => 1, D => undef, help => 1, l => undef, F => undef, defaultset =>
+   undef },
    'Bad dog'
 );
 
@@ -52,15 +55,17 @@ delete $defaults{bone};
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 1, D => undef, l => 3 },
+   { foo => 1, D => undef, l => 3, F => undef, defaultset => undef },
    'More love'
 );
 
 is($p->usage,
 <<EOF
-  --dog  -D  Dogs are fun
-  --[no]foo  Foo
-  --love -l  And peace
+  --defaults-file -F  alignment test
+  --[no]defaultset    alignment test
+  --dog           -D  Dogs are fun
+  --[no]foo           Foo
+  --love          -l  And peace
 EOF
 , 'Use me'
 );

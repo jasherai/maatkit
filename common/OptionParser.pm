@@ -73,7 +73,6 @@ sub usage {
    # Find how wide the 'left column' (long + short opts) is, and therefore how
    # much space to give long options that have a short option.
    my $lcol = max($maxl, ($maxs + 3));
-   my $lws  = $lcol - 3;
 
    # Format and return the options.
    my $usage = '';
@@ -82,10 +81,10 @@ sub usage {
       my $short = $spec->{t};
       my $desc  = $spec->{d};
       if ( $short ) {
-         $usage .= sprintf("  --%-${lws}s -%s  %s\n", $long, $short, $desc);
+         $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
       }
       else {
-         $usage .= sprintf("  --%-${maxl}s  %s\n", $long, $desc);
+         $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
       }
    }
    return $usage;
