@@ -10,8 +10,6 @@ sub new {
    bless {}, shift;
 }
 
-   my ($first_sql, $next_sql, $del_sql, $ins_sql);
-
    # These are lists of columns by ordinal position, not by name.  This is
    # necessary because the rows are fetched from the DB as arrays, not as hashes,
    # for efficiency, but for various statements I want one or the other subset of
@@ -21,52 +19,71 @@ sub new {
    # is the column ordinals in the order in which they appear in the get_next
    # query's WHERE clause.
 
-   my (@pk_slice, @asc_slice, @get_next_slice);
+# Creates the SQL needed to fetch the first row, fetch next rows, insert, and
+# delete.  Returns a hashref of
+# * first_sql     SQL hashref for fetching first row.
+# * next_sql      Ditto, but given last row and a slice, will fetch next row.
+# * del_sql       Ditto, to delete a row.
+# * ins_sql       Ditto, to insert a row.
+# * pk_cols       The column names of the PK in first_sql & next_sql.
+# * pk_slice      Ditto, column ordinals.
+# * asc_cols      The column names of the columns we'll ascend.
+# * asc_slice     Ditto, column ordinals.
+# * next_cols     Column names to pass to next_sql
+# * next_slice    Ditto, column ordinals.
+# * index         The index to ascend.
+#
+# A "SQL hashref" is the column list, values list, and WHERE clause, with ?
+# placeholders where needed.
+#
+# Arguments are as follows:
+# * tbl           Hashref as provided by TableParser.
+# * cols          Arrayref of columns to SELECT from the table.
+# * index         Which index to ascend; defaults to PRIMARY.
+# * ascendfirst   Ascend the first column of the given index.
+sub generate_nibble {
+   my ( $self, %opts ) = @_;
 
-   my @cols = $opts{c} ? split(/,/, $opts{c})                       # Explicitly specified columns
-            : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
-            :            @{$src->{info}->{cols}};                   # All columns
+   my $tbl  = $opts{tbl};
+   my @cols = @{$opts{cols}};
+   my $idx  = (!$opts{index} || uc $opts{index} eq 'PRIMARY') ? 'PRIMARY' : $opts{index};
 
-   # Do we have an index to ascend?  Use PRIMARY if nothing specified.
-   if ( $opts{N} && ($src->{i} || $src->{info}->{keys}->{PRIMARY}) ) {
-      # Make sure the lettercase is right and find the index...
-      my $ixname = $src->{i} || '';
-      if ( uc $ixname eq 'PRIMARY' || !$src->{i} ) {
-         $ixname = 'PRIMARY';
-      }
-      else {
-         ($ixname) = grep { uc $_ eq uc $src->{i} } keys %{$src->{info}->{keys}};
-      }
+   my ($first_sql, $next_sql, $del_sql, $ins_sql);
+   my (@asc_cols, @pk_slice, @asc_slice, @get_next_slice);
 
-      if ( $ixname ) {
-         $src->{i} = $ixname; # Corrects lettercase if it's wrong
-         my @asc_cols = @{$src->{info}->{keys}->{$ixname}->{cols}};
+   # ##########################################################################
+   # Detect indexes and columns needed.
+   # ##########################################################################
+   # Make sure the lettercase is right and verify that the index exists.
+   if ( $idx ne 'PRIMARY' ) {
+      ($idx) = grep { uc $_ eq uc $idx } keys %{$tbl->{keys}};
+   }
+   if ( !$tbl->{keys}->{$idx} ) {
+      die "Index '$idx' does not exist in table";
+   }
 
-         if ( @asc_cols ) {
-            if ( $opts{ascendfirst} ) {
-               @asc_cols = $asc_cols[0];
-            }
+   # These are the columns we'll ascend.
+   @asc_cols = @{$src->{info}->{keys}->{$idx}->{cols}};
+   if ( $opts{ascendfirst} ) {
+      @asc_cols = $asc_cols[0];
+   }
 
-            # Check that each column is defined as NOT NULL.
-            foreach my $col ( @asc_cols ) {
-               if ( $src->{info}->{is_nullable}->{$col} ) {
-                  die "Column '$col' in index '$ixname' is NULLable.\n";
-               }
-            }
-
-            # We found the columns by name, now find their positions for use as
-            # array slices.
-            @asc_slice = map { $src->{info}->{col_posn}->{$_} } @asc_cols;
-            die "Can't find ordinal position of all columns"
-               if grep { !defined($_) } @asc_slice;
-         }
-
-      }
-      else {
-         die "The specified index could not be found, or there is no PRIMARY key.\n";
+   # Check that each column is defined as NOT NULL.
+   foreach my $col ( @asc_cols ) {
+      if ( $tbl->{is_nullable}->{$col} ) {
+         die "Column '$col' in index '$idx' is NULLable";
       }
    }
 
+   # We found the columns by name, now find their positions for use as
+   # array slices.
+   @asc_slice = map { $src->{info}->{col_posn}->{$_} } @asc_cols;
+   die "Can't find ordinal position of all columns"
+      if grep { !defined($_) } @asc_slice;
+
+   # ##########################################################################
+   # Prepare SQL.
+   # ##########################################################################
    $first_sql
       = 'SELECT'
       . ( $opts{hpselect}           ? ' HIGH_PRIORITY' : '' )
@@ -165,3 +182,8 @@ sub new {
       exit(0);
    }
 
+1;
+
+# ###########################################################################
+# End TableNibbler package
+# ###########################################################################
