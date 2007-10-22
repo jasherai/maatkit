@@ -691,8 +691,6 @@ if ( !caller ) {
    # TODO: support batched inserts and deletes
    # TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
    # TODO: use prepared statements.
-   # TODO: use SET SQL_LOG_BIN=0
-   # TODO: use a certain database for purging the master but not slaves.
 
    my $dbh = $src->{dbh};
    my $sth;
