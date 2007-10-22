@@ -65,19 +65,34 @@ sub parse {
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs ) or $defaults{help} = 1;
+   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs )
+      or $defaults{help} = 1;
    return %defaults;
 }
 
 sub usage {
    my ( $self ) = @_;
    my @specs = @{$self->{specs}};
-   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxs = max(
+      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
+      grep { $_->{t} } @specs);
+
+   my $lcol = max($maxl, ($maxs + 3));
+
    my $usage = '';
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t} ? "-$spec->{t}" : '';
-      $usage .= sprintf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+      my $short = $spec->{t};
+      my $desc  = $spec->{d};
+      if ( $short ) {
+         $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+      }
+      else {
+         $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+      }
    }
    return $usage;
 }
