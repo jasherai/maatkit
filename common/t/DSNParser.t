@@ -58,16 +58,16 @@ is_deeply(
 is ($p->usage(),
 <<EOF
   DSN syntax: key=value[,key=value...] Allowable DSN keys:
-  KEY  MEANING
-  ===  =============================================
-  D    Database to use
-  F    Only read default options from the given file
-  P    Port number to use for connection
-  S    Socket file to use for connection
-  h    Connect to host
-  p    Password to use when connecting
-  t    [No description]
-  u    User for login if not current user
+  KEY  COPY  MEANING
+  ===  ====  =============================================
+  D    yes   Database to use
+  F    yes   Only read default options from the given file
+  P    yes   Port number to use for connection
+  S    yes   Socket file to use for connection
+  h    yes   Connect to host
+  p    yes   Password to use when connecting
+  t    no    [No description]
+  u    yes   User for login if not current user
 EOF
 , 'Usage is OK');
 
