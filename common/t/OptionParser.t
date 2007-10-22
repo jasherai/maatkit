@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 6;
+use Test::More tests => 7;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -48,7 +48,7 @@ $defaults{bone} = 1;
 eval {
    %opts = $p->parse(%defaults);
 };
-is ($EVAL_ERROR, "No such option 'bone'\n", 'No bone');
+is ($EVAL_ERROR, "Cannot set default for non-existent option 'bone'\n", 'No bone');
 
 delete $defaults{bone};
 @ARGV = qw(--love -l -l);
@@ -67,5 +67,17 @@ is($p->usage,
   --[no]foo           Foo
   --love          -l  And peace
 EOF
-, 'Use me'
+, 'Options aligned right'
+);
+
+$p = new OptionParser(
+      { s => 'database|D=s',      d => 'Specify the database for all tables' },
+      { s => 'nouniquechecks!',   d => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
+);
+is($p->usage,
+<<EOF
+  --database        -D  Specify the database for all tables
+  --[no]nouniquechecks  Set UNIQUE_CHECKS=0 before LOAD DATA INFILE
+EOF
+, 'Options aligned right when short options shorter than long'
 );
