@@ -41,7 +41,16 @@ use List::Util qw(max);
 
 sub new {
    my ( $class, @opts ) = @_;
-   bless { specs => \@opts }, $class;
+   my %opt_seen;
+   foreach my $opt ( @opts ) {
+      my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+      $opt->{k} = $short || $long;
+      $opt->{l} = $long;
+      $opt->{t} = $short;
+      $opt->{n} = $opt->{s} =~ m/!/;
+      die "Duplicate option $opt->{k}" if $opt_seen{$opt->{k}}++;
+   }
+   return bless { specs => \@opts }, $class;
 }
 
 sub parse {
@@ -50,33 +59,46 @@ sub parse {
 
    my %opt_seen;
    foreach my $spec ( @specs ) {
-      my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-      $spec->{k} = $short || $long;
-      $spec->{l} = $long;
-      $spec->{t} = $short;
-      $spec->{n} = $spec->{s} =~ m/!/;
       $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
-      die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+      $opt_seen{$spec->{k}} = 1;
    }
 
    foreach my $key ( keys %defaults ) {
-      die "No such option '$key'\n" unless exists $opt_seen{$key};
+      die "Cannot set default for non-existent option '$key'\n"
+         unless $opt_seen{$key};
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs ) or $defaults{help} = 1;
+   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs )
+      or $defaults{help} = 1;
    return %defaults;
 }
 
 sub usage {
    my ( $self ) = @_;
    my @specs = @{$self->{specs}};
-   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxs = max(
+      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
+      grep { $_->{t} } @specs);
+
+   my $lcol = max($maxl, ($maxs + 3));
+
+   $maxs = max($lcol - 3, $maxs);
+
    my $usage = '';
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t} ? "-$spec->{t}" : '';
-      $usage .= sprintf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
+      my $short = $spec->{t};
+      my $desc  = $spec->{d};
+      if ( $short ) {
+         $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+      }
+      else {
+         $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+      }
    }
    return $usage;
 }
