@@ -6,8 +6,8 @@ use warnings FATAL => 'all';
 
 package DSNParser;
 
-# Defaults are built-in, but you can add more items by passing them as hashrefs
-# of {key, desc, copy}.  The 'desc' item is optional.
+# Defaults are built-in, but you can add/replace items by passing them as hashrefs
+# of {key, desc, copy, dsn}.  The desc and dsn items are optional.
 sub new {
    my ( $class, @opts ) = @_;
    my $self = {
@@ -76,10 +76,11 @@ sub usage {
    my ( $self ) = @_;
    my $usage
       = "  DSN syntax: key=value[,key=value...] Allowable DSN keys:\n"
-      . "  KEY  MEANING\n"
-      . "  ===  =============================================\n";
+      . "  KEY  COPY  MEANING\n"
+      . "  ===  ====  =============================================\n";
    foreach my $key ( sort keys %$self ) {
       $usage .= "  $key    "
+             .  ($self->{$key}->{copy} ? 'yes   ' : 'no    ')
              .  ($self->{$key}->{desc} || '[No description]')
              . "\n";
    }
