@@ -25,15 +25,15 @@ sub new {
 # * next_sql      Ditto, but given last row and a slice, will fetch next row.
 # * del_sql       Ditto, to delete a row.
 # * ins_sql       Ditto, to insert a row.
-# * pk_cols       The column names of the PK in first_sql & next_sql.
-# * pk_slice      Ditto, column ordinals.
+# * del_cols      The column names of the PK in first_sql & next_sql.
+# * del_slice     Ditto, column ordinals.
 # * asc_cols      The column names of the columns we'll ascend.
 # * asc_slice     Ditto, column ordinals.
 # * next_cols     Column names to pass to next_sql
 # * next_slice    Ditto, column ordinals.
 # * index         The index to ascend.
 #
-# A "SQL hashref" is the column list, values list, and WHERE clause, with ?
+# A "SQL hashref" is the column list, values list, index name, and WHERE clause, with ?
 # placeholders where needed.
 #
 # Arguments are as follows:
@@ -41,15 +41,20 @@ sub new {
 # * cols          Arrayref of columns to SELECT from the table.
 # * index         Which index to ascend; defaults to PRIMARY.
 # * ascendfirst   Ascend the first column of the given index.
-sub generate_nibble {
+# * quoter        a Quoter object
+# * asconly       Whether to ascend strictly, that is, the WHERE clause for
+#                 the asc_stmt will fetch the next row > the given arguments.
+#                 The option is to fetch the row >=, which could loop
+#                 infinitely.  Default is false.
+sub generate_asc_stmt {
    my ( $self, %opts ) = @_;
 
    my $tbl  = $opts{tbl};
    my @cols = @{$opts{cols}};
    my $idx  = (!$opts{index} || uc $opts{index} eq 'PRIMARY') ? 'PRIMARY' : $opts{index};
+   my $q    = $opts{quoter};
 
-   my ($first_sql, $next_sql, $del_sql, $ins_sql);
-   my (@asc_cols, @pk_slice, @asc_slice, @get_next_slice);
+   my ($idx, @asc_cols, @asc_slice);
 
    # ##########################################################################
    # Detect indexes and columns needed.
@@ -63,78 +68,89 @@ sub generate_nibble {
    }
 
    # These are the columns we'll ascend.
-   @asc_cols = @{$src->{info}->{keys}->{$idx}->{cols}};
+   @asc_cols = @{$tbl->{keys}->{$idx}->{cols}};
    if ( $opts{ascendfirst} ) {
       @asc_cols = $asc_cols[0];
    }
 
-   # Check that each column is defined as NOT NULL.
+   # We found the columns by name, now find their positions for use as
+   # array slices, and make sure they are included in the SELECT list.
+   my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
    foreach my $col ( @asc_cols ) {
-      if ( $tbl->{is_nullable}->{$col} ) {
-         die "Column '$col' in index '$idx' is NULLable";
+      if ( !exists $col_posn{$col} ) {
+         push @cols, $col;
+         $col_posn{$col} = $#cols;
       }
+      push @asc_slice, $col_posn{$col};
    }
 
-   # We found the columns by name, now find their positions for use as
-   # array slices.
-   @asc_slice = map { $src->{info}->{col_posn}->{$_} } @asc_cols;
-   die "Can't find ordinal position of all columns"
-      if grep { !defined($_) } @asc_slice;
+   my $asc_stmt = {
+      cols  => \@cols,
+      idx   => $idx,
+      where => '',
+      slice => [],
+      scols => [],
+   };
 
    # ##########################################################################
-   # Prepare SQL.
+   # Figure out how to ascend the index.
    # ##########################################################################
-   $first_sql
-      = 'SELECT'
-      . ( $opts{hpselect}           ? ' HIGH_PRIORITY' : '' )
-      . ' /*!40001 SQL_NO_CACHE */ '
-      . join(',', map { $q->quote($_) } @cols)
-      . " FROM $src->{db_tbl}"
-      . ( $src->{i}
-         ? (($vp->version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
-         : '')
-      . " WHERE ($opts{W})";
-
-   # At this point the fetch-first and fetch-next queries may diverge.
-   $next_sql = $first_sql;
    if ( @asc_slice ) {
       my @clauses;
       foreach my $i ( 0 .. $#asc_slice ) {
          my @clause;
          foreach my $j ( 0 .. $i - 1 ) {
-            push @clause, "`$cols[$asc_slice[$j]]` = ?";
-            push @get_next_slice, $asc_slice[$j];
+            my $ord = $asc_slice[$j];
+            my $col = $cols[$ord];
+            my $quo = $q->quote($col);
+            if ( $tbl->{is_nullable}->{$col} ) {
+               push @clause, 
+                  "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+               push @{$asc_stmt->{slice}}, $ord, $ord;
+               push @{$asc_stmt->{scols}}, $col, $col;
+            }
+            else {
+               push @clause, "$quo = ?";
+               push @{$asc_stmt->{slice}}, $ord;
+               push @{$asc_stmt->{scols}}, $col;
+            }
          }
-         # Only the very last clause should be >=, all others strictly > UNLESS
-         # there is a chance the row will not be deleted, in which case everything
-         # must be strictly > and there is a chance some rows can be skipped in
-         # non-unique indexes.
-         my $op = ($i == $#asc_slice && !$src->{m}) ? '>=' : '>';
-         push @clause, "`$cols[$asc_slice[$i]]` $op ?";
-         push @get_next_slice, $asc_slice[$i];
-         push @clauses, '(' . join(' AND ', @clause) . ')';
+         # The last clause should be >=, all others strictly >, unless we are
+         # ascending strictly, in which case everything must be strictly > and
+         # there is a chance some rows can be skipped in non-unique indexes.
+         my $ord = $asc_slice[$i];
+         my $col = $cols[$ord];
+         my $quo = $q->quote($col);
+         if ( $tbl->{is_nullable}->{$col} ) {
+            # TODO
+         }
+         else {
+            push @{$asc_stmt->{slice}}, $ord;
+            push @{$asc_stmt->{scols}}, $col;
+            push @clause, $q->quote($col) . ($opts{asconly} ? ' > ?' : ' >= ?');
+            push @clauses, '(' . join(' AND ', @clause) . ')';
+         }
       }
-      $next_sql .= ' AND '
-         . (@clauses > 1 ? '(' : '')
-         . join(' OR ', @clauses)
-         . (@clauses > 1 ? ')' : '');
+      $asc_stmt->{where} = '(' . join(' OR ', @clauses) . ')';
    }
+}
 
-   $first_sql .= " LIMIT $opts{l}";
-   $next_sql  .= " LIMIT $opts{l}";
+1;
 
-   if ( $opts{forupdate} ) {
-      $first_sql .= ' FOR UPDATE';
-      $next_sql  .= ' FOR UPDATE';
-   }
-   elsif ( $opts{sharelock} ) {
-      $first_sql .= ' LOCK IN SHARE MODE';
-      $next_sql  .= ' LOCK IN SHARE MODE';
-   }
+__DATA__
 
-   # DELETE requires either a PK or all columns.  In theory, a UNIQUE index could
-   # be used, but I am not going to fool with that.
-   if ( $src->{info}->{keys}->{PRIMARY} ) {
+   # ##########################################################################
+   # Figure out how to delete rows. DELETE requires a PK, a unique non-NULL
+   # index, or all columns.
+   # ##########################################################################
+   $del_stmt = {
+      where => '',
+      slice => [],
+      cols  => [],
+   };
+
+=pod
+   if ( $tbl->{keys}->{PRIMARY} ) {
       @pk_slice = map {
          $src->{info}->{col_posn}->{$_}
       } @{$src->{info}->{keys}->{PRIMARY}->{cols}};
@@ -148,11 +164,6 @@ sub generate_nibble {
       @pk_slice = (0 .. $#cols);
    }
 
-   # The LIMIT is *always* 1 here, because even though a SELECT can return many
-   # rows, an INSERT only does one at a time.  It would not be safe to iterate
-   # over a SELECT that was LIMIT-ed to 500 rows, read and INSERT one, and then
-   # delete with a LIMIT of 500.  Only one row would be written to the file; only
-   # one would be INSERT-ed at the destination.  Every DELETE must be LIMIT 1.
    $del_sql = 'DELETE'
       . ($opts{lpdel}    ? ' LOW_PRIORITY' : '')
       . ($opts{quickdel} ? ' QUICK'        : '')
@@ -181,6 +192,14 @@ sub generate_nibble {
       print join("\n", ($opts{f} || ''), $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
       exit(0);
    }
+=cut
+
+   return {
+      asc_stmt => $asc_stmt,
+      del_stmt => $del_stmt,
+   };
+
+}
 
 1;
 
