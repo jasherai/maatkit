@@ -40,7 +40,7 @@ sub new {
 # * tbl           Hashref as provided by TableParser.
 # * cols          Arrayref of columns to SELECT from the table.
 # * index         Which index to ascend; defaults to PRIMARY.
-# * ascendfirst   Ascend the first column of the given index.
+# * ascfirst      Ascend the first column of the given index.
 # * quoter        a Quoter object
 # * asconly       Whether to ascend strictly, that is, the WHERE clause for
 #                 the asc_stmt will fetch the next row > the given arguments.
@@ -54,22 +54,24 @@ sub generate_asc_stmt {
    my $idx  = (!$opts{index} || uc $opts{index} eq 'PRIMARY') ? 'PRIMARY' : $opts{index};
    my $q    = $opts{quoter};
 
-   my ($idx, @asc_cols, @asc_slice);
+   my @asc_cols;
+   my @asc_slice;
 
    # ##########################################################################
    # Detect indexes and columns needed.
    # ##########################################################################
    # Make sure the lettercase is right and verify that the index exists.
+   my $index = $idx;
    if ( $idx ne 'PRIMARY' ) {
-      ($idx) = grep { uc $_ eq uc $idx } keys %{$tbl->{keys}};
+      ($index) = grep { uc $_ eq uc $idx } keys %{$tbl->{keys}};
    }
-   if ( !$tbl->{keys}->{$idx} ) {
+   if ( !$index || !$tbl->{keys}->{$index} ) {
       die "Index '$idx' does not exist in table";
    }
 
    # These are the columns we'll ascend.
-   @asc_cols = @{$tbl->{keys}->{$idx}->{cols}};
-   if ( $opts{ascendfirst} ) {
+   @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
+   if ( $opts{ascfirst} ) {
       @asc_cols = $asc_cols[0];
    }
 
@@ -86,26 +88,35 @@ sub generate_asc_stmt {
 
    my $asc_stmt = {
       cols  => \@cols,
-      idx   => $idx,
+      index => $index,
       where => '',
       slice => [],
       scols => [],
    };
 
    # ##########################################################################
-   # Figure out how to ascend the index.
+   # Figure out how to ascend the index by building a possibly complicated
+   # WHERE clause that will define a range beginning with a row retrieved by
+   # asc_stmt.  If asconly is given, the row's lower end should not include
+   # the row.
+   # Assuming a non-NULLable two-column index, the WHERE clause should look
+   # like this:
+   # WHERE (col1 > ?) OR (col1 = ? AND col2 >= ?)
+   # Ascending-only and nullable require variations on this.  The general
+   # pattern is (>), (= >), (= = >), (= = = >=).
    # ##########################################################################
    if ( @asc_slice ) {
       my @clauses;
       foreach my $i ( 0 .. $#asc_slice ) {
          my @clause;
+
+         # Most of the clauses should be strict equality.
          foreach my $j ( 0 .. $i - 1 ) {
             my $ord = $asc_slice[$j];
             my $col = $cols[$ord];
             my $quo = $q->quote($col);
             if ( $tbl->{is_nullable}->{$col} ) {
-               push @clause, 
-                  "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+               push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
                push @{$asc_stmt->{slice}}, $ord, $ord;
                push @{$asc_stmt->{scols}}, $col, $col;
             }
@@ -115,24 +126,37 @@ sub generate_asc_stmt {
                push @{$asc_stmt->{scols}}, $col;
             }
          }
-         # The last clause should be >=, all others strictly >, unless we are
-         # ascending strictly, in which case everything must be strictly > and
-         # there is a chance some rows can be skipped in non-unique indexes.
+
+         # The last clause in each parenthesized group should be >, but the
+         # very last of the whole WHERE clause should be >=, unless we are
+         # ascending strictly, in which case everything must be strictly >.
          my $ord = $asc_slice[$i];
          my $col = $cols[$ord];
          my $quo = $q->quote($col);
+         my $end = $i == $#asc_slice; # Last clause of the whole group.
          if ( $tbl->{is_nullable}->{$col} ) {
-            # TODO
+            if ( !$opts{asconly} && $end ) {
+               push @clause, "(? IS NULL OR $quo >= ?)";
+            }
+            else {
+               push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo > ?))";
+            }
+            push @{$asc_stmt->{slice}}, $ord, $ord;
+            push @{$asc_stmt->{scols}}, $col, $col;
          }
          else {
             push @{$asc_stmt->{slice}}, $ord;
             push @{$asc_stmt->{scols}}, $col;
-            push @clause, $q->quote($col) . ($opts{asconly} ? ' > ?' : ' >= ?');
-            push @clauses, '(' . join(' AND ', @clause) . ')';
+            push @clause, (!$opts{asconly} && $end ? "$quo >= ?" : "$quo > ?");
          }
+
+         # Add the clause to the larger WHERE clause.
+         push @clauses, '(' . join(' AND ', @clause) . ')';
       }
       $asc_stmt->{where} = '(' . join(' OR ', @clauses) . ')';
    }
+
+   return $asc_stmt;
 }
 
 1;
