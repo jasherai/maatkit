@@ -31,6 +31,12 @@ sub throws_ok {
 
 $t = $p->parse( load_file('samples/sakila.film.sql') );
 
+is_deeply (
+   [$n->sort_indexes($t)],
+   [qw(PRIMARY idx_fk_language_id idx_title idx_fk_original_language_id)],
+   'Sorted indexes OK'
+);
+
 is_deeply(
    $n->generate_asc_stmt (
       tbl    => $t,
@@ -48,6 +54,24 @@ is_deeply(
       scols => [qw(film_id)],
    },
    'asc stmt on sakila.film',
+);
+
+is_deeply(
+   $n->generate_asc_stmt (
+      tbl    => $t,
+      quoter => $q,
+   ),
+   {
+      cols  => [qw(film_id title description release_year language_id
+                  original_language_id rental_duration rental_rate
+                  length replacement_cost rating special_features
+                  last_update)],
+      index => 'PRIMARY',
+      where => '((`film_id` >= ?))',
+      slice => [0],
+      scols => [qw(film_id)],
+   },
+   'defaults to all columns',
 );
 
 throws_ok(
@@ -276,5 +300,28 @@ is_deeply(
                    rental_date inventory_id inventory_id customer_id)],
    },
    'Alternate index on sakila.rental with nullable inventory_id and strict ascending',
+);
+
+# ##########################################################################
+# Switch to the rental table with cols in a different order.
+# ##########################################################################
+$t = $p->parse( load_file('samples/sakila.rental.remix.sql') );
+
+is_deeply(
+   $n->generate_asc_stmt(
+      tbl    => $t,
+      quoter => $q,
+      index  => 'rental_date',
+   ),
+   {
+      cols  => [qw(rental_id rental_date customer_id inventory_id
+                  return_date staff_id last_update)],
+      index => 'rental_date',
+      where => '((`rental_date` > ?) OR (`rental_date` = ? AND `inventory_id` > ?)'
+         . ' OR (`rental_date` = ? AND `inventory_id` = ? AND `customer_id` >= ?))',
+      slice => [1, 1, 3, 1, 3, 2],
+      scols => [qw(rental_date rental_date inventory_id rental_date inventory_id customer_id)],
+   },
+   'Out-of-order index on sakila.rental',
 );
 
