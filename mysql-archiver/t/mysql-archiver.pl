@@ -98,17 +98,17 @@ is($output + 0, 0, 'Ascended key OK');
 # Test specifying a wrong index.
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mysql-archiver -W 1=1 --source i=foo,D=test,t=table_3,F=$opt_file --purge 2>&1`;
-is($output, "The specified index could not be found, or there is no PRIMARY key.\n", 'Got bad-index error OK');
+is($output, "Index 'foo' does not exist in table at ../mysql-archiver line 416.\n", 'Got bad-index error OK');
 
 # Test specifying a NULLable index.
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mysql-archiver -W 1=1 --source i=b,D=test,t=table_1,F=$opt_file --purge 2>&1`;
-is($output, "Column 'b' in index 'b' is NULLable.\n", 'Got NULL-index error');
+is($output, "", 'Got no error with a NULLable index');
 
 # Test table without a primary key
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mysql-archiver -W 1=1 --source D=test,t=table_4,F=$opt_file --purge 2>&1`;
-is($output, "The source table does not have a primary key.  Cannot continue.\n", 'Got need-PK-error OK');
+is($output, "Cannot find an ascendable index in table at ../mysql-archiver line 421.\n", 'Got need-PK-error OK');
 
 # Test ascending index explicitly
 `mysql --defaults-file=$opt_file < before.sql`;
@@ -222,7 +222,7 @@ like ( $output, qr/(^SELECT .*$)\n\1/m, '--noascend makes fetch-first and fetch-
 
 # Check ascending only first column
 $output = `perl ../mysql-archiver -W 1=1 -t --ascendfirst -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
-like ( $output, qr/WHERE \(1=1\) AND \(`a` >= \?\) LIMIT/, 'Can ascend just first column');
+like ( $output, qr/WHERE \(1=1\) AND \(\(`a` >= \?\)\) LIMIT/, 'Can ascend just first column');
 
 # Check plugin that does nothing
 `mysql --defaults-file=$opt_file < before.sql`;
