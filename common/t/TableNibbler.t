@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 15;
+use Test::More tests => 16;
 use English qw(-no_match_vars);
 
 require "../TableParser.pm";
@@ -323,5 +323,21 @@ is_deeply(
       scols => [qw(rental_date rental_date inventory_id rental_date inventory_id customer_id)],
    },
    'Out-of-order index on sakila.rental',
+);
+
+# ##########################################################################
+# Switch to table without any indexes
+# ##########################################################################
+$t = $p->parse( load_file('samples/t1.sql') );
+
+throws_ok(
+   sub {
+      $n->generate_asc_stmt (
+         tbl    => $t,
+         quoter => $q,
+      )
+   },
+   qr/Cannot find an ascendable index in table/,
+   'Error when no good index',
 );
 
