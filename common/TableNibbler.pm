@@ -44,7 +44,6 @@ sub generate_asc_stmt {
 
    my $tbl  = $opts{tbl};
    my @cols = $opts{cols} ? @{$opts{cols}} : @{$tbl->{cols}};
-   my $idx  = (!$opts{index} || uc $opts{index} eq 'PRIMARY') ? 'PRIMARY' : $opts{index};
    my $q    = $opts{quoter};
 
    my @asc_cols;
@@ -54,15 +53,14 @@ sub generate_asc_stmt {
    # Detect indexes and columns needed.
    # ##########################################################################
    # Make sure the lettercase is right and verify that the index exists.
-   my $index = $idx;
-   if ( $idx ne 'PRIMARY' ) {
-      ($index) = grep { uc $_ eq uc $idx } keys %{$tbl->{keys}};
+   my $index;
+   if ( $opts{index} ) {
+      ($index) = grep { uc $_ eq uc $opts{index} } keys %{$tbl->{keys}};
    }
-   # TODO: needs tests.
-   if ( !$index || !$tbl->{keys}->{$index} ) {
-      if ( $idx ) {
+   if ( !$index ) {
+      if ( $opts{index} ) {
          # The user specified an index, so we can't choose our own.
-         die "Index '$idx' does not exist in table";
+         die "Index '$opts{index}' does not exist in table";
       }
       else {
          # Try to pick the best index.
