@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 16;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 
 require "../TableParser.pm";
@@ -57,6 +57,21 @@ is_deeply(
 );
 
 is_deeply(
+   $n->generate_del_stmt (
+      tbl    => $t,
+      quoter => $q,
+   ),
+   {
+      cols  => [qw(film_id)],
+      index => 'PRIMARY',
+      where => '(`film_id` = ?)',
+      slice => [0],
+      scols => [qw(film_id)],
+   },
+   'del stmt on sakila.film',
+);
+
+is_deeply(
    $n->generate_asc_stmt (
       tbl    => $t,
       quoter => $q,
@@ -105,6 +120,23 @@ is_deeply(
       scols => [qw(title)],
    },
    'asc stmt on sakila.film with different index',
+);
+
+is_deeply(
+   $n->generate_del_stmt (
+      tbl    => $t,
+      quoter => $q,
+      index  => 'idx_title',
+      cols   => [qw(film_id)],
+   ),
+   {
+      cols  => [qw(film_id title)],
+      index => 'idx_title',
+      where => '(`title` = ?)',
+      slice => [1],
+      scols => [qw(title)],
+   },
+   'del stmt on sakila.film with different index and extra column',
 );
 
 is_deeply(
@@ -165,6 +197,36 @@ is_deeply(
       scols => [qw(rental_date rental_date inventory_id rental_date inventory_id customer_id)],
    },
    'Alternate index on sakila.rental',
+);
+
+is_deeply(
+   $n->generate_del_stmt (
+      tbl    => $t,
+      quoter => $q,
+      index  => 'rental_date',
+   ),
+   {
+      cols  => [qw(rental_date inventory_id customer_id)],
+      index => 'rental_date',
+      where => '(`rental_date` = ? AND `inventory_id` = ? AND `customer_id` = ?)',
+      slice => [0, 1, 2],
+      scols => [qw(rental_date inventory_id customer_id)],
+   },
+   'Alternate index on sakila.rental delete statement',
+);
+
+# Check that I can select from one table and insert into another OK
+my $f = $p->parse( load_file('samples/sakila.film.sql') );
+is_deeply(
+   $n->generate_ins_stmt (
+      tbl    => $f,
+      cols   => $t->{cols},
+   ),
+   {
+      cols  => [qw(last_update)],
+      slice => [12],
+   },
+   'Generated an INSERT statement from film into rental',
 );
 
 is_deeply(
@@ -229,6 +291,23 @@ is_deeply(
       scols => [qw(rental_date rental_date inventory_id rental_date inventory_id customer_id customer_id)],
    },
    'Alternate index on sakila.rental with nullable customer_id',
+);
+
+is_deeply(
+   $n->generate_del_stmt (
+      tbl    => $t,
+      quoter => $q,
+      index  => 'rental_date',
+   ),
+   {
+      cols  => [qw(rental_date inventory_id customer_id)],
+      index => 'rental_date',
+      where => '(`rental_date` = ? AND `inventory_id` = ? AND '
+               . '((? IS NULL AND `customer_id` IS NULL) OR (`customer_id` = ?)))',
+      slice => [0, 1, 2, 2],
+      scols => [qw(rental_date inventory_id customer_id customer_id)],
+   },
+   'Alternate index on sakila.rental delete statement with nullable customer_id',
 );
 
 is_deeply(
