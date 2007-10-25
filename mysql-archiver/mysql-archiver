@@ -378,6 +378,228 @@ sub quote {
 # ###########################################################################
 
 # ###########################################################################
+# TableNibbler package
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableNibbler;
+
+sub new {
+   bless {}, shift;
+}
+
+sub sort_indexes {
+   my ( $self, $tbl ) = @_;
+   my @indexes
+      = sort {
+         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
+         || ( !$tbl->{keys}->{$a}->{unique} <=> !$tbl->{keys}->{$b}->{unique} )
+         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
+         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
+      }
+      grep {
+         $tbl->{keys}->{$_}->{type} eq 'BTREE'
+      }
+      sort keys %{$tbl->{keys}};
+   return @indexes;
+}
+
+sub find_best_index {
+   my ( $self, $tbl, $index ) = @_;
+   my $best;
+   if ( $index ) {
+      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
+   }
+   if ( !$best ) {
+      if ( $index ) {
+         die "Index '$index' does not exist in table";
+      }
+      else {
+         ($best) = $self->sort_indexes($tbl);
+         if ( !$best ) {
+            die "Cannot find an ascendable index in table";
+         }
+      }
+   }
+   return $best;
+}
+
+sub generate_asc_stmt {
+   my ( $self, %opts ) = @_;
+
+   my $tbl  = $opts{tbl};
+   my @cols = $opts{cols} ? @{$opts{cols}} : @{$tbl->{cols}};
+   my $q    = $opts{quoter};
+
+   my @asc_cols;
+   my @asc_slice;
+
+   my $index = $self->find_best_index($tbl, $opts{index});
+
+   @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
+   if ( $opts{ascfirst} ) {
+      @asc_cols = $asc_cols[0];
+   }
+
+   my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
+   foreach my $col ( @asc_cols ) {
+      if ( !exists $col_posn{$col} ) {
+         push @cols, $col;
+         $col_posn{$col} = $#cols;
+      }
+      push @asc_slice, $col_posn{$col};
+   }
+
+   my $asc_stmt = {
+      cols  => \@cols,
+      index => $index,
+      where => '',
+      slice => [],
+      scols => [],
+   };
+
+   if ( @asc_slice ) {
+      my @clauses;
+      foreach my $i ( 0 .. $#asc_slice ) {
+         my @clause;
+
+         foreach my $j ( 0 .. $i - 1 ) {
+            my $ord = $asc_slice[$j];
+            my $col = $cols[$ord];
+            my $quo = $q->quote($col);
+            if ( $tbl->{is_nullable}->{$col} ) {
+               push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+               push @{$asc_stmt->{slice}}, $ord, $ord;
+               push @{$asc_stmt->{scols}}, $col, $col;
+            }
+            else {
+               push @clause, "$quo = ?";
+               push @{$asc_stmt->{slice}}, $ord;
+               push @{$asc_stmt->{scols}}, $col;
+            }
+         }
+
+         my $ord = $asc_slice[$i];
+         my $col = $cols[$ord];
+         my $quo = $q->quote($col);
+         my $end = $i == $#asc_slice; # Last clause of the whole group.
+         if ( $tbl->{is_nullable}->{$col} ) {
+            if ( !$opts{asconly} && $end ) {
+               push @clause, "(? IS NULL OR $quo >= ?)";
+            }
+            else {
+               push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo > ?))";
+            }
+            push @{$asc_stmt->{slice}}, $ord, $ord;
+            push @{$asc_stmt->{scols}}, $col, $col;
+         }
+         else {
+            push @{$asc_stmt->{slice}}, $ord;
+            push @{$asc_stmt->{scols}}, $col;
+            push @clause, (!$opts{asconly} && $end ? "$quo >= ?" : "$quo > ?");
+         }
+
+         push @clauses, '(' . join(' AND ', @clause) . ')';
+      }
+      $asc_stmt->{where} = '(' . join(' OR ', @clauses) . ')';
+   }
+
+   return $asc_stmt;
+}
+
+sub generate_del_stmt {
+   my ( $self, %opts ) = @_;
+
+   my $tbl  = $opts{tbl};
+   my @cols = $opts{cols} ? @{$opts{cols}} : ();
+   my $q    = $opts{quoter};
+
+   my @del_cols;
+   my @del_slice;
+
+   my $index = $self->find_best_index($tbl, $opts{index});
+
+   if ( $index ) {
+      @del_cols = @{$tbl->{keys}->{$index}->{cols}};
+   }
+   else {
+      @del_cols = @{$tbl->{cols}};
+   }
+
+   my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
+   foreach my $col ( @del_cols ) {
+      if ( !exists $col_posn{$col} ) {
+         push @cols, $col;
+         $col_posn{$col} = $#cols;
+      }
+      push @del_slice, $col_posn{$col};
+   }
+
+   my $del_stmt = {
+      cols  => \@cols,
+      index => $index,
+      where => '',
+      slice => [],
+      scols => [],
+   };
+
+   my @clauses;
+   foreach my $i ( 0 .. $#del_slice ) {
+      my $ord = $del_slice[$i];
+      my $col = $cols[$ord];
+      my $quo = $q->quote($col);
+      if ( $tbl->{is_nullable}->{$col} ) {
+         push @clauses, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+         push @{$del_stmt->{slice}}, $ord, $ord;
+         push @{$del_stmt->{scols}}, $col, $col;
+      }
+      else {
+         push @clauses, "$quo = ?";
+         push @{$del_stmt->{slice}}, $ord;
+         push @{$del_stmt->{scols}}, $col;
+      }
+   }
+
+   $del_stmt->{where} = '(' . join(' AND ', @clauses) . ')';
+
+   return $del_stmt;
+}
+
+sub generate_ins_stmt {
+   my ( $self, %opts ) = @_;
+
+   my $tbl  = $opts{tbl};
+   my @cols = @{$opts{cols}};
+
+   die "You didn't specify any columns" unless @cols;
+
+   my %col_posn = do { my $i = 0; map { $_ => $i++ } @{$tbl->{cols}} };
+   my @ins_cols;
+   my @ins_slice;
+
+   foreach my $col ( @cols ) {
+      if ( exists $col_posn{$col} ) {
+         push @ins_cols, $col;
+         push @ins_slice, $col_posn{$col};
+      }
+   }
+
+   my $ins_stmt = {
+      cols  => \@ins_cols,
+      slice => \@ins_slice,
+   };
+
+   return $ins_stmt;
+}
+
+1;
+
+# ###########################################################################
+# End TableNibbler package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -687,149 +909,85 @@ if ( !caller ) {
       }
    }
 
-   # TODO: ease the restrictions about primary keys and nullable columns.
-   # TODO: support batched inserts and deletes
-   # TODO: Use HANDLER interface: http://dev.mysql.com/doc/refman/5.0/en/handler.html
-   # TODO: use prepared statements.
-
+   # ############################################################################
+   # Design SQL statements.
+   # ############################################################################
    my $dbh = $src->{dbh};
-   my $sth;
-
-   # ############################################################################
-   # Design SQL statements. TODO: modularize this.
-   # ############################################################################
+   my $nibbler = new TableNibbler;
    my ($first_sql, $next_sql, $del_sql, $ins_sql);
+   my ($sel_stmt, $ins_stmt, $del_stmt);
+   my (@sel_slice, @del_slice, @ins_slice);
 
-   # These are lists of columns by ordinal position, not by name.  This is
-   # necessary because the rows are fetched from the DB as arrays, not as hashes,
-   # for efficiency, but for various statements I want one or the other subset of
-   # columns.  @pk_slice is the slice that will extract the primary key columns
-   # for DELETEs.  @asc_slice is only used to generate queries; it is the column
-   # ordinals of the index the get_next query will ascend.  @get_next_slice
-   # is the column ordinals in the order in which they appear in the get_next
-   # query's WHERE clause.  $key_is_ai is true if the key is a single-column
-   # AUTO_INCREMENT.
-   my (@pk_slice, @asc_slice, @get_next_slice, $key_is_ai);
+   $del_stmt = $nibbler->generate_del_stmt(
+      tbl    => $src->{info},
+      cols   => [
+                    $opts{c} ? split(/,/, $opts{c})                       # Explicitly specified columns
+                  : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
+                  :            @{$src->{info}->{cols}}                    # All columns
+                ],
+      quoter => $q,
+      index  => $src->{i},
+   );
+   @del_slice = @{$del_stmt->{slice}};
 
-   my @cols = $opts{c} ? split(/,/, $opts{c})                       # Explicitly specified columns
-            : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
-            :            @{$src->{info}->{cols}};                   # All columns
-
-   # Do we have an index to ascend?  Use PRIMARY if nothing specified.
-   if ( $opts{N} && ($src->{i} || $src->{info}->{keys}->{PRIMARY}) ) {
-      # Make sure the lettercase is right and find the index...
-      my $ixname = $src->{i} || '';
-      if ( uc $ixname eq 'PRIMARY' || !$src->{i} ) {
-         $ixname = 'PRIMARY';
-      }
-      else {
-         ($ixname) = grep { uc $_ eq uc $src->{i} } keys %{$src->{info}->{keys}};
-      }
-
-      if ( $ixname ) {
-         $src->{i} = $ixname; # Corrects lettercase if it's wrong
-         my @asc_cols = @{$src->{info}->{keys}->{$ixname}->{cols}};
-
-         if ( @asc_cols ) {
-            # Determine $key_is_ai; must come before the ascendfirst stmt below.
-            if ( @asc_cols == 1 ) {
-               $key_is_ai = $src->{info}->{is_autoinc}->{$asc_cols[0]};
-            }
-
-            if ( $opts{ascendfirst} ) {
-               @asc_cols = $asc_cols[0];
-            }
-
-            # Check that each column is defined as NOT NULL.
-            foreach my $col ( @asc_cols ) {
-               if ( $src->{info}->{is_nullable}->{$col} ) {
-                  die "Column '$col' in index '$ixname' is NULLable.\n";
-               }
-            }
-
-            # We found the columns by name, now find their positions for use as
-            # array slices.
-            @asc_slice = map { $src->{info}->{col_posn}->{$_} } @asc_cols;
-            die "Can't find ordinal position of all columns"
-               if grep { !defined($_) } @asc_slice;
-         }
-
-      }
-      else {
-         die "The specified index could not be found, or there is no PRIMARY key.\n";
-      }
+   # Generate statement for ascending index, if desired
+   if ( $opts{N} ) {
+      $sel_stmt = $nibbler->generate_asc_stmt(
+         tbl      => $src->{info},
+         cols     => $del_stmt->{cols},
+         index    => $del_stmt->{index},
+         ascfirst => $opts{ascendfirst},
+         quoter   => $q,
+         # Might prevent rows in the source from being deleted.
+         asconly  => $src->{m},
+      );
    }
+   else {
+      $sel_stmt = {
+         cols  => $del_stmt->{cols},
+         index => undef,
+         where => '1=1',
+         slice => $del_stmt->{slice},
+         scols => $del_stmt->{scols},
+      };
+   }
+   @sel_slice = @{$sel_stmt->{slice}};
 
    $first_sql
-      = 'SELECT'
-      . ( $opts{hpselect}           ? ' HIGH_PRIORITY' : '' )
-      . ' /*!40001 SQL_NO_CACHE */ '
-      . join(',', map { $q->quote($_) } @cols)
+      = 'SELECT' . ( $opts{hpselect} ? ' HIGH_PRIORITY' : '' ) . ' /*!40001 SQL_NO_CACHE */ '
+      . join(',', map { $q->quote($_) } @{$sel_stmt->{cols}} )
       . " FROM $src->{db_tbl}"
-      . ( $src->{i}
-         ? (($vp->version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$src->{i}`)")
+      . ( $sel_stmt->{index}
+         ? (($vp->version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$sel_stmt->{index}`)")
          : '')
       . " WHERE ($opts{W})";
 
-   if ( $opts{safeautoinc} && $key_is_ai ) {
-      if ( !$vp->version_ge($dbh, '4.1.0') ) {
-         die "--safeautoinc requires subqueries and thus MySQL >= 4.1.0\n";
-      }
-      my $col = "`$cols[$asc_slice[0]]`";
-      $first_sql .= " AND ($col<(SELECT MAX($col) FROM $src->{db_tbl}))";
-   }
-
-   # At this point the fetch-first and fetch-next queries may diverge.
-   $next_sql = $first_sql;
-   if ( @asc_slice ) {
-      my @clauses;
-      foreach my $i ( 0 .. $#asc_slice ) {
-         my @clause;
-         foreach my $j ( 0 .. $i - 1 ) {
-            push @clause, "`$cols[$asc_slice[$j]]` = ?";
-            push @get_next_slice, $asc_slice[$j];
+   if ( $opts{safeautoinc}
+         && $sel_stmt->{index}
+         && scalar(@{$src->{info}->{keys}->{$sel_stmt->{index}}->{cols}}) == 1
+         && $src->{info}->{is_autoinc}->{
+            $src->{info}->{keys}->{$sel_stmt->{index}}->{cols}->[0]
          }
-         # Only the very last clause should be >=, all others strictly > UNLESS
-         # there is a chance the row will not be deleted, in which case everything
-         # must be strictly > and there is a chance some rows can be skipped in
-         # non-unique indexes.
-         my $op = ($i == $#asc_slice && !$src->{m}) ? '>=' : '>';
-         push @clause, "`$cols[$asc_slice[$i]]` $op ?";
-         push @get_next_slice, $asc_slice[$i];
-         push @clauses, '(' . join(' AND ', @clause) . ')';
+   ) {
+      my $col = $q->quote($sel_stmt->{scols}->[0]);
+      my ($val) = $dbh->selectrow_array("SELECT MAX($col) FROM $src->{db_tbl}");
+      $val =~ s/'/''/g;
+      $first_sql .= " AND ($col < '$val')";
+   }
+
+   $next_sql = $first_sql;
+   if ( $opts{N} ) {
+      $next_sql .= " AND $sel_stmt->{where}";
+   }
+
+   foreach my $thing ( $first_sql, $next_sql ) {
+      $thing .= " LIMIT $opts{l}";
+      if ( $opts{forupdate} ) {
+         $thing .= ' FOR UPDATE';
       }
-      $next_sql .= ' AND '
-         . (@clauses > 1 ? '(' : '')
-         . join(' OR ', @clauses)
-         . (@clauses > 1 ? ')' : '');
-   }
-
-   $first_sql .= " LIMIT $opts{l}";
-   $next_sql  .= " LIMIT $opts{l}";
-
-   if ( $opts{forupdate} ) {
-      $first_sql .= ' FOR UPDATE';
-      $next_sql  .= ' FOR UPDATE';
-   }
-   elsif ( $opts{sharelock} ) {
-      $first_sql .= ' LOCK IN SHARE MODE';
-      $next_sql  .= ' LOCK IN SHARE MODE';
-   }
-
-   # DELETE requires either a PK or all columns.  In theory, a UNIQUE index could
-   # be used, but I am not going to fool with that.
-   if ( $src->{info}->{keys}->{PRIMARY} ) {
-      @pk_slice = map {
-         $src->{info}->{col_posn}->{$_}
-      } @{$src->{info}->{keys}->{PRIMARY}->{cols}};
-      die "Can't find ordinal position of all columns"
-         if grep { !defined($_) } @pk_slice;
-   }
-   else {
-      # At this time, issues with NULLs (=null vs. IS NULL) will prevent DELETEs
-      # from working right without a PRIMARY key.
-      die "The source table does not have a primary key.  Cannot continue.\n";
-      @pk_slice = (0 .. $#cols);
+      elsif ( $opts{sharelock} ) {
+         $thing .= ' LOCK IN SHARE MODE';
+      }
    }
 
    # The LIMIT is *always* 1 here, because even though a SELECT can return many
@@ -840,22 +998,22 @@ if ( !caller ) {
    $del_sql = 'DELETE'
       . ($opts{lpdel}    ? ' LOW_PRIORITY' : '')
       . ($opts{quickdel} ? ' QUICK'        : '')
-      . " FROM $src->{db_tbl} WHERE "
-      . join(' AND ', map { "`$cols[$_]` = ?" } @pk_slice)
+      . " FROM $src->{db_tbl} WHERE $del_stmt->{where}"
       . " LIMIT 1";
 
-   # INSERT is all columns.  I can't think of why you'd want to archive to a
-   # table with different columns than the source.
    if ( $dst ) {
+      $ins_stmt = $nibbler->generate_ins_stmt(
+         tbl  => $dst->{info},
+         cols => $sel_stmt->{cols},
+      );
+      @ins_slice = @{$ins_stmt->{slice}};
       $ins_sql = ($opts{r}          ? 'REPLACE'       : 'INSERT')
                . ($opts{lpins}      ? ' LOW_PRIORITY' : '')
                . ($opts{delayedins} ? ' DELAYED'      : '')
-               . ($opts{i}          ? ' IGNORE'       : '');
-      $ins_sql .= " INTO $dst->{db_tbl}("
-         . join(",", map { "`$_`" } @cols)
-         . ") VALUES ("
-         . join(",", map { "?" } @cols)
-         . ")";
+               . ($opts{i}          ? ' IGNORE'       : '')
+               . " INTO $dst->{db_tbl}("
+               . join(",", map { $q->quote($_) } @{$ins_stmt->{cols}} )
+               . ") VALUES (" . join(",", map { "?" } @{$ins_stmt->{cols}} ) . ")";
    }
    else {
       $ins_sql = '';
@@ -888,7 +1046,7 @@ if ( !caller ) {
    foreach my $table ( $dst, $src ) {
       next unless $table && $table->{plugin};
       trace ('before_begin', sub {
-         $table->{plugin}->before_begin(cols => \@cols) if $table->{plugin};
+         $table->{plugin}->before_begin(cols => $sel_stmt->{cols}) if $table->{plugin};
       });
    }
 
@@ -921,7 +1079,7 @@ if ( !caller ) {
          or die "Cannot open $opts{f}: $OS_ERROR\n";
       $file->autoflush(1) unless $opts{b};
       if ( $need_hdr ) {
-         print $file '', escape(\@cols), "\n"
+         print $file '', escape($sel_stmt->{cols}), "\n"
             or die "Cannot write to $opts{f}: $OS_ERROR\n";
       }
    }
@@ -963,6 +1121,7 @@ if ( !caller ) {
                });
             }
             $ins_sth ||= $ins_row; # Default to the sth decided before.
+            # TODO: allow to insert less than the full row.
             my $success = do_with_retries( 'inserting', sub { $ins_sth->execute(@$row) } );
             if ( $success == 0 ) {
                $retries = -1;
@@ -974,13 +1133,13 @@ if ( !caller ) {
             }
          }
 
-         # DELETE comes after INSERT.
+         # DELETE comes after INSERT for safety.
          if ( $src->{plugin} ) {
             trace('before_delete', sub {
                $src->{plugin}->before_delete(row => $row);
             });
          }
-         my $success = do_with_retries( 'deleting', sub { $del_row->execute(@{$row}[@pk_slice]) } );
+         my $success = do_with_retries( 'deleting', sub { $del_row->execute(@{$row}[@del_slice]) } );
          if ( $success == 0 ) {
             $retries = -1;
             last ROW;
@@ -1019,10 +1178,10 @@ if ( !caller ) {
          $get_sth = $get_next;
 
          trace('select', sub {
-            $get_next->execute(@{$lastrow}[@get_next_slice]);
+            $get_next->execute(@{$lastrow}[@sel_slice]);
          });
 
-         @beginning_of_txn = @{$lastrow}[@get_next_slice] unless $txn_cnt;
+         @beginning_of_txn = @{$lastrow}[@sel_slice] unless $txn_cnt;
          $row              = $get_sth->fetchrow_arrayref();
       }
    }
