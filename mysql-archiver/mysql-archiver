@@ -930,6 +930,9 @@ if ( !caller ) {
    );
    @del_slice = @{$del_stmt->{slice}};
 
+   # TODO: even though the SELECT statement might add more columns when needed,
+   # the file and dest table shouldn't get any columns not specified in
+   # --columns.  Also make sure they get passed to the plugin correctly.
    # Generate statement for ascending index, if desired
    if ( $opts{N} ) {
       $sel_stmt = $nibbler->generate_asc_stmt(
@@ -1447,7 +1450,7 @@ case it's just an incremental DELETE.
 
 mysql-archiver is extensible via a plugin mechanism.  You can inject your own
 code to add advanced archiving logic that could be useful for archiving
-dependencies, applying complex business rules, or building a data warehouse
+dependent data, applying complex business rules, or building a data warehouse
 during the archiving process.
 
 You need to choose values carefully for some options.  The most important are
@@ -1466,12 +1469,6 @@ whole table every query.
 You can disable the seek-then-scan optimizations partially or wholly with
 L<"--noascend"> and L<"--ascendfirst">.  Sometimes this may be more efficient for
 multi-column keys.
-
-At the moment, there are some limitations to ease the task of working with NULLs
-and indexes.  The table must have a PRIMARY key, and any index you specify in
-L<"--source"> must be composed entirely of non-NULL columns (or, if you specify
-L<"--ascendfirst">, the first column must be non-NULL).  These restrictions may be
-removed in future versions.
 
 =head1 ERROR-HANDLING
 
@@ -1523,7 +1520,8 @@ ended is as follows:
 
 Populating the placeholders with values uses memory and CPU, adds network
 traffic and parsing overhead, and may make the query harder for MySQL to
-optimize.
+optimize.  A four-column key isn't a big deal, but a ten-column key in which
+every column allows C<NULL> might be.
 
 Ascending the index might not be necessary if you know you are simply removing
 rows from the beginning of the table in chunks, but not leaving any holes, so
@@ -1570,11 +1568,10 @@ error.
 =item --columns
 
 Specify a comma-separated list of columns to fetch, write to the file, and
-insert into the destination table.  If specified, mysql-archiver completely
-ignores every other column.
-
-If you specify this option, at present you need to at least specify the
-columns in the primary key and the index given in L<"--source"> (if any).
+insert into the destination table.  If specified, mysql-archiver ignores other
+columns unless it needs to add them to the SELECT statement for ascending an
+index or deleting rows.  It fetches and uses these extra columns internally, but
+does not write them to the file or to the destination table.
 
 See also --pkonly.
 
@@ -1694,7 +1691,10 @@ OPTIMIZE TABLE.
 
 =item --pkonly
 
-A shortcut for specifying L<"--columns"> with the primary key columns.
+A shortcut for specifying L<"--columns"> with the primary key columns.  This is
+an efficiency if you just want to purge rows; it avoids fetching the entire row,
+when only the primary key columns are needed for C<DELETE> statements.  See also
+L<"--purge">.
 
 =item --progress
 
@@ -1744,11 +1744,9 @@ row when ascending a single-column AUTO_INCREMENT key.  This guards against
 re-using AUTO_INCREMENT values if the server restarts, and is enabled by
 default.
 
-The extra WHERE clause uses a non-correlated subquery, which MySQL should
-optimize into a constant when compiling the query, and should therefore be
-very efficient.  If you are worried about this, use L<"--test"> and EXPLAIN to
-examine the generated queries.  You should see the subquery's plan as
-"SUBQUERY... Select tables optimized away".
+The extra WHERE clause contains the maximum value of the auto-increment column
+as of the beginning of the archive or purge job.  If new rows are inserted while
+MySQL Archiver is running, it will not see them.
 
 =item --sentinel
 
@@ -1819,9 +1817,9 @@ places in the environment (such as options files).  Here is an example:
 The 'i' part deserves special mention.  This tells mysql-archiver which index
 it should scan to archive.  This appears in a FORCE INDEX or USE INDEX hint in
 the SELECT statements used to fetch archivable rows.  If you don't specify
-anything, mysql-archiver will try to use a PRIMARY KEY if one exists.  In my
-experience this usually works well, so most of the time you can probably just
-omit the 'i' part.
+anything, mysql-archiver will auto-discover a good index, preferring a C<PRIMARY
+KEY> if one exists.  In my experience this usually works well, so most of the
+time you can probably just omit the 'i' part.
 
 The index is used to optimize repeated accesses to the table; mysql-archiver
 remembers the last row it retrieves from each SELECT statement, and uses it to
