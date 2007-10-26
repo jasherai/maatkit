@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 76;
+use Test::More tests => 77;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -203,6 +203,12 @@ $output = `perl ../mysql-archiver -W 1=1 -t --dest t=table_4 --source D=test,t=t
 like($output, qr/The following columns exist in --source /, 'Column check throws error');
 $output = `perl ../mysql-archiver -W 1=1 -t --nochkcols --dest t=table_4 --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
 like($output, qr/SELECT/, 'I can disable the check OK');
+
+# Test that table with many rows can be archived to table with few
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -W 1=1 --dest t=table_4 --nochkcols --source D=test,t=table_1,F=$opt_file 2>&1`;
+$output = `mysql --defaults-file=$opt_file -N -e "select sum(a) from test.table_4"`;
+is($output + 0, 10, 'Rows got archived');
 
 # Test that ascending index check WHERE clause can't be hijacked
 $output = `perl ../mysql-archiver -s D=test,t=table_6,F=$opt_file -p -l 2 -W 'c=1'`;
