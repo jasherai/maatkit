@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 5;
+use Test::More tests => 6;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
@@ -20,7 +20,7 @@ is_deeply(
       F => undef,
       D => undef,
    },
-   'Basic DSN works'
+   'Basic DSN'
 );
 
 $p = new DSNParser(
@@ -38,7 +38,7 @@ is_deeply(
       D => undef,
       t => undef,
    },
-   'DSN works with an extra option'
+   'DSN with an extra option'
 );
 
 is_deeply(
@@ -52,7 +52,7 @@ is_deeply(
       t => undef,
       u => 'a',
    },
-   'DSN works with defaults'
+   'DSN with defaults'
 );
 
 is ($p->usage(),
@@ -69,7 +69,7 @@ is ($p->usage(),
   t    no    [No description]
   u    yes   User for login if not current user
 EOF
-, 'Usage is OK');
+, 'Usage');
 
 is_deeply (
    [
@@ -84,5 +84,25 @@ is_deeply (
       'a',
       'b',
    ],
-   'Got connection arguments OK',
+   'Got connection arguments',
+);
+
+is_deeply (
+   [
+      $p->get_cxn_params(
+         {
+            u => 'a',
+            p => 'b',
+            h => 'me',
+            D => 'foo',
+            dbidriver => 'Pg',
+         },
+      )
+   ],
+   [
+      'DBI:Pg:dbname=foo;host=me',
+      'a',
+      'b',
+   ],
+   'Got connection arguments for PostgreSQL',
 );
