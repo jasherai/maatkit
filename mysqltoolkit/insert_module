@@ -15,9 +15,12 @@ my $module = shift @ARGV;
 open my $file, "<", "../common/$module.pm"
    or die $OS_ERROR;
 my $text = <$file>;
+my ( $ver ) = $text =~ m/\$Revision: (\d+) \$/;
 $text =~ s/^ *#.*\n//gm; # strip comments out
+$input =~ s/$module package (\d+)/$module package/; # strip revision
 close $file;
 my $line = "# ###########################################################################\n";
 my $marker = qr/($line# (?:End )?$module package\n$line)/;
 $input =~ s/$marker.*?$marker/$1$text$2/s;
+$input =~ s/$module package/$module package $ver/; # add revision
 print $input;
