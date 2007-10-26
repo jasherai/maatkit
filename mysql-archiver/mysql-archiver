@@ -30,7 +30,7 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package
+# OptionParser package 1101
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -42,7 +42,16 @@ use List::Util qw(max);
 
 sub new {
    my ( $class, @opts ) = @_;
-   bless { specs => \@opts }, $class;
+   my %opt_seen;
+   foreach my $opt ( @opts ) {
+      my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+      $opt->{k} = $short || $long;
+      $opt->{l} = $long;
+      $opt->{t} = $short;
+      $opt->{n} = $opt->{s} =~ m/!/;
+      die "Duplicate option $opt->{k}" if $opt_seen{$opt->{k}}++;
+   }
+   return bless { specs => \@opts }, $class;
 }
 
 sub parse {
@@ -51,17 +60,13 @@ sub parse {
 
    my %opt_seen;
    foreach my $spec ( @specs ) {
-      my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-      $spec->{k} = $short || $long;
-      $spec->{l} = $long;
-      $spec->{t} = $short;
-      $spec->{n} = $spec->{s} =~ m/!/;
       $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
-      die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
+      $opt_seen{$spec->{k}} = 1;
    }
 
    foreach my $key ( keys %defaults ) {
-      die "No such option '$key'\n" unless exists $opt_seen{$key};
+      die "Cannot set default for non-existent option '$key'\n"
+         unless $opt_seen{$key};
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
@@ -81,7 +86,8 @@ sub usage {
       grep { $_->{t} } @specs);
 
    my $lcol = max($maxl, ($maxs + 3));
-   my $lws  = $lcol - 3;
+
+   $maxs = max($lcol - 3, $maxs);
 
    my $usage = '';
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
@@ -89,10 +95,10 @@ sub usage {
       my $short = $spec->{t};
       my $desc  = $spec->{d};
       if ( $short ) {
-         $usage .= sprintf("  --%-${lws}s -%s  %s\n", $long, $short, $desc);
+         $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
       }
       else {
-         $usage .= sprintf("  --%-${maxl}s  %s\n", $long, $desc);
+         $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
       }
    }
    return $usage;
@@ -105,7 +111,7 @@ sub usage {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package
+# TableParser package 1101
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -216,7 +222,7 @@ sub get_ddl {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package
+# DSNParser package 1101
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -304,12 +310,20 @@ sub usage {
 
 sub get_cxn_params {
    my ( $self, $info ) = @_;
-   my $dsn
-      = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-      . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
-                  grep { defined $info->{$_} }
-                  qw(F h P S))
-      . ';mysql_read_default_group=mysql';
+   my $dsn;
+   if ( $info->{dbidriver} && $info->{dbidriver} eq 'Pg' ) {
+      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(h P));
+   }
+   else {
+      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(F h P S))
+         . ';mysql_read_default_group=mysql';
+   }
    return ($dsn, $info->{u}, $info->{p});
 }
 
@@ -320,7 +334,7 @@ sub get_cxn_params {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package
+# VersionParser package 1101
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -351,7 +365,7 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package
+# Quoter package 1101
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -378,7 +392,7 @@ sub quote {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package
+# TableNibbler package 1101
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
