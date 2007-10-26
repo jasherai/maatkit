@@ -22,9 +22,207 @@
 use strict;
 use warnings FATAL => 'all';
 
+# ###########################################################################
+# OptionParser package 1101
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package OptionParser;
+
+use Getopt::Long;
+use List::Util qw(max);
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my %opt_seen;
+   foreach my $opt ( @opts ) {
+      my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+      $opt->{k} = $short || $long;
+      $opt->{l} = $long;
+      $opt->{t} = $short;
+      $opt->{n} = $opt->{s} =~ m/!/;
+      die "Duplicate option $opt->{k}" if $opt_seen{$opt->{k}}++;
+   }
+   return bless { specs => \@opts }, $class;
+}
+
+sub parse {
+   my ( $self, %defaults ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my %opt_seen;
+   foreach my $spec ( @specs ) {
+      $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
+      $opt_seen{$spec->{k}} = 1;
+   }
+
+   foreach my $key ( keys %defaults ) {
+      die "Cannot set default for non-existent option '$key'\n"
+         unless $opt_seen{$key};
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs )
+      or $defaults{help} = 1;
+   return %defaults;
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxs = max(
+      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
+      grep { $_->{t} } @specs);
+
+   my $lcol = max($maxl, ($maxs + 3));
+
+   $maxs = max($lcol - 3, $maxs);
+
+   my $usage = '';
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t};
+      my $desc  = $spec->{d};
+      if ( $short ) {
+         $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+      }
+      else {
+         $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+      }
+   }
+   return $usage;
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+
+# ###########################################################################
+# DSNParser package 1101
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package DSNParser;
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my $self = {
+      D => {
+         desc => 'Database to use',
+         dsn  => 'database',
+         copy => 1,
+      },
+      F => {
+         desc => 'Only read default options from the given file',
+         dsn  => 'mysql_read_default_file',
+         copy => 1,
+      },
+      h => {
+         desc => 'Connect to host',
+         dsn  => 'host',
+         copy => 1,
+      },
+      p => {
+         desc => 'Password to use when connecting',
+         dsn  => 'password',
+         copy => 1,
+      },
+      P => {
+         desc => 'Port number to use for connection',
+         dsn  => 'port',
+         copy => 1,
+      },
+      S => {
+         desc => 'Socket file to use for connection',
+         dsn  => 'mysql_socket',
+         copy => 1,
+      },
+      u => {
+         desc => 'User for login if not current user',
+         dsn  => 'user',
+         copy => 1,
+      },
+   };
+   foreach my $opt ( @opts ) {
+      $self->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   }
+   return bless $self, $class;
+}
+
+sub parse {
+   my ( $self, $dsn, $prev, $defaults ) = @_;
+   return unless $dsn;
+   $prev     ||= {};
+   $defaults ||= {};
+   my %hash    = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   my %vals;
+   foreach my $key ( keys %$self ) {
+      $vals{$key} = $hash{$key};
+      if ( !defined $vals{$key} && defined $prev->{$key} && $self->{$key}->{copy} ) {
+         $vals{$key} = $prev->{$key};
+      }
+      if ( !defined $vals{$key} ) {
+         $vals{$key} = $defaults->{$key};
+      }
+   }
+   return \%vals;
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my $usage
+      = "  DSN syntax: key=value[,key=value...] Allowable DSN keys:\n"
+      . "  KEY  COPY  MEANING\n"
+      . "  ===  ====  =============================================\n";
+   foreach my $key ( sort keys %$self ) {
+      $usage .= "  $key    "
+             .  ($self->{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($self->{$key}->{desc} || '[No description]')
+             . "\n";
+   }
+   return $usage;
+}
+
+sub get_cxn_params {
+   my ( $self, $info ) = @_;
+   my $dsn;
+   if ( $info->{dbidriver} && $info->{dbidriver} eq 'Pg' ) {
+      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(h P));
+   }
+   else {
+      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(F h P S))
+         . ';mysql_read_default_group=mysql';
+   }
+   return ($dsn, $info->{u}, $info->{p});
+}
+
+1;
+
+# ###########################################################################
+# End DSNParser package
+# ###########################################################################
+
+# ###########################################################################
+# And now for the "program".
+# ###########################################################################
+
+package main;
+
 use DBI;
 use English qw(-no_match_vars);
-use Getopt::Long;
 use List::Util qw(min max sum);
 use Term::ReadKey;
 use Time::HiRes qw(ualarm gettimeofday);
@@ -37,12 +235,12 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 # Get configuration information.
 # ############################################################################
 
-# Define cmdline args; each is GetOpt::Long spec and human-readable description.
 my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for password for connections' },
    { s => 'check',             d => 'Check slave delay once and exit' },
    { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
+   { s => 'dbidriver=s',       d => 'Specify DBI driver (default mysql, supports Pg)' },
    { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
    { s => 'file=s',            d => 'Print latest --monitor output to this file' },
    { s => 'frames=s',          d => 'Timeframes for averages (default 1m,5m,15m)' },
@@ -64,25 +262,14 @@ my %opts = (
    check   => 0,
    monitor => 0,
    frames  => '1m,5m,15m',
+   dbidriver => 'mysql',
 );
 
-# Post-process...
-my %opt_seen;
-foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-   $spec->{k} = $short || $long;
-   $spec->{l} = $long;
-   $spec->{t} = $short;
-   $spec->{n} = $spec->{s} =~ m/!/;
-   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
-   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
-}
-
-Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+my $opt_parser = OptionParser->new(@opt_spec);
+%opts = $opt_parser->parse(%opts);
 
 if ( $opts{version} ) {
-   print "$PROGRAM_NAME  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   print "mysql-heartbeat  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
    exit(0);
 }
 
@@ -118,18 +305,14 @@ if ( !$opts{help} ) {
 }
 
 if ( $opts{help} ) {
-   print "Usage: $PROGRAM_NAME <options> {--update|--monitor|--check}\n\n";
-   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
-      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
-   }
+   print "Usage: mysql-heartbeat <options> {--update|--monitor|--check}\n\n";
+   print $opt_parser->usage();
    (my $usage = <<"   USAGE") =~ s/^      //gm;
 
-      mysql-heartbeat measures replication lag.  You can use it to update a
-      master or monitor a slave.  If possible, connection options are read from
-      your .my.cnf file.  For more details, please read the documentation:
+      mysql-heartbeat measures replication lag on a MySQL or PostgreSQL server.
+      You can use it to update a master or monitor a slave.  If possible, MySQL
+      connection options are read from your .my.cnf file.  For more details,
+      please read the documentation:
 
          perldoc mysql-heartbeat
 
@@ -141,10 +324,29 @@ if ( $opts{help} ) {
 # ############################################################################
 # Work.
 # ############################################################################
-my $update_sql = "UPDATE $opts{t} SET ts=NOW() WHERE id=1";
-my $select_sql = "SELECT UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ts) AS delay FROM $opts{t} WHERE id=1";
-my $dbh = get_dbh(); # Connect before daemonizing so --askpass works.
-my $sth = $dbh->prepare($opts{update} ? $update_sql : $select_sql);
+
+# Get the password before daemonizing.
+if ( !$opts{p} && $opts{askpass} ) {
+   print "Enter password: ";
+   ReadMode('noecho');
+   chomp($opts{p} = <STDIN>);
+   ReadMode('normal');
+   print "\n";
+}
+
+my $update_sql = "UPDATE $opts{t} SET ts = NOW() WHERE id = 1";
+my $select_sql = "SELECT "
+               . ( $opts{dbidriver} eq 'Pg'
+                  ? "ROUND(DATE_PART('epoch', NOW() - ts)) "
+                  : "UNIX_TIMESTAMP() - UNIX_TIMESTAMP(ts) " )
+               . "AS delay FROM $opts{t} WHERE id = 1";
+
+my $dbopt = { AutoCommit => 1, RaiseError => 1, PrintError => 0 };
+my $dsn   = new DSNParser;
+my $dbh   = DBI->connect($dsn->get_cxn_params(\%opts), $dbopt);
+my $sth   = $dbh->prepare($opts{update} ? $update_sql : $select_sql);
+
+$dbh->{InactiveDestroy}  = 1; # Don't disconnect on fork
 
 # Do a little check just to make sure the table is there, so there's one last
 # chance to catch errors before daemonizing.
@@ -186,7 +388,7 @@ while ( 1 ) {
 
       # Connect or reconnect if necessary.
       if ( !$dbh->ping ) {
-         $dbh = get_dbh();
+         $dbh = DBI->connect($dsn->get_cxn_params(\%opts), $dbopt);
          $sth = undef;
       }
 
@@ -240,34 +442,6 @@ while ( 1 ) {
 }
 
 # ############################################################################
-# Subroutines
-# ############################################################################
-sub get_dbh {
-   my %conn = (
-      F => 'mysql_read_default_file',
-      h => 'host',
-      P => 'port',
-      S => 'mysql_socket'
-   );
-
-   # Connect to the database
-   if ( !$opts{p} && $opts{askpass} ) {
-      print "Enter password: ";
-      ReadMode('noecho');
-      chomp($opts{p} = <STDIN>);
-      ReadMode('normal');
-      print "\n";
-   }
-
-   my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
-      . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
-      . ';mysql_read_default_group=mysql';
-   my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
-   $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork
-   return $dbh;
-}
-
-# ############################################################################
 # Documentation.
 # ############################################################################
 
@@ -281,13 +455,14 @@ mysql-heartbeat - Monitor MySQL replication delay.
 
  mysql-heartbeat -D test --update -h master-server
  mysql-heartbeat -D test --monitor -h slave-server
+ mysql-heartbeat -D test --monitor -h slave-server --dbidriver Pg
 
 =head1 DESCRIPTION
 
-MySQL Heartbeat is a two-part MySQL replication delay monitoring system that
-doesn't require the slave SQL thread to be running.  The first part updates a
-timestamp every second on the master.  You must create a table on the master
-as follows:
+MySQL Heartbeat is a two-part MySQL and PostgreSQL replication delay monitoring
+system that doesn't require the slave to be working (in other words, it doesn't
+rely on C<SHOW SLAVE STATUS> on MySQL).  The first part updates a timestamp
+every second on the master.  You must create a table on the master as follows:
 
  CREATE TABLE heartbeat (
    id int NOT NULL PRIMARY KEY,
@@ -310,6 +485,9 @@ Heartbeat will report zero seconds of delay.
 
 MySQL Heartbeat will try to reconnect if the connection has an error, but will
 not retry if it can't get a connection when it first starts.
+
+The L<"--dbidriver"> option lets you use MySQL Heartbeat to monitor PostgreSQL
+as well.  It is reported to work well with Slony-1 replication.
 
 =head1 OPTIONS
 
@@ -336,6 +514,11 @@ The database to use for the connection.
 
 Only read default options from the given file.  You must give an absolute
 pathname.
+
+=item --dbidriver
+
+Specify a DBI driver for the connection.  At the moment C<mysql> and C<Pg> are
+supported.  The default is C<mysql>.
 
 =item --file
 

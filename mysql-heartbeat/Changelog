@@ -1,5 +1,8 @@
 Changelog for mysql-heartbeat:
 
+   * Added support for PostgreSQL with the --dbidriver option.
+   * Replaced some code with modules.
+
 2007-10-03: version 1.0.1
 
    * --check hung forever.
