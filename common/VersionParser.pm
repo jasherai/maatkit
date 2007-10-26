@@ -1,5 +1,5 @@
 # ###########################################################################
-# VersionParser package
+# VersionParser package $Revision$
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
