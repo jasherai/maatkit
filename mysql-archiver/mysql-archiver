@@ -1121,8 +1121,9 @@ if ( !caller ) {
                });
             }
             $ins_sth ||= $ins_row; # Default to the sth decided before.
-            # TODO: allow to insert less than the full row.
-            my $success = do_with_retries( 'inserting', sub { $ins_sth->execute(@$row) } );
+            my $success = do_with_retries( 'inserting', sub {
+               $ins_sth->execute(@{$row}[@ins_slice])
+            });
             if ( $success == 0 ) {
                $retries = -1;
                last ROW;
@@ -1139,7 +1140,9 @@ if ( !caller ) {
                $src->{plugin}->before_delete(row => $row);
             });
          }
-         my $success = do_with_retries( 'deleting', sub { $del_row->execute(@{$row}[@del_slice]) } );
+         my $success = do_with_retries( 'deleting', sub {
+            $del_row->execute(@{$row}[@del_slice])
+         });
          if ( $success == 0 ) {
             $retries = -1;
             last ROW;
