@@ -87,14 +87,24 @@ sub usage {
    return $usage;
 }
 
+# Supports PostgreSQL via the dbidriver element of $info, but assumes MySQL by
+# default.
 sub get_cxn_params {
    my ( $self, $info ) = @_;
-   my $dsn
-      = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-      . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
-                  grep { defined $info->{$_} }
-                  qw(F h P S))
-      . ';mysql_read_default_group=mysql';
+   my $dsn;
+   if ( $info->{dbidriver} && $info->{dbidriver} eq 'Pg' ) {
+      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(h P));
+   }
+   else {
+      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(F h P S))
+         . ';mysql_read_default_group=mysql';
+   }
    return ($dsn, $info->{u}, $info->{p});
 }
 
