@@ -930,23 +930,19 @@ if ( !caller ) {
    my $nibbler = new TableNibbler;
    my ($first_sql, $next_sql, $del_sql, $ins_sql);
    my ($sel_stmt, $ins_stmt, $del_stmt);
-   my (@sel_slice, @del_slice, @ins_slice);
+   my (@asc_slice, @sel_slice, @del_slice, @ins_slice);
+   my @sel_cols = $opts{c} ? split(/,/, $opts{c})                       # Explicit
+                : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
+                :            @{$src->{info}->{cols}};                   # All
 
    $del_stmt = $nibbler->generate_del_stmt(
       tbl    => $src->{info},
-      cols   => [
-                    $opts{c} ? split(/,/, $opts{c})                       # Explicitly specified columns
-                  : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
-                  :            @{$src->{info}->{cols}}                    # All columns
-                ],
+      cols   => \@sel_cols,
       quoter => $q,
       index  => $src->{i},
    );
    @del_slice = @{$del_stmt->{slice}};
 
-   # TODO: even though the SELECT statement might add more columns when needed,
-   # the file and dest table shouldn't get any columns not specified in
-   # --columns.  Also make sure they get passed to the plugin correctly.
    # Generate statement for ascending index, if desired
    if ( $opts{N} ) {
       $sel_stmt = $nibbler->generate_asc_stmt(
@@ -968,14 +964,17 @@ if ( !caller ) {
          scols => $del_stmt->{scols},
       };
    }
-   @sel_slice = @{$sel_stmt->{slice}};
+   @asc_slice = @{$sel_stmt->{slice}};
+   @sel_slice = 0..$#sel_cols;
 
    $first_sql
-      = 'SELECT' . ( $opts{hpselect} ? ' HIGH_PRIORITY' : '' ) . ' /*!40001 SQL_NO_CACHE */ '
+      = 'SELECT' . ( $opts{hpselect} ? ' HIGH_PRIORITY' : '' )
+      . ' /*!40001 SQL_NO_CACHE */ '
       . join(',', map { $q->quote($_) } @{$sel_stmt->{cols}} )
       . " FROM $src->{db_tbl}"
       . ( $sel_stmt->{index}
-         ? (($vp->version_ge($dbh, '4.0.9') ? " FORCE" : " USE") . " INDEX(`$sel_stmt->{index}`)")
+         ? (($vp->version_ge($dbh, '4.0.9') ? " FORCE" : " USE")
+            . " INDEX(`$sel_stmt->{index}`)")
          : '')
       . " WHERE ($opts{W})";
 
@@ -1021,7 +1020,7 @@ if ( !caller ) {
    if ( $dst ) {
       $ins_stmt = $nibbler->generate_ins_stmt(
          tbl  => $dst->{info},
-         cols => $sel_stmt->{cols},
+         cols => \@sel_cols,
       );
       @ins_slice = @{$ins_stmt->{slice}};
       $ins_sql = ($opts{r}          ? 'REPLACE'       : 'INSERT')
@@ -1063,7 +1062,10 @@ if ( !caller ) {
    foreach my $table ( $dst, $src ) {
       next unless $table && $table->{plugin};
       trace ('before_begin', sub {
-         $table->{plugin}->before_begin(cols => $sel_stmt->{cols}) if $table->{plugin};
+         $table->{plugin}->before_begin(
+            cols    => \@sel_cols,
+            allcols => $sel_stmt->{cols},
+         );
       });
    }
 
@@ -1096,7 +1098,7 @@ if ( !caller ) {
          or die "Cannot open $opts{f}: $OS_ERROR\n";
       $file->autoflush(1) unless $opts{b};
       if ( $need_hdr ) {
-         print $file '', escape($sel_stmt->{cols}), "\n"
+         print $file '', escape(\@sel_cols), "\n"
             or die "Cannot write to $opts{f}: $OS_ERROR\n";
       }
    }
@@ -1113,15 +1115,17 @@ if ( !caller ) {
       my $lastrow = $row;
 
       if ( !$src->{plugin}
-         || trace('is_archivable', sub { $src->{plugin}->is_archivable(row => $row)}) )
-      {
+         || trace('is_archivable', sub {
+            $src->{plugin}->is_archivable(row => $row)
+         })
+      ) {
 
          # Do the archiving.  Write to the file first, since like the file, MyISAM
          # and other tables cannot be rolled back etc.  If there is a problem,
          # hopefully the data has at least made it to the file.
          if ( $file ) {
             trace('print_file', sub {
-               print $file '', escape($row), "\n"
+               print $file '', escape([@{$row}[@sel_slice]]), "\n"
                   or die "Cannot write to $opts{f}: $OS_ERROR\n";
             });
          }
@@ -1198,10 +1202,10 @@ if ( !caller ) {
          $get_sth = $get_next;
 
          trace('select', sub {
-            $get_next->execute(@{$lastrow}[@sel_slice]);
+            $get_next->execute(@{$lastrow}[@asc_slice]);
          });
 
-         @beginning_of_txn = @{$lastrow}[@sel_slice] unless $txn_cnt;
+         @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
          $row              = $get_sth->fetchrow_arrayref();
       }
    }
@@ -1583,9 +1587,10 @@ error.
 
 Specify a comma-separated list of columns to fetch, write to the file, and
 insert into the destination table.  If specified, mysql-archiver ignores other
-columns unless it needs to add them to the SELECT statement for ascending an
+columns unless it needs to add them to the C<SELECT> statement for ascending an
 index or deleting rows.  It fetches and uses these extra columns internally, but
-does not write them to the file or to the destination table.
+does not write them to the file or to the destination table.  It I<does> pass
+them to plugins.
 
 See also --pkonly.
 
@@ -1958,13 +1963,20 @@ opens the connection, and before it examines the table given in the arguments.
 This gives the plugin a chance to create and populate temporary tables, or do
 other setup work.
 
-=item before_begin(cols => \@cols)
+=item before_begin(cols => \@cols, allcols => \@allcols)
 
 This method is called just before mysql-archiver begins iterating through rows
 and archiving them, but after it does all other setup work (examining table
 structures, designing SQL queries, and so on).  This is the only time
 mysql-archiver tells the plugin column names for the rows it will pass the
 plugin while archiving.
+
+The C<cols> argument is the column names the user requested to be archived,
+either by default or by the L<"--columns"> option.  The C<allcols> argument is
+the list of column names for every row MySQL Archiver will fetch from the source
+table.  It may fetch more columns than the user requested, because it needs some
+columns for its own use.  When subsequent plugin functions receive a row, it is
+the full row containing all the extra columns, if any, added to the end.
 
 =item is_archivable(row => \@row)
 

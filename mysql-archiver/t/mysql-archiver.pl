@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 77;
+use Test::More tests => 81;
 
 my $opt_file = shift or die "Specify an option file.\n";
 diag("Testing with $opt_file");
@@ -98,7 +98,7 @@ is($output + 0, 0, 'Ascended key OK');
 # Test specifying a wrong index.
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mysql-archiver -W 1=1 --source i=foo,D=test,t=table_3,F=$opt_file --purge 2>&1`;
-is($output, "Index 'foo' does not exist in table at ../mysql-archiver line 416.\n", 'Got bad-index error OK');
+like($output, qr/Index 'foo' does not exist in table/, 'Got bad-index error OK');
 
 # Test specifying a NULLable index.
 `mysql --defaults-file=$opt_file < before.sql`;
@@ -108,7 +108,7 @@ is($output, "", 'Got no error with a NULLable index');
 # Test table without a primary key
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mysql-archiver -W 1=1 --source D=test,t=table_4,F=$opt_file --purge 2>&1`;
-is($output, "Cannot find an ascendable index in table at ../mysql-archiver line 421.\n", 'Got need-PK-error OK');
+like($output, qr/Cannot find an ascendable index/, 'Got need-PK-error OK');
 
 # Test ascending index explicitly
 `mysql --defaults-file=$opt_file < before.sql`;
@@ -151,6 +151,21 @@ EOF
 , 'File has the right stuff');
 `rm -f archive.test.table_1`;
 
+# Archive to a file, but specify only some columns.
+`mysql --defaults-file=$opt_file < before.sql`;
+`rm -f archive.test.table_1`;
+$output = `perl ../mysql-archiver -c b,c -W 1=1 -h --source D=test,t=table_1,F=$opt_file --file 'archive.%D.%t' 2>&1`;
+$output = `cat archive.test.table_1`;
+is($output, <<EOF
+b\tc
+2\t3
+\\N\t3
+2\t3
+2\t3
+EOF
+, 'File has the right stuff with only some columns');
+`rm -f archive.test.table_1`;
+
 # Archive to another table.
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mysql-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
@@ -159,6 +174,25 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 0, 'Purged all rows ok');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_2"`;
 is($output + 0, 4, 'Found rows in new table OK');
+
+# Archive only some columns to another table.
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -c b,c -W 1=1 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
+is($output, '', 'No output');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
+is($output + 0, 0, 'Purged all rows ok');
+$output = `mysql --defaults-file=$opt_file -t -e "select * from test.table_2"`;
+is($output, <<EOF
++---+------+---+------+
+| a | b    | c | d    |
++---+------+---+------+
+| 1 |    3 | 1 | NULL | 
+| 2 |    3 | 2 | NULL | 
+| 3 |    3 | 3 | NULL | 
+| 4 |    3 | 4 | NULL | 
++---+------+---+------+
+EOF
+, 'Found rows in new table OK');
 
 # Test the output
 `mysql --defaults-file=$opt_file < before.sql`;
