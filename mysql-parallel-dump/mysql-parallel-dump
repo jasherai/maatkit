@@ -24,12 +24,6 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# This is a combination of modules and programs in one -- a runnable module.
-# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
-# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
-# ###########################################################################
-
-# ###########################################################################
 # OptionParser package
 # ###########################################################################
 use strict;
@@ -509,592 +503,588 @@ my %conn = (
    S => 'mysql_socket'
 );
 
-if ( !caller ) {
+# ############################################################################
+# Get configuration information.
+# ############################################################################
 
-   # ############################################################################
-   # Get configuration information.
-   # ############################################################################
+my @opt_spec = (
+   { s => 'age=s',             d => 'Dump only modified or not recently dumped tables' },
+   { s => 'basedir=s',         d => 'Base directory for creating files (default cwd)' },
+   { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
+   { s => 'chunksize|C=s',     d => 'Number of rows or data size to dump per file' },
+   { s => 'csv',               d => 'Do --tab dump in CSV format (implies --tab)' },
+   { s => 'databases|d=s',     d => 'Dump only this comma-separated list of databases' },
+   { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
+   { s => 'defaultset!',       d => 'When --sets given, dump tables not in any set' },
+   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'flushlock|k!',      d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
+   { s => 'flushlog!',         d => 'Execute FLUSH LOGS when getting binlog positions' },
+   { s => 'gzip!',             d => 'Compress files with gzip (default on non-Win32)' },
+   { s => 'host|h=s',          d => 'Connect to host' },
+   { s => 'help',              d => 'Show this help message' },
+   { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
+   { s => 'locktables!',       d => 'Use LOCK TABLES (implies --no-flushlock)' },
+   { s => 'numthread|m=i',     d => 'Number of threads (default #CPUs or 2)' },
+   { s => 'opt!',              d => 'Use sensible mysqldump options (enabled by default)' },
+   { s => 'password|p=s',      d => 'Password to use when connecting' },
+   { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'quiet|q',           d => 'Set --verbose to 0' },
+   { s => 'sets=s',            d => 'Dump this comma-separated list of sets' },
+   { s => 'setperdb',          d => 'Dump each database as a separate set' },
+   { s => 'settable=s',        d => 'database.table where backup sets are stored' },
+   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'tab|T',             d => 'Dump tab-separated (sets --umask 0)' },
+   { s => 'tables|t=s',        d => 'Dump only this comma-separated list of tables' },
+   { s => 'test',     ,        d => 'Print commands instead of executing them' },
+   { s => 'tblregex=s',        d => 'Dump only tables whose names match this pattern' },
+   { s => 'umask=s',           d => 'Set umask to this value, in octal' },
+   { s => 'user|u=s',          d => 'User for login if not current user' },
+   { s => 'verbose|v+',        d => 'Verbosity (default 1, can specify multiple times)' },
+   { s => 'version',           d => 'Output version information and exit' },
+   { s => 'wait|w=s',          d => 'Wait limit when server is down (default 5m)' },
+);
 
-   my @opt_spec = (
-      { s => 'age=s',             d => 'Dump only modified or not recently dumped tables' },
-      { s => 'basedir=s',         d => 'Base directory for creating files (default cwd)' },
-      { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
-      { s => 'chunksize|C=s',     d => 'Number of rows or data size to dump per file' },
-      { s => 'csv',               d => 'Do --tab dump in CSV format (implies --tab)' },
-      { s => 'databases|d=s',     d => 'Dump only this comma-separated list of databases' },
-      { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
-      { s => 'defaultset!',       d => 'When --sets given, dump tables not in any set' },
-      { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
-      { s => 'flushlock|k!',      d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
-      { s => 'flushlog!',         d => 'Execute FLUSH LOGS when getting binlog positions' },
-      { s => 'gzip!',             d => 'Compress files with gzip (default on non-Win32)' },
-      { s => 'host|h=s',          d => 'Connect to host' },
-      { s => 'help',              d => 'Show this help message' },
-      { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
-      { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
-      { s => 'locktables!',       d => 'Use LOCK TABLES (implies --no-flushlock)' },
-      { s => 'numthread|m=i',     d => 'Number of threads (default #CPUs or 2)' },
-      { s => 'opt!',              d => 'Use sensible mysqldump options (enabled by default)' },
-      { s => 'password|p=s',      d => 'Password to use when connecting' },
-      { s => 'port|P=i',          d => 'Port number to use for connection' },
-      { s => 'quiet|q',           d => 'Set --verbose to 0' },
-      { s => 'sets=s',            d => 'Dump this comma-separated list of sets' },
-      { s => 'setperdb',          d => 'Dump each database as a separate set' },
-      { s => 'settable=s',        d => 'database.table where backup sets are stored' },
-      { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-      { s => 'tab|T',             d => 'Dump tab-separated (sets --umask 0)' },
-      { s => 'tables|t=s',        d => 'Dump only this comma-separated list of tables' },
-      { s => 'test',     ,        d => 'Print commands instead of executing them' },
-      { s => 'tblregex=s',        d => 'Dump only tables whose names match this pattern' },
-      { s => 'umask=s',           d => 'Set umask to this value, in octal' },
-      { s => 'user|u=s',          d => 'User for login if not current user' },
-      { s => 'verbose|v+',        d => 'Verbosity (default 1, can specify multiple times)' },
-      { s => 'version',           d => 'Output version information and exit' },
-      { s => 'wait|w=s',          d => 'Wait limit when server is down (default 5m)' },
-   );
+# Holds command-line options.
+%opts = (
+   b        => 1,
+   opt      => 1,
+   gzip     => $OSNAME !~ m/Win32/,
+   basedir  => File::Spec->curdir(),
+   w        => '5m',
+   sets     => '',
+   v        => 1,
+   C        => '',
+);
 
-   # Holds command-line options.
-   %opts = (
-      b        => 1,
-      opt      => 1,
-      gzip     => $OSNAME !~ m/Win32/,
-      basedir  => File::Spec->curdir(),
-      w        => '5m',
-      sets     => '',
-      v        => 1,
-      C        => '',
-   );
+my $opt_parser = OptionParser->new(@opt_spec);
+%opts = $opt_parser->parse(%opts);
 
-   my $opt_parser = OptionParser->new(@opt_spec);
-   %opts = $opt_parser->parse(%opts);
+# ############################################################################
+# Process options.
+# ############################################################################
+$opts{basedir} = File::Spec->rel2abs($opts{basedir});
 
-   # ############################################################################
-   # Process options.
-   # ############################################################################
-   $opts{basedir} = File::Spec->rel2abs($opts{basedir});
+if ( $opts{q} ) {
+   $opts{v} = 0;
+}
 
-   if ( $opts{q} ) {
-      $opts{v} = 0;
+if ( !$opts{m} ) {
+   eval {
+      # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This
+      # only works on GNU/Linux.
+      open my $file, "<", "/proc/cpuinfo"
+         or die $OS_ERROR;
+      local $INPUT_RECORD_SEPARATOR = undef;
+      my $contents = <$file>;
+      close $file;
+      $opts{m} = scalar( map { $_ } $contents =~ m/(processor)/g );
+   };
+   $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
+   $opts{m} = max(2, $opts{m} || 0);
+}
+
+# Set locking options.
+my $lock_all      = $opts{sets} || $opts{locktables} || $opts{setperdb} ? 0 : 1;
+$opts{k}          = $lock_all unless defined $opts{k};
+$opts{locktables} = !$lock_all unless defined $opts{locktables};
+
+if ( !$opts{help} ) {
+   if ( $opts{C} && $opts{C} !~ m/^\d+[kGM]?$/ ) {
+      warn "Invalid --chunksize argument\n";
+      $opts{help} = 1;
+   }
+
+   if ( $opts{defaultset} && !$opts{sets} ) {
+      warn "--defaultset has no effect without --sets\n";
+      $opts{help} = 1;
    }
 
    if ( !$opts{m} ) {
-      eval {
-         # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This
-         # only works on GNU/Linux.
-         open my $file, "<", "/proc/cpuinfo"
-            or die $OS_ERROR;
-         local $INPUT_RECORD_SEPARATOR = undef;
-         my $contents = <$file>;
-         close $file;
-         $opts{m} = scalar( map { $_ } $contents =~ m/(processor)/g );
-      };
-      $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
-      $opts{m} = max(2, $opts{m} || 0);
+      warn "You must specify --numthread\n";
+      $opts{help} = 1;
    }
 
-   # Set locking options.
-   my $lock_all      = $opts{sets} || $opts{locktables} || $opts{setperdb} ? 0 : 1;
-   $opts{k}          = $lock_all unless defined $opts{k};
-   $opts{locktables} = !$lock_all unless defined $opts{locktables};
-
-   if ( !$opts{help} ) {
-      if ( $opts{C} && $opts{C} !~ m/^\d+[kGM]?$/ ) {
-         warn "Invalid --chunksize argument\n";
-         $opts{help} = 1;
-      }
-
-      if ( $opts{defaultset} && !$opts{sets} ) {
-         warn "--defaultset has no effect without --sets\n";
-         $opts{help} = 1;
-      }
-
-      if ( !$opts{m} ) {
-         warn "You must specify --numthread\n";
-         $opts{help} = 1;
-      }
-
-      if ( !$opts{help} && $opts{k} && $opts{locktables} ) {
-         warn "--locktables and --flushlock are mutually exclusive\n";
-         $opts{help} = 1;
-      }
-
-      if ( !$opts{help} && $opts{age} ) {
-         my ($num, $suf ) = $opts{age} =~ m/(\d+)([smhd])$/;
-         if ( !defined $num || $num <= 0 ) {
-            warn "Invalid --age argument\n";
-            $opts{help} = 1;
-         }
-         else {
-            $opts{age}
-               = $suf eq 's' ? $num            # Seconds
-               : $suf eq 'm' ? $num * 60       # Minutes
-               : $suf eq 'h' ? $num * 3600     # Hours
-               :               $num * 86400;   # Days
-         }
-      }
-
-      if ( !$opts{help} ) {
-         my ($num, $suf ) = $opts{w} =~ m/(\d+)([smhd])$/;
-         if ( !defined $num || $num <= 0 ) {
-            warn "Invalid --wait argument\n";
-            $opts{help} = 1;
-         }
-         else {
-            $opts{w} = $suf eq 's' ? $num            # Seconds
-                     : $suf eq 'm' ? $num * 60       # Minutes
-                     : $suf eq 'h' ? $num * 3600     # Hours
-                     :               $num * 86400;   # Days
-         }
-      }
-
-      if ( !$opts{help} && $opts{sets} && !$opts{settable} ) {
-         warn "--sets requires --settable\n";
-         $opts{help} = 1;
-      }
-
-      if ( !$opts{help} && $opts{setperdb} && $opts{sets} ) {
-         warn "--sets and --setperdb are mutually exclusive\n";
-         $opts{help} = 1;
-      }
+   if ( !$opts{help} && $opts{k} && $opts{locktables} ) {
+      warn "--locktables and --flushlock are mutually exclusive\n";
+      $opts{help} = 1;
    }
 
-   if ( $opts{csv} ) {
-      $opts{T} = 1;
-   }
-
-   if ( $opts{T} ) {
-      if ( !defined $opts{umask} ) {
-         $opts{umask} = 0;
-      }
-   }
-
-   if ( defined $opts{umask} ) {
-      umask oct($opts{umask});
-   }
-
-   # Gather connection parameters to pass to mysqldump.  Order matters; mysqldump
-   # will have a problem if --defaults-file isn't first.
-   my @conn_params = (
-      [qw(--defaults-file F)],
-      [qw(--host          h)],
-      [qw(--password      p)],
-      [qw(--port          P)],
-      [qw(--socket        S)],
-      [qw(--user          u)],
-   );
-   @conn_params = map { "$_->[0]='$opts{$_->[1]}'" } grep { defined $opts{$_->[1]} } @conn_params;
-
-   # Decide on options to mysqldump.
-   if ( $opts{opt} && !@ARGV ) {
-      # Sensible defaults.
-      $default_dir = 1;
-      @mysqldump_args = (
-         qw(mysqldump),
-         @conn_params,
-         ( $opts{T} ? qw(--no-data) : () ),
-         qw(
-            --add-drop-table
-            --add-locks
-            --allow-keywords
-            --comments
-            --complete-insert
-            --create-options
-            --disable-keys
-            --extended-insert
-            --quick
-            --quote-names
-            --set-charset
-            --skip-lock-tables
-            --triggers
-            --tz-utc
-            '%D'
-            '%N'
-         ),
-      );
-      if ( $opts{C} ) {
-         push @mysqldump_args, qw( --where '%W' );
-      }
-      if ( $opts{gzip} ) {
-         push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
-            '"' . filename('%S', '%D', '%N.%3C.sql.gz') . '"';
+   if ( !$opts{help} && $opts{age} ) {
+      my ($num, $suf ) = $opts{age} =~ m/(\d+)([smhd])$/;
+      if ( !defined $num || $num <= 0 ) {
+         warn "Invalid --age argument\n";
+         $opts{help} = 1;
       }
       else {
-         push @mysqldump_args,
-            '--result-file="' . filename('%S', '%D', '%N.%3C.sql') . '"';
+         $opts{age}
+            = $suf eq 's' ? $num            # Seconds
+            : $suf eq 'm' ? $num * 60       # Minutes
+            : $suf eq 'h' ? $num * 3600     # Hours
+            :               $num * 86400;   # Days
       }
    }
 
-   else {
-      @mysqldump_args = @ARGV;
-   }
-
-   if ( $opts{version} ) {
-      print "mysql-parallel-dump  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
-      exit(0);
-   }
-
-   if ( $opts{help} ) {
-      print "Usage: mysql-parallel-dump <options> [--] <external args>\n\n";
-      print $opt_parser->usage();
-      (my $usage = <<"      USAGE") =~ s/^         //gm;
-
-         mysql-parallel-dump dumps sets of MySQL tables simultaneously via
-         mysqldump or SELECT INTO OUTFILE.  For more details, please read the
-         documentation:
-
-            perldoc mysql-parallel-dump
-
-      USAGE
-      print $usage;
-      exit(0);
-   }
-
-   # Make comma-separated lists into hashes.
-   if ( $opts{d} ) {
-      $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
-   }
-   $opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
-   if ( $opts{t} ) {
-      $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
-   }
-   $opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
-   if ( $opts{e} ) {
-      $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
-   }
-
-   # ############################################################################
-   # Connect.
-   # ############################################################################
-   my $dbh = get_dbh();
-   $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
-   $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
-
-   # This signal handler will do nothing but wake up the sleeping parent process
-   # and record the exit status and time of the child that exited (as a side
-   # effect of not discarding the signal).
-   my %exited_children;
-   $SIG{CHLD} = sub {
-      my $kid;
-      while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
-         # Must right-shift to get the actual exit status of the child.
-         $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
-         $exited_children{$kid}->{exit_time}   = time();
+   if ( !$opts{help} ) {
+      my ($num, $suf ) = $opts{w} =~ m/(\d+)([smhd])$/;
+      if ( !defined $num || $num <= 0 ) {
+         warn "Invalid --wait argument\n";
+         $opts{help} = 1;
       }
-   };
-
-   # ############################################################################
-   # Derive a last-modified timestamp
-   # ############################################################################
-   my ( $age )
-      = $opts{age}
-      ? $dbh->selectrow_array("SELECT DATE_SUB(NOW(), INTERVAL $opts{age} SECOND)")
-      : undef;
-
-   # ############################################################################
-   # Lock the whole server if desired.
-   # ############################################################################
-   if ( $opts{k} && !$opts{test} ) {
-      $dbh->do('FLUSH TABLES WITH READ LOCK');
-   }
-
-   # ############################################################################
-   # Iterate over "sets" of tables.
-   # ############################################################################
-   my %tables_in_sets;
-   my %tables_for_set;
-   my %stats_for_set;
-   my @sets_to_do = unique($opts{sets} =~ m/(\w+)/g);
-
-   # Fetch backup sets from the database.
-   my $backedup_sth;
-   if ( $opts{sets} ) {
-      foreach my $set ( @sets_to_do ) {
-         die "'default' is a reserved set; don't use it\n" if lc $set eq 'default';
-         my $sql = "SELECT `db`, `tbl` "
-                 . "FROM $opts{settable} "
-                 . "WHERE `setname` = '$set' "
-                 . ($age ? "AND `ts` <= '$age' " : '')
-                 . "ORDER BY `priority`, `db`, `tbl`";
-         print $sql, "\n" if $opts{test};
-         my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
-         foreach my $row ( @$result ) {
-            $stats_for_set{$set}->{tables}++;
-            $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
-            push @{$tables_for_set{$set}}, [ $row->{db}, $row->{tbl} ];
-         }
-      }
-      if ( $age ) {
-         $backedup_sth = $dbh->prepare(
-            "UPDATE $opts{settable} AS `mysql_parallel_dump_writable` SET `ts` = NOW() "
-            . " WHERE `setname` = ? AND `db` = ? AND `tbl` = ?");
+      else {
+         $opts{w} = $suf eq 's' ? $num            # Seconds
+                  : $suf eq 'm' ? $num * 60       # Minutes
+                  : $suf eq 'h' ? $num * 3600     # Hours
+                  :               $num * 86400;   # Days
       }
    }
 
-   my %databases_for;
-   my @databases;
-   my %table_status;
-
-   # Do all databases and tables in a 'default' set, possibly excluding those
-   # that have been included in named sets above.  Or, if --setperdb is
-   # specified, place each into its own set.
-   if ( !$opts{sets} || $opts{defaultset} ) {
-      @databases = grep {
-         $_ !~ m/^(information_schema|lost\+found)$/mi
-      } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
-      if ( !$opts{sets} ) {
-         @databases = grep {
-            ( !$opts{d} || exists($opts{d}->{$_}) )
-            && ( !$opts{dbregex} || $_ =~ m/$opts{dbregex}/ )
-            && ( !exists $opts{g}->{$_} )
-         } @databases;
-      }
-      DATABASE:
-      foreach my $database ( @databases ) {
-         my $set = $opts{setperdb} ? $database : 'default';
-         push @{$databases_for{$set}}, $database;
-         @sets_to_do = unique(@sets_to_do, $set);
-      }
+   if ( !$opts{help} && $opts{sets} && !$opts{settable} ) {
+      warn "--sets requires --settable\n";
+      $opts{help} = 1;
    }
 
-   # ############################################################################
-   # Do each backup set.
-   # ############################################################################
-   SET:
-   foreach my $set ( @sets_to_do ) {
-
-      if ( !$opts{sets} ) {
-         # Must fetch tables.
-         foreach my $database ( @{$databases_for{$set}} ) {
-            get_tables_in_database(
-               dbh            => $dbh,
-               set            => $set,
-               database       => $database,
-               age            => $age,
-               opts           => \%opts,
-               tables_in_sets => \%tables_in_sets,
-               stats_for_set  => \%stats_for_set,
-               table_status   => \%table_status,
-               tables_for_set => \%tables_for_set,
-            );
-         }
-      }
-
-      if ( !$tables_for_set{$set} || !@{$tables_for_set{$set}} ) {
-         info(2, "Nothing to do for set $set");
-         next SET;
-      }
-      my $start = time();
-      my $stats = $stats_for_set{$set};
-
-      # #########################################################################
-      # Lock tables if needed.  Cycle until there are none to lock or we get the
-      # lock (some tables could have been dropped between the time we got the
-      # list and now).
-      # #########################################################################
-      if ( $opts{locktables} && !$opts{test} ) {
-         my @to_lock;
-         my $done;
-         do {
-            @to_lock = unique(
-               map { "`$_->[0]`.`$_->[1]` READ" } @{$tables_for_set{$set}} );
-            if ( $backedup_sth ) {
-               push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
-            }
-            eval {
-               $dbh->do('LOCK TABLES ' . join(', ', @to_lock));
-               $done = 1;
-            };
-            if ( $EVAL_ERROR ) {
-               my $err = mysql_error_msg($EVAL_ERROR);
-               my ($db, $tbl) = $err =~ m/Table '([^.]+)\.([^.]+)' doesn't exist/;
-               if ( $db && $tbl ) {
-                  # Remove the nonexistent table and try again.
-                  $tables_for_set{$set} = [
-                     grep { $_->[0] ne $db || $_->[1] ne $tbl } @{$tables_for_set{$set}}
-                  ];
-                  info(0, $err);
-               }
-               else {
-                  die "Cannot lock tables: $err";
-               }
-            }
-         } while ( @to_lock && !$done );
-      }
-
-      # #########################################################################
-      # Flush logs.
-      # #########################################################################
-      if ( $opts{flushlog} && !$opts{test} ) {
-         $dbh->do('FLUSH LOGS');
-      }
-
-      my @work_to_do;
-      foreach my $db_tbl ( @{$tables_for_set{$set}} ) {
-         my @chunks = get_chunks($dbh, $opts{C}, $set, @$db_tbl, \%table_status);
-         my $i = 0;
-         foreach my $chunk ( @chunks ) {
-            push @work_to_do, {
-               D => $chunk->{D},
-               N => $chunk->{N},
-               S => $chunk->{S},
-               C => $i++,
-               W => $chunk->{W},
-            };
-            $stats_for_set{$set}->{chunks}++;
-         }
-      }
-
-      # #########################################################################
-      # Get the master position.
-      # #########################################################################
-      if ( $opts{b} && !$opts{test} ) {
-         my $filename = filename($set, '00_master_data.sql');
-         makedir($filename);
-         open my $file, ">", $filename or die $OS_ERROR;
-         my %wanted = map { $_ => 1 }
-            qw(file position master_host master_port master_log_file
-            read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
-            exec_master_log_pos);
-
-         my ( $master_pos, $slave_pos );
-         eval {
-            $master_pos = $dbh->selectrow_hashref('SHOW MASTER STATUS');
-         };
-         eval {
-            $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
-            print $file "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
-                      . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
-                      . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n";
-         };
-         my %hash;
-         foreach my $thing ( $master_pos, $slave_pos ) {
-            next unless $thing;
-            foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
-               print $file "-- $key $thing->{$key}\n";
-            }
-         }
-
-         # Put the details of the chunks into the file.
-         foreach my $chunk ( @work_to_do ) {
-            print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n";
-         }
-
-         close $file or die $OS_ERROR;
-      }
-
-      # #########################################################################
-      # Design the format for printing out.
-      # #########################################################################
-      my ( $maxdb, $maxtbl, $maxset);
-      $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
-      $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
-      $maxset = max(3, length($set));
-      my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
-      info(2, sprintf($format, qw(SET DATABASE TABLE CHUNK TIME STATUS THREADS)));
-
-      # #########################################################################
-      # Assign the work to child processes.  Initially just start --numthreads
-      # number of children.  Each child that exits will trigger a new one to start
-      # after that.  This is really a terrible hack -- I wish Perl had decent
-      # threading support so I could just queue work for a fixed pool of worker
-      # threads!
-      # #########################################################################
-
-      my %kids;
-      while ( @work_to_do || %kids ) {
-
-         # Wait for the MySQL server to become responsive.
-         my $tries = 0;
-         while ( !$dbh->ping && $tries++ < $opts{w} ) {
-            sleep(1);
-            eval {
-               $dbh = get_dbh();
-            };
-            if ( $EVAL_ERROR ) {
-               info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
-            }
-         }
-         if ( $tries >= $opts{w} ) {
-            die "Too many retries, exiting.\n";
-         }
-
-         # Start a new child process.
-         while ( @work_to_do && $opts{m} > keys %kids ) {
-            my $todo = shift @work_to_do;
-            $todo->{time} = time;
-            my $pid = fork();
-            die "Can't fork: $OS_ERROR" unless defined $pid;
-            if ( $pid ) {              # I'm the parent
-               $kids{$pid} = $todo;
-            }
-            else {                     # I'm the child
-               my $exit_status = 0;
-               $exit_status = do_table($todo) || $exit_status;
-               exit($exit_status);
-            }
-         }
-
-         # Possibly wait for child.
-         my $reaped = 0;
-         foreach my $kid ( keys %exited_children ) {
-            my $status = $exited_children{$kid};
-            my $todo   = $kids{$kid};
-            my $stat   = $status->{exit_status};
-            if ( !$opts{test} && !$stat && $backedup_sth ) {
-               $backedup_sth->execute(@{$todo}{qw(S D N)});
-            }
-            my $time = $status->{exit_time} - $todo->{time};
-            info(2, sprintf($format, @{$todo}{qw(S D N C)},
-               sprintf('%.2f', $time), $stat, scalar(keys %kids)));
-            $stats->{ $stat ? 'failure' : 'success' }++;
-            $stats->{time} += $time;
-            delete $kids{$kid};
-            delete $exited_children{$kid};
-            $reaped = 1;
-         }
-
-         if ( !$reaped ) {
-            # Don't busy-wait.  But don't wait forever either, as a child may exit
-            # and signal while we're not sleeping, so if we sleep forever we may
-            # not get the signal.
-            sleep(1);
-         }
-      }
-
-      if ( $opts{locktables} && !$opts{test} ) {
-         $dbh->do('UNLOCK TABLES');
-         $dbh->commit;
-      }
-
-      $stats->{wallclock} = time() - $start;
-      info(1, sprintf( (@sets_to_do ? '%12s:          ' : '%s:')
-                      . '%5d tables, %5d chunks, %5d successes, %2d failures, '
-                      . '%6.2f wall-clock time, %6.2f dump time',
-                      $set, $stats->{tables}, $stats->{chunks}, $stats->{success} || 0,
-                      $stats->{failure} || 0, $stats->{wallclock},
-                      $stats->{time}));
+   if ( !$opts{help} && $opts{setperdb} && $opts{sets} ) {
+      warn "--sets and --setperdb are mutually exclusive\n";
+      $opts{help} = 1;
    }
-
-   $dbh->do('UNLOCK TABLES') unless $opts{test};
-   $dbh->commit;
-   $dbh->disconnect;
-
-   if ( @sets_to_do > 1 ) {
-      info(1, sprintf(
-         'Final result: %2d sets, %5d tables, %5d chunks, %5d successes, %2d failures, '
-         . '%6.2f wall-clock time, %6.2f dump time',
-         scalar(@sets_to_do),
-            map {
-               my $thing = $_;
-               sum(0, map { $_->{$thing} || 0 } values %stats_for_set);
-            } qw(tables chunks success failure wallclock time)
-         ));
-   }
-
-   # Exit status is 1 if there were any failures.
-   exit( sum(0, map { $_->{failure} || 0 } values %stats_for_set) ? 1 : 0 );
-
 }
+
+if ( $opts{csv} ) {
+   $opts{T} = 1;
+}
+
+if ( $opts{T} ) {
+   if ( !defined $opts{umask} ) {
+      $opts{umask} = 0;
+   }
+}
+
+if ( defined $opts{umask} ) {
+   umask oct($opts{umask});
+}
+
+# Gather connection parameters to pass to mysqldump.  Order matters; mysqldump
+# will have a problem if --defaults-file isn't first.
+my @conn_params = (
+   [qw(--defaults-file F)],
+   [qw(--host          h)],
+   [qw(--password      p)],
+   [qw(--port          P)],
+   [qw(--socket        S)],
+   [qw(--user          u)],
+);
+@conn_params = map { "$_->[0]='$opts{$_->[1]}'" } grep { defined $opts{$_->[1]} } @conn_params;
+
+# Decide on options to mysqldump.
+if ( $opts{opt} && !@ARGV ) {
+   # Sensible defaults.
+   $default_dir = 1;
+   @mysqldump_args = (
+      qw(mysqldump),
+      @conn_params,
+      ( $opts{T} ? qw(--no-data) : () ),
+      qw(
+         --add-drop-table
+         --add-locks
+         --allow-keywords
+         --comments
+         --complete-insert
+         --create-options
+         --disable-keys
+         --extended-insert
+         --quick
+         --quote-names
+         --set-charset
+         --skip-lock-tables
+         --triggers
+         --tz-utc
+         '%D'
+         '%N'
+      ),
+   );
+   if ( $opts{C} ) {
+      push @mysqldump_args, qw( --where '%W' );
+   }
+   if ( $opts{gzip} ) {
+      push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
+         '"' . filename('%S', '%D', '%N.%3C.sql.gz') . '"';
+   }
+   else {
+      push @mysqldump_args,
+         '--result-file="' . filename('%S', '%D', '%N.%3C.sql') . '"';
+   }
+}
+
+else {
+   @mysqldump_args = @ARGV;
+}
+
+if ( $opts{version} ) {
+   print "mysql-parallel-dump  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
+   exit(0);
+}
+
+if ( $opts{help} ) {
+   print "Usage: mysql-parallel-dump <options> [--] <external args>\n\n";
+   print $opt_parser->usage();
+   (my $usage = <<"   USAGE") =~ s/^         //gm;
+
+      mysql-parallel-dump dumps sets of MySQL tables simultaneously via
+      mysqldump or SELECT INTO OUTFILE.  For more details, please read the
+      documentation:
+
+         perldoc mysql-parallel-dump
+
+   USAGE
+   print $usage;
+   exit(0);
+}
+
+# Make comma-separated lists into hashes.
+if ( $opts{d} ) {
+   $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
+}
+$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
+if ( $opts{t} ) {
+   $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
+}
+$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
+if ( $opts{e} ) {
+   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
+}
+
+# ############################################################################
+# Connect.
+# ############################################################################
+my $dbh = get_dbh();
+$dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
+$dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
+
+# This signal handler will do nothing but wake up the sleeping parent process
+# and record the exit status and time of the child that exited (as a side
+# effect of not discarding the signal).
+my %exited_children;
+$SIG{CHLD} = sub {
+   my $kid;
+   while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+      # Must right-shift to get the actual exit status of the child.
+      $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
+      $exited_children{$kid}->{exit_time}   = time();
+   }
+};
+
+# ############################################################################
+# Derive a last-modified timestamp
+# ############################################################################
+my ( $age )
+   = $opts{age}
+   ? $dbh->selectrow_array("SELECT DATE_SUB(NOW(), INTERVAL $opts{age} SECOND)")
+   : undef;
+
+# ############################################################################
+# Lock the whole server if desired.
+# ############################################################################
+if ( $opts{k} && !$opts{test} ) {
+   $dbh->do('FLUSH TABLES WITH READ LOCK');
+}
+
+# ############################################################################
+# Iterate over "sets" of tables.
+# ############################################################################
+my %tables_in_sets;
+my %tables_for_set;
+my %stats_for_set;
+my @sets_to_do = unique($opts{sets} =~ m/(\w+)/g);
+
+# Fetch backup sets from the database.
+my $backedup_sth;
+if ( $opts{sets} ) {
+   foreach my $set ( @sets_to_do ) {
+      die "'default' is a reserved set; don't use it\n" if lc $set eq 'default';
+      my $sql = "SELECT `db`, `tbl` "
+              . "FROM $opts{settable} "
+              . "WHERE `setname` = '$set' "
+              . ($age ? "AND `ts` <= '$age' " : '')
+              . "ORDER BY `priority`, `db`, `tbl`";
+      print $sql, "\n" if $opts{test};
+      my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
+      foreach my $row ( @$result ) {
+         $stats_for_set{$set}->{tables}++;
+         $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
+         push @{$tables_for_set{$set}}, [ $row->{db}, $row->{tbl} ];
+      }
+   }
+   if ( $age ) {
+      $backedup_sth = $dbh->prepare(
+         "UPDATE $opts{settable} AS `mysql_parallel_dump_writable` SET `ts` = NOW() "
+         . " WHERE `setname` = ? AND `db` = ? AND `tbl` = ?");
+   }
+}
+
+my %databases_for;
+my @databases;
+my %table_status;
+
+# Do all databases and tables in a 'default' set, possibly excluding those
+# that have been included in named sets above.  Or, if --setperdb is
+# specified, place each into its own set.
+if ( !$opts{sets} || $opts{defaultset} ) {
+   @databases = grep {
+      $_ !~ m/^(information_schema|lost\+found)$/mi
+   } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+   if ( !$opts{sets} ) {
+      @databases = grep {
+         ( !$opts{d} || exists($opts{d}->{$_}) )
+         && ( !$opts{dbregex} || $_ =~ m/$opts{dbregex}/ )
+         && ( !exists $opts{g}->{$_} )
+      } @databases;
+   }
+   DATABASE:
+   foreach my $database ( @databases ) {
+      my $set = $opts{setperdb} ? $database : 'default';
+      push @{$databases_for{$set}}, $database;
+      @sets_to_do = unique(@sets_to_do, $set);
+   }
+}
+
+# ############################################################################
+# Do each backup set.
+# ############################################################################
+SET:
+foreach my $set ( @sets_to_do ) {
+
+   if ( !$opts{sets} ) {
+      # Must fetch tables.
+      foreach my $database ( @{$databases_for{$set}} ) {
+         get_tables_in_database(
+            dbh            => $dbh,
+            set            => $set,
+            database       => $database,
+            age            => $age,
+            opts           => \%opts,
+            tables_in_sets => \%tables_in_sets,
+            stats_for_set  => \%stats_for_set,
+            table_status   => \%table_status,
+            tables_for_set => \%tables_for_set,
+         );
+      }
+   }
+
+   if ( !$tables_for_set{$set} || !@{$tables_for_set{$set}} ) {
+      info(2, "Nothing to do for set $set");
+      next SET;
+   }
+   my $start = time();
+   my $stats = $stats_for_set{$set};
+
+   # #########################################################################
+   # Lock tables if needed.  Cycle until there are none to lock or we get the
+   # lock (some tables could have been dropped between the time we got the
+   # list and now).
+   # #########################################################################
+   if ( $opts{locktables} && !$opts{test} ) {
+      my @to_lock;
+      my $done;
+      do {
+         @to_lock = unique(
+            map { "`$_->[0]`.`$_->[1]` READ" } @{$tables_for_set{$set}} );
+         if ( $backedup_sth ) {
+            push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
+         }
+         eval {
+            $dbh->do('LOCK TABLES ' . join(', ', @to_lock));
+            $done = 1;
+         };
+         if ( $EVAL_ERROR ) {
+            my $err = mysql_error_msg($EVAL_ERROR);
+            my ($db, $tbl) = $err =~ m/Table '([^.]+)\.([^.]+)' doesn't exist/;
+            if ( $db && $tbl ) {
+               # Remove the nonexistent table and try again.
+               $tables_for_set{$set} = [
+                  grep { $_->[0] ne $db || $_->[1] ne $tbl } @{$tables_for_set{$set}}
+               ];
+               info(0, $err);
+            }
+            else {
+               die "Cannot lock tables: $err";
+            }
+         }
+      } while ( @to_lock && !$done );
+   }
+
+   # #########################################################################
+   # Flush logs.
+   # #########################################################################
+   if ( $opts{flushlog} && !$opts{test} ) {
+      $dbh->do('FLUSH LOGS');
+   }
+
+   my @work_to_do;
+   foreach my $db_tbl ( @{$tables_for_set{$set}} ) {
+      my @chunks = get_chunks($dbh, $opts{C}, $set, @$db_tbl, \%table_status);
+      my $i = 0;
+      foreach my $chunk ( @chunks ) {
+         push @work_to_do, {
+            D => $chunk->{D},
+            N => $chunk->{N},
+            S => $chunk->{S},
+            C => $i++,
+            W => $chunk->{W},
+         };
+         $stats_for_set{$set}->{chunks}++;
+      }
+   }
+
+   # #########################################################################
+   # Get the master position.
+   # #########################################################################
+   if ( $opts{b} && !$opts{test} ) {
+      my $filename = filename($set, '00_master_data.sql');
+      makedir($filename);
+      open my $file, ">", $filename or die $OS_ERROR;
+      my %wanted = map { $_ => 1 }
+         qw(file position master_host master_port master_log_file
+         read_master_log_pos relay_log_file relay_log_pos relay_master_log_file
+         exec_master_log_pos);
+
+      my ( $master_pos, $slave_pos );
+      eval {
+         $master_pos = $dbh->selectrow_hashref('SHOW MASTER STATUS');
+      };
+      eval {
+         $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
+         print $file "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
+                   . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
+                   . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n";
+      };
+      my %hash;
+      foreach my $thing ( $master_pos, $slave_pos ) {
+         next unless $thing;
+         foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
+            print $file "-- $key $thing->{$key}\n";
+         }
+      }
+
+      # Put the details of the chunks into the file.
+      foreach my $chunk ( @work_to_do ) {
+         print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n";
+      }
+
+      close $file or die $OS_ERROR;
+   }
+
+   # #########################################################################
+   # Design the format for printing out.
+   # #########################################################################
+   my ( $maxdb, $maxtbl, $maxset);
+   $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
+   $maxtbl = max(5, map { length($_->{N}) } @work_to_do);
+   $maxset = max(3, length($set));
+   my $format = "%-${maxset}s %-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
+   info(2, sprintf($format, qw(SET DATABASE TABLE CHUNK TIME STATUS THREADS)));
+
+   # #########################################################################
+   # Assign the work to child processes.  Initially just start --numthreads
+   # number of children.  Each child that exits will trigger a new one to start
+   # after that.  This is really a terrible hack -- I wish Perl had decent
+   # threading support so I could just queue work for a fixed pool of worker
+   # threads!
+   # #########################################################################
+
+   my %kids;
+   while ( @work_to_do || %kids ) {
+
+      # Wait for the MySQL server to become responsive.
+      my $tries = 0;
+      while ( !$dbh->ping && $tries++ < $opts{w} ) {
+         sleep(1);
+         eval {
+            $dbh = get_dbh();
+         };
+         if ( $EVAL_ERROR ) {
+            info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
+         }
+      }
+      if ( $tries >= $opts{w} ) {
+         die "Too many retries, exiting.\n";
+      }
+
+      # Start a new child process.
+      while ( @work_to_do && $opts{m} > keys %kids ) {
+         my $todo = shift @work_to_do;
+         $todo->{time} = time;
+         my $pid = fork();
+         die "Can't fork: $OS_ERROR" unless defined $pid;
+         if ( $pid ) {              # I'm the parent
+            $kids{$pid} = $todo;
+         }
+         else {                     # I'm the child
+            my $exit_status = 0;
+            $exit_status = do_table($todo) || $exit_status;
+            exit($exit_status);
+         }
+      }
+
+      # Possibly wait for child.
+      my $reaped = 0;
+      foreach my $kid ( keys %exited_children ) {
+         my $status = $exited_children{$kid};
+         my $todo   = $kids{$kid};
+         my $stat   = $status->{exit_status};
+         if ( !$opts{test} && !$stat && $backedup_sth ) {
+            $backedup_sth->execute(@{$todo}{qw(S D N)});
+         }
+         my $time = $status->{exit_time} - $todo->{time};
+         info(2, sprintf($format, @{$todo}{qw(S D N C)},
+            sprintf('%.2f', $time), $stat, scalar(keys %kids)));
+         $stats->{ $stat ? 'failure' : 'success' }++;
+         $stats->{time} += $time;
+         delete $kids{$kid};
+         delete $exited_children{$kid};
+         $reaped = 1;
+      }
+
+      if ( !$reaped ) {
+         # Don't busy-wait.  But don't wait forever either, as a child may exit
+         # and signal while we're not sleeping, so if we sleep forever we may
+         # not get the signal.
+         sleep(1);
+      }
+   }
+
+   if ( $opts{locktables} && !$opts{test} ) {
+      $dbh->do('UNLOCK TABLES');
+      $dbh->commit;
+   }
+
+   $stats->{wallclock} = time() - $start;
+   info(1, sprintf( (@sets_to_do ? '%12s:          ' : '%s:')
+                   . '%5d tables, %5d chunks, %5d successes, %2d failures, '
+                   . '%6.2f wall-clock time, %6.2f dump time',
+                   $set, $stats->{tables}, $stats->{chunks}, $stats->{success} || 0,
+                   $stats->{failure} || 0, $stats->{wallclock},
+                   $stats->{time}));
+}
+
+$dbh->do('UNLOCK TABLES') unless $opts{test};
+$dbh->commit;
+$dbh->disconnect;
+
+if ( @sets_to_do > 1 ) {
+   info(1, sprintf(
+      'Final result: %2d sets, %5d tables, %5d chunks, %5d successes, %2d failures, '
+      . '%6.2f wall-clock time, %6.2f dump time',
+      scalar(@sets_to_do),
+         map {
+            my $thing = $_;
+            sum(0, map { $_->{$thing} || 0 } values %stats_for_set);
+         } qw(tables chunks success failure wallclock time)
+      ));
+}
+
+# Exit status is 1 if there were any failures.
+exit( sum(0, map { $_->{failure} || 0 } values %stats_for_set) ? 1 : 0 );
 
 # ############################################################################
 # Subroutines
@@ -1342,8 +1332,6 @@ sub system_call {
    }
    return $exit_status;
 }
-
-1; # Because this is a runnable module.
 
 # ############################################################################
 # Documentation.
