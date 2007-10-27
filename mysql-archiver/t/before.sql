@@ -14,7 +14,7 @@ create table table_1(
 ) type=innodb;
 
 create table table_2(
-   a int not null primary key,
+   a int not null primary key auto_increment,
    b int,
    c int not null,
    d varchar(50)
