@@ -1420,6 +1420,9 @@ sub get_dbh {
       AutoCommit => !$opts{k} && !$opts{F} && !$opts{1},
       RaiseError => 1,
       PrintError => 0,
+      # TODO: enable support for this on old versions of DBD::mysql?
+      # http://www.perlmonks.org/?node_id=620803
+      mysql_enable_utf8 => 1,
    };
 
    if ( !$info->{p} && $opts{askpass} ) {
