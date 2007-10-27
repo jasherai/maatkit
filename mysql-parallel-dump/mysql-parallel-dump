@@ -495,7 +495,7 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 # Globals -- as few as possible.
 my %opts;
 my $default_dir;
-my @mysqldump_args;
+my (@mysqldump_args, @mysqldump_nodata_args);
 my %conn = (
    F => 'mysql_read_default_file',
    h => 'host',
@@ -523,6 +523,7 @@ my @opt_spec = (
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'help',              d => 'Show this help message' },
    { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoreengine|E=s',  d => 'No data for this comma-separated list of storage engines' },
    { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
    { s => 'locktables!',       d => 'Use LOCK TABLES (implies --no-flushlock)' },
    { s => 'numthread|m=i',     d => 'Number of threads (default #CPUs or 2)' },
@@ -555,6 +556,7 @@ my @opt_spec = (
    sets     => '',
    v        => 1,
    C        => '',
+   E        => 'FEDERATED,MRG_MyISAM'
 );
 
 my $opt_parser = OptionParser->new(@opt_spec);
@@ -680,10 +682,9 @@ my @conn_params = (
 if ( $opts{opt} && !@ARGV ) {
    # Sensible defaults.
    $default_dir = 1;
-   @mysqldump_args = (
-      qw(mysqldump),
-      @conn_params,
-      ( $opts{T} ? qw(--no-data) : () ),
+   @mysqldump_args        = ( qw(mysqldump), @conn_params );
+   @mysqldump_nodata_args = ( @mysqldump_args, qw(--no-data) );
+   my @common_args = (
       qw(
          --add-drop-table
          --add-locks
@@ -704,20 +705,23 @@ if ( $opts{opt} && !@ARGV ) {
       ),
    );
    if ( $opts{C} ) {
-      push @mysqldump_args, qw( --where '%W' );
+      push @common_args, qw( --where '%W' );
    }
    if ( $opts{gzip} ) {
-      push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
+      push @common_args, qw( | gzip --force --fast --stdout - > ),
          '"' . filename('%S', '%D', '%N.%3C.sql.gz') . '"';
    }
    else {
-      push @mysqldump_args,
+      push @common_args,
          '--result-file="' . filename('%S', '%D', '%N.%3C.sql') . '"';
    }
+   push @mysqldump_args, @common_args;
+   push @mysqldump_nodata_args, @common_args;
 }
 
 else {
    @mysqldump_args = @ARGV;
+   @mysqldump_nodata_args = @ARGV;
 }
 
 if ( $opts{version} ) {
@@ -746,6 +750,7 @@ if ( $opts{d} ) {
    $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
 }
 $opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
+$opts{E} = { map { $_ => 1 } split(/,\s*/, $opts{E} || '') };
 if ( $opts{t} ) {
    $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
 }
@@ -926,11 +931,12 @@ foreach my $set ( @sets_to_do ) {
       my $i = 0;
       foreach my $chunk ( @chunks ) {
          push @work_to_do, {
-            D => $chunk->{D},
-            N => $chunk->{N},
-            S => $chunk->{S},
-            C => $i++,
-            W => $chunk->{W},
+            D => $chunk->{D}, # Database name
+            N => $chunk->{N}, # Table name
+            S => $chunk->{S}, # Set name
+            C => $i++,        # Chunk number
+            W => $chunk->{W}, # WHERE clause
+            E => $chunk->{E}, # Storage engine
          };
          $stats_for_set{$set}->{chunks}++;
       }
@@ -1153,12 +1159,15 @@ sub get_tables_in_database {
 
 sub get_chunks {
    my ( $dbh, $spec, $set, $db, $tbl, $cache ) = @_;
+   my $tp    = TableParser->new;
+   my $table = $tp->parse($tp->get_ddl($dbh, $db, $tbl));
    my $rows_per_chunk;
    my $cant_chunk = {
       D => $db,
       N => $tbl,
       S => $set,
       W => '1=1',
+      E => $table->{engine},
    };
    return $cant_chunk unless $spec;
 
@@ -1179,8 +1188,6 @@ sub get_chunks {
    }
 
    # Get the chunk column candidates
-   my $tp    = TableParser->new;
-   my $table = $tp->parse($tp->get_ddl($dbh, $db, $tbl));
    my $col   = $tc->get_first_chunkable_column($table);
    return $cant_chunk unless $col;
    my %params = $tc->get_range_statistics($dbh, $db, $tbl, $col);
@@ -1200,6 +1207,7 @@ sub get_chunks {
          N => $tbl,
          S => $set,
          W => $_,
+         E => $table->{engine},
       }
    } @chunks;
 }
@@ -1228,9 +1236,10 @@ sub interp {
 sub do_table {
    my ( $todo ) = @_;
    my $exit_status = 0;
+   my $dump_data = !$opts{E}->{$todo->{E}};
 
    # Dump via SELECT INTO OUTFILE.
-   if ( $opts{T} ) {
+   if ( $opts{T} && $dump_data ) {
       my $dbh = get_dbh();
       my $filename = filename(interp($todo, '%S', '%D', '%N.%3C'));
       makedir($filename);
@@ -1261,12 +1270,12 @@ sub do_table {
    }
 
    # Normal dump using mysqldump.  If $opts{T} was set, the following won't dump
-   # the data because --no-data is in @mysqldump_args.  If the user left the
-   # options alone, we can predict the filename and directory naming convention,
-   # and ensure the directiories exist.  Otherwise the user must ensure the
-   # directories exist, because it's a hard job to figure out which argument in
-   # the array is a filename.  We only do this on the first chunk for each
-   # table.
+   # the data.  If the user left the options alone, we can predict the filename
+   # and directory naming convention, and ensure the directiories exist.
+   # Otherwise the user must ensure the directories exist, because it's a hard
+   # job to figure out which argument in the array is a filename.  We only do
+   # this on the first chunk for each table.
+
    if ( $default_dir && !$todo->{C} ) {
       makedir(interp($todo, filename('%S', '%D', '%N.%3C.sql')));
    }
@@ -1275,7 +1284,13 @@ sub do_table {
       # It's either a custom command, or it's the first chunk for a
       # tab-separated table and we're going to dump the schema, or it's a
       # regular SQL dump and we're going to dump data.
-      my @args = map { interp($todo, $_) } @mysqldump_args;
+      my @args;
+      if ( !$opts{T} && $dump_data ) {
+         @args = map { interp($todo, $_) } @mysqldump_args;
+      }
+      else { 
+         @args = map { interp($todo, $_) } @mysqldump_nodata_args;
+      }
       $exit_status = system_call( @args ) || $exit_status;
    }
 
@@ -1706,6 +1721,14 @@ Connect to host.
 
 Do not dump this comma-separated list of databases.  Only applies when
 L<"--sets"> is not given.
+
+=item --ignoreengine
+
+Do not dump any data for this comma-separated list of storage engines.  The
+schema file will be dumped as usual.
+
+The default value is C<FEDERATED,MRG_MyISAM>.  This prevents dumping data for
+Federated tables and Merge tables.
 
 =item --ignoretbl
 
