@@ -686,6 +686,8 @@ if ( $opts{opt} && !@ARGV ) {
    @mysqldump_nodata_args = ( @mysqldump_args, qw(--no-data) );
    my @common_args = (
       qw(
+         --skip-opt
+         --skip-lock-tables
          --add-drop-table
          --add-locks
          --allow-keywords
@@ -697,7 +699,6 @@ if ( $opts{opt} && !@ARGV ) {
          --quick
          --quote-names
          --set-charset
-         --skip-lock-tables
          --triggers
          --tz-utc
          '%D'
