@@ -22,7 +22,7 @@ do
       cat $FILE | ./insert_module $MOD > $MOD.tmp
       if diff -q $FILE $MOD.tmp | grep differ > /dev/null ; then
          echo "Updating $MOD in $FILE";
-         mv $MOD.tmp $FILE;
+         cat $MOD.tmp > $FILE;
       fi
       rm -f $MOD.tmp;
    done
