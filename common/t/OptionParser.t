@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 18;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -194,4 +194,28 @@ is_deeply(
    \%opts,
    { %basic, foo => 5, bar => 1 },
    'Defaults encoded in description',
+);
+
+$p = new OptionParser(
+   { s => 'foo=m', d => 'Time' },
+);
+@ARGV = qw(--foo 5h);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, foo => 3600*5, },
+   'Time value decoded',
+);
+
+@ARGV = qw(--foo 5z);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, foo => '5z', help => 1 },
+   'Bad time value threw error',
+);
+is_deeply(
+   $p->{notes},
+   ['Invalid --foo argument.'],
+   'Bad time argument set note',
 );

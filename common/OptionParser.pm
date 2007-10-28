@@ -48,15 +48,15 @@ sub new {
          $opt->{l} = $long;
          die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
-
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
-
-         # Instructions in the 'd' description.
-
+         # Option has a type
+         if ( (my ($y) = $opt->{s} =~ m/=([m])/) ) {
+            $opt->{y} = $y;
+            $opt->{s} =~ s/=./=s/;
+         }
          # Option is required if it contains the word 'required'
          $opt->{r} = $opt->{d} =~ m/required/;
-
          # Option has a default value if it says 'default'
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
@@ -141,6 +141,25 @@ sub parse {
          $note .= " and --$self->{long_for}->{$mutex->[-1]}"
                . " are mutually exclusive.";
          $self->note($note);
+      }
+   }
+
+   # Check typed options
+   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'm' ) {
+         my ( $num, $suffix ) = $val =~ m/(\d+)([smhd])$/;
+         if ( $suffix ) {
+            $val = $suffix eq 's' ? $num            # Seconds
+                 : $suffix eq 'm' ? $num * 60       # Minutes
+                 : $suffix eq 'h' ? $num * 3600     # Hours
+                 :                  $num * 86400;   # Days
+            $vals{$spec->{k}} = $val;
+         }
+         else {
+            $self->note("Invalid --$spec->{l} argument.");
+            $vals{help} = 1;
+         }
       }
    }
 
