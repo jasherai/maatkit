@@ -847,7 +847,7 @@ if ( $opts{version} ) {
 if ( $opts{help} ) {
    print "Usage: mysql-parallel-dump <options> [--] <external args>\n\n";
    print $opt_parser->usage();
-   (my $usage = <<"   USAGE") =~ s/^         //gm;
+   (my $usage = <<"   USAGE") =~ s/^      //gm;
 
       mysql-parallel-dump dumps sets of MySQL tables simultaneously via
       mysqldump or SELECT INTO OUTFILE.  For more details, please read the
