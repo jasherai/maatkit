@@ -3,10 +3,16 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 9;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
+
+sub throws_ok {
+   my ( $code, $pat, $msg ) = @_;
+   eval { $code->(); };
+   like ( $EVAL_ERROR, $pat, $msg );
+}
 
 my $p = new DSNParser;
 
@@ -130,4 +136,11 @@ is_deeply (
       'b',
    ],
    'Got connection arguments for PostgreSQL',
+);
+
+$p->prop('required', { h => 1 } );
+throws_ok (
+   sub { $p->parse('a=b') },
+   qr/Missing 'h' part in 'a=b'/,
+   'Missing host part',
 );

@@ -57,7 +57,9 @@ sub new {
 }
 
 # Recognized properties:
-# * autokey: what key to treat a bareword as (typically h=host).
+# * autokey:   which key to treat a bareword as (typically h=host).
+# * dbidriver: which DBI driver to use; assumes mysql, supports Pg.
+# * required:  which parts are required (hashref).
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
@@ -86,6 +88,11 @@ sub parse {
          if ( !defined $vals{$key} ) {
             $vals{$key} = $defaults->{$key};
          }
+      }
+   }
+   if ( (my $required = $self->prop('required')) ) {
+      foreach my $key ( keys %$required ) {
+         die "Missing '$key' part in '$dsn'" unless $vals{$key};
       }
    }
    return \%vals;
