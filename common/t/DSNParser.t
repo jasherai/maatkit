@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 6;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
@@ -71,6 +71,31 @@ is ($p->usage(),
 EOF
 , 'Usage');
 
+$p->prop('autokey', 'h');
+is_deeply(
+   $p->parse('automatic'),
+   {  h => 'automatic',
+   },
+   'DSN with autokey'
+);
+
+is ($p->usage(),
+<<EOF
+  DSN syntax: key=value[,key=value...] Allowable DSN keys:
+  KEY  COPY  MEANING
+  ===  ====  =============================================
+  D    yes   Database to use
+  F    yes   Only read default options from the given file
+  P    yes   Port number to use for connection
+  S    yes   Socket file to use for connection
+  h    yes   Connect to host
+  p    yes   Password to use when connecting
+  t    no    [No description]
+  u    yes   User for login if not current user
+  If the DSN is a bareword, the word is treated as the 'h' key.
+EOF
+, 'Usage');
+
 is_deeply (
    [
       $p->get_cxn_params(
@@ -87,6 +112,7 @@ is_deeply (
    'Got connection arguments',
 );
 
+$p->prop('dbidriver', 'Pg');
 is_deeply (
    [
       $p->get_cxn_params(
@@ -95,7 +121,6 @@ is_deeply (
             p => 'b',
             h => 'me',
             D => 'foo',
-            dbidriver => 'Pg',
          },
       )
    ],

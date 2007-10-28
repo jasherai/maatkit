@@ -7,50 +7,63 @@ use warnings FATAL => 'all';
 package DSNParser;
 
 # Defaults are built-in, but you can add/replace items by passing them as hashrefs
-# of {key, desc, copy, dsn}.  The desc and dsn items are optional.
+# of {key, desc, copy, dsn}.  The desc and dsn items are optional.  You can set
+# properties with the prop() function.  Don't set the 'opts' property.
 sub new {
    my ( $class, @opts ) = @_;
    my $self = {
-      D => {
-         desc => 'Database to use',
-         dsn  => 'database',
-         copy => 1,
-      },
-      F => {
-         desc => 'Only read default options from the given file',
-         dsn  => 'mysql_read_default_file',
-         copy => 1,
-      },
-      h => {
-         desc => 'Connect to host',
-         dsn  => 'host',
-         copy => 1,
-      },
-      p => {
-         desc => 'Password to use when connecting',
-         dsn  => 'password',
-         copy => 1,
-      },
-      P => {
-         desc => 'Port number to use for connection',
-         dsn  => 'port',
-         copy => 1,
-      },
-      S => {
-         desc => 'Socket file to use for connection',
-         dsn  => 'mysql_socket',
-         copy => 1,
-      },
-      u => {
-         desc => 'User for login if not current user',
-         dsn  => 'user',
-         copy => 1,
+      opts => {
+         D => {
+            desc => 'Database to use',
+            dsn  => 'database',
+            copy => 1,
+         },
+         F => {
+            desc => 'Only read default options from the given file',
+            dsn  => 'mysql_read_default_file',
+            copy => 1,
+         },
+         h => {
+            desc => 'Connect to host',
+            dsn  => 'host',
+            copy => 1,
+         },
+         p => {
+            desc => 'Password to use when connecting',
+            dsn  => 'password',
+            copy => 1,
+         },
+         P => {
+            desc => 'Port number to use for connection',
+            dsn  => 'port',
+            copy => 1,
+         },
+         S => {
+            desc => 'Socket file to use for connection',
+            dsn  => 'mysql_socket',
+            copy => 1,
+         },
+         u => {
+            desc => 'User for login if not current user',
+            dsn  => 'user',
+            copy => 1,
+         },
       },
    };
    foreach my $opt ( @opts ) {
-      $self->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
+}
+
+# Recognized properties:
+# * autokey: what key to treat a bareword as (typically h=host).
+sub prop {
+   my ( $self, $prop, $value ) = @_;
+   if ( @_ > 2 ) {
+      $self->{$prop} = $value;
+   }
+   return $self->{$prop};
 }
 
 sub parse {
@@ -58,15 +71,21 @@ sub parse {
    return unless $dsn;
    $prev     ||= {};
    $defaults ||= {};
-   my %hash    = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
    my %vals;
-   foreach my $key ( keys %$self ) {
-      $vals{$key} = $hash{$key};
-      if ( !defined $vals{$key} && defined $prev->{$key} && $self->{$key}->{copy} ) {
-         $vals{$key} = $prev->{$key};
-      }
-      if ( !defined $vals{$key} ) {
-         $vals{$key} = $defaults->{$key};
+   my %opts = %{$self->{opts}};
+   if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
+      $vals{ $self->prop('autokey') } = $dsn;
+   }
+   else {
+      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+      foreach my $key ( keys %opts ) {
+         $vals{$key} = $hash{$key};
+         if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+            $vals{$key} = $prev->{$key};
+         }
+         if ( !defined $vals{$key} ) {
+            $vals{$key} = $defaults->{$key};
+         }
       }
    }
    return \%vals;
@@ -78,11 +97,15 @@ sub usage {
       = "  DSN syntax: key=value[,key=value...] Allowable DSN keys:\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
-   foreach my $key ( sort keys %$self ) {
+   my %opts = %{$self->{opts}};
+   foreach my $key ( sort keys %opts ) {
       $usage .= "  $key    "
-             .  ($self->{$key}->{copy} ? 'yes   ' : 'no    ')
-             .  ($self->{$key}->{desc} || '[No description]')
+             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($opts{$key}->{desc} || '[No description]')
              . "\n";
+   }
+   if ( (my $key = $self->prop('autokey')) ) {
+      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
    }
    return $usage;
 }
@@ -92,15 +115,17 @@ sub usage {
 sub get_cxn_params {
    my ( $self, $info ) = @_;
    my $dsn;
-   if ( $info->{dbidriver} && $info->{dbidriver} eq 'Pg' ) {
+   my %opts = %{$self->{opts}};
+   my $driver = $self->prop('dbidriver') || '';
+   if ( $driver eq 'Pg' ) {
       $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
-         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
                      qw(h P));
    }
    else {
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
                      qw(F h P S))
          . ';mysql_read_default_group=mysql';
