@@ -34,8 +34,6 @@ use warnings FATAL => 'all';
 
 package DSNParser;
 
-# Defaults are built-in, but you can add/replace items by passing them as hashrefs
-# of {key, desc, copy, dsn}.  The desc and dsn items are optional.
 sub new {
    my ( $class, @opts ) = @_;
    my $self = {
@@ -115,8 +113,6 @@ sub usage {
    return $usage;
 }
 
-# Supports PostgreSQL via the dbidriver element of $info, but assumes MySQL by
-# default.
 sub get_cxn_params {
    my ( $self, $info ) = @_;
    my $dsn;
