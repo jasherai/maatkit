@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 14;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -81,3 +81,65 @@ is($p->usage,
 EOF
 , 'Options aligned right when short options shorter than long'
 );
+
+$p = new OptionParser(
+   { s => 'cat|C=s', d => 'How to catch the cat; required' }
+);
+
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { help => 1, C => undef },
+   'Required option sets help',
+);
+
+is_deeply(
+   $p->{notes},
+   ['Required option --cat must be specified'],
+   'Note set upon missing --cat',
+);
+
+is($p->usage,
+<<EOF
+  --cat -C  How to catch the cat; required
+Errors while processing:
+Required option --cat must be specified
+EOF
+, 'There is a note after missing --cat');
+
+@ARGV = qw(--cat net);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { C => 'net' },
+   'Required option OK',
+);
+
+$p = new OptionParser(
+      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
+      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+      '--ignore and --replace are mutually exclusive',
+);
+
+@ARGV = qw(--replace);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { i => undef, r => 1 },
+   '--replace does not trigger --help',
+);
+
+@ARGV = qw(--ignore --replace);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { help => 1, i => 1, r => 1 },
+   '--ignore --replace triggers --help',
+);
+
+is_deeply(
+   $p->{notes},
+   [],
+   'No note set when instruction violated',
+);
+
