@@ -157,7 +157,7 @@ sub parse {
             $vals{$spec->{k}} = $val;
          }
          else {
-            $self->note("Invalid --$spec->{l} argument.");
+            $self->note("Invalid --$spec->{l} argument");
             $vals{help} = 1;
          }
       }

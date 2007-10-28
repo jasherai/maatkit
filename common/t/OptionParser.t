@@ -216,6 +216,6 @@ is_deeply(
 );
 is_deeply(
    $p->{notes},
-   ['Invalid --foo argument.'],
+   ['Invalid --foo argument'],
    'Bad time argument set note',
 );
