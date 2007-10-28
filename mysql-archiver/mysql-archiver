@@ -30,7 +30,7 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1101
+# OptionParser package 1129
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -39,19 +39,67 @@ package OptionParser;
 
 use Getopt::Long;
 use List::Util qw(max);
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class, @opts ) = @_;
-   my %opt_seen;
+   my %key_seen;
+   my %long_seen;
+   my %key_for;
+   my %defaults;
+   my @mutex;
+   my %long_for;
+   unshift @opts,
+      { s => 'help',    d => 'Show this help message' },
+      { s => 'version', d => 'Output version information and exit' };
    foreach my $opt ( @opts ) {
-      my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-      $opt->{k} = $short || $long;
-      $opt->{l} = $long;
-      $opt->{t} = $short;
-      $opt->{n} = $opt->{s} =~ m/!/;
-      die "Duplicate option $opt->{k}" if $opt_seen{$opt->{k}}++;
+      if ( ref $opt ) {
+         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         $opt->{k} = $short || $long;
+         $key_for{$long} = $opt->{k};
+         $long_for{$opt->{k}} = $long;
+         $opt->{l} = $long;
+         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
+         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
+         $opt->{t} = $short;
+         $opt->{n} = $opt->{s} =~ m/!/;
+         if ( (my ($y) = $opt->{s} =~ m/=([m])/) ) {
+            $opt->{y} = $y;
+            $opt->{s} =~ s/=./=s/;
+         }
+         $opt->{r} = $opt->{d} =~ m/required/;
+         if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
+            $defaults{$opt->{k}} = defined $def ? $def : 1;
+         }
+      }
+      else { # It's an instruction.
+
+         if ( $opt =~ m/are mutually exclusive/ ) {
+            my @participants;
+            foreach my $thing ( $opt =~ m/(--?\S+)/g ) {
+               if ( (my ($long) = $thing =~ m/--(\S+)/) ) {
+                  push @participants, $key_for{$long}
+                     or die "No such option $thing";
+               }
+               else {
+                  foreach my $short ( $thing =~ m/([^-])/g ) {
+                     push @participants, $short;
+                  }
+               }
+            }
+            push @mutex, \@participants;
+         }
+
+      }
    }
-   return bless { specs => \@opts }, $class;
+   return bless {
+      specs => [ grep { ref $_ } @opts ],
+      notes => [],
+      instr => [ grep { !ref $_ } @opts ],
+      mutex => \@mutex,
+      defaults => \%defaults,
+      long_for => \%long_for,
+   }, $class;
 }
 
 sub parse {
@@ -59,8 +107,10 @@ sub parse {
    my @specs = @{$self->{specs}};
 
    my %opt_seen;
+   my %vals = %{$self->{defaults}};
+   @vals{keys %defaults} = values %defaults;
    foreach my $spec ( @specs ) {
-      $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
+      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
       $opt_seen{$spec->{k}} = 1;
    }
 
@@ -70,9 +120,60 @@ sub parse {
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs )
-      or $defaults{help} = 1;
-   return %defaults;
+   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
+      or $vals{help} = 1;
+
+   if ( $vals{version} ) {
+      (my $prog) = $PROGRAM_NAME =~ m/(mysql-[a-z-]+)$/;
+      printf("%s  Ver %s Distrib %s Changeset %s\n",
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+      exit(0);
+   }
+
+   foreach my $spec ( grep { $_->{r} } @specs ) {
+      if ( !defined $vals{$spec->{k}} ) {
+         $vals{help} = 1;
+         $self->note("Required option --$spec->{l} must be specified");
+      }
+   }
+
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { defined $vals{$_} } @$mutex;
+      if ( @set > 1 ) {
+         $vals{help} = 1;
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
+         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
+               . " are mutually exclusive.";
+         $self->note($note);
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'm' ) {
+         my ( $num, $suffix ) = $val =~ m/(\d+)([smhd])$/;
+         if ( $suffix ) {
+            $val = $suffix eq 's' ? $num            # Seconds
+                 : $suffix eq 'm' ? $num * 60       # Minutes
+                 : $suffix eq 'h' ? $num * 3600     # Hours
+                 :                  $num * 86400;   # Days
+            $vals{$spec->{k}} = $val;
+         }
+         else {
+            $self->note("Invalid --$spec->{l} argument");
+            $vals{help} = 1;
+         }
+      }
+   }
+
+   return %vals;
+}
+
+sub note {
+   my ( $self, $note ) = @_;
+   push @{$self->{notes}}, $note;
 }
 
 sub usage {
@@ -86,6 +187,8 @@ sub usage {
       grep { $_->{t} } @specs);
 
    my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
 
    $maxs = max($lcol - 3, $maxs);
 
@@ -94,12 +197,20 @@ sub usage {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t};
       my $desc  = $spec->{d};
+      $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+      $desc =~ s/ +$//mg;
       if ( $short ) {
          $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
       }
       else {
          $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
       }
+   }
+   if ( (my @instr = @{$self->{instr}}) ) {
+      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   }
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n", 'Errors in command-line arguments:', @notes) . "\n";
    }
    return $usage;
 }
@@ -677,6 +788,7 @@ my $dp = new DSNParser(
    { key => 'm', copy => 0, desc => 'Plugin module name' },
    { key => 'b', copy => 0, desc => 'Disable binary logging with SET SQL_LOG_BIN=0' },
 );
+$dp->prop('required', 't');
 my $vp = new VersionParser;
 my $q  = new Quoter;
 
@@ -687,7 +799,7 @@ if ( !caller ) {
    # ############################################################################
 
    # Define cmdline args.
-   my @opt_spec = (
+   my $opt_parser = new OptionParser(
       { s => 'analyze|A=s', d => 'Run ANALYZE TABLE afterwards on --source and/or --dest' },
       { s => 'ascend|N!',   d => 'Use ascending index optimization (default)' },
       { s => 'ascendfirst', d => 'Ascend only first column of index' },
@@ -701,10 +813,9 @@ if ( !caller ) {
       { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
       { s => 'forupdate',   d => 'Adds the FOR UPDATE modifier to SELECT statements' },
       { s => 'header|h',    d => 'Print column header at top of --file' },
-      { s => 'help',        d => 'Show this help message' },
       { s => 'hpselect',    d => 'Adds the HIGH_PRIORITY modifier to SELECT statements' },
       { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-      { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement' },
+      { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement (default 1)' },
       { s => 'local|L',     d => 'Do not write OPTIMIZE or ANALYZE queries to binlog' },
       { s => 'lpdel',       d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
       { s => 'lpins',       d => 'Add the LOW_PRIORITY modifier to INSERT statements' },
@@ -714,41 +825,28 @@ if ( !caller ) {
       { s => 'purge|p',     d => 'Purge, not archive; allows to omit --file and --dest' },
       { s => 'quickdel',    d => 'Add the QUICK modifier to DELETE statements' },
       { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-      { s => 'retries|R=i', d => 'Number of retries for a timeout or deadlock' },
+      { s => 'retries|R=i', d => 'Number of retries per timeout or deadlock (default 1)' },
       { s => 'safeautoinc!',d => 'Do not archive row with max AUTO_INCREMENT (default)'},
       { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mysql-archiver-sentinel' },
       { s => 'sharelock',   d => 'Adds LOCK IN SHARE MODE to SELECT statements' },
       { s => 'skipfkchk|K', d => 'Turn off foreign key checks' },
       { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
-      { s => 'source|s=s',  d => 'Table to archive from' },
+      { s => 'source|s=s',  d => 'Table to archive from (required)' },
       { s => 'statistics',  d => 'Collect and print timing statistics' },
       { s => 'stop',        d => 'Stop running instances by creating the sentinel file' },
       { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
-      { s => 'time|m=s',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
-      { s => 'txnsize|z=i', d => 'Number of rows per transaction (default 1; 0 disables)' },
-      { s => 'version',     d => 'Output version information and exit' },
+      { s => 'time|m=m',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
+      { s => 'txnsize|z=i', d => 'Number of rows per transaction (0 disables; default 1)' },
       { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive (required)' },
       { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
+      '--ignore and --replace are mutually exclusive.',
+      '--txnsize and --commit-each are mutually exclusive.',
+      '--lpins and --delayedins are mutually exclusive.',
+      '--sharelock and --forupdate are mutually exclusive.',
+      '--analyze and --optimize are mutually exclusive.',
+      'Specify at least one of --dest, --file, or --purge.',
    );
-
-   # This is the container for the command-line options' values to be stored in
-   # after processing.  Initial values are defaults.
-   %opts = (
-      C => 1,
-      l => 1,
-      N => 1,
-      R => 1,
-      S => '/tmp/mysql-archiver-sentinel',
-      safeautoinc => 1,
-   );
-
-   my $opt_parser = OptionParser->new(@opt_spec);
    %opts = $opt_parser->parse(%opts);
-
-   if ( $opts{version} ) {
-      print "mysql-archiver  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
-      exit(0);
-   }
 
    # First things first: if --stop was given, create the sentinel file.
    if ( $opts{stop} ) {
@@ -762,6 +860,7 @@ if ( !caller ) {
       exit(0);
    }
 
+   # TODO: '--dest defaults to values from --source'
    $src = $dp->parse($opts{s});
    $dst = $dp->parse($opts{d}, $src) if $src && $opts{d};
 
@@ -786,28 +885,8 @@ if ( !caller ) {
          warn "Unrecognized options '@ARGV'.  Do you need to quote --where?\n";
          $opts{help} = 1;
       }
-      elsif ( $opts{m} ) {
-         if ( $opts{m} !~ m/^\d+[smhd]?$/ ) {
-            warn "Invalid --time argument\n";
-            $opts{help} = 1;
-         }
-         elsif ( $opts{m} =~ m/(\d+)([smhd])$/ ) {
-            $opts{m} = $2 eq 's' ? $1            # Seconds
-                     : $2 eq 'm' ? $1 * 60       # Minutes
-                     : $2 eq 'h' ? $1 * 3600     # Hours
-                     :             $1 * 86400;   # Days
-         }
-      }
       elsif ( !$src || !$src->{t} ) {
          warn "Invalid or missing --source argument\n";
-         $opts{help} = 1;
-      }
-      elsif ( !$opts{W} ) {
-         warn "--where is required; use 1=1 if you do not want a WHERE clause\n";
-         $opts{help} = 1;
-      }
-      elsif ( !($dst || $opts{f}) && !$opts{p} ) {
-         warn "No --dest or --file; this would delete rows (override with --purge)\n";
          $opts{help} = 1;
       }
       elsif ( $opts{d} ) { # Ensure --source and --dest don't point to the same place
@@ -823,26 +902,6 @@ if ( !caller ) {
             warn "--source and --dest refer to the same table\n";
             $opts{help} = 1;
          }
-      }
-      elsif ( $opts{z} && $opts{'commit-each'} ) {
-         warn "--txnsize and --commit-each are mutually exclusive; use --limit\n";
-         $opts{help} = 1;
-      }
-      elsif ( $opts{i} && $opts{r} ) {
-         warn "--ignore and --replace are mutually exclusive\n";
-         $opts{help} = 1;
-      }
-      elsif ( $opts{lpins} && $opts{delayedins} ) {
-         warn "--lpins and --delayedins are mutually exclusive\n";
-         $opts{help} = 1;
-      }
-      elsif ( $opts{sharelock} && $opts{forupdate} ) {
-         warn "--sharelock and --forupdate are mutually exclusive\n";
-         $opts{help} = 1;
-      }
-      elsif ( $opts{A} && $opts{O} ) {
-         warn "--analyze and --optimize are mutually exclusive\n";
-         $opts{help} = 1;
       }
    }
 
