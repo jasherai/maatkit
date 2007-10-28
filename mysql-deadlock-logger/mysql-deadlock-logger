@@ -23,9 +23,228 @@
 use strict;
 use warnings FATAL => 'all';
 
+# ###########################################################################
+# OptionParser package 1101
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package OptionParser;
+
+use Getopt::Long;
+use List::Util qw(max);
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my %opt_seen;
+   foreach my $opt ( @opts ) {
+      my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+      $opt->{k} = $short || $long;
+      $opt->{l} = $long;
+      $opt->{t} = $short;
+      $opt->{n} = $opt->{s} =~ m/!/;
+      die "Duplicate option $opt->{k}" if $opt_seen{$opt->{k}}++;
+   }
+   return bless { specs => \@opts }, $class;
+}
+
+sub parse {
+   my ( $self, %defaults ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my %opt_seen;
+   foreach my $spec ( @specs ) {
+      $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
+      $opt_seen{$spec->{k}} = 1;
+   }
+
+   foreach my $key ( keys %defaults ) {
+      die "Cannot set default for non-existent option '$key'\n"
+         unless $opt_seen{$key};
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs )
+      or $defaults{help} = 1;
+   return %defaults;
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxs = max(
+      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
+      grep { $_->{t} } @specs);
+
+   my $lcol = max($maxl, ($maxs + 3));
+
+   $maxs = max($lcol - 3, $maxs);
+
+   my $usage = '';
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+      my $short = $spec->{t};
+      my $desc  = $spec->{d};
+      if ( $short ) {
+         $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+      }
+      else {
+         $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+      }
+   }
+   return $usage;
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+
+# ###########################################################################
+# DSNParser package 1120
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package DSNParser;
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my $self = {
+      opts => {
+         D => {
+            desc => 'Database to use',
+            dsn  => 'database',
+            copy => 1,
+         },
+         F => {
+            desc => 'Only read default options from the given file',
+            dsn  => 'mysql_read_default_file',
+            copy => 1,
+         },
+         h => {
+            desc => 'Connect to host',
+            dsn  => 'host',
+            copy => 1,
+         },
+         p => {
+            desc => 'Password to use when connecting',
+            dsn  => 'password',
+            copy => 1,
+         },
+         P => {
+            desc => 'Port number to use for connection',
+            dsn  => 'port',
+            copy => 1,
+         },
+         S => {
+            desc => 'Socket file to use for connection',
+            dsn  => 'mysql_socket',
+            copy => 1,
+         },
+         u => {
+            desc => 'User for login if not current user',
+            dsn  => 'user',
+            copy => 1,
+         },
+      },
+   };
+   foreach my $opt ( @opts ) {
+      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   }
+   return bless $self, $class;
+}
+
+sub prop {
+   my ( $self, $prop, $value ) = @_;
+   if ( @_ > 2 ) {
+      $self->{$prop} = $value;
+   }
+   return $self->{$prop};
+}
+
+sub parse {
+   my ( $self, $dsn, $prev, $defaults ) = @_;
+   return unless $dsn;
+   $prev     ||= {};
+   $defaults ||= {};
+   my %vals;
+   my %opts = %{$self->{opts}};
+   if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
+      $vals{ $self->prop('autokey') } = $dsn;
+   }
+   else {
+      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+      foreach my $key ( keys %opts ) {
+         $vals{$key} = $hash{$key};
+         if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+            $vals{$key} = $prev->{$key};
+         }
+         if ( !defined $vals{$key} ) {
+            $vals{$key} = $defaults->{$key};
+         }
+      }
+   }
+   if ( (my $required = $self->prop('required')) ) {
+      foreach my $key ( keys %$required ) {
+         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+      }
+   }
+   return \%vals;
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my $usage
+      = "  DSN syntax: key=value[,key=value...] Allowable DSN keys:\n"
+      . "  KEY  COPY  MEANING\n"
+      . "  ===  ====  =============================================\n";
+   my %opts = %{$self->{opts}};
+   foreach my $key ( sort keys %opts ) {
+      $usage .= "  $key    "
+             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($opts{$key}->{desc} || '[No description]')
+             . "\n";
+   }
+   if ( (my $key = $self->prop('autokey')) ) {
+      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
+   }
+   return $usage;
+}
+
+sub get_cxn_params {
+   my ( $self, $info ) = @_;
+   my $dsn;
+   my %opts = %{$self->{opts}};
+   my $driver = $self->prop('dbidriver') || '';
+   if ( $driver eq 'Pg' ) {
+      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(h P));
+   }
+   else {
+      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(F h P S))
+         . ';mysql_read_default_group=mysql';
+   }
+   return ($dsn, $info->{u}, $info->{p});
+}
+
+1;
+
+# ###########################################################################
+# End DSNParser package
+# ###########################################################################
+
 use DBI;
 use English qw(-no_match_vars);
-use Getopt::Long;
 use List::Util qw(max);
 use Socket qw(inet_aton);
 use Term::ReadKey;
@@ -35,22 +254,27 @@ our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
+my $dp = new DSNParser(
+   { key => 't', copy => 1, desc => 'Table in which to store deadlock information' },
+);
+$dp->prop('required', { h => 1 });
+$dp->prop('autokey', 'h');
+
 # ############################################################################
 # Get configuration information.
 # ############################################################################
 
-# Each cmdline arg is GetOpt::Long spec and human-readable description.
 my @opt_spec = (
    { s => 'askpass',      d => 'Prompt for password for connections' },
    { s => 'collapse|c!',  d => 'Collapse whitespace in queries' },
    { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
    { s => 'daemonize',    d => 'Fork to background and detach (POSIX only)' },
-   { s => 'dest|d=s',     d => 'Server in which to store deadlocks' },
+   { s => 'dest|d=s',     d => 'DSN for where to store deadlocks' },
    { s => 'help',         d => 'Show this help message' },
    { s => 'interval|i=s', d => 'Sleep interval, default none (suffix: s/m/h/d)' },
    { s => 'numip|n',      d => 'Express IP addresses as integers' },
    { s => 'print|p',      d => 'Print to STDOUT' },
-   { s => 'source|s=s',   d => 'Server to check for deadlocks' },
+   { s => 'source|s=s',   d => 'DSN to check for deadlocks' },
    { s => 'tab|t',        d => 'Output tab-separated' },
    { s => 'time|m=s',     d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'version',      d => 'Output version information and exit' },
@@ -64,20 +288,8 @@ my %opts = (
    C => '',
 );
 
-# Post-process...
-my %opt_seen;
-foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-   $spec->{k} = $short || $long;
-   $spec->{l} = $long;
-   $spec->{t} = $short;
-   $spec->{n} = $spec->{s} =~ m/!/;
-   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
-   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
-}
-
-Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
+my $opt_parser = OptionParser->new(@opt_spec);
+%opts = $opt_parser->parse(%opts);
 
 if ( $opts{version} ) {
    print "mysql-deadlock-logger  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
@@ -103,12 +315,12 @@ my %conn   = (
    t => 'table',
 );
 
-my $source = parse_dsn($opts{s}, {}      );
-my $dest   = parse_dsn($opts{d}, $source );
+my $source = $dp->parse($opts{s}          );
+my $dest   = $dp->parse($opts{d}, $source );
 
 if ( !$opts{help} ) {
    if (!$opts{p} && !$dest->{t}) {
-      warn "You need to specify what to do with --print or --dest.\n";
+      warn "You need to specify what to do (--print or --dest).\n";
       $opts{help} = 1;
    }
 
@@ -146,22 +358,18 @@ if ( !$opts{help} ) {
 
 if ( $opts{help} ) {
    print "Usage: mysql-deadlock-logger <options>\n\n";
-   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
-      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
-   }
-   print <<USAGE;
+   print $opt_parser->usage(), "\n", $dp->usage();
+   (my $usage = <<"   USAGE") =~ s/^      //gm;
 
-mysql-deadlock-logger extracts and saves information about the most recent
-deadlock in a MySQL server.  You need to specify whether to print the output or
-save it in a database.  The --source and --dest arguments use a special format.
-For more details, please read the documentation:
+      mysql-deadlock-logger extracts and saves information about the most recent
+      deadlock in a MySQL server.  You need to specify whether to print the
+      output or save it in a database.  For more details, please read the
+      documentation:
 
-   perldoc mysql-deadlock-logger
+         perldoc mysql-deadlock-logger
 
-USAGE
+   USAGE
+   print $usage;
    exit(0);
 }
 
@@ -437,24 +645,6 @@ sub finish {
    $oktorun = 0;
 }
 
-sub parse_dsn {
-   my ($dsn, $prev) = @_;
-   return unless $dsn;
-   $prev ||= {};
-
-   my %vals;
-   if ( $dsn =~ m/=/ ) {
-      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-      %vals = map  { $_ => $hash{$_} } keys %conn;
-   }
-   else {
-      $vals{h} = $dsn;
-   }
-   map { $vals{$_} ||= $prev->{$_} } keys %conn;
-   die "Missing host (h) part in $dsn.\n" unless $vals{h};
-   return \%vals;
-}
-
 sub get_dbh {
    my ( $info, $ac ) = @_;
    my $db_options = {
@@ -471,10 +661,7 @@ sub get_dbh {
       print "\n";
    }
 
-   my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
-      . ';mysql_read_default_group=mysql';
-   my $dbh = DBI->connect($dsn, @{$info}{qw(u p)}, $db_options);
+   my $dbh = DBI->connect($dp->get_cxn_params($info), $db_options);
    $dbh->{InactiveDestroy} = 1; # Because of forking.
    return $dbh;
 }
