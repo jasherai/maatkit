@@ -9,7 +9,9 @@ use English qw(-no_match_vars);
 require "../OptionParser.pm";
 
 my @specs = (
-   { s => 'defaultset!',       d => 'alignment test' },
+   { s => 'defaultset!',       d => 'alignment test with a very long thing '
+                                    . 'that is longer than 80 characters wide '
+                                    . 'and must be wrapped' },
    { s => 'defaults-file|F=s', d => 'alignment test' },
    { s => 'dog|D=s',           d => 'Dogs are fun' },
    { s => 'foo!',              d => 'Foo' },
@@ -19,11 +21,12 @@ my @specs = (
 my $p = new OptionParser(@specs);
 my %defaults = ( foo => 1 );
 my %opts;
+my %basic = ( version => undef, help => undef );
 
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 1, D => undef, l => undef, F => undef, defaultset => undef },
+   { %basic, foo => 1, D => undef, l => undef, F => undef, defaultset => undef },
    'Basics works'
 );
 
@@ -31,7 +34,7 @@ is_deeply(
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 0, D => undef, l => undef, F => undef, defaultset => undef },
+   { %basic, foo => 0, D => undef, l => undef, F => undef, defaultset => undef },
    'Negated foo'
 );
 
@@ -39,7 +42,7 @@ is_deeply(
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 1, D => undef, help => 1, l => undef, F => undef, defaultset =>
+   { %basic, foo => 1, D => undef, help => 1, l => undef, F => undef, defaultset =>
    undef },
    'Bad dog'
 );
@@ -55,17 +58,20 @@ delete $defaults{bone};
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { foo => 1, D => undef, l => 3, F => undef, defaultset => undef },
+   { %basic, foo => 1, D => undef, l => 3, F => undef, defaultset => undef },
    'More love'
 );
 
 is($p->usage,
 <<EOF
   --defaults-file -F  alignment test
-  --[no]defaultset    alignment test
+  --[no]defaultset    alignment test with a very long thing that is longer than
+                      80 characters wide and must be wrapped
   --dog           -D  Dogs are fun
   --[no]foo           Foo
+  --help              Show this help message
   --love          -l  And peace
+  --version           Output version information and exit
 EOF
 , 'Options aligned right'
 );
@@ -77,7 +83,9 @@ $p = new OptionParser(
 is($p->usage,
 <<EOF
   --database        -D  Specify the database for all tables
+  --help                Show this help message
   --[no]nouniquechecks  Set UNIQUE_CHECKS=0 before LOAD DATA INFILE
+  --version             Output version information and exit
 EOF
 , 'Options aligned right when short options shorter than long'
 );
@@ -89,7 +97,7 @@ $p = new OptionParser(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { help => 1, C => undef },
+   { %basic, help => 1, C => undef },
    'Required option sets help',
 );
 
@@ -101,8 +109,10 @@ is_deeply(
 
 is($p->usage,
 <<EOF
-  --cat -C  How to catch the cat; required
-Errors while processing:
+  --cat  -C  How to catch the cat; required
+  --help     Show this help message
+  --version  Output version information and exit
+Errors in command-line arguments:
 Required option --cat must be specified
 EOF
 , 'There is a note after missing --cat');
@@ -111,7 +121,7 @@ EOF
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { C => 'net' },
+   { %basic, C => 'net' },
    'Required option OK',
 );
 
@@ -122,8 +132,10 @@ $p = new OptionParser(
 );
 
 is($p->usage, <<EOF
+  --help        Show this help message
   --ignore  -i  Use IGNORE for INSERT statements
   --replace -r  Use REPLACE instead of INSERT statements
+  --version     Output version information and exit
   --ignore and --replace are mutually exclusive.
 EOF
 , 'Usage with instructions');
@@ -132,7 +144,7 @@ EOF
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { i => undef, r => 1 },
+   { %basic, i => undef, r => 1 },
    '--replace does not trigger --help',
 );
 
@@ -140,7 +152,7 @@ is_deeply(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { help => 1, i => 1, r => 1 },
+   { %basic, help => 1, i => 1, r => 1 },
    '--ignore --replace triggers --help',
 );
 
@@ -161,7 +173,7 @@ $p = new OptionParser(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { help => 1, i => 1, r => 1, d => undef },
+   { %basic, help => 1, i => 1, r => 1, d => undef },
    '--ignore --replace triggers --help when short spec used',
 );
 
@@ -180,6 +192,6 @@ $p = new OptionParser(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { foo => 5, bar => 1 },
+   { %basic, foo => 5, bar => 1 },
    'Defaults encoded in description',
 );

@@ -36,6 +36,9 @@ sub new {
    my %defaults;
    my @mutex;
    my %long_for;
+   unshift @opts,
+      { s => 'help',    d => 'Show this help message' },
+      { s => 'version', d => 'Output version information and exit' };
    foreach my $opt ( @opts ) {
       if ( ref $opt ) {
          my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
@@ -169,8 +172,10 @@ sub usage {
       grep { $_->{t} } @specs);
 
    # Find how wide the 'left column' (long + short opts) is, and therefore how
-   # much space to give options.
+   # much space to give options and how much to give descriptions.
    my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
 
    # Adjust the width of the options that have long and short both.
    $maxs = max($lcol - 3, $maxs);
@@ -181,6 +186,9 @@ sub usage {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t};
       my $desc  = $spec->{d};
+      # Wrap long descriptions
+      $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+      $desc =~ s/ +$//mg;
       if ( $short ) {
          $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
       }
@@ -192,7 +200,7 @@ sub usage {
       $usage .= join("\n", map { "  $_" } @instr) . "\n";
    }
    if ( (my @notes = @{$self->{notes}}) ) {
-      $usage .= join("\n", 'Errors while processing:', @notes) . "\n";
+      $usage .= join("\n", 'Errors in command-line arguments:', @notes) . "\n";
    }
    return $usage;
 }
