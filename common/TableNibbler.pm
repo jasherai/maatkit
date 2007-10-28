@@ -61,6 +61,19 @@ sub find_best_index {
 #            the asc_stmt will fetch the next row > the given arguments.
 #            The option is to fetch the row >=, which could loop
 #            infinitely.  Default is false.
+#
+# Returns a hashref of
+# * cols:  columns in the select stmt, with required extras appended
+# * index: index chosen to ascend
+# * where: WHERE clause
+# * slice: col ordinals to pull from a row that will satisfy ? placeholders
+# * scols: ditto, but column names instead of ordinals
+#
+# In other words,
+# $first = $dbh->prepare <....>;
+# $next  = $dbh->prepare <....>;
+# $row = $first->fetchrow_arrayref();
+# $row = $next->fetchrow_arrayref(@{$row}[@slice]);
 sub generate_asc_stmt {
    my ( $self, %opts ) = @_;
 
@@ -171,7 +184,8 @@ sub generate_asc_stmt {
 # generate_asc_stmt(), so you know what columns you'll need to fetch from the
 # table.  Arguments:
 # * tbl * cols * quoter * index
-# These are the same as the arguments to generate_asc_stmt().
+# These are the same as the arguments to generate_asc_stmt().  Return value is
+# similar too.
 sub generate_del_stmt {
    my ( $self, %opts ) = @_;
 
@@ -245,7 +259,8 @@ sub generate_del_stmt {
 # in the INSERT statement, returning only those that exist in both sets.
 # Arguments:
 # * tbl * cols
-# These are the same as the arguments to generate_asc_stmt().
+# These are the same as the arguments to generate_asc_stmt().  Return value is
+# similar too, but you only get back cols and slice.
 sub generate_ins_stmt {
    my ( $self, %opts ) = @_;
 
