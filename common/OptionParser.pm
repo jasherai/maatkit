@@ -23,25 +23,41 @@ use English qw(-no_match_vars);
 # * t is the option's short name
 # * n is whether the option is negatable
 # * r is whether the option is required
+# * y is the option's type.  In addition to Getopt::Long's types (siof), the
+#     following types can be used:
+#     * t = time, with an optional suffix of s/h/m/d
 # Returns the options as a hashref.  Options can also be plain-text
 # instructions, and instructions are recognized inside the 'd' as well.
 sub new {
    my ( $class, @opts ) = @_;
-   my %opt_seen;
+   my %key_seen;
+   my %long_seen;
    my %key_for;
+   my %defaults;
    my @mutex;
+   my %long_for;
    foreach my $opt ( @opts ) {
       if ( ref $opt ) {
          my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
          $opt->{k} = $short || $long;
          $key_for{$long} = $opt->{k};
+         $long_for{$opt->{k}} = $long;
          $opt->{l} = $long;
+         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
+         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
+
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
+
          # Instructions in the 'd' description.
+
+         # Option is required if it contains the word 'required'
          $opt->{r} = $opt->{d} =~ m/required/;
-         # TODO die on dupe long opts too
-         die "Duplicate option $opt->{k}" if $opt_seen{$opt->{k}}++;
+
+         # Option has a default value if it says 'default'
+         if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
+            $defaults{$opt->{k}} = defined $def ? $def : 1;
+         }
       }
       else { # It's an instruction.
 
@@ -54,7 +70,7 @@ sub new {
                }
                else {
                   foreach my $short ( $thing =~ m/([^-])/g ) {
-                     push @participants, $key_for{$short};
+                     push @participants, $short;
                   }
                }
             }
@@ -68,6 +84,8 @@ sub new {
       notes => [],
       instr => [ grep { !ref $_ } @opts ],
       mutex => \@mutex,
+      defaults => \%defaults,
+      long_for => \%long_for,
    }, $class;
 }
 
@@ -77,8 +95,11 @@ sub parse {
    my @specs = @{$self->{specs}};
 
    my %opt_seen;
+   my %vals = %{$self->{defaults}};
+   # Defaults passed as arg override defaults from descriptions.
+   @vals{keys %defaults} = values %defaults;
    foreach my $spec ( @specs ) {
-      $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
+      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
       $opt_seen{$spec->{k}} = 1;
    }
 
@@ -88,10 +109,10 @@ sub parse {
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs )
-      or $defaults{help} = 1;
+   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
+      or $vals{help} = 1;
 
-   if ( $defaults{version} ) {
+   if ( $vals{version} ) {
       (my $prog) = $PROGRAM_NAME =~ m/(mysql-[a-z-]+)$/;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
          $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
@@ -100,21 +121,27 @@ sub parse {
 
    # Check required options (oxymoron?)
    foreach my $spec ( grep { $_->{r} } @specs ) {
-      if ( !defined $defaults{$spec->{k}} ) {
-         $defaults{help} = 1;
+      if ( !defined $vals{$spec->{k}} ) {
+         $vals{help} = 1;
          $self->note("Required option --$spec->{l} must be specified");
       }
    }
 
    # Check mutex options
    foreach my $mutex ( @{$self->{mutex}} ) {
-      my @set = grep { defined $defaults{$_} } @$mutex;
+      my @set = grep { defined $vals{$_} } @$mutex;
       if ( @set > 1 ) {
-         $defaults{help} = 1;
+         $vals{help} = 1;
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
+         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
+               . " are mutually exclusive.";
+         $self->note($note);
       }
    }
 
-   return %defaults;
+   return %vals;
 }
 
 sub note {
@@ -160,6 +187,9 @@ sub usage {
       else {
          $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
       }
+   }
+   if ( (my @instr = @{$self->{instr}}) ) {
+      $usage .= join("\n", map { "  $_" } @instr) . "\n";
    }
    if ( (my @notes = @{$self->{notes}}) ) {
       $usage .= join("\n", 'Errors while processing:', @notes) . "\n";

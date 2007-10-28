@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 14;
+use Test::More tests => 18;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -118,8 +118,15 @@ is_deeply(
 $p = new OptionParser(
       { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
       { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-      '--ignore and --replace are mutually exclusive',
+      '--ignore and --replace are mutually exclusive.',
 );
+
+is($p->usage, <<EOF
+  --ignore  -i  Use IGNORE for INSERT statements
+  --replace -r  Use REPLACE instead of INSERT statements
+  --ignore and --replace are mutually exclusive.
+EOF
+, 'Usage with instructions');
 
 @ARGV = qw(--replace);
 %opts = $p->parse();
@@ -139,7 +146,40 @@ is_deeply(
 
 is_deeply(
    $p->{notes},
-   [],
-   'No note set when instruction violated',
+   ['--ignore and --replace are mutually exclusive.'],
+   'Note set when instruction violated',
 );
 
+$p = new OptionParser(
+      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
+      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+      { s => 'delete|d',    d => 'Delete' },
+      '-ird are mutually exclusive.',
+);
+
+@ARGV = qw(--ignore --replace);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { help => 1, i => 1, r => 1, d => undef },
+   '--ignore --replace triggers --help when short spec used',
+);
+
+is_deeply(
+   $p->{notes},
+   ['--ignore, --replace and --delete are mutually exclusive.'],
+   'Note set with long opt name and nice commas when instruction violated',
+);
+
+# Defaults encoded in descriptions.
+$p = new OptionParser(
+   { s => 'foo=i', d => 'Foo (default 5)' },
+   { s => 'bar',   d => 'Bar (default)' },
+);
+@ARGV = ();
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { foo => 5, bar => 1 },
+   'Defaults encoded in description',
+);
