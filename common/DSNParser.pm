@@ -92,7 +92,7 @@ sub parse {
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing '$key' part in '$dsn'" unless $vals{$key};
+         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
       }
    }
    return \%vals;

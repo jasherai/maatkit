@@ -141,6 +141,6 @@ is_deeply (
 $p->prop('required', { h => 1 } );
 throws_ok (
    sub { $p->parse('a=b') },
-   qr/Missing 'h' part in 'a=b'/,
+   qr/Missing DSN part 'h' in 'a=b'/,
    'Missing host part',
 );
