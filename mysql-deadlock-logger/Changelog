@@ -1,5 +1,7 @@
 Changelog for mysql-deadlock-logger:
 
+   * Replaced some code with modules that are unit-tested.
+
 2007-09-20: version 1.0.4
 
    * Added --interval, --time, and --daemonize options, and signal handling.
