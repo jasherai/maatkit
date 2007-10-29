@@ -3,10 +3,11 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 29;
+use Test::More tests => 36;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
+require "../DSNParser.pm";
 
 my @specs = (
    { s => 'defaultset!',       d => 'alignment test with a very long thing '
@@ -42,7 +43,7 @@ is_deeply(
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { %basic, foo => 1, D => undef, help => 1, l => undef, F => undef, defaultset =>
+   { %basic, foo => 1, D => undef, __error__ => 1, l => undef, F => undef, defaultset =>
    undef },
    'Bad dog'
 );
@@ -62,8 +63,15 @@ is_deeply(
    'More love'
 );
 
+$p->{prompt} = '<options>';
 is($p->usage,
 <<EOF
+OptionParser.t   For more details, please use the --help option, or try 'perldoc
+OptionParser.t' for complete documentation.
+
+Usage: OptionParser.t <options>
+
+Options:
   --defaults-file -F  alignment test
   --[no]defaultset    alignment test with a very long thing that is longer than
                       80 characters wide and must be wrapped
@@ -72,8 +80,17 @@ is($p->usage,
   --help              Show this help message
   --love          -l  And peace
   --version           Output version information and exit
+
+Options and values after processing arguments:
+  --defaults-file     (No value)
+  --defaultset        FALSE
+  --dog               (No value)
+  --foo               FALSE
+  --help              FALSE
+  --love              (No value)
+  --version           FALSE
 EOF
-, 'Options aligned right'
+, 'Options aligned and prompt included'
 );
 
 $p = new OptionParser(
@@ -82,12 +99,24 @@ $p = new OptionParser(
 );
 is($p->usage,
 <<EOF
+OptionParser.t   For more details, please use the --help option, or try 'perldoc
+OptionParser.t' for complete documentation.
+
+Usage: OptionParser.t <options>
+
+Options:
   --database        -D  Specify the database for all tables
   --help                Show this help message
   --[no]nouniquechecks  Set UNIQUE_CHECKS=0 before LOAD DATA INFILE
   --version             Output version information and exit
+
+Options and values after processing arguments:
+  --database            (No value)
+  --help                FALSE
+  --nouniquechecks      FALSE
+  --version             FALSE
 EOF
-, 'Options aligned right when short options shorter than long'
+, 'Options aligned when short options shorter than long, no-usage defaults to <options>'
 );
 
 $p = new OptionParser(
@@ -97,8 +126,8 @@ $p = new OptionParser(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { %basic, help => 1, C => undef },
-   'Required option sets help',
+   { %basic, __error__ => 1,  C => undef },
+   'Required option sets error',
 );
 
 is_deeply(
@@ -107,15 +136,19 @@ is_deeply(
    'Note set upon missing --cat',
 );
 
-is($p->usage,
+$p->{prompt} = 'foofoo';
+$p->{descr}  = 'barbar';
+is($p->errors,
 <<EOF
-  --cat  -C  How to catch the cat; required
-  --help     Show this help message
-  --version  Output version information and exit
+Usage: OptionParser.t foofoo
+
 Errors in command-line arguments:
-Required option --cat must be specified
+  * Required option --cat must be specified
+
+OptionParser.t barbar  For more details, please use the --help option, or try
+'perldoc OptionParser.t' for complete documentation.
 EOF
-, 'There is a note after missing --cat');
+, 'Error output includes note about missing cat');
 
 @ARGV = qw(--cat net);
 %opts = $p->parse();
@@ -132,11 +165,23 @@ $p = new OptionParser(
 );
 
 is($p->usage, <<EOF
+OptionParser.t   For more details, please use the --help option, or try 'perldoc
+OptionParser.t' for complete documentation.
+
+Usage: OptionParser.t <options>
+
+Options:
   --help        Show this help message
   --ignore  -i  Use IGNORE for INSERT statements
   --replace -r  Use REPLACE instead of INSERT statements
   --version     Output version information and exit
   --ignore and --replace are mutually exclusive.
+
+Options and values after processing arguments:
+  --help        FALSE
+  --ignore      FALSE
+  --replace     FALSE
+  --version     FALSE
 EOF
 , 'Usage with instructions');
 
@@ -145,15 +190,15 @@ EOF
 is_deeply(
    \%opts,
    { %basic, i => undef, r => 1 },
-   '--replace does not trigger --help',
+   '--replace does not trigger __error__',
 );
 
 @ARGV = qw(--ignore --replace);
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { %basic, help => 1, i => 1, r => 1 },
-   '--ignore --replace triggers --help',
+   { %basic, __error__ => 1, i => 1, r => 1 },
+   '--ignore --replace triggers __error__',
 );
 
 is_deeply(
@@ -173,8 +218,8 @@ $p = new OptionParser(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { %basic, help => 1, i => 1, r => 1, d => undef },
-   '--ignore --replace triggers --help when short spec used',
+   { %basic, __error__ => 1, i => 1, r => 1, d => undef },
+   '--ignore --replace triggers __error__ when short spec used',
 );
 
 is_deeply(
@@ -191,7 +236,7 @@ eval {
          'Use one and only one of --insert, --replace, or --delete.',
    );
 };
-like($EVAL_ERROR, qr/No such option --insert/, 'Bad option in one-and-only-one');
+like($EVAL_ERROR, qr/No such option 'insert'/, 'Bad option in one-and-only-one');
 
 $p = new OptionParser(
       { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
@@ -204,8 +249,8 @@ $p = new OptionParser(
 
 is_deeply(
    \%opts,
-   { %basic, help => 1, i => 1, r => 1, d => undef },
-   '--ignore --replace triggers --help for one-and-only-one',
+   { %basic, __error__ => 1, i => 1, r => 1, d => undef },
+   '--ignore --replace triggers __error__ for one-and-only-one',
 );
 
 is_deeply(
@@ -224,13 +269,13 @@ $p = new OptionParser(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { %basic, help => 1, i => undef, r => undef, d => undef },
-   'Missing options triggers --help for one-and-only-one',
+   { %basic, __error__ => 1, i => undef, r => undef, d => undef },
+   'Missing options triggers __error__ for one-and-only-one',
 );
 
 is_deeply(
    $p->{notes},
-   ['Specify at least one of --ignore, --replace or --delete.'],
+   ['Specify at least one of --ignore, --replace or --delete'],
    'Note set with one-and-only-one when none specified',
 );
 
@@ -244,13 +289,13 @@ $p = new OptionParser(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { %basic, help => 1, i => undef, r => undef, d => undef },
-   'Missing options triggers --help for at-least-one',
+   { %basic, __error__ => 1, i => undef, r => undef, d => undef },
+   'Missing options triggers __error__ for at-least-one',
 );
 
 is_deeply(
    $p->{notes},
-   ['Specify at least one of --ignore, --replace or --delete.'],
+   ['Specify at least one of --ignore, --replace or --delete'],
    'Note set with at-least-one when none specified',
 );
 
@@ -264,7 +309,7 @@ $p = new OptionParser(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { %basic, help => undef, i => 1, r => 1, d => undef },
+   { %basic, i => 1, r => 1, d => undef },
    'Multiple options OK for at-least-one',
 );
 
@@ -296,7 +341,7 @@ is_deeply(
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { %basic, foo => '5z', help => 1 },
+   { %basic, foo => '5z', __error__ => 1 },
    'Bad time value threw error',
 );
 is_deeply(
@@ -304,3 +349,135 @@ is_deeply(
    ['Invalid --foo argument'],
    'Bad time argument set note',
 );
+
+# One option disables another.
+$p = new OptionParser(
+   { s => 'foo=i', d => 'Foo disables --bar' },
+   { s => 'bar',   d => 'Bar (default 1)' },
+);
+@ARGV = qw(--foo 5);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, foo => 5, bar => undef },
+   '--foo disables --bar',
+);
+
+# Option can't disable a non-existent option.
+eval {
+   $p = new OptionParser(
+      { s => 'foo=i', d => 'Foo disables --fox' },
+      { s => 'bar',   d => 'Bar (default 1)' },
+   );
+};
+like(
+   $EVAL_ERROR,
+   qr/No such option 'fox' while processing foo/,
+   'Invalid option name in disable instruction',
+);
+
+is_deeply(
+   [$p->get_participants('--foo --bar, --baz, -abc')],
+   [qw(foo bar baz a b c)],
+   'Extract option names from a string',
+);
+
+my $d = new DSNParser;
+$p = new OptionParser(
+   { s => 'foo=d', d => 'DSN foo' },
+   { s => 'bar=d', d => 'DSN bar' },
+   'DSN values in --foo default to values in --bar if COPY is yes.',
+);
+$p->{dsn} = $d;
+is($p->usage(),
+<<EOF
+OptionParser.t   For more details, please use the --help option, or try 'perldoc
+OptionParser.t' for complete documentation.
+
+Usage: OptionParser.t <options>
+
+Options:
+  --bar      DSN bar
+  --foo      DSN foo
+  --help     Show this help message
+  --version  Output version information and exit
+  DSN values in --foo default to values in --bar if COPY is yes.
+
+DSN syntax is key=value[,key=value...]  Allowable DSN keys:
+  KEY  COPY  MEANING
+  ===  ====  =============================================
+  D    yes   Database to use
+  F    yes   Only read default options from the given file
+  P    yes   Port number to use for connection
+  S    yes   Socket file to use for connection
+  h    yes   Connect to host
+  p    yes   Password to use when connecting
+  u    yes   User for login if not current user
+
+Options and values after processing arguments:
+  --bar      (No value)
+  --foo      (No value)
+  --help     FALSE
+  --version  FALSE
+EOF
+, 'DSN is integrated into help output');
+
+@ARGV = ('--bar', 'D=DB,u=USER,h=localhost', '--foo', 'h=otherhost');
+%opts = $p->parse();
+
+is_deeply($opts{bar},
+   {  D => 'DB',
+      u => 'USER',
+      S => undef,
+      F => undef,
+      P => undef,
+      h => 'localhost',
+      p => undef,
+   },
+   'DSN parsing on type=d',
+);
+
+is_deeply($opts{foo},
+   {  D => 'DB',
+      u => 'USER',
+      S => undef,
+      F => undef,
+      P => undef,
+      h => 'otherhost',
+      p => undef,
+   },
+   'DSN parsing on type=d inheriting from --bar',
+);
+
+is($p->usage(%opts),
+<<EOF
+OptionParser.t   For more details, please use the --help option, or try 'perldoc
+OptionParser.t' for complete documentation.
+
+Usage: OptionParser.t <options>
+
+Options:
+  --bar      DSN bar
+  --foo      DSN foo
+  --help     Show this help message
+  --version  Output version information and exit
+  DSN values in --foo default to values in --bar if COPY is yes.
+
+DSN syntax is key=value[,key=value...]  Allowable DSN keys:
+  KEY  COPY  MEANING
+  ===  ====  =============================================
+  D    yes   Database to use
+  F    yes   Only read default options from the given file
+  P    yes   Port number to use for connection
+  S    yes   Socket file to use for connection
+  h    yes   Connect to host
+  p    yes   Password to use when connecting
+  u    yes   User for login if not current user
+
+Options and values after processing arguments:
+  --bar      D=DB,h=localhost,u=USER
+  --foo      D=DB,h=otherhost,u=USER
+  --help     FALSE
+  --version  FALSE
+EOF
+, 'DSN stringified with inheritance into post-processed args');

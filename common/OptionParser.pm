@@ -26,6 +26,7 @@ use English qw(-no_match_vars);
 # * y is the option's type.  In addition to Getopt::Long's types (siof), the
 #     following types can be used:
 #     * t = time, with an optional suffix of s/h/m/d
+#     * d = DSN, as provided by a DSNParser which is in $self->{dsn}.
 # Returns the options as a hashref.  Options can also be plain-text
 # instructions, and instructions are recognized inside the 'd' as well.
 sub new {
@@ -37,6 +38,8 @@ sub new {
    my @mutex;
    my @atleast1;
    my %long_for;
+   my %disables;
+   my %copyfrom;
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
@@ -46,13 +49,14 @@ sub new {
          $opt->{k} = $short || $long;
          $key_for{$long} = $opt->{k};
          $long_for{$opt->{k}} = $long;
+         $long_for{$long} = $long;
          $opt->{l} = $long;
          die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
          # Option has a type
-         if ( (my ($y) = $opt->{s} =~ m/=([m])/) ) {
+         if ( (my ($y) = $opt->{s} =~ m/=([md])/) ) {
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
@@ -62,22 +66,18 @@ sub new {
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
          }
+         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
+            # Defer checking till later because of possible forward references
+            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+         }
       }
       else { # It's an instruction.
 
          if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
-            my @participants;
-            foreach my $thing ( $opt =~ m/(--?[\w-]+)/g ) {
-               if ( (my ($long) = $thing =~ m/--(.+)/) ) {
-                  die "No such option $thing" unless $key_for{$long};
-                  push @participants, $key_for{$long}
-               }
-               else {
-                  foreach my $short ( $thing =~ m/([^-])/g ) {
-                     push @participants, $short;
-                  }
-               }
-            }
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $long_for{$_};
+               } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
             }
@@ -85,9 +85,26 @@ sub new {
                push @atleast1, \@participants;
             }
          }
+         elsif ( $opt =~ m/default to/ ) {
+            # It's an --x defaults to --y option.
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $long_for{$_};
+               } $class->get_participants($opt);
+            $copyfrom{$participants[0]} = $participants[1];
+         }
 
       }
    }
+
+   # Check forward references (and convert to long options) in 'disables' rules.
+   foreach my $dis ( keys %disables ) {
+      $disables{$dis} = [ map {
+            die "No such option '$_' while processing $dis" unless $long_for{$_};
+            $long_for{$_};
+         } @{$disables{$dis}} ];
+   }
+
    return bless {
       specs => [ grep { ref $_ } @opts ],
       notes => [],
@@ -96,10 +113,28 @@ sub new {
       defaults => \%defaults,
       long_for => \%long_for,
       atleast1 => \@atleast1,
+      disables => \%disables,
+      key_for  => \%key_for,
+      copyfrom => \%copyfrom,
    }, $class;
 }
 
-# Gets options from @ARGV.
+sub get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
+      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+         push @participants, $long;
+      }
+      else {
+         foreach my $short ( $thing =~ m/([^-])/g ) {
+            push @participants, $short;
+         }
+      }
+   }
+   return @participants;
+}
+
 sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
@@ -120,28 +155,34 @@ sub parse {
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $vals{help} = 1;
+      or $vals{__error__} = 1;
 
    if ( $vals{version} ) {
-      (my $prog) = $PROGRAM_NAME =~ m/(mysql-[a-z-]+)$/;
+      my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
          $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
       exit(0);
    }
 
+   # Disable options as specified.
+   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
+      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      @vals{@disses} = map { undef } @disses;
+   }
+
    # Check required options (oxymoron?)
    foreach my $spec ( grep { $_->{r} } @specs ) {
       if ( !defined $vals{$spec->{k}} ) {
-         $vals{help} = 1;
+         $vals{__error__} = 1;
          $self->note("Required option --$spec->{l} must be specified");
       }
    }
 
    # Check mutex options
    foreach my $mutex ( @{$self->{mutex}} ) {
-      my @set = grep { defined $vals{$_} } @$mutex;
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
       if ( @set > 1 ) {
-         $vals{help} = 1;
+         $vals{__error__} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
@@ -151,18 +192,20 @@ sub parse {
       }
    }
 
+   # Check mutually required options
    foreach my $required ( @{$self->{atleast1}} ) {
-      my @set = grep { defined $vals{$_} } @$required;
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
       if ( !@set ) {
-         $vals{help} = 1;
+         $vals{__error__} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$required}[ 0 .. scalar(@$required) - 2] );
-         $note .= " or --$self->{long_for}->{$required->[-1]}.";
+         $note .= " or --$self->{long_for}->{$required->[-1]}";
          $self->note("Specify at least one of $note");
       }
    }
 
+   # Validate typed arguments.
    foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'm' ) {
@@ -176,8 +219,17 @@ sub parse {
          }
          else {
             $self->note("Invalid --$spec->{l} argument");
-            $vals{help} = 1;
+            $vals{__error__} = 1;
          }
+      }
+      elsif ( $spec->{y} eq 'd' ) {
+         my $def = $self->{copyfrom}->{$spec->{k}};
+         if ( $def ) {
+            $def = $self->{dsn}->parse(
+               $self->{dsn}->as_string(
+                  $vals{$self->{copyfrom}->{$spec->{k}}}));
+         }
+         $vals{$spec->{k}} = $self->{dsn}->parse($val, $def);
       }
    }
 
@@ -189,6 +241,40 @@ sub note {
    push @{$self->{notes}}, $note;
 }
 
+sub prog {
+   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   return $prog || $PROGRAM_NAME;
+}
+
+sub prompt {
+   my ( $self ) = @_;
+   my $prog   = $self->prog;
+   my $prompt = $self->{prompt} || '<options>';
+   return "Usage: $prog $prompt\n";
+}
+
+sub descr {
+   my ( $self ) = @_;
+   my $prog = $self->prog;
+   my $descr  = $prog . ' ' . ($self->{descr} || '')
+          . "  For more details, please use the --help option, "
+          . "or try 'perldoc $prog' for complete documentation.";
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr =~ s/ +$//mg;
+   return $descr;
+}
+
+# Explains what errors were found while processing command-line arguments and
+# gives a brief overview so you can get more information.
+sub errors {
+   my ( $self ) = @_;
+   my $usage = $self->prompt() . "\n";
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   }
+   return $usage . "\n" . $self->descr();
+}
+
 # Prints out command-line help.  The format is like this:
 # --foo  -F   Description of --foo
 # --bars -B   Description of --bar
@@ -197,14 +283,14 @@ sub note {
 # long option, but long options that don't have a short option are allowed to
 # protrude past that.
 sub usage {
-   my ( $self ) = @_;
+   my ( $self, %vals ) = @_;
    my @specs = @{$self->{specs}};
 
    # Find how wide the widest long option is.
    my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
 
    # Find how wide the widest option with a short option is.
-   my $maxs = max(
+   my $maxs = max(0,
       map { length($_->{l}) + ($_->{n} ? 4 : 0)}
       grep { $_->{t} } @specs);
 
@@ -218,7 +304,7 @@ sub usage {
    $maxs = max($lcol - 3, $maxs);
 
    # Format and return the options.
-   my $usage = '';
+   my $usage = $self->descr() . "\n" . $self->prompt() . "\nOptions:\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t};
@@ -236,8 +322,18 @@ sub usage {
    if ( (my @instr = @{$self->{instr}}) ) {
       $usage .= join("\n", map { "  $_" } @instr) . "\n";
    }
-   if ( (my @notes = @{$self->{notes}}) ) {
-      $usage .= join("\n", 'Errors in command-line arguments:', @notes) . "\n";
+   if ( $self->{dsn} ) {
+      $usage .= "\n" . $self->{dsn}->usage();
+   }
+   $usage .= "\nOptions and values after processing arguments:\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $val   = $vals{$spec->{k}};
+      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val             ? '(No value)'
+                : ($spec->{y} || '') eq 'd' ? $self->{dsn}->as_string($val)
+                :                             $val;
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
    }
    return $usage;
 }
