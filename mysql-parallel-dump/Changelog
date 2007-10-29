@@ -1,5 +1,6 @@
 Changelog for mysql-parallel-dump:
 
+   * Replaced some code with modules that are unit-tested.
    * Added --ignoreengine command-line option.
    * Do not dump data for Federated or Merge tables by default.
    * Some versions of mysqldump tried to do LOCK TABLES and hung.
