@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 26;
+use Test::More tests => 29;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -232,6 +232,40 @@ is_deeply(
    $p->{notes},
    ['Specify at least one of --ignore, --replace or --delete.'],
    'Note set with one-and-only-one when none specified',
+);
+
+$p = new OptionParser(
+      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
+      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+      { s => 'delete|d',    d => 'Delete' },
+      'Use at least one of --ignore, --replace, or --delete.',
+);
+@ARGV = ();
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, help => 1, i => undef, r => undef, d => undef },
+   'Missing options triggers --help for at-least-one',
+);
+
+is_deeply(
+   $p->{notes},
+   ['Specify at least one of --ignore, --replace or --delete.'],
+   'Note set with at-least-one when none specified',
+);
+
+$p = new OptionParser(
+      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
+      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+      { s => 'delete|d',    d => 'Delete' },
+      'Use at least one of --ignore, --replace, or --delete.',
+);
+@ARGV = qw(-ir);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, help => undef, i => 1, r => 1, d => undef },
+   'Multiple options OK for at-least-one',
 );
 
 # Defaults encoded in descriptions.
