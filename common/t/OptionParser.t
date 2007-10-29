@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 26;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -181,6 +181,57 @@ is_deeply(
    $p->{notes},
    ['--ignore, --replace and --delete are mutually exclusive.'],
    'Note set with long opt name and nice commas when instruction violated',
+);
+
+eval {
+   $p = new OptionParser(
+         { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
+         { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+         { s => 'delete|d',    d => 'Delete' },
+         'Use one and only one of --insert, --replace, or --delete.',
+   );
+};
+like($EVAL_ERROR, qr/No such option --insert/, 'Bad option in one-and-only-one');
+
+$p = new OptionParser(
+      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
+      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+      { s => 'delete|d',    d => 'Delete' },
+      'Use one and only one of --ignore, --replace, or --delete.',
+);
+@ARGV = qw(--ignore --replace);
+%opts = $p->parse();
+
+is_deeply(
+   \%opts,
+   { %basic, help => 1, i => 1, r => 1, d => undef },
+   '--ignore --replace triggers --help for one-and-only-one',
+);
+
+is_deeply(
+   $p->{notes},
+   ['--ignore, --replace and --delete are mutually exclusive.'],
+   'Note set with one-and-only-one',
+);
+
+$p = new OptionParser(
+      { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
+      { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
+      { s => 'delete|d',    d => 'Delete' },
+      'Use one and only one of --ignore, --replace, or --delete.',
+);
+@ARGV = ();
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, help => 1, i => undef, r => undef, d => undef },
+   'Missing options triggers --help for one-and-only-one',
+);
+
+is_deeply(
+   $p->{notes},
+   ['Specify at least one of --ignore, --replace or --delete.'],
+   'Note set with one-and-only-one when none specified',
 );
 
 # Defaults encoded in descriptions.
