@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 9;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
@@ -61,9 +61,17 @@ is_deeply(
    'DSN with defaults'
 );
 
+is(
+   $p->as_string(
+      $p->parse('u=a,p=b', { D => 'foo', h => 'me' }, { S => 'bar', h => 'host' } )
+   ),
+   'D=foo,S=bar,h=me,p=b,u=a',
+   'DSN stringified'
+);
+
 is ($p->usage(),
 <<EOF
-  DSN syntax: key=value[,key=value...] Allowable DSN keys:
+DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
   ===  ====  =============================================
   D    yes   Database to use
@@ -87,7 +95,7 @@ is_deeply(
 
 is ($p->usage(),
 <<EOF
-  DSN syntax: key=value[,key=value...] Allowable DSN keys:
+DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
   ===  ====  =============================================
   D    yes   Database to use
