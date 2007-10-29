@@ -23,7 +23,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1101
+# OptionParser package 1136
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -32,19 +32,74 @@ package OptionParser;
 
 use Getopt::Long;
 use List::Util qw(max);
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class, @opts ) = @_;
-   my %opt_seen;
+   my %key_seen;
+   my %long_seen;
+   my %key_for;
+   my %defaults;
+   my @mutex;
+   my @atleast1;
+   my %long_for;
+   unshift @opts,
+      { s => 'help',    d => 'Show this help message' },
+      { s => 'version', d => 'Output version information and exit' };
    foreach my $opt ( @opts ) {
-      my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-      $opt->{k} = $short || $long;
-      $opt->{l} = $long;
-      $opt->{t} = $short;
-      $opt->{n} = $opt->{s} =~ m/!/;
-      die "Duplicate option $opt->{k}" if $opt_seen{$opt->{k}}++;
+      if ( ref $opt ) {
+         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         $opt->{k} = $short || $long;
+         $key_for{$long} = $opt->{k};
+         $long_for{$opt->{k}} = $long;
+         $opt->{l} = $long;
+         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
+         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
+         $opt->{t} = $short;
+         $opt->{n} = $opt->{s} =~ m/!/;
+         if ( (my ($y) = $opt->{s} =~ m/=([m])/) ) {
+            $opt->{y} = $y;
+            $opt->{s} =~ s/=./=s/;
+         }
+         $opt->{r} = $opt->{d} =~ m/required/;
+         if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
+            $defaults{$opt->{k}} = defined $def ? $def : 1;
+         }
+      }
+      else { # It's an instruction.
+
+         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
+            my @participants;
+            foreach my $thing ( $opt =~ m/(--?[\w-]+)/g ) {
+               if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+                  die "No such option $thing" unless $key_for{$long};
+                  push @participants, $key_for{$long}
+               }
+               else {
+                  foreach my $short ( $thing =~ m/([^-])/g ) {
+                     push @participants, $short;
+                  }
+               }
+            }
+            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+               push @mutex, \@participants;
+            }
+            if ( $opt =~ m/at least one|one and only one/ ) {
+               push @atleast1, \@participants;
+            }
+         }
+
+      }
    }
-   return bless { specs => \@opts }, $class;
+   return bless {
+      specs => [ grep { ref $_ } @opts ],
+      notes => [],
+      instr => [ grep { !ref $_ } @opts ],
+      mutex => \@mutex,
+      defaults => \%defaults,
+      long_for => \%long_for,
+      atleast1 => \@atleast1,
+   }, $class;
 }
 
 sub parse {
@@ -52,8 +107,10 @@ sub parse {
    my @specs = @{$self->{specs}};
 
    my %opt_seen;
+   my %vals = %{$self->{defaults}};
+   @vals{keys %defaults} = values %defaults;
    foreach my $spec ( @specs ) {
-      $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
+      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
       $opt_seen{$spec->{k}} = 1;
    }
 
@@ -63,9 +120,72 @@ sub parse {
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs )
-      or $defaults{help} = 1;
-   return %defaults;
+   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
+      or $vals{help} = 1;
+
+   if ( $vals{version} ) {
+      (my $prog) = $PROGRAM_NAME =~ m/(mysql-[a-z-]+)$/;
+      printf("%s  Ver %s Distrib %s Changeset %s\n",
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+      exit(0);
+   }
+
+   foreach my $spec ( grep { $_->{r} } @specs ) {
+      if ( !defined $vals{$spec->{k}} ) {
+         $vals{help} = 1;
+         $self->note("Required option --$spec->{l} must be specified");
+      }
+   }
+
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { defined $vals{$_} } @$mutex;
+      if ( @set > 1 ) {
+         $vals{help} = 1;
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
+         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
+               . " are mutually exclusive.";
+         $self->note($note);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { defined $vals{$_} } @$required;
+      if ( !@set ) {
+         $vals{help} = 1;
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$required}[ 0 .. scalar(@$required) - 2] );
+         $note .= " or --$self->{long_for}->{$required->[-1]}.";
+         $self->note("Specify at least one of $note");
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'm' ) {
+         my ( $num, $suffix ) = $val =~ m/(\d+)([smhd])$/;
+         if ( $suffix ) {
+            $val = $suffix eq 's' ? $num            # Seconds
+                 : $suffix eq 'm' ? $num * 60       # Minutes
+                 : $suffix eq 'h' ? $num * 3600     # Hours
+                 :                  $num * 86400;   # Days
+            $vals{$spec->{k}} = $val;
+         }
+         else {
+            $self->note("Invalid --$spec->{l} argument");
+            $vals{help} = 1;
+         }
+      }
+   }
+
+   return %vals;
+}
+
+sub note {
+   my ( $self, $note ) = @_;
+   push @{$self->{notes}}, $note;
 }
 
 sub usage {
@@ -79,6 +199,8 @@ sub usage {
       grep { $_->{t} } @specs);
 
    my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
 
    $maxs = max($lcol - 3, $maxs);
 
@@ -87,12 +209,20 @@ sub usage {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t};
       my $desc  = $spec->{d};
+      $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+      $desc =~ s/ +$//mg;
       if ( $short ) {
          $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
       }
       else {
          $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
       }
+   }
+   if ( (my @instr = @{$self->{instr}}) ) {
+      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   }
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n", 'Errors in command-line arguments:', @notes) . "\n";
    }
    return $usage;
 }
@@ -104,7 +234,7 @@ sub usage {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1101
+# DSNParser package 1120
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -114,46 +244,56 @@ package DSNParser;
 sub new {
    my ( $class, @opts ) = @_;
    my $self = {
-      D => {
-         desc => 'Database to use',
-         dsn  => 'database',
-         copy => 1,
-      },
-      F => {
-         desc => 'Only read default options from the given file',
-         dsn  => 'mysql_read_default_file',
-         copy => 1,
-      },
-      h => {
-         desc => 'Connect to host',
-         dsn  => 'host',
-         copy => 1,
-      },
-      p => {
-         desc => 'Password to use when connecting',
-         dsn  => 'password',
-         copy => 1,
-      },
-      P => {
-         desc => 'Port number to use for connection',
-         dsn  => 'port',
-         copy => 1,
-      },
-      S => {
-         desc => 'Socket file to use for connection',
-         dsn  => 'mysql_socket',
-         copy => 1,
-      },
-      u => {
-         desc => 'User for login if not current user',
-         dsn  => 'user',
-         copy => 1,
+      opts => {
+         D => {
+            desc => 'Database to use',
+            dsn  => 'database',
+            copy => 1,
+         },
+         F => {
+            desc => 'Only read default options from the given file',
+            dsn  => 'mysql_read_default_file',
+            copy => 1,
+         },
+         h => {
+            desc => 'Connect to host',
+            dsn  => 'host',
+            copy => 1,
+         },
+         p => {
+            desc => 'Password to use when connecting',
+            dsn  => 'password',
+            copy => 1,
+         },
+         P => {
+            desc => 'Port number to use for connection',
+            dsn  => 'port',
+            copy => 1,
+         },
+         S => {
+            desc => 'Socket file to use for connection',
+            dsn  => 'mysql_socket',
+            copy => 1,
+         },
+         u => {
+            desc => 'User for login if not current user',
+            dsn  => 'user',
+            copy => 1,
+         },
       },
    };
    foreach my $opt ( @opts ) {
-      $self->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
+}
+
+sub prop {
+   my ( $self, $prop, $value ) = @_;
+   if ( @_ > 2 ) {
+      $self->{$prop} = $value;
+   }
+   return $self->{$prop};
 }
 
 sub parse {
@@ -161,15 +301,26 @@ sub parse {
    return unless $dsn;
    $prev     ||= {};
    $defaults ||= {};
-   my %hash    = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
    my %vals;
-   foreach my $key ( keys %$self ) {
-      $vals{$key} = $hash{$key};
-      if ( !defined $vals{$key} && defined $prev->{$key} && $self->{$key}->{copy} ) {
-         $vals{$key} = $prev->{$key};
+   my %opts = %{$self->{opts}};
+   if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
+      $vals{ $self->prop('autokey') } = $dsn;
+   }
+   else {
+      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+      foreach my $key ( keys %opts ) {
+         $vals{$key} = $hash{$key};
+         if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+            $vals{$key} = $prev->{$key};
+         }
+         if ( !defined $vals{$key} ) {
+            $vals{$key} = $defaults->{$key};
+         }
       }
-      if ( !defined $vals{$key} ) {
-         $vals{$key} = $defaults->{$key};
+   }
+   if ( (my $required = $self->prop('required')) ) {
+      foreach my $key ( keys %$required ) {
+         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
       }
    }
    return \%vals;
@@ -181,11 +332,15 @@ sub usage {
       = "  DSN syntax: key=value[,key=value...] Allowable DSN keys:\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
-   foreach my $key ( sort keys %$self ) {
+   my %opts = %{$self->{opts}};
+   foreach my $key ( sort keys %opts ) {
       $usage .= "  $key    "
-             .  ($self->{$key}->{copy} ? 'yes   ' : 'no    ')
-             .  ($self->{$key}->{desc} || '[No description]')
+             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($opts{$key}->{desc} || '[No description]')
              . "\n";
+   }
+   if ( (my $key = $self->prop('autokey')) ) {
+      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
    }
    return $usage;
 }
@@ -193,15 +348,17 @@ sub usage {
 sub get_cxn_params {
    my ( $self, $info ) = @_;
    my $dsn;
-   if ( $info->{dbidriver} && $info->{dbidriver} eq 'Pg' ) {
+   my %opts = %{$self->{opts}};
+   my $driver = $self->prop('dbidriver') || '';
+   if ( $driver eq 'Pg' ) {
       $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
-         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
                      qw(h P));
    }
    else {
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-         . join(';', map  { "$self->{$_}->{dsn}=$info->{$_}" }
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
                      qw(F h P S))
          . ';mysql_read_default_group=mysql';
@@ -240,11 +397,10 @@ my @opt_spec = (
    { s => 'check',             d => 'Check slave delay once and exit' },
    { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
-   { s => 'dbidriver=s',       d => 'Specify DBI driver (default mysql, supports Pg)' },
-   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'dbidriver=s',       d => 'Specify DBI driver; supports Pg default mysql)' },
+   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
    { s => 'file=s',            d => 'Print latest --monitor output to this file' },
    { s => 'frames=s',          d => 'Timeframes for averages (default 1m,5m,15m)' },
-   { s => 'help',              d => 'Show this help message' },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'monitor',           d => 'Monitor slave delay continuously' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
@@ -253,33 +409,13 @@ my @opt_spec = (
    { s => 'table|t=s',         d => 'Table to use for heartbeat (default heartbeat)' },
    { s => 'update',            d => "Update a master's heartbeat" },
    { s => 'user|u=s',          d => 'User for login if not current user' },
-   { s => 'version',           d => 'Output version information and exit' },
-);
-
-my %opts = (
-   t       => 'heartbeat',
-   update  => 0,
-   check   => 0,
-   monitor => 0,
-   frames  => '1m,5m,15m',
-   dbidriver => 'mysql',
+   'Specify one and only one of --update, --monitor, or --check',
 );
 
 my $opt_parser = OptionParser->new(@opt_spec);
-%opts = $opt_parser->parse(%opts);
-
-if ( $opts{version} ) {
-   print "mysql-heartbeat  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
-   exit(0);
-}
+my %opts = $opt_parser->parse();
 
 if ( !$opts{help} ) {
-   if ( $opts{monitor} + $opts{update} + $opts{check} != 1 ) {
-      warn "You must use one and only one of --update, --monitor, or --check\n";
-      $opts{help} = 1;
-   }
-
-   # Parse the timeframe specification
    my @frames = $opts{frames} =~ m/(\d+[smhd])/g;
    if ( @frames ) {
       $opts{frames} = [];
@@ -343,6 +479,7 @@ my $select_sql = "SELECT "
 
 my $dbopt = { AutoCommit => 1, RaiseError => 1, PrintError => 0 };
 my $dsn   = new DSNParser;
+$dsn->prop('dbidriver', $opts{dbidriver});
 my $dbh   = DBI->connect($dsn->get_cxn_params(\%opts), $dbopt);
 my $sth   = $dbh->prepare($opts{update} ? $update_sql : $select_sql);
 

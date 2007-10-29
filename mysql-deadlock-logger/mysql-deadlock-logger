@@ -23,8 +23,12 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
+
 # ###########################################################################
-# OptionParser package 1101
+# OptionParser package 1136
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -33,19 +37,74 @@ package OptionParser;
 
 use Getopt::Long;
 use List::Util qw(max);
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class, @opts ) = @_;
-   my %opt_seen;
+   my %key_seen;
+   my %long_seen;
+   my %key_for;
+   my %defaults;
+   my @mutex;
+   my @atleast1;
+   my %long_for;
+   unshift @opts,
+      { s => 'help',    d => 'Show this help message' },
+      { s => 'version', d => 'Output version information and exit' };
    foreach my $opt ( @opts ) {
-      my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-      $opt->{k} = $short || $long;
-      $opt->{l} = $long;
-      $opt->{t} = $short;
-      $opt->{n} = $opt->{s} =~ m/!/;
-      die "Duplicate option $opt->{k}" if $opt_seen{$opt->{k}}++;
+      if ( ref $opt ) {
+         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         $opt->{k} = $short || $long;
+         $key_for{$long} = $opt->{k};
+         $long_for{$opt->{k}} = $long;
+         $opt->{l} = $long;
+         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
+         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
+         $opt->{t} = $short;
+         $opt->{n} = $opt->{s} =~ m/!/;
+         if ( (my ($y) = $opt->{s} =~ m/=([m])/) ) {
+            $opt->{y} = $y;
+            $opt->{s} =~ s/=./=s/;
+         }
+         $opt->{r} = $opt->{d} =~ m/required/;
+         if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
+            $defaults{$opt->{k}} = defined $def ? $def : 1;
+         }
+      }
+      else { # It's an instruction.
+
+         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
+            my @participants;
+            foreach my $thing ( $opt =~ m/(--?[\w-]+)/g ) {
+               if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+                  die "No such option $thing" unless $key_for{$long};
+                  push @participants, $key_for{$long}
+               }
+               else {
+                  foreach my $short ( $thing =~ m/([^-])/g ) {
+                     push @participants, $short;
+                  }
+               }
+            }
+            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+               push @mutex, \@participants;
+            }
+            if ( $opt =~ m/at least one|one and only one/ ) {
+               push @atleast1, \@participants;
+            }
+         }
+
+      }
    }
-   return bless { specs => \@opts }, $class;
+   return bless {
+      specs => [ grep { ref $_ } @opts ],
+      notes => [],
+      instr => [ grep { !ref $_ } @opts ],
+      mutex => \@mutex,
+      defaults => \%defaults,
+      long_for => \%long_for,
+      atleast1 => \@atleast1,
+   }, $class;
 }
 
 sub parse {
@@ -53,8 +112,10 @@ sub parse {
    my @specs = @{$self->{specs}};
 
    my %opt_seen;
+   my %vals = %{$self->{defaults}};
+   @vals{keys %defaults} = values %defaults;
    foreach my $spec ( @specs ) {
-      $defaults{$spec->{k}} = undef unless defined $defaults{$spec->{k}};
+      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
       $opt_seen{$spec->{k}} = 1;
    }
 
@@ -64,9 +125,72 @@ sub parse {
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$defaults{$_->{k}} } @specs )
-      or $defaults{help} = 1;
-   return %defaults;
+   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
+      or $vals{help} = 1;
+
+   if ( $vals{version} ) {
+      (my $prog) = $PROGRAM_NAME =~ m/(mysql-[a-z-]+)$/;
+      printf("%s  Ver %s Distrib %s Changeset %s\n",
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+      exit(0);
+   }
+
+   foreach my $spec ( grep { $_->{r} } @specs ) {
+      if ( !defined $vals{$spec->{k}} ) {
+         $vals{help} = 1;
+         $self->note("Required option --$spec->{l} must be specified");
+      }
+   }
+
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { defined $vals{$_} } @$mutex;
+      if ( @set > 1 ) {
+         $vals{help} = 1;
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
+         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
+               . " are mutually exclusive.";
+         $self->note($note);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { defined $vals{$_} } @$required;
+      if ( !@set ) {
+         $vals{help} = 1;
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$required}[ 0 .. scalar(@$required) - 2] );
+         $note .= " or --$self->{long_for}->{$required->[-1]}.";
+         $self->note("Specify at least one of $note");
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'm' ) {
+         my ( $num, $suffix ) = $val =~ m/(\d+)([smhd])$/;
+         if ( $suffix ) {
+            $val = $suffix eq 's' ? $num            # Seconds
+                 : $suffix eq 'm' ? $num * 60       # Minutes
+                 : $suffix eq 'h' ? $num * 3600     # Hours
+                 :                  $num * 86400;   # Days
+            $vals{$spec->{k}} = $val;
+         }
+         else {
+            $self->note("Invalid --$spec->{l} argument");
+            $vals{help} = 1;
+         }
+      }
+   }
+
+   return %vals;
+}
+
+sub note {
+   my ( $self, $note ) = @_;
+   push @{$self->{notes}}, $note;
 }
 
 sub usage {
@@ -80,6 +204,8 @@ sub usage {
       grep { $_->{t} } @specs);
 
    my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
 
    $maxs = max($lcol - 3, $maxs);
 
@@ -88,12 +214,20 @@ sub usage {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t};
       my $desc  = $spec->{d};
+      $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+      $desc =~ s/ +$//mg;
       if ( $short ) {
          $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
       }
       else {
          $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
       }
+   }
+   if ( (my @instr = @{$self->{instr}}) ) {
+      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   }
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n", 'Errors in command-line arguments:', @notes) . "\n";
    }
    return $usage;
 }
@@ -250,10 +384,6 @@ use Socket qw(inet_aton);
 use Term::ReadKey;
 use sigtrap qw(handler finish untrapped normal-signals);
 
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
-
 my $dp = new DSNParser(
    { key => 't', copy => 1, desc => 'Table in which to store deadlock information' },
 );
@@ -270,31 +400,23 @@ my @opt_spec = (
    { s => 'columns|C=s',  d => 'Comma-separated list of columns to output' },
    { s => 'daemonize',    d => 'Fork to background and detach (POSIX only)' },
    { s => 'dest|d=s',     d => 'DSN for where to store deadlocks' },
-   { s => 'help',         d => 'Show this help message' },
-   { s => 'interval|i=s', d => 'Sleep interval, default none (suffix: s/m/h/d)' },
+   { s => 'interval|i=m', d => 'Sleep interval (suffix: s/m/h/d); default 0s' },
    { s => 'numip|n',      d => 'Express IP addresses as integers' },
    { s => 'print|p',      d => 'Print to STDOUT' },
-   { s => 'source|s=s',   d => 'DSN to check for deadlocks' },
+   { s => 'source|s=s',   d => 'DSN to check for deadlocks; required' },
    { s => 'tab|t',        d => 'Output tab-separated' },
-   { s => 'time|m=s',     d => 'Time to run before exiting (suffix: s/m/h/d)' },
-   { s => 'version',      d => 'Output version information and exit' },
+   { s => 'time|m=m',     d => 'Time to run before exiting (suffix: s/m/h/d)' },
+   'Specify at least one of --print or --dest',
 );
 
 # This is the container for the command-line options' values to be stored in
 # after processing.  Initial values are defaults.
 my %opts = (
-   s => '',
-   d => '',
    C => '',
 );
 
 my $opt_parser = OptionParser->new(@opt_spec);
 %opts = $opt_parser->parse(%opts);
-
-if ( $opts{version} ) {
-   print "mysql-deadlock-logger  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
-   exit(0);
-}
 
 # Process options...
 $opts{c} = $opts{p} unless defined $opts{c};
@@ -304,57 +426,8 @@ $opts{C} = $opts{C} ? { map { $_ => 1 } $opts{C} =~ m/(\w+)/g } : 0;
 # Parse arguments saying where to connect.  If the script doesn't have
 # everything it needs, show help text.
 # ############################################################################
-my %conn   = (
-   h => 'host',
-   P => 'port',
-   S => 'mysql_socket',
-   u => 'user',
-   p => 'pass',
-   F => 'mysql_read_default_file',
-   D => 'database',
-   t => 'table',
-);
-
 my $source = $dp->parse($opts{s}          );
 my $dest   = $dp->parse($opts{d}, $source );
-
-if ( !$opts{help} ) {
-   if (!$opts{p} && !$dest->{t}) {
-      warn "You need to specify what to do (--print or --dest).\n";
-      $opts{help} = 1;
-   }
-
-   if ( $opts{i} ) {
-      my ($num, $suf ) = $opts{i} =~ m/(\d+)([smhd])$/;
-      if ( !defined $num || $num <= 0 ) {
-         warn "Invalid --interval argument\n";
-         $opts{help} = 1;
-      }
-      else {
-         $opts{i} = $suf eq 's' ? $num           # Seconds
-                  : $suf eq 'm' ? $num * 60      # Minutes
-                  : $suf eq 'h' ? $num * 3600    # Hours
-                  :               $num * 86400;  # Days
-         $opts{i} = max($opts{i}, 1);
-      }
-   }
-
-   if ( $opts{m} ) {
-      my ($num, $suf ) = $opts{m} =~ m/(\d+)([smhd])$/;
-      if ( !defined $num || $num <= 0 ) {
-         warn "Invalid --time argument\n";
-         $opts{help} = 1;
-      }
-      else {
-         $opts{m} = $suf eq 's' ? $num           # Seconds
-                  : $suf eq 'm' ? $num * 60      # Minutes
-                  : $suf eq 'h' ? $num * 3600    # Hours
-                  :               $num * 86400;  # Days
-         $opts{m} = max($opts{m}, 1);
-      }
-   }
-
-}
 
 if ( $opts{help} ) {
    print "Usage: mysql-deadlock-logger <options>\n\n";
