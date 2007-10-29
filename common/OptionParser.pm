@@ -35,6 +35,7 @@ sub new {
    my %key_for;
    my %defaults;
    my @mutex;
+   my @atleast1;
    my %long_for;
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
@@ -64,12 +65,12 @@ sub new {
       }
       else { # It's an instruction.
 
-         if ( $opt =~ m/are mutually exclusive/ ) {
+         if ( $opt =~ m/are mutually exclusive|one and only one/ ) {
             my @participants;
-            foreach my $thing ( $opt =~ m/(--?\S+)/g ) {
-               if ( (my ($long) = $thing =~ m/--(\S+)/) ) {
+            foreach my $thing ( $opt =~ m/(--?[\w-]+)/g ) {
+               if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+                  die "No such option $thing" unless $key_for{$long};
                   push @participants, $key_for{$long}
-                     or die "No such option $thing";
                }
                else {
                   foreach my $short ( $thing =~ m/([^-])/g ) {
@@ -78,6 +79,9 @@ sub new {
                }
             }
             push @mutex, \@participants;
+            if ( $opt =~ m/one and only one/ ) {
+               push @atleast1, \@participants;
+            }
          }
 
       }
@@ -89,6 +93,7 @@ sub new {
       mutex => \@mutex,
       defaults => \%defaults,
       long_for => \%long_for,
+      atleast1 => \@atleast1,
    }, $class;
 }
 
@@ -144,7 +149,18 @@ sub parse {
       }
    }
 
-   # Check typed options
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { defined $vals{$_} } @$required;
+      if ( !@set ) {
+         $vals{help} = 1;
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$required}[ 0 .. scalar(@$required) - 2] );
+         $note .= " or --$self->{long_for}->{$required->[-1]}.";
+         $self->note("Specify at least one of $note");
+      }
+   }
+
    foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'm' ) {
