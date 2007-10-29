@@ -30,7 +30,7 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1129
+# OptionParser package 1136
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -48,7 +48,10 @@ sub new {
    my %key_for;
    my %defaults;
    my @mutex;
+   my @atleast1;
    my %long_for;
+   my %disables;
+   my %copyfrom;
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
@@ -58,12 +61,13 @@ sub new {
          $opt->{k} = $short || $long;
          $key_for{$long} = $opt->{k};
          $long_for{$opt->{k}} = $long;
+         $long_for{$long} = $long;
          $opt->{l} = $long;
          die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
-         if ( (my ($y) = $opt->{s} =~ m/=([m])/) ) {
+         if ( (my ($y) = $opt->{s} =~ m/=([md])/) ) {
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
@@ -71,27 +75,42 @@ sub new {
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
          }
+         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
+            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+         }
       }
       else { # It's an instruction.
 
-         if ( $opt =~ m/are mutually exclusive/ ) {
-            my @participants;
-            foreach my $thing ( $opt =~ m/(--?\S+)/g ) {
-               if ( (my ($long) = $thing =~ m/--(\S+)/) ) {
-                  push @participants, $key_for{$long}
-                     or die "No such option $thing";
-               }
-               else {
-                  foreach my $short ( $thing =~ m/([^-])/g ) {
-                     push @participants, $short;
-                  }
-               }
+         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $long_for{$_};
+               } $class->get_participants($opt);
+            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+               push @mutex, \@participants;
             }
-            push @mutex, \@participants;
+            if ( $opt =~ m/at least one|one and only one/ ) {
+               push @atleast1, \@participants;
+            }
+         }
+         elsif ( $opt =~ m/default to/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $long_for{$_};
+               } $class->get_participants($opt);
+            $copyfrom{$participants[0]} = $participants[1];
          }
 
       }
    }
+
+   foreach my $dis ( keys %disables ) {
+      $disables{$dis} = [ map {
+            die "No such option '$_' while processing $dis" unless $long_for{$_};
+            $long_for{$_};
+         } @{$disables{$dis}} ];
+   }
+
    return bless {
       specs => [ grep { ref $_ } @opts ],
       notes => [],
@@ -99,7 +118,27 @@ sub new {
       mutex => \@mutex,
       defaults => \%defaults,
       long_for => \%long_for,
+      atleast1 => \@atleast1,
+      disables => \%disables,
+      key_for  => \%key_for,
+      copyfrom => \%copyfrom,
    }, $class;
+}
+
+sub get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
+      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+         push @participants, $long;
+      }
+      else {
+         foreach my $short ( $thing =~ m/([^-])/g ) {
+            push @participants, $short;
+         }
+      }
+   }
+   return @participants;
 }
 
 sub parse {
@@ -121,32 +160,49 @@ sub parse {
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $vals{help} = 1;
+      or $vals{__error__} = 1;
 
    if ( $vals{version} ) {
-      (my $prog) = $PROGRAM_NAME =~ m/(mysql-[a-z-]+)$/;
+      my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
          $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
       exit(0);
    }
 
+   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
+      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      @vals{@disses} = map { undef } @disses;
+   }
+
    foreach my $spec ( grep { $_->{r} } @specs ) {
       if ( !defined $vals{$spec->{k}} ) {
-         $vals{help} = 1;
+         $vals{__error__} = 1;
          $self->note("Required option --$spec->{l} must be specified");
       }
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
-      my @set = grep { defined $vals{$_} } @$mutex;
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
       if ( @set > 1 ) {
-         $vals{help} = 1;
+         $vals{__error__} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
          $note .= " and --$self->{long_for}->{$mutex->[-1]}"
                . " are mutually exclusive.";
          $self->note($note);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
+      if ( !@set ) {
+         $vals{__error__} = 1;
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$required}[ 0 .. scalar(@$required) - 2] );
+         $note .= " or --$self->{long_for}->{$required->[-1]}";
+         $self->note("Specify at least one of $note");
       }
    }
 
@@ -163,8 +219,17 @@ sub parse {
          }
          else {
             $self->note("Invalid --$spec->{l} argument");
-            $vals{help} = 1;
+            $vals{__error__} = 1;
          }
+      }
+      elsif ( $spec->{y} eq 'd' ) {
+         my $def = $self->{copyfrom}->{$spec->{k}};
+         if ( $def ) {
+            $def = $self->{dsn}->parse(
+               $self->{dsn}->as_string(
+                  $vals{$self->{copyfrom}->{$spec->{k}}}));
+         }
+         $vals{$spec->{k}} = $self->{dsn}->parse($val, $def);
       }
    }
 
@@ -176,13 +241,45 @@ sub note {
    push @{$self->{notes}}, $note;
 }
 
-sub usage {
+sub prog {
+   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   return $prog || $PROGRAM_NAME;
+}
+
+sub prompt {
    my ( $self ) = @_;
+   my $prog   = $self->prog;
+   my $prompt = $self->{prompt} || '<options>';
+   return "Usage: $prog $prompt\n";
+}
+
+sub descr {
+   my ( $self ) = @_;
+   my $prog = $self->prog;
+   my $descr  = $prog . ' ' . ($self->{descr} || '')
+          . "  For more details, please use the --help option, "
+          . "or try 'perldoc $prog' for complete documentation.";
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr =~ s/ +$//mg;
+   return $descr;
+}
+
+sub errors {
+   my ( $self ) = @_;
+   my $usage = $self->prompt() . "\n";
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   }
+   return $usage . "\n" . $self->descr();
+}
+
+sub usage {
+   my ( $self, %vals ) = @_;
    my @specs = @{$self->{specs}};
 
    my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
 
-   my $maxs = max(
+   my $maxs = max(0,
       map { length($_->{l}) + ($_->{n} ? 4 : 0)}
       grep { $_->{t} } @specs);
 
@@ -192,7 +289,7 @@ sub usage {
 
    $maxs = max($lcol - 3, $maxs);
 
-   my $usage = '';
+   my $usage = $self->descr() . "\n" . $self->prompt() . "\nOptions:\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t};
@@ -209,8 +306,18 @@ sub usage {
    if ( (my @instr = @{$self->{instr}}) ) {
       $usage .= join("\n", map { "  $_" } @instr) . "\n";
    }
-   if ( (my @notes = @{$self->{notes}}) ) {
-      $usage .= join("\n", 'Errors in command-line arguments:', @notes) . "\n";
+   if ( $self->{dsn} ) {
+      $usage .= "\n" . $self->{dsn}->usage();
+   }
+   $usage .= "\nOptions and values after processing arguments:\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $val   = $vals{$spec->{k}};
+      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val             ? '(No value)'
+                : ($spec->{y} || '') eq 'd' ? $self->{dsn}->as_string($val)
+                :                             $val;
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
    }
    return $usage;
 }
@@ -425,10 +532,16 @@ sub parse {
    return \%vals;
 }
 
+sub as_string {
+   my ( $self, $dsn ) = @_;
+   return $dsn unless ref $dsn;
+   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} } sort keys %$dsn );
+}
+
 sub usage {
    my ( $self ) = @_;
    my $usage
-      = "  DSN syntax: key=value[,key=value...] Allowable DSN keys:\n"
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
    my %opts = %{$self->{opts}};
@@ -788,7 +901,7 @@ my $dp = new DSNParser(
    { key => 'm', copy => 0, desc => 'Plugin module name' },
    { key => 'b', copy => 0, desc => 'Disable binary logging with SET SQL_LOG_BIN=0' },
 );
-$dp->prop('required', 't');
+$dp->prop('required', { t => 1 });
 my $vp = new VersionParser;
 my $q  = new Quoter;
 
@@ -807,8 +920,8 @@ if ( !caller ) {
       { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
       { s => 'chkcols|C!',  d => 'Ensure --source and --dest have same columns (default)' },
       { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
-      { s => 'commit-each', d => 'Commit each group of fetched and archived rows' },
-      { s => 'dest|d=s',    d => 'Table to archive to' },
+      { s => 'commit-each', d => 'Commit each set of fetched and archived rows (disables -z)' },
+      { s => 'dest|d=d',    d => 'Table to archive to' },
       { s => 'delayedins',  d => 'Add the DELAYED modifier to INSERT statements' },
       { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
       { s => 'forupdate',   d => 'Adds the FOR UPDATE modifier to SELECT statements' },
@@ -831,12 +944,12 @@ if ( !caller ) {
       { s => 'sharelock',   d => 'Adds LOCK IN SHARE MODE to SELECT statements' },
       { s => 'skipfkchk|K', d => 'Turn off foreign key checks' },
       { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
-      { s => 'source|s=s',  d => 'Table to archive from (required)' },
+      { s => 'source|s=d',  d => 'Table to archive from (required)' },
       { s => 'statistics',  d => 'Collect and print timing statistics' },
       { s => 'stop',        d => 'Stop running instances by creating the sentinel file' },
       { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
       { s => 'time|m=m',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
-      { s => 'txnsize|z=i', d => 'Number of rows per transaction (0 disables; default 1)' },
+      { s => 'txnsize|z=i', d => 'Number of rows per transaction; disable with 0; default 1)' },
       { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive (required)' },
       { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
       '--ignore and --replace are mutually exclusive.',
@@ -845,7 +958,13 @@ if ( !caller ) {
       '--sharelock and --forupdate are mutually exclusive.',
       '--analyze and --optimize are mutually exclusive.',
       'Specify at least one of --dest, --file, or --purge.',
+      'DSN values in --dest default to values from --source if COPY is yes.',
    );
+   $opt_parser->{prompt} = '--source DSN --where WHERE <options>';
+   $opt_parser->{dsn}    = $dp;
+   $opt_parser->{descr}  = 'nibbles records from a MySQL table.  The --source '
+                         . q{and --dest arguments use DSN syntax; if COPY is }
+                         . q{yes, --dest defaults to the key's value from --source.};
    %opts = $opt_parser->parse(%opts);
 
    # First things first: if --stop was given, create the sentinel file.
@@ -861,8 +980,8 @@ if ( !caller ) {
    }
 
    # TODO: '--dest defaults to values from --source'
-   $src = $dp->parse($opts{s});
-   $dst = $dp->parse($opts{d}, $src) if $src && $opts{d};
+   $src = $opts{s};
+   $dst = $opts{d};
 
    # Generate a filename with sprintf-like formatting codes.
    if ( $opts{f} ) {
@@ -883,11 +1002,7 @@ if ( !caller ) {
    if ( !$opts{help} ) {
       if ( @ARGV ) {
          warn "Unrecognized options '@ARGV'.  Do you need to quote --where?\n";
-         $opts{help} = 1;
-      }
-      elsif ( !$src || !$src->{t} ) {
-         warn "Invalid or missing --source argument\n";
-         $opts{help} = 1;
+         $opts{__error__} = 1;
       }
       elsif ( $opts{d} ) { # Ensure --source and --dest don't point to the same place
          my $same = 1;
@@ -900,7 +1015,7 @@ if ( !caller ) {
          }
          if ( $same ) {
             warn "--source and --dest refer to the same table\n";
-            $opts{help} = 1;
+            $opts{__error__} = 1;
          }
       }
    }
@@ -910,18 +1025,11 @@ if ( !caller ) {
    }
 
    if ( $opts{help} ) {
-      print "Usage: mysql-archiver --source SOURCE --where WHERE <options>\n\n";
-      print $opt_parser->usage(), "\n", $dp->usage();
-      (my $usage = <<"      USAGE") =~ s/^         //gm;
-
-         mysql-archiver nibbles records from a MySQL table.  The --source and --dest
-         arguments use DSN syntax; if COPY is yes, --dest defaults to the key's value
-         from --source.  For more details, please read the documentation:
-
-            perldoc mysql-archiver
-
-      USAGE
-      print $usage;
+      print $opt_parser->usage(%opts);
+      exit(0);
+   }
+   elsif ( $opts{__error__} ) {
+      print $opt_parser->errors();
       exit(0);
    }
 
