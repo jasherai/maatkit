@@ -65,7 +65,7 @@ sub new {
       }
       else { # It's an instruction.
 
-         if ( $opt =~ m/are mutually exclusive|one and only one/ ) {
+         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
             my @participants;
             foreach my $thing ( $opt =~ m/(--?[\w-]+)/g ) {
                if ( (my ($long) = $thing =~ m/--(.+)/) ) {
@@ -78,8 +78,10 @@ sub new {
                   }
                }
             }
-            push @mutex, \@participants;
-            if ( $opt =~ m/one and only one/ ) {
+            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+               push @mutex, \@participants;
+            }
+            if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
             }
          }
