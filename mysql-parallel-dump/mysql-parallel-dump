@@ -27,7 +27,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# DSNParser package 1120
+# DSNParser package 1149
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -110,6 +110,10 @@ sub parse {
             $vals{$key} = $defaults->{$key};
          }
       }
+      foreach my $key ( keys %hash ) {
+         die "Unrecognized DSN part '$key' in '$dsn'\n"
+            unless exists $opts{$key};
+      }
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
@@ -119,10 +123,16 @@ sub parse {
    return \%vals;
 }
 
+sub as_string {
+   my ( $self, $dsn ) = @_;
+   return $dsn unless ref $dsn;
+   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} } sort keys %$dsn );
+}
+
 sub usage {
    my ( $self ) = @_;
    my $usage
-      = "  DSN syntax: key=value[,key=value...] Allowable DSN keys:\n"
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
    my %opts = %{$self->{opts}};
@@ -166,7 +176,7 @@ sub get_cxn_params {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1131
+# OptionParser package 1149
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -184,7 +194,10 @@ sub new {
    my %key_for;
    my %defaults;
    my @mutex;
+   my @atleast1;
    my %long_for;
+   my %disables;
+   my %copyfrom;
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
@@ -194,12 +207,13 @@ sub new {
          $opt->{k} = $short || $long;
          $key_for{$long} = $opt->{k};
          $long_for{$opt->{k}} = $long;
+         $long_for{$long} = $long;
          $opt->{l} = $long;
          die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
-         if ( (my ($y) = $opt->{s} =~ m/=([m])/) ) {
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAa])/) ) {
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
@@ -207,27 +221,42 @@ sub new {
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
          }
+         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
+            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+         }
       }
       else { # It's an instruction.
 
-         if ( $opt =~ m/are mutually exclusive/ ) {
-            my @participants;
-            foreach my $thing ( $opt =~ m/(--?\S+)/g ) {
-               if ( (my ($long) = $thing =~ m/--(\S+)/) ) {
-                  push @participants, $key_for{$long}
-                     or die "No such option $thing";
-               }
-               else {
-                  foreach my $short ( $thing =~ m/([^-])/g ) {
-                     push @participants, $short;
-                  }
-               }
+         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $long_for{$_};
+               } $class->get_participants($opt);
+            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+               push @mutex, \@participants;
             }
-            push @mutex, \@participants;
+            if ( $opt =~ m/at least one|one and only one/ ) {
+               push @atleast1, \@participants;
+            }
+         }
+         elsif ( $opt =~ m/default to/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $key_for{$_};
+               } $class->get_participants($opt);
+            $copyfrom{$participants[0]} = $participants[1];
          }
 
       }
    }
+
+   foreach my $dis ( keys %disables ) {
+      $disables{$dis} = [ map {
+            die "No such option '$_' while processing $dis" unless $long_for{$_};
+            $long_for{$_};
+         } @{$disables{$dis}} ];
+   }
+
    return bless {
       specs => [ grep { ref $_ } @opts ],
       notes => [],
@@ -235,7 +264,28 @@ sub new {
       mutex => \@mutex,
       defaults => \%defaults,
       long_for => \%long_for,
+      atleast1 => \@atleast1,
+      disables => \%disables,
+      key_for  => \%key_for,
+      copyfrom => \%copyfrom,
+      strict   => 1,
    }, $class;
+}
+
+sub get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
+      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+         push @participants, $long;
+      }
+      else {
+         foreach my $short ( $thing =~ m/([^-])/g ) {
+            push @participants, $short;
+         }
+      }
+   }
+   return @participants;
 }
 
 sub parse {
@@ -257,32 +307,50 @@ sub parse {
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $vals{help} = 1;
+      or $self->error('Error parsing options');
 
    if ( $vals{version} ) {
-      (my $prog) = $PROGRAM_NAME =~ m/(mysql-[a-z-]+)$/;
+      my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
          $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
       exit(0);
    }
 
+   if ( @ARGV && $self->{strict} ) {
+      $self->error("Unrecognized command-line options @ARGV");
+   }
+
+   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
+      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      @vals{@disses} = map { undef } @disses;
+   }
+
    foreach my $spec ( grep { $_->{r} } @specs ) {
       if ( !defined $vals{$spec->{k}} ) {
-         $vals{help} = 1;
-         $self->note("Required option --$spec->{l} must be specified");
+         $self->error("Required option --$spec->{l} must be specified");
       }
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
-      my @set = grep { defined $vals{$_} } @$mutex;
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
       if ( @set > 1 ) {
-         $vals{help} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
          $note .= " and --$self->{long_for}->{$mutex->[-1]}"
                . " are mutually exclusive.";
-         $self->note($note);
+         $self->error($note);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
+      if ( !@set ) {
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$required}[ 0 .. scalar(@$required) - 2] );
+         $note .= " or --$self->{long_for}->{$required->[-1]}";
+         $self->error("Specify at least one of $note");
       }
    }
 
@@ -298,27 +366,89 @@ sub parse {
             $vals{$spec->{k}} = $val;
          }
          else {
-            $self->note("Invalid --$spec->{l} argument");
-            $vals{help} = 1;
+            $self->error("Invalid --$spec->{l} argument");
          }
+      }
+      elsif ( $spec->{y} eq 'd' ) {
+         my $from_key = $self->{copyfrom}->{$spec->{k}};
+         my $default = {};
+         if ( $from_key ) {
+            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
+         }
+         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
+         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
+      }
+      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
+         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
       }
    }
 
    return %vals;
 }
 
-sub note {
+sub error {
    my ( $self, $note ) = @_;
+   $self->{__error__} = 1;
    push @{$self->{notes}}, $note;
 }
 
-sub usage {
+sub prog {
+   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   return $prog || $PROGRAM_NAME;
+}
+
+sub prompt {
    my ( $self ) = @_;
+   my $prog   = $self->prog;
+   my $prompt = $self->{prompt} || '<options>';
+   return "Usage: $prog $prompt\n";
+}
+
+sub descr {
+   my ( $self ) = @_;
+   my $prog = $self->prog;
+   my $descr  = $prog . ' ' . ($self->{descr} || '')
+          . "  For more details, please use the --help option, "
+          . "or try 'perldoc $prog' for complete documentation.";
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr =~ s/ +$//mg;
+   return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self, %opts ) = @_;
+   if ( $opts{help} ) {
+      print $self->usage(%opts);
+      exit(0);
+   }
+   elsif ( $self->{__error__} ) {
+      print $self->errors();
+      exit(0);
+   }
+}
+
+sub errors {
+   my ( $self ) = @_;
+   my $usage = $self->prompt() . "\n";
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   }
+   return $usage . "\n" . $self->descr();
+}
+
+sub usage {
+   my ( $self, %vals ) = @_;
    my @specs = @{$self->{specs}};
 
    my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
 
-   my $maxs = max(
+   my $maxs = max(0,
       map { length($_->{l}) + ($_->{n} ? 4 : 0)}
       grep { $_->{t} } @specs);
 
@@ -328,7 +458,7 @@ sub usage {
 
    $maxs = max($lcol - 3, $maxs);
 
-   my $usage = '';
+   my $usage = $self->descr() . "\n" . $self->prompt() . "\nOptions:\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
       my $short = $spec->{t};
@@ -345,8 +475,21 @@ sub usage {
    if ( (my @instr = @{$self->{instr}}) ) {
       $usage .= join("\n", map { "  $_" } @instr) . "\n";
    }
-   if ( (my @notes = @{$self->{notes}}) ) {
-      $usage .= join("\n", 'Errors in command-line arguments:', @notes) . "\n";
+   if ( $self->{dsn} ) {
+      $usage .= "\n" . $self->{dsn}->usage();
+   }
+   $usage .= "\nOptions and values after processing arguments:\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $val   = $vals{$spec->{k}};
+      my $type  = $spec->{y} || '';
+      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val             ? '(No value)'
+                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type =~ m/H|h/           ? join(',', sort keys %$val)
+                : $type =~ m/A|a/           ? join(',', @$val)
+                :                             $val;
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
    }
    return $usage;
 }
@@ -358,7 +501,7 @@ sub usage {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1101
+# TableParser package 1149
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -469,7 +612,7 @@ sub get_ddl {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 1101
+# TableChunker package 1149
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -768,14 +911,16 @@ $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
 $opts{m} = max(2, $opts{m} || 0);
 
 my @opt_spec = (
-   { s => 'age=s',             d => 'Dump only modified or not recently dumped tables' },
+   { s => 'age=m',             d => 'Dump only modified or not recently '
+                                  . 'dumped tables; specify age with a '
+                                  . 'suffix of s/m/h/d' },
 # TODO
    { s => 'askpass',           d => 'Prompt for password for connections' },
    { s => 'basedir=s',         d => 'Base directory for creating files' },
    { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
    { s => 'chunksize|C=s',     d => 'Number of rows or data size to dump per file' },
    { s => 'csv',               d => 'Do --tab dump in CSV format (implies --tab)' },
-   { s => 'databases|d=s',     d => 'Dump only this comma-separated list of databases' },
+   { s => 'databases|d=h',     d => 'Dump only this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
    { s => 'defaultset!',       d => 'When --sets given, dump tables not in any set' },
    { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
@@ -783,27 +928,29 @@ my @opt_spec = (
    { s => 'flushlog!',         d => 'Execute FLUSH LOGS when getting binlog positions' },
    { s => 'gzip!',             d => 'Compress files with gzip (default on non-Win32)' },
    { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
-   { s => 'ignoreengine|E=s',  d => 'No data for this comma-separated list of storage engines (default FEDERATED,MRG_MyISAM)' },
-   { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
+   { s => 'ignoredb|g=H',      d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoreengine|E=H',  d => 'No data for this comma-separated list of storage engines (default FEDERATED,MRG_MyISAM)' },
+   { s => 'ignoretbl|n=H',     d => 'Ignore this comma-separated list of tables' },
    { s => 'locktables!',       d => 'Use LOCK TABLES (implies --no-flushlock)' },
    { s => 'numthread|m=i',     d => "Number of threads (default $opts{m})" },
    { s => 'opt!',              d => 'Use sensible mysqldump options (default)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'quiet|q',           d => 'Set --verbose to 0' },
-   { s => 'sets=s',            d => 'Dump this comma-separated list of sets' },
+   { s => 'quiet|q',           d => 'Quiet output; disables --verbose' },
+   { s => 'sets=a',            d => 'Dump this comma-separated list of sets' },
    { s => 'setperdb',          d => 'Dump each database as a separate set' },
    { s => 'settable=s',        d => 'database.table where backup sets are stored' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'tab|T',             d => 'Dump tab-separated (sets --umask 0)' },
-   { s => 'tables|t=s',        d => 'Dump only this comma-separated list of tables' },
+   { s => 'tables|t=h',        d => 'Dump only this comma-separated list of tables' },
    { s => 'test',     ,        d => 'Print commands instead of executing them' },
    { s => 'tblregex=s',        d => 'Dump only tables whose names match this pattern' },
    { s => 'umask=s',           d => 'Set umask to this value, in octal' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'verbose|v+',        d => 'Be verbose; can specify multiple times; default' },
-   { s => 'wait|w=s',          d => 'Wait limit when server is down (default 5m)' },
+   { s => 'wait|w=m',          d => 'Wait limit when server is down (default 5m)' },
+   '--locktables and --flushlock are mutually exclusive',
+   '--sets and --setperdb are mutually exclusive',
 );
 
 # Holds command-line options.
@@ -815,6 +962,9 @@ my @opt_spec = (
 );
 
 my $opt_parser = OptionParser->new(@opt_spec);
+$opt_parser->{prompt} = '<options> [--] <external args>';
+$opt_parser->{descr}  = q{dumps sets of MySQL tables simultaneously via }
+                      . q{mysqldump or SELECT INTO OUTFILE.};
 %opts = $opt_parser->parse(%opts);
 
 # ############################################################################
@@ -822,81 +972,35 @@ my $opt_parser = OptionParser->new(@opt_spec);
 # ############################################################################
 $opts{basedir} = File::Spec->rel2abs($opts{basedir});
 
-if ( $opts{q} ) {
-   $opts{v} = 0;
-}
-
 # Set locking options.
 my $lock_all      = $opts{sets} || $opts{locktables} || $opts{setperdb} ? 0 : 1;
 $opts{k}          = $lock_all unless defined $opts{k};
 $opts{locktables} = !$lock_all unless defined $opts{locktables};
 
+# TODO: modularize these.
 if ( !$opts{help} ) {
    if ( $opts{C} && $opts{C} !~ m/^\d+[kGM]?$/ ) {
-      warn "Invalid --chunksize argument\n";
-      $opts{help} = 1;
+      $opt_parser->error("Invalid --chunksize argument");
    }
 
    if ( $opts{defaultset} && !$opts{sets} ) {
-      warn "--defaultset has no effect without --sets\n";
-      $opts{help} = 1;
+      $opt_parser->error("--defaultset has no effect without --sets");
    }
 
    if ( !$opts{m} ) {
-      warn "You must specify --numthread\n";
-      $opts{help} = 1;
-   }
-
-   if ( !$opts{help} && $opts{k} && $opts{locktables} ) {
-      warn "--locktables and --flushlock are mutually exclusive\n";
-      $opts{help} = 1;
-   }
-
-   if ( !$opts{help} && $opts{age} ) {
-      my ($num, $suf ) = $opts{age} =~ m/(\d+)([smhd])$/;
-      if ( !defined $num || $num <= 0 ) {
-         warn "Invalid --age argument\n";
-         $opts{help} = 1;
-      }
-      else {
-         $opts{age}
-            = $suf eq 's' ? $num            # Seconds
-            : $suf eq 'm' ? $num * 60       # Minutes
-            : $suf eq 'h' ? $num * 3600     # Hours
-            :               $num * 86400;   # Days
-      }
-   }
-
-   if ( !$opts{help} ) {
-      my ($num, $suf ) = $opts{w} =~ m/(\d+)([smhd])$/;
-      if ( !defined $num || $num <= 0 ) {
-         warn "Invalid --wait argument\n";
-         $opts{help} = 1;
-      }
-      else {
-         $opts{w} = $suf eq 's' ? $num            # Seconds
-                  : $suf eq 'm' ? $num * 60       # Minutes
-                  : $suf eq 'h' ? $num * 3600     # Hours
-                  :               $num * 86400;   # Days
-      }
+      $opt_parser->error("You must specify --numthread");
    }
 
    if ( !$opts{help} && $opts{sets} && !$opts{settable} ) {
-      warn "--sets requires --settable\n";
-      $opts{help} = 1;
-   }
-
-   if ( !$opts{help} && $opts{setperdb} && $opts{sets} ) {
-      warn "--sets and --setperdb are mutually exclusive\n";
-      $opts{help} = 1;
+      $opt_parser->error("--sets requires --settable");
    }
 }
 
-if ( $opts{csv} ) {
+if ( $opts{csv} ) { # TODO: --csv implies --[no-]tab
    $opts{T} = 1;
 }
 
-if ( $opts{T} ) {
+if ( $opts{T} ) { # TODO: --tab implies --umask 0
    if ( !defined $opts{umask} ) {
       $opts{umask} = 0;
    }
@@ -906,8 +1010,12 @@ if ( defined $opts{umask} ) {
    umask oct($opts{umask});
 }
 
+$opt_parser->usage_or_errors(%opts);
+
+# ############################################################################
 # Gather connection parameters to pass to mysqldump.  Order matters; mysqldump
 # will have a problem if --defaults-file isn't first.
+# ############################################################################
 my @conn_params = (
    [qw(--defaults-file F)],
    [qw(--host          h)],
@@ -965,41 +1073,6 @@ else {
    @mysqldump_nodata_args = @ARGV;
 }
 
-if ( $opts{version} ) {
-   print "mysql-parallel-dump  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
-   exit(0);
-}
-
-if ( $opts{help} ) {
-   print "Usage: mysql-parallel-dump <options> [--] <external args>\n\n";
-   print $opt_parser->usage();
-   (my $usage = <<"   USAGE") =~ s/^      //gm;
-
-      mysql-parallel-dump dumps sets of MySQL tables simultaneously via
-      mysqldump or SELECT INTO OUTFILE.  For more details, please read the
-      documentation:
-
-         perldoc mysql-parallel-dump
-
-   USAGE
-   print $usage;
-   exit(0);
-}
-
-# Make comma-separated lists into hashes.
-if ( $opts{d} ) {
-   $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
-}
-$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
-$opts{E} = { map { $_ => 1 } split(/,\s*/, $opts{E} || '') };
-if ( $opts{t} ) {
-   $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
-}
-$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
-if ( $opts{e} ) {
-   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
-}
-
 # ############################################################################
 # Connect.
 # ############################################################################
@@ -1041,7 +1114,7 @@ if ( $opts{k} && !$opts{test} ) {
 my %tables_in_sets;
 my %tables_for_set;
 my %stats_for_set;
-my @sets_to_do = unique($opts{sets} =~ m/(\w+)/g);
+my @sets_to_do = unique(@{$opts{sets}});
 
 # Fetch backup sets from the database.
 my $backedup_sth;
