@@ -89,6 +89,10 @@ sub parse {
             $vals{$key} = $defaults->{$key};
          }
       }
+      foreach my $key ( keys %hash ) {
+         die "Unrecognized DSN part '$key' in '$dsn'\n"
+            unless exists $opts{$key};
+      }
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
