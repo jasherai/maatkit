@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use Test::More tests => 81;
 
-my $opt_file = shift or die "Specify an option file.\n";
+my $opt_file = shift || "~/.my.cnf";
 diag("Testing with $opt_file");
 $ENV{PERL5LIB} .= ':t/';
 
