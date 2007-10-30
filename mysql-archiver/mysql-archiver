@@ -30,7 +30,7 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1140
+# OptionParser package 1144
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -67,7 +67,7 @@ sub new {
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
-         if ( (my ($y) = $opt->{s} =~ m/=([md])/) ) {
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAa])/) ) {
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
@@ -122,6 +122,7 @@ sub new {
       disables => \%disables,
       key_for  => \%key_for,
       copyfrom => \%copyfrom,
+      strict   => 1,
    }, $class;
 }
 
@@ -160,13 +161,17 @@ sub parse {
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $vals{__error__} = 1;
+      or $self->error('Error parsing options');
 
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
          $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
       exit(0);
+   }
+
+   if ( @ARGV && $self->{strict} ) {
+      $self->error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
@@ -176,33 +181,30 @@ sub parse {
 
    foreach my $spec ( grep { $_->{r} } @specs ) {
       if ( !defined $vals{$spec->{k}} ) {
-         $vals{__error__} = 1;
-         $self->note("Required option --$spec->{l} must be specified");
+         $self->error("Required option --$spec->{l} must be specified");
       }
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
       if ( @set > 1 ) {
-         $vals{__error__} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
          $note .= " and --$self->{long_for}->{$mutex->[-1]}"
                . " are mutually exclusive.";
-         $self->note($note);
+         $self->error($note);
       }
    }
 
    foreach my $required ( @{$self->{atleast1}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
       if ( !@set ) {
-         $vals{__error__} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$required}[ 0 .. scalar(@$required) - 2] );
          $note .= " or --$self->{long_for}->{$required->[-1]}";
-         $self->note("Specify at least one of $note");
+         $self->error("Specify at least one of $note");
       }
    }
 
@@ -218,8 +220,7 @@ sub parse {
             $vals{$spec->{k}} = $val;
          }
          else {
-            $self->note("Invalid --$spec->{l} argument");
-            $vals{__error__} = 1;
+            $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
@@ -232,11 +233,22 @@ sub parse {
       }
    }
 
+   foreach my $spec ( grep { $_->{y} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
+         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
+      }
+      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
+         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
+      }
+   }
+
    return %vals;
 }
 
-sub note {
+sub error {
    my ( $self, $note ) = @_;
+   $self->{__error__} = 1;
    push @{$self->{notes}}, $note;
 }
 
@@ -261,6 +273,18 @@ sub descr {
    $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
    $descr =~ s/ +$//mg;
    return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self, %opts ) = @_;
+   if ( $opts{help} ) {
+      print $self->usage(%opts);
+      exit(0);
+   }
+   elsif ( $self->{__error__} ) {
+      print $self->errors();
+      exit(0);
+   }
 }
 
 sub errors {
@@ -311,10 +335,13 @@ sub usage {
    $usage .= "\nOptions and values after processing arguments:\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $val   = $vals{$spec->{k}};
+      my $type  = $spec->{y} || '';
       my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
       $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
                 : !defined $val             ? '(No value)'
-                : ($spec->{y} || '') eq 'd' ? $self->{dsn}->as_string($val)
+                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type =~ m/H|h/           ? join(',', sort keys %$val)
+                : $type =~ m/A|a/           ? join(',', @$val)
                 :                             $val;
       $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
    }
@@ -918,7 +945,7 @@ if ( !caller ) {
       { s => 'askpass',     d => 'Prompt for password for connections' },
       { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
       { s => 'chkcols|C!',  d => 'Ensure --source and --dest have same columns (default)' },
-      { s => 'columns|c=s', d => 'Comma-separated list of columns to archive' },
+      { s => 'columns|c=a', d => 'Comma-separated list of columns to archive' },
       { s => 'commit-each', d => 'Commit each set of fetched and archived rows (disables -z)' },
       { s => 'dest|d=d',    d => 'Table to archive to' },
       { s => 'delayedins',  d => 'Add the DELAYED modifier to INSERT statements' },
@@ -964,7 +991,7 @@ if ( !caller ) {
    $opt_parser->{descr}  = 'nibbles records from a MySQL table.  The --source '
                          . q{and --dest arguments use DSN syntax; if COPY is }
                          . q{yes, --dest defaults to the key's value from --source.};
-   %opts = $opt_parser->parse(%opts);
+   %opts = $opt_parser->parse();
 
    # First things first: if --stop was given, create the sentinel file.
    if ( $opts{stop} ) {
@@ -978,7 +1005,6 @@ if ( !caller ) {
       exit(0);
    }
 
-   # TODO: '--dest defaults to values from --source'
    $src = $opts{s};
    $dst = $opts{d};
 
@@ -998,39 +1024,21 @@ if ( !caller ) {
       $opts{f} =~ s/%([dHimsYDt])/$fmt{$1}/g;
    }
 
-   if ( !$opts{help} ) {
-      if ( @ARGV ) {
-         warn "Unrecognized options '@ARGV'.  Do you need to quote --where?\n";
-         $opts{__error__} = 1;
+   if ( !$opts{help} && $opts{d} ) { # Ensure --source and --dest don't point to the same place
+      my $same = 1;
+      foreach my $arg ( qw(h P D t S) ) {
+         if ( defined $src->{$arg} && defined $dst->{$arg} &&
+            $src->{$arg} ne $dst->{$arg} ) {
+            $same = 0;
+            last;
+         }
       }
-      elsif ( $opts{d} ) { # Ensure --source and --dest don't point to the same place
-         my $same = 1;
-         foreach my $arg ( qw(h P D t S) ) {
-            if ( defined $src->{$arg} && defined $dst->{$arg} &&
-               $src->{$arg} ne $dst->{$arg} ) {
-               $same = 0;
-               last;
-            }
-         }
-         if ( $same ) {
-            warn "--source and --dest refer to the same table\n";
-            $opts{__error__} = 1;
-         }
+      if ( $same ) {
+         $opt_parser->error("--source and --dest refer to the same table");
       }
    }
 
-   if ( !defined $opts{z} && !$opts{'commit-each'} ) {
-      $opts{z} = 1;
-   }
-
-   if ( $opts{help} ) {
-      print $opt_parser->usage(%opts);
-      exit(0);
-   }
-   elsif ( $opts{__error__} ) {
-      print $opt_parser->errors();
-      exit(0);
-   }
+   $opt_parser->usage_or_errors(%opts);
 
    # ############################################################################
    # Set up statistics.
@@ -1124,7 +1132,7 @@ if ( !caller ) {
    my ($first_sql, $next_sql, $del_sql, $ins_sql);
    my ($sel_stmt, $ins_stmt, $del_stmt);
    my (@asc_slice, @sel_slice, @del_slice, @ins_slice);
-   my @sel_cols = $opts{c} ? split(/,/, $opts{c})                       # Explicit
+   my @sel_cols = $opts{c} ? @{$opts{c}}                                # Explicit
                 : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
                 :            @{$src->{info}->{cols}};                   # All
 
