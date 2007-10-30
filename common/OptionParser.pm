@@ -89,7 +89,7 @@ sub new {
             # It's an --x defaults to --y option.
             my @participants = map {
                   die "No such option '$_' in $opt" unless $long_for{$_};
-                  $long_for{$_};
+                  $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
          }
@@ -223,13 +223,12 @@ sub parse {
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
-         my $def = $self->{copyfrom}->{$spec->{k}};
-         if ( $def ) {
-            $def = $self->{dsn}->parse(
-               $self->{dsn}->as_string(
-                  $vals{$self->{copyfrom}->{$spec->{k}}}));
+         my $from_key = $self->{copyfrom}->{$spec->{k}};
+         my $default = {};
+         if ( $from_key ) {
+            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
-         $vals{$spec->{k}} = $self->{dsn}->parse($val, $def);
+         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
       }
    }
 
