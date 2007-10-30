@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 37;
+use Test::More tests => 40;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -502,4 +502,63 @@ is_deeply($opts{f},
       p => undef,
    },
    'DSN parsing on type=d inheriting from --bar with short options',
+);
+
+$p = new OptionParser(
+   { s => 'columns|C=H',    d => 'Comma-separated list of columns to output' },
+   { s => 'tables|t=h',     d => 'Comma-separated list of tables to output' },
+   { s => 'databases|d=A',  d => 'Comma-separated list of databases to output' },
+   { s => 'books|b=a',      d => 'Comma-separated list of books to output' },
+);
+
+@ARGV = ();
+%opts = $p->parse;
+is_deeply(
+   \%opts,
+   {  %basic,
+      C => {},
+      t => undef,
+      d => [],
+      b => undef,
+   },
+   'Comma-separated lists: uppercase created even when not given',
+);
+
+@ARGV = ('-C', 'a,b', '-t', 'd,e', '-d', 'f,g', '-b', 'o,p' );
+%opts = $p->parse;
+is_deeply(
+   \%opts,
+   {  %basic,
+      C => { a => 1, b => 1},
+      t => { d => 1, e => 1},
+      d => [qw(f g)],
+      b => [qw(o p)],
+   },
+   'Comma-separated lists: all processed when given',
+);
+
+is($p->usage(%opts),
+<<EOF
+OptionParser.t   For more details, please use the --help option, or try 'perldoc
+OptionParser.t' for complete documentation.
+
+Usage: OptionParser.t <options>
+
+Options:
+  --books     -b  Comma-separated list of books to output
+  --columns   -C  Comma-separated list of columns to output
+  --databases -d  Comma-separated list of databases to output
+  --help          Show this help message
+  --tables    -t  Comma-separated list of tables to output
+  --version       Output version information and exit
+
+Options and values after processing arguments:
+  --books         o,p
+  --columns       a,b
+  --databases     f,g
+  --help          FALSE
+  --tables        d,e
+  --version       FALSE
+EOF
+, 'Lists properly expanded into usage information',
 );
