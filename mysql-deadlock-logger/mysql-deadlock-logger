@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 # ###########################################################################
-# OptionParser package 1140
+# OptionParser package 1149
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -120,6 +120,7 @@ sub new {
       disables => \%disables,
       key_for  => \%key_for,
       copyfrom => \%copyfrom,
+      strict   => 1,
    }, $class;
 }
 
@@ -158,13 +159,17 @@ sub parse {
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $vals{__error__} = 1;
+      or $self->error('Error parsing options');
 
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
          $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
       exit(0);
+   }
+
+   if ( @ARGV && $self->{strict} ) {
+      $self->error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
@@ -174,33 +179,30 @@ sub parse {
 
    foreach my $spec ( grep { $_->{r} } @specs ) {
       if ( !defined $vals{$spec->{k}} ) {
-         $vals{__error__} = 1;
-         $self->note("Required option --$spec->{l} must be specified");
+         $self->error("Required option --$spec->{l} must be specified");
       }
    }
 
    foreach my $mutex ( @{$self->{mutex}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
       if ( @set > 1 ) {
-         $vals{__error__} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
          $note .= " and --$self->{long_for}->{$mutex->[-1]}"
                . " are mutually exclusive.";
-         $self->note($note);
+         $self->error($note);
       }
    }
 
    foreach my $required ( @{$self->{atleast1}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
       if ( !@set ) {
-         $vals{__error__} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$required}[ 0 .. scalar(@$required) - 2] );
          $note .= " or --$self->{long_for}->{$required->[-1]}";
-         $self->note("Specify at least one of $note");
+         $self->error("Specify at least one of $note");
       }
    }
 
@@ -216,8 +218,7 @@ sub parse {
             $vals{$spec->{k}} = $val;
          }
          else {
-            $self->note("Invalid --$spec->{l} argument");
-            $vals{__error__} = 1;
+            $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
@@ -243,8 +244,9 @@ sub parse {
    return %vals;
 }
 
-sub note {
+sub error {
    my ( $self, $note ) = @_;
+   $self->{__error__} = 1;
    push @{$self->{notes}}, $note;
 }
 
@@ -269,6 +271,18 @@ sub descr {
    $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
    $descr =~ s/ +$//mg;
    return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self, %opts ) = @_;
+   if ( $opts{help} ) {
+      print $self->usage(%opts);
+      exit(0);
+   }
+   elsif ( $self->{__error__} ) {
+      print $self->errors();
+      exit(0);
+   }
 }
 
 sub errors {
@@ -339,7 +353,7 @@ sub usage {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1138
+# DSNParser package 1149
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -422,6 +436,10 @@ sub parse {
             $vals{$key} = $defaults->{$key};
          }
       }
+      foreach my $key ( keys %hash ) {
+         die "Unrecognized DSN part '$key' in '$dsn'\n"
+            unless exists $opts{$key};
+      }
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
@@ -503,7 +521,7 @@ $dp->prop('autokey', 'h');
 my @opt_spec = (
    { s => 'askpass',      d => 'Prompt for password for connections' },
    { s => 'collapse|c!',  d => 'Collapse whitespace in queries' },
-   { s => 'columns|C=H',  d => 'Comma-separated list of columns to output' },
+   { s => 'columns|C=h',  d => 'Comma-separated list of columns to output' },
    { s => 'daemonize',    d => 'Fork to background and detach (POSIX only)' },
    { s => 'dest|d=d',     d => 'DSN for where to store deadlocks' },
    { s => 'interval|i=m', d => 'Sleep interval (suffix: s/m/h/d); default 0s' },
@@ -535,14 +553,7 @@ $opts{c} = $opts{p} unless defined $opts{c};
 my $source = $opts{s};
 my $dest   = $opts{d};
 
-if ( $opts{help} ) {
-   print $opt_parser->usage(%opts);
-   exit(0);
-}
-elsif ( $opts{__error__} ) {
-   print $opt_parser->errors();
-   exit(0);
-}
+$opt_parser->usage_or_errors(%opts);
 
 # ############################################################################
 # Configuration info.
