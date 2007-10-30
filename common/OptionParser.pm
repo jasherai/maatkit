@@ -27,6 +27,8 @@ use English qw(-no_match_vars);
 #     following types can be used:
 #     * t = time, with an optional suffix of s/h/m/d
 #     * d = DSN, as provided by a DSNParser which is in $self->{dsn}.
+#     * H = hash, formed from a comma-separated list
+#     * h = hash as above, but only if a value is given
 # Returns the options as a hashref.  Options can also be plain-text
 # instructions, and instructions are recognized inside the 'd' as well.
 sub new {
@@ -56,7 +58,7 @@ sub new {
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
          # Option has a type
-         if ( (my ($y) = $opt->{s} =~ m/=([md])/) ) {
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAa])/) ) {
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
@@ -232,6 +234,17 @@ sub parse {
       }
    }
 
+   # Process list arguments
+   foreach my $spec ( grep { $_->{y} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
+         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
+      }
+      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
+         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
+      }
+   }
+
    return %vals;
 }
 
@@ -327,10 +340,13 @@ sub usage {
    $usage .= "\nOptions and values after processing arguments:\n";
    foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
       my $val   = $vals{$spec->{k}};
+      my $type  = $spec->{y} || '';
       my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
       $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
                 : !defined $val             ? '(No value)'
-                : ($spec->{y} || '') eq 'd' ? $self->{dsn}->as_string($val)
+                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type =~ m/H|h/           ? join(',', sort keys %$val)
+                : $type =~ m/A|a/           ? join(',', @$val)
                 :                             $val;
       $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
    }
