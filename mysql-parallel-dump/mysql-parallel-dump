@@ -881,6 +881,7 @@ use File::Basename qw(dirname);
 use File::Spec;
 use List::Util qw(max sum);
 use POSIX;
+use Term::ReadKey qw(ReadMode);
 use Time::HiRes qw(time);
 
 our $VERSION = '@VERSION@';
@@ -888,7 +889,11 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 # Globals -- as few as possible.
-my %opts;
+my %opts = (
+   basedir  => File::Spec->curdir(),
+   C        => '',
+   gzip     => $OSNAME =~ m/Win32/ ? 0 : 1,
+);
 my $default_dir;
 my (@mysqldump_args, @mysqldump_nodata_args);
 my $dp = new DSNParser;
@@ -911,10 +916,9 @@ $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
 $opts{m} = max(2, $opts{m} || 0);
 
 my @opt_spec = (
-   { s => 'age=m',             d => 'Dump only modified or not recently '
-                                  . 'dumped tables; specify age with a '
-                                  . 'suffix of s/m/h/d' },
-# TODO
+   { s => 'age=m',             d => 'Dump only tables modified since this long '
+                                  . 'ago, or not dumped since this long ago; '
+                                  . 'specify length of time, with a suffix of s/m/h/d' },
    { s => 'askpass',           d => 'Prompt for password for connections' },
    { s => 'basedir=s',         d => 'Base directory for creating files' },
    { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
@@ -926,7 +930,7 @@ my @opt_spec = (
    { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
    { s => 'flushlock|k!',      d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
    { s => 'flushlog!',         d => 'Execute FLUSH LOGS when getting binlog positions' },
-   { s => 'gzip!',             d => 'Compress files with gzip (default on non-Win32)' },
+   { s => 'gzip!',             d => "Compress files with gzip (default $opts{gzip})" },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'ignoredb|g=H',      d => 'Ignore this comma-separated list of databases' },
    { s => 'ignoreengine|E=H',  d => 'No data for this comma-separated list of storage engines (default FEDERATED,MRG_MyISAM)' },
@@ -953,15 +957,8 @@ my @opt_spec = (
    '--sets and --setperdb are mutually exclusive',
 );
 
-# Holds command-line options.
-%opts = (
-   gzip     => $OSNAME !~ m/Win32/,
-   basedir  => File::Spec->curdir(),
-   sets     => '',
-   C        => '',
-);
-
 my $opt_parser = OptionParser->new(@opt_spec);
+$opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '<options> [--] <external args>';
 $opt_parser->{descr}  = q{dumps sets of MySQL tables simultaneously via }
                       . q{mysqldump or SELECT INTO OUTFILE.};
@@ -1016,6 +1013,14 @@ $opt_parser->usage_or_errors(%opts);
 # Gather connection parameters to pass to mysqldump.  Order matters; mysqldump
 # will have a problem if --defaults-file isn't first.
 # ############################################################################
+if ( !defined $opts{p} && $opts{askpass} ) {
+   print "Enter password: ";
+   ReadMode('noecho');
+   chomp($opts{p} = <STDIN>);
+   ReadMode('normal');
+   print "\n";
+}
+
 my @conn_params = (
    [qw(--defaults-file F)],
    [qw(--host          h)],
@@ -1114,7 +1119,7 @@ if ( $opts{k} && !$opts{test} ) {
 my %tables_in_sets;
 my %tables_for_set;
 my %stats_for_set;
-my @sets_to_do = unique(@{$opts{sets}});
+my @sets_to_do = $opts{sets} ? unique(@{$opts{sets}}) : ();
 
 # Fetch backup sets from the database.
 my $backedup_sth;
@@ -1917,9 +1922,9 @@ C<--no-gzip>.
 
 =item --age
 
-Specifies how old a table must be modified before MySQL Parallel Dump will
-consider it.  The argument is a number with a suffix (s=seconds, m=minutes,
-h=hours, d=days).
+Specifies how 'old' a table must be before MySQL Parallel Dump will consider
+it.  The argument is a number with a suffix (s=seconds, m=minutes, h=hours,
+d=days).
 
 When L<"--sets"> is not specified, MySQL Parallel Dump uses C<SHOW TABLE STATUS>
 instead of C<SHOW TABLES> to get a list of tables in each database, and compares
