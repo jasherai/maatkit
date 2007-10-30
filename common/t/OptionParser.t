@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 40;
+use Test::More tests => 41;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -43,10 +43,11 @@ is_deeply(
 %opts = $p->parse(%defaults);
 is_deeply(
    \%opts,
-   { %basic, foo => 1, D => undef, __error__ => 1, l => undef, F => undef, defaultset =>
-   undef },
-   'Bad dog'
+   { %basic, foo => 1, D => undef, l => undef, F => undef, defaultset => undef },
+   'Bad dog options'
 );
+
+is($p->{__error__}, 1, 'Bad dog sets error');
 
 $defaults{bone} = 1;
 eval {
@@ -124,9 +125,9 @@ $p = new OptionParser(
 );
 
 %opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, __error__ => 1,  C => undef },
+is(
+   $p->{__error__},
+   1,
    'Required option sets error',
 );
 
@@ -187,18 +188,15 @@ EOF
 
 @ARGV = qw(--replace);
 %opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, i => undef, r => 1 },
-   '--replace does not trigger __error__',
+is(
+   $p->{__error__}, undef, '--replace does not trigger error',
 );
 
 @ARGV = qw(--ignore --replace);
 %opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, __error__ => 1, i => 1, r => 1 },
-   '--ignore --replace triggers __error__',
+is(
+   $p->{__error__}, 1,
+   '--ignore --replace triggers error',
 );
 
 is_deeply(
@@ -216,10 +214,9 @@ $p = new OptionParser(
 
 @ARGV = qw(--ignore --replace);
 %opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, __error__ => 1, i => 1, r => 1, d => undef },
-   '--ignore --replace triggers __error__ when short spec used',
+is(
+   $p->{__error__}, 1, 
+   '--ignore --replace triggers error when short spec used',
 );
 
 is_deeply(
@@ -247,10 +244,9 @@ $p = new OptionParser(
 @ARGV = qw(--ignore --replace);
 %opts = $p->parse();
 
-is_deeply(
-   \%opts,
-   { %basic, __error__ => 1, i => 1, r => 1, d => undef },
-   '--ignore --replace triggers __error__ for one-and-only-one',
+is(
+   $p->{__error__}, 1,
+   '--ignore --replace triggers error for one-and-only-one',
 );
 
 is_deeply(
@@ -267,10 +263,9 @@ $p = new OptionParser(
 );
 @ARGV = ();
 %opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, __error__ => 1, i => undef, r => undef, d => undef },
-   'Missing options triggers __error__ for one-and-only-one',
+is(
+   $p->{__error__}, 1,
+   'Missing options triggers error for one-and-only-one',
 );
 
 is_deeply(
@@ -287,10 +282,9 @@ $p = new OptionParser(
 );
 @ARGV = ();
 %opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, __error__ => 1, i => undef, r => undef, d => undef },
-   'Missing options triggers __error__ for at-least-one',
+is(
+   $p->{__error__}, 1,
+   'Missing options triggers error for at-least-one',
 );
 
 is_deeply(
@@ -339,9 +333,8 @@ is_deeply(
 
 @ARGV = qw(--foo 5z);
 %opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, foo => '5z', __error__ => 1 },
+is(
+   $p->{__error__}, 1,
    'Bad time value threw error',
 );
 is_deeply(

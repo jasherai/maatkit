@@ -118,6 +118,7 @@ sub new {
       disables => \%disables,
       key_for  => \%key_for,
       copyfrom => \%copyfrom,
+      strict   => 1,
    }, $class;
 }
 
@@ -157,13 +158,17 @@ sub parse {
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $vals{__error__} = 1;
+      or $self->error('Error parsing options');
 
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
          $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
       exit(0);
+   }
+
+   if ( @ARGV && $self->{strict} ) {
+      $self->error("Unrecognized command-line options @ARGV");
    }
 
    # Disable options as specified.
@@ -175,8 +180,7 @@ sub parse {
    # Check required options (oxymoron?)
    foreach my $spec ( grep { $_->{r} } @specs ) {
       if ( !defined $vals{$spec->{k}} ) {
-         $vals{__error__} = 1;
-         $self->note("Required option --$spec->{l} must be specified");
+         $self->error("Required option --$spec->{l} must be specified");
       }
    }
 
@@ -184,13 +188,12 @@ sub parse {
    foreach my $mutex ( @{$self->{mutex}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
       if ( @set > 1 ) {
-         $vals{__error__} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
          $note .= " and --$self->{long_for}->{$mutex->[-1]}"
                . " are mutually exclusive.";
-         $self->note($note);
+         $self->error($note);
       }
    }
 
@@ -198,12 +201,11 @@ sub parse {
    foreach my $required ( @{$self->{atleast1}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
       if ( !@set ) {
-         $vals{__error__} = 1;
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$required}[ 0 .. scalar(@$required) - 2] );
          $note .= " or --$self->{long_for}->{$required->[-1]}";
-         $self->note("Specify at least one of $note");
+         $self->error("Specify at least one of $note");
       }
    }
 
@@ -220,8 +222,7 @@ sub parse {
             $vals{$spec->{k}} = $val;
          }
          else {
-            $self->note("Invalid --$spec->{l} argument");
-            $vals{__error__} = 1;
+            $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
@@ -248,8 +249,9 @@ sub parse {
    return %vals;
 }
 
-sub note {
+sub error {
    my ( $self, $note ) = @_;
+   $self->{__error__} = 1;
    push @{$self->{notes}}, $note;
 }
 
@@ -274,6 +276,17 @@ sub descr {
    $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
    $descr =~ s/ +$//mg;
    return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self, %opts ) = @_;
+   if ( $opts{help} ) {
+      print $self->usage(%opts);
+   }
+   elsif ( $self->{__error__} ) {
+      print $self->errors();
+   }
+   exit(0);
 }
 
 # Explains what errors were found while processing command-line arguments and
