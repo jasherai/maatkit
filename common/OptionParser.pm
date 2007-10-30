@@ -282,11 +282,12 @@ sub usage_or_errors {
    my ( $self, %opts ) = @_;
    if ( $opts{help} ) {
       print $self->usage(%opts);
+      exit(0);
    }
    elsif ( $self->{__error__} ) {
       print $self->errors();
+      exit(0);
    }
-   exit(0);
 }
 
 # Explains what errors were found while processing command-line arguments and
