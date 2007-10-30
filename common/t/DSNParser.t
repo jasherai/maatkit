@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 11;
+use Test::More tests => 12;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
@@ -156,7 +156,13 @@ is_deeply (
 
 $p->prop('required', { h => 1 } );
 throws_ok (
-   sub { $p->parse('a=b') },
-   qr/Missing DSN part 'h' in 'a=b'/,
+   sub { $p->parse('u=b') },
+   qr/Missing DSN part 'h' in 'u=b'/,
    'Missing host part',
+);
+
+throws_ok (
+   sub { $p->parse('h=foo,Z=moo') },
+   qr/Unrecognized DSN part 'Z' in 'h=foo,Z=moo'/,
+   'Extra key',
 );
