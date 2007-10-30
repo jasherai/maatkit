@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 11;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
@@ -66,7 +66,15 @@ is(
       $p->parse('u=a,p=b', { D => 'foo', h => 'me' }, { S => 'bar', h => 'host' } )
    ),
    'D=foo,S=bar,h=me,p=b,u=a',
-   'DSN stringified'
+   'DSN stringified when it gets DSN as arg'
+);
+
+is(
+   $p->as_string(
+      'D=foo,S=bar,h=me,p=b,u=a',
+   ),
+   'D=foo,S=bar,h=me,p=b,u=a',
+   'DSN stringified when it gets a string as arg'
 );
 
 is ($p->usage(),

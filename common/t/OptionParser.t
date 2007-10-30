@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 36;
+use Test::More tests => 37;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -481,3 +481,25 @@ Options and values after processing arguments:
   --version  FALSE
 EOF
 , 'DSN stringified with inheritance into post-processed args');
+
+$p = new OptionParser(
+   { s => 'foo|f=d', d => 'DSN foo' },
+   { s => 'bar|b=d', d => 'DSN bar' },
+   'DSN values in --foo default to values in --bar if COPY is yes.',
+);
+$p->{dsn} = $d;
+
+@ARGV = ('-b', 'D=DB,u=USER,h=localhost', '-f', 'h=otherhost');
+%opts = $p->parse();
+
+is_deeply($opts{f},
+   {  D => 'DB',
+      u => 'USER',
+      S => undef,
+      F => undef,
+      P => undef,
+      h => 'otherhost',
+      p => undef,
+   },
+   'DSN parsing on type=d inheriting from --bar with short options',
+);
