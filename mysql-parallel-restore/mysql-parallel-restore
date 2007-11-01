@@ -785,12 +785,12 @@ sub do_table {
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
                   . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
                   . qq{LINES TERMINATED BY '\\n' }
-                  . qq{CHARACTER SET $opts{charset}};
+                  . qq{/*!50038 CHARACTER SET $opts{charset} */};
          }
          elsif ( $opts{T} ) {
             $sql  = qq{LOAD DATA$LOCAL INFILE ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
-                  . qq{CHARACTER SET $opts{charset}};
+                  . qq{/*!50038 CHARACTER SET $opts{charset} */};
          }
 
          if ( $sql ) {
