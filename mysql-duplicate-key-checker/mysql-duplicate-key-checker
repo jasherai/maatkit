@@ -180,7 +180,7 @@ sub get_cxn_params {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1149
+# OptionParser package 1158
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -498,6 +498,25 @@ sub usage {
    return $usage;
 }
 
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH;
+   print $prompt;
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
+}
+
 1;
 
 # ###########################################################################
@@ -672,7 +691,6 @@ use DBI;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
-use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -721,11 +739,7 @@ if ( !caller ) {
 
    # Connect to the database
    if ( !defined $opts{p} && $opts{askpass} ) {
-      print "Enter password: ";
-      ReadMode('noecho');
-      chomp($opts{p} = <STDIN>);
-      ReadMode('normal');
-      print "\n";
+      $opts{p} = OptionParser::prompt_noecho("Enter password: ");
    }
 
    my $dp = new DSNParser;
