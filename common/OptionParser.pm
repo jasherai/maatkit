@@ -383,6 +383,28 @@ sub usage {
    return $usage;
 }
 
+# Tries to prompt and read the answer without echoing the answer to the
+# terminal.  This isn't really related to this package, but it's too handy not
+# to put here.  OK, it's related, it gets config information from the user.
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH;
+   print $prompt;
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
+}
+
 1;
 
 # ###########################################################################
