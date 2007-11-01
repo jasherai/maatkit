@@ -176,7 +176,7 @@ sub get_cxn_params {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1149
+# OptionParser package 1158
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -492,6 +492,25 @@ sub usage {
       $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
    }
    return $usage;
+}
+
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH;
+   print $prompt;
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
 }
 
 1;
@@ -881,7 +900,6 @@ use File::Basename qw(dirname);
 use File::Spec;
 use List::Util qw(max sum);
 use POSIX;
-use Term::ReadKey qw(ReadMode);
 use Time::HiRes qw(time);
 
 our $VERSION = '@VERSION@';
@@ -1014,11 +1032,7 @@ $opt_parser->usage_or_errors(%opts);
 # will have a problem if --defaults-file isn't first.
 # ############################################################################
 if ( !defined $opts{p} && $opts{askpass} ) {
-   print "Enter password: ";
-   ReadMode('noecho');
-   chomp($opts{p} = <STDIN>);
-   ReadMode('normal');
-   print "\n";
+   $opts{p} = OptionParser::prompt_noecho("Enter password: ");
 }
 
 my @conn_params = (
