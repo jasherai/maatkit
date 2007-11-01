@@ -389,7 +389,7 @@ sub usage {
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
-   local $OUTPUT_AUTOFLUSH;
+   local $OUTPUT_AUTOFLUSH = 1;
    print $prompt;
    my $response;
    eval {
