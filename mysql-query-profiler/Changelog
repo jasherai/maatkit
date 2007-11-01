@@ -1,5 +1,8 @@
 Changelog for mysql-query-profiler and mysql-profile-compact:
 
+   * Removed the dependency on Term::ReadKey
+   * Replaced some code with modules that are unit-tested.
+
 2007-09-20: version 1.1.5
 
    * Documentation didn't specify how queries in FILE are separated.
