@@ -348,6 +348,25 @@ sub usage {
    return $usage;
 }
 
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH;
+   print $prompt;
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
+}
+
 1;
 
 # ###########################################################################
@@ -903,7 +922,6 @@ use DBI;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use IO::File;
-use Term::ReadKey;
 use sigtrap qw(handler finish untrapped normal-signals);
 
 our $VERSION = '@VERSION@';
@@ -1606,11 +1624,7 @@ sub get_dbh {
    };
 
    if ( !defined $info->{p} && $opts{askpass} ) {
-      print "Enter password for $info->{h}: ";
-      ReadMode('noecho');
-      chomp($info->{p} = <STDIN>);
-      ReadMode('normal');
-      print "\n";
+      $info->{p} = OptionParser::prompt_noecho("Enter password: ");
    }
 
    my $dbh = DBI->connect($dp->get_cxn_params($info), $db_options);
