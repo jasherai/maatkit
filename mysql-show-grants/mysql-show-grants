@@ -368,16 +368,13 @@ sub prompt_noecho {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1149 $Revision$
+# DSNParser package 1149
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package DSNParser;
 
-# Defaults are built-in, but you can add/replace items by passing them as hashrefs
-# of {key, desc, copy, dsn}.  The desc and dsn items are optional.  You can set
-# properties with the prop() function.  Don't set the 'opts' property.
 sub new {
    my ( $class, @opts ) = @_;
    my $self = {
@@ -425,10 +422,6 @@ sub new {
    return bless $self, $class;
 }
 
-# Recognized properties:
-# * autokey:   which key to treat a bareword as (typically h=host).
-# * dbidriver: which DBI driver to use; assumes mysql, supports Pg.
-# * required:  which parts are required (hashref).
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
@@ -496,8 +489,6 @@ sub usage {
    return $usage;
 }
 
-# Supports PostgreSQL via the dbidriver element of $info, but assumes MySQL by
-# default.
 sub get_cxn_params {
    my ( $self, $info ) = @_;
    my $dsn;
