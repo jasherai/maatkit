@@ -1,5 +1,8 @@
 Changelog for mysql-slave-restart:
 
+   * Removed the dependency on Term::ReadKey
+   * Replaced some code with modules that are unit-tested.
+
 2007-09-20: version 1.0.1
 
    * Added a --daemonize option to detach from the shell and run in the background.
