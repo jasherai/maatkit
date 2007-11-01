@@ -20,6 +20,9 @@
 use strict;
 use warnings FATAL => 'all';
 
+# TODO:
+# http://www.mysqlperformanceblog.com/2007/10/31/new-patch-for-mysql-performance/
+
 # ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
