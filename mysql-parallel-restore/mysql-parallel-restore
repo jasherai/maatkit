@@ -554,7 +554,7 @@ my @opt_spec = (
    { s => 'database|D=s',      d => 'Specify the database for all tables' },
    { s => 'databases|d=s',     d => 'Restore only this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Restore only databases whose names match this pattern' },
-   { s => 'defaults-file|F=s', d => 'Only read default options from the given file' },
+   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
    { s => 'disablekeys!',      d => 'Set DISABLE KEYS before loading files' },
    { s => 'fifo!',             d => 'Stream files into a FIFO for --tab; default' },
    { s => 'host|h=s',          d => 'Connect to host' },
