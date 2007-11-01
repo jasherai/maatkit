@@ -1,5 +1,6 @@
 Changelog for mysql-archiver:
 
+   * Removed the dependency on Term::ReadKey
    * Replaced some code with modules that are unit-tested.
    * You can control binary logging with the 'a' and 'b' options in a DSN.
    * Destination plugins can now rewrite the INSERT statement.
