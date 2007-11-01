@@ -587,7 +587,7 @@ my @opt_spec = (
 my $dsn_parser = new DSNParser();
 my $vp = new VersionParser();
 my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{pcompt} = '<options>';
+$opt_parser->{prompt} = '<options>';
 $opt_parser->{descr}  = 'watches a MySQL replication slave for errors, and '
                       . 'tries to restart replication if it stops.';
 my %opts = $opt_parser->parse();
