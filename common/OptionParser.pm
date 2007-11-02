@@ -76,7 +76,7 @@ sub new {
          $opt->{n} = $opt->{s} =~ m/!/;
          $opt->{g} ||= 'o';
          # Option has a type
-         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAa])/) ) {
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
@@ -160,6 +160,7 @@ sub get_participants {
 sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
 
    my %opt_seen;
    my %vals = %{$self->{defaults}};
@@ -251,6 +252,18 @@ sub parse {
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
+      }
+      elsif ( $spec->{y} eq 'z' ) {
+         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+         if ( defined $num ) {
+            if ( $factor ) {
+               $num *= $factor_for{$factor};
+            }
+            $vals{$spec->{k}} = ($pre || '') . $num;
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
       }
    }
 
