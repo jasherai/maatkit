@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 41;
+use Test::More tests => 42;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -570,4 +570,45 @@ Options and values after processing arguments:
   --version       FALSE
 EOF
 , 'Lists properly expanded into usage information',
+);
+
+$p = new OptionParser(
+   { s => 'columns|C=H',    g => 'o', d => 'Comma-separated list of columns to output' },
+   { s => 'tables|t=h',     g => 'p', d => 'Comma-separated list of tables to output' },
+   { s => 'databases|d=A',  g => 'q', d => 'Comma-separated list of databases to output' },
+   { s => 'books|b=a',      g => 'p', d => 'Comma-separated list of books to output' },
+);
+$p->groups(
+   { k => 'p', d => 'Foofoo' },
+   { k => 'q', d => 'Bizbat' },
+);
+
+is($p->usage(%opts),
+<<EOF
+OptionParser.t   For more details, please use the --help option, or try 'perldoc
+OptionParser.t' for complete documentation.
+
+Usage: OptionParser.t <options>
+
+Options:
+  --columns   -C  Comma-separated list of columns to output
+  --help          Show this help message
+  --version       Output version information and exit
+
+Foofoo:
+  --books     -b  Comma-separated list of books to output
+  --tables    -t  Comma-separated list of tables to output
+
+Bizbat:
+  --databases -d  Comma-separated list of databases to output
+
+Options and values after processing arguments:
+  --books         o,p
+  --columns       a,b
+  --databases     f,g
+  --help          FALSE
+  --tables        d,e
+  --version       FALSE
+EOF
+, 'Option groupings',
 );
