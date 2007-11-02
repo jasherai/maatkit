@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This program efficiently synchronizes data between two MySQL tables, which
+# This program synchronizes data efficiently between two MySQL tables, which
 # can be on different servers.
 #
 # This program is copyright (c) 2007 Baron Schwartz.
@@ -23,12 +23,560 @@
 use strict;
 use warnings FATAL => 'all';
 
+# ###########################################################################
+# OptionParser package 1178
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package OptionParser;
+
+use Getopt::Long;
+use List::Util qw(max);
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my %key_seen;
+   my %long_seen;
+   my %key_for;
+   my %defaults;
+   my @mutex;
+   my @atleast1;
+   my %long_for;
+   my %disables;
+   my %copyfrom;
+   unshift @opts,
+      { s => 'help',    d => 'Show this help message' },
+      { s => 'version', d => 'Output version information and exit' };
+   foreach my $opt ( @opts ) {
+      if ( ref $opt ) {
+         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         $opt->{k} = $short || $long;
+         $key_for{$long} = $opt->{k};
+         $long_for{$opt->{k}} = $long;
+         $long_for{$long} = $long;
+         $opt->{l} = $long;
+         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
+         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
+         $opt->{t} = $short;
+         $opt->{n} = $opt->{s} =~ m/!/;
+         $opt->{g} ||= 'o';
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
+            $opt->{y} = $y;
+            $opt->{s} =~ s/=./=s/;
+         }
+         $opt->{r} = $opt->{d} =~ m/required/;
+         if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
+            $defaults{$opt->{k}} = defined $def ? $def : 1;
+         }
+         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
+            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+         }
+      }
+      else { # It's an instruction.
+
+         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $long_for{$_};
+               } $class->get_participants($opt);
+            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+               push @mutex, \@participants;
+            }
+            if ( $opt =~ m/at least one|one and only one/ ) {
+               push @atleast1, \@participants;
+            }
+         }
+         elsif ( $opt =~ m/default to/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $key_for{$_};
+               } $class->get_participants($opt);
+            $copyfrom{$participants[0]} = $participants[1];
+         }
+
+      }
+   }
+
+   foreach my $dis ( keys %disables ) {
+      $disables{$dis} = [ map {
+            die "No such option '$_' while processing $dis" unless $long_for{$_};
+            $long_for{$_};
+         } @{$disables{$dis}} ];
+   }
+
+   return bless {
+      specs => [ grep { ref $_ } @opts ],
+      notes => [],
+      instr => [ grep { !ref $_ } @opts ],
+      mutex => \@mutex,
+      defaults => \%defaults,
+      long_for => \%long_for,
+      atleast1 => \@atleast1,
+      disables => \%disables,
+      key_for  => \%key_for,
+      copyfrom => \%copyfrom,
+      strict   => 1,
+      groups   => [ { k => 'o', d => 'Options' } ],
+   }, $class;
+}
+
+sub get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
+      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+         push @participants, $long;
+      }
+      else {
+         foreach my $short ( $thing =~ m/([^-])/g ) {
+            push @participants, $short;
+         }
+      }
+   }
+   return @participants;
+}
+
+sub parse {
+   my ( $self, %defaults ) = @_;
+   my @specs = @{$self->{specs}};
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+
+   my %opt_seen;
+   my %vals = %{$self->{defaults}};
+   @vals{keys %defaults} = values %defaults;
+   foreach my $spec ( @specs ) {
+      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
+      $opt_seen{$spec->{k}} = 1;
+   }
+
+   foreach my $key ( keys %defaults ) {
+      die "Cannot set default for non-existent option '$key'\n"
+         unless $opt_seen{$key};
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
+      or $self->error('Error parsing options');
+
+   if ( $vals{version} ) {
+      my $prog = $self->prog;
+      printf("%s  Ver %s Distrib %s Changeset %s\n",
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+      exit(0);
+   }
+
+   if ( @ARGV && $self->{strict} ) {
+      $self->error("Unrecognized command-line options @ARGV");
+   }
+
+   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
+      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      @vals{@disses} = map { undef } @disses;
+   }
+
+   foreach my $spec ( grep { $_->{r} } @specs ) {
+      if ( !defined $vals{$spec->{k}} ) {
+         $self->error("Required option --$spec->{l} must be specified");
+      }
+   }
+
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
+      if ( @set > 1 ) {
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
+         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
+               . " are mutually exclusive.";
+         $self->error($note);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
+      if ( !@set ) {
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$required}[ 0 .. scalar(@$required) - 2] );
+         $note .= " or --$self->{long_for}->{$required->[-1]}";
+         $self->error("Specify at least one of $note");
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'm' ) {
+         my ( $num, $suffix ) = $val =~ m/(\d+)([smhd])$/;
+         if ( $suffix ) {
+            $val = $suffix eq 's' ? $num            # Seconds
+                 : $suffix eq 'm' ? $num * 60       # Minutes
+                 : $suffix eq 'h' ? $num * 3600     # Hours
+                 :                  $num * 86400;   # Days
+            $vals{$spec->{k}} = $val;
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
+      elsif ( $spec->{y} eq 'd' ) {
+         my $from_key = $self->{copyfrom}->{$spec->{k}};
+         my $default = {};
+         if ( $from_key ) {
+            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
+         }
+         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
+      }
+      elsif ( $spec->{y} eq 'z' ) {
+         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+         if ( defined $num ) {
+            if ( $factor ) {
+               $num *= $factor_for{$factor};
+            }
+            $vals{$spec->{k}} = ($pre || '') . $num;
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
+         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
+      }
+      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
+         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
+      }
+   }
+
+   return %vals;
+}
+
+sub error {
+   my ( $self, $note ) = @_;
+   $self->{__error__} = 1;
+   push @{$self->{notes}}, $note;
+}
+
+sub prog {
+   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   return $prog || $PROGRAM_NAME;
+}
+
+sub prompt {
+   my ( $self ) = @_;
+   my $prog   = $self->prog;
+   my $prompt = $self->{prompt} || '<options>';
+   return "Usage: $prog $prompt\n";
+}
+
+sub descr {
+   my ( $self ) = @_;
+   my $prog = $self->prog;
+   my $descr  = $prog . ' ' . ($self->{descr} || '')
+          . "  For more details, please use the --help option, "
+          . "or try 'perldoc $prog' for complete documentation.";
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr =~ s/ +$//mg;
+   return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self, %opts ) = @_;
+   if ( $opts{help} ) {
+      print $self->usage(%opts);
+      exit(0);
+   }
+   elsif ( $self->{__error__} ) {
+      print $self->errors();
+      exit(0);
+   }
+}
+
+sub errors {
+   my ( $self ) = @_;
+   my $usage = $self->prompt() . "\n";
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   }
+   return $usage . "\n" . $self->descr();
+}
+
+sub usage {
+   my ( $self, %vals ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxs = max(0,
+      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
+      grep { $_->{t} } @specs);
+
+   my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
+
+   $maxs = max($lcol - 3, $maxs);
+
+   my $usage = $self->descr() . "\n" . $self->prompt();
+   foreach my $g ( @{$self->{groups}} ) {
+      $usage .= "\n$g->{d}:\n";
+      foreach my $spec ( sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs ) {
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t};
+         my $desc  = $spec->{d};
+         $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+         $desc =~ s/ +$//mg;
+         if ( $short ) {
+            $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+         }
+         else {
+            $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+         }
+      }
+   }
+
+   if ( (my @instr = @{$self->{instr}}) ) {
+      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   }
+   if ( $self->{dsn} ) {
+      $usage .= "\n" . $self->{dsn}->usage();
+   }
+   $usage .= "\nOptions and values after processing arguments:\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $val   = $vals{$spec->{k}};
+      my $type  = $spec->{y} || '';
+      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val             ? '(No value)'
+                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type =~ m/H|h/           ? join(',', sort keys %$val)
+                : $type =~ m/A|a/           ? join(',', @$val)
+                :                             $val;
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
+   }
+   return $usage;
+}
+
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH = 1;
+   print $prompt;
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
+}
+
+sub groups {
+   my ( $self, @groups ) = @_;
+   push @{$self->{groups}}, @groups;
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+
+# ###########################################################################
+# DSNParser package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package DSNParser;
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my $self = {
+      opts => {
+         D => {
+            desc => 'Database to use',
+            dsn  => 'database',
+            copy => 1,
+         },
+         F => {
+            desc => 'Only read default options from the given file',
+            dsn  => 'mysql_read_default_file',
+            copy => 1,
+         },
+         h => {
+            desc => 'Connect to host',
+            dsn  => 'host',
+            copy => 1,
+         },
+         p => {
+            desc => 'Password to use when connecting',
+            dsn  => 'password',
+            copy => 1,
+         },
+         P => {
+            desc => 'Port number to use for connection',
+            dsn  => 'port',
+            copy => 1,
+         },
+         S => {
+            desc => 'Socket file to use for connection',
+            dsn  => 'mysql_socket',
+            copy => 1,
+         },
+         u => {
+            desc => 'User for login if not current user',
+            dsn  => 'user',
+            copy => 1,
+         },
+      },
+   };
+   foreach my $opt ( @opts ) {
+      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   }
+   return bless $self, $class;
+}
+
+sub prop {
+   my ( $self, $prop, $value ) = @_;
+   if ( @_ > 2 ) {
+      $self->{$prop} = $value;
+   }
+   return $self->{$prop};
+}
+
+sub parse {
+   my ( $self, $dsn, $prev, $defaults ) = @_;
+   return unless $dsn;
+   $prev     ||= {};
+   $defaults ||= {};
+   my %vals;
+   my %opts = %{$self->{opts}};
+   if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
+      $vals{ $self->prop('autokey') } = $dsn;
+   }
+   else {
+      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+      foreach my $key ( keys %opts ) {
+         $vals{$key} = $hash{$key};
+         if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+            $vals{$key} = $prev->{$key};
+         }
+         if ( !defined $vals{$key} ) {
+            $vals{$key} = $defaults->{$key};
+         }
+      }
+      foreach my $key ( keys %hash ) {
+         die "Unrecognized DSN part '$key' in '$dsn'\n"
+            unless exists $opts{$key};
+      }
+   }
+   if ( (my $required = $self->prop('required')) ) {
+      foreach my $key ( keys %$required ) {
+         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+      }
+   }
+   return \%vals;
+}
+
+sub as_string {
+   my ( $self, $dsn ) = @_;
+   return $dsn unless ref $dsn;
+   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} } sort keys %$dsn );
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my $usage
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      . "  KEY  COPY  MEANING\n"
+      . "  ===  ====  =============================================\n";
+   my %opts = %{$self->{opts}};
+   foreach my $key ( sort keys %opts ) {
+      $usage .= "  $key    "
+             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($opts{$key}->{desc} || '[No description]')
+             . "\n";
+   }
+   if ( (my $key = $self->prop('autokey')) ) {
+      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
+   }
+   return $usage;
+}
+
+sub get_cxn_params {
+   my ( $self, $info ) = @_;
+   my $dsn;
+   my %opts = %{$self->{opts}};
+   my $driver = $self->prop('dbidriver') || '';
+   if ( $driver eq 'Pg' ) {
+      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(h P));
+   }
+   else {
+      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(F h P S))
+         . ';mysql_read_default_group=mysql';
+   }
+   return ($dsn, $info->{u}, $info->{p});
+}
+
+1;
+
+# ###########################################################################
+# End DSNParser package
+# ###########################################################################
+
+# ###########################################################################
+# VersionParser package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package VersionParser;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub parse {
+   my ( $self, $str ) = @_;
+   return sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+}
+
+sub version_ge {
+   my ( $self, $dbh, $target ) = @_;
+   $self->{$dbh} ||= $self->parse(
+      $dbh->selectrow_array('SELECT VERSION()'));
+   return $self->{$dbh} ge $self->parse($target);
+}
+
+1;
+
+# ###########################################################################
+# End VersionParser package
+# ###########################################################################
+
+package main;
+
 use DBI;
 use English qw(-no_match_vars);
-use Getopt::Long;
 use List::Util qw(sum max min);
 use POSIX qw(ceil);
-use Term::ReadKey;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -64,8 +612,12 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # Get configuration information.
 # ############################################################################
 
+# Generate a quasi-random string that's constant in a given day
+my $prefix = '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00');
+$prefix =~ s/\W+/_/g;
+
 my @opt_spec = (
-   { s => 'algorithm|a=s',    d => 'Algorithm to use: topdown (default) or bottomup'},
+   { s => 'algorithm|a=s',    d => 'Algorithm to use (default topdown)'},
    { s => 'analyze|A!',       d => 'Analyze (find/fix/print) in bottom-up algorithm (default)' },
    { s => 'askpass',          d => 'Prompt for password for connections' },
    { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm (default 128)' },
@@ -73,92 +625,70 @@ my @opt_spec = (
    { s => 'build|U!',         d => 'Build tables for bottom-up algorithm (default)' },
    { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
    { s => 'collate|O!',       d => 'Use MySQL to compare strings if necessary (default)' },
-   { s => 'columns|c=s',      d => 'Comma-separated column list' },
+   { s => 'columns|c=a',      d => 'Comma-separated column list' },
    { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
    { s => 'deleteinsert|l',   d => 'Convert all UPDATES to DELETE and INSERT' },
    { s => 'queries|q',        d => 'Make debugging output executable SQL' },
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
-   { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables' },
-   { s => 'execute|x',        d => 'Execute queries required to sync' },
+   { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables; default InnoDB' },
+   { s => 'execute|x',        d => 'Execute queries to sync tables' },
    { s => 'forupdate|F',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
    { s => 'function|f=s',     d => 'Cryptographic hash function (SHA1, MD5...)' },
-   { s => 'help',             d => 'Show this help message' },
    { s => 'lock|k!',          d => 'Lock tables when beginning work' },
    { s => 'maxcost|m=i',      d => 'Maximum rowcount before aborting' },
-   { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default: all)' },
-   { s => 'prefix|P=s',       d => 'Tablename prefix for bottom-up algorithm' },
+   { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default ins,upd,del)' },
+   { s => 'prefix|P=s',       d => "Tablename prefix for bottom-up algorithm (default $prefix)" },
    { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
-   { s => 'separator|e=s',    d => 'Separator for CONCAT_WS' },
+   { s => 'separator|e=s',    d => 'Separator for CONCAT_WS (default #)' },
    { s => 'singletxn|1',      d => 'Do in a single transaction' },
    { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
    { s => 'skipbinlog',       d => 'Do not log to the binary log' },
    { s => 'skipforeignkey|K', d => 'Turn off foreign key checks' },
    { s => 'skipuniquekey',    d => 'Turn off UNIQUE key checks' },
-   { s => 'strategy|s=s',     d => 'Query strategy when syncing (r=replace, s=ins/upd/del)' },
+   { s => 'strategy|s=s',     d => 'Query strategy when syncing (r=replace, s=ins/upd/del) (default s)' },
    { s => 'synctomaster|r',   d => 'Sync a slave to its master. Implies --strategy=r and --wait 60'},
-   { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm (default: no)' },
+   { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm' },
    { s => 'timeoutok|t',      d => 'Keep going if --wait fails' },
-   { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times' },
+   { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times; default 0' },
    { s => 'verify|V!',        d => 'Verify checksum compatibility across servers (default)' },
-   { s => 'version',          d => 'Output version information and exit' },
    { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
    { s => 'where|W=s',        d => 'WHERE clause to restrict syncing to part of the table' },
 );
 
-# Generate a quasi-random string that's constant in a given day
-my $prefix = '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00');
-$prefix =~ s/\W+/_/g;
-
-# This is the container for the command-line options' values to be stored in
-# after processing.  Initial values are defaults.
-my %opts = (
-   a => 'topdown',
-   bufferresults => 0,
-   e => '#',
-   o => 'INSUPDDEL',
-   s => 's',
-   B => 128,
-   P => $prefix,
-   E => 'InnoDB',
-   U => 1,
-   A => 1,
-   v => 0,
-   V => 1,
-   1 => 0,
-   O => 1,
+my $vp = new VersionParser();
+my $dsn_parser = new DSNParser(
+   {
+      key  => 'D',
+      desc => 'Database containing the table to be synced',
+      dsn  => 'database',
+      copy => 1,
+   },
+   {
+      key  => 't',
+      desc => 'Table to be synced',
+      dsn  => undef,
+      copy => 1,
+   },
+   {
+      key  => 'i',
+      desc => 'Index to drill into when syncing',
+      dsn  => undef,
+      copy => 1,
+   },
 );
+$dsn_parser->prop('required', { t => 1 });
+my $opt_parser = new OptionParser(@opt_spec);
+$opt_parser->{dsn}    = $dsn_parser;
+$opt_parser->{strict} = 0;
+$opt_parser->{prompt} = '[OPTION].. [SOURCE] DEST';
+$opt_parser->{descr}
+   = 'finds and resolves data differences between two MySQL tables.  SOURCE '
+   . 'and DEST are DSNs.  Values for DEST default to the values for SOURCE.';
+my %opts = $opt_parser->parse();
 
-my %opt_seen;
-foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-   $spec->{k} = $short || $long;
-   $spec->{l} = $long;
-   $spec->{t} = $short;
-   $spec->{n} = $spec->{s} =~ m/!/;
-   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
-   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
-}
-
-# ############################################################################
-# Get and process options
-# ############################################################################
-
-Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
-
-if ( $opts{version} ) {
-   print "mysql-table-sync  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
-   exit(0);
-}
-
-$opts{help} = 1        if $opts{s} && $opts{s} !~ m/^(s|r)/;
 $opts{k}    = $opts{w} if !defined $opts{k};
 $opts{w}    = 60       if $opts{r} && !defined $opts{w};
 
-# Make comma-separated lists into hashes.
-if ( $opts{c} ) {
-   $opts{c} = { map { $_ => 1 } split(/,\s*/, $opts{c}) };
-}
 $opts{T} = $opts{T} ? 'TEMPORARY' : '';
 if ( !defined $opts{C} ) {
    $opts{C} = !$opts{T};
@@ -166,53 +696,20 @@ if ( !defined $opts{C} ) {
 if ( $opts{r} ) {
    $opts{s} = 'r';
 }
-$opts{o} = lc(join('|', $opts{o} =~ m/(\w{3})/g));
+$opts{o} = lc(join('|', $opts{o} =~ m/(\w{3})/g)); # TODO this is ugly
 
-# ############################################################################
-# Parse arguments saying which tables.  If the script doesn't have everything
-# it needs, show help text.
-# ############################################################################
-my %conn   = (
-   h => 'host',
-   P => 'port',
-   S => 'mysql_socket',
-   u => 'user',
-   p => 'pass',
-   F => 'mysql_read_default_file',
-   D => 'database',
-   t => 'table',
-   i => 'index',
-);
+my $source = $dsn_parser->parse(shift(@ARGV), {}     );
+my $dest   = $dsn_parser->parse(shift(@ARGV), $source);
 
-my $source = parse_dsn(shift(@ARGV), {}     );
-my $dest   = parse_dsn(shift(@ARGV), $source);
-
-if ( $opts{help} || !$source || (!$dest && !$opts{r}) ) {
-   print "Usage: mysql-table-sync [OPTION].. [SOURCE] DEST\n\n";
-   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
-      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t} ? "-$spec->{t}" : '';
-      printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
-   }
-   (my $usage = <<"   USAGE") =~ s/^      //gm;
-
-      mysql-table-sync finds and resolves data differences between two MySQL tables.
-      SOURCE and DEST are specially formatted as
-
-       h=host,D=database,t=table,i=index,...
-
-      Everything but the table name is optional; see the documentation for the
-      full list of possible keys.  Values for DEST default to the values for
-      SOURCE.  Connection options are read from MySQL option files.  For more
-      details, please read the documentation:
-
-         perldoc mysql-table-sync
-
-   USAGE
-   print $usage;
-   exit(0);
+if ( $opts{s} && $opts{s} !~ m/^(s|r)/ ) {
+   $opt_parser->error('--strategy must be either r or s');
 }
+
+if ( !$source || (!$dest && !$opts{r}) ) {
+   $opt_parser->error('SOURCE is required, and DEST is required unless --replicate is specified');
+}
+
+$opt_parser->usage_or_errors(%opts);
 
 # ############################################################################
 # Lookup tables
@@ -382,7 +879,7 @@ if ( $opts{k} && !$opts{r} ) {
 my %collation_for = ();
 my %collation_sth = ();
 my %charset_for   = ();
-if ( $opts{O} && version_ge($source->{dbh}, '4.1.0') ) {
+if ( $opts{O} && $vp->version_ge($source->{dbh}, '4.1.0') ) {
    my @collations = @{$source->{dbh}->selectall_arrayref('SHOW COLLATION', {Slice => {}})};
    foreach my $collation ( @collations ) {
       $charset_for{$collation->{Collation}} = $collation->{Charset};
@@ -404,7 +901,8 @@ if ( $opts{K} ) {
 }
 
 if ( $opts{v} ) {
-   print '-- Syncing ' . dsn_to_string($source) . ' with ' . dsn_to_string($dest) . "\n";
+   print '-- Syncing ' . $dsn_parser->as_string($source)
+      . ' with ' . $dsn_parser->as_string($dest) . "\n";
 }
 
 if ( $code_for_algorithm{$opts{a}} ) {
@@ -1263,35 +1761,6 @@ sub make_slices {
    return join(', ', @slices);
 }
 
-sub dsn_to_string {
-   my ( $dsn ) = @_;
-   my $str = join(',',
-      map  { "$_=$dsn->{$_}" }
-      grep { exists $dsn->{$_} && defined $dsn->{$_} && $_ ne 'p' }
-      sort keys %conn
-   );
-   return $str;
-}
-
-sub parse_dsn {
-   my ($dsn, $prev) = @_;
-   return unless $dsn;
-   $prev ||= {};
-
-   my %vals;
-   if ( $dsn =~ m/=/ ) {
-      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-      %vals = map { $_ => $hash{$_} } keys %conn;
-   }
-   else {
-      $vals{h} = $dsn;
-   }
-   map { $vals{$_} ||= $prev->{$_} } keys %conn;
-   $vals{i} ||= 'PRIMARY';
-   die "Missing host (h) part in $dsn.\n" unless $vals{h};
-   return \%vals if $vals{t};
-}
-
 sub get_tbl_struct {
    my ( $info ) = @_;
    my $ddl = ($info->{dbh}->selectrow_array("SHOW CREATE TABLE $info->{db_tbl}"))[1];
@@ -1325,6 +1794,7 @@ sub get_tbl_struct {
    my %alldefs;
    @alldefs{@cols} = @defs;
 
+   $info->{i} ||= 'PRIMARY';
    if ( !exists $keys{$info->{i}} ) {
       die "No such key $info->{i} in table $info->{h}/$info->{db_tbl}";
    }
@@ -1385,7 +1855,7 @@ sub make_where_clause {
 
 sub find_collation {
    my ( $dbh, $tbl, $cols ) = @_;
-   if ( $opts{O} && version_ge($dbh, '4.1.2') ) {
+   if ( $opts{O} && $vp->version_ge($dbh, '4.1.2') ) {
       my $info = $dbh->selectall_hashref(
          "SHOW FULL COLUMNS FROM $tbl", 'Field');
       foreach my $col ( @$cols ) {
@@ -1407,13 +1877,6 @@ sub make_key {
    return join('#', map { defined $row->{$_} ? $row->{$_} : 'NULL' } @$cols);
 }
 
-# Compares versions like 5.0.27 and 4.1.15-standard-log
-sub version_ge {
-   my ( $dbh, $target ) = @_;
-   my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
-   return $version ge sprintf('%03d%03d%03d', $target =~ m/(\d+)/g);
-}
-
 sub get_dbh {
    my ( $info ) = @_;
    my $db_options = {
@@ -1426,19 +1889,9 @@ sub get_dbh {
    };
 
    if ( !$info->{p} && $opts{askpass} ) {
-      print "Enter password for $info->{h}: ";
-      ReadMode('noecho');
-      my $pass = <STDIN>;
-      ReadMode('normal');
-      chomp $pass;
-      print "\n";
-      $info->{p} = $pass;
+      $info->{p} = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
    }
-
-   my $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-      . join(';', map  { "$conn{$_}=$info->{$_}" } grep { defined $info->{$_} } qw(F h P S))
-      . ';mysql_read_default_group=mysql';
-   return DBI->connect($dsn, @{$info}{qw(u p)}, $db_options);
+   return DBI->connect($dsn_parser->get_cxn_params($info), $db_options);
 }
 
 sub col_list {
@@ -2427,6 +2880,6 @@ Baron Schwartz.
 
 =head1 VERSION
 
-This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision $.
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 =cut
