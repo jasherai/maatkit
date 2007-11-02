@@ -1,5 +1,8 @@
 Changelog for mysql-table-checksum and mysql-checksum-filter:
 
+   * Removed the dependency on Term::ReadKey
+   * Replaced some code with modules that are unit-tested.
+
 2007-10-01: version 1.1.16
 
    * Made mysql-checksum-filter able to compare tables in different databases.
