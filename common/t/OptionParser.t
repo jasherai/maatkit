@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 42;
+use Test::More tests => 48;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -334,6 +334,54 @@ is_deeply(
    \%opts,
    { %basic, foo => 5, bar => 1 },
    'Defaults encoded in description',
+);
+
+$p = new OptionParser(
+   { s => 'foo=z', d => 'Number' },
+);
+
+@ARGV = qw(--foo 5k);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, foo => 1024*5, },
+   '5K expanded',
+);
+
+@ARGV = qw(--foo -5k);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, foo => -1024*5, },
+   '-5K expanded',
+);
+
+@ARGV = qw(--foo +5k);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, foo => '+' . (1024*5), },
+   '+5K expanded',
+);
+
+@ARGV = qw(--foo 5);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   { %basic, foo => 5 },
+   '5 expanded',
+);
+
+@ARGV = qw(--foo 5z);
+%opts = $p->parse();
+is(
+   $p->{__error__}, 1,
+   'Bad number value threw error',
+);
+is_deeply(
+   $p->{notes},
+   ['Invalid --foo argument'],
+   'Bad number argument set note',
 );
 
 $p = new OptionParser(
