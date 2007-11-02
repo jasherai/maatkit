@@ -1,5 +1,8 @@
 Changelog for mysql-find:
 
+   * Removed the dependency on Term::ReadKey
+   * Replaced some code with modules that are unit-tested.
+
 2007-10-03: version 0.9.5
 
    * The --dbregex parameter didn't work right.

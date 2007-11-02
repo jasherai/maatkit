@@ -23,11 +23,378 @@
 use strict;
 use warnings FATAL => 'all';
 
-use DBI;
-use English qw(-no_match_vars);
+# ###########################################################################
+# OptionParser package 1178
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package OptionParser;
+
 use Getopt::Long;
 use List::Util qw(max);
-use Term::ReadKey;
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my %key_seen;
+   my %long_seen;
+   my %key_for;
+   my %defaults;
+   my @mutex;
+   my @atleast1;
+   my %long_for;
+   my %disables;
+   my %copyfrom;
+   unshift @opts,
+      { s => 'help',    d => 'Show this help message' },
+      { s => 'version', d => 'Output version information and exit' };
+   foreach my $opt ( @opts ) {
+      if ( ref $opt ) {
+         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         $opt->{k} = $short || $long;
+         $key_for{$long} = $opt->{k};
+         $long_for{$opt->{k}} = $long;
+         $long_for{$long} = $long;
+         $opt->{l} = $long;
+         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
+         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
+         $opt->{t} = $short;
+         $opt->{n} = $opt->{s} =~ m/!/;
+         $opt->{g} ||= 'o';
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
+            $opt->{y} = $y;
+            $opt->{s} =~ s/=./=s/;
+         }
+         $opt->{r} = $opt->{d} =~ m/required/;
+         if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
+            $defaults{$opt->{k}} = defined $def ? $def : 1;
+         }
+         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
+            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+         }
+      }
+      else { # It's an instruction.
+
+         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $long_for{$_};
+               } $class->get_participants($opt);
+            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+               push @mutex, \@participants;
+            }
+            if ( $opt =~ m/at least one|one and only one/ ) {
+               push @atleast1, \@participants;
+            }
+         }
+         elsif ( $opt =~ m/default to/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $key_for{$_};
+               } $class->get_participants($opt);
+            $copyfrom{$participants[0]} = $participants[1];
+         }
+
+      }
+   }
+
+   foreach my $dis ( keys %disables ) {
+      $disables{$dis} = [ map {
+            die "No such option '$_' while processing $dis" unless $long_for{$_};
+            $long_for{$_};
+         } @{$disables{$dis}} ];
+   }
+
+   return bless {
+      specs => [ grep { ref $_ } @opts ],
+      notes => [],
+      instr => [ grep { !ref $_ } @opts ],
+      mutex => \@mutex,
+      defaults => \%defaults,
+      long_for => \%long_for,
+      atleast1 => \@atleast1,
+      disables => \%disables,
+      key_for  => \%key_for,
+      copyfrom => \%copyfrom,
+      strict   => 1,
+      groups   => [ { k => 'o', d => 'Options' } ],
+   }, $class;
+}
+
+sub get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
+      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+         push @participants, $long;
+      }
+      else {
+         foreach my $short ( $thing =~ m/([^-])/g ) {
+            push @participants, $short;
+         }
+      }
+   }
+   return @participants;
+}
+
+sub parse {
+   my ( $self, %defaults ) = @_;
+   my @specs = @{$self->{specs}};
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+
+   my %opt_seen;
+   my %vals = %{$self->{defaults}};
+   @vals{keys %defaults} = values %defaults;
+   foreach my $spec ( @specs ) {
+      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
+      $opt_seen{$spec->{k}} = 1;
+   }
+
+   foreach my $key ( keys %defaults ) {
+      die "Cannot set default for non-existent option '$key'\n"
+         unless $opt_seen{$key};
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
+      or $self->error('Error parsing options');
+
+   if ( $vals{version} ) {
+      my $prog = $self->prog;
+      printf("%s  Ver %s Distrib %s Changeset %s\n",
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+      exit(0);
+   }
+
+   if ( @ARGV && $self->{strict} ) {
+      $self->error("Unrecognized command-line options @ARGV");
+   }
+
+   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
+      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      @vals{@disses} = map { undef } @disses;
+   }
+
+   foreach my $spec ( grep { $_->{r} } @specs ) {
+      if ( !defined $vals{$spec->{k}} ) {
+         $self->error("Required option --$spec->{l} must be specified");
+      }
+   }
+
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
+      if ( @set > 1 ) {
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
+         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
+               . " are mutually exclusive.";
+         $self->error($note);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
+      if ( !@set ) {
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$required}[ 0 .. scalar(@$required) - 2] );
+         $note .= " or --$self->{long_for}->{$required->[-1]}";
+         $self->error("Specify at least one of $note");
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'm' ) {
+         my ( $num, $suffix ) = $val =~ m/(\d+)([smhd])$/;
+         if ( $suffix ) {
+            $val = $suffix eq 's' ? $num            # Seconds
+                 : $suffix eq 'm' ? $num * 60       # Minutes
+                 : $suffix eq 'h' ? $num * 3600     # Hours
+                 :                  $num * 86400;   # Days
+            $vals{$spec->{k}} = $val;
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
+      elsif ( $spec->{y} eq 'd' ) {
+         my $from_key = $self->{copyfrom}->{$spec->{k}};
+         my $default = {};
+         if ( $from_key ) {
+            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
+         }
+         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
+      }
+      elsif ( $spec->{y} eq 'z' ) {
+         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+         if ( defined $num ) {
+            if ( $factor ) {
+               $num *= $factor_for{$factor};
+            }
+            $vals{$spec->{k}} = ($pre || '') . $num;
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
+         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
+      }
+      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
+         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
+      }
+   }
+
+   return %vals;
+}
+
+sub error {
+   my ( $self, $note ) = @_;
+   $self->{__error__} = 1;
+   push @{$self->{notes}}, $note;
+}
+
+sub prog {
+   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   return $prog || $PROGRAM_NAME;
+}
+
+sub prompt {
+   my ( $self ) = @_;
+   my $prog   = $self->prog;
+   my $prompt = $self->{prompt} || '<options>';
+   return "Usage: $prog $prompt\n";
+}
+
+sub descr {
+   my ( $self ) = @_;
+   my $prog = $self->prog;
+   my $descr  = $prog . ' ' . ($self->{descr} || '')
+          . "  For more details, please use the --help option, "
+          . "or try 'perldoc $prog' for complete documentation.";
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr =~ s/ +$//mg;
+   return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self, %opts ) = @_;
+   if ( $opts{help} ) {
+      print $self->usage(%opts);
+      exit(0);
+   }
+   elsif ( $self->{__error__} ) {
+      print $self->errors();
+      exit(0);
+   }
+}
+
+sub errors {
+   my ( $self ) = @_;
+   my $usage = $self->prompt() . "\n";
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   }
+   return $usage . "\n" . $self->descr();
+}
+
+sub usage {
+   my ( $self, %vals ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxs = max(0,
+      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
+      grep { $_->{t} } @specs);
+
+   my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
+
+   $maxs = max($lcol - 3, $maxs);
+
+   my $usage = $self->descr() . "\n" . $self->prompt();
+   foreach my $g ( @{$self->{groups}} ) {
+      $usage .= "\n$g->{d}:\n";
+      foreach my $spec ( sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs ) {
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t};
+         my $desc  = $spec->{d};
+         $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+         $desc =~ s/ +$//mg;
+         if ( $short ) {
+            $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+         }
+         else {
+            $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+         }
+      }
+   }
+
+   if ( (my @instr = @{$self->{instr}}) ) {
+      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   }
+   if ( $self->{dsn} ) {
+      $usage .= "\n" . $self->{dsn}->usage();
+   }
+   $usage .= "\nOptions and values after processing arguments:\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $val   = $vals{$spec->{k}};
+      my $type  = $spec->{y} || '';
+      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val             ? '(No value)'
+                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type =~ m/H|h/           ? join(',', sort keys %$val)
+                : $type =~ m/A|a/           ? join(',', @$val)
+                :                             $val;
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
+   }
+   return $usage;
+}
+
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH = 1;
+   print $prompt;
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
+}
+
+sub groups {
+   my ( $self, @groups ) = @_;
+   push @{$self->{groups}}, @groups;
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+
+package main;
+
+use DBI;
+use English qw(-no_match_vars);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -41,99 +408,69 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-# 'y' is the 'tYpe' of the option ('t' is generated later and used for something
-# else).
 my @opt_spec = (
-   { s => 'askpass',           y => 'o', d => 'Prompt for password for connections' },
-   { s => 'case-insensitive',  y => 'o', d => 'Regular expression patterns ignore case' },
-   { s => 'daystart',          y => 'o', d => 'Measure times from the beginning of the day' },
-   { s => 'defaults-file|F=s', y => 'o', d => 'Only read default options from the given file' },
-   { s => 'help',              y => 'o', d => 'Show this help message' },
-   { s => 'host|h=s',          y => 'o', d => 'Connect to host' },
-   { s => 'or',                y => 'o', d => 'Combine tests with OR, not AND' },
-   { s => 'password|p=s',      y => 'o', d => 'Password to use when connecting' },
-   { s => 'port|P=i',          y => 'o', d => 'Port number to use for connection' },
-   { s => 'quote!',            y => 'o', d => 'Quote database and table names (default)' },
-   { s => 'socket|S=s',        y => 'o', d => 'Socket file to use for connection' },
-   { s => 'user|u=s',          y => 'o', d => 'User for login if not current user' },
-   { s => 'version',           y => 'o', d => 'Output version information and exit' },
+   { s => 'askpass',           g => 'o', d => 'Prompt for password for connections' },
+   { s => 'case-insensitive',  g => 'o', d => 'Regular expression patterns ignore case' },
+   { s => 'daystart',          g => 'o', d => 'Measure times from the beginning of the day' },
+   { s => 'defaults-file|F=s', g => 'o', d => 'Only read mysql options from the given file' },
+   { s => 'host|h=s',          g => 'o', d => 'Connect to host' },
+   { s => 'or',                g => 'o', d => 'Combine tests with OR, not AND' },
+   { s => 'password|p=s',      g => 'o', d => 'Password to use when connecting' },
+   { s => 'port|P=i',          g => 'o', d => 'Port number to use for connection' },
+   { s => 'quote!',            g => 'o', d => 'Quote database and table names (default)' },
+   { s => 'socket|S=s',        g => 'o', d => 'Socket file to use for connection' },
+   { s => 'user|u=s',          g => 'o', d => 'User for login if not current user' },
 
-   { s => 'autoinc=s',         y => 't', d => 'Table next AUTO_INCREMENT is n' },
-   { s => 'avgrowlen=s',       y => 't', d => 'Table avg row len is n bytes' },
-   { s => 'checksum=s',        y => 't', d => 'Table checksum is n' },
-   { s => 'cmin=s',            y => 't', d => 'Table was created n minutes ago' },
-   { s => 'collation=s',       y => 't', d => 'Table collation matches pattern' },
-   { s => 'comment=s',         y => 't', d => 'Table comment matches pattern' },
-   { s => 'createopts=s',      y => 't', d => 'Table create option matches pattern' },
-   { s => 'ctime=s',           y => 't', d => 'Table was created n days ago' },
-   { s => 'datasize=s',        y => 't', d => 'Table data uses n bytes of space' },
-   { s => 'datafree=s',        y => 't', d => 'Table has n bytes of free space' },
-   { s => 'dblike=s',          y => 't', d => 'Database name matches SQL LIKE pattern' },
-   { s => 'dbregex=s',         y => 't', d => 'Database name matches this pattern' },
-   { s => 'empty',             y => 't', d => 'Table has no rows' },
-   { s => 'engine=s',          y => 't', d => 'Table storage engine matches this pattern' },
-   { s => 'indexsize=s',       y => 't', d => 'Table indexes use n bytes of space' },
-   { s => 'kmin=s',            y => 't', d => 'Table was checked n minutes ago' },
-   { s => 'ktime=s',           y => 't', d => 'Table was checked n days ago' },
-   { s => 'mmin=s',            y => 't', d => 'Table was last modified n minutes ago' },
-   { s => 'mtime=s',           y => 't', d => 'Table was last modified n days ago' },
-   { s => 'pid=s',             y => 't', d => 'Table name has nonexistent MySQL connection ID' },
-   { s => 'rows=s',            y => 't', d => 'Table has n rows' },
-   { s => 'rowformat=s',       y => 't', d => 'Table row format matches pattern' },
-   { s => 'tablesize=s',       y => 't', d => 'Table (data+index) uses n bytes of space' },
-   { s => 'tbllike=s',         y => 't', d => 'Table name matches SQL LIKE pattern' },
-   { s => 'tblregex=s',        y => 't', d => 'Table name matches this pattern' },
-   { s => 'tblversion=s',      y => 't', d => 'Table version is n' },
+   { s => 'autoinc=s',         g => 't', d => 'Table next AUTO_INCREMENT is n' },
+   { s => 'avgrowlen=z',       g => 't', d => 'Table avg row len is n bytes' },
+   { s => 'checksum=s',        g => 't', d => 'Table checksum is n' },
+   { s => 'cmin=z',            g => 't', d => 'Table was created n minutes ago' },
+   { s => 'collation=s',       g => 't', d => 'Table collation matches pattern' },
+   { s => 'comment=s',         g => 't', d => 'Table comment matches pattern' },
+   { s => 'createopts=s',      g => 't', d => 'Table create option matches pattern' },
+   { s => 'ctime=z',           g => 't', d => 'Table was created n days ago' },
+   { s => 'datasize=z',        g => 't', d => 'Table data uses n bytes of space' },
+   { s => 'datafree=z',        g => 't', d => 'Table has n bytes of free space' },
+   { s => 'dblike=s',          g => 't', d => 'Database name matches SQL LIKE pattern' },
+   { s => 'dbregex=s',         g => 't', d => 'Database name matches this pattern' },
+   { s => 'empty',             g => 't', d => 'Table has no rows' },
+   { s => 'engine=s',          g => 't', d => 'Table storage engine matches this pattern' },
+   { s => 'indexsize=z',       g => 't', d => 'Table indexes use n bytes of space' },
+   { s => 'kmin=z',            g => 't', d => 'Table was checked n minutes ago' },
+   { s => 'ktime=z',           g => 't', d => 'Table was checked n days ago' },
+   { s => 'mmin=z',            g => 't', d => 'Table was last modified n minutes ago' },
+   { s => 'mtime=z',           g => 't', d => 'Table was last modified n days ago' },
+   { s => 'pid=s',             g => 't', d => 'Table name has nonexistent MySQL connection ID' },
+   { s => 'rows=z',            g => 't', d => 'Table has n rows' },
+   { s => 'rowformat=s',       g => 't', d => 'Table row format matches pattern' },
+   { s => 'tablesize=z',       g => 't', d => 'Table (data+index) uses n bytes of space' },
+   { s => 'tbllike=s',         g => 't', d => 'Table name matches SQL LIKE pattern' },
+   { s => 'tblregex=s',        g => 't', d => 'Table name matches this pattern' },
+   { s => 'tblversion=z',      g => 't', d => 'Table version is n' },
 
-   { s => 'exec=s',            y => 'a', d => 'Execute this SQL with each item found' },
-   { s => 'exec_plus=s',       y => 'a', d => 'Execute this SQL with all items at once' },
-   { s => 'print',             y => 'a', d => 'Print the database and table name' },
-   { s => 'printf=s',          y => 'a', d => 'Print format, with escapes and directives' },
+   { s => 'exec=s',            g => 'a', d => 'Execute this SQL with each item found' },
+   { s => 'exec_plus=s',       g => 'a', d => 'Execute this SQL with all items at once' },
+   { s => 'print',             g => 'a', d => 'Print the database and table name' },
+   { s => 'printf=s',          g => 'a', d => 'Print format, with escapes and directives' },
 
 );
 
-# This is the container for the command-line options' values to be stored in
-# after processing.  Initial values are defaults.
-my %opts = ( quote => 1 );
-
-# Post-process...
-my %opt_seen;
-foreach my $spec ( @opt_spec ) {
-   my ( $long, $short ) = $spec->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-   $spec->{k} = $short || $long;
-   $spec->{l} = $long;
-   $spec->{t} = $short;
-   $spec->{n} = $spec->{s} =~ m/!/;
-   $opts{$spec->{k}} = undef unless defined $opts{$spec->{k}};
-   die "Duplicate option $spec->{k}" if $opt_seen{$spec->{k}}++;
-}
-
-Getopt::Long::Configure('no_ignore_case', 'bundling');
-GetOptions( map { $_->{s} => \$opts{$_->{k}} } @opt_spec) or $opts{help} = 1;
-
-if ( $opts{version} ) {
-   print "mysql-find  Ver $VERSION Distrib $DISTRIB Changeset $SVN_REV\n";
-   exit(0);
-}
-
-# ############################################################################
-# Validate and expand arguments
-# ############################################################################
-foreach my $option (
-      grep { defined $opts{$_} }
-      qw(cmin ctime datasize indexsize kmin ktime mmin mtime rows tablesize tblversion) )
-{
-   if ( $opts{$option} && $opts{$option} !~ m/^[+-]?\d+[kMG]?$/ ) {
-      warn "Invalid argument to --$option\n";
-      $opts{help} = 1;
-   }
-   $opts{$option} = expand($opts{$option});
-}
+my $opt_parser = new OptionParser(@opt_spec);
+$opt_parser->{prompt} = '[option]... [database...]';
+$opt_parser->{strict} = 0;
+$opt_parser->{descr} = 'searches for MySQL tables and executes actions, like '
+   . 'GNU find.  The default action is to print the database and table name.';
+$opt_parser->groups(
+   { k => 't', d => 'Tests' },
+   { k => 'a', d => 'Actions' },
+);
+my %opts = $opt_parser->parse;
 
 if ( $opts{pid} && $opts{pid} !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
-   warn "--pid regex doesn't capture digits with (\\d+)\n";
-   $opts{help} = 1;
+   $opt_parser->error("--pid regex doesn't capture digits with (\\d+)");
 }
+
+$opt_parser->usage_or_errors(%opts);
 
 my %arg_for = (
    a => 'Auto_increment',
@@ -174,32 +511,6 @@ foreach my $thing (qw(exec printf)) {
    if ( grep { $_ !~ m/^(Database|Name)$/ } @$arg_names ) {
       $showstat = 1;
    }
-}
-
-if ( $opts{help} ) {
-   print "Usage: mysql-find [option]... [database...]\n";
-   my %sections = ( o => 'Options', t => 'Tests', a => 'Actions' );
-   my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
-   foreach my $section ( qw(o t a) ) {
-      print "\n$sections{$section}:\n";
-      foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
-         next unless $spec->{y} eq $section;
-         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-         my $short = $spec->{t} ? "-$spec->{t}" : '';
-         printf("  --%-${maxw}s %-4s %s\n", $long, $short, $spec->{d});
-      }
-   }
-
-   print <<USAGE;
-
-mysql-find searches for MySQL tables and executes actions, like GNU find.  The
-default action is to print the database and table name.  Connection options are
-read from MySQL option files.  For more details, please read the documentation:
-
-   perldoc mysql-find
-
-USAGE
-   exit(0);
 }
 
 # ############################################################################
@@ -343,11 +654,7 @@ foreach my $test ( keys %test_for, keys %action_for ) {
 
 # Connect to the database
 if ( !$opts{p} && $opts{askpass} ) {
-   print "Enter password: ";
-   ReadMode('noecho');
-   chomp($opts{p} = <STDIN>);
-   ReadMode('normal');
-   print "\n";
+   $opts{p} = OptionParser::prompt_noecho("Enter password: ");
 }
 
 my %conn = (
