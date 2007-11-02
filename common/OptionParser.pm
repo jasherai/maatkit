@@ -30,6 +30,7 @@ use English qw(-no_match_vars);
 # {
 #   s => GetOpt::Long specification,
 #   d => --help output
+#   g => Optional grouping (default is "o => Options")
 # }
 # Supported 's' values are long|short key, whether something is negatable and
 # whether it can be specified multiple times. Expands the compact specs into
@@ -73,6 +74,7 @@ sub new {
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
+         $opt->{g} ||= 'o';
          # Option has a type
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAa])/) ) {
             $opt->{y} = $y;
@@ -135,6 +137,7 @@ sub new {
       key_for  => \%key_for,
       copyfrom => \%copyfrom,
       strict   => 1,
+      groups   => [ { k => 'o', d => 'Options' } ],
    }, $class;
 }
 
@@ -346,21 +349,25 @@ sub usage {
    $maxs = max($lcol - 3, $maxs);
 
    # Format and return the options.
-   my $usage = $self->descr() . "\n" . $self->prompt() . "\nOptions:\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
-      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t};
-      my $desc  = $spec->{d};
-      # Wrap long descriptions
-      $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
-      $desc =~ s/ +$//mg;
-      if ( $short ) {
-         $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
-      }
-      else {
-         $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+   my $usage = $self->descr() . "\n" . $self->prompt();
+   foreach my $g ( @{$self->{groups}} ) {
+      $usage .= "\n$g->{d}:\n";
+      foreach my $spec ( sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs ) {
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t};
+         my $desc  = $spec->{d};
+         # Wrap long descriptions
+         $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+         $desc =~ s/ +$//mg;
+         if ( $short ) {
+            $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+         }
+         else {
+            $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+         }
       }
    }
+
    if ( (my @instr = @{$self->{instr}}) ) {
       $usage .= join("\n", map { "  $_" } @instr) . "\n";
    }
@@ -403,6 +410,11 @@ sub prompt_noecho {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
    }
    return $response;
+}
+
+sub groups {
+   my ( $self, @groups ) = @_;
+   push @{$self->{groups}}, @groups;
 }
 
 1;
