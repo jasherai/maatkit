@@ -24,7 +24,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1168
+# OptionParser package 1178
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -35,27 +35,6 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-# Holds command-line options.  Each option is a hashref:
-# {
-#   s => GetOpt::Long specification,
-#   d => --help output
-# }
-# Supported 's' values are long|short key, whether something is negatable and
-# whether it can be specified multiple times. Expands the compact specs into
-# their full form.
-# * k is the option's key
-# * l is the option's long name
-# * t is the option's short name
-# * n is whether the option is negatable
-# * r is whether the option is required
-# * y is the option's type.  In addition to Getopt::Long's types (siof), the
-#     following types can be used:
-#     * t = time, with an optional suffix of s/h/m/d
-#     * d = DSN, as provided by a DSNParser which is in $self->{dsn}.
-#     * H = hash, formed from a comma-separated list
-#     * h = hash as above, but only if a value is given
-# Returns the options as a hashref.  Options can also be plain-text
-# instructions, and instructions are recognized inside the 'd' as well.
 sub new {
    my ( $class, @opts ) = @_;
    my %key_seen;
@@ -82,19 +61,16 @@ sub new {
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
-         # Option has a type
-         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAa])/) ) {
+         $opt->{g} ||= 'o';
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
-         # Option is required if it contains the word 'required'
          $opt->{r} = $opt->{d} =~ m/required/;
-         # Option has a default value if it says 'default'
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
-            # Defer checking till later because of possible forward references
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
          }
       }
@@ -113,7 +89,6 @@ sub new {
             }
          }
          elsif ( $opt =~ m/default to/ ) {
-            # It's an --x defaults to --y option.
             my @participants = map {
                   die "No such option '$_' in $opt" unless $long_for{$_};
                   $key_for{$_};
@@ -124,7 +99,6 @@ sub new {
       }
    }
 
-   # Check forward references (and convert to long options) in 'disables' rules.
    foreach my $dis ( keys %disables ) {
       $disables{$dis} = [ map {
             die "No such option '$_' while processing $dis" unless $long_for{$_};
@@ -144,6 +118,7 @@ sub new {
       key_for  => \%key_for,
       copyfrom => \%copyfrom,
       strict   => 1,
+      groups   => [ { k => 'o', d => 'Options' } ],
    }, $class;
 }
 
@@ -166,10 +141,10 @@ sub get_participants {
 sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
 
    my %opt_seen;
    my %vals = %{$self->{defaults}};
-   # Defaults passed as arg override defaults from descriptions.
    @vals{keys %defaults} = values %defaults;
    foreach my $spec ( @specs ) {
       $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
@@ -196,20 +171,17 @@ sub parse {
       $self->error("Unrecognized command-line options @ARGV");
    }
 
-   # Disable options as specified.
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
       @vals{@disses} = map { undef } @disses;
    }
 
-   # Check required options (oxymoron?)
    foreach my $spec ( grep { $_->{r} } @specs ) {
       if ( !defined $vals{$spec->{k}} ) {
          $self->error("Required option --$spec->{l} must be specified");
       }
    }
 
-   # Check mutex options
    foreach my $mutex ( @{$self->{mutex}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
       if ( @set > 1 ) {
@@ -222,7 +194,6 @@ sub parse {
       }
    }
 
-   # Check mutually required options
    foreach my $required ( @{$self->{atleast1}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
       if ( !@set ) {
@@ -234,7 +205,6 @@ sub parse {
       }
    }
 
-   # Validate typed arguments.
    foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'm' ) {
@@ -258,9 +228,20 @@ sub parse {
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
       }
+      elsif ( $spec->{y} eq 'z' ) {
+         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+         if ( defined $num ) {
+            if ( $factor ) {
+               $num *= $factor_for{$factor};
+            }
+            $vals{$spec->{k}} = ($pre || '') . $num;
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
    }
 
-   # Process list arguments
    foreach my $spec ( grep { $_->{y} } @specs ) {
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
@@ -315,8 +296,6 @@ sub usage_or_errors {
    }
 }
 
-# Explains what errors were found while processing command-line arguments and
-# gives a brief overview so you can get more information.
 sub errors {
    my ( $self ) = @_;
    my $usage = $self->prompt() . "\n";
@@ -326,50 +305,40 @@ sub errors {
    return $usage . "\n" . $self->descr();
 }
 
-# Prints out command-line help.  The format is like this:
-# --foo  -F   Description of --foo
-# --bars -B   Description of --bar
-# --longopt   Description of --longopt
-# Note that the short options are aligned along the right edge of their longest
-# long option, but long options that don't have a short option are allowed to
-# protrude past that.
 sub usage {
    my ( $self, %vals ) = @_;
    my @specs = @{$self->{specs}};
 
-   # Find how wide the widest long option is.
    my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
 
-   # Find how wide the widest option with a short option is.
    my $maxs = max(0,
       map { length($_->{l}) + ($_->{n} ? 4 : 0)}
       grep { $_->{t} } @specs);
 
-   # Find how wide the 'left column' (long + short opts) is, and therefore how
-   # much space to give options and how much to give descriptions.
    my $lcol = max($maxl, ($maxs + 3));
    my $rcol = 80 - $lcol - 6;
    my $rpad = ' ' x ( 80 - $rcol );
 
-   # Adjust the width of the options that have long and short both.
    $maxs = max($lcol - 3, $maxs);
 
-   # Format and return the options.
-   my $usage = $self->descr() . "\n" . $self->prompt() . "\nOptions:\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
-      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t};
-      my $desc  = $spec->{d};
-      # Wrap long descriptions
-      $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
-      $desc =~ s/ +$//mg;
-      if ( $short ) {
-         $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
-      }
-      else {
-         $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+   my $usage = $self->descr() . "\n" . $self->prompt();
+   foreach my $g ( @{$self->{groups}} ) {
+      $usage .= "\n$g->{d}:\n";
+      foreach my $spec ( sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs ) {
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t};
+         my $desc  = $spec->{d};
+         $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+         $desc =~ s/ +$//mg;
+         if ( $short ) {
+            $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+         }
+         else {
+            $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+         }
       }
    }
+
    if ( (my @instr = @{$self->{instr}}) ) {
       $usage .= join("\n", map { "  $_" } @instr) . "\n";
    }
@@ -392,9 +361,6 @@ sub usage {
    return $usage;
 }
 
-# Tries to prompt and read the answer without echoing the answer to the
-# terminal.  This isn't really related to this package, but it's too handy not
-# to put here.  OK, it's related, it gets config information from the user.
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
@@ -412,6 +378,11 @@ sub prompt_noecho {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
    }
    return $response;
+}
+
+sub groups {
+   my ( $self, @groups ) = @_;
+   push @{$self->{groups}}, @groups;
 }
 
 1;
