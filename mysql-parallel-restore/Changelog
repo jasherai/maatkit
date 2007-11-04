@@ -1,6 +1,8 @@
 Changelog for mysql-parallel-restore:
 
-   * Removed the dependency on Term::ReadKey
+   * Made command-line help easier to use.
+   * Optimized the calls to CREATE DATABASE with the --createdb argument.
+   * Removed the dependency on Term::ReadKey.
    * CHARACTER SET was added to LOAD DATA INFILE even before MySQL 5.0.38.
    * Replaced some code with modules that are unit-tested.
    * Fixed documentation formatting errors.

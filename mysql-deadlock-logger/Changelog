@@ -1,5 +1,6 @@
 Changelog for mysql-deadlock-logger:
 
+   * Made command-line help easier to use.
    * Removed the dependency on Term::ReadKey.
    * Replaced some code with modules that are unit-tested.
 

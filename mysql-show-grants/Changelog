@@ -1,6 +1,7 @@
 Changelog for mysql-show-grants:
 
-   * Removed the dependency on Term::ReadKey
+   * Made command-line help easier to use.
+   * Removed the dependency on Term::ReadKey.
    * Replaced some code with modules that are unit-tested.
 
 2007-08-23: version 1.0.3

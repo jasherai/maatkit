@@ -1,6 +1,7 @@
 Changelog for mysql-heartbeat:
 
-   * Removed the dependency on Term::ReadKey
+   * Made command-line help easier to use.
+   * Removed the dependency on Term::ReadKey.
    * Added support for PostgreSQL with the --dbidriver option.
    * Replaced some code with modules.
 
