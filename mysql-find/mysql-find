@@ -391,6 +391,33 @@ sub groups {
 # End OptionParser package
 # ###########################################################################
 
+# ###########################################################################
+# Quoter package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
 package main;
 
 use DBI;
@@ -455,6 +482,7 @@ my @opt_spec = (
 
 );
 
+my $q          = new Quoter();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{prompt} = '[option]... [database...]';
 $opt_parser->{strict} = 0;
@@ -754,8 +782,8 @@ foreach my $database ( @databases ) {
    # Quote database and table names if desired
    if ( $opts{quote} ) {
       foreach my $table ( @tables ) {
-         $table->{Database} = $dbh->quote_identifier($table->{Database});
-         $table->{Name}     = $dbh->quote_identifier($table->{Name});
+         $table->{Database} = $q->quote($table->{Database});
+         $table->{Name}     = $q->quote($table->{Name});
       }
    }
 

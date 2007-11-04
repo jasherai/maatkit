@@ -392,6 +392,33 @@ sub groups {
 # ###########################################################################
 
 # ###########################################################################
+# Quoter package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
 # DSNParser package 1149
 # ###########################################################################
 use strict;
@@ -655,7 +682,8 @@ my @opt_spec = (
    { s => 'where|W=s',        d => 'WHERE clause to restrict syncing to part of the table' },
 );
 
-my $vp = new VersionParser();
+my $q          = new Quoter();
+my $vp         = new VersionParser();
 my $dsn_parser = new DSNParser(
    {
       key  => 'D',
@@ -760,7 +788,7 @@ foreach my $table ( $source, $dest ) {
 
    $table->{db_tbl} =
       join('.',
-      map  { $table->{dbh}->quote_identifier($_) }
+      map  { $q->quote($_) }
       grep { $_ }
       map  { $_ =~ s/(^`|`$)//g; $_; }
       grep { $_ }
@@ -1718,7 +1746,7 @@ sub handle_data_change {
             my @cols = grep { !exists($where->{$_}) } @{$which->{info}->{cols}};
             $query = "UPDATE $which->{db_tbl} SET "
                . join(',',
-                  map { $dbh->quote_identifier($_) . '=' .  $dbh->quote($res->{$_}) } @cols)
+                  map { $q->quote($_) . '=' .  $dbh->quote($res->{$_}) } @cols)
                . ' ' . $crit;
          }
          if ( $opts{p} ) {
@@ -1837,7 +1865,7 @@ sub make_where_clause {
    my @clauses = map {
       my $val = $where->{$_};
       my $sep = defined $val ? ' = ' : ' IS ';
-      $dbh->quote_identifier($_) . $sep . $dbh->quote($val);
+      $q->quote($_) . $sep . $dbh->quote($val);
    } keys %$where;
    my $clause = @clauses 
       ? 'WHERE (' . join(' AND ', @clauses) . ')'
