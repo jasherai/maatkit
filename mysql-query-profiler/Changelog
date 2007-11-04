@@ -1,6 +1,7 @@
 Changelog for mysql-query-profiler and mysql-profile-compact:
 
-   * Removed the dependency on Term::ReadKey
+   * Made command-line help easier to use.
+   * Removed the dependency on Term::ReadKey.
    * Replaced some code with modules that are unit-tested.
 
 2007-09-20: version 1.1.5
