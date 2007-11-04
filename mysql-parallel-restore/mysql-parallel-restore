@@ -391,6 +391,33 @@ sub groups {
 # ###########################################################################
 
 # ###########################################################################
+# Quoter package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
 # DSNParser package 1149
 # ###########################################################################
 use strict;
@@ -586,15 +613,15 @@ my @opt_spec = (
    { s => 'createdb',          d => 'Create databases that do not exist' },
    { s => 'csv',               d => 'Files are in in CSV format (implies --tab)' },
    { s => 'database|D=s',      d => 'Specify the database for all tables' },
-   { s => 'databases|d=s',     d => 'Restore only this comma-separated list of databases' },
+   { s => 'databases|d=h',     d => 'Restore only this comma-separated list of databases' },
    { s => 'dbregex=s',         d => 'Restore only databases whose names match this pattern' },
    { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
    { s => 'disablekeys!',      d => 'Set DISABLE KEYS before loading files' },
    { s => 'fifo!',             d => 'Stream files into a FIFO for --tab; default' },
    { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'ignoredb|g=s',      d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoredb|g=H',      d => 'Ignore this comma-separated list of databases' },
    { s => 'ignore|i',          d => 'Use the IGNORE option to LOAD DATA INFILE' },
-   { s => 'ignoretbl|n=s',     d => 'Ignore this comma-separated list of tables' },
+   { s => 'ignoretbl|n=H',     d => 'Ignore this comma-separated list of tables' },
    { s => 'local|L',           d => 'Use the LOCAL option to LOAD DATA INFILE' },
    { s => 'locktables!',       d => 'Lock tables before LOAD DATA INFILE' },
    { s => 'noautovalon0!',     d => 'Set NO_AUTO_VALUE_ON_ZERO before LOAD DATA INFILE' },
@@ -608,7 +635,7 @@ my @opt_spec = (
    { s => 'replace|r',         d => 'Use the REPLACE option to LOAD DATA INFILE' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'sql!',              d => 'Load SQL files first with mysql; default' },
-   { s => 'tables|t=s',        d => 'Restore only this comma-separated list of tables' },
+   { s => 'tables|t=h',        d => 'Restore only this comma-separated list of tables' },
    { s => 'tab|T',             d => 'Restore tab-separated files with LOAD DATA INFILE' },
    { s => 'tblregex=s',        d => 'Restore only tables whose names match this pattern' },
    { s => 'test',     ,        d => 'Print commands instead of executing them' },
@@ -619,7 +646,11 @@ my @opt_spec = (
    { s => 'wait|w=m',          d => 'Wait limit when server is down (default 5m)' },
 );
 
-my $opt_parser = OptionParser->new(@opt_spec);
+my $q          = new Quoter();
+my $opt_parser = new OptionParser(@opt_spec);
+$opt_parser->{strict} = 0;
+$opt_parser->{prompt} = '<options> PATH [PATH...]';
+$opt_parser->{descr} = 'loads files into MySQL in parallel.';
 %opts = $opt_parser->parse(%opts);
 
 # ############################################################################
@@ -637,7 +668,7 @@ if ( $opts{csv} ) {
    $opts{T} = 1;
 }
 
-if ( $opts{T} ) {
+if ( $opts{T} ) { # TODO 'implies
    $opts{disablekeys}    = 1 unless defined $opts{disablekeys};
    $opts{noautovalon0}   = 1 unless defined $opts{noautovalon0};
    $opts{nobinlog}       = 1 unless defined $opts{nobinlog};
@@ -645,21 +676,16 @@ if ( $opts{T} ) {
    $opts{noforeignkeys}  = 1 unless defined $opts{noforeignkeys};
 }
 
-if ( !$opts{help} ) {
+if ( !@ARGV ) {
+   $opt_parser->error("You did not specify any files to restore");
+}
 
-   if ( !$opts{help} && !@ARGV ) {
-      warn "You did not specify any files to restore\n";
-      $opts{help} = 1;
-   }
-
-   foreach my $opt ( qw(locktables truncate disablekeys noautovalon0
-                        nouniquechecks noforeignkeys nobinlog
-                        bulkinsbufsize commit L i r) ) {
-      if ( defined $opts{$opt} && !$opts{T} ) {
-         warn 'Option ' . (length($opt) > 1 ? '--' : '-')
-            . "$opt is ineffective without --tab or --csv\n";
-         $opts{help} = 1;
-      }
+foreach my $opt ( qw(locktables truncate disablekeys noautovalon0
+                     nouniquechecks noforeignkeys nobinlog
+                     bulkinsbufsize commit L i r) ) {
+   if ( defined $opts{$opt} && !$opts{T} ) {
+      $opt_parser->error('Option ' . (length($opt) > 1 ? '--' : '-')
+         . "$opt is ineffective without --tab or --csv");
    }
 }
 
@@ -672,6 +698,8 @@ if ( $opts{fifo} ) {
 if ( defined $opts{umask} ) {
    umask oct($opts{umask});
 }
+
+$opt_parser->usage_or_errors(%opts);
 
 # ############################################################################
 # Gather connection parameters to pass to mysql.  Order matters; mysql
@@ -689,34 +717,6 @@ if ( !defined $opts{p} && $opts{askpass} ) {
    [qw(--user          u)],
 );
 @conn_params = map { "$_->[0]='$opts{$_->[1]}'" } grep { defined $opts{$_->[1]} } @conn_params;
-
-if ( $opts{help} ) {
-   print "Usage: mysql-parallel-restore <options> PATH [PATH...]\n\n";
-   print $opt_parser->usage();
-   (my $usage = <<"   USAGE") =~ s/^      //gm;
-
-      mysql-parallel-restore loads files into MySQL in parallel.  For
-      more details, please read the documentation:
-
-         perldoc mysql-parallel-restore
-
-   USAGE
-   print $usage;
-   exit(0);
-}
-
-# Make comma-separated lists into hashes. TODO: do in OptionParser
-if ( $opts{d} ) {
-   $opts{d} = { map { $_ => 1 } split(/,\s*/, $opts{d}) };
-}
-$opts{g} = { map { $_ => 1 } split(/,\s*/, $opts{g} || '') };
-if ( $opts{t} ) {
-   $opts{t} = { map { $_ => 1 } split(/,\s*/, $opts{t}) };
-}
-$opts{n} = { map { $_ => 1 } split(/,\s*/, $opts{n} || '') };
-if ( $opts{e} ) {
-   $opts{e} = { map { lc($_) => 1 } split(/,\s*/, $opts{e}) };
-}
 
 # ############################################################################
 # Connect.
@@ -790,6 +790,15 @@ File::Find::find(
    my %seen;
    @tables_to_do = grep { !$seen{$_->{D}}->{$_->{N}}++ } @tables_to_do;
    $stats{tables} = scalar(@tables_to_do);
+
+   if ( $opts{createdb} ) {
+      my %dbs;
+      map { $dbs{ $_->{D} }++ } @tables_to_do;
+      foreach my $db ( keys %dbs ) {
+         $dbh->do("CREATE DATABASE IF NOT EXISTS " . $q->quote($db));
+      }
+   }
+
 }
 
 # #########################################################################
@@ -929,11 +938,6 @@ sub do_table {
    }
 
    my $dbh;
-
-   if ( $opts{createdb} ) {
-      $dbh = get_dbh();
-      $dbh->do("CREATE DATABASE IF NOT EXISTS `$db`");
-   }
 
    my ($fifo, $load_from, $loaded);
 
