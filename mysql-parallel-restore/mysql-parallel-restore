@@ -23,7 +23,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1158
+# OptionParser package 1178
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -60,7 +60,8 @@ sub new {
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
-         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAa])/) ) {
+         $opt->{g} ||= 'o';
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
@@ -116,6 +117,7 @@ sub new {
       key_for  => \%key_for,
       copyfrom => \%copyfrom,
       strict   => 1,
+      groups   => [ { k => 'o', d => 'Options' } ],
    }, $class;
 }
 
@@ -138,6 +140,7 @@ sub get_participants {
 sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
 
    my %opt_seen;
    my %vals = %{$self->{defaults}};
@@ -224,6 +227,18 @@ sub parse {
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
       }
+      elsif ( $spec->{y} eq 'z' ) {
+         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+         if ( defined $num ) {
+            if ( $factor ) {
+               $num *= $factor_for{$factor};
+            }
+            $vals{$spec->{k}} = ($pre || '') . $num;
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
    }
 
    foreach my $spec ( grep { $_->{y} } @specs ) {
@@ -305,20 +320,24 @@ sub usage {
 
    $maxs = max($lcol - 3, $maxs);
 
-   my $usage = $self->descr() . "\n" . $self->prompt() . "\nOptions:\n";
-   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
-      my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
-      my $short = $spec->{t};
-      my $desc  = $spec->{d};
-      $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
-      $desc =~ s/ +$//mg;
-      if ( $short ) {
-         $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
-      }
-      else {
-         $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+   my $usage = $self->descr() . "\n" . $self->prompt();
+   foreach my $g ( @{$self->{groups}} ) {
+      $usage .= "\n$g->{d}:\n";
+      foreach my $spec ( sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs ) {
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t};
+         my $desc  = $spec->{d};
+         $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+         $desc =~ s/ +$//mg;
+         if ( $short ) {
+            $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+         }
+         else {
+            $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+         }
       }
    }
+
    if ( (my @instr = @{$self->{instr}}) ) {
       $usage .= join("\n", map { "  $_" } @instr) . "\n";
    }
@@ -344,7 +363,7 @@ sub usage {
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
-   local $OUTPUT_AUTOFLUSH;
+   local $OUTPUT_AUTOFLUSH = 1;
    print $prompt;
    my $response;
    eval {
@@ -360,6 +379,11 @@ sub prompt_noecho {
    return $response;
 }
 
+sub groups {
+   my ( $self, @groups ) = @_;
+   push @{$self->{groups}}, @groups;
+}
+
 1;
 
 # ###########################################################################
@@ -367,7 +391,7 @@ sub prompt_noecho {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1120
+# DSNParser package 1149
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -450,6 +474,10 @@ sub parse {
             $vals{$key} = $defaults->{$key};
          }
       }
+      foreach my $key ( keys %hash ) {
+         die "Unrecognized DSN part '$key' in '$dsn'\n"
+            unless exists $opts{$key};
+      }
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
@@ -459,10 +487,16 @@ sub parse {
    return \%vals;
 }
 
+sub as_string {
+   my ( $self, $dsn ) = @_;
+   return $dsn unless ref $dsn;
+   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} } sort keys %$dsn );
+}
+
 sub usage {
    my ( $self ) = @_;
    my $usage
-      = "  DSN syntax: key=value[,key=value...] Allowable DSN keys:\n"
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
       . "  KEY  COPY  MEANING\n"
       . "  ===  ====  =============================================\n";
    my %opts = %{$self->{opts}};
