@@ -372,6 +372,33 @@ sub prompt_noecho {
 # ###########################################################################
 
 # ###########################################################################
+# Quoter package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
 # DSNParser package 1149
 # ###########################################################################
 use strict;
@@ -552,6 +579,7 @@ my @opt_spec = (
    'DSN values in --dest default to values from --source',
 );
 
+my $q          = new Quoter();
 my $opt_parser = OptionParser->new(@opt_spec);
 $opt_parser->{dsn} = $dp;
 $opt_parser->{prompt} = '--source DSN <options>';
@@ -645,12 +673,12 @@ if ( $opts{C} ) {
 if ( $dest && $dest->{t} ) {
    my $db_tbl = 
       join('.',
-      map  {  $dbh->quote_identifier($_) }
+      map  {  $q->quote($_) }
       grep { $_ }
       ( $dest->{D}, $dest->{t} ));
 
    $dbh2     = get_dbh($dest, 0);
-   my $cols  = join(',', map { $dbh->quote_identifier($_) } @cols);
+   my $cols  = join(',', map { $q->quote($_) } @cols);
    my $parms = join(',', map { '?' } @cols);
    $ins_sth  = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
 }

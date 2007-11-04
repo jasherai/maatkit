@@ -1,26 +1,3 @@
-Module-ify (and keep up with it):
-   mysql-duplicate-key-checker
-   mysql-find
-   mysql-finger
-   mysql-heartbeat
-   mysql-log-parser
-   mysql-parallel-dump
-   mysql-parallel-restore
-   mysql-query-profiler
-   mysql-random-table
-   mysql-schema-sync
-   mysql-show-grants
-   mysql-slave-delay
-   mysql-slave-restart
-   mysql-table-checksum
-   mysql-table-sync
-   mysqltoolkit
-   mysql-visual-explain
-
-* quote_identifier doesn't work right.  See mysql-archiver (I think).
-
-Pipe output from duplicate-key-checker into another tool to graph structures 
-   (check out dot for graphing)
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 http://www.mysqldiff.org/
 query sniper:
@@ -29,9 +6,6 @@ query sniper:
    * Specify users/hosts NOT to kill (by default root/localhost)
 mysql-relay-prefetch: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
 * read binlogs from many servers and apply them to one.
-
-Wrapper around netcat file copies
-wrapper to discover LVM and take/release snapshots
 
 Swallow a log file and output only the selected fields.  This could be piped
 to a colorizer or pushed into mysql-query-profiler.
