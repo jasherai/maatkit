@@ -419,7 +419,7 @@ sub quote {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1149
+# DSNParser package 1209
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -489,23 +489,21 @@ sub parse {
    my %vals;
    my %opts = %{$self->{opts}};
    if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
-      $vals{ $self->prop('autokey') } = $dsn;
+      $dsn = $self->prop('autokey') . "=$dsn";
    }
-   else {
-      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-      foreach my $key ( keys %opts ) {
-         $vals{$key} = $hash{$key};
-         if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-            $vals{$key} = $prev->{$key};
-         }
-         if ( !defined $vals{$key} ) {
-            $vals{$key} = $defaults->{$key};
-         }
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   foreach my $key ( keys %opts ) {
+      $vals{$key} = $hash{$key};
+      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+         $vals{$key} = $prev->{$key};
       }
-      foreach my $key ( keys %hash ) {
-         die "Unrecognized DSN part '$key' in '$dsn'\n"
-            unless exists $opts{$key};
+      if ( !defined $vals{$key} ) {
+         $vals{$key} = $defaults->{$key};
       }
+   }
+   foreach my $key ( keys %hash ) {
+      die "Unrecognized DSN part '$key' in '$dsn'\n"
+         unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
@@ -518,7 +516,7 @@ sub parse {
 sub as_string {
    my ( $self, $dsn ) = @_;
    return $dsn unless ref $dsn;
-   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} } sort keys %$dsn );
+   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} && $self->{opts}->{$_} } sort keys %$dsn );
 }
 
 sub usage {
@@ -734,7 +732,7 @@ if ( $opts{s} && $opts{s} !~ m/^(s|r)/ ) {
 }
 
 if ( !$source || (!$dest && !$opts{r}) ) {
-   $opt_parser->error('SOURCE is required, and DEST is required unless --replicate is specified');
+   $opt_parser->error('SOURCE is required, and DEST is required unless --synctomaster is specified');
 }
 
 $opt_parser->usage_or_errors(%opts);
