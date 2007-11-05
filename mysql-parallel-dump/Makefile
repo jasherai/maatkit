@@ -13,7 +13,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-parallel-dump
-VERSION = 0.9.10
+VERSION = 0.9.11
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \

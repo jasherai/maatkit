@@ -1,5 +1,7 @@
 Changelog for mysql-parallel-restore:
 
+2007-11-04: version 0.9.1
+
    * Made command-line help easier to use.
    * Optimized the calls to CREATE DATABASE with the --createdb argument.
    * Removed the dependency on Term::ReadKey.

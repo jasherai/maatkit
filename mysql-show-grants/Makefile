@@ -15,7 +15,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-show-grants
-VERSION = 1.0.3
+VERSION = 1.0.4
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \

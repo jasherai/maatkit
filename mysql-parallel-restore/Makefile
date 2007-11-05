@@ -13,7 +13,7 @@ MKDIR = /bin/mkdir
 # define some variables
 
 NAME = mysql-parallel-restore
-VERSION = 0.9.0
+VERSION = 0.9.1
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \
