@@ -22,18 +22,59 @@ use warnings FATAL => 'all';
 
 package MySQLFind;
 
+# SYNOPSIS:
+#   $f = new MySQLFind(
+#      dbh       => $dbh,
+#      databases => {
+#         permit => { a => 1, b => 1, },
+#         reject => { ... },
+#         regexp => 'pattern',
+#         like   => 'pattern',
+#      },
+#   );
+
 use English qw(-no_match_vars);
 
-sub _db_filter {
-   shift @_ if $_[0] eq __PACKAGE__ or ref $_[0] eq __PACKAGE__;
-   my %opts = @_;
-   foreach my $db ( @{$opts{dbs}} ) {
-      next if $db =~ m/^(information_schema|lost\+found)$/i;
-      $opts{code}->({
-         type => 'database',
-         name => $db,
-      });
+sub new {
+   my ( $class, %opts ) = @_;
+   bless \%opts, $class;
+}
+
+sub find_databases {
+   my ( $self ) = @_;
+   my $permit = $self->{databases}->{permit};
+   my $reject = $self->{databases}->{reject};
+   my $regexp = $self->{databases}->{regexp};
+   return grep {
+      $_ !~ m/^(information_schema|lost\+found)$/i
+         && ( !$reject || !$reject->{$_} )
+         && ( !$permit ||  $permit->{$_} )
+         && ( !$regexp ||  m/$regexp/ )
+   } $self->_fetch_db_list();
+}
+
+sub find_tables {
+   my ( $self, %opts ) = @_;
+   die "database is required" unless $opts{database};
+   my $permit = $self->{tables}->{permit};
+   my $reject = $self->{tables}->{reject};
+   return grep {
+      ( !$reject || !$reject->{$_} )
+         && ( !$permit ||  $permit->{$_} )
+   } $self->_fetch_table_list($opts{database});
+}
+
+sub _fetch_db_list {
+   my ( $self ) = @_;
+   my $sql = 'SHOW DATABASES';
+   my @params;
+   if ( $self->{databases}->{like} ) {
+      $sql .= ' LIKE ?';
+      push @params, $self->{databases}->{like};
    }
+   my $sth = $self->{dbh}->prepare($sql);
+   $sth->execute( @params );
+   return map { $_->[0] } @{$sth->fetchall_arrayref()};
 }
 
 1;
@@ -41,3 +82,21 @@ sub _db_filter {
 # ###########################################################################
 # End MySQLFind package
 # ###########################################################################
+
+__DATA__
+   my $need_table_status = $age || $opts{C} =~ m/\D/;
+
+   my $tables = $dbh->selectall_arrayref(
+      $need_table_status
+         ? "SHOW TABLE STATUS FROM `$database`"
+         : "SHOW /*!50002 FULL*/ TABLES FROM `$database`",
+      { Slice => {} });
+
+   if ( @$tables ) {
+
+      my ( $name_key )
+         = $need_table_status
+         ? ( qw(name) )
+         : ( grep { $_ ne 'table_type' } keys %{$tables->[0]} );
+      my $type_key = $need_table_status ? 'comment' : 'table_type';
+
