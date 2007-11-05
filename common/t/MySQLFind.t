@@ -19,51 +19,101 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 17;
 use English qw(-no_match_vars);
+use DBI;
 
 require "../MySQLFind.pm";
+my $f;
+my %dbs;
+my @setup_dbs = qw(lost+found information_schema
+   test_mysql_finder_1 test_mysql_finder_2);
+my %existing_dbs;
 
-my @found;
-sub callback {
-   my ( $item ) = @_;
-   push @found, $item;
+# Open a connection to MySQL, or skip the rest of the tests.
+my $dbh;
+eval {
+   $dbh = DBI->connect(
+   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
+   { PrintError => 0, RaiseError => 1 })
+};
+SKIP: {
+   skip $EVAL_ERROR, 1 if $EVAL_ERROR;
+
+   # Setup
+   %existing_dbs = map { $_ => 1 }
+      @{$dbh->selectcol_arrayref('SHOW DATABASES')};
+   foreach my $db ( @setup_dbs ) {
+      eval {
+         $dbh->do("CREATE DATABASE IF NOT EXISTS `$db`");
+      };
+      die $EVAL_ERROR if $EVAL_ERROR && $EVAL_ERROR !~ m/Access denied/;
+   }
+
+   $f = new MySQLFind(
+      dbh       => $dbh,
+   );
+
+   %dbs = map { lc($_) => 1 } $f->find_databases();
+   ok($dbs{mysql}, 'mysql database default');
+   ok($dbs{test_mysql_finder_1}, 'test_mysql_finder_1 database default');
+   ok($dbs{test_mysql_finder_2}, 'test_mysql_finder_2 database default');
+   ok(!$dbs{information_schema}, 'I_S filtered out default');
+   ok(!$dbs{'lost+found'}, 'lost+found filtered out default');
+
+   $f = new MySQLFind(
+      dbh       => $dbh,
+      databases => {
+         permit => { test_mysql_finder_1 => 1 },
+      },
+   );
+
+   %dbs = map { lc($_) => 1 } $f->find_databases();
+   ok(!$dbs{mysql}, 'mysql database permit');
+   ok($dbs{test_mysql_finder_1}, 'test_mysql_finder_1 database permit');
+   ok(!$dbs{test_mysql_finder_2}, 'test_mysql_finder_2 database permit');
+
+   $f = new MySQLFind(
+      dbh       => $dbh,
+      databases => {
+         reject => { test_mysql_finder_1 => 1 },
+      },
+   );
+
+   %dbs = map { lc($_) => 1 } $f->find_databases();
+   ok($dbs{mysql}, 'mysql database reject');
+   ok(!$dbs{test_mysql_finder_1}, 'test_mysql_finder_1 database reject');
+   ok($dbs{test_mysql_finder_2}, 'test_mysql_finder_2 database reject');
+
+   $f = new MySQLFind(
+      dbh       => $dbh,
+      databases => {
+         like   => 'test\\_%',
+      },
+   );
+
+   %dbs = map { lc($_) => 1 } $f->find_databases();
+   ok(!$dbs{mysql}, 'mysql database like');
+   ok($dbs{test_mysql_finder_1}, 'test_mysql_finder_1 database like');
+   ok($dbs{test_mysql_finder_2}, 'test_mysql_finder_2 database like');
+
+   $f = new MySQLFind(
+      dbh       => $dbh,
+      databases => {
+         regexp => 'finder',
+      },
+   );
+
+   %dbs = map { lc($_) => 1 } $f->find_databases();
+   ok(!$dbs{mysql}, 'mysql database regex');
+   ok($dbs{test_mysql_finder_1}, 'test_mysql_finder_1 database regex');
+   ok($dbs{test_mysql_finder_2}, 'test_mysql_finder_2 database regex');
+
 }
 
-MySQLFind::_db_filter (
-   dbs   => [qw( foo bar )],
-   tests => {},
-   code  => \&callback,
-);
-is_deeply(
-   [ @found ],
-   [
-      {type => 'database', name => 'foo'},
-      {type => 'database', name => 'bar'},
-   ],
-   'List of dbs',
-);
+__DATA__
 
-@found = ();
-MySQLFind::_db_filter (
-   dbs   => [qw( foo bar INFORMATION_SCHEMA lost+found )],
-   tests => {},
-   code  => \&callback,
-);
-is_deeply(
-   [ @found ],
-   [
-      {type => 'database', name => 'foo'},
-      {type => 'database', name => 'bar'},
-   ],
-   'List of dbs skipping I_S and lost+found',
-);
-
-# verify that information_schema|lost\+found are skipped
-# apply LIKE
-# apply dbregex
-# apply list-o-databases
-# apply ignore-these-dbs
+      # my @tables = $finder->find_tables(database => $database);
 
 # Find a list of tables
 # apply LIKE
@@ -73,3 +123,4 @@ is_deeply(
 # skip views
 # apply list-o-engines
 # apply ignore-these-engines
+   # TODO: tear down databases.
