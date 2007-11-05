@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 12;
+use Test::More tests => 13;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
@@ -112,9 +112,32 @@ EOF
 $p->prop('autokey', 'h');
 is_deeply(
    $p->parse('automatic'),
-   {  h => 'automatic',
+   {  D => undef,
+      F => undef,
+      h => 'automatic',
+      p => undef,
+      P => undef,
+      S => undef,
+      t => undef,
+      u => undef,
    },
    'DSN with autokey'
+);
+
+is_deeply(
+   $p->parse('automatic',
+      { D => 'foo', h => 'me', p => 'b' },
+      { S => 'bar', h => 'host', u => 'a' } ),
+   {  D => 'foo',
+      F => undef,
+      h => 'automatic',
+      p => 'b',
+      P => undef,
+      S => 'bar',
+      t => undef,
+      u => 'a',
+   },
+   'DSN with defaults and an autokey'
 );
 
 is ($p->usage(),
