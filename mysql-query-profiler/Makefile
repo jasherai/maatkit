@@ -16,7 +16,7 @@ MKDIR = /bin/mkdir
 
 NAME = mysql-query-profiler
 HELPER = mysql-profile-compact
-VERSION = 1.1.5
+VERSION = 1.1.6
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \

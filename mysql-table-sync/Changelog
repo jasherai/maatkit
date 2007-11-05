@@ -1,5 +1,7 @@
 Changelog for mysql-table-sync:
 
+2007-11-04: version 0.9.8
+
    * Made command-line help easier to use.
    * Removed the dependency on Term::ReadKey.
    * Replaced some code with modules that are unit-tested.
