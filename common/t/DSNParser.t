@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 13;
+use Test::More tests => 14;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
@@ -91,6 +91,12 @@ is(
    ),
    'D=foo,S=bar,h=me,p=b,u=a',
    'DSN stringified when it gets a string as arg'
+);
+
+is (
+   $p->as_string({ bez => 'bat', h => 'foo' }),
+   'h=foo',
+   'DSN stringifies without extra crap',
 );
 
 is ($p->usage(),
