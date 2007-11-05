@@ -92,23 +92,21 @@ sub parse {
    my %vals;
    my %opts = %{$self->{opts}};
    if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
-      $vals{ $self->prop('autokey') } = $dsn;
+      $dsn = $self->prop('autokey') . "=$dsn";
    }
-   else {
-      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-      foreach my $key ( keys %opts ) {
-         $vals{$key} = $hash{$key};
-         if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-            $vals{$key} = $prev->{$key};
-         }
-         if ( !defined $vals{$key} ) {
-            $vals{$key} = $defaults->{$key};
-         }
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   foreach my $key ( keys %opts ) {
+      $vals{$key} = $hash{$key};
+      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+         $vals{$key} = $prev->{$key};
       }
-      foreach my $key ( keys %hash ) {
-         die "Unrecognized DSN part '$key' in '$dsn'\n"
-            unless exists $opts{$key};
+      if ( !defined $vals{$key} ) {
+         $vals{$key} = $defaults->{$key};
       }
+   }
+   foreach my $key ( keys %hash ) {
+      die "Unrecognized DSN part '$key' in '$dsn'\n"
+         unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
