@@ -762,7 +762,7 @@ if ( $opts{replcheck} ) {
       # Connect to that server (if needed)
       my $slave_dbh;
       if ( !$slave->{dbh} ) {
-         my $dsn    = parse_dsn("h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
+         my $dsn    = $dsn_parser->parse("h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
          $slave_dbh = get_dbh($dsn, ($opts{d} ? keys %{$opts{d}} : '' ));
          $slave->{dbh} = $slave_dbh;
       }
