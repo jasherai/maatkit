@@ -119,7 +119,10 @@ sub parse {
 sub as_string {
    my ( $self, $dsn ) = @_;
    return $dsn unless ref $dsn;
-   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} && $self->{opts}->{$_} } sort keys %$dsn );
+   return join(',',
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      sort keys %$dsn );
 }
 
 sub usage {

@@ -81,7 +81,7 @@ is(
    $p->as_string(
       $p->parse('u=a,p=b', { D => 'foo', h => 'me' }, { S => 'bar', h => 'host' } )
    ),
-   'D=foo,S=bar,h=me,p=b,u=a',
+   'D=foo,S=bar,h=me,p=...,u=a',
    'DSN stringified when it gets DSN as arg'
 );
 
