@@ -766,7 +766,7 @@ if ( !$dest ) {
    $sth->execute();
    my $status = $sth->fetchrow_hashref();
    my $spec   = "h=$status->{master_host},P=$status->{master_port}";
-   $source    = parse_dsn($spec, $dest);
+   $source    = $dsn_parser->parse($spec, $dest);
 }
 
 if ( $source->{t} ne $dest->{t} && -t STDIN && -t STDOUT ) {
