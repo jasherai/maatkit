@@ -60,7 +60,7 @@ sub find_databases {
    return grep {
       $_ !~ m/^(information_schema|lost\+found)$/i
    }
-   $self->_name_filter('databases', $self->_fetch_db_list());
+   $self->_filter('databases', sub { $_[0] }, $self->_fetch_db_list());
 }
 
 sub _fetch_db_list {
@@ -82,8 +82,10 @@ sub find_tables {
    my @tables = grep {
          ( $views || $_->{Engine} ne 'VIEW' )
       }
-      $self->_fetch_tbl_list(%opts);
-   return $self->_name_filter('tables', map { $_->{Name} } @tables);
+      $self->_filter('engines', sub { $_[0]->{Engine} },
+         $self->_filter('tables', sub { $_[0]->{Name} },
+            $self->_fetch_tbl_list(%opts)));
+   return map { $_->{Name} } @tables;
 }
 
 # Returns hashrefs in the format SHOW TABLE STATUS would, but doesn't
@@ -92,32 +94,55 @@ sub _fetch_tbl_list {
    my ( $self, %opts ) = @_;
    die "database is required" unless $opts{database};
    my @params;
-   my $sql = "SHOW /*!50002 FULL*/ TABLES FROM "
-           . $self->{quoter}->quote($opts{database});
-   if ( $self->{tables}->{like} ) {
-      $sql .= ' LIKE ?';
-      push @params, $self->{tables}->{like};
-   }
-   my $sth = $self->{dbh}->prepare($sql);
-   $sth->execute(@params);
-   my @tables = @{$sth->fetchall_arrayref()};
-   return map {
-      {  Name   => $_->[0],
-         Engine => ($_->[1] || '') eq 'VIEW' ? 'VIEW' : '',
+   if ( $self->{engines}->{permit}
+     || $self->{engines}->{reject}
+     || $self->{engines}->{regexp} )
+   {
+      my $sql = "SHOW TABLE STATUS FROM "
+              . $self->{quoter}->quote($opts{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
       }
-   } @tables;
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref({})};
+      return map {
+         $_->{Engine} ||= $_->{Type} || $_->{Comment};
+         delete $_->{Type};
+         $_;
+      } @tables;
+   }
+   else {
+      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM "
+              . $self->{quoter}->quote($opts{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
+      }
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref()};
+      return map {
+         {  Name   => $_->[0],
+            Engine => ($_->[1] || '') eq 'VIEW' ? 'VIEW' : '',
+         }
+      } @tables;
+   }
 }
 
-sub _name_filter {
-   my ( $self, $thing, @names ) = @_;
+sub _filter {
+   my ( $self, $thing, $sub, @vals ) = @_;
    my $permit = $self->{$thing}->{permit};
    my $reject = $self->{$thing}->{reject};
    my $regexp = $self->{$thing}->{regexp};
    return grep {
-      ( !$reject || !$reject->{$_} )
-         && ( !$permit ||  $permit->{$_} )
-         && ( !$regexp ||  m/$regexp/ )
-   } @names
+      my $val = $sub->($_);
+      $val = '' unless defined $val;
+      ( !$reject || !$reject->{$val} )
+         && ( !$permit ||  $permit->{$val} )
+         && ( !$regexp ||  $val =~ m/$regexp/ )
+   } @vals
 }
 
 1;
@@ -125,21 +150,3 @@ sub _name_filter {
 # ###########################################################################
 # End MySQLFind package
 # ###########################################################################
-
-__DATA__
-   my $need_table_status = $age || $opts{C} =~ m/\D/;
-
-   my $tables = $dbh->selectall_arrayref(
-      $need_table_status
-         ? "SHOW TABLE STATUS FROM `$database`"
-         : "SHOW /*!50002 FULL*/ TABLES FROM `$database`",
-      { Slice => {} });
-
-   if ( @$tables ) {
-
-      my ( $name_key )
-         = $need_table_status
-         ? ( qw(name) )
-         : ( grep { $_ ne 'table_type' } keys %{$tables->[0]} );
-      my $type_key = $need_table_status ? 'comment' : 'table_type';
-
