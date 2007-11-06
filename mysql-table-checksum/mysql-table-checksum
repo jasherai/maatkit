@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This program efficiently checksums MySQL tables on one or more servers.
+# This program checksums MySQL tables efficiently on one or more servers.
 #
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
@@ -746,8 +746,8 @@ if ( $opts{replcheck} ) {
       print_err("Cannot check slaves; --replcheck requires MySQL 3.23.26 or newer.");
    }
 
-   my $sql = "SELECT db, tbl, chunk, boundaries, this_cnt-master_cnt AS cnt_diff, "
-      . "this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc) AS crc_diff "
+   my $sql = "SELECT db, tbl, chunk, boundaries, COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,"
+      . "COALESCE(this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc), 0) AS crc_diff "
       . "FROM $opts{R} "
       . "WHERE master_cnt <> this_cnt OR master_crc <> this_crc "
       . "OR ISNULL(master_crc) <> ISNULL(this_crc)";
@@ -836,7 +836,6 @@ if ( $opts{replcheck} ) {
 # Otherwise do the checksums.
 # ############################################################################
 $main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
-my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
 
 # Figure out what strategy to use
 my $strat;
@@ -961,9 +960,10 @@ if ( $opts{v} && @hosts > 1 ) {
 
 my ($fetch_sth, $update_sth);
 if ( $opts{R} ) {
-   # Check for the existence of, and optionally clean out, the replication table before starting.
-   $main_dbh->do("DESCRIBE $opts{R}"); # Ignore the result; this is a no-op
+   # Check for existence and privileges on the replication table before starting.
+   $main_dbh->do("REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0");
    if ( $opts{emptyrepltbl} ) {
+      # Clean out the replication table.
       my $del_sql = "DELETE FROM $opts{R}";
       if ( $opts{d} ) {
          $del_sql .= " WHERE ";
@@ -981,6 +981,7 @@ if ( $opts{R} ) {
       "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? WHERE db = ? AND tbl = ? AND chunk = ?");
 }
 
+my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
 DATABASE:
 foreach my $database ( @databases ) {
    next DATABASE if
