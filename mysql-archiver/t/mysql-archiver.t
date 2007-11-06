@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 81;
+use Test::More tests => 82;
 
 my $opt_file = shift || "~/.my.cnf";
 diag("Testing with $opt_file");
@@ -259,6 +259,9 @@ is($output + 0, 0, 'Purged completely on multi-column ascending index');
 # Make sure ascending index check can be disabled
 $output = `perl ../mysql-archiver -W 1=1 -t --noascend -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
 like ( $output, qr/(^SELECT .*$)\n\1/m, '--noascend makes fetch-first and fetch-next identical' );
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mysql-archiver -W 1=1 --noascend -s D=test,t=table_5,F=$opt_file -p -l 1 2>&1`;
+is($output, '', "No output when --noascend");
 
 # Check ascending only first column
 $output = `perl ../mysql-archiver -W 1=1 -t --ascendfirst -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;

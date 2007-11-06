@@ -1207,8 +1207,8 @@ if ( !caller ) {
          cols  => $del_stmt->{cols},
          index => undef,
          where => '1=1',
-         slice => $del_stmt->{slice},
-         scols => $del_stmt->{scols},
+         slice => [], # No-ascend = no bind variables in the WHERE clause.
+         scols => [], # No-ascend = no bind variables in the WHERE clause.
       };
    }
    @asc_slice = @{$sel_stmt->{slice}};
