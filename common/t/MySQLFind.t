@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 47;
+use Test::More tests => 25;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -134,11 +134,17 @@ SKIP: {
    );
 
    %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
-   ok($found{a}, 'a tbl default');
-   ok($found{b}, 'b tbl default');
-   ok($found{c}, 'c tbl default');
-   ok($found{aa}, 'aa tbl default');
-   ok($found{vw_1}, 'vw_1 default');
+   is_deeply(
+      \%found,
+      {
+         a => 1,
+         b => 1,
+         c => 1,
+         aa => 1,
+         vw_1 => 1,
+      },
+      'table default',
+   );
 
    $f = new MySQLFind(
       dbh    => $dbh,
@@ -149,12 +155,13 @@ SKIP: {
    );
 
    %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
-   ok($found{a}, 'a tbl reject');
-   ok(!$found{b}, 'b tbl permit');
-   ok(!$found{c}, 'c tbl permit');
-   ok(!$found{aa}, 'aa tbl permit');
-   ok(!$found{vw_1}, 'vw_1 permit');
-
+   is_deeply(
+      \%found,
+      {
+         a => 1,
+      },
+      'table permit',
+   );
 
    $f = new MySQLFind(
       dbh    => $dbh,
@@ -165,11 +172,16 @@ SKIP: {
    );
 
    %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
-   ok(!$found{a}, 'a tbl reject');
-   ok($found{b}, 'b tbl reject');
-   ok($found{c}, 'c tbl reject');
-   ok($found{aa}, 'aa tbl reject');
-   ok($found{vw_1}, 'vw_1 reject');
+   is_deeply(
+      \%found,
+      {
+         b => 1,
+         c => 1,
+         aa => 1,
+         vw_1 => 1,
+      },
+      'table reject',
+   );
 
    $f = new MySQLFind(
       dbh    => $dbh,
@@ -180,11 +192,15 @@ SKIP: {
    );
 
    %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
-   ok($found{a}, 'a tbl regexp');
-   ok($found{b}, 'b tbl regexp');
-   ok(!$found{c}, 'c tbl regexp');
-   ok($found{aa}, 'aa tbl regexp');
-   ok(!$found{vw_1}, 'vw_1 regexp');
+   is_deeply(
+      \%found,
+      {
+         a => 1,
+         b => 1,
+         aa => 1,
+      },
+      'table regexp',
+   );
 
    $f = new MySQLFind(
       dbh    => $dbh,
@@ -195,11 +211,14 @@ SKIP: {
    );
 
    %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
-   ok($found{a}, 'a tbl like');
-   ok(!$found{b}, 'b tbl like');
-   ok(!$found{c}, 'c tbl like');
-   ok($found{aa}, 'aa tbl like');
-   ok(!$found{vw_1}, 'vw_1 like');
+   is_deeply(
+      \%found,
+      {
+         a => 1,
+         aa => 1,
+      },
+      'table like',
+   );
 
    $f = new MySQLFind(
       dbh    => $dbh,
@@ -212,15 +231,61 @@ SKIP: {
    );
 
    %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
-   ok($found{a}, 'a tbl views');
-   ok($found{b}, 'b tbl views');
-   ok($found{c}, 'c tbl views');
-   ok($found{aa}, 'aa tbl views');
-   ok(!$found{vw_1}, 'vw_1 views');
+   is_deeply(
+      \%found,
+      {
+         a => 1,
+         b => 1,
+         c => 1,
+         aa => 1,
+      },
+      'engine no views',
+   );
+
+   $f = new MySQLFind(
+      dbh    => $dbh,
+      quoter => $q,
+      tables => {
+      },
+      engines => {
+         permit => { MyISAM => 1 },
+      }
+   );
+
+   %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
+   is_deeply(
+      \%found,
+      {
+         a => 1,
+         b => 1,
+         c => 1,
+      },
+      'engine permit',
+   );
+
+   $f = new MySQLFind(
+      dbh    => $dbh,
+      quoter => $q,
+      tables => {
+      },
+      engines => {
+         reject => { MyISAM => 1 },
+      }
+   );
+
+   %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
+   is_deeply(
+      \%found,
+      {
+         aa => 1,
+         vw_1 => 1,
+      },
+      'engine reject',
+   );
 
    foreach my $db ( @setup_dbs ) {
       if (!exists $existing_dbs{$db} ) {
-         $dbh->do("drop database $db");
+         $dbh->do("drop database " . $q->quote($db));
       }
    }
 
