@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 2;
+   $tests = 3;
 }
 
 use Test::More tests => $tests;
@@ -46,12 +46,9 @@ SKIP: {
    skip "Can't find sakila database", $tests
       unless grep { m/sakila/ } @{$dbh->selectcol_arrayref('show databases')};
 
-   my $d = new MySQLDump(
-      dbh       => $dbh,
-      quoter    => $q,
-   );
+   my $d = new MySQLDump();
 
-   my $dump = $d->dump('sakila', 'film', 'table');
+   my $dump = $d->dump($dbh, $q, 'sakila', 'film', 'table');
    is($dump, <<'EOF'
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -96,7 +93,8 @@ CREATE TABLE `film` (
 EOF
 , 'Dump sakila.film');
 
-   $dump = $d->dump('sakila', 'film', 'triggers');
+   $dump = $d->dump($dbh, $q, 'sakila', 'film', 'triggers');
+   like($dump,qr/'root'\@'localhost'/, 'Triggers were defined by root');
    is($dump, <<'EOF'
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -111,14 +109,14 @@ EOF
 
 DELIMITER ;;
 /*!50003 SET SESSION SQL_MODE="STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_AUTO_CREATE_USER" */;;
-/*!50003 CREATE */ /*!50017 DEFINER='baron'@'%' */ /*!50003 TRIGGER `ins_film` AFTER INSERT ON `film`
+/*!50003 CREATE */ /*!50017 DEFINER='root'@'localhost' */ /*!50003 TRIGGER `ins_film` AFTER INSERT ON `film`
 FOR EACH ROW BEGIN
     INSERT INTO film_text (film_id, title, description)
         VALUES (new.film_id, new.title, new.description);
   END */;;
 
 /*!50003 SET SESSION SQL_MODE="STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_AUTO_CREATE_USER" */;;
-/*!50003 CREATE */ /*!50017 DEFINER='baron'@'%' */ /*!50003 TRIGGER `upd_film` AFTER UPDATE ON `film`
+/*!50003 CREATE */ /*!50017 DEFINER='root'@'localhost' */ /*!50003 TRIGGER `upd_film` AFTER UPDATE ON `film`
 FOR EACH ROW BEGIN
     IF (old.title != new.title) or (old.description != new.description)
     THEN
@@ -131,7 +129,7 @@ FOR EACH ROW BEGIN
   END */;;
 
 /*!50003 SET SESSION SQL_MODE="STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_AUTO_CREATE_USER" */;;
-/*!50003 CREATE */ /*!50017 DEFINER='baron'@'%' */ /*!50003 TRIGGER `del_film` AFTER DELETE ON `film`
+/*!50003 CREATE */ /*!50017 DEFINER='root'@'localhost' */ /*!50003 TRIGGER `del_film` AFTER DELETE ON `film`
 FOR EACH ROW BEGIN
     DELETE FROM film_text WHERE film_id = old.film_id;
   END */;;
