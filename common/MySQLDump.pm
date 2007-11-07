@@ -25,16 +25,13 @@ package MySQLDump;
 use English qw(-no_match_vars);
 
 sub new {
-   my ( $class, %opts ) = @_;
-   foreach my $opt ( qw(dbh quoter) ) {
-      die "You must specify $opt" unless defined $opts{$opt};
-   }
-   my $self = bless \%opts, $class;
+   my ( $class ) = @_;
+   my $self = bless {}, $class;
    return $self;
 }
 
 sub dump {
-   my ( $self, $db, $tbl, $what ) = @_;
+   my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
    ( my $result = <<'   EOF') =~ s/^      //gm;
       /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
       /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -49,12 +46,12 @@ sub dump {
    EOF
 
    if ( $what eq 'table' ) {
-      my $ddl = $self->get_create_table($db, $tbl);
-      $result .= 'DROP TABLE IF EXISTS ' . $self->{quoter}->quote($tbl) . ";\n";
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      $result .= 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n";
       $result .= $ddl . ";\n";
    }
    elsif ( $what eq 'triggers' ) {
-      my $trgs = $self->get_triggers($db, $tbl);
+      my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
       if ( $trgs && @$trgs ) {
          $result .= "\nDELIMITER ;;\n";
          foreach my $trg ( @$trgs ) {
@@ -69,9 +66,9 @@ sub dump {
                $result .= "/*!50017 DEFINER=$user\@$host */ ";
             }
             $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
-               $self->{quoter}->quote($trg->{trigger}),
+               $quoter->quote($trg->{trigger}),
                @{$trg}{qw(timing event)},
-               $self->{quoter}->quote($trg->{table}),
+               $quoter->quote($trg->{table}),
                $trg->{statement});
          }
          $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
@@ -98,19 +95,19 @@ sub dump {
 }
 
 sub get_create_table {
-   my ( $self, $db, $tbl ) = @_;
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{tables}->{$db}->{$tbl} ) {
-      $self->{dbh}->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $href = $self->{dbh}->selectrow_hashref(
+      my $href = $dbh->selectrow_hashref(
          "SHOW CREATE TABLE "
-         . $self->{quoter}->quote($db)
+         . $quoter->quote($db)
          . '.'
-         . $self->{quoter}->quote($tbl)
+         . $quoter->quote($tbl)
       );
-      $self->{dbh}->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
       my ($key) = grep { m/create table/i } keys %$href;
       $self->{tables}->{$db}->{$tbl} = $href->{$key};
@@ -119,15 +116,15 @@ sub get_create_table {
 }
 
 sub get_triggers {
-   my ( $self, $db, $tbl ) = @_;
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
-      $self->{dbh}->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $trgs = $self->{dbh}->selectall_arrayref(
-         "SHOW TRIGGERS FROM " . $self->{quoter}->quote($db),
+      my $trgs = $dbh->selectall_arrayref(
+         "SHOW TRIGGERS FROM " . $quoter->quote($db),
          { Slice => {} }
       );
       foreach my $trg ( @$trgs ) {
@@ -138,7 +135,7 @@ sub get_triggers {
          @trg{ map { lc $_ } keys %$trg } = values %$trg;
          push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
       }
-      $self->{dbh}->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
    }
    return $self->{triggers}->{$db}->{$tbl};
