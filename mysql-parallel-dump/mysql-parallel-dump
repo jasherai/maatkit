@@ -22,6 +22,7 @@
 
 # TODO: there are still some issues with filename quoting.  It is not
 # cross-platform compatible.
+# TODO: quote MySQL identifiers with Quoter.
 
 use strict;
 use warnings FATAL => 'all';
@@ -544,7 +545,7 @@ sub groups {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1149
+# TableParser package 1219
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -635,23 +636,143 @@ sub parse {
    };
 }
 
-sub get_ddl {
-   my ( $self, $dbh, $db, $tbl ) = @_;
-   $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
-      . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
-      . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-      . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-   my $href = $dbh->selectrow_hashref("SHOW CREATE TABLE `$db`.`$tbl`");
-   $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-      . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
-   my ($key) = grep { m/create table/i } keys %$href;
-   return $href->{$key};
+1;
+
+# ###########################################################################
+# End TableParser package
+# ###########################################################################
+
+# ###########################################################################
+# MySQLDump package 1219
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MySQLDump;
+
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, %opts ) = @_;
+   foreach my $opt ( qw(dbh quoter) ) {
+      die "You must specify $opt" unless defined $opts{$opt};
+   }
+   my $self = bless \%opts, $class;
+   return $self;
+}
+
+sub dump {
+   my ( $self, $db, $tbl, $what ) = @_;
+   ( my $result = <<'   EOF') =~ s/^      //gm;
+      /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+      /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+      /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+      /*!40101 SET NAMES utf8 */;
+      /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+      /*!40103 SET TIME_ZONE='+00:00' */;
+      /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+      /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+      /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+      /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+   EOF
+
+   if ( $what eq 'table' ) {
+      my $ddl = $self->get_create_table($db, $tbl);
+      $result .= 'DROP TABLE IF EXISTS ' . $self->{quoter}->quote($tbl) . ";\n";
+      $result .= $ddl . ";\n";
+   }
+   elsif ( $what eq 'triggers' ) {
+      my $trgs = $self->get_triggers($db, $tbl);
+      if ( $trgs && @$trgs ) {
+         $result .= "\nDELIMITER ;;\n";
+         foreach my $trg ( @$trgs ) {
+            if ( $trg->{sql_mode} ) {
+               $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
+            }
+            $result .= "/*!50003 CREATE */ ";
+            if ( $trg->{definer} ) {
+               my ( $user, $host )
+                  = map { s/'/''/g; "'$_'"; }
+                    split('@', $trg->{definer}, 2);
+               $result .= "/*!50017 DEFINER=$user\@$host */ ";
+            }
+            $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
+               $self->{quoter}->quote($trg->{trigger}),
+               @{$trg}{qw(timing event)},
+               $self->{quoter}->quote($trg->{table}),
+               $trg->{statement});
+         }
+         $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
+      }
+      else {
+         return undef;
+      }
+   }
+   else {
+      die "You didn't say what to dump.";
+   }
+
+   ( my $after = <<'   EOF') =~ s/^      //gm;
+      /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+      /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+      /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+      /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+      /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+      /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+      /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+      /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+   EOF
+   return $result . $after;
+}
+
+sub get_create_table {
+   my ( $self, $db, $tbl ) = @_;
+   if ( !$self->{tables}->{$db}->{$tbl} ) {
+      $self->{dbh}->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $href = $self->{dbh}->selectrow_hashref(
+         "SHOW CREATE TABLE "
+         . $self->{quoter}->quote($db)
+         . '.'
+         . $self->{quoter}->quote($tbl)
+      );
+      $self->{dbh}->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+      my ($key) = grep { m/create table/i } keys %$href;
+      $self->{tables}->{$db}->{$tbl} = $href->{$key};
+   }
+   return $self->{tables}->{$db}->{$tbl};
+}
+
+sub get_triggers {
+   my ( $self, $db, $tbl ) = @_;
+   if ( !$self->{triggers}->{$db} ) {
+      $self->{triggers}->{$db} = {};
+      $self->{dbh}->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $trgs = $self->{dbh}->selectall_arrayref(
+         "SHOW TRIGGERS FROM " . $self->{quoter}->quote($db),
+         { Slice => {} }
+      );
+      foreach my $trg ( @$trgs ) {
+         my %trg;
+         @trg{ map { lc $_ } keys %$trg } = values %$trg;
+         push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
+      }
+      $self->{dbh}->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+   }
+   return $self->{triggers}->{$db}->{$tbl};
 }
 
 1;
 
 # ###########################################################################
-# End TableParser package
+# End MySQLDump package
 # ###########################################################################
 
 # ###########################################################################
@@ -916,6 +1037,33 @@ sub timestampdiff {
 # End TableChunker package
 # ###########################################################################
 
+# ###########################################################################
+# Quoter package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
 package main;
 
 use DBI;
@@ -936,9 +1084,10 @@ my %opts = (
    C        => '',
    gzip     => $OSNAME =~ m/Win32/ ? 0 : 1,
 );
-my $default_dir;
-my (@mysqldump_args, @mysqldump_nodata_args);
-my $dp = new DSNParser;
+my @mysqldump_args;
+my $dp = new DSNParser();
+my $q  = new Quoter();
+my $tp = new TableParser();
 
 # ############################################################################
 # Get configuration information.
@@ -979,7 +1128,6 @@ my @opt_spec = (
    { s => 'ignoretbl|n=H',     d => 'Ignore this comma-separated list of tables' },
    { s => 'locktables!',       d => 'Use LOCK TABLES (implies --no-flushlock)' },
    { s => 'numthread|m=i',     d => "Number of threads (default $opts{m})" },
-   { s => 'opt!',              d => 'Use sensible mysqldump options (default)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Quiet output; disables --verbose' },
@@ -1033,6 +1181,9 @@ if ( !$opts{help} ) {
    if ( !$opts{help} && $opts{sets} && !$opts{settable} ) {
       $opt_parser->error("--sets requires --settable");
    }
+   if ( $opts{T} && @ARGV ) {
+      $opt_parser->error("Unused arguments: @ARGV");
+   }
 }
 
 if ( $opts{csv} ) { # TODO: --csv implies --[no-]tab
@@ -1069,51 +1220,60 @@ my @conn_params = (
 );
 @conn_params = map { "$_->[0]='$opts{$_->[1]}'" } grep { defined $opts{$_->[1]} } @conn_params;
 
+# ############################################################################
 # Decide on options to mysqldump.
-if ( $opts{opt} && !@ARGV ) {
-   # Sensible defaults.
-   $default_dir = 1;
-   @mysqldump_args        = ( qw(mysqldump), @conn_params );
-   @mysqldump_nodata_args = ( @mysqldump_args, qw(--no-data) );
-   my @common_args = (
-      qw(
-         --skip-opt
-         --skip-lock-tables
-         --add-drop-table
-         --add-locks
-         --allow-keywords
-         --comments
-         --complete-insert
-         --create-options
-         --disable-keys
-         --extended-insert
-         --quick
-         --quote-names
-         --set-charset
-         --triggers
-         --tz-utc
-         '%D'
-         '%N'
+# ############################################################################
+if ( !@ARGV && !$opts{T} ) {
+   # Choose sensible defaults.  Inspect mysqldump --help to see what options
+   # it accepts.
+   my $help = `mysqldump --help`;
+   if ( $CHILD_ERROR ) {
+      exit(1);
+   }
+   $help =~ s/\A.*?\n----//s;
+   my %is_opt = map { $_ => 1 } $help =~ m/^(\w[a-z_-]+)/gm;
+   my %skip   = map { $_ => 1 } qw(lock-all-tables lock-tables);
+   @mysqldump_args = (
+      qw(mysqldump),
+      @conn_params,
+      (
+         map  { $skip{$_} ? "--skip-$_" : "--$_" }
+         grep { $is_opt{$_} }
+         qw(
+            lock-all-tables
+            lock-tables
+            add-drop-table
+            add-locks
+            allow-keywords
+            comments
+            complete-insert
+            create-options
+            disable-keys
+            extended-insert
+            quick
+            quote-names
+            set-charset
+            triggers
+            tz-utc
+         )
       ),
+      qw( '%D' '%N' ),
    );
    if ( $opts{C} ) {
-      push @common_args, qw( --where '%W' );
+      push @mysqldump_args, qw( --where '%W' );
    }
    if ( $opts{gzip} ) {
-      push @common_args, qw( | gzip --force --fast --stdout - > ),
+      push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
          '"' . filename('%S', '%D', '%N.%3C.sql.gz') . '"';
    }
    else {
-      push @common_args,
+      push @mysqldump_args,
          '--result-file="' . filename('%S', '%D', '%N.%3C.sql') . '"';
    }
-   push @mysqldump_args, @common_args;
-   push @mysqldump_nodata_args, @common_args;
 }
 
 else {
    @mysqldump_args = @ARGV;
-   @mysqldump_nodata_args = @ARGV;
 }
 
 # ############################################################################
@@ -1122,6 +1282,10 @@ else {
 my $dbh = get_dbh();
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
+my $du = new MySQLDump(
+   dbh    => $dbh,
+   quoter => $q,
+);
 
 # This signal handler will do nothing but wake up the sleeping parent process
 # and record the exit status and time of the child that exited (as a side
@@ -1284,7 +1448,7 @@ foreach my $set ( @sets_to_do ) {
 
    my @work_to_do;
    foreach my $db_tbl ( @{$tables_for_set{$set}} ) {
-      my @chunks = get_chunks($dbh, $opts{C}, $set, @$db_tbl, \%table_status);
+      my @chunks = get_chunks($opts{C}, $set, @$db_tbl, \%table_status);
       my $i = 0;
       foreach my $chunk ( @chunks ) {
          push @work_to_do, {
@@ -1515,9 +1679,8 @@ sub get_tables_in_database {
 }
 
 sub get_chunks {
-   my ( $dbh, $spec, $set, $db, $tbl, $cache ) = @_;
-   my $tp    = TableParser->new;
-   my $table = $tp->parse($tp->get_ddl($dbh, $db, $tbl));
+   my ( $spec, $set, $db, $tbl, $cache ) = @_;
+   my $table = $tp->parse($du->get_create_table($db, $tbl));
    my $rows_per_chunk;
    my $cant_chunk = {
       D => $db,
@@ -1594,60 +1757,77 @@ sub do_table {
    my ( $todo ) = @_;
    my $exit_status = 0;
    my $dump_data = !$opts{E}->{$todo->{E}};
+   my $D         = $q->quote($todo->{D});
+   my $N         = $q->quote($todo->{N});
 
    # Dump via SELECT INTO OUTFILE.
-   if ( $opts{T} && $dump_data ) {
+   if ( $opts{T} ) {
       my $dbh = get_dbh();
+
       my $filename = filename(interp($todo, '%S', '%D', '%N.%3C'));
       makedir($filename);
-      my $sql;
-      if ( $opts{csv} ) {
-         $sql  = qq{SELECT * INTO OUTFILE '$filename.txt' }
-               . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
-               . qq{LINES TERMINATED BY '\\n' FROM `$todo->{D}`.`$todo->{N}`};
+
+      # Dump the schema before the first chunk.
+      if ( $todo->{C} == 0 ) {
+         # Table definition.
+         my $ddl = $du->dump($todo->{D}, $todo->{N}, 'table');
+         if ( $ddl ) {
+            my $fspec = $opts{gzip}
+               ? "| gzip --force --fast > $filename.sql.gz"
+               : "> $filename.sql";
+            open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
+            print $file $ddl      or die "Couldn't print to $fspec: $OS_ERROR";
+            close $file           or die "Couldn't print to $fspec: $OS_ERROR";
+         }
+         my $trg = $du->dump($todo->{D}, $todo->{N}, 'triggers');
+         if ( $trg ) {
+            my $fspec = $opts{gzip}
+               ? "| gzip --force --fast > $filename.trg.gz"
+               : "> $filename.trg";
+            open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
+            print $file $trg      or die "Couldn't print to $fspec: $OS_ERROR";
+            close $file           or die "Couldn't print to $fspec: $OS_ERROR";
+         }
       }
-      else {
-         $sql = "SELECT * INTO OUTFILE '$filename.txt' "
-              . "FROM `$todo->{D}`.`$todo->{N}` WHERE $todo->{W}";
-      }
-      if ( $opts{test} ) {
-         print $sql, "\n";
-      }
-      eval {
-         $dbh->do($sql) unless $opts{test};
-         $dbh->disconnect;
-      };
-      if ( $EVAL_ERROR ) {
-         die mysql_error_msg($EVAL_ERROR) . "\n";
-      }
-      if ( $opts{gzip} ) {
-         $exit_status = system_call(
-            'gzip', '--force', '--fast', qq{"$filename.txt"});
+
+      # Dump the data.
+      if ( $dump_data ) {
+         my $sql
+           = $opts{csv}
+           ?    "SELECT * INTO OUTFILE '$filename.txt' "
+              . "FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\\"' "
+              . "LINES TERMINATED BY '\\n' FROM $D.$N"
+           :    "SELECT * INTO OUTFILE '$filename.txt' "
+              . "FROM $D.$N WHERE $todo->{W}";
+         if ( $opts{test} ) {
+            print $sql, "\n";
+         }
+         else {
+            eval {
+               $dbh->do($sql);
+               $dbh->disconnect;
+            };
+            if ( $EVAL_ERROR ) {
+               die mysql_error_msg($EVAL_ERROR) . "\n";
+            }
+         }
+         if ( $opts{gzip} ) {
+            $exit_status = system_call(
+               'gzip', '--force', '--fast', qq{"$filename.txt"});
+         }
       }
    }
+   else {
+      # It's either a custom command, or it's a regular SQL dump and we're going to dump data.
 
-   # Normal dump using mysqldump.  If $opts{T} was set, the following won't dump
-   # the data.  If the user left the options alone, we can predict the filename
-   # and directory naming convention, and ensure the directiories exist.
-   # Otherwise the user must ensure the directories exist, because it's a hard
-   # job to figure out which argument in the array is a filename.  We only do
-   # this on the first chunk for each table.
-
-   if ( $default_dir && !$todo->{C} ) {
-      makedir(interp($todo, filename('%S', '%D', '%N.%3C.sql')));
-   }
-
-   if ( !$default_dir || !$todo->{C} || !$opts{T} ) {
-      # It's either a custom command, or it's the first chunk for a
-      # tab-separated table and we're going to dump the schema, or it's a
-      # regular SQL dump and we're going to dump data.
-      my @args;
-      if ( !$opts{T} && $dump_data ) {
-         @args = map { interp($todo, $_) } @mysqldump_args;
+      # If the user left the options alone, we can predict the filename and
+      # directory naming convention, and ensure the directories exist.
+      # Otherwise the user must ensure the directories exist.
+      if ( !@ARGV ) {
+         makedir(interp($todo, filename('%S', '%D', '%N.%3C.sql')));
       }
-      else { 
-         @args = map { interp($todo, $_) } @mysqldump_nodata_args;
-      }
+
+      my @args = map { interp($todo, $_) } @mysqldump_args;
       $exit_status = system_call( @args ) || $exit_status;
    }
 

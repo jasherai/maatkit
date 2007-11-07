@@ -1,5 +1,10 @@
 Changelog for mysql-parallel-dump:
 
+   * Do not shell out to mysqldump for --tab.
+   * Removed the --opt option.
+   * Check for valid options to mysqldump.
+   * Dump table definition and triggers separately for --tab.
+
 2007-11-04: version 0.9.11
 
    * Made command-line help easier to use.
