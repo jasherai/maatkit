@@ -21,6 +21,10 @@
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
 # TODO: search for obsolete grant statements.
+# TODO: build a module that prints grants by inspecting the grant tables.
+# Should be able to show stuff the grant system doesn't show.  Print grants in a
+# way that can be done on earlier MySQL versions, with version-specific
+# comments.
 
 use strict;
 use warnings FATAL => 'all';
