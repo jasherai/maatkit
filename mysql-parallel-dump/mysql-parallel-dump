@@ -22,7 +22,6 @@
 
 # TODO: there are still some issues with filename quoting.  It is not
 # cross-platform compatible.
-# TODO: quote MySQL identifiers with Quoter.
 
 use strict;
 use warnings FATAL => 'all';
@@ -643,7 +642,7 @@ sub parse {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1219
+# MySQLDump package 1223
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -653,16 +652,13 @@ package MySQLDump;
 use English qw(-no_match_vars);
 
 sub new {
-   my ( $class, %opts ) = @_;
-   foreach my $opt ( qw(dbh quoter) ) {
-      die "You must specify $opt" unless defined $opts{$opt};
-   }
-   my $self = bless \%opts, $class;
+   my ( $class ) = @_;
+   my $self = bless {}, $class;
    return $self;
 }
 
 sub dump {
-   my ( $self, $db, $tbl, $what ) = @_;
+   my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
    ( my $result = <<'   EOF') =~ s/^      //gm;
       /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
       /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -677,12 +673,12 @@ sub dump {
    EOF
 
    if ( $what eq 'table' ) {
-      my $ddl = $self->get_create_table($db, $tbl);
-      $result .= 'DROP TABLE IF EXISTS ' . $self->{quoter}->quote($tbl) . ";\n";
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      $result .= 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n";
       $result .= $ddl . ";\n";
    }
    elsif ( $what eq 'triggers' ) {
-      my $trgs = $self->get_triggers($db, $tbl);
+      my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
       if ( $trgs && @$trgs ) {
          $result .= "\nDELIMITER ;;\n";
          foreach my $trg ( @$trgs ) {
@@ -697,9 +693,9 @@ sub dump {
                $result .= "/*!50017 DEFINER=$user\@$host */ ";
             }
             $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
-               $self->{quoter}->quote($trg->{trigger}),
+               $quoter->quote($trg->{trigger}),
                @{$trg}{qw(timing event)},
-               $self->{quoter}->quote($trg->{table}),
+               $quoter->quote($trg->{table}),
                $trg->{statement});
          }
          $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
@@ -726,19 +722,19 @@ sub dump {
 }
 
 sub get_create_table {
-   my ( $self, $db, $tbl ) = @_;
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{tables}->{$db}->{$tbl} ) {
-      $self->{dbh}->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $href = $self->{dbh}->selectrow_hashref(
+      my $href = $dbh->selectrow_hashref(
          "SHOW CREATE TABLE "
-         . $self->{quoter}->quote($db)
+         . $quoter->quote($db)
          . '.'
-         . $self->{quoter}->quote($tbl)
+         . $quoter->quote($tbl)
       );
-      $self->{dbh}->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
       my ($key) = grep { m/create table/i } keys %$href;
       $self->{tables}->{$db}->{$tbl} = $href->{$key};
@@ -747,15 +743,15 @@ sub get_create_table {
 }
 
 sub get_triggers {
-   my ( $self, $db, $tbl ) = @_;
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
-      $self->{dbh}->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $trgs = $self->{dbh}->selectall_arrayref(
-         "SHOW TRIGGERS FROM " . $self->{quoter}->quote($db),
+      my $trgs = $dbh->selectall_arrayref(
+         "SHOW TRIGGERS FROM " . $quoter->quote($db),
          { Slice => {} }
       );
       foreach my $trg ( @$trgs ) {
@@ -763,7 +759,7 @@ sub get_triggers {
          @trg{ map { lc $_ } keys %$trg } = values %$trg;
          push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
       }
-      $self->{dbh}->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
    }
    return $self->{triggers}->{$db}->{$tbl};
@@ -1282,10 +1278,7 @@ else {
 my $dbh = get_dbh();
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
-my $du = new MySQLDump(
-   dbh    => $dbh,
-   quoter => $q,
-);
+my $du = new MySQLDump();
 
 # This signal handler will do nothing but wake up the sleeping parent process
 # and record the exit status and time of the child that exited (as a side
@@ -1414,7 +1407,7 @@ foreach my $set ( @sets_to_do ) {
       my $done;
       do {
          @to_lock = unique(
-            map { "`$_->[0]`.`$_->[1]` READ" } @{$tables_for_set{$set}} );
+            map { $q->quote(@$_) . " READ" } @{$tables_for_set{$set}} );
          if ( $backedup_sth ) {
             push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
          }
@@ -1680,7 +1673,7 @@ sub get_tables_in_database {
 
 sub get_chunks {
    my ( $spec, $set, $db, $tbl, $cache ) = @_;
-   my $table = $tp->parse($du->get_create_table($db, $tbl));
+   my $table = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
    my $rows_per_chunk;
    my $cant_chunk = {
       D => $db,
@@ -1770,7 +1763,7 @@ sub do_table {
       # Dump the schema before the first chunk.
       if ( $todo->{C} == 0 ) {
          # Table definition.
-         my $ddl = $du->dump($todo->{D}, $todo->{N}, 'table');
+         my $ddl = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'table');
          if ( $ddl ) {
             my $fspec = $opts{gzip}
                ? "| gzip --force --fast > $filename.sql.gz"
@@ -1779,7 +1772,7 @@ sub do_table {
             print $file $ddl      or die "Couldn't print to $fspec: $OS_ERROR";
             close $file           or die "Couldn't print to $fspec: $OS_ERROR";
          }
-         my $trg = $du->dump($todo->{D}, $todo->{N}, 'triggers');
+         my $trg = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'triggers');
          if ( $trg ) {
             my $fspec = $opts{gzip}
                ? "| gzip --force --fast > $filename.trg.gz"
@@ -2022,8 +2015,8 @@ Set names may contain only lowercase letters, numbers, and underscores.
 MySQL Parallel Dump can break your tables into chunks when dumping, and put
 approximately the amount of data you specify into each chunk.  This is useful to
 avoid enormous files for restoration, which can not only take a long time but
-may be a lot of extra work for transactional storage engines like InnoDB.  It
-can create a huge rollback segment in your tablespace.
+may be a lot of extra work for transactional storage engines like InnoDB.  A
+huge file can create a huge rollback segment in your tablespace.
 
 To dump in chunks, specify the L<"--chunksize"> option.  This option is an
 integer with an optional suffix.  Without the suffix, it's the number of rows
@@ -2287,18 +2280,6 @@ MySQL Parallel Dump, after all -- 1 is not parallel).  On GNU/Linux machines,
 the default is the number of times 'processor' appears in F</proc/cpuinfo>.  On
 Windows, the default is read from the environment.  In any case, the default is
 at least 2, even when there's only a single processor.
-
-=item --opt
-
-This is sort of related to C<mysqldump>'s C<--opt> argument, I<but not the same>.
-It does I<not> pass C<--opt> to C<mysqldump>.  Instead, it passes the following:
-
-C<--add-drop-table> C<--add-locks> C<--allow-keywords> C<--comments>
-C<--complete-insert> C<--create-options> C<--disable-keys>
-C<--extended-insert> C<--quick> C<--quote-names> C<--set-charset>
-C<--skip-lock-tables> C<--triggers> C<--tz-utc>
-
-These are what I consider to be sensible default options.
 
 =item --password
 
