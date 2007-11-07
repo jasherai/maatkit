@@ -55,7 +55,7 @@ sub dump {
    }
    elsif ( $what eq 'triggers' ) {
       my $trgs = $self->get_triggers($db, $tbl);
-      if ( @$trgs ) {
+      if ( $trgs && @$trgs ) {
          $result .= "\nDELIMITER ;;\n";
          foreach my $trg ( @$trgs ) {
             if ( $trg->{sql_mode} ) {
@@ -75,6 +75,9 @@ sub dump {
                $trg->{statement});
          }
          $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
+      }
+      else {
+         return undef;
       }
    }
    else {
