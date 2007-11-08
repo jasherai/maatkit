@@ -29,6 +29,7 @@ package MySQLFind;
 #      useddl    => 1/0 (default 0, 1 requires parser/dumper)
 #      parser    => new TableParser(), # optional
 #      dumper    => new MySQLDump(), # optional
+#      nullpass  => 1/0 # whether an undefined status test is true
 #      databases => {
 #         permit => { a => 1, b => 1, },
 #         reject => { ... },
@@ -40,6 +41,9 @@ package MySQLFind;
 #         reject => { ... },
 #         regexp => 'pattern',
 #         like   => 'pattern',
+#         status => [
+#            { update => '[+-]seconds' }, # age of Update_time
+#         ],
 #      },
 #      engines => {
 #         views  => 1/0, # 1 default
@@ -55,9 +59,14 @@ sub new {
    my ( $class, %opts ) = @_;
    my $self = bless \%opts, $class;
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   die "Specify dbh" unless $opts{dbh};
    if ( $opts{useddl} ) {
       die "Specifying useddl requires parser and dumper"
          unless $opts{parser} && $opts{dumper};
+   }
+   if ( $opts{tables}->{status} ) {
+      ($self->{timestamp}->{now})
+         = $opts{dbh}->selectrow_array('SELECT CURRENT_TIMESTAMP');
    }
    return $self;
 }
@@ -92,6 +101,14 @@ sub find_tables {
       $self->_filter('engines', sub { $_[0]->{Engine} },
          $self->_filter('tables', sub { $_[0]->{Name} },
             $self->_fetch_tbl_list(%opts)));
+   foreach my $crit ( @{$self->{tables}->{status}} ) {
+      my ($key, $test) = %$crit;
+      @tables
+         = grep {
+            # TODO: tests other than date...
+            $self->_test_date($_, $key, $test)
+         } @tables;
+   }
    return map { $_->{Name} } @tables;
 }
 
@@ -103,8 +120,9 @@ sub _fetch_tbl_list {
    my $need_engine = $self->{engines}->{permit}
         || $self->{engines}->{reject}
         || $self->{engines}->{regexp};
+   my $need_status = $self->{tables}->{status};
    my @params;
-   if ( !$self->{useddl} && $need_engine ) {
+   if ( $need_status || ($need_engine && !$self->{useddl}) ) {
       my $sql = "SHOW TABLE STATUS FROM "
               . $self->{quoter}->quote($opts{database});
       if ( $self->{tables}->{like} ) {
@@ -163,6 +181,23 @@ sub _filter {
          && ( !$permit ||  $permit->{$val} )
          && ( !$regexp ||  $val =~ m/$regexp/ )
    } @vals
+}
+
+sub _test_date {
+   my ( $self, $table, $prop, $test ) = @_;
+   if ( !defined $table->{$prop} ) {
+      return $self->{nullpass};
+   }
+   my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
+   die "Invalid date test $test for $prop" unless defined $num;
+   ($self->{timestamp}->{$num})
+      ||= $self->{dbh}->selectrow_array(
+         "SELECT DATE_SUB('$self->{timestamp}->{now}', INTERVAL $num SECOND)");
+   my $time = $self->{timestamp}->{$num};
+   return 
+         ( $equality eq '-' && $table->{$prop} gt $time )
+      || ( $equality eq '+' && $table->{$prop} lt $time )
+      || (                     $table->{$prop} eq $time );
 }
 
 1;
