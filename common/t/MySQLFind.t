@@ -19,15 +19,24 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 25;
+my $tests;
+BEGIN {
+   $tests = 31;
+}
+
+use Test::More tests => $tests;
 use English qw(-no_match_vars);
 use DBI;
 
 require "../MySQLFind.pm";
 require "../Quoter.pm";
+require "../TableParser.pm";
+require "../MySQLDump.pm";
 
 my $f;
 my $q = new Quoter();
+my $p = new TableParser();
+my $d = new MySQLDump();
 my %found;
 my @setup_dbs = qw(lost+found information_schema
    test_mysql_finder_1 test_mysql_finder_2);
@@ -41,7 +50,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 SKIP: {
-   skip $EVAL_ERROR, 1 if $EVAL_ERROR;
+   skip $EVAL_ERROR, $tests if $EVAL_ERROR;
 
    # Setup
    %existing_dbs = map { $_ => 1 }
@@ -282,6 +291,47 @@ SKIP: {
       },
       'engine reject',
    );
+
+   # Test that preferring DDL over SHOW TABLE STATUS wants a TableParser.
+   eval {
+      $f = new MySQLFind(
+         dbh    => $dbh,
+         useddl => 1,
+         quoter => $q,
+         tables => {
+         },
+         engines => {
+            reject => { MyISAM => 1 },
+            views  => 0,
+         }
+      );
+   };
+   like($EVAL_ERROR, qr/parser and dumper/, 'wants a TableParser');
+
+   # Test that the cache gets populated
+   $f = new MySQLFind(
+      dbh    => $dbh,
+      useddl => 1,
+      parser => $p,
+      dumper => $d,
+      quoter => $q,
+      tables => {
+      },
+      engines => {
+         reject => { MyISAM => 1 },
+         views  => 0,
+      }
+   );
+
+   is_deeply(
+      [$f->find_tables(database => 'test_mysql_finder_1')],
+      [qw(aa)],
+      'engine reject with useddl',
+   );
+
+   map {
+      ok($d->{tables}->{test_mysql_finder_1}->{$_}, "$_ in cache")
+   } qw(aa a b c);
 
    foreach my $db ( @setup_dbs ) {
       if (!exists $existing_dbs{$db} ) {

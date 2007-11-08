@@ -26,6 +26,9 @@ package MySQLFind;
 #   $f = new MySQLFind(
 #      dbh       => $dbh,
 #      quoter    => new Quoter(),
+#      useddl    => 1/0 (default 0, 1 requires parser/dumper)
+#      parser    => new TableParser(), # optional
+#      dumper    => new MySQLDump(), # optional
 #      databases => {
 #         permit => { a => 1, b => 1, },
 #         reject => { ... },
@@ -52,6 +55,10 @@ sub new {
    my ( $class, %opts ) = @_;
    my $self = bless \%opts, $class;
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   if ( $opts{useddl} ) {
+      die "Specifying useddl requires parser and dumper"
+         unless $opts{parser} && $opts{dumper};
+   }
    return $self;
 }
 
@@ -93,11 +100,11 @@ sub find_tables {
 sub _fetch_tbl_list {
    my ( $self, %opts ) = @_;
    die "database is required" unless $opts{database};
+   my $need_engine = $self->{engines}->{permit}
+        || $self->{engines}->{reject}
+        || $self->{engines}->{regexp};
    my @params;
-   if ( $self->{engines}->{permit}
-     || $self->{engines}->{reject}
-     || $self->{engines}->{regexp} )
-   {
+   if ( !$self->{useddl} && $need_engine ) {
       my $sql = "SHOW TABLE STATUS FROM "
               . $self->{quoter}->quote($opts{database});
       if ( $self->{tables}->{like} ) {
@@ -123,11 +130,24 @@ sub _fetch_tbl_list {
       my $sth = $self->{dbh}->prepare($sql);
       $sth->execute(@params);
       my @tables = @{$sth->fetchall_arrayref()};
-      return map {
-         {  Name   => $_->[0],
-            Engine => ($_->[1] || '') eq 'VIEW' ? 'VIEW' : '',
+      my @result;
+      foreach my $tbl ( @tables ) {
+         my $engine = '';
+         if ( ($tbl->[1] || '') eq 'VIEW' ) {
+            $engine = 'VIEW';
          }
-      } @tables;
+         elsif ( $need_engine ) {
+            my $struct = $self->{parser}->parse(
+               $self->{dumper}->get_create_table(
+                  $self->{dbh}, $self->{quoter}, $opts{database}, $tbl->[0]));
+            $engine = $struct->{engine};
+         }
+         push @result,
+         {  Name   => $tbl->[0],
+            Engine => $engine,
+         }
+      }
+      return @result;
    }
 }
 
