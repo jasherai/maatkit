@@ -124,7 +124,7 @@ sub get_triggers {
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
       my $trgs = $dbh->selectall_arrayref(
-         "SHOW TRIGGERS FROM " . $quoter->quote($db),
+         "/*!50010 SHOW TRIGGERS FROM " . $quoter->quote($db) . "*/",
          { Slice => {} }
       );
       foreach my $trg ( @$trgs ) {
