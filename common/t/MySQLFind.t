@@ -21,11 +21,12 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 31;
+   $tests = 35;
 }
 
 use Test::More tests => $tests;
 use English qw(-no_match_vars);
+use List::Util qw(max);
 use DBI;
 
 require "../MySQLFind.pm";
@@ -332,6 +333,88 @@ SKIP: {
    map {
       ok($d->{tables}->{test_mysql_finder_1}->{$_}, "$_ in cache")
    } qw(aa a b c);
+
+   # Sleep until the MyISAM tables age at least one second
+   my $diff;
+   do {
+      sleep(1);
+      my $rows = $dbh->selectall_arrayref(
+         'SHOW TABLE STATUS FROM test_mysql_finder_1 like "c"',
+         { Slice => {} },
+      );
+      my ( $age ) = map { $_->{Update_time} } grep { $_->{Update_time} } @$rows;
+      ($diff) = $dbh->selectrow_array(
+         "SELECT TIMESTAMPDIFF(second, '$age', now())");
+   } until ( $diff );
+
+   # Test aging with the Update_time.
+   $f = new MySQLFind(
+      dbh    => $dbh,
+      useddl => 1,
+      parser => $p,
+      dumper => $d,
+      quoter => $q,
+      tables => {
+         status => [
+            { Update_time => '+1' },
+         ],
+      },
+      engines => {
+      }
+   );
+
+   ok($f->{timestamp}, 'Finder timestamp');
+
+   is_deeply(
+      [$f->find_tables(database => 'test_mysql_finder_1')],
+      [qw(a b c)],
+      'age older than 1 sec',
+   );
+
+   # Test aging with the Update_time, but the other direction.
+   $f = new MySQLFind(
+      dbh    => $dbh,
+      useddl => 1,
+      parser => $p,
+      dumper => $d,
+      quoter => $q,
+      tables => {
+         status => [
+            { Update_time => '-1' },
+         ],
+      },
+      engines => {
+      }
+   );
+
+   is_deeply(
+      [$f->find_tables(database => 'test_mysql_finder_1')],
+      [qw()],
+      'age newer than 1 sec',
+   );
+
+   # Test aging with the Update_time with nullpass
+   $f = new MySQLFind(
+      dbh    => $dbh,
+      useddl => 1,
+      parser => $p,
+      dumper => $d,
+      quoter => $q,
+      nullpass => 1,
+      tables => {
+         status => [
+            { Update_time => '-1' },
+         ],
+      },
+      engines => {
+      }
+   );
+
+   is_deeply(
+      [$f->find_tables(database => 'test_mysql_finder_1')],
+      [qw(aa vw_1)],
+      'age newer than 1 sec with nullpass',
+   );
 
    foreach my $db ( @setup_dbs ) {
       if (!exists $existing_dbs{$db} ) {
