@@ -1,5 +1,6 @@
 Changelog for mysql-parallel-dump:
 
+   * Use a module to find databases and tables.
    * Do not shell out to mysqldump for --tab.
    * Removed the --opt option.
    * Check for valid options to mysqldump.
