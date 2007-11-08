@@ -27,7 +27,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# MySQLFind package 1227
+# MySQLFind package 1230
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -41,9 +41,14 @@ sub new {
    my ( $class, %opts ) = @_;
    my $self = bless \%opts, $class;
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   die "Specify dbh" unless $opts{dbh};
    if ( $opts{useddl} ) {
       die "Specifying useddl requires parser and dumper"
          unless $opts{parser} && $opts{dumper};
+   }
+   if ( $opts{tables}->{status} ) {
+      ($self->{timestamp}->{now})
+         = $opts{dbh}->selectrow_array('SELECT CURRENT_TIMESTAMP');
    }
    return $self;
 }
@@ -72,13 +77,21 @@ sub _fetch_db_list {
 sub find_tables {
    my ( $self, %opts ) = @_;
    my $views = $self->{engines}->{views};
-   my @tables = grep {
-         ( $views || $_->{Engine} ne 'VIEW' )
-      }
-      $self->_filter('engines', sub { $_[0]->{Engine} },
-         $self->_filter('tables', sub { $_[0]->{Name} },
+   my @tables 
+      = $self->_filter('engines', sub { $_[0]->{engine} },
+         $self->_filter('tables', sub { $_[0]->{name} },
             $self->_fetch_tbl_list(%opts)));
-   return map { $_->{Name} } @tables;
+   @tables = grep {
+         ( $views || ($_->{engine} ne 'VIEW') )
+      } @tables;
+   foreach my $crit ( @{$self->{tables}->{status}} ) {
+      my ($key, $test) = %$crit;
+      @tables
+         = grep {
+            $self->_test_date($_, $key, $test)
+         } @tables;
+   }
+   return map { $_->{name} } @tables;
 }
 
 sub _fetch_tbl_list {
@@ -87,8 +100,9 @@ sub _fetch_tbl_list {
    my $need_engine = $self->{engines}->{permit}
         || $self->{engines}->{reject}
         || $self->{engines}->{regexp};
+   my $need_status = $self->{tables}->{status};
    my @params;
-   if ( !$self->{useddl} && $need_engine ) {
+   if ( $need_status || ($need_engine && !$self->{useddl}) ) {
       my $sql = "SHOW TABLE STATUS FROM "
               . $self->{quoter}->quote($opts{database});
       if ( $self->{tables}->{like} ) {
@@ -99,9 +113,11 @@ sub _fetch_tbl_list {
       $sth->execute(@params);
       my @tables = @{$sth->fetchall_arrayref({})};
       return map {
-         $_->{Engine} ||= $_->{Type} || $_->{Comment};
-         delete $_->{Type};
-         $_;
+         my %tbl; # Make a copy with lowercased keys
+         @tbl{ map { lc $_ } keys %$_ } = values %$_;
+         $tbl{engine} ||= $tbl{type} || $tbl{comment};
+         delete $tbl{type};
+         \%tbl;
       } @tables;
    }
    else {
@@ -127,8 +143,8 @@ sub _fetch_tbl_list {
             $engine = $struct->{engine};
          }
          push @result,
-         {  Name   => $tbl->[0],
-            Engine => $engine,
+         {  name   => $tbl->[0],
+            engine => $engine,
          }
       }
       return @result;
@@ -147,6 +163,24 @@ sub _filter {
          && ( !$permit ||  $permit->{$val} )
          && ( !$regexp ||  $val =~ m/$regexp/ )
    } @vals
+}
+
+sub _test_date {
+   my ( $self, $table, $prop, $test ) = @_;
+   $prop = lc $prop;
+   if ( !defined $table->{$prop} ) {
+      return $self->{nullpass};
+   }
+   my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
+   die "Invalid date test $test for $prop" unless defined $num;
+   ($self->{timestamp}->{$num})
+      ||= $self->{dbh}->selectrow_array(
+         "SELECT DATE_SUB('$self->{timestamp}->{now}', INTERVAL $num SECOND)");
+   my $time = $self->{timestamp}->{$num};
+   return 
+         ( $equality eq '-' && $table->{$prop} gt $time )
+      || ( $equality eq '+' && $table->{$prop} lt $time )
+      || (                     $table->{$prop} eq $time );
 }
 
 1;
@@ -1424,14 +1458,6 @@ $SIG{CHLD} = sub {
 };
 
 # ############################################################################
-# Derive a last-modified timestamp
-# ############################################################################
-my ( $age )
-   = $opts{age}
-   ? $dbh->selectrow_array("SELECT DATE_SUB(NOW(), INTERVAL $opts{age} SECOND)")
-   : undef;
-
-# ############################################################################
 # Lock the whole server if desired.
 # ############################################################################
 if ( $opts{k} && !$opts{test} ) {
@@ -1444,6 +1470,7 @@ if ( $opts{k} && !$opts{test} ) {
 my %tables_in_sets;
 my %tables_for_set;
 my %stats_for_set;
+my %tables_for;
 my @sets_to_do = $opts{sets} ? unique(@{$opts{sets}}) : ();
 
 # Fetch backup sets from the database.
@@ -1454,7 +1481,7 @@ if ( $opts{sets} ) {
       my $sql = "SELECT `db`, `tbl` "
               . "FROM $opts{settable} "
               . "WHERE `setname` = '$set' "
-              . ($age ? "AND `ts` <= '$age' " : '')
+              . ($opts{age} ? "AND `ts` <= DATE_SUB(NOW(), INTERVAL $opts{age} SECOND) " : '')
               . "ORDER BY `priority`, `db`, `tbl`";
       print $sql, "\n" if $opts{test};
       my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
@@ -1464,7 +1491,7 @@ if ( $opts{sets} ) {
          push @{$tables_for_set{$set}}, [ $row->{db}, $row->{tbl} ];
       }
    }
-   if ( $age ) {
+   if ( $opts{age} ) {
       $backedup_sth = $dbh->prepare(
          "UPDATE $opts{settable} AS `mysql_parallel_dump_writable` SET `ts` = NOW() "
          . " WHERE `setname` = ? AND `db` = ? AND `tbl` = ?");
@@ -1474,7 +1501,7 @@ if ( $opts{sets} ) {
 my %databases_for;
 my %table_status;
 
-my $f = new MySQLFind(
+my %findspec = (
    dbh => $dbh,
    quoter => $q,
    databases => {
@@ -1491,6 +1518,10 @@ my $f = new MySQLFind(
       views => 0,
    },
 );
+if ( $opts{age} && !$opts{sets} ) {
+   push @{$findspec{tables}->{status}}, { Update_time => "+$opts{age}" };
+}
+my $f = new MySQLFind(%findspec);
 
 # Do all databases and tables in a 'default' set, possibly excluding those
 # that have been included in named sets above.  Or, if --setperdb is
@@ -1512,16 +1543,15 @@ foreach my $set ( @sets_to_do ) {
 
    if ( !$opts{sets} ) { # Must fetch tables.
       foreach my $database ( @{$databases_for{$set}} ) {
-# TODO
-=pod
-         next TABLE if
-            # skip tables in other sets
-            ( $tables_in_sets->{$database}->{$tblname} )
-            || ( $table->{update_time} && $age && $table->{update_time} lt $age );
-         $stats_for_set->{$set}->{tables}++;
-         $tables_in_sets->{$database}->{$tblname}++;
-         push @{$tables_for_set->{$set}}, [ $database, $tblname ];
-=cut
+         $tables_for{$database} ||= [ $f->find_tables(database => $database) ];
+         TABLE:
+         foreach my $table ( @{$tables_for{$database}} ) {
+            if ( !$tables_in_sets{$database}->{$table} ) { # Skip if in another set
+               $stats_for_set{$set}->{tables}++;
+               $tables_in_sets{$database}->{$table}++;
+               push @{$tables_for_set{$set}}, [ $database, $table ];
+            }
+         }
       }
    }
 
