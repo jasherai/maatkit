@@ -27,6 +27,135 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
+# MySQLFind package 1227
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MySQLFind;
+
+
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, %opts ) = @_;
+   my $self = bless \%opts, $class;
+   $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   if ( $opts{useddl} ) {
+      die "Specifying useddl requires parser and dumper"
+         unless $opts{parser} && $opts{dumper};
+   }
+   return $self;
+}
+
+sub find_databases {
+   my ( $self ) = @_;
+   return grep {
+      $_ !~ m/^(information_schema|lost\+found)$/i
+   }
+   $self->_filter('databases', sub { $_[0] }, $self->_fetch_db_list());
+}
+
+sub _fetch_db_list {
+   my ( $self ) = @_;
+   my $sql = 'SHOW DATABASES';
+   my @params;
+   if ( $self->{databases}->{like} ) {
+      $sql .= ' LIKE ?';
+      push @params, $self->{databases}->{like};
+   }
+   my $sth = $self->{dbh}->prepare($sql);
+   $sth->execute( @params );
+   return map { $_->[0] } @{$sth->fetchall_arrayref()};
+}
+
+sub find_tables {
+   my ( $self, %opts ) = @_;
+   my $views = $self->{engines}->{views};
+   my @tables = grep {
+         ( $views || $_->{Engine} ne 'VIEW' )
+      }
+      $self->_filter('engines', sub { $_[0]->{Engine} },
+         $self->_filter('tables', sub { $_[0]->{Name} },
+            $self->_fetch_tbl_list(%opts)));
+   return map { $_->{Name} } @tables;
+}
+
+sub _fetch_tbl_list {
+   my ( $self, %opts ) = @_;
+   die "database is required" unless $opts{database};
+   my $need_engine = $self->{engines}->{permit}
+        || $self->{engines}->{reject}
+        || $self->{engines}->{regexp};
+   my @params;
+   if ( !$self->{useddl} && $need_engine ) {
+      my $sql = "SHOW TABLE STATUS FROM "
+              . $self->{quoter}->quote($opts{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
+      }
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref({})};
+      return map {
+         $_->{Engine} ||= $_->{Type} || $_->{Comment};
+         delete $_->{Type};
+         $_;
+      } @tables;
+   }
+   else {
+      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM "
+              . $self->{quoter}->quote($opts{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
+      }
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref()};
+      my @result;
+      foreach my $tbl ( @tables ) {
+         my $engine = '';
+         if ( ($tbl->[1] || '') eq 'VIEW' ) {
+            $engine = 'VIEW';
+         }
+         elsif ( $need_engine ) {
+            my $struct = $self->{parser}->parse(
+               $self->{dumper}->get_create_table(
+                  $self->{dbh}, $self->{quoter}, $opts{database}, $tbl->[0]));
+            $engine = $struct->{engine};
+         }
+         push @result,
+         {  Name   => $tbl->[0],
+            Engine => $engine,
+         }
+      }
+      return @result;
+   }
+}
+
+sub _filter {
+   my ( $self, $thing, $sub, @vals ) = @_;
+   my $permit = $self->{$thing}->{permit};
+   my $reject = $self->{$thing}->{reject};
+   my $regexp = $self->{$thing}->{regexp};
+   return grep {
+      my $val = $sub->($_);
+      $val = '' unless defined $val;
+      ( !$reject || !$reject->{$val} )
+         && ( !$permit ||  $permit->{$val} )
+         && ( !$regexp ||  $val =~ m/$regexp/ )
+   } @vals
+}
+
+1;
+
+# ###########################################################################
+# End MySQLFind package
+# ###########################################################################
+
+# ###########################################################################
 # DSNParser package 1216
 # ###########################################################################
 use strict;
@@ -1343,29 +1472,36 @@ if ( $opts{sets} ) {
 }
 
 my %databases_for;
-my @databases;
 my %table_status;
+
+my $f = new MySQLFind(
+   dbh => $dbh,
+   quoter => $q,
+   databases => {
+      permit => $opts{d},
+      reject => $opts{g},
+      regexp => $opts{dbregex},
+   },
+   tables => {
+      permit => $opts{t},
+      reject => $opts{n},
+      regexp => $opts{tblregex},
+   },
+   engines => {
+      views => 0,
+   },
+);
 
 # Do all databases and tables in a 'default' set, possibly excluding those
 # that have been included in named sets above.  Or, if --setperdb is
 # specified, place each into its own set.
 if ( !$opts{sets} || $opts{defaultset} ) {
-   @databases = grep {
-      $_ !~ m/^(information_schema|lost\+found)$/mi
-   } @{$dbh->selectcol_arrayref('SHOW DATABASES')};
-   if ( !$opts{sets} ) {
-      @databases = grep {
-         ( !$opts{d} || exists($opts{d}->{$_}) )
-         && ( !$opts{dbregex} || $_ =~ m/$opts{dbregex}/ )
-         && ( !exists $opts{g}->{$_} )
-      } @databases;
-   }
-   DATABASE:
-   foreach my $database ( @databases ) {
+   foreach my $database ( $f->find_databases() ) {
       my $set = $opts{setperdb} ? $database : 'default';
       push @{$databases_for{$set}}, $database;
-      @sets_to_do = unique(@sets_to_do, $set);
+      push @sets_to_do, $set;
    }
+   @sets_to_do = unique(@sets_to_do);
 }
 
 # ############################################################################
@@ -1374,20 +1510,18 @@ if ( !$opts{sets} || $opts{defaultset} ) {
 SET:
 foreach my $set ( @sets_to_do ) {
 
-   if ( !$opts{sets} ) {
-      # Must fetch tables.
+   if ( !$opts{sets} ) { # Must fetch tables.
       foreach my $database ( @{$databases_for{$set}} ) {
-         get_tables_in_database(
-            dbh            => $dbh,
-            set            => $set,
-            database       => $database,
-            age            => $age,
-            opts           => \%opts,
-            tables_in_sets => \%tables_in_sets,
-            stats_for_set  => \%stats_for_set,
-            table_status   => \%table_status,
-            tables_for_set => \%tables_for_set,
-         );
+# TODO
+=pod
+         next TABLE if
+            # skip tables in other sets
+            ( $tables_in_sets->{$database}->{$tblname} )
+            || ( $table->{update_time} && $age && $table->{update_time} lt $age );
+         $stats_for_set->{$set}->{tables}++;
+         $tables_in_sets->{$database}->{$tblname}++;
+         push @{$tables_for_set->{$set}}, [ $database, $tblname ];
+=cut
       }
    }
 
@@ -1496,7 +1630,7 @@ foreach my $set ( @sets_to_do ) {
    }
 
    # #########################################################################
-   # Design the format for printing out.
+   # Design the format for printing out. TODO: modularize.
    # #########################################################################
    my ( $maxdb, $maxtbl, $maxset);
    $maxdb  = max(8, map { length($_->{D}) } @work_to_do);
@@ -1611,65 +1745,11 @@ exit( sum(0, map { $_->{failure} || 0 } values %stats_for_set) ? 1 : 0 );
 # Subroutines
 # ############################################################################
 
+# TODO: modularize.
 sub mysql_error_msg {
    my ( $text ) = @_;
    $text =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
    return $text;
-}
-
-# Called when sets aren't retrieved from the settbl or when --defaultset is
-# given.
-sub get_tables_in_database {
-   my ( %args ) = @_;
-   my $dbh            = $args{dbh};
-   my $set            = $args{set};
-   my $database       = $args{database};
-   my $age            = $args{age};
-   my %opts           = %{$args{opts}};
-   my $tables_in_sets = $args{tables_in_sets};
-   my $tables_for_set = $args{tables_for_set};
-   my $stats_for_set  = $args{stats_for_set};
-   my $table_status   = $args{table_status};
-
-   my $need_table_status = $age || $opts{C} =~ m/\D/;
-
-   my $tables = $dbh->selectall_arrayref(
-      $need_table_status
-         ? "SHOW TABLE STATUS FROM `$database`"
-         : "SHOW /*!50002 FULL*/ TABLES FROM `$database`",
-      { Slice => {} });
-
-   if ( @$tables ) {
-
-      my ( $name_key )
-         = $need_table_status
-         ? ( qw(name) )
-         : ( grep { $_ ne 'table_type' } keys %{$tables->[0]} );
-      my $type_key = $need_table_status ? 'comment' : 'table_type';
-
-      TABLE:
-      foreach my $table ( @$tables ) {
-         my $tblname = $table->{$name_key};
-         if ( !$opts{sets} ) {
-            next TABLE if
-               ( $opts{t} && !exists($opts{t}->{$tblname}) )
-               || ( $opts{tblregex} && $tblname !~ m/$opts{tblregex}/ )
-               || exists $opts{n}->{$tblname};
-         }
-         next TABLE if
-            ( $tables_in_sets->{$database}->{$tblname} )
-            || ( $table->{$type_key} && $table->{$type_key} eq 'VIEW' )
-            || ( $table->{update_time} && $age && $table->{update_time} lt $age );
-
-         if ( $need_table_status ) {
-            $table_status->{$database}->{$tblname} = $table;
-         }
-
-         $stats_for_set->{$set}->{tables}++;
-         $tables_in_sets->{$database}->{$tblname}++;
-         push @{$tables_for_set->{$set}}, [ $database, $tblname ];
-      }
-   }
 }
 
 sub get_chunks {
@@ -1734,6 +1814,7 @@ sub info {
    }
 }
 
+# TODO: modularize
 sub unique {
    my %seen;
    grep { !$seen{$_}++ } @_;
@@ -2198,13 +2279,11 @@ This option implies L<"--tab">.
 
 =item --databases
 
-Dump this comma-separated list of databases.  Only applies when L<"--sets"> is
-not given.
+Dump this comma-separated list of databases.
 
-=item dbregex
+=item --dbregex
 
-Dump only databases whose names match this Perl regular expression.  Only
-applies when L<"--sets"> is not given.
+Dump only databases whose names match this Perl regular expression.
 
 =item --defaultset
 
@@ -2252,8 +2331,7 @@ Connect to host.
 
 =item --ignoredb
 
-Do not dump this comma-separated list of databases.  Only applies when
-L<"--sets"> is not given.
+Do not dump this comma-separated list of databases.
 
 =item --ignoreengine
 
@@ -2265,8 +2343,7 @@ Federated tables and Merge tables.
 
 =item --ignoretbl
 
-Do not dump this comma-separated list of table (not database.table) names.  Only
-applies when L<"--sets"> is not given.
+Do not dump this comma-separated list of table (not database.table) names.
 
 =item --locktables
 
@@ -2329,13 +2406,11 @@ server.
 
 =item --tables
 
-Dump this comma-separated list of table (not database.table) names.  Only
-applies when L<"--sets"> is not given.
+Dump this comma-separated list of table (not database.table) names.
 
 =item --tblregex
 
-Dump only tables whose names match this Perl regular expression.  Only applies
-when L<"--sets"> is not given.
+Dump only tables whose names match this Perl regular expression.
 
 =item --test
 
