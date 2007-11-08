@@ -95,12 +95,13 @@ sub _fetch_db_list {
 sub find_tables {
    my ( $self, %opts ) = @_;
    my $views = $self->{engines}->{views};
-   my @tables = grep {
-         ( $views || $_->{Engine} ne 'VIEW' )
-      }
-      $self->_filter('engines', sub { $_[0]->{Engine} },
-         $self->_filter('tables', sub { $_[0]->{Name} },
+   my @tables 
+      = $self->_filter('engines', sub { $_[0]->{engine} },
+         $self->_filter('tables', sub { $_[0]->{name} },
             $self->_fetch_tbl_list(%opts)));
+   @tables = grep {
+         ( $views || ($_->{engine} ne 'VIEW') )
+      } @tables;
    foreach my $crit ( @{$self->{tables}->{status}} ) {
       my ($key, $test) = %$crit;
       @tables
@@ -109,11 +110,12 @@ sub find_tables {
             $self->_test_date($_, $key, $test)
          } @tables;
    }
-   return map { $_->{Name} } @tables;
+   return map { $_->{name} } @tables;
 }
 
 # Returns hashrefs in the format SHOW TABLE STATUS would, but doesn't
-# necessarily call SHOW TABLE STATUS unless it needs to.
+# necessarily call SHOW TABLE STATUS unless it needs to.  Hash keys are all
+# lowercase.
 sub _fetch_tbl_list {
    my ( $self, %opts ) = @_;
    die "database is required" unless $opts{database};
@@ -133,9 +135,11 @@ sub _fetch_tbl_list {
       $sth->execute(@params);
       my @tables = @{$sth->fetchall_arrayref({})};
       return map {
-         $_->{Engine} ||= $_->{Type} || $_->{Comment};
-         delete $_->{Type};
-         $_;
+         my %tbl; # Make a copy with lowercased keys
+         @tbl{ map { lc $_ } keys %$_ } = values %$_;
+         $tbl{engine} ||= $tbl{type} || $tbl{comment};
+         delete $tbl{type};
+         \%tbl;
       } @tables;
    }
    else {
@@ -161,8 +165,8 @@ sub _fetch_tbl_list {
             $engine = $struct->{engine};
          }
          push @result,
-         {  Name   => $tbl->[0],
-            Engine => $engine,
+         {  name   => $tbl->[0],
+            engine => $engine,
          }
       }
       return @result;
@@ -185,6 +189,7 @@ sub _filter {
 
 sub _test_date {
    my ( $self, $table, $prop, $test ) = @_;
+   $prop = lc $prop;
    if ( !defined $table->{$prop} ) {
       return $self->{nullpass};
    }
