@@ -807,7 +807,38 @@ sub parse {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1232
+# VersionParser package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package VersionParser;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub parse {
+   my ( $self, $str ) = @_;
+   return sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+}
+
+sub version_ge {
+   my ( $self, $dbh, $target ) = @_;
+   $self->{$dbh} ||= $self->parse(
+      $dbh->selectrow_array('SELECT VERSION()'));
+   return $self->{$dbh} ge $self->parse($target);
+}
+
+1;
+
+# ###########################################################################
+# End VersionParser package
+# ###########################################################################
+
+# ###########################################################################
+# MySQLDump package 1234
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -916,7 +947,7 @@ sub get_triggers {
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
       my $trgs = $dbh->selectall_arrayref(
-         "/*!50010 SHOW TRIGGERS FROM " . $quoter->quote($db) . "*/",
+         "SHOW TRIGGERS FROM " . $quoter->quote($db),
          { Slice => {} }
       );
       foreach my $trg ( @$trgs ) {
@@ -1444,6 +1475,7 @@ my $dbh = get_dbh();
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 my $du = new MySQLDump();
+my $has_triggers = VersionParser->new()->version_ge($dbh, '5.0.10');
 
 # This signal handler will do nothing but wake up the sleeping parent process
 # and record the exit status and time of the child that exited (as a side
@@ -1881,18 +1913,20 @@ sub do_table {
             my $fspec = $opts{gzip}
                ? "| gzip --force --fast > $filename.sql.gz"
                : "> $filename.sql";
-            open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
-            print $file $ddl      or die "Couldn't print to $fspec: $OS_ERROR";
-            close $file           or die "Couldn't print to $fspec: $OS_ERROR";
+            open my $file, $fspec   or die "Couldn't open $fspec: $OS_ERROR";
+            print {$file} $ddl      or die "Couldn't print to $fspec: $OS_ERROR";
+            close {$file}           or die "Couldn't print to $fspec: $OS_ERROR";
          }
-         my $trg = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'triggers');
-         if ( $trg ) {
-            my $fspec = $opts{gzip}
-               ? "| gzip --force --fast > $filename.trg.gz"
-               : "> $filename.trg";
-            open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
-            print $file $trg      or die "Couldn't print to $fspec: $OS_ERROR";
-            close $file           or die "Couldn't print to $fspec: $OS_ERROR";
+         if ( $has_triggers ) {
+            my $trg = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'triggers');
+            if ( $trg ) {
+               my $fspec = $opts{gzip}
+                  ? "| gzip --force --fast > $filename.trg.gz"
+                  : "> $filename.trg";
+               open my $file, $fspec   or die "Couldn't open $fspec: $OS_ERROR";
+               print {$file} $trg      or die "Couldn't print to $fspec: $OS_ERROR";
+               close {$file}           or die "Couldn't print to $fspec: $OS_ERROR";
+            }
          }
       }
 
