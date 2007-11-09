@@ -653,7 +653,7 @@ my @opt_spec = (
    { s => 'build|U!',         d => 'Build tables for bottom-up algorithm (default)' },
    { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
    { s => 'collate|O!',       d => 'Use MySQL to compare strings if necessary (default)' },
-   { s => 'columns|c=a',      d => 'Comma-separated column list' },
+   { s => 'columns|c=h',      d => 'Comma-separated column list' },
    { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
    { s => 'deleteinsert|l',   d => 'Convert all UPDATES to DELETE and INSERT' },
    { s => 'queries|q',        d => 'Make debugging output executable SQL' },
@@ -717,6 +717,13 @@ my %opts = $opt_parser->parse();
 
 $opts{k}    = $opts{w} if !defined $opts{k};
 $opts{w}    = 60       if $opts{r} && !defined $opts{w};
+
+# TODO: when --columns is specified, and --synctomaster is given, you end up
+# with REPLACE INTO (partial columns) which will destroy data.  Yet maybe we
+# don't want to update the whole row, just columns we know to be bad (the DBA
+# knows this externally to mysql-table-sync).  This should turn into INSERT
+# and UPDATE.  Or REPLACE should be disallowed when not all columns are
+# included.
 
 $opts{T} = $opts{T} ? 'TEMPORARY' : '';
 if ( !defined $opts{C} ) {
@@ -1820,7 +1827,7 @@ sub get_tbl_struct {
       $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
 
    # Die if REPLACE is in use and there's more than one unique key.
-   if ( $opts{s} eq 'r' ) {
+   if ( $opts{s} eq 'r' && $opts{x} ) {
       my @matches = $ddl =~ m/(UNIQUE|PRIMARY)/g;
       if ( @matches > 1 ) {
          die "It isn't safe to use --strategy=r when the table has multiple unique keys";
