@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 3;
+   $tests = 10;
 }
 
 use Test::More tests => $tests;
@@ -54,4 +54,15 @@ SKIP: {
    $dump = $d->dump($dbh, $q, 'sakila', 'film', 'triggers');
    like($dump, qr/'root'\@'localhost'/, 'Triggers were defined by root');
    like($dump, qr/AFTER INSERT/, 'dump triggers');
+
+   $dump = $d->dump($dbh, $q, 'sakila', 'customer_list', 'table');
+   like($dump, qr/CREATE TABLE/, 'Temp table def for view/table');
+   like($dump, qr/DROP TABLE/, 'Drop temp table def for view/table');
+   like($dump, qr/DROP VIEW/, 'Drop view def for view/table');
+   unlike($dump, qr/ALGORITHM/, 'No view def');
+
+   $dump = $d->dump($dbh, $q, 'sakila', 'customer_list', 'view');
+   like($dump, qr/DROP TABLE/, 'Drop temp table def for view');
+   like($dump, qr/DROP VIEW/, 'Drop view def for view');
+   like($dump, qr/ALGORITHM/, 'View def');
 }

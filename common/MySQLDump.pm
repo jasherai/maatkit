@@ -24,6 +24,30 @@ package MySQLDump;
 
 use English qw(-no_match_vars);
 
+( our $before = <<'EOF') =~ s/^   //gm;
+   /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+   /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+   /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+   /*!40101 SET NAMES utf8 */;
+   /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+   /*!40103 SET TIME_ZONE='+00:00' */;
+   /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+   /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+   /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+   /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+EOF
+
+( our $after = <<'EOF') =~ s/^   //gm;
+   /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+   /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+   /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+   /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+   /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+   /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+   /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+   /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+EOF
+
 sub new {
    my ( $class ) = @_;
    my $self = bless {}, $class;
@@ -32,23 +56,20 @@ sub new {
 
 sub dump {
    my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
-   ( my $result = <<'   EOF') =~ s/^      //gm;
-      /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-      /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-      /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-      /*!40101 SET NAMES utf8 */;
-      /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
-      /*!40103 SET TIME_ZONE='+00:00' */;
-      /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
-      /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
-      /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
-      /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
-   EOF
+   my $result = $before;
 
    if ( $what eq 'table' ) {
       my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
       $result .= 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n";
-      $result .= $ddl . ";\n";
+      if ( $ddl->[0] eq 'table' ) {
+         $result .= $ddl->[1] . ";\n";
+      }
+      else {
+         $result .= '/*!50001 DROP VIEW IF EXISTS '
+                 . $quoter->quote($tbl) . "*/;\n";
+         $result .= '/*!50001 '
+                 . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
+      }
    }
    elsif ( $what eq 'triggers' ) {
       my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
@@ -77,20 +98,18 @@ sub dump {
          return undef;
       }
    }
+   elsif ( $what eq 'view' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      $result  = '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";*/\n";
+      $result .= '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . ";*/\n";
+      $result .= '/*!50001 ' . $ddl->[1] . "*/;\n";
+      # Views are concatenated together; don't add before/after
+      return $result;
+   }
    else {
       die "You didn't say what to dump.";
    }
 
-   ( my $after = <<'   EOF') =~ s/^      //gm;
-      /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
-      /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
-      /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
-      /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
-      /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-      /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-      /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
-      /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
-   EOF
    return $result . $after;
 }
 
@@ -110,9 +129,45 @@ sub get_create_table {
       $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
       my ($key) = grep { m/create table/i } keys %$href;
-      $self->{tables}->{$db}->{$tbl} = $href->{$key};
+      if ( $key ) {
+         $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
+      }
+      else {
+         ($key) = grep { m/create view/i } keys %$href;
+         $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
+      }
    }
    return $self->{tables}->{$db}->{$tbl};
+}
+
+sub get_columns {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{columns}->{$db}->{$tbl} ) {
+      my $cols = $dbh->selectall_arrayref(
+         "SHOW COLUMNS FROM "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl),
+         { Slice => {} }
+      );
+      $self->{columns}->{$db}->{$tbl} = [
+         map {
+            my %row;
+            @row{ map { lc $_ } keys %$_ } = values %$_;
+            \%row;
+         } @$cols
+      ];
+   }
+   return $self->{columns}->{$db}->{$tbl};
+}
+
+sub get_tmp_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
+   $result .= join(",\n",
+      map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
+      @{$self->get_columns($dbh, $quoter, $db, $tbl)});
+   $result .= "\n);";
 }
 
 sub get_triggers {
