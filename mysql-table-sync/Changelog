@@ -1,5 +1,9 @@
 Changelog for mysql-table-sync:
 
+   * DSN parsing was broken.
+   * Changed --replicate to --synctomaster option.
+   * Errors were being hidden in an EVAL when --execute specified (bug #1819744).
+
 2007-11-04: version 0.9.8
 
    * Made command-line help easier to use.
