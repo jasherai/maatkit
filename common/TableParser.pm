@@ -32,6 +32,17 @@ sub new {
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
 
+   if ( ref $ddl eq 'ARRAY' ) {
+      if ( $ddl->[0] eq 'table' ) {
+         $ddl = $ddl->[1];
+      }
+      else {
+         return {
+            engine => 'VIEW',
+         };
+      }
+   }
+
    if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
       die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
