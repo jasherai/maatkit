@@ -56,25 +56,25 @@ sub new {
 
 sub dump {
    my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
-   my $result = $before;
 
    if ( $what eq 'table' ) {
       my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
-      $result .= 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n";
       if ( $ddl->[0] eq 'table' ) {
-         $result .= $ddl->[1] . ";\n";
+         return $before
+            . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . $ddl->[1] . ";\n";
       }
       else {
-         $result .= '/*!50001 DROP VIEW IF EXISTS '
-                 . $quoter->quote($tbl) . "*/;\n";
-         $result .= '/*!50001 '
-                 . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
+         return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . '/*!50001 DROP VIEW IF EXISTS '
+            . $quoter->quote($tbl) . "*/;\n/*!50001 "
+            . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
       }
    }
    elsif ( $what eq 'triggers' ) {
       my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
       if ( $trgs && @$trgs ) {
-         $result .= "\nDELIMITER ;;\n";
+         my $result = $before . "\nDELIMITER ;;\n";
          foreach my $trg ( @$trgs ) {
             if ( $trg->{sql_mode} ) {
                $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
@@ -93,6 +93,7 @@ sub dump {
                $trg->{statement});
          }
          $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
+         return $result;
       }
       else {
          return undef;
@@ -100,17 +101,13 @@ sub dump {
    }
    elsif ( $what eq 'view' ) {
       my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
-      $result  = '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";*/\n";
-      $result .= '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . ";*/\n";
-      $result .= '/*!50001 ' . $ddl->[1] . "*/;\n";
-      # Views are concatenated together; don't add before/after
-      return $result;
+      return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 ' . $ddl->[1] . "*/;\n";
    }
    else {
       die "You didn't say what to dump.";
    }
-
-   return $result . $after;
 }
 
 sub get_create_table {
@@ -167,7 +164,7 @@ sub get_tmp_table {
    $result .= join(",\n",
       map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
       @{$self->get_columns($dbh, $quoter, $db, $tbl)});
-   $result .= "\n);";
+   $result .= "\n)";
 }
 
 sub get_triggers {
