@@ -22,7 +22,6 @@
 
 # TODO: there are still some issues with filename quoting.  It is not
 # cross-platform compatible.
-# TODO: dump views.
 
 use strict;
 use warnings FATAL => 'all';
@@ -709,7 +708,7 @@ sub groups {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1219
+# TableParser package 1237
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -722,6 +721,17 @@ sub new {
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
+
+   if ( ref $ddl eq 'ARRAY' ) {
+      if ( $ddl->[0] eq 'table' ) {
+         $ddl = $ddl->[1];
+      }
+      else {
+         return {
+            engine => 'VIEW',
+         };
+      }
+   }
 
    if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
       die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
@@ -838,7 +848,7 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1234
+# MySQLDump package 1238
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -846,6 +856,30 @@ use warnings FATAL => 'all';
 package MySQLDump;
 
 use English qw(-no_match_vars);
+
+( our $before = <<'EOF') =~ s/^   //gm;
+   /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+   /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+   /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+   /*!40101 SET NAMES utf8 */;
+   /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+   /*!40103 SET TIME_ZONE='+00:00' */;
+   /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+   /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+   /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+   /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+EOF
+
+( our $after = <<'EOF') =~ s/^   //gm;
+   /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+   /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+   /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+   /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+   /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+   /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+   /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+   /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+EOF
 
 sub new {
    my ( $class ) = @_;
@@ -855,28 +889,25 @@ sub new {
 
 sub dump {
    my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
-   ( my $result = <<'   EOF') =~ s/^      //gm;
-      /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-      /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-      /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-      /*!40101 SET NAMES utf8 */;
-      /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
-      /*!40103 SET TIME_ZONE='+00:00' */;
-      /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
-      /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
-      /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
-      /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
-   EOF
 
    if ( $what eq 'table' ) {
       my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
-      $result .= 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n";
-      $result .= $ddl . ";\n";
+      if ( $ddl->[0] eq 'table' ) {
+         return $before
+            . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . $ddl->[1] . ";\n";
+      }
+      else {
+         return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . '/*!50001 DROP VIEW IF EXISTS '
+            . $quoter->quote($tbl) . "*/;\n/*!50001 "
+            . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
+      }
    }
    elsif ( $what eq 'triggers' ) {
       my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
       if ( $trgs && @$trgs ) {
-         $result .= "\nDELIMITER ;;\n";
+         my $result = $before . "\nDELIMITER ;;\n";
          foreach my $trg ( @$trgs ) {
             if ( $trg->{sql_mode} ) {
                $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
@@ -895,26 +926,21 @@ sub dump {
                $trg->{statement});
          }
          $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
+         return $result;
       }
       else {
          return undef;
       }
    }
+   elsif ( $what eq 'view' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 ' . $ddl->[1] . "*/;\n";
+   }
    else {
       die "You didn't say what to dump.";
    }
-
-   ( my $after = <<'   EOF') =~ s/^      //gm;
-      /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
-      /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
-      /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
-      /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
-      /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-      /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-      /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
-      /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
-   EOF
-   return $result . $after;
 }
 
 sub get_create_table {
@@ -933,9 +959,45 @@ sub get_create_table {
       $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
       my ($key) = grep { m/create table/i } keys %$href;
-      $self->{tables}->{$db}->{$tbl} = $href->{$key};
+      if ( $key ) {
+         $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
+      }
+      else {
+         ($key) = grep { m/create view/i } keys %$href;
+         $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
+      }
    }
    return $self->{tables}->{$db}->{$tbl};
+}
+
+sub get_columns {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{columns}->{$db}->{$tbl} ) {
+      my $cols = $dbh->selectall_arrayref(
+         "SHOW COLUMNS FROM "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl),
+         { Slice => {} }
+      );
+      $self->{columns}->{$db}->{$tbl} = [
+         map {
+            my %row;
+            @row{ map { lc $_ } keys %$_ } = values %$_;
+            \%row;
+         } @$cols
+      ];
+   }
+   return $self->{columns}->{$db}->{$tbl};
+}
+
+sub get_tmp_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
+   $result .= join(",\n",
+      map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
+      @{$self->get_columns($dbh, $quoter, $db, $tbl)});
+   $result .= "\n)";
 }
 
 sub get_triggers {
@@ -1471,11 +1533,11 @@ else {
 # ############################################################################
 # Connect.
 # ############################################################################
-my $dbh = get_dbh();
+my $dbh                  = get_dbh();
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
-my $du = new MySQLDump();
-my $has_triggers = VersionParser->new()->version_ge($dbh, '5.0.10');
+my $du                   = new MySQLDump();
+my $has_triggers         = VersionParser->new()->version_ge($dbh, '5.0.10');
 
 # This signal handler will do nothing but wake up the sleeping parent process
 # and record the exit status and time of the child that exited (as a side
@@ -1504,6 +1566,7 @@ my %tables_in_sets;
 my %tables_for_set;
 my %stats_for_set;
 my %tables_for;
+my @views;
 my @sets_to_do = $opts{sets} ? unique(@{$opts{sets}}) : ();
 
 # Fetch backup sets from the database.
@@ -1548,7 +1611,7 @@ my %findspec = (
       regexp => $opts{tblregex},
    },
    engines => {
-      views => 0,
+      views => $opts{T},
    },
 );
 if ( $opts{age} && !$opts{sets} ) {
@@ -1576,7 +1639,25 @@ foreach my $set ( @sets_to_do ) {
 
    if ( !$opts{sets} ) { # Must fetch tables.
       foreach my $database ( @{$databases_for{$set}} ) {
-         $tables_for{$database} ||= [ $f->find_tables(database => $database) ];
+         if ( !$tables_for{$database} ) {
+            my @tables = $f->find_tables(database => $database);
+            if ( $opts{T} ) {
+               # Split the views and tables out separately.  Since I need the
+               # DDL for each anyway, go ahead and get it now.
+               foreach my $table ( @tables ) {
+                  my $ddl = $du->get_create_table($dbh, $q, $database, $table);
+                  if ( $ddl->[0] eq 'table' ) {
+                     push @{$tables_for{$database}}, $table;
+                  }
+                  else {
+                     push @views, [ $database, $table ];
+                  }
+               }
+            }
+            else {
+               $tables_for{$database} = \@tables;
+            }
+         }
          TABLE:
          foreach my $table ( @{$tables_for{$database}} ) {
             if ( !$tables_in_sets{$database}->{$table} ) { # Skip if in another set
@@ -1589,7 +1670,7 @@ foreach my $set ( @sets_to_do ) {
    }
 
    if ( !$tables_for_set{$set} || !@{$tables_for_set{$set}} ) {
-      info(2, "Nothing to do for set $set");
+      info(2, "No tables to do for set $set");
       next SET;
    }
    my $start = time();
@@ -1672,21 +1753,24 @@ foreach my $set ( @sets_to_do ) {
       };
       eval {
          $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
-         print $file "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
-                   . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
-                   . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n";
+         print {$file} "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
+                     . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
+                     . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n"
+                     or die $OS_ERROR;
       };
       my %hash;
       foreach my $thing ( $master_pos, $slave_pos ) {
          next unless $thing;
          foreach my $key ( grep { $wanted{$_} } sort keys %$thing ) {
-            print $file "-- $key $thing->{$key}\n";
+            print $file "-- $key $thing->{$key}\n"
+               or die $OS_ERROR;
          }
       }
 
       # Put the details of the chunks into the file.
       foreach my $chunk ( @work_to_do ) {
-         print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n";
+         print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n"
+            or die $OS_ERROR;
       }
 
       close $file or die $OS_ERROR;
@@ -1783,6 +1867,29 @@ foreach my $set ( @sets_to_do ) {
                    $set, $stats->{tables}, $stats->{chunks}, $stats->{success} || 0,
                    $stats->{failure} || 0, $stats->{wallclock},
                    $stats->{time}));
+}
+
+# ############################################################################
+# Dump views now.
+# ############################################################################
+if ( @views ) {
+   my $filename = filename('default', '00_views');
+   my $fspec = $opts{gzip}
+      ? "| gzip --force --fast > $filename.sql.gz"
+      : "> $filename.sql";
+   makedir($filename);
+   open my $file, $fspec or die $OS_ERROR;
+   print {$file} $MySQLDump::before or die $OS_ERROR;
+   foreach my $view ( @views ) {
+      print {$file} "USE $view->[0];\n",
+         $du->dump($dbh, $q, @$view, 'table') or die $OS_ERROR;
+   }
+   foreach my $view ( @views ) {
+      print {$file} "USE $view->[0];\n",
+         $du->dump($dbh, $q, @$view, 'view') or die $OS_ERROR;
+   }
+   print {$file} $MySQLDump::after or die $OS_ERROR;
+   close $file or die $OS_ERROR;
 }
 
 $dbh->do('UNLOCK TABLES') unless $opts{test};
@@ -1915,7 +2022,7 @@ sub do_table {
                : "> $filename.sql";
             open my $file, $fspec   or die "Couldn't open $fspec: $OS_ERROR";
             print {$file} $ddl      or die "Couldn't print to $fspec: $OS_ERROR";
-            close $file             or die "Couldn't print to $fspec: $OS_ERROR";
+            close $file             or die "Couldn't close $fspec: $OS_ERROR";
          }
          if ( $has_triggers ) {
             my $trg = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'triggers');
@@ -1925,7 +2032,7 @@ sub do_table {
                   : "> $filename.trg";
                open my $file, $fspec   or die "Couldn't open $fspec: $OS_ERROR";
                print {$file} $trg      or die "Couldn't print to $fspec: $OS_ERROR";
-               close $file             or die "Couldn't print to $fspec: $OS_ERROR";
+               close $file             or die "Couldn't close $fspec: $OS_ERROR";
             }
          }
       }
@@ -2096,10 +2203,13 @@ on to every forked copy of C<mysqldump>: L<"--defaults-file">, L<"--host">,
 L<"--port">, L<"--socket">, L<"--user">, L<"--password">.  If you write your own
 command-line, you will need to specify them manually.
 
-MySQL Parallel Dump does I<not> back up your entire database.  It dumps tables
-and data I<only>.  It does not dump view definitions or stored routines.
-However, if you dump the C<mysql> database, you'll be dumping the stored
-routines anyway.
+If you specify the L<"--tab"> option, MySQL Parallel Dump creates separate files
+that hold views and triggers, so they can be restored correctly (this is not
+currently possible with the C<mysqldump> from MySQL AB, which will restore
+triggers before restoring data).  Otherwise it does I<not> back up your entire
+database; it dumps tables and data I<only>.  It does not dump view definitions
+or stored routines.  However, if you dump the C<mysql> database, you'll be
+dumping the stored routines anyway.
 
 Exit status is 0 if everything went well, 1 if any chunks failed, and any
 other value indicates an internal error.
@@ -2468,6 +2578,13 @@ machine as the MySQL server, but there is no protection if you don't.
 The files will be gzipped after dumping if L<"--gzip"> is enabled.  This option
 sets L<"--umask"> to zero so auto-created directories are writable by the MySQL
 server.
+
+Triggers are dumped into C<.trg> files, and views are postponed until the end of
+the dump, then dumped all together into the C<00_views.sql> file.  This allows
+restoring data before the triggers, which is important for restoring data
+accurately.  Views must be postponed until the end and dumped together so they
+can be restored correctly; interdependencies between views and tables may
+prevent correct restoration otherwise.
 
 =item --tables
 
