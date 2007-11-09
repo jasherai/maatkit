@@ -419,7 +419,7 @@ sub quote {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1209
+# DSNParser package 1216
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -516,7 +516,10 @@ sub parse {
 sub as_string {
    my ( $self, $dsn ) = @_;
    return $dsn unless ref $dsn;
-   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} && $self->{opts}->{$_} } sort keys %$dsn );
+   return join(',',
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      sort keys %$dsn );
 }
 
 sub usage {
@@ -855,15 +858,15 @@ if ( $opts{V} ) {
 # User wants us to lock for consistency.  But only lock on source initially;
 # might have to wait for the slave to catch up before locking on the dest.
 if ( $opts{k} ) {
-   if ( $opts{v} ) {
-      print "-- Locking table on source\n";
-   }
    my $lock_mode = $opts{r} ? 'WRITE' : 'READ';
+   if ( $opts{v} ) {
+      print "-- Locking table on source in $lock_mode mode\n";
+   }
    my $query = "LOCK TABLES $source->{db_tbl} $lock_mode";
    debug_print($query);
    $source->{dbh}->do($query);
    if ( $opts{v} ) {
-      print "-- Acquired table lock on source\n";
+      print "-- Acquired table lock on source in $lock_mode mode\n";
    }
 }
 
@@ -890,14 +893,20 @@ if ( $opts{w} ) {
 # destination if it's a replication slave, or the replication thread will be
 # locked out... we assume there is nothing else writing on the slave.
 if ( $opts{k} && !$opts{r} ) {
-   if ( $opts{v} ) {
-      print "-- Locking table on destination\n";
+   my $lock_mode = $opts{x} ? 'WRITE' : 'READ';
+   if ( $lock_mode eq 'WRITE' && $opts{a} eq 'bottomup' ) {
+      die "Sorry, you can't lock tables with --execute in bottomup mode "
+      . "because of mysql-table-sync bug #1819744.  Run with --no-lock "
+      . "or use --algorithm=topdown instead.\n";
    }
-   my $query = "LOCK TABLES $dest->{db_tbl} READ";
+   if ( $opts{v} ) {
+      print "-- Locking table on destination in $lock_mode mode\n";
+   }
+   my $query = "LOCK TABLES $dest->{db_tbl} $lock_mode";
    debug_print($query);
    $dest->{dbh}->do($query);
    if ( $opts{v} ) {
-      print "-- Acquired table lock on destination\n";
+      print "-- Acquired $lock_mode table lock on destination\n";
    }
 }
 
@@ -1757,6 +1766,9 @@ sub handle_data_change {
                   die "Your tables probably have some differences "
                      . "that cannot be resolved with UPDATE statements.  "
                      . "Re-run mysql-table-sync with --deleteinsert to proceed.\n";
+               }
+               else {
+                  die $EVAL_ERROR;
                }
             }
          }
