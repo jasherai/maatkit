@@ -2381,6 +2381,9 @@ connecting, inspecting the table, and dumping it.  Note that tab-separated
 dumps are typically much faster and don't suffer as much from the effects of
 many tiny tables, because they're not done via C<mysqldump>.
 
+See also L<http://www.paragon-cs.com/wordpress/?p=52> for a test of parallel
+dumping and restoring.
+
 =head1 OPTIONS
 
 Some options can be disabled by prefixing them with C<--no>, such as
