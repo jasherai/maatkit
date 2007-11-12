@@ -635,7 +635,6 @@ my @opt_spec = (
    { s => 'quiet|q',           d => 'Sets --verbose to 0' },
    { s => 'replace|r',         d => 'Use the REPLACE option to LOAD DATA INFILE' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'sql!',              d => 'Load SQL files first with mysql; default' },
    { s => 'tables|t=h',        d => 'Restore only this comma-separated list of tables' },
    { s => 'tab|T',             d => 'Restore tab-separated files with LOAD DATA INFILE' },
    { s => 'tblregex=s',        d => 'Restore only tables whose names match this pattern' },
@@ -743,17 +742,19 @@ $SIG{CHLD} = sub {
 # Discover files to be restored.
 # ############################################################################
 my @tables_to_do;
+my @view_files;
 my %files_for_table;
 my %stats;
+my $known_filetypes = 'sql|txt|csv|trg';
 
 # Find directories and files and save them.
 File::Find::find(
    {  no_chdir => 1,
       wanted   => sub {
          my ( $dir, $filename ) = ($File::Find::dir, $File::Find::name);
-         if ( -f $filename && $filename !~ m/00_master_data.sql$/ ) {
+         if ( -f $filename && $filename !~ m/00_(?:master|views)/ ) {
             my ($vol, $dirs, $file) = File::Spec->splitpath( $filename );
-            if ( $file =~ m/\.(?:sql|txt|csv)(?:\.\d+)?(?:\.gz)?$/ ) {
+            if ( $file =~ m/\.(?:$known_filetypes)(?:\.\d+)?(?:\.gz)?$/ ) {
                my @dirs  = grep { $_ } File::Spec->splitdir($dir);
                my $db    = $opts{D} || $dirs[-1];
                my ($tbl) = $file =~ m/^([^.]+)/;
@@ -764,19 +765,26 @@ File::Find::find(
                   && ( !$opts{t} || exists($opts{t}->{$tbl}) )
                   && ( !$opts{tblregex} || $tbl =~ m/$opts{tblregex}/ )
                ) {
-                  if ( !is_sql_file($file) && !$opts{T} ) {
+                  if ( filetype($file) ne 'sql' && !$opts{T} ) {
                      die "$filename isn't a SQL file and you didn't tell me "
                         . "to load tab-delimited files.  Maybe you should "
                         . "specify the --tab option.\n";
                   }
                   $stats{files}++;
-                  push @{$files_for_table{$db}->{$tbl}}, $File::Find::name;
+                  push @{$files_for_table{$db}->{$tbl}}, $filename;
                   push @tables_to_do, {
                      D => $db,
                      N => $tbl,
                   };
                }
             }
+         }
+         elsif ( $filename =~ m/00_views.sql/ ) {
+            $stats{files}++;
+            push @view_files, $filename;
+         }
+         elsif ( ! -d $filename ) {
+            info(1, "Skipping file $filename");
          }
       },
    },
@@ -879,6 +887,19 @@ while ( @tables_to_do || %kids ) {
    }
 }
 
+# Load views.
+foreach my $file ( @view_files ) {
+   my @args;
+   if ( $file =~ m/\.gz/ ) {
+      @args = (qw(gunzip --stdout), qq{'$file'}, qw(| mysql), @conn_params);
+   }
+   else {
+      @args = (qw(mysql), @conn_params, '<', qq{'$file'});
+   }
+   my $exit_status = system_call( @args );
+   $stats{ $exit_status ? 'failure' : 'success' }++;
+}
+
 $stats{wallclock} = time() - $start;
 
 info(1, sprintf(
@@ -931,12 +952,19 @@ sub do_table {
    my ( $db, $tbl, @files ) = @_;
    my $exit_status = 0;
 
-   # Sort sql files first.
-   if ( $opts{sql} ) {
-      @files = reverse sort {
-         is_sql_file($a) <=> is_sql_file($b)
-      } @files;
-   }
+   # Sort files.  If it's a --tab, this will result in the following load
+   # order:
+   # * sql     (drop and create table)
+   # * txt/csv (load data into table)
+   # * trg     (create triggers)
+   # Later we'll do the views from the 00_views file, after all tables are
+   # recreated.
+   @files = sort {
+      my $a_type = filetype($a);
+      my $b_type = filetype($b);
+      (index($known_filetypes, $a_type) <=> index($known_filetypes, $b_type))
+         || ($a cmp $b);
+   } @files;
 
    my $dbh;
 
@@ -944,7 +972,7 @@ sub do_table {
 
    foreach my $file ( @files ) {
 
-      if ( is_sql_file($file) ) {
+      if ( filetype($file) =~ m/^(?:sql|trg)$/ ) {
          my @args;
          if ( $file =~ m/\.gz/ ) {
             @args = (qw(gunzip --stdout), qq{'$file'}, qw(| mysql), $db, @conn_params);
@@ -1060,9 +1088,10 @@ sub do_table {
    return $exit_status;
 }
 
-sub is_sql_file {
+sub filetype {
    my ( $filename ) = @_;
-   return $filename =~ m/\.sql(?:\.gz)?$/ ? 1 : 0;
+   my ( $type ) = $filename =~ m/\.(sql|txt|csv|trg)(?:\.\d+)?(?:\.gz)?$/;
+   return $type || '';
 }
 
 sub get_dbh {
@@ -1128,6 +1157,7 @@ like the following:
   dir/tbl.sql
   dir/tbl.txt
   dir/tbl.csv
+  dir/tbl.trg
 
 It is also happy with files that look like this, where C<EXT> is one of the
 extensions just listed.
@@ -1139,7 +1169,12 @@ By default, it loads C<SQL> files first, if they exist, then loads C<CSV> or
 C<TXT> files next, in order of the numbers in the filename extension as just
 shown.  This makes it easy for you to reload a table's definition followed by
 its data, in case you dumped them into separate files (as happens with
-C<mysqldump>'s C<--tab> option).
+C<mysqldump>'s C<--tab> option).  It loads C<TRG> files, which create
+triggers, last.  Creating the triggers before loading data might keep the data
+from being restored correctly.  Files that are named 00_views.sql are loaded
+even later, after all the parallel restores are finished; dependencies among
+views and tables make them hard to restore one at a time.  See
+L<mysql-parallel-dump> for details on how data is dumped.
 
 Exit status is 0 if everything went well, 1 if any files failed, and any
 other value indicates an internal error.
@@ -1154,7 +1189,7 @@ When L<"--verbose"> is 0, there is normally no output unless there's an error.
 When L<"--verbose"> is 1, there is one line of output for the entire job,
 showing how many tables were processed, how many files were loaded with what
 status, how much time elapsed, and how much time the parallel load jobs added
-up to.
+up to.  If any files were skipped, the filenames are printed to the output.
 
 When L<"--verbose"> is 2, there's one line of output per table, showing extra
 data such as how many threads were running when each table finished loading:
@@ -1171,7 +1206,8 @@ data such as how many threads were running when each table finished loading:
 
 =head1 SPEED OF PARALLEL LOADING
 
-User-contributed benchmarks are welcome.
+User-contributed benchmarks are welcome.  See
+L<http://www.paragon-cs.com/wordpress/?p=52> for one user's experiences.
 
 =head1 OPTIONS
 
@@ -1315,11 +1351,6 @@ Adds the C<REPLACE> modifier to C<LOAD DATA INFILE>.
 =item --socket
 
 Socket file to use for connection.
-
-=item --sql
-
-Causes files with a .sql extension to be loaded (via C<mysql>) before
-loading .txt and .csv files via C<LOAD DATA INFILE>.  Enabled by default.
 
 =item --tab
 
