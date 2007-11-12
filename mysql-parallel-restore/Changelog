@@ -1,5 +1,7 @@
 Changelog for mysql-parallel-restore:
 
+2007-11-12: version 1.0.0
+
    * Removed the --sql option, as sort order is implied when --tab is given.
    * Added code to load .trg files (triggers) and load 00_views files.
    * Print out files that are not loaded.
