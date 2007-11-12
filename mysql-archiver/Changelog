@@ -1,5 +1,7 @@
 Changelog for mysql-archiver:
 
+2007-11-12: version 1.0.3
+
    * The --no-ascend option caused too many bind variables to be used.
 
 2007-11-04: version 1.0.2
