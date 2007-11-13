@@ -19,7 +19,12 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 15;
+my $tests;
+BEGIN {
+   $tests = 15;
+}
+
+use Test::More tests => $tests;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -65,7 +70,7 @@ eval {
    "DBI:mysql:;mysql_read_default_group=mysql", undef, undef, { RaiseError => 1 })
 };
 SKIP: {
-   skip $EVAL_ERROR, 1 if $EVAL_ERROR;
+   skip 'Cannot connect to MySQL', $tests - 3 if $EVAL_ERROR;
    my @chunks;
 
    @chunks = $c->calculate_chunks(

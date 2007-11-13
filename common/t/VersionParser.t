@@ -40,6 +40,6 @@ eval {
    "DBI:mysql:;mysql_read_default_group=mysql", undef, undef, { RaiseError => 1 })
 };
 SKIP: {
-   skip $EVAL_ERROR, 1 if $EVAL_ERROR;
+   skip 'Cannot connect to MySQL', 1 if $EVAL_ERROR;
    ok($p->version_ge($dbh, '3.23.00'), 'Version is > 3.23');
 }
