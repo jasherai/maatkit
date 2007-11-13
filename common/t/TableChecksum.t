@@ -19,7 +19,13 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 12;
+my ($tests, $skipped);
+BEGIN {
+   $tests = 23;
+   $skipped = 2;
+}
+
+use Test::More tests => $tests;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -168,3 +174,108 @@ is (
    'ACCUM',
    'ACCUM as requested',
 );
+
+ok($c->is_hash_algorithm('ACCUM'), 'ACCUM is hash');
+ok($c->is_hash_algorithm('BIT_XOR'), 'BIT_XOR is hash');
+ok(!$c->is_hash_algorithm('CHECKSUM'), 'CHECKSUM is not hash');
+
+is (
+   $c->make_xor_slices(
+      query   => 'FOO',
+      crc_wid => 1,
+   ),
+   "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(FOO, 1, 1), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 1, '0')",
+   'FOO XOR slices 1 wide',
+);
+
+is (
+   $c->make_xor_slices(
+      query   => 'FOO',
+      crc_wid => 16,
+   ),
+   "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(FOO, 1, 16), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 16, '0')",
+   'FOO XOR slices 16 wide',
+);
+
+is (
+   $c->make_xor_slices(
+      query   => 'FOO',
+      crc_wid => 17,
+   ),
+   "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(FOO, 1, 16), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 16, '0'), "
+      . "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(FOO, 17, 1), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 1, '0')",
+   'FOO XOR slices 17 wide',
+);
+
+is (
+   $c->make_xor_slices(
+      query   => 'FOO',
+      crc_wid => 32,
+   ),
+   "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(FOO, 1, 16), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 16, '0'), "
+      . "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(FOO, 17, 16), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 16, '0')",
+   'FOO XOR slices 32 wide',
+);
+
+is (
+   $c->make_xor_slices(
+      query     => 'FOO',
+      crc_wid   => 32,
+      opt_slice => 0,
+      opt_xor   => 1,
+   ),
+   "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := FOO, 1, 16), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 16, '0'), "
+      . "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 17, 16), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 16, '0')",
+   'XOR slice optimized in slice 0',
+);
+
+is (
+   $c->make_xor_slices(
+      query     => 'FOO',
+      crc_wid   => 32,
+      opt_slice => 1,
+      opt_xor   => 1,
+   ),
+   "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 16, '0'), "
+      . "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := FOO, 17, 16), 16, 10) "
+      . "AS UNSIGNED)), 10, 16), 16, '0')",
+   'XOR slice optimized in slice 1',
+);
+
+# Open a connection to MySQL, or skip the rest of the tests.
+my $dbh;
+eval {
+   $dbh = DBI->connect(
+   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
+   { PrintError => 0, RaiseError => 1 })
+};
+SKIP: {
+   skip 'Cannot open a DB connection', $tests-$skipped if $EVAL_ERROR;
+
+   is(
+      $c->choose_hash_func(
+         dbh => $dbh,
+      ),
+      'SHA1',
+      'SHA1 is default',
+   );
+
+   is(
+      $c->choose_hash_func(
+         dbh => $dbh,
+         func => 'SHA99',
+      ),
+      'SHA1',
+      'SHA99 does not exist so I get SHA1',
+   );
+
+}
