@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 23;
+   $tests = 25;
    $skipped = 2;
 }
 
@@ -228,7 +228,6 @@ is (
       query     => 'FOO',
       crc_wid   => 32,
       opt_slice => 0,
-      opt_xor   => 1,
    ),
    "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc := FOO, 1, 16), 16, 10) "
       . "AS UNSIGNED)), 10, 16), 16, '0'), "
@@ -242,7 +241,6 @@ is (
       query     => 'FOO',
       crc_wid   => 32,
       opt_slice => 1,
-      opt_xor   => 1,
    ),
    "LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(\@crc, 1, 16), 16, 10) "
       . "AS UNSIGNED)), 10, 16), 16, '0'), "
@@ -276,6 +274,24 @@ SKIP: {
       ),
       'SHA1',
       'SHA99 does not exist so I get SHA1',
+   );
+
+   is(
+      $c->optimize_xor(
+         dbh  => $dbh,
+         func => 'SHA1',
+      ),
+      '2',
+      'SHA1 slice is 2',
+   );
+
+   is(
+      $c->optimize_xor(
+         dbh  => $dbh,
+         func => 'MD5',
+      ),
+      '1',
+      'MD5 slice is 1',
    );
 
 }

@@ -110,11 +110,13 @@ sub choose_hash_func {
 
 # Figure out which slice in a sliced BIT_XOR checksum should have the actual
 # concat-columns-and-checksum, and which should just get variable references.
-# Stash the slice in $self for later reference.
+# Returns the slice.  I'm really not sure if this code is needed.  It always
+# seems the last slice is the one that works.  But I'd rather be paranoid.
 sub optimize_xor {
-   my ( $self, $dbh, $func ) = @_;
+   my ( $self, %opts ) = @_;
+   my ( $dbh, $func ) = @opts{qw(dbh func)};
 
-   my $crc_slice = 0;
+   my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
    my $sliced    = '';
    my $start     = 1;
@@ -122,30 +124,33 @@ sub optimize_xor {
 
    do { # Try different positions till sliced result equals non-sliced.
       $dbh->do('SET @crc := NULL, @cnt := 0');
-      my $slices = $self->make_slices($crc_slice, "\@crc := $func('a')");
-      my $sql    = "SELECT CONCAT($slices) AS TEST FROM (SELECT NULL) AS x";
-      $sliced    = ($dbh->selectrow_array($sql))[0];
+      my $slices = $self->make_xor_slices(
+         query     => "\@crc := $func('a')",
+         crc_wid   => $crc_wid,
+         opt_slice => $opt_slice,
+      );
+
+      my $sql = "SELECT CONCAT($slices) AS TEST FROM (SELECT NULL) AS x";
+      $sliced = ($dbh->selectrow_array($sql))[0];
       if ( $sliced ne $unsliced ) {
          $start += 16;
-         ++$crc_slice;
+         ++$opt_slice;
       }
    } while ( $start < $crc_wid && $sliced ne $unsliced );
 
-   if ( $sliced ne $unsliced ) {
-      # Disable the user-variable optimization.
-   }
+   return $sliced eq $unsliced ? $opt_slice : undef;
 }
 
 # Returns an expression that will do a bitwise XOR over a very wide integer,
 # such as that returned by SHA1, which is too large to just put into BIT_XOR().
 # $query is an expression that returns a row's checksum, $crc_wid is the width
-# of that expression in characters.  If the opt_xor argument is given, use a
+# of that expression in characters.  If the opt_slice argument is given, use a
 # variable to avoid calling the $query expression multiple times.  The variable
 # goes in slice $opt_slice.
 sub make_xor_slices {
    my ( $self, %opts ) = @_;
-   my ( $query, $crc_wid, $opt_xor, $opt_slice )
-      = @opts{qw(query crc_wid opt_xor opt_slice)};
+   my ( $query, $crc_wid, $opt_slice )
+      = @opts{qw(query crc_wid opt_slice)};
 
    # Create a series of slices with @crc as a placeholder.
    my @slices;
@@ -163,7 +168,7 @@ sub make_xor_slices {
    # Replace the placeholder with the expression.  If specified, add a
    # user-variable optimization so the expression goes in only one of the
    # slices.
-   if ( defined $opt_slice && $opt_slice < @slices && $opt_xor ) {
+   if ( defined $opt_slice && $opt_slice < @slices ) {
       $slices[$opt_slice] =~ s/\@crc/\@crc := $query/;
    }
    else {
