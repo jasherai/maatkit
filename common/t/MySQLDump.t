@@ -41,7 +41,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 SKIP: {
-   skip $EVAL_ERROR, $tests if $EVAL_ERROR;
+   skip 'Cannot connect to MySQL', $tests if $EVAL_ERROR;
 
    skip "Can't find sakila database", $tests
       unless grep { m/sakila/ } @{$dbh->selectcol_arrayref('show databases')};

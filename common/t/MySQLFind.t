@@ -51,7 +51,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 SKIP: {
-   skip $EVAL_ERROR, $tests if $EVAL_ERROR;
+   skip 'Cannot connect to MySQL', $tests if $EVAL_ERROR;
 
    # Setup
    %existing_dbs = map { $_ => 1 }
