@@ -272,6 +272,17 @@ is (
    'SHA1 query for sakila.film',
 );
 
+is (
+   $c->make_row_checksum(
+      func      => 'SHA1',
+      table     => $t,
+      quoter    => $q,
+      cols      => [qw(film_id)],
+   ),
+   q{SHA1(`film_id`)},
+   'SHA1 query for sakila.film with only one column',
+);
+
 #TODO
    my $todo = q{SELECT /*sakila.film:1/1*/ COUNT(*) AS cnt, }
    . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }

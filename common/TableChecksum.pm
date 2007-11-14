@@ -183,7 +183,7 @@ sub make_xor_slices {
 # *   quoter    Quoter()
 # *   func      SHA1, MD5, etc
 # *   sep       (Optional) Separator for CONCAT_WS(); default #
-# *   cols      (Optional) arrayref of columns to checksum TODO
+# *   cols      (Optional) arrayref of columns to checksum
 sub make_row_checksum {
    my ( $self, %args ) = @_;
    my ( $table, $quoter, $func )
