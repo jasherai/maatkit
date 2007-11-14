@@ -189,35 +189,40 @@ sub make_row_checksum {
    my ( $table, $quoter, $func )
       = @args{ qw(table quoter func) };
 
-   my $sep = $args{sep} || '#'; # TODO test
+   my $sep = $args{sep} || '#';
    $sep =~ s/'//g;
    $sep ||= '#';
 
    # Generate the expression that will turn a row into a checksum.
    # Choose columns.  Normalize query results: make FLOAT and TIMESTAMP
    # stringify uniformly.
-   my @cols = map {
+   my %cols = map { $_ => 1 } ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
+   my @cols =
+      map {
          my $type = $table->{type_for}->{$_};
          my $result = $quoter->quote($_);
          if ( $type eq 'timestamp' ) {
             $result .= ' + 0';
          }
          elsif ( $type =~ m/float|double/ && $args{precision} ) {
-            # TODO: test this.
             $result = "ROUND($result, $args{precision})";
          }
          $result;
-      } @{$table->{cols}}; # TODO: test explicit columns.
+      }
+      grep {
+         $cols{$_}
+      }
+      @{$table->{cols}};
 
    # Add a bitmap of which nullable columns are NULL.
-   if ( @{$table->{null_cols}} ) {
+   my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
+   if ( @nulls ) {
       my $bitmap = "CONCAT("
-         . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @{$table->{null_cols}})
+         . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
          . ")";
       push @cols, $bitmap;
    }
 
-   # TODO: test no need for CONCAT_WS() when only one column
    my $query = @cols > 1
              ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
              : "$func($cols[0])";
