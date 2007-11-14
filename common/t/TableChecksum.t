@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 37;
+   $tests = 39;
    $skipped = 2;
 }
 
@@ -349,12 +349,24 @@ is (
       tblname   => 'film',
       table     => $t,
       quoter    => $q,
-      algorithm => 'CHECKSUM TABLE',
+      algorithm => 'CHECKSUM',
       func      => 'SHA1',
       crc_wid   => 40,
    ),
    'CHECKSUM TABLE `sakila`.`film`',
    'Sakila.film CHECKSUM',
+);
+
+throws_ok (
+   sub { $c->make_checksum_query() },
+   qr/missing checksum algorithm/,
+   'Complains about missing algorithm',
+);
+
+throws_ok (
+   sub { $c->make_checksum_query(algorithm => 'CHECKSUM TABLE') },
+   qr/missing checksum algorithm/,
+   'Complains about bad algorithm',
 );
 
 is (

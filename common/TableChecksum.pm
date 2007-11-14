@@ -49,7 +49,7 @@ sub best_algorithm {
    my ($alg, $vp, $dbh) = @opts{ qw(algorithm vp dbh) };
    my @choices = sort { $ALGOS{$a}->{pref} <=> $ALGOS{$b}->{pref} } keys %ALGOS;
    die "Invalid checksum algorithm $alg"
-      if $alg && ! grep { $_ eq $alg } @choices;
+      if $alg && !$ALGOS{$alg};
 
    # CHECKSUM is eliminated by lots of things...
    if ( 
@@ -123,7 +123,7 @@ sub optimize_xor {
    my $crc_wid   = length($unsliced) < 16 ? 16 : length($unsliced);
 
    do { # Try different positions till sliced result equals non-sliced.
-      $dbh->do('SET @crc := NULL, @cnt := 0');
+      $dbh->do('SET @crc := "", @cnt := 0');
       my $slices = $self->make_xor_slices(
          query     => "\@crc := $func('a')",
          crc_wid   => $crc_wid,
@@ -167,7 +167,7 @@ sub make_xor_slices {
 
    # Replace the placeholder with the expression.  If specified, add a
    # user-variable optimization so the expression goes in only one of the
-   # slices.
+   # slices.  This optimization relies on @crc being '' when the query begins.
    if ( defined $opt_slice && $opt_slice < @slices ) {
       $slices[$opt_slice] =~ s/\@crc/\@crc := $query/;
    }
@@ -248,14 +248,18 @@ sub make_checksum_query {
         $func, $crc_wid, $opt_slice )
       = @args{ qw(dbname tblname table quoter algorithm
         func crc_wid opt_slice) };
+   die "Invalid or missing checksum algorithm"
+      unless $algorithm && $ALGOS{$algorithm};
 
-   my $expr = $self->make_row_checksum(%args);
    my $result;
 
-   if ( $algorithm eq 'CHECKSUM TABLE' ) {
+   if ( $algorithm eq 'CHECKSUM' ) {
       return "CHECKSUM TABLE " . $quoter->quote($dbname, $tblname);
    }
-   elsif ( $algorithm eq 'BIT_XOR' ) {
+
+   my $expr = $self->make_row_checksum(%args);
+
+   if ( $algorithm eq 'BIT_XOR' ) {
       # This checksum algorithm concatenates the columns in each row and
       # checksums them, then slices this checksum up into 16-character chunks.
       # It then converts them BIGINTs with the CONV() function, and then
@@ -268,7 +272,7 @@ sub make_checksum_query {
       $result = "CONCAT($slices) AS crc ";
    }
    else {
-      # Use an accumulator variable.  This query relies on @crc being NULL, and
+      # Use an accumulator variable.  This query relies on @crc being '', and
       # @cnt being 0 when it begins.  It checksums each row, appends it to the
       # running checksum, and checksums the two together.  In this way it acts
       # as an accumulator for all the rows.  It then prepends a steadily
