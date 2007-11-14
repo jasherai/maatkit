@@ -118,8 +118,9 @@ is_deeply(
          special_features     => 1,
          last_update          => 1,
       },
-      null_cols   => [qw( release_year original_language_id length rating special_features )],
+      null_cols   => [qw(description release_year original_language_id length rating special_features )],
       is_nullable => {
+         description          => 1,
          release_year         => 1,
          original_language_id => 1,
          length               => 1,
@@ -210,7 +211,7 @@ is_deeply(
          last_update          => 'timestamp',
       },
    },
-   'sakila.film is OK',
+   'sakila.film',
 );
 
 $t = $p->parse( load_file('samples/temporary_table.sql') );
@@ -229,6 +230,6 @@ is_deeply(
       engine       => 'MyISAM',
       type_for     => { a => 'int' },
    },
-   'Temporary table is OK',
+   'Temporary table',
 );
 
