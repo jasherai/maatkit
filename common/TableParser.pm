@@ -69,7 +69,7 @@ sub parse {
          push @nums, $col;
          $is_numeric{$col} = 1;
       }
-      if ( $def !~ m/NOT NULL/ && $def !~ m/text$/ ) {
+      if ( $def !~ m/NOT NULL/ ) {
          push @null, $col;
          $is_nullable{$col} = 1;
       }
