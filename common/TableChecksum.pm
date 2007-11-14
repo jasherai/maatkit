@@ -230,13 +230,32 @@ sub make_row_checksum {
    return $query;
 }
 
-1;
+# Generates a checksum query for a given table.  Arguments:
+# *   dbname    Database name
+# *   tblname   Table name
+# *   table     Struct as returned by TableParser::parse()
+# *   quoter    Quoter()
+# *   algorithm Any of @ALGOS
+# *   func      SHA1, MD5, etc
+# *   crc_wid   Width of the string returned by func
+# *   opt_slice (Optional) Which slice gets opt_xor (see make_xor_slices()).
+# *   cols      (Optional) see make_row_checksum()
+# *   sep       (Optional) see make_row_checksum()
+# *   replicate (Optional) generate query to REPLACE into this table.
+sub make_checksum_query {
+   my ( $self, %args ) = @_;
+   my ( $dbname, $tblname, $table, $quoter, $algorithm,
+        $func, $crc_wid, $opt_slice )
+      = @args{ qw(dbname tblname table quoter algorithm
+        func crc_wid opt_slice) };
 
-__DATA__
+   my $expr = $self->make_row_checksum(%args);
+   my $result;
 
-   # Make the query.
-   if ( $strat eq 'BIT_XOR' ) {
-
+   if ( $algorithm eq 'CHECKSUM TABLE' ) {
+      return "CHECKSUM TABLE " . $quoter->quote($dbname, $tblname);
+   }
+   elsif ( $algorithm eq 'BIT_XOR' ) {
       # This checksum algorithm concatenates the columns in each row and
       # checksums them, then slices this checksum up into 16-character chunks.
       # It then converts them BIGINTs with the CONV() function, and then
@@ -245,68 +264,33 @@ __DATA__
       # puts them back together.  The effect is the same as XORing a very wide
       # (32 characters = 128 bits for MD5, and SHA1 is even larger) unsigned
       # integer over all the rows.
-
-      my $slices = $tc->make_slices(
-         query     => $chks,
-         crc_wid   => $crc_wid,
-         opt_slice => $opt_slice,
-      );
-
-      if ( $opts{R} ) {
-         $query = "REPLACE /*progress_comment*/ INTO $opts{R}"
-            . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
-            . "SELECT '$db', '$tbl', ?, ?, COUNT(*), CONCAT($slices) AS crc "
-            . "FROM `$db`.`$tbl`$opts{W}";
-      }
-      else {
-         $query = "SELECT /*progress_comment*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
-      }
-
+      my $slices = $self->make_xor_slices( query => $expr, %args );
+      $result = "CONCAT($slices) AS crc ";
    }
-   else { # Use an accumulator variable.
-      # Find whether there's a PK (for order-by).  Since the accumulator
-      # variable re-checksums every row combined with the previous row's
-      # checksum, row order matters.
-      my $index = $opts{i}                           ? " USE INDEX(`$opts{i}`)"
-                : $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)'
-                : '';
-
-      # Generate the query.  This query relies on @crc being NULL, and @cnt
-      # being 0 when it begins.  It checksums each row, appends it to the
+   else {
+      # Use an accumulator variable.  This query relies on @crc being NULL, and
+      # @cnt being 0 when it begins.  It checksums each row, appends it to the
       # running checksum, and checksums the two together.  In this way it acts
       # as an accumulator for all the rows.  It then prepends a steadily
-      # increasing number to the left, left-padded with zeroes, so each
-      # checksum taken is stringwise greater than the last.  In this way the
-      # MAX() function can be used to return the last checksum calculated.
-      # @cnt is not used for a row count, it is only used to make MAX() work
-      # correctly.
-      if ( $opts{R} ) {
-         $query = "REPLACE /*progress_comment*/ INTO $opts{R}"
-            . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
-            . "SELECT '$db', '$tbl', ?, ?, COUNT(*) AS cnt, RIGHT(MAX("
-            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
-            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
-      }
-      else {
-         $query = "SELECT /*progress_comment*/ COUNT(*) AS cnt, RIGHT(MAX("
-            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
-            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
-      }
+      # increasing number to the left, left-padded with zeroes, so each checksum
+      # taken is stringwise greater than the last.  In this way the MAX()
+      # function can be used to return the last checksum calculated.  @cnt is
+      # not used for a row count, it is only used to make MAX() work correctly.
+      $result = "RIGHT(MAX("
+         . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
+         . "$func(CONCAT(\@crc, $expr)))"
+         . "), $crc_wid) AS crc ";
    }
+   if ( $args{replicate} ) {
+      $result = "REPLACE /*progress_comment*/ INTO $args{replicate} "
+         . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
+         . "SELECT ?, ?, ?, ?, COUNT(*) AS cnt, $result";
+   }
+   else {
+      $result = "SELECT /*progress_comment*/ COUNT(*) AS cnt, $result";
+   }
+   return $result . "FROM " . $quoter->quote($dbname, $tblname) . "/*WHERE*/";
 }
-
-# Generates a checksum query for a given table.  Arguments:
-# *   table     Struct as returned by TableParser::parse()
-# *   quoter    Quoter()
-# *   algorithm Any of @ALGOS
-# *   func      SHA1, MD5, etc
-# *   crc_wid   Width of the string returned by func
-# *   opt_slice (Optional) Which slice gets opt_xor (see make_xor_slices()).
-# *   cols      (Optional) arrayref of columns to checksum
-# sub make_checksum_query {
- #   my ( $self, %args ) = @_;
-  #  my ( $table, $quoter, $algorithm, $func, $crc_wid, $opt_slice )
-   #    = @opts{ qw(table quoter algorithm func crc_wid opt_slice) };
 
 1;
 
