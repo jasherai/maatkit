@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 32;
+   $tests = 37;
    $skipped = 2;
 }
 
@@ -341,17 +341,117 @@ is (
    'FLOAT column is rounded to 5 places',
 );
 
-#TODO
-   my $todo = q{SELECT /*sakila.film:1/1*/ COUNT(*) AS cnt, }
+$t = $tp->parse(load_file('samples/sakila.film.sql'));
+
+is (
+   $c->make_checksum_query(
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'CHECKSUM TABLE',
+      func      => 'SHA1',
+      crc_wid   => 40,
+   ),
+   'CHECKSUM TABLE `sakila`.`film`',
+   'Sakila.film CHECKSUM',
+);
+
+is (
+   $c->make_checksum_query(
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'BIT_XOR',
+      func      => 'SHA1',
+      crc_wid   => 40,
+      cols      => [qw(film_id)],
+   ),
+   q{SELECT /*progress_comment*/ COUNT(*) AS cnt, }
+   . q{CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 1, }
+   . q{16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
+   . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 17, 16), 16, }
+   . q{10) AS UNSIGNED)), 10, 16), 16, '0'), }
+   . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 33, 8), 16, }
+   . q{10) AS UNSIGNED)), 10, 16), 8, '0')) AS crc }
+   . q{FROM `sakila`.`film`/*WHERE*/},
+   'Sakila.film SHA1 BIT_XOR',
+);
+
+is (
+   $c->make_checksum_query(
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'BIT_XOR',
+      func      => 'SHA1',
+      crc_wid   => 40,
+      cols      => [qw(film_id)],
+      replicate => 'test.checksum',
+   ),
+   q{REPLACE /*progress_comment*/ INTO test.checksum }
+   . q{(db, tbl, chunk, boundaries, this_cnt, this_crc) }
+   . q{SELECT ?, ?, ?, ?, COUNT(*) AS cnt, }
+   . q{CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 1, }
+   . q{16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
+   . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 17, 16), 16, }
+   . q{10) AS UNSIGNED)), 10, 16), 16, '0'), }
+   . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 33, 8), 16, }
+   . q{10) AS UNSIGNED)), 10, 16), 8, '0')) AS crc }
+   . q{FROM `sakila`.`film`/*WHERE*/},
+   'Sakila.film SHA1 BIT_XOR with replication',
+);
+
+is (
+   $c->make_checksum_query(
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'ACCUM',
+      func      => 'SHA1',
+      crc_wid   => 40,
+   ),
+   q{SELECT /*progress_comment*/ COUNT(*) AS cnt, }
    . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
-   . q{SHA1(CONCAT_WS('#', @crc, SHA1(CONCAT_WS('#', }
-   . q{`film_id`, `title`, `description`, `release_year`, `language_id`,}
-   . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`,}
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', }
+   . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
+   . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
    . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
    . q{ISNULL(`original_language_id`), ISNULL(`length`), }
    . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40) AS crc }
-   . q{FROM `sakila`.`film` USE INDEX(PRIMARY) /*WHERE*/};
+   . q{FROM `sakila`.`film`/*WHERE*/},
+   'Sakila.film SHA1 ACCUM',
+);
+
+is (
+   $c->make_checksum_query(
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'ACCUM',
+      func      => 'SHA1',
+      crc_wid   => 40,
+      replicate => 'test.checksum',
+   ),
+   q{REPLACE /*progress_comment*/ INTO test.checksum }
+   . q{(db, tbl, chunk, boundaries, this_cnt, this_crc) }
+   . q{SELECT ?, ?, ?, ?, COUNT(*) AS cnt, }
+   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', }
+   . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
+   . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
+   . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
+   . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
+   . q{ISNULL(`original_language_id`), ISNULL(`length`), }
+   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40) AS crc }
+   . q{FROM `sakila`.`film`/*WHERE*/},
+   'Sakila.film SHA1 ACCUM with replication',
+);
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $dbh;
