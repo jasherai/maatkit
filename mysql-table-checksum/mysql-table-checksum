@@ -23,6 +23,337 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
+# TableParser package 1259
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableParser;
+
+sub new {
+   bless {}, shift;
+}
+
+sub parse {
+   my ( $self, $ddl, $opts ) = @_;
+
+   if ( ref $ddl eq 'ARRAY' ) {
+      if ( $ddl->[0] eq 'table' ) {
+         $ddl = $ddl->[1];
+      }
+      else {
+         return {
+            engine => 'VIEW',
+         };
+      }
+   }
+
+   if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
+      die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+   }
+
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+
+   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+
+   my %def_for;
+   @def_for{@cols} = @defs;
+
+   my (@nums, @null);
+   my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
+      die "Can't determine column type for $def" unless $type;
+      $type_for{$col} = $type;
+      if ( $type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ) {
+         push @nums, $col;
+         $is_numeric{$col} = 1;
+      }
+      if ( $def !~ m/NOT NULL/ ) {
+         push @null, $col;
+         $is_nullable{$col} = 1;
+      }
+      $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
+   }
+
+   my %keys;
+   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
+
+      if ( $engine !~ m/MEMORY|HEAP/ ) {
+         $key =~ s/USING HASH/USING BTREE/;
+      }
+
+      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
+      $type = $type || $special || 'BTREE';
+      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
+         && $engine =~ m/HEAP|MEMORY/i )
+      {
+         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
+      }
+
+      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
+      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
+      my @cols   = grep { m/[^,]/ } split('`', $cols);
+      $name      =~ s/`//g;
+
+      $keys{$name} = {
+         colnames    => $cols,
+         cols        => \@cols,
+         unique      => $unique,
+         is_col      => { map { $_ => 1 } @cols },
+         is_nullable => scalar(grep { $is_nullable{$_} } @cols),
+         type        => $type,
+      };
+   }
+
+   return {
+      cols           => \@cols,
+      col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
+      is_col         => { map { $_ => 1 } @cols },
+      null_cols      => \@null,
+      is_nullable    => \%is_nullable,
+      is_autoinc     => \%is_autoinc,
+      keys           => \%keys,
+      defs           => \%def_for,
+      numeric_cols   => \@nums,
+      is_numeric     => \%is_numeric,
+      engine         => $engine,
+      type_for       => \%type_for,
+   };
+}
+
+1;
+
+# ###########################################################################
+# End TableParser package
+# ###########################################################################
+
+# ###########################################################################
+# TableChecksum package 1263
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableChecksum;
+
+use English qw(-no_match_vars);
+use POSIX qw(ceil);
+use List::Util qw(min max);
+
+our %ALGOS = (
+   CHECKSUM => { pref => 0, hash => 0 },
+   ACCUM    => { pref => 1, hash => 1 },
+   BIT_XOR  => { pref => 2, hash => 1 },
+);
+
+sub new {
+   bless {}, shift;
+}
+
+sub best_algorithm {
+   my ( $self, %opts ) = @_;
+   my ($alg, $vp, $dbh) = @opts{ qw(algorithm vp dbh) };
+   my @choices = sort { $ALGOS{$a}->{pref} <=> $ALGOS{$b}->{pref} } keys %ALGOS;
+   die "Invalid checksum algorithm $alg"
+      if $alg && !$ALGOS{$alg};
+
+   if ( 
+      $opts{where} || $opts{chunk}        # CHECKSUM does whole table
+      || $opts{replicate}                 # CHECKSUM can't do INSERT.. SELECT
+      || !$vp->version_ge($dbh, '4.1.1')) # CHECKSUM doesn't exist
+   {
+      @choices = grep { $_ ne 'CHECKSUM' } @choices;
+   }
+
+   if ( !$vp->version_ge($dbh, '4.1.1') ) {
+      @choices = grep { $_ ne 'BIT_XOR' } @choices;
+   }
+
+   if ( $alg && grep { $_ eq $alg } @choices ) {
+      return $alg;
+   }
+
+   if ( $opts{count} && grep { $_ ne 'CHECKSUM' } @choices ) {
+      @choices = grep { $_ ne 'CHECKSUM' } @choices;
+   }
+
+   return $choices[0];
+}
+
+sub is_hash_algorithm {
+   my ( $self, $algorithm ) = @_;
+   return $ALGOS{$algorithm} && $ALGOS{$algorithm}->{hash};
+}
+
+sub choose_hash_func {
+   my ( $self, %opts ) = @_;
+   my @funcs = qw(SHA1 MD5);
+   if ( $opts{func} && !grep { uc $opts{func} eq $_ } @funcs ) {
+      unshift @funcs, $opts{func};
+   }
+   my ($result, $error);
+   do {
+      my $func;
+      eval {
+         $func = shift(@funcs);
+         $opts{dbh}->do("SELECT $func('test-string')");
+         $result = $func;
+      };
+      if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
+         $error .= qq{$func cannot be used because "$1"\n};
+      }
+   } while ( @funcs && !$result );
+
+   die $error unless $result;
+   return $result;
+}
+
+sub optimize_xor {
+   my ( $self, %opts ) = @_;
+   my ( $dbh, $func ) = @opts{qw(dbh func)};
+
+   my $opt_slice = 0;
+   my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
+   my $sliced    = '';
+   my $start     = 1;
+   my $crc_wid   = length($unsliced) < 16 ? 16 : length($unsliced);
+
+   do { # Try different positions till sliced result equals non-sliced.
+      $dbh->do('SET @crc := "", @cnt := 0');
+      my $slices = $self->make_xor_slices(
+         query     => "\@crc := $func('a')",
+         crc_wid   => $crc_wid,
+         opt_slice => $opt_slice,
+      );
+
+      my $sql = "SELECT CONCAT($slices) AS TEST FROM (SELECT NULL) AS x";
+      $sliced = ($dbh->selectrow_array($sql))[0];
+      if ( $sliced ne $unsliced ) {
+         $start += 16;
+         ++$opt_slice;
+      }
+   } while ( $start < $crc_wid && $sliced ne $unsliced );
+
+   return $sliced eq $unsliced ? $opt_slice : undef;
+}
+
+sub make_xor_slices {
+   my ( $self, %opts ) = @_;
+   my ( $query, $crc_wid, $opt_slice )
+      = @opts{qw(query crc_wid opt_slice)};
+
+   my @slices;
+   for ( my $start = 1; $start <= $crc_wid; $start += 16 ) {
+      my $len = $crc_wid - $start + 1;
+      if ( $len > 16 ) {
+         $len = 16;
+      }
+      push @slices,
+         "LPAD(CONV(BIT_XOR("
+         . "CAST(CONV(SUBSTRING(\@crc, $start, $len), 16, 10) AS UNSIGNED))"
+         . ", 10, 16), $len, '0')";
+   }
+
+   if ( defined $opt_slice && $opt_slice < @slices ) {
+      $slices[$opt_slice] =~ s/\@crc/\@crc := $query/;
+   }
+   else {
+      map { s/\@crc/$query/ } @slices;
+   }
+
+   return join(', ', @slices);
+}
+
+sub make_row_checksum {
+   my ( $self, %args ) = @_;
+   my ( $table, $quoter, $func )
+      = @args{ qw(table quoter func) };
+
+   my $sep = $args{sep} || '#';
+   $sep =~ s/'//g;
+   $sep ||= '#';
+
+   my %cols = map { $_ => 1 } ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
+   my @cols =
+      map {
+         my $type = $table->{type_for}->{$_};
+         my $result = $quoter->quote($_);
+         if ( $type eq 'timestamp' ) {
+            $result .= ' + 0';
+         }
+         elsif ( $type =~ m/float|double/ && $args{precision} ) {
+            $result = "ROUND($result, $args{precision})";
+         }
+         $result;
+      }
+      grep {
+         $cols{$_}
+      }
+      @{$table->{cols}};
+
+   my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
+   if ( @nulls ) {
+      my $bitmap = "CONCAT("
+         . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
+         . ")";
+      push @cols, $bitmap;
+   }
+
+   my $query = @cols > 1
+             ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
+             : "$func($cols[0])";
+
+   return $query;
+}
+
+sub make_checksum_query {
+   my ( $self, %args ) = @_;
+   my ( $dbname, $tblname, $table, $quoter, $algorithm,
+        $func, $crc_wid, $opt_slice )
+      = @args{ qw(dbname tblname table quoter algorithm
+        func crc_wid opt_slice) };
+   die "Invalid or missing checksum algorithm"
+      unless $algorithm && $ALGOS{$algorithm};
+
+   my $result;
+
+   if ( $algorithm eq 'CHECKSUM' ) {
+      return "CHECKSUM TABLE " . $quoter->quote($dbname, $tblname);
+   }
+
+   my $expr = $self->make_row_checksum(%args);
+
+   if ( $algorithm eq 'BIT_XOR' ) {
+      my $slices = $self->make_xor_slices( query => $expr, %args );
+      $result = "CONCAT($slices) AS crc ";
+   }
+   else {
+      $result = "RIGHT(MAX("
+         . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
+         . "$func(CONCAT(\@crc, $expr)))"
+         . "), $crc_wid) AS crc ";
+   }
+   if ( $args{replicate} ) {
+      $result = "REPLACE /*progress_comment*/ INTO $args{replicate} "
+         . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
+         . "SELECT ?, ?, ?, ?, COUNT(*) AS cnt, $result";
+   }
+   else {
+      $result = "SELECT /*progress_comment*/ COUNT(*) AS cnt, $result";
+   }
+   return $result . "FROM " . $quoter->quote($dbname, $tblname) . "/*WHERE*/";
+}
+
+1;
+
+# ###########################################################################
+# End TableChecksum package
+# ###########################################################################
+
+# ###########################################################################
 # OptionParser package 1178
 # ###########################################################################
 use strict;
@@ -391,7 +722,7 @@ sub groups {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1207
+# DSNParser package 1216
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -488,7 +819,10 @@ sub parse {
 sub as_string {
    my ( $self, $dsn ) = @_;
    return $dsn unless ref $dsn;
-   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} } sort keys %$dsn );
+   return join(',',
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      sort keys %$dsn );
 }
 
 sub usage {
@@ -568,6 +902,656 @@ sub version_ge {
 # End VersionParser package
 # ###########################################################################
 
+# ###########################################################################
+# MySQLDump package 1238
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MySQLDump;
+
+use English qw(-no_match_vars);
+
+( our $before = <<'EOF') =~ s/^   //gm;
+   /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+   /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+   /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+   /*!40101 SET NAMES utf8 */;
+   /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+   /*!40103 SET TIME_ZONE='+00:00' */;
+   /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+   /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+   /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+   /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+EOF
+
+( our $after = <<'EOF') =~ s/^   //gm;
+   /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+   /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+   /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+   /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+   /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+   /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+   /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+   /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+EOF
+
+sub new {
+   my ( $class ) = @_;
+   my $self = bless {}, $class;
+   return $self;
+}
+
+sub dump {
+   my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
+
+   if ( $what eq 'table' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      if ( $ddl->[0] eq 'table' ) {
+         return $before
+            . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . $ddl->[1] . ";\n";
+      }
+      else {
+         return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . '/*!50001 DROP VIEW IF EXISTS '
+            . $quoter->quote($tbl) . "*/;\n/*!50001 "
+            . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
+      }
+   }
+   elsif ( $what eq 'triggers' ) {
+      my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
+      if ( $trgs && @$trgs ) {
+         my $result = $before . "\nDELIMITER ;;\n";
+         foreach my $trg ( @$trgs ) {
+            if ( $trg->{sql_mode} ) {
+               $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
+            }
+            $result .= "/*!50003 CREATE */ ";
+            if ( $trg->{definer} ) {
+               my ( $user, $host )
+                  = map { s/'/''/g; "'$_'"; }
+                    split('@', $trg->{definer}, 2);
+               $result .= "/*!50017 DEFINER=$user\@$host */ ";
+            }
+            $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
+               $quoter->quote($trg->{trigger}),
+               @{$trg}{qw(timing event)},
+               $quoter->quote($trg->{table}),
+               $trg->{statement});
+         }
+         $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
+         return $result;
+      }
+      else {
+         return undef;
+      }
+   }
+   elsif ( $what eq 'view' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 ' . $ddl->[1] . "*/;\n";
+   }
+   else {
+      die "You didn't say what to dump.";
+   }
+}
+
+sub get_create_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{tables}->{$db}->{$tbl} ) {
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $href = $dbh->selectrow_hashref(
+         "SHOW CREATE TABLE "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl)
+      );
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+      my ($key) = grep { m/create table/i } keys %$href;
+      if ( $key ) {
+         $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
+      }
+      else {
+         ($key) = grep { m/create view/i } keys %$href;
+         $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
+      }
+   }
+   return $self->{tables}->{$db}->{$tbl};
+}
+
+sub get_columns {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{columns}->{$db}->{$tbl} ) {
+      my $cols = $dbh->selectall_arrayref(
+         "SHOW COLUMNS FROM "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl),
+         { Slice => {} }
+      );
+      $self->{columns}->{$db}->{$tbl} = [
+         map {
+            my %row;
+            @row{ map { lc $_ } keys %$_ } = values %$_;
+            \%row;
+         } @$cols
+      ];
+   }
+   return $self->{columns}->{$db}->{$tbl};
+}
+
+sub get_tmp_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
+   $result .= join(",\n",
+      map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
+      @{$self->get_columns($dbh, $quoter, $db, $tbl)});
+   $result .= "\n)";
+}
+
+sub get_triggers {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{triggers}->{$db} ) {
+      $self->{triggers}->{$db} = {};
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $trgs = $dbh->selectall_arrayref(
+         "SHOW TRIGGERS FROM " . $quoter->quote($db),
+         { Slice => {} }
+      );
+      foreach my $trg ( @$trgs ) {
+         my %trg;
+         @trg{ map { lc $_ } keys %$trg } = values %$trg;
+         push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
+      }
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+   }
+   return $self->{triggers}->{$db}->{$tbl};
+}
+
+1;
+
+# ###########################################################################
+# End MySQLDump package
+# ###########################################################################
+
+# ###########################################################################
+# TableChunker package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableChunker;
+
+use POSIX qw(ceil);
+use List::Util qw(min max);
+
+sub new {
+   bless {}, shift;
+}
+
+my $EPOCH      = '1970-01-01';
+my %int_types  = map { $_ => 1 }
+   qw( bigint date datetime int mediumint smallint time timestamp tinyint year );
+my %real_types = map { $_ => 1 }
+   qw( decimal double float );
+
+sub find_chunk_columns {
+   my ( $self, $table, $opts ) = @_;
+   $opts ||= {};
+
+   my @candidate_cols;
+
+   my @possible_keys = grep { $_->{type} eq 'BTREE' } values %{$table->{keys}};
+
+   my $can_chunk_exact = 0;
+   if ($opts->{exact}) {
+      @candidate_cols =
+         grep {
+            $int_types{$table->{type_for}->{$_}}
+            || $real_types{$table->{type_for}->{$_}}
+         }
+         map  { $_->{cols}->[0] }
+         grep { $_->{unique} && @{$_->{cols}} == 1 }
+              @possible_keys;
+      if ( @candidate_cols ) {
+         $can_chunk_exact = 1;
+      }
+   }
+
+   if ( !@candidate_cols ) {
+      @candidate_cols =
+         grep {
+            $int_types{$table->{type_for}->{$_}}
+            || $real_types{$table->{type_for}->{$_}}
+         }
+         map { $_->{cols}->[0] }
+         @possible_keys;
+   }
+
+   my @result;
+   if ( $table->{keys}->{PRIMARY} ) {
+      my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
+      @result = grep { $_ eq $pk_first_col } @candidate_cols;
+      @candidate_cols = grep { $_ ne $pk_first_col } @candidate_cols;
+   }
+   my $i = 0;
+   my %col_pos = map { $_ => $i++ } @{$table->{cols}};
+   push @result, sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
+
+   return ($can_chunk_exact, \@result);
+}
+
+sub calculate_chunks {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(table col min max rows_in_range size dbh) ) {
+      die "Required argument $arg not given or undefined"
+         unless defined $args{$arg};
+   }
+
+   my @chunks;
+   my ($range_func, $start_point, $end_point);
+   my $col_type = $args{table}->{type_for}->{$args{col}};
+
+
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $start_point = $args{min};
+      $end_point   = $args{max};
+      $range_func  = 'range_num';
+   }
+   elsif ( $col_type eq 'timestamp' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')");
+      $range_func  = 'range_timestamp';
+   }
+   elsif ( $col_type eq 'date' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')");
+      $range_func  = 'range_date';
+   }
+   elsif ( $col_type eq 'time' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')");
+      $range_func  = 'range_time';
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      $start_point = $self->timestampdiff($args{dbh}, $args{min});
+      $end_point   = $self->timestampdiff($args{dbh}, $args{max});
+      $range_func  = 'range_datetime';
+   }
+   else {
+      die "I don't know how to chunk $col_type\n";
+   }
+
+   if ( !defined $start_point ) {
+      $start_point = 0;
+   }
+   if ( !defined $end_point || $end_point < $start_point ) {
+      $end_point = 0;
+   }
+
+   my $interval = $args{size} * ($end_point - $start_point) / $args{rows_in_range};
+   if ( $int_types{$col_type} ) {
+      $interval = ceil($interval);
+   }
+   $interval ||= $args{size};
+   if ( $args{exact} ) {
+      $interval = $args{size};
+   }
+
+   my $col = "`$args{col}`";
+   if ( $start_point < $end_point ) {
+      my ( $beg, $end );
+      my $iter = 0;
+      for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
+         ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $interval, $end_point);
+
+         if ( $iter++ == 0 ) {
+            push @chunks, "$col < " . $self->quote($end);
+         }
+         else {
+            push @chunks, "$col >= " . $self->quote($beg) . " AND $col < " . $self->quote($end);
+         }
+      }
+
+      my $nullable = $args{table}->{is_nullable}->{$args{col}};
+      pop @chunks;
+      if ( @chunks ) {
+         push @chunks, "$col >= " . $self->quote($beg);
+      }
+      else {
+         push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
+      }
+      if ( $nullable ) {
+         push @chunks, "$col IS NULL";
+      }
+
+   }
+   else {
+      push @chunks, '1=1';
+   }
+
+   return @chunks;
+}
+
+sub get_first_chunkable_column {
+   my ( $self, $table, $opts ) = @_;
+   my ($exact, $cols) = $self->find_chunk_columns($table, $opts);
+   return $cols->[0];
+}
+
+sub size_to_rows {
+   my ( $self, $dbh, $db, $tbl, $size, $cache ) = @_;
+   my $avg_row_length;
+   my $status;
+   if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
+      $tbl =~ s/_/\\_/g;
+      my $sth = $dbh->prepare(
+         "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'");
+      $sth->execute;
+      $status = $sth->fetchrow_hashref();
+      if ( $cache ) {
+         $cache->{$db}->{$tbl} = $status;
+      }
+   }
+   my ($key) = grep { /avg_row_length/i } keys %$status;
+   $avg_row_length = $status->{$key};
+   return $avg_row_length ? ceil($size / $avg_row_length) : undef;
+}
+
+sub get_range_statistics {
+   my ( $self, $dbh, $db, $tbl, $col, $opts ) = @_;
+   my ( $min, $max ) = $dbh->selectrow_array(
+      "SELECT MIN(`$col`), MAX(`$col`) FROM `$db`.`$tbl`");
+   my $expl = $dbh->selectrow_hashref(
+      "EXPLAIN SELECT * FROM `$db`.`$tbl");
+   return (
+      min           => $min,
+      max           => $max,
+      rows_in_range => $expl->{rows},
+   );
+}
+
+sub quote {
+   my ( $self, $val ) = @_;
+   return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
+}
+
+sub inject_chunks {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(database table chunks chunk_num) ) {
+      die "$arg is required" unless defined $args{$arg};
+   }
+   my $comment = sprintf("/*%s.%s:%d/%d*/",
+      $args{database}, $args{table},
+      $args{chunk_num} + 1, scalar @{$args{chunks}});
+   $args{query} =~ s!/\*progress_comment\*/!$comment!;
+   my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
+   if ( $args{where} ) {
+      $where .= " AND ($args{where})";
+   }
+   $args{query} =~ s!/\*WHERE\*/! $where!;
+   return $args{query};
+}
+
+sub range_num {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   my $end = min($max, $start + $interval);
+   $start =~ s/\.(\d{5}).*$/.$1/;
+   $end   =~ s/\.(\d{5}).*$/.$1/;
+   if ( $end > $start ) {
+      return ( $start, $end );
+   }
+   else {
+      die "Chunk size is too small: $end !> $start\n";
+   }
+}
+
+sub range_time {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))");
+}
+
+sub range_date {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))");
+}
+
+sub range_datetime {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND),
+       DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)");
+}
+
+sub range_timestamp {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))");
+}
+
+sub timestampdiff {
+   my ( $self, $dbh, $time ) = @_;
+   my ( $diff ) = $dbh->selectrow_array(
+      "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+      . "- TO_DAYS('$EPOCH 00:00:00') * 86400");
+   my ( $check ) = $dbh->selectrow_array(
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)");
+   die <<"   EOF"
+   Incorrect datetime math: given $time, calculated $diff but checked to $check.
+   This is probably because you are using a version of MySQL that overflows on
+   large interval values to DATE_ADD().  If not, please report this as a bug.
+   EOF
+      unless $check eq $time;
+   return $diff;
+}
+
+1;
+
+# ###########################################################################
+# End TableChunker package
+# ###########################################################################
+
+# ###########################################################################
+# Quoter package 1149
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
+# MySQLFind package 1230
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MySQLFind;
+
+
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, %opts ) = @_;
+   my $self = bless \%opts, $class;
+   $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   die "Specify dbh" unless $opts{dbh};
+   if ( $opts{useddl} ) {
+      die "Specifying useddl requires parser and dumper"
+         unless $opts{parser} && $opts{dumper};
+   }
+   if ( $opts{tables}->{status} ) {
+      ($self->{timestamp}->{now})
+         = $opts{dbh}->selectrow_array('SELECT CURRENT_TIMESTAMP');
+   }
+   return $self;
+}
+
+sub find_databases {
+   my ( $self ) = @_;
+   return grep {
+      $_ !~ m/^(information_schema|lost\+found)$/i
+   }
+   $self->_filter('databases', sub { $_[0] }, $self->_fetch_db_list());
+}
+
+sub _fetch_db_list {
+   my ( $self ) = @_;
+   my $sql = 'SHOW DATABASES';
+   my @params;
+   if ( $self->{databases}->{like} ) {
+      $sql .= ' LIKE ?';
+      push @params, $self->{databases}->{like};
+   }
+   my $sth = $self->{dbh}->prepare($sql);
+   $sth->execute( @params );
+   return map { $_->[0] } @{$sth->fetchall_arrayref()};
+}
+
+sub find_tables {
+   my ( $self, %opts ) = @_;
+   my $views = $self->{engines}->{views};
+   my @tables 
+      = $self->_filter('engines', sub { $_[0]->{engine} },
+         $self->_filter('tables', sub { $_[0]->{name} },
+            $self->_fetch_tbl_list(%opts)));
+   @tables = grep {
+         ( $views || ($_->{engine} ne 'VIEW') )
+      } @tables;
+   foreach my $crit ( @{$self->{tables}->{status}} ) {
+      my ($key, $test) = %$crit;
+      @tables
+         = grep {
+            $self->_test_date($_, $key, $test)
+         } @tables;
+   }
+   return map { $_->{name} } @tables;
+}
+
+sub _fetch_tbl_list {
+   my ( $self, %opts ) = @_;
+   die "database is required" unless $opts{database};
+   my $need_engine = $self->{engines}->{permit}
+        || $self->{engines}->{reject}
+        || $self->{engines}->{regexp};
+   my $need_status = $self->{tables}->{status};
+   my @params;
+   if ( $need_status || ($need_engine && !$self->{useddl}) ) {
+      my $sql = "SHOW TABLE STATUS FROM "
+              . $self->{quoter}->quote($opts{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
+      }
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref({})};
+      return map {
+         my %tbl; # Make a copy with lowercased keys
+         @tbl{ map { lc $_ } keys %$_ } = values %$_;
+         $tbl{engine} ||= $tbl{type} || $tbl{comment};
+         delete $tbl{type};
+         \%tbl;
+      } @tables;
+   }
+   else {
+      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM "
+              . $self->{quoter}->quote($opts{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
+      }
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref()};
+      my @result;
+      foreach my $tbl ( @tables ) {
+         my $engine = '';
+         if ( ($tbl->[1] || '') eq 'VIEW' ) {
+            $engine = 'VIEW';
+         }
+         elsif ( $need_engine ) {
+            my $struct = $self->{parser}->parse(
+               $self->{dumper}->get_create_table(
+                  $self->{dbh}, $self->{quoter}, $opts{database}, $tbl->[0]));
+            $engine = $struct->{engine};
+         }
+         push @result,
+         {  name   => $tbl->[0],
+            engine => $engine,
+         }
+      }
+      return @result;
+   }
+}
+
+sub _filter {
+   my ( $self, $thing, $sub, @vals ) = @_;
+   my $permit = $self->{$thing}->{permit};
+   my $reject = $self->{$thing}->{reject};
+   my $regexp = $self->{$thing}->{regexp};
+   return grep {
+      my $val = $sub->($_);
+      $val = '' unless defined $val;
+      ( !$reject || !$reject->{$val} )
+         && ( !$permit ||  $permit->{$val} )
+         && ( !$regexp ||  $val =~ m/$regexp/ )
+   } @vals
+}
+
+sub _test_date {
+   my ( $self, $table, $prop, $test ) = @_;
+   $prop = lc $prop;
+   if ( !defined $table->{$prop} ) {
+      return $self->{nullpass};
+   }
+   my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
+   die "Invalid date test $test for $prop" unless defined $num;
+   ($self->{timestamp}->{$num})
+      ||= $self->{dbh}->selectrow_array(
+         "SELECT DATE_SUB('$self->{timestamp}->{now}', INTERVAL $num SECOND)");
+   my $time = $self->{timestamp}->{$num};
+   return 
+         ( $equality eq '-' && $table->{$prop} gt $time )
+      || ( $equality eq '+' && $table->{$prop} lt $time )
+      || (                     $table->{$prop} eq $time );
+}
+
+1;
+
+# ###########################################################################
+# End MySQLFind package
+# ###########################################################################
 package main;
 
 use DBI;
@@ -585,50 +1569,49 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-# TODO: enable chunking on character columns.
-# TODO: add --ignorecol
-# TODO: add --ignoretype
-# TODO: retry on deadlocks
-# TODO: make sure cxns aren't being created and dropped needlessly.
-
 my @opt_spec = (
    { s => 'algorithm|a=s',     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
    { s => 'askpass',           d => 'Prompt for username and password for connections' },
-   { s => 'chunkcol=s',        d => 'Explicitly specifies a column to use for chunking' },
-   { s => 'chunksize|C=i',     d => 'Number of rows to checksum at a time (disallows -a CHECKSUM)' },
-   { s => 'chunksize-exact',   d => 'Try not to exceed chunk sizes' },
-   { s => 'databases|d=h',     d => 'Only do this comma-separated list of databases' },
+   { s => 'chunksize|C=s',     d => 'Approximate number of rows or size of '
+                                  . 'data to checksum at a time; allowable '
+                                  . 'suffixes are k, M, G (disallows -a CHECKSUM)' },
+   { s => 'columns=a',         d => 'Do only this comma-separated list of columns' },
+   { s => 'databases|d=h',     d => 'Do only this comma-separated list of databases' },
    { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
    { s => 'emptyrepltbl',      d => 'Empty table given by --replicate before starting' },
-   { s => 'engine|e=h',        d => 'Only do this comma-separated list of storage engines' },
+   { s => 'engine|e=h',        d => 'Do only this comma-separated list of storage engines' },
    { s => 'explain',           d => 'Show, but do not execute, checksum queries' },
    { s => 'explainhosts',      d => 'Print connection information and exit' },
    { s => 'float-precision=i', d => 'Precision for FLOAT and DOUBLE column comparisons' },
-   { s => 'function|f=s',      d => 'Cryptographic hash function (SHA1, MD5...)' },
+   { s => 'function|f=s',      d => 'Hash function for checksums (SHA1, MD5...)' },
    { s => 'ignoredb|g=H',      d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoreengine|E=H',  d => 'Ignore this comma-separated list of storage engines (default FEDERATED,MRG_MyISAM)' },
    { s => 'ignoretbl|n=H',     d => 'Ignore this comma-separated list of tables' },
-   { s => 'index|i=s',         d => 'Index to use for ACCUM checksum algorithm' },
    { s => 'lock|k',            d => 'Lock table on master until done on slaves (implies -l)' },
-   { s => 'count|r!',          d => 'Do the count' },
-   { s => 'crc|c!',            d => 'Do the CRC (default)' },
+   { s => 'count|r!',          d => 'Count rows in tables.  This is built into '
+                                  . 'ACCUM and BIT_XOR, but requires an extra '
+                                  . 'query for CHECKSUM' },
+   { s => 'crc|c!',            d => 'Do a CRC (checksum) of tables (default)' },
    { s => 'optxor|o!',         d => 'Optimize BIT_XOR with user variables (default)'},
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Do not print checksum results' },
    { s => 'recursecheck',      d => 'Do --replcheck recursively (implies --replcheck)' },
    { s => 'replcheck',         d => 'Connect to slaves and check results (requires --replicate)' },
-   { s => 'replicate|R=s',     d => 'Replicate checksums in a table (disallows -a CHECKSUM)' },
+   { s => 'replicate|R=s',     d => 'Replicate checksums to slaves (disallows -a CHECKSUM)' },
    { s => 'slavelag|l',        d => 'Report how far slaves lag master' },
    { s => 'separator|s=s',     d => 'Separator for CONCAT_WS() (default #)' },
    { s => 'sleep=i',           d => 'Sleep time between checksums' },
    { s => 'sleep-coef=f',      d => 'Sleep time as a multiple of last checksum time' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'tab|b',             d => 'Output separated with tabs' },
-   { s => 'tables|t=h',        d => 'Only do this comma-separated list of tables' },
+   { s => 'tab|b',             d => 'Print tab-separated output' },
+   { s => 'tables|t=h',        d => 'Do only this comma-separated list of tables' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'verify|v!',         d => 'Verify checksum compatibility across servers (default)' },
-   { s => 'wait|w=i',          d => 'How long to do MASTER_POS_WAIT() on slaves (implies -kl)' },
-   { s => 'where|W=s',         d => 'Only do rows matching this WHERE clause (disallows -a CHECKSUM)' },
+   { s => 'wait|w=m',          d => 'Wait this long for slaves to catch up to '
+                                  . 'their master (implies -kl).  Possible '
+                                  . 'suffixes are s/m/h/d.' },
+   { s => 'where|W=s',         d => 'Do only rows matching this WHERE clause (disallows -a CHECKSUM)' },
 );
 
 my $vp         = new VersionParser();
@@ -695,26 +1678,6 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 
 my $exit_status = 0;
-my $EPOCH       = '1970-01-01';
-
-my %int_types = map { $_ => 1 }
-   qw( bigint date datetime int mediumint smallint time timestamp tinyint year );
-my %real_types = map { $_ => 1 }
-   qw( decimal double float );
-
-# TODO: Unsupported types:
-# BIT SET ENUM
-# BINARY BLOB CHAR CHAR BYTE LONGBLOB LONGTEXT MEDIUMBLOB
-# MEDIUMTEXT TEXT TINYBLOB TINYTEXT VARBINARY VARCHAR
-# TODO: ENUM and SET can be treated as integers without defeating indexes.
-
-my $db_options = {
-   RaiseError => 1,
-   PrintError => 0,
-   AutoCommit => $opts{k} ? 0 : 1,
-};
-
-my %db_info; # holds user/pass etc for each host
 
 my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 
@@ -835,109 +1798,63 @@ if ( $opts{replcheck} ) {
 # ############################################################################
 # Otherwise do the checksums.
 # ############################################################################
-$main_dbh->{InactiveDestroy} = 1; # Can't be set in $db_options
+my $tc = new TableChecksum();
+my $strat = $tc->best_algorithm(
+   algorithm   => $opts{a},
+   vp          => $vp,
+   dbh         => $main_dbh,
+   where       => $opts{W},
+   chunk       => $opts{C},
+   replicate   => $opts{R},
+   count       => $opts{r},
+);
 
-# Figure out what strategy to use
-my $strat;
-if ( (!$opts{a} || $opts{a} eq 'CHECKSUM')   # By default, use CHECKSUM TABLE
-   && !$opts{W} && !$opts{C}                 # CHECKSUM does whole table
-   && !$opts{R}                              # CHECKSUM can't be INSERT.. SELECTed
-   && $vp->version_ge($main_dbh, '4.1.1') )  # CHECKSUM doesn't exist before this
-{
-   if ( !$opts{a} && $opts{r} ) {
-      # The user didn't specify an algorithm, but wants a count, which is
-      # inefficient with CHECKSUM TABLE.  Since the user didn't explicitly
-      # demand this poor strategy, we fall back to another.
-      $strat = 'ACCUM';
-   }
-   else {
-      # Alas, the user wants me to be stupid and run two queries where one would
-      # suffice.  (This can actually be a good strategy on MyISAM, and is even
-      # better when MyISAM's live checksums are enabled).
-      $strat = 'CHECKSUM';
-   }
-}
-elsif (!$opts{a} || $opts{a} eq 'ACCUM') {   # Fall back to ACCUM
-   $strat = 'ACCUM';
-}
-elsif ( $opts{a} eq 'BIT_XOR'
-   && $vp->version_ge($main_dbh, '4.1.1') )  # BIT_XOR() doesn't exist before this
-{
-   $strat = 'BIT_XOR';
-}
-else {
-   $strat = 'ACCUM';                         # Fallback if all else fails
-}
 if ( $opts{a} && $opts{a} ne $strat ) {
    warn "--algorithm=$opts{a} can't be used; falling back to $strat\n";
 }
 
-# If using a cryptographic hash strategy, decide what hash function to use.
-my $func = $opts{f} || 'SHA1';
-if ( $strat =~ m/ACCUM|BIT_XOR/ ) {
-   my $res = eval { $main_dbh->do("SELECT $func('test-string')") };
-   if ( !$res ) {
-      my $err = '';
-      if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
-         $err = qq{ because "$1"};
+# ############################################################################
+# If using a cryptographic hash strategy, decide what hash function to use, and
+# if using BIT_XOR, whether and which slice to place the user variable in.
+# ############################################################################
+my $func;
+my $opt_slice;
+my $crc_wid = 16;
+if ( $tc->is_hash_algorithm($strat) ) {
+   $func = $tc->choose_hash_func(
+      func => $opts{f},
+      dbh  => $main_dbh,
+   );
+   if ( $opts{f} && $opts{f} ne $func ) {
+      warn "Checksum function $opts{f} cannot be used; using $func\n";
+   }
+   $crc_wid = max(16, length(
+      $main_dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0]));
+
+   if ( $opts{o} && $strat eq 'BIT_XOR' ) {
+      $opt_slice = $tc->optimize_xor(dbh => $main_dbh, func => $func);
+      if ( !defined $opt_slice ) {
+         warn "Cannot use --optxor, disabling.\n";
+         $opts{o} = 0;
       }
-      if ( lc $func eq 'md5' ) {  # There's nothing to fall back to
-         die "Cryptographic function $func cannot be used$err\n";
-      }
-      warn "Cryptographic function $func cannot be used$err; falling back to MD5()\n";
-      $func = 'MD5';
    }
 }
 
-# If using a cryptographic hash strategy, ensure there's a WHERE clause.  Do
-# this after the above checks, because otherwise it would disable the CHECKSUM
-# strategy.
-$opts{W} = $opts{W} ? " WHERE ($opts{W})" : ' WHERE (1=1)';
-
-my $crc_wid   = max(16, length(($main_dbh->selectrow_array("SELECT $func('a')"))[0]));
-my $crc_slice = 0;
-my $sanity    = '';
-
-# Figure out which slice in a sliced BIT_XOR checksum should have the actual
-# concat-columns-and-checksum, and which should just get variable references.
-if ( $opts{o} && $strat eq 'BIT_XOR' ) {
-   my $desired = uc $main_dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
-   my $result  = '';
-   my $start   = 1;
-
-   do { # Try different positions till sliced result equals non-sliced.
-      $main_dbh->do('SET @crc := NULL, @cnt := 0');
-      my $slices = make_slices("\@crc := $func('a')");
-      my $sanity = "SELECT CONCAT($slices) as test from (select null) as t";
-      $result    = $main_dbh->selectall_arrayref($sanity)->[0]->[0];
-      if ( $result ne $desired ) {
-         $start += 16;
-         ++$crc_slice;
-      }
-   } while ( $start < $crc_wid && $result ne $desired );
-
-   if ( $result ne $desired ) {
-      # Disable the user-variable optimization.
-      warn "Cannot get good checksums with --optxor, disabling.\n";
-      $opts{o} = 0;
-   }
-}
-
+# ############################################################################
+# Verify that CONCAT_WS is compatible across all servers.  On older versions
+# of MySQL it skips both empty strings and NULL; on newer just NULL.
+# ############################################################################
 if ( $opts{v} && @hosts > 1 ) {
-   # Verify that CONCAT_WS is compatible across all servers.  On older versions
-   # of MySQL it skips both empty strings and NULL; on newer just NULL.
    my @verify_sums;
-   my @verify_vars;
    foreach my $host ( @hosts ) {
       my $dbh = get_dbh($host, ($opts{d} ? keys %{$opts{d}} : '' ));
-      my $cks = $dbh->selectall_arrayref("SELECT MD5(CONCAT_WS(',', '1', ''))")->[0]->[0];
-      push @verify_sums, { host => $host->{h}, ver => $dbh->{mysql_serverinfo}, sum => $cks };
-      if ( $sanity ) {
-         # Also verify all servers treat user-variables the same way.
-         $dbh->do('SET @crc := NULL, @cnt := 0');
-         $cks = $dbh->selectall_arrayref($sanity)->[0]->[0];
-         push @verify_vars, { host => $host->{h}, ver => $dbh->{mysql_serverinfo}, sum => $cks };
-      }
+      my $cks = $dbh->selectall_arrayref(
+         "SELECT MD5(CONCAT_WS(',', '1', ''))")->[0]->[0];
+      push @verify_sums, {
+         host => $host->{h},
+         ver  => $dbh->{mysql_serverinfo},
+         sum  => $cks
+      };
    }
    if ( unique(map { $_->{sum} } @verify_sums ) > 1 ) {
       my $max = max(map { length($_->{h}) } @hosts);
@@ -945,78 +1862,144 @@ if ( $opts{v} && @hosts > 1 ) {
          . "checksum values for the same query, and cannot be compared.  This\n"
          . "behavior changed in MySQL 4.0.14.  Here is info on each host:\n\n"
          . join("\n",
-            map { sprintf("%-${max}s %-32s %s", @{$_}{qw(host sum ver)}) }
-            { host => 'HOST', sum => 'CHECKSUM', ver => 'VERSION'}, @verify_sums)
+            map {
+               sprintf("%-${max}s %-32s %s", @{$_}{qw(host sum ver)})
+            }
+               { host => 'HOST', sum => 'CHECKSUM', ver => 'VERSION'},
+               @verify_sums
+         )
          . "\n\nYou can disable this check with --noverify.\n";
-   }
-
-   # Also check @verify_vars (not @verify_sums... I almost deleted this as
-   # crap code till I noticed that it's not the same variable name).
-   if ( unique(map { $_->{sum} } @verify_vars ) > 1 ) {
-      # No need to die, just disable the variable optimization.
-      $opts{o} = 0;
    }
 }
 
+# ############################################################################
+# Check for existence and privileges on the replication table before starting,
+# and prepare the statements that will be used to update it.
+# ############################################################################
 my ($fetch_sth, $update_sth);
 if ( $opts{R} ) {
-   # Check for existence and privileges on the replication table before starting.
    $main_dbh->do("REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0");
    if ( $opts{emptyrepltbl} ) {
       # Clean out the replication table.
       my $del_sql = "DELETE FROM $opts{R}";
       if ( $opts{d} ) {
-         $del_sql .= " WHERE ";
-         $del_sql .= "db IN(" . join(',', map { $main_dbh->quote($_) } keys %{$opts{d}}) . ')';
+         $del_sql .= " WHERE db IN("
+                  . join(',', map { $main_dbh->quote($_) } keys %{$opts{d}})
+                  . ')';
       }
       if ( $opts{t} ) {
          $del_sql .= $opts{d} ? ' AND ' : ' WHERE ';
-         $del_sql .= "tbl IN(" . join(',', map { $main_dbh->quote($_) } keys %{$opts{t}}) . ')';
+         $del_sql .= "tbl IN("
+                  . join(',', map { $main_dbh->quote($_) } keys %{$opts{t}})
+                  . ')';
       }
       $main_dbh->do($del_sql);
    }
    $fetch_sth = $main_dbh->prepare(
-      "SELECT this_crc, this_cnt FROM $opts{R} WHERE db = ? AND tbl = ? AND chunk = ?");
+      "SELECT this_crc, this_cnt FROM $opts{R} "
+      . "WHERE db = ? AND tbl = ? AND chunk = ?");
    $update_sth = $main_dbh->prepare(
-      "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? WHERE db = ? AND tbl = ? AND chunk = ?");
+      "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? "
+      . "WHERE db = ? AND tbl = ? AND chunk = ?");
 }
 
-my @databases = @{$main_dbh->selectcol_arrayref('SHOW DATABASES')};
+# ############################################################################
+# Iterate through databases and tables and do the checksums.
+# ############################################################################
+my $q      = new Quoter();
+my $tp     = new TableParser();
+my $du     = new MySQLDump();
+my $ch     = new TableChunker();
+my $finder = new MySQLFind(
+   dbh       => $main_dbh,
+   quoter    => $q,
+   useddl    => 1,
+   parser    => $tp,
+   dumper    => $du,
+   databases => {
+      permit => $opts{d},
+      reject => $opts{g},
+   },
+   tables => {
+      permit => $opts{t},
+      reject => $opts{n},
+   },
+   engines => {
+      views  => 0,
+      permit => $opts{e},
+      reject => $opts{E},
+   },
+);
+
 DATABASE:
-foreach my $database ( @databases ) {
-   next DATABASE if
-      ( $opts{d} && !exists($opts{d}->{$database}) )
-      || $database =~ m/^(information_schema|lost\+found)$/mi
-      || exists $opts{g}->{$database};
+foreach my $database ( $finder->find_databases() ) {
+   my @tables;
+   foreach my $table ( $finder->find_tables(database => $database) ) {
 
-   my @tables = @{$main_dbh->selectcol_arrayref("SHOW TABLES FROM `$database`")};
-   next DATABASE unless @tables;
+      # Skip the table in which checksums are stored.
+      if ( !$opts{R} || $opts{R} ne "$database.$table" ) {
 
-   my %info_for;
-   TABLE:
-   foreach my $table ( @tables ) {
-      next TABLE if
-         ( $opts{t} && !exists($opts{t}->{$table}) )
-         || ( $opts{R} && $opts{R} eq "$database.$table" )
-         || exists $opts{n}->{$table};
+         eval { # Catch errors caused by tables being dropped during work.
 
-      # Get the table type, and a query to generate a checksum for it.
-      eval {
-         my $info = checksum_query( $main_dbh, $database, $table );
+            my $struct = $tp->parse(
+               $du->get_create_table($main_dbh, $q, $database, $table));
 
-         # Skip views, and tables of the wrong engine.
-         if ( $info->{engine} ne 'VIEW' && (!$opts{e} || $opts{e}->{lc($info->{engine})}) ) {
-            $info_for{$table} = $info;
+            my @chunks = '1=1'; # Default.
+            if ( $opts{C} ) {
+               # Figure out whether the chunksize is a number of rows or a data
+               # size.
+               my $rows_per_chunk;
+               my ( $num, $suffix ) = $opts{C} =~ m/^(\d+)([MGk])$/;
+               if ( $suffix ) {
+                  # Figure out how many rows fit into this many bytes
+                  my $size = $suffix eq 'k' ? 1_024
+                           : $suffix eq 'M' ? 1_024 * 1_024
+                           :                  1_024 * 1_024 * 1_024;
+                  $rows_per_chunk = $ch->size_to_rows(
+                     $main_dbh, $database, $table, $size * $num);
+               }
+               else {
+                  $rows_per_chunk = $opts{C};
+               }
+
+               if ( $rows_per_chunk ) {
+                  # Get the chunk column candidates
+                  my $col   = $ch->get_first_chunkable_column($struct);
+                  if ( $col ) {
+                     my %params = $ch->get_range_statistics(
+                        $main_dbh, $database, $table, $col);
+
+                     if ( !grep { !defined $params{$_} }
+                           qw(min max rows_in_range) )
+                     {
+                        @chunks = $ch->calculate_chunks(
+                           dbh      => $main_dbh,
+                           table    => $struct,
+                           col      => $col,
+                           size     => $rows_per_chunk,
+                           %params,
+                        );
+                     }
+                  }
+               }
+            }
+
+            push @tables, {
+               struct   => $struct,
+               database => $database,
+               table    => $table,
+               chunks   => \@chunks,
+            };
+
+         };
+         if ( $EVAL_ERROR ) {
+            print_err($EVAL_ERROR, $database, $table);
          }
 
-      };
-      if ( $EVAL_ERROR ) {
-         print_err($EVAL_ERROR, $database, $table);
       }
-
    }
 
-   next DATABASE unless %info_for;
+   next DATABASE unless @tables;
 
    # Design and print header
    my ($hdr, $explain);
@@ -1025,60 +2008,93 @@ foreach my $database ( @databases ) {
       $explain = "%s\t%s\t%s\n";
    }
    else {
-      my $max_tbl  = max(5, map { length($_) } keys %info_for);
+      my $max_tbl  = max(5, map { length($_->{table}) } @tables);
       my $max_db   = max(8, length($database));
       my $max_host = max(4, map { length($_->{h}) } @hosts);
       $hdr         = "%-${max_db}s %-${max_tbl}s %5s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
       $explain     = "%-${max_db}s %-${max_tbl}s %s\n";
    }
+
    my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
    printf($hdr, @hdr_args) unless ($opts{q} || $opts{explain});
 
    TABLE:
-   foreach my $table ( sort keys %info_for ) {
+   foreach my $table ( @tables ) {
       eval {
-         my $info      = $info_for{$table};
 
-         # Chunking.  Gah.  Complicated bad stuff.  Put it off in a subroutine,
-         # it will make it all better.  Chunks are either arrayref of start/end,
-         # undef for the NULL chunk, or the string '' for a table that's not
-         # chunked.
-         if ( $info->{chunk_col} && $opts{C} ) {
-            calculate_chunks($info);
-         }
-         else {
-            $info->{chunks}    = [ '' ];
-            $info->{chunk_tot} = 1;
-         }
+         # #####################################################################
+         # The query is independent of the chunk, so I make it once for every
+         # one.
+         # #####################################################################
+         my $query = $tc->make_checksum_query(
+            dbname    => $database,
+            tblname   => $table->{table},
+            table     => $table->{struct},
+            quoter    => $q,
+            algorithm => $strat,
+            func      => $func,
+            crc_wid   => $crc_wid,
+            opt_slice => $opt_slice,
+            cols      => $opts{columns},
+            sep       => $opts{s},
+            replicate => $opts{R},
+         );
 
-         # Do a chunk at a time.
-         foreach my $chunk_num ( 0 .. scalar(@{$info->{chunks}}) - 1 ) {
-            $info->{chunk_cur} = $chunk_num + 1;
+         # #####################################################################
+         # This loop may seem suboptimal, because it causes a new child to be
+         # forked for each table, for each host, for each chunk.  It also causes
+         # the program to parallelize only within the chunk; that is, no two
+         # child processes are running on different chunks at a time.  This is
+         # by design.  It lets me unlock the table on the master between chunks.
+         # #####################################################################
+         foreach my $chunk_num ( 0 .. scalar(@{$table->{chunks}}) - 1 ) {
+
             my $chunk_start_time = time;
+
             if ( $opts{R} ) { # We're in --replicate mode.
-               do_tbl_replicate($hosts[0], $info, $hdr, $explain);
+               do_tbl_replicate($hosts[0], $query, $table,
+                  $chunk_num, $hdr, $explain);
             }
 
             else {
 
-               # Lock table and get master position on the master, if applicable.
-               $main_dbh->do("LOCK TABLES `$database`.`$table` READ")
-                  if ($opts{k} && !$opts{explain});
-               if ( defined $opts{w} && !$opts{explain} ) {
-                  my $master_status = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
-                  @{$info}{keys %$master_status} = values %$master_status;
+               # Lock table and get position on the master.
+               if ( !$opts{explain} ) {
+                  if ( $opts{k} ) {
+                     $main_dbh->do( "LOCK TABLES "
+                        . $q->quote($database, $table) . " READ");
+                  }
+                  if ( defined $opts{w} ) {
+                     my $master_status
+                        = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
+                     @{$table}{keys %$master_status} = values %$master_status;
+                  }
                }
 
                my %children;
                foreach my $i ( 0 .. $#hosts ) {
-                  my $host = $hosts[$i];
+                  my $is_master = $i == 0; # First host is assumed to be master.
+                  my $host      = $hosts[$i];
+
+                  # Open a single connection for each host.  Re-use the
+                  # connection for the master/single host.
+                  if ( $is_master ) {
+                     $host->{dbh} ||= $main_dbh;
+                  }
+                  else {
+                     $host->{dbh} ||= get_dbh($host);
+                  }
+
+                  # Fork, but only if there's more than one host.
                   my $pid = @hosts > 1 ? fork() : undef;
-                  if ( @hosts == 1 || (defined($pid) && $pid == 0) ) { # I am a child
+                  if ( @hosts == 1 || (defined($pid) && $pid == 0) ) {
+                     # Do the work (I'm a child, or there's only one host)
                      eval {
-                        do_tbl($host, $info, $i == 0, $hdr, $explain);
+                        do_tbl($host, $query, $table, $chunk_num,
+                               $is_master, $hdr, $explain);
                      };
                      if ( $EVAL_ERROR ) {
-                        print_err($EVAL_ERROR, $database, $table);
+                        print_err($EVAL_ERROR, $database, $table->{table});
                         exit(1) if @hosts > 1; # exit only if I'm a child
                      }
                      exit(0) if @hosts > 1; # exit only if I'm a child
@@ -1103,194 +2119,81 @@ foreach my $database ( @databases ) {
                sleep($opts{sleep});
             }
             elsif ( $opts{'sleep-coef'} && !$opts{explain} ) {
-               my $sleep_time = ceil( (time - $chunk_start_time) * $opts{'sleep-coef'} );
+               my $sleep_time
+                  = ceil( (time - $chunk_start_time) * $opts{'sleep-coef'} );
                sleep($sleep_time);
             }
 
          }
       };
       if ( $EVAL_ERROR ) {
-         print_err($EVAL_ERROR, $database, $table);
+         print_err($EVAL_ERROR, $database, $table->{table});
       }
    }
-}
-
-# Side effects: modifies $info.  I moved it here just to clear up the logic in
-# the main loop a bit.
-sub calculate_chunks {
-   my ( $info ) = @_;
-
-   my $table_min;
-   my $table_max;
-   my $num_rows;
-   my $chunk_size;
-   my @chunks;
-
-   # Determine the range of values for the chunk_col column on this table.
-   my $chunk_sql = "SELECT MIN($info->{chunk_col}), MAX($info->{chunk_col}) "
-      . "FROM `$info->{database}`.`$info->{table}`$opts{W}";
-   if ( $info->{chunk_null} && !$vp->version_ge($main_dbh, '4.0.0') ) {
-      # MySQL 3.23 will return NULL as the minimum column value and break my
-      # test suite when there is a row with NULL in the chunk column.
-      $chunk_sql .= "AND $info->{chunk_col} IS NOT NULL";
-   }
-
-   ( $table_min, $table_max ) = $main_dbh->selectrow_array($chunk_sql);
-
-   my $expl = $main_dbh->selectrow_hashref(
-      "EXPLAIN SELECT * FROM `$info->{database}`.`$info->{table}"
-      . "`$opts{W} AND $info->{chunk_col} IS NOT NULL");
-
-   # This isn't always reliable.  Sometimes EXPLAIN will say there are rows
-   # when the table is empty.
-   $num_rows = $expl->{rows};
-
-   if ( $num_rows && defined $table_min && defined $table_max ) { # $num_rows is unreliable
-
-      # Determine chunk size in "distance between endpoints" that will give
-      # approximately the right number of rows between the endpoints.  Also
-      # find the start/end points as a number that Perl can do + and < on.
-      my ($range_func, $start_point, $end_point);
-      if ( $info->{chunk_type} =~ m/(?:int|year|float|double|decimal)$/ ) {
-         $start_point = $table_min;
-         $end_point   = $table_max;
-         $range_func  = \&range_num;
-      }
-      elsif ( $info->{chunk_type} eq 'timestamp' ) {
-         ($start_point, $end_point) = $main_dbh->selectrow_array(
-            "SELECT UNIX_TIMESTAMP('$table_min'), UNIX_TIMESTAMP('$table_max')");
-         $range_func  = \&range_timestamp;
-      }
-      elsif ( $info->{chunk_type} eq 'date' ) {
-         ($start_point, $end_point) = $main_dbh->selectrow_array(
-            "SELECT TO_DAYS('$table_min'), TO_DAYS('$table_max')");
-         $range_func  = \&range_date;
-      }
-      elsif ( $info->{chunk_type} eq 'time' ) {
-         ($start_point, $end_point) = $main_dbh->selectrow_array(
-            "SELECT TIME_TO_SEC('$table_min'), TIME_TO_SEC('$table_max')");
-         $range_func  = \&range_time;
-      }
-      elsif ( $info->{chunk_type} eq 'datetime' ) {
-         # Newer versions of MySQL could use TIMESTAMPDIFF, but it's easier
-         # to maintain just one kind of code, so I do it all with DATE_ADD().
-         $start_point = timestampdiff($main_dbh, $table_min);
-         $end_point   = timestampdiff($main_dbh, $table_max);
-         $range_func  = \&range_datetime;
-      }
-      else {
-         die "I don't know how to chunk $info->{chunk_type}\n";
-      }
-
-      # The endpoints could easily be undef, because of things like dates that
-      # are '0000-00-00'.  The only thing to do is make them zeroes and
-      # they'll be done in a single chunk then.
-      if ( !defined $start_point ) {
-         $start_point = 0;
-      }
-      if ( !defined $end_point || $end_point < $start_point ) {
-         $end_point = 0;
-      }
-
-      # Calculate the chunk size, in terms of "distance between endpoints."  If
-      # possible and requested, forbid chunks from being any bigger than
-      # specified.  Add 1 to the range because the interval is half-open,
-      # that is, it is inclusive on the upper end.  (If the table's min value is
-      # 1 and the max is 100, that's 100 values to cover, not 99).
-      $chunk_size = ceil( $opts{C} * (($end_point - $start_point) + 1) / $num_rows ) || $opts{C};
-      if ( $opts{'chunksize-exact'} && $info->{chunk_exact} ) {
-         $chunk_size = $opts{C};
-      }
-
-      # Generate a list of chunk boundaries.
-      for ( my $i = $start_point; $i < $end_point; $i += $chunk_size ) {
-         push @chunks, [ $range_func->($main_dbh, $i, $chunk_size, $end_point) ];
-      }
-
-      if ( $start_point < $end_point ) {
-         # A final chunk that matches the end of the range, and anything outside it
-         # on the upper end, which should not happen on the master but may on a
-         # slave that has extra rows.
-         push @chunks, [ $chunks[-1]->[1], undef ];
-
-         # Ditto for rows below the lower boundary, but this one should not match
-         # anything at all on the master, unlike the one above.
-         push @chunks, [ undef, $chunks[0]->[0] ];
-      }
-      else {
-         # There are no chunks; just do the whole table in one chunk.
-         push @chunks, '';
-      }
-
-   }
-   else {
-      push @chunks, '';
-   }
-
-   # If the chunk column is nullable, we need to do NULL separately.
-   if ( $info->{chunk_null} ) {
-      push @chunks, undef;
-   }
-
-   $info->{chunks}    = \@chunks;
-   $info->{chunk_tot} = scalar(@chunks);
-}
-
-sub add_progress_comment {
-   my ( $query, $info ) = @_;
-   $query =~ s/progress_comment/$info->{database}.$info->{table}:$info->{chunk_cur}\/$info->{chunk_tot}/;
-   return $query;
 }
 
 sub do_tbl_replicate {
-   my ( $host, $info, $hdr, $explain ) = @_;
+   my ( $host, $query, $info, $chunk_num, $hdr, $explain ) = @_;
    my $dbh = $main_dbh;
+   $dbh->do("USE " . $q->quote($info->{database}) );
    my $cnt = 'NULL';
    my $crc = 'NULL';
    my $beg = time();
-   my $sql = add_progress_comment($info->{query}, $info);
+   my $sql = $ch->inject_chunks(
+      query     => $query,
+      database  => $info->{database},
+      table     => $info->{table},
+      chunks    => $info->{chunks},
+      chunk_num => $chunk_num,
+      where     => $opts{W},
+   );
 
-   my $chunk = $info->{chunks}->[$info->{chunk_cur} - 1];
-   my $where = make_where_clause($main_dbh, $info, $chunk);
-
-   # Figure out arguments to the query
-   my @arg = ($info->{chunk_cur}, $where);
-
+   my $where = $info->{chunks}->[$chunk_num];
    if ( $opts{explain} ) {
-      if ( $info->{chunk_cur} == 1 ) {
+      if ( $chunk_num == 0 ) {
          printf($explain, @{$info}{qw(database table)}, $sql);
       }
       printf($explain, @{$info}{qw(database table)}, $where);
       return;
    }
 
-   $dbh->do("USE `$info->{database}`");
-   $dbh->do('SET @crc := NULL, @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
-   $dbh->do("$sql AND $where", {}, @arg);
-
-   $fetch_sth->execute(@{$info}{qw(database table chunk_cur)});
+   $dbh->do('SET @crc := "", @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
+   $dbh->do($sql, {}, @{$info}{qw(database table)}, $chunk_num, $where);
+   $fetch_sth->execute(@{$info}{qw(database table)}, $chunk_num);
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
-   $update_sth->execute($crc, $cnt, @{$info}{qw(database table chunk_cur)});
+   $update_sth->execute($crc, $cnt, @{$info}{qw(database table)}, $chunk_num);
+
    my $end = time();
    $crc  ||= 'NULL';
-   printf($hdr, @{$info}{qw(database table chunk_cur)}, $host->{h}, $info->{engine}, $cnt, $crc,
-      $end - $beg, 'NULL', 'NULL', 'NULL') unless ($opts{q} || $opts{explain});
+   if (!$opts{q} && !$opts{explain}) {
+      printf($hdr,
+         @{$info}{qw(database table)}, $chunk_num,
+         $host->{h}, $info->{struct}->{engine}, $cnt, $crc,
+         $end - $beg, 'NULL', 'NULL', 'NULL')
+   }
 }
 
 sub do_tbl {
-   my ( $host, $info, $is_master, $hdr, $explain ) = @_;
-   my $dbh = get_dbh($host, $info->{database});
+   my ( $host, $query, $info, $chunk_num, $is_master, $hdr, $explain ) = @_;
+   my $dbh = $host->{dbh};
+   $dbh->do("USE " . $q->quote($info->{database}) );
    my $cnt = 'NULL';
    my $crc = 'NULL';
    my $sta = 'NULL';
    my $lag = 'NULL';
    my $beg = time();
+
+   # I'm a slave.  Wait to catch up to the master.  Calculate slave lag.
    if ( !$is_master && defined $opts{w} && !$opts{explain} ) {
-      $sta = $dbh->selectall_arrayref(
-         add_progress_comment(
-            "SELECT /*progress_comment*/ MASTER_POS_WAIT('$info->{File}', $info->{Position}, $opts{w})",
-            $info
-         ))->[0]->[0];
+      my $sql = $ch->inject_chunks(
+         query     => "SELECT /*progress_comment*/ MASTER_POS_WAIT("
+               . "'$info->{File}', $info->{Position}, $opts{w})",
+         database  => $info->{database},
+         table     => $info->{table},
+         chunks    => $info->{chunks},
+         chunk_num => $chunk_num,
+      );
+      $sta = $dbh->selectall_arrayref($sql)->[0]->[0];
       $sta = 'NULL' unless defined $sta;
    }
    if ( !$is_master && $opts{l} && !$opts{explain} ) {
@@ -1299,238 +2202,34 @@ sub do_tbl {
            ? $res->{Seconds_Behind_Master}
            : 'NULL';
    }
+
+   # Time the checksum operation and the wait-for-master operation separately.
    my $mid = time();
+
+   # Do the checksum operation.
    if ( $strat eq 'CHECKSUM' ) {
       if ( $opts{c} ) {
-         $crc = do_checksum($dbh, $info, $explain);
+         $crc = do_checksum($dbh, $info, $query, $explain);
       }
       if ( $opts{r} ) {
-         $cnt = do_count($dbh, $info, $explain);
+         $cnt = do_count($dbh, $info, $chunk_num, $explain);
       }
    }
    elsif ( $opts{c} ) {
-      ( $cnt, $crc ) = do_var_crc($dbh, $info, $explain);
+      ( $cnt, $crc ) = do_var_crc($dbh, $query, $info, $chunk_num, $explain);
       $crc ||= 'NULL';
    }
    else {
-      $cnt = do_count($dbh, $info, $explain);
+      $cnt = do_count($dbh, $info, $chunk_num, $explain);
    }
+
    my $end = time();
-   $dbh->disconnect();
-   printf($hdr, @{$info}{qw(database table chunk_cur)}, $host->{h}, $info->{engine}, $cnt, $crc,
-      $end - $mid, $mid - $beg, $sta, $lag) unless ($opts{q} || $opts{explain});
-}
-
-# Generates a checksum query for a given table.
-sub checksum_query {
-   my ( $dbh, $db, $tbl ) = @_;
-   my $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$db`.`$tbl`"))[1];
-   return {engine => 'VIEW'} if $ddl =~ m/^CREATE ALGORITHM/;
-
-   my ( $engine ) = $ddl =~ m/^\) (?:ENGINE|TYPE)=(\S+)/m;
-
-   # Make a list of all columns.
-   my @defs = $ddl =~ m/^(\s+`.*)$/gm;
-   my %def_for;
-   my @tocrc;
-   my %type_for;
-   my $chunk_exact = 0;
-
-   # Normalize query results: make sure floats stringify the same way, and
-   # disable different formatting for TIMESTAMP columns.  Grab column types too.
-   foreach my $def ( @defs ) {
-      my ($name, $type) = $def =~ m/(`[^`]+`)\s([a-z]+)/;
-      $type_for{$name} = $type;
-      $def_for{$name}  = $def;
-      die "Can't parse column definition $def" unless $name;
-      push @tocrc,
-           $type =~ m/float|double/ && $opts{'float-precision'} ? "ROUND($name, $opts{'float-precision'})"
-         : $type eq 'timestamp'                                 ? "$name + 0"
-         :                                                        $name;
+   if ( !$opts{q} && !$opts{explain} ) {
+      printf($hdr,
+         @{$info}{qw(database table)}, $chunk_num,
+         $host->{h}, $info->{struct}->{engine}, $cnt, $crc,
+         $end - $mid, $mid - $beg, $sta, $lag);
    }
-
-   # See if there's an index that will support chunking.  If chunksize-exact
-   # is specified, it must be single column unique or primary.
-   my $chunk_col = $opts{chunkcol} || '';
-   if ( $opts{C} && !$chunk_col ) {
-
-      my @candidates;
-
-      if ($opts{'chunksize-exact'}) {
-         # Extract only single-column unique indexes.
-         @candidates  = $ddl =~ m/(?:PRIMARY|UNIQUE) KEY .*?\((`[^`]+`)\)/g;
-         $chunk_exact = scalar @candidates;
-      }
-
-      # Even if chunksize-exact is specified, fall back to non-exact.  Better
-      # to go a little over spec than do the whole table in one chunk!
-      if ( !@candidates ) {
-         # We chunk only on the first column of multi-column indexes, so this
-         # regex extracts the first column of every index.  The optional
-         # PRIMARY or UNIQUE simply eliminates RTREE and HASH indexes, which
-         # are not usable for range queries.
-         @candidates = $ddl =~ m/^ *(?:PRIMARY|UNIQUE)? *KEY .*?\((`[^`]+`)/mg;
-      }
-
-      # Eliminate types for which I can't choose endpoints.
-      @candidates = grep {
-         exists($int_types{$type_for{$_}})
-         || exists($real_types{$type_for{$_}})
-      } @candidates;
-
-      if ( @candidates ) {
-         $chunk_col = $candidates[0];
-      }
-   }
-
-   # To detect when columns are NULL, make a bitmap of nullable columns.
-   my @nulls = map { $_ =~ m/(`[^`]+`)/g } grep { $_ !~ m/NOT NULL/ } @defs;
-   if ( @nulls ) {
-      push @tocrc, "CONCAT(" . join(', ', map { "ISNULL($_)" } @nulls) . ")";
-   }
-
-   # Is the chunk column nullable?  What is the type of the chunk column?
-   my ($chunk_null, $null_query, $chunk_type);
-   if ( $chunk_col ) {
-      $chunk_null = grep { $_ eq $chunk_col } @nulls;
-      $chunk_type = $type_for{$chunk_col};
-   }
-
-   # Design the column checksum expression.
-   my $chks = @tocrc > 1
-            ? "$func(CONCAT_WS('$opts{s}', " . join(',', @tocrc) . '))'
-            : "$func($tocrc[0])";
-
-   # Make the query.
-   my $query = '';
-   if ( $strat eq 'BIT_XOR' ) {
-
-      # This checksum algorithm concatenates the columns in each row and
-      # checksums them, then slices this checksum up into 16-character chunks.
-      # It then converts them BIGINTs with the CONV() function, and then
-      # groupwise XORs them to produce an order-independent checksum of the
-      # slice over all the rows.  It then converts these back to base 16 and
-      # puts them back together.  The effect is the same as XORing a very wide
-      # (32 characters = 128 bits for MD5, and SHA1 is even larger) unsigned
-      # integer over all the rows.
-
-      my $slices = make_slices($chks);
-
-      if ( $opts{R} ) {
-         $query = "REPLACE /*progress_comment*/ INTO $opts{R}"
-            . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
-            . "SELECT '$db', '$tbl', ?, ?, COUNT(*), CONCAT($slices) AS crc "
-            . "FROM `$db`.`$tbl`$opts{W}";
-      }
-      else {
-         $query = "SELECT /*progress_comment*/ COUNT(*) as cnt, CONCAT($slices) AS crc FROM `$db`.`$tbl`$opts{W}";
-      }
-
-   }
-   else { # Use an accumulator variable.
-      # Find whether there's a PK (for order-by).  Since the accumulator
-      # variable re-checksums every row combined with the previous row's
-      # checksum, row order matters.
-      my $index = $opts{i}                           ? " USE INDEX(`$opts{i}`)"
-                : $ddl =~ m/PRIMARY KEY\s*\((.*?)\)/ ? ' USE INDEX(PRIMARY)'
-                : '';
-
-      # Generate the query.  This query relies on @crc being NULL, and @cnt
-      # being 0 when it begins.  It checksums each row, appends it to the
-      # running checksum, and checksums the two together.  In this way it acts
-      # as an accumulator for all the rows.  It then prepends a steadily
-      # increasing number to the left, left-padded with zeroes, so each
-      # checksum taken is stringwise greater than the last.  In this way the
-      # MAX() function can be used to return the last checksum calculated.
-      # @cnt is not used for a row count, it is only used to make MAX() work
-      # correctly.
-      if ( $opts{R} ) {
-         $query = "REPLACE /*progress_comment*/ INTO $opts{R}"
-            . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
-            . "SELECT '$db', '$tbl', ?, ?, COUNT(*) AS cnt, RIGHT(MAX("
-            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
-            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
-      }
-      else {
-         $query = "SELECT /*progress_comment*/ COUNT(*) AS cnt, RIGHT(MAX("
-            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), $func(CONCAT_WS('$opts{s}', \@crc, $chks)))"
-            . "), $crc_wid) AS crc FROM `$db`.`$tbl`$index$opts{W}";
-      }
-   }
-
-   return {
-       database    => $db,
-       table       => $tbl,
-       engine      => $engine,
-       query       => $query,
-       chunk_col   => $chunk_col,
-       chunk_null  => $chunk_null,
-       chunk_type  => $chunk_type,
-       chunk_exact => $chunk_exact,
-   };
-}
-
-# The WHERE clauses are tricky.  There are several cases:
-# Normal:      WHERE foo >= ? AND foo < ?
-# NULL slice:  WHERE foo IS NULL
-# Edge cases:  WHERE foo < ?
-#              WHERE foo >= ?
-sub make_where_clause {
-   my ( $dbh, $info, $chunk ) = @_;
-   my $is_first = $info->{chunk_cur} == 1;
-   my $col      = $info->{chunk_col};
-   my $sql;
-
-   return '1=1' if !$info->{chunk_col};
-
-   if ( !defined $chunk ) {
-      $sql = "$col IS NULL";
-   }
-   elsif ( !ref $chunk ) {
-      $sql = "$col IS NOT NULL";
-   }
-   else {
-      my ( $beg, $end ) = @$chunk;
-
-      # The normal case is a chunk in the middle of the range somewhere.
-      if ( defined $beg && defined $end ) {
-         $sql = "$col >= " . $dbh->quote($beg) . " AND $col < " . $dbh->quote($end);
-      }
-      elsif ( defined $beg ) {
-         $sql = "$col >= " . $dbh->quote($beg);
-      }
-      elsif ( defined $end ) {
-         $sql = "$col < " . $dbh->quote($end);
-      }
-      else {
-         die "This code should never run";
-      }
-   }
-
-   return $sql;
-}
-
-sub make_slices {
-   my ( $chks ) = @_;
-
-   # Split the CRC result up into slices and glue them together.
-   my @slices;
-   for ( my $start = 1; $start < $crc_wid; $start += 16 ) {
-      my $len = min(16, $crc_wid - $start + 1);
-      push @slices,
-         "LPAD(CONV(BIT_XOR("
-         . "CAST(CONV(SUBSTRING(\@crc, $start, $len), 16, 10) AS UNSIGNED))"
-         . ", 10, 16), $len, '0')";
-   }
-
-   if ( $crc_slice < @slices && $opts{o} ) {
-      $slices[$crc_slice] =~ s/\@crc/\@crc := $chks/;
-   }
-   else {
-      map { s/\@crc/$chks/ } @slices;
-   }
-
-   return join(', ', @slices);
 }
 
 exit $exit_status;
@@ -1539,106 +2238,69 @@ exit $exit_status;
 # Subroutines
 # ############################################################################
 
-# Range functions.
-sub range_num {
-   my ( $dbh, $start, $interval, $max ) = @_;
-   return ( $start, min($max, $start + $interval) );
-}
-
-sub range_time {
-   my ( $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))");
-}
-
-sub range_date {
-   my ( $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))");
-}
-
-sub range_datetime {
-   my ( $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND),
-       DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)");
-}
-
-sub range_timestamp {
-   my ( $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))");
-}
-
-# Returns the number of seconds between $EPOCH and the value, according to
-# the MySQL server.  (The server can do no wrong).  I believe this code is right
-# after looking at the source of sql/time.cc but I am paranoid and add in an
-# extra check just to make sure.  Earlier versions overflow on large interval
-# values, such as on 3.23.58, '1970-01-01' - interval 58000000000 second is
-# 2037-06-25 11:29:04.  I know of no workaround.
-sub timestampdiff {
-   my ( $dbh, $time ) = @_;
-   my ( $diff ) = $dbh->selectrow_array(
-      "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
-      . "- TO_DAYS('$EPOCH 00:00:00') * 86400");
-   my ( $check ) = $dbh->selectrow_array(
-      "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)");
-   die <<"   EOF"
-   Incorrect datetime math: given $time, calculated $diff but checked to $check.
-   This is probably because you are using a version of MySQL that overflows on
-   large interval values.  If not, please report this as a bug.
-   EOF
-      unless $check eq $time;
-   return $diff;
-}
-
 sub get_dbh {
-   my ( $info, $db ) = @_;
+   my ( $info ) = @_;
    if ( $opts{askpass} && !defined $info->{p} ) {
-      $info->{p} = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
+      $info->{p}
+         = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
    }
+
+   my $db_options = {
+      RaiseError => 1,
+      PrintError => 0,
+      AutoCommit => $opts{k} ? 0 : 1,
+   };
+
    my $dbh = DBI->connect($dsn_parser->get_cxn_params($info), $db_options);
-   if ( $db ) {
-      $dbh->do("USE $db");
-   }
+   $dbh->{InactiveDestroy} = 1; # Prevent destroying on fork.
    return $dbh;
 }
 
 sub do_var_crc {
-   my ( $dbh, $info, $explain ) = @_;
+   my ( $dbh, $query, $info, $chunk_num, $explain ) = @_;
 
-   my $sql   = add_progress_comment($info->{query}, $info);
-   my $chunk = $info->{chunks}->[$info->{chunk_cur} - 1];
-   my $where = make_where_clause($main_dbh, $info, $chunk);
+   my $sql = $ch->inject_chunks(
+      query     => $query,
+      database  => $info->{database},
+      table     => $info->{table},
+      chunks    => $info->{chunks},
+      chunk_num => $chunk_num,
+      where     => $opts{W},
+   );
 
    if ( $opts{explain} ) {
       if ( $info->{chunk_cur} == 1 ) {
          printf($explain, @{$info}{qw(database table)}, $sql);
       }
-      printf($explain, @{$info}{qw(database table)}, $where);
+      printf($explain,
+         @{$info}{qw(database table)}, $info->{chunks}->{$chunk_num});
       return;
    }
 
-   $dbh->do('set @crc := NULL, @cnt := 0');
-   my $res = $dbh->selectall_arrayref("$sql AND $where", { Slice => {} })->[0];
+   $dbh->do('set @crc := "", @cnt := 0');
+   my $res = $dbh->selectall_arrayref($sql, { Slice => {} })->[0];
    return ($res->{cnt}, $res->{crc});
 }
 
 sub do_checksum {
-   my ( $dbh, $info, $explain ) = @_;
-   my $sql = "CHECKSUM TABLE `$info->{database}`.`$info->{table}`";
+   my ( $dbh, $info, $query, $explain ) = @_;
    if ( $opts{explain} ) {
-      printf($explain, @{$info}{qw(database table)}, $sql);
+      printf($explain, @{$info}{qw(database table)}, $query);
    }
    else {
-      my $res = $dbh->selectrow_hashref($sql);
-      return $res->{Checksum} if $res;
+      my $res = $dbh->selectrow_hashref($query);
+      if ( $res ) {
+         my ($key) = grep { m/checksum/i } keys %$res;
+         return $res->{$key};
+      }
    }
 }
 
 sub do_count {
-   my ( $dbh, $info, $explain ) = @_;
-   my $sql = "SELECT COUNT(*) FROM `$info->{database}`.`$info->{table}`$opts{W}";
+   my ( $dbh, $info, $chunk_num, $explain ) = @_;
+   my $sql = "SELECT COUNT(*) FROM "
+      . $q->quote(@{$info}{qw(database table)})
+      . ($opts{W} ? " WHERE $opts{W}" : '');
    if ( $opts{explain} ) {
       printf($explain, @{$info}{qw(database table)}, $sql);
    }
@@ -1696,7 +2358,7 @@ See L<"SPECIFYING HOSTS"> for more on the syntax of the host arguments.
 
 MySQL Table Checksum generates table checksums for MySQL tables, typically
 useful for verifying your slaves are in sync with the master.  The checksums
-are generated by a query on the server, and there is virtually no network
+are generated by a query on the server, and there is very little network
 traffic as a result.
 
 Checksums typically take about twice as long as COUNT(*) on very large InnoDB
@@ -1729,19 +2391,11 @@ specify connection options two ways:
 
 Format a host definition in a key=value,key=value form.  If an argument on the
 command line contains the letter '=', MySQL Table Checksum will parse it into
-its component parts.  The parts are as follows:
+its component parts.  Examine the L<"--help"> output for details on the allowed
+keys.
 
-   KEY MEANING
-   === =======
-   h   Connect to host
-   P   Port number to use for connection
-   S   Socket file to use for connection
-   u   User for login if not current user
-   p   Password to use when connecting
-   F   Only read default options from the given file
-
-With this in mind, consider that specifying a list of simple host definitions
-"host1 host2" is equivalent to the more complicated "h=host1 h=host2" format.
+Specifying a list of simple host definitions "host1 host2" is equivalent to the
+more complicated "h=host1 h=host2" format.
 
 =item *
 
@@ -1761,9 +2415,9 @@ highest precedence is the option specified directly in the host definition, next
 is the option specified in the first host definition, and lowest is the
 command-line option.
 
-You can freely mix simple and complex host definitions and/or command-line
-arguments.  For example, if all your servers except one of your slaves uses a
-non-standard port number:
+You can mix simple and complex host definitions and/or command-line arguments.
+For example, if all your servers except one of your slaves uses a non-standard
+port number:
 
    mysql-table-checksum --port 4500 master h=slave1,p=3306 slave2 slave3
 
@@ -1782,10 +2436,9 @@ Specifies which checksum algorithm to use.  Valid arguments are CHECKSUM,
 BIT_XOR and ACCUM.  The latter two do cryptographic hash checksums.
 
 CHECKSUM is built into MySQL, but has some disadvantages.  BIT_XOR and ACCUM are
-implemented by the SQL queries mysql-table-checksum generates.  They use a
-cryptographic hash of all columns concatenated together with a separator,
-followed by a bitmap of each nullable column that is NULL (necessary because
-CONCAT_WS() skips NULL columns).
+implemented by SQL queries.  They use a cryptographic hash of all columns
+concatenated together with a separator, followed by a bitmap of each nullable
+column that is NULL (necessary because CONCAT_WS() skips NULL columns).
 
 CHECKSUM is the default.  This method uses MySQL's built-in CHECKSUM TABLE
 command.  It cannot be used before MySQL 4.1.1, and various options disable it
@@ -1822,34 +2475,16 @@ algorithm won't work for some reason, mysql-table-checksum falls back to
 another.  The least common denominator is ACCUM, which works on MySQL 3.23.2 and
 newer.
 
-One reason to specify a cryptographic hash algorithm instead of CHECKSUM is to
-checksum tables that have the same data but different row formats (possibly
-because of different storage engines), and thus will return different values for
-CHECKSUM TABLE.
-
 =item --askpass
 
 Prompt for a password for each host for which no password is given.
 
-=item --chunkcol
-
-Specifies a column for chunking (see L<"--chunksize">).  You should not need to do
-this normally, because mysql-table-checksum can find a suitable column if one
-exists.  Be careful of using character columns, because mysql-table-checksum's
-chunking algorithm works only on numbers.  For instance, if you have a character
-column containing values 1 through 90 and you specify a chunksize of 50,
-mysql-table-checksum will checksum BETWEEN 1 AND 50, then BETWEEN 51 and 100.
-The second query will not match any rows because 51 is stringwise greater than
-100.
-
 =item --chunksize
 
-If you specify a chunk size, mysql-table-checksum will look for an index whose
-first colum is a numeric or temporal data type.  It will estimate the number of
-rows to be checksummed and split them into ranges of approximately L<"--chunksize">
+If you specify a chunk size, mysql-table-checksum will try to find an index that
+will let it split the table into ranges of approximately L<"--chunksize">
 rows, based on the table's index statistics.  It will checksum each range
-separately with parameters in the checksum query's WHERE clause.  The WHERE
-comparisons will refer to the first column of the chosen index.
+separately with parameters in the checksum query's WHERE clause.
 
 If mysql-table-checksum cannot find a suitable index, it will do the entire
 table in one chunk as though you had not specified L<"--chunksize"> at all.  Each
@@ -1857,20 +2492,17 @@ table is handled individually, so some tables may be chunked and others not.
 
 The chunks will be approximately sized, and depending on the distribution of
 values in the indexed column, some chunks may be larger than the value you
-specify.  If it is important for you to avoid this, you may be able to use
-L<"--chunksize-exact">.  Otherwise, perhaps you should just specify a smaller size,
-such as half the size you really want.
+specify.
 
-You can override mysql-table-checksum's choice of column with L<"--chunkcol">.
+If you specify a suffix (one of k, M or G), the parameter is treated as a data
+size rather than a number of rows.  The output of SHOW TABLE STATUS is then used
+to estimate the amount of data the table contains, and convert that to a number
+of rows.
 
-=item --chunksize-exact
+=item --columns
 
-If this option is given, mysql-table-checksum will checksum the table in chunks
-no larger than L<"--chunksize">.  This requires a single-column integral or date
-index.  The index must be a UNIQUE or PRIMARY KEY.
-
-If the table doesn't have a suitable index, mysql-table-checksum will try to
-chunk approximately instead of just doing the whole table in one chunk.
+A comma-separated list of columns to checksum.  Other columns will be
+ignored.TODO: test
 
 =item --count
 
@@ -1930,9 +2562,10 @@ the same values on different MySQL versions and hardware.
 =item --function
 
 You can use this option to choose the cryptographic hash function used for
-L<"--algorithm">=ACCUM or L<"--algorithm">=BIT_XOR.  The default is to use SHA1, but MD5
-is also a good choice.  Whatever function you specify is run in SQL, not in
-Perl, so it must be available to MySQL.
+L<"--algorithm">=ACCUM or L<"--algorithm">=BIT_XOR.  The default is to use SHA1,
+but MD5 is also a good choice, and you can use your own function, such as a
+compiled UDF, if you wish.  Whatever function you specify is run in SQL, not
+in Perl, so it must be available to MySQL.
 
 =item --help
 
@@ -1942,16 +2575,13 @@ Displays a help message.
 
 Use this option to skip a comma-separated list of databases.
 
+=item --ignoreengine
+
+Use this option to skip a comma-separated list of storage engines (table types).
+
 =item --ignoretbl
 
 Use this option to skip a comma-separated list of tables.
-
-=item --index
-
-If you specify L<"--algorithm">=ACCUM and the table has no PRIMARY KEY, row ordering
-will be non-deterministic, and you may get unpredictable results.  If there is
-another index that will give predictable results, this option can be used to
-specify it.
 
 =item --lock
 
@@ -2020,7 +2650,7 @@ default-and-override method described in L<"SPECIFYING HOSTS">.  The host and
 port from SHOW SLAVE HOSTS are combined into "h=host,P=port" and used as the
 argument.
 
-This requires the @@SERVER_ID system variable, so it only works on MySQL
+This requires the @@SERVER_ID system variable, so it works only on MySQL
 3.23.26 or newer.
 
 If any slave has chunks that differ from the master, MySQL Table Checksum's
@@ -2029,11 +2659,11 @@ exit status is 1; otherwise it is 0.
 =item --replicate
 
 This option enables a completely different checksum strategy for a consistent,
-lock-free checksum across a master and its slaves.  This only works with
+lock-free checksum across a master and its slaves.  This works only with
 statement-based replication (mysql-table-checksum will switch the binlog format
 to STATEMENT for the duration of the session if your server uses row-based
-replication).  Instead of running the checksum queries on each server, you only
-run it on the master.  You specify a table to insert the results into.  The
+replication).  Instead of running the checksum queries on each server, you run
+it only on the master.  You specify a table to insert the results into.  The
 query will insert directly into the table, so it will be replicated through the
 binlog to the slaves.
 
@@ -2148,10 +2778,6 @@ in your table.  If you know you don't (for instance, all columns are
 integers), you can safely disable this check and you will get a reliable
 checksum even on servers with different behavior.
 
-This option also checks all servers to be sure the L<"--optxor"> optimization will
-work correctly.  If not, it simply disables the optimization, rather than
-stopping with an error.
-
 =item --version
 
 Output version information and exit.
@@ -2161,13 +2787,15 @@ Output version information and exit.
 This option helps you get a consistent checksum across a master server and its
 slaves.  It combines locking and waiting to accomplish this.  First it locks the
 table on the master (the first server on the command line).  Then it finds the
-master's binlog position and checksums.
+master's binlog position.  Checksums on slaves will be deferred until they reach
+the same binlog position.
 
 The argument to the option is the number of seconds to wait for the slaves to
 catch up to the master.  It is actually the argument to MASTER_POS_WAIT().  If
 the slaves don't catch up to the master within this time, they will unblock
 and go ahead with the checksum.  You can tell whether this happened by
-examining the STAT column in the output.
+examining the STAT column in the output, which is the return value of
+MASTER_POS_WAIT().
 
 =item --where
 
@@ -2272,7 +2900,7 @@ Output is unsorted, though all lines for one table should be output together.
 For speed, all checksums are done in parallel (as much as possible) and may
 complete out of the order in which they were started.  You might want to run
 them through another script or command-line utility to make sure they are in the
-order you want.  If you pipe the output through mysql-checksum-filter, you can
+order you want.  If you pipe the output through L<mysql-checksum-filter>, you can
 sort the output and/or avoid seeing output about tables that have no differences.
 
 The columns in the output are as follows.  The database, table, and chunk come
