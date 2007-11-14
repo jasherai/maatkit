@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 15;
+   $tests = 16;
 }
 
 use Test::More tests => $tests;
@@ -61,6 +61,19 @@ is_deeply(
    [ $c->find_chunk_columns($t) ],
    [ 0, [qw(film_id language_id original_language_id)]],
    'PK column is first',
+);
+
+is (
+   $c->inject_chunks(
+      query     => 'SELECT /*progress_comment*/ FOO FROM 1/*WHERE*/',
+      database  => 'sakila',
+      table     => 'film',
+      chunks    => [ '1=1', 'a=b' ],
+      chunk_num => 1,
+      where     => 'FOO=BAR',
+   ),
+   'SELECT /*sakila.film:2/2*/ FOO FROM 1 WHERE (a=b) AND (FOO=BAR)',
+   'Injects into WHERE clause and progress comment',
 );
 
 # Open a connection to MySQL, or skip the rest of the tests.
