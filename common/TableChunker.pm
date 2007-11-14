@@ -270,6 +270,23 @@ sub quote {
    return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
 }
 
+sub inject_chunks {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(database table chunks chunk_num) ) {
+      die "$arg is required" unless defined $args{$arg};
+   }
+   my $comment = sprintf("/*%s.%s:%d/%d*/",
+      $args{database}, $args{table},
+      $args{chunk_num} + 1, scalar @{$args{chunks}});
+   $args{query} =~ s!/\*progress_comment\*/!$comment!;
+   my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
+   if ( $args{where} ) {
+      $where .= " AND ($args{where})";
+   }
+   $args{query} =~ s!/\*WHERE\*/! $where!;
+   return $args{query};
+}
+
 # ###########################################################################
 # Range functions.
 # ###########################################################################
