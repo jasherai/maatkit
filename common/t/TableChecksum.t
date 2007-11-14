@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 26;
+   $tests = 32;
    $skipped = 2;
 }
 
@@ -281,6 +281,64 @@ is (
    ),
    q{SHA1(`film_id`)},
    'SHA1 query for sakila.film with only one column',
+);
+
+is (
+   $c->make_row_checksum(
+      func      => 'SHA1',
+      table     => $t,
+      quoter    => $q,
+      cols      => [qw(film_id title)],
+      sep       => '%',
+   ),
+   q{SHA1(CONCAT_WS('%', `film_id`, `title`))},
+   'Separator',
+);
+
+is (
+   $c->make_row_checksum(
+      func      => 'SHA1',
+      table     => $t,
+      quoter    => $q,
+      cols      => [qw(film_id title)],
+      sep       => "'%'",
+   ),
+   q{SHA1(CONCAT_WS('%', `film_id`, `title`))},
+   'Bad separator',
+);
+
+is (
+   $c->make_row_checksum(
+      func      => 'SHA1',
+      table     => $t,
+      quoter    => $q,
+      cols      => [qw(film_id title)],
+      sep       => "'''",
+   ),
+   q{SHA1(CONCAT_WS('#', `film_id`, `title`))},
+   'Really bad separator',
+);
+
+$t = $tp->parse(load_file('samples/sakila.rental.float.sql'));
+is (
+   $c->make_row_checksum(
+      func      => 'SHA1',
+      table     => $t,
+      quoter    => $q,
+   ),
+   q{SHA1(CONCAT_WS('#', `rental_id`, `foo`))},
+   'FLOAT column is like any other',
+);
+
+is (
+   $c->make_row_checksum(
+      func      => 'SHA1',
+      table     => $t,
+      quoter    => $q,
+      precision => 5,
+   ),
+   q{SHA1(CONCAT_WS('#', `rental_id`, ROUND(`foo`, 5)))},
+   'FLOAT column is rounded to 5 places',
 );
 
 #TODO
