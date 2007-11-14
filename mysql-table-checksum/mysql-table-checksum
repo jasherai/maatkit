@@ -1570,48 +1570,83 @@ $OUTPUT_AUTOFLUSH = 1;
 # ############################################################################
 
 my @opt_spec = (
-   { s => 'algorithm|a=s',     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
-   { s => 'askpass',           d => 'Prompt for username and password for connections' },
-   { s => 'chunksize|C=s',     d => 'Approximate number of rows or size of '
-                                  . 'data to checksum at a time; allowable '
-                                  . 'suffixes are k, M, G (disallows -a CHECKSUM)' },
-   { s => 'columns=a',         d => 'Do only this comma-separated list of columns' },
-   { s => 'databases|d=h',     d => 'Do only this comma-separated list of databases' },
-   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
-   { s => 'emptyrepltbl',      d => 'Empty table given by --replicate before starting' },
-   { s => 'engine|e=h',        d => 'Do only this comma-separated list of storage engines' },
-   { s => 'explain',           d => 'Show, but do not execute, checksum queries' },
-   { s => 'explainhosts',      d => 'Print connection information and exit' },
-   { s => 'float-precision=i', d => 'Precision for FLOAT and DOUBLE column comparisons' },
-   { s => 'function|f=s',      d => 'Hash function for checksums (SHA1, MD5...)' },
-   { s => 'ignoredb|g=H',      d => 'Ignore this comma-separated list of databases' },
-   { s => 'ignoreengine|E=H',  d => 'Ignore this comma-separated list of storage engines (default FEDERATED,MRG_MyISAM)' },
-   { s => 'ignoretbl|n=H',     d => 'Ignore this comma-separated list of tables' },
-   { s => 'lock|k',            d => 'Lock table on master until done on slaves (implies -l)' },
-   { s => 'count|r!',          d => 'Count rows in tables.  This is built into '
-                                  . 'ACCUM and BIT_XOR, but requires an extra '
-                                  . 'query for CHECKSUM' },
-   { s => 'crc|c!',            d => 'Do a CRC (checksum) of tables (default)' },
-   { s => 'optxor|o!',         d => 'Optimize BIT_XOR with user variables (default)'},
-   { s => 'password|p=s',      d => 'Password to use when connecting' },
-   { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'quiet|q',           d => 'Do not print checksum results' },
-   { s => 'recursecheck',      d => 'Do --replcheck recursively (implies --replcheck)' },
-   { s => 'replcheck',         d => 'Connect to slaves and check results (requires --replicate)' },
-   { s => 'replicate|R=s',     d => 'Replicate checksums to slaves (disallows -a CHECKSUM)' },
-   { s => 'slavelag|l',        d => 'Report how far slaves lag master' },
-   { s => 'separator|s=s',     d => 'Separator for CONCAT_WS() (default #)' },
-   { s => 'sleep=i',           d => 'Sleep time between checksums' },
-   { s => 'sleep-coef=f',      d => 'Sleep time as a multiple of last checksum time' },
-   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'tab|b',             d => 'Print tab-separated output' },
-   { s => 'tables|t=h',        d => 'Do only this comma-separated list of tables' },
-   { s => 'user|u=s',          d => 'User for login if not current user' },
-   { s => 'verify|v!',         d => 'Verify checksum compatibility across servers (default)' },
-   { s => 'wait|w=m',          d => 'Wait this long for slaves to catch up to '
-                                  . 'their master (implies -kl).  Possible '
-                                  . 'suffixes are s/m/h/d.' },
-   { s => 'where|W=s',         d => 'Do only rows matching this WHERE clause (disallows -a CHECKSUM)' },
+   { s => 'algorithm|a=s',
+     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
+   { s => 'askpass',
+     d => 'Prompt for username and password for connections' },
+   { s => 'chunksize|C=s',
+     d => 'Approximate number of rows or size of '
+        . 'data to checksum at a time; allowable '
+        . 'suffixes are k, M, G (disallows -a CHECKSUM)' },
+   { s => 'columns=a',
+     d => 'Do only this comma-separated list of columns' },
+   { s => 'databases|d=h',
+     d => 'Do only this comma-separated list of databases' },
+   { s => 'defaults-file|F=s',
+     d => 'Only read mysql options from the given file' },
+   { s => 'emptyrepltbl',
+     d => 'Empty table given by --replicate before starting' },
+   { s => 'engine|e=h',
+     d => 'Do only this comma-separated list of storage engines' },
+   { s => 'explain',
+     d => 'Show, but do not execute, checksum queries' },
+   { s => 'explainhosts',
+     d => 'Print connection information and exit' },
+   { s => 'float-precision=i',
+     d => 'Precision for FLOAT and DOUBLE column comparisons' },
+   { s => 'function|f=s',
+     d => 'Hash function for checksums (SHA1, MD5...)' },
+   { s => 'ignoredb|g=H',
+     d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoreengine|E=H',
+     d => 'Ignore this comma-separated list of storage engines '
+        . '(default FEDERATED,MRG_MyISAM)' },
+   { s => 'ignoretbl|n=H',
+     d => 'Ignore this comma-separated list of tables' },
+   { s => 'lock|k',
+     d => 'Lock table on master until done on slaves (implies -l)' },
+   { s => 'count|r!',
+     d => 'Count rows in tables.  This is built into '
+        . 'ACCUM and BIT_XOR, but requires an extra query for CHECKSUM' },
+   { s => 'crc|c!',
+     d => 'Do a CRC (checksum) of tables (default)' },
+   { s => 'optxor|o!',
+     d => 'Optimize BIT_XOR with user variables (default)'},
+   { s => 'password|p=s',
+     d => 'Password to use when connecting' },
+   { s => 'port|P=i',
+     d => 'Port number to use for connection' },
+   { s => 'quiet|q',
+     d => 'Do not print checksum results' },
+   { s => 'recursecheck',
+     d => 'Do --replcheck recursively (implies --replcheck)' },
+   { s => 'replcheck',
+     d => 'Connect to slaves and check results (requires --replicate)' },
+   { s => 'replicate|R=s',
+     d => 'Replicate checksums to slaves (disallows -a CHECKSUM)' },
+   { s => 'slavelag|l',
+     d => 'Report how far slaves lag master' },
+   { s => 'separator|s=s',
+     d => 'Separator for CONCAT_WS() (default #)' },
+   { s => 'sleep=i',
+     d => 'Sleep time between checksums' },
+   { s => 'sleep-coef=f',
+     d => 'Sleep time as a multiple of last checksum time' },
+   { s => 'socket|S=s',
+     d => 'Socket file to use for connection' },
+   { s => 'tab|b',
+     d => 'Print tab-separated output' },
+   { s => 'tables|t=h',
+     d => 'Do only this comma-separated list of tables' },
+   { s => 'user|u=s',
+     d => 'User for login if not current user' },
+   { s => 'verify|v!',
+     d => 'Verify checksum compatibility across servers (default)' },
+   { s => 'wait|w=m',
+     d => 'Wait this long for slaves to catch up to their master '
+        . '(implies -kl).  Possible suffixes are s/m/h/d.' },
+   { s => 'where|W=s',
+     d => 'Do only rows matching this WHERE clause (disallows -a CHECKSUM)' },
 );
 
 my $vp         = new VersionParser();
@@ -1634,13 +1669,6 @@ my %opts = $opt_parser->parse();
 $opts{k} ||= defined $opts{w};
 $opts{l} ||= $opts{k};
 $opts{replcheck} ||= $opts{recursecheck};
-
-# Don't let someone put a ' in the separator
-$opts{s} =~ s/'//g;
-
-if ( $opts{a} && $opts{a} !~ m/^(?:ACCUM|CHECKSUM|BIT_XOR)$/ ) {
-   $opt_parser->error("--algorithm=$opts{a}: unknown algorithm.");
-}
 
 if ( !@ARGV ) {
    $opt_parser->error("No hosts specified.");
@@ -1687,7 +1715,6 @@ my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 if ( $opts{replcheck} ) {
    my %seen;
    my @hosts_to_do;
-   my $exit = 0;
 
    # Start the checking.
    if ( $vp->version_ge($main_dbh, '3.23.26') ) {
@@ -1706,14 +1733,21 @@ if ( $opts{replcheck} ) {
       };
    }
    else {
-      print_err("Cannot check slaves; --replcheck requires MySQL 3.23.26 or newer.");
+      print_err(
+         "Cannot check slaves; --replcheck requires MySQL 3.23.26 or newer.");
    }
 
-   my $sql = "SELECT db, tbl, chunk, boundaries, COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,"
-      . "COALESCE(this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc), 0) AS crc_diff "
-      . "FROM $opts{R} "
-      . "WHERE master_cnt <> this_cnt OR master_crc <> this_crc "
-      . "OR ISNULL(master_crc) <> ISNULL(this_crc)";
+   (my $sql = <<"   EOF") =~ s/^      //gm;
+      SELECT db, tbl, chunk, boundaries,
+         COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,
+         COALESCE(
+            this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
+            0
+         ) AS crc_diff 
+      FROM $opts{R} 
+      WHERE master_cnt <> this_cnt OR master_crc <> this_crc 
+      OR ISNULL(master_crc) <> ISNULL(this_crc)
+   EOF
 
    SLAVE:
    while ( @hosts_to_do ) {
@@ -1723,7 +1757,8 @@ if ( $opts{replcheck} ) {
       # Connect to that server (if needed)
       my $slave_dbh;
       if ( !$slave->{dbh} ) {
-         my $dsn    = $dsn_parser->parse("h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
+         my $dsn    = $dsn_parser->parse(
+                      "h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
          $slave_dbh = get_dbh($dsn, ($opts{d} ? keys %{$opts{d}} : '' ));
          $slave->{dbh} = $slave_dbh;
       }
@@ -1741,7 +1776,9 @@ if ( $opts{replcheck} ) {
          next SLAVE unless $id == $slave->{Server_id};
       }
       else {
-         print_err("Cannot check $slave->{Host}:$slave->{Port}; requires MySQL 3.23.26 or newer.");
+         print_err(
+            "Cannot check $slave->{Host}:$slave->{Port}; "
+            . "requires MySQL 3.23.26 or newer.");
          next SLAVE;
       }
 
@@ -1750,7 +1787,8 @@ if ( $opts{replcheck} ) {
          eval {
             push @hosts_to_do,
                grep { $_->{Master_id} == $id } # Only its own slaves
-               @{$slave_dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+               @{$slave_dbh->selectall_arrayref(
+                  "SHOW SLAVE HOSTS", { Slice => {} })};
          };
          if ( $EVAL_ERROR ) {
             print_err("Cannot recurse from $slave->{Host}:$slave->{Port}");
@@ -1776,7 +1814,7 @@ if ( $opts{replcheck} ) {
       }
 
       if ( $chunks && @$chunks ) {
-         $exit = 1;
+         $exit_status = 1;
          if ( !$opts{q} ) {
             # Design a header to align the results
             my $max_db   = max(5, map { length($_->{db})  } @$chunks);
@@ -1786,13 +1824,14 @@ if ( $opts{replcheck} ) {
             # Print the header and the rows
             printf($fmt, qw(db tbl chunk cnt_diff crc_diff boundaries));
             foreach my $chunk ( @$chunks ) {
-               printf($fmt, @{$chunk}{qw(db tbl chunk cnt_diff crc_diff boundaries)});
+               printf($fmt,
+                  @{$chunk}{qw(db tbl chunk cnt_diff crc_diff boundaries)});
             }
          }
       }
    }
 
-   exit($exit);
+   exit($exit_status);
 }
 
 # ############################################################################
@@ -1947,7 +1986,8 @@ foreach my $database ( $finder->find_databases() ) {
             my @chunks = '1=1'; # Default.
             if ( $opts{C} ) {
                # Figure out whether the chunksize is a number of rows or a data
-               # size.
+               # size. TODO: this is also in parallel-dump, put it into
+               # optionparser? or put it into the chunker?
                my $rows_per_chunk;
                my ( $num, $suffix ) = $opts{C} =~ m/^(\d+)([MGk])$/;
                if ( $suffix ) {
@@ -2011,11 +2051,13 @@ foreach my $database ( $finder->find_databases() ) {
       my $max_tbl  = max(5, map { length($_->{table}) } @tables);
       my $max_db   = max(8, length($database));
       my $max_host = max(4, map { length($_->{h}) } @hosts);
-      $hdr         = "%-${max_db}s %-${max_tbl}s %5s %-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+      $hdr         = "%-${max_db}s %-${max_tbl}s %5s "
+                   . "%-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
       $explain     = "%-${max_db}s %-${max_tbl}s %s\n";
    }
 
-   my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE COUNT CHECKSUM TIME WAIT STAT LAG);
+   my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
+                     COUNT CHECKSUM TIME WAIT STAT LAG);
    printf($hdr, @hdr_args) unless ($opts{q} || $opts{explain});
 
    TABLE:
@@ -2157,7 +2199,8 @@ sub do_tbl_replicate {
       return;
    }
 
-   $dbh->do('SET @crc := "", @cnt := 0 /*!50108 , @@binlog_format := "STATEMENT"*/');
+   $dbh->do('SET @crc := "", @cnt := 0 /*!50108 , '
+          . '@@binlog_format := "STATEMENT"*/');
    $dbh->do($sql, {}, @{$info}{qw(database table)}, $chunk_num, $where);
    $fetch_sth->execute(@{$info}{qw(database table)}, $chunk_num);
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
@@ -2269,11 +2312,11 @@ sub do_var_crc {
    );
 
    if ( $opts{explain} ) {
-      if ( $info->{chunk_cur} == 1 ) {
+      if ( $chunk_num == 0 ) {
          printf($explain, @{$info}{qw(database table)}, $sql);
       }
       printf($explain,
-         @{$info}{qw(database table)}, $info->{chunks}->{$chunk_num});
+         @{$info}{qw(database table)}, $info->{chunks}->[$chunk_num]);
       return;
    }
 
@@ -2319,7 +2362,8 @@ sub print_err {
    my ( $msg, $database, $table ) = @_;
    return if !defined $msg
       # Honor --quiet in the (common?) event of dropped tables or deadlocks
-      or ($opts{q} && $EVAL_ERROR =~ m/: Table .*? doesn't exist|Deadlock found/);
+      or ($opts{q}
+         && $EVAL_ERROR =~ m/: Table .*? doesn't exist|Deadlock found/);
    $msg =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
    $msg =~ s/\s+/ /g;
    if ( $database && $table ) {
@@ -2487,8 +2531,9 @@ rows, based on the table's index statistics.  It will checksum each range
 separately with parameters in the checksum query's WHERE clause.
 
 If mysql-table-checksum cannot find a suitable index, it will do the entire
-table in one chunk as though you had not specified L<"--chunksize"> at all.  Each
-table is handled individually, so some tables may be chunked and others not.
+table in one chunk as though you had not specified L<"--chunksize"> at all.
+Each table is handled individually, so some tables may be chunked and others
+not.
 
 The chunks will be approximately sized, and depending on the distribution of
 values in the indexed column, some chunks may be larger than the value you
@@ -2528,10 +2573,10 @@ otherwise all the default files will be read.
 
 =item --emptyrepltbl
 
-Issues a DELETE against the table given by L<"--replicate"> before beginning work.
-Ignored if L<"--replicate"> is not specified.  This can be useful to remove entries
-related to tables that no longer exist, or just to clean out the results of a
-previous run.
+Issues a DELETE against the table given by L<"--replicate"> before beginning
+work.  Ignored if L<"--replicate"> is not specified.  This can be useful to
+remove entries related to tables that no longer exist, or just to clean out the
+results of a previous run.
 
 If you specify L<"--databases"> or L<"--tables">, MySLQ Table Checksum will
 construct a WHERE clause for the DELETE statement, so only matching rows will
@@ -2704,8 +2749,8 @@ for master binlog positions, and so on.  It disables L<"--lock">, L<"--wait">,
 and L<"--slavelag">.
 
 The checksum queries actually do a REPLACE into this table, so existing rows
-need not be removed before running.  However, you may wish to do this anyway
-to remove rows related to tables that don't exist anymore.  The L<"--emptyrepltbl">
+need not be removed before running.  However, you may wish to do this anyway to
+remove rows related to tables that don't exist anymore.  The L<"--emptyrepltbl">
 option does this for you.
 
 Since mysql-table-checksum uses USE to select the table's database as its
@@ -2816,13 +2861,14 @@ keyword.  You may need to quote the value.  Here is an example:
 If you are using this tool to verify your slaves still have the same data as the
 master, which is why I wrote it, you should read this section.
 
-The best way to do this with replication is to use the L<"--replicate"> option.  When
-the queries are finished running on the master and its slaves, you can go to the
-slaves and issue SQL queries to see if any tables are different from the master.
-Try the following:
+The best way to do this with replication is to use the L<"--replicate"> option.
+When the queries are finished running on the master and its slaves, you can go
+to the slaves and issue SQL queries to see if any tables are different from the
+master.  Try the following:
 
   SELECT db, tbl, chunk, this_cnt-master_cnt AS cnt_diff,
-     this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc) AS crc_diff
+     this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc)
+        AS crc_diff
   FROM checksum
   WHERE master_cnt <> this_cnt OR master_crc <> this_crc
      OR ISNULL(master_crc) <> ISNULL(this_crc);
@@ -2843,8 +2889,8 @@ further ado:
 
 If the servers are being written to, you need some way to make sure they are
 consistent at the moment you run the checksums.  For situations other than
-master-slave replication, you will have to figure this out yourself.  You may
-be able to use the L<"--where"> option with a date or time column to only checksum
+master-slave replication, you will have to figure this out yourself.  You may be
+able to use the L<"--where"> option with a date or time column to only checksum
 data that's not recent.
 
 =item *
@@ -2860,9 +2906,9 @@ further.
 
 The next most disruptive technique is to lock the table on the master, then take
 checksums.  This should prevent changes from propagating to the slaves.  You can
-just lock on the master (with L<"--lock">), or you can both lock on the master and wait
-on the slaves till they reach that point in the master's binlog (L<"--wait">).  Which is
-better depends on your workload; only you know that.
+just lock on the master (with L<"--lock">), or you can both lock on the master
+and wait on the slaves till they reach that point in the master's binlog
+(L<"--wait">).  Which is better depends on your workload; only you know that.
 
 =item *
 
@@ -2881,17 +2927,18 @@ to be caught up to the master, the algorithm looks like this:
 
 =back
 
-What I typically do when I'm not using the L<"--replicate"> option is simply run the
-tool on all servers with no further options.  This runs fast, parallel,
+What I typically do when I'm not using the L<"--replicate"> option is simply run
+the tool on all servers with no further options.  This runs fast, parallel,
 non-blocking checksums simultaneously.  If there are tables that look different,
-I re-run with L<"--wait">=600 on the tables in question.  This makes the tool lock on
-the master as explained above.
+I re-run with L<"--wait">=600 on the tables in question.  This makes the tool
+lock on the master as explained above.
 
 =head1 OUTPUT
 
 Output is to STDOUT, one line per server and table, with header lines for each
 database.  I tried to make the output easy to process with awk.  For this reason
-columns are always present.  If there's no value, mysql-table-checksum prints 'NULL'.
+columns are always present.  If there's no value, mysql-table-checksum prints
+'NULL'.
 
 The default is column-aligned output for human readability, but you can change
 it to tab-separated if you want.  Use the L<"--tab"> option for this.
@@ -2900,8 +2947,9 @@ Output is unsorted, though all lines for one table should be output together.
 For speed, all checksums are done in parallel (as much as possible) and may
 complete out of the order in which they were started.  You might want to run
 them through another script or command-line utility to make sure they are in the
-order you want.  If you pipe the output through L<mysql-checksum-filter>, you can
-sort the output and/or avoid seeing output about tables that have no differences.
+order you want.  If you pipe the output through L<mysql-checksum-filter>, you
+can sort the output and/or avoid seeing output about tables that have no
+differences.
 
 The columns in the output are as follows.  The database, table, and chunk come
 first so you can sort by them easily (they are the "primary key").
