@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 25;
+   $tests = 26;
    $skipped = 2;
 }
 
@@ -31,9 +31,14 @@ use English qw(-no_match_vars);
 
 require "../TableChecksum.pm";
 require "../VersionParser.pm";
+require "../TableParser.pm";
+require "../Quoter.pm";
 
 my $c = new TableChecksum();
 my $vp = new VersionParser();
+my $tp = new TableParser();
+my $q  = new Quoter();
+my $t;
 
 sub load_file {
    my ($file) = @_;
@@ -248,6 +253,36 @@ is (
       . "AS UNSIGNED)), 10, 16), 16, '0')",
    'XOR slice optimized in slice 1',
 );
+
+$t = $tp->parse(load_file('samples/sakila.film.sql'));
+
+is (
+   $c->make_row_checksum(
+      func      => 'SHA1',
+      table     => $t,
+      quoter    => $q,
+   ),
+   q{SHA1(CONCAT_WS('#', }
+   . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
+   . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
+   . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
+   . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
+   . q{ISNULL(`original_language_id`), ISNULL(`length`), }
+   . q{ISNULL(`rating`), ISNULL(`special_features`))))},
+   'SHA1 query for sakila.film',
+);
+
+#TODO
+   my $todo = q{SELECT /*sakila.film:1/1*/ COUNT(*) AS cnt, }
+   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{SHA1(CONCAT_WS('#', @crc, SHA1(CONCAT_WS('#', }
+   . q{`film_id`, `title`, `description`, `release_year`, `language_id`,}
+   . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`,}
+   . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
+   . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
+   . q{ISNULL(`original_language_id`), ISNULL(`length`), }
+   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40) AS crc }
+   . q{FROM `sakila`.`film` USE INDEX(PRIMARY) /*WHERE*/};
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $dbh;
