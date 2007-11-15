@@ -1556,7 +1556,7 @@ package main;
 
 use DBI;
 use English qw(-no_match_vars);
-use List::Util qw(min max);
+use List::Util qw(max);
 use POSIX qw(ceil);
 
 our $VERSION = '@VERSION@';
@@ -1679,15 +1679,15 @@ foreach my $arg ( unique(@ARGV) ) {
    push @hosts, $dsn_parser->parse($arg, $hosts[0], \%opts);
 }
 
-if ( $opts{explain} ) {
-   @hosts = $hosts[0];
-}
-
 if ( $opts{explainhosts} ) {
    foreach my $host ( @hosts ) {
       print "Server $host->{h}:\n   ", $dsn_parser->as_string($host), "\n";
    }
    exit(0);
+}
+
+if ( $opts{explain} ) {
+   @hosts = $hosts[0];
 }
 
 if ( !$opts{help} ) {
@@ -1696,6 +1696,9 @@ if ( !$opts{help} ) {
    }
    elsif ( $opts{R} && @hosts > 1 ) {
       $opt_parser->error("You can only specify one host with --replicate.");
+   }
+   if ( $opts{C} && $opts{C} !~ m/^[1-9]\d*[MGk]?$/ ) {
+      $opt_parser->error("Invalid --chunksize argument");
    }
 }
 
@@ -1713,6 +1716,7 @@ my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 # Check replication slaves if desired.
 # ############################################################################
 if ( $opts{replcheck} ) {
+   my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
    my %seen;
    my @hosts_to_do;
 
@@ -1722,15 +1726,22 @@ if ( $opts{replcheck} ) {
       push @hosts_to_do,
          grep { $_->{Master_id} == $id } # Only its own slaves
          @{$main_dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+
       # Add the specified server (the master) as well.  This way the server
       # will get checked if someone specifies the root of some sub-tree in the
-      # replication topology.
-      push @hosts_to_do, {
-         Server_id => $id,
-         dbh       => $main_dbh,
-         Host      => $hosts[0]->{h},
-         Port      => $hosts[0]->{P},
+      # replication topology.  BUT do this only if the server is itself a
+      # slave.
+      my @is_slave = eval {
+         $main_dbh->selectrow_array('SHOW SLAVE STATUS');
       };
+      if ( @is_slave ) {
+         push @hosts_to_do, {
+            Server_id => $id,
+            dbh       => $main_dbh,
+            Host      => $hosts[0]->{h},
+            Port      => $hosts[0]->{P},
+         };
+      }
    }
    else {
       print_err(
@@ -1822,10 +1833,9 @@ if ( $opts{replcheck} ) {
             my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
 
             # Print the header and the rows
-            printf($fmt, qw(db tbl chunk cnt_diff crc_diff boundaries));
+            printf($fmt, @headers);
             foreach my $chunk ( @$chunks ) {
-               printf($fmt,
-                  @{$chunk}{qw(db tbl chunk cnt_diff crc_diff boundaries)});
+               printf($fmt, @{$chunk}{@headers});
             }
          }
       }
@@ -1985,8 +1995,8 @@ foreach my $database ( $finder->find_databases() ) {
 
             my @chunks = '1=1'; # Default.
             if ( $opts{C} ) {
-               # Figure out whether the chunksize is a number of rows or a data
-               # size. TODO: this is also in parallel-dump, put it into
+               # Figure out whether the chunksize is a number of rows or a
+               # data size. TODO: this is also in parallel-dump, put it into
                # optionparser? or put it into the chunker?
                my $rows_per_chunk;
                my ( $num, $suffix ) = $opts{C} =~ m/^(\d+)([MGk])$/;
@@ -1999,11 +2009,12 @@ foreach my $database ( $finder->find_databases() ) {
                      $main_dbh, $database, $table, $size * $num);
                }
                else {
-                  $rows_per_chunk = $opts{C};
+                  $rows_per_chunk = $num;
                }
 
                if ( $rows_per_chunk ) {
-                  # Get the chunk column candidates
+                  # Get the chunk column candidates and calculate chunks for
+                  # this table.
                   my $col   = $ch->get_first_chunkable_column($struct);
                   if ( $col ) {
                      my %params = $ch->get_range_statistics(
@@ -2064,10 +2075,10 @@ foreach my $database ( $finder->find_databases() ) {
    foreach my $table ( @tables ) {
       eval {
 
-         # #####################################################################
+         # ##################################################################
          # The query is independent of the chunk, so I make it once for every
          # one.
-         # #####################################################################
+         # ##################################################################
          my $query = $tc->make_checksum_query(
             dbname    => $database,
             tblname   => $table->{table},
@@ -2082,13 +2093,14 @@ foreach my $database ( $finder->find_databases() ) {
             replicate => $opts{R},
          );
 
-         # #####################################################################
+         # ##################################################################
          # This loop may seem suboptimal, because it causes a new child to be
-         # forked for each table, for each host, for each chunk.  It also causes
-         # the program to parallelize only within the chunk; that is, no two
-         # child processes are running on different chunks at a time.  This is
-         # by design.  It lets me unlock the table on the master between chunks.
-         # #####################################################################
+         # forked for each table, for each host, for each chunk.  It also
+         # causes the program to parallelize only within the chunk; that is,
+         # no two child processes are running on different chunks at a time.
+         # This is by design.  It lets me unlock the table on the master
+         # between chunks.
+         # ##################################################################
          foreach my $chunk_num ( 0 .. scalar(@{$table->{chunks}}) - 1 ) {
 
             my $chunk_start_time = time;
@@ -2151,10 +2163,9 @@ foreach my $database ( $finder->find_databases() ) {
                # Wait for the children to exit.
                foreach my $host ( keys %children ) {
                   my $pid = waitpid($children{$host}, 0);
-                  $exit_status = $CHILD_ERROR;
+                  $exit_status ||= $CHILD_ERROR >> 8;
                }
                $main_dbh->do("UNLOCK TABLES") if ($opts{k} && !$opts{explain});
-
             }
 
             if ( $opts{sleep} && !$opts{explain} ) {
@@ -2380,7 +2391,7 @@ sub print_err {
 =head1 NAME
 
 mysql-table-checksum - Perform an online replication consistency check, or
-efficiently checksum MySQL tables on one or many servers.
+checksum MySQL tables efficiently on one or many servers.
 
 =head1 SYNOPSIS
 
@@ -2419,7 +2430,7 @@ different forms of the hostname (for example, "localhost 127.0.0.1", or
 MySQL Table Checksum only examines table structure on the first host specified,
 so if anything differs on the others, it won't notice.  It ignores views.
 
-The checksums are tested on MySQL version 3.23.58 through 6.0-alpha.
+The checksums work on MySQL version 3.23.58 through 6.0-alpha.
 
 =head1 SPECIFYING HOSTS
 
