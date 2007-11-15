@@ -2148,7 +2148,8 @@ foreach my $database ( $finder->find_databases() ) {
                                $is_master, $hdr, $explain);
                      };
                      if ( $EVAL_ERROR ) {
-                        print_err($EVAL_ERROR, $database, $table->{table});
+                        print_err($EVAL_ERROR, $database, $table->{table},
+                           $dsn_parser->as_string($host));
                         exit(1) if @hosts > 1; # exit only if I'm a child
                      }
                      exit(0) if @hosts > 1; # exit only if I'm a child
@@ -2370,7 +2371,7 @@ sub unique {
 
 # Tries to extract the MySQL error message and print it
 sub print_err {
-   my ( $msg, $database, $table ) = @_;
+   my ( $msg, $database, $table, $host ) = @_;
    return if !defined $msg
       # Honor --quiet in the (common?) event of dropped tables or deadlocks
       or ($opts{q}
@@ -2379,6 +2380,9 @@ sub print_err {
    $msg =~ s/\s+/ /g;
    if ( $database && $table ) {
       $msg .= " while doing $database.$table";
+   }
+   if ( $host ) {
+      $msg .= " on $host";
    }
    print STDERR $msg, "\n";
 }
