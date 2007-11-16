@@ -88,7 +88,7 @@ sub is_hash_algorithm {
 sub choose_hash_func {
    my ( $self, %opts ) = @_;
    my @funcs = qw(SHA1 MD5);
-   if ( $opts{func} && !grep { uc $opts{func} eq $_ } @funcs ) {
+   if ( $opts{func} ) {
       unshift @funcs, $opts{func};
    }
    my ($result, $error);

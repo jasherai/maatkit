@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 39;
+   $tests = 40;
    $skipped = 2;
 }
 
@@ -490,6 +490,15 @@ SKIP: {
       ),
       'SHA1',
       'SHA99 does not exist so I get SHA1',
+   );
+
+   is(
+      $c->choose_hash_func(
+         dbh => $dbh,
+         func => 'MD5',
+      ),
+      'MD5',
+      'MD5 requested and MD5 granted',
    );
 
    is(
