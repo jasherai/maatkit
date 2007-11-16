@@ -132,7 +132,7 @@ sub parse {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1268
+# TableChecksum package 1276
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -191,7 +191,7 @@ sub is_hash_algorithm {
 sub choose_hash_func {
    my ( $self, %opts ) = @_;
    my @funcs = qw(SHA1 MD5);
-   if ( $opts{func} && !grep { uc $opts{func} eq $_ } @funcs ) {
+   if ( $opts{func} ) {
       unshift @funcs, $opts{func};
    }
    my ($result, $error);
@@ -328,7 +328,7 @@ sub make_checksum_query {
 
    if ( $algorithm eq 'BIT_XOR' ) {
       my $slices = $self->make_xor_slices( query => $expr, %args );
-      $result = "CONCAT($slices) AS crc ";
+      $result = "LOWER(CONCAT($slices)) AS crc ";
    }
    else {
       $result = "RIGHT(MAX("
@@ -1574,6 +1574,9 @@ my @opt_spec = (
      d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
    { s => 'askpass',
      d => 'Prompt for username and password for connections' },
+   { s => 'checksum',
+     d => 'Print checksums and table names in the style of '
+        . 'md5sum (disables --count)' },
    { s => 'chunksize|C=s',
      d => 'Approximate number of rows or size of '
         . 'data to checksum at a time; allowable '
@@ -1684,6 +1687,10 @@ if ( $opts{explainhosts} ) {
       print "Server $host->{h}:\n   ", $dsn_parser->as_string($host), "\n";
    }
    exit(0);
+}
+
+if ( $opts{checksum} ) {
+   $opts{r} = 0;
 }
 
 if ( $opts{explain} ) {
@@ -1955,6 +1962,7 @@ if ( $opts{R} ) {
 # ############################################################################
 # Iterate through databases and tables and do the checksums.
 # ############################################################################
+my $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
 my $q      = new Quoter();
 my $tp     = new TableParser();
 my $du     = new MySQLDump();
@@ -2069,7 +2077,8 @@ foreach my $database ( $finder->find_databases() ) {
 
    my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
                      COUNT CHECKSUM TIME WAIT STAT LAG);
-   printf($hdr, @hdr_args) unless ($opts{q} || $opts{explain});
+   printf($hdr, @hdr_args)
+      unless ($opts{q} || $opts{explain} || $opts{checksum});
 
    TABLE:
    foreach my $table ( @tables ) {
@@ -2221,10 +2230,16 @@ sub do_tbl_replicate {
    my $end = time();
    $crc  ||= 'NULL';
    if (!$opts{q} && !$opts{explain}) {
-      printf($hdr,
-         @{$info}{qw(database table)}, $chunk_num,
-         $host->{h}, $info->{struct}->{engine}, $cnt, $crc,
-         $end - $beg, 'NULL', 'NULL', 'NULL')
+      if ( $opts{checksum} ) {
+         printf($md5sum_fmt, $crc, $host->{h},
+            @{$info}{qw(database table)}, $chunk_num);
+      }
+      else {
+         printf($hdr,
+            @{$info}{qw(database table)}, $chunk_num,
+            $host->{h}, $info->{struct}->{engine}, $cnt, $crc,
+            $end - $beg, 'NULL', 'NULL', 'NULL')
+      }
    }
 }
 
@@ -2280,10 +2295,16 @@ sub do_tbl {
 
    my $end = time();
    if ( !$opts{q} && !$opts{explain} ) {
-      printf($hdr,
-         @{$info}{qw(database table)}, $chunk_num,
-         $host->{h}, $info->{struct}->{engine}, $cnt, $crc,
-         $end - $mid, $mid - $beg, $sta, $lag);
+      if ( $opts{checksum} ) {
+         printf($md5sum_fmt, $crc, $host->{h},
+            @{$info}{qw(database table)}, $chunk_num);
+      }
+         else {
+         printf($hdr,
+            @{$info}{qw(database table)}, $chunk_num,
+            $host->{h}, $info->{struct}->{engine}, $cnt, $crc,
+            $end - $mid, $mid - $beg, $sta, $lag);
+      }
    }
 }
 
@@ -2537,6 +2558,12 @@ newer.
 =item --askpass
 
 Prompt for a password for each host for which no password is given.
+
+=item --checksum
+
+Makes the output behave more like the output of L<md5sum>.  The checksum is
+first on the line, followed by the host, database, table, and chunk number,
+concatenated with dots.  Disables L<"--count">.
 
 =item --chunksize
 
@@ -2969,7 +2996,7 @@ differences.
 The columns in the output are as follows.  The database, table, and chunk come
 first so you can sort by them easily (they are the "primary key").
 
-Output from L<"--replcheck"> is different.
+Output from L<"--replcheck"> and L<"--checksum"> are different.
 
 =over
 
