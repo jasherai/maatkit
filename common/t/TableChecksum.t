@@ -427,14 +427,14 @@ is (
       crc_wid   => 40,
    ),
    q{SELECT /*progress_comment*/ COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{UPPER(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
    . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', }
    . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
    . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
    . q{ISNULL(`original_language_id`), ISNULL(`length`), }
-   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40) AS crc }
+   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40)) AS crc }
    . q{FROM `sakila`.`film`/*WHERE*/},
    'Sakila.film SHA1 ACCUM',
 );
@@ -453,14 +453,14 @@ is (
    q{REPLACE /*progress_comment*/ INTO test.checksum }
    . q{(db, tbl, chunk, boundaries, this_cnt, this_crc) }
    . q{SELECT ?, ?, ?, ?, COUNT(*) AS cnt, }
-   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{UPPER(RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
    . q{SHA1(CONCAT(@crc, SHA1(CONCAT_WS('#', }
    . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0, }
    . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
    . q{ISNULL(`original_language_id`), ISNULL(`length`), }
-   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40) AS crc }
+   . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40)) AS crc }
    . q{FROM `sakila`.`film`/*WHERE*/},
    'Sakila.film SHA1 ACCUM with replication',
 );
