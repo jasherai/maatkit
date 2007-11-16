@@ -132,6 +132,97 @@ sub parse {
 # ###########################################################################
 
 # ###########################################################################
+# ReplSyncChecker package 1276
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package ReplSyncChecker;
+
+use DBI;
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub check_server {
+   my ( $self, $args ) = @_;
+
+   eval {
+      $args->{dsn}->{dbh} ||= DBI->connect(
+         $args->{dsn_parser}->get_cxn_params($args->{dsn},
+            { RaiseError => 1, PrintError => 0, AutoCommit => 1 }));
+   };
+   if ( $EVAL_ERROR ) {
+      print "Cannot connect to "
+         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
+      return;
+   }
+   my $dbh = $args->{dsn}->{dbh};
+
+   # SHOW SLAVE HOSTS sometimes has obsolete information.  Verify that this
+   # server has the ID its master thought, and that we have not seen it before
+   # in any case.
+   my ($id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
+   my $master_thinks_i_am = $args->{dsn}->{server_id};
+   if ( !defined $id
+       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
+       || $args->{server_ids_seen}->{$id}++
+   ) {
+      print "Skipping "
+         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
+      return;
+   }
+
+   (my $sql = <<"   EOF") =~ s/^      //gm;
+      SELECT db, tbl, chunk, boundaries,
+         COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,
+         COALESCE(
+            this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
+            0
+         ) AS crc_diff 
+      FROM $args->{table}
+      WHERE master_cnt <> this_cnt OR master_crc <> this_crc 
+      OR ISNULL(master_crc) <> ISNULL(this_crc)
+   EOF
+
+   my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
+   if ( @$diffs ) {
+      $args->{callback}->($args->{dsn}, @$diffs);
+   }
+
+   if ( $args->{recurse} ) {
+
+      # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
+      # revealed by server_id and master_id).  SHOW SLAVE HOSTS can be wacky.
+      my @slaves = 
+         grep { $_->{master_id} == $id } # Only my own slaves.
+         map  {                          # Convert each to all-lowercase keys.
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            \%hash;
+         }
+         @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+
+      foreach my $slave ( @slaves ) {
+         my $dsn = $args->{dsn_parser}->parse(
+             "h=$slave->{host},P=$slave->{port}", $args->{dsn});
+         $dsn->{server_id} = $slave->{server_id};
+         $self->check_server( { %$args, dsn => $dsn } );
+      }
+   }
+
+}
+
+1;
+
+# ###########################################################################
+# End ReplSyncChecker package
+# ###########################################################################
+
+# ###########################################################################
 # TableChecksum package 1276
 # ###########################################################################
 use strict;
@@ -1714,147 +1805,44 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 # Ready to work now.
 # ############################################################################
-
+my $tc          = new TableChecksum();
 my $exit_status = 0;
-
-my $main_dbh  = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
+my $main_dbh    = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 
 # ############################################################################
 # Check replication slaves if desired.
 # ############################################################################
 if ( $opts{replcheck} ) {
    my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
-   my %seen;
-   my @hosts_to_do;
-
-   # Start the checking.
-   if ( $vp->version_ge($main_dbh, '3.23.26') ) {
-      my ($id) = $main_dbh->selectrow_array('SELECT @@SERVER_ID');
-      push @hosts_to_do,
-         grep { $_->{Master_id} == $id } # Only its own slaves
-         @{$main_dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
-
-      # Add the specified server (the master) as well.  This way the server
-      # will get checked if someone specifies the root of some sub-tree in the
-      # replication topology.  BUT do this only if the server is itself a
-      # slave.
-      my @is_slave = eval {
-         $main_dbh->selectrow_array('SHOW SLAVE STATUS');
-      };
-      if ( @is_slave ) {
-         push @hosts_to_do, {
-            Server_id => $id,
-            dbh       => $main_dbh,
-            Host      => $hosts[0]->{h},
-            Port      => $hosts[0]->{P},
-         };
-      }
-   }
-   else {
-      print_err(
-         "Cannot check slaves; --replcheck requires MySQL 3.23.26 or newer.");
-   }
-
-   (my $sql = <<"   EOF") =~ s/^      //gm;
-      SELECT db, tbl, chunk, boundaries,
-         COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,
-         COALESCE(
-            this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
-            0
-         ) AS crc_diff 
-      FROM $opts{R} 
-      WHERE master_cnt <> this_cnt OR master_crc <> this_crc 
-      OR ISNULL(master_crc) <> ISNULL(this_crc)
-   EOF
-
-   SLAVE:
-   while ( @hosts_to_do ) {
-      my $slave = shift @hosts_to_do;
-      next SLAVE if $seen{$slave->{Server_id}};
-
-      # Connect to that server (if needed)
-      my $slave_dbh;
-      if ( !$slave->{dbh} ) {
-         my $dsn    = $dsn_parser->parse(
-                      "h=$slave->{Host},P=$slave->{Port}", $hosts[0]);
-         $slave_dbh = get_dbh($dsn, ($opts{d} ? keys %{$opts{d}} : '' ));
-         $slave->{dbh} = $slave_dbh;
-      }
-      else {
-         $slave_dbh = $slave->{dbh};
-      }
-      my $id;
-
-      # SHOW SLAVE HOSTS is somewhat flakey.  Sometimes it shows obsolete
-      # information.  Verify that this instance has the server ID reported by
-      # its master.
-      if ( $vp->version_ge($main_dbh, '3.23.26') ) {
-         ($id) = $slave_dbh->selectrow_array('SELECT @@SERVER_ID');
-         $seen{$id}++;
-         next SLAVE unless $id == $slave->{Server_id};
-      }
-      else {
-         print_err(
-            "Cannot check $slave->{Host}:$slave->{Port}; "
-            . "requires MySQL 3.23.26 or newer.");
-         next SLAVE;
-      }
-
-      # Recurse to its slaves, if desired
-      if ( $opts{recursecheck} ) {
-         eval {
-            push @hosts_to_do,
-               grep { $_->{Master_id} == $id } # Only its own slaves
-               @{$slave_dbh->selectall_arrayref(
-                  "SHOW SLAVE HOSTS", { Slice => {} })};
-         };
-         if ( $EVAL_ERROR ) {
-            print_err("Cannot recurse from $slave->{Host}:$slave->{Port}");
-            print_err($EVAL_ERROR);
-         }
-      }
-
-      my $chunks = $slave_dbh->selectall_arrayref($sql, { Slice => {} });
-
-      if ( !$opts{q} ) {
-         delete $slave->{Rpl_recovery_rank};
-         print "\nResults on "
-            . join(':', map  { "$slave->{$_}" }
-                        grep { $slave->{$_} }
-                             qw(Host Port)
-               )
-            . " ("
-            . join(',', map  { "$_=$slave->{$_}" }
-                        grep { $_ ne 'dbh' && $slave->{$_} }
-                             keys %$slave
-               )
-            . ")\n";
-      }
-
-      if ( $chunks && @$chunks ) {
-         $exit_status = 1;
-         if ( !$opts{q} ) {
-            # Design a header to align the results
-            my $max_db   = max(5, map { length($_->{db})  } @$chunks);
-            my $max_tbl  = max(5, map { length($_->{tbl}) } @$chunks);
-            my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
-
-            # Print the header and the rows
-            printf($fmt, @headers);
-            foreach my $chunk ( @$chunks ) {
-               printf($fmt, @{$chunk}{@headers});
+   $tc->check_server(
+      {  dbh        => $main_dbh,
+         dsn        => $hosts[0],
+         dsn_parser => $dsn_parser,
+         recurse    => $opts{recursecheck},
+         table      => $opts{R},
+         callback   => sub {
+            my ( $host, @differences ) = @_;
+            $exit_status = 1;
+            if ( !$opts{q} ) {
+               print "Differences on " . $dsn_parser->as_string($host) . "\n";
+               my $max_db   = max(5, map { length($_->{db})  } @differences);
+               my $max_tbl  = max(5, map { length($_->{tbl}) } @differences);
+               my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
+               printf($fmt, map { uc } @headers);
+               foreach my $diff ( @differences ) {
+                  printf($fmt, @{$diff}{@headers});
+               }
+               print "\n";
             }
          }
       }
-   }
-
+   );
    exit($exit_status);
 }
 
 # ############################################################################
 # Otherwise do the checksums.
 # ############################################################################
-my $tc = new TableChecksum();
 my $strat = $tc->best_algorithm(
    algorithm   => $opts{a},
    vp          => $vp,
