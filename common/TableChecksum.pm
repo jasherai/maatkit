@@ -280,10 +280,10 @@ sub make_checksum_query {
       # taken is stringwise greater than the last.  In this way the MAX()
       # function can be used to return the last checksum calculated.  @cnt is
       # not used for a row count, it is only used to make MAX() work correctly.
-      $result = "RIGHT(MAX("
+      $result = "UPPER(RIGHT(MAX("
          . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
          . "$func(CONCAT(\@crc, $expr)))"
-         . "), $crc_wid) AS crc ";
+         . "), $crc_wid)) AS crc ";
    }
    if ( $args{replicate} ) {
       $result = "REPLACE /*progress_comment*/ INTO $args{replicate} "
