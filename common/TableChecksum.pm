@@ -269,7 +269,7 @@ sub make_checksum_query {
       # (32 characters = 128 bits for MD5, and SHA1 is even larger) unsigned
       # integer over all the rows.
       my $slices = $self->make_xor_slices( query => $expr, %args );
-      $result = "CONCAT($slices) AS crc ";
+      $result = "LOWER(CONCAT($slices)) AS crc ";
    }
    else {
       # Use an accumulator variable.  This query relies on @crc being '', and
@@ -280,10 +280,10 @@ sub make_checksum_query {
       # taken is stringwise greater than the last.  In this way the MAX()
       # function can be used to return the last checksum calculated.  @cnt is
       # not used for a row count, it is only used to make MAX() work correctly.
-      $result = "UPPER(RIGHT(MAX("
+      $result = "RIGHT(MAX("
          . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
          . "$func(CONCAT(\@crc, $expr)))"
-         . "), $crc_wid)) AS crc ";
+         . "), $crc_wid) AS crc ";
    }
    if ( $args{replicate} ) {
       $result = "REPLACE /*progress_comment*/ INTO $args{replicate} "
