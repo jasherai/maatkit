@@ -345,7 +345,10 @@ SKIP: {
       my ( $age ) = map { $_->{Update_time} } grep { $_->{Update_time} } @$rows;
       ($diff) = $dbh->selectrow_array(
          "SELECT TIMESTAMPDIFF(second, '$age', now())");
-   } until ( $diff );
+   } until ( $diff > 1 );
+
+   # The old info is cached and needs to be flushed.
+   $d = new MySQLDump();
 
    # Test aging with the Update_time.
    $f = new MySQLFind(
