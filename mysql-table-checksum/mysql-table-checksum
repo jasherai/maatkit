@@ -132,98 +132,7 @@ sub parse {
 # ###########################################################################
 
 # ###########################################################################
-# ReplSyncChecker package 1276
-# ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
-package ReplSyncChecker;
-
-use DBI;
-use English qw(-no_match_vars);
-
-sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
-}
-
-sub check_server {
-   my ( $self, $args ) = @_;
-
-   eval {
-      $args->{dsn}->{dbh} ||= DBI->connect(
-         $args->{dsn_parser}->get_cxn_params($args->{dsn},
-            { RaiseError => 1, PrintError => 0, AutoCommit => 1 }));
-   };
-   if ( $EVAL_ERROR ) {
-      print "Cannot connect to "
-         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
-      return;
-   }
-   my $dbh = $args->{dsn}->{dbh};
-
-   # SHOW SLAVE HOSTS sometimes has obsolete information.  Verify that this
-   # server has the ID its master thought, and that we have not seen it before
-   # in any case.
-   my ($id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
-   my $master_thinks_i_am = $args->{dsn}->{server_id};
-   if ( !defined $id
-       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
-       || $args->{server_ids_seen}->{$id}++
-   ) {
-      print "Skipping "
-         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
-      return;
-   }
-
-   (my $sql = <<"   EOF") =~ s/^      //gm;
-      SELECT db, tbl, chunk, boundaries,
-         COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,
-         COALESCE(
-            this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
-            0
-         ) AS crc_diff 
-      FROM $args->{table}
-      WHERE master_cnt <> this_cnt OR master_crc <> this_crc 
-      OR ISNULL(master_crc) <> ISNULL(this_crc)
-   EOF
-
-   my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
-   if ( @$diffs ) {
-      $args->{callback}->($args->{dsn}, @$diffs);
-   }
-
-   if ( $args->{recurse} ) {
-
-      # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
-      # revealed by server_id and master_id).  SHOW SLAVE HOSTS can be wacky.
-      my @slaves = 
-         grep { $_->{master_id} == $id } # Only my own slaves.
-         map  {                          # Convert each to all-lowercase keys.
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            \%hash;
-         }
-         @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
-
-      foreach my $slave ( @slaves ) {
-         my $dsn = $args->{dsn_parser}->parse(
-             "h=$slave->{host},P=$slave->{port}", $args->{dsn});
-         $dsn->{server_id} = $slave->{server_id};
-         $self->check_server( { %$args, dsn => $dsn } );
-      }
-   }
-
-}
-
-1;
-
-# ###########################################################################
-# End ReplSyncChecker package
-# ###########################################################################
-
-# ###########################################################################
-# TableChecksum package 1276
+# TableChecksum package 1282
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -436,6 +345,71 @@ sub make_checksum_query {
       $result = "SELECT /*progress_comment*/ COUNT(*) AS cnt, $result";
    }
    return $result . "FROM " . $quoter->quote($dbname, $tblname) . "/*WHERE*/";
+}
+
+sub check_server {
+   my ( $self, $args, $level ) = @_;
+   $level ||= 0;
+
+   my $dbh;
+   eval {
+      $dbh = $args->{dbh} || DBI->connect(
+         $args->{dsn_parser}->get_cxn_params($args->{dsn},
+            { RaiseError => 1, PrintError => 0, AutoCommit => 1 }));
+   };
+   if ( $EVAL_ERROR ) {
+      print "Cannot connect to "
+         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
+      return;
+   }
+
+   my ($id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
+   my $master_thinks_i_am = $args->{dsn}->{server_id};
+   if ( !defined $id
+       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
+       || $args->{server_ids_seen}->{$id}++
+   ) {
+      print "Skipping "
+         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
+      return;
+   }
+
+   (my $sql = <<"   EOF") =~ s/^      //gm;
+      SELECT db, tbl, chunk, boundaries,
+         COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,
+         COALESCE(
+            this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
+            0
+         ) AS crc_diff 
+      FROM $args->{table}
+      WHERE master_cnt <> this_cnt OR master_crc <> this_crc 
+      OR ISNULL(master_crc) <> ISNULL(this_crc)
+   EOF
+
+   my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
+   if ( @$diffs ) {
+      $args->{callback}->($args->{dsn}, @$diffs);
+   }
+
+   if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
+
+      my @slaves = 
+         grep { $_->{master_id} == $id } # Only my own slaves.
+         map  {                          # Convert each to all-lowercase keys.
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            \%hash;
+         }
+         @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+
+      foreach my $slave ( @slaves ) {
+         my $dsn = $args->{dsn_parser}->parse(
+             "h=$slave->{host},P=$slave->{port}", $args->{dsn});
+         $dsn->{server_id} = $slave->{server_id};
+         $self->check_server( { %$args, dsn => $dsn }, $level + 1 );
+      }
+   }
+
 }
 
 1;
@@ -1818,7 +1792,7 @@ if ( $opts{replcheck} ) {
       {  dbh        => $main_dbh,
          dsn        => $hosts[0],
          dsn_parser => $dsn_parser,
-         recurse    => $opts{recursecheck},
+         recurse    => $opts{recursecheck} ? undef : 0,
          table      => $opts{R},
          callback   => sub {
             my ( $host, @differences ) = @_;
