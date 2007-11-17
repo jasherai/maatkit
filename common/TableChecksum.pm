@@ -301,7 +301,8 @@ sub make_checksum_query {
 # * dbh        (Optional) a DBH to check
 # * dsn        The DSN to check; if no DBH, will connect using this
 # * dsn_parser A DSNParser object
-# * recurse    How many levels to recurse. 0 = check this server, ...
+# * recurse    How many levels to recurse. 0 = check this server, undef =
+#              infinite recursion.
 # * table      Table to check
 # * callback   Code to execute when differences are found
 sub check_server {
@@ -310,7 +311,7 @@ sub check_server {
 
    my $dbh;
    eval {
-      $dbh = $args{dbh} || DBI->connect(
+      $dbh = $args->{dbh} || DBI->connect(
          $args->{dsn_parser}->get_cxn_params($args->{dsn},
             { RaiseError => 1, PrintError => 0, AutoCommit => 1 }));
    };
@@ -351,8 +352,7 @@ sub check_server {
       $args->{callback}->($args->{dsn}, @$diffs);
    }
 
-   if ( $args->{recurse} && (!defined $args->{level} || $level <
-      $args->{level} )) {
+   if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
 
       # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
       # revealed by server_id and master_id).  SHOW SLAVE HOSTS can be wacky.
@@ -369,7 +369,7 @@ sub check_server {
          my $dsn = $args->{dsn_parser}->parse(
              "h=$slave->{host},P=$slave->{port}", $args->{dsn});
          $dsn->{server_id} = $slave->{server_id};
-         $self->check_server( { %$args, dsn => $dsn } );
+         $self->check_server( { %$args, dsn => $dsn }, $level + 1 );
       }
    }
 
