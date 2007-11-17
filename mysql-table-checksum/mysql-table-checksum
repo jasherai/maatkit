@@ -132,7 +132,7 @@ sub parse {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1282
+# TableChecksum package 1284
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -406,7 +406,7 @@ sub check_server {
          my $dsn = $args->{dsn_parser}->parse(
              "h=$slave->{host},P=$slave->{port}", $args->{dsn});
          $dsn->{server_id} = $slave->{server_id};
-         $self->check_server( { %$args, dsn => $dsn }, $level + 1 );
+         $self->check_server( { %$args, dsn => $dsn, dbh => undef }, $level + 1 );
       }
    }
 
