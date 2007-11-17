@@ -1,3 +1,6 @@
+A tool to check that cmdline opts are defined before use, and all defined ones
+are used
+
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 http://www.mysqldiff.org/
 query sniper:
