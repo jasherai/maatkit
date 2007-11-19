@@ -16,7 +16,7 @@ MKDIR = /bin/mkdir
 
 NAME = mysql-table-checksum
 FILTER = mysql-checksum-filter
-VERSION = 1.1.18
+VERSION = 1.1.19
 DISTFILES = COPYING \
 	INSTALL \
 	Makefile.PL \

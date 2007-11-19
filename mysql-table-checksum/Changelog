@@ -1,5 +1,7 @@
 Changelog for mysql-table-checksum and mysql-checksum-filter:
 
+2007-11-18: version 1.1.19
+
    * Check for needed privileges on --replicate table before beginning.
    * Made some error messages more informative.
    * Fixed child process exit status with 8-bit right-shift.
