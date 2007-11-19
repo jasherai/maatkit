@@ -1,18 +1,15 @@
    $Revision$
-   
-   
-   
-   0.9.6
-   0.9.9
-   1.0.0
-   1.0.0
-   1.0.2
-   1.0.2
-   1.0.2
-   1.0.3
-   1.0.4
-   1.0.4
-   1.0.5
-   1.1.19
-   1.1.2
-   1.1.6
+mysql-archiver 1.0.3
+mysql-deadlock-logger 1.0.5
+mysql-duplicate-key-checker 1.1.2
+mysql-find 0.9.6
+mysql-heartbeat 1.0.2
+mysql-parallel-dump 1.0.0
+mysql-parallel-restore 1.0.0
+mysql-query-profiler 1.1.6
+mysql-show-grants 1.0.4
+mysql-slave-delay 1.0.2
+mysql-slave-restart 1.0.2
+mysql-table-checksum 1.1.19
+mysql-table-sync 0.9.9
+mysql-visual-explain 1.0.4
