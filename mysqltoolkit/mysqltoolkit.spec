@@ -1,12 +1,12 @@
-Name:           mysqltoolkit
+Name:           maatkit
 Version:        @DISTRIB@
 Release:        1%{?dist}
 Summary:        MySQL Toolkit
 
 Group:          Applications/Databases
 License:        GPL
-URL:            http://sourceforge.net/projects/mysqltoolkit/
-Source0:        http://prdownloads.sourceforge.net/mysqltoolkit/%{name}-%{version}.tar.gz
+URL:            http://sourceforge.net/projects/maatkit/
+Source0:        http://prdownloads.sourceforge.net/maatkit/%{name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildArch:      noarch
@@ -48,7 +48,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/*
 %{_mandir}/man1/*.1*
 %{_mandir}/man3/*.3*
-%{perl_vendorlib}/mysqltoolkit.pm
+%{perl_vendorlib}/maatkit.pm
 
 
 %changelog

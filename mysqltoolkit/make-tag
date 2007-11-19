@@ -34,8 +34,8 @@ if [ -d ../../tags/$PACK/$PACK-$VER ]; then
    exit 1
 fi
 
-REV=`svn info https://mysqltoolkit.svn.sourceforge.net/svnroot/mysqltoolkit/ | grep Revision | awk '{print $2}'`
+REV=`svn info https://maatkit.svn.sourceforge.net/svnroot/maatkit/ | grep Revision | awk '{print $2}'`
 
 svn cp -m "Tagged from trunk at r$REV" \
-   https://mysqltoolkit.svn.sourceforge.net/svnroot/mysqltoolkit/trunk/$PACK \
-   https://mysqltoolkit.svn.sourceforge.net/svnroot/mysqltoolkit/tags/$PACK/$PACK-$VER
+   https://maatkit.svn.sourceforge.net/svnroot/maatkit/trunk/$PACK \
+   https://maatkit.svn.sourceforge.net/svnroot/maatkit/tags/$PACK/$PACK-$VER

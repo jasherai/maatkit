@@ -38,7 +38,7 @@ print `svn revert packlist`; # Just in case there were no changes
 my $rev = `head -n 1 packlist | awk '{print \$2}'` + 0;
 
 # make the dist directory
-my $distbase = "mysqltoolkit-$rev";
+my $distbase = "maatkit-$rev";
 my $dist = "release/$distbase";
 print `rm -rf release html cache`;
 print `mkdir -p html cache $dist/bin $dist/lib`;
@@ -53,9 +53,9 @@ foreach my $p ( sort keys %versions ) {
 }
 print `cp README $dist/`;
 
-# Write mysqltoolkit.pod
-print `cat mysqltoolkit.head.pod packlist mysqltoolkit.mid.pod > $dist/lib/mysqltoolkit.pm`;
-open my $file, ">> $dist/lib/mysqltoolkit.pm" or die $OS_ERROR;
+# Write maatkit.pod
+print `cat maatkit.head.pod packlist maatkit.mid.pod > $dist/lib/maatkit.pm`;
+open my $file, ">> $dist/lib/maatkit.pm" or die $OS_ERROR;
 foreach my $program ( <$dist/bin/mysql-*> ) {
    my $line = `grep -A 6 head1.NAME $program | tail -n 5`;
    my @parts = split(/\n\n/, $line);
@@ -65,10 +65,10 @@ foreach my $program ( <$dist/bin/mysql-*> ) {
    print $file "\n\n=item $prog\n\n$rest See L<$prog>.";
 }
 close $file;
-print `cat mysqltoolkit.tail.pod >> $dist/lib/mysqltoolkit.pm`;
+print `cat maatkit.tail.pod >> $dist/lib/maatkit.pm`;
 
 # Copy other files
-foreach my $file ( qw(Makefile.PL COPYING INSTALL mysqltoolkit.spec) ) {
+foreach my $file ( qw(Makefile.PL COPYING INSTALL maatkit.spec) ) {
    print `cp $file $dist`;
 }
 
@@ -103,8 +103,8 @@ for ( 0 .. 1 ) {
       "--backlink=Top",
       "--cachedir=cache",
       "--htmldir=html",
-      "--infile=$dist/lib/mysqltoolkit.pm",
-      "--outfile=html/mysqltoolkit.html",
+      "--infile=$dist/lib/maatkit.pm",
+      "--outfile=html/maatkit.html",
       "--libpods=perlfunc:perlguts:perlvar:perlrun:perlop",
       "--podpath=bin",
       "--podroot=$dist",
@@ -112,7 +112,7 @@ for ( 0 .. 1 ) {
    );
 }
 # Wow, Pod::HTML is a pain in the butt.  Fix links now.
-my $img = '<a href="http://sourceforge.net/projects/mysqltoolkit/"><img '
+my $img = '<a href="http://sourceforge.net/projects/maatkit/"><img '
    . 'alt="SourceForge.net Logo" height="62" width="210" '
    . 'src="http://sflogo.sourceforge.net/sflogo.php?group_id=189154\&amp;type=5" '
    . 'style="float:right"/>';

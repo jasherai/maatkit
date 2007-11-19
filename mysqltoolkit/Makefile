@@ -14,7 +14,7 @@ individual: dist
 	./make-individual.pl
 
 doc-upload:
-	scp html/*.html bps7j@shell.sourceforge.net:mysqltoolkit/htdocs/doc
+	scp html/*.html bps7j@shell.sourceforge.net:maatkit/htdocs/doc
 
 .PHONY: upload
 upload:
