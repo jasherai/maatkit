@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use Test::More tests => 1;
 
-require "../mysql-visual-explain";
+require "../mk-visual-explain";
 
 sub load_file {
    my ($file) = @_;

@@ -6,7 +6,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Test::More tests => 57;
 
-require "../mysql-visual-explain";
+require "../mk-visual-explain";
 
 sub load_file {
    my ($file) = @_;
