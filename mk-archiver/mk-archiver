@@ -2001,14 +2001,14 @@ storage engines other than InnoDB.  Request that feature if you need it.
 
 =item --safeautoinc
 
-Adds an extra WHERE clause to prevent MySQL Archiver from removing the newest
+Adds an extra WHERE clause to prevent mk-archiver from removing the newest
 row when ascending a single-column AUTO_INCREMENT key.  This guards against
 re-using AUTO_INCREMENT values if the server restarts, and is enabled by
 default.
 
 The extra WHERE clause contains the maximum value of the auto-increment column
 as of the beginning of the archive or purge job.  If new rows are inserted while
-MySQL Archiver is running, it will not see them.
+mk-archiver is running, it will not see them.
 
 =item --sentinel
 
@@ -2216,7 +2216,7 @@ plugin while archiving.
 
 The C<cols> argument is the column names the user requested to be archived,
 either by default or by the L<"--columns"> option.  The C<allcols> argument is
-the list of column names for every row MySQL Archiver will fetch from the source
+the list of column names for every row mk-archiver will fetch from the source
 table.  It may fetch more columns than the user requested, because it needs some
 columns for its own use.  When subsequent plugin functions receive a row, it is
 the full row containing all the extra columns, if any, added to the end.

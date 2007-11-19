@@ -1312,24 +1312,24 @@ mk-visual-explain - Format EXPLAIN output as a tree.
 
 =head1 DESCRIPTION
 
-MySQL Visual Explain reverse-engineers MySQL's EXPLAIN output into a query
+mk-visual-explain reverse-engineers MySQL's EXPLAIN output into a query
 execution plan, which it then formats as a left-deep tree -- the same way the
 plan is represented inside MySQL.  It is possible to do this by hand, or to read
 EXPLAIN's output directly, but it requires patience and expertise.  Many people
 find a tree representation more understandable.
 
-You can pipe input into MySQL Visual Explain or specify a filename at the
+You can pipe input into mk-visual-explain or specify a filename at the
 command line, including the magical '-' filename, which will read from standard
 input.  It can do two things with the input: parse it for something that looks
 like EXPLAIN output, or connect to a MySQL instance and run EXPLAIN on the
 input.
 
-When parsing its input, MySQL Visual Explain understands three formats: tabular
+When parsing its input, mk-visual-explain understands three formats: tabular
 like that shown in the mysql command-line client, vertical like that created by
 using the \G line terminator in the mysql command-line client, and tab
 separated.  It ignores any lines it doesn't know how to parse.
 
-When executing the input, MySQL Visual Explain replaces everything in the input
+When executing the input, mk-visual-explain replaces everything in the input
 up to the first SELECT keyword with 'EXPLAIN SELECT,' and then executes the
 result.  You must specify L<"--connect"> to execute the input as a query.
 
@@ -1338,7 +1338,7 @@ output.  For the following query,
 
  select * from sakila.film_actor join sakila.film using(film_id);
 
-MySQL Visual Explain generates this query plan:
+mk-visual-explain generates this query plan:
 
  JOIN
  +- Bookmark lookup
@@ -1397,8 +1397,8 @@ retrieve rows.  This is the case for InnoDB.
 =item --connect
 
 Treat input as a query, and obtain EXPLAIN output by connecting to a MySQL
-instance and running EXPLAIN on the query.  When this option is given, MySQL
-Visual Explain uses the other connection-specific options such as L<"--user"> to
+instance and running EXPLAIN on the query.  When this option is given,
+mk-visual-explain uses the other connection-specific options such as L<"--user"> to
 connect to the MySQL instance.  If you have a .my.cnf file, it will read it, so
 you may not need to specify any connection-specific options.
 
@@ -1805,7 +1805,7 @@ from the type column of EXPLAIN.  The documentation says this is a "join type,"
 but I think "access type" is more accurate, because it's "how MySQL accesses
 rows."
 
-MySQL Visual Explain decorates the tree significantly more than just turning
+mk-visual-explain decorates the tree significantly more than just turning
 rows into nodes.  Each node may get a series of transformations that turn it
 into a subtree of more than one node.  For example, an index scan not marked
 with 'Using index' must do a bookmark lookup into the table rows; that is a

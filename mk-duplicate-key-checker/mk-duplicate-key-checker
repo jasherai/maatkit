@@ -4,8 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # This is mk-duplicate-key-checker, a program to analyze MySQL tables for
-# duplicated or redundant indexes and foreign key constraints.  It is part of
-# MySQL Toolkit (http://mysqltoolkit.sourceforge.net).
+# duplicated or redundant indexes and foreign key constraints.
 # 
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
@@ -942,8 +941,6 @@ colums.  You can override this.
 It also looks for duplicate foreign keys.  A duplicate foreign key covers the
 same columns as another in the same table, and references the same parent
 table.
-
-This tool is part of MySQL Toolkit L<http://mysqltoolkit.sourceforge.net>.
 
 =head1 OPTIONS
 

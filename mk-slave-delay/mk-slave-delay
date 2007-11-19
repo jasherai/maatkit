@@ -831,7 +831,7 @@ To hold slavehost one minute behind its master for ten minutes:
 
 =head1 DESCRIPTION
 
-MySQL Slave Delay watches a slave and starts and stops its replication SQL
+mk-slave-delay watches a slave and starts and stops its replication SQL
 thread as necessary to hold it at least as far behind the master as you
 request.  In practice, it will typically cause the slave to lag between
 L<"--delay"> and L<"--delay">+L<"--interval"> behind the master.
@@ -840,10 +840,10 @@ It bases the delay on binlog positions in the slave's relay logs by default,
 so there is no need to connect to the master.  This works well if the IO
 thread doesn't lag the master much, which is typical in most replication
 setups; the IO thread lag is usually milliseconds on a fast network.  If your
-IO thread's lag is too large for your purposes, MySQL Slave Delay can also
+IO thread's lag is too large for your purposes, mk-slave-delay can also
 connect to the master for information about binlog positions.
 
-Note that since MySQL Slave Delay starts and stops the SQL thread, monitoring
+Note that since mk-slave-delay starts and stops the SQL thread, monitoring
 systems may think the slave is having trouble when it's just being held back
 intentionally.
 
@@ -861,11 +861,11 @@ string.  Keys are a single letter:
    F   Only read default options from the given file
 
 If you omit any values in MASTER-HOST, they are filled in with defaults from
-SLAVE-HOST, so you don't need to specify them in both places.  MySQL Slave
-Delay reads all normal MySQL option files, such as ~/.my.cnf, so you may not
-need to specify username, password and other common options at all.
+SLAVE-HOST, so you don't need to specify them in both places.  mk-slave-delay
+reads all normal MySQL option files, such as ~/.my.cnf, so you may not need to
+specify username, password and other common options at all.
 
-MySQL Slave Delay tries to exit gracefully by trapping signals such as Ctrl-C.
+mk-slave-delay tries to exit gracefully by trapping signals such as Ctrl-C.
 You cannot bypass L<"--continue"> with a trappable signal.
 
 =head1 OPTIONS
@@ -887,7 +887,7 @@ Prompts the user for a password when connecting to MySQL.
 
 After exiting, restart the slave's SQL thread with no UNTIL condition, so it
 will run as usual and catch up to the master.  This is enabled by default and
-works even if you terminate MySQL Slave Delay with Control-C.
+works even if you terminate mk-slave-delay with Control-C.
 
 =item --daemonize
 
@@ -905,7 +905,7 @@ Displays a help message.
 
 =item --interval
 
-How frequently MySQL Slave Delay should check whether the slave needs to be
+How frequently mk-slave-delay should check whether the slave needs to be
 started or stopped.  See above for suffix syntax.
 
 =item --quiet
@@ -914,18 +914,18 @@ Do not output regular status messages.
 
 =item --time
 
-How long MySQL Slave Delay should run before exiting.  Default is to run
+How long mk-slave-delay should run before exiting.  Default is to run
 forever.  See above for suffix syntax.
 
 =item --usemaster
 
 Don't trust the binlog positions in the slave's relay log.  Connect to the
 master and get binlog positions instead.  If you specify this option without
-giving a MASTER-HOST on the command line, MySQL Slave Delay examines the
+giving a MASTER-HOST on the command line, mk-slave-delay examines the
 slave's SHOW SLAVE STATUS to determine the hostname and port for connecting to
 the master.
 
-MySQL Slave Delay only uses the MASTER_HOST and MASTER_PORT values from SHOW
+mk-slave-delay only uses the MASTER_HOST and MASTER_PORT values from SHOW
 SLAVE STATUS for the master connection.  It does not use the MASTER_USER
 value.  If you want to specify a different username for the master than the
 one you use to connect to the slave, you should specify the MASTER-HOST option
@@ -945,8 +945,8 @@ installed in any reasonably new version of Perl.
 =head1 OUTPUT
 
 If you specify L<"--quiet">, there is no output.  Otherwise, the normal output
-is a status message consisting of a timestamp and information about what MySQL
-Slave Delay is doing: starting the slave, stopping the slave, or just
+is a status message consisting of a timestamp and information about what
+mk-slave-delay is doing: starting the slave, stopping the slave, or just
 observing.
 
 =head1 BUGS

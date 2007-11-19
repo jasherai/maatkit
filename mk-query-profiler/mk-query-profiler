@@ -1270,7 +1270,7 @@ Prompt for password for connections.
 
 =item --calibrate
 
-Makes MySQL Query Profiler measure and compensate for the "cost of
+Makes mk-query-profiler measure and compensate for the "cost of
 observation" caused by running SHOW STATUS.  Enabled by default.  Only works
 reliably on a quiet server; on a busy server, other processes can cause the
 calibration to be wrong.
@@ -1285,22 +1285,22 @@ Only read default options from the given file.
 
 =item --external
 
-Makes MySQL Query Profiler measure the cost of observation, then pause,
-typically while you run an external program.  When you press [enter] MySQL
-Query Profiler will stop sleeping and take another measurement, then print
+Makes mk-query-profiler measure the cost of observation, then pause,
+typically while you run an external program.  When you press [enter]
+mk-query-profiler will stop sleeping and take another measurement, then print
 statistics as usual.
 
-When there is a filename on the command line, MySQL Query Profiler executes
+When there is a filename on the command line, mk-query-profiler executes
 each line in the file as a shell command.  If you give - as the filename,
-MySQL Query Profiler reads from STDIN.
+mk-query-profiler reads from STDIN.
 
 Output from shell commands is printed to STDOUT and terminated with __BEGIN__,
-after which MySQL Query Profiler prints its own output.
+after which mk-query-profiler prints its own output.
 
 =item --flush
 
 Calls FLUSH TABLES before profiling.  If you are executing queries from a
-batch file, specifying --flush twice will cause MySQL Query Profiler to call
+batch file, specifying --flush twice will cause mk-query-profiler to call
 FLUSH TABLES between every query, not just once at the beginning.  Default is
 not to flush at all. See L<http://dev.mysql.com/doc/en/flush.html> for more
 information.
@@ -1368,7 +1368,7 @@ Output version information and exit.
 
 =head1 DESCRIPTION
 
-MySQL Query Profiler reads a file containing one or more SQL
+mk-query-profiler reads a file containing one or more SQL
 statements or shell commands, executes them, and analyzes the output of SHOW STATUS afterwards.
 It then prints statistics about how the batch performed.  For example, it can
 show how many table scans the batch caused, how many page reads, how many
@@ -1380,18 +1380,18 @@ profiling an external program with the L<"--external"> option, or provide
 input to STDIN.
 
 If the file contains multiple statements, they must be separated by blank
-lines.  If you don't do that, MySQL Query Profiler won't be able to split the
+lines.  If you don't do that, mk-query-profiler won't be able to split the
 file into individual queries, and MySQL will complain about syntax errors.
 
 If the MySQL server version is before 5.0.2, you should make sure the server
 is completely unused before trying to profile a batch.  Prior to this version,
 SHOW STATUS showed only global status variables, so other queries will
-interfere and produce false results.  MySQL Query Profiler will try to detect
+interfere and produce false results.  mk-query-profiler will try to detect
 if anything did interfere, but there can be no guarantees.
 
 Prior to MySQL 5.0.2, InnoDB status variables are not available, and prior to
-version 5.0.3, InnoDB row lock status variables are not available.  MySQL
-Query Profiler will omit any output related to these variables if they're not
+version 5.0.3, InnoDB row lock status variables are not available.
+mk-query-profiler will omit any output related to these variables if they're not
 available.
 
 For more information about SHOW STATUS, read the relevant section of the MySQL
@@ -1430,9 +1430,9 @@ can see how much work SHOW STATUS itself causes.
 
 =item *
 
-If you specify L<"--verbose">, output includes every variable MySQL Query
-Profiler measures.  If not (default) it only includes variables where there
-was some difference from one column to the next.
+If you specify L<"--verbose">, output includes every variable
+mk-query-profiler measures.  If not (default) it only includes variables where
+there was some difference from one column to the next.
 
 =back
 
@@ -1441,7 +1441,7 @@ was some difference from one column to the next.
 If you don't specify --tab, you'll get a report formatted for human
 readability.  This is the default output format.
 
-MySQL Query Profiler can output a lot of information, as you've seen if you
+mk-query-profiler can output a lot of information, as you've seen if you
 ran the examples in the L<"SYNOPSIS">.  What does it all mean?
 
 First, there are two basic groups of information you might see: per-query and
