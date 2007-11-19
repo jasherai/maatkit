@@ -883,7 +883,7 @@ See also L<mk-slave-delay> and L<mk-slave-restart>.
 =head1 BUGS
 
 Please use the Sourceforge bug tracker, forums, and mailing lists to request
-support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
+support or report bugs: L<http://sourceforge.net/projects/maatkit/>.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
