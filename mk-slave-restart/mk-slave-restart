@@ -748,11 +748,11 @@ while ( ( !$opts{t} || time() < $exit_time ) ) {
 
    # Errors are very likely to follow each other in quick succession.  NOTE:
    # this policy has a side effect with respect to $sleep.  Suppose $sleep is
-   # 512 and MySQL Slave Restart finds an error; now $sleep is 256, but MySQL
-   # Slave Restart only sleeps 1 (the initial value of --sleep).  Suppose there
-   # is no error when it wakes up after 1 second, because 1 was too short.  Now
-   # it doubles $sleep, back to 512.  $sleep has the same value it did before
-   # the error was ever found.
+   # 512 and mk-slave-restart finds an error; now $sleep is 256, but
+   # mk-slave-restart sleeps only 1 (the initial value of --sleep).  Suppose
+   # there is no error when it wakes up after 1 second, because 1 was too
+   # short.  Now it doubles $sleep, back to 512.  $sleep has the same value it
+   # did before the error was ever found.
    print "sleeping $sleep\n" if $opts{v} > 2;
    sleep($was_running ? $sleep : min($sleep, $opts{s}));
 }
@@ -799,7 +799,7 @@ mk-slave-restart - Watch and restart MySQL replication after errors.
 
 =head1 DESCRIPTION
 
-MySQL Slave Restart watches a MySQL replication slave and tries to skip
+mk-slave-restart watches a MySQL replication slave and tries to skip
 statements that cause errors.  It polls the slave intelligently with an
 exponentially varying sleep time.  You can specify errors to skip and run the
 slave until a certain binlog position.
@@ -837,7 +837,7 @@ Only read default options from the given file.
 
 =item --error-numbers
 
-Makes MySQL Slave Restart only try to restart if the error number is in this
+Makes mk-slave-restart only try to restart if the error number is in this
 comma-separated list of errors.  If it sees an error not in the list, it will
 exit.
 
@@ -846,8 +846,8 @@ The error number is in the last_errno column of SHOW SLAVE STATUS.
 =item --error-text
 
 A Perl regular expression against which the error text, if any, is matched.  If
-the error text exists and matches, MySQL Slave Restart will try to restart the
-slave.  If it exists but doesn't match, MySQL Slave Restart will exit.
+the error text exists and matches, mk-slave-restart will try to restart the
+slave.  If it exists but doesn't match, mk-slave-restart will exit.
 
 The error text is in the last_error column of SHOW SLAVE STATUS.
 
@@ -867,12 +867,12 @@ Connect to host.
 
 =item --maxsleep
 
-The maximum time MySQL Slave Restart will sleep before polling the slave again.
+The maximum time mk-slave-restart will sleep before polling the slave again.
 See L<"SLEEP">.
 
 =item --minsleep
 
-The minimum time MySQL Slave Restart will sleep before polling the slave again.
+The minimum time mk-slave-restart will sleep before polling the slave again.
 See L<"SLEEP">.
 
 =item --password
@@ -897,7 +897,7 @@ Socket file to use for connection.
 
 =item --time
 
-Causes MySQL Slave Restart to stop after the specified time has elapsed.  The
+Causes mk-slave-restart to stop after the specified time has elapsed.  The
 argument can have a suffix of s, m, h, or d, indicating seconds, minutes, hours,
 or days.  The number is interpreted as seconds if there is no suffix.
 
@@ -911,7 +911,7 @@ no space.
 
 This will also cause an UNTIL clause to be given to START SLAVE.
 
-After reaching this point, the slave should be stopped and MySQL Slave Restart
+After reaching this point, the slave should be stopped and mk-slave-restart
 will exit.
 
 =item --untilrelay
@@ -928,7 +928,7 @@ User for login if not current user.
 Verbosity; specify multiple times for more verbosity.  Default is no output.
 Verbosity 1 outputs a timestamp, relay_log_file, relay_log_pos, and last_errno.
 Verbosity 2 adds last_error.  See also L<"--error-length">.  Verbosity 3
-prints the current sleep time each time MySQL Slave Restart sleeps.
+prints the current sleep time each time mk-slave-restart sleeps.
 
 =item --version
 
@@ -943,12 +943,12 @@ installed in any reasonably new version of Perl.
 
 =head1 OUTPUT
 
-If you specify --verbose, MySQL Slave Restart prints a line every time it sees
+If you specify --verbose, mk-slave-restart prints a line every time it sees
 the slave has an error.  See L<"--verbose"> for details.
 
 =head1 SLEEP
 
-MySQL Slave Restart sleeps intelligently between polling the slave.  The current
+mk-slave-restart sleeps intelligently between polling the slave.  The current
 sleep time varies.
 
 =over
@@ -971,7 +971,7 @@ The sleep time is bounded below by L<"--minsleep"> and above by L<"--maxsleep">.
 
 =item *
 
-Immediately after finding an error, MySQL Slave Restart assumes another error is
+Immediately after finding an error, mk-slave-restart assumes another error is
 very likely to happen next, so it sleeps the current sleep time or the initial
 sleep time, whichever is less.
 
@@ -979,7 +979,7 @@ sleep time, whichever is less.
 
 =head1 COMPATIBILITY
 
-MySQL Slave Restart should work on many versions of MySQL.  Lettercase of many
+mk-slave-restart should work on many versions of MySQL.  Lettercase of many
 output columns from SHOW SLAVE STATUS has changed over time, so it treats them
 all as lowercase.
 

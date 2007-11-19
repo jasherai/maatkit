@@ -746,7 +746,7 @@ mk-heartbeat - Monitor MySQL replication delay.
 
 =head1 DESCRIPTION
 
-MySQL Heartbeat is a two-part MySQL and PostgreSQL replication delay monitoring
+mk-heartbeat is a two-part MySQL and PostgreSQL replication delay monitoring
 system that doesn't require the slave to be working (in other words, it doesn't
 rely on C<SHOW SLAVE STATUS> on MySQL).  The first part updates a timestamp
 every second on the master.  You must create a table on the master as follows:
@@ -757,23 +757,23 @@ every second on the master.  You must create a table on the master as follows:
  );
  INSERT INTO heartbeat(id) VALUES(1);
 
-Now you connect MySQL Heartbeat to the master and run it in L<"--update"> mode
+Now you connect mk-heartbeat to the master and run it in L<"--update"> mode
 to generate the heartbeat.  This completes the first part.
 
 The second part is to monitor the slave's delay with L<"--monitor"> or
 L<"--check">.  This works even on daisy-chained slaves to any depth.
 
-MySQL Heartbeat has a one-second resolution.  It depends on the clocks on the
+mk-heartbeat has a one-second resolution.  It depends on the clocks on the
 master and slave servers being closely synchronized via NTP.  L<"--update">
 checks happen on the edge of the second, and L<"--monitor"> checks happen
 halfway between seconds.  As long as the servers' clocks aren't skewed much
-and the replication events are propagating in less than half a second, MySQL
-Heartbeat will report zero seconds of delay.
+and the replication events are propagating in less than half a second,
+mk-heartbeat will report zero seconds of delay.
 
-MySQL Heartbeat will try to reconnect if the connection has an error, but will
+mk-heartbeat will try to reconnect if the connection has an error, but will
 not retry if it can't get a connection when it first starts.
 
-The L<"--dbidriver"> option lets you use MySQL Heartbeat to monitor PostgreSQL
+The L<"--dbidriver"> option lets you use mk-heartbeat to monitor PostgreSQL
 as well.  It is reported to work well with Slony-1 replication.
 
 =head1 OPTIONS

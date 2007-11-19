@@ -2152,7 +2152,7 @@ mk-parallel-dump - Dump sets of MySQL tables in parallel.
 
 =head1 DESCRIPTION
 
-MySQL Parallel Dump connects to a MySQL server, finds database and table names,
+mk-parallel-dump connects to a MySQL server, finds database and table names,
 and dumps them in parallel for speed.  It can be used in several pre-packaged
 ways, or as a generic wrapper to call some program in parallel, passing it
 parameters for each table.  It supports backup sets and dumping only tables that
@@ -2178,7 +2178,7 @@ To dump one or more backup sets (see L<"BACKUP SETS">):
   mk-parallel-dump --sets set1,set2,set3 --settable meta.backupset
 
 To "write your own command line," use C<--> to indicate where the arguments for
-MySQL Parallel Dump stop and where the arguments for C<mysqldump> (or any other
+mk-parallel-dump stop and where the arguments for C<mysqldump> (or any other
 program) begin.  The following example shows C<mysqldump>, and aside from simpler
 options to C<mysqldump>, is basically what happens when you specify no arguments
 at all:
@@ -2187,23 +2187,23 @@ at all:
      \| gzip --fast -c - \> '%D.%N.gz'
 
 The C<%> modifiers are macros (see L<"MACROS">).  The C<--skip-lock-tables>
-argument is very important in that last example, because otherwise both MySQL
-Parallel Dump and C<mysqldump> will lock tables, so C<mysqldump> will hang,
+argument is very important in that last example, because otherwise both
+mk-parallel-dump and C<mysqldump> will lock tables, so C<mysqldump> will hang,
 waiting for the locks.  Notice the shell metacharacters C<|> and C<E<gt>> are
 escaped so the shell won't interpret them, and they'll get passed through to the
 generated command-line.
 
-There's no reason you can't use MySQL Parallel Dump to do other tasks in
+There's no reason you can't use mk-parallel-dump to do other tasks in
 parallel, such as C<OPTIMIZE TABLE>:
 
   mk-parallel-dump --noflushlock --nolocktables -- mysqlcheck --optimize '%D' '%N'
 
-When you use built-in defaults, MySQL Parallel Dump will relay these arguments
+When you use built-in defaults, mk-parallel-dump will relay these arguments
 on to every forked copy of C<mysqldump>: L<"--defaults-file">, L<"--host">,
 L<"--port">, L<"--socket">, L<"--user">, L<"--password">.  If you write your own
 command-line, you will need to specify them manually.
 
-If you specify the L<"--tab"> option, MySQL Parallel Dump creates separate files
+If you specify the L<"--tab"> option, mk-parallel-dump creates separate files
 that hold views and triggers, so they can be restored correctly (this is not
 currently possible with the C<mysqldump> from MySQL AB, which will restore
 triggers before restoring data).  Otherwise it does I<not> back up your entire
@@ -2214,7 +2214,7 @@ dumping the stored routines anyway.
 Exit status is 0 if everything went well, 1 if any chunks failed, and any
 other value indicates an internal error.
 
-MySQL Parallel Dump doesn't clean out any destination directories before
+mk-parallel-dump doesn't clean out any destination directories before
 dumping into them.  You can move away the old destination, then remove it
 after a successful dump, with a shell script like the following:
 
@@ -2234,8 +2234,8 @@ after a successful dump, with a shell script like the following:
 
 Backup sets are groups of logically related tables you want to backup together.
 You specify a set by inserting the table names into a table in the MySQL server
-from which you're dumping, and then naming it in the L<"--sets"> option.  MySQL
-Parallel Dump always works a set at a time; if you don't specify a set, it
+from which you're dumping, and then naming it in the L<"--sets"> option.
+mk-parallel-dump always works a set at a time; if you don't specify a set, it
 auto-discovers tables, filters them with the various command-line options
 (L<"--databases">, etc) and considers them the default set.
 
@@ -2257,7 +2257,7 @@ first, not last.  If it looks like tables are dumped in the wrong order, it's
 probably because they're being dumped asynchronously.  The output is printed
 when the dump finishes, not when it starts.
 
-If you specify L<"--age">, MySQL Parallel Dump expects the C<ts> column to
+If you specify L<"--age">, mk-parallel-dump expects the C<ts> column to
 exist, and will update the column to the current date and time when it
 successfully dumps a table.
 
@@ -2269,7 +2269,7 @@ Set names may contain only lowercase letters, numbers, and underscores.
 
 =head1 CHUNKS
 
-MySQL Parallel Dump can break your tables into chunks when dumping, and put
+mk-parallel-dump can break your tables into chunks when dumping, and put
 approximately the amount of data you specify into each chunk.  This is useful to
 avoid enormous files for restoration, which can not only take a long time but
 may be a lot of extra work for transactional storage engines like InnoDB.  A
@@ -2279,18 +2279,18 @@ To dump in chunks, specify the L<"--chunksize"> option.  This option is an
 integer with an optional suffix.  Without the suffix, it's the number of rows
 you want in each chunk.  With the suffix, it's the approximate size of the data.
 
-MySQL Parallel Dump tries to use index statistics to calculate where the
+mk-parallel-dump tries to use index statistics to calculate where the
 boundaries between chunks should be.  If the values are not evenly distributed,
 some chunks can have a lot of rows, and others may have very few or even none.
 Some chunks can exceed the size you want.
 
 When you specify the size with a suffix, the allowed suffixes are k, M and G,
-for kibibytes, mebibytes, and gibibytes, respectively.  MySQL Parallel Dump
+for kibibytes, mebibytes, and gibibytes, respectively.  mk-parallel-dump
 doesn't know anything about data size.  It asks MySQL (via C<SHOW TABLE STATUS>)
 how long an average row is in the table, and converts your option to a number
 of rows.
 
-Not all tables can be broken into chunks.  MySQL Parallel Dump looks for an
+Not all tables can be broken into chunks.  mk-parallel-dump looks for an
 index whose leading column is numeric (integers, real numbers, and date and time
 types).  It prefers the primary key if its first column is chunk-able.
 Otherwise it chooses the first chunk-able column in the table.
@@ -2301,7 +2301,7 @@ please write to the author (see L<"BUGS">).
 
 =head1 MACROS
 
-MySQL Parallel Dump can insert C<%> variables into arguments.  The available macros
+mk-parallel-dump can insert C<%> variables into arguments.  The available macros
 are as follows:
 
   MACRO  MEANING
@@ -2393,11 +2393,11 @@ C<--no-gzip>.
 
 =item --age
 
-Specifies how 'old' a table must be before MySQL Parallel Dump will consider
+Specifies how 'old' a table must be before mk-parallel-dump will consider
 it.  The argument is a number with a suffix (s=seconds, m=minutes, h=hours,
 d=days).
 
-When L<"--sets"> is not specified, MySQL Parallel Dump uses C<SHOW TABLE STATUS>
+When L<"--sets"> is not specified, mk-parallel-dump uses C<SHOW TABLE STATUS>
 instead of C<SHOW TABLES> to get a list of tables in each database, and compares
 the time to the C<Update_time> column in the output.  If the C<Update_time>
 column is not C<NULL> and is older than the specified interval ago, it will not
@@ -2413,13 +2413,13 @@ not dumped in X amount of time."
 =item --basedir
 
 The directory in which files will be stored.  If you use pre-canned options,
-such as L<"--tab">, MySQL Parallel Dump knows what the eventual filenames will
+such as L<"--tab">, mk-parallel-dump knows what the eventual filenames will
 be, and can place all the files in this directory.  It will also create any
 parent directories that don't exist, if needed (see also L<"--umask">).
 
 The default is the current working directory.
 
-If you write your own command line, MySQL Parallel Dump cannot know which
+If you write your own command line, mk-parallel-dump cannot know which
 arguments in the command line are filenames, and thus doesn't know the
 eventual destination of the dump files.  It does not try to create parent
 directories in this case.
@@ -2465,7 +2465,7 @@ Dump only databases whose names match this Perl regular expression.
 
 =item --defaultset
 
-When L<"--sets"> is given, this option makes MySQL Parallel Dump dump a
+When L<"--sets"> is given, this option makes mk-parallel-dump dump a
 C<default> set consisting of tables not explicitly included in any set.
 
 =item --defaults-file
@@ -2532,7 +2532,7 @@ lock is taken and released with every set of tables dumped.
 =item --numthread
 
 Specifies the number of parallel processes to run.  The default is 2 (this is
-MySQL Parallel Dump, after all -- 1 is not parallel).  On GNU/Linux machines,
+mk-parallel-dump, after all -- 1 is not parallel).  On GNU/Linux machines,
 the default is the number of times 'processor' appears in F</proc/cpuinfo>.  On
 Windows, the default is read from the environment.  In any case, the default is
 at least 2, even when there's only a single processor.
@@ -2575,7 +2575,7 @@ Dump via C<SELECT INTO OUTFILE>, which is similar to what C<mysqldump> does with
 the C<--tab> option, but you're not constrained to a single database at a time.
 
 Before you use this option, make sure you know what C<SELECT INTO OUTFILE> does!
-I recommend using it only if you're running MySQL Parallel Dump on the same
+I recommend using it only if you're running mk-parallel-dump on the same
 machine as the MySQL server, but there is no protection if you don't.
 
 The files will be gzipped after dumping if L<"--gzip"> is enabled.  This option
@@ -2624,12 +2624,12 @@ Output version information and exit.
 
 If the MySQL server crashes during dumping, waits until the server comes back
 and then continues with the rest of the tables.  The value is a number with a
-suffix (s=seconds, m=minutes, h=hours, d=days).  MySQL Parallel Dump will
+suffix (s=seconds, m=minutes, h=hours, d=days).  mk-parallel-dump will
 check the server every second until this time is exhausted, at which point it
 will give up and exit.
 
 This implements Peter Zaitsev's "safe dump" request: sometimes a dump on a
-server that has corrupt data will kill the server.  MySQL Parallel Dump will
+server that has corrupt data will kill the server.  mk-parallel-dump will
 wait for the server to restart, then keep going.  It's hard to say which table
 killed the server, so no tables will be retried.  Tables that were being
 concurrently dumped when the crash happened will not be retried.  No additional

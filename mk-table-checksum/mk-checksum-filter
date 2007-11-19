@@ -562,7 +562,7 @@ C<database2.table1.chunk1> if they have the same checksum.
 
 =item --header
 
-Preserves headers output by MySQL Table Checksum.
+Preserves headers output by mk-table-checksum.
 
 =item --help
 

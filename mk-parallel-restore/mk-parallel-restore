@@ -1141,9 +1141,9 @@ mk-parallel-restore - Load files into MySQL in parallel.
 
 =head1 DESCRIPTION
 
-MySQL Parallel Restore is a way to load SQL or delimited-file dumps into MySQL
+mk-parallel-restore is a way to load SQL or delimited-file dumps into MySQL
 in parallel at high speed.  It is especially designed for restoring files
-dumped by MySQL Parallel Dump (see L<mk-parallel-dump>).  It automatically
+dumped by L<mk-parallel-dump>.  It automatically
 detects whether a file contains SQL or delimited data from the filename
 extension, and either shells out to C<mysql> or executes C<LOAD DATA INFILE>
 with the file.  On UNIX-like systems, it will even make a FIFO to decompress
@@ -1327,7 +1327,7 @@ Set C<UNIQUE_CHECKS=0> before C<LOAD DATA INFILE>.
 =item --numthread
 
 Specifies the number of parallel processes to run.  The default is 2 (this is
-MySQL Parallel Restore, after all -- 1 is not parallel).  On GNU/Linux machines,
+mk-parallel-restore after all -- 1 is not parallel).  On GNU/Linux machines,
 the default is the number of times 'processor' appears in F</proc/cpuinfo>.  On
 Windows, the default is read from the environment.  In any case, the default is
 at least 2, even when there's only a single processor.
@@ -1401,7 +1401,7 @@ Output version information and exit.
 
 If the MySQL server crashes during loading, waits until the server comes back
 and then continues with the rest of the files.  The value is a number with a
-suffix (s=seconds, m=minutes, h=hours, d=days).  MySQL Parallel Restore will
+suffix (s=seconds, m=minutes, h=hours, d=days).  mk-parallel-restore will
 check the server every second until this time is exhausted, at which point it
 will give up and exit.
 

@@ -1009,7 +1009,7 @@ Displays a help message.
 
 =item --interval
 
-How frequently MySQL Deadlock Logger should check for deadlocks.  The argument
+How frequently mk-deadlock-logger should check for deadlocks.  The argument
 must have a suffix of s, m, h, or d, indicating seconds, minutes, hours, or
 days.
 
@@ -1050,7 +1050,7 @@ whitespace-aligning them.  See L<"OUTPUT"> for more.
 
 =item --time
 
-Causes MySQL Deadlock Logger to stop after the specified time has elapsed.
+Causes mk-deadlock-logger to stop after the specified time has elapsed.
 The argument must have a suffix of s, m, h, or d, indicating seconds, minutes,
 hours, or days.
 

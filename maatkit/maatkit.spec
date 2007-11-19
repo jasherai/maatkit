@@ -1,7 +1,7 @@
 Name:           maatkit
 Version:        @DISTRIB@
 Release:        1%{?dist}
-Summary:        MySQL Toolkit
+Summary:        Essential command-line utilities for MySQL
 
 Group:          Applications/Databases
 License:        GPL
