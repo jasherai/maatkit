@@ -18,13 +18,15 @@ my %versions;
 # Find latest of each package
 foreach my $p ( @packages ) {
    ($p) = $p =~ m/(mysql-.*)/;
-   chomp($versions{$p} = `cat $base/$p/VERSION`);
+   if ( -f "$base/$p/VERSION" ) {
+      chomp($versions{$p} = `cat $base/$p/VERSION`);
+   }
 }
 
 # Commit the list of files and get the resulting version number.
 print `svn up packlist`;
 open my $packlist, "> packlist" or die $!;
-print $packlist '   $Revision$', "\n", map { "   $_\n" } sort values %versions;
+print $packlist '   $Revision$', "\n", map { "$_ $versions{$_}\n" } sort keys %versions;
 close $packlist;
 print `svn ci -m 'Bump version' packlist`;
 print `rm packlist`;
@@ -40,10 +42,9 @@ print `mkdir -p html cache $dist/bin $dist/lib`;
 # Copy the executables and their Changelog files into the $dist dir, and set the
 # $VERSION variable correctly
 foreach my $p ( sort keys %versions ) {
-   my ($version) = $versions{$p} =~ m/([\d.]+)/;
-   print `for a in $base/$p/$versions{$p}/mysql-*; do b=\`basename \$a\`; cp \$a $dist/bin; sed -i -e 's/\@VERSION\@/$version/' $dist/bin/\$b; done`;
+   print `for a in $base/$p/mysql-*; do b=\`basename \$a\`; cp \$a $dist/bin; sed -i -e 's/\@VERSION\@/$versions{$p}/' $dist/bin/\$b; done`;
    print `echo "" >> $dist/Changelog`;
-   print `cat $base/$p/$versions{$p}/Changelog >> $dist/Changelog`;
+   print `cat $base/$p/Changelog >> $dist/Changelog`;
 }
 print `cp README $dist/`;
 
@@ -117,12 +118,3 @@ print `for a in html/*; do sed -i -e "s~\\\`~\\\'~g" \$a; done`;
 
 # Cleanup temporary directories
 print `rm -rf cache $dist`;
-
-# #####################################################################
-# Subroutines
-# #####################################################################
-
-sub x {
-   my ($name) = @_;
-   sprintf('%03d%03d%03d', $name =~ m/(\d+)/g);
-}
