@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use Test::More tests => 5;
 
-require "../mysql-visual-explain";
+require "../mk-visual-explain";
 
 # Test that I can load 'explain' files and get an array of hashrefs from them.
 my $p = new ExplainParser;
