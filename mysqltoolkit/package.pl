@@ -11,20 +11,14 @@ use Pod::Html;
 print `svn up ../../`;
 
 # Find list of packages
-my $base     = '../../tags';
-my @packages = map { basename $_ } (split(/\s+/, `ls -d $base/mysql-*`));
+my $base     = '..';
+my @packages = <$base/mysql-*>;
 my %versions;
 
 # Find latest of each package
 foreach my $p ( @packages ) {
-   my @vers = map { basename $_ } (split(/\s+/, `ls -d $base/$p/mysql-*`));
-   @vers = reverse sort { x($a) cmp x($b) } @vers;
-   if ( @vers ) {
-      $versions{$p} = $vers[0];
-   }
-   else {
-      warn "No version found for $p";
-   }
+   ($p) = $p =~ m/(mysql-.*)/;
+   chomp($versions{$p} = `cat $base/$p/VERSION`);
 }
 
 # Commit the list of files and get the resulting version number.
