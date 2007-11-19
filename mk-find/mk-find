@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-find, a program that searches for MySQL tables and takes actions
+# This is mk-find, a program that searches for MySQL tables and takes actions
 # like GNU find.
 #
 # This program is copyright (c) 2007 Baron Schwartz.
@@ -887,31 +887,31 @@ sub expand {
 
 =head1 NAME
 
-mysql-find - Find MySQL tables and execute actions, like GNU find.
+mk-find - Find MySQL tables and execute actions, like GNU find.
 
 =head1 DESCRIPTION
 
-mysql-find looks for MySQL tables that pass the tests you specify, and executes
+mk-find looks for MySQL tables that pass the tests you specify, and executes
 the actions you specify.  The default action is to print the database and table
 name to STDOUT.
 
-mysql-find is simpler than GNU find.  It doesn't allow you to specify
+mk-find is simpler than GNU find.  It doesn't allow you to specify
 complicated expressions on the command line.
 
-mysql-find only looks for and processes tables.  If you need it to do
+mk-find only looks for and processes tables.  If you need it to do
 other things, like triggers or columns, file a bug report and I'll add the
 features.
 
-mysql-find uses SHOW TABLES when possible, and SHOW TABLE STATUS when needed.
+mk-find uses SHOW TABLES when possible, and SHOW TABLE STATUS when needed.
 
 =head1 OPTIONS
 
 There are three kinds of options: normal options, which determine some behavior
 or setting; tests, which determine whether a table should be included in the
-list of tables found; and actions, which do something to the tables mysql-find
+list of tables found; and actions, which do something to the tables mk-find
 finds.
 
-mysql-find uses standard Getopt::Long option parsing, so you should use double
+mk-find uses standard Getopt::Long option parsing, so you should use double
 dashes in front of long option names, unlike GNU find.
 
 =head2 OPTIONS
@@ -949,7 +949,7 @@ Connect to host.
 By default, tests are evaluated as though there were an AND between them.  This
 option switches it to OR.
 
-Option parsing is not implemented by mysql-find itself, so you cannot specify
+Option parsing is not implemented by mk-find itself, so you cannot specify
 complicated expressions with parentheses and mixtures of OR and AND.
 
 =item --password
@@ -989,7 +989,7 @@ of k, M or G (1_024, 1_048_576, and 1_073_741_824 respectively).  All patterns
 are Perl regular expressions (see 'man perlre') unless specified as SQL LIKE
 patterns.
 
-Dates and times are all measured relative to the same instant, when mysql-find
+Dates and times are all measured relative to the same instant, when mk-find
 first asks the database server what time it is.  All date and time manipulation
 is done in SQL, so if you say to find tables modified 5 days ago, that
 translates to SELECT DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 5 DAY).  If you
@@ -997,11 +997,11 @@ specify L<"--daystart">, if course it's relative to CURRENT_DATE instead.
 
 However, table sizes and other metrics are not consistent at an instant in
 time.  It can take some time for MySQL to process all the SHOW queries, and
-mysql-find can't do anything about that.  These measurements are as of the
+mk-find can't do anything about that.  These measurements are as of the
 time they're taken.
 
 If you need some test that's not in this list, file a bug report and I'll
-enhance mysql-find for you.  It's really easy.
+enhance mk-find for you.  It's really easy.
 
 =over
 
@@ -1089,7 +1089,7 @@ a pattern.  The argument to this test must be a Perl regular expression that
 captures digits like this: (\d+).  If the table name matches the pattern,
 these captured digits are taken to be the MySQL connection ID of some process.
 If the connection doesn't exist according to SHOW FULL PROCESSLIST, the test
-returns true.  If the connection ID is greater than mysql-find's own
+returns true.  If the connection ID is greater than mk-find's own
 connection ID, the test returns false for safety.
 
 Why would you want to do this?  If you use MySQL statement-based replication,
@@ -1103,7 +1103,7 @@ can assume the connection died without cleaning up its tables, and this table
 is a candidate for removal.
 
 This how I manage scratch tables, and that's why I included this test in
-mysql-find.
+mk-find.
 
 The argument I use to L<"--pid"> is "\D_(\d+)$".  That finds tables with a series of
 numbers at the end, preceded by an underscore and some non-number character (the
@@ -1111,9 +1111,9 @@ latter criterion prevents me from examining tables with a date at the end, which
 people tend to do: baron_scratch_2007_05_07 for example).  It's better to keep
 the scratch tables separate of course.
 
-If you do this, make sure the user mysql-find runs as has the PROCESS privilege!
+If you do this, make sure the user mk-find runs as has the PROCESS privilege!
 Otherwise it will only see connections from the same user, and might think some
-tables are ready to remove when they're still in use.  For safety, mysql-find
+tables are ready to remove when they're still in use.  For safety, mk-find
 checks this for you.
 
 =item --rows
@@ -1220,34 +1220,34 @@ the following list is discarded (but the other character is printed).
 Find all tables created more than a day ago, which use the MyISAM engine, and
 print their names:
 
-  mysql-find --ctime +1 --engine MyISAM
+  mk-find --ctime +1 --engine MyISAM
 
 Find InnoDB tables that haven't been updated in a month, and convert them to
 MyISAM storage engine (data warehousing, anyone?):
 
-  mysql-find --mtime +30 --engine InnoDB --exec "ALTER TABLE %D.%N ENGINE=MyISAM"
+  mk-find --mtime +30 --engine InnoDB --exec "ALTER TABLE %D.%N ENGINE=MyISAM"
 
 Find tables created by a process that no longer exists, following the name_pid
 naming convention, and remove them.
 
-  mysql-find --pid '\D_(\d+)$' --exec_plus "DROP TABLE %s"
+  mk-find --pid '\D_(\d+)$' --exec_plus "DROP TABLE %s"
 
 Find empty tables in the test and junk databases, and delete them:
 
-  mysql-find --empty junk test --exec_plus "DROP TABLE %s"
+  mk-find --empty junk test --exec_plus "DROP TABLE %s"
 
 Find tables more than five gigabytes in total size:
 
-  mysql-find --tablesize +5G
+  mk-find --tablesize +5G
 
 Find all tables and print their total data and index size, and sort largest
 tables first (sort is a different program, by the way).
 
-  mysql-find --printf "%T\t%D.%N\n" | sort -rn
+  mk-find --printf "%T\t%D.%N\n" | sort -rn
 
 As above, but this time, insert the data back into the database for posterity:
 
-  mysql-find --noquote --exec "INSERT INTO sysdata.tblsize(db, tbl, size) VALUES('%D', '%N', %T)"
+  mk-find --noquote --exec "INSERT INTO sysdata.tblsize(db, tbl, size) VALUES('%D', '%N', %T)"
 
 =head1 BUGS
 

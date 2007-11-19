@@ -204,8 +204,8 @@ drop table if exists table_10;
 create table table_10(a int not null primary key);
 
 -- This table is designed not to work right with ascending slices unless
--- mysql-archiver gets the ascending slice right.  The important thing is that
--- the PK columns aren't in the same order as the columns.  If mysql-archiver
+-- mk-archiver gets the ascending slice right.  The important thing is that
+-- the PK columns aren't in the same order as the columns.  If mk-archiver
 -- ascends by the first two columns 2 rows at a time, confusing column ordinals
 -- with PK ordinals, some rows won't get archived.
 drop table if exists table_11;

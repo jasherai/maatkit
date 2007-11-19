@@ -1132,18 +1132,18 @@ sub system_call {
 
 =head1 NAME
 
-mysql-parallel-restore - Load files into MySQL in parallel.
+mk-parallel-restore - Load files into MySQL in parallel.
 
 =head1 SYNOPSIS
 
-  mysql-parallel-restore /path/to/files
-  mysql-parallel-restore --tab /path/to/files
+  mk-parallel-restore /path/to/files
+  mk-parallel-restore --tab /path/to/files
 
 =head1 DESCRIPTION
 
 MySQL Parallel Restore is a way to load SQL or delimited-file dumps into MySQL
 in parallel at high speed.  It is especially designed for restoring files
-dumped by MySQL Parallel Dump (see L<mysql-parallel-dump>).  It automatically
+dumped by MySQL Parallel Dump (see L<mk-parallel-dump>).  It automatically
 detects whether a file contains SQL or delimited data from the filename
 extension, and either shells out to C<mysql> or executes C<LOAD DATA INFILE>
 with the file.  On UNIX-like systems, it will even make a FIFO to decompress
@@ -1174,7 +1174,7 @@ triggers, last.  Creating the triggers before loading data might keep the data
 from being restored correctly.  Files that are named 00_views.sql are loaded
 even later, after all the parallel restores are finished; dependencies among
 views and tables make them hard to restore one at a time.  See
-L<mysql-parallel-dump> for details on how data is dumped.
+L<mk-parallel-dump> for details on how data is dumped.
 
 Exit status is 0 if everything went well, 1 if any files failed, and any
 other value indicates an internal error.
@@ -1442,7 +1442,7 @@ Baron Schwartz.
 
 =head1 SEE ALSO
 
-See also L<mysql-parallel-dump>.
+See also L<mk-parallel-dump>.
 
 =head1 VERSION
 

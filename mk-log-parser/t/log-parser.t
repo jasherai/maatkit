@@ -6,7 +6,7 @@ use warnings FATAL => 'all';
 use Test::More tests => 3;
 use English qw(-no_match_vars);
 
-require "../mysql-log-parser";
+require "../mk-log-parser";
 
 my $p = new LogParser;
 my @e;

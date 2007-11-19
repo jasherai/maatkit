@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-slave-delay, a program that makes a MySQL slave lag its master.
+# This is mk-slave-delay, a program that makes a MySQL slave lag its master.
 #
 # This program is copyright (c) 2007 Sergey Zhuravlev and Baron Schwartz.
 # Feedback and improvements are welcome.
@@ -777,7 +777,7 @@ sub info {
    print ts($now), " ", $message, "\n" unless $opts{q};
 }
 
-# Catches signals so mysql-slave-delay can exit gracefully.
+# Catches signals so mk-slave-delay can exit gracefully.
 sub finish {
    my ($signal) = @_;
    print STDERR "Exiting on SIG$signal.\n";
@@ -821,13 +821,13 @@ sub get_dbh {
 
 =head1 NAME
 
-mysql-slave-delay - Make a MySQL slave server lag behind its master.
+mk-slave-delay - Make a MySQL slave server lag behind its master.
 
 =head1 SYNOPSIS
 
 To hold slavehost one minute behind its master for ten minutes:
 
- mysql-slave-delay --delay 1m --interval 15s --time 10m slavehost
+ mk-slave-delay --delay 1m --interval 15s --time 10m slavehost
 
 =head1 DESCRIPTION
 

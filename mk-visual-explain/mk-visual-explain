@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-visual-explain, a program to transform MySQL's EXPLAIN output
+# This is mk-visual-explain, a program to transform MySQL's EXPLAIN output
 # into a query execution plan formatted as a tree.
 #
 # This program is copyright (c) 2007 Baron Schwartz.  Feedback and
@@ -1302,13 +1302,13 @@ if ( !caller ) {
 
 =head1 NAME
 
-mysql-visual-explain - Format EXPLAIN output as a tree.
+mk-visual-explain - Format EXPLAIN output as a tree.
 
 =head1 SYNOPSIS
 
- mysql-visual-explain <file_containing_explain_output>
- mysql-visual-explain -c <file_containing_query>
- mysql -e "explain select * from mysql.user" | mysql-visual-explain
+ mk-visual-explain <file_containing_explain_output>
+ mk-visual-explain -c <file_containing_query>
+ mysql -e "explain select * from mysql.user" | mk-visual-explain
 
 =head1 DESCRIPTION
 
@@ -1461,7 +1461,7 @@ functionality if you want.
 The ExplainParser package accepts a string and parses whatever it thinks looks
 like EXPLAIN output from it.  The synopsis is as follows:
 
- require "mysql-visual-explain";
+ require "mk-visual-explain";
  my $p    = ExplainParser->new();
  my $rows = $p->parse("some text");
  # $rows is an arrayref of hashrefs.
@@ -1470,7 +1470,7 @@ The ExplainTree package accepts a set of rows and turns it into a tree.  For
 convenience, you can also have it delegate to ExplainParser and parse text for
 you.  Here's the synopsis:
 
- require "mysql-visual-explain";
+ require "mk-visual-explain";
  my $e      = ExplainTree->new();
  my $tree   = $e->parse("some text", \%options);
  my $output = $e->pretty_print($tree);
@@ -1814,7 +1814,7 @@ the rest of the process is pretty simple.
 
 =head1 SEE ALSO
 
-See also L<mysql-query-profiler>.
+See also L<mk-query-profiler>.
 
 =head1 BUGS
 

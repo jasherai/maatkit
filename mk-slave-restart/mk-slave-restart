@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-slave-restart, a program to watch replication and try to
+# This is mk-slave-restart, a program to watch replication and try to
 # restart the slave on errors.
 #
 # This program is copyright (c) 2007 Baron Schwartz.  Feedback and
@@ -791,11 +791,11 @@ sub ts {
 
 =head1 NAME
 
-mysql-slave-restart - Watch and restart MySQL replication after errors.
+mk-slave-restart - Watch and restart MySQL replication after errors.
 
 =head1 SYNOPSIS
 
- mysql-slave-restart --verbose
+ mk-slave-restart --verbose
 
 =head1 DESCRIPTION
 
@@ -990,7 +990,7 @@ mailing lists at http://sourceforge.net/projects/mysqltoolkit.
 
 =head1 SEE ALSO
 
-See also L<mysql-table-checksum>, L<mysql-table-sync>, L<mysql-slave-delay>.
+See also L<mk-table-checksum>, L<mk-table-sync>, L<mk-slave-delay>.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 

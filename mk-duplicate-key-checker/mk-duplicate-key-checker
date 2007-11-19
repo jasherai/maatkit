@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-# This is mysql-duplicate-key-checker, a program to analyze MySQL tables for
+# This is mk-duplicate-key-checker, a program to analyze MySQL tables for
 # duplicated or redundant indexes and foreign key constraints.  It is part of
 # MySQL Toolkit (http://mysqltoolkit.sourceforge.net).
 # 
@@ -927,7 +927,7 @@ if ( !caller ) {
 
 =head1 NAME
 
-mysql-duplicate-key-checker - Find possible duplicate indexes and foreign keys on
+mk-duplicate-key-checker - Find possible duplicate indexes and foreign keys on
 MySQL tables.
 
 =head1 DESCRIPTION

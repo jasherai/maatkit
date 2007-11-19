@@ -721,7 +721,7 @@ $opts{w}    = 60       if $opts{r} && !defined $opts{w};
 # TODO: when --columns is specified, and --synctomaster is given, you end up
 # with REPLACE INTO (partial columns) which will destroy data.  Yet maybe we
 # don't want to update the whole row, just columns we know to be bad (the DBA
-# knows this externally to mysql-table-sync).  This should turn into INSERT
+# knows this externally to mk-table-sync).  This should turn into INSERT
 # and UPDATE.  Or REPLACE should be disallowed when not all columns are
 # included.
 
@@ -903,7 +903,7 @@ if ( $opts{k} && !$opts{r} ) {
    my $lock_mode = $opts{x} ? 'WRITE' : 'READ';
    if ( $lock_mode eq 'WRITE' && $opts{a} eq 'bottomup' ) {
       die "Sorry, you can't lock tables with --execute in bottomup mode "
-      . "because of mysql-table-sync bug #1819744.  Run with --no-lock "
+      . "because of mk-table-sync bug #1819744.  Run with --no-lock "
       . "or use --algorithm=topdown instead.\n";
    }
    if ( $opts{v} ) {
@@ -1772,7 +1772,7 @@ sub handle_data_change {
                if ( $EVAL_ERROR =~ m/Duplicate entry/ ) {
                   die "Your tables probably have some differences "
                      . "that cannot be resolved with UPDATE statements.  "
-                     . "Re-run mysql-table-sync with --deleteinsert to proceed.\n";
+                     . "Re-run mk-table-sync with --deleteinsert to proceed.\n";
                }
                else {
                   die $EVAL_ERROR;
@@ -1958,18 +1958,18 @@ sub coalesce {
 
 =head1 NAME
 
-mysql-table-sync - Efficiently synchronize data between two MySQL tables.
+mk-table-sync - Efficiently synchronize data between two MySQL tables.
 
 =head1 SYNOPSIS
 
 To compare two tables, try one of these:
 
- mysql-table-sync -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
- mysql-table-sync -a bottomup -B 128 u=user,p=pass,h=host1,D=db,t=tbl host2
+ mk-table-sync -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
+ mk-table-sync -a bottomup -B 128 u=user,p=pass,h=host1,D=db,t=tbl host2
 
 To sync the destination to the source, try
 
- mysql-table-sync -x -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
+ mk-table-sync -x -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
 
 To show the differences between the tables, use the L<"--verbose"> option.
 Issue this option multiple times for more detail.  To see queries that will
@@ -2009,7 +2009,7 @@ DIFFERENCES TOP-DOWN"> and bottom-up in L<"FINDING DIFFERENCES BOTTOM-UP">.
 
 =item --analyze
 
-Only applies to bottom-up search.  Specifies that mysql-table-sync should examine the
+Only applies to bottom-up search.  Specifies that mk-table-sync should examine the
 summary tables and find table differences, and if desired, issue queries to
 resolve them.  This is the default behavior, but you can disable it if you just
 want to build the summary tables.
@@ -2023,7 +2023,7 @@ Prompts the user for a password when connecting to MySQL.
 Branch factor for bottom-up algorithm.  Each successive summary table will group
 this many rows together in the next summary table.  This means each summary
 table will be approximately this fraction of the size of the previous table.  If
-you don't specify an exact power of two, mysql-table-sync will round it to the
+you don't specify an exact power of two, mk-table-sync will round it to the
 nearest power of two.  The default is 128.
 
 =item --bufferresults
@@ -2049,13 +2049,13 @@ troubleshooting.
 
 Use MySQL to compare strings if necessary.  Enabled by default.  Perl cannot
 reliably compare character strings the same way MySQL does, so if it's unsure
-how two strings should be sorted, mysql-table-sync will send them to MySQL and
+how two strings should be sorted, mk-table-sync will send them to MySQL and
 ask its opinion.  You should leave this enabled.
 
 =item --columns
 
 Comma-separated list of columns to compare and synchronize.  If you specify this
-list, mysql-table-sync will completely ignore any other columns.  Specifying
+list, mk-table-sync will completely ignore any other columns.  Specifying
 a column that doesn't exist is not an error.
 
 =item --debug
@@ -2067,7 +2067,7 @@ data.  It is not complete at the moment.
 
 Convert all UPDATES to DELETE and INSERT.  This can help prevent conflicts due
 to unique indexes on columns other than the primary key.  This option will
-become obsolete when I make mysql-table-sync auto-detect this situation and handle it
+become obsolete when I make mk-table-sync auto-detect this situation and handle it
 itself.
 
 =item --drilldown
@@ -2091,7 +2091,7 @@ After finding differences, execute the queries required to sync the tables.
 
 Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums.  This only applies to
 the top-down algorithm.  It can help prevent the tables being changed while
-you're examining them.  mysql-table-sync automatically decides which type of
+you're examining them.  mk-table-sync automatically decides which type of
 locks to acquire, based on other command-line options.  This doesn't do anything
 on some storage engines, such as MyISAM.
 
@@ -2107,7 +2107,7 @@ help prevent tables being changed while you're examining them.
 =item --maxcost
 
 Maximum rowcount before aborting.  In either algorithm, if you specify this
-option mysql-table-sync will abort if it discovers more than this many rows need
+option mk-table-sync will abort if it discovers more than this many rows need
 to be changed to sync the tables.  There may be more rows to change than can be
 definitely discovered up front, but this might be a good way to stop before
 doing too much work.
@@ -2118,7 +2118,7 @@ Only do INSERT, UPDATE, or DELETE queries while syncing tables.  The default is
 to do all three, but if you want to, you can specify any combination of actions.
 For example, if you want to do a two-way sync of rows that have been added to
 either table, one way to do it is specify 'L<"--onlydo"> iu' and then run
-mysql-table-sync again the "other direction" with the same iu argument.  That
+mk-table-sync again the "other direction" with the same iu argument.  That
 will avoid deleting extra rows from the destination table, which the second
 invocation will then copy back to the source table.
 
@@ -2127,12 +2127,12 @@ invocation will then copy back to the source table.
 Tablename prefix for bottom-up algorithm.  In case the default prefix clashes
 with existing tables for some reason, or in case you want to use work tables
 that were built previously.  The default is a pseudo-random value that is
-constant within a given day.  If you run mysql-table-sync again the next day, it
+constant within a given day.  If you run mk-table-sync again the next day, it
 will choose a different prefix.
 
 =item --print
 
-Print all sync queries to STDOUT.  If you don't trust mysql-table-sync, or just
+Print all sync queries to STDOUT.  If you don't trust mk-table-sync, or just
 want to see what it will do, this is a good way.  These queries are valid SQL
 and you can run them yourself if you want to sync the tables manually.
 
@@ -2156,7 +2156,7 @@ tables that use a transactional storage engine.
 =item --size
 
 Table size in bottom-up algorithm.  Size estimates used to build the summary
-tables may be off.  If this happens, mysql-table-sync will die and tell you what
+tables may be off.  If this happens, mk-table-sync will die and tell you what
 value to use for this parameter.  Most of the time the size estimates should be
 accurate enough (they just have to be within some logarithmic order of
 magnitude), so estimating size up front is a good optimization.  It prevents
@@ -2183,7 +2183,7 @@ Use temporary tables in bottom-up algorithm.  The default is to use real tables.
 
 Keep going if L<"--wait"> fails.  If you specify L<"--wait"> and the slave doesn't catch
 up to the master's position before the wait times out, the default behavior is
-to abort.  This option makes mysql-table-sync keep going anyway.  Warning: if
+to abort.  This option makes mk-table-sync keep going anyway.  Warning: if
 you are trying to get a consistent comparision between the two servers, you
 probably don't want to keep going after a timeout.
 
@@ -2196,7 +2196,7 @@ times for more verbosity.  See L<"OUTPUT"> for more details about the output.
 
 Verify checksum compatibility across servers.  Some older versions of MySQL
 won't concatenate columns the same, so checksums might differ.
-mysql-table-checksum checks for this and aborts if the servers have different
+mk-table-checksum checks for this and aborts if the servers have different
 behavior.  If you know your columns will never contain the empty string, you can
 safely disable this check.
 
@@ -2208,7 +2208,7 @@ Output version information and exit.
 
 Make the slave wait to catch up to the master before comparing the tables.  The
 value is the number of seconds to wait before timing out (see also L<"--timeoutok">).
-mysql-table-sync issues LOCK TABLES on the master, then finds the master's
+mk-table-sync issues LOCK TABLES on the master, then finds the master's
 binlog position and waits for the slave to catch up to that position before
 comparing tables.  This is useful for guaranteeing a consistent comparision
 between the servers.
@@ -2220,7 +2220,7 @@ value will be added to queries in the WHERE clause .  Do not include the
 keyword WHERE in the option; that will be added automatically.  Be sure to
 quote and escape as required by your shell.  For example:
 
-  mysql-table-sync [OPTIONS...] --where "id between 5 and 10"
+  mk-table-sync [OPTIONS...] --where "id between 5 and 10"
 
 =back
 
@@ -2236,7 +2236,7 @@ the time involved, and a way to resync the slaves "live" is very attractive
 indeed.  There are also many constraints introduced by replication, which I
 wanted to either avoid or use to my advantage.
 
-I know not everyone has exactly these needs, so I made mysql-table-sync much more
+I know not everyone has exactly these needs, so I made mk-table-sync much more
 generic than I'd need to patch a table that's out of sync on a slave.
 
 The DBA must choose the algorithm and parameters to use when reconciling
@@ -2308,11 +2308,11 @@ Assuming a branch factor of 128, level 1 has 1/128th as many rows as level 0,
 give or take.  Level 2 is built from level 1, and has 1/128th as many rows in it
 again, and so on until level N, which has just a single row.
 
-After building scratch tables 0 through N, mysql-table-sync begins at level N and works
+After building scratch tables 0 through N, mk-table-sync begins at level N and works
 backwards.  At level N, there is just a single row.  If the checksum in this row
 matches on source and destination, the tables must be identical, and there is no
 more work to do.  If they differ though, some rows in level N-1 must differ, and
-mysql-table-sync examines the "parent" rows in level N-1.  It continues to do this until
+mk-table-sync examines the "parent" rows in level N-1.  It continues to do this until
 it travels all the way back "up the tree" to level 0 and identifies exactly
 which rows in the target tables are different.  It uses breadth-first search.
 
@@ -2354,7 +2354,7 @@ that differ group by client, then account, and finally descend to the individual
 row level, using the primary key.
 
 This approach is also a breadth-first search as I've implemented it.  At each
-level in the drill-down, mysql-table-sync knows a set of truths, such as the value of
+level in the drill-down, mk-table-sync knows a set of truths, such as the value of
 certain columns in the rows, the number of rows that might be bad, and so on.
 In this respect it is fairly similar to the bottom-up approach.
 
@@ -2590,7 +2590,7 @@ server to do over and over.
 
 =head1 RESOLVING DIFFERENCES
 
-Once mysql-table-sync has found the differences, you probably want to resolve them.
+Once mk-table-sync has found the differences, you probably want to resolve them.
 There are two major ways I know to do this, and several variations.
 
 The most obvious way is to simply issue INSERT, UPDATE, and DELETE statements
@@ -2635,7 +2635,7 @@ non-transactional tables such as MyISAM.  Running the entire sync in a single
 transaction causes extra overhead.
 
 Another special case is comparing strings between servers.  If your primary key
-or drilldown columns are character data, mysql-table-sync will potentially issue queries
+or drilldown columns are character data, mk-table-sync will potentially issue queries
 to the source server when it doesn't think it can reliably compare two strings
 exactly the same way MySQL does.  The collation used is the column's collation
 on the source server, so if the character set or collation differ between the
@@ -2881,7 +2881,7 @@ my own work.
 
 Another tool that can synchronize tables is the SQLyog Job Agent from webyog.
 Thanks to Rohit Nadhani, SJA's author, for the conversations about the general
-techniques.  There is a comparison of mysql-table-sync and SJA at
+techniques.  There is a comparison of mk-table-sync and SJA at
 L<http://www.xaprb.com/blog/2007/04/05/mysql-table-sync-vs-sqlyog-job-agent/>
 
 Thanks to the following people and organizations for helping in many ways:

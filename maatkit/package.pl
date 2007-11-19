@@ -12,12 +12,12 @@ print `svn up ../../`;
 
 # Find list of packages
 my $base     = '..';
-my @packages = <$base/mysql-*>;
+my @packages = <$base/mk-*>;
 my %versions;
 
 # Find latest of each package
 foreach my $p ( @packages ) {
-   ($p) = $p =~ m/(mysql-.*)/;
+   ($p) = $p =~ m/(mk-.*)/;
    if ( -f "$base/$p/VERSION" ) {
       chomp($versions{$p} = `cat $base/$p/VERSION`);
    }
@@ -42,7 +42,7 @@ print `mkdir -p html cache $dist/bin $dist/lib`;
 # Copy the executables and their Changelog files into the $dist dir, and set the
 # $VERSION variable correctly
 foreach my $p ( sort keys %versions ) {
-   print `for a in $base/$p/mysql-*; do b=\`basename \$a\`; cp \$a $dist/bin; sed -i -e 's/\@VERSION\@/$versions{$p}/' $dist/bin/\$b; done`;
+   print `for a in $base/$p/mk-*; do b=\`basename \$a\`; cp \$a $dist/bin; sed -i -e 's/\@VERSION\@/$versions{$p}/' $dist/bin/\$b; done`;
    print `echo "" >> $dist/Changelog`;
    print `cat $base/$p/Changelog >> $dist/Changelog`;
 }
@@ -51,7 +51,7 @@ print `cp README $dist/`;
 # Write maatkit.pod
 print `cat maatkit.head.pod packlist maatkit.mid.pod > $dist/lib/maatkit.pm`;
 open my $file, ">> $dist/lib/maatkit.pm" or die $OS_ERROR;
-foreach my $program ( <$dist/bin/mysql-*> ) {
+foreach my $program ( <$dist/bin/mk-*> ) {
    my $line = `grep -A 6 head1.NAME $program | tail -n 5`;
    my @parts = split(/\n\n/, $line);
    $line = $parts[0];
@@ -79,7 +79,7 @@ print `cd release && tar zcf $distbase.tar.gz $distbase`;
 print `cd release && zip -qr $distbase.zip    $distbase`;
 
 # Make the documentation.  Requires two passes.
-my @module_files = map { basename $_ } <$dist/bin/mysql-*>;
+my @module_files = map { basename $_ } <$dist/bin/mk-*>;
 for ( 0 .. 1 ) {
    foreach my $module ( @module_files ) {
       pod2html(

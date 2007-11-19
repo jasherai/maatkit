@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-deadlock-logger, a program that extracts and saves a summary of
+# This is mk-deadlock-logger, a program that extracts and saves a summary of
 # the last deadlock recorded in MySQL.
 #
 # This program is copyright (c) 2007 Baron Schwartz.
@@ -921,7 +921,7 @@ sub get_dbh {
 
 =head1 NAME
 
-mysql-deadlock-logger - Extract and log MySQL deadlock information.
+mk-deadlock-logger - Extract and log MySQL deadlock information.
 
 =head1 SYNOPSIS
 
@@ -929,13 +929,13 @@ The following examples will print deadlocks, store deadlocks in a database
 table, and daemonize and check once every 30 seconds for 4 hours,
 respectively:
 
- mysql-deadlock-logger --print
- mysql-deadlock-logger --source u=user,p=pass,h=server --dest D=test,t=deadlocks
- mysql-deadlock-logger --dest D=test,t=deadlocks --daemonize -m 4h -i 30s
+ mk-deadlock-logger --print
+ mk-deadlock-logger --source u=user,p=pass,h=server --dest D=test,t=deadlocks
+ mk-deadlock-logger --dest D=test,t=deadlocks --daemonize -m 4h -i 30s
 
 =head1 DESCRIPTION
 
-mysql-deadlock-logger extracts deadlock data from a MySQL server (currently only
+mk-deadlock-logger extracts deadlock data from a MySQL server (currently only
 InnoDB deadlock information is available).  You can print it to standard output
 or save it in a database table.  By default it does neither.
 
@@ -951,7 +951,7 @@ Prompt for password for connections.
 
 =item --collapse
 
-Makes mysql-deadlock-logger collapse all whitespace in queries to a single
+Makes mk-deadlock-logger collapse all whitespace in queries to a single
 space.  This might make it easier to inspect on the command line or in a query.
 By default, whitespace is collapsed when printing with L<"--print">, but not
 modified when storing to L<"--dest">.  (That is, the default is different for
@@ -959,7 +959,7 @@ each action).
 
 =item --columns
 
-Makes mysql-deadlock-logger only output and/or save certain columns.  See
+Makes mk-deadlock-logger only output and/or save certain columns.  See
 L<"OUTPUT"> for more details.
 
 =item --daemonize
@@ -978,7 +978,7 @@ By default, whitespace in the query column is left intact; use L<"--collapse">
 if you want whitespace collapsed.
 
 The following table is suggested if you want to store all the information
-mysql-deadlock-logger can extract about deadlocks:
+mk-deadlock-logger can extract about deadlocks:
 
  CREATE TABLE deadlocks (
    server char(20) NOT NULL,
@@ -1015,11 +1015,11 @@ days.
 
 =item --numip
 
-Makes mysql-deadlock-logger express IP addresses as integers.
+Makes mk-deadlock-logger express IP addresses as integers.
 
 =item --print
 
-Makes mysql-deadlock-logger print results on standard output.  See L<"OUTPUT">
+Makes mk-deadlock-logger print results on standard output.  See L<"OUTPUT">
 for more.  By default, enables L<"--collapse"> unless you explicitly disable it.
 
 =item --source
@@ -1039,13 +1039,13 @@ specially formatted as a key=value,key=value string.  Keys are a single letter:
    t   Table in which to store deadlock information
 
 The 't' part only applies to L<"--dest">.  All parts are optional;
-mysql-deadlock-logger will try to read MySQL's option files to determine how
+mk-deadlock-logger will try to read MySQL's option files to determine how
 to connect.  If you specify a value without an '=' character,
-mysql-deadlock-logger will interpret this as a hostname.
+mk-deadlock-logger will interpret this as a hostname.
 
 =item --tab
 
-Makes mysql-deadlock-logger output tab-separated columns instead of
+Makes mk-deadlock-logger output tab-separated columns instead of
 whitespace-aligning them.  See L<"OUTPUT"> for more.
 
 =item --time
@@ -1071,7 +1071,7 @@ in those columns.  It may also be the case that the deadlock output is so long
 
 Though there are usually two transactions involved in a deadlock, there are more
 locks than that; at a minimum, one more lock than transactions is necessary to
-create a cycle in the waits-for graph.  mysql-deadlock-logger prints the
+create a cycle in the waits-for graph.  mk-deadlock-logger prints the
 transactions (always two in the InnoDB output, even when there are more
 transactions in the waits-for graph than that) and fills in locks.  It prefers
 waited-for over held when choosing lock information to output, but you can

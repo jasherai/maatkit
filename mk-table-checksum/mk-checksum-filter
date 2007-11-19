@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This program sorts and filters table checksums output by mysql-table-checksum,
+# This program sorts and filters table checksums output by mk-table-checksum,
 # and shows only those that differ.
 #
 # This program is copyright (c) 2007 Baron Schwartz.
@@ -418,7 +418,7 @@ my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '<options> FILE';
 $opt_parser->{descr}
-   = 'filters checksums from mysql-table-checksum and prints those that '
+   = 'filters checksums from mk-table-checksum and prints those that '
    . 'differ.  With no FILE, or when FILE is -, read standard input.';
 my %opts = $opt_parser->parse();
 $opts{m} ||= '';
@@ -529,22 +529,22 @@ exit $exit_status;
 
 =head1 NAME
 
-mysql-checksum-filter - Filter checksums from mysql-table-checksum.
+mk-checksum-filter - Filter checksums from mk-table-checksum.
 
 =head1 SYNOPSIS
 
-   mysql-checksum-filter checksums.txt
-   mysql-table-checksum host1 host2 | mysql-checksum-filter
-   mysql-checksum-filter db1-checksums.txt db2-checksums.txt --ignoredb
+   mk-checksum-filter checksums.txt
+   mk-table-checksum host1 host2 | mk-checksum-filter
+   mk-checksum-filter db1-checksums.txt db2-checksums.txt --ignoredb
 
 =head1 OVERVIEW
 
-This program takes the unsorted, verbose output from L<mysql-table-checksum> and
+This program takes the unsorted, verbose output from L<mk-table-checksum> and
 sorts it, then filters it so you only see lines that have different checksums
 or counts.
 
-You can pipe input directly into it from L<mysql-table-checksum>, or you can
-save the mysql-table-checksum's output and run mysql-checksum-filter on the
+You can pipe input directly into it from L<mk-table-checksum>, or you can
+save the mk-table-checksum's output and run mk-checksum-filter on the
 resulting file(s).  If you run it against just one file, or pipe output
 directly into it, it'll output results during processing.  Processing multiple
 files is slightly more expensive, and you won't see any output until they're

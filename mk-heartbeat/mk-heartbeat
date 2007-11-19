@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-heartbeat, a script to measure replication delay.
+# This is mk-heartbeat, a script to measure replication delay.
 #
 # This program is copyright (c) 2006 Proven Scaling LLC and SixApart Ltd, and
 # (c) 2007 Baron Schwartz.  Feedback and improvements are welcome.
@@ -736,13 +736,13 @@ while ( 1 ) {
 
 =head1 NAME
 
-mysql-heartbeat - Monitor MySQL replication delay.
+mk-heartbeat - Monitor MySQL replication delay.
 
 =head1 SYNOPSIS
 
- mysql-heartbeat -D test --update -h master-server
- mysql-heartbeat -D test --monitor -h slave-server
- mysql-heartbeat -D test --monitor -h slave-server --dbidriver Pg
+ mk-heartbeat -D test --update -h master-server
+ mk-heartbeat -D test --monitor -h slave-server
+ mk-heartbeat -D test --monitor -h slave-server --dbidriver Pg
 
 =head1 DESCRIPTION
 
@@ -833,7 +833,7 @@ Connect to host.
 
 =item --monitor
 
-Specifies that mysql-heartbeat should check the slave's delay every second and
+Specifies that mk-heartbeat should check the slave's delay every second and
 report to STDOUT (or if L<"--file"> is given, to the file instead).  The output
 is the current delay followed by moving averages over the timeframe given in
 L<"--frames">.  For example,
@@ -878,7 +878,7 @@ installed in any reasonably new version of Perl.
 
 =head1 SEE ALSO
 
-See also L<mysql-slave-delay> and L<mysql-slave-restart>.
+See also L<mk-slave-delay> and L<mk-slave-restart>.
 
 =head1 BUGS
 

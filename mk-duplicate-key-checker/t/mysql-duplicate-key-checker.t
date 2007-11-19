@@ -6,7 +6,7 @@ use warnings FATAL => 'all';
 use English qw('no_match_vars);
 use Test::More tests => 26;
 
-require "../mysql-duplicate-key-checker";
+require "../mk-duplicate-key-checker";
 
 sub load_file {
    my ($file) = @_;

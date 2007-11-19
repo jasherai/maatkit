@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mysql-query-profiler, a program to analyze MySQL workload.
+# This is mk-query-profiler, a program to analyze MySQL workload.
 # 
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
@@ -1226,28 +1226,28 @@ $qcost
 
 =head1 NAME
 
-mysql-query-profiler - Execute SQL statements and print statistics, or measure
+mk-query-profiler - Execute SQL statements and print statistics, or measure
 activity caused by other processes.
 
 =head1 SYNOPSIS
 
-mysql-query-profiler can profile the (semicolon-terminated, blank-line
+mk-query-profiler can profile the (semicolon-terminated, blank-line
 separated) queries in a file:
 
-   mysql-query-profiler queries.sql
-   cat queries.sql | mysql-query-profiler
-   mysql-query-profiler -vv queries.sql
-   mysql-query-profiler -v --separate --only 2,5,6 queries.sql
-   mysql-query-profiler --tab queries.sql > results.csv
+   mk-query-profiler queries.sql
+   cat queries.sql | mk-query-profiler
+   mk-query-profiler -vv queries.sql
+   mk-query-profiler -v --separate --only 2,5,6 queries.sql
+   mk-query-profiler --tab queries.sql > results.csv
 
 It can also just observe what happens in the server:
 
-   mysql-query-profiler --external
+   mk-query-profiler --external
 
 Or it can run shell commands from a file and measure the result:
 
-   mysql-query-profiler --external commands.txt
-   mysql-query-profiler --external - < commands.txt
+   mk-query-profiler --external commands.txt
+   mk-query-profiler --external - < commands.txt
 
 Read L<"HOW TO INTERPRET"> to learn what it all means.
 
@@ -1553,7 +1553,7 @@ You need Perl, DBI, DBD::mysql, and some core modules.
 
 =head1 SEE ALSO
 
-See also L<mysql-profile-compact>.
+See also L<mk-profile-compact>.
 
 =head1 LICENSE
 
