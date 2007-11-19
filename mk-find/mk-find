@@ -430,6 +430,8 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 $OUTPUT_AUTOFLUSH = 1;
 
 # TODO: implement processes too; then it can be a stale query sniper.
+# TODO: kill temp tables only on the server ID they were created on.  So,
+# _(\d+)_(\d+)$ is tbl_serverid_connectionid pattern.
 
 # ############################################################################
 # Get configuration information.
