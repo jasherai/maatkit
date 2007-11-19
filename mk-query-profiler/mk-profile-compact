@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
-# This is mysql-profile-compact, a program to align results from
-# mysql-query-profiler side by side for comparison.
+# This is mk-profile-compact, a program to align results from
+# mk-query-profiler side by side for comparison.
 # 
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
@@ -525,21 +525,21 @@ print join('|', @header), "\n", join("\n", @report), "\n";
 
 =head1 NAME
 
-mysql-profile-compact - Compact the output from mysql-query-profiler.
+mk-profile-compact - Compact the output from mk-query-profiler.
 
 =head1 SYNOPSIS
 
 To view queries 2, 4 and 6 side by side:
 
-   mysql-profile-compact -q 2,4,6 profile-results.txt
+   mk-profile-compact -q 2,4,6 profile-results.txt
 
 To view summaries from two runs side by side:
 
-   mysql-profile-compact -m SUMMARY results-1.txt results-2.txt
+   mk-profile-compact -m SUMMARY results-1.txt results-2.txt
 
 =head1 DESCRIPTION
 
-mysql-profile-compact slices and aligns the output from mysql-query-profiler
+mk-profile-compact slices and aligns the output from mk-query-profiler
 so you can compare profile results side by side easily.  It prints the first
 profile result intact, but each subsequent result is trimmed to be as narrow
 as possible, then aligned next to the first.
@@ -554,7 +554,7 @@ If the first profile it sees is labeled QUERY X, it will only look at QUERY
 profiles from then on.  The same holds for SUMMARY profiles.  This is because
 there are different numbers of lines in QUERY and SUMMARY profiles.  You can
 specify which kind of profile result you want to process.  See
-L<mysql-query-profiler> for the full list of types.
+L<mk-query-profiler> for the full list of types.
 
 =head1 OPTIONS
 
@@ -589,7 +589,7 @@ support or report bugs: L<http://sourceforge.net/projects/mysqltoolkit/>.
 
 =head1 SEE ALSO
 
-See also L<mysql-query-profiler>.
+See also L<mk-query-profiler>.
 
 =head1 LICENSE
 

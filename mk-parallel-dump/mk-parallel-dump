@@ -2142,13 +2142,13 @@ sub system_call {
 
 =head1 NAME
 
-mysql-parallel-dump - Dump sets of MySQL tables in parallel.
+mk-parallel-dump - Dump sets of MySQL tables in parallel.
 
 =head1 SYNOPSIS
 
-  mysql-parallel-dump
-  mysql-parallel-dump --tab --basedir /path/to/backups/
-  mysql-parallel-dump --sets order,profile,session --settable meta.backupset
+  mk-parallel-dump
+  mk-parallel-dump --tab --basedir /path/to/backups/
+  mk-parallel-dump --sets order,profile,session --settable meta.backupset
 
 =head1 DESCRIPTION
 
@@ -2162,20 +2162,20 @@ To dump all tables to gzipped files in the current directory, each database with
 its own directory, with a global read lock, flushing and recording binary log
 positions, each table in a single file:
 
-  mysql-parallel-dump
+  mk-parallel-dump
 
 To dump tables elsewhere:
 
-  mysql-parallel-dump --basedir /path/to/elsewhere
+  mk-parallel-dump --basedir /path/to/elsewhere
 
 To dump to tab-separated files with C<SELECT INTO OUTFILE>, each table with
 separate data and SQL files:
 
-  mysql-parallel-dump --tab
+  mk-parallel-dump --tab
 
 To dump one or more backup sets (see L<"BACKUP SETS">):
 
-  mysql-parallel-dump --sets set1,set2,set3 --settable meta.backupset
+  mk-parallel-dump --sets set1,set2,set3 --settable meta.backupset
 
 To "write your own command line," use C<--> to indicate where the arguments for
 MySQL Parallel Dump stop and where the arguments for C<mysqldump> (or any other
@@ -2183,7 +2183,7 @@ program) begin.  The following example shows C<mysqldump>, and aside from simple
 options to C<mysqldump>, is basically what happens when you specify no arguments
 at all:
 
-  mysql-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \
+  mk-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \
      \| gzip --fast -c - \> '%D.%N.gz'
 
 The C<%> modifiers are macros (see L<"MACROS">).  The C<--skip-lock-tables>
@@ -2196,7 +2196,7 @@ generated command-line.
 There's no reason you can't use MySQL Parallel Dump to do other tasks in
 parallel, such as C<OPTIMIZE TABLE>:
 
-  mysql-parallel-dump --noflushlock --nolocktables -- mysqlcheck --optimize '%D' '%N'
+  mk-parallel-dump --noflushlock --nolocktables -- mysqlcheck --optimize '%D' '%N'
 
 When you use built-in defaults, MySQL Parallel Dump will relay these arguments
 on to every forked copy of C<mysqldump>: L<"--defaults-file">, L<"--host">,
@@ -2221,7 +2221,7 @@ after a successful dump, with a shell script like the following:
    #!/bin/sh
    CNT=`ls | grep -c old`;
    if [ -d default ]; then mv default default.old.$CNT;
-   mysql-parallel-dump
+   mk-parallel-dump
    if [ $? != 0 ]
    then
       echo "There were errors, not purging old sets."
@@ -2352,14 +2352,14 @@ of the space is in one huge table that wasn't dumped in parallel:
 
   COMMAND                      SIZE  TIME
   --------------------------  -----  ----
-  mysql-parallel-dump         1.4GB   269
+  mk-parallel-dump            1.4GB   269
   mysqldump                   1.4GB   345
 
 On the same machine, in a database with lots of roughly equal-sized tables:
 
   COMMAND                      SIZE  TIME
   --------------------------  -----  ----
-  mysql-parallel-dump         117MB     7
+  mk-parallel-dump            117MB     7
   mysqldump                   117MB    37
 
 It doesn't always work that well.  A dual 2.80GHz Xeon server with a RAID-5
@@ -2368,7 +2368,7 @@ achieved the following dump times:
 
   COMMAND                      SIZE  TIME
   --------------------------  -----  ----
-  mysql-parallel-dump         3.0GB  2596
+  mk-parallel-dump            3.0GB  2596
   mysqldump | gzip --fast     3.0GB  3195
 
 While dumping two threads in parallel, this machine was at an average of 74%
@@ -2673,7 +2673,7 @@ Baron Schwartz.
 
 =head1 SEE ALSO
 
-See also L<mysql-parallel-restore>.
+See also L<mk-parallel-restore>.
 
 =head1 VERSION
 

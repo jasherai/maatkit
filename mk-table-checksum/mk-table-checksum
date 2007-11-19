@@ -2377,22 +2377,22 @@ sub print_err {
 
 =head1 NAME
 
-mysql-table-checksum - Perform an online replication consistency check, or
+mk-table-checksum - Perform an online replication consistency check, or
 checksum MySQL tables efficiently on one or many servers.
 
 =head1 SYNOPSIS
 
-   mysql-table-checksum --replicate=mydb.checksum master-host
+   mk-table-checksum --replicate=mydb.checksum master-host
    ... time passses, replication catches up ...
-   mysql-table-checksum --replicate=mydb.checksum --replcheck master-host
+   mk-table-checksum --replicate=mydb.checksum --replcheck master-host
 
 Or,
 
-   mysql-table-checksum h=host1,u=user,p=password h=host2 ...
+   mk-table-checksum h=host1,u=user,p=password h=host2 ...
 
 Or,
 
-   mysql-table-checksum host1 host2 ... hostN | mysql-checksum-filter
+   mk-table-checksum host1 host2 ... hostN | mk-checksum-filter
 
 See L<"SPECIFYING HOSTS"> for more on the syntax of the host arguments.
 
@@ -2461,7 +2461,7 @@ You can mix simple and complex host definitions and/or command-line arguments.
 For example, if all your servers except one of your slaves uses a non-standard
 port number:
 
-   mysql-table-checksum --port 4500 master h=slave1,p=3306 slave2 slave3
+   mk-table-checksum --port 4500 master h=slave1,p=3306 slave2 slave3
 
 If you are confused about how MySQL Table Checksum will connect to your servers,
 give the L<"--explainhosts"> option and it will tell you.
@@ -2513,7 +2513,7 @@ with identical data but the rows are out of order, you'll get different
 checksums with ACCUM.
 
 Choose your (mild) poison.  Each algorithm is very good in reality.  If a given
-algorithm won't work for some reason, mysql-table-checksum falls back to
+algorithm won't work for some reason, mk-table-checksum falls back to
 another.  The least common denominator is ACCUM, which works on MySQL 3.23.2 and
 newer.
 
@@ -2529,12 +2529,12 @@ concatenated with dots.  Disables L<"--count">.
 
 =item --chunksize
 
-If you specify a chunk size, mysql-table-checksum will try to find an index that
+If you specify a chunk size, mk-table-checksum will try to find an index that
 will let it split the table into ranges of approximately L<"--chunksize">
 rows, based on the table's index statistics.  It will checksum each range
 separately with parameters in the checksum query's WHERE clause.
 
-If mysql-table-checksum cannot find a suitable index, it will do the entire
+If mk-table-checksum cannot find a suitable index, it will do the entire
 table in one chunk as though you had not specified L<"--chunksize"> at all.
 Each table is handled individually, so some tables may be chunked and others
 not.
@@ -2635,7 +2635,7 @@ Use this option to skip a comma-separated list of tables.
 =item --lock
 
 This option can help you to get a consistent read on a master and many slaves.
-If you specify this option, mysql-table-checksum will lock the table on the
+If you specify this option, mk-table-checksum will lock the table on the
 first server on the command line, which it assumes to be the master.  It will
 keep this lock until the checksums complete on the other servers.
 
@@ -2709,7 +2709,7 @@ exit status is 1; otherwise it is 0.
 
 This option enables a completely different checksum strategy for a consistent,
 lock-free checksum across a master and its slaves.  This works only with
-statement-based replication (mysql-table-checksum will switch the binlog format
+statement-based replication (mk-table-checksum will switch the binlog format
 to STATEMENT for the duration of the session if your server uses row-based
 replication).  Instead of running the checksum queries on each server, you run
 it only on the master.  You specify a table to insert the results into.  The
@@ -2746,7 +2746,7 @@ When the queries are finished replicating, you can run a simple query on each
 slave to see which tables have differences from the master.  See L<"CONSISTENT
 CHECKSUMS"> for details.  If you find tables that have differences, you can use
 the chunk boundaries in a WHERE clause to MySQL Table Sync to help repair
-them more efficiently.  See L<mysql-table-sync> for details.
+them more efficiently.  See L<mk-table-sync> for details.
 
 This option eliminates the need to do complicated locking and unlocking, waiting
 for master binlog positions, and so on.  It disables L<"--lock">, L<"--wait">,
@@ -2757,7 +2757,7 @@ need not be removed before running.  However, you may wish to do this anyway to
 remove rows related to tables that don't exist anymore.  The L<"--emptyrepltbl">
 option does this for you.
 
-Since mysql-table-checksum uses USE to select the table's database as its
+Since mk-table-checksum uses USE to select the table's database as its
 default database before executing the checksum query, the checksum queries
 should replicate to slaves even if --binlog-do-db settings on the master filter
 out the checksum table's database.  For more information on how --binlog-do-db
@@ -2789,13 +2789,13 @@ slave are due to slave lag instead of corrupt data.
 
 =item --sleep
 
-If this option is specified, mysql-table-checksum will sleep the specified
+If this option is specified, mk-table-checksum will sleep the specified
 number of seconds between checksums.  That is, it will sleep between every
 table, and if you specify L<"--chunksize">, it will also sleep between chunks.
 
 =item --sleep-coef
 
-If this option is specified, mysql-table-checksum will sleep the amount of
+If this option is specified, mk-table-checksum will sleep the amount of
 time elapsed during the previous checksum, multiplied by the specified
 coefficient.  This option is ignored if L<"--sleep"> is specified.
 
@@ -2856,7 +2856,7 @@ yesterday's rows, for instance.
 This option is much like the -w option to mysqldump.  Do not specify the WHERE
 keyword.  You may need to quote the value.  Here is an example:
 
-  mysql-table-checksum --where "foo=bar"
+  mk-table-checksum --where "foo=bar"
 
 =back
 
@@ -2887,7 +2887,7 @@ method, try the following:
 If your servers are not being written to, you can just run the tool with no
 further ado:
 
-  mysql-table-checksum server1 server2 ... serverN
+  mk-table-checksum server1 server2 ... serverN
 
 =item *
 
@@ -2941,7 +2941,7 @@ lock on the master as explained above.
 
 Output is to STDOUT, one line per server and table, with header lines for each
 database.  I tried to make the output easy to process with awk.  For this reason
-columns are always present.  If there's no value, mysql-table-checksum prints
+columns are always present.  If there's no value, mk-table-checksum prints
 'NULL'.
 
 The default is column-aligned output for human readability, but you can change
@@ -2951,7 +2951,7 @@ Output is unsorted, though all lines for one table should be output together.
 For speed, all checksums are done in parallel (as much as possible) and may
 complete out of the order in which they were started.  You might want to run
 them through another script or command-line utility to make sure they are in the
-order you want.  If you pipe the output through L<mysql-checksum-filter>, you
+order you want.  If you pipe the output through L<mk-checksum-filter>, you
 can sort the output and/or avoid seeing output about tables that have no
 differences.
 
@@ -3025,7 +3025,7 @@ the checksum queries.  They look similar to this:
 
   REPLACE /*test.test_tbl:'2'/'5'*/ INTO test.checksum(db, ...
 
-Since mysql-table-checksum's queries run for a long time and tend to be
+Since mk-table-checksum's queries run for a long time and tend to be
 textually very long, and thus won't fit on one screen of these monitoring
 tools, I've been careful to place a comment at the beginning of the query so
 you can see what it is and what it's doing.  The comment contains the name of
@@ -3035,7 +3035,7 @@ checksumming chunk 2 of 5 in table test.test_tbl.
 
 =head1 SEE ALSO
 
-See also L<mysql-checksum-filter> and L<mysql-table-sync>.
+See also L<mk-checksum-filter> and L<mk-table-sync>.
 
 =head1 BUGS
 

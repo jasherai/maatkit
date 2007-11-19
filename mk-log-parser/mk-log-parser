@@ -231,7 +231,7 @@ if ( !caller ) {
    }
 
    if ( $opts{help} ) {
-      print "Usage: mysql-log-parser <options> [FILE ..]\n\n";
+      print "Usage: mk-log-parser <options> [FILE ..]\n\n";
       my $maxw = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @opt_spec);
       foreach my $spec ( sort { $a->{l} cmp $b->{l} } @opt_spec ) {
          my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
@@ -240,10 +240,10 @@ if ( !caller ) {
       }
       (my $usage = <<"      USAGE") =~ s/^         //gm;
 
-         mysql-log-parser reads from FILE.  With no FILE, or when FILE is -, read
+         mk-log-parser reads from FILE.  With no FILE, or when FILE is -, read
          standard input.  For more details, please read the documentation:
 
-            perldoc mysql-log-parser
+            perldoc mk-log-parser
 
       USAGE
       print $usage;

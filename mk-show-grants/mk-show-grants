@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# mysql-show-grants canonicalizes and prints MySQL grants so you can effectively
+# mk-show-grants canonicalizes and prints MySQL grants so you can effectively
 # replicate, compare and version-control them.
 #
 # This program is copyright (c) 2007 Baron Schwartz.
@@ -611,7 +611,7 @@ my $dbh = DBI->connect($dsn_parser->get_cxn_params(\%opts), { AutoCommit => 1, R
 
 my ( $version, $ts ) = $dbh->selectrow_array("SELECT VERSION(), NOW()");
 print join("\n",
-   "-- Grants dumped by mysql-show-grants $VERSION",
+   "-- Grants dumped by mk-show-grants $VERSION",
    "-- Dumped from server " . ($dbh->{mysql_hostinfo} || '') . ", MySQL $version at $ts",
    ), "\n";
 
@@ -739,13 +739,13 @@ sub parse_user {
 
 =head1 NAME
 
-mysql-show-grants - Canonicalize and print MySQL grants so you can effectively
+mk-show-grants - Canonicalize and print MySQL grants so you can effectively
 replicate, compare and version-control them.
 
 =head1 SYNOPSIS
 
-   mysql-show-grants
-   mysql-show-grants --separate --revoke | diff othergrants.sql -
+   mk-show-grants
+   mk-show-grants --separate --revoke | diff othergrants.sql -
 
 =head1 OPTIONS
 
@@ -823,7 +823,7 @@ Output version information and exit.
 
 =head1 DESCRIPTION
 
-mysql-show-grants extracts, orders, and then prints grants for MySQL user
+mk-show-grants extracts, orders, and then prints grants for MySQL user
 accounts.
 
 Why would you want this?  There are several reasons.
@@ -851,10 +851,10 @@ you'll get from running SHOW GRANTS, and avoids spurious changesets in version
 control.
 
 Third, if you want to diff grants across servers, it will be hard without
-"canonicalizing" them, which mysql-show-grants does.  The output is fully
+"canonicalizing" them, which mk-show-grants does.  The output is fully
 diff-able.
 
-With the L<"--revoke">, L<"--separate"> and other options, mysql-show-grants
+With the L<"--revoke">, L<"--separate"> and other options, mk-show-grants
 also makes it easy to revoke specific privileges from users.  This is tedious
 otherwise.
 

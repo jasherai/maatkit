@@ -8,7 +8,7 @@ use Test::More tests => 10;
 my $opt_file = shift || "~/.my.cnf";
 my ($output, $output2);
 diag("Testing with $opt_file");
-my $cmd = "perl ../mysql-table-checksum --defaults-file=$opt_file -d test -t checksum_test 127.0.0.1";
+my $cmd = "perl ../mk-table-checksum --defaults-file=$opt_file -d test -t checksum_test 127.0.0.1";
 
 # Load.
 `mysql --defaults-file=$opt_file < before.sql`;

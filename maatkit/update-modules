@@ -15,7 +15,7 @@ if [ ! -d ../$PACK ]; then
    exit 1
 fi
 
-for FILE in `ls ../$PACK/mysql-*`
+for FILE in `ls ../$PACK/mk-*`
 do
    for MOD in `grep 'End .* package' $FILE | awk '{print $3}'`
    do

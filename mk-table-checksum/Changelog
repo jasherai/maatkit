@@ -1,4 +1,4 @@
-Changelog for mysql-table-checksum and mysql-checksum-filter:
+Changelog for mk-table-checksum and mk-checksum-filter:
 
 2007-11-18: version 1.1.19
 
@@ -29,7 +29,7 @@ Changelog for mysql-table-checksum and mysql-checksum-filter:
 
 2007-10-01: version 1.1.16
 
-   * Made mysql-checksum-filter able to compare tables in different databases.
+   * Made mk-checksum-filter able to compare tables in different databases.
 
 2007-09-20: version 1.1.15
 
@@ -67,8 +67,8 @@ Changelog for mysql-table-checksum and mysql-checksum-filter:
    * Enabled chunking on FLOAT, DOUBLE and DECIMAL columns.
 
    Bugs fixed:
-   * mysql-table-checksum crashed when EXPLAIN said an empty table had rows.
-   * mysql-table-checksum failed to find rows on slaves that didn't exist
+   * mk-table-checksum crashed when EXPLAIN said an empty table had rows.
+   * mk-table-checksum failed to find rows on slaves that didn't exist
      on the master.
    * Changed from BETWEEN to WHERE clauses.
 
@@ -79,7 +79,7 @@ Changelog for mysql-table-checksum and mysql-checksum-filter:
    * Support complex host definitions.
    * Added --explainhosts option to debug host definitions.
    * Added --explain option.
-   * When exact chunking is impossible, mysql-table-checksum will use approximate.
+   * When exact chunking is impossible, mk-table-checksum will use approximate.
 
    Incompatible changes:
    * Added required 'boundaries' column to checksum table for --replicate.
@@ -112,7 +112,7 @@ Changelog for mysql-table-checksum and mysql-checksum-filter:
    * Perl's auto-vivify hashes could cause all tables to be skipped after the
      first VIEW.
    * Some DBIs did not consider ? inside a comment to be a placeholder.
-   * Systems that return nothing from CHECKSUM TABLE crashed mysql-table-checksum.
+   * Systems that return nothing from CHECKSUM TABLE crashed mk-table-checksum.
    * --askpass did not print a newline after reading password.
    * Different TIMESTAMP display formatting could cause spurious checksum differences.
    * Checksumming by chunks did not work when the chunk column contained NULL.
@@ -130,7 +130,7 @@ Changelog for mysql-table-checksum and mysql-checksum-filter:
    * Added --emptyrepltbl option to empty --replicate table before starting work.
    * Added --defaults-file option to read a given MySQL options file.
    * Check for existence of --replicate table before starting work.
-   * Updated mysql-checksum-filter to handle the new CHUNK column in the output.
+   * Updated mk-checksum-filter to handle the new CHUNK column in the output.
    * More documentation.
    * More tests in the test suite.
 
@@ -169,7 +169,7 @@ Changelog for mysql-table-checksum and mysql-checksum-filter:
 2007-03-06: version 1.0.2
 
    * Fix more quoting
-   * Fix an off-by-one error in mysql-checksum-filter
+   * Fix an off-by-one error in mk-checksum-filter
 
 2007-03-02: version 1.0.1
 

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is a test for mysql-table-sync.  It depends on other tools in the
+# This is a test for mk-table-sync.  It depends on other tools in the
 # toolkit.
 #
 # This program is copyright (c) 2007 Baron Schwartz, baron at xaprb dot com.
@@ -81,7 +81,7 @@ if ( $opts{help} ) {
    }
    print <<USAGE;
 
-$PROGRAM_NAME tests mysql-table-sync.
+$PROGRAM_NAME tests mk-table-sync.
 
 If possible, database options are read from your .my.cnf file.
 For more details, please read the documentation:
@@ -106,14 +106,14 @@ my $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1,
 my $i = 0;
 while ( $i++ < $opts{t} ) {
    my $cols = $opts{c} ? "-c $opts{c}" : '';
-   print `mysql-random-table -d $cols -s $opts{s}`;
+   print `mk-random-table -d $cols -s $opts{s}`;
    map { $dbh->do("drop table if exists test$_") } 2..3;
    $dbh->do("create table test2 like test1");
    $dbh->do("insert into test2 select * from test1");
    $dbh->do("create table test3 like test1");
    $dbh->do("insert into test3 select * from test1");
    random_perturb();
-   my $bad = `mysql-table-checksum -t test1,test2,test3 localhost`;
+   my $bad = `mk-table-checksum -t test1,test2,test3 localhost`;
    my @bad = $bad =~ m/([a-f0-9]{32})/g;
    if ( unique(@bad) < 2 ) {
       die "Tables aren't different before starting: $bad.";
@@ -121,8 +121,8 @@ while ( $i++ < $opts{t} ) {
    # TODO: reverse and sync test2 to test3
    my $algorithm = $opts{a} || (rand() < .5) ? ' topdown' : 'bottomup';
    `mysqldump --tables test test1 > save.sql`;
-   `mysql-table-sync -1 -a $algorithm -x test2 test3`;
-   my $good = `mysql-table-checksum -t test1,test2,test3 localhost`;
+   `mk-table-sync -1 -a $algorithm -x test2 test3`;
+   my $good = `mk-table-checksum -t test1,test2,test3 localhost`;
    my @good = $good =~ m/([a-f0-9]{32})/g;
    if ( !$good || unique(@good) > 1 ) {
       die "Tables are different after fixing\n$good";

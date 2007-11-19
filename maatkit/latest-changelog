@@ -6,8 +6,8 @@ use warnings FATAL => 'all';
 my @packages = @ARGV;
 if ( !@packages ) {
   @packages =
-     map { m/(mysql-.*)/g }
-     grep { -f "$_/Changelog" }  <../mysql-*>;
+     map { m/(mk-.*)/g }
+     grep { -f "$_/Changelog" }  <../mk-*>;
 }
 
 foreach my $package ( @packages ) {
