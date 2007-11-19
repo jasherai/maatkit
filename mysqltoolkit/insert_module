@@ -7,7 +7,7 @@ use English qw(-no_match_vars);
 
 # Read in the standard input, and replace the desired module by the contents of
 # the most recent version of the module.
-# Example: :%!../mysqltoolkit/insert_module TableParser
+# Example: :%!../maatkit/insert_module TableParser
 
 $INPUT_RECORD_SEPARATOR = undef;
 my $input = <STDIN>;

@@ -20,7 +20,7 @@ installed in any reasonably new version of Perl.
 =head1 BUGS
 
 If you find bugs, need features, etc please use the bug tracker, forums, and
-mailing lists at http://sourceforge.net/projects/mysqltoolkit.
+mailing lists at http://sourceforge.net/projects/maatkit.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 

@@ -1,17 +1,17 @@
 INSTALLATION
 
-   tar -zxf mysqltoolkit-<version>.tar.gz
-   cd mysqltoolkit-<version>
+   tar -zxf maatkit-<version>.tar.gz
+   cd maatkit-<version>
    perl Makefile.PL
    make install
 
 WEB
 
-   http://mysqltoolkit.sourceforge.net/
+   http://maatkit.sourceforge.net/
 
 MAILING LIST, BUG REPORTS, FEEDBACK
 
-   http://sourceforge.net/projects/mysqltoolkit
+   http://sourceforge.net/projects/maatkit
 
 DOCUMENTATION
 

@@ -5,7 +5,7 @@ set -x
 
 VERSION=`head -n 1 packlist | awk '{print $2}'`
 
-RELEASE_TAR=release/mysqltoolkit-$VERSION.tar.gz
+RELEASE_TAR=release/maatkit-$VERSION.tar.gz
 
 # Build the source tarball if necessary
 if [ -f $RELEASE_TAR ]; then
@@ -31,16 +31,16 @@ mkdir release-debian
 cd release-debian
 
 # Extract and debianize source folders
-cp ../$RELEASE_TAR mysqltoolkit_$VERSION.orig.tar.gz
-tar xzf mysqltoolkit_$VERSION.orig.tar.gz
-rsync -a --exclude .svn ../debian/ mysqltoolkit-$VERSION/debian/
+cp ../$RELEASE_TAR maatkit_$VERSION.orig.tar.gz
+tar xzf maatkit_$VERSION.orig.tar.gz
+rsync -a --exclude .svn ../debian/ maatkit-$VERSION/debian/
 
 # Build Debian source and binary packages
-cd mysqltoolkit-$VERSION
+cd maatkit-$VERSION
 debuild -S -sa -us -uc
 debuild -b -us -uc
 
 # Clean up unnecessary stuff
 cd ..
-rm -rf mysqltoolkit-$VERSION
+rm -rf maatkit-$VERSION
 cd ..

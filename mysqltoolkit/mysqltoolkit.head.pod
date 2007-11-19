@@ -1,4 +1,4 @@
-package mysqltoolkit;
+package maatkit;
 
 our $VERSION = '@DISTRIB@';
 
@@ -8,11 +8,11 @@ our $VERSION = '@DISTRIB@';
 
 =head1 NAME
 
-mysqltoolkit - Essential command-line utilities for MySQL.
+maatkit - Essential command-line utilities for MySQL.
 
 =head1 DESCRIPTION
 
-mysqltoolkit, or MySQL Toolkit, is a collection of command-line utilities that
+maatkit, formerly MySQL Toolkit, is a collection of command-line utilities that
 provide missing functionality for MySQL.  Some of the tools implement lacking
 server functionality, such as online consistency checks for master/slave
 replication; others are client-side utilities such as a query profiler.

@@ -1,4 +1,4 @@
-Source: mysqltoolkit
+Source: maatkit
 Section: utils
 Priority: optional
 Maintainer: Baron Schwartz <bps7j@users.sourceforge.net>
@@ -7,7 +7,7 @@ Build-Depends: debhelper (>= 4.2)
 Build-Depends-Indep: perl (>= 5.6.0-16), libdbi-perl (>= 1.13), libdbd-mysql-perl (>= 1.0), libterm-readkey-perl (>=2.10)
 Standards-Version: 3.7.2
 
-Package: mysqltoolkit
+Package: maatkit
 Architecture: all
 Depends: ${perl:Depends}, libdbi-perl (>= 1.13), libdbd-mysql-perl (>= 1.0), libterm-readkey-perl (>=2.10)
 Description: Command-line utilities for MySQL
@@ -16,4 +16,4 @@ Description: Command-line utilities for MySQL
  servers, log deadlocks, find duplicate indexes and foreign keys, profile
  queries, and perform other essential tasks.
  .
- Homepage: http://mysqltoolkit.sourceforge.net
+ Homepage: http://maatkit.sourceforge.net
