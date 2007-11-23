@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * --replcheck didn't recurse; it should recurse one level (to slaves).
+
 2007-11-18: version 1.1.19
 
    * Check for needed privileges on --replicate table before beginning.
