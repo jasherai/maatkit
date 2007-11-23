@@ -430,8 +430,6 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 $OUTPUT_AUTOFLUSH = 1;
 
 # TODO: implement processes too; then it can be a stale query sniper.
-# TODO: kill temp tables only on the server ID they were created on.  So,
-# _(\d+)_(\d+)$ is tbl_serverid_connectionid pattern.
 
 # ############################################################################
 # Get configuration information.
@@ -472,6 +470,7 @@ my @opt_spec = (
    { s => 'pid=s',             g => 't', d => 'Table name has nonexistent MySQL connection ID' },
    { s => 'rows=z',            g => 't', d => 'Table has n rows' },
    { s => 'rowformat=s',       g => 't', d => 'Table row format matches pattern' },
+   { s => 'sid=s',             g => 't', d => 'Table name matches server ID' },
    { s => 'tablesize=z',       g => 't', d => 'Table (data+index) uses n bytes of space' },
    { s => 'tbllike=s',         g => 't', d => 'Table name matches SQL LIKE pattern' },
    { s => 'tblregex=s',        g => 't', d => 'Table name matches this pattern' },
@@ -498,6 +497,10 @@ my %opts = $opt_parser->parse;
 
 if ( $opts{pid} && $opts{pid} !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
    $opt_parser->error("--pid regex doesn't capture digits with (\\d+)");
+}
+
+if ( $opts{sid} && $opts{sid} !~ m/\(\\d\+\)/ ) { # Ensure there is a capture group
+   $opt_parser->error("--sid regex doesn't capture digits with (\\d+)");
 }
 
 $opt_parser->usage_or_errors(%opts);
@@ -548,6 +551,7 @@ foreach my $thing (qw(exec printf)) {
 # ############################################################################
 my %time_for;     # Holds time constants for mmin, mtime etc
 my %connections;  # Holds a list of thread IDs connected
+my $server_id;    # Holds the server's @@SERVER_ID
 my $dbh;          # This program's $dbh
 
 # Functions to call while evaluating tests.
@@ -637,6 +641,12 @@ my %test_for = (
    rowformat => sub {
       my ( $table ) = @_;
       return test_regex($table, 'Row_format', $opts{rowformat});
+   },
+   sid => sub {
+      my ( $table ) = @_;
+      my $test = $opts{'case-insensitive'} ? "(?i)$opts{sid}" : $opts{sid};
+      my ( $sid ) = $table->{Name} =~ m/$test/;
+      return $sid && $sid == $server_id;
    },
    tablesize => sub {
       my ( $table ) = @_;
@@ -729,6 +739,8 @@ if ( $opts{pid} ) {
       die "--pid requires the PROCESS privilege for safety.\n";
    }
 }
+
+($server_id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
 
 # ############################################################################
 # Go do it.
@@ -1118,6 +1130,8 @@ Otherwise it will only see connections from the same user, and might think some
 tables are ready to remove when they're still in use.  For safety, mk-find
 checks this for you.
 
+See also L<"--sid">.
+
 =item --rows
 
 Table has n rows.  This tests the Rows column.
@@ -1125,6 +1139,22 @@ Table has n rows.  This tests the Rows column.
 =item --rowformat
 
 Table row format matches pattern.  This tests the Row_format column.
+
+=item --sid
+
+Table name contains the server ID.  If you create temporary tables with the
+naming convention explained in L<"--pid">, but also add the server ID of the
+server on which the tables are created, then you can use this pattern match to
+ensure tables are dropped only on the server they're created on.  This prevents
+a table from being accidentally dropped on a slave while it's in use (provided
+that your server IDs are all unique, which they should be for replication to
+work).
+
+For example, on the master (server ID 22) you create a table called
+scratch_table_22_12345.  If you see this table on the slave (server ID 23), you
+might think it can be dropped safely if there's no such connection 12345.  But
+if you also force the name to match the server ID with C<--sid '\D_(\d+)_\d+$'>,
+the table won't be dropped on the slave.
 
 =item --tablesize
 
@@ -1229,10 +1259,10 @@ MyISAM storage engine (data warehousing, anyone?):
 
   mk-find --mtime +30 --engine InnoDB --exec "ALTER TABLE %D.%N ENGINE=MyISAM"
 
-Find tables created by a process that no longer exists, following the name_pid
+Find tables created by a process that no longer exists, following the name_sid_pid
 naming convention, and remove them.
 
-  mk-find --pid '\D_(\d+)$' --exec_plus "DROP TABLE %s"
+  mk-find --pid '\D_\d+_(\d+)$' --sid '\D_(\d+)_\d+$' --exec_plus "DROP TABLE %s"
 
 Find empty tables in the test and junk databases, and delete them:
 
