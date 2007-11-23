@@ -1792,7 +1792,7 @@ if ( $opts{replcheck} ) {
       {  dbh        => $main_dbh,
          dsn        => $hosts[0],
          dsn_parser => $dsn_parser,
-         recurse    => $opts{recursecheck} ? undef : 0,
+         recurse    => $opts{recursecheck} ? undef : 1,
          table      => $opts{R},
          callback   => sub {
             my ( $host, @differences ) = @_;
