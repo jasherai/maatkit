@@ -605,7 +605,7 @@ if ( $opts{i} ) {
 
 # Connect to the database
 if ( !$opts{p} && $opts{askpass} ) {
-   OptionParser::prompt_noecho("Enter password: ");
+   $opts{p} = OptionParser::prompt_noecho("Enter password: ");
 }
 my $dbh = DBI->connect($dsn_parser->get_cxn_params(\%opts), { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
 
