@@ -1,5 +1,7 @@
 Changelog for mk-show-grants:
 
+  * --askpass ignored the entered password (bug #1838131).
+
 2007-11-04: version 1.0.4
 
    * Made command-line help easier to use.
