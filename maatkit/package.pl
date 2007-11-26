@@ -127,7 +127,7 @@ sub get_version_or_quit {
       die "$file doesn't have a version set\n"
          if m/^   \*/;
       next unless m/version/;
-      $ver = sprintf('%s', m/([0-9\.]+)/);
+      $ver = sprintf('%s', m/version ([0-9\.]+)/);
       last;
    }
    close $fh;
