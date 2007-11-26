@@ -18,8 +18,8 @@ my %versions;
 # Find latest of each package
 foreach my $p ( @packages ) {
    ($p) = $p =~ m/(mk-.*)/;
-   if ( -f "$base/$p/VERSION" ) {
-      chomp($versions{$p} = `cat $base/$p/VERSION`);
+   if ( -f "$base/$p/Changelog" ) {
+      $versions{$p} = get_version_or_quit("$base/$p/Changelog");
    }
 }
 
@@ -118,3 +118,18 @@ print `for a in html/*; do sed -i -e "s~\\\`~\\\'~g" \$a; done`;
 
 # Cleanup temporary directories
 print `rm -rf cache $dist`;
+
+sub get_version_or_quit {
+   my ( $file ) = @_;
+   my $ver;
+   open my $fh, "<", $file or die $OS_ERROR;
+   while ( <$fh> ) {
+      die "$file doesn't have a version set\n"
+         if m/^   \*/;
+      next unless m/version/;
+      $ver = sprintf('%s', m/([0-9\.]+)/);
+      last;
+   }
+   close $fh;
+   return $ver;
+}
