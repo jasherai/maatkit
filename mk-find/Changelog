@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+2007-11-25: version 0.9.7
+
    * Added --sid option.
 
 2007-11-04: version 0.9.6
