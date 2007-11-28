@@ -572,6 +572,7 @@ my @opt_spec = (
    { s => 'password|p=s',  d => 'Password to use when connecting' },
    { s => 'port|P=i',      d => 'Port number to use for connection' },
    { s => 'separate|s',    d => 'Print stats separately for each query' },
+   { s => 'session!',      d => 'Use session-scoped SHOW VARIABLES and SHOW STATUS (default)' },
    { s => 'socket|S=s',    d => 'Socket file to use for connection' },
    { s => 'tab|t',         d => 'Print tab-separated values (for a spreadsheet)' },
    { s => 'user|u=s',      d => 'User for login if not current user' },
@@ -608,7 +609,7 @@ my $dbh = DBI->connect($dsn_parser->get_cxn_params(\%opts), { AutoCommit => 1, R
 
 my $variables    = get_variables($dbh);
 my $have_innodb  = !$opts{i} && $variables->{have_innodb} eq 'YES' ? 1 : 0;
-my $have_session = version_ge($dbh, '5.0.2'); # SESSION status and InnoDB status values.
+my $have_session = $opts{session} && version_ge($dbh, '5.0.2'); # SESSION status and InnoDB status values.
 my $have_rowlock = version_ge($dbh, '5.0.3') && $have_innodb; # InnoDB row lock status.
 my $have_last    = version_ge($dbh, '5.0.1') && !$opts{e};    # Last query cost according to optimizer.
 
@@ -908,7 +909,7 @@ else {
       write;
    }
    if ( !$have_session ) {
-      if ( $queries[-1]->{Questions} - $sql_status_0->{Questions}
+      if ( $queries[-1]->{status}->{Questions} - $sql_status_0->{Questions}
          > (@queries * 2) + 1 )
       {
          print STDERR "WARNING: Something else accessed the database at "
@@ -1334,6 +1335,11 @@ Port number to use for connection.
 
 Print statistics for each query or command in a batch file.  The default is to
 show only the summary of the entire batch.  See also L<"--verbose">.
+
+=item --session
+
+Enable session-scoped C<SHOW STATUS> and C<SHOW VARIABLES> when profiling.
+Enabled by default; disabled if the server version doesn't support it.
 
 =item --socket
 
