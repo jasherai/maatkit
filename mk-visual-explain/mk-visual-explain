@@ -242,7 +242,7 @@ sub build_query_plan {
       my @enclosed_scope = splice(@rows, $start, $end - $start);
       my $kids           = $self->build_query_plan(@enclosed_scope);
       $der->{children}   = [$kids];
-      $der->{table}      = "derived(" . $self->recursive_table_name($kids) . ")";
+      $der->{table}      = "derived(" . ($self->recursive_table_name($kids) || '<none>') . ")";
    }
 
    # Handle the "normal case."  For each node, if the id is the same as the last

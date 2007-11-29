@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 58;
+use Test::More tests => 59;
 
 require "../mk-visual-explain";
 
@@ -2418,4 +2418,28 @@ is_deeply(
       ],
    },
    'Complex SELECT types combined',
+);
+
+$t = $e->parse( load_file('samples/derived_without_table.sql') );
+is_deeply(
+   $t,
+   {  id       => 1,
+      type     => 'Constant table access',
+      rows     => '1',
+      rowid    => 0,
+      children => [
+         {  possible_keys => undef,
+            table         => 'derived(<none>)',
+            type          => 'DERIVED',
+            partitions    => undef,
+            children      => [
+               {  id    => 2,
+                  type  => 'DERIVED',
+                  rowid => 1
+               }
+            ],
+         }
+      ],
+   },
+   'Recursive table name with anonymous derived table',
 );
