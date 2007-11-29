@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Test::More tests => 57;
+use Test::More tests => 58;
 
 require "../mk-visual-explain";
 
@@ -2308,4 +2308,114 @@ is_deeply(
       ],
    },
    'Adjacent subqueries',
+);
+
+$t = $e->parse( load_file('samples/complex_select_types.sql') );
+is_deeply(
+   $t,
+   {  id       => '1',
+      type     => 'Table scan',
+      rows     => undef,
+      rowid    => 7,
+      children => [
+         {  possible_keys => undef,
+            table      => 'union(derived(actor),film_actor,derived(film,store),rental)',
+            type       => 'UNION',
+            partitions => undef,
+            children   => [
+               {  type     => 'DEPENDENT SUBQUERY',
+                  children => [
+                     {  id       => 1,
+                        type     => 'Table scan',
+                        rows     => '5',
+                        rowid    => 0,
+                        children => [
+                           {  possible_keys => undef,
+                              table         => 'derived(actor)',
+                              type          => 'DERIVED',
+                              partitions    => undef,
+                              children      => [
+                                 {  key_len       => '2',
+                                    ref           => undef,
+                                    rows          => '200',
+                                    partitions    => undef,
+                                    rowid         => 1,
+                                    key           => 'actor->PRIMARY',
+                                    possible_keys => undef,
+                                    type          => 'Index scan',
+                                    id            => 3
+                                 }
+                              ],
+                           }
+                        ],
+                     },
+                     {  key_len       => '2',
+                        ref           => 'der_1.actor_id',
+                        rows          => '13',
+                        partitions    => undef,
+                        rowid         => 2,
+                        key           => 'film_actor->PRIMARY',
+                        possible_keys => 'PRIMARY',
+                        type          => 'Index lookup',
+                        id            => 2
+                     }
+                  ],
+               },
+               {  type     => 'UNCACHEABLE SUBQUERY',
+                  children => [
+                     {  id       => 4,
+                        type     => 'Table scan',
+                        rows     => '5',
+                        rowid    => 3,
+                        children => [
+                           {  possible_keys => undef,
+                              table         => 'derived(film,store)',
+                              type          => 'DERIVED',
+                              partitions    => undef,
+                              children      => [
+                                 {  type     => 'SUBQUERY',
+                                    children => [
+                                       {  key_len       => '1',
+                                          ref           => undef,
+                                          rows          => '1022',
+                                          partitions    => undef,
+                                          rowid         => 4,
+                                          key           => 'film->idx_fk_language_id',
+                                          possible_keys => undef,
+                                          type          => 'Index scan',
+                                          id            => 6
+                                       },
+                                       {  key_len       => '1',
+                                          ref           => undef,
+                                          rows          => '2',
+                                          partitions    => undef,
+                                          rowid         => 5,
+                                          key           => 'store->PRIMARY',
+                                          possible_keys => undef,
+                                          type          => 'Index scan',
+                                          id            => 7
+                                       }
+                                    ],
+                                 }
+                              ],
+                           }
+                        ],
+                     },
+                     {  key_len       => '1',
+                        ref           => undef,
+                        rows          => '16305',
+                        partitions    => undef,
+                        rowid         => 6,
+                        key           => 'rental->idx_fk_staff_id',
+                        possible_keys => undef,
+                        type          => 'Index scan',
+                        id            => 5
+                     }
+                  ],
+               }
+            ],
+         }
+      ],
+   },
+   'Complex SELECT types combined',
 );
