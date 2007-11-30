@@ -2,10 +2,13 @@ Source: maatkit
 Section: utils
 Priority: optional
 Maintainer: Baron Schwartz <bps7j@users.sourceforge.net>
-Uploaders: Christian Hammers <ch@debian.org>
+Uploaders: Norbert Tretkowski <nobse@debian.org>
 Build-Depends: debhelper (>= 4.2)
 Build-Depends-Indep: perl (>= 5.6.0-16), libdbi-perl (>= 1.13), libdbd-mysql-perl (>= 1.0), libterm-readkey-perl (>=2.10)
 Standards-Version: 3.7.2
+Homepage: http://maatkit.sourceforge.net/
+Vcs-Browser: http://maatkit.svn.sourceforge.net/viewvc/maatkit/
+Vcs-Svn: https://maatkit.svn.sourceforge.net/svnroot/maatkit/
 
 Package: maatkit
 Architecture: all
@@ -15,5 +18,3 @@ Description: Command-line utilities for MySQL
  master, efficiently synchronize remote tables, archive rows from OLTP
  servers, log deadlocks, find duplicate indexes and foreign keys, profile
  queries, and perform other essential tasks.
- .
- Homepage: http://maatkit.sourceforge.net
