@@ -31,7 +31,7 @@ require "../TableSyncStream.pm";
 require "../Quoter.pm";
 require "../MockSth.pm";
 require "../RowDiff.pm";
-require "../RowSyncer.pm";
+require "../ChangeHandler.pm";
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -41,11 +41,11 @@ sub throws_ok {
 
 my ( $t );
 
-throws_ok( sub { new TableSyncStream() }, qr/I need a rowsyncer/, 'RowSyncer required' );
+throws_ok( sub { new TableSyncStream() }, qr/I need a handler/, 'ChangeHandler required' );
 
-my $rs = new RowSyncer();
+my $rs = new ChangeHandler();
 $t = new TableSyncStream(
-   rowsyncer => $rs,
+   handler => $rs,
    cols      => [qw(a b c)],
 );
 
