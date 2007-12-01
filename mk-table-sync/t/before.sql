@@ -10,9 +10,4 @@ create table test1(
 ) ENGINE=INNODB DEFAULT CHARSET=latin1;
 
 create table test2 like test1;
-
 insert into test1 values(1, 'en'), (2, 'ca');
-
--- The funny eacute character will cause mk-table-sync to make a call to
--- MySQL to strcmp(), and that should not cause any problems.
-insert into test2 values(1, 'en'), (2, 'ée');
