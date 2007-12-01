@@ -27,10 +27,10 @@ use warnings FATAL => 'all';
 package TableSyncStream;
 
 # Arguments:
-# * rowsyncer RowSyncer
+# * handler ChangeHandler
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(rowsyncer cols) ) {
+   foreach my $arg ( qw(handler cols) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    return bless { %args }, $class;
@@ -55,12 +55,12 @@ sub same_row {
 
 sub not_in_right {
    my ( $self, $lr ) = @_;
-   $self->{rowsyncer}->ins($lr);
+   $self->{handler}->ins($lr);
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
-   $self->{rowsyncer}->del($rr);
+   $self->{handler}->del($rr);
 }
 
 sub done_with_rows {
