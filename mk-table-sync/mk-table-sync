@@ -602,27 +602,18 @@ sub version_ge {
 # ###########################################################################
 # TableSyncStream package 1323
 # ###########################################################################
+
 use strict;
 use warnings FATAL => 'all';
 
-# This package implements the simplest possible table-sync algorithm: read every
-# row from the tables and compare them.
 package TableSyncStream;
 
-# Arguments:
-# * rowsyncer RowSyncer
 sub new {
    my ( $class, %args ) = @_;
    die "I need a rowsyncer argument" unless $args{rowsyncer};
    return bless { rowsyncer => $args{rowsyncer} }, $class;
 }
 
-# Arguments:
-# * quoter   Quoter
-# * cols     Arrayref of desired column names
-# * database Database name
-# * table    Table name
-# * where    WHERE clause
 sub get_sql {
    my ( $self, %args ) = @_;
    return "SELECT "
@@ -673,9 +664,6 @@ sub new {
    bless {}, shift;
 }
 
-# $ddl:  the output of SHOW CREATE TABLE
-# $opts: hashref of options
-#        mysql_version: MySQL version, zero-padded so 4.1.0 => 004001000
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
 
@@ -699,12 +687,9 @@ sub parse {
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
 
-   # Save the column definitions *exactly*
    my %def_for;
    @def_for{@cols} = @defs;
 
-   # Find column types, whether numeric, whether nullable, whether
-   # auto-increment.
    my (@nums, @null);
    my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
    foreach my $col ( @cols ) {
@@ -726,14 +711,10 @@ sub parse {
    my %keys;
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
 
-      # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
-      # will report its index as USING HASH even when this is not supported.  The
-      # true type should be BTREE.  See http://bugs.mysql.com/bug.php?id=22632
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
       }
 
-      # Determine index type
       my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
       my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
       $type = $type || $special || 'BTREE';
@@ -795,11 +776,6 @@ sub new {
    return bless $self, $class;
 }
 
-# Iterates through two sets of rows and finds differences.  Calls various
-# methods on the $syncer object when it finds differences.  $left and $right
-# should be DBI $sth, or should at least behave like them.  $key is an arrayref
-# of the key columns.  $sths is a hashref of collation-comparison $sths.  $tbl
-# is a struct from TableParser.
 sub compare_sets {
    my ( $self, %args ) = @_;
    my ( $left, $right, $syncer, $key, $tbl )
@@ -823,19 +799,14 @@ sub compare_sets {
          $cmp = $self->key_cmp($lr, $rr, $key, $tbl);
       }
       if ( $lr || $rr ) {
-         # If the current row is the "same row" on both sides, meaning the two
-         # rows have the same key, check the contents of the row to see if
-         # they're the same.
          if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
             $syncer->same_row($lr, $rr);
             $lr = $rr = undef; # Fetch another row from each side.
          }
-         # The row in the left doesn't exist in the right.
          elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
             $syncer->not_in_right($lr);
             $lr = undef;
          }
-         # Symmetric to the above.
          else {
             $syncer->not_in_left($rr);
             $rr = undef;
@@ -845,19 +816,6 @@ sub compare_sets {
    $syncer->done_with_rows();
 }
 
-# Compare two rows to determine how they should be ordered.  NULL sorts before
-# defined values in MySQL, so I consider undef "less than." Numbers are easy to
-# compare.  Otherwise string comparison is tricky.  This function must match
-# MySQL exactly or the merge algorithm runs off the rails, so when in doubt I
-# ask MySQL to compare strings for me.  I can handle numbers and "normal" latin1
-# characters without asking MySQL.  See
-# http://dev.mysql.com/doc/refman/5.0/en/charset-literal.html.  $r1 and $r2 are
-# row hashrefs.  $key is an arrayref of the key columns to compare.  $tbl is the
-# structure returned by TableParser.  The result matches Perl's cmp or <=>
-# operators:
-# 1 cmp 0 =>  1
-# 1 cmp 1 =>  0
-# 1 cmp 2 => -1
 sub key_cmp {
    my ( $self, $lr, $rr, $key, $tbl ) = @_;
    foreach my $col ( @$key ) {
@@ -871,8 +829,6 @@ sub key_cmp {
             my $cmp = $l <=> $r;
             return $cmp unless $cmp == 0;
          }
-         # Do case-sensitive cmp, expecting most will be eq.  If that fails, try
-         # a case-insensitive cmp if possible; otherwise ask MySQL how to sort.
          elsif ( $l ne $r ) {
             my $cmp;
             my $coll = $tbl->{collation_for}->{$col};
@@ -1083,9 +1039,6 @@ sub get_triggers {
          { Slice => {} }
       );
       foreach my $trg ( @$trgs ) {
-         # Lowercase the hash keys because the NAME_lc property might be set
-         # on the $dbh, so the lettercase is unpredictable.  This makes them
-         # predictable.
          my %trg;
          @trg{ map { lc $_ } keys %$trg } = values %$trg;
          push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
