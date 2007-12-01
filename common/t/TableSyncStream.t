@@ -19,12 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-my $tests;
-BEGIN {
-   $tests = 4;
-}
-
-use Test::More tests => $tests;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 
 require "../TableSyncStream.pm";
@@ -36,23 +31,30 @@ require "../ChangeHandler.pm";
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
    eval { $code->(); };
-   like ( $EVAL_ERROR, $pat, $msg );
+   like( $EVAL_ERROR, $pat, $msg );
 }
 
-my ( $t );
+my ($t);
 
-throws_ok( sub { new TableSyncStream() }, qr/I need a handler/, 'ChangeHandler required' );
-
-my $rs = new ChangeHandler();
-$t = new TableSyncStream(
-   handler => $rs,
-   cols      => [qw(a b c)],
+throws_ok(
+   sub { new TableSyncStream() },
+   qr/I need a handler/,
+   'ChangeHandler required'
 );
 
-is (
-   $t->get_sql(
-      quoter => new Quoter(),
-      where  => 'foo=1',
+my $ch = new ChangeHandler(
+   quoter   => new Quoter(),
+   database => 'test',
+   table    => 'foo',
+);
+$t = new TableSyncStream(
+   handler => $ch,
+   cols    => [qw(a b c)],
+);
+
+is($t->get_sql(
+      quoter   => new Quoter(),
+      where    => 'foo=1',
       database => 'test',
       table    => 'foo',
    ),
@@ -60,9 +62,9 @@ is (
    'Got SQL OK',
 );
 
-isnt($t->done, 'Not done yet');
+isnt( $t->done, 'Not done yet' );
 
-my $d = new RowDiff(dbh=>1);
+my $d = new RowDiff( dbh => 1 );
 $d->compare_sets(
    left => new MockSth(
       { a => 1, b => 2, c => 3 },
@@ -77,18 +79,17 @@ $d->compare_sets(
       { a => 4, b => 2, c => 3 },
    ),
    syncer => $t,
-   tbl => {},
+   tbl    => {},
 );
 
 is_deeply(
-   $rs,
-   {
-      del => [
-         { a => 4, b => 2, c => 3 },
-      ],
-      ins => [
-         { a => 1, b => 2, c => 3 },
-      ],
-   },
-   'differences in basic set of rows',
+   $ch->{del},
+   [ [{ a => 4, b => 2, c => 3 }, [qw(a b c)]]],
+   'Delete rows in handler',
+);
+
+is_deeply(
+   $ch->{ins},
+   [ [{ a => 1, b => 2, c => 3 }, [qw(a b c)]]],
+   'Insert rows in handler',
 );
