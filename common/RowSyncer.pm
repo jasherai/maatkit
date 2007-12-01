@@ -1,5 +1,3 @@
-#!/usr/bin/perl
-
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
@@ -16,11 +14,13 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
+# ###########################################################################
+# RowSyncer package $Revision$
+# ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
-# A package to mock up a RowSyncer.
-package MockRowSyncer;
+package RowSyncer;
 
 sub new {
    my ( $class ) = @_;
@@ -43,3 +43,7 @@ sub upd {
 }
 
 1;
+
+# ###########################################################################
+# End RowSyncer package
+# ###########################################################################
