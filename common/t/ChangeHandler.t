@@ -19,38 +19,44 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 2;
 use English qw(-no_match_vars);
+use DBI;
 
+require "../ChangeHandler.pm";
 require "../Quoter.pm";
 
-my $q = new Quoter;
+sub throws_ok {
+   my ( $code, $pat, $msg ) = @_;
+   eval { $code->(); };
+   like ( $EVAL_ERROR, $pat, $msg );
+}
 
-is(
-   $q->quote('a'),
-   '`a`',
-   'Simple quote OK',
+throws_ok(
+   sub { new ChangeHandler() },
+   qr/I need a quoter/,
+   'Needs a quoter',
 );
 
-is(
-   $q->quote('a','b'),
-   '`a`.`b`',
-   'multi value',
+my @rows;
+my $ch = new ChangeHandler(
+   quoter   => new Quoter(),
+   database => 'test',
+   table    => 'foo',
+   actions  => [ sub { push @rows, @_ } ],
 );
 
-is(
-   $q->quote('`a`'),
-   '```a```',
-   'already quoted',
-);
+$ch->ins({ a => 1, b => 2 }, [qw(a)] );
+$ch->del({ a => 1, b => 2 }, [qw(a)] );
+$ch->upd({ a => 1, b => 2 }, [qw(a)] );
 
-is(
-   $q->quote('a`b'),
-   '`a``b`',
-   'internal quote',
-);
+$ch->process_rows();
 
-is( $q->quote_val(1), "1", 'number' );
-is( $q->quote_val(qw(1 2 3)), '1, 2, 3', 'three numbers');
-is( $q->quote_val(qw(a)), "'a'", 'letter');
-is( $q->quote_val("a'"), "'a\\''", 'letter with quotes');
+is_deeply(\@rows,
+   [
+   'DELETE FROM `test`.`foo` WHERE `a`=1 LIMIT 1',
+   'UPDATE `test`.`foo` SET `b`=2 WHERE `a`=1 LIMIT 1',
+   'INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',
+   ],
+   'Dump the rows',
+);

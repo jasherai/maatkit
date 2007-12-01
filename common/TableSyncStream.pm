@@ -55,12 +55,12 @@ sub same_row {
 
 sub not_in_right {
    my ( $self, $lr ) = @_;
-   $self->{handler}->ins($lr);
+   $self->{handler}->ins($lr, $self->key_cols());
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
-   $self->{handler}->del($rr);
+   $self->{handler}->del($rr, $self->key_cols());
 }
 
 sub done_with_rows {
