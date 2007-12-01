@@ -600,7 +600,7 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 1323
+# TableSyncStream package 1327
 # ###########################################################################
 
 use strict;
@@ -610,14 +610,16 @@ package TableSyncStream;
 
 sub new {
    my ( $class, %args ) = @_;
-   die "I need a rowsyncer argument" unless $args{rowsyncer};
-   return bless { rowsyncer => $args{rowsyncer} }, $class;
+   foreach my $arg ( qw(rowsyncer cols) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   return bless { %args }, $class;
 }
 
 sub get_sql {
    my ( $self, %args ) = @_;
    return "SELECT "
-      . join(', ', map { $args{quoter}->quote($_) } @{$args{cols}})
+      . join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}})
       . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' );
 }
@@ -644,6 +646,11 @@ sub done_with_rows {
 sub done {
    my ( $self ) = @_;
    return $self->{done};
+}
+
+sub key_cols {
+   my ( $self ) = @_;
+   return $self->{cols};
 }
 
 1;
@@ -762,7 +769,7 @@ sub parse {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 1323
+# RowDiff package 1327
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -778,10 +785,8 @@ sub new {
 
 sub compare_sets {
    my ( $self, %args ) = @_;
-   my ( $left, $right, $syncer, $key, $tbl )
-      = @args{qw(left right syncer key tbl)};
-   die 'You must give me a $key arrayref'
-      unless ref $key eq 'ARRAY' && @$key;
+   my ( $left, $right, $syncer, $tbl )
+      = @args{qw(left right syncer tbl)};
 
    my ($lr, $rr);       # Current row from the left/right sources.
 
@@ -796,7 +801,7 @@ sub compare_sets {
 
       my $cmp;
       if ( $lr && $rr ) {
-         $cmp = $self->key_cmp($lr, $rr, $key, $tbl);
+         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
       }
       if ( $lr || $rr ) {
          if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
@@ -817,8 +822,8 @@ sub compare_sets {
 }
 
 sub key_cmp {
-   my ( $self, $lr, $rr, $key, $tbl ) = @_;
-   foreach my $col ( @$key ) {
+   my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
+   foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
       if ( !defined $l || !defined $r ) {
@@ -1053,6 +1058,40 @@ sub get_triggers {
 
 # ###########################################################################
 # End MySQLDump package
+# ###########################################################################
+
+# ###########################################################################
+# RowSyncer package 1326 $Revision$
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package RowSyncer;
+
+sub new {
+   my ( $class ) = @_;
+   return bless {}, $class;
+}
+
+sub del {
+   my ( $self, $row ) = @_;
+   push @{$self->{del}}, $row;
+}
+
+sub ins {
+   my ( $self, $row ) = @_;
+   push @{$self->{ins}}, $row;
+}
+
+sub upd {
+   my ( $self, $row ) = @_;
+   push @{$self->{upd}}, $row;
+}
+
+1;
+
+# ###########################################################################
+# End RowSyncer package
 # ###########################################################################
 
 package main;
@@ -1315,43 +1354,42 @@ if ( $opts{v} ) {
 }
 
 my $rs = new RowSyncer();
-my $rd = new RowDiff(dbh => $source->{dbh});
+my $rd = new RowDiff( dbh => $source->{dbh} );
 my $syncer;
-if ( $algorithms{$opts{a}} ) {
+if ( $algorithms{ $opts{a} } ) {
    my $class = "TableSync$opts{a}";
    $syncer = new $class(
       rowsyncer => $rs,
+      cols      => $tbl_struct->{cols},
    );
 }
 else {
    die "Sorry, algorithm '$opts{a}' unknown; try one of "
-      . join('|', keys %algorithms);
+      . join( '|', keys %algorithms );
 }
 
 while ( !$syncer->done ) {
    my $src_sql = $syncer->get_sql(
-      quoter => $q,
-      cols   => $tbl_struct->{cols},
+      quoter   => $q,
       database => $source->{D},
-      table => $source->{t},
-      where => $opts{w},
+      table    => $source->{t},
+      where    => $opts{w},
    );
    my $dst_sql = $syncer->get_sql(
-      quoter => $q,
-      cols   => $tbl_struct->{cols},
+      quoter   => $q,
       database => $dest->{D},
-      table => $dest->{t},
-      where => $opts{w},
+      table    => $dest->{t},
+      where    => $opts{w},
    );
-   my $src_sth = $source->{dbh}->prepare($src_sql,
-      { mysql_use_result => !$opts{bufferresults}});
-   my $dst_sth = $dest->{dbh}->prepare($dst_sql,
-      { mysql_use_result => !$opts{bufferresults}});
+   my $src_sth = $source->{dbh}
+      ->prepare( $src_sql, { mysql_use_result => !$opts{bufferresults} } );
+   my $dst_sth = $dest->{dbh}
+      ->prepare( $dst_sql, { mysql_use_result => !$opts{bufferresults} } );
    $rd->compare_sets(
-      left => $src_sth,
-      right => $dst_sth,
+      left   => $src_sth,
+      right  => $dst_sth,
       syncer => $syncer,
-      tbl   => $tbl_struct,
+      tbl    => $tbl_struct,
    );
 }
 
