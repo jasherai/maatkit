@@ -599,6 +599,509 @@ sub version_ge {
 # End VersionParser package
 # ###########################################################################
 
+# ###########################################################################
+# TableSyncStream package 1323
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+# This package implements the simplest possible table-sync algorithm: read every
+# row from the tables and compare them.
+package TableSyncStream;
+
+# Arguments:
+# * rowsyncer RowSyncer
+sub new {
+   my ( $class, %args ) = @_;
+   die "I need a rowsyncer argument" unless $args{rowsyncer};
+   return bless { rowsyncer => $args{rowsyncer} }, $class;
+}
+
+# Arguments:
+# * quoter   Quoter
+# * cols     Arrayref of desired column names
+# * database Database name
+# * table    Table name
+# * where    WHERE clause
+sub get_sql {
+   my ( $self, %args ) = @_;
+   return "SELECT "
+      . join(', ', map { $args{quoter}->quote($_) } @{$args{cols}})
+      . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
+      . ' WHERE ' . ( $args{where} || '1=1' );
+}
+
+sub same_row {
+   my ( $self, $lr, $rr ) = @_;
+}
+
+sub not_in_right {
+   my ( $self, $lr ) = @_;
+   $self->{rowsyncer}->ins($lr);
+}
+
+sub not_in_left {
+   my ( $self, $rr ) = @_;
+   $self->{rowsyncer}->del($rr);
+}
+
+sub done_with_rows {
+   my ( $self ) = @_;
+   $self->{done} = 1;
+}
+
+sub done {
+   my ( $self ) = @_;
+   return $self->{done};
+}
+
+1;
+
+# ###########################################################################
+# End TableSyncStream package
+# ###########################################################################
+
+# ###########################################################################
+# TableParser package 1259
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableParser;
+
+sub new {
+   bless {}, shift;
+}
+
+# $ddl:  the output of SHOW CREATE TABLE
+# $opts: hashref of options
+#        mysql_version: MySQL version, zero-padded so 4.1.0 => 004001000
+sub parse {
+   my ( $self, $ddl, $opts ) = @_;
+
+   if ( ref $ddl eq 'ARRAY' ) {
+      if ( $ddl->[0] eq 'table' ) {
+         $ddl = $ddl->[1];
+      }
+      else {
+         return {
+            engine => 'VIEW',
+         };
+      }
+   }
+
+   if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
+      die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+   }
+
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+
+   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+
+   # Save the column definitions *exactly*
+   my %def_for;
+   @def_for{@cols} = @defs;
+
+   # Find column types, whether numeric, whether nullable, whether
+   # auto-increment.
+   my (@nums, @null);
+   my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
+      die "Can't determine column type for $def" unless $type;
+      $type_for{$col} = $type;
+      if ( $type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ) {
+         push @nums, $col;
+         $is_numeric{$col} = 1;
+      }
+      if ( $def !~ m/NOT NULL/ ) {
+         push @null, $col;
+         $is_nullable{$col} = 1;
+      }
+      $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
+   }
+
+   my %keys;
+   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
+
+      # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
+      # will report its index as USING HASH even when this is not supported.  The
+      # true type should be BTREE.  See http://bugs.mysql.com/bug.php?id=22632
+      if ( $engine !~ m/MEMORY|HEAP/ ) {
+         $key =~ s/USING HASH/USING BTREE/;
+      }
+
+      # Determine index type
+      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
+      $type = $type || $special || 'BTREE';
+      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
+         && $engine =~ m/HEAP|MEMORY/i )
+      {
+         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
+      }
+
+      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
+      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
+      my @cols   = grep { m/[^,]/ } split('`', $cols);
+      $name      =~ s/`//g;
+
+      $keys{$name} = {
+         colnames    => $cols,
+         cols        => \@cols,
+         unique      => $unique,
+         is_col      => { map { $_ => 1 } @cols },
+         is_nullable => scalar(grep { $is_nullable{$_} } @cols),
+         type        => $type,
+      };
+   }
+
+   return {
+      cols           => \@cols,
+      col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
+      is_col         => { map { $_ => 1 } @cols },
+      null_cols      => \@null,
+      is_nullable    => \%is_nullable,
+      is_autoinc     => \%is_autoinc,
+      keys           => \%keys,
+      defs           => \%def_for,
+      numeric_cols   => \@nums,
+      is_numeric     => \%is_numeric,
+      engine         => $engine,
+      type_for       => \%type_for,
+   };
+}
+
+1;
+
+# ###########################################################################
+# End TableParser package
+# ###########################################################################
+
+# ###########################################################################
+# RowDiff package 1323
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package RowDiff;
+
+sub new {
+   my ( $class, %args ) = @_;
+   die "I need a dbh" unless $args{dbh};
+   my $self = \%args;
+   return bless $self, $class;
+}
+
+# Iterates through two sets of rows and finds differences.  Calls various
+# methods on the $syncer object when it finds differences.  $left and $right
+# should be DBI $sth, or should at least behave like them.  $key is an arrayref
+# of the key columns.  $sths is a hashref of collation-comparison $sths.  $tbl
+# is a struct from TableParser.
+sub compare_sets {
+   my ( $self, %args ) = @_;
+   my ( $left, $right, $syncer, $key, $tbl )
+      = @args{qw(left right syncer key tbl)};
+   die 'You must give me a $key arrayref'
+      unless ref $key eq 'ARRAY' && @$key;
+
+   my ($lr, $rr);       # Current row from the left/right sources.
+
+   do {
+
+      if ( !$lr && $left->{Active} ) {
+         $lr = $left->fetchrow_hashref;
+      }
+      if ( !$rr && $right->{Active} ) {
+         $rr = $right->fetchrow_hashref;
+      }
+
+      my $cmp;
+      if ( $lr && $rr ) {
+         $cmp = $self->key_cmp($lr, $rr, $key, $tbl);
+      }
+      if ( $lr || $rr ) {
+         # If the current row is the "same row" on both sides, meaning the two
+         # rows have the same key, check the contents of the row to see if
+         # they're the same.
+         if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
+            $syncer->same_row($lr, $rr);
+            $lr = $rr = undef; # Fetch another row from each side.
+         }
+         # The row in the left doesn't exist in the right.
+         elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
+            $syncer->not_in_right($lr);
+            $lr = undef;
+         }
+         # Symmetric to the above.
+         else {
+            $syncer->not_in_left($rr);
+            $rr = undef;
+         }
+      }
+   } while ( $left->{Active} || $right->{Active} );
+   $syncer->done_with_rows();
+}
+
+# Compare two rows to determine how they should be ordered.  NULL sorts before
+# defined values in MySQL, so I consider undef "less than." Numbers are easy to
+# compare.  Otherwise string comparison is tricky.  This function must match
+# MySQL exactly or the merge algorithm runs off the rails, so when in doubt I
+# ask MySQL to compare strings for me.  I can handle numbers and "normal" latin1
+# characters without asking MySQL.  See
+# http://dev.mysql.com/doc/refman/5.0/en/charset-literal.html.  $r1 and $r2 are
+# row hashrefs.  $key is an arrayref of the key columns to compare.  $tbl is the
+# structure returned by TableParser.  The result matches Perl's cmp or <=>
+# operators:
+# 1 cmp 0 =>  1
+# 1 cmp 1 =>  0
+# 1 cmp 2 => -1
+sub key_cmp {
+   my ( $self, $lr, $rr, $key, $tbl ) = @_;
+   foreach my $col ( @$key ) {
+      my $l = $lr->{$col};
+      my $r = $rr->{$col};
+      if ( !defined $l || !defined $r ) {
+         return defined $l || -1;
+      }
+      else {
+         if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
+            my $cmp = $l <=> $r;
+            return $cmp unless $cmp == 0;
+         }
+         # Do case-sensitive cmp, expecting most will be eq.  If that fails, try
+         # a case-insensitive cmp if possible; otherwise ask MySQL how to sort.
+         elsif ( $l ne $r ) {
+            my $cmp;
+            my $coll = $tbl->{collation_for}->{$col};
+            if ( $coll && ( $coll ne 'latin1_swedish_ci'
+                           || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) ) {
+               $cmp = $self->db_cmp($coll, $l, $r);
+            }
+            else {
+               $cmp = lc $l cmp lc $r;
+            }
+            return $cmp unless $cmp == 0;
+         }
+      }
+   }
+   return 0;
+}
+
+sub db_cmp {
+   my ( $self, $collation, $l, $r ) = @_;
+   if ( !$self->{sth}->{$collation} ) {
+      if ( !$self->{charset_for} ) {
+         my @collations = @{$self->{dbh}->selectall_arrayref(
+            'SHOW COLLATION', {Slice => { collation => 1, charset => 1 }})};
+         foreach my $collation ( @collations ) {
+            $self->{charset_for}->{$collation->{collation}}
+               = $collation->{charset};
+         }
+      }
+      $self->{sth}->{$collation} = $self->{dbh}->prepare(
+         "SELECT STRCMP(_$self->{charset_for}->{$collation}? COLLATE $collation, "
+         . "_$self->{charset_for}->{$collation}? COLLATE $collation) AS res"
+      );
+   }
+   my $sth = $self->{sth}->{$collation};
+   $sth->execute($l, $r);
+   return $sth->fetchall_arrayref()->[0]->[0];
+}
+
+1;
+
+# ###########################################################################
+# End RowDiff package
+# ###########################################################################
+
+# ###########################################################################
+# MySQLDump package 1238
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MySQLDump;
+
+use English qw(-no_match_vars);
+
+( our $before = <<'EOF') =~ s/^   //gm;
+   /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+   /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+   /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+   /*!40101 SET NAMES utf8 */;
+   /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+   /*!40103 SET TIME_ZONE='+00:00' */;
+   /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+   /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+   /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+   /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+EOF
+
+( our $after = <<'EOF') =~ s/^   //gm;
+   /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+   /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+   /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+   /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+   /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+   /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+   /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+   /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+EOF
+
+sub new {
+   my ( $class ) = @_;
+   my $self = bless {}, $class;
+   return $self;
+}
+
+sub dump {
+   my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
+
+   if ( $what eq 'table' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      if ( $ddl->[0] eq 'table' ) {
+         return $before
+            . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . $ddl->[1] . ";\n";
+      }
+      else {
+         return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . '/*!50001 DROP VIEW IF EXISTS '
+            . $quoter->quote($tbl) . "*/;\n/*!50001 "
+            . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
+      }
+   }
+   elsif ( $what eq 'triggers' ) {
+      my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
+      if ( $trgs && @$trgs ) {
+         my $result = $before . "\nDELIMITER ;;\n";
+         foreach my $trg ( @$trgs ) {
+            if ( $trg->{sql_mode} ) {
+               $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
+            }
+            $result .= "/*!50003 CREATE */ ";
+            if ( $trg->{definer} ) {
+               my ( $user, $host )
+                  = map { s/'/''/g; "'$_'"; }
+                    split('@', $trg->{definer}, 2);
+               $result .= "/*!50017 DEFINER=$user\@$host */ ";
+            }
+            $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
+               $quoter->quote($trg->{trigger}),
+               @{$trg}{qw(timing event)},
+               $quoter->quote($trg->{table}),
+               $trg->{statement});
+         }
+         $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
+         return $result;
+      }
+      else {
+         return undef;
+      }
+   }
+   elsif ( $what eq 'view' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 ' . $ddl->[1] . "*/;\n";
+   }
+   else {
+      die "You didn't say what to dump.";
+   }
+}
+
+sub get_create_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{tables}->{$db}->{$tbl} ) {
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $href = $dbh->selectrow_hashref(
+         "SHOW CREATE TABLE "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl)
+      );
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+      my ($key) = grep { m/create table/i } keys %$href;
+      if ( $key ) {
+         $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
+      }
+      else {
+         ($key) = grep { m/create view/i } keys %$href;
+         $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
+      }
+   }
+   return $self->{tables}->{$db}->{$tbl};
+}
+
+sub get_columns {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{columns}->{$db}->{$tbl} ) {
+      my $cols = $dbh->selectall_arrayref(
+         "SHOW COLUMNS FROM "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl),
+         { Slice => {} }
+      );
+      $self->{columns}->{$db}->{$tbl} = [
+         map {
+            my %row;
+            @row{ map { lc $_ } keys %$_ } = values %$_;
+            \%row;
+         } @$cols
+      ];
+   }
+   return $self->{columns}->{$db}->{$tbl};
+}
+
+sub get_tmp_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
+   $result .= join(",\n",
+      map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
+      @{$self->get_columns($dbh, $quoter, $db, $tbl)});
+   $result .= "\n)";
+}
+
+sub get_triggers {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{triggers}->{$db} ) {
+      $self->{triggers}->{$db} = {};
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $trgs = $dbh->selectall_arrayref(
+         "SHOW TRIGGERS FROM " . $quoter->quote($db),
+         { Slice => {} }
+      );
+      foreach my $trg ( @$trgs ) {
+         # Lowercase the hash keys because the NAME_lc property might be set
+         # on the $dbh, so the lettercase is unpredictable.  This makes them
+         # predictable.
+         my %trg;
+         @trg{ map { lc $_ } keys %$trg } = values %$trg;
+         push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
+      }
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+   }
+   return $self->{triggers}->{$db}->{$tbl};
+}
+
+1;
+
+# ###########################################################################
+# End MySQLDump package
+# ###########################################################################
+
 package main;
 
 use DBI;
@@ -616,25 +1119,12 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 
 # TODO: unify timestamp format: add a 0 to the timestamp.
 # TODO: must add a slice for rows greater/less in drilldown mode.
+# TODO: algorithms: nibble, chunk, stream, drilldown, temp-table, group-by (like
+# sja).
 
-# TODO: write a helper to analyze indexes and suggest a drilldown strategy.
-# TODO: CRC32 can be used for checksums.
 # TODO: grouping strategy: first chars of char column.
 # TODO: save memory by using more efficient bind methods from DBI.
 # TODO: autodetect index violation and rewrite all UPD to DEL/INS
-# TODO: check the results of the following query:
-# set @CRC := null;
-# 
-# select 
-#    CONCAT(
-#       LPAD(CONV(BIT_XOR(
-#          CAST(CONV(LEFT(@CRC, 16), 16, 10) AS UNSIGNED)
-#          ), 10, 16), 16, '0'),
-#       LPAD(CONV(BIT_XOR(
-#          CAST(CONV(RIGHT(@CRC:=md5(9), 16), 16, 10) AS UNSIGNED)
-#          ), 10, 16), 16, '0')
-#    ) AS crc;
-
 
 # ############################################################################
 # Get configuration information.
@@ -683,6 +1173,8 @@ my @opt_spec = (
    { s => 'where|W=s',        d => 'WHERE clause to restrict syncing to part of the table' },
 );
 
+my $du         = new MySQLDump();
+my $tp         = new TableParser();
 my $q          = new Quoter();
 my $vp         = new VersionParser();
 my $dsn_parser = new DSNParser(
@@ -751,10 +1243,7 @@ $opt_parser->usage_or_errors(%opts);
 # Lookup tables
 # ############################################################################
 
-my %code_for_algorithm = (
-   topdown  => \&topdown,
-   bottomup => \&bottomup,
-);
+my %algorithms = map { $_ => 1 } qw( Stream );
 
 # ############################################################################
 # Do the work.
@@ -788,79 +1277,15 @@ if ( $source->{t} ne $dest->{t} && -t STDIN && -t STDOUT ) {
 }
 
 foreach my $table ( $source, $dest ) {
-
    # It is necessary to get a $dbh to run the sync queries, and a $dbh to use
    # while the main $dbh is in use (for checking collated string comparison).
    $table->{dbh}  ||= get_dbh($table);
    $table->{dbh2} ||= get_dbh($table);
-
-   $table->{db_tbl} =
-      join('.',
-      map  { $q->quote($_) }
-      grep { $_ }
-      map  { $_ =~ s/(^`|`$)//g; $_; }
-      grep { $_ }
-      ( $table->{D}, $table->{t} ));
-   $table->{info} = get_tbl_struct($table);
-   $table->{cols} = col_list(@{$table->{info}->{cols}});
+   $table->{db_tbl} = $q->quote(@{$table}{qw(D t)});
 }
 
-# Decide what hash function to use.
-my $func = $opts{f} || 'MD5';
-{
-   my $res = eval { $source->{dbh}->do("SELECT $func('test-string')") };
-   if ( !$res ) {
-      my $err = '';
-      if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
-         $err = qq{ because "$1"};
-      }
-      if ( lc $func eq 'md5' ) {  # There's nothing to fall back to
-         die "Cryptographic function $func cannot be used$err\n";
-      }
-      warn "Cryptographic function $func cannot be used$err; falling back to MD5()\n";
-      $func = 'MD5';
-   }
-}
-
-my $crc_wid   = max(16, length(($source->{dbh}->selectrow_array("SELECT $func('a')"))[0]));
-my $crc_slice = 0;
-my $sanity    = '';
-
-# Figure out which slice in a sliced BIT_XOR checksum should have the actual
-# concat-columns-and-checksum, and which should just get variable references.
-{
-   my $desired = uc $source->{dbh}->selectall_arrayref("SELECT $func('a')")->[0]->[0];
-   my $result  = '';
-   my $start   = 1;
-
-   do { # Try different positions till sliced result equals non-sliced.
-      $source->{dbh}->do('SET @crc := NULL, @cnt := 0');
-      my $slices = make_slices("\@crc := $func('a')");
-      my $sanity = "SELECT CONCAT($slices) as test from (select null) as t";
-      $result    = $source->{dbh}->selectall_arrayref($sanity)->[0]->[0];
-      if ( $result ne $desired ) {
-         $start += 16;
-         ++$crc_slice;
-      }
-   } while ( $start < $crc_wid && $result ne $desired );
-}
-
-if ( $opts{V} ) {
-   # Verify that CONCAT_WS is compatible across all servers.  On older versions
-   # of MySQL it skips both empty strings and NULL; on newer just NULL.
-   my @verify_sums;
-   foreach my $host ( $source, $dest ) {
-      my $cks = $host->{dbh}->selectall_arrayref("SELECT MD5(CONCAT_WS(',', '1', ''))")->[0]->[0];
-      push @verify_sums, { ver => $host->{dbh}->{mysql_serverinfo}, sum => $cks };
-   }
-   if ( unique(map { $_->{sum} } @verify_sums ) > 1 ) {
-      die "The servers have incompatible versions.  They return different\n"
-         . "checksum values for the same query, and cannot be compared.  This\n"
-         . "behavior changed in MySQL 4.0.14.  Here is info on each host:\n\n"
-         . join("\n", map { "$_->{sum}    $_->{ver}" } @verify_sums)
-         . "\n\nYou can disable this check with --noverify.\n";
-   }
-}
+my $tbl_struct = $tp->parse(
+   $du->get_create_table($source->{dbh}, $q, $source->{D}, $source->{t}));
 
 # User wants us to lock for consistency.  But only lock on source initially;
 # might have to wait for the slave to catch up before locking on the dest.
@@ -917,17 +1342,6 @@ if ( $opts{k} && !$opts{r} ) {
    }
 }
 
-# Will be used later by the different algorithms.
-my %collation_for = ();
-my %collation_sth = ();
-my %charset_for   = ();
-if ( $opts{O} && $vp->version_ge($source->{dbh}, '4.1.0') ) {
-   my @collations = @{$source->{dbh}->selectall_arrayref('SHOW COLLATION', {Slice => {}})};
-   foreach my $collation ( @collations ) {
-      $charset_for{$collation->{Collation}} = $collation->{Charset};
-   }
-}
-
 # Set some SQL options as requested.
 if ( $opts{skipbinlog} ) {
    $source->{dbh}->do("/*!32316 SET SQL_LOG_BIN=0 */");
@@ -947,15 +1361,47 @@ if ( $opts{v} ) {
       . ' with ' . $dsn_parser->as_string($dest) . "\n";
 }
 
-if ( $code_for_algorithm{$opts{a}} ) {
-   $code_for_algorithm{$opts{a}}->();
+my $rs = new RowSyncer();
+my $rd = new RowDiff(dbh => $source->{dbh});
+my $syncer;
+if ( $algorithms{$opts{a}} ) {
+   my $class = "TableSync$opts{a}";
+   $syncer = new $class(
+      rowsyncer => $rs,
+   );
 }
 else {
    die "Sorry, algorithm '$opts{a}' unknown; try one of "
-      . join('|', keys %code_for_algorithm);
+      . join('|', keys %algorithms);
 }
 
-map { $_->finish() } values %collation_sth; # Keep it from complaining
+while ( !$syncer->done ) {
+   my $src_sql = $syncer->get_sql(
+      quoter => $q,
+      cols   => $tbl_struct->{cols},
+      database => $source->{D},
+      table => $source->{t},
+      where => $opts{w},
+   );
+   my $dst_sql = $syncer->get_sql(
+      quoter => $q,
+      cols   => $tbl_struct->{cols},
+      database => $dest->{D},
+      table => $dest->{t},
+      where => $opts{w},
+   );
+   my $src_sth = $source->{dbh}->prepare($src_sql,
+      { mysql_use_result => !$opts{bufferresults}});
+   my $dst_sth = $dest->{dbh}->prepare($dst_sql,
+      { mysql_use_result => !$opts{bufferresults}});
+   $rd->compare_sets(
+      left => $src_sth,
+      right => $dst_sth,
+      syncer => $syncer,
+      tbl   => $tbl_struct,
+   );
+}
+
 foreach my $table ( $source, $dest ) {
    my $dbh = $table->{dbh};
    $dbh->commit if $opts{k} || $opts{F} || $opts{1};
@@ -965,757 +1411,8 @@ foreach my $table ( $source, $dest ) {
 exit $exit_status;
 
 # ############################################################################
-# Top-down algorithm
-# ############################################################################
-
-sub topdown {
-
-   # Design a grouping strategy: user-defined, then finally primary key.
-   my @groupings = { cols => $source->{info}->{keys}->{$source->{i}} };
-   if ( $opts{d} ) {
-      push @groupings, reverse map { { cols => [$_] } } $opts{d} =~ m/(\w+)/g;
-   }
-
-   # Now that the keys are known, find out the collation on the source.
-   my @grp_cols = unique(map { @{$_->{cols}} } @groupings);
-   find_collation($source->{dbh}, $source->{db_tbl}, \@grp_cols);
-
-   # Array indices
-   my ($WHERE, $LEVEL, $COUNT) = (0, 1, 2);
-
-   # Queue of groups to drill into on next iteration.  Managing as a queue, not
-   # stack, is breadth-first search, not depth-first.
-   my @to_examine = [ {}, $#groupings, 0 ];
-
-   # Lists of rows that differ in the target tables.
-   my (@to_update, @to_delete, @to_insert);
-
-   # Counters
-   my %count = map { $_ => 0 } qw(ins upd del bad);
-
-   do {
-      my $work  = shift @to_examine;
-      my $level = $work->[$LEVEL];
-      my $where = $work->[$WHERE];
-
-      my $grouping = $groupings[$level]->{cols};
-      my $src_sth  = td_fetch_level($source, $level, $grouping, $where, 'source');
-      my $dst_sth  = td_fetch_level($dest,   $level, $grouping, $where, 'dest');
-
-      my ($sr, $dr);       # Source row, dest row
-      my %this_level = ( rows => 0, cnt => 0 );
-
-      # TODO: keep track of what the last change was, and accumulate adjacent
-      # INSERT and UPDATE statements into IN() lists as I go.
-
-      # The statements fetch in order, so use a 'merge' algorithm of advancing
-      # after rows match.  This is essentially a FULL OUTER JOIN.
-      MERGE:
-      while ( 1 ) { # Exit this loop via 'last'
-
-         if ( !$sr && $src_sth->{Active} ) {
-            $sr = $src_sth->fetchrow_hashref;
-         }
-         if ( !$dr && $dst_sth->{Active} ) {
-            $dr = $dst_sth->fetchrow_hashref;
-         }
-
-         # Compare the rows if both exist.  The result is used several places.
-         my $cmp;
-         if ( $sr && $dr ) {
-            $cmp = key_cmp($source, $sr, $dr, $grouping);
-         }
-
-         last MERGE unless $sr || $dr;
-
-         my %new_where = %$where;  # Will get more cols added and used below.
-
-         # If the current row is the "same row" on both sides...
-         if ( $sr && $dr && defined $cmp && $cmp == 0 ) {
-            # The "same" row descends from parents that differ.
-            if ( $sr->{__crc} ne $dr->{__crc} || ($level && ($sr->{__cnt} != $dr->{__cnt})) ) {
-               @new_where{@$grouping} = @{$sr}{@$grouping};
-               if ( $level ) {
-                  # Special case: push $level - 1 because this will be processed
-                  # later.
-                  push @to_examine, [ \%new_where, $level - 1, $sr->{__cnt} ];
-                  $this_level{cnt}++;
-                  $this_level{rows} += $sr->{__cnt};
-                  if ( $level && $opts{v} > 2 ) {
-                     printf("-- Level %1d: CHECK  group of  %5d rows %s\n",
-                        $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
-                  }
-               }
-               else {
-                  push @to_update, \%new_where;
-                  $count{upd}++;
-                  $count{bad}++;
-                  if ( $opts{v} > 2 ) {
-                     printf("-- Level %1d: UPDATE              1 row  %s\n",
-                        $level, make_where_clause($source->{dbh}, \%new_where));
-                  }
-               }
-            }
-            $sr = $dr = undef;
-         }
-
-         # The row in the source doesn't exist at the destination
-         elsif ( !$dr || ( defined $cmp && $cmp < 0 ) ) {
-            @new_where{@$grouping} = @{$sr}{@$grouping};
-            push @to_insert, \%new_where;
-            $count{ins} += $sr->{__cnt} || 1;
-            $count{bad} += $sr->{__cnt} || 1;
-            if ( $level && $opts{v} > 2 ) {
-               printf("-- Level %1d: INSERT group of  %5d rows %s\n",
-                  $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
-            }
-            $sr = undef;
-         }
-
-         # Symmetric to the above
-         elsif ( !$sr || ( defined $cmp && $cmp > 0 ) ) {
-            @new_where{@$grouping} = @{$dr}{@$grouping};
-            push @to_delete, \%new_where;
-            $count{del} += $dr->{__cnt} || 1;
-            $count{bad} += $dr->{__cnt} || 1;
-            if ( $level && $opts{v} > 2 ) {
-               printf("-- Level %1d: DELETE group of  %5d rows %s\n",
-                  $level, $dr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
-            }
-            $dr = undef;
-         }
-
-         else {
-            die "This code should never have run.  This is a bug.";
-         }
-
-         if ( $level < $#groupings && $opts{m} && $opts{m} < $count{bad}) {
-            print "-- Level $level halt: $count{bad} rows, --maxcost=$opts{m}\n";
-            return 0;
-         }
-
-      }
-
-      if ( $opts{v} ) {
-         printf("--          Level %1d total:   %5d bad rows      %5d to inspect\n",
-            $level, $count{bad}, sum(map { $_->[$COUNT] } @to_examine) || 0);
-      }
-      if ( $opts{v} > 1 ) {
-         printf("--          Level %1d summary: %5d bad groups in %5d src groups %5d dst groups\n",
-            $level, scalar(@to_examine), $src_sth->rows, $dst_sth->rows);
-         printf("--          Level %1d changes: %5d updates       %5d inserts    %5d deletes\n",
-            $level, scalar(@to_update), $count{ins}, $count{del});
-      }
-
-      $level--;
-   } while ( @to_examine );
-
-   # Release locks/close transaction as soon as possible.
-   if ( $opts{r} && $opts{F} && !$opts{1} ) {
-      $dest->{dbh}->commit;
-   }
-
-   td_handle_data_change('DELETE', @to_delete);
-   # Do UPDATE before INSERT because the current (bad) values may conflict with
-   # newly INSERTed rows otherwise.
-   if ( $opts{l} ) {
-      td_handle_data_change('DELETE', @to_update);
-      td_handle_data_change('INSERT', @to_update);
-   }
-   else {
-      td_handle_data_change('UPDATE', @to_update);
-   }
-   td_handle_data_change('INSERT', @to_insert);
-}
-
-sub td_handle_data_change {
-   my ( $action, @rows ) = @_;
-   return unless $action =~ m/$opts{o}/i;
-   foreach my $where ( @rows ) {
-      # TODO I'm worried this is double-fetching rows that need to be
-      # mass-inserted or updated.
-      handle_data_change($action, $where);
-   }
-}
-
-sub td_fetch_level {
-   my ( $info, $level, $groupby, $where, $which ) = @_;
-   my $dbh = $info->{dbh};
-   my $tbl = $info->{info};
-
-   # Columns that need to be in the checksum list.
-   # TODO: why remove columns that are in the WHERE clause?
-   my @cols = grep { !exists($where->{$_}) } @{$tbl->{cols}};
-   my $cols = col_list(@cols);
-
-   # To handle nulls, make a bitmap of nullable columns that are null.
-   my @null = grep { $tbl->{null_hash}->{$_} } @cols;
-   my $null = @null
-            ? (", CONCAT(" . join(', ', map  { "ISNULL(`$_`)" } @null) . ")")
-            : '';
-
-   my $grp  = col_list(@$groupby);
-   my $crit = make_where_clause($dbh, $where);
-   my $lock = '';
-
-   if ( $opts{F} && !$opts{k} ) { # User wants us to lock for consistency.
-      # Is this the server where changes will happen?
-      my $is_target = $opts{r} ? $which eq 'source' : $which eq 'dest';
-      $lock = $is_target ? ' FOR UPDATE' : ' LOCK IN SHARE MODE';
-   }
-
-   # Maxia's approach used SUM() as the aggregate function.  This is not a good
-   # aggregate function; though it commutes, and is therefore order-independent,
-   # the law of large numbers will cause checksum collisions on large data sets.
-   # BIT_XOR() is really just a bitwise parity.  It is also order-independent,
-   # but you expect any given bit in the result to be essentially a random coin
-   # flip over the group.
-
-   my $query;
-   # Design the column checksum expression.
-   if ( $level ) {
-      my $slices = make_slices("$func(CONCAT_WS('$opts{e}', $cols$null))");
-      $query = "SELECT /*$which:$info->{db_tbl}*/ $grp, COUNT(*) AS __cnt, "
-         . "CONCAT($slices) AS __crc "
-         . "FROM $info->{db_tbl} $crit GROUP BY $grp ORDER BY $grp$lock";
-   }
-   else {
-      $query = "SELECT /*$which:$info->{db_tbl}*/ $grp, "
-         . "MD5(CONCAT_WS('$opts{e}', $cols$null)) AS __crc "
-         . "FROM $info->{db_tbl} $crit "
-         . "ORDER BY $grp$lock";
-   }
-   debug_print($query);
-
-   my $sth = $dbh->prepare($query, { mysql_use_result => !$opts{bufferresults}});
-   $sth->execute();
-   return $sth;
-}
-
-# ############################################################################
-# Bottom-up algorithm
-# ############################################################################
-
-sub bottomup {
-
-   # Ensure branch factor is a power of two.
-   $opts{B} = max(2, 2 ** round( log($opts{B}) / log(2) ));
-
-   # Store table prefix in hashes
-   $source->{prefix} = "$opts{P}_s_";
-   $dest->{prefix}   = "$opts{P}_d_";
-
-   my $levels = 0;
-   if ( $opts{U} ) {
-
-      # Begin with estimates of table size to allow calculating the checksum
-      # remainder on the first level.
-      my $est_size    = $opts{S} || max( estimate_size($source), estimate_size($dest) );
-      my $level_est_1 = bu_num_levels($est_size);
-
-      # Determine the data type needed for the remainder column.
-      my $rem_col        = bu_size_to_type(( $opts{B} ** ($level_est_1 + 2)) - 1);
-      $source->{rem_col} = $rem_col;
-      $dest->{rem_col}   = $rem_col;
-
-      # Build the initial checksum tables and calculate how many summary tables to build.
-      my $src_size    = bu_build_checksum( $source, $level_est_1 );
-      my $level_est_2 = bu_num_levels( max( $est_size, $src_size ) );
-      my $dst_size    = bu_build_checksum( $dest, $level_est_2 );
-      my $true_size   = max( $src_size, $dst_size );
-      $levels         = bu_num_levels( $true_size );
-
-      # Similar to the above, choose a type for the __cnt columns
-      my $cnt_col        = bu_size_to_type($true_size);
-      $source->{cnt_col} = $cnt_col;
-      $dest->{cnt_col}   = $cnt_col;
-
-      # Check and possibly rebuild remainders.
-      if ( $levels > $level_est_1 + 2 ) {
-         # The initial estimated number of levels caused the first-level tables to
-         # have too-small data types, and I don't want to run ALTER TABLE; I'd
-         # rather ask the user to re-run.
-         die "Table size estimates ($est_size) were too small; specify --size $true_size";
-      }
-      if ( $level_est_1 != $levels ) {
-         bu_rebuild_remainder($source, $levels);
-      }
-      if ( $level_est_2 != $levels ) {
-         bu_rebuild_remainder($dest, $levels);
-      }
-
-      # Build the trees, merge them, and clean them up. TODO this part can be
-      # parallelized with fork.
-      bu_build_tree($source, $levels);
-      bu_build_tree($dest,   $levels);
-   }
-   else {
-      $levels  = bu_existing_levels( $source );
-   }
-
-   my $finished_work = 1;
-   if ( $opts{A} ) {
-      # Determine the collation of the primary key columns on the source, then
-      # do the comparison.
-      find_collation($source->{dbh},
-         "$source->{prefix}_0",
-         $source->{info}->{keys}->{$source->{i}});
-      $finished_work = bu_merge_tree($dest,   $source, $levels);
-   }
-   bu_cleanup_tree($dest, $source) if $finished_work && $opts{C};
-}
-
-# Builds the first-level checksum table and returns the number of rows in it.
-# The bitwise & operator in the __rem calculation is essentially the same as
-# MOD().  In unsigned arithmetic, num MOD 128 is the same as num & 127.  It has
-# the advantage of taking the absolute value of the modulo though, so there will
-# be no negative values.
-sub bu_build_checksum {
-   my ($info, $levels) = @_;
-   my $dbh    = $info->{dbh};
-   my $tbl    = $info->{info};
-   my $pk     = col_list( @{ $tbl->{keys}->{$info->{i}} } );
-   my @cols   = @{ $tbl->{cols} };
-   my $cols   = col_list(@cols);
-   my $pks    = join( ',', @{ $tbl->{defs} }{ @{ $tbl->{keys}->{$info->{i}} } } );
-   my @null   = grep { $tbl->{null_hash}->{$_} } @cols;
-   my $null = @null
-            ? ( ", CONCAT(" . join( ', ', map {"ISNULL(`$_`)"} @null ) . ")" ) : '';
-   my $name = "$info->{prefix}_0";
-   my $mask = ($opts{B} ** ($levels - 1)) - 1;
-
-   # Create the table
-   my $query = "DROP TABLE IF EXISTS `$name`";
-   debug_print($query);
-   $dbh->do($query);
-   ( $query = <<"   END") =~ s/\s+/ /g;
-      CREATE $opts{T} TABLE `$name` (
-         $pks,
-         __crc CHAR(32) NOT NULL,
-         __rem $info->{rem_col} UNSIGNED NOT NULL,
-         KEY(__rem),
-         PRIMARY KEY($pk)
-      ) ENGINE=$opts{E}
-   END
-   debug_print($query);
-   $dbh->do($query);
-
-   # Populate it
-   ( $query = <<"   END") =~ s/\s+/ /g;
-      INSERT /*$info->{db_tbl}*/ INTO `$name`($pk, __crc, __rem)
-      SELECT $pk,
-         MD5(CONCAT_WS('$opts{e}', $cols$null)) AS __crc,
-         CAST(CONV(RIGHT(MD5(CONCAT_WS('$opts{e}', $pk)), 16), 16, 10) AS UNSIGNED) & $mask AS __rem
-      FROM $info->{db_tbl}
-   END
-   debug_print($query);
-   my $sth = $dbh->prepare($query);
-   $sth->execute();
-   return $sth->rows;
-}
-
-sub bu_rebuild_remainder {
-   my ( $info, $levels ) = @_;
-   my $pk   = col_list( @{ $info->{info}->{keys}->{$info->{i}} } );
-   my $mask = ($opts{B} ** ($levels - 1)) - 1;
-   my $name = "$info->{prefix}_0";
-   my $query = "UPDATE `$name` SET __rem = "
-      . "CAST(CONV(RIGHT(MD5(CONCAT_WS('$opts{e}', $pk)), 8), 16, 10) AS UNSIGNED) & $mask";
-   debug_print($query);
-   $info->{dbh}->do($query);
-}
-
-# Builds the nth-level summary tables.
-# TODO: allow to use other hash functions like SHA1, and genericize the substringing code
-# and the required size of the columns.
-sub bu_build_tree {
-   my ($info, $levels) = @_;
-   my $dbh = $info->{dbh};
-   my $tbl = $info->{info};
-
-   # Do from 1 because level 0 has already been built.
-   foreach my $i ( 1 .. $levels ) {
-      my $modulo   = int($opts{B} ** ( $levels - $i - 1 ));
-      my $last_mod = $modulo * $opts{B};
-      my $this_tbl = "$info->{prefix}_" . $i;
-      my $last_tbl = "$info->{prefix}_" . ( $i - 1 );
-      my $mask     = max(0, $modulo - 1);
-      my $cnt_sum  = $i > 1 ? 'SUM(__cnt)' : 'COUNT(*)';
-
-      # Create the table
-      my $query = "DROP TABLE IF EXISTS `$this_tbl`";
-      debug_print($query);
-      $dbh->do($query);
-      ( $query = <<"      END" ) =~ s/\s+/ /g;
-         CREATE $opts{T} TABLE `$this_tbl` (
-            __par INT NOT NULL,
-            __crc CHAR(32) NOT NULL,
-            __rem $info->{rem_col} UNSIGNED NOT NULL,
-            __cnt $info->{cnt_col} UNSIGNED NOT NULL,
-            KEY(__rem),
-            PRIMARY KEY(__par)
-         ) ENGINE=$opts{E}
-      END
-      debug_print($query);
-      $dbh->do($query);
-
-      # Populate it
-      ( $query = <<"      END" ) =~ s/\s+/ /g;
-         INSERT /*$info->{db_tbl}*/ INTO `$this_tbl`
-            (__par, __crc, __rem, __cnt)
-         SELECT __rem,
-            CONCAT(
-               LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(__crc, 1,  16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'),
-               LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(__crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0')
-            ) AS this_crc,
-            __rem & $mask AS this_remainder,
-            $cnt_sum AS total_rows
-         FROM `$last_tbl`
-         GROUP BY __rem
-         ORDER BY NULL
-      END
-      debug_print($query);
-      $dbh->do($query);
-   }
-}
-
-# There are actually 1 more than $levels summary tables; there are tables 0 ..
-# $levels (see bu_build_tree).  Level 0 has a different structure.  It has
-# primary keys instead of a __par pointer.
-# Returns true if it finished working.
-# TODO: there is a lot of shared code here with topdown, maybe factor out the
-# FULL OUTER JOIN-ish code into a subroutine?
-sub bu_merge_tree {
-   my ($dest, $source, $levels) = @_;
-
-   my $level = $levels;
-   my @bad_parents; # List of parents that must differ at current level
-   my ( $rows_in_src, $rows_in_dst ) = (0,0);
-
-   # Lists of rows that differ in the target tables.
-   my (@to_update, @to_delete, @to_insert);
-   my (@bulk_insert, @bulk_delete);
-
-   # Counters
-   my %count = map { $_ => 0 } qw(ins upd del bad);
-
-   do {
-      my $src_sth = bu_fetch_level($source, $level, @bad_parents);
-      my $dst_sth = bu_fetch_level($dest,   $level, @bad_parents);
-
-      # Reset for next loop, once used to fetch this loop
-      @bad_parents = ();
-      $rows_in_src = $rows_in_dst = 0;
-
-      my @key = $level ? '__par' : @{$source->{info}->{keys}->{$source->{i}}};
-      my ($sr, $dr); # Source row, dest row
-
-      # The statements fetch in order, so use a 'merge' algorithm of advancing
-      # after rows match.  This is essentially a FULL OUTER JOIN.
-      MERGE:
-      while ( 1 ) { # Exit this loop via 'last'
-
-         if ( !$sr && $src_sth->{Active} ) {
-            $sr = $src_sth->fetchrow_hashref;
-            if ( $sr ) {
-               $rows_in_src += $sr->{__cnt} || 1;
-            }
-         }
-         if ( !$dr && $dst_sth->{Active} ) {
-            $dr = $dst_sth->fetchrow_hashref;
-            if ( $dr ) {
-               $rows_in_dst += $dr->{__cnt} || 1;
-            }
-         }
-
-         # Compare the rows if both exist.  The result is used several places.
-         my $cmp;
-         if ( $sr && $dr ) {
-            $cmp = key_cmp($source, $sr, $dr, \@key);
-         }
-
-         last MERGE unless $sr || $dr;
-
-         # If the current row is the "same row" on both sides...
-         if ( $sr && $dr && defined $cmp && $cmp == 0 ) {
-            # The "same" row descends from parents that differ.
-            if ( $sr->{__crc} ne $dr->{__crc} ) {
-               if ( $level ) {
-                  push @bad_parents, $sr;
-                  if ( $level && $opts{v} > 2 ) {
-                     printf("-- Level %1d UPDATE parent:   %5d\n",
-                        $level, $sr->{__par});
-                  }
-               }
-               else {
-                  $count{upd}++;
-                  $count{bad}++;
-                  push @to_update, $sr;
-               }
-            }
-            $sr = $dr = undef;
-         }
-
-         # The row in the source doesn't exist at the destination
-         elsif ( !$dr || ( defined $cmp && $cmp < 0 ) ) {
-            if ( $level ) {
-               push @bulk_insert, $sr;
-               if ( $level && $opts{v} > 2 ) {
-                  printf("-- Level %1d BULKIN parent:   %5d\n",
-                     $level, $sr->{__par});
-               }
-            }
-            else {
-               push @to_insert, $sr;
-               if ( $level && $opts{v} > 2 ) {
-                  printf("-- Level %1d INSERT parent:   %5d\n",
-                     $level, $sr->{__par});
-               }
-            }
-            $count{ins} += $sr->{__cnt} || 1;
-            $count{bad} += $sr->{__cnt} || 1;
-            $sr = undef;
-         }
-
-         # Symmetric to the above
-         elsif ( !$sr || ( defined $cmp && $cmp > 0 ) ) {
-            if ( $level ) {
-               push @bulk_delete, $dr;
-               if ( $level && $opts{v} > 2 ) {
-                  printf("-- Level %1d BULKDE parent:   %5d\n",
-                     $level, $dr->{__par});
-               }
-            }
-            else {
-               push @to_delete, $dr;
-               if ( $level && $opts{v} > 2 ) {
-                  printf("-- Level %1d DELETE parent:   %5d\n",
-                     $level, $dr->{__par});
-               }
-            }
-            $count{del} += $dr->{__cnt} || 1;
-            $count{bad} += $dr->{__cnt} || 1;
-            $dr = undef;
-         }
-
-         else {
-            die "This code should never have run.  This is a bug.";
-         }
-
-         if ( $level < $levels && $opts{m} && $opts{m} < $count{bad} ) {
-            print "-- Level $level halt: $count{bad} rows, --maxcost=$opts{m}\n";
-            return 0;
-         }
-
-      }
-
-      my $sum_bulk_ins = sum(map { $_->{__cnt} } @bulk_insert) || 0;
-      my $sum_bulk_del = sum(map { $_->{__cnt} } @bulk_delete) || 0;
-      my $sum_parents  = sum(map { $_->{__cnt} || 1 } @bad_parents) || 0;
-      my $num_bad_rows = scalar(@to_update) + scalar(@to_insert) + $sum_bulk_ins
-                       + scalar(@to_delete) + $sum_bulk_del + $sum_parents;
-
-      if ( $opts{v} ) {
-         printf("--         Level %1d total:   %5d rows\n", $level, $num_bad_rows);
-      }
-      if ( $opts{v} > 1 ) {
-         printf("--         Level %1d summary: %5d parents %5d src rows %5d dst rows\n",
-            $level, scalar(@bad_parents), $rows_in_src, $rows_in_dst);
-         printf("--         Level %1d changes: %5d updates %5d inserts  %5d deletes %5d total\n",
-            $level, scalar(@to_update), scalar(@to_insert) + $sum_bulk_ins,
-            scalar(@to_delete) + $sum_bulk_del,
-            scalar(@to_update) + scalar(@to_insert) + $sum_bulk_ins
-               + scalar(@to_delete) + $sum_bulk_del
-         );
-         printf("--         Level %1d bulk-op: %5d inserts %5d ins-rows %5d deletes %5d del-rows\n",
-            $level, scalar(@bulk_insert), $sum_bulk_ins,
-            scalar(@bulk_delete), $sum_bulk_del);
-      }
-
-      $level--;
-   } while ( $level >= 0 && @bad_parents );
-
-   bu_handle_data_change('DELETE', @to_delete);
-   bu_handle_bulk_change('DELETE', $levels, $dest,   @bulk_delete);
-   # Do UPDATE before INSERT because the current (bad) values may conflict with
-   # newly INSERTed rows otherwise.
-   if ( $opts{l} ) {
-      bu_handle_data_change('DELETE', @to_update);
-      bu_handle_data_change('INSERT', @to_update);
-   }
-   else {
-      bu_handle_data_change('UPDATE', @to_update);
-   }
-   bu_handle_data_change('INSERT', @to_insert);
-   bu_handle_bulk_change('INSERT', $levels, $source, @bulk_insert);
-
-   return 1; # Finished the work.
-}
-
-sub bu_cleanup_tree {
-   my @servers = @_;
-   foreach my $info ( @servers ) {
-      my @tables = @{$info->{dbh}->selectcol_arrayref('SHOW TABLES')};
-      foreach my $table ( grep { m/^$info->{prefix}_\d+$/ } @tables ) {
-         my $query = "DROP TABLE IF EXISTS `$table`";
-         debug_print($query);
-         $info->{dbh}->do($query);
-      }
-   }
-}
-
-# Finds atomic rows that got folded into an entirely insertable or deleteable
-# part of the tree.
-sub bu_handle_bulk_change {
-   my ( $action, $levels, $info, @rows ) = @_;
-   return unless $action =~ m/$opts{o}/i;
-   my $pk = col_list( @{ $info->{info}->{keys}->{$info->{i}} } );
-   my @rows_to_do;
-   my $mask = ($opts{B} ** ($levels - 1)) - 1;
-
-   foreach my $row ( @rows ) {
-
-      # TODO: optimization.
-      # This is logically correct, but MySQL won't use indexes:
-      # "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $mask = $row->{__par}"
-      # This ends up looking like __rem & 255 = 3.  This will match any of the
-      # following (partial list):
-      # +-------+--------+
-      # | __rem | binary |
-      # +-------+--------+
-      # |     3 |     11 |
-      # |    11 |   1011 |
-      # |    15 |   1111 |
-      # |    19 |  10011 |
-      # |    31 |  11111 |
-      # |    51 | 110011 |
-      # |    59 | 111011 |
-      # +-------+--------+
-      # Notice the rightmost two bits are the same in each number.  All these
-      # combinations can be generated by adding 3 and every number from 4 to the
-      # maximum possible __rem value.  This is easiest to do by mentally
-      # left-shifting by the appropriate number of digits and adding.  Suppose
-      # $levels is such that the maximum __rem is 63; something like
-      # $i = 1; while ( $i * 4 < 63 ) { print 3 + $i * 4; $i++; }
-      # If the list is really long, it'll be less efficient for MySQL, so I'd
-      # say only do this if the list is less than 20% of the number of __rem
-      # values.
-
-      my $parent = $row->{__par};
-      my $query  = "SELECT $pk FROM $info->{prefix}_0 WHERE __rem & $mask = $parent";
-      debug_print($query);
-      my $vals = $info->{dbh}->selectall_arrayref($query, { Slice => {} });
-      push @rows_to_do, @$vals;
-   }
-
-   bu_handle_data_change($action, @rows_to_do);
-}
-
-sub bu_handle_data_change {
-   my ( $action, @rows ) = @_;
-   return unless $action =~ m/$opts{o}/i;
-
-   foreach my $row ( @rows ) {
-      delete $row->{__crc}; # Now the row can be used as a WHERE clause
-      handle_data_change($action, $row);
-   }
-}
-
-sub bu_fetch_level {
-   my ( $info, $level, @bad_parents ) = @_;
-   my $dbh = $info->{dbh};
-   my $tbl = "$info->{prefix}_" . $level;
-
-   my $cols  = $level
-             ? '__par, __cnt'
-             : col_list( @{ $info->{info}->{keys}->{$info->{i}} } );
-   my $where = @bad_parents
-             ? "WHERE __rem IN(" . join(',', map { $_->{__par} } @bad_parents) . ")"
-             : '';
-   my $order = $level
-             ? '__par'
-             : col_list( @{ $info->{info}->{keys}->{$info->{i}} } );
-
-   my $query = "SELECT $cols, __crc FROM $tbl $where ORDER BY $order";
-   debug_print($query);
-   my $sth = $dbh->prepare($query, { mysql_use_result => !$opts{bufferresults}});
-   $sth->execute();
-   return $sth;
-}
-
-# Returns how many levels of tables you need to build for a table of a given
-# size.  If your B factor is 4 and you pass in 100, you need the summaries
-# to be grouping mod 64, 16, 4, 1 so you need 4 levels (5 total including 0,
-# which is row-for-row with the real table).
-sub bu_num_levels {
-   my ( $size ) = @_;
-   return int( log($size) / log($opts{B}) );
-}
-
-# Returns the maximum modulus that the tables will need.
-sub bu_size_to_type {
-   my ( $size ) = @_;
-   return $size < 256        ? 'TINYINT'
-        : $size < 65536      ? 'SMALLINT'
-        : $size < 16777216   ? 'MEDIUMINT'
-        : $size < 4294967296 ? 'INT'
-        :                      'BIGINT';
-}
-
-# Figure out how many levels exist for pre-existing tables.
-sub bu_existing_levels {
-   my ($info) = @_;
-   my @tables = @{$info->{dbh}->selectcol_arrayref("SHOW TABLES")};
-   @tables    = grep { m/^$info->{prefix}_\d+$/ } @tables;
-   die "No existing tables with prefix $info->{prefix} found" unless @tables;
-   return max(map { $_ =~ m/(\d+)$/g } @tables);
-}
-
-# ############################################################################
 # Subroutines
 # ############################################################################
-
-# NULL sorts before defined values in MySQL, so I consider undef "less than."
-# Numbers are easy to compare.  Otherwise string comparison is tricky.  This
-# function must match MySQL exactly or the merge algorithm runs off the rails,
-# so when in doubt I ask MySQL to compare strings for me.  See
-# http://dev.mysql.com/doc/refman/5.0/en/charset-literal.html
-sub key_cmp {
-   my ( $info, $r1, $r2, $key ) = @_;
-   foreach my $c ( @$key ) {
-      my $l = $r1->{$c};
-      my $r = $r2->{$c};
-      if ( !defined $l || !defined $r ) {
-         return defined $l || -1;
-      }
-      else {
-         if ($c eq '__par' || $info->{info}->{num_hash}->{$c} ) {   # Numeric column
-            my $cmp = $l <=> $r;
-            return $cmp unless $cmp == 0;
-         }
-         elsif ( $l ne $r ) { # Do case-sensitive cmp, expecting most will be eq
-            # TODO: any of the latin1 collations...
-            # TODO: in pre-4.0, detect BINARY columns
-            my $coll = $collation_for{$c};
-            my $send_to_db = $coll
-               && ( $coll ne 'latin1_swedish_ci' || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/);
-            my $cmp = $send_to_db ? db_cmp($coll, $l, $r) : lc $l cmp lc $r;
-            return $cmp unless $cmp == 0;
-         }
-      }
-   }
-   return 0;
-}
-
-# Send the strings to MySQL to get a consistent cmp that matches MySQL's own
-# sort order.  Without this, the algorithm may do a great deal of extra work.
-sub db_cmp {
-   my ( $coll, $l, $r ) = @_;
-   $collation_sth{$coll} ||= $source->{dbh2}->prepare(
-      "SELECT STRCMP(_$charset_for{$coll}? COLLATE $coll, _$charset_for{$coll}? COLLATE $coll) as res");
-   $collation_sth{$coll}->execute($l, $r);
-   return $collation_sth{$coll}->fetchall_arrayref()->[0]->[0];
-}
 
 # All output has to be prefixed with SQL comments so the output can be piped
 # right into MySQL if desired.
@@ -1783,100 +1480,6 @@ sub handle_data_change {
    }
 }
 
-sub make_slices {
-   my ( $chks ) = @_;
-
-   # Split the CRC result up into slices and glue them together.
-   my @slices;
-   for ( my $start = 1; $start < $crc_wid; $start += 16 ) {
-      my $len = min(16, $crc_wid - $start + 1);
-      push @slices,
-         "LPAD(CONV(BIT_XOR("
-         . "CAST(CONV(SUBSTRING(\@crc, $start, $len), 16, 10) AS UNSIGNED))"
-         . ", 10, 16), $len, '0')";
-   }
-
-   if ( $crc_slice < @slices ) {
-      $slices[$crc_slice] =~ s/\@crc/\@crc := $chks/;
-   }
-   else {
-      map { s/\@crc/$chks/ } @slices;
-   }
-
-   return join(', ', @slices);
-}
-
-sub get_tbl_struct {
-   my ( $info ) = @_;
-   my $ddl = ($info->{dbh}->selectrow_array("SHOW CREATE TABLE $info->{db_tbl}"))[1];
-   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
-   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
-   if ( $opts{c} ) { # Eliminate columns the user said to ignore
-      @cols = grep { exists($opts{c}->{$_}) } @cols;
-   }
-   my @nums = map  { $_ =~ m/`([^`]+)`/g }
-              grep { $_ =~ m/`[^`]+` (?:(?:tiny|big|medium|small)?int|float|double|decimal)/ } @defs;
-   my @null = map { $_ =~ m/`([^`]+)`/g } grep { $_ !~ m/NOT NULL/ } @defs;
-   my %keys =
-      map {
-         my ($name) = $_ =~ m/(PRIMARY|`[^`]*`)/;
-         my ($cols) = $_ =~ m/\((.+)\),?$/;
-         $name =~ s/`//g;
-         ($name, [ grep { m/[^,]/ } split('`', $cols) ])
-      }
-      $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm;
-
-   # Die if REPLACE is in use and there's more than one unique key.
-   if ( $opts{s} eq 'r' && $opts{x} ) {
-      my @matches = $ddl =~ m/(UNIQUE|PRIMARY)/g;
-      if ( @matches > 1 ) {
-         die "It isn't safe to use --strategy=r when the table has multiple unique keys";
-      }
-   }
-
-   # Save the column definitions *exactly* for use when calculating summary
-   # tables.
-   my %alldefs;
-   @alldefs{@cols} = @defs;
-
-   $info->{i} ||= 'PRIMARY';
-   if ( !exists $keys{$info->{i}} ) {
-      die "No such key $info->{i} in table $info->{h}/$info->{db_tbl}";
-   }
-
-   return {
-      cols      => \@cols,
-      col_hash  => { map { $_ => 1 } @cols },
-      null      => \@null,
-      null_hash => { map { $_ => 1 } @null },
-      keys      => \%keys,
-      defs      => \%alldefs,
-      nums      => \@nums,
-      num_hash  => { map { $_ => 1 } @nums },
-   };
-}
-
-# Get a size estimate (not a precise count because that may be very slow).
-# Can't use COUNT(*) because it might be optimized away and so 'rows' could be
-# null.  And in tables where there is no NULL column, again it could be
-# optimized away, so I must generate a WHERE clause that will defeat this.
-# TODO: add --where to this query.
-sub estimate_size {
-   my ($info) = @_;
-   my ( $pkcol ) = @{$info->{info}->{keys}->{$info->{i}}};
-   my $query = "EXPLAIN SELECT COUNT("
-      . join("), COUNT(", split(',', col_list(@{$info->{info}->{cols}})))
-      . ") FROM $info->{db_tbl} "
-      . "WHERE COALESCE(`$pkcol`, `$pkcol`) = `$pkcol`";
-   debug_print($query);
-   return $info->{dbh}->selectrow_hashref($query)->{rows};
-}
-
-sub round {
-   my ($number) = @_;
-   return int( $number + .5 );
-}
-
 sub make_where_clause {
    my ( $dbh, $where ) = @_;
    my @clauses = map {
@@ -1898,28 +1501,9 @@ sub make_where_clause {
    return $clause;
 }
 
-sub find_collation {
-   my ( $dbh, $tbl, $cols ) = @_;
-   if ( $opts{O} && $vp->version_ge($dbh, '4.1.2') ) {
-      my $info = $dbh->selectall_hashref(
-         "SHOW FULL COLUMNS FROM $tbl", 'Field');
-      foreach my $col ( @$cols ) {
-         my $colinfo = $info->{$col}->{Collation};
-         if ( $colinfo ) {
-            $collation_for{$col} = $colinfo;
-         }
-      }
-   }
-}
-
 sub unique {
    my %seen;
    grep { !$seen{$_}++ } @_;
-}
-
-sub make_key {
-   my ( $row, $cols ) = @_;
-   return join('#', map { defined $row->{$_} ? $row->{$_} : 'NULL' } @$cols);
 }
 
 sub get_dbh {
@@ -1941,14 +1525,6 @@ sub get_dbh {
 
 sub col_list {
    return '`' . join('`,`', @_) . '`';
-}
-
-sub coalesce {
-   my $i = 0;
-   while ( $i < @_ && !defined $_[$i] ) {
-      $i++;
-   }
-   return $_[$i];
 }
 
 # ############################################################################
