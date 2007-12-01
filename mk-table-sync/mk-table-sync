@@ -392,7 +392,7 @@ sub groups {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 1149
+# Quoter package 1331
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -410,6 +410,16 @@ sub quote {
       $val =~ s/`/``/g;
    }
    return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+sub quote_val {
+   my ( $self, @vals ) = @_;
+   return join(', ',
+      map {
+         $_ =~ s/'/\\'/g;
+         $_ =~ m/\D/ ? "'$_'" : $_;
+      } @vals
+   );
 }
 
 1;
@@ -600,7 +610,7 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 1327
+# TableSyncStream package 1331
 # ###########################################################################
 
 use strict;
@@ -610,7 +620,7 @@ package TableSyncStream;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(rowsyncer cols) ) {
+   foreach my $arg ( qw(handler cols) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    return bless { %args }, $class;
@@ -630,12 +640,12 @@ sub same_row {
 
 sub not_in_right {
    my ( $self, $lr ) = @_;
-   $self->{rowsyncer}->ins($lr);
+   $self->{handler}->ins($lr, $self->key_cols());
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
-   $self->{rowsyncer}->del($rr);
+   $self->{handler}->del($rr, $self->key_cols());
 }
 
 sub done_with_rows {
@@ -1061,37 +1071,100 @@ sub get_triggers {
 # ###########################################################################
 
 # ###########################################################################
-# RowSyncer package 1326 $Revision$
+# ChangeHandler package 1331
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
-package RowSyncer;
+package ChangeHandler;
 
 sub new {
-   my ( $class ) = @_;
-   return bless {}, $class;
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(quoter database table) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   $args{queue} = 1 unless defined $args{queue};
+   my $self = { %args, map { $_ => [] } qw(del upd ins) };
+   $self->{db_tbl} = $self->{quoter}->quote(@args{qw(database table)});
+   return bless $self, $class;
 }
 
 sub del {
-   my ( $self, $row ) = @_;
-   push @{$self->{del}}, $row;
+   my ( $self, $row, $cols ) = @_;
+   if ( $self->{queue} ) {
+      push @{$self->{del}}, [ $row, $cols ];
+   }
 }
 
 sub ins {
-   my ( $self, $row ) = @_;
-   push @{$self->{ins}}, $row;
+   my ( $self, $row, $cols ) = @_;
+   if ( $self->{queue} ) {
+      push @{$self->{ins}}, [ $row, $cols ];
+   }
 }
 
 sub upd {
-   my ( $self, $row ) = @_;
-   push @{$self->{upd}}, $row;
+   my ( $self, $row, $cols ) = @_;
+   if ( $self->{queue} ) {
+      push @{$self->{upd}}, [ $row, $cols ];
+   }
+}
+
+sub process_rows {
+   my ( $self ) = @_;
+   foreach my $row (
+      (map { $self->make_del(@$_) } @{$self->{del}}),
+      (map { $self->make_upd(@$_) } @{$self->{upd}}),
+      (map { $self->make_ins(@$_) } @{$self->{ins}}),
+   ) {
+      foreach my $action ( @{$self->{actions}} ) {
+         $action->($row);
+      }
+   }
+}
+
+sub make_del {
+   my ( $self, $row, $cols ) = @_;
+   return "DELETE FROM $self->{db_tbl} WHERE "
+      . $self->make_where_clause($row, $cols)
+      . ' LIMIT 1';
+}
+
+sub make_upd {
+   my ( $self, $row, $cols ) = @_;
+   my %in_where = map { $_ => 1 } @$cols;
+   return "UPDATE $self->{db_tbl} SET "
+      . join(', ', map {
+            $self->{quoter}->quote($_)
+            . '=' .  $self->{quoter}->quote_val($row->{$_})
+         } grep { !$in_where{$_} } sort keys %$row)
+      . ' WHERE ' . $self->make_where_clause($row, $cols) . ' LIMIT 1';
+}
+
+sub make_ins {
+   my ( $self, $row, $cols ) = @_;
+   my @cols = sort keys %$row;
+   return "INSERT INTO $self->{db_tbl}("
+      . join(', ', map { $self->{quoter}->quote($_) } @cols)
+      . ') VALUES ('
+      . $self->{quoter}->quote_val( @{$row}{@cols} )
+      . ')';
+}
+
+sub make_where_clause {
+   my ( $self, $row, $cols ) = @_;
+   my @clauses = map {
+      my $val = $row->{$_};
+      my $sep = defined $val ? '=' : ' IS ';
+      $self->{quoter}->quote($_) . $sep . $self->{quoter}->quote_val($val);
+   } @$cols;
+   return join(' AND ', @clauses);
 }
 
 1;
 
 # ###########################################################################
-# End RowSyncer package
+# End ChangeHandler package
 # ###########################################################################
 
 package main;
@@ -1353,14 +1426,19 @@ if ( $opts{v} ) {
       . ' with ' . $dsn_parser->as_string($dest) . "\n";
 }
 
-my $rs = new RowSyncer();
+my $ch = new ChangeHandler(
+   quoter   => $q,
+   database => $dest->{D},
+   table    => $dest->{t},
+   actions  => [ sub { print @_, ";\n" } ],
+);
 my $rd = new RowDiff( dbh => $source->{dbh} );
 my $syncer;
 if ( $algorithms{ $opts{a} } ) {
    my $class = "TableSync$opts{a}";
    $syncer = new $class(
-      rowsyncer => $rs,
-      cols      => $tbl_struct->{cols},
+      handler => $ch,
+      cols    => $tbl_struct->{cols},
    );
 }
 else {
@@ -1383,8 +1461,10 @@ while ( !$syncer->done ) {
    );
    my $src_sth = $source->{dbh}
       ->prepare( $src_sql, { mysql_use_result => !$opts{bufferresults} } );
+   $src_sth->execute();
    my $dst_sth = $dest->{dbh}
       ->prepare( $dst_sql, { mysql_use_result => !$opts{bufferresults} } );
+   $dst_sth->execute();
    $rd->compare_sets(
       left   => $src_sth,
       right  => $dst_sth,
@@ -1392,6 +1472,8 @@ while ( !$syncer->done ) {
       tbl    => $tbl_struct,
    );
 }
+
+$ch->process_rows();
 
 foreach my $table ( $source, $dest ) {
    my $dbh = $table->{dbh};
