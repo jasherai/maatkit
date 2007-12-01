@@ -46,12 +46,12 @@ throws_ok( sub { new TableSyncStream() }, qr/I need a rowsyncer/, 'RowSyncer req
 my $rs = new RowSyncer();
 $t = new TableSyncStream(
    rowsyncer => $rs,
+   cols      => [qw(a b c)],
 );
 
 is (
    $t->get_sql(
       quoter => new Quoter(),
-      cols   => [qw(a b c)],
       where  => 'foo=1',
       database => 'test',
       table    => 'foo',
@@ -78,7 +78,6 @@ $d->compare_sets(
    ),
    syncer => $t,
    tbl => {},
-   key => [qw(a b c)],
 );
 
 is_deeply(

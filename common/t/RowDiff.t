@@ -46,11 +46,15 @@ sub done_with_rows {
    push @$self, 'done';
 }
 
+sub key_cols {
+   return [qw(a)];
+}
+
 package main;
 
 my $tests;
 BEGIN {
-   $tests = 19;
+   $tests = 18;
 }
 
 use Test::More tests => $tests;
@@ -70,7 +74,6 @@ my ( $d, $s );
 
 throws_ok( sub { new RowDiff() }, qr/I need a dbh/, 'DBH required' );
 $d = new RowDiff(dbh => 1);
-throws_ok( sub { $d->compare_sets() }, qr/You must give me/, 'Key required' );
 
 is(
    $d->key_cmp( { a => 1 }, { a => 1 }, [qw(a)], {},),
@@ -140,7 +143,6 @@ $d->compare_sets(
    ),
    syncer => $s,
    tbl => {},
-   key => [qw(a)],
 );
 is_deeply(
    $s,
@@ -159,7 +161,6 @@ $d->compare_sets(
    ),
    syncer => $s,
    tbl => {},
-   key => [qw(a)],
 );
 is_deeply(
    $s,
@@ -179,7 +180,6 @@ $d->compare_sets(
    ),
    syncer => $s,
    tbl => {},
-   key => [qw(a)],
 );
 is_deeply(
    $s,
@@ -200,7 +200,6 @@ $d->compare_sets(
    ),
    syncer => $s,
    tbl => {},
-   key => [qw(a)],
 );
 is_deeply(
    $s,
@@ -227,7 +226,6 @@ $d->compare_sets(
    ),
    syncer => $s,
    tbl => {},
-   key => [qw(a)],
 );
 is_deeply(
    $s,
@@ -251,7 +249,6 @@ $d->compare_sets(
    ),
    syncer => $s,
    tbl => { is_numeric => { a => 1 } },
-   key => [qw(a)],
 );
 is_deeply(
    $s,
@@ -286,7 +283,6 @@ SKIP: {
       ),
       syncer => $s,
       tbl => { collation_for => { a => 'utf8_general_ci' } },
-      key => [qw(a)],
    );
    is_deeply(
       $s,

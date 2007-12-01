@@ -31,15 +31,12 @@ sub new {
 
 # Iterates through two sets of rows and finds differences.  Calls various
 # methods on the $syncer object when it finds differences.  $left and $right
-# should be DBI $sth, or should at least behave like them.  $key is an arrayref
-# of the key columns.  $sths is a hashref of collation-comparison $sths.  $tbl
+# should be DBI $sth, or should at least behave like them.  $tbl
 # is a struct from TableParser.
 sub compare_sets {
    my ( $self, %args ) = @_;
-   my ( $left, $right, $syncer, $key, $tbl )
-      = @args{qw(left right syncer key tbl)};
-   die 'You must give me a $key arrayref'
-      unless ref $key eq 'ARRAY' && @$key;
+   my ( $left, $right, $syncer, $tbl )
+      = @args{qw(left right syncer tbl)};
 
    my ($lr, $rr);       # Current row from the left/right sources.
 
@@ -54,7 +51,7 @@ sub compare_sets {
 
       my $cmp;
       if ( $lr && $rr ) {
-         $cmp = $self->key_cmp($lr, $rr, $key, $tbl);
+         $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
       }
       if ( $lr || $rr ) {
          # If the current row is the "same row" on both sides, meaning the two
@@ -86,15 +83,15 @@ sub compare_sets {
 # ask MySQL to compare strings for me.  I can handle numbers and "normal" latin1
 # characters without asking MySQL.  See
 # http://dev.mysql.com/doc/refman/5.0/en/charset-literal.html.  $r1 and $r2 are
-# row hashrefs.  $key is an arrayref of the key columns to compare.  $tbl is the
+# row hashrefs.  $key_cols is an arrayref of the key columns to compare.  $tbl is the
 # structure returned by TableParser.  The result matches Perl's cmp or <=>
 # operators:
 # 1 cmp 0 =>  1
 # 1 cmp 1 =>  0
 # 1 cmp 2 => -1
 sub key_cmp {
-   my ( $self, $lr, $rr, $key, $tbl ) = @_;
-   foreach my $col ( @$key ) {
+   my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
+   foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
       if ( !defined $l || !defined $r ) {

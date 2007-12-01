@@ -30,20 +30,21 @@ package TableSyncStream;
 # * rowsyncer RowSyncer
 sub new {
    my ( $class, %args ) = @_;
-   die "I need a rowsyncer argument" unless $args{rowsyncer};
-   return bless { rowsyncer => $args{rowsyncer} }, $class;
+   foreach my $arg ( qw(rowsyncer cols) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   return bless { %args }, $class;
 }
 
 # Arguments:
 # * quoter   Quoter
-# * cols     Arrayref of desired column names
 # * database Database name
 # * table    Table name
 # * where    WHERE clause
 sub get_sql {
    my ( $self, %args ) = @_;
    return "SELECT "
-      . join(', ', map { $args{quoter}->quote($_) } @{$args{cols}})
+      . join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}})
       . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' );
 }
@@ -70,6 +71,11 @@ sub done_with_rows {
 sub done {
    my ( $self ) = @_;
    return $self->{done};
+}
+
+sub key_cols {
+   my ( $self ) = @_;
+   return $self->{cols};
 }
 
 1;
