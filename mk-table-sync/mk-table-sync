@@ -1180,8 +1180,6 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 $OUTPUT_AUTOFLUSH = 1;
 
-my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
-
 # TODO: unify timestamp format: add a 0 to the timestamp.
 # TODO: must add a slice for rows greater/less in drilldown mode.
 # TODO: algorithms: nibble, chunk, stream, drilldown, temp-table, group-by (like
@@ -1196,11 +1194,12 @@ my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(t
 # ############################################################################
 
 # Generate a quasi-random string that's constant in a given day
+my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
 my $prefix = '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00');
 $prefix =~ s/\W+/_/g;
 
 my @opt_spec = (
-   { s => 'algorithm|a=s',    d => 'Algorithm to use (default topdown)'},
+   { s => 'algorithm|a=s',    d => 'Algorithm to use (default Stream)'},
    { s => 'analyze|A!',       d => 'Analyze (find/fix/print) in bottom-up algorithm (default)' },
    { s => 'askpass',          d => 'Prompt for password for connections' },
    { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm (default 128)' },
@@ -1255,12 +1254,6 @@ my $dsn_parser = new DSNParser(
       dsn  => undef,
       copy => 1,
    },
-   {
-      key  => 'i',
-      desc => 'Index to drill into when syncing',
-      dsn  => undef,
-      copy => 1,
-   },
 );
 $dsn_parser->prop('required', { t => 1 });
 my $opt_parser = new OptionParser(@opt_spec);
@@ -1309,6 +1302,9 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 
 my %algorithms = map { $_ => 1 } qw( Stream );
+die "Sorry, algorithm '$opts{a}' unknown; try one of "
+   . join( '|', keys %algorithms )
+   unless $algorithms{ $opts{a} };
 
 # ############################################################################
 # Do the work.
@@ -1333,7 +1329,10 @@ if ( !$dest ) {
    $source    = $dsn_parser->parse($spec, $dest);
 }
 
-if ( $source->{t} ne $dest->{t} && -t STDIN && -t STDOUT ) {
+if ( $source->{t} ne $dest->{t}
+      && -t STDIN && -t STDOUT
+      && ($source->{h} || '') ne ($dest->{h} || '') )
+{
    print "Source and destination table have different names.  Continue?  y/n: ";
    my $answer = <STDIN>;
    if ( $answer !~ m/y/i ) {
@@ -1347,6 +1346,16 @@ foreach my $table ( $source, $dest ) {
    $table->{dbh}  ||= get_dbh($table);
    $table->{dbh2} ||= get_dbh($table);
    $table->{db_tbl} = $q->quote(@{$table}{qw(D t)});
+   # Set some SQL options as requested.
+   if ( $opts{skipbinlog} ) {
+      $table->{dbh}->do("/*!32316 SET SQL_LOG_BIN=0 */");
+   }
+   if ( $opts{skipuniquekey} ) {
+      $table->{dbh}->do("/*!40014 SET UNIQUE_CHECKS=0 */");
+   }
+   if ( $opts{K} ) {
+      $table->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+   }
 }
 
 my $tbl_struct = $tp->parse(
@@ -1396,68 +1405,51 @@ if ( $opts{k} && !$opts{r} ) {
       . "because of mk-table-sync bug #1819744.  Run with --no-lock "
       . "or use --algorithm=topdown instead.\n";
    }
-   if ( $opts{v} ) {
-      print "-- Locking table on destination in $lock_mode mode\n";
-   }
+   debug_print("Locking table on destination in $lock_mode mode");
    my $query = "LOCK TABLES $dest->{db_tbl} $lock_mode";
    debug_print($query);
    $dest->{dbh}->do($query);
-   if ( $opts{v} ) {
-      print "-- Acquired $lock_mode table lock on destination\n";
-   }
+   debug_print("Acquired $lock_mode table lock on destination");
 }
 
-# Set some SQL options as requested.
-if ( $opts{skipbinlog} ) {
-   $source->{dbh}->do("/*!32316 SET SQL_LOG_BIN=0 */");
-   $dest->{dbh}->do("/*!32316 SET SQL_LOG_BIN=0 */");
-}
-if ( $opts{skipuniquekey} ) {
-   $source->{dbh}->do("/*!40014 SET UNIQUE_CHECKS=0 */");
-   $dest->{dbh}->do("/*!40014 SET UNIQUE_CHECKS=0 */");
-}
-if ( $opts{K} ) {
-   $source->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-   $dest->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
-}
+debug_print('Syncing ' . $dsn_parser->as_string($source)
+   . ' with ' . $dsn_parser->as_string($dest));
 
-if ( $opts{v} ) {
-   print '-- Syncing ' . $dsn_parser->as_string($source)
-      . ' with ' . $dsn_parser->as_string($dest) . "\n";
+my @actions;
+if ( $opts{p} ) {
+   push @actions, sub { print @_, ";\n" };
+}
+if ( $opts{x} ) {
+   my $dbh = $dest->{dbh};
+   push @actions, sub { map { $dbh->do($_) } @_ };
 }
 
 my $ch = new ChangeHandler(
    quoter   => $q,
    database => $dest->{D},
    table    => $dest->{t},
-   actions  => [ sub { print @_, ";\n" } ],
+   actions  => \@actions,
 );
 my $rd = new RowDiff( dbh => $source->{dbh} );
 my $syncer;
-if ( $algorithms{ $opts{a} } ) {
-   my $class = "TableSync$opts{a}";
-   $syncer = new $class(
-      handler => $ch,
-      cols    => $tbl_struct->{cols},
-   );
-}
-else {
-   die "Sorry, algorithm '$opts{a}' unknown; try one of "
-      . join( '|', keys %algorithms );
-}
+my $class = "TableSync$opts{a}";
+$syncer = new $class(
+   handler => $ch,
+   cols    => $tbl_struct->{cols},
+);
 
 while ( !$syncer->done ) {
    my $src_sql = $syncer->get_sql(
       quoter   => $q,
       database => $source->{D},
       table    => $source->{t},
-      where    => $opts{w},
+      where    => $opts{W},
    );
    my $dst_sql = $syncer->get_sql(
       quoter   => $q,
       database => $dest->{D},
       table    => $dest->{t},
-      where    => $opts{w},
+      where    => $opts{W},
    );
    my $src_sth = $source->{dbh}
       ->prepare( $src_sql, { mysql_use_result => !$opts{bufferresults} } );
@@ -1487,96 +1479,9 @@ exit $exit_status;
 # Subroutines
 # ############################################################################
 
-# All output has to be prefixed with SQL comments so the output can be piped
-# right into MySQL if desired.
 sub debug_print {
    return unless $opts{b};
-   print '-- ' if !$opts{q};
-   print @_;
-   print ";\n" if $opts{q};
-   print "\n" if $opts{b};
-}
-
-# Code factored out of bu_handle_data_change and td_handle_data_change.
-sub handle_data_change {
-   my ( $action, $where) = @_;
-   my $which = $opts{r} ? $source : $dest;
-   my $dbh   = $which->{dbh};
-   my $crit  = make_where_clause($dbh, $where);
-
-   if ( $action eq 'DELETE' ) {
-      my $query = "DELETE FROM $which->{db_tbl} $crit";
-      if ( $opts{p} ) {
-         print STDOUT $query, ";\n";
-      }
-      if ( $opts{x} ) {
-         $dbh->do($query);
-      }
-   }
-
-   else {
-      my $query = "SELECT $source->{cols} FROM $source->{db_tbl} $crit";
-      debug_print($query);
-      my $sth = $source->{dbh}->prepare($query);
-      $sth->execute();
-      while ( my $res = $sth->fetchrow_hashref() ) {
-         if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
-            my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
-            $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
-               . join(',', map { $dbh->quote($res->{$_}) }
-                  @{$which->{info}->{cols}}) . ")";
-         }
-         else {
-            my @cols = grep { !exists($where->{$_}) } @{$which->{info}->{cols}};
-            $query = "UPDATE $which->{db_tbl} SET "
-               . join(',',
-                  map { $q->quote($_) . '=' .  $dbh->quote($res->{$_}) } @cols)
-               . ' ' . $crit;
-         }
-         if ( $opts{p} ) {
-            print STDOUT $query, ";\n";
-         }
-         if ( $opts{x} ) {
-            eval { $dbh->do($query) };
-            if ( $EVAL_ERROR ) {
-               if ( $EVAL_ERROR =~ m/Duplicate entry/ ) {
-                  die "Your tables probably have some differences "
-                     . "that cannot be resolved with UPDATE statements.  "
-                     . "Re-run mk-table-sync with --deleteinsert to proceed.\n";
-               }
-               else {
-                  die $EVAL_ERROR;
-               }
-            }
-         }
-      }
-   }
-}
-
-sub make_where_clause {
-   my ( $dbh, $where ) = @_;
-   my @clauses = map {
-      my $val = $where->{$_};
-      my $sep = defined $val ? ' = ' : ' IS ';
-      $q->quote($_) . $sep . $dbh->quote($val);
-   } keys %$where;
-   my $clause = @clauses 
-      ? 'WHERE (' . join(' AND ', @clauses) . ')'
-      : '';
-
-   # Add in the global WHERE clause from command-line arguments
-   if ( $opts{W} ) {
-      $clause .= @clauses
-         ? " AND ($opts{W})"
-         : "WHERE ($opts{W})";
-   }
-
-   return $clause;
-}
-
-sub unique {
-   my %seen;
-   grep { !$seen{$_}++ } @_;
+   print '-- ', @_, "\n";
 }
 
 sub get_dbh {
@@ -1594,10 +1499,6 @@ sub get_dbh {
       $info->{p} = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
    }
    return DBI->connect($dsn_parser->get_cxn_params($info), $db_options);
-}
-
-sub col_list {
-   return '`' . join('`,`', @_) . '`';
 }
 
 # ############################################################################
