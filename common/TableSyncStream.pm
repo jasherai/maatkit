@@ -78,6 +78,12 @@ sub key_cols {
    return $self->{cols};
 }
 
+# Do any required setup before executing the SQL (such as setting up user
+# variables for checksum queries).
+sub prepare {
+   my ( $self, $dbh ) = @_;
+}
+
 1;
 
 # ###########################################################################

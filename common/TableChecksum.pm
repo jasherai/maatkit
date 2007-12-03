@@ -286,14 +286,14 @@ sub make_checksum_query {
          . "), $crc_wid) AS crc ";
    }
    if ( $args{replicate} ) {
-      $result = "REPLACE /*progress_comment*/ INTO $args{replicate} "
+      $result = "REPLACE /*PROGRESS_COMMENT*/ INTO $args{replicate} "
          . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
-         . "SELECT ?, ?, ?, ?, COUNT(*) AS cnt, $result";
+         . "SELECT ?, ?, /*CHUNK_NUM*/ ?, COUNT(*) AS cnt, $result";
    }
    else {
-      $result = "SELECT /*progress_comment*/ COUNT(*) AS cnt, $result";
+      $result = "SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, $result";
    }
-   return $result . "FROM " . $quoter->quote($dbname, $tblname) . "/*WHERE*/";
+   return $result . "FROM /*DB_TBL*//*WHERE*/";
 }
 
 # Checks tables for differences, optionally recursively.  Arguments is a

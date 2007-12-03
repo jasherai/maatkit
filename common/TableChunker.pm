@@ -252,6 +252,7 @@ sub size_to_rows {
 }
 
 # Determine the range of values for the chunk_col column on this table.
+# TODO: accept a WHERE clause.
 sub get_range_statistics {
    my ( $self, $dbh, $db, $tbl, $col, $opts ) = @_;
    my ( $min, $max ) = $dbh->selectrow_array(
@@ -272,18 +273,21 @@ sub quote {
 
 sub inject_chunks {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(database table chunks chunk_num) ) {
+   foreach my $arg ( qw(database table chunks chunk_num query quoter) ) {
       die "$arg is required" unless defined $args{$arg};
    }
    my $comment = sprintf("/*%s.%s:%d/%d*/",
       $args{database}, $args{table},
       $args{chunk_num} + 1, scalar @{$args{chunks}});
-   $args{query} =~ s!/\*progress_comment\*/!$comment!;
+   $args{query} =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
    my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
    if ( $args{where} ) {
       $where .= " AND ($args{where})";
    }
    $args{query} =~ s!/\*WHERE\*/! $where!;
+   my $db_tbl = $args{quoter}->quote(@args{qw(database table)});
+   $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
+   $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
    return $args{query};
 }
 

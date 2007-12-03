@@ -30,6 +30,7 @@ use English qw(-no_match_vars);
 
 require "../TableParser.pm";
 require "../TableChunker.pm";
+require "../Quoter.pm";
 
 my $p = new TableParser();
 my $c = new TableChunker();
@@ -65,15 +66,16 @@ is_deeply(
 
 is (
    $c->inject_chunks(
-      query     => 'SELECT /*progress_comment*/ FOO FROM 1/*WHERE*/',
+      query     => 'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ FOO FROM 1/*WHERE*/',
       database  => 'sakila',
       table     => 'film',
       chunks    => [ '1=1', 'a=b' ],
       chunk_num => 1,
       where     => 'FOO=BAR',
+      quoter    => new Quoter(),
    ),
-   'SELECT /*sakila.film:2/2*/ FOO FROM 1 WHERE (a=b) AND (FOO=BAR)',
-   'Injects into WHERE clause and progress comment',
+   'SELECT /*sakila.film:2/2*/ 1 AS chunk_num, FOO FROM 1 WHERE (a=b) AND (FOO=BAR)',
+   'Replaces chunk info into query',
 );
 
 # Open a connection to MySQL, or skip the rest of the tests.
