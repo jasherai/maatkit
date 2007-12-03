@@ -416,8 +416,13 @@ sub quote_val {
    my ( $self, @vals ) = @_;
    return join(', ',
       map {
-         $_ =~ s/'/\\'/g;
-         $_ =~ m/\D/ ? "'$_'" : $_;
+         if ( defined $_ ) {
+            $_ =~ s/'/\\'/g;
+            $_ =~ m/\D/ ? "'$_'" : $_;
+         }
+         else {
+            'NULL';
+         }
       } @vals
    );
 }
@@ -661,6 +666,10 @@ sub done {
 sub key_cols {
    my ( $self ) = @_;
    return $self->{cols};
+}
+
+sub prepare {
+   my ( $self, $dbh ) = @_;
 }
 
 1;
@@ -1093,6 +1102,11 @@ sub new {
    return bless $self, $class;
 }
 
+sub fetch_back {
+   my ( $self, $dbh ) = @_;
+   $self->{fetch_back} = $dbh;
+}
+
 sub take_action {
    my ( $self, $sql ) = @_;
    foreach my $action ( @{$self->{actions}} ) {
@@ -1156,16 +1170,32 @@ sub make_DELETE {
 sub make_UPDATE {
    my ( $self, $row, $cols ) = @_;
    my %in_where = map { $_ => 1 } @$cols;
+   my $where = $self->make_where_clause($row, $cols);
+   if ( my $dbh = $self->{fetch_back} ) {
+      my $res = $dbh->selectrow_hashref(
+         "SELECT * FROM $self->{db_tbl} WHERE $where LIMIT 1");
+      @{$row}{keys %$res} = values %$res;
+      $cols = [sort keys %$res];
+   }
+   else {
+      $cols = [ sort keys %$row ];
+   }
    return "UPDATE $self->{db_tbl} SET "
       . join(', ', map {
             $self->{quoter}->quote($_)
             . '=' .  $self->{quoter}->quote_val($row->{$_})
-         } grep { !$in_where{$_} } sort keys %$row)
-      . ' WHERE ' . $self->make_where_clause($row, $cols) . ' LIMIT 1';
+         } grep { !$in_where{$_} } @$cols)
+      . " WHERE $where LIMIT 1";
 }
 
 sub make_INSERT {
    my ( $self, $row, $cols ) = @_;
+   if ( my $dbh = $self->{fetch_back} ) {
+      my $where = $self->make_where_clause($row, $cols);
+      my $res = $dbh->selectrow_hashref(
+         "SELECT * FROM $self->{db_tbl} WHERE $where LIMIT 1");
+      @{$row}{keys %$res} = values %$res;
+   }
    my @cols = sort keys %$row;
    return "INSERT INTO $self->{db_tbl}("
       . join(', ', map { $self->{quoter}->quote($_) } @cols)
@@ -1246,6 +1276,736 @@ sub handle_data_change {
 # End ChangeHandler package
 # ###########################################################################
 
+# ###########################################################################
+# TableChunker package 1267
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableChunker;
+
+use POSIX qw(ceil);
+use List::Util qw(min max);
+
+sub new {
+   bless {}, shift;
+}
+
+my $EPOCH      = '1970-01-01';
+my %int_types  = map { $_ => 1 }
+   qw( bigint date datetime int mediumint smallint time timestamp tinyint year );
+my %real_types = map { $_ => 1 }
+   qw( decimal double float );
+
+sub find_chunk_columns {
+   my ( $self, $table, $opts ) = @_;
+   $opts ||= {};
+
+   my @candidate_cols;
+
+   my @possible_keys = grep { $_->{type} eq 'BTREE' } values %{$table->{keys}};
+
+   my $can_chunk_exact = 0;
+   if ($opts->{exact}) {
+      @candidate_cols =
+         grep {
+            $int_types{$table->{type_for}->{$_}}
+            || $real_types{$table->{type_for}->{$_}}
+         }
+         map  { $_->{cols}->[0] }
+         grep { $_->{unique} && @{$_->{cols}} == 1 }
+              @possible_keys;
+      if ( @candidate_cols ) {
+         $can_chunk_exact = 1;
+      }
+   }
+
+   if ( !@candidate_cols ) {
+      @candidate_cols =
+         grep {
+            $int_types{$table->{type_for}->{$_}}
+            || $real_types{$table->{type_for}->{$_}}
+         }
+         map { $_->{cols}->[0] }
+         @possible_keys;
+   }
+
+   my @result;
+   if ( $table->{keys}->{PRIMARY} ) {
+      my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
+      @result = grep { $_ eq $pk_first_col } @candidate_cols;
+      @candidate_cols = grep { $_ ne $pk_first_col } @candidate_cols;
+   }
+   my $i = 0;
+   my %col_pos = map { $_ => $i++ } @{$table->{cols}};
+   push @result, sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
+
+   return ($can_chunk_exact, \@result);
+}
+
+sub calculate_chunks {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(table col min max rows_in_range size dbh) ) {
+      die "Required argument $arg not given or undefined"
+         unless defined $args{$arg};
+   }
+
+   my @chunks;
+   my ($range_func, $start_point, $end_point);
+   my $col_type = $args{table}->{type_for}->{$args{col}};
+
+
+   if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
+      $start_point = $args{min};
+      $end_point   = $args{max};
+      $range_func  = 'range_num';
+   }
+   elsif ( $col_type eq 'timestamp' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')");
+      $range_func  = 'range_timestamp';
+   }
+   elsif ( $col_type eq 'date' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')");
+      $range_func  = 'range_date';
+   }
+   elsif ( $col_type eq 'time' ) {
+      ($start_point, $end_point) = $args{dbh}->selectrow_array(
+         "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')");
+      $range_func  = 'range_time';
+   }
+   elsif ( $col_type eq 'datetime' ) {
+      $start_point = $self->timestampdiff($args{dbh}, $args{min});
+      $end_point   = $self->timestampdiff($args{dbh}, $args{max});
+      $range_func  = 'range_datetime';
+   }
+   else {
+      die "I don't know how to chunk $col_type\n";
+   }
+
+   if ( !defined $start_point ) {
+      $start_point = 0;
+   }
+   if ( !defined $end_point || $end_point < $start_point ) {
+      $end_point = 0;
+   }
+
+   my $interval = $args{size} * ($end_point - $start_point) / $args{rows_in_range};
+   if ( $int_types{$col_type} ) {
+      $interval = ceil($interval);
+   }
+   $interval ||= $args{size};
+   if ( $args{exact} ) {
+      $interval = $args{size};
+   }
+
+   my $col = "`$args{col}`";
+   if ( $start_point < $end_point ) {
+      my ( $beg, $end );
+      my $iter = 0;
+      for ( my $i = $start_point; $i < $end_point; $i += $interval ) {
+         ( $beg, $end ) = $self->$range_func($args{dbh}, $i, $interval, $end_point);
+
+         if ( $iter++ == 0 ) {
+            push @chunks, "$col < " . $self->quote($end);
+         }
+         else {
+            push @chunks, "$col >= " . $self->quote($beg) . " AND $col < " . $self->quote($end);
+         }
+      }
+
+      my $nullable = $args{table}->{is_nullable}->{$args{col}};
+      pop @chunks;
+      if ( @chunks ) {
+         push @chunks, "$col >= " . $self->quote($beg);
+      }
+      else {
+         push @chunks, $nullable ? "$col IS NOT NULL" : '1=1';
+      }
+      if ( $nullable ) {
+         push @chunks, "$col IS NULL";
+      }
+
+   }
+   else {
+      push @chunks, '1=1';
+   }
+
+   return @chunks;
+}
+
+sub get_first_chunkable_column {
+   my ( $self, $table, $opts ) = @_;
+   my ($exact, $cols) = $self->find_chunk_columns($table, $opts);
+   return $cols->[0];
+}
+
+sub size_to_rows {
+   my ( $self, $dbh, $db, $tbl, $size, $cache ) = @_;
+   my $avg_row_length;
+   my $status;
+   if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
+      $tbl =~ s/_/\\_/g;
+      my $sth = $dbh->prepare(
+         "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'");
+      $sth->execute;
+      $status = $sth->fetchrow_hashref();
+      if ( $cache ) {
+         $cache->{$db}->{$tbl} = $status;
+      }
+   }
+   my ($key) = grep { /avg_row_length/i } keys %$status;
+   $avg_row_length = $status->{$key};
+   return $avg_row_length ? ceil($size / $avg_row_length) : undef;
+}
+
+sub get_range_statistics {
+   my ( $self, $dbh, $db, $tbl, $col, $opts ) = @_;
+   my ( $min, $max ) = $dbh->selectrow_array(
+      "SELECT MIN(`$col`), MAX(`$col`) FROM `$db`.`$tbl`");
+   my $expl = $dbh->selectrow_hashref(
+      "EXPLAIN SELECT * FROM `$db`.`$tbl");
+   return (
+      min           => $min,
+      max           => $max,
+      rows_in_range => $expl->{rows},
+   );
+}
+
+sub quote {
+   my ( $self, $val ) = @_;
+   return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
+}
+
+sub inject_chunks {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(database table chunks chunk_num query quoter) ) {
+      die "$arg is required" unless defined $args{$arg};
+   }
+   my $comment = sprintf("/*%s.%s:%d/%d*/",
+      $args{database}, $args{table},
+      $args{chunk_num} + 1, scalar @{$args{chunks}});
+   $args{query} =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
+   my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
+   if ( $args{where} ) {
+      $where .= " AND ($args{where})";
+   }
+   $args{query} =~ s!/\*WHERE\*/! $where!;
+   my $db_tbl = $args{quoter}->quote(@args{qw(database table)});
+   $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
+   $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
+   return $args{query};
+}
+
+sub range_num {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   my $end = min($max, $start + $interval);
+   $start =~ s/\.(\d{5}).*$/.$1/;
+   $end   =~ s/\.(\d{5}).*$/.$1/;
+   if ( $end > $start ) {
+      return ( $start, $end );
+   }
+   else {
+      die "Chunk size is too small: $end !> $start\n";
+   }
+}
+
+sub range_time {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))");
+}
+
+sub range_date {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))");
+}
+
+sub range_datetime {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND),
+       DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)");
+}
+
+sub range_timestamp {
+   my ( $self, $dbh, $start, $interval, $max ) = @_;
+   return $dbh->selectrow_array(
+      "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))");
+}
+
+sub timestampdiff {
+   my ( $self, $dbh, $time ) = @_;
+   my ( $diff ) = $dbh->selectrow_array(
+      "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+      . "- TO_DAYS('$EPOCH 00:00:00') * 86400");
+   my ( $check ) = $dbh->selectrow_array(
+      "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)");
+   die <<"   EOF"
+   Incorrect datetime math: given $time, calculated $diff but checked to $check.
+   This is probably because you are using a version of MySQL that overflows on
+   large interval values to DATE_ADD().  If not, please report this as a bug.
+   EOF
+      unless $check eq $time;
+   return $diff;
+}
+
+1;
+
+# ###########################################################################
+# End TableChunker package
+# ###########################################################################
+
+# ###########################################################################
+# TableChecksum package 1284
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableChecksum;
+
+use English qw(-no_match_vars);
+use POSIX qw(ceil);
+use List::Util qw(min max);
+
+our %ALGOS = (
+   CHECKSUM => { pref => 0, hash => 0 },
+   ACCUM    => { pref => 1, hash => 1 },
+   BIT_XOR  => { pref => 2, hash => 1 },
+);
+
+sub new {
+   bless {}, shift;
+}
+
+sub best_algorithm {
+   my ( $self, %opts ) = @_;
+   my ($alg, $vp, $dbh) = @opts{ qw(algorithm vp dbh) };
+   my @choices = sort { $ALGOS{$a}->{pref} <=> $ALGOS{$b}->{pref} } keys %ALGOS;
+   die "Invalid checksum algorithm $alg"
+      if $alg && !$ALGOS{$alg};
+
+   if ( 
+      $opts{where} || $opts{chunk}        # CHECKSUM does whole table
+      || $opts{replicate}                 # CHECKSUM can't do INSERT.. SELECT
+      || !$vp->version_ge($dbh, '4.1.1')) # CHECKSUM doesn't exist
+   {
+      @choices = grep { $_ ne 'CHECKSUM' } @choices;
+   }
+
+   if ( !$vp->version_ge($dbh, '4.1.1') ) {
+      @choices = grep { $_ ne 'BIT_XOR' } @choices;
+   }
+
+   if ( $alg && grep { $_ eq $alg } @choices ) {
+      return $alg;
+   }
+
+   if ( $opts{count} && grep { $_ ne 'CHECKSUM' } @choices ) {
+      @choices = grep { $_ ne 'CHECKSUM' } @choices;
+   }
+
+   return $choices[0];
+}
+
+sub is_hash_algorithm {
+   my ( $self, $algorithm ) = @_;
+   return $ALGOS{$algorithm} && $ALGOS{$algorithm}->{hash};
+}
+
+sub choose_hash_func {
+   my ( $self, %opts ) = @_;
+   my @funcs = qw(SHA1 MD5);
+   if ( $opts{func} ) {
+      unshift @funcs, $opts{func};
+   }
+   my ($result, $error);
+   do {
+      my $func;
+      eval {
+         $func = shift(@funcs);
+         $opts{dbh}->do("SELECT $func('test-string')");
+         $result = $func;
+      };
+      if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
+         $error .= qq{$func cannot be used because "$1"\n};
+      }
+   } while ( @funcs && !$result );
+
+   die $error unless $result;
+   return $result;
+}
+
+sub optimize_xor {
+   my ( $self, %opts ) = @_;
+   my ( $dbh, $func ) = @opts{qw(dbh func)};
+
+   my $opt_slice = 0;
+   my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
+   my $sliced    = '';
+   my $start     = 1;
+   my $crc_wid   = length($unsliced) < 16 ? 16 : length($unsliced);
+
+   do { # Try different positions till sliced result equals non-sliced.
+      $dbh->do('SET @crc := "", @cnt := 0');
+      my $slices = $self->make_xor_slices(
+         query     => "\@crc := $func('a')",
+         crc_wid   => $crc_wid,
+         opt_slice => $opt_slice,
+      );
+
+      my $sql = "SELECT CONCAT($slices) AS TEST FROM (SELECT NULL) AS x";
+      $sliced = ($dbh->selectrow_array($sql))[0];
+      if ( $sliced ne $unsliced ) {
+         $start += 16;
+         ++$opt_slice;
+      }
+   } while ( $start < $crc_wid && $sliced ne $unsliced );
+
+   return $sliced eq $unsliced ? $opt_slice : undef;
+}
+
+sub make_xor_slices {
+   my ( $self, %opts ) = @_;
+   my ( $query, $crc_wid, $opt_slice )
+      = @opts{qw(query crc_wid opt_slice)};
+
+   my @slices;
+   for ( my $start = 1; $start <= $crc_wid; $start += 16 ) {
+      my $len = $crc_wid - $start + 1;
+      if ( $len > 16 ) {
+         $len = 16;
+      }
+      push @slices,
+         "LPAD(CONV(BIT_XOR("
+         . "CAST(CONV(SUBSTRING(\@crc, $start, $len), 16, 10) AS UNSIGNED))"
+         . ", 10, 16), $len, '0')";
+   }
+
+   if ( defined $opt_slice && $opt_slice < @slices ) {
+      $slices[$opt_slice] =~ s/\@crc/\@crc := $query/;
+   }
+   else {
+      map { s/\@crc/$query/ } @slices;
+   }
+
+   return join(', ', @slices);
+}
+
+sub make_row_checksum {
+   my ( $self, %args ) = @_;
+   my ( $table, $quoter, $func )
+      = @args{ qw(table quoter func) };
+
+   my $sep = $args{sep} || '#';
+   $sep =~ s/'//g;
+   $sep ||= '#';
+
+   my %cols = map { $_ => 1 } ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
+   my @cols =
+      map {
+         my $type = $table->{type_for}->{$_};
+         my $result = $quoter->quote($_);
+         if ( $type eq 'timestamp' ) {
+            $result .= ' + 0';
+         }
+         elsif ( $type =~ m/float|double/ && $args{precision} ) {
+            $result = "ROUND($result, $args{precision})";
+         }
+         $result;
+      }
+      grep {
+         $cols{$_}
+      }
+      @{$table->{cols}};
+
+   my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
+   if ( @nulls ) {
+      my $bitmap = "CONCAT("
+         . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
+         . ")";
+      push @cols, $bitmap;
+   }
+
+   my $query = @cols > 1
+             ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
+             : "$func($cols[0])";
+
+   return $query;
+}
+
+sub make_checksum_query {
+   my ( $self, %args ) = @_;
+   my ( $dbname, $tblname, $table, $quoter, $algorithm,
+        $func, $crc_wid, $opt_slice )
+      = @args{ qw(dbname tblname table quoter algorithm
+        func crc_wid opt_slice) };
+   die "Invalid or missing checksum algorithm"
+      unless $algorithm && $ALGOS{$algorithm};
+
+   my $result;
+
+   if ( $algorithm eq 'CHECKSUM' ) {
+      return "CHECKSUM TABLE " . $quoter->quote($dbname, $tblname);
+   }
+
+   my $expr = $self->make_row_checksum(%args);
+
+   if ( $algorithm eq 'BIT_XOR' ) {
+      my $slices = $self->make_xor_slices( query => $expr, %args );
+      $result = "LOWER(CONCAT($slices)) AS crc ";
+   }
+   else {
+      $result = "RIGHT(MAX("
+         . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
+         . "$func(CONCAT(\@crc, $expr)))"
+         . "), $crc_wid) AS crc ";
+   }
+   if ( $args{replicate} ) {
+      $result = "REPLACE /*PROGRESS_COMMENT*/ INTO $args{replicate} "
+         . "(db, tbl, chunk, boundaries, this_cnt, this_crc) "
+         . "SELECT ?, ?, /*CHUNK_NUM*/ ?, COUNT(*) AS cnt, $result";
+   }
+   else {
+      $result = "SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, $result";
+   }
+   return $result . "FROM /*DB_TBL*//*WHERE*/";
+}
+
+sub check_server {
+   my ( $self, $args, $level ) = @_;
+   $level ||= 0;
+
+   my $dbh;
+   eval {
+      $dbh = $args->{dbh} || DBI->connect(
+         $args->{dsn_parser}->get_cxn_params($args->{dsn},
+            { RaiseError => 1, PrintError => 0, AutoCommit => 1 }));
+   };
+   if ( $EVAL_ERROR ) {
+      print "Cannot connect to "
+         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
+      return;
+   }
+
+   my ($id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
+   my $master_thinks_i_am = $args->{dsn}->{server_id};
+   if ( !defined $id
+       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
+       || $args->{server_ids_seen}->{$id}++
+   ) {
+      print "Skipping "
+         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
+      return;
+   }
+
+   (my $sql = <<"   EOF") =~ s/^      //gm;
+      SELECT db, tbl, chunk, boundaries,
+         COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,
+         COALESCE(
+            this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
+            0
+         ) AS crc_diff 
+      FROM $args->{table}
+      WHERE master_cnt <> this_cnt OR master_crc <> this_crc 
+      OR ISNULL(master_crc) <> ISNULL(this_crc)
+   EOF
+
+   my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
+   if ( @$diffs ) {
+      $args->{callback}->($args->{dsn}, @$diffs);
+   }
+
+   if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
+
+      my @slaves = 
+         grep { $_->{master_id} == $id } # Only my own slaves.
+         map  {                          # Convert each to all-lowercase keys.
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            \%hash;
+         }
+         @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+
+      foreach my $slave ( @slaves ) {
+         my $dsn = $args->{dsn_parser}->parse(
+             "h=$slave->{host},P=$slave->{port}", $args->{dsn});
+         $dsn->{server_id} = $slave->{server_id};
+         $self->check_server( { %$args, dsn => $dsn, dbh => undef }, $level + 1 );
+      }
+   }
+
+}
+
+1;
+
+# ###########################################################################
+# End TableChecksum package
+# ###########################################################################
+
+# ###########################################################################
+# TableSyncChunk package 1334
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableSyncChunk;
+
+use List::Util qw(max);
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(dbh database table handler chunker
+                        quoter struct checksum cols vp chunksize) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   $args{crc_col} = '__crc';
+   while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
+      $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
+   }
+
+   my @chunks;
+   my $col = $args{chunker}->get_first_chunkable_column($args{struct});
+   if ( $col ) {
+      my %params = $args{chunker}->get_range_statistics(
+         $args{dbh}, $args{database}, $args{table}, $col);
+      if ( !grep { !defined $params{$_} }
+            qw(min max rows_in_range) )
+      {
+         @chunks = $args{chunker}->calculate_chunks(
+            dbh      => $args{dbh},
+            table    => $args{struct},
+            col      => $col,
+            size     => $args{chunksize},
+            %params,
+         );
+      }
+      $args{chunk_col} = $col;
+   }
+   die "Cannot chunk $args{database}.$args{table}; cannot find a column."
+      unless @chunks;
+   $args{chunks}     = \@chunks;
+   $args{chunk_num}  = 0;
+
+   $args{algorithm} = $args{checksum}->best_algorithm(
+      algorithm   => 'BIT_XOR',
+      vp          => $args{vp},
+      dbh         => $args{dbh},
+      where       => 1,
+      chunk       => 1,
+      count       => 1,
+   );
+   $args{func} = $args{checksum}->choose_hash_func(
+      func => 'SHA1',
+      dbh  => $args{dbh},
+   );
+   $args{crc_wid} = max(16, length(
+      $args{dbh}->selectall_arrayref("SELECT $args{func}('a')")->[0]->[0]));
+   if ( $args{algorithm} eq 'BIT_XOR' ) {
+      $args{opt_slice}
+         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => 'SHA1');
+   }
+   $args{chunk_sql} ||= $args{checksum}->make_checksum_query(
+      dbname    => $args{database},
+      tblname   => $args{table},
+      table     => $args{struct},
+      quoter    => $args{quoter},
+      algorithm => $args{algorithm},
+      func      => $args{func},
+      crc_wid   => $args{crc_wid},
+      opt_slice => $args{opt_slice},
+      cols      => $args{cols},
+   );
+   $args{row_sql} ||= $args{checksum}->make_row_checksum(
+      table     => $args{struct},
+      quoter    => $args{quoter},
+      func      => $args{func},
+      cols      => $args{cols},
+   );
+
+   $args{level} = 0;
+   $args{handler}->fetch_back($args{dbh});
+   return bless { %args }, $class;
+}
+
+sub get_sql {
+   my ( $self, %args ) = @_;
+   if ( $self->{level} ) {
+      return 'SELECT '
+         . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
+         . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
+         . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
+         . ' WHERE (' . $self->{chunks}->[$self->{chunk_num} - 1] . ')'
+         . ($args{where} ? " AND ($args{where})" : '');
+   }
+   else {
+      return $self->{chunker}->inject_chunks(
+         database  => $args{database},
+         table     => $args{table},
+         chunks    => $self->{chunks},
+         chunk_num => $self->{chunk_num},
+         query     => $self->{chunk_sql},
+         where     => $args{where},
+         quoter    => $self->{quoter},
+      );
+   }
+}
+
+sub prepare {
+   my ( $self, $dbh ) = @_;
+   $dbh->do(q{SET @crc := ''});
+}
+
+sub same_row {
+   my ( $self, $lr, $rr ) = @_;
+   if ( $self->{level} ) {
+      if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
+         $self->{handler}->change('UPDATE', $lr, $self->key_cols());
+      }
+   }
+   elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
+      $self->{level} = 1;
+   }
+}
+
+sub not_in_right {
+   my ( $self, $lr ) = @_;
+   die "Called not_in_right at level 0" unless $self->{level};
+   $self->{handler}->change('INSERT', $lr, $self->key_cols());
+}
+
+sub not_in_left {
+   my ( $self, $rr ) = @_;
+   die "Called not_in_left at level 0" unless $self->{level};
+   $self->{handler}->change('DELETE', $rr, $self->key_cols());
+}
+
+sub done_with_rows {
+   my ( $self ) = @_;
+   $self->{level} = 0;
+   $self->{chunk_num}++;
+}
+
+sub done {
+   my ( $self ) = @_;
+   return $self->{level} == 0
+      && $self->{chunk_num} >= scalar(@{$self->{chunks}})
+}
+
+sub key_cols {
+   my ( $self ) = @_;
+   return $self->{level} == 0 ? [qw(chunk_num)] : [$self->{chunk_col}];
+}
+
+1;
+
+# ###########################################################################
+# End TableSyncChunk package
+# ###########################################################################
+
 package main;
 
 use DBI;
@@ -1284,8 +2044,9 @@ my @opt_spec = (
    { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm (default 128)' },
    { s => 'bufferresults',    d => 'Fetch all rows from MySQL before comparing' },
    { s => 'build|U!',         d => 'Build tables for bottom-up algorithm (default)' },
+   { s => 'chunksize=i',      d => 'Number of rows to sync at a time for Chunk '
+                                 . 'algorithm (default 50000)'},
    { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
-   { s => 'collate|O!',       d => 'Use MySQL to compare strings if necessary (default)' },
    { s => 'columns|c=h',      d => 'Comma-separated column list' },
    { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
    { s => 'deleteinsert|l',   d => 'Convert all UPDATES to DELETE and INSERT' },
@@ -1320,6 +2081,8 @@ my $du         = new MySQLDump();
 my $tp         = new TableParser();
 my $q          = new Quoter();
 my $vp         = new VersionParser();
+my $chunker    = new TableChunker();
+my $checksum   = new TableChecksum();
 my $dsn_parser = new DSNParser(
    {
       key  => 'D',
@@ -1380,7 +2143,7 @@ $opt_parser->usage_or_errors(%opts);
 # Lookup tables
 # ############################################################################
 
-my %algorithms = map { $_ => 1 } qw( Stream );
+my %algorithms = map { $_ => 1 } qw( Stream Chunk );
 die "Sorry, algorithm '$opts{a}' unknown; try one of "
    . join( '|', keys %algorithms )
    unless $algorithms{ $opts{a} };
@@ -1487,8 +2250,18 @@ my $rd = new RowDiff( dbh => $source->{dbh} );
 my $syncer;
 my $class = "TableSync$opts{a}";
 $syncer = new $class(
-   handler => $ch,
-   cols    => $tbl_struct->{cols},
+   handler   => $ch,
+   cols      => $tbl_struct->{cols},
+   dbh       => $source->{dbh},
+   database  => $source->{D},
+   table     => $source->{t},
+   chunker   => $chunker,
+   struct    => $tbl_struct,
+   checksum  => $checksum,
+   vp        => $vp,
+   quoter    => $q,
+   chunksize => $opts{chunksize},
+   where     => $opts{W},
 );
 
 while ( !$syncer->done ) {
@@ -1504,6 +2277,8 @@ while ( !$syncer->done ) {
       table    => $dest->{t},
       where    => $opts{W},
    );
+   $syncer->prepare($source->{dbh});
+   $syncer->prepare($dest->{dbh});
    my $src_sth = $source->{dbh}
       ->prepare( $src_sql, { mysql_use_result => !$opts{bufferresults} } );
    $src_sth->execute();
@@ -1516,6 +2291,7 @@ while ( !$syncer->done ) {
       syncer => $syncer,
       tbl    => $tbl_struct,
    );
+   $syncer->done_with_rows();
    $ch->process_rows(1);
 }
 

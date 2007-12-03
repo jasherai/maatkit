@@ -42,6 +42,17 @@ sub new {
    return bless $self, $class;
 }
 
+# If I'm supposed to fetch-back, that means I have to get the full row from the
+# database.  For example, someone might call me like so:
+# $me->change('UPDATE', { a => 1 })
+# but 'a' is only the primary key. I now need to select that row and make an
+# UPDATE statement with all of its columns.  The argument is the DB handle used
+# to fetch.
+sub fetch_back {
+   my ( $self, $dbh ) = @_;
+   $self->{fetch_back} = $dbh;
+}
+
 sub take_action {
    my ( $self, $sql ) = @_;
    foreach my $action ( @{$self->{actions}} ) {
@@ -97,6 +108,7 @@ sub process_rows {
    }
 }
 
+# DELETE never needs to be fetched back.
 sub make_DELETE {
    my ( $self, $row, $cols ) = @_;
    return "DELETE FROM $self->{db_tbl} WHERE "
@@ -107,16 +119,32 @@ sub make_DELETE {
 sub make_UPDATE {
    my ( $self, $row, $cols ) = @_;
    my %in_where = map { $_ => 1 } @$cols;
+   my $where = $self->make_where_clause($row, $cols);
+   if ( my $dbh = $self->{fetch_back} ) {
+      my $res = $dbh->selectrow_hashref(
+         "SELECT * FROM $self->{db_tbl} WHERE $where LIMIT 1");
+      @{$row}{keys %$res} = values %$res;
+      $cols = [sort keys %$res];
+   }
+   else {
+      $cols = [ sort keys %$row ];
+   }
    return "UPDATE $self->{db_tbl} SET "
       . join(', ', map {
             $self->{quoter}->quote($_)
             . '=' .  $self->{quoter}->quote_val($row->{$_})
-         } grep { !$in_where{$_} } sort keys %$row)
-      . ' WHERE ' . $self->make_where_clause($row, $cols) . ' LIMIT 1';
+         } grep { !$in_where{$_} } @$cols)
+      . " WHERE $where LIMIT 1";
 }
 
 sub make_INSERT {
    my ( $self, $row, $cols ) = @_;
+   if ( my $dbh = $self->{fetch_back} ) {
+      my $where = $self->make_where_clause($row, $cols);
+      my $res = $dbh->selectrow_hashref(
+         "SELECT * FROM $self->{db_tbl} WHERE $where LIMIT 1");
+      @{$row}{keys %$res} = values %$res;
+   }
    my @cols = sort keys %$row;
    return "INSERT INTO $self->{db_tbl}("
       . join(', ', map { $self->{quoter}->quote($_) } @cols)

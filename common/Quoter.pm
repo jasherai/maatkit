@@ -39,8 +39,13 @@ sub quote_val {
    my ( $self, @vals ) = @_;
    return join(', ',
       map {
-         $_ =~ s/'/\\'/g;
-         $_ =~ m/\D/ ? "'$_'" : $_;
+         if ( defined $_ ) {
+            $_ =~ s/'/\\'/g;
+            $_ =~ m/\D/ ? "'$_'" : $_;
+         }
+         else {
+            'NULL';
+         }
       } @vals
    );
 }
