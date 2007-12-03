@@ -1071,7 +1071,7 @@ sub get_triggers {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 1334
+# ChangeHandler package 1337
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1079,6 +1079,8 @@ use warnings FATAL => 'all';
 package ChangeHandler;
 
 use English qw(-no_match_vars);
+
+my $DEFER_PAT = qr/Duplicate entry|Commands out of sync/;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1106,7 +1108,7 @@ sub change {
          my $sql  = $self->$func($row, $cols);
          $self->take_action($sql);
       };
-      if ( $EVAL_ERROR =~ m/TODO/ ) { # TODO
+      if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
          push @{$self->{$action}}, [ $row, $cols ];
          $self->{queue}++; # Defer further rows
       }
@@ -1120,11 +1122,28 @@ sub change {
 }
 
 sub process_rows {
-   my ( $self ) = @_;
-   map { $self->take_action($_) }
-      (map { $self->make_DELETE(@$_) } @{$self->{DELETE}}),
-      (map { $self->make_UPDATE(@$_) } @{$self->{UPDATE}}),
-      (map { $self->make_INSERT(@$_) } @{$self->{INSERT}});
+   my ( $self, $queue_level ) = @_;
+   return if $queue_level && $queue_level < $self->{queue};
+   my ($row, $cur_act);
+   eval {
+      foreach my $action ( qw(DELETE UPDATE INSERT) ) {
+         my $func = "make_$action";
+         my $rows = $self->{$action};
+         $cur_act = $action;
+         while ( @$rows ) {
+            $row = shift @$rows;
+            my $sql = $self->$func(@$row);
+            $self->take_action($sql);
+         }
+      }
+   };
+   if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
+      unshift @{$self->{$cur_act}}, $row;
+      $self->{queue}++; # Defer rows to the very end
+   }
+   elsif ( $EVAL_ERROR ) {
+      die $EVAL_ERROR;
+   }
 }
 
 sub make_DELETE {
@@ -1504,6 +1523,7 @@ $ch->process_rows();
 
 foreach my $table ( $source, $dest ) {
    my $dbh = $table->{dbh};
+   $dbh->do('UNLOCK TABLES');
    $dbh->commit if $opts{k} || $opts{F} || $opts{1};
    $dbh->disconnect;
 }
