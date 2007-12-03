@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -46,17 +46,30 @@ my $ch = new ChangeHandler(
    actions  => [ sub { push @rows, @_ } ],
 );
 
-$ch->ins({ a => 1, b => 2 }, [qw(a)] );
-$ch->del({ a => 1, b => 2 }, [qw(a)] );
-$ch->upd({ a => 1, b => 2 }, [qw(a)] );
+$ch->change('INSERT', { a => 1, b => 2 }, [qw(a)] );
 
+is_deeply(\@rows,
+   ['INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',],
+   'First row',
+);
+
+$ch->{queue} = 1;
+
+$ch->change('DELETE', { a => 1, b => 2 }, [qw(a)] );
+
+is_deeply(\@rows,
+   ['INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',],
+   'Second row not there yet',
+);
+
+$ch->change('UPDATE', { a => 1, b => 2 }, [qw(a)] );
 $ch->process_rows();
 
 is_deeply(\@rows,
    [
+   'INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',
    'DELETE FROM `test`.`foo` WHERE `a`=1 LIMIT 1',
    'UPDATE `test`.`foo` SET `b`=2 WHERE `a`=1 LIMIT 1',
-   'INSERT INTO `test`.`foo`(`a`, `b`) VALUES (1, 2)',
    ],
    'Dump the rows',
 );

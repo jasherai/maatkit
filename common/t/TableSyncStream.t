@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 5;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 
 require "../TableSyncStream.pm";
@@ -35,6 +35,7 @@ sub throws_ok {
 }
 
 my ($t);
+my @rows;
 
 throws_ok(
    sub { new TableSyncStream() },
@@ -46,6 +47,7 @@ my $ch = new ChangeHandler(
    quoter   => new Quoter(),
    database => 'test',
    table    => 'foo',
+   actions  => [ sub { push @rows, @_ }, ]
 );
 $t = new TableSyncStream(
    handler => $ch,
@@ -62,7 +64,7 @@ is($t->get_sql(
    'Got SQL OK',
 );
 
-isnt( $t->done, 'Not done yet' );
+is( $t->done, undef, 'Not done yet' );
 
 my $d = new RowDiff( dbh => 1 );
 $d->compare_sets(
@@ -83,13 +85,10 @@ $d->compare_sets(
 );
 
 is_deeply(
-   $ch->{del},
-   [ [{ a => 4, b => 2, c => 3 }, [qw(a b c)]]],
-   'Delete rows in handler',
-);
-
-is_deeply(
-   $ch->{ins},
-   [ [{ a => 1, b => 2, c => 3 }, [qw(a b c)]]],
-   'Insert rows in handler',
+   \@rows,
+   [
+   'INSERT INTO `test`.`foo`(`a`, `b`, `c`) VALUES (1, 2, 3)',
+   'DELETE FROM `test`.`foo` WHERE `a`=4 AND `b`=2 AND `c`=3 LIMIT 1',
+   ],
+   'rows from handler',
 );
