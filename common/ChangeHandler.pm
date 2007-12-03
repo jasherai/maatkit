@@ -68,12 +68,31 @@ sub change {
    }
 }
 
+# If called with 1, will process rows that have been deferred from instant
+# processing.  If no arg, will process all rows.
 sub process_rows {
-   my ( $self ) = @_;
-   map { $self->take_action($_) }
-      (map { $self->make_DELETE(@$_) } @{$self->{DELETE}}),
-      (map { $self->make_UPDATE(@$_) } @{$self->{UPDATE}}),
-      (map { $self->make_INSERT(@$_) } @{$self->{INSERT}});
+   my ( $self, $queue_level ) = @_;
+   return if $queue_level && $queue_level < $self->{queue};
+   my ($row, $cur_act);
+   eval {
+      foreach my $action ( qw(DELETE UPDATE INSERT) ) {
+         my $func = "make_$action";
+         my $rows = $self->{$action};
+         $cur_act = $action;
+         while ( @$rows ) {
+            $row = shift @$rows;
+            my $sql = $self->$func(@$row);
+            $self->take_action($sql);
+         }
+      }
+   };
+   if ( $EVAL_ERROR =~ m/TODO/ ) { # TODO
+      unshift @{$self->{$cur_act}}, $row;
+      $self->{queue}++; # Defer rows to the very end
+   }
+   elsif ( $EVAL_ERROR ) {
+      die $EVAL_ERROR;
+   }
 }
 
 sub make_DELETE {
