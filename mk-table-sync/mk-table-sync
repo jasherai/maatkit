@@ -610,7 +610,7 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 1331
+# TableSyncStream package 1334
 # ###########################################################################
 
 use strict;
@@ -640,12 +640,12 @@ sub same_row {
 
 sub not_in_right {
    my ( $self, $lr ) = @_;
-   $self->{handler}->ins($lr, $self->key_cols());
+   $self->{handler}->change('INSERT', $lr, $self->key_cols());
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
-   $self->{handler}->del($rr, $self->key_cols());
+   $self->{handler}->change('DELETE', $rr, $self->key_cols());
 }
 
 sub done_with_rows {
@@ -1071,66 +1071,70 @@ sub get_triggers {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 1331
+# ChangeHandler package 1334
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package ChangeHandler;
 
+use English qw(-no_match_vars);
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(quoter database table) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   $args{queue} = 1 unless defined $args{queue};
-   my $self = { %args, map { $_ => [] } qw(del upd ins) };
+   my $self = { %args, map { $_ => [] } qw(DELETE INSERT UPDATE) };
    $self->{db_tbl} = $self->{quoter}->quote(@args{qw(database table)});
+   $self->{queue}  = 0; # Do changes immediately if possible.
    return bless $self, $class;
 }
 
-sub del {
-   my ( $self, $row, $cols ) = @_;
-   if ( $self->{queue} ) {
-      push @{$self->{del}}, [ $row, $cols ];
+sub take_action {
+   my ( $self, $sql ) = @_;
+   foreach my $action ( @{$self->{actions}} ) {
+      $action->($sql);
    }
 }
 
-sub ins {
-   my ( $self, $row, $cols ) = @_;
-   if ( $self->{queue} ) {
-      push @{$self->{ins}}, [ $row, $cols ];
+sub change {
+   my ( $self, $action, $row, $cols ) = @_;
+   if ( !$self->{queue} ) {
+      eval {
+         my $func = "make_$action";
+         my $sql  = $self->$func($row, $cols);
+         $self->take_action($sql);
+      };
+      if ( $EVAL_ERROR =~ m/TODO/ ) { # TODO
+         push @{$self->{$action}}, [ $row, $cols ];
+         $self->{queue}++; # Defer further rows
+      }
+      elsif ( $EVAL_ERROR ) {
+         die $EVAL_ERROR;
+      }
    }
-}
-
-sub upd {
-   my ( $self, $row, $cols ) = @_;
-   if ( $self->{queue} ) {
-      push @{$self->{upd}}, [ $row, $cols ];
+   else {
+      push @{$self->{$action}}, [ $row, $cols ];
    }
 }
 
 sub process_rows {
    my ( $self ) = @_;
-   foreach my $row (
-      (map { $self->make_del(@$_) } @{$self->{del}}),
-      (map { $self->make_upd(@$_) } @{$self->{upd}}),
-      (map { $self->make_ins(@$_) } @{$self->{ins}}),
-   ) {
-      foreach my $action ( @{$self->{actions}} ) {
-         $action->($row);
-      }
-   }
+   map { $self->take_action($_) }
+      (map { $self->make_DELETE(@$_) } @{$self->{DELETE}}),
+      (map { $self->make_UPDATE(@$_) } @{$self->{UPDATE}}),
+      (map { $self->make_INSERT(@$_) } @{$self->{INSERT}});
 }
 
-sub make_del {
+sub make_DELETE {
    my ( $self, $row, $cols ) = @_;
    return "DELETE FROM $self->{db_tbl} WHERE "
       . $self->make_where_clause($row, $cols)
       . ' LIMIT 1';
 }
 
-sub make_upd {
+sub make_UPDATE {
    my ( $self, $row, $cols ) = @_;
    my %in_where = map { $_ => 1 } @$cols;
    return "UPDATE $self->{db_tbl} SET "
@@ -1141,7 +1145,7 @@ sub make_upd {
       . ' WHERE ' . $self->make_where_clause($row, $cols) . ' LIMIT 1';
 }
 
-sub make_ins {
+sub make_INSERT {
    my ( $self, $row, $cols ) = @_;
    my @cols = sort keys %$row;
    return "INSERT INTO $self->{db_tbl}("
@@ -1160,6 +1164,62 @@ sub make_where_clause {
    } @$cols;
    return join(' AND ', @clauses);
 }
+
+=pod
+sub handle_data_change {
+   my ( $self, $action, $where) = @_;
+   my $dbh   = $which->{dbh};
+   my $crit  = make_where_clause($dbh, $where);
+
+   if ( $action eq 'DELETE' ) {
+      my $query = "DELETE FROM $which->{db_tbl} $crit";
+      if ( $opts{p} ) {
+         print STDOUT $query, ";\n";
+      }
+      if ( $opts{x} ) {
+         $dbh->do($query);
+      }
+   }
+
+   else {
+      my $query = "SELECT $source->{cols} FROM $source->{db_tbl} $crit";
+      debug_print($query);
+      my $sth = $source->{dbh}->prepare($query);
+      $sth->execute();
+      while ( my $res = $sth->fetchrow_hashref() ) {
+         if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
+            my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
+            $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
+               . join(',', map { $dbh->quote($res->{$_}) }
+                  @{$which->{info}->{cols}}) . ")";
+         }
+         else {
+            my @cols = grep { !exists($where->{$_}) } @{$which->{info}->{cols}};
+            $query = "UPDATE $which->{db_tbl} SET "
+               . join(',',
+                  map { $q->quote($_) . '=' .  $dbh->quote($res->{$_}) } @cols)
+               . ' ' . $crit;
+         }
+         if ( $opts{p} ) {
+            print STDOUT $query, ";\n";
+         }
+         if ( $opts{x} ) {
+            eval { $dbh->do($query) };
+            if ( $EVAL_ERROR ) {
+               if ( $EVAL_ERROR =~ m/Duplicate entry/ ) {
+                  die "Your tables probably have some differences "
+                     . "that cannot be resolved with UPDATE statements.  "
+                     . "Re-run mk-table-sync with --deleteinsert to proceed.\n";
+               }
+               else {
+                  die $EVAL_ERROR;
+               }
+            }
+         }
+      }
+   }
+}
+=cut
 
 1;
 
@@ -1364,25 +1424,15 @@ my $tbl_struct = $tp->parse(
 # User wants us to lock for consistency.  But only lock on source initially;
 # might have to wait for the slave to catch up before locking on the dest.
 if ( $opts{k} ) {
-   my $lock_mode = $opts{r} ? 'WRITE' : 'READ';
-   if ( $opts{v} ) {
-      print "-- Locking table on source in $lock_mode mode\n";
-   }
-   my $query = "LOCK TABLES $source->{db_tbl} $lock_mode";
-   debug_print($query);
-   $source->{dbh}->do($query);
-   if ( $opts{v} ) {
-      print "-- Acquired table lock on source in $lock_mode mode\n";
-   }
+   lock_table($source->{dbh}, 'source', $source->{db_tbl},
+      $opts{r} ? 'WRITE' : 'READ');
 }
 
 if ( $opts{w} ) {
    my $query = 'SHOW MASTER STATUS';
    debug_print($query);
    my $ms = $source->{dbh}->selectrow_hashref($query);
-   if ( $opts{v} ) {
-      print "-- Waiting $opts{w} sec for $ms->{File}, $ms->{Position}\n";
-   }
+   debug_print("Waiting $opts{w} sec for $ms->{File}, $ms->{Position}");
    $query = "SELECT MASTER_POS_WAIT('$ms->{File}', $ms->{Position}, $opts{w})";
    debug_print($query);
    my $stat = $dest->{dbh}->selectall_arrayref($query)->[0]->[0];
@@ -1390,45 +1440,29 @@ if ( $opts{w} ) {
    if ( $stat eq 'NULL' || $stat < 0 && !$opts{t} ) {
       die "MASTER_POS_WAIT failed: $stat";
    }
-   if ( $opts{v} ) {
-      print "-- Result of waiting: $stat\n";
-   }
+   debug_print("Result of waiting: $stat");
 }
 
-# Now lock on dest if desired (see above).  In this case don't lock at all on
-# destination if it's a replication slave, or the replication thread will be
-# locked out... we assume there is nothing else writing on the slave.
+# Don't lock at all on destination if it's a replication slave, or the
+# replication thread will be locked out... we assume there is nothing else
+# writing on the slave.
 if ( $opts{k} && !$opts{r} ) {
-   my $lock_mode = $opts{x} ? 'WRITE' : 'READ';
-   if ( $lock_mode eq 'WRITE' && $opts{a} eq 'bottomup' ) {
-      die "Sorry, you can't lock tables with --execute in bottomup mode "
-      . "because of mk-table-sync bug #1819744.  Run with --no-lock "
-      . "or use --algorithm=topdown instead.\n";
-   }
-   debug_print("Locking table on destination in $lock_mode mode");
-   my $query = "LOCK TABLES $dest->{db_tbl} $lock_mode";
-   debug_print($query);
-   $dest->{dbh}->do($query);
-   debug_print("Acquired $lock_mode table lock on destination");
+   lock_table($dest->{dbh}, 'dest', $dest->{db_tbl},
+      $opts{x} ? 'WRITE' : 'READ');
 }
 
 debug_print('Syncing ' . $dsn_parser->as_string($source)
    . ' with ' . $dsn_parser->as_string($dest));
 
-my @actions;
-if ( $opts{p} ) {
-   push @actions, sub { print @_, ";\n" };
-}
-if ( $opts{x} ) {
-   my $dbh = $dest->{dbh};
-   push @actions, sub { map { $dbh->do($_) } @_ };
-}
-
+my $change_dbh = $dest->{dbh};
 my $ch = new ChangeHandler(
    quoter   => $q,
    database => $dest->{D},
    table    => $dest->{t},
-   actions  => \@actions,
+   actions  => [
+      ( $opts{p} ? sub { print @_, ";\n" }                : () ),
+      ( $opts{x} ? sub { map { $change_dbh->do($_) } @_ } : () ),
+   ],
 );
 my $rd = new RowDiff( dbh => $source->{dbh} );
 my $syncer;
@@ -1463,6 +1497,7 @@ while ( !$syncer->done ) {
       syncer => $syncer,
       tbl    => $tbl_struct,
    );
+   $ch->process_rows(1);
 }
 
 $ch->process_rows();
@@ -1478,6 +1513,14 @@ exit $exit_status;
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub lock_table {
+   my ( $dbh, $where, $db_tbl, $mode ) = @_;
+   my $query = "LOCK TABLES $db_tbl $mode";
+   debug_print($query);
+   $dbh->do($query);
+   debug_print("Acquired table lock on $where in $mode mode");
+}
 
 sub debug_print {
    return unless $opts{b};
