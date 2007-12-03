@@ -24,6 +24,8 @@ package ChangeHandler;
 
 use English qw(-no_match_vars);
 
+my $DEFER_PAT = qr/Duplicate entry|Commands out of sync/;
+
 # Arguments:
 # * quoter     Quoter()
 # * database   database name
@@ -55,7 +57,7 @@ sub change {
          my $sql  = $self->$func($row, $cols);
          $self->take_action($sql);
       };
-      if ( $EVAL_ERROR =~ m/TODO/ ) { # TODO
+      if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
          push @{$self->{$action}}, [ $row, $cols ];
          $self->{queue}++; # Defer further rows
       }
@@ -86,7 +88,7 @@ sub process_rows {
          }
       }
    };
-   if ( $EVAL_ERROR =~ m/TODO/ ) { # TODO
+   if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
       unshift @{$self->{$cur_act}}, $row;
       $self->{queue}++; # Defer rows to the very end
    }
