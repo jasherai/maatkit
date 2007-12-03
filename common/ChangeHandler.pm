@@ -22,67 +22,68 @@ use warnings FATAL => 'all';
 
 package ChangeHandler;
 
+use English qw(-no_match_vars);
+
 # Arguments:
 # * quoter     Quoter()
 # * database   database name
 # * table      table name
-# * queue      whether to queue rows for later, or print/execute on the fly.
-#              Default is to queue until dump_rows() or dump_sql() is called.
-# TODO: implement non-queued stuff.
 # * actions    arrayref of subroutines to call when handling a change.
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(quoter database table) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   $args{queue} = 1 unless defined $args{queue};
-   my $self = { %args, map { $_ => [] } qw(del upd ins) };
+   my $self = { %args, map { $_ => [] } qw(DELETE INSERT UPDATE) };
    $self->{db_tbl} = $self->{quoter}->quote(@args{qw(database table)});
+   $self->{queue}  = 0; # Do changes immediately if possible.
    return bless $self, $class;
 }
 
-sub del {
-   my ( $self, $row, $cols ) = @_;
-   if ( $self->{queue} ) {
-      push @{$self->{del}}, [ $row, $cols ];
+sub take_action {
+   my ( $self, $sql ) = @_;
+   foreach my $action ( @{$self->{actions}} ) {
+      $action->($sql);
    }
 }
 
-sub ins {
-   my ( $self, $row, $cols ) = @_;
-   if ( $self->{queue} ) {
-      push @{$self->{ins}}, [ $row, $cols ];
+sub change {
+   my ( $self, $action, $row, $cols ) = @_;
+   if ( !$self->{queue} ) {
+      eval {
+         my $func = "make_$action";
+         my $sql  = $self->$func($row, $cols);
+         $self->take_action($sql);
+      };
+      if ( $EVAL_ERROR =~ m/TODO/ ) { # TODO
+         push @{$self->{$action}}, [ $row, $cols ];
+         $self->{queue}++; # Defer further rows
+      }
+      elsif ( $EVAL_ERROR ) {
+         die $EVAL_ERROR;
+      }
    }
-}
-
-sub upd {
-   my ( $self, $row, $cols ) = @_;
-   if ( $self->{queue} ) {
-      push @{$self->{upd}}, [ $row, $cols ];
+   else {
+      push @{$self->{$action}}, [ $row, $cols ];
    }
 }
 
 sub process_rows {
    my ( $self ) = @_;
-   foreach my $row (
-      (map { $self->make_del(@$_) } @{$self->{del}}),
-      (map { $self->make_upd(@$_) } @{$self->{upd}}),
-      (map { $self->make_ins(@$_) } @{$self->{ins}}),
-   ) {
-      foreach my $action ( @{$self->{actions}} ) {
-         $action->($row);
-      }
-   }
+   map { $self->take_action($_) }
+      (map { $self->make_DELETE(@$_) } @{$self->{DELETE}}),
+      (map { $self->make_UPDATE(@$_) } @{$self->{UPDATE}}),
+      (map { $self->make_INSERT(@$_) } @{$self->{INSERT}});
 }
 
-sub make_del {
+sub make_DELETE {
    my ( $self, $row, $cols ) = @_;
    return "DELETE FROM $self->{db_tbl} WHERE "
       . $self->make_where_clause($row, $cols)
       . ' LIMIT 1';
 }
 
-sub make_upd {
+sub make_UPDATE {
    my ( $self, $row, $cols ) = @_;
    my %in_where = map { $_ => 1 } @$cols;
    return "UPDATE $self->{db_tbl} SET "
@@ -93,7 +94,7 @@ sub make_upd {
       . ' WHERE ' . $self->make_where_clause($row, $cols) . ' LIMIT 1';
 }
 
-sub make_ins {
+sub make_INSERT {
    my ( $self, $row, $cols ) = @_;
    my @cols = sort keys %$row;
    return "INSERT INTO $self->{db_tbl}("
@@ -112,6 +113,62 @@ sub make_where_clause {
    } @$cols;
    return join(' AND ', @clauses);
 }
+
+=pod
+sub handle_data_change {
+   my ( $self, $action, $where) = @_;
+   my $dbh   = $which->{dbh};
+   my $crit  = make_where_clause($dbh, $where);
+
+   if ( $action eq 'DELETE' ) {
+      my $query = "DELETE FROM $which->{db_tbl} $crit";
+      if ( $opts{p} ) {
+         print STDOUT $query, ";\n";
+      }
+      if ( $opts{x} ) {
+         $dbh->do($query);
+      }
+   }
+
+   else {
+      my $query = "SELECT $source->{cols} FROM $source->{db_tbl} $crit";
+      debug_print($query);
+      my $sth = $source->{dbh}->prepare($query);
+      $sth->execute();
+      while ( my $res = $sth->fetchrow_hashref() ) {
+         if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
+            my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
+            $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
+               . join(',', map { $dbh->quote($res->{$_}) }
+                  @{$which->{info}->{cols}}) . ")";
+         }
+         else {
+            my @cols = grep { !exists($where->{$_}) } @{$which->{info}->{cols}};
+            $query = "UPDATE $which->{db_tbl} SET "
+               . join(',',
+                  map { $q->quote($_) . '=' .  $dbh->quote($res->{$_}) } @cols)
+               . ' ' . $crit;
+         }
+         if ( $opts{p} ) {
+            print STDOUT $query, ";\n";
+         }
+         if ( $opts{x} ) {
+            eval { $dbh->do($query) };
+            if ( $EVAL_ERROR ) {
+               if ( $EVAL_ERROR =~ m/Duplicate entry/ ) {
+                  die "Your tables probably have some differences "
+                     . "that cannot be resolved with UPDATE statements.  "
+                     . "Re-run mk-table-sync with --deleteinsert to proceed.\n";
+               }
+               else {
+                  die $EVAL_ERROR;
+               }
+            }
+         }
+      }
+   }
+}
+=cut
 
 1;
 
