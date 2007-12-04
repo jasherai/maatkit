@@ -2018,8 +2018,7 @@ my @opt_spec = (
    { s => 'skipbinlog',       d => 'Do not log to the binary log' },
    { s => 'skipforeignkey|K', d => 'Turn off foreign key checks' },
    { s => 'skipuniquekey',    d => 'Turn off UNIQUE key checks' },
-   { s => 'strategy|s=s',     d => 'Query strategy when syncing (r=replace, s=ins/upd/del) (default s)' },
-   { s => 'synctomaster|r',   d => 'Sync a slave to its master. Implies --strategy=r and --wait 60'},
+   { s => 'synctomaster|r',   d => 'Sync a slave to its master. Implies --wait 60'},
    { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm' },
    { s => 'timeoutok|t',      d => 'Keep going if --wait fails' },
    { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times; default 0' },
@@ -2072,17 +2071,10 @@ $opts{T} = $opts{T} ? 'TEMPORARY' : '';
 if ( !defined $opts{C} ) {
    $opts{C} = !$opts{T};
 }
-if ( $opts{r} ) {
-   $opts{s} = 'r';
-}
 $opts{o} = lc(join('|', $opts{o} =~ m/(\w{3})/g)); # TODO this is ugly
 
 my $src = $dsn_parser->parse(shift(@ARGV));
 my $dst = $dsn_parser->parse(shift(@ARGV), $src);
-
-if ( $opts{s} && $opts{s} !~ m/^(s|r)/ ) {
-   $opt_parser->error('--strategy must be either r or s');
-}
 
 if ( !$src || (!$dst && !$opts{r}) ) {
    $opt_parser->error('SOURCE is required, and DEST is required unless --synctomaster is specified');
@@ -2136,9 +2128,26 @@ foreach my $dbh ( $src_dbh, $dst_dbh ) {
    }
 }
 
-$exit_status ||= sync_table( $src, $src->{D}, $src->{t}, $src_dbh, 
-                             $dst, $dst->{D}, $dst->{t}, $dst_dbh,
-                             $misc_dbh, $opts{a} );
+$exit_status ||= sync_table(
+   src_dsn   => $src,
+   src_db    => $src->{D},
+   src_tbl   => $src->{t},
+   src_dbh   => $src_dbh,
+   dst_dsn   => $dst,
+   dst_db    => $dst->{D},
+   dst_tbl   => $dst->{t},
+   dst_dbh   => $dst_dbh,
+   misc_dbh  => $misc_dbh,
+   algorithm => $opts{a},
+   chunksize => $opts{chunksize},
+   wait      => $opts{W},
+   lock      => $opts{k},
+   replicate => $opts{r},
+   print     => $opts{p},
+   execute   => $opts{x},
+   where     => $opts{W},
+   buffer    => $opts{bufferresults},
+);
 
 foreach my $dbh ( $src_dbh, $dst_dbh, $misc_dbh ) {
    $dbh->commit unless $dbh->{AutoCommit};
@@ -2152,13 +2161,12 @@ exit $exit_status;
 # ############################################################################
 
 sub sync_table {
-   my ( $src, $src_db, $src_tbl, $src_dbh,
-        $dst, $dst_db, $dst_tbl, $dst_dbh,
-        $misc_dbh, $algorithm ) = @_;
+   my ( %args ) = @_;
 
-   if ( $src_tbl ne $dst_tbl
+   # TODO: move outside function, and don't pass DSN into function at all
+   if ( $args{src_tbl} ne $args{dst_tbl}
          && -t STDIN && -t STDOUT
-         && ($src->{h} || '') ne ($dst->{h} || '') )
+         && ($args{src_dsn}->{h} || '') ne ($args{dst_dsn}->{h} || '') )
    {
       print "Continue syncing tables with different names?  y/n: ";
       my $answer = <STDIN>;
@@ -2167,62 +2175,63 @@ sub sync_table {
       }
    }
 
+   my $src_db_tbl = $q->quote($args{src_db}, $args{src_tbl});
+   my $dst_db_tbl = $q->quote($args{dst_db}, $args{dst_tbl});
+
    my $tbl_struct = $tp->parse(
-      $du->get_create_table($src_dbh, $q, $src_db, $src_tbl));
+      $du->get_create_table($args{src_dbh}, $q, $args{src_db}, $args{src_tbl}));
 
    # User wants us to lock for consistency.  But only lock on source initially;
    # might have to wait for the slave to catch up before locking on the dest.
-   if ( $opts{k} ) {
-      lock_table($src_dbh, 'source', $q->quote($src_db, $src_tbl),
-         $opts{r} ? 'WRITE' : 'READ');
+   if ( $args{lock} ) {
+      lock_table($args{src_dbh}, 'source', $src_db_tbl,
+         $args{replicate} ? 'WRITE' : 'READ');
    }
 
-   if ( $opts{w} ) {
-      wait_for_master($src_dbh, $dst_dbh, $opts{w});
+   if ( $args{wait} ) {
+      wait_for_master($args{src_dbh}, $args{dst_dbh}, $args{wait});
    }
 
    # Don't lock at all on destination if it's a replication slave, or the
    # replication thread will be locked out... we assume there is nothing else
    # writing on the slave.
-   if ( $opts{k} && !$opts{r} ) {
-      lock_table($dst_dbh, 'dest', $q->quote($dst_db, $dst_tbl),
-         $opts{x} ? 'WRITE' : 'READ');
+   if ( $args{lock} && !$args{replicate} ) {
+      lock_table($args{dst_dbh}, 'dest', $dst_db_tbl,
+         $args{execute} ? 'WRITE' : 'READ');
    }
 
-   debug_print('Syncing ' . $dsn_parser->as_string($src)
-      . ' with ' . $dsn_parser->as_string($dst));
+   debug_print("Syncing $src_db_tbl with $dst_db_tbl"); # TODO: move out of func?
 
-   my $change_dbh = $dst_dbh; # TODO
+   my $change_dbh = $args{dst_dbh}; # TODO
 
    my $ch = new ChangeHandler(
       quoter    => $q,
-      database  => $dst_db,
-      table     => $dst_tbl,
-      sdatabase => $src_db,
-      stable    => $src_tbl,
+      database  => $args{dst_db},
+      table     => $args{dst_tbl},
+      sdatabase => $args{src_db},
+      stable    => $args{src_tbl},
       actions   => [
-         ( $opts{p} ? sub { print @_, ";\n" }                : () ),
-         ( $opts{x} ? sub { map { $change_dbh->do($_) } @_ } : () ),
+         ( $args{print}   ? sub { print @_, ";\n" }                : () ),
+         ( $args{execute} ? sub { map { $change_dbh->do($_) } @_ } : () ),
       ],
    );
-   my $rd = new RowDiff( dbh => $misc_dbh );
-   my $syncer;
+   my $rd = new RowDiff( dbh => $args{misc_dbh} );
 
-   debug_print("Using $algorithm algorithm");
-   my $class = "TableSync$algorithm";
-   $syncer = new $class(
+   debug_print("Using $args{algorithm} algorithm");
+   my $class = "TableSync$args{algorithm}";
+   my $syncer = new $class(
       handler   => $ch,
       cols      => $tbl_struct->{cols},
-      dbh       => $src_dbh,
-      database  => $src_db,
-      table     => $src_tbl,
+      dbh       => $args{src_dbh},
+      database  => $args{src_db},
+      table     => $args{src_tbl},
       chunker   => $chunker,
       struct    => $tbl_struct,
       checksum  => $checksum,
       vp        => $vp,
       quoter    => $q,
-      chunksize => $opts{chunksize},
-      where     => $opts{W},
+      chunksize => $args{chunksize},
+      where     => $args{where},
    );
 
    my $cycle = 0;
@@ -2230,25 +2239,25 @@ sub sync_table {
       debug_print("Beginning sync cycle $cycle");
       my $src_sql = $syncer->get_sql(
          quoter   => $q,
-         database => $src_db,
-         table    => $src_tbl,
-         where    => $opts{W},
+         database => $args{src_db},
+         table    => $args{src_tbl},
+         where    => $args{where},
       );
       my $dst_sql = $syncer->get_sql(
          quoter   => $q,
-         database => $dst_db,
-         table    => $dst_tbl,
-         where    => $opts{W},
+         database => $args{dst_db},
+         table    => $args{dst_tbl},
+         where    => $args{where},
       );
       $syncer->prepare($src_dbh);
       $syncer->prepare($dst_dbh);
       debug_print("src: " . $src_sql);
       debug_print("dst: " . $dst_sql);
-      my $src_sth = $src_dbh
-         ->prepare( $src_sql, { mysql_use_result => !$opts{bufferresults} } );
+      my $src_sth = $args{src_dbh}
+         ->prepare( $src_sql, { mysql_use_result => !$args{buffer} } );
       $src_sth->execute();
-      my $dst_sth = $dst_dbh
-         ->prepare( $dst_sql, { mysql_use_result => !$opts{bufferresults} } );
+      my $dst_sth = $args{dst_dbh}
+         ->prepare( $dst_sql, { mysql_use_result => !$args{buffer} } );
       $dst_sth->execute();
       $rd->compare_sets(
          left   => $src_sth,
@@ -2259,8 +2268,8 @@ sub sync_table {
       debug_print("Finished sync cycle $cycle"); # TODO report diff count
       debug_print('Processing deferred changes');
       $ch->process_rows(1);
-      foreach my $dbh ( $src_dbh, $dst_dbh ) {
-         $dbh->do('UNLOCK TABLES') if $opts{k} < 2;
+      foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
+         $dbh->do('UNLOCK TABLES'); # TODO
          $dbh->commit unless $dbh->{AutoCommit};
       }
       $cycle++;
@@ -2270,7 +2279,7 @@ sub sync_table {
    $ch->process_rows();
 
    debug_print('Committing and unlocking');
-   foreach my $dbh ( $src_dbh, $dst_dbh ) {
+   foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
       $dbh->do('UNLOCK TABLES');
       $dbh->commit unless $dbh->{AutoCommit};
    }
@@ -2535,13 +2544,6 @@ value to use for this parameter.  Most of the time the size estimates should be
 accurate enough (they just have to be within some logarithmic order of
 magnitude), so estimating size up front is a good optimization.  It prevents
 COUNT() queries that aren't needed.
-
-=item --strategy
-
-Query strategy when syncing (r=replace, s=ins/upd/del).  If you specify r,
-INSERT and UPDATE queries will be issued as REPLACE.  This is most useful when
-you're syncing a slave to its master via replication (see
-L<"--synctomaster">).
 
 =item --synctomaster
 
