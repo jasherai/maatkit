@@ -67,6 +67,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
+      $ENV{MKDEBUG} && _d('Adding extra property ' . $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -79,6 +80,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
+      $ENV{MKDEBUG} && _d("Setting $prop property");
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -86,22 +88,29 @@ sub prop {
 
 sub parse {
    my ( $self, $dsn, $prev, $defaults ) = @_;
-   return unless $dsn;
+   if ( !$dsn ) {
+      $ENV{MKDEBUG} && _d('No DSN to parse');
+      return;
+   }
    $prev     ||= {};
    $defaults ||= {};
    my %vals;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
-      $dsn = $self->prop('autokey') . "=$dsn";
+   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
+      $ENV{MKDEBUG} && _d("Interpreting $dsn as $p=$dsn");
+      $dsn = "$p=$dsn";
    }
    my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
    foreach my $key ( keys %opts ) {
+      $ENV{MKDEBUG} && _d("Finding value for $key");
       $vals{$key} = $hash{$key};
       if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
          $vals{$key} = $prev->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from previous DSN");
       }
       if ( !defined $vals{$key} ) {
          $vals{$key} = $defaults->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from defaults");
       }
    }
    foreach my $key ( keys %hash ) {
@@ -152,12 +161,14 @@ sub get_cxn_params {
    my %opts = %{$self->{opts}};
    my $driver = $self->prop('dbidriver') || '';
    if ( $driver eq 'Pg' ) {
+      $ENV{MKDEBUG} && _d('Building DBI connection string for PostgreSQL');
       $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
                      qw(h P));
    }
    else {
+      $ENV{MKDEBUG} && _d('Building DBI connection string for MySQL');
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
@@ -165,6 +176,11 @@ sub get_cxn_params {
          . ';mysql_read_default_group=mysql';
    }
    return ($dsn, $info->{u}, $info->{p});
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# DSNParser:$line ", @_, "\n";
 }
 
 1;

@@ -57,23 +57,27 @@ sub best_algorithm {
       || $opts{replicate}                 # CHECKSUM can't do INSERT.. SELECT
       || !$vp->version_ge($dbh, '4.1.1')) # CHECKSUM doesn't exist
    {
+      $ENV{MKDEBUG} && _d('Cannot use CHECKSUM algorithm');
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
    # BIT_XOR isn't available till 4.1.1 either
    if ( !$vp->version_ge($dbh, '4.1.1') ) {
+      $ENV{MKDEBUG} && _d('Cannot use BIT_XOR algorithm');
       @choices = grep { $_ ne 'BIT_XOR' } @choices;
    }
 
    # Choose the best (fastest) among the remaining choices.
    if ( $alg && grep { $_ eq $alg } @choices ) {
       # Honor explicit choices.
+      $ENV{MKDEBUG} && _d("User requested $alg algorithm");
       return $alg;
    }
 
    # If the user wants a count, prefer something other than CHECKSUM, because it
    # requires an extra query for the count.
    if ( $opts{count} && grep { $_ ne 'CHECKSUM' } @choices ) {
+      $ENV{MKDEBUG} && _d('Not using CHECKSUM algorithm because COUNT desired');
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
@@ -101,6 +105,7 @@ sub choose_hash_func {
       };
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
          $error .= qq{$func cannot be used because "$1"\n};
+         $ENV{MKDEBUG} && _d("$func cannot be used because $1");
       }
    } while ( @funcs && !$result );
 
@@ -123,6 +128,7 @@ sub optimize_xor {
    my $crc_wid   = length($unsliced) < 16 ? 16 : length($unsliced);
 
    do { # Try different positions till sliced result equals non-sliced.
+      $ENV{MKDEBUG} && _d("Trying slice $opt_slice");
       $dbh->do('SET @crc := "", @cnt := 0');
       my $slices = $self->make_xor_slices(
          query     => "\@crc := $func('a')",
@@ -133,6 +139,7 @@ sub optimize_xor {
       my $sql = "SELECT CONCAT($slices) AS TEST FROM (SELECT NULL) AS x";
       $sliced = ($dbh->selectrow_array($sql))[0];
       if ( $sliced ne $unsliced ) {
+         $ENV{MKDEBUG} && _d("Slice $opt_slice does not work");
          $start += 16;
          ++$opt_slice;
       }
@@ -314,6 +321,8 @@ sub check_server {
       $dbh = $args->{dbh} || DBI->connect(
          $args->{dsn_parser}->get_cxn_params($args->{dsn},
             { RaiseError => 1, PrintError => 0, AutoCommit => 1 }));
+      $ENV{MKDEBUG} && _d('Connected to '
+         . $args->{dsn_parser}->as_string($args->{dsn}));
    };
    if ( $EVAL_ERROR ) {
       print "Cannot connect to "
@@ -325,17 +334,19 @@ sub check_server {
    # server has the ID its master thought, and that we have not seen it before
    # in any case.
    my ($id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
+   $ENV{MKDEBUG} && _d('Working on server ID ' . $id);
    my $master_thinks_i_am = $args->{dsn}->{server_id};
    if ( !defined $id
        || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
        || $args->{server_ids_seen}->{$id}++
    ) {
+      $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
       print "Skipping "
          . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
       return;
    }
 
-   (my $sql = <<"   EOF") =~ s/^      //gm;
+   (my $sql = <<"   EOF") =~ s/\s+/ /gm;
       SELECT db, tbl, chunk, boundaries,
          COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,
          COALESCE(
@@ -347,6 +358,7 @@ sub check_server {
       OR ISNULL(master_crc) <> ISNULL(this_crc)
    EOF
 
+   $ENV{MKDEBUG} && _d($sql);
    my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
    if ( @$diffs ) {
       $args->{callback}->($args->{dsn}, @$diffs);
@@ -369,10 +381,19 @@ sub check_server {
          my $dsn = $args->{dsn_parser}->parse(
              "h=$slave->{host},P=$slave->{port}", $args->{dsn});
          $dsn->{server_id} = $slave->{server_id};
+         $ENV{MKDEBUG} && _d('Recursing from '
+            . $args->{dsn_parser}->as_string($args->{dsn})
+            . ' to '
+            . $args->{dsn_parser}->as_string($dsn));
          $self->check_server( { %$args, dsn => $dsn, dbh => undef }, $level + 1 );
       }
    }
 
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableChecksum:$line ", @_, "\n";
 }
 
 1;

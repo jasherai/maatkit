@@ -66,6 +66,7 @@ sub find_chunk_columns {
       if ( @candidate_cols ) {
          $can_chunk_exact = 1;
       }
+      $ENV{MKDEBUG} && _d('Exact chunkable: ' . join(', ', @candidate_cols));
    }
 
    # If an exactly chunk-able index was not found, fall back to non-exact.
@@ -77,6 +78,7 @@ sub find_chunk_columns {
          }
          map { $_->{cols}->[0] }
          @possible_keys;
+      $ENV{MKDEBUG} && _d('Inexact chunkable: ' . join(', ', @candidate_cols));
    }
 
    # Order the candidates by their original column order.  Put the PK's
@@ -116,6 +118,7 @@ sub calculate_chunks {
    my @chunks;
    my ($range_func, $start_point, $end_point);
    my $col_type = $args{table}->{type_for}->{$args{col}};
+   $ENV{MKDEBUG} && _d("Chunking on $args{col} ($col_type)");
 
    # Determine chunk size in "distance between endpoints" that will give
    # approximately the right number of rows between the endpoints.  Also
@@ -127,18 +130,21 @@ sub calculate_chunks {
       $range_func  = 'range_num';
    }
    elsif ( $col_type eq 'timestamp' ) {
-      ($start_point, $end_point) = $args{dbh}->selectrow_array(
-         "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')");
+      my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
+      $ENV{MKDEBUG} && _d($sql);
+      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
       $range_func  = 'range_timestamp';
    }
    elsif ( $col_type eq 'date' ) {
-      ($start_point, $end_point) = $args{dbh}->selectrow_array(
-         "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')");
+      my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
+      $ENV{MKDEBUG} && _d($sql);
+      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
       $range_func  = 'range_date';
    }
    elsif ( $col_type eq 'time' ) {
-      ($start_point, $end_point) = $args{dbh}->selectrow_array(
-         "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')");
+      my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
+      $ENV{MKDEBUG} && _d($sql);
+      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
       $range_func  = 'range_time';
    }
    elsif ( $col_type eq 'datetime' ) {
@@ -156,11 +162,14 @@ sub calculate_chunks {
    # are '0000-00-00'.  The only thing to do is make them zeroes and
    # they'll be done in a single chunk then.
    if ( !defined $start_point ) {
+      $ENV{MKDEBUG} && _d('Start point is undefined');
       $start_point = 0;
    }
    if ( !defined $end_point || $end_point < $start_point ) {
+      $ENV{MKDEBUG} && _d('End point is undefined or before start point');
       $end_point = 0;
    }
+   $ENV{MKDEBUG} && _d("Start and end of chunk range: $start_point, $end_point");
 
    # Calculate the chunk size, in terms of "distance between endpoints."  If
    # possible and requested, forbid chunks from being any bigger than
@@ -173,6 +182,7 @@ sub calculate_chunks {
    if ( $args{exact} ) {
       $interval = $args{size};
    }
+   $ENV{MKDEBUG} && _d("Chunk interval: $interval units");
 
    # Generate a list of chunk boundaries.  The first and last chunks are
    # inclusive, and will catch any rows before or after the end of the
@@ -238,10 +248,9 @@ sub size_to_rows {
    my $status;
    if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
       $tbl =~ s/_/\\_/g;
-      my $sth = $dbh->prepare(
-         "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'");
-      $sth->execute;
-      $status = $sth->fetchrow_hashref();
+      my $sql = "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'"; # TODO: quote!!!
+      $ENV{MKDEBUG} && _d($sql);
+      $status = $dbh->selectrow_hashref($sql);
       if ( $cache ) {
          $cache->{$db}->{$tbl} = $status;
       }
@@ -255,10 +264,12 @@ sub size_to_rows {
 # TODO: accept a WHERE clause.
 sub get_range_statistics {
    my ( $self, $dbh, $db, $tbl, $col, $opts ) = @_;
-   my ( $min, $max ) = $dbh->selectrow_array(
-      "SELECT MIN(`$col`), MAX(`$col`) FROM `$db`.`$tbl`");
-   my $expl = $dbh->selectrow_hashref(
-      "EXPLAIN SELECT * FROM `$db`.`$tbl");
+   my $sql = "SELECT MIN(`$col`), MAX(`$col`) FROM `$db`.`$tbl`"; # TODO: quote!
+   $ENV{MKDEBUG} && _d($sql);
+   my ( $min, $max ) = $dbh->selectrow_array($sql);
+   $sql = "EXPLAIN SELECT * FROM `$db`.`$tbl";
+   $ENV{MKDEBUG} && _d($sql);
+   my $expl = $dbh->selectrow_hashref($sql);
    return (
       min           => $min,
       max           => $max,
@@ -311,27 +322,31 @@ sub range_num {
 
 sub range_time {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))");
+   my $sql = "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))";
+   $ENV{MKDEBUG} && _d($sql);
+   return $dbh->selectrow_array($sql);
 }
 
 sub range_date {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))");
+   my $sql = "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))";
+   $ENV{MKDEBUG} && _d($sql);
+   return $dbh->selectrow_array($sql);
 }
 
 sub range_datetime {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND),
-       DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)");
+   my $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND), "
+       . "DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)";
+   $ENV{MKDEBUG} && _d($sql);
+   return $dbh->selectrow_array($sql);
 }
 
 sub range_timestamp {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))");
+   my $sql = "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))";
+   $ENV{MKDEBUG} && _d($sql);
+   return $dbh->selectrow_array($sql);
 }
 
 # Returns the number of seconds between $EPOCH and the value, according to
@@ -342,11 +357,12 @@ sub range_timestamp {
 # 2037-06-25 11:29:04.  I know of no workaround.
 sub timestampdiff {
    my ( $self, $dbh, $time ) = @_;
-   my ( $diff ) = $dbh->selectrow_array(
-      "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
-      . "- TO_DAYS('$EPOCH 00:00:00') * 86400");
-   my ( $check ) = $dbh->selectrow_array(
-      "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)");
+   my $sql = "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+      . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
+   my ( $diff ) = $dbh->selectrow_array($sql);
+   $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
+   $ENV{MKDEBUG} && _d($sql);
+   my ( $check ) = $dbh->selectrow_array($sql);
    die <<"   EOF"
    Incorrect datetime math: given $time, calculated $diff but checked to $check.
    This is probably because you are using a version of MySQL that overflows on
@@ -354,6 +370,11 @@ sub timestampdiff {
    EOF
       unless $check eq $time;
    return $diff;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableChunker:$line ", @_, "\n";
 }
 
 1;

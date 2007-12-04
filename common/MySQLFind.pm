@@ -65,8 +65,10 @@ sub new {
          unless $opts{parser} && $opts{dumper};
    }
    if ( $opts{tables}->{status} ) {
-      ($self->{timestamp}->{now})
-         = $opts{dbh}->selectrow_array('SELECT CURRENT_TIMESTAMP');
+      my $sql = 'SELECT CURRENT_TIMESTAMP';
+      $ENV{MKDEBUG} && _d($sql);
+      ($self->{timestamp}->{now}) = $opts{dbh}->selectrow_array($sql);
+      $ENV{MKDEBUG} && _d("Current timestamp: $self->{timestamp}->{now}");
    }
    return $self;
 }
@@ -88,6 +90,7 @@ sub _fetch_db_list {
       push @params, $self->{databases}->{like};
    }
    my $sth = $self->{dbh}->prepare($sql);
+   $ENV{MKDEBUG} && _d($sql, @params);
    $sth->execute( @params );
    return map { $_->[0] } @{$sth->fetchall_arrayref()};
 }
@@ -131,6 +134,7 @@ sub _fetch_tbl_list {
          $sql .= ' LIKE ?';
          push @params, $self->{tables}->{like};
       }
+      $ENV{MKDEBUG} && _d($sql, $params);
       my $sth = $self->{dbh}->prepare($sql);
       $sth->execute(@params);
       my @tables = @{$sth->fetchall_arrayref({})};
@@ -149,6 +153,7 @@ sub _fetch_tbl_list {
          $sql .= ' LIKE ?';
          push @params, $self->{tables}->{like};
       }
+      $ENV{MKDEBUG} && _d($sql, $params);
       my $sth = $self->{dbh}->prepare($sql);
       $sth->execute(@params);
       my @tables = @{$sth->fetchall_arrayref()};
@@ -175,6 +180,7 @@ sub _fetch_tbl_list {
 
 sub _filter {
    my ( $self, $thing, $sub, @vals ) = @_;
+   $ENV{MKDEBUG} && _d("Filtering $thing list");
    my $permit = $self->{$thing}->{permit};
    my $reject = $self->{$thing}->{reject};
    my $regexp = $self->{$thing}->{regexp};
@@ -182,8 +188,8 @@ sub _filter {
       my $val = $sub->($_);
       $val = '' unless defined $val;
       ( !$reject || !$reject->{$val} )
-         && ( !$permit ||  $permit->{$val} )
-         && ( !$regexp ||  $val =~ m/$regexp/ )
+         && ( !$permit || $permit->{$val} )
+         && ( !$regexp || $val =~ m/$regexp/ )
    } @vals
 }
 
@@ -191,18 +197,24 @@ sub _test_date {
    my ( $self, $table, $prop, $test ) = @_;
    $prop = lc $prop;
    if ( !defined $table->{$prop} ) {
+      $ENV{MKDEBUG} && _d("$prop is not defined");
       return $self->{nullpass};
    }
    my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
    die "Invalid date test $test for $prop" unless defined $num;
-   ($self->{timestamp}->{$num})
-      ||= $self->{dbh}->selectrow_array(
-         "SELECT DATE_SUB('$self->{timestamp}->{now}', INTERVAL $num SECOND)");
+   my $sql = "SELECT DATE_SUB('$self->{timestamp}->{now}', INTERVAL $num SECOND)";
+   $ENV{MKDEBUG} && _d($sql);
+   ($self->{timestamp}->{$num}) ||= $self->{dbh}->selectrow_array($sql);
    my $time = $self->{timestamp}->{$num};
    return 
          ( $equality eq '-' && $table->{$prop} gt $time )
       || ( $equality eq '+' && $table->{$prop} lt $time )
       || (                     $table->{$prop} eq $time );
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# MySQLFind:$line ", @_, "\n";
 }
 
 1;

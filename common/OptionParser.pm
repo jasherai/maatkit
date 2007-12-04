@@ -60,6 +60,7 @@ sub new {
    my %disables;
    my %copyfrom;
    unshift @opts,
+      { s => 'debug',   d => 'Set ENV{MKDEBUG} and enable debugging output' },
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
    foreach my $opt ( @opts ) {
@@ -77,18 +78,24 @@ sub new {
          $opt->{g} ||= 'o';
          # Option has a type
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
+            $ENV{MKDEBUG} && _d("Option $opt->{k} type: $y");
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
          # Option is required if it contains the word 'required'
-         $opt->{r} = $opt->{d} =~ m/required/;
+         if ( $opt->{d} =~ m/required/ ) {
+            $opt->{r} = 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} is required");
+         }
          # Option has a default value if it says 'default'
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} has a default");
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             # Defer checking till later because of possible forward references
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+            $ENV{MKDEBUG} && _d("Option $opt->{k} $dis");
          }
       }
       else { # It's an instruction.
@@ -100,9 +107,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -112,6 +121,7 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
+            $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
          }
 
       }
@@ -154,6 +164,7 @@ sub get_participants {
          }
       }
    }
+   $ENV{MKDEBUG} && _d("Participants for $str: ", @participants);
    return @participants;
 }
 
@@ -187,6 +198,10 @@ sub parse {
       exit(0);
    }
 
+   if ( $vals{debug} ) {
+      $ENV{MKDEBUG} = 1;
+   }
+
    if ( @ARGV && $self->{strict} ) {
       $self->error("Unrecognized command-line options @ARGV");
    }
@@ -194,6 +209,7 @@ sub parse {
    # Disable options as specified.
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      $ENV{MKDEBUG} && _d("Unsetting options: ", @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -240,15 +256,18 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
+            $ENV{MKDEBUG} && _d("Setting option $spec->{k} to $val");
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
+         $ENV{MKDEBUG} && _d("Parsing option $spec->{y} as a DSN");
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
+            $ENV{MKDEBUG} && _d("Option $spec->{y} DSN copies from option $from_key");
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -258,6 +277,7 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
+               $ENV{MKDEBUG} && _d("Setting option $spec->{y} to num * factor");
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -269,6 +289,7 @@ sub parse {
 
    # Process list arguments
    foreach my $spec ( grep { $_->{y} } @specs ) {
+      $ENV{MKDEBUG} && _d("Treating option $spec->{k} as a list");
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -428,6 +449,11 @@ sub prompt_noecho {
 sub groups {
    my ( $self, @groups ) = @_;
    push @{$self->{groups}}, @groups;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# OptionParser:$line ", @_, "\n";
 }
 
 1;
