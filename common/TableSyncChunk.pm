@@ -190,7 +190,20 @@ sub done {
 
 sub key_cols {
    my ( $self ) = @_;
-   return $self->{state} == 0 ? [qw(chunk_num)] : [$self->{chunk_col}];
+   my @cols;
+   if ( $self->{state} == 0 ) {
+      @cols = qw(chunk_num);
+   }
+   else {
+      @cols = $self->{chunk_col};
+   }
+   $ENV{MKDEBUG} && _d("State $self->{state}, key cols " . join(', ', @cols));
+   return \@cols;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableSyncChunk:$line ", @_, "\n";
 }
 
 1;

@@ -54,10 +54,12 @@ sub new {
 sub fetch_back {
    my ( $self, $dbh ) = @_;
    $self->{fetch_back} = $dbh;
+   $ENV{MKDEBUG} && _d('Will fetch rows from source when updating destination');
 }
 
 sub take_action {
    my ( $self, $sql ) = @_;
+   $ENV{MKDEBUG} && _d('Calling subroutines on ', $sql);
    foreach my $action ( @{$self->{actions}} ) {
       $action->($sql);
    }
@@ -65,6 +67,7 @@ sub take_action {
 
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
+   $ENV{MKDEBUG} && _d("$action where ", $self->make_where_clause($row, $cols));
    if ( !$self->{queue} ) {
       eval {
          my $func = "make_$action";
@@ -72,6 +75,9 @@ sub change {
          $self->take_action($sql);
       };
       if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
+         # TODO: index violations do not have to be queued, do they?  Note to
+         # self: try to prove that REPLACE can or cannot destroy data.
+         $ENV{MKDEBUG} && _d('The DBH is busy; queueing further changes');
          push @{$self->{$action}}, [ $row, $cols ];
          $self->{queue}++; # Defer further rows
       }
@@ -80,6 +86,7 @@ sub change {
       }
    }
    else {
+      $ENV{MKDEBUG} && _d('Queueing change for later');
       push @{$self->{$action}}, [ $row, $cols ];
    }
 }
@@ -88,12 +95,16 @@ sub change {
 # processing.  If no arg, will process all rows.
 sub process_rows {
    my ( $self, $queue_level ) = @_;
-   return if $queue_level && $queue_level < $self->{queue};
+   if ( $queue_level && $queue_level < $self->{queue} ) {
+      $ENV{MKDEBUG} && _d("Not processing now $queue_level<$self->{queue}");
+      return;
+   }
    my ($row, $cur_act);
    eval {
       foreach my $action ( qw(DELETE UPDATE INSERT) ) {
          my $func = "make_$action";
          my $rows = $self->{$action};
+         $ENV{MKDEBUG} && _d(scalar(@$rows) . " to $action");
          $cur_act = $action;
          while ( @$rows ) {
             $row = shift @$rows;
@@ -104,6 +115,7 @@ sub process_rows {
    };
    if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
       unshift @{$self->{$cur_act}}, $row;
+      $ENV{MKDEBUG} && _d('The DBH is still busy; increasing queue level');
       $self->{queue}++; # Defer rows to the very end
    }
    elsif ( $EVAL_ERROR ) {
@@ -124,8 +136,9 @@ sub make_UPDATE {
    my %in_where = map { $_ => 1 } @$cols;
    my $where = $self->make_where_clause($row, $cols);
    if ( my $dbh = $self->{fetch_back} ) {
-      my $res = $dbh->selectrow_hashref(
-         "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1");
+      my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
+      $ENV{MKDEBUG} && _d("Fetching data for UPDATE: $sql");
+      my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       $cols = [sort keys %$res];
    }
@@ -145,8 +158,9 @@ sub make_INSERT {
    my @cols = sort keys %$row;
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
-      my $res = $dbh->selectrow_hashref(
-         "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1");
+      my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
+      $ENV{MKDEBUG} && _d("Fetching data for UPDATE: $sql");
+      my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = sort keys %$res;
    }
@@ -165,6 +179,11 @@ sub make_where_clause {
       $self->{quoter}->quote($_) . $sep . $self->{quoter}->quote_val($val);
    } @$cols;
    return join(' AND ', @clauses);
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# ChangeHandler:$line ", @_, "\n";
 }
 
 1;

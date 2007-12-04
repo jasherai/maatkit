@@ -84,6 +84,11 @@ sub prepare {
    my ( $self, $dbh ) = @_;
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableSyncStream:$line ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################

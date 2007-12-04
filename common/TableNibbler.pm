@@ -28,7 +28,7 @@ sub new {
 
 # Sorts indexes in this order: PRIMARY, unique, non-nullable, any (shortest
 # first, alphabetical).  Only BTREE indexes are considered.  TODO: consider
-# length as # of bytes instead of # of columns.
+# length as # of bytes instead of # of columns.  TODO: move this to TableParser.
 sub sort_indexes {
    my ( $self, $tbl ) = @_;
    my @indexes
@@ -60,6 +60,7 @@ sub find_best_index {
          # Try to pick the best index.
          ($best) = $self->sort_indexes($tbl);
          if ( !$best ) {
+            # TODO: move into application code?
             die "Cannot find an ascendable index in table";
          }
       }
@@ -107,8 +108,11 @@ sub generate_asc_stmt {
 
    # These are the columns we'll ascend.
    @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
+   $ENV{MKDEBUG} && _d("Will ascend index $index");
+   $ENV{MKDEBUG} && _d("Will ascend columns " . join(', ', @asc_cols));
    if ( $opts{ascfirst} ) {
       @asc_cols = $asc_cols[0];
+      $ENV{MKDEBUG} && _d("Ascending only first column");
    }
 
    # We found the columns by name, now find their positions for use as
@@ -121,6 +125,8 @@ sub generate_asc_stmt {
       }
       push @asc_slice, $col_posn{$col};
    }
+   $ENV{MKDEBUG}
+      && _d('Will ascend, in ordinal position: ' . join(', ', @asc_slice));
 
    my $asc_stmt = {
       cols  => \@cols,
@@ -225,6 +231,7 @@ sub generate_del_stmt {
    else {
       @del_cols = @{$tbl->{cols}};
    }
+   $ENV{MKDEBUG} && _d('Columns needed for DELETE: ' . join(', ', @del_cols));
 
    # We found the columns by name, now find their positions for use as
    # array slices, and make sure they are included in the SELECT list.
@@ -236,6 +243,7 @@ sub generate_del_stmt {
       }
       push @del_slice, $col_posn{$col};
    }
+   $ENV{MKDEBUG} && _d('Ordinals needed for DELETE: ' . join(', ', @del_slice));
 
    my $del_stmt = {
       cols  => \@cols,
@@ -303,6 +311,11 @@ sub generate_ins_stmt {
    };
 
    return $ins_stmt;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableNibbler:$line ", @_, "\n";
 }
 
 1;

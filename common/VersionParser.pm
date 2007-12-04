@@ -29,16 +29,27 @@ sub new {
 
 sub parse {
    my ( $self, $str ) = @_;
-   return sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+   my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+   $ENV{MKDEBUG} && _d("$str parses to $result");
+   return $result;
 }
 
 # Compares versions like 5.0.27 and 4.1.15-standard-log.  Caches version number
 # for each DBH for later use.
 sub version_ge {
    my ( $self, $dbh, $target ) = @_;
-   $self->{$dbh} ||= $self->parse(
-      $dbh->selectrow_array('SELECT VERSION()'));
-   return $self->{$dbh} ge $self->parse($target);
+   if ( !$self->{$dbh} ) {
+      $self->{$dbh} = $self->parse(
+         $dbh->selectrow_array('SELECT VERSION()'));
+   }
+   my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
+   $ENV{MKDEBUG} && _d("$self->{$dbh} ge $target: $result");
+   return $result;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# VersionParser:$line ", @_, "\n";
 }
 
 1;

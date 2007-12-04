@@ -1,7 +1,6 @@
 use test;
 
-drop table if exists test1;
-drop table if exists test2;
+drop table if exists test1,test2;
 
 create table test1(
    a int not null,

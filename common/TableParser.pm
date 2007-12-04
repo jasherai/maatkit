@@ -33,7 +33,7 @@ sub parse {
    my ( $self, $ddl, $opts ) = @_;
 
    if ( ref $ddl eq 'ARRAY' ) {
-      if ( $ddl->[0] eq 'table' ) {
+      if ( lc $ddl->[0] eq 'table' ) {
          $ddl = $ddl->[1];
       }
       else {
@@ -48,9 +48,11 @@ sub parse {
    }
 
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   $ENV{MKDEBUG} && _d('Columns: ' . join(', ', @cols));
 
    # Save the column definitions *exactly*
    my %def_for;
@@ -100,6 +102,7 @@ sub parse {
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
       my @cols   = grep { m/[^,]/ } split('`', $cols);
       $name      =~ s/`//g;
+      $ENV{MKDEBUG} && _d("Index $name columns: " . join(', ', @cols));
 
       $keys{$name} = {
          colnames    => $cols,
@@ -125,6 +128,11 @@ sub parse {
       engine         => $engine,
       type_for       => \%type_for,
    };
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableParser:$line ", @_, "\n";
 }
 
 1;
