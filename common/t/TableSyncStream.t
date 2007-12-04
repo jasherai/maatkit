@@ -44,10 +44,12 @@ throws_ok(
 );
 
 my $ch = new ChangeHandler(
-   quoter   => new Quoter(),
-   database => 'test',
-   table    => 'foo',
-   actions  => [ sub { push @rows, @_ }, ]
+   quoter    => new Quoter(),
+   database  => 'test',
+   table     => 'foo',
+   sdatabase => 'test',
+   stable    => 'foo',
+   actions   => [ sub { push @rows, @_ }, ]
 );
 $t = new TableSyncStream(
    handler => $ch,

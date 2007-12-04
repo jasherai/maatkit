@@ -31,7 +31,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
-   plan tests => 15;
+   plan tests => 16;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -65,10 +65,12 @@ my $checksum   = new TableChecksum();
 
 my @rows;
 my $ch = new ChangeHandler(
-   quoter   => new Quoter(),
-   database => 'test',
-   table    => 'test1',
-   actions  => [ sub { push @rows, @_ }, ]
+   quoter    => new Quoter(),
+   database  => 'test',
+   table     => 'test1',
+   sdatabase => 'test',
+   stable    => 'test1',
+   actions   => [ sub { push @rows, @_ }, ]
 );
 
 my $t = new TableSyncChunk(
@@ -105,7 +107,7 @@ like ($t->get_sql(
    'First chunk SQL',
 );
 
-is_deeply($t->key_cols(), [qw(chunk_num)], 'Key cols at level 0');
+is_deeply($t->key_cols(), [qw(chunk_num)], 'Key cols in state 0');
 $t->done_with_rows();
 
 like ($t->get_sql(
@@ -142,8 +144,8 @@ $t->done_with_rows(); # tell it to begin working on first chunk
 
 throws_ok(
    sub { $t->not_in_left() },
-   qr/at level 0/,
-   'not_in_(side) illegal at level 0',
+   qr/in state 0/,
+   'not_in_(side) illegal in state 0',
 );
 
 # "find a bad row"
@@ -151,13 +153,15 @@ $t->same_row(
    { chunk_num => 0, cnt => 0, crc => 'abc' },
    { chunk_num => 0, cnt => 1, crc => 'abc' },
 );
-ok($t->{level}, 'Working inside chunk');
+is($t->{state}, 1, 'Working inside chunk');
+$t->done_with_rows();
+is($t->{state}, 2, 'Now in state to fetch individual rows');
 is($t->get_sql(database => 'test', table => 'test1'),
    "SELECT `a`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM "
       . "`test`.`test1` WHERE (`a` < 3)",
    'SQL now working inside chunk'
 );
-ok($t->{level}, 'Still working inside chunk');
+ok($t->{state}, 'Still working inside chunk');
 is(scalar(@rows), 0, 'No bad row triggered');
 
 $t->not_in_left({a => 1});
@@ -200,4 +204,4 @@ is_deeply(\@rows,
 );
 
 $t->done_with_rows();
-is($t->{level}, 0, 'Now not working inside chunk');
+is($t->{state}, 0, 'Now not working inside chunk');
