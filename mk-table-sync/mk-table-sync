@@ -2007,12 +2007,12 @@ my @opt_spec = (
    { s => 'execute|x',        d => 'Execute queries to sync tables' },
    { s => 'forupdate|F',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
    { s => 'function|f=s',     d => 'Cryptographic hash function (SHA1, MD5...)' },
+   # TODO: allow three levels of locking (lock/release every cycle)
+   # Actually, singletxn can accomplish that...
    { s => 'lock|k!',          d => 'Lock tables when beginning work' },
-   { s => 'maxcost|m=i',      d => 'Maximum rowcount before aborting' },
    { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default ins,upd,del)' },
    { s => 'prefix|P=s',       d => "Tablename prefix for bottom-up algorithm (default $prefix)" },
    { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
-   { s => 'separator|e=s',    d => 'Separator for CONCAT_WS (default #)' },
    { s => 'singletxn|1',      d => 'Do in a single transaction' },
    { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
    { s => 'skipbinlog',       d => 'Do not log to the binary log' },
@@ -2077,14 +2077,14 @@ if ( $opts{r} ) {
 }
 $opts{o} = lc(join('|', $opts{o} =~ m/(\w{3})/g)); # TODO this is ugly
 
-my $source = $dsn_parser->parse(shift(@ARGV), {}     );
-my $dest   = $dsn_parser->parse(shift(@ARGV), $source);
+my $src = $dsn_parser->parse(shift(@ARGV));
+my $dst = $dsn_parser->parse(shift(@ARGV), $src);
 
 if ( $opts{s} && $opts{s} !~ m/^(s|r)/ ) {
    $opt_parser->error('--strategy must be either r or s');
 }
 
-if ( !$source || (!$dest && !$opts{r}) ) {
+if ( !$src || (!$dst && !$opts{r}) ) {
    $opt_parser->error('SOURCE is required, and DEST is required unless --synctomaster is specified');
 }
 
@@ -2104,165 +2104,44 @@ die "Sorry, algorithm '$opts{a}' unknown; try one of "
 # ############################################################################
 my $exit_status = 0;
 
-if ( !$dest ) {
-   # The user specified --synctomaster and no master, so the argument is the
-   # slave, and master info comes from SHOW SLAVE STATUS.
-   $dest = $source;
-   undef $source;
-   $dest->{dbh} = get_dbh($dest);
+my ($src_dbh, $dst_dbh, $misc_dbh);
 
-   # I want column names to be lowercased for just this one statement.
-   $dest->{dbh}->{FetchHashKeyName} = 'NAME_lc';
-   my $sth = $dest->{dbh}->prepare('SHOW SLAVE STATUS', { FetchHashKeyName => 'NAME_lc' } );
-   $dest->{dbh}->{FetchHashKeyName} = 'NAME';
-
-   $sth->execute();
-   my $status = $sth->fetchrow_hashref();
+if ( !$dst ) {
+   debug_print("Connecting to the master by inspecting SHOW SLAVE STATUS");
+   $dst     = $src; undef $src; # swap source and destination.
+   $dst_dbh = get_dbh($dst);
+   my $query  = 'SHOW SLAVE STATUS';
+   debug_print($query);
+   my $status = $dst_dbh->selectrow_hashref($query);
+   $status    = { map { lc($_) => $status->{$_} } keys %$status };
    my $spec   = "h=$status->{master_host},P=$status->{master_port}";
-   $source    = $dsn_parser->parse($spec, $dest);
+   $src       = $dsn_parser->parse($spec, $dst);
 }
 
-if ( $source->{t} ne $dest->{t}
-      && -t STDIN && -t STDOUT
-      && ($source->{h} || '') ne ($dest->{h} || '') )
-{
-   print "Source and destination table have different names.  Continue?  y/n: ";
-   my $answer = <STDIN>;
-   if ( $answer !~ m/y/i ) {
-      exit(1);
-   }
-}
+# Open connections as needed.
+$src_dbh   = get_dbh($src);
+$dst_dbh ||= get_dbh($dst);
+$misc_dbh  = get_dbh($src); # For collation checks.
 
-foreach my $table ( $source, $dest ) {
-   # It is necessary to get a $dbh to run the sync queries, and a $dbh to use
-   # while the main $dbh is in use (for checking collated string comparison).
-   $table->{dbh}  ||= get_dbh($table);
-   $table->{dbh2} ||= get_dbh($table);
-   $table->{db_tbl} = $q->quote(@{$table}{qw(D t)});
-   # Set some SQL options as requested.
+# Set some SQL options as requested.
+foreach my $dbh ( $src_dbh, $dst_dbh ) {
    if ( $opts{skipbinlog} ) {
-      $table->{dbh}->do("/*!32316 SET SQL_LOG_BIN=0 */");
+      $dbh->do("/*!32316 SET SQL_LOG_BIN=0 */");
    }
    if ( $opts{skipuniquekey} ) {
-      $table->{dbh}->do("/*!40014 SET UNIQUE_CHECKS=0 */");
+      $dbh->do("/*!40014 SET UNIQUE_CHECKS=0 */");
    }
    if ( $opts{K} ) {
-      $table->{dbh}->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+      $dbh->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
    }
 }
 
-my $tbl_struct = $tp->parse(
-   $du->get_create_table($source->{dbh}, $q, $source->{D}, $source->{t}));
+$exit_status ||= sync_table( $src, $src->{D}, $src->{t}, $src_dbh, 
+                             $dst, $dst->{D}, $dst->{t}, $dst_dbh,
+                             $misc_dbh, $opts{a} );
 
-# User wants us to lock for consistency.  But only lock on source initially;
-# might have to wait for the slave to catch up before locking on the dest.
-if ( $opts{k} ) {
-   lock_table($source->{dbh}, 'source', $source->{db_tbl},
-      $opts{r} ? 'WRITE' : 'READ');
-}
-
-if ( $opts{w} ) {
-   my $query = 'SHOW MASTER STATUS';
-   debug_print($query);
-   my $ms = $source->{dbh}->selectrow_hashref($query);
-   debug_print("Waiting $opts{w} sec for $ms->{File}, $ms->{Position}");
-   $query = "SELECT MASTER_POS_WAIT('$ms->{File}', $ms->{Position}, $opts{w})";
-   debug_print($query);
-   my $stat = $dest->{dbh}->selectall_arrayref($query)->[0]->[0];
-   $stat = 'NULL' unless defined $stat;
-   if ( $stat eq 'NULL' || $stat < 0 && !$opts{t} ) {
-      die "MASTER_POS_WAIT failed: $stat";
-   }
-   debug_print("Result of waiting: $stat");
-}
-
-# Don't lock at all on destination if it's a replication slave, or the
-# replication thread will be locked out... we assume there is nothing else
-# writing on the slave.
-if ( $opts{k} && !$opts{r} ) {
-   lock_table($dest->{dbh}, 'dest', $dest->{db_tbl},
-      $opts{x} ? 'WRITE' : 'READ');
-}
-
-debug_print('Syncing ' . $dsn_parser->as_string($source)
-   . ' with ' . $dsn_parser->as_string($dest));
-
-my $change_dbh = $dest->{dbh};
-my $ch = new ChangeHandler(
-   quoter    => $q,
-   database  => $dest->{D},
-   table     => $dest->{t},
-   sdatabase => $source->{D},
-   stable    => $source->{t},
-   actions   => [
-      ( $opts{p} ? sub { print @_, ";\n" }                : () ),
-      ( $opts{x} ? sub { map { $change_dbh->do($_) } @_ } : () ),
-   ],
-);
-my $rd = new RowDiff( dbh => $source->{dbh} );
-my $syncer;
-
-debug_print("Using $opts{a} algorithm");
-my $class = "TableSync$opts{a}";
-$syncer = new $class(
-   handler   => $ch,
-   cols      => $tbl_struct->{cols},
-   dbh       => $source->{dbh},
-   database  => $source->{D},
-   table     => $source->{t},
-   chunker   => $chunker,
-   struct    => $tbl_struct,
-   checksum  => $checksum,
-   vp        => $vp,
-   quoter    => $q,
-   chunksize => $opts{chunksize},
-   where     => $opts{W},
-);
-
-my $cycle = 0;
-while ( !$syncer->done && ++$cycle ) {
-   debug_print("Beginning sync cycle $cycle");
-   my $src_sql = $syncer->get_sql(
-      quoter   => $q,
-      database => $source->{D},
-      table    => $source->{t},
-      where    => $opts{W},
-   );
-   my $dst_sql = $syncer->get_sql(
-      quoter   => $q,
-      database => $dest->{D},
-      table    => $dest->{t},
-      where    => $opts{W},
-   );
-   $syncer->prepare($source->{dbh});
-   $syncer->prepare($dest->{dbh});
-   debug_print("src: " . $src_sql);
-   debug_print("dst: " . $dst_sql);
-   my $src_sth = $source->{dbh}
-      ->prepare( $src_sql, { mysql_use_result => !$opts{bufferresults} } );
-   $src_sth->execute();
-   my $dst_sth = $dest->{dbh}
-      ->prepare( $dst_sql, { mysql_use_result => !$opts{bufferresults} } );
-   $dst_sth->execute();
-   $rd->compare_sets(
-      left   => $src_sth,
-      right  => $dst_sth,
-      syncer => $syncer,
-      tbl    => $tbl_struct,
-   );
-   debug_print("Finished sync cycle $cycle"); # TODO report diff count
-   debug_print('Processing deferred changes');
-   $ch->process_rows(1);
-}
-
-debug_print('Processing more deferred changes');
-$ch->process_rows();
-
-debug_print('Cleaning up database connections');
-foreach my $table ( $source, $dest ) {
-   my $dbh = $table->{dbh};
-   $dbh->do('UNLOCK TABLES');
-   $dbh->commit if $opts{k} || $opts{F} || $opts{1};
+foreach my $dbh ( $src_dbh, $dst_dbh, $misc_dbh ) {
+   $dbh->commit unless $dbh->{AutoCommit};
    $dbh->disconnect;
 }
 
@@ -2272,12 +2151,155 @@ exit $exit_status;
 # Subroutines
 # ############################################################################
 
+sub sync_table {
+   my ( $src, $src_db, $src_tbl, $src_dbh,
+        $dst, $dst_db, $dst_tbl, $dst_dbh,
+        $misc_dbh, $algorithm ) = @_;
+
+   if ( $src_tbl ne $dst_tbl
+         && -t STDIN && -t STDOUT
+         && ($src->{h} || '') ne ($dst->{h} || '') )
+   {
+      print "Continue syncing tables with different names?  y/n: ";
+      my $answer = <STDIN>;
+      if ( $answer !~ m/y/i ) {
+         exit(1);
+      }
+   }
+
+   my $tbl_struct = $tp->parse(
+      $du->get_create_table($src_dbh, $q, $src_db, $src_tbl));
+
+   # User wants us to lock for consistency.  But only lock on source initially;
+   # might have to wait for the slave to catch up before locking on the dest.
+   if ( $opts{k} ) {
+      lock_table($src_dbh, 'source', $q->quote($src_db, $src_tbl),
+         $opts{r} ? 'WRITE' : 'READ');
+   }
+
+   if ( $opts{w} ) {
+      wait_for_master($src_dbh, $dst_dbh, $opts{w});
+   }
+
+   # Don't lock at all on destination if it's a replication slave, or the
+   # replication thread will be locked out... we assume there is nothing else
+   # writing on the slave.
+   if ( $opts{k} && !$opts{r} ) {
+      lock_table($dst_dbh, 'dest', $q->quote($dst_db, $dst_tbl),
+         $opts{x} ? 'WRITE' : 'READ');
+   }
+
+   debug_print('Syncing ' . $dsn_parser->as_string($src)
+      . ' with ' . $dsn_parser->as_string($dst));
+
+   my $change_dbh = $dst_dbh; # TODO
+
+   my $ch = new ChangeHandler(
+      quoter    => $q,
+      database  => $dst_db,
+      table     => $dst_tbl,
+      sdatabase => $src_db,
+      stable    => $src_tbl,
+      actions   => [
+         ( $opts{p} ? sub { print @_, ";\n" }                : () ),
+         ( $opts{x} ? sub { map { $change_dbh->do($_) } @_ } : () ),
+      ],
+   );
+   my $rd = new RowDiff( dbh => $misc_dbh );
+   my $syncer;
+
+   debug_print("Using $algorithm algorithm");
+   my $class = "TableSync$algorithm";
+   $syncer = new $class(
+      handler   => $ch,
+      cols      => $tbl_struct->{cols},
+      dbh       => $src_dbh,
+      database  => $src_db,
+      table     => $src_tbl,
+      chunker   => $chunker,
+      struct    => $tbl_struct,
+      checksum  => $checksum,
+      vp        => $vp,
+      quoter    => $q,
+      chunksize => $opts{chunksize},
+      where     => $opts{W},
+   );
+
+   my $cycle = 0;
+   while ( !$syncer->done ) {
+      debug_print("Beginning sync cycle $cycle");
+      my $src_sql = $syncer->get_sql(
+         quoter   => $q,
+         database => $src_db,
+         table    => $src_tbl,
+         where    => $opts{W},
+      );
+      my $dst_sql = $syncer->get_sql(
+         quoter   => $q,
+         database => $dst_db,
+         table    => $dst_tbl,
+         where    => $opts{W},
+      );
+      $syncer->prepare($src_dbh);
+      $syncer->prepare($dst_dbh);
+      debug_print("src: " . $src_sql);
+      debug_print("dst: " . $dst_sql);
+      my $src_sth = $src_dbh
+         ->prepare( $src_sql, { mysql_use_result => !$opts{bufferresults} } );
+      $src_sth->execute();
+      my $dst_sth = $dst_dbh
+         ->prepare( $dst_sql, { mysql_use_result => !$opts{bufferresults} } );
+      $dst_sth->execute();
+      $rd->compare_sets(
+         left   => $src_sth,
+         right  => $dst_sth,
+         syncer => $syncer,
+         tbl    => $tbl_struct,
+      );
+      debug_print("Finished sync cycle $cycle"); # TODO report diff count
+      debug_print('Processing deferred changes');
+      $ch->process_rows(1);
+      foreach my $dbh ( $src_dbh, $dst_dbh ) {
+         $dbh->do('UNLOCK TABLES') if $opts{k} < 2;
+         $dbh->commit unless $dbh->{AutoCommit};
+      }
+      $cycle++;
+   }
+
+   debug_print('Processing more deferred changes');
+   $ch->process_rows();
+
+   debug_print('Committing and unlocking');
+   foreach my $dbh ( $src_dbh, $dst_dbh ) {
+      $dbh->do('UNLOCK TABLES');
+      $dbh->commit unless $dbh->{AutoCommit};
+   }
+   # TODO: return exit status.
+}
+
 sub lock_table {
    my ( $dbh, $where, $db_tbl, $mode ) = @_;
    my $query = "LOCK TABLES $db_tbl $mode";
    debug_print($query);
    $dbh->do($query);
    debug_print("Acquired table lock on $where in $mode mode");
+}
+
+sub wait_for_master {
+   my ( $src_dbh, $dst_dbh, $time ) = @_;
+   my $query = 'SHOW MASTER STATUS';
+   debug_print($query);
+   my $ms = $src_dbh->selectrow_hashref($query);
+   $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
+   debug_print("Waiting $time sec for $ms->{file}, $ms->{position}");
+   $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+   debug_print($query);
+   my $stat = $dst_dbh->selectall_arrayref($query)->[0]->[0];
+   $stat = 'NULL' unless defined $stat;
+   if ( $stat eq 'NULL' || $stat < 0 && !$opts{t} ) { # TODO: opts{t}???
+      die "MASTER_POS_WAIT failed: $stat";
+   }
+   debug_print("Result of waiting: $stat");
 }
 
 sub debug_print {
@@ -2297,7 +2319,8 @@ sub get_dbh {
    };
 
    if ( !$info->{p} && $opts{askpass} ) {
-      $info->{p} = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
+      $info->{p}
+         = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
    }
    return DBI->connect($dsn_parser->get_cxn_params($info), $db_options);
 }
