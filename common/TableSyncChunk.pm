@@ -22,8 +22,9 @@ use warnings FATAL => 'all';
 
 # This package implements a simple sync algorithm:
 # * Chunk the table (see TableChunker.pm)
-# * Checksum each chunk (level 0)
-# * If a chunk differs, checksum the rows in the chunk (level 1)
+# * Checksum each chunk (state 0)
+# * If a chunk differs, make a note to checksum the rows in the chunk (state 1)
+# * Checksum them (state 2)
 # * If a row differs, it must be synced
 # See TableSyncStream for the TableSync interface this conforms to.
 package TableSyncChunk;
@@ -37,7 +38,7 @@ sub new {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
-   # Sanity check.  The row-level (level 1) checksums use __crc, so the table
+   # Sanity check.  The row-level (state 2) checksums use __crc, so the table
    # had better not use that...
    $args{crc_col} = '__crc';
    while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
@@ -107,7 +108,7 @@ sub new {
       cols      => $args{cols},
    );
 
-   $args{level} = 0;
+   $args{state} = 0;
    $args{handler}->fetch_back($args{dbh});
    return bless { %args }, $class;
 }
@@ -117,7 +118,7 @@ sub new {
 # table before moving on to the next part.
 sub get_sql {
    my ( $self, %args ) = @_;
-   if ( $self->{level} ) {
+   if ( $self->{state} ) {
       return 'SELECT '
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
@@ -145,46 +146,51 @@ sub prepare {
 
 sub same_row {
    my ( $self, $lr, $rr ) = @_;
-   if ( $self->{level} ) {
+   if ( $self->{state} ) {
       if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
          $self->{handler}->change('UPDATE', $lr, $self->key_cols());
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
-      $self->{level} = 1;
+      $self->{state} = 1; # Must examine this chunk row-by-row
    }
 }
 
-# This (and not_in_left) should NEVER be called at level 0.  If there are
-# missing rows at level 0 in one of the tables, the CRC will be all 0's and the
+# This (and not_in_left) should NEVER be called in state 0.  If there are
+# missing rows in state 0 in one of the tables, the CRC will be all 0's and the
 # cnt will be 0, but the result set should still come back.
 sub not_in_right {
    my ( $self, $lr ) = @_;
-   die "Called not_in_right at level 0" unless $self->{level};
+   die "Called not_in_right in state 0" unless $self->{state};
    $self->{handler}->change('INSERT', $lr, $self->key_cols());
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
-   die "Called not_in_left at level 0" unless $self->{level};
+   die "Called not_in_left in state 0" unless $self->{state};
    $self->{handler}->change('DELETE', $rr, $self->key_cols());
 }
 
 sub done_with_rows {
    my ( $self ) = @_;
-   $self->{level} = 0;
-   $self->{chunk_num}++;
+   if ( $self->{state} == 1 ) {
+      $self->{state} = 2;
+   }
+   else {
+      $self->{state} = 0;
+      $self->{chunk_num}++;
+   }
 }
 
 sub done {
    my ( $self ) = @_;
-   return $self->{level} == 0
+   return $self->{state} == 0
       && $self->{chunk_num} >= scalar(@{$self->{chunks}})
 }
 
 sub key_cols {
    my ( $self ) = @_;
-   return $self->{level} == 0 ? [qw(chunk_num)] : [$self->{chunk_col}];
+   return $self->{state} == 0 ? [qw(chunk_num)] : [$self->{chunk_col}];
 }
 
 1;

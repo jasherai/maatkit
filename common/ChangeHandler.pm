@@ -30,15 +30,18 @@ my $DEFER_PAT = qr/Duplicate entry|Commands out of sync/;
 # * quoter     Quoter()
 # * database   database name
 # * table      table name
+# * sdatabase  source database name
+# * stable     source table name
 # * actions    arrayref of subroutines to call when handling a change.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(quoter database table) ) {
+   foreach my $arg ( qw(quoter database table sdatabase stable) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $self = { %args, map { $_ => [] } qw(DELETE INSERT UPDATE) };
-   $self->{db_tbl} = $self->{quoter}->quote(@args{qw(database table)});
-   $self->{queue}  = 0; # Do changes immediately if possible.
+   $self->{db_tbl}  = $self->{quoter}->quote(@args{qw(database table)});
+   $self->{sdb_tbl} = $self->{quoter}->quote(@args{qw(sdatabase stable)});
+   $self->{queue}   = 0; # Do changes immediately if possible.
    return bless $self, $class;
 }
 
@@ -122,7 +125,7 @@ sub make_UPDATE {
    my $where = $self->make_where_clause($row, $cols);
    if ( my $dbh = $self->{fetch_back} ) {
       my $res = $dbh->selectrow_hashref(
-         "SELECT * FROM $self->{db_tbl} WHERE $where LIMIT 1");
+         "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1");
       @{$row}{keys %$res} = values %$res;
       $cols = [sort keys %$res];
    }
@@ -139,13 +142,14 @@ sub make_UPDATE {
 
 sub make_INSERT {
    my ( $self, $row, $cols ) = @_;
+   my @cols = sort keys %$row;
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
       my $res = $dbh->selectrow_hashref(
-         "SELECT * FROM $self->{db_tbl} WHERE $where LIMIT 1");
+         "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1");
       @{$row}{keys %$res} = values %$res;
+      @cols = sort keys %$res;
    }
-   my @cols = sort keys %$row;
    return "INSERT INTO $self->{db_tbl}("
       . join(', ', map { $self->{quoter}->quote($_) } @cols)
       . ') VALUES ('
@@ -162,62 +166,6 @@ sub make_where_clause {
    } @$cols;
    return join(' AND ', @clauses);
 }
-
-=pod
-sub handle_data_change {
-   my ( $self, $action, $where) = @_;
-   my $dbh   = $which->{dbh};
-   my $crit  = make_where_clause($dbh, $where);
-
-   if ( $action eq 'DELETE' ) {
-      my $query = "DELETE FROM $which->{db_tbl} $crit";
-      if ( $opts{p} ) {
-         print STDOUT $query, ";\n";
-      }
-      if ( $opts{x} ) {
-         $dbh->do($query);
-      }
-   }
-
-   else {
-      my $query = "SELECT $source->{cols} FROM $source->{db_tbl} $crit";
-      debug_print($query);
-      my $sth = $source->{dbh}->prepare($query);
-      $sth->execute();
-      while ( my $res = $sth->fetchrow_hashref() ) {
-         if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
-            my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
-            $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
-               . join(',', map { $dbh->quote($res->{$_}) }
-                  @{$which->{info}->{cols}}) . ")";
-         }
-         else {
-            my @cols = grep { !exists($where->{$_}) } @{$which->{info}->{cols}};
-            $query = "UPDATE $which->{db_tbl} SET "
-               . join(',',
-                  map { $q->quote($_) . '=' .  $dbh->quote($res->{$_}) } @cols)
-               . ' ' . $crit;
-         }
-         if ( $opts{p} ) {
-            print STDOUT $query, ";\n";
-         }
-         if ( $opts{x} ) {
-            eval { $dbh->do($query) };
-            if ( $EVAL_ERROR ) {
-               if ( $EVAL_ERROR =~ m/Duplicate entry/ ) {
-                  die "Your tables probably have some differences "
-                     . "that cannot be resolved with UPDATE statements.  "
-                     . "Re-run mk-table-sync with --deleteinsert to proceed.\n";
-               }
-               else {
-                  die $EVAL_ERROR;
-               }
-            }
-         }
-      }
-   }
-}
-=cut
 
 1;
 
