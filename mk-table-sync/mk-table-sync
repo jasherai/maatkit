@@ -392,7 +392,7 @@ sub groups {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 1331
+# Quoter package 1339
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -615,7 +615,7 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 1334
+# TableSyncStream package 1339
 # ###########################################################################
 
 use strict;
@@ -1080,7 +1080,7 @@ sub get_triggers {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 1337
+# ChangeHandler package 1340
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1093,12 +1093,13 @@ my $DEFER_PAT = qr/Duplicate entry|Commands out of sync/;
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(quoter database table) ) {
+   foreach my $arg ( qw(quoter database table sdatabase stable) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $self = { %args, map { $_ => [] } qw(DELETE INSERT UPDATE) };
-   $self->{db_tbl} = $self->{quoter}->quote(@args{qw(database table)});
-   $self->{queue}  = 0; # Do changes immediately if possible.
+   $self->{db_tbl}  = $self->{quoter}->quote(@args{qw(database table)});
+   $self->{sdb_tbl} = $self->{quoter}->quote(@args{qw(sdatabase stable)});
+   $self->{queue}   = 0; # Do changes immediately if possible.
    return bless $self, $class;
 }
 
@@ -1173,7 +1174,7 @@ sub make_UPDATE {
    my $where = $self->make_where_clause($row, $cols);
    if ( my $dbh = $self->{fetch_back} ) {
       my $res = $dbh->selectrow_hashref(
-         "SELECT * FROM $self->{db_tbl} WHERE $where LIMIT 1");
+         "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1");
       @{$row}{keys %$res} = values %$res;
       $cols = [sort keys %$res];
    }
@@ -1190,13 +1191,14 @@ sub make_UPDATE {
 
 sub make_INSERT {
    my ( $self, $row, $cols ) = @_;
+   my @cols = sort keys %$row;
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
       my $res = $dbh->selectrow_hashref(
-         "SELECT * FROM $self->{db_tbl} WHERE $where LIMIT 1");
+         "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1");
       @{$row}{keys %$res} = values %$res;
+      @cols = sort keys %$res;
    }
-   my @cols = sort keys %$row;
    return "INSERT INTO $self->{db_tbl}("
       . join(', ', map { $self->{quoter}->quote($_) } @cols)
       . ') VALUES ('
@@ -1214,62 +1216,6 @@ sub make_where_clause {
    return join(' AND ', @clauses);
 }
 
-=pod
-sub handle_data_change {
-   my ( $self, $action, $where) = @_;
-   my $dbh   = $which->{dbh};
-   my $crit  = make_where_clause($dbh, $where);
-
-   if ( $action eq 'DELETE' ) {
-      my $query = "DELETE FROM $which->{db_tbl} $crit";
-      if ( $opts{p} ) {
-         print STDOUT $query, ";\n";
-      }
-      if ( $opts{x} ) {
-         $dbh->do($query);
-      }
-   }
-
-   else {
-      my $query = "SELECT $source->{cols} FROM $source->{db_tbl} $crit";
-      debug_print($query);
-      my $sth = $source->{dbh}->prepare($query);
-      $sth->execute();
-      while ( my $res = $sth->fetchrow_hashref() ) {
-         if ( $opts{s} eq 'r' || $action eq 'INSERT' ) {
-            my $verb = $opts{s} eq 'r' ? 'REPLACE' : 'INSERT';
-            $query = "$verb INTO $which->{db_tbl}($which->{cols}) VALUES("
-               . join(',', map { $dbh->quote($res->{$_}) }
-                  @{$which->{info}->{cols}}) . ")";
-         }
-         else {
-            my @cols = grep { !exists($where->{$_}) } @{$which->{info}->{cols}};
-            $query = "UPDATE $which->{db_tbl} SET "
-               . join(',',
-                  map { $q->quote($_) . '=' .  $dbh->quote($res->{$_}) } @cols)
-               . ' ' . $crit;
-         }
-         if ( $opts{p} ) {
-            print STDOUT $query, ";\n";
-         }
-         if ( $opts{x} ) {
-            eval { $dbh->do($query) };
-            if ( $EVAL_ERROR ) {
-               if ( $EVAL_ERROR =~ m/Duplicate entry/ ) {
-                  die "Your tables probably have some differences "
-                     . "that cannot be resolved with UPDATE statements.  "
-                     . "Re-run mk-table-sync with --deleteinsert to proceed.\n";
-               }
-               else {
-                  die $EVAL_ERROR;
-               }
-            }
-         }
-      }
-   }
-}
-=cut
-
 1;
 
 # ###########################################################################
@@ -1277,7 +1223,7 @@ sub handle_data_change {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 1267
+# TableChunker package 1339
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1559,7 +1505,7 @@ sub timestampdiff {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1284
+# TableChecksum package 1339
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1846,7 +1792,7 @@ sub check_server {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1334
+# TableSyncChunk package 1340
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1926,14 +1872,14 @@ sub new {
       cols      => $args{cols},
    );
 
-   $args{level} = 0;
+   $args{state} = 0;
    $args{handler}->fetch_back($args{dbh});
    return bless { %args }, $class;
 }
 
 sub get_sql {
    my ( $self, %args ) = @_;
-   if ( $self->{level} ) {
+   if ( $self->{state} ) {
       return 'SELECT '
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
@@ -1961,43 +1907,48 @@ sub prepare {
 
 sub same_row {
    my ( $self, $lr, $rr ) = @_;
-   if ( $self->{level} ) {
+   if ( $self->{state} ) {
       if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
          $self->{handler}->change('UPDATE', $lr, $self->key_cols());
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
-      $self->{level} = 1;
+      $self->{state} = 1; # Must examine this chunk row-by-row
    }
 }
 
 sub not_in_right {
    my ( $self, $lr ) = @_;
-   die "Called not_in_right at level 0" unless $self->{level};
+   die "Called not_in_right in state 0" unless $self->{state};
    $self->{handler}->change('INSERT', $lr, $self->key_cols());
 }
 
 sub not_in_left {
    my ( $self, $rr ) = @_;
-   die "Called not_in_left at level 0" unless $self->{level};
+   die "Called not_in_left in state 0" unless $self->{state};
    $self->{handler}->change('DELETE', $rr, $self->key_cols());
 }
 
 sub done_with_rows {
    my ( $self ) = @_;
-   $self->{level} = 0;
-   $self->{chunk_num}++;
+   if ( $self->{state} == 1 ) {
+      $self->{state} = 2;
+   }
+   else {
+      $self->{state} = 0;
+      $self->{chunk_num}++;
+   }
 }
 
 sub done {
    my ( $self ) = @_;
-   return $self->{level} == 0
+   return $self->{state} == 0
       && $self->{chunk_num} >= scalar(@{$self->{chunks}})
 }
 
 sub key_cols {
    my ( $self ) = @_;
-   return $self->{level} == 0 ? [qw(chunk_num)] : [$self->{chunk_col}];
+   return $self->{state} == 0 ? [qw(chunk_num)] : [$self->{chunk_col}];
 }
 
 1;
@@ -2238,16 +2189,20 @@ debug_print('Syncing ' . $dsn_parser->as_string($source)
 
 my $change_dbh = $dest->{dbh};
 my $ch = new ChangeHandler(
-   quoter   => $q,
-   database => $dest->{D},
-   table    => $dest->{t},
-   actions  => [
+   quoter    => $q,
+   database  => $dest->{D},
+   table     => $dest->{t},
+   sdatabase => $source->{D},
+   stable    => $source->{t},
+   actions   => [
       ( $opts{p} ? sub { print @_, ";\n" }                : () ),
       ( $opts{x} ? sub { map { $change_dbh->do($_) } @_ } : () ),
    ],
 );
 my $rd = new RowDiff( dbh => $source->{dbh} );
 my $syncer;
+
+debug_print("Using $opts{a} algorithm");
 my $class = "TableSync$opts{a}";
 $syncer = new $class(
    handler   => $ch,
@@ -2264,7 +2219,9 @@ $syncer = new $class(
    where     => $opts{W},
 );
 
-while ( !$syncer->done ) {
+my $cycle = 0;
+while ( !$syncer->done && ++$cycle ) {
+   debug_print("Beginning sync cycle $cycle");
    my $src_sql = $syncer->get_sql(
       quoter   => $q,
       database => $source->{D},
@@ -2279,6 +2236,8 @@ while ( !$syncer->done ) {
    );
    $syncer->prepare($source->{dbh});
    $syncer->prepare($dest->{dbh});
+   debug_print("src: " . $src_sql);
+   debug_print("dst: " . $dst_sql);
    my $src_sth = $source->{dbh}
       ->prepare( $src_sql, { mysql_use_result => !$opts{bufferresults} } );
    $src_sth->execute();
@@ -2291,12 +2250,15 @@ while ( !$syncer->done ) {
       syncer => $syncer,
       tbl    => $tbl_struct,
    );
-   $syncer->done_with_rows();
+   debug_print("Finished sync cycle $cycle"); # TODO report diff count
+   debug_print('Processing deferred changes');
    $ch->process_rows(1);
 }
 
+debug_print('Processing more deferred changes');
 $ch->process_rows();
 
+debug_print('Cleaning up database connections');
 foreach my $table ( $source, $dest ) {
    my $dbh = $table->{dbh};
    $dbh->do('UNLOCK TABLES');
