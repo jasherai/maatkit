@@ -70,8 +70,21 @@ sub sync_table {
          sort keys %args));
 
    # TODO: for two-way sync, the change handler needs both DBHs.
-   my $change_dbh = $args{replicate} ? $args{src_dbh} : $args{dst_dbh};
-   $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
+   # Check permissions on writable tables (TODO: 2-way needs to check both)
+   my $update_func;
+   if ( $args{execute} ) {
+      my $change_dbh;
+      if ( $args{replicate} ) {
+         $change_dbh = $args{src_dbh};
+         $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
+      }
+      else {
+         $change_dbh = $args{dst_dbh};
+         $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
+      }
+      $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
+      $update_func = sub {  map { $change_dbh->do($_) } @_ };
+   }
 
    my $ch = new ChangeHandler(
       quoter    => $args{quoter},
@@ -80,8 +93,8 @@ sub sync_table {
       sdatabase => $args{src_db},
       stable    => $args{src_tbl},
       actions   => [
-         ( $args{print}   ? sub { print @_, ";\n" }                : () ),
-         ( $args{execute} ? sub { map { $change_dbh->do($_) } @_ } : () ),
+         ( $args{print} ? sub { print @_, ";\n" } : () ),
+         ( $update_func ? $update_func            : () ),
       ],
    );
    my $rd = new RowDiff( dbh => $args{misc_dbh} );
@@ -155,6 +168,14 @@ sub sync_table {
    }
 
    return $ch->get_changes();
+}
+
+sub check_permissions {
+   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
+   my $db_tbl = $quoter->quote($db, $tbl);
+   my $sql = "REPLACE INTO $db_tbl SELECT * FROM $db_tbl LIMIT 0";
+   $ENV{MKDEBUG} && _d('Permissions check: ', $sql);
+   $dbh->do($sql);
 }
 
 sub lock_table {

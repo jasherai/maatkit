@@ -44,6 +44,7 @@ sub new {
    while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
       $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
    }
+   $ENV{MKDEBUG} && _d('CRC column will be named ' . $args{crc_col});
 
    # Chunk the table and store the chunks for later processing.
    my @chunks;
