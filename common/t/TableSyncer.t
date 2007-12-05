@@ -71,10 +71,10 @@ my $checksum   = new TableChecksum();
 my $nibbler    = new TableNibbler();
 
 my $algo = $ts->best_algorithm(
-   struct  => $tbl_struct,
-   nibbler => $nibbler,
-   chunker => $chunker,
-   parser  => $tp,
+   tbl_struct  => $tbl_struct,
+   nibbler     => $nibbler,
+   chunker     => $chunker,
+   parser      => $tp,
 );
 
 ok( $algo, 'Found an algorithm' );

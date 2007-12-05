@@ -33,14 +33,13 @@ sub new {
 # Choose the best algorithm for syncing a given table.
 sub best_algorithm {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(struct parser nibbler chunker) ) {
+   foreach my $arg ( qw(tbl_struct parser nibbler chunker) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $struct = $args{struct};
    my $result;
 
    # Does the table have a primary or unique non-nullable key?
-   if ( $args{chunker}->get_first_chunkable_column($args{struct}) ) {
+   if ( $args{chunker}->get_first_chunkable_column($args{tbl_struct}) ) {
       $result = 'Chunk';
    }
    else {
@@ -95,6 +94,9 @@ sub sync_table {
       ],
    );
    my $rd = new RowDiff( dbh => $args{misc_dbh} );
+
+   $args{algorithm} ||= $self->best_algorithm(
+      map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
 
    my $class  = "TableSync$args{algorithm}";
    my $plugin = $class->new(
