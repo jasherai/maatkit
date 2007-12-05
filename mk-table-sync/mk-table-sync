@@ -2485,7 +2485,7 @@ my @opt_spec = (
    { s => 'askpass',          d => 'Prompt for password for connections' },
    { s => 'bufferresults',    d => 'Fetch all rows from MySQL before comparing' },
    { s => 'chunksize=i',      d => 'Number of rows to sync at a time for '
-                                 . 'Chunk algorithm (default 50000)'},
+                                 . 'Chunk algorithm (default 1000)'},
    { s => 'columns|c=a',      d => 'Compare this comma-separated list of columns' },
    { s => 'execute|x',        d => 'Execute queries to sync tables' },
    #TODO { s => 'forupdate|F',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
