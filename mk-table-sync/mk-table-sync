@@ -1732,7 +1732,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1349
+# TableChecksum package 1356
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1760,7 +1760,7 @@ sub best_algorithm {
    die "Invalid checksum algorithm $alg"
       if $alg && !$ALGOS{$alg};
 
-   if ( 
+   if (
       $args{where} || $args{chunk}        # CHECKSUM does whole table
       || $args{replicate}                 # CHECKSUM can't do INSERT.. SELECT
       || !$vp->version_ge($dbh, '4.1.1')) # CHECKSUM doesn't exist
@@ -1998,21 +1998,21 @@ sub check_server {
          COALESCE(
             this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
             0
-         ) AS crc_diff 
+         ) AS crc_diff
       FROM $args->{table}
-      WHERE master_cnt <> this_cnt OR master_crc <> this_crc 
+      WHERE master_cnt <> this_cnt OR master_crc <> this_crc
       OR ISNULL(master_crc) <> ISNULL(this_crc)
    EOF
 
    $ENV{MKDEBUG} && _d($sql);
    my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
    if ( @$diffs ) {
-      $args->{callback}->($args->{dsn}, @$diffs);
+      $args->{callback}->($args->{dsn}, $dbh, $level, @$diffs);
    }
 
    if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
 
-      my @slaves = 
+      my @slaves =
          grep { $_->{master_id} == $id } # Only my own slaves.
          map  {                          # Convert each to all-lowercase keys.
             my %hash;
@@ -2047,7 +2047,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1348
+# TableSyncChunk package 1355
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2067,6 +2067,7 @@ sub new {
    while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
       $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
    }
+   $ENV{MKDEBUG} && _d('CRC column will be named ' . $args{crc_col});
 
    my @chunks;
    my $col = $args{chunker}->get_first_chunkable_column(
@@ -2236,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1350
+# TableSyncer package 1355
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2287,8 +2288,20 @@ sub sync_table {
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
 
-   my $change_dbh = $args{replicate} ? $args{src_dbh} : $args{dst_dbh};
-   $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
+   my $update_func;
+   if ( $args{execute} ) {
+      my $change_dbh;
+      if ( $args{replicate} ) {
+         $change_dbh = $args{src_dbh};
+         $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
+      }
+      else {
+         $change_dbh = $args{dst_dbh};
+         $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
+      }
+      $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
+      $update_func = sub {  map { $change_dbh->do($_) } @_ };
+   }
 
    my $ch = new ChangeHandler(
       quoter    => $args{quoter},
@@ -2297,8 +2310,8 @@ sub sync_table {
       sdatabase => $args{src_db},
       stable    => $args{src_tbl},
       actions   => [
-         ( $args{print}   ? sub { print @_, ";\n" }                : () ),
-         ( $args{execute} ? sub { map { $change_dbh->do($_) } @_ } : () ),
+         ( $args{print} ? sub { print @_, ";\n" } : () ),
+         ( $update_func ? $update_func            : () ),
       ],
    );
    my $rd = new RowDiff( dbh => $args{misc_dbh} );
@@ -2371,6 +2384,14 @@ sub sync_table {
    }
 
    return $ch->get_changes();
+}
+
+sub check_permissions {
+   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
+   my $db_tbl = $quoter->quote($db, $tbl);
+   my $sql = "REPLACE INTO $db_tbl SELECT * FROM $db_tbl LIMIT 0";
+   $ENV{MKDEBUG} && _d('Permissions check: ', $sql);
+   $dbh->do($sql);
 }
 
 sub lock_table {
@@ -2481,25 +2502,56 @@ $OUTPUT_AUTOFLUSH = 1;
 # ############################################################################
 
 my @opt_spec = (
-   { s => 'algorithm|a=s',    d => 'Algorithm to use (default Stream)'},
-   { s => 'askpass',          d => 'Prompt for password for connections' },
-   { s => 'bufferresults',    d => 'Fetch all rows from MySQL before comparing' },
-   { s => 'chunksize=i',      d => 'Number of rows to sync at a time for '
-                                 . 'Chunk algorithm (default 1000)'},
-   { s => 'columns|c=a',      d => 'Compare this comma-separated list of columns' },
-   { s => 'execute|x',        d => 'Execute queries to sync tables' },
-   #TODO { s => 'forupdate|F',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
-   { s => 'lock|k=i',         d => 'Lock tables: 0=none, 1=per sync cycle, '
-                                 . '2=per table, or 3=globally (default 0)' },
-   { s => 'print|p',          d => 'Print queries that will resolve differences' },
-   { s => 'skipbinlog',       d => 'Do not log to the binary log' },
-   { s => 'skipforeignkey|K', d => 'Turn off foreign key checks' },
-   { s => 'skipuniquekey',    d => 'Turn off UNIQUE key checks' },
-   { s => 'synctomaster|r',   d => 'Sync a slave to its master. Implies --wait 60'},
-   { s => 'timeoutok|t',      d => 'Keep going if --wait fails' },
-   { s => 'verbose|v',        d => 'Print results of sync operations' },
-   { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
-   { s => 'where|W=s',        d => 'WHERE clause to restrict syncing to part of the table' },
+   { s => 'algorithm|a=s',
+     d => 'Algorithm to use (default Chunk)'},
+   { s => 'askpass',
+     d => 'Prompt for password for connections' },
+   { s => 'bufferresults',
+     d => 'Fetch all rows from MySQL before comparing' },
+   { s => 'chunksize=i',
+     d => 'Number of rows to sync at a time for Chunk algorithm (default 1000)'},
+   { s => 'columns|c=a',
+     d => 'Compare this comma-separated list of columns' },
+   { s => 'databases|d=h',
+     d => 'Do only this comma-separated list of databases' },
+   { s => 'engine|e=h',
+     d => 'Do only this comma-separated list of storage engines' },
+   { s => 'execute|x',
+     d => 'Execute queries to sync tables' },
+   #TODO { s => 'forupdate|F',
+   #       d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
+   { s => 'ignoredb|g=H',
+     d => 'Ignore this comma-separated list of databases' },
+   { s => 'ignoreengine|E=H',
+     d => 'Ignore this comma-separated list of storage engines '
+        . '(default FEDERATED,MRG_MyISAM)' },
+   { s => 'ignoretbl|n=H',
+     d => 'Ignore this comma-separated list of tables' },
+   { s => 'lock|k=i',
+     d => 'Lock tables: 0=none, 1=per sync cycle, 2=per table, '
+        . 'or 3=globally (default 0)' },
+   { s => 'print|p',
+     d => 'Print queries that will resolve differences' },
+   { s => 'replicate|R=s',
+     d => 'Sync tables listed as different in this table' },
+   { s => 'skipbinlog',
+     d => 'Do not log to the binary log' },
+   { s => 'skipforeignkey|K',
+     d => 'Turn off foreign key checks' },
+   { s => 'skipuniquekey',
+     d => 'Turn off UNIQUE key checks' },
+   { s => 'synctomaster|s',
+     d => 'Sync a slave to its master. Implies --wait 60'},
+   { s => 'tables|t=h',
+     d => 'Do only this comma-separated list of tables' },
+   { s => 'timeoutok',
+     d => 'Keep going if --wait fails' },
+   { s => 'verbose|v',
+     d => 'Print results of sync operations' },
+   { s => 'wait|w=i',
+     d => 'Make slave wait for master pos (implies --lock)' },
+   { s => 'where|W=s',
+     d => 'WHERE clause to restrict syncing to part of the table' },
 );
 
 my $du         = new MySQLDump();
@@ -2523,7 +2575,6 @@ my $dsn_parser = new DSNParser(
       copy => 1,
    },
 );
-$dsn_parser->prop('required', { t => 1 });
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{dsn}    = $dsn_parser;
 $opt_parser->{strict} = 0;
@@ -2533,8 +2584,8 @@ $opt_parser->{descr}
    . 'and DEST are DSNs.  Values for DEST default to the values for SOURCE.';
 my %opts = $opt_parser->parse();
 
-$opts{w}    = 60 if $opts{r} && !defined $opts{w};
-$opts{k}    = 1  if $opts{w} && !defined $opts{k};
+$opts{w}    = 60 if ($opts{R} || $opts{s} ) && !defined $opts{w};
+$opts{k}    = 1  if $opts{w}                && !defined $opts{k};
 
 # TODO: when --columns is specified, and --synctomaster is given, you end up
 # with REPLACE INTO (partial columns) which will destroy data.  Yet maybe we
@@ -2543,114 +2594,258 @@ $opts{k}    = 1  if $opts{w} && !defined $opts{k};
 # and UPDATE.  Or REPLACE should be disallowed when not all columns are
 # included.
 
-my $src = $dsn_parser->parse(shift(@ARGV));
-my $dst = $dsn_parser->parse(shift(@ARGV), $src);
+my @dsns;
+while ( my $arg = shift(@ARGV) ) {
+   my $dsn = $dsn_parser->parse($arg, $dsns[0]);
+   die "You specified a t part, but not a D part in $arg"
+      if ($dsn->{t} && !$dsn->{D});
+   push @dsns, $dsn;
+}
 
-if ( !$src || (!$dst && !$opts{r}) ) {
-   $opt_parser->error('SOURCE is required, and DEST is required unless --synctomaster is specified');
+if ( !@dsns || (@dsns ==1 && !$opts{R} && !$opts{s}) ) {
+   $opt_parser->error('SOURCE is required, and at least one DEST is '
+      . 'required unless --synctomaster or --replicate is specified');
 }
 
 $opt_parser->usage_or_errors(%opts);
-
-# ############################################################################
-# Lookup tables
-# ############################################################################
 
 # ############################################################################
 # Do the work.
 # ############################################################################
 my $exit_status = 0;
 
-my ($src_dbh, $dst_dbh, $misc_dbh);
-
-if ( !$dst ) {
-   $ENV{MKDEBUG} && _d("Connecting to the master by inspecting SHOW SLAVE STATUS");
-   $dst       = $src; undef $src; # swap source and destination.
-   $dst_dbh   = get_dbh($dst);
-   my $query  = 'SHOW SLAVE STATUS';
-   $ENV{MKDEBUG} && _d($query);
-   my $status = $dst_dbh->selectrow_hashref($query);
-   $status    = { map { lc($_) => $status->{$_} } keys %$status };
-   my $spec   = "h=$status->{master_host},P=$status->{master_port}";
-   $src       = $dsn_parser->parse($spec, $dst);
-}
-
-# Open connections as needed.
-$src_dbh   = get_dbh($src);
-$dst_dbh ||= get_dbh($dst);
-$misc_dbh  = get_dbh($src); # For collation checks.
-
-# Set some SQL options as requested.
-foreach my $dbh ( $src_dbh, $dst_dbh ) {
-   my $sql;
-   if ( $opts{skipbinlog} ) {
-      $sql = "/*!32316 SET SQL_LOG_BIN=0 */";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
-      $dbh->do($sql);
-   }
-   if ( $opts{skipuniquekey} ) {
-      $sql = "/*!40014 SET UNIQUE_CHECKS=0 */";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
-      $dbh->do($sql);
-   }
-   if ( $opts{K} ) {
-      $sql = "/*!40014 SET FOREIGN_KEY_CHECKS=0 */";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
-      $dbh->do($sql);
-   }
-}
-
-if ( $src->{t} ne $dst->{t}
-      && -t STDIN && -t STDOUT
-      && ($src->{h} || '') ne ($dst->{h} || '') )
-{
-   print "Continue syncing tables with different names?  y/n: ";
-   my $answer = <STDIN>;
-   if ( $answer !~ m/y/i ) {
-      exit(1);
-   }
-}
-
-my $tbl_struct = $tp->parse(
-   $du->get_create_table($src_dbh, $q, $src->{D}, $src->{t}));
-my @possible_keys = $tp->find_possible_keys(
-   $src_dbh, $src->{D}, $src->{t}, $q, $opts{W});
-
-my %status = $syncer->sync_table(
-   algorithm     => $opts{a},
-   buffer        => $opts{bufferresults} ? 1 : 0,
-   checksum      => $checksum,
-   chunker       => $chunker,
-   chunksize     => $opts{chunksize},
-   cols          => $opts{c} || $tbl_struct->{cols},
-   dst_db        => $dst->{D},
-   dst_dbh       => $dst_dbh,
-   dst_tbl       => $dst->{t},
-   execute       => $opts{x} ? 1 : 0,
-   lock          => $opts{k} ? 1 : 0,
-   misc_dbh      => $misc_dbh,
-   possible_keys => \@possible_keys,
-   print         => $opts{p} ? 1 : 0,
-   quoter        => $q,
-   replicate     => $opts{r} ? 1 : 0,
-   src_dbh       => $src_dbh,
-   src_db        => $src->{D},
-   src_tbl       => $src->{t},
-   tbl_struct    => $tbl_struct,
-   timeoutok     => $opts{t} ? 1 : 0,
-   versionparser => $vp,
-   wait          => $opts{w} ? 1 : 0,
-   where         => $opts{W} || '',
-);
-
 if ( $opts{v} ) {
-   printf("# %6d %6d %6d %s.%s\n",
-      @status{@ChangeHandler::ACTIONS}, @{$src}{qw(D t)});
+   printf("# %6s %6s %6s %s.%s\n",
+      @ChangeHandler::ACTIONS, qw(DATABASE TABLE));
 }
 
-foreach my $dbh ( $src_dbh, $dst_dbh, $misc_dbh ) {
-   $dbh->commit unless $dbh->{AutoCommit};
-   $dbh->disconnect;
+if ( $dsns[0]->{t} ) {
+   $ENV{MKDEBUG} && _d('DSN has t part; syncing ONE TABLE between servers');
+   if ( @dsns == 1 ) {
+      die "You specified one DSN with a t part, but not --synctomaster.\n"
+         unless $opts{s};
+      $dsns[0]->{dbh} = get_dbh($dsns[0]);
+      unshift @dsns, get_master_dsn($dsns[0]);
+   }
+
+   if ( $dsns[0]->{t} ne $dsns[1]->{t}
+         && -t STDIN && -t STDOUT
+         && (  (($dsns[0]->{h} || '') ne ($dsns[1]->{h} || ''))
+            || (($dsns[0]->{P} || '') ne ($dsns[1]->{P} || '')) ))
+   {
+      print "Continue syncing tables with different names?  y/n: ";
+      my $answer = <STDIN>;
+      if ( $answer !~ m/y/i ) {
+         exit(1);
+      }
+   }
+
+   foreach my $dsn ( @dsns[1 .. $#dsns] ) {
+      sync_a_table(
+         src     => $dsns[0],
+         src_db  => $dsns[0]->{D},
+         src_tbl => $dsns[0]->{t},
+         dst     => $dsn,
+         dst_db  => $dsn->{D},
+         dst_tbl => $dsn->{t},
+         where   => $opts{W},
+      );
+   }
+}
+elsif ( $opts{R} ) {
+
+   # Connect to the master and treat it as the source, then find differences on
+   # the slave and sync them.
+   if ( $opts{s} ) {
+      $dsns[0]->{dbh} = get_dbh($dsns[0]);
+      unshift @dsns, get_master_dsn($dsns[0]);
+      $dsns[0]->{dbh} = get_dbh($dsns[0]);
+
+      # First, check that the master (source) has no discrepancies itself, and
+      # ignore tables that do.
+      my %skip_table;
+      $checksum->check_server(
+         {  dbh        => $dsns[0]->{dbh},
+            dsn        => $dsns[0],
+            dsn_parser => $dsn_parser,
+            recurse    => 0,
+            table      => $opts{R},
+            callback   => sub {
+               my ( $dsn, $dbh, $level, @diffs ) = @_;
+               foreach my $diff ( @diffs ) {
+                  $skip_table{$diff->{db}}->{$diff->{tbl}}++;
+               }
+            },
+         }
+      );
+
+      $checksum->check_server(
+         {  dbh        => $dsns[1]->{dbh},
+            dsn        => $dsns[1],
+            dsn_parser => $dsn_parser,
+            recurse    => 0,
+            table      => $opts{R},
+            callback   => sub {
+               my ( $dsn, $dbh, $level, @diffs ) = @_;
+               foreach my $diff ( @diffs ) {
+                  next if $skip_table{$diff->{db}}->{$diff->{tbl}};
+                  sync_a_table(
+                     src     => $dsns[0],
+                     src_db  => $diff->{db},
+                     src_tbl => $diff->{tbl},
+                     dst     => $dsns[1],
+                     dst_db  => $diff->{db},
+                     dst_tbl => $diff->{tbl},
+                     where   => $diff->{boundaries},
+                  );
+               }
+            },
+         }
+      );
+
+   }
+
+   # The DSN is the master.  Connect to each slave and find differences, then
+   # sync them.
+   else {
+      my %skip_table;
+      $dsns[0]->{dbh} = get_dbh($dsns[0]);
+      $checksum->check_server(
+         {  dbh        => $dsns[0]->{dbh},
+            dsn        => $dsns[0],
+            dsn_parser => $dsn_parser,
+            recurse    => 1,
+            table      => $opts{R},
+            callback   => sub {
+               my ( $dsn, $dbh, $level, @diffs ) = @_;
+               if ( $level ) {
+                  # Must save a reference to the DBH to close gracefully later
+                  $dsn->{dbh} ||= $dbh;
+                  push @dsns, $dsn;
+               }
+               foreach my $diff ( @diffs ) {
+                  if ( !$level ) {
+                     $skip_table{$diff->{db}}->{$diff->{tbl}}++;
+                  }
+                  else {
+                     next if $skip_table{$diff->{db}}->{$diff->{tbl}};
+                     sync_a_table(
+                        src     => $dsns[0],
+                        src_db  => $diff->{db},
+                        src_tbl => $diff->{table},
+                        dst     => $dsns[1],
+                        dst_db  => $diff->{db},
+                        dst_tbl => $diff->{table},
+                        where   => $diff->{boundaries},
+                     );
+                  }
+               }
+            },
+         }
+      );
+   }
+
+}
+else {
+   $dsns[0]->{dbh} = get_dbh($dsns[0]);
+   my $finder = new MySQLFind(
+      dbh       => $dsns[0]->{dbh},
+      quoter    => $q,
+      useddl    => 1,
+      parser    => $tp,
+      dumper    => $du,
+      databases => {
+         permit => $opts{d},
+         reject => $opts{g},
+      },
+      tables => {
+         permit => $opts{t},
+         reject => $opts{n},
+      },
+      engines => {
+         views  => 0,
+         permit => $opts{e},
+         reject => $opts{E},
+      },
+   );
+
+   DATABASE:
+   foreach my $database ( $finder->find_databases() ) {
+      foreach my $table ( $finder->find_tables(database => $database) ) {
+         foreach my $dsn ( @dsns[ 1 .. $#dsns ] ) {
+            eval {
+               sync_a_table(
+                  src     => $dsns[0],
+                  src_db  => $database,
+                  src_tbl => $table,
+                  dst     => $dsn,
+                  dst_db  => $database,
+                  dst_tbl => $table,
+                  where   => $opts{W},
+               );
+            };
+            if ( $EVAL_ERROR ) {
+               print_err($EVAL_ERROR, $database, $table, $dsn->{h} );
+               $exit_status = 1;
+            }
+         }
+      }
+   }
+}
+
+sub sync_a_table {
+   my (%args) = @_;
+
+   # Open connections as needed.
+   $args{src}->{dbh}      ||= get_dbh($args{src});
+   $args{dst}->{dbh}      ||= get_dbh($args{dst});
+   $args{src}->{misc_dbh} ||= get_dbh($args{src});
+
+   my $tbl_struct = $tp->parse(
+      $du->get_create_table($args{src}->{dbh}, $q, @args{qw(src_db src_tbl)}));
+   my @possible_keys = $tp->find_possible_keys(
+      $args{src}->{dbh}, @args{qw(src_db src_tbl)}, $q, $opts{W});
+
+   my %status = $syncer->sync_table(
+      algorithm     => $opts{a},
+      buffer        => $opts{bufferresults} ? 1 : 0,
+      checksum      => $checksum,
+      chunker       => $chunker,
+      chunksize     => $opts{chunksize},
+      cols          => $opts{c} || $tbl_struct->{cols},
+      dst_db        => $args{dst_db},
+      dst_dbh       => $args{dst}->{dbh},
+      dst_tbl       => $args{dst_tbl},
+      execute       => $opts{x} ? 1 : 0,
+      lock          => $opts{k} ? 1 : 0,
+      misc_dbh      => $args{src}->{misc_dbh},
+      possible_keys => \@possible_keys,
+      print         => $opts{p} ? 1 : 0,
+      quoter        => $q,
+      replicate     => ($opts{R} || $opts{s}) ? 1 : 0,
+      src_db        => $args{src_db},
+      src_dbh       => $args{src}->{dbh},
+      src_tbl       => $args{src_tbl},
+      tbl_struct    => $tbl_struct,
+      timeoutok     => $opts{timeoutok} ? 1 : 0,
+      versionparser => $vp,
+      wait          => $opts{w} ? 1 : 0,
+      where         => $args{where} || '',
+   );
+
+   if ( $opts{v} ) {
+      printf("# %6d %6d %6d %s.%s\n",
+         @status{@ChangeHandler::ACTIONS}, @args{qw(src_db src_tbl)});
+   }
+}
+
+foreach my $dsn (@dsns) {
+   foreach my $thing ( qw(dbh misc_dbh) ) {
+      my $dbh = $dsn->{$thing};
+      next unless $dbh;
+      $dbh->commit unless $dbh->{AutoCommit};
+      $dbh->disconnect;
+   }
 }
 
 exit $exit_status;
@@ -2662,6 +2857,32 @@ exit $exit_status;
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# main:$line ", @_, "\n";
+}
+
+# Tries to extract the MySQL error message and print it
+sub print_err {
+   my ( $msg, $database, $table, $host ) = @_;
+   return if !defined $msg;
+   $msg =~ s/^.*?failed: (.*?) at \S+ line (\d+).*$/$1 at line $2/s;
+   $msg =~ s/\s+/ /g;
+   if ( $database && $table ) {
+      $msg .= " while doing $database.$table";
+   }
+   if ( $host ) {
+      $msg .= " on $host";
+   }
+   print STDERR $msg, "\n";
+}
+
+sub get_master_dsn {
+   my ( $dsn ) = @_;
+   $ENV{MKDEBUG} && _d("Connecting to master via SHOW SLAVE STATUS");
+   my $query  = 'SHOW SLAVE STATUS';
+   $ENV{MKDEBUG} && _d($query);
+   my $status = $dsn->{dbh}->selectrow_hashref($query);
+   $status    = { map { lc($_) => $status->{$_} } keys %$status };
+   my $spec   = "h=$status->{master_host},P=$status->{master_port}";
+   return       $dsn_parser->parse($spec, $dsn);
 }
 
 sub get_dbh {
@@ -2679,7 +2900,24 @@ sub get_dbh {
       $info->{p}
          = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
    }
-   return DBI->connect($dsn_parser->get_cxn_params($info), $db_options);
+   my $dbh = DBI->connect($dsn_parser->get_cxn_params($info), $db_options);
+   my $sql;
+   if ( $opts{skipbinlog} ) {
+      $sql = "/*!32316 SET SQL_LOG_BIN=0 */";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
+   if ( $opts{skipuniquekey} ) {
+      $sql = "/*!40014 SET UNIQUE_CHECKS=0 */";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
+   if ( $opts{K} ) {
+      $sql = "/*!40014 SET FOREIGN_KEY_CHECKS=0 */";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
+   return $dbh;
 }
 
 # ############################################################################
@@ -3345,8 +3583,8 @@ sync these two tables with straightforward UPDATE statements:
  +---+---+  +---+---+
  | a | b |  | a | b |
  +---+---+  +---+---+
- | 1 | 2 |  | 1 | 1 | 
- | 2 | 1 |  | 2 | 2 | 
+ | 1 | 2 |  | 1 | 1 |
+ | 2 | 1 |  | 2 | 2 |
  +---+---+  +---+---+
 
 If you run into this, you can use the L<"--deleteinsert"> option to convert all
