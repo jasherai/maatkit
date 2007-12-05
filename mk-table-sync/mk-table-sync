@@ -24,7 +24,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1178
+# OptionParser package 1344
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -47,6 +47,7 @@ sub new {
    my %disables;
    my %copyfrom;
    unshift @opts,
+      { s => 'debug',   d => 'Set ENV{MKDEBUG} and enable debugging output' },
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
    foreach my $opt ( @opts ) {
@@ -63,15 +64,21 @@ sub new {
          $opt->{n} = $opt->{s} =~ m/!/;
          $opt->{g} ||= 'o';
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
+            $ENV{MKDEBUG} && _d("Option $opt->{k} type: $y");
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
-         $opt->{r} = $opt->{d} =~ m/required/;
+         if ( $opt->{d} =~ m/required/ ) {
+            $opt->{r} = 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} is required");
+         }
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} has a default");
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+            $ENV{MKDEBUG} && _d("Option $opt->{k} $dis");
          }
       }
       else { # It's an instruction.
@@ -83,9 +90,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -94,6 +103,7 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
+            $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
          }
 
       }
@@ -135,6 +145,7 @@ sub get_participants {
          }
       }
    }
+   $ENV{MKDEBUG} && _d("Participants for $str: ", @participants);
    return @participants;
 }
 
@@ -167,12 +178,17 @@ sub parse {
       exit(0);
    }
 
+   if ( $vals{debug} ) {
+      $ENV{MKDEBUG} = 1;
+   }
+
    if ( @ARGV && $self->{strict} ) {
       $self->error("Unrecognized command-line options @ARGV");
    }
 
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      $ENV{MKDEBUG} && _d("Unsetting options: ", @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -215,15 +231,18 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
+            $ENV{MKDEBUG} && _d("Setting option $spec->{k} to $val");
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
+         $ENV{MKDEBUG} && _d("Parsing option $spec->{y} as a DSN");
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
+            $ENV{MKDEBUG} && _d("Option $spec->{y} DSN copies from option $from_key");
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -233,6 +252,7 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
+               $ENV{MKDEBUG} && _d("Setting option $spec->{y} to num * factor");
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -243,6 +263,7 @@ sub parse {
    }
 
    foreach my $spec ( grep { $_->{y} } @specs ) {
+      $ENV{MKDEBUG} && _d("Treating option $spec->{k} as a list");
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -385,6 +406,11 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# OptionParser:$line ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -434,7 +460,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1216
+# DSNParser package 1345
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -483,6 +509,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
+      $ENV{MKDEBUG} && _d('Adding extra property ' . $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -491,6 +518,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
+      $ENV{MKDEBUG} && _d("Setting $prop property");
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -498,22 +526,30 @@ sub prop {
 
 sub parse {
    my ( $self, $dsn, $prev, $defaults ) = @_;
-   return unless $dsn;
+   if ( !$dsn ) {
+      $ENV{MKDEBUG} && _d('No DSN to parse');
+      return;
+   }
+   $ENV{MKDEBUG} && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
    my %vals;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
-      $dsn = $self->prop('autokey') . "=$dsn";
+   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
+      $ENV{MKDEBUG} && _d("Interpreting $dsn as $p=$dsn");
+      $dsn = "$p=$dsn";
    }
    my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
    foreach my $key ( keys %opts ) {
+      $ENV{MKDEBUG} && _d("Finding value for $key");
       $vals{$key} = $hash{$key};
       if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
          $vals{$key} = $prev->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from previous DSN");
       }
       if ( !defined $vals{$key} ) {
          $vals{$key} = $defaults->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from defaults");
       }
    }
    foreach my $key ( keys %hash ) {
@@ -574,7 +610,13 @@ sub get_cxn_params {
                      qw(F h P S))
          . ';mysql_read_default_group=mysql';
    }
+   $ENV{MKDEBUG} && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# DSNParser:$line ", @_, "\n";
 }
 
 1;
@@ -584,7 +626,7 @@ sub get_cxn_params {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 1149
+# VersionParser package 1344
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -598,14 +640,25 @@ sub new {
 
 sub parse {
    my ( $self, $str ) = @_;
-   return sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+   my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+   $ENV{MKDEBUG} && _d("$str parses to $result");
+   return $result;
 }
 
 sub version_ge {
    my ( $self, $dbh, $target ) = @_;
-   $self->{$dbh} ||= $self->parse(
-      $dbh->selectrow_array('SELECT VERSION()'));
-   return $self->{$dbh} ge $self->parse($target);
+   if ( !$self->{$dbh} ) {
+      $self->{$dbh} = $self->parse(
+         $dbh->selectrow_array('SELECT VERSION()'));
+   }
+   my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
+   $ENV{MKDEBUG} && _d("$self->{$dbh} ge $target: $result");
+   return $result;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# VersionParser:$line ", @_, "\n";
 }
 
 1;
@@ -615,7 +668,7 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 1339
+# TableSyncStream package 1344
 # ###########################################################################
 
 use strict;
@@ -672,6 +725,11 @@ sub prepare {
    my ( $self, $dbh ) = @_;
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableSyncStream:$line ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -679,7 +737,7 @@ sub prepare {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1259
+# TableParser package 1344
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -694,7 +752,7 @@ sub parse {
    my ( $self, $ddl, $opts ) = @_;
 
    if ( ref $ddl eq 'ARRAY' ) {
-      if ( $ddl->[0] eq 'table' ) {
+      if ( lc $ddl->[0] eq 'table' ) {
          $ddl = $ddl->[1];
       }
       else {
@@ -709,9 +767,11 @@ sub parse {
    }
 
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   $ENV{MKDEBUG} && _d('Columns: ' . join(', ', @cols));
 
    my %def_for;
    @def_for{@cols} = @defs;
@@ -754,6 +814,7 @@ sub parse {
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
       my @cols   = grep { m/[^,]/ } split('`', $cols);
       $name      =~ s/`//g;
+      $ENV{MKDEBUG} && _d("Index $name columns: " . join(', ', @cols));
 
       $keys{$name} = {
          colnames    => $cols,
@@ -781,6 +842,11 @@ sub parse {
    };
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableParser:$line ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -788,7 +854,7 @@ sub parse {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 1327
+# RowDiff package 1344
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -812,44 +878,55 @@ sub compare_sets {
    do {
 
       if ( !$lr && $left->{Active} ) {
+         $ENV{MKDEBUG} && _d('Fetching row from left');
          $lr = $left->fetchrow_hashref;
       }
       if ( !$rr && $right->{Active} ) {
+         $ENV{MKDEBUG} && _d('Fetching row from right');
          $rr = $right->fetchrow_hashref;
       }
 
       my $cmp;
       if ( $lr && $rr ) {
          $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
+         $ENV{MKDEBUG} && _d('Key comparison on left and right: '
+            . (defined $cmp ? $cmp : 'undef'));
       }
       if ( $lr || $rr ) {
          if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
+            $ENV{MKDEBUG} && _d('Left and right have the same key');
             $syncer->same_row($lr, $rr);
             $lr = $rr = undef; # Fetch another row from each side.
          }
          elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
+            $ENV{MKDEBUG} && _d('Left is not in right');
             $syncer->not_in_right($lr);
             $lr = undef;
          }
          else {
+            $ENV{MKDEBUG} && _d('Right is not in left');
             $syncer->not_in_left($rr);
             $rr = undef;
          }
       }
    } while ( $left->{Active} || $right->{Active} );
+   $ENV{MKDEBUG} && _d('No more rows');
    $syncer->done_with_rows();
 }
 
 sub key_cmp {
    my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
+   $ENV{MKDEBUG} && _d("Comparing keys using columns " . join(',', @$key_cols));
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
       if ( !defined $l || !defined $r ) {
+         $ENV{MKDEBUG} && _d("$col is not defined in both rows");
          return defined $l || -1;
       }
       else {
          if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
+            $ENV{MKDEBUG} && _d("$col is numeric");
             my $cmp = $l <=> $r;
             return $cmp unless $cmp == 0;
          }
@@ -858,9 +935,11 @@ sub key_cmp {
             my $coll = $tbl->{collation_for}->{$col};
             if ( $coll && ( $coll ne 'latin1_swedish_ci'
                            || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) ) {
+               $ENV{MKDEBUG} && _d("Comparing $col via MySQL");
                $cmp = $self->db_cmp($coll, $l, $r);
             }
             else {
+               $ENV{MKDEBUG} && _d("Comparing $col in lowercase");
                $cmp = lc $l cmp lc $r;
             }
             return $cmp unless $cmp == 0;
@@ -874,6 +953,7 @@ sub db_cmp {
    my ( $self, $collation, $l, $r ) = @_;
    if ( !$self->{sth}->{$collation} ) {
       if ( !$self->{charset_for} ) {
+         $ENV{MKDEBUG} && _d("Fetching collations from MySQL");
          my @collations = @{$self->{dbh}->selectall_arrayref(
             'SHOW COLLATION', {Slice => { collation => 1, charset => 1 }})};
          foreach my $collation ( @collations ) {
@@ -881,14 +961,19 @@ sub db_cmp {
                = $collation->{charset};
          }
       }
-      $self->{sth}->{$collation} = $self->{dbh}->prepare(
-         "SELECT STRCMP(_$self->{charset_for}->{$collation}? COLLATE $collation, "
-         . "_$self->{charset_for}->{$collation}? COLLATE $collation) AS res"
-      );
+      my $sql = "SELECT STRCMP(_$self->{charset_for}->{$collation}? COLLATE $collation, "
+         . "_$self->{charset_for}->{$collation}? COLLATE $collation) AS res";
+      $ENV{MKDEBUG} && _d($sql);
+      $self->{sth}->{$collation} = $self->{dbh}->prepare($sql);
    }
    my $sth = $self->{sth}->{$collation};
    $sth->execute($l, $r);
    return $sth->fetchall_arrayref()->[0]->[0];
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# RowDiff:$line ", @_, "\n";
 }
 
 1;
@@ -1080,7 +1165,7 @@ sub get_triggers {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 1340
+# ChangeHandler package 1344
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1106,10 +1191,12 @@ sub new {
 sub fetch_back {
    my ( $self, $dbh ) = @_;
    $self->{fetch_back} = $dbh;
+   $ENV{MKDEBUG} && _d('Will fetch rows from source when updating destination');
 }
 
 sub take_action {
    my ( $self, $sql ) = @_;
+   $ENV{MKDEBUG} && _d('Calling subroutines on ', $sql);
    foreach my $action ( @{$self->{actions}} ) {
       $action->($sql);
    }
@@ -1117,6 +1204,7 @@ sub take_action {
 
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
+   $ENV{MKDEBUG} && _d("$action where ", $self->make_where_clause($row, $cols));
    if ( !$self->{queue} ) {
       eval {
          my $func = "make_$action";
@@ -1124,6 +1212,7 @@ sub change {
          $self->take_action($sql);
       };
       if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
+         $ENV{MKDEBUG} && _d('The DBH is busy; queueing further changes');
          push @{$self->{$action}}, [ $row, $cols ];
          $self->{queue}++; # Defer further rows
       }
@@ -1132,18 +1221,23 @@ sub change {
       }
    }
    else {
+      $ENV{MKDEBUG} && _d('Queueing change for later');
       push @{$self->{$action}}, [ $row, $cols ];
    }
 }
 
 sub process_rows {
    my ( $self, $queue_level ) = @_;
-   return if $queue_level && $queue_level < $self->{queue};
+   if ( $queue_level && $queue_level < $self->{queue} ) {
+      $ENV{MKDEBUG} && _d("Not processing now $queue_level<$self->{queue}");
+      return;
+   }
    my ($row, $cur_act);
    eval {
       foreach my $action ( qw(DELETE UPDATE INSERT) ) {
          my $func = "make_$action";
          my $rows = $self->{$action};
+         $ENV{MKDEBUG} && _d(scalar(@$rows) . " to $action");
          $cur_act = $action;
          while ( @$rows ) {
             $row = shift @$rows;
@@ -1154,6 +1248,7 @@ sub process_rows {
    };
    if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
       unshift @{$self->{$cur_act}}, $row;
+      $ENV{MKDEBUG} && _d('The DBH is still busy; increasing queue level');
       $self->{queue}++; # Defer rows to the very end
    }
    elsif ( $EVAL_ERROR ) {
@@ -1173,8 +1268,9 @@ sub make_UPDATE {
    my %in_where = map { $_ => 1 } @$cols;
    my $where = $self->make_where_clause($row, $cols);
    if ( my $dbh = $self->{fetch_back} ) {
-      my $res = $dbh->selectrow_hashref(
-         "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1");
+      my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
+      $ENV{MKDEBUG} && _d("Fetching data for UPDATE: $sql");
+      my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       $cols = [sort keys %$res];
    }
@@ -1194,8 +1290,9 @@ sub make_INSERT {
    my @cols = sort keys %$row;
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
-      my $res = $dbh->selectrow_hashref(
-         "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1");
+      my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
+      $ENV{MKDEBUG} && _d("Fetching data for UPDATE: $sql");
+      my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = sort keys %$res;
    }
@@ -1216,6 +1313,11 @@ sub make_where_clause {
    return join(' AND ', @clauses);
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# ChangeHandler:$line ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -1223,7 +1325,7 @@ sub make_where_clause {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 1339
+# TableChunker package 1346
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1264,6 +1366,7 @@ sub find_chunk_columns {
       if ( @candidate_cols ) {
          $can_chunk_exact = 1;
       }
+      $ENV{MKDEBUG} && _d('Exact chunkable: ' . join(', ', @candidate_cols));
    }
 
    if ( !@candidate_cols ) {
@@ -1274,6 +1377,7 @@ sub find_chunk_columns {
          }
          map { $_->{cols}->[0] }
          @possible_keys;
+      $ENV{MKDEBUG} && _d('Inexact chunkable: ' . join(', ', @candidate_cols));
    }
 
    my @result;
@@ -1299,6 +1403,7 @@ sub calculate_chunks {
    my @chunks;
    my ($range_func, $start_point, $end_point);
    my $col_type = $args{table}->{type_for}->{$args{col}};
+   $ENV{MKDEBUG} && _d("Chunking on $args{col} ($col_type)");
 
 
    if ( $col_type =~ m/(?:int|year|float|double|decimal)$/ ) {
@@ -1307,18 +1412,21 @@ sub calculate_chunks {
       $range_func  = 'range_num';
    }
    elsif ( $col_type eq 'timestamp' ) {
-      ($start_point, $end_point) = $args{dbh}->selectrow_array(
-         "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')");
+      my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
+      $ENV{MKDEBUG} && _d($sql);
+      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
       $range_func  = 'range_timestamp';
    }
    elsif ( $col_type eq 'date' ) {
-      ($start_point, $end_point) = $args{dbh}->selectrow_array(
-         "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')");
+      my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
+      $ENV{MKDEBUG} && _d($sql);
+      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
       $range_func  = 'range_date';
    }
    elsif ( $col_type eq 'time' ) {
-      ($start_point, $end_point) = $args{dbh}->selectrow_array(
-         "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')");
+      my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
+      $ENV{MKDEBUG} && _d($sql);
+      ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
       $range_func  = 'range_time';
    }
    elsif ( $col_type eq 'datetime' ) {
@@ -1331,11 +1439,14 @@ sub calculate_chunks {
    }
 
    if ( !defined $start_point ) {
+      $ENV{MKDEBUG} && _d('Start point is undefined');
       $start_point = 0;
    }
    if ( !defined $end_point || $end_point < $start_point ) {
+      $ENV{MKDEBUG} && _d('End point is undefined or before start point');
       $end_point = 0;
    }
+   $ENV{MKDEBUG} && _d("Start and end of chunk range: $start_point, $end_point");
 
    my $interval = $args{size} * ($end_point - $start_point) / $args{rows_in_range};
    if ( $int_types{$col_type} ) {
@@ -1345,6 +1456,7 @@ sub calculate_chunks {
    if ( $args{exact} ) {
       $interval = $args{size};
    }
+   $ENV{MKDEBUG} && _d("Chunk interval: $interval units");
 
    my $col = "`$args{col}`";
    if ( $start_point < $end_point ) {
@@ -1393,10 +1505,9 @@ sub size_to_rows {
    my $status;
    if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
       $tbl =~ s/_/\\_/g;
-      my $sth = $dbh->prepare(
-         "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'");
-      $sth->execute;
-      $status = $sth->fetchrow_hashref();
+      my $sql = "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'"; # TODO: quote!!!
+      $ENV{MKDEBUG} && _d($sql);
+      $status = $dbh->selectrow_hashref($sql);
       if ( $cache ) {
          $cache->{$db}->{$tbl} = $status;
       }
@@ -1408,10 +1519,12 @@ sub size_to_rows {
 
 sub get_range_statistics {
    my ( $self, $dbh, $db, $tbl, $col, $opts ) = @_;
-   my ( $min, $max ) = $dbh->selectrow_array(
-      "SELECT MIN(`$col`), MAX(`$col`) FROM `$db`.`$tbl`");
-   my $expl = $dbh->selectrow_hashref(
-      "EXPLAIN SELECT * FROM `$db`.`$tbl");
+   my $sql = "SELECT MIN(`$col`), MAX(`$col`) FROM `$db`.`$tbl`"; # TODO: quote!
+   $ENV{MKDEBUG} && _d($sql);
+   my ( $min, $max ) = $dbh->selectrow_array($sql);
+   $sql = "EXPLAIN SELECT * FROM `$db`.`$tbl";
+   $ENV{MKDEBUG} && _d($sql);
+   my $expl = $dbh->selectrow_hashref($sql);
    return (
       min           => $min,
       max           => $max,
@@ -1429,6 +1542,7 @@ sub inject_chunks {
    foreach my $arg ( qw(database table chunks chunk_num query quoter) ) {
       die "$arg is required" unless defined $args{$arg};
    }
+   $ENV{MKDEBUG} && _d("Injecting chunk $args{chunk_num}");
    my $comment = sprintf("/*%s.%s:%d/%d*/",
       $args{database}, $args{table},
       $args{chunk_num} + 1, scalar @{$args{chunks}});
@@ -1459,36 +1573,41 @@ sub range_num {
 
 sub range_time {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))");
+   my $sql = "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))";
+   $ENV{MKDEBUG} && _d($sql);
+   return $dbh->selectrow_array($sql);
 }
 
 sub range_date {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))");
+   my $sql = "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))";
+   $ENV{MKDEBUG} && _d($sql);
+   return $dbh->selectrow_array($sql);
 }
 
 sub range_datetime {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND),
-       DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)");
+   my $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND), "
+       . "DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)";
+   $ENV{MKDEBUG} && _d($sql);
+   return $dbh->selectrow_array($sql);
 }
 
 sub range_timestamp {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
-   return $dbh->selectrow_array(
-      "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))");
+   my $sql = "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))";
+   $ENV{MKDEBUG} && _d($sql);
+   return $dbh->selectrow_array($sql);
 }
 
 sub timestampdiff {
    my ( $self, $dbh, $time ) = @_;
-   my ( $diff ) = $dbh->selectrow_array(
-      "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
-      . "- TO_DAYS('$EPOCH 00:00:00') * 86400");
-   my ( $check ) = $dbh->selectrow_array(
-      "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)");
+   my $sql = "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+      . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
+   my ( $diff ) = $dbh->selectrow_array($sql);
+   $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
+   $ENV{MKDEBUG} && _d($sql);
+   my ( $check ) = $dbh->selectrow_array($sql);
    die <<"   EOF"
    Incorrect datetime math: given $time, calculated $diff but checked to $check.
    This is probably because you are using a version of MySQL that overflows on
@@ -1498,6 +1617,11 @@ sub timestampdiff {
    return $diff;
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableChunker:$line ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -1505,7 +1629,7 @@ sub timestampdiff {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1339
+# TableChecksum package 1346
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1538,18 +1662,22 @@ sub best_algorithm {
       || $opts{replicate}                 # CHECKSUM can't do INSERT.. SELECT
       || !$vp->version_ge($dbh, '4.1.1')) # CHECKSUM doesn't exist
    {
+      $ENV{MKDEBUG} && _d('Cannot use CHECKSUM algorithm');
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
    if ( !$vp->version_ge($dbh, '4.1.1') ) {
+      $ENV{MKDEBUG} && _d('Cannot use BIT_XOR algorithm');
       @choices = grep { $_ ne 'BIT_XOR' } @choices;
    }
 
    if ( $alg && grep { $_ eq $alg } @choices ) {
+      $ENV{MKDEBUG} && _d("User requested $alg algorithm");
       return $alg;
    }
 
    if ( $opts{count} && grep { $_ ne 'CHECKSUM' } @choices ) {
+      $ENV{MKDEBUG} && _d('Not using CHECKSUM algorithm because COUNT desired');
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
@@ -1577,6 +1705,7 @@ sub choose_hash_func {
       };
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
          $error .= qq{$func cannot be used because "$1"\n};
+         $ENV{MKDEBUG} && _d("$func cannot be used because $1");
       }
    } while ( @funcs && !$result );
 
@@ -1595,6 +1724,7 @@ sub optimize_xor {
    my $crc_wid   = length($unsliced) < 16 ? 16 : length($unsliced);
 
    do { # Try different positions till sliced result equals non-sliced.
+      $ENV{MKDEBUG} && _d("Trying slice $opt_slice");
       $dbh->do('SET @crc := "", @cnt := 0');
       my $slices = $self->make_xor_slices(
          query     => "\@crc := $func('a')",
@@ -1605,12 +1735,20 @@ sub optimize_xor {
       my $sql = "SELECT CONCAT($slices) AS TEST FROM (SELECT NULL) AS x";
       $sliced = ($dbh->selectrow_array($sql))[0];
       if ( $sliced ne $unsliced ) {
+         $ENV{MKDEBUG} && _d("Slice $opt_slice does not work");
          $start += 16;
          ++$opt_slice;
       }
    } while ( $start < $crc_wid && $sliced ne $unsliced );
 
-   return $sliced eq $unsliced ? $opt_slice : undef;
+   if ( $sliced eq $unsliced ) {
+      $ENV{MKDEBUG} && _d("Slice $opt_slice works");
+      return $opt_slice;
+   }
+   else {
+      $ENV{MKDEBUG} && _d("No slice works");
+      return undef;
+   }
 }
 
 sub make_xor_slices {
@@ -1729,6 +1867,8 @@ sub check_server {
       $dbh = $args->{dbh} || DBI->connect(
          $args->{dsn_parser}->get_cxn_params($args->{dsn},
             { RaiseError => 1, PrintError => 0, AutoCommit => 1 }));
+      $ENV{MKDEBUG} && _d('Connected to '
+         . $args->{dsn_parser}->as_string($args->{dsn}));
    };
    if ( $EVAL_ERROR ) {
       print "Cannot connect to "
@@ -1737,17 +1877,19 @@ sub check_server {
    }
 
    my ($id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
+   $ENV{MKDEBUG} && _d('Working on server ID ' . $id);
    my $master_thinks_i_am = $args->{dsn}->{server_id};
    if ( !defined $id
        || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
        || $args->{server_ids_seen}->{$id}++
    ) {
+      $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
       print "Skipping "
          . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
       return;
    }
 
-   (my $sql = <<"   EOF") =~ s/^      //gm;
+   (my $sql = <<"   EOF") =~ s/\s+/ /gm;
       SELECT db, tbl, chunk, boundaries,
          COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,
          COALESCE(
@@ -1759,6 +1901,7 @@ sub check_server {
       OR ISNULL(master_crc) <> ISNULL(this_crc)
    EOF
 
+   $ENV{MKDEBUG} && _d($sql);
    my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
    if ( @$diffs ) {
       $args->{callback}->($args->{dsn}, @$diffs);
@@ -1779,10 +1922,19 @@ sub check_server {
          my $dsn = $args->{dsn_parser}->parse(
              "h=$slave->{host},P=$slave->{port}", $args->{dsn});
          $dsn->{server_id} = $slave->{server_id};
+         $ENV{MKDEBUG} && _d('Recursing from '
+            . $args->{dsn_parser}->as_string($args->{dsn})
+            . ' to '
+            . $args->{dsn_parser}->as_string($dsn));
          $self->check_server( { %$args, dsn => $dsn, dbh => undef }, $level + 1 );
       }
    }
 
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableChecksum:$line ", @_, "\n";
 }
 
 1;
@@ -1792,7 +1944,7 @@ sub check_server {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1340
+# TableSyncChunk package 1346
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1884,7 +2036,7 @@ sub get_sql {
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
-         . ' WHERE (' . $self->{chunks}->[$self->{chunk_num} - 1] . ')'
+         . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
          . ($args{where} ? " AND ($args{where})" : '');
    }
    else {
@@ -1913,6 +2065,7 @@ sub same_row {
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
+      $ENV{MKDEBUG} && _d('Will examine this chunk before moving to next');
       $self->{state} = 1; # Must examine this chunk row-by-row
    }
 }
@@ -1933,28 +2086,240 @@ sub done_with_rows {
    my ( $self ) = @_;
    if ( $self->{state} == 1 ) {
       $self->{state} = 2;
+      $ENV{MKDEBUG} && _d("Setting state=$self->{state}");
    }
    else {
       $self->{state} = 0;
       $self->{chunk_num}++;
+      $ENV{MKDEBUG}
+         && _d("Setting state=$self->{state}, chunk_num=$self->{chunk_num}");
    }
 }
 
 sub done {
    my ( $self ) = @_;
+   $ENV{MKDEBUG}
+      && _d("Done with $self->{chunk_num} of "
+       . scalar(@{$self->{chunks}}) . ' chunks');
+   $ENV{MKDEBUG} && $self->{state} && _d('Chunk differs; must examine rows');
    return $self->{state} == 0
       && $self->{chunk_num} >= scalar(@{$self->{chunks}})
 }
 
 sub key_cols {
    my ( $self ) = @_;
-   return $self->{state} == 0 ? [qw(chunk_num)] : [$self->{chunk_col}];
+   my @cols;
+   if ( $self->{state} == 0 ) {
+      @cols = qw(chunk_num);
+   }
+   else {
+      @cols = $self->{chunk_col};
+   }
+   $ENV{MKDEBUG} && _d("State $self->{state}, key cols " . join(', ', @cols));
+   return \@cols;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableSyncChunk:$line ", @_, "\n";
 }
 
 1;
 
 # ###########################################################################
 # End TableSyncChunk package
+# ###########################################################################
+
+# ###########################################################################
+# TableSyncer package 1346
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableSyncer;
+
+use English qw(-no_match_vars);
+
+our %ALGOS = map { $_ => 1 } qw(Stream Chunk);
+
+sub new {
+   bless {}, shift;
+}
+
+sub best_algorithm {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(struct nibbler chunker) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $struct = $args{struct};
+   my $result;
+
+   my $best_key = $args{nibbler}->find_best_index($struct);
+   if ( $best_key eq 'PRIMARY'
+      || ( $struct->{keys}->{$best_key}->{unique}
+         && !$struct->{keys}->{$best_key}->{is_nullable} )) {
+      $result = 'Chunk';
+   }
+   else {
+      $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
+      $result = 'Stream';
+   }
+   $ENV{MKDEBUG} && _d("Algorithm: $result");
+   return $result;
+}
+
+sub sync_table {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(
+      buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
+      misc_dbh quoter replicate src_db src_dbh src_tbl tbl_struct timeoutok
+      versionparser wait where) )
+   {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   $ENV{MKDEBUG} && _d("Syncing table with args "
+      . join(', ',
+         map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
+         sort keys %args));
+
+   if ( $args{lock} ) {
+      $self->lock_table($args{src_dbh}, 'source',
+         $args{quoter}->quote($args{src_db}, $args{src_tbl}),
+         $args{replicate} ? 'WRITE' : 'READ');
+   }
+
+   if ( $args{wait} ) {
+      $self->wait_for_master(
+         $args{src_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
+   }
+
+   if ( $args{lock} ) {
+      if ( $args{replicate} ) {
+         $ENV{MKDEBUG}
+            && _d('Not locking destination because syncing via replication');
+      }
+      else {
+         $self->lock_table($args{dst_dbh}, 'dest',
+            $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
+            $args{execute} ? 'WRITE' : 'READ');
+      }
+   }
+
+   my $change_dbh = $args{replicate} ? $args{src_dbh} : $args{dst_dbh};
+   $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
+
+   my $ch = new ChangeHandler(
+      quoter    => $args{quoter},
+      database  => $args{dst_db},
+      table     => $args{dst_tbl},
+      sdatabase => $args{src_db},
+      stable    => $args{src_tbl},
+      actions   => [
+         ( $args{print}   ? sub { print @_, ";\n" }                : () ),
+         ( $args{execute} ? sub { map { $change_dbh->do($_) } @_ } : () ),
+      ],
+   );
+   my $rd = new RowDiff( dbh => $args{misc_dbh} );
+
+   my $class  = "TableSync$args{algorithm}";
+   my $plugin = $class->new(
+      handler   => $ch,
+      cols      => $args{tbl_struct}->{cols}, # TODO
+      dbh       => $args{src_dbh},
+      database  => $args{src_db},
+      table     => $args{src_tbl},
+      chunker   => $args{chunker},
+      struct    => $args{tbl_struct},
+      checksum  => $args{checksum},
+      vp        => $args{versionparser},
+      quoter    => $args{quoter},
+      chunksize => $args{chunksize},
+      where     => $args{where},
+   );
+
+   my $cycle = 0;
+   while ( !$plugin->done ) {
+      $ENV{MKDEBUG} && _d("Beginning sync cycle $cycle");
+      my $src_sql = $plugin->get_sql(
+         quoter   => $args{quoter},
+         database => $args{src_db},
+         table    => $args{src_tbl},
+         where    => $args{where},
+      );
+      my $dst_sql = $plugin->get_sql(
+         quoter   => $args{quoter},
+         database => $args{dst_db},
+         table    => $args{dst_tbl},
+         where    => $args{where},
+      );
+      $plugin->prepare($args{src_dbh});
+      $plugin->prepare($args{dst_dbh});
+      $ENV{MKDEBUG} && _d("src: " . $src_sql);
+      $ENV{MKDEBUG} && _d("dst: " . $dst_sql);
+      my $src_sth = $args{src_dbh}
+         ->prepare( $src_sql, { mysql_use_result => !$args{buffer} } );
+      $src_sth->execute();
+      my $dst_sth = $args{dst_dbh}
+         ->prepare( $dst_sql, { mysql_use_result => !$args{buffer} } );
+      $dst_sth->execute();
+      $rd->compare_sets(
+         left   => $src_sth,
+         right  => $dst_sth,
+         syncer => $plugin,
+         tbl    => $args{tbl_struct},
+      );
+      $ENV{MKDEBUG} && _d("Finished sync cycle $cycle");
+      $ch->process_rows(1);
+      foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
+         $dbh->do('UNLOCK TABLES'); # TODO
+         $dbh->commit unless $dbh->{AutoCommit};
+      }
+      $cycle++;
+   }
+
+   $ch->process_rows();
+
+   $ENV{MKDEBUG} && _d('Committing and unlocking');
+   foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
+      $dbh->do('UNLOCK TABLES');
+      $dbh->commit unless $dbh->{AutoCommit};
+   }
+}
+
+sub lock_table {
+   my ( $self, $dbh, $where, $db_tbl, $mode ) = @_;
+   my $query = "LOCK TABLES $db_tbl $mode";
+   $ENV{MKDEBUG} && _d($query);
+   $dbh->do($query);
+   $ENV{MKDEBUG} && _d("Acquired table lock on $where in $mode mode");
+}
+
+sub wait_for_master {
+   my ( $self, $src_dbh, $dst_dbh, $time, $timeoutok ) = @_;
+   my $query = 'SHOW MASTER STATUS';
+   $ENV{MKDEBUG} && _d($query);
+   my $ms = $src_dbh->selectrow_hashref($query);
+   $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
+   $ENV{MKDEBUG} && _d("Waiting $time sec for $ms->{file}, $ms->{position}");
+   $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+   $ENV{MKDEBUG} && _d($query);
+   my $stat = $dst_dbh->selectall_arrayref($query)->[0]->[0];
+   $stat = 'NULL' unless defined $stat;
+   if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+      die "MASTER_POS_WAIT failed: $stat";
+   }
+   $ENV{MKDEBUG} && _d("Result of waiting: $stat");
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableSyncer:$line ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableSyncer package
 # ###########################################################################
 
 package main;
@@ -1999,7 +2364,6 @@ my @opt_spec = (
                                  . 'algorithm (default 50000)'},
    { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
    { s => 'columns|c=h',      d => 'Comma-separated column list' },
-   { s => 'debug|b',          d => 'Print debugging output to STDOUT' },
    { s => 'deleteinsert|l',   d => 'Convert all UPDATES to DELETE and INSERT' },
    { s => 'queries|q',        d => 'Make debugging output executable SQL' },
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
@@ -2033,6 +2397,7 @@ my $q          = new Quoter();
 my $vp         = new VersionParser();
 my $chunker    = new TableChunker();
 my $checksum   = new TableChecksum();
+my $syncer     = new TableSyncer();
 my $dsn_parser = new DSNParser(
    {
       key  => 'D',
@@ -2086,11 +2451,6 @@ $opt_parser->usage_or_errors(%opts);
 # Lookup tables
 # ############################################################################
 
-my %algorithms = map { $_ => 1 } qw( Stream Chunk );
-die "Sorry, algorithm '$opts{a}' unknown; try one of "
-   . join( '|', keys %algorithms )
-   unless $algorithms{ $opts{a} };
-
 # ############################################################################
 # Do the work.
 # ############################################################################
@@ -2099,16 +2459,31 @@ my $exit_status = 0;
 my ($src_dbh, $dst_dbh, $misc_dbh);
 
 if ( !$dst ) {
-   debug_print("Connecting to the master by inspecting SHOW SLAVE STATUS");
+   $ENV{MKDEBUG} && _d("Connecting to the master by inspecting SHOW SLAVE STATUS");
    $dst     = $src; undef $src; # swap source and destination.
    $dst_dbh = get_dbh($dst);
    my $query  = 'SHOW SLAVE STATUS';
-   debug_print($query);
+   $ENV{MKDEBUG} && _d($query);
    my $status = $dst_dbh->selectrow_hashref($query);
    $status    = { map { lc($_) => $status->{$_} } keys %$status };
    my $spec   = "h=$status->{master_host},P=$status->{master_port}";
    $src       = $dsn_parser->parse($spec, $dst);
 }
+
+# TODO
+=pod
+   # TODO: move outside function, and don't pass DSN into function at all
+   if ( $args{src_tbl} ne $args{dst_tbl}
+         && -t STDIN && -t STDOUT
+         && ($args{src_dsn}->{h} || '') ne ($args{dst_dsn}->{h} || '') )
+   {
+      print "Continue syncing tables with different names?  y/n: ";
+      my $answer = <STDIN>;
+      if ( $answer !~ m/y/i ) {
+         exit(1);
+      }
+   }
+=cut
 
 # Open connections as needed.
 $src_dbh   = get_dbh($src);
@@ -2117,36 +2492,50 @@ $misc_dbh  = get_dbh($src); # For collation checks.
 
 # Set some SQL options as requested.
 foreach my $dbh ( $src_dbh, $dst_dbh ) {
+   my $sql;
    if ( $opts{skipbinlog} ) {
-      $dbh->do("/*!32316 SET SQL_LOG_BIN=0 */");
+      $sql = "/*!32316 SET SQL_LOG_BIN=0 */";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
    if ( $opts{skipuniquekey} ) {
-      $dbh->do("/*!40014 SET UNIQUE_CHECKS=0 */");
+      $sql = "/*!40014 SET UNIQUE_CHECKS=0 */";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
    if ( $opts{K} ) {
-      $dbh->do("/*!40014 SET FOREIGN_KEY_CHECKS=0 */");
+      $sql = "/*!40014 SET FOREIGN_KEY_CHECKS=0 */";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
 }
 
-$exit_status ||= sync_table(
-   src_dsn   => $src,
+my $tbl_struct = $tp->parse(
+   $du->get_create_table($src_dbh, $q, $src->{D}, $src->{t}));
+
+$exit_status ||= $syncer->sync_table(
+   algorithm => $opts{a},
+   buffer    => $opts{bufferresults} ? 1 : 0,
+   checksum  => $checksum,
+   chunker   => $chunker,
+   chunksize => $opts{chunksize},
+   dst_db    => $dst->{D},
+   dst_dbh   => $dst_dbh,
+   dst_tbl   => $dst->{t},
+   execute   => $opts{x} ? 1 : 0,
+   lock      => $opts{k} ? 1 : 0,
+   misc_dbh  => $misc_dbh,
+   print     => $opts{p} ? 1 : 0,
+   quoter    => $q,
+   replicate => $opts{r} ? 1 : 0,
+   src_dbh   => $src_dbh,
    src_db    => $src->{D},
    src_tbl   => $src->{t},
-   src_dbh   => $src_dbh,
-   dst_dsn   => $dst,
-   dst_db    => $dst->{D},
-   dst_tbl   => $dst->{t},
-   dst_dbh   => $dst_dbh,
-   misc_dbh  => $misc_dbh,
-   algorithm => $opts{a},
-   chunksize => $opts{chunksize},
-   wait      => $opts{W},
-   lock      => $opts{k},
-   replicate => $opts{r},
-   print     => $opts{p},
-   execute   => $opts{x},
-   where     => $opts{W},
-   buffer    => $opts{bufferresults},
+   tbl_struct => $tbl_struct,
+   timeoutok  => $opts{timeoutok} ? 1 : 0,
+   versionparser => $vp,
+   wait      => $opts{w} ? 1 : 0,
+   where     => $opts{W} || '',
 );
 
 foreach my $dbh ( $src_dbh, $dst_dbh, $misc_dbh ) {
@@ -2160,160 +2549,9 @@ exit $exit_status;
 # Subroutines
 # ############################################################################
 
-sub sync_table {
-   my ( %args ) = @_;
-
-   # TODO: move outside function, and don't pass DSN into function at all
-   if ( $args{src_tbl} ne $args{dst_tbl}
-         && -t STDIN && -t STDOUT
-         && ($args{src_dsn}->{h} || '') ne ($args{dst_dsn}->{h} || '') )
-   {
-      print "Continue syncing tables with different names?  y/n: ";
-      my $answer = <STDIN>;
-      if ( $answer !~ m/y/i ) {
-         exit(1);
-      }
-   }
-
-   my $src_db_tbl = $q->quote($args{src_db}, $args{src_tbl});
-   my $dst_db_tbl = $q->quote($args{dst_db}, $args{dst_tbl});
-
-   my $tbl_struct = $tp->parse(
-      $du->get_create_table($args{src_dbh}, $q, $args{src_db}, $args{src_tbl}));
-
-   # User wants us to lock for consistency.  But only lock on source initially;
-   # might have to wait for the slave to catch up before locking on the dest.
-   if ( $args{lock} ) {
-      lock_table($args{src_dbh}, 'source', $src_db_tbl,
-         $args{replicate} ? 'WRITE' : 'READ');
-   }
-
-   if ( $args{wait} ) {
-      wait_for_master($args{src_dbh}, $args{dst_dbh}, $args{wait});
-   }
-
-   # Don't lock at all on destination if it's a replication slave, or the
-   # replication thread will be locked out... we assume there is nothing else
-   # writing on the slave.
-   if ( $args{lock} && !$args{replicate} ) {
-      lock_table($args{dst_dbh}, 'dest', $dst_db_tbl,
-         $args{execute} ? 'WRITE' : 'READ');
-   }
-
-   debug_print("Syncing $src_db_tbl with $dst_db_tbl"); # TODO: move out of func?
-
-   my $change_dbh = $args{dst_dbh}; # TODO
-
-   my $ch = new ChangeHandler(
-      quoter    => $q,
-      database  => $args{dst_db},
-      table     => $args{dst_tbl},
-      sdatabase => $args{src_db},
-      stable    => $args{src_tbl},
-      actions   => [
-         ( $args{print}   ? sub { print @_, ";\n" }                : () ),
-         ( $args{execute} ? sub { map { $change_dbh->do($_) } @_ } : () ),
-      ],
-   );
-   my $rd = new RowDiff( dbh => $args{misc_dbh} );
-
-   debug_print("Using $args{algorithm} algorithm");
-   my $class = "TableSync$args{algorithm}";
-   my $syncer = new $class(
-      handler   => $ch,
-      cols      => $tbl_struct->{cols},
-      dbh       => $args{src_dbh},
-      database  => $args{src_db},
-      table     => $args{src_tbl},
-      chunker   => $chunker,
-      struct    => $tbl_struct,
-      checksum  => $checksum,
-      vp        => $vp,
-      quoter    => $q,
-      chunksize => $args{chunksize},
-      where     => $args{where},
-   );
-
-   my $cycle = 0;
-   while ( !$syncer->done ) {
-      debug_print("Beginning sync cycle $cycle");
-      my $src_sql = $syncer->get_sql(
-         quoter   => $q,
-         database => $args{src_db},
-         table    => $args{src_tbl},
-         where    => $args{where},
-      );
-      my $dst_sql = $syncer->get_sql(
-         quoter   => $q,
-         database => $args{dst_db},
-         table    => $args{dst_tbl},
-         where    => $args{where},
-      );
-      $syncer->prepare($src_dbh);
-      $syncer->prepare($dst_dbh);
-      debug_print("src: " . $src_sql);
-      debug_print("dst: " . $dst_sql);
-      my $src_sth = $args{src_dbh}
-         ->prepare( $src_sql, { mysql_use_result => !$args{buffer} } );
-      $src_sth->execute();
-      my $dst_sth = $args{dst_dbh}
-         ->prepare( $dst_sql, { mysql_use_result => !$args{buffer} } );
-      $dst_sth->execute();
-      $rd->compare_sets(
-         left   => $src_sth,
-         right  => $dst_sth,
-         syncer => $syncer,
-         tbl    => $tbl_struct,
-      );
-      debug_print("Finished sync cycle $cycle"); # TODO report diff count
-      debug_print('Processing deferred changes');
-      $ch->process_rows(1);
-      foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
-         $dbh->do('UNLOCK TABLES'); # TODO
-         $dbh->commit unless $dbh->{AutoCommit};
-      }
-      $cycle++;
-   }
-
-   debug_print('Processing more deferred changes');
-   $ch->process_rows();
-
-   debug_print('Committing and unlocking');
-   foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
-      $dbh->do('UNLOCK TABLES');
-      $dbh->commit unless $dbh->{AutoCommit};
-   }
-   # TODO: return exit status.
-}
-
-sub lock_table {
-   my ( $dbh, $where, $db_tbl, $mode ) = @_;
-   my $query = "LOCK TABLES $db_tbl $mode";
-   debug_print($query);
-   $dbh->do($query);
-   debug_print("Acquired table lock on $where in $mode mode");
-}
-
-sub wait_for_master {
-   my ( $src_dbh, $dst_dbh, $time ) = @_;
-   my $query = 'SHOW MASTER STATUS';
-   debug_print($query);
-   my $ms = $src_dbh->selectrow_hashref($query);
-   $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
-   debug_print("Waiting $time sec for $ms->{file}, $ms->{position}");
-   $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
-   debug_print($query);
-   my $stat = $dst_dbh->selectall_arrayref($query)->[0]->[0];
-   $stat = 'NULL' unless defined $stat;
-   if ( $stat eq 'NULL' || $stat < 0 && !$opts{t} ) { # TODO: opts{t}???
-      die "MASTER_POS_WAIT failed: $stat";
-   }
-   debug_print("Result of waiting: $stat");
-}
-
-sub debug_print {
-   return unless $opts{b};
-   print '-- ', @_, "\n";
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
 }
 
 sub get_dbh {
