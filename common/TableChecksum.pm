@@ -52,7 +52,7 @@ sub best_algorithm {
       if $alg && !$ALGOS{$alg};
 
    # CHECKSUM is eliminated by lots of things...
-   if ( 
+   if (
       $args{where} || $args{chunk}        # CHECKSUM does whole table
       || $args{replicate}                 # CHECKSUM can't do INSERT.. SELECT
       || !$vp->version_ge($dbh, '4.1.1')) # CHECKSUM doesn't exist
@@ -359,23 +359,23 @@ sub check_server {
          COALESCE(
             this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
             0
-         ) AS crc_diff 
+         ) AS crc_diff
       FROM $args->{table}
-      WHERE master_cnt <> this_cnt OR master_crc <> this_crc 
+      WHERE master_cnt <> this_cnt OR master_crc <> this_crc
       OR ISNULL(master_crc) <> ISNULL(this_crc)
    EOF
 
    $ENV{MKDEBUG} && _d($sql);
    my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
    if ( @$diffs ) {
-      $args->{callback}->($args->{dsn}, @$diffs);
+      $args->{callback}->($args->{dsn}, $dbh, $level, @$diffs);
    }
 
    if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
 
       # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
       # revealed by server_id and master_id).  SHOW SLAVE HOSTS can be wacky.
-      my @slaves = 
+      my @slaves =
          grep { $_->{master_id} == $id } # Only my own slaves.
          map  {                          # Convert each to all-lowercase keys.
             my %hash;
