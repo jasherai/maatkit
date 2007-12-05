@@ -56,18 +56,18 @@ package MySQLFind;
 use English qw(-no_match_vars);
 
 sub new {
-   my ( $class, %opts ) = @_;
-   my $self = bless \%opts, $class;
+   my ( $class, %args ) = @_;
+   my $self = bless \%args, $class;
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
-   die "Specify dbh" unless $opts{dbh};
-   if ( $opts{useddl} ) {
+   die "Specify dbh" unless $args{dbh};
+   if ( $args{useddl} ) {
       die "Specifying useddl requires parser and dumper"
-         unless $opts{parser} && $opts{dumper};
+         unless $args{parser} && $args{dumper};
    }
-   if ( $opts{tables}->{status} ) {
+   if ( $args{tables}->{status} ) {
       my $sql = 'SELECT CURRENT_TIMESTAMP';
       $ENV{MKDEBUG} && _d($sql);
-      ($self->{timestamp}->{now}) = $opts{dbh}->selectrow_array($sql);
+      ($self->{timestamp}->{now}) = $args{dbh}->selectrow_array($sql);
       $ENV{MKDEBUG} && _d("Current timestamp: $self->{timestamp}->{now}");
    }
    return $self;
@@ -96,12 +96,12 @@ sub _fetch_db_list {
 }
 
 sub find_tables {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
    my $views = $self->{engines}->{views};
    my @tables 
       = $self->_filter('engines', sub { $_[0]->{engine} },
          $self->_filter('tables', sub { $_[0]->{name} },
-            $self->_fetch_tbl_list(%opts)));
+            $self->_fetch_tbl_list(%args)));
    @tables = grep {
          ( $views || ($_->{engine} ne 'VIEW') )
       } @tables;
@@ -120,8 +120,8 @@ sub find_tables {
 # necessarily call SHOW TABLE STATUS unless it needs to.  Hash keys are all
 # lowercase.
 sub _fetch_tbl_list {
-   my ( $self, %opts ) = @_;
-   die "database is required" unless $opts{database};
+   my ( $self, %args ) = @_;
+   die "database is required" unless $args{database};
    my $need_engine = $self->{engines}->{permit}
         || $self->{engines}->{reject}
         || $self->{engines}->{regexp};
@@ -129,7 +129,7 @@ sub _fetch_tbl_list {
    my @params;
    if ( $need_status || ($need_engine && !$self->{useddl}) ) {
       my $sql = "SHOW TABLE STATUS FROM "
-              . $self->{quoter}->quote($opts{database});
+              . $self->{quoter}->quote($args{database});
       if ( $self->{tables}->{like} ) {
          $sql .= ' LIKE ?';
          push @params, $self->{tables}->{like};
@@ -148,7 +148,7 @@ sub _fetch_tbl_list {
    }
    else {
       my $sql = "SHOW /*!50002 FULL*/ TABLES FROM "
-              . $self->{quoter}->quote($opts{database});
+              . $self->{quoter}->quote($args{database});
       if ( $self->{tables}->{like} ) {
          $sql .= ' LIKE ?';
          push @params, $self->{tables}->{like};
@@ -166,7 +166,7 @@ sub _fetch_tbl_list {
          elsif ( $need_engine ) {
             my $struct = $self->{parser}->parse(
                $self->{dumper}->get_create_table(
-                  $self->{dbh}, $self->{quoter}, $opts{database}, $tbl->[0]));
+                  $self->{dbh}, $self->{quoter}, $args{database}, $tbl->[0]));
             $engine = $struct->{engine};
          }
          push @result,
