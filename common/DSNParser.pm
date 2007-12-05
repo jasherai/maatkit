@@ -92,6 +92,7 @@ sub parse {
       $ENV{MKDEBUG} && _d('No DSN to parse');
       return;
    }
+   $ENV{MKDEBUG} && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
    my %vals;
@@ -161,20 +162,19 @@ sub get_cxn_params {
    my %opts = %{$self->{opts}};
    my $driver = $self->prop('dbidriver') || '';
    if ( $driver eq 'Pg' ) {
-      $ENV{MKDEBUG} && _d('Building DBI connection string for PostgreSQL');
       $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
                      qw(h P));
    }
    else {
-      $ENV{MKDEBUG} && _d('Building DBI connection string for MySQL');
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
                      qw(F h P S))
          . ';mysql_read_default_group=mysql';
    }
+   $ENV{MKDEBUG} && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});
 }
 
