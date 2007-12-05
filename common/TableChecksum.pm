@@ -45,16 +45,16 @@ sub new {
 #   replicate   bool: whether user wants to do via replication
 #   count       bool: whether user wants a row count too
 sub best_algorithm {
-   my ( $self, %opts ) = @_;
-   my ($alg, $vp, $dbh) = @opts{ qw(algorithm vp dbh) };
+   my ( $self, %args ) = @_;
+   my ($alg, $vp, $dbh) = @args{ qw(algorithm vp dbh) };
    my @choices = sort { $ALGOS{$a}->{pref} <=> $ALGOS{$b}->{pref} } keys %ALGOS;
    die "Invalid checksum algorithm $alg"
       if $alg && !$ALGOS{$alg};
 
    # CHECKSUM is eliminated by lots of things...
    if ( 
-      $opts{where} || $opts{chunk}        # CHECKSUM does whole table
-      || $opts{replicate}                 # CHECKSUM can't do INSERT.. SELECT
+      $args{where} || $args{chunk}        # CHECKSUM does whole table
+      || $args{replicate}                 # CHECKSUM can't do INSERT.. SELECT
       || !$vp->version_ge($dbh, '4.1.1')) # CHECKSUM doesn't exist
    {
       $ENV{MKDEBUG} && _d('Cannot use CHECKSUM algorithm');
@@ -76,7 +76,7 @@ sub best_algorithm {
 
    # If the user wants a count, prefer something other than CHECKSUM, because it
    # requires an extra query for the count.
-   if ( $opts{count} && grep { $_ ne 'CHECKSUM' } @choices ) {
+   if ( $args{count} && grep { $_ ne 'CHECKSUM' } @choices ) {
       $ENV{MKDEBUG} && _d('Not using CHECKSUM algorithm because COUNT desired');
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
@@ -90,17 +90,17 @@ sub is_hash_algorithm {
 }
 
 sub choose_hash_func {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
    my @funcs = qw(SHA1 MD5);
-   if ( $opts{func} ) {
-      unshift @funcs, $opts{func};
+   if ( $args{func} ) {
+      unshift @funcs, $args{func};
    }
    my ($result, $error);
    do {
       my $func;
       eval {
          $func = shift(@funcs);
-         $opts{dbh}->do("SELECT $func('test-string')");
+         $args{dbh}->do("SELECT $func('test-string')");
          $result = $func;
       };
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
@@ -118,8 +118,8 @@ sub choose_hash_func {
 # Returns the slice.  I'm really not sure if this code is needed.  It always
 # seems the last slice is the one that works.  But I'd rather be paranoid.
 sub optimize_xor {
-   my ( $self, %opts ) = @_;
-   my ( $dbh, $func ) = @opts{qw(dbh func)};
+   my ( $self, %args ) = @_;
+   my ( $dbh, $func ) = @args{qw(dbh func)};
 
    my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
@@ -162,9 +162,9 @@ sub optimize_xor {
 # variable to avoid calling the $query expression multiple times.  The variable
 # goes in slice $opt_slice.
 sub make_xor_slices {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
    my ( $query, $crc_wid, $opt_slice )
-      = @opts{qw(query crc_wid opt_slice)};
+      = @args{qw(query crc_wid opt_slice)};
 
    # Create a series of slices with @crc as a placeholder.
    my @slices;
