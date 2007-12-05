@@ -25,6 +25,7 @@ package ChangeHandler;
 use English qw(-no_match_vars);
 
 my $DEFER_PAT = qr/Duplicate entry|Commands out of sync/;
+my @ACTIONS   = qw(DELETE INSERT UPDATE);
 
 # Arguments:
 # * quoter     Quoter()
@@ -38,10 +39,11 @@ sub new {
    foreach my $arg ( qw(quoter database table sdatabase stable) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my $self = { %args, map { $_ => [] } qw(DELETE INSERT UPDATE) };
+   my $self = { %args, map { $_ => [] } @ACTIONS };
    $self->{db_tbl}  = $self->{quoter}->quote(@args{qw(database table)});
    $self->{sdb_tbl} = $self->{quoter}->quote(@args{qw(sdatabase stable)});
    $self->{queue}   = 0; # Do changes immediately if possible.
+   $self->{changes} = { map { $_ => 0 } @ACTIONS };
    return bless $self, $class;
 }
 
@@ -68,6 +70,7 @@ sub take_action {
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
    $ENV{MKDEBUG} && _d("$action where ", $self->make_where_clause($row, $cols));
+   $self->{changes}->{$action}++;
    if ( !$self->{queue} ) {
       eval {
          my $func = "make_$action";
@@ -101,7 +104,7 @@ sub process_rows {
    }
    my ($row, $cur_act);
    eval {
-      foreach my $action ( qw(DELETE UPDATE INSERT) ) {
+      foreach my $action ( @ACTIONS ) {
          my $func = "make_$action";
          my $rows = $self->{$action};
          $ENV{MKDEBUG} && _d(scalar(@$rows) . " to $action");
@@ -179,6 +182,11 @@ sub make_where_clause {
       $self->{quoter}->quote($_) . $sep . $self->{quoter}->quote_val($val);
    } @$cols;
    return join(' AND ', @clauses);
+}
+
+sub get_changes {
+   my ( $self ) = @_;
+   return %{$self->{changes}};
 }
 
 sub _d {

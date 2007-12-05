@@ -115,7 +115,8 @@ sub find_chunk_columns {
    else {
       @result = @candidate_cols;
    }
-   $ENV{MKDEBUG} && _d('Chunkable columns: ' . join(', ', @candidate_cols));
+   $ENV{MKDEBUG} && _d('Chunkable columns: ' . join(', ', @result));
+   $ENV{MKDEBUG} && _d("Can chunk exactly: $can_chunk_exact");
 
    return ($can_chunk_exact, \@result);
 }
