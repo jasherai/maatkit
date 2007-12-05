@@ -737,7 +737,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1344
+# TableParser package 1348
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -823,6 +823,7 @@ sub parse {
          is_col      => { map { $_ => 1 } @cols },
          is_nullable => scalar(grep { $is_nullable{$_} } @cols),
          type        => $type,
+         name        => $name,
       };
    }
 
@@ -840,6 +841,69 @@ sub parse {
       engine         => $engine,
       type_for       => \%type_for,
    };
+}
+
+sub sort_indexes {
+   my ( $self, $tbl ) = @_;
+   my @indexes
+      = sort {
+         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
+         || ( !$tbl->{keys}->{$a}->{unique} <=> !$tbl->{keys}->{$b}->{unique} )
+         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
+         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
+      }
+      grep {
+         $tbl->{keys}->{$_}->{type} eq 'BTREE'
+      }
+      sort keys %{$tbl->{keys}};
+   $ENV{MKDEBUG} && _d('Indexes sorted best-first: ' . join(', ', @indexes));
+   return @indexes;
+}
+
+sub find_best_index {
+   my ( $self, $tbl, $index ) = @_;
+   my $best;
+   if ( $index ) {
+      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
+   }
+   if ( !$best ) {
+      if ( $index ) {
+         die "Index '$index' does not exist in table";
+      }
+      else {
+         ($best) = $self->sort_indexes($tbl);
+      }
+   }
+   $ENV{MKDEBUG} && _d("Best index found is " . ($index || 'undef'));
+   return $best;
+}
+
+sub find_possible_keys {
+   my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
+   return () unless $where;
+   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
+      . ' WHERE ' . $where;
+   $ENV{MKDEBUG} && _d($sql);
+   my $expl = $dbh->selectrow_hashref($sql);
+   $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
+   if ( $expl->{possible_keys} ) {
+      $ENV{MKDEBUG} && _d("possible_keys=$expl->{possible_keys}");
+      my @candidates = split(',', $expl->{possible_keys});
+      my %possible   = map { $_ => 1 } @candidates;
+      if ( $expl->{key} ) {
+         $ENV{MKDEBUG} && _d("MySQL chose $expl->{key}");
+         unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
+         $ENV{MKDEBUG} && _d('Before deduping: ' . join(', ', @candidates));
+         my %seen;
+         @candidates = grep { !$seen{$_}++ } @candidates;
+      }
+      $ENV{MKDEBUG} && _d('Final list: ' . join(', ', @candidates));
+      return @candidates;
+   }
+   else {
+      $ENV{MKDEBUG} && _d('No keys in possible_keys');
+      return ();
+   }
 }
 
 sub _d {
@@ -1165,7 +1229,7 @@ sub get_triggers {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 1344
+# ChangeHandler package 1351
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1175,16 +1239,18 @@ package ChangeHandler;
 use English qw(-no_match_vars);
 
 my $DEFER_PAT = qr/Duplicate entry|Commands out of sync/;
+our @ACTIONS  = qw(DELETE INSERT UPDATE);
 
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(quoter database table sdatabase stable) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   my $self = { %args, map { $_ => [] } qw(DELETE INSERT UPDATE) };
+   my $self = { %args, map { $_ => [] } @ACTIONS };
    $self->{db_tbl}  = $self->{quoter}->quote(@args{qw(database table)});
    $self->{sdb_tbl} = $self->{quoter}->quote(@args{qw(sdatabase stable)});
    $self->{queue}   = 0; # Do changes immediately if possible.
+   $self->{changes} = { map { $_ => 0 } @ACTIONS };
    return bless $self, $class;
 }
 
@@ -1205,6 +1271,7 @@ sub take_action {
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
    $ENV{MKDEBUG} && _d("$action where ", $self->make_where_clause($row, $cols));
+   $self->{changes}->{$action}++;
    if ( !$self->{queue} ) {
       eval {
          my $func = "make_$action";
@@ -1234,7 +1301,7 @@ sub process_rows {
    }
    my ($row, $cur_act);
    eval {
-      foreach my $action ( qw(DELETE UPDATE INSERT) ) {
+      foreach my $action ( @ACTIONS ) {
          my $func = "make_$action";
          my $rows = $self->{$action};
          $ENV{MKDEBUG} && _d(scalar(@$rows) . " to $action");
@@ -1313,6 +1380,11 @@ sub make_where_clause {
    return join(' AND ', @clauses);
 }
 
+sub get_changes {
+   my ( $self ) = @_;
+   return %{$self->{changes}};
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# ChangeHandler:$line ", @_, "\n";
@@ -1325,7 +1397,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 1346
+# TableChunker package 1350
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1336,7 +1408,9 @@ use POSIX qw(ceil);
 use List::Util qw(min max);
 
 sub new {
-   bless {}, shift;
+   my ( $class, %args ) = @_;
+   die "I need a quoter" unless $args{quoter};
+   bless { %args }, $class;
 }
 
 my $EPOCH      = '1970-01-01';
@@ -1349,9 +1423,22 @@ sub find_chunk_columns {
    my ( $self, $table, $opts ) = @_;
    $opts ||= {};
 
+   my %prefer;
+   if ( $opts->{possible_keys} && @{$opts->{possible_keys}} ) {
+      my $i = 1;
+      %prefer = map { $_ => $i++ } @{$opts->{possible_keys}};
+      $ENV{MKDEBUG} && _d("Preferred indexes for chunking: "
+         . join(', ', @{$opts->{possible_keys}}));
+   }
+
    my @candidate_cols;
 
    my @possible_keys = grep { $_->{type} eq 'BTREE' } values %{$table->{keys}};
+   @possible_keys = sort {
+      ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
+   } @possible_keys;
+   $ENV{MKDEBUG} && _d('Possible keys in order: '
+      . join(', ', map { $_->{name} } @possible_keys));
 
    my $can_chunk_exact = 0;
    if ($opts->{exact}) {
@@ -1381,14 +1468,22 @@ sub find_chunk_columns {
    }
 
    my @result;
-   if ( $table->{keys}->{PRIMARY} ) {
-      my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
-      @result = grep { $_ eq $pk_first_col } @candidate_cols;
-      @candidate_cols = grep { $_ ne $pk_first_col } @candidate_cols;
+   if ( !%prefer ) {
+      $ENV{MKDEBUG} && _d('Ordering columns by order in tbl, PK first');
+      if ( $table->{keys}->{PRIMARY} ) {
+         my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
+         @result = grep { $_ eq $pk_first_col } @candidate_cols;
+         @candidate_cols = grep { $_ ne $pk_first_col } @candidate_cols;
+      }
+      my $i = 0;
+      my %col_pos = map { $_ => $i++ } @{$table->{cols}};
+      push @result, sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
    }
-   my $i = 0;
-   my %col_pos = map { $_ => $i++ } @{$table->{cols}};
-   push @result, sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
+   else {
+      @result = @candidate_cols;
+   }
+   $ENV{MKDEBUG} && _d('Chunkable columns: ' . join(', ', @result));
+   $ENV{MKDEBUG} && _d("Can chunk exactly: $can_chunk_exact");
 
    return ($can_chunk_exact, \@result);
 }
@@ -1399,6 +1494,9 @@ sub calculate_chunks {
       die "Required argument $arg not given or undefined"
          unless defined $args{$arg};
    }
+   $ENV{MKDEBUG} && _d("Arguments: "
+      . join(', ',
+         map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') } keys %args));
 
    my @chunks;
    my ($range_func, $start_point, $end_point);
@@ -1505,9 +1603,10 @@ sub size_to_rows {
    my $status;
    if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
       $tbl =~ s/_/\\_/g;
-      my $sql = "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'"; # TODO: quote!!!
-      $ENV{MKDEBUG} && _d($sql);
-      $status = $dbh->selectrow_hashref($sql);
+      my $sql = "SHOW TABLE STATUS FROM "
+         . $self->{quoter}->quote($db) . " LIKE ?";
+      $ENV{MKDEBUG} && _d($sql, ' ', $tbl);
+      $status = $dbh->selectrow_hashref($sql, {}, $tbl);
       if ( $cache ) {
          $cache->{$db}->{$tbl} = $status;
       }
@@ -1518,11 +1617,15 @@ sub size_to_rows {
 }
 
 sub get_range_statistics {
-   my ( $self, $dbh, $db, $tbl, $col, $opts ) = @_;
-   my $sql = "SELECT MIN(`$col`), MAX(`$col`) FROM `$db`.`$tbl`"; # TODO: quote!
+   my ( $self, $dbh, $db, $tbl, $col, $where ) = @_;
+   my $q = $self->{quoter};
+   my $sql = "SELECT MIN(" . $q->quote($col) . "), MAX(" . $q->quote($col)
+      . ") FROM " . $q->quote($db, $tbl)
+      . ($where ? " WHERE $where" : '');
    $ENV{MKDEBUG} && _d($sql);
    my ( $min, $max ) = $dbh->selectrow_array($sql);
-   $sql = "EXPLAIN SELECT * FROM `$db`.`$tbl";
+   $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
+      . ($where ? " WHERE $where" : '');
    $ENV{MKDEBUG} && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
    return (
@@ -1539,7 +1642,7 @@ sub quote {
 
 sub inject_chunks {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(database table chunks chunk_num query quoter) ) {
+   foreach my $arg ( qw(database table chunks chunk_num query) ) {
       die "$arg is required" unless defined $args{$arg};
    }
    $ENV{MKDEBUG} && _d("Injecting chunk $args{chunk_num}");
@@ -1552,7 +1655,7 @@ sub inject_chunks {
       $where .= " AND ($args{where})";
    }
    $args{query} =~ s!/\*WHERE\*/! $where!;
-   my $db_tbl = $args{quoter}->quote(@args{qw(database table)});
+   my $db_tbl = $self->{quoter}->quote(@args{qw(database table)});
    $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
    $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
    return $args{query};
@@ -1629,7 +1732,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1346
+# TableChecksum package 1349
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1651,15 +1754,15 @@ sub new {
 }
 
 sub best_algorithm {
-   my ( $self, %opts ) = @_;
-   my ($alg, $vp, $dbh) = @opts{ qw(algorithm vp dbh) };
+   my ( $self, %args ) = @_;
+   my ($alg, $vp, $dbh) = @args{ qw(algorithm vp dbh) };
    my @choices = sort { $ALGOS{$a}->{pref} <=> $ALGOS{$b}->{pref} } keys %ALGOS;
    die "Invalid checksum algorithm $alg"
       if $alg && !$ALGOS{$alg};
 
    if ( 
-      $opts{where} || $opts{chunk}        # CHECKSUM does whole table
-      || $opts{replicate}                 # CHECKSUM can't do INSERT.. SELECT
+      $args{where} || $args{chunk}        # CHECKSUM does whole table
+      || $args{replicate}                 # CHECKSUM can't do INSERT.. SELECT
       || !$vp->version_ge($dbh, '4.1.1')) # CHECKSUM doesn't exist
    {
       $ENV{MKDEBUG} && _d('Cannot use CHECKSUM algorithm');
@@ -1676,7 +1779,7 @@ sub best_algorithm {
       return $alg;
    }
 
-   if ( $opts{count} && grep { $_ ne 'CHECKSUM' } @choices ) {
+   if ( $args{count} && grep { $_ ne 'CHECKSUM' } @choices ) {
       $ENV{MKDEBUG} && _d('Not using CHECKSUM algorithm because COUNT desired');
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
@@ -1690,17 +1793,17 @@ sub is_hash_algorithm {
 }
 
 sub choose_hash_func {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
    my @funcs = qw(SHA1 MD5);
-   if ( $opts{func} ) {
-      unshift @funcs, $opts{func};
+   if ( $args{func} ) {
+      unshift @funcs, $args{func};
    }
    my ($result, $error);
    do {
       my $func;
       eval {
          $func = shift(@funcs);
-         $opts{dbh}->do("SELECT $func('test-string')");
+         $args{dbh}->do("SELECT $func('test-string')");
          $result = $func;
       };
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
@@ -1714,8 +1817,8 @@ sub choose_hash_func {
 }
 
 sub optimize_xor {
-   my ( $self, %opts ) = @_;
-   my ( $dbh, $func ) = @opts{qw(dbh func)};
+   my ( $self, %args ) = @_;
+   my ( $dbh, $func ) = @args{qw(dbh func)};
 
    my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
@@ -1752,9 +1855,9 @@ sub optimize_xor {
 }
 
 sub make_xor_slices {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
    my ( $query, $crc_wid, $opt_slice )
-      = @opts{qw(query crc_wid opt_slice)};
+      = @args{qw(query crc_wid opt_slice)};
 
    my @slices;
    for ( my $start = 1; $start <= $crc_wid; $start += 16 ) {
@@ -1944,7 +2047,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1346
+# TableSyncChunk package 1348
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1955,8 +2058,8 @@ use List::Util qw(max);
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dbh database table handler chunker
-                        quoter struct checksum cols vp chunksize) ) {
+   foreach my $arg ( qw(dbh database table handler chunker quoter struct
+                        checksum cols vp chunksize where possible_keys) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
@@ -1966,10 +2069,12 @@ sub new {
    }
 
    my @chunks;
-   my $col = $args{chunker}->get_first_chunkable_column($args{struct});
+   my $col = $args{chunker}->get_first_chunkable_column(
+      $args{struct}, { possible_keys => $args{possible_keys} });
    if ( $col ) {
       my %params = $args{chunker}->get_range_statistics(
-         $args{dbh}, $args{database}, $args{table}, $col);
+         $args{dbh}, $args{database}, $args{table}, $col,
+         $args{where});
       if ( !grep { !defined $params{$_} }
             qw(min max rows_in_range) )
       {
@@ -2131,7 +2236,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1346
+# TableSyncer package 1350
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2148,13 +2253,13 @@ sub new {
 
 sub best_algorithm {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(struct nibbler chunker) ) {
+   foreach my $arg ( qw(struct parser nibbler chunker) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $struct = $args{struct};
    my $result;
 
-   my $best_key = $args{nibbler}->find_best_index($struct);
+   my $best_key = $args{parser}->find_best_index($struct);
    if ( $best_key eq 'PRIMARY'
       || ( $struct->{keys}->{$best_key}->{unique}
          && !$struct->{keys}->{$best_key}->{is_nullable} )) {
@@ -2173,7 +2278,7 @@ sub sync_table {
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replicate src_db src_dbh src_tbl tbl_struct timeoutok
-      versionparser wait where) )
+      versionparser wait where possible_keys cols) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -2181,29 +2286,6 @@ sub sync_table {
       . join(', ',
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
-
-   if ( $args{lock} ) {
-      $self->lock_table($args{src_dbh}, 'source',
-         $args{quoter}->quote($args{src_db}, $args{src_tbl}),
-         $args{replicate} ? 'WRITE' : 'READ');
-   }
-
-   if ( $args{wait} ) {
-      $self->wait_for_master(
-         $args{src_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
-   }
-
-   if ( $args{lock} ) {
-      if ( $args{replicate} ) {
-         $ENV{MKDEBUG}
-            && _d('Not locking destination because syncing via replication');
-      }
-      else {
-         $self->lock_table($args{dst_dbh}, 'dest',
-            $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
-            $args{execute} ? 'WRITE' : 'READ');
-      }
-   }
 
    my $change_dbh = $args{replicate} ? $args{src_dbh} : $args{dst_dbh};
    $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
@@ -2224,7 +2306,7 @@ sub sync_table {
    my $class  = "TableSync$args{algorithm}";
    my $plugin = $class->new(
       handler   => $ch,
-      cols      => $args{tbl_struct}->{cols}, # TODO
+      cols      => $args{cols},
       dbh       => $args{src_dbh},
       database  => $args{src_db},
       table     => $args{src_tbl},
@@ -2235,10 +2317,14 @@ sub sync_table {
       quoter    => $args{quoter},
       chunksize => $args{chunksize},
       where     => $args{where},
+      possible_keys => [],
    );
 
    my $cycle = 0;
    while ( !$plugin->done ) {
+
+      $self->lock_and_wait(%args, lock_level => $cycle ? 1 : 2);
+
       $ENV{MKDEBUG} && _d("Beginning sync cycle $cycle");
       my $src_sql = $plugin->get_sql(
          quoter   => $args{quoter},
@@ -2270,20 +2356,21 @@ sub sync_table {
       );
       $ENV{MKDEBUG} && _d("Finished sync cycle $cycle");
       $ch->process_rows(1);
-      foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
-         $dbh->do('UNLOCK TABLES'); # TODO
-         $dbh->commit unless $dbh->{AutoCommit};
-      }
+
       $cycle++;
    }
 
    $ch->process_rows();
 
-   $ENV{MKDEBUG} && _d('Committing and unlocking');
-   foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
-      $dbh->do('UNLOCK TABLES');
-      $dbh->commit unless $dbh->{AutoCommit};
+   if ( $args{lock} && $args{lock} < 3 ) {
+      $ENV{MKDEBUG} && _d('Unlocking and committing');
+      foreach my $dbh ( @args{qw(src_dbh dst_dbh)} ) {
+         $dbh->do('UNLOCK TABLES');
+         $dbh->commit unless $dbh->{AutoCommit};
+      }
    }
+
+   return $ch->get_changes();
 }
 
 sub lock_table {
@@ -2311,6 +2398,58 @@ sub wait_for_master {
    $ENV{MKDEBUG} && _d("Result of waiting: $stat");
 }
 
+sub lock_and_wait {
+   my ( $self, %args ) = @_;
+
+   foreach my $arg ( qw(
+      dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
+      timeoutok wait lock_level) )
+   {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   return unless $args{lock} && $args{lock} >= $args{lock_level};
+
+   my $sql = 'UNLOCK TABLES';
+   $ENV{MKDEBUG} && _d($sql);
+   foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
+      $dbh->do($sql);
+   }
+
+   if ( $args{lock} == 3 ) {
+      my $sql = 'FLUSH TABLES WITH READ LOCK';
+      $ENV{MKDEBUG} && _d("$args{src_dbh}, $sql");
+      $args{src_dbh}->do($sql);
+   }
+   else {
+      $self->lock_table($args{src_dbh}, 'source',
+         $args{quoter}->quote($args{src_db}, $args{src_tbl}),
+         $args{replicate} ? 'WRITE' : 'READ');
+   }
+
+   if ( $args{wait} ) {
+      $self->wait_for_master(
+         $args{src_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
+   }
+
+   if ( $args{replicate} ) {
+      $ENV{MKDEBUG}
+         && _d('Not locking destination because syncing via replication');
+   }
+   else {
+      if ( $args{lock} == 3 ) {
+         my $sql = 'FLUSH TABLES WITH READ LOCK';
+         $ENV{MKDEBUG} && _d("$args{dst_dbh}, $sql");
+         $args{dst_dbh}->do($sql);
+      }
+      else {
+         $self->lock_table($args{dst_dbh}, 'dest',
+            $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
+            $args{execute} ? 'WRITE' : 'READ');
+      }
+   }
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# TableSyncer:$line ", @_, "\n";
@@ -2335,14 +2474,7 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# TODO: unify timestamp format: add a 0 to the timestamp.
-# TODO: must add a slice for rows greater/less in drilldown mode.
-# TODO: algorithms: nibble, chunk, stream, drilldown, temp-table, group-by (like
-# sja).
-
-# TODO: grouping strategy: first chars of char column.
-# TODO: save memory by using more efficient bind methods from DBI.
-# TODO: autodetect index violation and rewrite all UPD to DEL/INS
+# TODO: algorithms: nibble, chunk, stream, drilldown, temp-table, group-by (sja)
 
 # ############################################################################
 # Get configuration information.
@@ -2363,7 +2495,7 @@ my @opt_spec = (
    { s => 'chunksize=i',      d => 'Number of rows to sync at a time for Chunk '
                                  . 'algorithm (default 50000)'},
    { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
-   { s => 'columns|c=h',      d => 'Comma-separated column list' },
+   { s => 'columns|c=a',      d => 'Comma-separated column list' },
    { s => 'deleteinsert|l',   d => 'Convert all UPDATES to DELETE and INSERT' },
    { s => 'queries|q',        d => 'Make debugging output executable SQL' },
    { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
@@ -2395,7 +2527,7 @@ my $du         = new MySQLDump();
 my $tp         = new TableParser();
 my $q          = new Quoter();
 my $vp         = new VersionParser();
-my $chunker    = new TableChunker();
+my $chunker    = new TableChunker( quoter => $q );
 my $checksum   = new TableChecksum();
 my $syncer     = new TableSyncer();
 my $dsn_parser = new DSNParser(
@@ -2460,8 +2592,8 @@ my ($src_dbh, $dst_dbh, $misc_dbh);
 
 if ( !$dst ) {
    $ENV{MKDEBUG} && _d("Connecting to the master by inspecting SHOW SLAVE STATUS");
-   $dst     = $src; undef $src; # swap source and destination.
-   $dst_dbh = get_dbh($dst);
+   $dst       = $src; undef $src; # swap source and destination.
+   $dst_dbh   = get_dbh($dst);
    my $query  = 'SHOW SLAVE STATUS';
    $ENV{MKDEBUG} && _d($query);
    my $status = $dst_dbh->selectrow_hashref($query);
@@ -2469,21 +2601,6 @@ if ( !$dst ) {
    my $spec   = "h=$status->{master_host},P=$status->{master_port}";
    $src       = $dsn_parser->parse($spec, $dst);
 }
-
-# TODO
-=pod
-   # TODO: move outside function, and don't pass DSN into function at all
-   if ( $args{src_tbl} ne $args{dst_tbl}
-         && -t STDIN && -t STDOUT
-         && ($args{src_dsn}->{h} || '') ne ($args{dst_dsn}->{h} || '') )
-   {
-      print "Continue syncing tables with different names?  y/n: ";
-      my $answer = <STDIN>;
-      if ( $answer !~ m/y/i ) {
-         exit(1);
-      }
-   }
-=cut
 
 # Open connections as needed.
 $src_dbh   = get_dbh($src);
@@ -2510,33 +2627,53 @@ foreach my $dbh ( $src_dbh, $dst_dbh ) {
    }
 }
 
+if ( $src->{t} ne $dst->{t}
+      && -t STDIN && -t STDOUT
+      && ($src->{h} || '') ne ($dst->{h} || '') )
+{
+   print "Continue syncing tables with different names?  y/n: ";
+   my $answer = <STDIN>;
+   if ( $answer !~ m/y/i ) {
+      exit(1);
+   }
+}
+
 my $tbl_struct = $tp->parse(
    $du->get_create_table($src_dbh, $q, $src->{D}, $src->{t}));
+my @possible_keys = $tp->find_possible_keys(
+   $src_dbh, $src->{D}, $src->{t}, $q, $opts{W});
 
-$exit_status ||= $syncer->sync_table(
-   algorithm => $opts{a},
-   buffer    => $opts{bufferresults} ? 1 : 0,
-   checksum  => $checksum,
-   chunker   => $chunker,
-   chunksize => $opts{chunksize},
-   dst_db    => $dst->{D},
-   dst_dbh   => $dst_dbh,
-   dst_tbl   => $dst->{t},
-   execute   => $opts{x} ? 1 : 0,
-   lock      => $opts{k} ? 1 : 0,
-   misc_dbh  => $misc_dbh,
-   print     => $opts{p} ? 1 : 0,
-   quoter    => $q,
-   replicate => $opts{r} ? 1 : 0,
-   src_dbh   => $src_dbh,
-   src_db    => $src->{D},
-   src_tbl   => $src->{t},
-   tbl_struct => $tbl_struct,
-   timeoutok  => $opts{timeoutok} ? 1 : 0,
+my %status = $syncer->sync_table(
+   algorithm     => $opts{a},
+   buffer        => $opts{bufferresults} ? 1 : 0,
+   checksum      => $checksum,
+   chunker       => $chunker,
+   chunksize     => $opts{chunksize},
+   cols          => $opts{c} || $tbl_struct->{cols},
+   dst_db        => $dst->{D},
+   dst_dbh       => $dst_dbh,
+   dst_tbl       => $dst->{t},
+   execute       => $opts{x} ? 1 : 0,
+   lock          => $opts{k} ? 1 : 0,
+   misc_dbh      => $misc_dbh,
+   possible_keys => \@possible_keys,
+   print         => $opts{p} ? 1 : 0,
+   quoter        => $q,
+   replicate     => $opts{r} ? 1 : 0,
+   src_dbh       => $src_dbh,
+   src_db        => $src->{D},
+   src_tbl       => $src->{t},
+   tbl_struct    => $tbl_struct,
+   timeoutok     => $opts{timeoutok} ? 1 : 0,
    versionparser => $vp,
-   wait      => $opts{w} ? 1 : 0,
-   where     => $opts{W} || '',
+   wait          => $opts{w} ? 1 : 0,
+   where         => $opts{W} || '',
 );
+
+if ( $opts{v} ) {
+   printf("# %6d %6d %6d %s.%s\n",
+      @status{@ChangeHandler::ACTIONS}, @{$src}{qw(D t)});
+}
 
 foreach my $dbh ( $src_dbh, $dst_dbh, $misc_dbh ) {
    $dbh->commit unless $dbh->{AutoCommit};
