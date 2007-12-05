@@ -38,8 +38,10 @@ sub best_algorithm {
    }
    my $result;
 
-   # Does the table have a primary or unique non-nullable key?
-   if ( $args{chunker}->get_first_chunkable_column($args{tbl_struct}) ) {
+   # See if Chunker says it can handle the table
+   my $chunk = $args{chunker}->get_first_chunkable_column($args{tbl_struct});
+   if ( $chunk ) {
+      $ENV{MKDEBUG} && _d("Chunker says it can use $chunk to chunk on");
       $result = 'Chunk';
    }
    else {
