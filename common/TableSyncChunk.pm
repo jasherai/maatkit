@@ -65,10 +65,12 @@ sub new {
             %params,
          );
       }
+      else {
+         @chunks = '1=1';
+      }
       $args{chunk_col} = $col;
    }
-   die "Cannot chunk $args{database}.$args{table}; cannot find a column."
-      unless @chunks;
+   die "Cannot chunk $args{database}.$args{table}" unless @chunks;
    $args{chunks}     = \@chunks;
    $args{chunk_num}  = 0;
 
