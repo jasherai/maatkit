@@ -2480,45 +2480,24 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-# Generate a quasi-random string that's constant in a given day
-my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = localtime(time);
-my $prefix = '__cmp' . crypt(sprintf('%d%02d%02d', $year + 1900, $mon, $mday), '00');
-$prefix =~ s/\W+/_/g;
-
 my @opt_spec = (
    { s => 'algorithm|a=s',    d => 'Algorithm to use (default Stream)'},
-   { s => 'analyze|A!',       d => 'Analyze (find/fix/print) in bottom-up algorithm (default)' },
    { s => 'askpass',          d => 'Prompt for password for connections' },
-   { s => 'branchfactor|B=i', d => 'Branch factor for bottom-up algorithm (default 128)' },
    { s => 'bufferresults',    d => 'Fetch all rows from MySQL before comparing' },
-   { s => 'build|U!',         d => 'Build tables for bottom-up algorithm (default)' },
-   { s => 'chunksize=i',      d => 'Number of rows to sync at a time for Chunk '
-                                 . 'algorithm (default 50000)'},
-   { s => 'cleanup|C!',       d => 'Clean up scratch tables for bottom-up algorithm (default)' },
-   { s => 'columns|c=a',      d => 'Comma-separated column list' },
-   { s => 'deleteinsert|l',   d => 'Convert all UPDATES to DELETE and INSERT' },
-   { s => 'queries|q',        d => 'Make debugging output executable SQL' },
-   { s => 'drilldown|d=s',    d => 'Drilldown groupings for top-down algorithm' },
-   { s => 'engine|E=s',       d => 'Storage engine for bottom-up tables; default InnoDB' },
+   { s => 'chunksize=i',      d => 'Number of rows to sync at a time for '
+                                 . 'Chunk algorithm (default 50000)'},
+   { s => 'columns|c=a',      d => 'Compare this comma-separated list of columns' },
    { s => 'execute|x',        d => 'Execute queries to sync tables' },
-   { s => 'forupdate|F',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
-   { s => 'function|f=s',     d => 'Cryptographic hash function (SHA1, MD5...)' },
-   # TODO: allow three levels of locking (lock/release every cycle)
-   # Actually, singletxn can accomplish that...
-   { s => 'lock|k!',          d => 'Lock tables when beginning work' },
-   { s => 'onlydo|o=s',       d => 'Only do INS/UPD/DEL (default ins,upd,del)' },
-   { s => 'prefix|P=s',       d => "Tablename prefix for bottom-up algorithm (default $prefix)" },
-   { s => 'print|p',          d => 'Print all sync queries to STDOUT' },
-   { s => 'singletxn|1',      d => 'Do in a single transaction' },
-   { s => 'size|S=i',         d => 'Table size in bottom-up algorithm, not usually needed' },
+   #TODO { s => 'forupdate|F',      d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
+   { s => 'lock|k=i',         d => 'Lock tables: 0=none, 1=per sync cycle, '
+                                 . '2=per table, or 3=globally (default 0)' },
+   { s => 'print|p',          d => 'Print queries that will resolve differences' },
    { s => 'skipbinlog',       d => 'Do not log to the binary log' },
    { s => 'skipforeignkey|K', d => 'Turn off foreign key checks' },
    { s => 'skipuniquekey',    d => 'Turn off UNIQUE key checks' },
    { s => 'synctomaster|r',   d => 'Sync a slave to its master. Implies --wait 60'},
-   { s => 'temp|T',           d => 'Use temporary tables in bottom-up algorithm' },
    { s => 'timeoutok|t',      d => 'Keep going if --wait fails' },
-   { s => 'verbose|v+',       d => 'Explain differences found; specify up to three times; default 0' },
-   { s => 'verify|V!',        d => 'Verify checksum compatibility across servers (default)' },
+   { s => 'verbose|v',        d => 'Print results of sync operations' },
    { s => 'wait|w=i',         d => 'Make slave wait for master pos (implies --lock)' },
    { s => 'where|W=s',        d => 'WHERE clause to restrict syncing to part of the table' },
 );
@@ -2554,8 +2533,8 @@ $opt_parser->{descr}
    . 'and DEST are DSNs.  Values for DEST default to the values for SOURCE.';
 my %opts = $opt_parser->parse();
 
-$opts{k}    = $opts{w} if !defined $opts{k};
-$opts{w}    = 60       if $opts{r} && !defined $opts{w};
+$opts{w}    = 60 if $opts{r} && !defined $opts{w};
+$opts{k}    = 1  if $opts{w} && !defined $opts{k};
 
 # TODO: when --columns is specified, and --synctomaster is given, you end up
 # with REPLACE INTO (partial columns) which will destroy data.  Yet maybe we
@@ -2563,12 +2542,6 @@ $opts{w}    = 60       if $opts{r} && !defined $opts{w};
 # knows this externally to mk-table-sync).  This should turn into INSERT
 # and UPDATE.  Or REPLACE should be disallowed when not all columns are
 # included.
-
-$opts{T} = $opts{T} ? 'TEMPORARY' : '';
-if ( !defined $opts{C} ) {
-   $opts{C} = !$opts{T};
-}
-$opts{o} = lc(join('|', $opts{o} =~ m/(\w{3})/g)); # TODO this is ugly
 
 my $src = $dsn_parser->parse(shift(@ARGV));
 my $dst = $dsn_parser->parse(shift(@ARGV), $src);
@@ -2664,7 +2637,7 @@ my %status = $syncer->sync_table(
    src_db        => $src->{D},
    src_tbl       => $src->{t},
    tbl_struct    => $tbl_struct,
-   timeoutok     => $opts{timeoutok} ? 1 : 0,
+   timeoutok     => $opts{t} ? 1 : 0,
    versionparser => $vp,
    wait          => $opts{w} ? 1 : 0,
    where         => $opts{W} || '',
