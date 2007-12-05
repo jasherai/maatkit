@@ -2047,7 +2047,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1355
+# TableSyncChunk package 1360
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2087,10 +2087,12 @@ sub new {
             %params,
          );
       }
+      else {
+         @chunks = '1=1';
+      }
       $args{chunk_col} = $col;
    }
-   die "Cannot chunk $args{database}.$args{table}; cannot find a column."
-      unless @chunks;
+   die "Cannot chunk $args{database}.$args{table}" unless @chunks;
    $args{chunks}     = \@chunks;
    $args{chunk_num}  = 0;
 
@@ -2237,7 +2239,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1355
+# TableSyncer package 1360
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2254,16 +2256,14 @@ sub new {
 
 sub best_algorithm {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(struct parser nibbler chunker) ) {
+   foreach my $arg ( qw(tbl_struct parser nibbler chunker) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   my $struct = $args{struct};
    my $result;
 
-   my $best_key = $args{parser}->find_best_index($struct);
-   if ( $best_key eq 'PRIMARY'
-      || ( $struct->{keys}->{$best_key}->{unique}
-         && !$struct->{keys}->{$best_key}->{is_nullable} )) {
+   my $chunk = $args{chunker}->get_first_chunkable_column($args{tbl_struct});
+   if ( $chunk ) {
+      $ENV{MKDEBUG} && _d("Chunker says it can use $chunk to chunk on");
       $result = 'Chunk';
    }
    else {
@@ -2315,6 +2315,9 @@ sub sync_table {
       ],
    );
    my $rd = new RowDiff( dbh => $args{misc_dbh} );
+
+   $args{algorithm} ||= $self->best_algorithm(
+      map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
 
    my $class  = "TableSync$args{algorithm}";
    my $plugin = $class->new(
@@ -2482,6 +2485,381 @@ sub _d {
 # End TableSyncer package
 # ###########################################################################
 
+# ###########################################################################
+# MySQLFind package 1349
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MySQLFind;
+
+
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = bless \%args, $class;
+   $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   die "Specify dbh" unless $args{dbh};
+   if ( $args{useddl} ) {
+      die "Specifying useddl requires parser and dumper"
+         unless $args{parser} && $args{dumper};
+   }
+   if ( $args{tables}->{status} ) {
+      my $sql = 'SELECT CURRENT_TIMESTAMP';
+      $ENV{MKDEBUG} && _d($sql);
+      ($self->{timestamp}->{now}) = $args{dbh}->selectrow_array($sql);
+      $ENV{MKDEBUG} && _d("Current timestamp: $self->{timestamp}->{now}");
+   }
+   return $self;
+}
+
+sub find_databases {
+   my ( $self ) = @_;
+   return grep {
+      $_ !~ m/^(information_schema|lost\+found)$/i
+   }
+   $self->_filter('databases', sub { $_[0] }, $self->_fetch_db_list());
+}
+
+sub _fetch_db_list {
+   my ( $self ) = @_;
+   my $sql = 'SHOW DATABASES';
+   my @params;
+   if ( $self->{databases}->{like} ) {
+      $sql .= ' LIKE ?';
+      push @params, $self->{databases}->{like};
+   }
+   my $sth = $self->{dbh}->prepare($sql);
+   $ENV{MKDEBUG} && _d($sql, @params);
+   $sth->execute( @params );
+   return map { $_->[0] } @{$sth->fetchall_arrayref()};
+}
+
+sub find_tables {
+   my ( $self, %args ) = @_;
+   my $views = $self->{engines}->{views};
+   my @tables 
+      = $self->_filter('engines', sub { $_[0]->{engine} },
+         $self->_filter('tables', sub { $_[0]->{name} },
+            $self->_fetch_tbl_list(%args)));
+   @tables = grep {
+         ( $views || ($_->{engine} ne 'VIEW') )
+      } @tables;
+   foreach my $crit ( @{$self->{tables}->{status}} ) {
+      my ($key, $test) = %$crit;
+      @tables
+         = grep {
+            $self->_test_date($_, $key, $test)
+         } @tables;
+   }
+   return map { $_->{name} } @tables;
+}
+
+sub _fetch_tbl_list {
+   my ( $self, %args ) = @_;
+   die "database is required" unless $args{database};
+   my $need_engine = $self->{engines}->{permit}
+        || $self->{engines}->{reject}
+        || $self->{engines}->{regexp};
+   my $need_status = $self->{tables}->{status};
+   my @params;
+   if ( $need_status || ($need_engine && !$self->{useddl}) ) {
+      my $sql = "SHOW TABLE STATUS FROM "
+              . $self->{quoter}->quote($args{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
+      }
+      $ENV{MKDEBUG} && _d($sql, @params);
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref({})};
+      return map {
+         my %tbl; # Make a copy with lowercased keys
+         @tbl{ map { lc $_ } keys %$_ } = values %$_;
+         $tbl{engine} ||= $tbl{type} || $tbl{comment};
+         delete $tbl{type};
+         \%tbl;
+      } @tables;
+   }
+   else {
+      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM "
+              . $self->{quoter}->quote($args{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
+      }
+      $ENV{MKDEBUG} && _d($sql, @params);
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref()};
+      my @result;
+      foreach my $tbl ( @tables ) {
+         my $engine = '';
+         if ( ($tbl->[1] || '') eq 'VIEW' ) {
+            $engine = 'VIEW';
+         }
+         elsif ( $need_engine ) {
+            my $struct = $self->{parser}->parse(
+               $self->{dumper}->get_create_table(
+                  $self->{dbh}, $self->{quoter}, $args{database}, $tbl->[0]));
+            $engine = $struct->{engine};
+         }
+         push @result,
+         {  name   => $tbl->[0],
+            engine => $engine,
+         }
+      }
+      return @result;
+   }
+}
+
+sub _filter {
+   my ( $self, $thing, $sub, @vals ) = @_;
+   $ENV{MKDEBUG} && _d("Filtering $thing list");
+   my $permit = $self->{$thing}->{permit};
+   my $reject = $self->{$thing}->{reject};
+   my $regexp = $self->{$thing}->{regexp};
+   return grep {
+      my $val = $sub->($_);
+      $val = '' unless defined $val;
+      ( !$reject || !$reject->{$val} )
+         && ( !$permit || $permit->{$val} )
+         && ( !$regexp || $val =~ m/$regexp/ )
+   } @vals
+}
+
+sub _test_date {
+   my ( $self, $table, $prop, $test ) = @_;
+   $prop = lc $prop;
+   if ( !defined $table->{$prop} ) {
+      $ENV{MKDEBUG} && _d("$prop is not defined");
+      return $self->{nullpass};
+   }
+   my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
+   die "Invalid date test $test for $prop" unless defined $num;
+   my $sql = "SELECT DATE_SUB('$self->{timestamp}->{now}', INTERVAL $num SECOND)";
+   $ENV{MKDEBUG} && _d($sql);
+   ($self->{timestamp}->{$num}) ||= $self->{dbh}->selectrow_array($sql);
+   my $time = $self->{timestamp}->{$num};
+   return 
+         ( $equality eq '-' && $table->{$prop} gt $time )
+      || ( $equality eq '+' && $table->{$prop} lt $time )
+      || (                     $table->{$prop} eq $time );
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# MySQLFind:$line ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MySQLFind package
+# ###########################################################################
+
+# ###########################################################################
+# TableNibbler package 1348
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableNibbler;
+
+sub new {
+   bless {}, shift;
+}
+
+sub generate_asc_stmt {
+   my ( $self, %args ) = @_;
+
+   my $tbl  = $args{tbl};
+   my @cols = $args{cols} ? @{$args{cols}} : @{$tbl->{cols}};
+   my $q    = $args{quoter};
+
+   my @asc_cols;
+   my @asc_slice;
+
+   my $index = $args{parser}->find_best_index($tbl, $args{index});
+   die "Cannot find an ascendable index in table" unless $index;
+
+   @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
+   $ENV{MKDEBUG} && _d("Will ascend index $index");
+   $ENV{MKDEBUG} && _d("Will ascend columns " . join(', ', @asc_cols));
+   if ( $args{ascfirst} ) {
+      @asc_cols = $asc_cols[0];
+      $ENV{MKDEBUG} && _d("Ascending only first column");
+   }
+
+   my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
+   foreach my $col ( @asc_cols ) {
+      if ( !exists $col_posn{$col} ) {
+         push @cols, $col;
+         $col_posn{$col} = $#cols;
+      }
+      push @asc_slice, $col_posn{$col};
+   }
+   $ENV{MKDEBUG}
+      && _d('Will ascend, in ordinal position: ' . join(', ', @asc_slice));
+
+   my $asc_stmt = {
+      cols  => \@cols,
+      index => $index,
+      where => '',
+      slice => [],
+      scols => [],
+   };
+
+   if ( @asc_slice ) {
+      my @clauses;
+      foreach my $i ( 0 .. $#asc_slice ) {
+         my @clause;
+
+         foreach my $j ( 0 .. $i - 1 ) {
+            my $ord = $asc_slice[$j];
+            my $col = $cols[$ord];
+            my $quo = $q->quote($col);
+            if ( $tbl->{is_nullable}->{$col} ) {
+               push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+               push @{$asc_stmt->{slice}}, $ord, $ord;
+               push @{$asc_stmt->{scols}}, $col, $col;
+            }
+            else {
+               push @clause, "$quo = ?";
+               push @{$asc_stmt->{slice}}, $ord;
+               push @{$asc_stmt->{scols}}, $col;
+            }
+         }
+
+         my $ord = $asc_slice[$i];
+         my $col = $cols[$ord];
+         my $quo = $q->quote($col);
+         my $end = $i == $#asc_slice; # Last clause of the whole group.
+         if ( $tbl->{is_nullable}->{$col} ) {
+            if ( !$args{asconly} && $end ) {
+               push @clause, "(? IS NULL OR $quo >= ?)";
+            }
+            else {
+               push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo > ?))";
+            }
+            push @{$asc_stmt->{slice}}, $ord, $ord;
+            push @{$asc_stmt->{scols}}, $col, $col;
+         }
+         else {
+            push @{$asc_stmt->{slice}}, $ord;
+            push @{$asc_stmt->{scols}}, $col;
+            push @clause, (!$args{asconly} && $end ? "$quo >= ?" : "$quo > ?");
+         }
+
+         push @clauses, '(' . join(' AND ', @clause) . ')';
+      }
+      $asc_stmt->{where} = '(' . join(' OR ', @clauses) . ')';
+   }
+
+   return $asc_stmt;
+}
+
+sub generate_del_stmt {
+   my ( $self, %args ) = @_;
+
+   my $tbl  = $args{tbl};
+   my @cols = $args{cols} ? @{$args{cols}} : ();
+   my $q    = $args{quoter};
+
+   my @del_cols;
+   my @del_slice;
+
+   my $index = $args{parser}->find_best_index($tbl, $args{index});
+   die "Cannot find an ascendable index in table" unless $index;
+
+   if ( $index ) {
+      @del_cols = @{$tbl->{keys}->{$index}->{cols}};
+   }
+   else {
+      @del_cols = @{$tbl->{cols}};
+   }
+   $ENV{MKDEBUG} && _d('Columns needed for DELETE: ' . join(', ', @del_cols));
+
+   my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
+   foreach my $col ( @del_cols ) {
+      if ( !exists $col_posn{$col} ) {
+         push @cols, $col;
+         $col_posn{$col} = $#cols;
+      }
+      push @del_slice, $col_posn{$col};
+   }
+   $ENV{MKDEBUG} && _d('Ordinals needed for DELETE: ' . join(', ', @del_slice));
+
+   my $del_stmt = {
+      cols  => \@cols,
+      index => $index,
+      where => '',
+      slice => [],
+      scols => [],
+   };
+
+   my @clauses;
+   foreach my $i ( 0 .. $#del_slice ) {
+      my $ord = $del_slice[$i];
+      my $col = $cols[$ord];
+      my $quo = $q->quote($col);
+      if ( $tbl->{is_nullable}->{$col} ) {
+         push @clauses, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+         push @{$del_stmt->{slice}}, $ord, $ord;
+         push @{$del_stmt->{scols}}, $col, $col;
+      }
+      else {
+         push @clauses, "$quo = ?";
+         push @{$del_stmt->{slice}}, $ord;
+         push @{$del_stmt->{scols}}, $col;
+      }
+   }
+
+   $del_stmt->{where} = '(' . join(' AND ', @clauses) . ')';
+
+   return $del_stmt;
+}
+
+sub generate_ins_stmt {
+   my ( $self, %args ) = @_;
+
+   my $tbl  = $args{tbl};
+   my @cols = @{$args{cols}};
+
+   die "You didn't specify any columns" unless @cols;
+
+   my %col_posn = do { my $i = 0; map { $_ => $i++ } @{$tbl->{cols}} };
+   my @ins_cols;
+   my @ins_slice;
+
+   foreach my $col ( @cols ) {
+      if ( exists $col_posn{$col} ) {
+         push @ins_cols, $col;
+         push @ins_slice, $col_posn{$col};
+      }
+   }
+
+   my $ins_stmt = {
+      cols  => \@ins_cols,
+      slice => \@ins_slice,
+   };
+
+   return $ins_stmt;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableNibbler:$line ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableNibbler package
+# ###########################################################################
+
 package main;
 
 use DBI;
@@ -2503,7 +2881,7 @@ $OUTPUT_AUTOFLUSH = 1;
 
 my @opt_spec = (
    { s => 'algorithm|a=s',
-     d => 'Algorithm to use (default Chunk)'},
+     d => 'Algorithm to use'},
    { s => 'askpass',
      d => 'Prompt for password for connections' },
    { s => 'bufferresults',
@@ -2559,6 +2937,7 @@ my $tp         = new TableParser();
 my $q          = new Quoter();
 my $vp         = new VersionParser();
 my $chunker    = new TableChunker( quoter => $q );
+my $nibbler    = new TableNibbler();
 my $checksum   = new TableChecksum();
 my $syncer     = new TableSyncer();
 my $dsn_parser = new DSNParser(
@@ -2807,7 +3186,7 @@ sub sync_a_table {
       $args{src}->{dbh}, @args{qw(src_db src_tbl)}, $q, $opts{W});
 
    my %status = $syncer->sync_table(
-      algorithm     => $opts{a},
+      algorithm     => $opts{a} || '',
       buffer        => $opts{bufferresults} ? 1 : 0,
       checksum      => $checksum,
       chunker       => $chunker,
@@ -2819,7 +3198,9 @@ sub sync_a_table {
       execute       => $opts{x} ? 1 : 0,
       lock          => $opts{k} ? 1 : 0,
       misc_dbh      => $args{src}->{misc_dbh},
+      nibbler       => $nibbler,
       possible_keys => \@possible_keys,
+      parser        => $tp,
       print         => $opts{p} ? 1 : 0,
       quoter        => $q,
       replicate     => ($opts{R} || $opts{s}) ? 1 : 0,
