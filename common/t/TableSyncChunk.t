@@ -31,7 +31,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
-   plan tests => 16;
+   plan tests => 17;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -60,7 +60,7 @@ my $q  = new Quoter();
 my $vp = new VersionParser();
 my $ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
 my $tbl_struct = $tp->parse($ddl);
-my $chunker    = new TableChunker();
+my $chunker    = new TableChunker( quoter => $q );
 my $checksum   = new TableChecksum();
 
 my @rows;
@@ -85,7 +85,35 @@ my $t = new TableSyncChunk(
    checksum => $checksum,
    vp       => $vp,
    quoter   => $q,
+   chunksize => 1,
+   where     => 'a>2',
+   possible_keys => [],
+);
+
+is_deeply(
+   $t->{chunks},
+   [
+      # it should really chunk in chunks of 1, but table stats are bad.
+      '1=1',
+   ],
+   'Chunks with WHERE'
+);
+
+$t = new TableSyncChunk(
+   handler  => $ch,
+   cols     => [qw(a b c)],
+   cols     => $tbl_struct->{cols},
+   dbh      => $dbh,
+   database => 'test',
+   table    => 'test1',
+   chunker  => $chunker,
+   struct   => $tbl_struct,
+   checksum => $checksum,
+   vp       => $vp,
+   quoter   => $q,
    chunksize => 2,
+   where     => '',
+   possible_keys => [],
 );
 
 is_deeply(
@@ -138,6 +166,8 @@ $t = new TableSyncChunk(
    vp       => $vp,
    quoter   => $q,
    chunksize => 2,
+   where     => '',
+   possible_keys => [],
 );
 
 throws_ok(

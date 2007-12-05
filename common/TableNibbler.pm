@@ -26,51 +26,8 @@ sub new {
    bless {}, shift;
 }
 
-# Sorts indexes in this order: PRIMARY, unique, non-nullable, any (shortest
-# first, alphabetical).  Only BTREE indexes are considered.  TODO: consider
-# length as # of bytes instead of # of columns.  TODO: move this to TableParser.
-sub sort_indexes {
-   my ( $self, $tbl ) = @_;
-   my @indexes
-      = sort {
-         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
-         || ( !$tbl->{keys}->{$a}->{unique} <=> !$tbl->{keys}->{$b}->{unique} )
-         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
-         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
-      }
-      grep {
-         $tbl->{keys}->{$_}->{type} eq 'BTREE'
-      }
-      sort keys %{$tbl->{keys}};
-   $ENV{MKDEBUG} && _d('Indexes sorted best-first: ' . join(', ', @indexes));
-   return @indexes;
-}
-
-sub find_best_index {
-   my ( $self, $tbl, $index ) = @_;
-   my $best;
-   if ( $index ) {
-      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
-   }
-   if ( !$best ) {
-      if ( $index ) {
-         # The user specified an index, so we can't choose our own.
-         die "Index '$index' does not exist in table";
-      }
-      else {
-         # Try to pick the best index.
-         ($best) = $self->sort_indexes($tbl);
-         if ( !$best ) {
-            # TODO: move into application code?
-            die "Cannot find an ascendable index in table";
-         }
-      }
-   }
-   $ENV{MKDEBUG} && _d("Best index found is " . ($index || 'undef'));
-   return $best;
-}
-
 # Arguments are as follows:
+# * parser   TableParser
 # * tbl      Hashref as provided by TableParser.
 # * cols     Arrayref of columns to SELECT from the table. Defaults to all.
 # * index    Which index to ascend; optional.
@@ -94,11 +51,11 @@ sub find_best_index {
 # $row = $first->fetchrow_arrayref();
 # $row = $next->fetchrow_arrayref(@{$row}[@slice]);
 sub generate_asc_stmt {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
 
-   my $tbl  = $opts{tbl};
-   my @cols = $opts{cols} ? @{$opts{cols}} : @{$tbl->{cols}};
-   my $q    = $opts{quoter};
+   my $tbl  = $args{tbl};
+   my @cols = $args{cols} ? @{$args{cols}} : @{$tbl->{cols}};
+   my $q    = $args{quoter};
 
    my @asc_cols;
    my @asc_slice;
@@ -106,13 +63,14 @@ sub generate_asc_stmt {
    # ##########################################################################
    # Detect indexes and columns needed.
    # ##########################################################################
-   my $index = $self->find_best_index($tbl, $opts{index});
+   my $index = $args{parser}->find_best_index($tbl, $args{index});
+   die "Cannot find an ascendable index in table" unless $index;
 
    # These are the columns we'll ascend.
    @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
    $ENV{MKDEBUG} && _d("Will ascend index $index");
    $ENV{MKDEBUG} && _d("Will ascend columns " . join(', ', @asc_cols));
-   if ( $opts{ascfirst} ) {
+   if ( $args{ascfirst} ) {
       @asc_cols = $asc_cols[0];
       $ENV{MKDEBUG} && _d("Ascending only first column");
    }
@@ -179,7 +137,7 @@ sub generate_asc_stmt {
          my $quo = $q->quote($col);
          my $end = $i == $#asc_slice; # Last clause of the whole group.
          if ( $tbl->{is_nullable}->{$col} ) {
-            if ( !$opts{asconly} && $end ) {
+            if ( !$args{asconly} && $end ) {
                push @clause, "(? IS NULL OR $quo >= ?)";
             }
             else {
@@ -191,7 +149,7 @@ sub generate_asc_stmt {
          else {
             push @{$asc_stmt->{slice}}, $ord;
             push @{$asc_stmt->{scols}}, $col;
-            push @clause, (!$opts{asconly} && $end ? "$quo >= ?" : "$quo > ?");
+            push @clause, (!$args{asconly} && $end ? "$quo >= ?" : "$quo > ?");
          }
 
          # Add the clause to the larger WHERE clause.
@@ -207,15 +165,15 @@ sub generate_asc_stmt {
 # columns.  For that reason you should call this before calling
 # generate_asc_stmt(), so you know what columns you'll need to fetch from the
 # table.  Arguments:
-# * tbl * cols * quoter * index
+# * parser * tbl * cols * quoter * index
 # These are the same as the arguments to generate_asc_stmt().  Return value is
 # similar too.
 sub generate_del_stmt {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
 
-   my $tbl  = $opts{tbl};
-   my @cols = $opts{cols} ? @{$opts{cols}} : ();
-   my $q    = $opts{quoter};
+   my $tbl  = $args{tbl};
+   my @cols = $args{cols} ? @{$args{cols}} : ();
+   my $q    = $args{quoter};
 
    my @del_cols;
    my @del_slice;
@@ -224,7 +182,8 @@ sub generate_del_stmt {
    # Detect the best or preferred index to use for the WHERE clause needed to
    # delete the rows.
    # ##########################################################################
-   my $index = $self->find_best_index($tbl, $opts{index});
+   my $index = $args{parser}->find_best_index($tbl, $args{index});
+   die "Cannot find an ascendable index in table" unless $index;
 
    # These are the columns needed for the DELETE statement's WHERE clause.
    if ( $index ) {
@@ -288,10 +247,10 @@ sub generate_del_stmt {
 # These are the same as the arguments to generate_asc_stmt().  Return value is
 # similar too, but you only get back cols and slice.
 sub generate_ins_stmt {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
 
-   my $tbl  = $opts{tbl};
-   my @cols = @{$opts{cols}};
+   my $tbl  = $args{tbl};
+   my @cols = @{$args{cols}};
 
    die "You didn't specify any columns" unless @cols;
 

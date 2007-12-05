@@ -111,6 +111,7 @@ sub parse {
          is_col      => { map { $_ => 1 } @cols },
          is_nullable => scalar(grep { $is_nullable{$_} } @cols),
          type        => $type,
+         name        => $name,
       };
    }
 
@@ -128,6 +129,82 @@ sub parse {
       engine         => $engine,
       type_for       => \%type_for,
    };
+}
+
+# Sorts indexes in this order: PRIMARY, unique, non-nullable, any (shortest
+# first, alphabetical).  Only BTREE indexes are considered.  TODO: consider
+# length as # of bytes instead of # of columns.
+sub sort_indexes {
+   my ( $self, $tbl ) = @_;
+   my @indexes
+      = sort {
+         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
+         || ( !$tbl->{keys}->{$a}->{unique} <=> !$tbl->{keys}->{$b}->{unique} )
+         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
+         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
+      }
+      grep {
+         $tbl->{keys}->{$_}->{type} eq 'BTREE'
+      }
+      sort keys %{$tbl->{keys}};
+   $ENV{MKDEBUG} && _d('Indexes sorted best-first: ' . join(', ', @indexes));
+   return @indexes;
+}
+
+# Finds the 'best' index; if the user specifies one, dies if it's not in the
+# table.
+sub find_best_index {
+   my ( $self, $tbl, $index ) = @_;
+   my $best;
+   if ( $index ) {
+      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
+   }
+   if ( !$best ) {
+      if ( $index ) {
+         # The user specified an index, so we can't choose our own.
+         die "Index '$index' does not exist in table";
+      }
+      else {
+         # Try to pick the best index.
+         ($best) = $self->sort_indexes($tbl);
+      }
+   }
+   $ENV{MKDEBUG} && _d("Best index found is " . ($index || 'undef'));
+   return $best;
+}
+
+# Takes a dbh, database, table, quoter, and WHERE clause, and reports the
+# indexes MySQL thinks are best for EXPLAIN SELECT * FROM that table.  If no
+# WHERE, just returns an empty list.  If no possible_keys, returns empty list,
+# even if 'key' is not null.  Only adds 'key' to the list if it's included in
+# possible_keys.
+sub find_possible_keys {
+   my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
+   return () unless $where;
+   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
+      . ' WHERE ' . $where;
+   $ENV{MKDEBUG} && _d($sql);
+   my $expl = $dbh->selectrow_hashref($sql);
+   # Normalize columns to lowercase
+   $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
+   if ( $expl->{possible_keys} ) {
+      $ENV{MKDEBUG} && _d("possible_keys=$expl->{possible_keys}");
+      my @candidates = split(',', $expl->{possible_keys});
+      my %possible   = map { $_ => 1 } @candidates;
+      if ( $expl->{key} ) {
+         $ENV{MKDEBUG} && _d("MySQL chose $expl->{key}");
+         unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
+         $ENV{MKDEBUG} && _d('Before deduping: ' . join(', ', @candidates));
+         my %seen;
+         @candidates = grep { !$seen{$_}++ } @candidates;
+      }
+      $ENV{MKDEBUG} && _d('Final list: ' . join(', ', @candidates));
+      return @candidates;
+   }
+   else {
+      $ENV{MKDEBUG} && _d('No keys in possible_keys');
+      return ();
+   }
 }
 
 sub _d {

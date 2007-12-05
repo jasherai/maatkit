@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 
 require "../TableParser.pm";
@@ -47,14 +47,9 @@ sub throws_ok {
 
 $t = $p->parse( load_file('samples/sakila.film.sql') );
 
-is_deeply (
-   [$n->sort_indexes($t)],
-   [qw(PRIMARY idx_fk_language_id idx_title idx_fk_original_language_id)],
-   'Sorted indexes OK'
-);
-
 is_deeply(
    $n->generate_asc_stmt (
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -74,6 +69,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_del_stmt (
+      parser => $p,
       tbl    => $t,
       quoter => $q,
    ),
@@ -89,6 +85,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt (
+      parser => $p,
       tbl    => $t,
       quoter => $q,
    ),
@@ -108,6 +105,7 @@ is_deeply(
 throws_ok(
    sub {
       $n->generate_asc_stmt (
+         parser => $p,
          tbl    => $t,
          cols   => $t->{cols},
          quoter => $q,
@@ -120,6 +118,7 @@ throws_ok(
 
 is_deeply(
    $n->generate_asc_stmt (
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -140,6 +139,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_del_stmt (
+      parser => $p,
       tbl    => $t,
       quoter => $q,
       index  => 'idx_title',
@@ -157,6 +157,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt (
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -177,6 +178,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt (
+      parser => $p,
       tbl    => $t,
       cols   => [qw(title)],
       quoter => $q,
@@ -198,6 +200,7 @@ $t = $p->parse( load_file('samples/sakila.rental.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -217,6 +220,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_del_stmt (
+      parser => $p,
       tbl    => $t,
       quoter => $q,
       index  => 'rental_date',
@@ -235,6 +239,7 @@ is_deeply(
 my $f = $p->parse( load_file('samples/sakila.film.sql') );
 is_deeply(
    $n->generate_ins_stmt (
+      parser => $p,
       tbl    => $f,
       cols   => $t->{cols},
    ),
@@ -247,6 +252,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt(
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -266,6 +272,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt(
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -291,6 +298,7 @@ $t = $p->parse( load_file('samples/sakila.rental.null.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -311,6 +319,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_del_stmt (
+      parser => $p,
       tbl    => $t,
       quoter => $q,
       index  => 'rental_date',
@@ -328,6 +337,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt(
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -354,6 +364,7 @@ $t = $p->parse( load_file('samples/sakila.rental.null2.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -376,6 +387,7 @@ is_deeply(
 
 is_deeply(
    $n->generate_asc_stmt(
+      parser => $p,
       tbl    => $t,
       cols   => $t->{cols},
       quoter => $q,
@@ -404,6 +416,7 @@ $t = $p->parse( load_file('samples/sakila.rental.remix.sql') );
 
 is_deeply(
    $n->generate_asc_stmt(
+      parser => $p,
       tbl    => $t,
       quoter => $q,
       index  => 'rental_date',
@@ -428,6 +441,7 @@ $t = $p->parse( load_file('samples/t1.sql') );
 throws_ok(
    sub {
       $n->generate_asc_stmt (
+         parser => $p,
          tbl    => $t,
          quoter => $q,
       )
