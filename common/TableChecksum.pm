@@ -145,7 +145,14 @@ sub optimize_xor {
       }
    } while ( $start < $crc_wid && $sliced ne $unsliced );
 
-   return $sliced eq $unsliced ? $opt_slice : undef;
+   if ( $sliced eq $unsliced ) {
+      $ENV{MKDEBUG} && _d("Slice $opt_slice works");
+      return $opt_slice;
+   }
+   else {
+      $ENV{MKDEBUG} && _d("No slice works");
+      return undef;
+   }
 }
 
 # Returns an expression that will do a bitwise XOR over a very wide integer,

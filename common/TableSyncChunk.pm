@@ -123,7 +123,7 @@ sub get_sql {
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
-         . ' WHERE (' . $self->{chunks}->[$self->{chunk_num} - 1] . ')'
+         . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
          . ($args{where} ? " AND ($args{where})" : '');
    }
    else {
@@ -152,6 +152,7 @@ sub same_row {
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
+      $ENV{MKDEBUG} && _d('Will examine this chunk before moving to next');
       $self->{state} = 1; # Must examine this chunk row-by-row
    }
 }
@@ -175,15 +176,22 @@ sub done_with_rows {
    my ( $self ) = @_;
    if ( $self->{state} == 1 ) {
       $self->{state} = 2;
+      $ENV{MKDEBUG} && _d("Setting state=$self->{state}");
    }
    else {
       $self->{state} = 0;
       $self->{chunk_num}++;
+      $ENV{MKDEBUG}
+         && _d("Setting state=$self->{state}, chunk_num=$self->{chunk_num}");
    }
 }
 
 sub done {
    my ( $self ) = @_;
+   $ENV{MKDEBUG}
+      && _d("Done with $self->{chunk_num} of "
+       . scalar(@{$self->{chunks}}) . ' chunks');
+   $ENV{MKDEBUG} && $self->{state} && _d('Chunk differs; must examine rows');
    return $self->{state} == 0
       && $self->{chunk_num} >= scalar(@{$self->{chunks}})
 }
