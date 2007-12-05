@@ -40,10 +40,7 @@ sub best_algorithm {
    my $result;
 
    # Does the table have a primary or unique non-nullable key?
-   my $best_key = $args{parser}->find_best_index($struct);
-   if ( $best_key eq 'PRIMARY'
-      || ( $struct->{keys}->{$best_key}->{unique}
-         && !$struct->{keys}->{$best_key}->{is_nullable} )) {
+   if ( $args{chunker}->get_first_chunkable_column($args{struct}) ) {
       $result = 'Chunk';
    }
    else {
