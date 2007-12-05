@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -95,6 +95,12 @@ is_deeply(\@rows,
    'UPDATE `test`.`foo` SET `b`=2 WHERE `a`=1 LIMIT 1',
    ],
    'All rows',
+);
+
+is_deeply(
+   { $ch->get_changes() },
+   { DELETE => 1, INSERT => 1, UPDATE => 1 },
+   'Changes were recorded',
 );
 
 # Open a connection to MySQL, or skip the rest of the tests.

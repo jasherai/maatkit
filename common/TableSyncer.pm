@@ -69,33 +69,6 @@ sub sync_table {
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
 
-   # User wants us to lock for consistency.  But lock only on source initially;
-   # might have to wait for the slave to catch up before locking on the dest.
-   if ( $args{lock} ) {
-      $self->lock_table($args{src_dbh}, 'source',
-         $args{quoter}->quote($args{src_db}, $args{src_tbl}),
-         $args{replicate} ? 'WRITE' : 'READ');
-   }
-
-   if ( $args{wait} ) {
-      $self->wait_for_master(
-         $args{src_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
-   }
-
-   # Don't lock on destination if it's a replication slave, or the replication
-   # thread will not be able to make changes.
-   if ( $args{lock} ) {
-      if ( $args{replicate} ) {
-         $ENV{MKDEBUG}
-            && _d('Not locking destination because syncing via replication');
-      }
-      else {
-         $self->lock_table($args{dst_dbh}, 'dest',
-            $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
-            $args{execute} ? 'WRITE' : 'READ');
-      }
-   }
-
    # TODO: for two-way sync, the change handler needs both DBHs.
    my $change_dbh = $args{replicate} ? $args{src_dbh} : $args{dst_dbh};
    $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
@@ -132,6 +105,10 @@ sub sync_table {
 
    my $cycle = 0;
    while ( !$plugin->done ) {
+
+      # The first cycle is a per-table lock; any others are per-cycle
+      $self->lock_and_wait(%args, lock_level => $cycle ? 1 : 2);
+
       $ENV{MKDEBUG} && _d("Beginning sync cycle $cycle");
       my $src_sql = $plugin->get_sql(
          quoter   => $args{quoter},
@@ -162,23 +139,22 @@ sub sync_table {
          tbl    => $args{tbl_struct},
       );
       $ENV{MKDEBUG} && _d("Finished sync cycle $cycle");
-       # TODO report diff count
       $ch->process_rows(1);
-      foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
-         $dbh->do('UNLOCK TABLES'); # TODO
-         $dbh->commit unless $dbh->{AutoCommit};
-      }
+
       $cycle++;
    }
 
    $ch->process_rows();
 
-   $ENV{MKDEBUG} && _d('Committing and unlocking');
-   foreach my $dbh ( $args{src_dbh}, $args{dst_dbh} ) {
-      $dbh->do('UNLOCK TABLES');
-      $dbh->commit unless $dbh->{AutoCommit};
+   if ( $args{lock} && $args{lock} < 3 ) {
+      $ENV{MKDEBUG} && _d('Unlocking and committing');
+      foreach my $dbh ( @args{qw(src_dbh dst_dbh)} ) {
+         $dbh->do('UNLOCK TABLES');
+         $dbh->commit unless $dbh->{AutoCommit};
+      }
    }
-   # TODO: return exit status.
+
+   return $ch->get_changes();
 }
 
 sub lock_table {
@@ -204,6 +180,68 @@ sub wait_for_master {
       die "MASTER_POS_WAIT failed: $stat";
    }
    $ENV{MKDEBUG} && _d("Result of waiting: $stat");
+}
+
+# Lock levels:
+# 0 => none
+# 1 => per sync cycle
+# 2 => per table
+# 3 => global
+sub lock_and_wait {
+   my ( $self, %args ) = @_;
+
+   foreach my $arg ( qw(
+      dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
+      timeoutok wait lock_level) )
+   {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   return unless $args{lock} && $args{lock} >= $args{lock_level};
+
+   # First, unlock.
+   my $sql = 'UNLOCK TABLES';
+   $ENV{MKDEBUG} && _d($sql);
+   foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
+      $dbh->do($sql);
+   }
+
+   # User wants us to lock for consistency.  But lock only on source initially;
+   # might have to wait for the slave to catch up before locking on the dest.
+   if ( $args{lock} == 3 ) {
+      my $sql = 'FLUSH TABLES WITH READ LOCK';
+      $ENV{MKDEBUG} && _d("$args{src_dbh}, $sql");
+      $args{src_dbh}->do($sql);
+   }
+   else {
+      $self->lock_table($args{src_dbh}, 'source',
+         $args{quoter}->quote($args{src_db}, $args{src_tbl}),
+         $args{replicate} ? 'WRITE' : 'READ');
+   }
+
+   if ( $args{wait} ) {
+      $self->wait_for_master(
+         $args{src_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
+   }
+
+   # Don't lock on destination if it's a replication slave, or the replication
+   # thread will not be able to make changes.
+   if ( $args{replicate} ) {
+      $ENV{MKDEBUG}
+         && _d('Not locking destination because syncing via replication');
+   }
+   else {
+      if ( $args{lock} == 3 ) {
+         my $sql = 'FLUSH TABLES WITH READ LOCK';
+         $ENV{MKDEBUG} && _d("$args{dst_dbh}, $sql");
+         $args{dst_dbh}->do($sql);
+      }
+      else {
+         $self->lock_table($args{dst_dbh}, 'dest',
+            $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
+            $args{execute} ? 'WRITE' : 'READ');
+      }
+   }
 }
 
 sub _d {
