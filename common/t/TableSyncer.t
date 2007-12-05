@@ -24,17 +24,15 @@ use English qw(-no_match_vars);
 use DBI;
 
 # Open a connection to MySQL, or skip the rest of the tests.
-my ($src_dbh, $dst_dbh);
+my ( $src_dbh, $dst_dbh );
 eval {
-   $src_dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
-   { PrintError => 0, RaiseError => 1 });
-   $dst_dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
-   { PrintError => 0, RaiseError => 1 });
+   $src_dbh = DBI->connect( "DBI:mysql:;mysql_read_default_group=mysql",
+      undef, undef, { PrintError => 0, RaiseError => 1 } );
+   $dst_dbh = DBI->connect( "DBI:mysql:;mysql_read_default_group=mysql",
+      undef, undef, { PrintError => 0, RaiseError => 1 } );
 };
-if ( $src_dbh ) {
-   plan tests => 2;
+if ($src_dbh) {
+   plan tests => 3;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -61,50 +59,88 @@ sub throws_ok {
 
 `mysql < samples/before-TableSyncChunk.sql`;
 
-my $ts = new TableSyncer();
-my $tp = new TableParser();
-my $du = new MySQLDump();
-my $q  = new Quoter();
-my $vp = new VersionParser();
-my $ddl        = $du->get_create_table($src_dbh, $q, 'test', 'test1');
+my $ts         = new TableSyncer();
+my $tp         = new TableParser();
+my $du         = new MySQLDump();
+my $q          = new Quoter();
+my $vp         = new VersionParser();
+my $ddl        = $du->get_create_table( $src_dbh, $q, 'test', 'test1' );
 my $tbl_struct = $tp->parse($ddl);
-my $chunker    = new TableChunker();
+my $chunker    = new TableChunker( quoter => $q );
 my $checksum   = new TableChecksum();
 my $nibbler    = new TableNibbler();
 
 my $algo = $ts->best_algorithm(
-   struct => $tbl_struct,
+   struct  => $tbl_struct,
    nibbler => $nibbler,
    chunker => $chunker,
+   parser  => $tp,
 );
 
-ok ($algo, 'Found an algorithm');
+ok( $algo, 'Found an algorithm' );
 
 $ts->sync_table(
-   algorithm => $algo,
-   buffer    => 0,
-   checksum  => $checksum,
-   chunker   => $chunker,
-   chunksize => 2,
-   dst_dbh   => $dst_dbh,
-   dst_db    => 'test',
-   dst_tbl   => 'test2',
-   execute   => 1,
-   lock      => 1,
-   misc_dbh  => $src_dbh,
-   print     => 1,
-   quoter    => $q,
-   replicate => 0,
-   src_dbh   => $src_dbh,
-   src_db    => 'test',
-   src_tbl   => 'test1',
-   tbl_struct => $tbl_struct,
-   timeoutok  => 0,
+   algorithm     => 'Chunk',
+   buffer        => 0,
+   checksum      => $checksum,
+   chunker       => $chunker,
+   chunksize     => 2,
+   dst_dbh       => $dst_dbh,
+   dst_db        => 'test',
+   dst_tbl       => 'test2',
+   execute       => 1,
+   lock          => 1,
+   misc_dbh      => $src_dbh,
+   print         => 0,
+   quoter        => $q,
+   replicate     => 0,
+   src_dbh       => $src_dbh,
+   src_db        => 'test',
+   src_tbl       => 'test1',
+   tbl_struct    => $tbl_struct,
+   timeoutok     => 0,
    versionparser => $vp,
-   wait      => 0,
-   where     => '',
+   wait          => 0,
+   where         => '',
+   possible_keys => [],
+   cols          => $tbl_struct->{cols},
 );
 
-my ($cnt) = $src_dbh->selectall_arrayref(
-   'select count(*) from test.test2')->[0]->[0];
-is($cnt, 4, 'Four rows in destination');
+my ($cnt)
+   = $src_dbh->selectall_arrayref('select count(*) from test.test2')->[0]
+   ->[0];
+is( $cnt, 4, 'Four rows in destination after Chunk' );
+
+`mysql < samples/before-TableSyncChunk.sql`;
+
+$ts->sync_table(
+   algorithm     => 'Stream',
+   buffer        => 0,
+   checksum      => $checksum,
+   chunker       => $chunker,
+   chunksize     => 2,
+   dst_dbh       => $dst_dbh,
+   dst_db        => 'test',
+   dst_tbl       => 'test2',
+   execute       => 1,
+   lock          => 1,
+   misc_dbh      => $src_dbh,
+   print         => 0,
+   quoter        => $q,
+   replicate     => 0,
+   src_dbh       => $src_dbh,
+   src_db        => 'test',
+   src_tbl       => 'test1',
+   tbl_struct    => $tbl_struct,
+   timeoutok     => 0,
+   versionparser => $vp,
+   wait          => 0,
+   where         => '',
+   possible_keys => [],
+   cols          => $tbl_struct->{cols},
+);
+
+($cnt)
+   = $src_dbh->selectall_arrayref('select count(*) from test.test2')->[0]
+   ->[0];
+is( $cnt, 4, 'Four rows in destination after Stream' );

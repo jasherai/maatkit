@@ -33,14 +33,14 @@ sub new {
 # Choose the best algorithm for syncing a given table.
 sub best_algorithm {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(struct nibbler chunker) ) {
+   foreach my $arg ( qw(struct parser nibbler chunker) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $struct = $args{struct};
    my $result;
 
    # Does the table have a primary or unique non-nullable key?
-   my $best_key = $args{nibbler}->find_best_index($struct);
+   my $best_key = $args{parser}->find_best_index($struct);
    if ( $best_key eq 'PRIMARY'
       || ( $struct->{keys}->{$best_key}->{unique}
          && !$struct->{keys}->{$best_key}->{is_nullable} )) {
@@ -60,7 +60,7 @@ sub sync_table {
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replicate src_db src_dbh src_tbl tbl_struct timeoutok
-      versionparser wait where) )
+      versionparser wait where possible_keys cols) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -116,7 +116,7 @@ sub sync_table {
    my $class  = "TableSync$args{algorithm}";
    my $plugin = $class->new(
       handler   => $ch,
-      cols      => $args{tbl_struct}->{cols}, # TODO
+      cols      => $args{cols},
       dbh       => $args{src_dbh},
       database  => $args{src_db},
       table     => $args{src_tbl},
@@ -127,6 +127,7 @@ sub sync_table {
       quoter    => $args{quoter},
       chunksize => $args{chunksize},
       where     => $args{where},
+      possible_keys => [],
    );
 
    my $cycle = 0;

@@ -33,8 +33,8 @@ use List::Util qw(max);
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dbh database table handler chunker
-                        quoter struct checksum cols vp chunksize) ) {
+   foreach my $arg ( qw(dbh database table handler chunker quoter struct
+                        checksum cols vp chunksize where possible_keys) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
@@ -47,11 +47,12 @@ sub new {
 
    # Chunk the table and store the chunks for later processing.
    my @chunks;
-   my $col = $args{chunker}->get_first_chunkable_column($args{struct});
+   my $col = $args{chunker}->get_first_chunkable_column(
+      $args{struct}, { possible_keys => $args{possible_keys} });
    if ( $col ) {
-      # TODO: pass a WHERE clause.
       my %params = $args{chunker}->get_range_statistics(
-         $args{dbh}, $args{database}, $args{table}, $col);
+         $args{dbh}, $args{database}, $args{table}, $col,
+         $args{where});
       if ( !grep { !defined $params{$_} }
             qw(min max rows_in_range) )
       {

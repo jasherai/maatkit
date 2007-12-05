@@ -26,7 +26,9 @@ use POSIX qw(ceil);
 use List::Util qw(min max);
 
 sub new {
-   bless {}, shift;
+   my ( $class, %args ) = @_;
+   die "I need a quoter" unless $args{quoter};
+   bless { %args }, $class;
 }
 
 my $EPOCH      = '1970-01-01';
@@ -38,6 +40,8 @@ my %real_types = map { $_ => 1 }
 # $table  hashref returned from TableParser::parse
 # $opts   hashref of options
 #         exact: try to support exact chunk sizes (may still chunk fuzzily)
+#         possible_keys: arrayref of keys to prefer, in order.  These can be
+#                        generated from EXPLAIN by TableParser.pm
 # Returns an array:
 #   whether the table can be chunked exactly, if requested (zero otherwise)
 #   arrayref of columns that support chunking
@@ -45,12 +49,25 @@ sub find_chunk_columns {
    my ( $self, $table, $opts ) = @_;
    $opts ||= {};
 
+   my %prefer;
+   if ( $opts->{possible_keys} && @{$opts->{possible_keys}} ) {
+      my $i = 1;
+      %prefer = map { $_ => $i++ } @{$opts->{possible_keys}};
+      $ENV{MKDEBUG} && _d("Preferred indexes for chunking: "
+         . join(', ', @{$opts->{possible_keys}}));
+   }
+
    # See if there's an index that will support chunking.  If exact
    # is specified, it must be single column unique or primary.
    my @candidate_cols;
 
-   # Only BTREE are good for range queries.
+   # Only BTREE are good for range queries.  Sort in order of preferred-ness.
    my @possible_keys = grep { $_->{type} eq 'BTREE' } values %{$table->{keys}};
+   @possible_keys = sort {
+      ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
+   } @possible_keys;
+   $ENV{MKDEBUG} && _d('Possible keys in order: '
+      . join(', ', map { $_->{name} } @possible_keys));
 
    my $can_chunk_exact = 0;
    if ($opts->{exact}) {
@@ -84,14 +101,21 @@ sub find_chunk_columns {
    # Order the candidates by their original column order.  Put the PK's
    # first column first, if it's a candidate.
    my @result;
-   if ( $table->{keys}->{PRIMARY} ) {
-      my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
-      @result = grep { $_ eq $pk_first_col } @candidate_cols;
-      @candidate_cols = grep { $_ ne $pk_first_col } @candidate_cols;
+   if ( !%prefer ) {
+      $ENV{MKDEBUG} && _d('Ordering columns by order in tbl, PK first');
+      if ( $table->{keys}->{PRIMARY} ) {
+         my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
+         @result = grep { $_ eq $pk_first_col } @candidate_cols;
+         @candidate_cols = grep { $_ ne $pk_first_col } @candidate_cols;
+      }
+      my $i = 0;
+      my %col_pos = map { $_ => $i++ } @{$table->{cols}};
+      push @result, sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
    }
-   my $i = 0;
-   my %col_pos = map { $_ => $i++ } @{$table->{cols}};
-   push @result, sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
+   else {
+      @result = @candidate_cols;
+   }
+   $ENV{MKDEBUG} && _d('Chunkable columns: ' . join(', ', @candidate_cols));
 
    return ($can_chunk_exact, \@result);
 }
@@ -114,6 +138,9 @@ sub calculate_chunks {
       die "Required argument $arg not given or undefined"
          unless defined $args{$arg};
    }
+   $ENV{MKDEBUG} && _d("Arguments: "
+      . join(', ',
+         map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') } keys %args));
 
    my @chunks;
    my ($range_func, $start_point, $end_point);
@@ -248,9 +275,10 @@ sub size_to_rows {
    my $status;
    if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
       $tbl =~ s/_/\\_/g;
-      my $sql = "SHOW TABLE STATUS FROM `$db` LIKE '$tbl'"; # TODO: quote!!!
-      $ENV{MKDEBUG} && _d($sql);
-      $status = $dbh->selectrow_hashref($sql);
+      my $sql = "SHOW TABLE STATUS FROM "
+         . $self->{quoter}->quote($db) . " LIKE ?";
+      $ENV{MKDEBUG} && _d($sql, ' ', $tbl);
+      $status = $dbh->selectrow_hashref($sql, {}, $tbl);
       if ( $cache ) {
          $cache->{$db}->{$tbl} = $status;
       }
@@ -261,13 +289,16 @@ sub size_to_rows {
 }
 
 # Determine the range of values for the chunk_col column on this table.
-# TODO: accept a WHERE clause.
 sub get_range_statistics {
-   my ( $self, $dbh, $db, $tbl, $col, $opts ) = @_;
-   my $sql = "SELECT MIN(`$col`), MAX(`$col`) FROM `$db`.`$tbl`"; # TODO: quote!
+   my ( $self, $dbh, $db, $tbl, $col, $where ) = @_;
+   my $q = $self->{quoter};
+   my $sql = "SELECT MIN(" . $q->quote($col) . "), MAX(" . $q->quote($col)
+      . ") FROM " . $q->quote($db, $tbl)
+      . ($where ? " WHERE $where" : '');
    $ENV{MKDEBUG} && _d($sql);
    my ( $min, $max ) = $dbh->selectrow_array($sql);
-   $sql = "EXPLAIN SELECT * FROM `$db`.`$tbl";
+   $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
+      . ($where ? " WHERE $where" : '');
    $ENV{MKDEBUG} && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
    return (
@@ -277,6 +308,8 @@ sub get_range_statistics {
    );
 }
 
+# Quotes values only when needed, and uses double-quotes instead of
+# single-quotes (see comments earlier).
 sub quote {
    my ( $self, $val ) = @_;
    return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
@@ -284,7 +317,7 @@ sub quote {
 
 sub inject_chunks {
    my ( $self, %args ) = @_;
-   foreach my $arg ( qw(database table chunks chunk_num query quoter) ) {
+   foreach my $arg ( qw(database table chunks chunk_num query) ) {
       die "$arg is required" unless defined $args{$arg};
    }
    $ENV{MKDEBUG} && _d("Injecting chunk $args{chunk_num}");
@@ -297,7 +330,7 @@ sub inject_chunks {
       $where .= " AND ($args{where})";
    }
    $args{query} =~ s!/\*WHERE\*/! $where!;
-   my $db_tbl = $args{quoter}->quote(@args{qw(database table)});
+   my $db_tbl = $self->{quoter}->quote(@args{qw(database table)});
    $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
    $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
    return $args{query};

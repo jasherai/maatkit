@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 16;
+   $tests = 17;
 }
 
 use Test::More tests => $tests;
@@ -32,8 +32,9 @@ require "../TableParser.pm";
 require "../TableChunker.pm";
 require "../Quoter.pm";
 
+my $q = new Quoter();
 my $p = new TableParser();
-my $c = new TableChunker();
+my $c = new TableChunker( quoter => $q );
 my $t;
 
 sub load_file {
@@ -57,6 +58,12 @@ is_deeply(
    'Found exact chunkable columns on sakila.film',
 );
 
+is_deeply(
+   [ $c->find_chunk_columns($t, { possible_keys => [qw(idx_fk_language_id)] }) ],
+   [ 0, [qw(language_id original_language_id film_id)]],
+   'Found preferred chunkable columns on sakila.film',
+);
+
 $t = $p->parse( load_file('samples/pk_not_first.sql') );
 is_deeply(
    [ $c->find_chunk_columns($t) ],
@@ -72,7 +79,6 @@ is (
       chunks    => [ '1=1', 'a=b' ],
       chunk_num => 1,
       where     => 'FOO=BAR',
-      quoter    => new Quoter(),
    ),
    'SELECT /*sakila.film:2/2*/ 1 AS chunk_num, FOO FROM 1 WHERE (a=b) AND (FOO=BAR)',
    'Replaces chunk info into query',

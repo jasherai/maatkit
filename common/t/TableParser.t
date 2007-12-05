@@ -19,13 +19,22 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 5;
+use Test::More tests => 11;
 use English qw(-no_match_vars);
+use DBI;
 
 require "../TableParser.pm";
+require "../Quoter.pm";
 
 my $p = new TableParser();
+my $q = new Quoter();
 my $t;
+
+sub throws_ok {
+   my ( $code, $pat, $msg ) = @_;
+   eval { $code->(); };
+   like ( $EVAL_ERROR, $pat, $msg );
+}
 
 sub load_file {
    my ($file) = @_;
@@ -135,6 +144,7 @@ is_deeply(
             is_nullable => 0,
             unique      => 1,
             type        => 'BTREE',
+            name        => 'PRIMARY',
          },
          idx_title => {
             colnames    => '`title`',
@@ -143,6 +153,7 @@ is_deeply(
             is_nullable => 0,
             unique      => 0,
             type        => 'BTREE',
+            name        => 'idx_title',
          },
          idx_fk_language_id => {
             colnames    => '`language_id`',
@@ -151,6 +162,7 @@ is_deeply(
             is_col      => { language_id => 1 },
             is_nullable => 0,
             type        => 'BTREE',
+            name        => 'idx_fk_language_id',
          },
          idx_fk_original_language_id => {
             colnames    => '`original_language_id`',
@@ -159,6 +171,7 @@ is_deeply(
             is_col      => { original_language_id => 1 },
             is_nullable => 1,
             type        => 'BTREE',
+            name        => 'idx_fk_original_language_id',
          },
       },
       defs => {
@@ -214,6 +227,20 @@ is_deeply(
    'sakila.film',
 );
 
+is_deeply (
+   [$p->sort_indexes($t)],
+   [qw(PRIMARY idx_fk_language_id idx_title idx_fk_original_language_id)],
+   'Sorted indexes OK'
+);
+
+is( $p->find_best_index($t), 'PRIMARY', 'Primary key is best');
+is( $p->find_best_index($t, 'idx_title'), 'idx_title', 'Specified key is best');
+throws_ok (
+   sub { $p->find_best_index($t, 'foo') },
+   qr/does not exist/,
+   'Index does not exist',
+);
+
 $t = $p->parse( load_file('samples/temporary_table.sql') );
 is_deeply(
    $t,
@@ -233,3 +260,31 @@ is_deeply(
    'Temporary table',
 );
 
+# Open a connection to MySQL, or skip the rest of the tests.
+my $dbh;
+eval {
+   $dbh = DBI->connect(
+   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
+   { PrintError => 0, RaiseError => 1 })
+};
+SKIP: {
+   skip 'Cannot connect to MySQL', 2
+      unless $dbh;
+   skip 'Sakila is not installed', 2
+      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
+
+   is_deeply(
+      [$p->find_possible_keys(
+         $dbh, 'sakila', 'film_actor', $q, 'film_id > 990  and actor_id > 1')],
+      [qw(idx_fk_film_id PRIMARY)],
+      'Best index for WHERE clause'
+   );
+
+   is_deeply(
+      [$p->find_possible_keys(
+         $dbh, 'sakila', 'film_actor', $q, 'film_id > 990 or actor_id > 1')],
+      [qw(idx_fk_film_id PRIMARY)],
+      'Best index for WHERE clause with sort_union'
+   );
+
+}
