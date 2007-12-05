@@ -37,19 +37,22 @@ sub best_algorithm {
       die "I need a $arg argument" unless $args{$arg};
    }
    my $struct = $args{struct};
+   my $result;
 
    # Does the table have a primary or unique non-nullable key?
    my $best_key = $args{nibbler}->find_best_index($struct);
    if ( $best_key eq 'PRIMARY'
       || ( $struct->{keys}->{$best_key}->{unique}
          && !$struct->{keys}->{$best_key}->{is_nullable} )) {
-      return 'Chunk';
+      $result = 'Chunk';
    }
    else {
       # If not, Stream is the only choice.
       $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
-      return 'Stream';
+      $result = 'Stream';
    }
+   $ENV{MKDEBUG} && _d("Algorithm: $result");
+   return $result;
 }
 
 sub sync_table {
@@ -61,6 +64,10 @@ sub sync_table {
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
+   $ENV{MKDEBUG} && _d("Syncing table with args "
+      . join(', ',
+         map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
+         sort keys %args));
 
    # User wants us to lock for consistency.  But lock only on source initially;
    # might have to wait for the slave to catch up before locking on the dest.
@@ -77,14 +84,21 @@ sub sync_table {
 
    # Don't lock on destination if it's a replication slave, or the replication
    # thread will not be able to make changes.
-   if ( $args{lock} && !$args{replicate} ) {
-      $self->lock_table($args{dst_dbh}, 'dest',
-         $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
-         $args{execute} ? 'WRITE' : 'READ');
+   if ( $args{lock} ) {
+      if ( $args{replicate} ) {
+         $ENV{MKDEBUG}
+            && _d('Not locking destination because syncing via replication');
+      }
+      else {
+         $self->lock_table($args{dst_dbh}, 'dest',
+            $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
+            $args{execute} ? 'WRITE' : 'READ');
+      }
    }
 
    # TODO: for two-way sync, the change handler needs both DBHs.
    my $change_dbh = $args{replicate} ? $args{src_dbh} : $args{dst_dbh};
+   $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
 
    my $ch = new ChangeHandler(
       quoter    => $args{quoter},

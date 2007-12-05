@@ -287,6 +287,7 @@ sub inject_chunks {
    foreach my $arg ( qw(database table chunks chunk_num query quoter) ) {
       die "$arg is required" unless defined $args{$arg};
    }
+   $ENV{MKDEBUG} && _d("Injecting chunk $args{chunk_num}");
    my $comment = sprintf("/*%s.%s:%d/%d*/",
       $args{database}, $args{table},
       $args{chunk_num} + 1, scalar @{$args{chunks}});

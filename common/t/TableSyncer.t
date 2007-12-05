@@ -34,7 +34,7 @@ eval {
    { PrintError => 0, RaiseError => 1 });
 };
 if ( $src_dbh ) {
-   plan tests => 16;
+   plan tests => 2;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -104,3 +104,7 @@ $ts->sync_table(
    wait      => 0,
    where     => '',
 );
+
+my ($cnt) = $src_dbh->selectall_arrayref(
+   'select count(*) from test.test2')->[0]->[0];
+is($cnt, 4, 'Four rows in destination');

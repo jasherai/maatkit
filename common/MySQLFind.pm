@@ -134,7 +134,7 @@ sub _fetch_tbl_list {
          $sql .= ' LIKE ?';
          push @params, $self->{tables}->{like};
       }
-      $ENV{MKDEBUG} && _d($sql, $params);
+      $ENV{MKDEBUG} && _d($sql, @params);
       my $sth = $self->{dbh}->prepare($sql);
       $sth->execute(@params);
       my @tables = @{$sth->fetchall_arrayref({})};
@@ -153,7 +153,7 @@ sub _fetch_tbl_list {
          $sql .= ' LIKE ?';
          push @params, $self->{tables}->{like};
       }
-      $ENV{MKDEBUG} && _d($sql, $params);
+      $ENV{MKDEBUG} && _d($sql, @params);
       my $sth = $self->{dbh}->prepare($sql);
       $sth->execute(@params);
       my @tables = @{$sth->fetchall_arrayref()};

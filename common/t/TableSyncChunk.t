@@ -140,8 +140,6 @@ $t = new TableSyncChunk(
    chunksize => 2,
 );
 
-$t->done_with_rows(); # tell it to begin working on first chunk
-
 throws_ok(
    sub { $t->not_in_left() },
    qr/in state 0/,

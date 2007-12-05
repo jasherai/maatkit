@@ -42,6 +42,7 @@ sub sort_indexes {
          $tbl->{keys}->{$_}->{type} eq 'BTREE'
       }
       sort keys %{$tbl->{keys}};
+   $ENV{MKDEBUG} && _d('Indexes sorted best-first: ' . join(', ', @indexes));
    return @indexes;
 }
 
@@ -65,6 +66,7 @@ sub find_best_index {
          }
       }
    }
+   $ENV{MKDEBUG} && _d("Best index found is " . ($index || 'undef'));
    return $best;
 }
 
