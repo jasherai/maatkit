@@ -25,7 +25,7 @@ package ChangeHandler;
 use English qw(-no_match_vars);
 
 my $DEFER_PAT = qr/Duplicate entry|Commands out of sync/;
-my @ACTIONS   = qw(DELETE INSERT UPDATE);
+our @ACTIONS  = qw(DELETE INSERT UPDATE);
 
 # Arguments:
 # * quoter     Quoter()
