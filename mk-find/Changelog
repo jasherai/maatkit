@@ -1,5 +1,9 @@
 Changelog for mk-find:
 
+2007-12-06: version 0.9.8
+
+   * Updated modules for compatibility with changes made to mk-table-sync.
+
 2007-11-25: version 0.9.7
 
    * Added --sid option.
