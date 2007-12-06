@@ -385,8 +385,10 @@ sub check_server {
          @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
 
       foreach my $slave ( @slaves ) {
-         my $dsn = $args->{dsn_parser}->parse(
-             "h=$slave->{host},P=$slave->{port}", $args->{dsn});
+         my $spec = "h=$slave->{host},P=$slave->{port}"
+            . ( $slave->{user} ? ",u=$slave->{user}" : '')
+            . ( $slave->{password} ? ",p=$slave->{password}" : '');
+         my $dsn = $args->{dsn_parser}->parse($spec, $args->{dsn});
          $dsn->{server_id} = $slave->{server_id};
          $ENV{MKDEBUG} && _d('Recursing from '
             . $args->{dsn_parser}->as_string($args->{dsn})
