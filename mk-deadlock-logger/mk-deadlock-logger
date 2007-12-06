@@ -1211,6 +1211,13 @@ The query that caused the deadlock.
 
 =back
 
+=head1 ENVIRONMENT
+
+The environment variable MKDEBUG enables verbose debugging output in all of the
+Maatkit tools:
+
+   MKDEBUG=1 mk-....
+
 =head1 SYSTEM REQUIREMENTS
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
