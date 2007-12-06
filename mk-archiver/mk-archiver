@@ -30,7 +30,7 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1178
+# OptionParser package 1369
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -69,15 +69,21 @@ sub new {
          $opt->{n} = $opt->{s} =~ m/!/;
          $opt->{g} ||= 'o';
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
+            $ENV{MKDEBUG} && _d("Option $opt->{k} type: $y");
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
-         $opt->{r} = $opt->{d} =~ m/required/;
+         if ( $opt->{d} =~ m/required/ ) {
+            $opt->{r} = 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} is required");
+         }
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} has a default");
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+            $ENV{MKDEBUG} && _d("Option $opt->{k} $dis");
          }
       }
       else { # It's an instruction.
@@ -89,9 +95,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -100,6 +108,7 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
+            $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
          }
 
       }
@@ -141,6 +150,7 @@ sub get_participants {
          }
       }
    }
+   $ENV{MKDEBUG} && _d("Participants for $str: ", @participants);
    return @participants;
 }
 
@@ -179,6 +189,7 @@ sub parse {
 
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      $ENV{MKDEBUG} && _d("Unsetting options: ", @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -221,15 +232,18 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
+            $ENV{MKDEBUG} && _d("Setting option $spec->{k} to $val");
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
+         $ENV{MKDEBUG} && _d("Parsing option $spec->{y} as a DSN");
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
+            $ENV{MKDEBUG} && _d("Option $spec->{y} DSN copies from option $from_key");
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -239,6 +253,7 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
+               $ENV{MKDEBUG} && _d("Setting option $spec->{y} to num * factor");
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -249,6 +264,7 @@ sub parse {
    }
 
    foreach my $spec ( grep { $_->{y} } @specs ) {
+      $ENV{MKDEBUG} && _d("Treating option $spec->{k} as a list");
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -391,6 +407,11 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# OptionParser:$line ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -398,7 +419,7 @@ sub groups {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1149
+# TableParser package 1348
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -412,14 +433,27 @@ sub new {
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
 
+   if ( ref $ddl eq 'ARRAY' ) {
+      if ( lc $ddl->[0] eq 'table' ) {
+         $ddl = $ddl->[1];
+      }
+      else {
+         return {
+            engine => 'VIEW',
+         };
+      }
+   }
+
    if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
       die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
 
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   $ENV{MKDEBUG} && _d('Columns: ' . join(', ', @cols));
 
    my %def_for;
    @def_for{@cols} = @defs;
@@ -435,7 +469,7 @@ sub parse {
          push @nums, $col;
          $is_numeric{$col} = 1;
       }
-      if ( $def !~ m/NOT NULL/ && $def !~ m/text$/ ) {
+      if ( $def !~ m/NOT NULL/ ) {
          push @null, $col;
          $is_nullable{$col} = 1;
       }
@@ -462,6 +496,7 @@ sub parse {
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
       my @cols   = grep { m/[^,]/ } split('`', $cols);
       $name      =~ s/`//g;
+      $ENV{MKDEBUG} && _d("Index $name columns: " . join(', ', @cols));
 
       $keys{$name} = {
          colnames    => $cols,
@@ -470,6 +505,7 @@ sub parse {
          is_col      => { map { $_ => 1 } @cols },
          is_nullable => scalar(grep { $is_nullable{$_} } @cols),
          type        => $type,
+         name        => $name,
       };
    }
 
@@ -489,17 +525,72 @@ sub parse {
    };
 }
 
-sub get_ddl {
-   my ( $self, $dbh, $db, $tbl ) = @_;
-   $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
-      . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
-      . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-      . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-   my $href = $dbh->selectrow_hashref("SHOW CREATE TABLE `$db`.`$tbl`");
-   $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-      . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
-   my ($key) = grep { m/create table/i } keys %$href;
-   return $href->{$key};
+sub sort_indexes {
+   my ( $self, $tbl ) = @_;
+   my @indexes
+      = sort {
+         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
+         || ( !$tbl->{keys}->{$a}->{unique} <=> !$tbl->{keys}->{$b}->{unique} )
+         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
+         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
+      }
+      grep {
+         $tbl->{keys}->{$_}->{type} eq 'BTREE'
+      }
+      sort keys %{$tbl->{keys}};
+   $ENV{MKDEBUG} && _d('Indexes sorted best-first: ' . join(', ', @indexes));
+   return @indexes;
+}
+
+sub find_best_index {
+   my ( $self, $tbl, $index ) = @_;
+   my $best;
+   if ( $index ) {
+      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
+   }
+   if ( !$best ) {
+      if ( $index ) {
+         die "Index '$index' does not exist in table";
+      }
+      else {
+         ($best) = $self->sort_indexes($tbl);
+      }
+   }
+   $ENV{MKDEBUG} && _d("Best index found is " . ($index || 'undef'));
+   return $best;
+}
+
+sub find_possible_keys {
+   my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
+   return () unless $where;
+   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
+      . ' WHERE ' . $where;
+   $ENV{MKDEBUG} && _d($sql);
+   my $expl = $dbh->selectrow_hashref($sql);
+   $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
+   if ( $expl->{possible_keys} ) {
+      $ENV{MKDEBUG} && _d("possible_keys=$expl->{possible_keys}");
+      my @candidates = split(',', $expl->{possible_keys});
+      my %possible   = map { $_ => 1 } @candidates;
+      if ( $expl->{key} ) {
+         $ENV{MKDEBUG} && _d("MySQL chose $expl->{key}");
+         unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
+         $ENV{MKDEBUG} && _d('Before deduping: ' . join(', ', @candidates));
+         my %seen;
+         @candidates = grep { !$seen{$_}++ } @candidates;
+      }
+      $ENV{MKDEBUG} && _d('Final list: ' . join(', ', @candidates));
+      return @candidates;
+   }
+   else {
+      $ENV{MKDEBUG} && _d('No keys in possible_keys');
+      return ();
+   }
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableParser:$line ", @_, "\n";
 }
 
 1;
@@ -509,7 +600,7 @@ sub get_ddl {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1149
+# DSNParser package 1345
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -558,6 +649,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
+      $ENV{MKDEBUG} && _d('Adding extra property ' . $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -566,6 +658,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
+      $ENV{MKDEBUG} && _d("Setting $prop property");
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -573,29 +666,35 @@ sub prop {
 
 sub parse {
    my ( $self, $dsn, $prev, $defaults ) = @_;
-   return unless $dsn;
+   if ( !$dsn ) {
+      $ENV{MKDEBUG} && _d('No DSN to parse');
+      return;
+   }
+   $ENV{MKDEBUG} && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
    my %vals;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
-      $vals{ $self->prop('autokey') } = $dsn;
+   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
+      $ENV{MKDEBUG} && _d("Interpreting $dsn as $p=$dsn");
+      $dsn = "$p=$dsn";
    }
-   else {
-      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-      foreach my $key ( keys %opts ) {
-         $vals{$key} = $hash{$key};
-         if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-            $vals{$key} = $prev->{$key};
-         }
-         if ( !defined $vals{$key} ) {
-            $vals{$key} = $defaults->{$key};
-         }
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   foreach my $key ( keys %opts ) {
+      $ENV{MKDEBUG} && _d("Finding value for $key");
+      $vals{$key} = $hash{$key};
+      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+         $vals{$key} = $prev->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from previous DSN");
       }
-      foreach my $key ( keys %hash ) {
-         die "Unrecognized DSN part '$key' in '$dsn'\n"
-            unless exists $opts{$key};
+      if ( !defined $vals{$key} ) {
+         $vals{$key} = $defaults->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from defaults");
       }
+   }
+   foreach my $key ( keys %hash ) {
+      die "Unrecognized DSN part '$key' in '$dsn'\n"
+         unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
@@ -608,7 +707,10 @@ sub parse {
 sub as_string {
    my ( $self, $dsn ) = @_;
    return $dsn unless ref $dsn;
-   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} } sort keys %$dsn );
+   return join(',',
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      sort keys %$dsn );
 }
 
 sub usage {
@@ -648,7 +750,13 @@ sub get_cxn_params {
                      qw(F h P S))
          . ';mysql_read_default_group=mysql';
    }
+   $ENV{MKDEBUG} && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# DSNParser:$line ", @_, "\n";
 }
 
 1;
@@ -658,7 +766,7 @@ sub get_cxn_params {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 1149
+# VersionParser package 1344
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -672,14 +780,25 @@ sub new {
 
 sub parse {
    my ( $self, $str ) = @_;
-   return sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+   my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+   $ENV{MKDEBUG} && _d("$str parses to $result");
+   return $result;
 }
 
 sub version_ge {
    my ( $self, $dbh, $target ) = @_;
-   $self->{$dbh} ||= $self->parse(
-      $dbh->selectrow_array('SELECT VERSION()'));
-   return $self->{$dbh} ge $self->parse($target);
+   if ( !$self->{$dbh} ) {
+      $self->{$dbh} = $self->parse(
+         $dbh->selectrow_array('SELECT VERSION()'));
+   }
+   my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
+   $ENV{MKDEBUG} && _d("$self->{$dbh} ge $target: $result");
+   return $result;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# VersionParser:$line ", @_, "\n";
 }
 
 1;
@@ -689,7 +808,7 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 1149
+# Quoter package 1339
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -709,6 +828,21 @@ sub quote {
    return join('.', map { '`' . $_ . '`' } @vals);
 }
 
+sub quote_val {
+   my ( $self, @vals ) = @_;
+   return join(', ',
+      map {
+         if ( defined $_ ) {
+            $_ =~ s/'/\\'/g;
+            $_ =~ m/\D/ ? "'$_'" : $_;
+         }
+         else {
+            'NULL';
+         }
+      } @vals
+   );
+}
+
 1;
 
 # ###########################################################################
@@ -716,7 +850,7 @@ sub quote {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 1149
+# TableNibbler package 1348
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -727,57 +861,25 @@ sub new {
    bless {}, shift;
 }
 
-sub sort_indexes {
-   my ( $self, $tbl ) = @_;
-   my @indexes
-      = sort {
-         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
-         || ( !$tbl->{keys}->{$a}->{unique} <=> !$tbl->{keys}->{$b}->{unique} )
-         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
-         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
-      }
-      grep {
-         $tbl->{keys}->{$_}->{type} eq 'BTREE'
-      }
-      sort keys %{$tbl->{keys}};
-   return @indexes;
-}
-
-sub find_best_index {
-   my ( $self, $tbl, $index ) = @_;
-   my $best;
-   if ( $index ) {
-      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
-   }
-   if ( !$best ) {
-      if ( $index ) {
-         die "Index '$index' does not exist in table";
-      }
-      else {
-         ($best) = $self->sort_indexes($tbl);
-         if ( !$best ) {
-            die "Cannot find an ascendable index in table";
-         }
-      }
-   }
-   return $best;
-}
-
 sub generate_asc_stmt {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
 
-   my $tbl  = $opts{tbl};
-   my @cols = $opts{cols} ? @{$opts{cols}} : @{$tbl->{cols}};
-   my $q    = $opts{quoter};
+   my $tbl  = $args{tbl};
+   my @cols = $args{cols} ? @{$args{cols}} : @{$tbl->{cols}};
+   my $q    = $args{quoter};
 
    my @asc_cols;
    my @asc_slice;
 
-   my $index = $self->find_best_index($tbl, $opts{index});
+   my $index = $args{parser}->find_best_index($tbl, $args{index});
+   die "Cannot find an ascendable index in table" unless $index;
 
    @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
-   if ( $opts{ascfirst} ) {
+   $ENV{MKDEBUG} && _d("Will ascend index $index");
+   $ENV{MKDEBUG} && _d("Will ascend columns " . join(', ', @asc_cols));
+   if ( $args{ascfirst} ) {
       @asc_cols = $asc_cols[0];
+      $ENV{MKDEBUG} && _d("Ascending only first column");
    }
 
    my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
@@ -788,6 +890,8 @@ sub generate_asc_stmt {
       }
       push @asc_slice, $col_posn{$col};
    }
+   $ENV{MKDEBUG}
+      && _d('Will ascend, in ordinal position: ' . join(', ', @asc_slice));
 
    my $asc_stmt = {
       cols  => \@cols,
@@ -823,7 +927,7 @@ sub generate_asc_stmt {
          my $quo = $q->quote($col);
          my $end = $i == $#asc_slice; # Last clause of the whole group.
          if ( $tbl->{is_nullable}->{$col} ) {
-            if ( !$opts{asconly} && $end ) {
+            if ( !$args{asconly} && $end ) {
                push @clause, "(? IS NULL OR $quo >= ?)";
             }
             else {
@@ -835,7 +939,7 @@ sub generate_asc_stmt {
          else {
             push @{$asc_stmt->{slice}}, $ord;
             push @{$asc_stmt->{scols}}, $col;
-            push @clause, (!$opts{asconly} && $end ? "$quo >= ?" : "$quo > ?");
+            push @clause, (!$args{asconly} && $end ? "$quo >= ?" : "$quo > ?");
          }
 
          push @clauses, '(' . join(' AND ', @clause) . ')';
@@ -847,16 +951,17 @@ sub generate_asc_stmt {
 }
 
 sub generate_del_stmt {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
 
-   my $tbl  = $opts{tbl};
-   my @cols = $opts{cols} ? @{$opts{cols}} : ();
-   my $q    = $opts{quoter};
+   my $tbl  = $args{tbl};
+   my @cols = $args{cols} ? @{$args{cols}} : ();
+   my $q    = $args{quoter};
 
    my @del_cols;
    my @del_slice;
 
-   my $index = $self->find_best_index($tbl, $opts{index});
+   my $index = $args{parser}->find_best_index($tbl, $args{index});
+   die "Cannot find an ascendable index in table" unless $index;
 
    if ( $index ) {
       @del_cols = @{$tbl->{keys}->{$index}->{cols}};
@@ -864,6 +969,7 @@ sub generate_del_stmt {
    else {
       @del_cols = @{$tbl->{cols}};
    }
+   $ENV{MKDEBUG} && _d('Columns needed for DELETE: ' . join(', ', @del_cols));
 
    my %col_posn = do { my $i = 0; map { $_ => $i++ } @cols };
    foreach my $col ( @del_cols ) {
@@ -873,6 +979,7 @@ sub generate_del_stmt {
       }
       push @del_slice, $col_posn{$col};
    }
+   $ENV{MKDEBUG} && _d('Ordinals needed for DELETE: ' . join(', ', @del_slice));
 
    my $del_stmt = {
       cols  => \@cols,
@@ -905,10 +1012,10 @@ sub generate_del_stmt {
 }
 
 sub generate_ins_stmt {
-   my ( $self, %opts ) = @_;
+   my ( $self, %args ) = @_;
 
-   my $tbl  = $opts{tbl};
-   my @cols = @{$opts{cols}};
+   my $tbl  = $args{tbl};
+   my @cols = @{$args{cols}};
 
    die "You didn't specify any columns" unless @cols;
 
@@ -931,10 +1038,200 @@ sub generate_ins_stmt {
    return $ins_stmt;
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableNibbler:$line ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
 # End TableNibbler package
+# ###########################################################################
+
+# ###########################################################################
+# MySQLDump package 1238
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MySQLDump;
+
+use English qw(-no_match_vars);
+
+( our $before = <<'EOF') =~ s/^   //gm;
+   /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+   /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+   /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+   /*!40101 SET NAMES utf8 */;
+   /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+   /*!40103 SET TIME_ZONE='+00:00' */;
+   /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+   /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+   /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+   /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+EOF
+
+( our $after = <<'EOF') =~ s/^   //gm;
+   /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+   /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+   /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+   /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+   /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+   /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+   /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+   /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+EOF
+
+sub new {
+   my ( $class ) = @_;
+   my $self = bless {}, $class;
+   return $self;
+}
+
+sub dump {
+   my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
+
+   if ( $what eq 'table' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      if ( $ddl->[0] eq 'table' ) {
+         return $before
+            . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . $ddl->[1] . ";\n";
+      }
+      else {
+         return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . '/*!50001 DROP VIEW IF EXISTS '
+            . $quoter->quote($tbl) . "*/;\n/*!50001 "
+            . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
+      }
+   }
+   elsif ( $what eq 'triggers' ) {
+      my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
+      if ( $trgs && @$trgs ) {
+         my $result = $before . "\nDELIMITER ;;\n";
+         foreach my $trg ( @$trgs ) {
+            if ( $trg->{sql_mode} ) {
+               $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
+            }
+            $result .= "/*!50003 CREATE */ ";
+            if ( $trg->{definer} ) {
+               my ( $user, $host )
+                  = map { s/'/''/g; "'$_'"; }
+                    split('@', $trg->{definer}, 2);
+               $result .= "/*!50017 DEFINER=$user\@$host */ ";
+            }
+            $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
+               $quoter->quote($trg->{trigger}),
+               @{$trg}{qw(timing event)},
+               $quoter->quote($trg->{table}),
+               $trg->{statement});
+         }
+         $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
+         return $result;
+      }
+      else {
+         return undef;
+      }
+   }
+   elsif ( $what eq 'view' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 ' . $ddl->[1] . "*/;\n";
+   }
+   else {
+      die "You didn't say what to dump.";
+   }
+}
+
+sub get_create_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{tables}->{$db}->{$tbl} ) {
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $href = $dbh->selectrow_hashref(
+         "SHOW CREATE TABLE "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl)
+      );
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+      my ($key) = grep { m/create table/i } keys %$href;
+      if ( $key ) {
+         $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
+      }
+      else {
+         ($key) = grep { m/create view/i } keys %$href;
+         $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
+      }
+   }
+   return $self->{tables}->{$db}->{$tbl};
+}
+
+sub get_columns {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{columns}->{$db}->{$tbl} ) {
+      my $cols = $dbh->selectall_arrayref(
+         "SHOW COLUMNS FROM "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl),
+         { Slice => {} }
+      );
+      $self->{columns}->{$db}->{$tbl} = [
+         map {
+            my %row;
+            @row{ map { lc $_ } keys %$_ } = values %$_;
+            \%row;
+         } @$cols
+      ];
+   }
+   return $self->{columns}->{$db}->{$tbl};
+}
+
+sub get_tmp_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
+   $result .= join(",\n",
+      map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
+      @{$self->get_columns($dbh, $quoter, $db, $tbl)});
+   $result .= "\n)";
+}
+
+sub get_triggers {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{triggers}->{$db} ) {
+      $self->{triggers}->{$db} = {};
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $trgs = $dbh->selectall_arrayref(
+         "SHOW TRIGGERS FROM " . $quoter->quote($db),
+         { Slice => {} }
+      );
+      foreach my $trg ( @$trgs ) {
+         # Lowercase the hash keys because the NAME_lc property might be set
+         # on the $dbh, so the lettercase is unpredictable.  This makes them
+         # predictable.
+         my %trg;
+         @trg{ map { lc $_ } keys %$trg } = values %$trg;
+         push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
+      }
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+   }
+   return $self->{triggers}->{$db}->{$tbl};
+}
+
+1;
+
+# ###########################################################################
+# End MySQLDump package
 # ###########################################################################
 
 # ###########################################################################
@@ -1118,6 +1415,7 @@ if ( !caller ) {
    # ############################################################################
 
    my $tp = new TableParser;
+   my $du = new MySQLDump;
    foreach my $table ( grep { $_ } ($src, $dst) ) {
       my $dbh        = get_dbh($table);
       $table->{dbh}  = $dbh;
@@ -1148,7 +1446,7 @@ if ( !caller ) {
       }
 
       $table->{info} = $tp->parse(
-         $tp->get_ddl($dbh, $table->{D}, $table->{t}));
+         $du->get_create_table($dbh, $q, $table->{D}, $table->{t}));
    }
 
    if ( $dst && $opts{C} ) {
@@ -1183,6 +1481,7 @@ if ( !caller ) {
                 :            @{$src->{info}->{cols}};                   # All
 
    $del_stmt = $nibbler->generate_del_stmt(
+      parser => $tp,
       tbl    => $src->{info},
       cols   => \@sel_cols,
       quoter => $q,
@@ -1193,6 +1492,7 @@ if ( !caller ) {
    # Generate statement for ascending index, if desired
    if ( $opts{N} ) {
       $sel_stmt = $nibbler->generate_asc_stmt(
+         parser   => $tp,
          tbl      => $src->{info},
          cols     => $del_stmt->{cols},
          index    => $del_stmt->{index},
@@ -2310,6 +2610,13 @@ A sample module might look like this:
    sub after_finish  {} # Take no action
    
    1;
+
+=head1 ENVIRONMENT
+
+The environment variable MKDEBUG enables verbose debugging output in all of the
+Maatkit tools:
+
+   MKDEBUG=1 mk-....
 
 =head1 SYSTEM REQUIREMENTS
 

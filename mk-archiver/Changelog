@@ -1,5 +1,9 @@
 Changelog for mk-archiver:
 
+2007-12-06: version 1.0.4
+
+   * Updated modules for compatibility with changes made to mk-table-sync.
+
 2007-11-12: version 1.0.3
 
    * The --no-ascend option caused too many bind variables to be used.
