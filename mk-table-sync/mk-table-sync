@@ -1732,7 +1732,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1356
+# TableChecksum package 1362
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2022,8 +2022,10 @@ sub check_server {
          @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
 
       foreach my $slave ( @slaves ) {
-         my $dsn = $args->{dsn_parser}->parse(
-             "h=$slave->{host},P=$slave->{port}", $args->{dsn});
+         my $spec = "h=$slave->{host},P=$slave->{port}"
+            . ( $slave->{user} ? ",u=$slave->{user}" : '')
+            . ( $slave->{password} ? ",p=$slave->{password}" : '');
+         my $dsn = $args->{dsn_parser}->parse($spec, $args->{dsn});
          $dsn->{server_id} = $slave->{server_id};
          $ENV{MKDEBUG} && _d('Recursing from '
             . $args->{dsn_parser}->as_string($args->{dsn})
@@ -2239,7 +2241,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1360
+# TableSyncer package 1363
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2386,7 +2388,7 @@ sub sync_table {
       }
    }
 
-   return $ch->get_changes();
+   return ($ch->get_changes(), ALGORITHM => $args{algorithm});
 }
 
 sub check_permissions {
@@ -2954,6 +2956,7 @@ my $dsn_parser = new DSNParser(
       copy => 1,
    },
 );
+$dsn_parser->prop('autokey', 'h');
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{dsn}    = $dsn_parser;
 $opt_parser->{strict} = 0;
@@ -2991,12 +2994,8 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 # Do the work.
 # ############################################################################
-my $exit_status = 0;
-
-if ( $opts{v} ) {
-   printf("# %6s %6s %6s %s.%s\n",
-      @ChangeHandler::ACTIONS, qw(DATABASE TABLE));
-}
+my $exit_status = 0; # 1: internal error, 2: tables differed, 3: both
+my $hdr         = "# %6s %6s %6s %-9s %s.%s\n";
 
 if ( $dsns[0]->{t} ) {
    $ENV{MKDEBUG} && _d('DSN has t part; syncing ONE TABLE between servers');
@@ -3020,6 +3019,12 @@ if ( $dsns[0]->{t} ) {
    }
 
    foreach my $dsn ( @dsns[1 .. $#dsns] ) {
+
+      if ( $opts{v} ) {
+         print "# Syncing ", $dsn_parser->as_string($dsn), "\n";
+         printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
+      }
+
       sync_a_table(
          src     => $dsns[0],
          src_db  => $dsns[0]->{D},
@@ -3032,6 +3037,10 @@ if ( $dsns[0]->{t} ) {
    }
 }
 elsif ( $opts{R} ) {
+
+   if ( @dsns > 1 ) {
+      die "You should specify only one DSN with --replicate\n";
+   }
 
    # Connect to the master and treat it as the source, then find differences on
    # the slave and sync them.
@@ -3066,8 +3075,12 @@ elsif ( $opts{R} ) {
             table      => $opts{R},
             callback   => sub {
                my ( $dsn, $dbh, $level, @diffs ) = @_;
+               @diffs = grep { !$skip_table{$_->{db}}->{$_->{tbl}} } @diffs;
+               if ( $opts{v} ) {
+                  print "# Syncing ", $dsn_parser->as_string($dsn), "\n";
+                  printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
+               }
                foreach my $diff ( @diffs ) {
-                  next if $skip_table{$diff->{db}}->{$diff->{tbl}};
                   sync_a_table(
                      src     => $dsns[0],
                      src_db  => $diff->{db},
@@ -3102,19 +3115,23 @@ elsif ( $opts{R} ) {
                   $dsn->{dbh} ||= $dbh;
                   push @dsns, $dsn;
                }
-               foreach my $diff ( @diffs ) {
-                  if ( !$level ) {
-                     $skip_table{$diff->{db}}->{$diff->{tbl}}++;
+               if ( !$level ) {
+                  map { $skip_table{$_->{db}}->{$_->{tbl}}++ } @diffs;
+               }
+               else {
+                  @diffs = grep { !$skip_table{$_->{db}}->{$_->{tbl}} } @diffs;
+                  if ( $opts{v} ) {
+                     print "# Syncing ", $dsn_parser->as_string($dsn), "\n";
+                     printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
                   }
-                  else {
-                     next if $skip_table{$diff->{db}}->{$diff->{tbl}};
+                  foreach my $diff ( @diffs ) {
                      sync_a_table(
                         src     => $dsns[0],
                         src_db  => $diff->{db},
-                        src_tbl => $diff->{table},
-                        dst     => $dsns[1],
+                        src_tbl => $diff->{tbl},
+                        dst     => $dsn,
                         dst_db  => $diff->{db},
-                        dst_tbl => $diff->{table},
+                        dst_tbl => $diff->{tbl},
                         where   => $diff->{boundaries},
                      );
                   }
@@ -3148,25 +3165,24 @@ else {
       },
    );
 
-   DATABASE:
-   foreach my $database ( $finder->find_databases() ) {
-      foreach my $table ( $finder->find_tables(database => $database) ) {
-         foreach my $dsn ( @dsns[ 1 .. $#dsns ] ) {
-            eval {
-               sync_a_table(
-                  src     => $dsns[0],
-                  src_db  => $database,
-                  src_tbl => $table,
-                  dst     => $dsn,
-                  dst_db  => $database,
-                  dst_tbl => $table,
-                  where   => $opts{W},
-               );
-            };
-            if ( $EVAL_ERROR ) {
-               print_err($EVAL_ERROR, $database, $table, $dsn->{h} );
-               $exit_status = 1;
-            }
+   foreach my $dsn ( @dsns[ 1 .. $#dsns ] ) {
+
+      if ( $opts{v} ) {
+         print "# Syncing ", $dsn_parser->as_string($dsn), "\n";
+         printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
+      }
+
+      foreach my $database ( $finder->find_databases() ) {
+         foreach my $table ( $finder->find_tables(database => $database) ) {
+            sync_a_table(
+               src     => $dsns[0],
+               src_db  => $database,
+               src_tbl => $table,
+               dst     => $dsn,
+               dst_db  => $database,
+               dst_tbl => $table,
+               where   => $opts{W},
+            );
          }
       }
    }
@@ -3175,48 +3191,60 @@ else {
 sub sync_a_table {
    my (%args) = @_;
 
-   # Open connections as needed.
-   $args{src}->{dbh}      ||= get_dbh($args{src});
-   $args{dst}->{dbh}      ||= get_dbh($args{dst});
-   $args{src}->{misc_dbh} ||= get_dbh($args{src});
+   eval {
+      # Open connections as needed.
+      $args{src}->{dbh}      ||= get_dbh($args{src});
+      $args{dst}->{dbh}      ||= get_dbh($args{dst});
+      $args{src}->{misc_dbh} ||= get_dbh($args{src});
 
-   my $tbl_struct = $tp->parse(
-      $du->get_create_table($args{src}->{dbh}, $q, @args{qw(src_db src_tbl)}));
-   my @possible_keys = $tp->find_possible_keys(
-      $args{src}->{dbh}, @args{qw(src_db src_tbl)}, $q, $opts{W});
+      my $tbl_struct = $tp->parse(
+         $du->get_create_table($args{src}->{dbh}, $q, @args{qw(src_db src_tbl)}));
+      my @possible_keys = $tp->find_possible_keys(
+         $args{src}->{dbh}, @args{qw(src_db src_tbl)}, $q, $opts{W});
 
-   my %status = $syncer->sync_table(
-      algorithm     => $opts{a} || '',
-      buffer        => $opts{bufferresults} ? 1 : 0,
-      checksum      => $checksum,
-      chunker       => $chunker,
-      chunksize     => $opts{chunksize},
-      cols          => $opts{c} || $tbl_struct->{cols},
-      dst_db        => $args{dst_db},
-      dst_dbh       => $args{dst}->{dbh},
-      dst_tbl       => $args{dst_tbl},
-      execute       => $opts{x} ? 1 : 0,
-      lock          => $opts{k} ? 1 : 0,
-      misc_dbh      => $args{src}->{misc_dbh},
-      nibbler       => $nibbler,
-      possible_keys => \@possible_keys,
-      parser        => $tp,
-      print         => $opts{p} ? 1 : 0,
-      quoter        => $q,
-      replicate     => ($opts{R} || $opts{s}) ? 1 : 0,
-      src_db        => $args{src_db},
-      src_dbh       => $args{src}->{dbh},
-      src_tbl       => $args{src_tbl},
-      tbl_struct    => $tbl_struct,
-      timeoutok     => $opts{timeoutok} ? 1 : 0,
-      versionparser => $vp,
-      wait          => $opts{w} ? 1 : 0,
-      where         => $args{where} || '',
-   );
+      my %status = $syncer->sync_table(
+         algorithm     => $opts{a} || '',
+         buffer        => $opts{bufferresults} ? 1 : 0,
+         checksum      => $checksum,
+         chunker       => $chunker,
+         chunksize     => $opts{chunksize},
+         cols          => $opts{c} || $tbl_struct->{cols},
+         dst_db        => $args{dst_db},
+         dst_dbh       => $args{dst}->{dbh},
+         dst_tbl       => $args{dst_tbl},
+         execute       => $opts{x} ? 1 : 0,
+         lock          => $opts{k} ? 1 : 0,
+         misc_dbh      => $args{src}->{misc_dbh},
+         nibbler       => $nibbler,
+         possible_keys => \@possible_keys,
+         parser        => $tp,
+         print         => $opts{p} ? 1 : 0,
+         quoter        => $q,
+         replicate     => ($opts{R} || $opts{s}) ? 1 : 0,
+         src_db        => $args{src_db},
+         src_dbh       => $args{src}->{dbh},
+         src_tbl       => $args{src_tbl},
+         tbl_struct    => $tbl_struct,
+         timeoutok     => $opts{timeoutok} ? 1 : 0,
+         versionparser => $vp,
+         wait          => $opts{w} ? 1 : 0,
+         where         => $args{where} || '',
+      );
 
-   if ( $opts{v} ) {
-      printf("# %6d %6d %6d %s.%s\n",
-         @status{@ChangeHandler::ACTIONS}, @args{qw(src_db src_tbl)});
+      if ( $opts{v} ) {
+         printf($hdr,
+            @status{@ChangeHandler::ACTIONS, 'ALGORITHM'},
+            @args{qw(src_db src_tbl)});
+      }
+
+      if ( sum(@status{@ChangeHandler::ACTIONS}) ) {
+         $exit_status |= 2;
+      }
+   };
+
+   if ( $EVAL_ERROR ) {
+      print_err($EVAL_ERROR, @args{qw(dst_db dst_tbl)}, $args{dst_dsn}->{h} );
+      $exit_status |= 1;
    }
 }
 
@@ -3320,6 +3348,20 @@ To compare two tables, try one of these:
 To sync the destination to the source, try
 
  mk-table-sync -x -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
+
+   if DSN->t, sync only that table:
+      if 1 DSN:
+         if --synctomaster:
+            connect to master and sync
+      if more than 1 DSN:
+         Assume the first is the master and sync each slave in turn
+   else if --replicate:
+      if --synctomaster:
+         connect to master, find bad chunks and fix
+      else:
+         find slaves and connect to each, find bad chunks, and fix
+   else:
+      find tables, filtering with --databases etc, and sync each DSN
 
 To show the differences between the tables, use the L<"--verbose"> option.
 Issue this option multiple times for more detail.  To see queries that will
