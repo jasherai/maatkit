@@ -4,29 +4,73 @@ use strict;
 use warnings FATAL => 'all';
 
 use Test::More tests => 4;
+use DBI;
 
 my $opt_file = shift || "~/.my.cnf";
 my ( $output );
+my $dbh;
 
-`mysql --defaults-file=$opt_file < before.sql`;
+sub query {
+   $dbh->selectall_arrayref(@_, {Slice => {}});
+}
 
-$output = `perl ~/bin/mk-table-sync D=test,t=test1 t=test2 -a Stream --print --execute`;
-is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
-INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');
-", 'Basic Stream sync');
+sub run {
+   my ($src, $dst, $other) = @_;
+   my $cmd = "perl ../mk-table-sync -px D=test,t=$src t=$dst $other";
+   chomp(my $output=`$cmd`);
+   return $output;
+}
 
-$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.test2"`;
-is($output + 0, 2, 'Synced OK with Stream');
+# Open a connection to MySQL, or skip the rest of the tests.
+eval {
+   $dbh = DBI->connect(
+   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
+   { PrintError => 0, RaiseError => 1 })
+};
+SKIP: { skip 'Cannot connect to MySQL', 1 unless $dbh;
 
-`mysql --defaults-file=$opt_file < before.sql`;
+   `mysql --defaults-file=$opt_file < before.sql`;
 
-$output = `perl ~/bin/mk-table-sync D=test,t=test1 t=test2 -a Chunk --print --execute`;
-is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
-INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');
-", 'Basic Chunk sync');
+   $output = run('test1', 'test2', '-a Stream');
+   is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Stream sync');
 
-$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.test2"`;
-is($output + 0, 2, 'Synced OK with Chunk');
+   is_deeply(
+      query('select * from test.test2'),
+      [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
+      'Synced OK with Stream'
+   );
+
+   `mysql --defaults-file=$opt_file < before.sql`;
+
+   $output = run('test1', 'test2', '-a Chunk');
+   is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
+
+   is_deeply(
+      query('select * from test.test2'),
+      [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
+      'Synced OK with Stream'
+   );
+
+# TODO: do a test run for all possible combinations of these:
+=pod
+   my %args = (
+      lock => [qw(1 2 3)],
+      transaction => [''],
+      algorithm => [qw(Stream Chunk)],
+      bufferresults => [''],
+      columns => [qw(b)],
+      replace => [''],
+      skipbinlog => [''],
+      skipforeignkey => [''],
+      skipuniquekey   => [''],
+      verbose => [''],
+      wait => [''],
+      where => [qw('a>0')],
+   );
+   my @argkeys = sort keys %args;
+=cut
 
 # TODO Ensure wacky collations and callbacks to MySQL to compare collations don't
 # cause problems.
@@ -35,4 +79,6 @@ is($output + 0, 2, 'Synced OK with Chunk');
 #             . "INSERT INTO `test`.`test2`(`a`,`b`) VALUES('2','ca');\n";
 #is($output, $expected, "Funny characters got synced okay");
 
-`mysql --defaults-file=$opt_file < after.sql`;
+   `mysql --defaults-file=$opt_file < after.sql`;
+
+}
