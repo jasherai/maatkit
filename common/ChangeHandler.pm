@@ -24,8 +24,9 @@ package ChangeHandler;
 
 use English qw(-no_match_vars);
 
-my $DEFER_PAT = qr/Duplicate entry|Commands out of sync/;
-our @ACTIONS  = qw(DELETE INSERT UPDATE);
+my $DEFER_PAT = qr/Commands out of sync/;
+my $DUPE_KEY  = qr/Duplicate entry/;
+our @ACTIONS  = qw(DELETE REPLACE INSERT UPDATE);
 
 # Arguments:
 # * quoter     Quoter()
@@ -34,9 +35,10 @@ our @ACTIONS  = qw(DELETE INSERT UPDATE);
 # * sdatabase  source database name
 # * stable     source table name
 # * actions    arrayref of subroutines to call when handling a change.
+# * replace    Do UPDATE/INSERT as REPLACE.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(quoter database table sdatabase stable) ) {
+   foreach my $arg ( qw(quoter database table sdatabase stable replace) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $self = { %args, map { $_ => [] } @ACTIONS };
@@ -60,69 +62,91 @@ sub fetch_back {
 }
 
 sub take_action {
-   my ( $self, $sql ) = @_;
-   $ENV{MKDEBUG} && _d('Calling subroutines on ', $sql);
+   my ( $self, @sql ) = @_;
+   $ENV{MKDEBUG} && _d('Calling subroutines on ', @sql);
    foreach my $action ( @{$self->{actions}} ) {
-      $action->($sql);
+      $action->(@sql);
    }
 }
 
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
    $ENV{MKDEBUG} && _d("$action where ", $self->make_where_clause($row, $cols));
-   $self->{changes}->{$action}++;
-   if ( !$self->{queue} ) {
+   $self->{changes}->{$self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action}++;
+   if ( $self->{queue} ) {
+      $self->__queue($action, $row, $cols);
+   }
+   else {
       eval {
          my $func = "make_$action";
-         my $sql  = $self->$func($row, $cols);
-         $self->take_action($sql);
+         $self->take_action($self->$func($row, $cols));
       };
       if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
-         # TODO: index violations do not have to be queued, do they?  Note to
-         # self: try to prove that REPLACE can or cannot destroy data.
          $ENV{MKDEBUG} && _d('The DBH is busy; queueing further changes');
-         push @{$self->{$action}}, [ $row, $cols ];
          $self->{queue}++; # Defer further rows
+         $self->__queue($action, $row, $cols);
+      }
+      elsif ( $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
+         $ENV{MKDEBUG} && _d('Duplicate key violation; queueing and rewriting');
+         $self->{queue}++;
+         $self->{replace} = 1;
+         $self->__queue($action, $row, $cols);
       }
       elsif ( $EVAL_ERROR ) {
          die $EVAL_ERROR;
       }
    }
-   else {
-      $ENV{MKDEBUG} && _d('Queueing change for later');
-      push @{$self->{$action}}, [ $row, $cols ];
+}
+
+sub __queue {
+   my ( $self, $action, $row, $cols ) = @_;
+   $ENV{MKDEBUG} && _d('Queueing change for later');
+   if ( $self->{replace} ) {
+      $action = $action eq 'DELETE' ? $action : 'REPLACE';
    }
+   push @{$self->{$action}}, [ $row, $cols ];
 }
 
 # If called with 1, will process rows that have been deferred from instant
 # processing.  If no arg, will process all rows.
 sub process_rows {
    my ( $self, $queue_level ) = @_;
-   if ( $queue_level && $queue_level < $self->{queue} ) {
-      $ENV{MKDEBUG} && _d("Not processing now $queue_level<$self->{queue}");
-      return;
-   }
-   my ($row, $cur_act);
-   eval {
-      foreach my $action ( @ACTIONS ) {
-         my $func = "make_$action";
-         my $rows = $self->{$action};
-         $ENV{MKDEBUG} && _d(scalar(@$rows) . " to $action");
-         $cur_act = $action;
-         while ( @$rows ) {
-            $row = shift @$rows;
-            my $sql = $self->$func(@$row);
-            $self->take_action($sql);
-         }
+   my $error_count = 0;
+   TRY: {
+      if ( $queue_level && $queue_level < $self->{queue} ) { # see redo below!
+         $ENV{MKDEBUG} && _d("Not processing now $queue_level<$self->{queue}");
+         return;
       }
-   };
-   if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
-      unshift @{$self->{$cur_act}}, $row;
-      $ENV{MKDEBUG} && _d('The DBH is still busy; increasing queue level');
-      $self->{queue}++; # Defer rows to the very end
-   }
-   elsif ( $EVAL_ERROR ) {
-      die $EVAL_ERROR;
+
+      my ($row, $cur_act);
+      eval {
+         foreach my $action ( @ACTIONS ) {
+            my $func = "make_$action";
+            my $rows = $self->{$action};
+            $ENV{MKDEBUG} && _d(scalar(@$rows) . " to $action");
+            $cur_act = $action;
+            while ( @$rows ) {
+               $row = shift @$rows;
+               $self->take_action($self->$func(@$row));
+            }
+         }
+         $error_count = 0;
+      };
+      if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
+         unshift @{$self->{$cur_act}}, $row;
+         $ENV{MKDEBUG} && _d('The DBH is still busy; increasing queue level');
+         $self->{queue}++; # Defer rows to the very end
+      }
+      elsif ( !$error_count++ && $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
+         $ENV{MKDEBUG} && _d('Duplicate key violation; re-queueing and rewriting');
+         $self->{queue}++; # Defer rows to the very end
+         $self->{replace} = 1;
+         $self->__queue($cur_act, @$row);
+         redo TRY;
+      }
+      elsif ( $EVAL_ERROR ) {
+         die $EVAL_ERROR;
+      }
    }
 }
 
@@ -136,6 +160,9 @@ sub make_DELETE {
 
 sub make_UPDATE {
    my ( $self, $row, $cols ) = @_;
+   if ( $self->{replace} ) {
+      return $self->make_row('REPLACE', $row, $cols);
+   }
    my %in_where = map { $_ => 1 } @$cols;
    my $where = $self->make_where_clause($row, $cols);
    if ( my $dbh = $self->{fetch_back} ) {
@@ -158,6 +185,19 @@ sub make_UPDATE {
 
 sub make_INSERT {
    my ( $self, $row, $cols ) = @_;
+   if ( $self->{replace} ) {
+      return $self->make_row('REPLACE', $row, $cols);
+   }
+   return $self->make_row('INSERT', $row, $cols);
+}
+
+sub make_REPLACE {
+   my ( $self, $row, $cols ) = @_;
+   return $self->make_row('REPLACE', $row, $cols);
+}
+
+sub make_row {
+   my ( $self, $verb, $row, $cols ) = @_;
    my @cols = sort keys %$row;
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
@@ -167,7 +207,7 @@ sub make_INSERT {
       @{$row}{keys %$res} = values %$res;
       @cols = sort keys %$res;
    }
-   return "INSERT INTO $self->{db_tbl}("
+   return "$verb INTO $self->{db_tbl}("
       . join(', ', map { $self->{quoter}->quote($_) } @cols)
       . ') VALUES ('
       . $self->{quoter}->quote_val( @{$row}{@cols} )

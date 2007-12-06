@@ -57,8 +57,8 @@ sub sync_table {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
-      misc_dbh quoter replicate src_db src_dbh src_tbl tbl_struct timeoutok
-      versionparser wait where possible_keys cols) )
+      misc_dbh quoter replace replicate src_db src_dbh src_tbl tbl_struct
+      timeoutok versionparser wait where possible_keys cols) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -90,9 +90,12 @@ sub sync_table {
       table     => $args{dst_tbl},
       sdatabase => $args{src_db},
       stable    => $args{src_tbl},
+      replace   => $args{replace},
       actions   => [
-         ( $args{print} ? sub { print @_, ";\n" } : () ),
          ( $update_func ? $update_func            : () ),
+         # Print after executing, so the print isn't misleading in case of an
+         # index violation etc that doesn't actually get executed.
+         ( $args{print} ? sub { print @_, ";\n" } : () ),
       ],
    );
    my $rd = new RowDiff( dbh => $args{misc_dbh} );

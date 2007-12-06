@@ -70,7 +70,8 @@ my $ch = new ChangeHandler(
    table     => 'test1',
    sdatabase => 'test',
    stable    => 'test1',
-   actions   => [ sub { push @rows, @_ }, ]
+   replace   => 0,
+   actions   => [ sub { push @rows, @_ }, ],
 );
 
 my $t = new TableSyncChunk(
