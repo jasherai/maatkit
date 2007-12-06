@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 50;
+use Test::More tests => 48;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -38,7 +38,7 @@ my @specs = (
 my $p = new OptionParser(@specs);
 my %defaults = ( foo => 1 );
 my %opts;
-my %basic = ( debug => undef, version => undef, help => undef );
+my %basic = ( version => undef, help => undef );
 
 %opts = $p->parse(%defaults);
 is_deeply(
@@ -89,7 +89,6 @@ OptionParser.t' for complete documentation.
 Usage: OptionParser.t <options>
 
 Options:
-  --debug             Set ENV{MKDEBUG} and enable debugging output
   --defaults-file -F  alignment test
   --[no]defaultset    alignment test with a very long thing that is longer than
                       80 characters wide and must be wrapped
@@ -100,7 +99,6 @@ Options:
   --version           Output version information and exit
 
 Options and values after processing arguments:
-  --debug             FALSE
   --defaults-file     (No value)
   --defaultset        FALSE
   --dog               (No value)
@@ -125,14 +123,12 @@ Usage: OptionParser.t <options>
 
 Options:
   --database        -D  Specify the database for all tables
-  --debug               Set ENV{MKDEBUG} and enable debugging output
   --help                Show this help message
   --[no]nouniquechecks  Set UNIQUE_CHECKS=0 before LOAD DATA INFILE
   --version             Output version information and exit
 
 Options and values after processing arguments:
   --database            (No value)
-  --debug               FALSE
   --help                FALSE
   --nouniquechecks      FALSE
   --version             FALSE
@@ -192,7 +188,6 @@ OptionParser.t' for complete documentation.
 Usage: OptionParser.t <options>
 
 Options:
-  --debug       Set ENV{MKDEBUG} and enable debugging output
   --help        Show this help message
   --ignore  -i  Use IGNORE for INSERT statements
   --replace -r  Use REPLACE instead of INSERT statements
@@ -200,7 +195,6 @@ Options:
   --ignore and --replace are mutually exclusive.
 
 Options and values after processing arguments:
-  --debug       FALSE
   --help        FALSE
   --ignore      FALSE
   --replace     FALSE
@@ -461,7 +455,6 @@ Usage: OptionParser.t <options>
 
 Options:
   --bar      DSN bar
-  --debug    Set ENV{MKDEBUG} and enable debugging output
   --foo      DSN foo
   --help     Show this help message
   --version  Output version information and exit
@@ -480,7 +473,6 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
 
 Options and values after processing arguments:
   --bar      (No value)
-  --debug    FALSE
   --foo      (No value)
   --help     FALSE
   --version  FALSE
@@ -523,7 +515,6 @@ Usage: OptionParser.t <options>
 
 Options:
   --bar      DSN bar
-  --debug    Set ENV{MKDEBUG} and enable debugging output
   --foo      DSN foo
   --help     Show this help message
   --version  Output version information and exit
@@ -542,7 +533,6 @@ DSN syntax is key=value[,key=value...]  Allowable DSN keys:
 
 Options and values after processing arguments:
   --bar      D=DB,h=localhost,u=USER
-  --debug    FALSE
   --foo      D=DB,h=otherhost,u=USER
   --help     FALSE
   --version  FALSE
@@ -615,7 +605,6 @@ Options:
   --books     -b  Comma-separated list of books to output
   --columns   -C  Comma-separated list of columns to output
   --databases -d  Comma-separated list of databases to output
-  --debug         Set ENV{MKDEBUG} and enable debugging output
   --help          Show this help message
   --tables    -t  Comma-separated list of tables to output
   --version       Output version information and exit
@@ -624,7 +613,6 @@ Options and values after processing arguments:
   --books         o,p
   --columns       a,b
   --databases     f,g
-  --debug         FALSE
   --help          FALSE
   --tables        d,e
   --version       FALSE
@@ -652,7 +640,6 @@ Usage: OptionParser.t <options>
 
 Options:
   --columns   -C  Comma-separated list of columns to output
-  --debug         Set ENV{MKDEBUG} and enable debugging output
   --help          Show this help message
   --version       Output version information and exit
 
@@ -667,21 +654,9 @@ Options and values after processing arguments:
   --books         o,p
   --columns       a,b
   --databases     f,g
-  --debug         FALSE
   --help          FALSE
   --tables        d,e
   --version       FALSE
 EOF
 , 'Option groupings',
 );
-
-# Keep this one last because it sets $ENV{MKDEBUG}.
-$p = new OptionParser();
-@ARGV = qw(--debug);
-%opts = $p->parse();
-is_deeply(
-   \%opts,
-   { %basic, debug => 1, },
-   'Debug'
-);
-ok($ENV{MKDEBUG}, 'ENV{MKDEBUG} set by --debug');

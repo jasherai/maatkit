@@ -60,7 +60,6 @@ sub new {
    my %disables;
    my %copyfrom;
    unshift @opts,
-      { s => 'debug',   d => 'Set ENV{MKDEBUG} and enable debugging output' },
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
    foreach my $opt ( @opts ) {
@@ -196,10 +195,6 @@ sub parse {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
          $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
       exit(0);
-   }
-
-   if ( $vals{debug} ) {
-      $ENV{MKDEBUG} = 1;
    }
 
    if ( @ARGV && $self->{strict} ) {
