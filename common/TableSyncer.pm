@@ -168,7 +168,7 @@ sub sync_table {
       }
    }
 
-   return $ch->get_changes();
+   return ($ch->get_changes(), ALGORITHM => $args{algorithm});
 }
 
 sub check_permissions {
