@@ -1,5 +1,13 @@
 Changelog for mk-table-sync:
 
+2007-12-06: version 1.0.0
+
+   * Complete rewrite.
+   * Syncs multiple tables and servers
+   * Has no top-down or bottom-up algorithms
+   * Integrates with mk-table-checksum results
+   * Fixes many bugs, probably introduces new ones
+
 2007-11-12: version 0.9.9
 
    * DSN parsing was broken when --synctomaster was given with one DSN.
