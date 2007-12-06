@@ -31,7 +31,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
-   plan tests => 17;
+   plan tests => 20;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -182,9 +182,11 @@ $t->same_row(
    { chunk_num => 0, cnt => 0, crc => 'abc' },
    { chunk_num => 0, cnt => 1, crc => 'abc' },
 );
+ok($t->pending_changes(), 'Pending changes found');
 is($t->{state}, 1, 'Working inside chunk');
 $t->done_with_rows();
 is($t->{state}, 2, 'Now in state to fetch individual rows');
+ok($t->pending_changes(), 'Pending changes not done yet');
 is($t->get_sql(database => 'test', table => 'test1'),
    "SELECT `a`, SHA1(CONCAT_WS('#', `a`, `b`)) AS __crc FROM "
       . "`test`.`test1` WHERE (`a` < 3)",
@@ -234,3 +236,4 @@ is_deeply(\@rows,
 
 $t->done_with_rows();
 is($t->{state}, 0, 'Now not working inside chunk');
+is($t->pending_changes(), 0, 'No pending changes');

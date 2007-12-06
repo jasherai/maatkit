@@ -58,7 +58,7 @@ sub sync_table {
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl tbl_struct
-      timeoutok versionparser wait where possible_keys cols) )
+      timeoutok transaction versionparser wait where possible_keys cols) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -70,8 +70,8 @@ sub sync_table {
    # TODO: for two-way sync, the change handler needs both DBHs.
    # Check permissions on writable tables (TODO: 2-way needs to check both)
    my $update_func;
+   my $change_dbh;
    if ( $args{execute} ) {
-      my $change_dbh;
       if ( $args{replicate} ) {
          $change_dbh = $args{src_dbh};
          $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
@@ -120,11 +120,17 @@ sub sync_table {
       possible_keys => [],
    );
 
+   $self->lock_and_wait(%args, lock_level => 2);
+
    my $cycle = 0;
    while ( !$plugin->done ) {
 
-      # The first cycle is a per-table lock; any others are per-cycle
-      $self->lock_and_wait(%args, lock_level => $cycle ? 1 : 2);
+      # The first cycle should lock to begin work; after that, unlock only if
+      # the plugin says it's OK (it may want to dig deeper on the rows it
+      # currently has locked).
+      if ( !$cycle || !$plugin->pending_changes() ) {
+         $self->lock_and_wait(%args, lock_level => 1);
+      }
 
       $ENV{MKDEBUG} && _d("Beginning sync cycle $cycle");
       my $src_sql = $plugin->get_sql(
@@ -139,6 +145,17 @@ sub sync_table {
          table    => $args{dst_tbl},
          where    => $args{where},
       );
+      if ( $args{transaction} ) {
+         # TODO: update this for 2-way sync.
+         if ( $change_dbh eq $args{src_dbh} ) {
+            $src_sql .= ' FOR UPDATE';
+            $dst_sql .= ' LOCK IN SHARE MODE';
+         }
+         else {
+            $src_sql .= ' LOCK IN SHARE MODE';
+            $dst_sql .= ' FOR UPDATE';
+         }
+      }
       $plugin->prepare($args{src_dbh});
       $plugin->prepare($args{dst_dbh});
       $ENV{MKDEBUG} && _d("src: " . $src_sql);
@@ -163,13 +180,7 @@ sub sync_table {
 
    $ch->process_rows();
 
-   if ( $args{lock} && $args{lock} < 3 ) {
-      $ENV{MKDEBUG} && _d('Unlocking and committing');
-      foreach my $dbh ( @args{qw(src_dbh dst_dbh)} ) {
-         $dbh->do('UNLOCK TABLES');
-         $dbh->commit unless $dbh->{AutoCommit};
-      }
-   }
+   $self->unlock(%args, lock_level => 2);
 
    return ($ch->get_changes(), ALGORITHM => $args{algorithm});
 }
@@ -207,6 +218,34 @@ sub wait_for_master {
    $ENV{MKDEBUG} && _d("Result of waiting: $stat");
 }
 
+# Doesn't work quite the same way as lock_and_wait. It will unlock any LOWER
+# priority lock level, not just the exact same one.
+sub unlock {
+   my ( $self, %args ) = @_;
+
+   foreach my $arg ( qw(
+      dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
+      timeoutok transaction wait lock_level) )
+   {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   return unless $args{lock} && $args{lock} <= $args{lock_level};
+
+   # First, unlock/commit.
+   foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
+      if ( $args{transaction} ) {
+         $ENV{MKDEBUG} && _d("Committing $dbh");
+         $dbh->commit;
+      }
+      else {
+         my $sql = 'UNLOCK TABLES';
+         $ENV{MKDEBUG} && _d($dbh, $sql);
+         $dbh->do($sql);
+      }
+   }
+}
+
 # Lock levels:
 # 0 => none
 # 1 => per sync cycle
@@ -217,18 +256,24 @@ sub lock_and_wait {
 
    foreach my $arg ( qw(
       dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
-      timeoutok wait lock_level) )
+      timeoutok transaction wait lock_level) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
-   return unless $args{lock} && $args{lock} >= $args{lock_level};
+   return unless $args{lock} && $args{lock} == $args{lock_level};
 
-   # First, unlock.
-   my $sql = 'UNLOCK TABLES';
-   $ENV{MKDEBUG} && _d($sql);
+   # First, unlock/commit.
    foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
-      $dbh->do($sql);
+      if ( $args{transaction} ) {
+         $ENV{MKDEBUG} && _d("Committing $dbh");
+         $dbh->commit;
+      }
+      else {
+         my $sql = 'UNLOCK TABLES';
+         $ENV{MKDEBUG} && _d($dbh, $sql);
+         $dbh->do($sql);
+      }
    }
 
    # User wants us to lock for consistency.  But lock only on source initially;
@@ -238,13 +283,13 @@ sub lock_and_wait {
       $ENV{MKDEBUG} && _d("$args{src_dbh}, $sql");
       $args{src_dbh}->do($sql);
    }
-   else {
+   elsif ( !$args{transaction} ) {
       $self->lock_table($args{src_dbh}, 'source',
          $args{quoter}->quote($args{src_db}, $args{src_tbl}),
          $args{replicate} ? 'WRITE' : 'READ');
    }
 
-   if ( $args{wait} ) {
+   if ( (!$args{transaction} || $args{lock} == 3) && $args{wait} ) {
       $self->wait_for_master(
          $args{src_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
    }
@@ -261,7 +306,7 @@ sub lock_and_wait {
          $ENV{MKDEBUG} && _d("$args{dst_dbh}, $sql");
          $args{dst_dbh}->do($sql);
       }
-      else {
+      elsif ( !$args{transaction} ) {
          $self->lock_table($args{dst_dbh}, 'dest',
             $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
             $args{execute} ? 'WRITE' : 'READ');
