@@ -1229,7 +1229,7 @@ sub get_triggers {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 1351
+# ChangeHandler package 1365
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1238,12 +1238,13 @@ package ChangeHandler;
 
 use English qw(-no_match_vars);
 
-my $DEFER_PAT = qr/Duplicate entry|Commands out of sync/;
-our @ACTIONS  = qw(DELETE INSERT UPDATE);
+my $DEFER_PAT = qr/Commands out of sync/;
+my $DUPE_KEY  = qr/Duplicate entry/;
+our @ACTIONS  = qw(DELETE REPLACE INSERT UPDATE);
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(quoter database table sdatabase stable) ) {
+   foreach my $arg ( qw(quoter database table sdatabase stable replace) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $self = { %args, map { $_ => [] } @ACTIONS };
@@ -1261,65 +1262,89 @@ sub fetch_back {
 }
 
 sub take_action {
-   my ( $self, $sql ) = @_;
-   $ENV{MKDEBUG} && _d('Calling subroutines on ', $sql);
+   my ( $self, @sql ) = @_;
+   $ENV{MKDEBUG} && _d('Calling subroutines on ', @sql);
    foreach my $action ( @{$self->{actions}} ) {
-      $action->($sql);
+      $action->(@sql);
    }
 }
 
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
    $ENV{MKDEBUG} && _d("$action where ", $self->make_where_clause($row, $cols));
-   $self->{changes}->{$action}++;
-   if ( !$self->{queue} ) {
+   $self->{changes}->{$self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action}++;
+   if ( $self->{queue} ) {
+      $self->__queue($action, $row, $cols);
+   }
+   else {
       eval {
          my $func = "make_$action";
-         my $sql  = $self->$func($row, $cols);
-         $self->take_action($sql);
+         $self->take_action($self->$func($row, $cols));
       };
       if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
          $ENV{MKDEBUG} && _d('The DBH is busy; queueing further changes');
-         push @{$self->{$action}}, [ $row, $cols ];
          $self->{queue}++; # Defer further rows
+         $self->__queue($action, $row, $cols);
+      }
+      elsif ( $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
+         $ENV{MKDEBUG} && _d('Duplicate key violation; queueing and rewriting');
+         $self->{queue}++;
+         $self->{replace} = 1;
+         $self->__queue($action, $row, $cols);
       }
       elsif ( $EVAL_ERROR ) {
          die $EVAL_ERROR;
       }
    }
-   else {
-      $ENV{MKDEBUG} && _d('Queueing change for later');
-      push @{$self->{$action}}, [ $row, $cols ];
+}
+
+sub __queue {
+   my ( $self, $action, $row, $cols ) = @_;
+   $ENV{MKDEBUG} && _d('Queueing change for later');
+   if ( $self->{replace} ) {
+      $action = $action eq 'DELETE' ? $action : 'REPLACE';
    }
+   push @{$self->{$action}}, [ $row, $cols ];
 }
 
 sub process_rows {
    my ( $self, $queue_level ) = @_;
-   if ( $queue_level && $queue_level < $self->{queue} ) {
-      $ENV{MKDEBUG} && _d("Not processing now $queue_level<$self->{queue}");
-      return;
-   }
-   my ($row, $cur_act);
-   eval {
-      foreach my $action ( @ACTIONS ) {
-         my $func = "make_$action";
-         my $rows = $self->{$action};
-         $ENV{MKDEBUG} && _d(scalar(@$rows) . " to $action");
-         $cur_act = $action;
-         while ( @$rows ) {
-            $row = shift @$rows;
-            my $sql = $self->$func(@$row);
-            $self->take_action($sql);
-         }
+   my $error_count = 0;
+   TRY: {
+      if ( $queue_level && $queue_level < $self->{queue} ) { # see redo below!
+         $ENV{MKDEBUG} && _d("Not processing now $queue_level<$self->{queue}");
+         return;
       }
-   };
-   if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
-      unshift @{$self->{$cur_act}}, $row;
-      $ENV{MKDEBUG} && _d('The DBH is still busy; increasing queue level');
-      $self->{queue}++; # Defer rows to the very end
-   }
-   elsif ( $EVAL_ERROR ) {
-      die $EVAL_ERROR;
+
+      my ($row, $cur_act);
+      eval {
+         foreach my $action ( @ACTIONS ) {
+            my $func = "make_$action";
+            my $rows = $self->{$action};
+            $ENV{MKDEBUG} && _d(scalar(@$rows) . " to $action");
+            $cur_act = $action;
+            while ( @$rows ) {
+               $row = shift @$rows;
+               $self->take_action($self->$func(@$row));
+            }
+         }
+         $error_count = 0;
+      };
+      if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
+         unshift @{$self->{$cur_act}}, $row;
+         $ENV{MKDEBUG} && _d('The DBH is still busy; increasing queue level');
+         $self->{queue}++; # Defer rows to the very end
+      }
+      elsif ( !$error_count++ && $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
+         $ENV{MKDEBUG} && _d('Duplicate key violation; re-queueing and rewriting');
+         $self->{queue}++; # Defer rows to the very end
+         $self->{replace} = 1;
+         $self->__queue($cur_act, @$row);
+         redo TRY;
+      }
+      elsif ( $EVAL_ERROR ) {
+         die $EVAL_ERROR;
+      }
    }
 }
 
@@ -1332,6 +1357,9 @@ sub make_DELETE {
 
 sub make_UPDATE {
    my ( $self, $row, $cols ) = @_;
+   if ( $self->{replace} ) {
+      return $self->make_row('REPLACE', $row, $cols);
+   }
    my %in_where = map { $_ => 1 } @$cols;
    my $where = $self->make_where_clause($row, $cols);
    if ( my $dbh = $self->{fetch_back} ) {
@@ -1354,6 +1382,19 @@ sub make_UPDATE {
 
 sub make_INSERT {
    my ( $self, $row, $cols ) = @_;
+   if ( $self->{replace} ) {
+      return $self->make_row('REPLACE', $row, $cols);
+   }
+   return $self->make_row('INSERT', $row, $cols);
+}
+
+sub make_REPLACE {
+   my ( $self, $row, $cols ) = @_;
+   return $self->make_row('REPLACE', $row, $cols);
+}
+
+sub make_row {
+   my ( $self, $verb, $row, $cols ) = @_;
    my @cols = sort keys %$row;
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
@@ -1363,7 +1404,7 @@ sub make_INSERT {
       @{$row}{keys %$res} = values %$res;
       @cols = sort keys %$res;
    }
-   return "INSERT INTO $self->{db_tbl}("
+   return "$verb INTO $self->{db_tbl}("
       . join(', ', map { $self->{quoter}->quote($_) } @cols)
       . ') VALUES ('
       . $self->{quoter}->quote_val( @{$row}{@cols} )
@@ -2241,7 +2282,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1363
+# TableSyncer package 1365
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2280,8 +2321,8 @@ sub sync_table {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
-      misc_dbh quoter replicate src_db src_dbh src_tbl tbl_struct timeoutok
-      versionparser wait where possible_keys cols) )
+      misc_dbh quoter replace replicate src_db src_dbh src_tbl tbl_struct
+      timeoutok versionparser wait where possible_keys cols) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -2311,9 +2352,10 @@ sub sync_table {
       table     => $args{dst_tbl},
       sdatabase => $args{src_db},
       stable    => $args{src_tbl},
+      replace   => $args{replace},
       actions   => [
-         ( $args{print} ? sub { print @_, ";\n" } : () ),
          ( $update_func ? $update_func            : () ),
+         ( $args{print} ? sub { print @_, ";\n" } : () ),
       ],
    );
    my $rd = new RowDiff( dbh => $args{misc_dbh} );
@@ -2912,6 +2954,8 @@ my @opt_spec = (
         . 'or 3=globally (default 0)' },
    { s => 'print|p',
      d => 'Print queries that will resolve differences' },
+   { s => 'replace|r',
+     d => 'Use REPLACE instead of INSERT and UPDATE' },
    { s => 'replicate|R=s',
      d => 'Sync tables listed as different in this table' },
    { s => 'skipbinlog',
@@ -2995,7 +3039,7 @@ $opt_parser->usage_or_errors(%opts);
 # Do the work.
 # ############################################################################
 my $exit_status = 0; # 1: internal error, 2: tables differed, 3: both
-my $hdr         = "# %6s %6s %6s %-9s %s.%s\n";
+my $hdr         = "# %6s %7s %6s %6s %-9s %s.%s\n";
 
 if ( $dsns[0]->{t} ) {
    $ENV{MKDEBUG} && _d('DSN has t part; syncing ONE TABLE between servers');
@@ -3204,7 +3248,7 @@ sub sync_a_table {
 
       my %status = $syncer->sync_table(
          algorithm     => $opts{a} || '',
-         buffer        => $opts{bufferresults} ? 1 : 0,
+         buffer        => $opts{bufferresults} || 0,
          checksum      => $checksum,
          chunker       => $chunker,
          chunksize     => $opts{chunksize},
@@ -3212,22 +3256,23 @@ sub sync_a_table {
          dst_db        => $args{dst_db},
          dst_dbh       => $args{dst}->{dbh},
          dst_tbl       => $args{dst_tbl},
-         execute       => $opts{x} ? 1 : 0,
-         lock          => $opts{k} ? 1 : 0,
+         execute       => $opts{x} || 0,
+         lock          => $opts{k} || 0,
          misc_dbh      => $args{src}->{misc_dbh},
          nibbler       => $nibbler,
          possible_keys => \@possible_keys,
          parser        => $tp,
-         print         => $opts{p} ? 1 : 0,
+         print         => $opts{p} || 0,
          quoter        => $q,
-         replicate     => ($opts{R} || $opts{s}) ? 1 : 0,
+         replace       => $opts{r} || 0,
+         replicate     => ($opts{R} || $opts{s}) || 0,
          src_db        => $args{src_db},
          src_dbh       => $args{src}->{dbh},
          src_tbl       => $args{src_tbl},
          tbl_struct    => $tbl_struct,
-         timeoutok     => $opts{timeoutok} ? 1 : 0,
+         timeoutok     => $opts{timeoutok} || 0,
          versionparser => $vp,
-         wait          => $opts{w} ? 1 : 0,
+         wait          => $opts{w} || 0,
          where         => $args{where} || '',
       );
 
