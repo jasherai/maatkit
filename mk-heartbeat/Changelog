@@ -1,5 +1,9 @@
 Changelog for mk-heartbeat:
 
+2007-12-06: version 1.0.3
+
+   * Updated modules for compatibility with changes made to mk-table-sync.
+
 2007-11-04: version 1.0.2
 
    * Made command-line help easier to use.
