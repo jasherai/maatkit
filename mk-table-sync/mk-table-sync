@@ -668,7 +668,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 1344
+# TableSyncStream package 1367
 # ###########################################################################
 
 use strict;
@@ -723,6 +723,10 @@ sub key_cols {
 
 sub prepare {
    my ( $self, $dbh ) = @_;
+}
+
+sub pending_changes {
+   my ( $self ) = @_;
 }
 
 sub _d {
@@ -2090,7 +2094,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1360
+# TableSyncChunk package 1367
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2257,6 +2261,18 @@ sub done {
       && $self->{chunk_num} >= scalar(@{$self->{chunks}})
 }
 
+sub pending_changes {
+   my ( $self ) = @_;
+   if ( $self->{state} ) {
+      $ENV{MKDEBUG} && _d('There are pending changes');
+      return 1;
+   }
+   else {
+      $ENV{MKDEBUG} && _d('No pending changes');
+      return 0;
+   }
+}
+
 sub key_cols {
    my ( $self ) = @_;
    my @cols;
@@ -2282,7 +2298,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1365
+# TableSyncer package 1367
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2322,7 +2338,7 @@ sub sync_table {
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl tbl_struct
-      timeoutok versionparser wait where possible_keys cols) )
+      timeoutok transaction versionparser wait where possible_keys cols) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -2332,17 +2348,17 @@ sub sync_table {
          sort keys %args));
 
    my $update_func;
+   my $change_dbh;
+   if ( $args{replicate} ) {
+      $change_dbh = $args{src_dbh};
+      $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
+   }
+   else {
+      $change_dbh = $args{dst_dbh};
+      $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
+   }
+   $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
    if ( $args{execute} ) {
-      my $change_dbh;
-      if ( $args{replicate} ) {
-         $change_dbh = $args{src_dbh};
-         $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
-      }
-      else {
-         $change_dbh = $args{dst_dbh};
-         $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
-      }
-      $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
       $update_func = sub {  map { $change_dbh->do($_) } @_ };
    }
 
@@ -2380,10 +2396,14 @@ sub sync_table {
       possible_keys => [],
    );
 
+   $self->lock_and_wait(%args, lock_level => 2);
+
    my $cycle = 0;
    while ( !$plugin->done ) {
 
-      $self->lock_and_wait(%args, lock_level => $cycle ? 1 : 2);
+      if ( !$cycle || !$plugin->pending_changes() ) {
+         $self->lock_and_wait(%args, lock_level => 1);
+      }
 
       $ENV{MKDEBUG} && _d("Beginning sync cycle $cycle");
       my $src_sql = $plugin->get_sql(
@@ -2398,6 +2418,16 @@ sub sync_table {
          table    => $args{dst_tbl},
          where    => $args{where},
       );
+      if ( $args{transaction} ) {
+         if ( $change_dbh eq $args{src_dbh} ) {
+            $src_sql .= ' FOR UPDATE';
+            $dst_sql .= ' LOCK IN SHARE MODE';
+         }
+         else {
+            $src_sql .= ' LOCK IN SHARE MODE';
+            $dst_sql .= ' FOR UPDATE';
+         }
+      }
       $plugin->prepare($args{src_dbh});
       $plugin->prepare($args{dst_dbh});
       $ENV{MKDEBUG} && _d("src: " . $src_sql);
@@ -2422,13 +2452,7 @@ sub sync_table {
 
    $ch->process_rows();
 
-   if ( $args{lock} && $args{lock} < 3 ) {
-      $ENV{MKDEBUG} && _d('Unlocking and committing');
-      foreach my $dbh ( @args{qw(src_dbh dst_dbh)} ) {
-         $dbh->do('UNLOCK TABLES');
-         $dbh->commit unless $dbh->{AutoCommit};
-      }
-   }
+   $self->unlock(%args, lock_level => 2);
 
    return ($ch->get_changes(), ALGORITHM => $args{algorithm});
 }
@@ -2466,22 +2490,53 @@ sub wait_for_master {
    $ENV{MKDEBUG} && _d("Result of waiting: $stat");
 }
 
+sub unlock {
+   my ( $self, %args ) = @_;
+
+   foreach my $arg ( qw(
+      dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
+      timeoutok transaction wait lock_level) )
+   {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   return unless $args{lock} && $args{lock} <= $args{lock_level};
+
+   foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
+      if ( $args{transaction} ) {
+         $ENV{MKDEBUG} && _d("Committing $dbh");
+         $dbh->commit;
+      }
+      else {
+         my $sql = 'UNLOCK TABLES';
+         $ENV{MKDEBUG} && _d($dbh, $sql);
+         $dbh->do($sql);
+      }
+   }
+}
+
 sub lock_and_wait {
    my ( $self, %args ) = @_;
 
    foreach my $arg ( qw(
       dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
-      timeoutok wait lock_level) )
+      timeoutok transaction wait lock_level) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
-   return unless $args{lock} && $args{lock} >= $args{lock_level};
+   return unless $args{lock} && $args{lock} == $args{lock_level};
 
-   my $sql = 'UNLOCK TABLES';
-   $ENV{MKDEBUG} && _d($sql);
    foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
-      $dbh->do($sql);
+      if ( $args{transaction} ) {
+         $ENV{MKDEBUG} && _d("Committing $dbh");
+         $dbh->commit;
+      }
+      else {
+         my $sql = 'UNLOCK TABLES';
+         $ENV{MKDEBUG} && _d($dbh, $sql);
+         $dbh->do($sql);
+      }
    }
 
    if ( $args{lock} == 3 ) {
@@ -2489,13 +2544,13 @@ sub lock_and_wait {
       $ENV{MKDEBUG} && _d("$args{src_dbh}, $sql");
       $args{src_dbh}->do($sql);
    }
-   else {
+   elsif ( !$args{transaction} ) {
       $self->lock_table($args{src_dbh}, 'source',
          $args{quoter}->quote($args{src_db}, $args{src_tbl}),
          $args{replicate} ? 'WRITE' : 'READ');
    }
 
-   if ( $args{wait} ) {
+   if ( (!$args{transaction} || $args{lock} == 3) && $args{wait} ) {
       $self->wait_for_master(
          $args{src_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
    }
@@ -2510,7 +2565,7 @@ sub lock_and_wait {
          $ENV{MKDEBUG} && _d("$args{dst_dbh}, $sql");
          $args{dst_dbh}->do($sql);
       }
-      else {
+      elsif ( !$args{transaction} ) {
          $self->lock_table($args{dst_dbh}, 'dest',
             $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
             $args{execute} ? 'WRITE' : 'READ');
@@ -2917,8 +2972,6 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 $OUTPUT_AUTOFLUSH = 1;
 
-# TODO: algorithms: nibble, chunk, stream, drilldown, temp-table, group-by (sja)
-
 # ############################################################################
 # Get configuration information.
 # ############################################################################
@@ -2940,8 +2993,6 @@ my @opt_spec = (
      d => 'Do only this comma-separated list of storage engines' },
    { s => 'execute|x',
      d => 'Execute queries to sync tables' },
-   #TODO { s => 'forupdate|F',
-   #       d => 'Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums' },
    { s => 'ignoredb|g=H',
      d => 'Ignore this comma-separated list of databases' },
    { s => 'ignoreengine|E=H',
@@ -2950,8 +3001,7 @@ my @opt_spec = (
    { s => 'ignoretbl|n=H',
      d => 'Ignore this comma-separated list of tables' },
    { s => 'lock|k=i',
-     d => 'Lock tables: 0=none, 1=per sync cycle, 2=per table, '
-        . 'or 3=globally (default 0)' },
+     d => 'Lock tables: 0=none, 1=per sync cycle, 2=per table, or 3=globally' },
    { s => 'print|p',
      d => 'Print queries that will resolve differences' },
    { s => 'replace|r',
@@ -2965,15 +3015,17 @@ my @opt_spec = (
    { s => 'skipuniquekey',
      d => 'Turn off UNIQUE key checks' },
    { s => 'synctomaster|s',
-     d => 'Sync a slave to its master. Implies --wait 60'},
+     d => 'Treat the DSN as a slave and sync it to its master'},
    { s => 'tables|t=h',
      d => 'Do only this comma-separated list of tables' },
    { s => 'timeoutok',
      d => 'Keep going if --wait fails' },
+   { s => 'transaction!',
+     d => 'Use transactions INSTEAD OF locking tables' },
    { s => 'verbose|v',
      d => 'Print results of sync operations' },
    { s => 'wait|w=i',
-     d => 'Make slave wait for master pos (implies --lock)' },
+     d => 'Make slave wait for master pos' },
    { s => 'where|W=s',
      d => 'WHERE clause to restrict syncing to part of the table' },
 );
@@ -3010,15 +3062,12 @@ $opt_parser->{descr}
    . 'and DEST are DSNs.  Values for DEST default to the values for SOURCE.';
 my %opts = $opt_parser->parse();
 
-$opts{w}    = 60 if ($opts{R} || $opts{s} ) && !defined $opts{w};
-$opts{k}    = 1  if $opts{w}                && !defined $opts{k};
-
-# TODO: when --columns is specified, and --synctomaster is given, you end up
-# with REPLACE INTO (partial columns) which will destroy data.  Yet maybe we
-# don't want to update the whole row, just columns we know to be bad (the DBA
-# knows this externally to mk-table-sync).  This should turn into INSERT
-# and UPDATE.  Or REPLACE should be disallowed when not all columns are
-# included.
+if ( $opts{R} || $opts{s} ) {
+   $opts{w} = 60 unless defined $opts{w};
+}
+if ( $opts{w} ) {
+   $opts{k} = 1 unless defined $opts{k};
+}
 
 my @dsns;
 while ( my $arg = shift(@ARGV) ) {
@@ -3069,15 +3118,20 @@ if ( $dsns[0]->{t} ) {
          printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
       }
 
-      sync_a_table(
+      my %args = (
          src     => $dsns[0],
+         dst     => $dsn,
+      );
+      lock_server(%args);
+      sync_a_table(
+         %args,
          src_db  => $dsns[0]->{D},
          src_tbl => $dsns[0]->{t},
-         dst     => $dsn,
          dst_db  => $dsn->{D},
          dst_tbl => $dsn->{t},
          where   => $opts{W},
       );
+      unlock_server(%args);
    }
 }
 elsif ( $opts{R} ) {
@@ -3111,6 +3165,12 @@ elsif ( $opts{R} ) {
          }
       );
 
+      my %args = (
+         src     => $dsns[0],
+         dst     => $dsns[1],
+      );
+      lock_server(%args);
+
       $checksum->check_server(
          {  dbh        => $dsns[1]->{dbh},
             dsn        => $dsns[1],
@@ -3126,10 +3186,9 @@ elsif ( $opts{R} ) {
                }
                foreach my $diff ( @diffs ) {
                   sync_a_table(
-                     src     => $dsns[0],
+                     %args,
                      src_db  => $diff->{db},
                      src_tbl => $diff->{tbl},
-                     dst     => $dsns[1],
                      dst_db  => $diff->{db},
                      dst_tbl => $diff->{tbl},
                      where   => $diff->{boundaries},
@@ -3138,6 +3197,8 @@ elsif ( $opts{R} ) {
             },
          }
       );
+
+      unlock_server(%args);
 
    }
 
@@ -3168,17 +3229,22 @@ elsif ( $opts{R} ) {
                      print "# Syncing ", $dsn_parser->as_string($dsn), "\n";
                      printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
                   }
+                  my %args = (
+                     src     => $dsns[0],
+                     dst     => $dsn,
+                  );
+                  lock_server(%args);
                   foreach my $diff ( @diffs ) {
                      sync_a_table(
-                        src     => $dsns[0],
+                        %args,
                         src_db  => $diff->{db},
                         src_tbl => $diff->{tbl},
-                        dst     => $dsn,
                         dst_db  => $diff->{db},
                         dst_tbl => $diff->{tbl},
-                        where   => $diff->{boundaries},
+                        where => $diff->{boundaries},
                      );
                   }
+                  unlock_server(%args);
                }
             },
          }
@@ -3216,19 +3282,47 @@ else {
          printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
       }
 
+      my %args = (
+         src     => $dsns[0],
+         dst     => $dsn,
+      );
+      lock_server(%args);
+
       foreach my $database ( $finder->find_databases() ) {
          foreach my $table ( $finder->find_tables(database => $database) ) {
             sync_a_table(
-               src     => $dsns[0],
+               %args,
                src_db  => $database,
                src_tbl => $table,
-               dst     => $dsn,
                dst_db  => $database,
                dst_tbl => $table,
                where   => $opts{W},
             );
          }
       }
+      unlock_server(%args);
+   }
+}
+
+sub lock_server {
+   my (%args) = @_;
+   eval {
+      # Open connections as needed.
+      $args{src}->{dbh}      ||= get_dbh($args{src});
+      $args{dst}->{dbh}      ||= get_dbh($args{dst});
+      $args{src}->{misc_dbh} ||= get_dbh($args{src});
+      $syncer->lock_and_wait(%args, lock_level => 3);
+   }
+}
+
+sub unlock_server {
+   my (%args) = @_;
+   eval {
+      # Open connections as needed.
+      $args{src}->{dbh}      ||= get_dbh($args{src});
+      $args{dst}->{dbh}      ||= get_dbh($args{dst});
+      $args{src}->{misc_dbh} ||= get_dbh($args{src});
+      $syncer->unlock(%args, lock_level => 3);
    }
 }
 
@@ -3266,6 +3360,7 @@ sub sync_a_table {
          quoter        => $q,
          replace       => $opts{r} || 0,
          replicate     => ($opts{R} || $opts{s}) || 0,
+         transaction   => $opts{transaction} || 0,
          src_db        => $args{src_db},
          src_dbh       => $args{src}->{dbh},
          src_tbl       => $args{src_tbl},
@@ -3342,7 +3437,7 @@ sub get_master_dsn {
 sub get_dbh {
    my ( $info ) = @_;
    my $db_options = {
-      AutoCommit => !$opts{k} && !$opts{F} && !$opts{1},
+      AutoCommit => !$opts{k},
       RaiseError => 1,
       PrintError => 0,
       # TODO: enable support for this on old versions of DBD::mysql?
@@ -3381,87 +3476,119 @@ sub get_dbh {
 
 =head1 NAME
 
-mk-table-sync - Efficiently synchronize data between two MySQL tables.
+mk-table-sync - Synchronize MySQL tables efficiently.
 
 =head1 SYNOPSIS
 
-To compare two tables, try one of these:
+To sync db.tbl1 from host1 to host2:
 
- mk-table-sync -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
- mk-table-sync -a bottomup -B 128 u=user,p=pass,h=host1,D=db,t=tbl host2
+   mk-table-sync -x u=user,p=pass,h=host1,D=db,t=tbl host2
 
-To sync the destination to the source, try
+Sync all tables in host1 to host2 and host3:
 
- mk-table-sync -x -d col1,col2 u=user,p=pass,h=host1,D=db,t=tbl host2
+   mk-table-sync -x host1 host2 host3
 
-   if DSN->t, sync only that table:
+Sync slaves that had differences according to L<mk-table-checksum>:
+
+   mk-table-sync -x --replicate test.checksum master1
+
+Sync this slave to its replication master:
+
+   mk-table-sync -x --replicate test.checksum slave1
+
+=head1 DESCRIPTION
+
+This tool is designed to do one-way synchronization of data (two-way sync is
+planned for the future).  It finds differences efficiently with one of several
+algorithms (see L<"ALGORITHMS">).  It makes changes on the destination table(s)
+so it matches the source.
+
+It does B<not> synchronize table structures, indexes, or any other schema
+changes.  It synchronizes only data.
+
+It can operate through replication by comparing a slave with its master and
+making changes on the master.  These changes will flow through replication and
+correct any differences found on the slave.
+
+It accepts a list of DSNs (see the L<"--help"> output) to tell it where and how
+to connect.
+
+There are many ways to invoke it.  The following is the abbreviated logic:
+
+   if DSN has a t part, sync only that table:
       if 1 DSN:
          if --synctomaster:
-            connect to master and sync
+            The DSN is a slave.  Connect to its master and sync.
       if more than 1 DSN:
-         Assume the first is the master and sync each slave in turn
+         The first DSN is the source.  Sync each DSN in turn.
    else if --replicate:
       if --synctomaster:
-         connect to master, find bad chunks and fix
+         The DSN is a slave.  Connect to its master, find records
+         of differences, and fix.
       else:
-         find slaves and connect to each, find bad chunks, and fix
+         The DSN is the master.  Find slaves and connect to each,
+         find records of differences, and fix.
    else:
-      find tables, filtering with --databases etc, and sync each DSN
+      find tables, filtering with --databases etc, and sync each
+      DSN to the first.
 
-To show the differences between the tables, use the L<"--verbose"> option.
-Issue this option multiple times for more detail.  To see queries that will
-make the second table the same as the first, use the L<"--print"> option.  To
-see the queries issued while searching for differences, use the L<"--debug">
-option.
+=head1 ALGORITHMS
 
-There is a special syntax for connecting to MySQL servers.  Each server name
-on the command line can be either just a hostname, or a key=value,key=value
-string.  Keys are a single letter:
+This tool has a generic data-syncing framework, within which it is possible to
+use any number of different algorithms to actually find differences.  It chooses
+the best algorithm automatically.  While I plan to add more algorithms in the
+future, the following are implemented now:
 
-   KEY MEANING
-   === =======
-   h   Connect to host
-   P   Port number to use for connection
-   S   Socket file to use for connection
-   u   User for login if not current user
-   p   Password to use when connecting
-   F   Only read default options from the given file
-   D   Database containing the table to be synced
-   t   Table to be synced
-   i   Index to drill into when syncing
+=over
+
+=item Chunk
+
+Finds an index whose first column is numeric (including date and time types),
+and divides the column's range of values into chunks of approximately
+L<"--chunksize"> rows.  Syncs a chunk at a time by checksumming the entire
+chunk.  If the chunk differs on the source and destination, checksums each
+chunk's rows individually to find the rows that differ.
+
+It is efficient when the column has sufficient cardinality to make the chunks
+end up about the right size.
+
+The initial per-chunk checksum is quite small and results in minimal network
+traffic and memory consumption.  If a chunk's rows must be examined, only the
+primary key columns and a checksum are sent over the network, not the entire
+row.  If a row is found to be different, the entire row will be fetched, but not
+before.
+
+=item Stream
+
+Selects the entire table in one big stream and compares all columns.  Selects
+all columns.  Much less efficient than the Chunk algorithm, but works when there
+is no suitable index for chunking.
+
+=item Future Plans
+
+I plan to implement an algorithm called Nibble, which will generally be superior
+to Chunk.  Other possibilities are TempTable (what I originally called bottom-up
+in earlier versions of this tool), DrillDown (what I originallly called
+top-down), and GroupByPrefix (similar to how SqlYOG Job Agent works).  Each
+algorithm has strengths and weaknesses.  If you'd like to implement your
+favorite technique for finding differences between two sources of data on
+possibly different servers, I'm willing to help.
+
+=back
 
 =head1 OPTIONS
-
-Many options are enabled by default and can be disabled by prefixing with --no.
 
 =over
 
 =item --algorithm
 
-The algorithm to use when comparing the tables.  Top-down drills into the tables
-with GROUP BY queries.  Bottom-up builds levels of summary tables with
-logarithmically fewer rows at each successive level, and then navigates the
-tables in reverse to find differences.  Top-down is explained in L<"FINDING
-DIFFERENCES TOP-DOWN"> and bottom-up in L<"FINDING DIFFERENCES BOTTOM-UP">.
-
-=item --analyze
-
-Only applies to bottom-up search.  Specifies that mk-table-sync should examine the
-summary tables and find table differences, and if desired, issue queries to
-resolve them.  This is the default behavior, but you can disable it if you just
-want to build the summary tables.
+The algorithm to use when comparing the tables.  This is a suggestion.  The tool
+will auto-detect the best algorithm, and if your chosen algorithm can't be used,
+will use the best available one instead.  See L<"ALGORITHMS">.
 
 =item --askpass
 
 Prompts the user for a password when connecting to MySQL.
-
-=item --branchfactor
-
-Branch factor for bottom-up algorithm.  Each successive summary table will group
-this many rows together in the next summary table.  This means each summary
-table will be approximately this fraction of the size of the previous table.  If
-you don't specify an exact power of two, mk-table-sync will round it to the
-nearest power of two.  The default is 128.
 
 =item --bufferresults
 
@@ -3471,164 +3598,156 @@ the results "cursor" being held open for a shorter time on the server, but if
 the tables are large, it could take a long time anyway, and eat all your memory.
 For most non-trivial data sizes, you want to leave this disabled.
 
-=item --build
+=item --chunksize
 
-Build summary tables for bottom-up algorithm.  Enabled by default.  You can
-disable to use existing summary tables.
-
-=item --cleanup
-
-Clean up scratch tables for bottom-up algorithm.  Enabled by default.  You can
-disable this to leave the scratch (summary) tables for later analysis or
-troubleshooting.
-
-=item --collate
-
-Use MySQL to compare strings if necessary.  Enabled by default.  Perl cannot
-reliably compare character strings the same way MySQL does, so if it's unsure
-how two strings should be sorted, mk-table-sync will send them to MySQL and
-ask its opinion.  You should leave this enabled.
+The size of each chunk of rows for the Chunk algorithm.
 
 =item --columns
 
-Comma-separated list of columns to compare and synchronize.  If you specify this
-list, mk-table-sync will completely ignore any other columns.  Specifying
-a column that doesn't exist is not an error.
+Comma-separated list of columns to compare when looking for differences.
 
-=item --debug
+=item --databases
 
-Print debugging output to STDOUT.  This is mostly the queries used to compare
-data.  It is not complete at the moment.
-
-=item --deleteinsert
-
-Convert all UPDATES to DELETE and INSERT.  This can help prevent conflicts due
-to unique indexes on columns other than the primary key.  This option will
-become obsolete when I make mk-table-sync auto-detect this situation and handle it
-itself.
-
-=item --drilldown
-
-Drilldown groupings for the top-down algorithm.  This governs how the
-comparison algorithm searches for differences.  If you specify col2,col3 it will
-group rows by col2, find groups that differ, search within them grouped by col3,
-and then search within these rows on primary key.  The behavior of this option
-is likely to change in the future.
+Sync only this comma-separated list of databases.
 
 =item --engine
 
-Storage engine to use for the bottom-up summary tables.  If you don't specify,
-it is controlled by the server's default storage engine.
+Sync only tables whose storage engine is in this comma-separated list.
 
 =item --execute
 
 After finding differences, execute the queries required to sync the tables.
 
-=item --forupdate
-
-Use SELECT FOR UPDATE or LOCK IN SHARE MODE for checksums.  This only applies to
-the top-down algorithm.  It can help prevent the tables being changed while
-you're examining them.  mk-table-sync automatically decides which type of
-locks to acquire, based on other command-line options.  This doesn't do anything
-on some storage engines, such as MyISAM.
-
 =item --help
 
 Show a brief help message.
 
+=item --ignoredb
+
+Use this option to skip a comma-separated list of databases.
+
+=item --ignoreengine
+
+Use this option to skip a comma-separated list of storage engines (table types).
+
+=item --ignoretbl
+
+Use this option to skip a comma-separated list of tables.
+
 =item --lock
 
-Lock tables when beginning work.  This uses table-level LOCK TABLES.  This can
-help prevent tables being changed while you're examining them.
+Lock tables when beginning work.  This uses C<LOCK TABLES>.  This can help
+prevent tables being changed while you're examining them.
 
-=item --maxcost
+The argument is an integer, default value 0.  The possible values are as
+follows:
 
-Maximum rowcount before aborting.  In either algorithm, if you specify this
-option mk-table-sync will abort if it discovers more than this many rows need
-to be changed to sync the tables.  There may be more rows to change than can be
-definitely discovered up front, but this might be a good way to stop before
-doing too much work.
+  VALUE  MEANING
+  =====  =======================================================
+  0      Never lock tables.
+  1      Lock and unlock one time per sync cycle (as implemented
+         by the syncing algorithm).  This is the most granular
+         level of locking available.  For example, the Chunk
+         algorithm will lock each chunk of C<N> rows, and then
+         unlock them if they are the same on the source and the
+         destination, before moving on to the next chunk.
+  2      Lock and unlock before and after each table.
+  3      Lock and unlock once for every server (DSN) synced, with
+         C<FLUSH TABLES WITH READ LOCK>.
 
-=item --onlydo
+A replication slave is never locked if L<"--replicate"> or L<"--synctomaster">
+is specified, since in theory locking the table on the master should prevent any
+changes from taking place.  (You are not changing data on your slave, right?)
+If L<"--wait"> is given, the master (source) is locked and then the tool waits
+for the slave to catch up to the master before continuing.
 
-Only do INSERT, UPDATE, or DELETE queries while syncing tables.  The default is
-to do all three, but if you want to, you can specify any combination of actions.
-For example, if you want to do a two-way sync of rows that have been added to
-either table, one way to do it is specify 'L<"--onlydo"> iu' and then run
-mk-table-sync again the "other direction" with the same iu argument.  That
-will avoid deleting extra rows from the destination table, which the second
-invocation will then copy back to the source table.
-
-=item --prefix
-
-Tablename prefix for bottom-up algorithm.  In case the default prefix clashes
-with existing tables for some reason, or in case you want to use work tables
-that were built previously.  The default is a pseudo-random value that is
-constant within a given day.  If you run mk-table-sync again the next day, it
-will choose a different prefix.
+If L<"--transaction"> is specified, C<LOCK TABLES> is not used.  Instead, lock
+and unlock are replaced by beginning and committing transactions.  The exception
+is if L<"--lock"> is 3.
 
 =item --print
 
-Print all sync queries to STDOUT.  If you don't trust mk-table-sync, or just
-want to see what it will do, this is a good way.  These queries are valid SQL
-and you can run them yourself if you want to sync the tables manually.
+Print queries that will resolve the differences between the tables.  If you
+don't trust C<mk-table-sync>, or just want to see what it will do, this is a
+good way to be safe.  These queries are valid SQL and you can run them yourself
+if you want to sync the tables manually.
 
-=item --queries
+=item --replace
 
-Output the L<"--debug"> debugging output as SQL that can be executed.  By
-default it's commented out with SQL comments, so it won't interfere with the
-output of L<"--print">.  This option removes the comments.
+Write all C<INSERT> and C<UPDATE> statements as C<REPLACE>.  This is
+automatically switched on as needed when there are unique index violations.
 
-=item --separator
+=item --replicate
 
-Separator for CONCAT_WS, which is used to concatenate all columns in each row
-for checksumming.  The default is '#', but you might want to change it if
-you're suspicious about this for any reason (possible collisions, for example).
+Specifies that C<mk-table-sync> should examine the specified table to find data
+that differs.  The table is exactly the same as the argument of the same name to
+L<mk-table-checksum>.  That is, it contains records of which tables (and ranges
+of values) differ between the master and slave.
 
-=item --singletxn
+For each table and range of values that shows differences between the master and
+slave, C<mk-table-checksum> will sync that table, with the appropriate C<WHERE>
+clause, to its master.
 
-Do all work in a single transaction.  This has no effect unless you're syncing
-tables that use a transactional storage engine.
+This automatically sets L<"--wait"> to 60 and causes changes to be made on the
+master instead of the slave.
 
-=item --size
+If L<"--synctomaster"> is specified, the tool will assume the server you
+specified is the slave, and connect to the master as usual to sync.  Otherwise,
+it will use C<SHOW SLAVE HOSTS> to find slaves of the server you specified,
+inspect the specified table on each slave to find data that needs to be synced,
+and sync it.  You must configure each slave's C<report-host>, C<report-port> and
+other options for this to work right.
 
-Table size in bottom-up algorithm.  Size estimates used to build the summary
-tables may be off.  If this happens, mk-table-sync will die and tell you what
-value to use for this parameter.  Most of the time the size estimates should be
-accurate enough (they just have to be within some logarithmic order of
-magnitude), so estimating size up front is a good optimization.  It prevents
-COUNT() queries that aren't needed.
+The tool examines the master's copy of the table first, assuming that the master
+is potentially a slave as well.  Any table that shows differences there will
+B<NOT> be synced on the slave(s).  For example, suppose your replication is set
+up as A->B, B->C, B->D.  Suppose you use this argument and specify server B.
+The tool will examine server B's copy of the table.  If it looks like server B's
+data in table C<test.tbl1> is different from server A's copy, the tool will not
+sync that table on servers C and D.
+
+=item --skipbinlog
+
+Do not log statements to the binary log (C<SET SQL_LOG_BIN=0>).
+
+=item --skipforeignkey
+
+Disable foreign key checks (C<SET FOREIGN_KEY_CHECKS=0>).
+
+=item --skipuniquekey
+
+Disable unique index checks (C<SET UNIQUE_CHECKS=0>).
 
 =item --synctomaster
 
-Change the table on the master/source server, and let replication propagate the
-changes to the destination table.  If you're syncing a master and slave, this is
-almost certainly the option you should use.  Implies L<"--strategy">=r.
+Treat the server you specified as a slave.  Inspect C<SHOW SLAVE STATUS>,
+connect to the server's master, and treat the master as the source and the slave
+as the destination.  Causes changes to be made on the master.  Sets L<"--wait">
+to 60 by default, sets L<"--lock"> to 1 by default, and disables
+L<"--transaction"> by default.
 
-=item --temp
+=item --tables
 
-Use temporary tables in bottom-up algorithm.  The default is to use real tables.
+Restrict syncing to this comma-separated list of tables.
 
 =item --timeoutok
 
-Keep going if L<"--wait"> fails.  If you specify L<"--wait"> and the slave doesn't catch
-up to the master's position before the wait times out, the default behavior is
-to abort.  This option makes mk-table-sync keep going anyway.  Warning: if
-you are trying to get a consistent comparision between the two servers, you
-probably don't want to keep going after a timeout.
+Keep going if L<"--wait"> fails.  If you specify L<"--wait"> and the slave
+doesn't catch up to the master's position before the wait times out, the default
+behavior is to abort.  This option makes the tool keep going anyway.
+B<Warning>: if you are trying to get a consistent comparision between the two
+servers, you probably don't want to keep going after a timeout.
+
+=item --transaction
+
+Use transactions instead of C<LOCK TABLES>.  The granularity of beginning and
+committing transactions is controlled by L<"--lock">.  This is enabled by
+default, but since L<"--lock"> is disabled by default, it has no effect.
 
 =item --verbose
 
-Explain the differences found while comparing the tables.  Specify up to three
-times for more verbosity.  See L<"OUTPUT"> for more details about the output.
-
-=item --verify
-
-Verify checksum compatibility across servers.  Some older versions of MySQL
-won't concatenate columns the same, so checksums might differ.
-mk-table-checksum checks for this and aborts if the servers have different
-behavior.  If you know your columns will never contain the empty string, you can
-safely disable this check.
+Explain the differences found while comparing the tables.  See L<"OUTPUT"> for
+more details about the output.
 
 =item --version
 
@@ -3636,417 +3755,34 @@ Output version information and exit.
 
 =item --wait
 
-Make the slave wait to catch up to the master before comparing the tables.  The
-value is the number of seconds to wait before timing out (see also L<"--timeoutok">).
-mk-table-sync issues LOCK TABLES on the master, then finds the master's
-binlog position and waits for the slave to catch up to that position before
-comparing tables.  This is useful for guaranteeing a consistent comparision
-between the servers.
+Make the master wait for the slave to catch up in replication before comparing
+the tables.  The value is the number of seconds to wait before timing out (see
+also L<"--timeoutok">).  Sets L<"--lock"> to 1 and L<"--transaction"> to 0 by
+default.
 
 =item --where
 
-Use this option to limit the portion of the table being synchronized.  The
-value will be added to queries in the WHERE clause .  Do not include the
-keyword WHERE in the option; that will be added automatically.  Be sure to
-quote and escape as required by your shell.  For example:
-
-  mk-table-sync [OPTIONS...] --where "id between 5 and 10"
+A C<WHERE> clause to restrict the portion of the table being synchronized.
 
 =back
 
-=head1 DESCRIPTION
-
-I wrote this tool to help me resync slaves that "drift" from their masters,
-which can happen for any number of reasons.  I wanted a solution that would work
-well for MySQL replication, so I didn't have to re-initialize the slaves, which
-can be prohibitively expensive -- if there's enough data, even stopping and
-restarting the slave is costly, as it takes a while to "warm up" the server.
-Add to that the overhead of copying huge amounts of data over the network, and
-the time involved, and a way to resync the slaves "live" is very attractive
-indeed.  There are also many constraints introduced by replication, which I
-wanted to either avoid or use to my advantage.
-
-I know not everyone has exactly these needs, so I made mk-table-sync much more
-generic than I'd need to patch a table that's out of sync on a slave.
-
-The DBA must choose the algorithm and parameters to use when reconciling
-differences between the tables.  See below for help making this decision.
-Different algorithms have more or less network traffic, impact on the servers,
-or work better in certain circumstances.  The tool supports a variety of
-algorithms so you can resolve the differences as efficiently as possible within
-whatever parameters matter to you.
-
-=head1 SYSTEM REQUIREMENTS
-
-You need Perl, DBI, DBD::mysql, and some core packages that ought to be
-installed in any reasonably new version of Perl.
-
-You need MySQL version 4.1.1 or greater; earlier versions lack the BIT_XOR()
-function required to take a groupwise checksum.
-
-=head1 OVERVIEW
-
-This tool implements two algorithms to find differences between two MySQL
-tables, which need not be on the same server.  One is "bottom-up" and builds
-summary tables from each table, then traverses them to find rows and chunks of
-rows that differ.  The other is "top-down" and builds no summary tables, but
-repeatedly queries the target table.  Each algorithm has strengths and
-limitations, and is suitable for different situations.
-
-Once you've identified the differences, you can also choose from several methods
-of resolving them.  One method is to do inserts, updates and deletes to the
-destination table.  The other assumes the destination table is on a replication
-slave and makes the changes on the source (master) server, counting on
-replication to propagate the changes.  Again it's up to a smart DBA to decide
-which method is best.
-
-There are also variations on all the techniques, in support of locking,
-master/slave consistency, partial-row updates, and so forth.
-
-=head1 FINDING DIFFERENCES BOTTOM-UP
-
-The bottom-up method of finding differences begins by checksumming every row in
-the source and destination target tables.  The result of the checksum is stored
-in a scratch table on the server.
-
-This scratch table is what I call the "level 0" table.  It contains the target
-table's primary key columns and a checksum of all the columns, concatenated.
-This checksum is easy to compare and makes it possible to see whether the rows
-differ.  Level 0 contains one row per row in the target table.
-
-Table "level 1" is derived from level 0 by grouping a number of rows together
-and checksumming the group.  How many rows are grouped together is up to the
-user, but it must be a power of two.  128 is a suggestion I've seen.  I refer to
-this number as the "branch factor" because the summary tables conceptually build
-a tree.
-
-The grouping works by dividing the checksum of each row in level 0 by some power
-of the branch factor and taking the remainder.  A checksum is a number, though
-it is usually written as a string of hex digits, such as
-acbd18db4cc2f85cedef654fccc4a4d8, so you can divide and take the remainder
-(modulus) easily.  (This tool actually uses some bitwise arithmetic to optimize
-this, but I won't go into it here).  The power of the branch factor decreases as
-the levels are built, so the remainders get smaller and smaller, grouping the
-rows into fewer and fewer summary rows.
-
-Level 1's primary key is not the target table's primary key.  It is the modulus
-of the group from which the row was derived.  For example, if a number of rows
-in level 0 have a modulus of 11, they will be grouped together into a single row
-in level 1, with the primary key value of 11.
-
-Assuming a branch factor of 128, level 1 has 1/128th as many rows as level 0,
-give or take.  Level 2 is built from level 1, and has 1/128th as many rows in it
-again, and so on until level N, which has just a single row.
-
-After building scratch tables 0 through N, mk-table-sync begins at level N and works
-backwards.  At level N, there is just a single row.  If the checksum in this row
-matches on source and destination, the tables must be identical, and there is no
-more work to do.  If they differ though, some rows in level N-1 must differ, and
-mk-table-sync examines the "parent" rows in level N-1.  It continues to do this until
-it travels all the way back "up the tree" to level 0 and identifies exactly
-which rows in the target tables are different.  It uses breadth-first search.
-
-I've glossed over many subtleties.  For example, as the summary tables are
-built, not only their checksums but the remainders are computed on the fly; the
-remainders are stored in the summary tables and are indexed for efficient lookup
-as the algorithm traverses back up the tree seeking differences.  A running
-count is also stored so at any given point you know how many rows in the target
-table got rolled into the one row you're examining, no matter what level you're
-at in the tree.  Some optimizations can be used to short-circuit the process
-when entire chunks of rows are missing from one of the tables, and so on.  But
-these optimizations and subtleties are just efficiencies, and are not necessary
-for correctness.
-
-Here are some details about the table structures: The __crc column contains the
-checksum of the row from which it was derived.  The __cnt column contains the
-running count of rows from which it was derived, except in the case of level 0
-where each row is derived from one row.  The __rem column contains the checksum
-modulus the power of the branching factor.  The __par column in level N is a
-"pointer" to the __rem column in level N-1.
-
-=head1 FINDING DIFFERENCES TOP-DOWN
-
-The top-down algorithm is nearly the reverse of the bottom-up algorithm.
-Instead of building summary tables bottom-up from many rows and ending with one
-row, then searching top-down back through the summaries, it does an n-ary search
-on clusters of the tables, which I refer to as "groupings."  The search begins
-with grouped data and ends with single rows, instead of beginning with single
-rows and working towards summaries.  There are no summary tables.
-
-The basic idea is to choose an appropriate grouping strategy which will allow
-MySQL to use indexes to drill down through regions of the table, grouping each
-region together at first and comparing whole chunks of data between the source
-and destination.  Suppose the tables contain day-level data for many client
-accounts; clients can have many accounts.  Day, client, account and whatever the
-primary key is, are all indexed.  The drill-down strategy might first group the
-table by day and see which days differ between the tables, then within the days
-that differ group by client, then account, and finally descend to the individual
-row level, using the primary key.
-
-This approach is also a breadth-first search as I've implemented it.  At each
-level in the drill-down, mk-table-sync knows a set of truths, such as the value of
-certain columns in the rows, the number of rows that might be bad, and so on.
-In this respect it is fairly similar to the bottom-up approach.
-
-=head1 PROS AND CONS OF THE TWO SEARCH METHODS
-
-Each method for finding the rows that differ has its own strengths and
-weaknesses, and is suited for different scenarios.
-
-The bottom-up approach has these advantages:
-
-=over
-
-=item *
-
-The checksum and modulo arithmetic ensure a uniform hierarchy of rows in the
-"tree" of N-level summary tables.  Taking the modulo of a checksum is
-essentially a random number, which will distribute rows approximately evenly in
-each successive summary.
-
-=item *
-
-The algorithm makes no assumptions about keys or data types, and will work on
-any table with a primary key or a user-specified index.  All you need is a way
-to identify a row, in the final analysis.
-
-=item *
-
-The technique works the same on every table structure; there's no need to think
-about the "best" way to do it for a specific table.
-
-=item *
-
-The summary tables can be kept and re-used for successive analyses, or to
-restart an analysis that fails for some reason (for example, you specified a
-maximum cost before halting, and it was exceeded but you've changed your mind;
-no need to rebuild the summaries, you can just restart).
-
-=item *
-
-If you assume there are occasional "bad" rows scattered through the table, the
-entire tree of summary tables will need to be examined to find them.
-Pre-calculating this is an up-front penalty that pays off in efficiency once you
-try to find the bad rows.
-
-=item *
-
-This algorithm's best and worst cases, in terms of pre-computing the summary
-tables, are identical.  Given that you know the table size, you know how
-expensive it will be.
-
-=item *
-
-Parts of the algorithm can be parallelized readily, though I have not yet done
-so, as I want to make sure the implementation is correct first (I plan to do
-this soon).
-
-=item *
-
-This algorithm is network-efficient, as the potentially large rows in the target
-tables (suppose each row has very large BLOBS in it) are not sent across the
-network.  Only the checksums are sent across the network, until the bad rows
-themselves are identified.
-
-=back
-
-The algorithm has its shortcomings too, though:
-
-=over
-
-=item *
-
-It is necessary to do some possibly significant work up front to design the
-summary tables properly.  For example, you need to know the maximum possible
-number of rows to be examined.  I have tried to optimize this process as much as
-possible by examining index statistics and making estimates.  This is fairly
-cheap, and should work in nearly every case, but it makes the coding much more
-complex, just to avoid things like a COUNT(*) query, which is notoriously slow
-on InnoDB.
-
-=item *
-
-All the summary tables may add up to a LOT of data on very large tables.  If the
-target table is narrow, the summary tables may be even larger than the target
-tables, though there will never be more rows in level 0 than the target table
-has.
-
-=item *
-
-It's hard to make this approach play nicely with replication.  If you build
-temporary tables in memory, you're playing havoc with statement-based
-replication should the slave crash.  Even if you build them on disk, which is
-durable and restartable, the summary tables built on the master will replicate
-to the slave.  The slave server will be doing double work with the master's
-queries running on it.  Either way, building summary tables on the server is
-anathema to replication.
-
-=item *
-
-It's hard to lock the table for consistency, should you wish to.  You can't
-design the summary tables until you start querying the target tables, yet you
-can't write to the summary tables while only holding a lock on the target table,
-which would require releasing and re-acquiring the lock on the target -- race
-conditions abound.  I do have a workaround to this problem in mind, but have not
-implemented it yet (and it would not solve the problem in cases where the
-destination table is being written to).
-
-=item *
-
-The original algorithm, as designed by Coelho, didn't use any indexes or
-pre-computed and cached remainders and counts on the summary tables.  This is
-extremely inefficient on large tables, causing repeated table scans.  While I
-have modified the algorithm to avoid this, it comes at the cost of larger table
-and index size on the server.
-
-=item *
-
-The checksum/modulo approach destroys locality of reference in the target
-tables.  Suppose the rows that differ between the source and destination tables
-are concentrated in a small region of the table; the checksum/modulo math will
-randomly scatter these neighbors throughout the summary tables.  This precludes
-some types of optimizations.  This is very important on extremely large tables,
-as it causes lots of random I/O during the search phase.  It's also a realistic
-scenario for large tables, which may tend to be append-only logs or similar
-(credit card transactions, for example).
-
-=item *
-
-The reverse of something I mentioned earlier as a benefit becomes a drawback
-when only a small part of the table is bad.  Building the entire summary table
-tree for just one bad row is wasteful.  Most of the tree will compare equal, but
-there's no chance for early optimizations by pruning those branches; they've
-already been built by the time the search notices they aren't needed.
-
-=item *
-
-All the INSERT .. SELECT statements necessary to build the summary tables will
-acquire shared row locks on InnoDB tables.  This overhead adds up.
-
-=back
-
-The top-down approach is quite different, both in behavior and implementation
-details.  Here are some of its strengths:
-
-=over
-
-=item *
-
-This approach is network-efficient.  Large rows are not sent across the network,
-just as with the bottom-up approach.  However, it is also memory and space
-efficient on the servers, as there are no summary tables to build.
-
-=item *
-
-This approach does allow for early optimizations such as tree-pruning in the
-search.
-
-=item *
-
-The target table's natural groupings, created by its indexes, can (and should)
-be exploited.
-
-=item *
-
-The queries are not replicated because they don't affect any data.  The queries
-on the master will not cause extra work on the slave.
-
-=item *
-
-It's easy to lock the tables with one of several strategies, including
-intentionally locking InnoDB tables with SELECT FOR UPDATE or SELECT LOCK ON
-SHARE MODE, and MySQL's own table locks.
-
-=item *
-
-There is no need in this algorithm to compute branching factors and numbers of
-summary levels needed according the the size of the target tables.  There's no
-up-front analysis to do.  You don't need to pre-compute anything before
-searching for differences.
-
-=item *
-
-Spatial locality can be exploited.  Adjacent "bad" rows stay adjacent during the
-search.  This can help avoid random I/O during the search.
-
-=item *
-
-There are more opportunities for bulk operations, such as noticing a large chunk
-of the table can be inserted or deleted en masse.  While there are some in the
-bottom-up approach, there are not as many, and they're harder to optimize.
-
-=item *
-
-The best case for this algorithm is not the same cost as the worst case.  This
-can be good or bad, depending on the scenario.
-
-=item *
-
-The grouping strategy determines the "branch factor" of the search tree, and it
-can vary from level to level in the search, depending on the data and the
-strategy chosen.  This can be a good thing in the hands of a smart DBA, or a bad
-thing in a novice's hands.
-
-=item *
-
-As the search descends through the tree of groupings, it needs to examine fewer
-and fewer columns in the target tables.
-
-=back
-
-The top-down approach is not without its weaknesses:
-
-=over
-
-=item *
-
-The search strategy can be simpler or more complex.  It's up to the DBA.  There
-are certainly more possibilities, and choosing a good top-down strategy might be
-hard.
-
-=item *
-
-If there's no locality to exploit, the top-down approach might not be able to
-prune the search tree, and it might end up doing more work than the bottom-up.
-
-=item *
-
-The drill-down must repeatedly checksum the entire row (except the columns it
-holds as constants in each level of the search).  If the rows are very large,
-for example if there are large text columns, this might be a lot of work for the
-server to do over and over.
-
-=back
-
-=head1 RESOLVING DIFFERENCES
-
-Once mk-table-sync has found the differences, you probably want to resolve them.
-There are two major ways I know to do this, and several variations.
-
-The most obvious way is to simply issue INSERT, UPDATE, and DELETE statements
-against the destination server.
-
-A more subtle approach is to take advantage of replication and issue the
-statements on the master, letting replication propagate them to the slave.  In
-this case a slightly different approach is needed.  If a row is missing on the
-slave, you can't just INSERT it on the master, or you'll presumably get a
-duplicate key error.  You could do INSERT IGNORE or REPLACE instead.
-
-The tool uses REPLACE by default when you're using replication.  To tell it to
-use INSERT and UPDATE instead, use the L<"--strategy">=s option.  You can use
-L<"--strategy">=s to use REPLACE even when you're not using replication to fix the
-destination table.
-
-You can also use the L<"--onlydo"> option to only issue some kinds of statements --
-for example, suppose you want to run the INSERT and UPDATE statements but not
-the DELETE.
-
-=head1 SPECIAL CASES
-
-There are cases where no combination of UPDATE statements can resolve
-differences without violating some unique key.  For example, suppose there's a
-primary key on column a and a unique key on column b.  Then there is no way to
-sync these two tables with straightforward UPDATE statements:
+=head1 OUTPUT
+
+If you specify the L<"--verbose"> option, you'll see information about the 
+differences between the tables.  There is one row per table.  Each server is
+printed separately.  For example,
+
+   # Syncing D=test,t=test2
+   # DELETE REPLACE INSERT UPDATE ALGORITHM DATABASE.TABLE
+   #      0       0      2      0 Chunk     test.test1
+
+This table required 2 C<UPDATE> statements to synchronize.
+
+There are cases where no combination of C<INSERT>, C<UPDATE> or C<DELETE>
+statements can resolve differences without violating some unique key.  For
+example, suppose there's a primary key on column a and a unique key on column b.
+Then there is no way to sync these two tables with straightforward UPDATE
+statements:
 
  +---+---+  +---+---+
  | a | b |  | a | b |
@@ -4055,229 +3791,9 @@ sync these two tables with straightforward UPDATE statements:
  | 2 | 1 |  | 2 | 2 |
  +---+---+  +---+---+
 
-If you run into this, you can use the L<"--deleteinsert"> option to convert all
-UPDATE statements into DELETE followed by INSERT.  The tool orders statements
-such that this will succeed.
-
-If necessary, you can use the L<"--singletxn"> option to make sure sychronizing
-either succeeds or rolls back entirely.  Of course this will have no effect on
-non-transactional tables such as MyISAM.  Running the entire sync in a single
-transaction causes extra overhead.
-
-Another special case is comparing strings between servers.  If your primary key
-or drilldown columns are character data, mk-table-sync will potentially issue queries
-to the source server when it doesn't think it can reliably compare two strings
-exactly the same way MySQL does.  The collation used is the column's collation
-on the source server, so if the character set or collation differ between the
-tables being synced, it's hard to say what the results will be.  This feature
-will cause more network traffic between the servers as it compares the tables.
-This is a feature I don't have fully baked yet.  You can disable it with the
-L<"--nocollate"> option.
-
-=head1 GUARANTEEING CONSISTENCY
-
-I wrote this tool to synchronize tables live, without stopping the servers
-they're on.  This requires some kind of locking to guarantee a consistent write
-after reading.  This tool supports several methods.
-
-The first is simple table locks.  If you specify the L<"--lock"> option, it will lock
-the table for reading or writing, depending on how you want to update.  If you
-want to update on a master and let replication propagate the changes, it locks
-for write on the master and read on the slave; if you want to make changes on
-the slave, it locks for read on the master and doesn't lock on the slave, to
-avoid blocking the replication thread on the slave.
-
-If you are using InnoDB tables, you can get consistency without locking the
-whole table.  This is especially useful if you're only trying to synchronize
-part of the table that you know to be bad.  Use the L<"--forupdate"> option to make
-the SELECT statements acquire locks.  As above, it gets either shared (LOCK IN
-SHARE MODE) or exclusive (FOR UPDATE) locks, depending on how you are syncing.
-This only applies to the top-down algorithm.  The bottom-up algorithm creates
-tables, which implicitly commits and releases locks unless you use temporary
-tables (the L<"--temp"> option).  If you're using temporary tables with the bottom-up
-algorithm, there are implicit shared locks on the target tables if they're
-InnoDB.
-
-Finally, if you're working on a master and slave server, you should probably
-specify the L<"--wait"> option in conjunction with one of the above. This locks on
-the master, finds the master's position, and then waits for the slave to catch
-up to that position.  The argument to the option is the number of seconds the
-slave should wait before timing out.  By default L<"--wait"> implies L<"--lock">, but you
-can specify L<"--nolock"> if you want to override this and use InnoDB's row-level
-locks.  Also by default, if the wait timeout is exceeded or another
-MASTER_POS_WAIT error occurs, the program will exit with an error, but you can
-use the L<"--timeoutok"> option to control this.
-
-You can use the L<"--singletxn"> option to make the entire sync run in one
-transaction.
-
-=head1 OUTPUT
-
-Output varies greatly depending on the command-line options you specify.
-There are several different kinds of output: debugging, status, and query.  I
-have tried to ensure it will always be valid SQL, though much of it will be
-commented out.
-
-If you specify the L<"--print"> option, the queries needed to sync the destination
-table with the source table will be printed to STDOUT.
-
-If you specify the L<"--debug"> option, the queries needed to discover the
-differences between source and destination will be printed to STDOUT, commented
-out.  You can use this to see how many queries are executed for a given
-strategy, or whatever other debugging you want.  If you remove the comment
-characters with the L<"--queries"> option, you can also replay the process of finding
-the differences.
-
-If you specify the L<"--verbose"> option, you'll see information about the process of
-discovering the differences between the tables.  The output is quite different
-for top-down and bottom-up algorithms.  Specify this option multiple times to
-increase the amount of information you see.  This output is complex enough
-that I'll need to explain it separately.
-
-=head2 TOP-DOWN OUTPUT
-
-At its most verbose, the top-down output may resemble this:
-
-   -- Level 2: CHECK  group of    81 rows WHERE `col2` = '20'
-   -- Level 2: INSERT group of    18 rows WHERE `col2` = '42'
-   --          Level 2 total:     18 bad rows        81 to inspect
-   --          Level 2 summary:    1 bad groups in    3 src groups    2 dst groups
-   --          Level 2 changes:    0 updates         18 inserts       0 deletes
-   -- Level 1: CHECK  group of     6 rows WHERE `col3` = '737696900' AND `col2` = '20'
-   -- Level 1: CHECK  group of     1 rows WHERE `col3` = '737953400' AND `col2` = '20'
-   -- Level 1: CHECK  group of     1 rows WHERE `col3` = '737955900' AND `col2` = '20'
-   --          Level 1 total:     18 bad rows         8 to inspect
-   --          Level 1 summary:    3 bad groups in   32 src groups   32 dst groups
-   --          Level 1 changes:    0 updates         18 inserts       0 deletes
-   --          Level 0 total:     18 bad rows         2 to inspect
-   --          Level 0 summary:    2 bad groups in    6 src groups    6 dst groups
-   --          Level 0 changes:    0 updates         18 inserts       0 deletes
-   -- Level 0: UPDATE             1 row  WHERE `col3` = '737953400' AND `col1` = '87551' AND `col2` = '20'
-   --          Level 0 total:     19 bad rows         1 to inspect
-   --          Level 0 summary:    1 bad groups in    1 src groups    1 dst groups
-   --          Level 0 changes:    1 updates         18 inserts       0 deletes
-   --          Level 0 total:     19 bad rows         0 to inspect
-   --          Level 0 summary:    0 bad groups in    1 src groups    1 dst groups
-   --          Level 0 changes:    1 updates         18 inserts       0 deletes
-
-Outdented lines are actions that must be taken later, indented lines are
-play-by-play status as differences between the tables are found.  There will be
-one group of indented lines for each group of rows drilled into and found to
-have differences.
-
-The first two lines are details of level 2.  At level 2, col2 is held as a
-constant.  There is one group of 81 rows where col2 = 20, which does not match
-from source to destination.  It needs further checking and is marked as CHECK.
-The next level will drill down into this group.  Also at level 2, there is one
-group of 18 rows that needs to be inserted to sync the destination table.  This
-does not need to be drilled into on the next level.
-
-The next three lines summarize the findings at level 2, and the work that
-remains to be done.  Line 1 shows level 2 found a total of 18 rows known to
-differ between the source and destination, and there are 81 more to inspect
-further.  Line 2 shows level 2 found 1 entire group of rows known to be bad
-(the group that must be inserted) after inspecting 3 groups from the source
-table and 2 from the destination table.  The difference, 3-2, is the one group
-that must be inserted.  Line 3 shows 18 rows have been queued for insertion
-en masse.
-
-The next six lines are what happens in the one group at level 1.  At level 1,
-the group of rows where col2 = 20 is drilled into, grouped on col3.  The first
-three lines of output show the algorithm finds three groups of rows that don't
-match.  The next three show the total bad-row count still at 18, so no new bad
-rows have been found, but the number of rows that must be drilled into is much
-smaller now -- only 8 rows.  Level 1 found 3 bad groups by checking 32 groups
-from each table, and queued no new rows into the known-bad list.
-
-The level 0 output shows these 3 groups being examined a row at a time, with no
-more drilldown possible.  And you can see the one bad row being found.
-Eventually the last line of output shows 18 rows must be inserted (no change
-from before) and 1 row must be updated to sync the destination table.
-
-It might help to see what happens with only one level of verbosity, this time on
-a 50,000 row table with 5 rows missing from the destination:
-
-   --          Level 2 total:       0 bad rows       6385 to inspect
-   --          Level 1 total:       0 bad rows       5142 to inspect
-   --          Level 1 total:       1 bad rows       4235 to inspect
-   --          Level 1 total:       1 bad rows       2919 to inspect
-   --          Level 1 total:       1 bad rows       2560 to inspect
-   --          Level 1 total:       1 bad rows        325 to inspect
-   --          Level 0 total:       2 bad rows        142 to inspect
-   --          Level 0 total:       2 bad rows        141 to inspect
-   --          Level 0 total:       3 bad rows         61 to inspect
-   --          Level 0 total:       4 bad rows         37 to inspect
-   --          Level 0 total:       5 bad rows          0 to inspect
-
-Now you can see it progressing from 0 known bad rows, with 6385 to do, all the
-way to 5 known bad rows and 0 left to do.
-
-=head2 BOTTOM-UP OUTPUT
-
-At maximum verbosity, the output from the bottom-up algorithm may look like this
-(this output is from the same 100-row tables as above).
-
-   -- Level 2 UPDATE parent:      0
-   --         Level 2 total:    100 rows
-   --         Level 2 summary:    1 parents  100 src rows   82 dst rows
-   --         Level 2 changes:    0 updates    0 inserts     0 deletes    0 total
-   --         Level 2 bulk-op:    0 inserts    0 ins-rows    0 deletes    0 del-rows
-   -- Level 1 UPDATE parent:      0
-   -- Level 1 BULKIN parent:      1
-   -- Level 1 UPDATE parent:      2
-   -- Level 1 UPDATE parent:      3
-   -- Level 1 UPDATE parent:      4
-   -- Level 1 UPDATE parent:      5
-   -- Level 1 UPDATE parent:      8
-   -- Level 1 UPDATE parent:      9
-   -- Level 1 UPDATE parent:     10
-   -- Level 1 UPDATE parent:     11
-   -- Level 1 UPDATE parent:     14
-   -- Level 1 UPDATE parent:     15
-   --         Level 1 total:     84 rows
-   --         Level 1 summary:   11 parents  100 src rows   82 dst rows
-   --         Level 1 changes:    0 updates    1 inserts     0 deletes    1 total
-   --         Level 1 bulk-op:    1 inserts    1 ins-rows    0 deletes    0 del-rows
-   --         Level 0 total:     19 rows
-   --         Level 0 summary:    0 parents   83 src rows   66 dst rows
-   --         Level 0 changes:    1 updates   18 inserts     0 deletes   19 total
-   --         Level 0 bulk-op:    1 inserts    1 ins-rows    0 deletes    0 del-rows
-
-The first level, level 2, says the parent row whose remainder is 0 (this will
-always be the case at the first level in bottom-up) differs.  At this point it
-looks like the parent must be updated to reconcile source and destination
-tables, but it's not yet known which individual rows must be changed.  The level
-2 summary says there are 100 rows grouped together from parent rows, that is 1
-parent value with 100 rows in the source and 82 in the destination (the
-difference is the 18 rows that must be inserted, but that is not yet known).
-The next two lines of output show what work is queued to do -- row-level
-updates, inserts and deletes, and bulk inserts and deletes.  Each bulk insert or
-delete knows how many rows it will affect.
-
-The next set of output, for level 1, shows that this level of the tree has 11
-rows that don't match between source and destination.  These are again marked as
-UPDATE because they differ, but it's still not known why.  One row doesn't exist
-in the destination and is marked as BULKIN, for "bulk insert."  This level of
-drill-down was able to narrow the part of the table possibly bad from 100 to 84
-rows.
-
-At level 0, this narrows down to just 19 rows.  Most of these are inserted
-singly, and there is one update.
-
-Again, here is what happens with just one level of verbosity on the same
-50,000-row tables as above:
-
-   --         Level 2 total:   50000 rows
-   --         Level 1 total:    1945 rows
-   --         Level 0 total:       5 rows
-
-At the beginning, all 50,000 rows look bad, but as it navigates the tree, it
-narrows it down to just the 5 missing rows.
-
-=head1 COMPATIBILITY
-
-My goal is a superb solution for MySQL.  However, I think you can probably
-make some minor changes and use this tool on other platforms.
+The tool rewrites queries to C<DELETE> and C<REPLACE> in this case.  This is
+automatically handled after the first index violation, so you don't have to
+worry about it.
 
 =head1 HISTORY AND ACKNOWLEDGEMENTS
 
@@ -4305,6 +3821,10 @@ understood it completely.  I discovered it is not what I thought it was, and is
 considerably more complex than it appeared to me at first.  Fabien Coelho was
 kind enough to address some questions over email.
 
+The first versions of this tool implemented a version of the Coelho/Maxia
+algorithm, which I called "bottom-up", and my own, which I called "top-down."
+Those algorithms are considerably more complex than the Stream and Chunk
+algorithms and I have removed them from this tool, and may add them back later.
 The improvements to the bottom-up algorithm are my original work, as is the
 top-down algorithm.  The techniques to actually resolve the differences are also
 my own work.
@@ -4316,14 +3836,21 @@ L<http://www.xaprb.com/blog/2007/04/05/mysql-table-sync-vs-sqlyog-job-agent/>
 
 Thanks to the following people and organizations for helping in many ways:
 
-Alan Rimm-Kaufman and John Miller (The Rimm-Kaufman Group),
-Dane Miller,
+The Rimm-Kaufman Group L<http://www.rimmkaufman.com/>,
+MySQL AB L<http://www.mysql.com/>,
+Blue Ridge InternetWorks L<http://www.briworks.com/>,
+Percona L<http://www.percona.com/>,
 Fabien Coelho,
 Giuseppe Maxia and others at MySQL AB,
 Kristian Koehntopp (MySQL AB),
 Rohit Nadhani (WebYog),
 The helpful monks at Perlmonks,
-Travis Rodak,
+And others too numerous to mention.
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
 
 =head1 BUGS
 
