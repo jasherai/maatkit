@@ -49,7 +49,8 @@ my $ch = new ChangeHandler(
    table     => 'foo',
    sdatabase => 'test',
    stable    => 'foo',
-   actions   => [ sub { push @rows, @_ }, ]
+   replace   => 0,
+   actions   => [ sub { push @rows, @_ }, ],
 );
 $t = new TableSyncStream(
    handler => $ch,
