@@ -24,7 +24,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1344
+# OptionParser package 1369
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -47,7 +47,6 @@ sub new {
    my %disables;
    my %copyfrom;
    unshift @opts,
-      { s => 'debug',   d => 'Set ENV{MKDEBUG} and enable debugging output' },
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
    foreach my $opt ( @opts ) {
@@ -176,10 +175,6 @@ sub parse {
       printf("%s  Ver %s Distrib %s Changeset %s\n",
          $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
       exit(0);
-   }
-
-   if ( $vals{debug} ) {
-      $ENV{MKDEBUG} = 1;
    }
 
    if ( @ARGV && $self->{strict} ) {
@@ -2349,16 +2344,16 @@ sub sync_table {
 
    my $update_func;
    my $change_dbh;
-   if ( $args{replicate} ) {
-      $change_dbh = $args{src_dbh};
-      $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
-   }
-   else {
-      $change_dbh = $args{dst_dbh};
-      $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
-   }
-   $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
    if ( $args{execute} ) {
+      if ( $args{replicate} ) {
+         $change_dbh = $args{src_dbh};
+         $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
+      }
+      else {
+         $change_dbh = $args{dst_dbh};
+         $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
+      }
+      $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
       $update_func = sub {  map { $change_dbh->do($_) } @_ };
    }
 
@@ -3011,9 +3006,9 @@ my @opt_spec = (
    { s => 'skipbinlog',
      d => 'Do not log to the binary log' },
    { s => 'skipforeignkey|K',
-     d => 'Turn off foreign key checks' },
+     d => 'Disable foreign key checks' },
    { s => 'skipuniquekey',
-     d => 'Turn off UNIQUE key checks' },
+     d => 'Disable unique key checks' },
    { s => 'synctomaster|s',
      d => 'Treat the DSN as a slave and sync it to its master'},
    { s => 'tables|t=h',
@@ -3056,10 +3051,8 @@ $dsn_parser->prop('autokey', 'h');
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{dsn}    = $dsn_parser;
 $opt_parser->{strict} = 0;
-$opt_parser->{prompt} = '[OPTION].. [SOURCE] DEST';
-$opt_parser->{descr}
-   = 'finds and resolves data differences between two MySQL tables.  SOURCE '
-   . 'and DEST are DSNs.  Values for DEST default to the values for SOURCE.';
+$opt_parser->{prompt} = '[OPTION].. DSN [DSN...]';
+$opt_parser->{descr} = 'finds and resolves data differences between MySQL tables.';
 my %opts = $opt_parser->parse();
 
 if ( $opts{R} || $opts{s} ) {
@@ -3078,7 +3071,7 @@ while ( my $arg = shift(@ARGV) ) {
 }
 
 if ( !@dsns || (@dsns ==1 && !$opts{R} && !$opts{s}) ) {
-   $opt_parser->error('SOURCE is required, and at least one DEST is '
+   $opt_parser->error('At least one DSN is required, and at least two are '
       . 'required unless --synctomaster or --replicate is specified');
 }
 
@@ -3794,6 +3787,13 @@ statements:
 The tool rewrites queries to C<DELETE> and C<REPLACE> in this case.  This is
 automatically handled after the first index violation, so you don't have to
 worry about it.
+
+=head1 ENVIRONMENT
+
+The environment variable MKDEBUG enables verbose debugging output in all of the
+Maatkit tools:
+
+   MKDEBUG=1 mk-....
 
 =head1 HISTORY AND ACKNOWLEDGEMENTS
 
