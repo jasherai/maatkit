@@ -200,6 +200,18 @@ sub done {
       && $self->{chunk_num} >= scalar(@{$self->{chunks}})
 }
 
+sub pending_changes {
+   my ( $self ) = @_;
+   if ( $self->{state} ) {
+      $ENV{MKDEBUG} && _d('There are pending changes');
+      return 1;
+   }
+   else {
+      $ENV{MKDEBUG} && _d('No pending changes');
+      return 0;
+   }
+}
+
 sub key_cols {
    my ( $self ) = @_;
    my @cols;

@@ -24,15 +24,17 @@ use English qw(-no_match_vars);
 use DBI;
 
 # Open a connection to MySQL, or skip the rest of the tests.
-my ( $src_dbh, $dst_dbh );
+my ( $src_dbh, $dst_dbh, $dbh );
 eval {
    $src_dbh = DBI->connect( "DBI:mysql:;mysql_read_default_group=mysql",
       undef, undef, { PrintError => 0, RaiseError => 1 } );
    $dst_dbh = DBI->connect( "DBI:mysql:;mysql_read_default_group=mysql",
       undef, undef, { PrintError => 0, RaiseError => 1 } );
+   $dbh = DBI->connect( "DBI:mysql:;mysql_read_default_group=mysql",
+      undef, undef, { PrintError => 0, RaiseError => 1 } );
 };
 if ($src_dbh) {
-   plan tests => 5;
+   plan tests => 10;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -80,27 +82,23 @@ my $algo = $ts->best_algorithm(
 
 ok( $algo, 'Found an algorithm' );
 
-$ts->sync_table(
-   algorithm     => 'Chunk',
+my %args = (
    buffer        => 0,
    checksum      => $checksum,
    chunker       => $chunker,
    chunksize     => 2,
    dst_dbh       => $dst_dbh,
-   dst_db        => 'test',
-   dst_tbl       => 'test2',
    execute       => 1,
-   lock          => 1,
+   lock          => 0,
    misc_dbh      => $src_dbh,
    print         => 0,
    quoter        => $q,
    replace       => 0,
    replicate     => 0,
    src_dbh       => $src_dbh,
-   src_db        => 'test',
-   src_tbl       => 'test1',
    tbl_struct    => $tbl_struct,
    timeoutok     => 0,
+   transaction   => 0,
    versionparser => $vp,
    wait          => 0,
    where         => '',
@@ -108,76 +106,45 @@ $ts->sync_table(
    cols          => $tbl_struct->{cols},
 );
 
-$cnt = $src_dbh->selectall_arrayref('select count(*) from test.test2')
+$ts->sync_table(
+   %args,
+   algorithm     => 'Chunk',
+   dst_db        => 'test',
+   dst_tbl       => 'test2',
+   src_db        => 'test',
+   src_tbl       => 'test1',
+);
+
+$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')
    ->[0]->[0];
 is( $cnt, 4, 'Four rows in destination after Chunk' );
 
 `mysql < samples/before-TableSyncChunk.sql`;
 
 $ts->sync_table(
+   %args,
    algorithm     => 'Stream',
-   buffer        => 0,
-   checksum      => $checksum,
-   chunker       => $chunker,
-   chunksize     => 2,
-   dst_dbh       => $dst_dbh,
    dst_db        => 'test',
    dst_tbl       => 'test2',
-   execute       => 1,
-   lock          => 1,
-   misc_dbh      => $src_dbh,
-   print         => 0,
-   quoter        => $q,
-   replace       => 0,
-   replicate     => 0,
-   src_dbh       => $src_dbh,
    src_db        => 'test',
    src_tbl       => 'test1',
-   tbl_struct    => $tbl_struct,
-   timeoutok     => 0,
-   versionparser => $vp,
-   wait          => 0,
-   where         => '',
-   possible_keys => [],
-   cols          => $tbl_struct->{cols},
 );
 
-($cnt)
-   = $src_dbh->selectall_arrayref('select count(*) from test.test2')->[0]
-   ->[0];
+$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
 is( $cnt, 4, 'Four rows in destination after Stream' );
 
 `mysql < samples/before-TableSyncChunk.sql`;
 
 $ts->sync_table(
+   %args,
    algorithm     => 'Stream',
-   buffer        => 0,
-   checksum      => $checksum,
-   chunker       => $chunker,
-   chunksize     => 2,
-   dst_dbh       => $dst_dbh,
    dst_db        => 'test',
    dst_tbl       => 'test4',
-   execute       => 1,
-   lock          => 1,
-   misc_dbh      => $src_dbh,
-   print         => 0,
-   quoter        => $q,
-   replace       => 0,
-   replicate     => 0,
-   src_dbh       => $src_dbh,
    src_db        => 'test',
    src_tbl       => 'test3',
-   tbl_struct    => $tbl_struct,
-   timeoutok     => 0,
-   versionparser => $vp,
-   wait          => 0,
-   where         => '',
-   possible_keys => [],
-   cols          => $tbl_struct->{cols},
 );
 
-$rows = $src_dbh->selectall_arrayref(
+$rows = $dbh->selectall_arrayref(
    'select * from test.test4 order by a', { Slice => {}} );
 is_deeply($rows,
    [ { a => 1, b => 2 }, { a => 2, b => 1 } ],
@@ -186,35 +153,85 @@ is_deeply($rows,
 `mysql < samples/before-TableSyncChunk.sql`;
 
 $ts->sync_table(
+   %args,
    algorithm     => 'Chunk',
-   buffer        => 0,
-   checksum      => $checksum,
-   chunker       => $chunker,
-   chunksize     => 2,
-   dst_dbh       => $dst_dbh,
    dst_db        => 'test',
    dst_tbl       => 'test4',
-   execute       => 1,
-   lock          => 1,
-   misc_dbh      => $src_dbh,
-   print         => 0,
-   quoter        => $q,
-   replace       => 0,
-   replicate     => 0,
-   src_dbh       => $src_dbh,
    src_db        => 'test',
    src_tbl       => 'test3',
-   tbl_struct    => $tbl_struct,
-   timeoutok     => 0,
-   versionparser => $vp,
-   wait          => 0,
-   where         => '',
-   possible_keys => [],
-   cols          => $tbl_struct->{cols},
 );
 
-$rows = $src_dbh->selectall_arrayref(
+$rows = $dbh->selectall_arrayref(
    'select * from test.test4 order by a', { Slice => {}} );
 is_deeply($rows,
    [ { a => 1, b => 2 }, { a => 2, b => 1 } ],
    'Resolves unique key violations with Chunk' );
+
+`mysql < samples/before-TableSyncChunk.sql`;
+
+$ts->sync_table(
+   %args,
+   lock          => 1, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   algorithm     => 'Chunk',
+   dst_db        => 'test',
+   dst_tbl       => 'test4',
+   src_db        => 'test',
+   src_tbl       => 'test3',
+);
+
+# The locks should be released.
+ok($src_dbh->do('select * from test.test4'), 'cycle locks released');
+
+$ts->sync_table(
+   %args,
+   lock          => 2, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   algorithm     => 'Chunk',
+   dst_db        => 'test',
+   dst_tbl       => 'test4',
+   src_db        => 'test',
+   src_tbl       => 'test3',
+);
+
+# The locks should be released.
+ok($src_dbh->do('select * from test.test4'), 'table locks released');
+
+$ts->sync_table(
+   %args,
+   lock          => 3, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   algorithm     => 'Chunk',
+   dst_db        => 'test',
+   dst_tbl       => 'test4',
+   src_db        => 'test',
+   src_tbl       => 'test3',
+);
+
+ok($dbh->do('replace into test.test3 select * from test.test3 limit 0'),
+   'sync_table does not lock in level 3 locking');
+
+ok($ts->lock_and_wait(
+   %args,
+   lock          => 3, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   algorithm     => 'Chunk',
+   dst_db        => 'test',
+   dst_tbl       => 'test4',
+   src_db        => 'test',
+   src_tbl       => 'test3',
+   lock_level => 3
+   ),
+   'Locks in level 3');
+
+# See DBI man page.
+use POSIX ':signal_h';
+my $mask = POSIX::SigSet->new(SIGALRM);    # signals to mask in the handler
+my $action = POSIX::SigAction->new( sub { die "maatkit timeout" }, $mask, );
+my $oldaction = POSIX::SigAction->new();
+sigaction( SIGALRM, $action, $oldaction );
+
+throws_ok (
+   sub {
+      alarm 1;
+      $dbh->do('replace into test.test3 select * from test.test3 limit 0');
+   },
+   qr/maatkit timeout/,
+   "Level 3 lock NOT released",
+);
