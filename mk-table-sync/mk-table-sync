@@ -2309,7 +2309,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1367
+# TableSyncer package 1410
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2348,7 +2348,7 @@ sub sync_table {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
-      misc_dbh quoter replace replicate src_db src_dbh src_tbl tbl_struct
+      misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
@@ -2389,6 +2389,9 @@ sub sync_table {
 
    $args{algorithm} ||= $self->best_algorithm(
       map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
+   if ( $args{test} ) {
+      return ($ch->get_changes(), ALGORITHM => $args{algorithm});
+   }
 
    my $class  = "TableSync$args{algorithm}";
    my $plugin = $class->new(
@@ -3029,6 +3032,8 @@ my @opt_spec = (
      d => 'Treat the DSN as a slave and sync it to its master'},
    { s => 'tables|t=h',
      d => 'Do only this comma-separated list of tables' },
+   { s => 'test',
+     d => 'Analyze and decide the sync algorithm to use, then bail out' },
    { s => 'timeoutok',
      d => 'Keep going if --wait fails' },
    { s => 'transaction!',
@@ -3373,6 +3378,7 @@ sub sync_a_table {
          src_db        => $args{src_db},
          src_dbh       => $args{src}->{dbh},
          src_tbl       => $args{src_tbl},
+         test          => $opts{test} || 0,
          tbl_struct    => $tbl_struct,
          timeoutok     => $opts{timeoutok} || 0,
          versionparser => $vp,
@@ -3741,6 +3747,11 @@ L<"--transaction"> by default.
 =item --tables
 
 Restrict syncing to this comma-separated list of tables.
+
+=item --test
+
+Analyze tables and decide which sync algorithm to use, then bail out before
+doing any work.
 
 =item --timeoutok
 
