@@ -2036,7 +2036,7 @@ if ( defined $opts{replcheck} ) {
          recurse    => $opts{replcheck},
          table      => $opts{R},
          callback   => sub {
-            my ( $host, $dbh, $dsn, @differences ) = @_;
+            my ( $host, $dbh, $level, @differences ) = @_;
             $exit_status = 1;
             if ( !$opts{q} ) {
                print "Differences on " . $dsn_parser->as_string($host) . "\n";
@@ -2926,7 +2926,8 @@ requires slaves to be configured with C<report-host>, C<report-port> and so
 on.
 
 This requires the @@SERVER_ID system variable, so it works only on MySQL
-3.23.26 or newer.
+3.23.26 or newer.  It also requires the slaves to have the correct
+C<report_host> and C<report_port> parameters set in their configuration files.
 
 If any slave has chunks that differ from the master, mk-table-checksum's
 exit status is 1; otherwise it is 0.
