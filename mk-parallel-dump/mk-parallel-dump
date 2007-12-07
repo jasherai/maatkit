@@ -1162,7 +1162,7 @@ sub get_triggers {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 1350
+# TableChunker package 1398
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1364,6 +1364,20 @@ sub get_first_chunkable_column {
 
 sub size_to_rows {
    my ( $self, $dbh, $db, $tbl, $size, $cache ) = @_;
+  
+   my ( $num, $suffix ) = $size =~ m/^(\d+)([MGk])?$/;
+   if ( $suffix ) { # Convert to bytes.
+      $size = $suffix eq 'k' ? $num * 1_024
+            : $suffix eq 'M' ? $num * 1_024 * 1_024
+            :                  $num * 1_024 * 1_024 * 1_024;
+   }
+   elsif ( $num ) {
+      return $num;
+   }
+   else {
+      die "Invalid size spec $size; must be an integer with optional suffix kMG";
+   }
+
    my $avg_row_length;
    my $status;
    if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
@@ -1641,10 +1655,6 @@ $opts{locktables} = !$lock_all unless defined $opts{locktables};
 
 # TODO: modularize these.
 if ( !$opts{help} ) {
-   if ( $opts{C} && $opts{C} !~ m/^\d+[kGM]?$/ ) {
-      $opt_parser->error("Invalid --chunksize argument");
-   }
-
    if ( $opts{defaultset} && !$opts{sets} ) {
       $opt_parser->error("--defaultset has no effect without --sets");
    }
@@ -2146,7 +2156,6 @@ sub mysql_error_msg {
 sub get_chunks {
    my ( $spec, $set, $db, $tbl, $cache ) = @_;
    my $table = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
-   my $rows_per_chunk;
    my $cant_chunk = {
       D => $db,
       N => $tbl,
@@ -2156,19 +2165,7 @@ sub get_chunks {
    };
    return $cant_chunk unless $spec;
 
-   # Figure out whether the chunksize is a number of rows or a data size.
-   my ( $num, $suffix ) = $spec =~ m/^(\d+)([MGk])$/;
-   if ( $suffix ) {
-      # Figure out how many rows fit into this many bytes
-      my $size = $suffix eq 'k' ? 1_024
-               : $suffix eq 'M' ? 1_024 * 1_024
-               :                  1_024 * 1_024 * 1_024;
-      $rows_per_chunk = $tc->size_to_rows($dbh, $db, $tbl, $size * $num, $cache);
-      return $cant_chunk unless $rows_per_chunk;
-   }
-   else {
-      $rows_per_chunk = $spec;
-   }
+   my $rows_per_chunk = $tc->size_to_rows($dbh, $db, $tbl, $spec, $cache);
 
    # Get the chunk column candidates
    my $col   = $tc->get_first_chunkable_column($table);
