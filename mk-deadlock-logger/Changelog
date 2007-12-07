@@ -1,8 +1,8 @@
 Changelog for mk-deadlock-logger:
 
-2007-12-06: version 1.0.6
+2007-12-07: version 1.0.6
 
-   * Updated modules for compatibility with changes made to mk-table-sync.
+   * Updated common code.
 
 2007-11-04: version 1.0.5
 
