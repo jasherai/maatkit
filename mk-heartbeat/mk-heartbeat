@@ -611,6 +611,7 @@ my @opt_spec = (
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'table|t=s',         d => 'Table to use for heartbeat (default heartbeat)' },
+   { s => 'time|m=m',          d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'update',            d => "Update a master's heartbeat" },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    'Specify one and only one of --update, --monitor, or --check',
@@ -702,9 +703,13 @@ $SIG{ALRM} = sub {};
 # --monitor alarms happen halfway between seconds.
 ualarm(( ($opts{update} ? 1_000_000 : 1_500_000) - (gettimeofday)[1] ), 1_000_000);
 
-while ( 1 ) {
-
-      eval {
+my $now = time();
+my $end = $now + ($opts{m} || 0); # When we should exit
+while (                       # Quit if:
+   (!$opts{m} || $now < $end) # time is exceeded
+   )
+{
+   eval {
       # Normally it is not safe to use sleep and alarm together, but since we're
       # sleeping an infinite time and waiting for the alarm to wake us up,
       # there's no harm in it.  In other words, infinite sleep isn't implemented
@@ -764,7 +769,11 @@ while ( 1 ) {
          die $EVAL_ERROR;
       }
    }
+   $now = time();
 }
+
+alarm(0);
+exit(0);
 
 # ############################################################################
 # Documentation.
@@ -894,6 +903,11 @@ Socket file to use for connection.
 
 The table to use for the heartbeat.  The default is 'heartbeat'.  Don't
 specify database.table; use L<"--database"> to specify the database.
+
+=item --time
+
+A number of seconds to run before exiting.  The suffix is similar to
+L<"--frames">.  Default is forever.
 
 =item --update
 
