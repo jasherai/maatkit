@@ -24,7 +24,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1178
+# OptionParser package 1369
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -63,15 +63,21 @@ sub new {
          $opt->{n} = $opt->{s} =~ m/!/;
          $opt->{g} ||= 'o';
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
+            $ENV{MKDEBUG} && _d("Option $opt->{k} type: $y");
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
-         $opt->{r} = $opt->{d} =~ m/required/;
+         if ( $opt->{d} =~ m/required/ ) {
+            $opt->{r} = 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} is required");
+         }
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} has a default");
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+            $ENV{MKDEBUG} && _d("Option $opt->{k} $dis");
          }
       }
       else { # It's an instruction.
@@ -83,9 +89,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -94,6 +102,7 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
+            $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
          }
 
       }
@@ -135,6 +144,7 @@ sub get_participants {
          }
       }
    }
+   $ENV{MKDEBUG} && _d("Participants for $str: ", @participants);
    return @participants;
 }
 
@@ -173,6 +183,7 @@ sub parse {
 
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      $ENV{MKDEBUG} && _d("Unsetting options: ", @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -215,15 +226,18 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
+            $ENV{MKDEBUG} && _d("Setting option $spec->{k} to $val");
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
+         $ENV{MKDEBUG} && _d("Parsing option $spec->{y} as a DSN");
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
+            $ENV{MKDEBUG} && _d("Option $spec->{y} DSN copies from option $from_key");
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -233,6 +247,7 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
+               $ENV{MKDEBUG} && _d("Setting option $spec->{y} to num * factor");
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -243,6 +258,7 @@ sub parse {
    }
 
    foreach my $spec ( grep { $_->{y} } @specs ) {
+      $ENV{MKDEBUG} && _d("Treating option $spec->{k} as a list");
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -385,6 +401,11 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# OptionParser:$line ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -392,7 +413,7 @@ sub groups {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 1149
+# VersionParser package 1344
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -406,14 +427,25 @@ sub new {
 
 sub parse {
    my ( $self, $str ) = @_;
-   return sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+   my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
+   $ENV{MKDEBUG} && _d("$str parses to $result");
+   return $result;
 }
 
 sub version_ge {
    my ( $self, $dbh, $target ) = @_;
-   $self->{$dbh} ||= $self->parse(
-      $dbh->selectrow_array('SELECT VERSION()'));
-   return $self->{$dbh} ge $self->parse($target);
+   if ( !$self->{$dbh} ) {
+      $self->{$dbh} = $self->parse(
+         $dbh->selectrow_array('SELECT VERSION()'));
+   }
+   my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
+   $ENV{MKDEBUG} && _d("$self->{$dbh} ge $target: $result");
+   return $result;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# VersionParser:$line ", @_, "\n";
 }
 
 1;
@@ -423,7 +455,7 @@ sub version_ge {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1149
+# DSNParser package 1345
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -472,6 +504,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
+      $ENV{MKDEBUG} && _d('Adding extra property ' . $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -480,6 +513,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
+      $ENV{MKDEBUG} && _d("Setting $prop property");
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -487,29 +521,35 @@ sub prop {
 
 sub parse {
    my ( $self, $dsn, $prev, $defaults ) = @_;
-   return unless $dsn;
+   if ( !$dsn ) {
+      $ENV{MKDEBUG} && _d('No DSN to parse');
+      return;
+   }
+   $ENV{MKDEBUG} && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
    my %vals;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && $self->prop('autokey') ) {
-      $vals{ $self->prop('autokey') } = $dsn;
+   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
+      $ENV{MKDEBUG} && _d("Interpreting $dsn as $p=$dsn");
+      $dsn = "$p=$dsn";
    }
-   else {
-      my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-      foreach my $key ( keys %opts ) {
-         $vals{$key} = $hash{$key};
-         if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-            $vals{$key} = $prev->{$key};
-         }
-         if ( !defined $vals{$key} ) {
-            $vals{$key} = $defaults->{$key};
-         }
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   foreach my $key ( keys %opts ) {
+      $ENV{MKDEBUG} && _d("Finding value for $key");
+      $vals{$key} = $hash{$key};
+      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+         $vals{$key} = $prev->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from previous DSN");
       }
-      foreach my $key ( keys %hash ) {
-         die "Unrecognized DSN part '$key' in '$dsn'\n"
-            unless exists $opts{$key};
+      if ( !defined $vals{$key} ) {
+         $vals{$key} = $defaults->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from defaults");
       }
+   }
+   foreach my $key ( keys %hash ) {
+      die "Unrecognized DSN part '$key' in '$dsn'\n"
+         unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
@@ -522,7 +562,10 @@ sub parse {
 sub as_string {
    my ( $self, $dsn ) = @_;
    return $dsn unless ref $dsn;
-   return join(',', map { "$_=$dsn->{$_}" } grep { defined $dsn->{$_} } sort keys %$dsn );
+   return join(',',
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      sort keys %$dsn );
 }
 
 sub usage {
@@ -562,7 +605,13 @@ sub get_cxn_params {
                      qw(F h P S))
          . ';mysql_read_default_group=mysql';
    }
+   $ENV{MKDEBUG} && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# DSNParser:$line ", @_, "\n";
 }
 
 1;
