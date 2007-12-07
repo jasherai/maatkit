@@ -31,6 +31,8 @@ use DBI;
 require "../MySQLDump.pm";
 require "../Quoter.pm";
 
+# TODO: get_create_table() seems to return an arrayref sometimes!
+
 my $q = new Quoter();
 
 # Open a connection to MySQL, or skip the rest of the tests.
