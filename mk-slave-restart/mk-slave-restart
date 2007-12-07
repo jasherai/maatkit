@@ -983,6 +983,13 @@ mk-slave-restart should work on many versions of MySQL.  Lettercase of many
 output columns from SHOW SLAVE STATUS has changed over time, so it treats them
 all as lowercase.
 
+=head1 ENVIRONMENT
+
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
+
+   MKDEBUG=1 mk-....
+
 =head1 BUGS
 
 If you find bugs, need features, etc please use the bug tracker, forums, and
