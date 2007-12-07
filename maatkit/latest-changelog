@@ -17,6 +17,8 @@ foreach my $package ( @packages ) {
       or die $!;
    my $contents = do { local $/ = undef; <$file>; };
    close $file;
+   die "$package has a tab in its changelog"
+      if $contents =~ m/\t/;
    my ($log) = $contents =~ m/^(200.*?)(?=^200|\Z)/sm;
    if ( @packages > 1 ) {
       print "Changelog for $package:\n\n";
