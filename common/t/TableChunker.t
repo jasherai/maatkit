@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 17;
+   $tests = 20;
 }
 
 use Test::More tests => $tests;
@@ -36,6 +36,12 @@ my $q = new Quoter();
 my $p = new TableParser();
 my $c = new TableChunker( quoter => $q );
 my $t;
+
+sub throws_ok {
+   my ( $code, $pat, $msg ) = @_;
+   eval { $code->(); };
+   like ( $EVAL_ERROR, $pat, $msg );
+}
 
 sub load_file {
    my ($file) = @_;
@@ -91,7 +97,10 @@ eval {
    "DBI:mysql:;mysql_read_default_group=mysql", undef, undef, { RaiseError => 1 })
 };
 SKIP: {
-   skip 'Cannot connect to MySQL', $tests - 3 if $EVAL_ERROR;
+   skip 'Cannot connect to MySQL', $tests - 8 if $EVAL_ERROR;
+   skip 'Sakila is not installed', $tests - 8
+         unless @{$dbh->selectall_arrayref('show databases like "sakila"')};
+
    my @chunks;
 
    @chunks = $c->calculate_chunks(
@@ -324,5 +333,14 @@ SKIP: {
       ],
       'Decimal column chunks OK',
    );
+
+   throws_ok(
+      sub { $c->size_to_rows($dbh, 'sakila', 'film', 'foo') },
+      qr/Invalid size spec/,
+      'Rejects bad size spec',
+   );
+   is( $c->size_to_rows($dbh, 'sakila', 'film', '5'), 5, 'Numeric size' );
+   my $size = $c->size_to_rows($dbh, 'sakila', 'film', '5k');
+   ok($size >= 20 && $size <= 30, 'Convert bytes to rows');
 
 }
