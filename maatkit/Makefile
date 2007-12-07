@@ -1,10 +1,10 @@
-dist:
+dist: test
 	./package.pl
 
 all: dist debian individual
 
 .PHONY: debian
-debian:
+debian: dist
 	./debian-build
 
 clean:
@@ -19,3 +19,6 @@ doc-upload:
 .PHONY: upload
 upload:
 	./upload
+
+test:
+	./test.sh
