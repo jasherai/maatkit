@@ -1215,9 +1215,6 @@ sub get_triggers {
          { Slice => {} }
       );
       foreach my $trg ( @$trgs ) {
-         # Lowercase the hash keys because the NAME_lc property might be set
-         # on the $dbh, so the lettercase is unpredictable.  This makes them
-         # predictable.
          my %trg;
          @trg{ map { lc $_ } keys %$trg } = values %$trg;
          push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
