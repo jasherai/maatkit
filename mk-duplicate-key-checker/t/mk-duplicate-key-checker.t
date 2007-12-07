@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 27;
 
 require "../mk-duplicate-key-checker";
 
@@ -343,3 +343,7 @@ is_deeply(
    [],
    'No cluster-duplicate keys in mysql.db'
 );
+
+my $output = `perl ../mk-duplicate-key-checker -d mysql -t columns_priv -v`;
+like($output, qr/mysql\s+columns_priv\s+MyISAM/, 'Finds mysql.columns_priv PK');
+

@@ -30,6 +30,586 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
+# Quoter package 1339
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+sub quote_val {
+   my ( $self, @vals ) = @_;
+   return join(', ',
+      map {
+         if ( defined $_ ) {
+            $_ =~ s/'/\\'/g;
+            $_ =~ m/\D/ ? "'$_'" : $_;
+         }
+         else {
+            'NULL';
+         }
+      } @vals
+   );
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
+# TableParser package 1348
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableParser;
+
+sub new {
+   bless {}, shift;
+}
+
+sub parse {
+   my ( $self, $ddl, $opts ) = @_;
+
+   if ( ref $ddl eq 'ARRAY' ) {
+      if ( lc $ddl->[0] eq 'table' ) {
+         $ddl = $ddl->[1];
+      }
+      else {
+         return {
+            engine => 'VIEW',
+         };
+      }
+   }
+
+   if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
+      die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+   }
+
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
+
+   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   $ENV{MKDEBUG} && _d('Columns: ' . join(', ', @cols));
+
+   my %def_for;
+   @def_for{@cols} = @defs;
+
+   my (@nums, @null);
+   my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
+      die "Can't determine column type for $def" unless $type;
+      $type_for{$col} = $type;
+      if ( $type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ) {
+         push @nums, $col;
+         $is_numeric{$col} = 1;
+      }
+      if ( $def !~ m/NOT NULL/ ) {
+         push @null, $col;
+         $is_nullable{$col} = 1;
+      }
+      $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
+   }
+
+   my %keys;
+   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
+
+      if ( $engine !~ m/MEMORY|HEAP/ ) {
+         $key =~ s/USING HASH/USING BTREE/;
+      }
+
+      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
+      $type = $type || $special || 'BTREE';
+      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
+         && $engine =~ m/HEAP|MEMORY/i )
+      {
+         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
+      }
+
+      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
+      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
+      my @cols   = grep { m/[^,]/ } split('`', $cols);
+      $name      =~ s/`//g;
+      $ENV{MKDEBUG} && _d("Index $name columns: " . join(', ', @cols));
+
+      $keys{$name} = {
+         colnames    => $cols,
+         cols        => \@cols,
+         unique      => $unique,
+         is_col      => { map { $_ => 1 } @cols },
+         is_nullable => scalar(grep { $is_nullable{$_} } @cols),
+         type        => $type,
+         name        => $name,
+      };
+   }
+
+   return {
+      cols           => \@cols,
+      col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
+      is_col         => { map { $_ => 1 } @cols },
+      null_cols      => \@null,
+      is_nullable    => \%is_nullable,
+      is_autoinc     => \%is_autoinc,
+      keys           => \%keys,
+      defs           => \%def_for,
+      numeric_cols   => \@nums,
+      is_numeric     => \%is_numeric,
+      engine         => $engine,
+      type_for       => \%type_for,
+   };
+}
+
+sub sort_indexes {
+   my ( $self, $tbl ) = @_;
+   my @indexes
+      = sort {
+         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
+         || ( !$tbl->{keys}->{$a}->{unique} <=> !$tbl->{keys}->{$b}->{unique} )
+         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
+         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
+      }
+      grep {
+         $tbl->{keys}->{$_}->{type} eq 'BTREE'
+      }
+      sort keys %{$tbl->{keys}};
+   $ENV{MKDEBUG} && _d('Indexes sorted best-first: ' . join(', ', @indexes));
+   return @indexes;
+}
+
+sub find_best_index {
+   my ( $self, $tbl, $index ) = @_;
+   my $best;
+   if ( $index ) {
+      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
+   }
+   if ( !$best ) {
+      if ( $index ) {
+         die "Index '$index' does not exist in table";
+      }
+      else {
+         ($best) = $self->sort_indexes($tbl);
+      }
+   }
+   $ENV{MKDEBUG} && _d("Best index found is " . ($index || 'undef'));
+   return $best;
+}
+
+sub find_possible_keys {
+   my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
+   return () unless $where;
+   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
+      . ' WHERE ' . $where;
+   $ENV{MKDEBUG} && _d($sql);
+   my $expl = $dbh->selectrow_hashref($sql);
+   $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
+   if ( $expl->{possible_keys} ) {
+      $ENV{MKDEBUG} && _d("possible_keys=$expl->{possible_keys}");
+      my @candidates = split(',', $expl->{possible_keys});
+      my %possible   = map { $_ => 1 } @candidates;
+      if ( $expl->{key} ) {
+         $ENV{MKDEBUG} && _d("MySQL chose $expl->{key}");
+         unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
+         $ENV{MKDEBUG} && _d('Before deduping: ' . join(', ', @candidates));
+         my %seen;
+         @candidates = grep { !$seen{$_}++ } @candidates;
+      }
+      $ENV{MKDEBUG} && _d('Final list: ' . join(', ', @candidates));
+      return @candidates;
+   }
+   else {
+      $ENV{MKDEBUG} && _d('No keys in possible_keys');
+      return ();
+   }
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableParser:$line ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableParser package
+# ###########################################################################
+
+# ###########################################################################
+# MySQLDump package 1238
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MySQLDump;
+
+use English qw(-no_match_vars);
+
+( our $before = <<'EOF') =~ s/^   //gm;
+   /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+   /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+   /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+   /*!40101 SET NAMES utf8 */;
+   /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+   /*!40103 SET TIME_ZONE='+00:00' */;
+   /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+   /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+   /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+   /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+EOF
+
+( our $after = <<'EOF') =~ s/^   //gm;
+   /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+   /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+   /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+   /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+   /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+   /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+   /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+   /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+EOF
+
+sub new {
+   my ( $class ) = @_;
+   my $self = bless {}, $class;
+   return $self;
+}
+
+sub dump {
+   my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
+
+   if ( $what eq 'table' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      if ( $ddl->[0] eq 'table' ) {
+         return $before
+            . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . $ddl->[1] . ";\n";
+      }
+      else {
+         return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . '/*!50001 DROP VIEW IF EXISTS '
+            . $quoter->quote($tbl) . "*/;\n/*!50001 "
+            . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
+      }
+   }
+   elsif ( $what eq 'triggers' ) {
+      my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
+      if ( $trgs && @$trgs ) {
+         my $result = $before . "\nDELIMITER ;;\n";
+         foreach my $trg ( @$trgs ) {
+            if ( $trg->{sql_mode} ) {
+               $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
+            }
+            $result .= "/*!50003 CREATE */ ";
+            if ( $trg->{definer} ) {
+               my ( $user, $host )
+                  = map { s/'/''/g; "'$_'"; }
+                    split('@', $trg->{definer}, 2);
+               $result .= "/*!50017 DEFINER=$user\@$host */ ";
+            }
+            $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
+               $quoter->quote($trg->{trigger}),
+               @{$trg}{qw(timing event)},
+               $quoter->quote($trg->{table}),
+               $trg->{statement});
+         }
+         $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
+         return $result;
+      }
+      else {
+         return undef;
+      }
+   }
+   elsif ( $what eq 'view' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 ' . $ddl->[1] . "*/;\n";
+   }
+   else {
+      die "You didn't say what to dump.";
+   }
+}
+
+sub get_create_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{tables}->{$db}->{$tbl} ) {
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $href = $dbh->selectrow_hashref(
+         "SHOW CREATE TABLE "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl)
+      );
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+      my ($key) = grep { m/create table/i } keys %$href;
+      if ( $key ) {
+         $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
+      }
+      else {
+         ($key) = grep { m/create view/i } keys %$href;
+         $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
+      }
+   }
+   return $self->{tables}->{$db}->{$tbl};
+}
+
+sub get_columns {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{columns}->{$db}->{$tbl} ) {
+      my $cols = $dbh->selectall_arrayref(
+         "SHOW COLUMNS FROM "
+         . $quoter->quote($db)
+         . '.'
+         . $quoter->quote($tbl),
+         { Slice => {} }
+      );
+      $self->{columns}->{$db}->{$tbl} = [
+         map {
+            my %row;
+            @row{ map { lc $_ } keys %$_ } = values %$_;
+            \%row;
+         } @$cols
+      ];
+   }
+   return $self->{columns}->{$db}->{$tbl};
+}
+
+sub get_tmp_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
+   $result .= join(",\n",
+      map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
+      @{$self->get_columns($dbh, $quoter, $db, $tbl)});
+   $result .= "\n)";
+}
+
+sub get_triggers {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{triggers}->{$db} ) {
+      $self->{triggers}->{$db} = {};
+      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
+      my $trgs = $dbh->selectall_arrayref(
+         "SHOW TRIGGERS FROM " . $quoter->quote($db),
+         { Slice => {} }
+      );
+      foreach my $trg ( @$trgs ) {
+         my %trg;
+         @trg{ map { lc $_ } keys %$trg } = values %$trg;
+         push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
+      }
+      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+   }
+   return $self->{triggers}->{$db}->{$tbl};
+}
+
+1;
+
+# ###########################################################################
+# End MySQLDump package
+# ###########################################################################
+
+# ###########################################################################
+# MySQLFind package 1349
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MySQLFind;
+
+
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = bless \%args, $class;
+   $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   die "Specify dbh" unless $args{dbh};
+   if ( $args{useddl} ) {
+      die "Specifying useddl requires parser and dumper"
+         unless $args{parser} && $args{dumper};
+   }
+   if ( $args{tables}->{status} ) {
+      my $sql = 'SELECT CURRENT_TIMESTAMP';
+      $ENV{MKDEBUG} && _d($sql);
+      ($self->{timestamp}->{now}) = $args{dbh}->selectrow_array($sql);
+      $ENV{MKDEBUG} && _d("Current timestamp: $self->{timestamp}->{now}");
+   }
+   return $self;
+}
+
+sub find_databases {
+   my ( $self ) = @_;
+   return grep {
+      $_ !~ m/^(information_schema|lost\+found)$/i
+   }
+   $self->_filter('databases', sub { $_[0] }, $self->_fetch_db_list());
+}
+
+sub _fetch_db_list {
+   my ( $self ) = @_;
+   my $sql = 'SHOW DATABASES';
+   my @params;
+   if ( $self->{databases}->{like} ) {
+      $sql .= ' LIKE ?';
+      push @params, $self->{databases}->{like};
+   }
+   my $sth = $self->{dbh}->prepare($sql);
+   $ENV{MKDEBUG} && _d($sql, @params);
+   $sth->execute( @params );
+   return map { $_->[0] } @{$sth->fetchall_arrayref()};
+}
+
+sub find_tables {
+   my ( $self, %args ) = @_;
+   my $views = $self->{engines}->{views};
+   my @tables 
+      = $self->_filter('engines', sub { $_[0]->{engine} },
+         $self->_filter('tables', sub { $_[0]->{name} },
+            $self->_fetch_tbl_list(%args)));
+   @tables = grep {
+         ( $views || ($_->{engine} ne 'VIEW') )
+      } @tables;
+   foreach my $crit ( @{$self->{tables}->{status}} ) {
+      my ($key, $test) = %$crit;
+      @tables
+         = grep {
+            $self->_test_date($_, $key, $test)
+         } @tables;
+   }
+   return map { $_->{name} } @tables;
+}
+
+sub _fetch_tbl_list {
+   my ( $self, %args ) = @_;
+   die "database is required" unless $args{database};
+   my $need_engine = $self->{engines}->{permit}
+        || $self->{engines}->{reject}
+        || $self->{engines}->{regexp};
+   my $need_status = $self->{tables}->{status};
+   my @params;
+   if ( $need_status || ($need_engine && !$self->{useddl}) ) {
+      my $sql = "SHOW TABLE STATUS FROM "
+              . $self->{quoter}->quote($args{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
+      }
+      $ENV{MKDEBUG} && _d($sql, @params);
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref({})};
+      return map {
+         my %tbl; # Make a copy with lowercased keys
+         @tbl{ map { lc $_ } keys %$_ } = values %$_;
+         $tbl{engine} ||= $tbl{type} || $tbl{comment};
+         delete $tbl{type};
+         \%tbl;
+      } @tables;
+   }
+   else {
+      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM "
+              . $self->{quoter}->quote($args{database});
+      if ( $self->{tables}->{like} ) {
+         $sql .= ' LIKE ?';
+         push @params, $self->{tables}->{like};
+      }
+      $ENV{MKDEBUG} && _d($sql, @params);
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref()};
+      my @result;
+      foreach my $tbl ( @tables ) {
+         my $engine = '';
+         if ( ($tbl->[1] || '') eq 'VIEW' ) {
+            $engine = 'VIEW';
+         }
+         elsif ( $need_engine ) {
+            my $struct = $self->{parser}->parse(
+               $self->{dumper}->get_create_table(
+                  $self->{dbh}, $self->{quoter}, $args{database}, $tbl->[0]));
+            $engine = $struct->{engine};
+         }
+         push @result,
+         {  name   => $tbl->[0],
+            engine => $engine,
+         }
+      }
+      return @result;
+   }
+}
+
+sub _filter {
+   my ( $self, $thing, $sub, @vals ) = @_;
+   $ENV{MKDEBUG} && _d("Filtering $thing list");
+   my $permit = $self->{$thing}->{permit};
+   my $reject = $self->{$thing}->{reject};
+   my $regexp = $self->{$thing}->{regexp};
+   return grep {
+      my $val = $sub->($_);
+      $val = '' unless defined $val;
+      ( !$reject || !$reject->{$val} )
+         && ( !$permit || $permit->{$val} )
+         && ( !$regexp || $val =~ m/$regexp/ )
+   } @vals
+}
+
+sub _test_date {
+   my ( $self, $table, $prop, $test ) = @_;
+   $prop = lc $prop;
+   if ( !defined $table->{$prop} ) {
+      $ENV{MKDEBUG} && _d("$prop is not defined");
+      return $self->{nullpass};
+   }
+   my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
+   die "Invalid date test $test for $prop" unless defined $num;
+   my $sql = "SELECT DATE_SUB('$self->{timestamp}->{now}', INTERVAL $num SECOND)";
+   $ENV{MKDEBUG} && _d($sql);
+   ($self->{timestamp}->{$num}) ||= $self->{dbh}->selectrow_array($sql);
+   my $time = $self->{timestamp}->{$num};
+   return 
+         ( $equality eq '-' && $table->{$prop} gt $time )
+      || ( $equality eq '+' && $table->{$prop} lt $time )
+      || (                     $table->{$prop} eq $time );
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# MySQLFind:$line ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MySQLFind package
+# ###########################################################################
+
+# ###########################################################################
 # DSNParser package 1345
 # ###########################################################################
 use strict;
@@ -772,9 +1352,11 @@ if ( !caller ) {
       { s => 'clustered|c',       d => 'PK columns appended to secondary key is duplicate' },
       { s => 'databases|d=h',     d => 'Check only this comma-separated list of databases' },
       { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
+      { s => 'engine|e=h',        d => 'Do only this comma-separated list of storage engines' },
       { s => 'function|f=s',      d => 'Do f=foreign keys, k=keys; default fk' },
       { s => 'host|h=s',          d => 'Connect to host' },
       { s => 'ignoredb|g=H',      d => 'Ignore this comma-separated list of databases' },
+      { s => 'ignoreengine|E=H',  d => 'Ignore this comma-separated list of storage engines'},
       { s => 'ignoreorder',       d => 'Ignore index order so KEY(a,b) duplicates KEY(b,a)' },
       { s => 'ignoretbl|n=H',     d => 'Ignore this comma-separated list of tables' },
       { s => 'password|p=s',      d => 'Password to use when connecting' },
@@ -808,11 +1390,14 @@ if ( !caller ) {
       $dp->get_cxn_params(\%opts),
       { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
 
-   my @databases = @{$dbh->selectcol_arrayref('SHOW DATABASES')};
    my @whole_batch;
    my $exit_code = 0;
+   # TODO: use versionparser
    my $version = sprintf('%03d%03d%03d', $dbh->{mysql_serverinfo} =~ m/(\d+)/g);
 
+   my $q  = new Quoter();
+   my $tp = new TableParser();
+   my $du = new MySQLDump();
    my $ic = new IndexChecker;
    my $ic_opts = {
       ignore_type  => $opts{a},
@@ -820,37 +1405,35 @@ if ( !caller ) {
       clustered    => $opts{c},
    };
 
+   my $finder = new MySQLFind(
+      dbh       => $dbh,
+      quoter    => $q,
+      useddl    => 1,
+      parser    => $tp,
+      dumper    => $du,
+      databases => {
+         permit => $opts{d},
+         reject => $opts{g},
+      },
+      tables => {
+         permit => $opts{t},
+         reject => $opts{n},
+      },
+      engines => {
+         views  => 0,
+         permit => $opts{e},
+         reject => $opts{E},
+      },
+   );
+
    DATABASE:
-   foreach my $database ( @databases ) {
-
-      # Ignore databases as instructed.  Also ignore INFORMATION_SCHEMA and skip
-      # databases caused by lost+found directories created in the root of ext3
-      # filesystems; they are not really databases.
-      # TODO: modularize this.
-      next DATABASE if
-         ( $opts{d} && !exists($opts{d}->{$database}) )
-         || $database =~ m/^(information_schema|lost\+found)$/mi
-         || exists $opts{g}->{$database};
-
-      my @tables = @{$dbh->selectcol_arrayref('SHOW TABLES FROM `' . $database .  '`')};
-      next DATABASE unless @tables;
-
+   foreach my $database ( $finder->find_databases() ) {
       my %info_for;
 
       TABLE:
-      foreach my $table ( @tables ) {
-         next TABLE if
-            ( $opts{t} && !exists($opts{t}->{$table}) )
-            || exists $opts{n}->{$table};
-
-         $exit_code = 1;
-         my $ddl;
-         eval {
-            $ddl = ($dbh->selectrow_array("SHOW CREATE TABLE `$database`.`$table`"))[1];
-            $exit_code = 0;
-         };
-         next TABLE if !$ddl;
-         my $engine = $ic->find_engine($ddl) || next TABLE;
+      foreach my $table ( $finder->find_tables(database => $database) ) {
+         my $ddl    = $du->get_create_table($dbh, $q, $database, $table)->[1];
+         my $engine = $ic->find_engine($ddl) || next TABLE; # TODO: use TableParser
 
          my $keys = $opts{f} =~ m/k/ ? $ic->find_keys($ddl, {version => $version }) : [];
          my $fks  = $opts{f} =~ m/f/ ? $ic->find_fks($ddl, {database => $database}) : [];
@@ -879,7 +1462,8 @@ if ( !caller ) {
             }
             else { # Find duplicate/redundant by prefix matching.
                push @to_print, map { make_hash($hash, 'KEY', $_) }
-                  @{$ic->find_duplicate_keys($hash->{keys}, { engine => $engine, %$ic_opts})};
+                  @{$ic->find_duplicate_keys($hash->{keys},
+                     { engine => $engine, %$ic_opts})};
             }
          }
 
@@ -1024,6 +1608,10 @@ A comma-separated list of databases to examine.
 
 Only read default options from the given file.
 
+=item --engine
+
+Do only tables whose storage engine is in this comma-separated list.
+
 =item --function
 
 What to check: 'f' is foreign keys, 'k' is indexes.  The default is to check
@@ -1041,7 +1629,11 @@ Connect to host.
 
 A comma-separated list of databases to ignore.
 
-=item --ignoretype
+=item --ignoreengine
+
+Use this option to skip a comma-separated list of storage engines (table types).
+
+=item --ignoreorder
 
 Ignore column ordering, so an index on columns (a,b) is considered a duplicate
 of an index on columns (b,a).
