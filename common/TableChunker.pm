@@ -267,11 +267,27 @@ sub get_first_chunkable_column {
    return $cols->[0];
 }
 
-# Convert a size in bytes to a number of rows in the table, using SHOW TABLE
-# STATUS.  The $cache may hold the table's status already; if so we use it
-# (because it's expensive).
+# Convert a size in rows or bytes to a number of rows in the table, using SHOW
+# TABLE STATUS.  The $cache may hold the table's status already; if so we use
+# it (because it's expensive).  If the size is a string with a suffix of
+# M/G/k, interpret it as mebibytes, gibibytes, or kibibytes respectively.  If
+# it's just a number, treat it as a number of rows and return right away.
 sub size_to_rows {
    my ( $self, $dbh, $db, $tbl, $size, $cache ) = @_;
+  
+   my ( $num, $suffix ) = $size =~ m/^(\d+)([MGk])?$/;
+   if ( $suffix ) { # Convert to bytes.
+      $size = $suffix eq 'k' ? $num * 1_024
+            : $suffix eq 'M' ? $num * 1_024 * 1_024
+            :                  $num * 1_024 * 1_024 * 1_024;
+   }
+   elsif ( $num ) {
+      return $num;
+   }
+   else {
+      die "Invalid size spec $size; must be an integer with optional suffix kMG";
+   }
+
    my $avg_row_length;
    my $status;
    if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
