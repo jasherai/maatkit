@@ -3082,6 +3082,9 @@ if ( $opts{R} || $opts{s} ) {
 if ( $opts{w} ) {
    $opts{k} = 1 unless defined $opts{k};
 }
+if ( $opts{test} ) {
+   $opts{v} = 1;
+}
 
 my @dsns;
 while ( my $arg = shift(@ARGV) ) {
@@ -3513,6 +3516,11 @@ Sync this slave to its replication master:
 
 =head1 DESCRIPTION
 
+B<WARNING> this tool is unfinished and could perform slowly.  The Chunk
+algorithm is great when it can be used, but otherwise Stream is the only choice
+and it does not perform very well.  Please run with L<"--test"> before
+subjecting your poor servers to this tool!
+
 This tool is designed to do one-way synchronization of data (two-way sync is
 planned for the future).  It finds differences efficiently with one of several
 algorithms (see L<"ALGORITHMS">).  It makes changes on the destination table(s)
@@ -3751,7 +3759,7 @@ Restrict syncing to this comma-separated list of tables.
 =item --test
 
 Analyze tables and decide which sync algorithm to use, then bail out before
-doing any work.
+doing any work.  Implies L<"--verbose"> so you can see the results.
 
 =item --timeoutok
 
