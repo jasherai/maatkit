@@ -1,5 +1,9 @@
 Changelog for mk-parallel-restore:
 
+2007-12-07: version 1.0.1
+
+   * Updated shared code.
+
 2007-11-12: version 1.0.0
 
    * Removed the --sql option, as sort order is implied when --tab is given.
