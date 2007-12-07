@@ -2036,7 +2036,7 @@ if ( defined $opts{replcheck} ) {
          recurse    => $opts{replcheck},
          table      => $opts{R},
          callback   => sub {
-            my ( $host, @differences ) = @_;
+            my ( $host, $dbh, $dsn, @differences ) = @_;
             $exit_status = 1;
             if ( !$opts{q} ) {
                print "Differences on " . $dsn_parser->as_string($host) . "\n";
