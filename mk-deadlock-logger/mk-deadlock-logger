@@ -1213,8 +1213,8 @@ The query that caused the deadlock.
 
 =head1 ENVIRONMENT
 
-The environment variable MKDEBUG enables verbose debugging output in all of the
-Maatkit tools:
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
 
    MKDEBUG=1 mk-....
 
