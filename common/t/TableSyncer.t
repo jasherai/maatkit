@@ -34,7 +34,7 @@ eval {
       undef, undef, { PrintError => 0, RaiseError => 1 } );
 };
 if ($src_dbh) {
-   plan tests => 10;
+   plan tests => 11;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -104,7 +104,22 @@ my %args = (
    where         => '',
    possible_keys => [],
    cols          => $tbl_struct->{cols},
+   test          => 0,
 );
+
+$ts->sync_table(
+   %args,
+   algorithm     => 'Chunk',
+   dst_db        => 'test',
+   dst_tbl       => 'test2',
+   src_db        => 'test',
+   src_tbl       => 'test1',
+   test          => 1,
+);
+
+$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')
+   ->[0]->[0];
+is( $cnt, 0, 'Nothing happened' );
 
 $ts->sync_table(
    %args,

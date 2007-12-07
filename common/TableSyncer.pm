@@ -57,7 +57,7 @@ sub sync_table {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
-      misc_dbh quoter replace replicate src_db src_dbh src_tbl tbl_struct
+      misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
@@ -102,6 +102,9 @@ sub sync_table {
 
    $args{algorithm} ||= $self->best_algorithm(
       map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
+   if ( $args{test} ) {
+      return ($ch->get_changes(), ALGORITHM => $args{algorithm});
+   }
 
    my $class  = "TableSync$args{algorithm}";
    my $plugin = $class->new(
