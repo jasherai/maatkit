@@ -1319,8 +1319,8 @@ As above, but this time, insert the data back into the database for posterity:
 
 =head1 ENVIRONMENT
 
-The environment variable MKDEBUG enables verbose debugging output in all of the
-Maatkit tools:
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
 
    MKDEBUG=1 mk-....
 
