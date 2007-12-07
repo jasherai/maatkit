@@ -1,5 +1,10 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2007-12-07: version 1.1.21
+
+   * Updated common code.
+   * --chunksize was broken when no suffix given (bug #1845018).
+
 2007-11-25: version 1.1.20
 
    * --replcheck didn't recurse; it should recurse one level (to slaves).
