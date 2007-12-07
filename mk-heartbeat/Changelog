@@ -3,7 +3,8 @@ Changelog for mk-heartbeat:
 2007-12-06: version 1.0.3
 
    * Updated modules for compatibility with changes made to mk-table-sync.
-   * Added --time option.
+   * Added --time, --interval and --skew options.
+   * The combination of sleep() and alarm() did not work on some systems.
 
 2007-11-04: version 1.0.2
 

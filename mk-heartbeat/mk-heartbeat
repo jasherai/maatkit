@@ -586,7 +586,7 @@ package main;
 use DBI;
 use English qw(-no_match_vars);
 use List::Util qw(min max sum);
-use Time::HiRes qw(ualarm gettimeofday);
+use Time::HiRes qw(usleep gettimeofday);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -606,9 +606,11 @@ my @opt_spec = (
    { s => 'file=s',            d => 'Print latest --monitor output to this file' },
    { s => 'frames=s',          d => 'Timeframes for averages (default 1m,5m,15m)' },
    { s => 'host|h=s',          d => 'Connect to host' },
+   { s => 'interval|i=m',      d => 'Interval between updates and checks (default 1s)' },
    { s => 'monitor',           d => 'Monitor slave delay continuously' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'table|t=s',         d => 'Table to use for heartbeat (default heartbeat)' },
    { s => 'time|m=m',          d => 'Time to run before exiting (suffix: s/m/h/d)' },
@@ -648,6 +650,8 @@ if ( !$opts{help} ) {
    }
 }
 
+$opts{i} ||= 1; # Prevent 0-second interval
+
 $opt_parser->usage_or_errors(%opts);
 
 # ############################################################################
@@ -665,6 +669,9 @@ my $select_sql = "SELECT "
                   ? "ROUND(DATE_PART('epoch', NOW() - ts)) "
                   : "UNIX_TIMESTAMP() - UNIX_TIMESTAMP(ts) " )
                . "AS delay FROM $opts{t} WHERE id = 1";
+
+$ENV{MKDEBUG} && _d("UPDATE SQL: $update_sql");
+$ENV{MKDEBUG} && _d("SELECT SQL: $select_sql");
 
 my $dbopt = { AutoCommit => 1, RaiseError => 1, PrintError => 0 };
 my $dsn   = new DSNParser;
@@ -696,25 +703,19 @@ my @samples;
 my $limit  = max(@{$opts{frames}});
 my $format = "%4ds [ " . join(", ", map { "%5.2fs" } @{$opts{frames}}) . " ]\n";
 
-# This handler will do nothing but wake us up from sleep();
-$SIG{ALRM} = sub {};
-
-# Set up an alarm.  --update alarms happen on the second boundary, and
-# --monitor alarms happen halfway between seconds.
-ualarm(( ($opts{update} ? 1_000_000 : 1_500_000) - (gettimeofday)[1] ), 1_000_000);
-
 my $now = time();
-my $end = $now + ($opts{m} || 0); # When we should exit
-while (                       # Quit if:
-   (!$opts{m} || $now < $end) # time is exceeded
-   )
-{
+my $end = $now + ($opts{m} || 0);    # When to exit
+$ENV{MKDEBUG} && _d("Will exit at $end");
+while ( !$opts{m} || $now < $end ) { # Quit if time is exceeded
    eval {
-      # Normally it is not safe to use sleep and alarm together, but since we're
-      # sleeping an infinite time and waiting for the alarm to wake us up,
-      # there's no harm in it.  In other words, infinite sleep isn't implemented
-      # with alarm.
-      sleep;
+
+      my @now = gettimeofday();
+      usleep(
+         (($opts{i} - ($now[0] % $opts{i})) * 1_000_000) - $now[1]
+         # --update happens at the second boundary, but --monitor and --check
+         # are delayed to 
+         + ($opts{update} ? 0 : $opts{k} ));
+      $ENV{MKDEBUG} && _d('Woke up at ' . gettimeofday());
 
       # Connect or reconnect if necessary.
       if ( !$dbh->ping ) {
@@ -727,7 +728,9 @@ while (                       # Quit if:
          # Get the data
          $sth ||= $dbh->prepare($select_sql);
          $sth->execute;
+         $ENV{MKDEBUG} && _d($sth->{Statement});
          my ( $delay ) = $sth->fetchrow_array;
+         $ENV{MKDEBUG} && _d("Found delay of $delay");
          unshift @samples, $delay;
          pop @samples if @samples > $limit;
 
@@ -758,6 +761,7 @@ while (                       # Quit if:
       else { # --update mode
          $sth ||= $dbh->prepare($update_sql);
          $sth->execute;
+         $ENV{MKDEBUG} && _d($sth->{Statement});
       }
    };
    if ( $EVAL_ERROR ) {
@@ -772,8 +776,12 @@ while (                       # Quit if:
    $now = time();
 }
 
-alarm(0);
 exit(0);
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
+}
 
 # ############################################################################
 # Documentation.
@@ -878,6 +886,12 @@ Displays a help message.
 
 Connect to host.
 
+=item --interval
+
+How often to check or update values.  The updates and checks will happen when
+the Unix time (seconds since epoch) is an even multiple of this value.  The
+default is one second.  The suffix is similar to L<"--frames">.
+
 =item --monitor
 
 Specifies that mk-heartbeat should check the slave's delay every second and
@@ -894,6 +908,16 @@ Password to use when connecting.
 =item --port
 
 Port number to use for connection.
+
+=item --skew
+
+How much to delay checks.  The default is to delay checks one half second.
+Since the update happens as soon as possible after the beginning of the second
+on the master, this allows one half second of replication delay before
+reporting that the slave lags the master by one second.  If your clocks are
+not completely accurate or there is some other reason you'd like to delay the
+slave more or less, you can tweak this value.  Try setting the C<MKDEBUG>
+environment variable to see the effect this has.
 
 =item --socket
 
@@ -925,7 +949,7 @@ Output version information and exit.
 
 =head1 ENVIRONMENT
 
-The environment variable MKDEBUG enables verbose debugging output in all of the
+The environment variable C<MKDEBUG> enables verbose debugging output in all of the
 Maatkit tools:
 
    MKDEBUG=1 mk-....
