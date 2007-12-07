@@ -1933,10 +1933,8 @@ my @opt_spec = (
      d => 'Port number to use for connection' },
    { s => 'quiet|q',
      d => 'Do not print checksum results' },
-   { s => 'recursecheck',
-     d => 'Do --replcheck recursively (implies --replcheck)' },
-   { s => 'replcheck',
-     d => 'Connect to slaves and check results (requires --replicate)' },
+   { s => 'replcheck=i',
+     d => 'Check results in --replicate table, to the specified depth' },
    { s => 'replicate|R=s',
      d => 'Replicate checksums to slaves (disallows -a CHECKSUM)' },
    { s => 'slavelag|l',
@@ -1983,7 +1981,6 @@ my %opts = $opt_parser->parse();
 # Post-process command-line options and arguments.
 $opts{k} ||= defined $opts{w};
 $opts{l} ||= $opts{k};
-$opts{replcheck} ||= $opts{recursecheck};
 
 if ( !@ARGV ) {
    $opt_parser->error("No hosts specified.");
@@ -2016,9 +2013,6 @@ if ( !$opts{help} ) {
    elsif ( $opts{R} && @hosts > 1 ) {
       $opt_parser->error("You can only specify one host with --replicate.");
    }
-   if ( $opts{C} && $opts{C} !~ m/^[1-9]\d*[MGk]?$/ ) {
-      $opt_parser->error("Invalid --chunksize argument");
-   }
 }
 
 $opt_parser->usage_or_errors(%opts);
@@ -2033,13 +2027,13 @@ my $main_dbh    = get_dbh($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 # ############################################################################
 # Check replication slaves if desired.
 # ############################################################################
-if ( $opts{replcheck} ) {
+if ( defined $opts{replcheck} ) {
    my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
    $tc->check_server(
       {  dbh        => $main_dbh,
          dsn        => $hosts[0],
          dsn_parser => $dsn_parser,
-         recurse    => $opts{recursecheck} ? undef : 1,
+         recurse    => $opts{replcheck},
          table      => $opts{R},
          callback   => sub {
             my ( $host, @differences ) = @_;
@@ -2910,26 +2904,26 @@ The password to use when connecting.
 
 The port number to use for the connection.
 
-=item --recursecheck
-
-Recursively runs L<"--replcheck"> to check the entire replication subtree
-rooted at the given master.
-
 =item --replcheck
 
-Connects to the master and runs SHOW SLAVE HOSTS, then connects to each slave
-of the master, runs the query shown in L<"CONSISTENT CHECKSUMS">, and prints
-results.  Exits after printing.  This is just a convenient way of running the
-query so you don't have to do it manually.
+Recursively finds differences recorded in the table given by L<"--replicate">.
+Recurses to the depth you specify: 0 is no recursion (check only the server
+you specify), 1 is check the server and its slaves, 2 is check the slaves of
+its slaves, and so on.
+
+It finds differences by running the query shown in L<"CONSISTENT CHECKSUMS">,
+and prints results.  Exits after printing.  This is just a convenient way of
+running the query so you don't have to do it manually.
 
 The output is one informational line per slave host, followed by the results
 of the query, if any.  If L<"--quiet"> is specified, there is no output.
 
-Requires L<"--replicate"> to be specified so it knows which table to query.
-Connection information for each slave is derived from the same
-default-and-override method described in L<"SPECIFYING HOSTS">.  The host and
-port from SHOW SLAVE HOSTS are combined into "h=host,P=port" and used as the
-argument.
+Finds slaves by running SHOW SLAVE HOSTS.  Connection information for each
+slave is derived from the same default-and-override method described in
+L<"SPECIFYING HOSTS">.  The host and port, and user and password if available,
+from SHOW SLAVE HOSTS are combined into a DSN and used as the argument.  This
+requires slaves to be configured with C<report-host>, C<report-port> and so
+on.
 
 This requires the @@SERVER_ID system variable, so it works only on MySQL
 3.23.26 or newer.
