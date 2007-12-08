@@ -1261,7 +1261,7 @@ my $get_sth;
 my @beginning_of_txn;
 my $dp = new DSNParser(
    { key => 'D', copy => 1, desc => 'Database that contains the table' },
-   { key => 't', copy => 1, desc => 'Table to archive from' },
+   { key => 't', copy => 1, desc => 'Table to archive from/to' },
    { key => 'a', copy => 0, desc => 'Database to USE when executing queries' },
    { key => 'i', copy => 1, desc => 'Index to use' },
    { key => 'm', copy => 0, desc => 'Plugin module name' },
