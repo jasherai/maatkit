@@ -14,6 +14,7 @@ filter:
    Throw away non-replicated DBs
    throw away events of certain size (user, certain tables, ...)
    allow only certain types of statements
+   throw away timestamp identical to previous timestamp
 parse
 convert
    UPDATE: convert to SELECT
@@ -26,12 +27,19 @@ convert
 replay
    rewrite columns as LEFT(CONCAT(LEFT(col, 1), LEFT(col, 1)...), 1)
 sleep N
+
+Look at relay log size and file times to see how fast the slave is advancing on
+average, or just watch it for a few seconds and see.
+
+Learn which statements take a long time to execute, canonicalize them, and don't
+re-execute them.  Read a file of such statements on startup.
+
 =cut
 
 # This is mk-slave-prefetch, a program to pipeline relay logs on a MySQL slave.
 #
-# This program is copyright (c) 2007 Sergey Zhuravlev and Baron Schwartz.
-# Feedback and improvements are welcome.
+# This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
+# are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -659,43 +667,28 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 my @opt_spec = (
-   { s => 'askpass',       d => 'Prompt for password for connections' },
-   { s => 'continue|c!',   d => 'Continue replication normally on exit (default)' },
-   { s => 'daemonize',     d => 'Fork to background and detach (POSIX only)' },
-   { s => 'delay|d=m',     d => 'Slave delay (default 1h); suffix: s/m/h/d' },
-   { s => 'interval|i=m',  d => 'Sleep interval (default 1m); suffix: s/m/h/d' },
-   { s => 'quiet|q',       d => 'Suppress normal output' },
-   { s => 'time|t=m',      d => 'Time to run before exiting; suffix: s/m/h/d' },
-   { s => 'usemaster|u',   d => 'Get binlog positions from master, not slave' },
+   { s => 'askpass',           d => 'Prompt for password for connections' },
+   { s => 'bytes|b=z',         d => 'Number of bytes to read per chunk (default 1k)' },
+   { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
+   { s => 'database|D=s',      d => 'Database to use' },
+   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
+   { s => 'host|h=s',          d => 'Connect to host' },
+   { s => 'interval|i=m',      d => 'Sleep interval (default 1s); suffix: s/m/h/d' },
+   { s => 'offset|o=z',        d => 'Number of bytes ahead to start (default 1k)' },
+   { s => 'password|p=s',      d => 'Password to use when connecting' },
+   { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'time|t=m',          d => 'Time to run before exiting; suffix: s/m/h/d' },
+   { s => 'user|u=s',          d => 'User for login if not current user' },
 );
 
 my $dsn_parser = new DSNParser();
-$dsn_parser->prop('required', { h => 1 });
-$dsn_parser->prop('autokey', 'h' );
 my $vp = new VersionParser();
 my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{dsn} = $dsn_parser;
-$opt_parser->{strict} = 0;
-$opt_parser->{prompt} = '[OPTION]... SLAVE-HOST [MASTER-HOST]';
-$opt_parser->{descr}  = 'starts and stops a slave server as needed '
-                      . 'to make it lag behind the master.  The SLAVE-HOST '
-                      . 'and MASTER-HOST use DSN syntax, and values are copied '
-                      . 'from the SLAVE-HOST to the MASTER-HOST if omitted.';
+$opt_parser->{prompt} = '[OPTION...]';
+$opt_parser->{descr}  = q{pipelines the relay log to pre-warm the slave's caches};
 my %opts = $opt_parser->parse();
 
-my ($slave_dsn, $master_dsn);
-if ( @ARGV ) {
-   $slave_dsn  = $dsn_parser->parse(shift @ARGV);
-   $master_dsn = $dsn_parser->parse(shift(@ARGV), $slave_dsn) if @ARGV;
-}
-
-if ( !$opts{help} ) {
-   if ( !$slave_dsn ) {
-      $opt_parser->error("Missing or invalid slave host");
-   }
-}
-
-$opts{i} = max($opts{i}, 1);
 if ( $opts{t} ) {
    $opts{t} = max($opts{t}, 1);
 }
@@ -705,30 +698,9 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 # Ready to work now.
 # ############################################################################
-my ( $TS, $FILE, $POS ) = ( 0, 1, 2 );
-
-my @positions;
 my $now        = time();
-my $next_start = 0;
 my $end        = $now + ( $opts{t} || 0 );    # When we should exit
 my $oktorun    = 1;
-
-# Connect before daemonizing, in case --askpass is needed.
-my ( $slave, $master );
-$slave  = get_dbh($slave_dsn);
-if ( $master_dsn ) {
-   $master = get_dbh($master_dsn);
-}
-elsif ( $opts{u} ) {
-   # Try to connect to the slave's master just by looking at its SLAVE STATUS.
-   my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
-   if ( !$status || ! %$status ) {
-      die "No SLAVE STATUS found while trying to connect to master.\n";
-   }
-
-   my $spec = "h=$status->{master_host},P=$status->{master_port}";
-   $master  = get_dbh($dsn_parser->parse($spec, $slave_dsn));
-}
 
 # Daemonize only after (potentially) asking for passwords for --askpass.
 if ( $opts{daemonize} ) {
@@ -740,135 +712,45 @@ if ( $opts{daemonize} ) {
    exit if $pid;
    POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
    open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+   delete $ENV{MKDEBUG};     # Debugging is useless
 }
+
+my $dbh       = get_dbh(\%opts);
+my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
+$ENV{MKDEBUG} && _d("Data directory ", $datadir);
 
 while (                       # Quit if:
    (!$opts{t} || $now < $end) # time is exceeded
    && $oktorun                # or instructed to quit
 ) {
-
-   $now = time();
-
-   my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
+   my $status = $dbh->selectrow_hashref("SHOW SLAVE STATUS");
    if ( !$status || ! %$status ) {
       die "No SLAVE STATUS found.\n";
    }
 
-   if ( defined $status->{seconds_behind_master} ) {
-      info("slave running $status->{seconds_behind_master} seconds behind");
-   }
-
-   # Get binlog position.
-   if ( $master ) {
-      my $res = $master->selectrow_hashref("SHOW MASTER STATUS");
-      my $pos = $positions[-1];
-      if ( !@positions || $pos->[$FILE] ne $res->{file} || $pos->[$POS] != $res->{position} ) {
-         push @positions,
-            [ $now, $res->{file}, $res->{position} ];
+   if ( ($status->{slave_sql_running} || '') eq 'Yes' ) {
+      my ($file, $pos) = @{$status}{qw(relay_log_file relay_log_pos)};
+      open FILE, "mysqlbinlog --start-pos=4 --stop-pos=400 $datadir/$file |"
+         or die $OS_ERROR;
+      while ( my $line = <FILE> ) {
+         print $line;
       }
-   }
-   else {
-      # Use the position on master at which the I/O thread is reading.  If the
-      # I/O thread is not far behind, which it usually is not, this is basically
-      # the same as the master's File/Position, but it's more efficient -- one
-      # fewer connections to keep open.
-      my $pos = $positions[-1];
-      if ( !@positions
-         || $pos->[$FILE] ne $status->{master_log_file} || $pos->[$POS] != $status->{read_master_log_pos} )
-      {
-         push @positions,
-            [ $now, $status->{master_log_file}, $status->{read_master_log_pos} ];
-      }
+      close FILE;
    }
 
-   if ( ( $status->{slave_sql_running} || '' ) eq 'No' ) {
-      # Find the most recent binlog position that's older than the delay amount.
-      my $pos;
-      my $i = 0;
-      while ( $i < @positions && $positions[$i]->[$TS] <= $now - $opts{d} ) {
-         $pos = $i;
-         $i++;
-      }
-
-      # Make the slave server delay if possible; otherwise sleep and check
-      # again.
-      if ( $now >= $next_start && defined $pos ) {
-         my $position = $positions[$pos];
-         if ( $position->[$FILE] ne $status->{master_log_file}
-            || $position->[$POS] != $status->{read_master_log_pos} )
-         {
-            $slave->do(
-               "START SLAVE SQL_THREAD UNTIL /*$position->[$TS]*/ "
-                  . "MASTER_LOG_FILE = '$position->[$FILE]', "
-                  . "MASTER_LOG_POS = $position->[$POS]"
-            );
-
-            info("START SLAVE until master "
-               . ts($position->[$TS])
-               . " $position->[$FILE]/$position->[$POS]");
-         }
-         else {
-            info("no new binlog events");
-         }
-
-         # Throw away positions we're going to replicate past.
-         @positions = @positions[$pos + 1 .. $#positions];
-      }
-      else {
-         my $position = $positions[-1];
-         info("slave stopped at master position $position->[$FILE]/$position->[$POS]");
-      }
-   }
-   elsif ( ($status->{seconds_behind_master} || 0) < $opts{d} ) {
-      my $position = $positions[-1];
-      my $behind = $status->{seconds_behind_master} || 0;
-      $next_start = $now + $opts{d} - $behind;
-      # TODO: under what conditions is something here undef?
-      info("STOP SLAVE until "
-         . ts($next_start)
-         . " at master position $position->[$FILE]/$position->[$POS]");
-
-      $slave->do("STOP SLAVE SQL_THREAD");
-   }
-   else {
-      my $position = $positions[-1];
-      my $behind = $status->{seconds_behind_master} || 0;
-      info("slave running $behind seconds behind at"
-         . " master position $position->[$FILE]/$position->[$POS]");
-   }
-
+   $ENV{MKDEBUG} && _d("Sleeping ", $opts{i});
    sleep($opts{i});
-}
-
-if ( $slave && $opts{c} ) {
-   info("Setting slave to run normally");
-   $slave->do("START SLAVE SQL_THREAD");
+   $now = time();
+      $oktorun = 0; # TODO
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
 
-sub info {
-   my ( $message ) = @_;
-   print ts($now), " ", $message, "\n" unless $opts{q};
-}
-
-# Catches signals so mk-slave-delay can exit gracefully.
-sub finish {
-   my ($signal) = @_;
-   print STDERR "Exiting on SIG$signal.\n";
-   $oktorun = 0;
-}
-
-sub ts {
-   my ( $time ) = @_;
-   my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
-   $mon  += 1;
-   $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
-      $year, $mon, $mday, $hour, $min, $sec);
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
 }
 
 sub get_dbh {
