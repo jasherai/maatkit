@@ -1,6 +1,34 @@
 #!/usr/bin/perl
 
-# This is mk-slave-delay, a program that makes a MySQL slave lag its master.
+=pod
+
+NOTES:
+
+Best notes on this are Farhan's:
+http://mysqldatabaseadministration.blogspot.com/2007/05/pre-fetch-binlogs-to-speed-up-mysql.html
+
+connect to slave
+read slave status
+read N bytes from binlog, N bytes ahead of current position
+filter:
+   Throw away non-replicated DBs
+   throw away events of certain size (user, certain tables, ...)
+   allow only certain types of statements
+parse
+convert
+   UPDATE: convert to SELECT
+   INSERT: convert to SELECT... where PK >= keys limit 1
+      (cache table structures)
+   REPLACE: convert to SELECT
+   DELETE: convert to SELECT... where limit 1
+   INSERT/SELECT: split into two queries
+   REPLACE/SELECT: split into two queries
+replay
+   rewrite columns as LEFT(CONCAT(LEFT(col, 1), LEFT(col, 1)...), 1)
+sleep N
+=cut
+
+# This is mk-slave-prefetch, a program to pipeline relay logs on a MySQL slave.
 #
 # This program is copyright (c) 2007 Sergey Zhuravlev and Baron Schwartz.
 # Feedback and improvements are welcome.
