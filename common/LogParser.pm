@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 
 package LogParser;
 
+use English qw(-no_match_vars);
+
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
@@ -51,6 +53,10 @@ my $general_log_any_line = qr{
 my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
 my $slow_log_uh_line = qr/^# User\@Host: ([^\[]+).*?@ (\S*) \[(.*)\]/;
 my $slow_log_tr_line = qr{^# Query_time: (\d+(?:\.\d+)?)  Lock_time: (\d+(?:\.\d+)?)  Rows_sent: (\d+)  Rows_examined: (\d+)};
+
+my $binlog_line_1 = qr{^# at (\d+)};
+my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
+my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)};
 
 # This method accepts an open filehandle and a callback function.  It reads
 # events from the filehandle and calls the callback with each event.
@@ -170,6 +176,71 @@ sub parse_event {
 
    if ( $mode eq 'slow' ) {
       $event->{arg} =~ s/;\s*//g;
+   }
+
+   $code->($event) if $event;
+   return $event;
+}
+
+# This method accepts an open filehandle and a callback function.  It reads
+# events from the filehandle and calls the callback with each event.
+sub parse_binlog_event {
+   my ( $self, $fh, $code ) = @_;
+   my $event;
+
+   my $term  = $self->{term} || ";\n"; # Corresponds to DELIMITER
+   my $tpat  = quotemeta $term;
+   local $RS = $term;
+   my $line  = <$fh>;
+
+   LINE: {
+      return unless $line;
+
+      # Catch changes in DELIMITER
+      if ( $line =~ m/^DELIMITER/m ) {
+         my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
+         $self->{term} = $del;
+         local $RS     = $term;
+         $tpat         = quotemeta $term;
+         $line         = <$fh>; # Throw away DELIMITER line
+         redo LINE;
+      }
+
+      # Throw away the delimiter
+      $line =~ s/$tpat\Z//;
+
+      # Match the beginning of an event in the binary log.
+      if ( my ( $offset ) = $line =~ m/$binlog_line_1/m ) {
+         $self->{last_line} = undef;
+         $event = {
+            offset => $offset,
+         };
+         my ( $ts, $sid, $end, $type, $rest ) = $line =~ m/$binlog_line_2/m;
+         @{$event}{qw(ts server_id end type arg)}
+            = ($ts, $sid, $end, $type, $line);
+         if ( $type eq 'Xid' ) {
+            my ($xid) = $rest =~ m/(\d+)/;
+            $event->{xid} = $xid;
+         }
+         elsif ( $type eq 'Query' ) {
+            @{$event}{qw(id time code)} = $rest =~ m/$binlog_line_2_rest/;
+         }
+         else {
+            die "Unknown event type $type"
+               unless $type =~ m/Intvar/;
+         }
+      }
+      else {
+         $event = {
+            arg => $line,
+         };
+      }
+   }
+
+   # If it was EOF, discard the last line so statefulness doesn't interfere with
+   # the next log file.
+   if ( !defined $line ) {
+      delete $self->{term};
    }
 
    $code->($event) if $event;
