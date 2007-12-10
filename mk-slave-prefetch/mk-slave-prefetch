@@ -2,14 +2,24 @@
 
 =pod
 
-NOTES:
-
-Best notes on this are Farhan's:
-http://mysqldatabaseadministration.blogspot.com/2007/05/pre-fetch-binlogs-to-speed-up-mysql.html
-
 connect to slave
 read slave status
 read N bytes from binlog, N bytes ahead of current position
+   * but only if the file/pos has advanced since last time
+   * if it hasn't, then the next time it does, replay the ones just done
+   * keep track of the # bytes the slave advances each time
+   * try to read that many bytes, that far ahead, IOW
+   |-----|-----|-----|-----|
+    slave perl
+          slave perl
+                slave perl
+   * try to shorten the number of bytes read to the point they can be replayed
+     in opts{i} number of seconds?  but what if this is much faster than the
+     slave is processing events?  I guess try to read as many bytes as the
+     slave reads in X amount of time, and sleep if this doesn't take X time to
+     replay.  If it takes more than X time to replay, keep X interval the
+     same, but decrease the number of bytes to read.
+   * -l set the tmp dir for mysqlbinlog to /dev/null (what about Windows)?
 filter:
    Throw away non-replicated DBs
    throw away events of certain size (user, certain tables, ...)
@@ -26,13 +36,19 @@ convert
    REPLACE/SELECT: split into two queries
 replay
    rewrite columns as LEFT(CONCAT(LEFT(col, 1), LEFT(col, 1)...), 1)
+   (goal: don't fetch a lot of data from the SELECT)
 sleep N
 
 Look at relay log size and file times to see how fast the slave is advancing on
 average, or just watch it for a few seconds and see.
 
-Learn which statements take a long time to execute, canonicalize them, and don't
-re-execute them.  Read a file of such statements on startup.
+Learn which statements take a long time to execute, canonicalize them, and
+don't re-execute them.  Read a file of such statements on startup.
+
+Optionally read the binlog from the server's master.  advantages: can run
+tool on another server than the slave.
+
+Maybe open the mysqlbinlog pipe and keep it open forever?
 
 =cut
 
@@ -660,7 +676,6 @@ package main;
 use DBI;
 use English qw(-no_match_vars);
 use List::Util qw(max);
-use sigtrap qw(handler finish untrapped normal-signals);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -695,14 +710,8 @@ if ( $opts{t} ) {
 
 $opt_parser->usage_or_errors(%opts);
 
-# ############################################################################
-# Ready to work now.
-# ############################################################################
-my $now        = time();
-my $end        = $now + ( $opts{t} || 0 );    # When we should exit
-my $oktorun    = 1;
-
 # Daemonize only after (potentially) asking for passwords for --askpass.
+my $dbh = get_dbh(\%opts);
 if ( $opts{daemonize} ) {
    require POSIX;
    chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
@@ -715,9 +724,17 @@ if ( $opts{daemonize} ) {
    delete $ENV{MKDEBUG};     # Debugging is useless
 }
 
-my $dbh       = get_dbh(\%opts);
+# ############################################################################
+# Ready to work now.
+# ############################################################################
+my $now       = time();
+my $end       = $now + ( $opts{t} || 0 );    # When we should exit
+my $oktorun   = 1;
 my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
+
 $ENV{MKDEBUG} && _d("Data directory ", $datadir);
+my ($cfile, $cpos, $pfile, $ppos, $ctime, $ptime);
+my ($abytes, $asecs); # For computing moving averages
 
 while (                       # Quit if:
    (!$opts{t} || $now < $end) # time is exceeded
@@ -729,19 +746,44 @@ while (                       # Quit if:
    }
 
    if ( ($status->{slave_sql_running} || '') eq 'Yes' ) {
-      my ($file, $pos) = @{$status}{qw(relay_log_file relay_log_pos)};
-      open FILE, "mysqlbinlog --start-pos=4 --stop-pos=400 $datadir/$file |"
+      $ctime = time();
+      ($cfile, $cpos) = @{$status}{qw(relay_log_file relay_log_pos)};
+
+=pod
+TODO: not sure what the best way to get a moving average weighted towards most
+recent values is, but this is a try that doesn't seem to work all that well.
+      if ( $pfile && $cfile eq $pfile && $ppos && $cpos ne $ppos ) {
+         my $bytes = $cpos - $ppos;
+         my $secs = $ctime - $ptime;
+         my $cur  = $bytes/$secs;
+         my $factor = .95; # TODO param
+         $abytes = $abytes * $factor + $bytes;
+         $asecs  = $asecs  * $factor + $secs;
+         my $wgt = $abytes / $asecs;
+         printf("%12.3f %12.3f %d\n", $cur, $wgt, $cpos);
+      }
+      else {
+         $abytes = 0;
+         $asecs  = 1;
+      }
+      ($pfile, $ppos) = ($cfile, $cpos);
+      $ptime = $ctime;
+=cut
+
+      my $start = $cpos  + $opts{o};
+      my $stop  = $start + $opts{b};
+      open FILE, "mysqlbinlog -l /dev/null --start-pos=$start --stop-pos=$stop $datadir/$file |"
          or die $OS_ERROR;
       while ( my $line = <FILE> ) {
          print $line;
       }
       close FILE;
+
    }
 
    $ENV{MKDEBUG} && _d("Sleeping ", $opts{i});
    sleep($opts{i});
    $now = time();
-      $oktorun = 0; # TODO
 }
 
 # ############################################################################
