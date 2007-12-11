@@ -672,7 +672,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 1425
+# LogParser package 1429
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -715,18 +715,6 @@ my $binlog_line_1 = qr{^# at (\d+)};
 my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
 my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)};
 
-# This method accepts an open filehandle and a callback function.  It reads
-# events from the filehandle and calls the callback with each event.
-#
-# Each event looks like this:
-#  my $event = {
-#     ts  => '',    # Timestamp
-#     id  => '',    # Connection ID
-#     cmd => '',    # Command (type of event)
-#     arg => '',    # Argument to the command
-#  };
-#
-# Returns true if it was able to find an event.
 sub parse_event {
    my ( $self, $fh, $code ) = @_;
    my $event;
@@ -739,8 +727,6 @@ sub parse_event {
    LINE:
    while ( !$done && defined $line ) {
 
-      # These can appear in the log file when it's opened -- for example, when
-      # someone runs FLUSH LOGS.
       if ( $line =~ m/Version:.+ started with:/ ) {
          <$fh>; # Tcp port: etc
          <$fh>; # Column headers
@@ -748,7 +734,6 @@ sub parse_event {
          redo LINE;
       }
 
-      # Match the beginning of an event in the general log.
       elsif ( my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s ) {
          $mode = 'log';
          $self->{last_line} = undef;
@@ -766,16 +751,12 @@ sub parse_event {
             }
          }
          else {
-            # The last line was the end of the query; this is the beginning of
-            # the next.  Save it for the next round.
             $self->{last_line} = $line;
             $done = 1;
             chomp $event->{arg};
          }
       }
 
-      # Maybe it's the beginning of a slow query log event.
-      # # Time: 071015 21:43:52
       elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
          $mode              = 'slow';
          $self->{last_line} = undef;
@@ -783,21 +764,15 @@ sub parse_event {
             $event->{ts} = $time;
          }
          else {
-            # Last line was the end of a query; this is the beginning of the
-            # next.
             $self->{last_line} = $line;
             $done = 1;
          }
       }
 
-      # Maybe it's the user/host line of a slow query log.
-      # # User@Host: root[root] @ localhost []
       elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
          @{$event}{qw(user host ip)} = ($user, $host, $ip);
       }
 
-      # Maybe it's the timing line of a slow query log.
-      # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
       elsif ( my ( $q, $l, $s, $e ) = $line =~ m/$slow_log_tr_line/ ) {
          @{$event}{qw(query_time lock_time rows_sent rows_exam)}
             = ( $q, $l, $s, $e );
@@ -825,8 +800,6 @@ sub parse_event {
       $line = <$fh> unless $done;
    }
 
-   # If it was EOF, discard the last line so statefulness doesn't interfere with
-   # the next log file.
    if ( !defined $line ) {
       $self->{last_line} = undef;
    }
@@ -839,8 +812,6 @@ sub parse_event {
    return $event;
 }
 
-# This method accepts an open filehandle and a callback function.  It reads
-# events from the filehandle and calls the callback with each event.
 sub parse_binlog_event {
    my ( $self, $fh, $code ) = @_;
    my $event;
@@ -853,7 +824,6 @@ sub parse_binlog_event {
    LINE: {
       return unless $line;
 
-      # Catch changes in DELIMITER
       if ( $line =~ m/^DELIMITER/m ) {
          my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
          $self->{term} = $del;
@@ -863,18 +833,17 @@ sub parse_binlog_event {
          redo LINE;
       }
 
-      # Throw away the delimiter
       $line =~ s/$tpat\Z//;
 
-      # Match the beginning of an event in the binary log.
       if ( my ( $offset ) = $line =~ m/$binlog_line_1/m ) {
          $self->{last_line} = undef;
          $event = {
             offset => $offset,
          };
          my ( $ts, $sid, $end, $type, $rest ) = $line =~ m/$binlog_line_2/m;
-         @{$event}{qw(ts server_id end type arg)}
-            = ($ts, $sid, $end, $type, $line);
+         @{$event}{qw(ts server_id end type)} = ($ts, $sid, $end, $type);
+         (my $arg = $line) =~ s/\n*^#.*\n//gm; # Remove comment lines
+         $event->{arg} = $arg;
          if ( $type eq 'Xid' ) {
             my ($xid) = $rest =~ m/(\d+)/;
             $event->{xid} = $xid;
@@ -884,7 +853,7 @@ sub parse_binlog_event {
          }
          else {
             die "Unknown event type $type"
-               unless $type =~ m/Intvar/;
+               unless $type =~ m/Rand|User_var|Intvar/;
          }
       }
       else {
@@ -894,8 +863,6 @@ sub parse_binlog_event {
       }
    }
 
-   # If it was EOF, discard the last line so statefulness doesn't interfere with
-   # the next log file.
    if ( !defined $line ) {
       delete $self->{term};
    }
@@ -908,6 +875,102 @@ sub parse_binlog_event {
 
 # ###########################################################################
 # End LogParser package
+# ###########################################################################
+
+# ###########################################################################
+# QueryRewriter package 1432
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package QueryRewriter;
+
+my $num_regex = qr/[+-]?(?=\d|\.)\d*(?:\.\d+)?(?:e[+-]?\d+|)/;
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub norm {
+   my ( $self, $query ) = @_;
+   $query = lc $query;
+   $query =~ s{
+              (?<![\w.+-])
+              [+-]?
+              (?:
+                \d+
+                (?:[.]\d*)?
+                |[.]\d+
+              )
+              (?:e[+-]?\d+)?
+              \b
+             }
+             {N}gx;                             # Float/real into N
+   $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
+   $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
+   $query =~ s{
+               ("(?:(?!(?<!\\)").)*"
+               |'(?:(?!(?<!\\)').)*')
+              }
+              {S}gx;            # Turn quoted strings into S
+   $query =~ s/\A\s+//;         # Chop off leading whitespace
+   $query =~ s/\s{2,}/ /g;      # Collapse all whitespace
+   $query =~ s/[\n\r\f]+/ /g;   # Collapse newlines etc
+   $query =~ s{
+               \b(in|values)\s*\(\s*([NS])\s*,[^\)]*\)
+              }
+              {$1($2+)}gx;      # Collapse IN() and VALUES() lists
+   $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
+   return $query;
+}
+
+sub convert {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
+   $query =~ s{
+                 \A.*?
+                 update\s+(.*?)
+                 \s+set(.*?)
+                 (?:\s+where(.*))?
+                 \Z
+              }
+              {
+                 "select $2 from $1"
+                 . ( $3 ? " where $3" : '' )
+              }exsi;
+   $query =~ s{
+                 \A.*?
+                 insert\s+
+                 into(.*?)\(([^\)]*)\)\s*
+                 values.*
+                 \Z
+              }
+              {select $2 from $1}xsi;
+   $query =~ s{
+                 \A.*?
+                 delete\s+(.*?)
+                 from(.*)
+                 \Z
+              }
+              {select * from $2}xsi;
+   $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
+   return $query;
+}
+
+sub wrap {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   return $query =~ m/\A\s*select/i
+      ? "select 1 from ($query) as x limit 1"
+      : $query;
+}
+
+1;
+
+# ###########################################################################
+# End QueryRewriter package
 # ###########################################################################
 
 package main;
@@ -937,7 +1000,9 @@ my @opt_spec = (
 );
 
 my $dsn_parser = new DSNParser();
-my $vp = new VersionParser();
+my $vp         = new VersionParser();
+my $qn         = new QueryRewriter();
+my $lp         = new LogParser();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{prompt} = '[OPTION...]';
 $opt_parser->{descr}  = q{pipelines the relay log to pre-warm the slave's caches};
@@ -972,8 +1037,7 @@ my $oktorun   = 1;
 my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
 
 $ENV{MKDEBUG} && _d("Data directory ", $datadir);
-my ($cfile, $cpos, $pfile, $ppos, $ctime, $ptime);
-my ($abytes, $asecs); # For computing moving averages
+my ($cfile, $cpos, $ctime, $pfile, $ppos, $ptime);
 
 while (                       # Quit if:
    (!$opts{t} || $now < $end) # time is exceeded
@@ -988,39 +1052,34 @@ while (                       # Quit if:
       $ctime = time();
       ($cfile, $cpos) = @{$status}{qw(relay_log_file relay_log_pos)};
 
-=pod
-TODO: not sure what the best way to get a moving average weighted towards most
-recent values is, but this is a try that doesn't seem to work all that well.
-      if ( $pfile && $cfile eq $pfile && $ppos && $cpos ne $ppos ) {
-         my $bytes = $cpos - $ppos;
-         my $secs = $ctime - $ptime;
-         my $cur  = $bytes/$secs;
-         my $factor = .95; # TODO param
-         $abytes = $abytes * $factor + $bytes;
-         $asecs  = $asecs  * $factor + $secs;
-         my $wgt = $abytes / $asecs;
-         printf("%12.3f %12.3f %d\n", $cur, $wgt, $cpos);
+      if ( $pfile && $cfile eq $pfile && $cpos != $ppos ) {
+
+         my $stop = $cpos + $opts{o} + $opts{b};
+
+         open my $fh, "mysqlbinlog --start-pos=$cpos "
+                    . "--stop-pos=$stop $datadir/$cfile |"
+            or die $OS_ERROR;
+
+         1 while $lp->parse_binlog_event($fh, sub {
+            my ($event) = @_;
+            return unless $event
+               ; # && ($event->{arg}||'') =~ m/\A\s*(?:set [t@]|use|insert|update|delete|replace)/i;
+            my $query = $qn->convert($event->{arg});
+            # die $event->{arg} unless $query =~ m/\A\s*(?:set|select|use)/i;
+            $query = $qn->norm($query);
+            print $query, "\n";
+         });
+
+         close $fh;
       }
       else {
-         $abytes = 0;
-         $asecs  = 1;
+         print "No change from last loop\n";
       }
-      ($pfile, $ppos) = ($cfile, $cpos);
-      $ptime = $ctime;
-=cut
 
-      my $start = $cpos  + $opts{o};
-      my $stop  = $start + $opts{b};
-      open FILE, "mysqlbinlog -l /dev/null --start-pos=$cpos --stop-pos=$stop $datadir/$cfile |"
-         or die $OS_ERROR;
-      while ( my $line = <FILE> ) {
-         print $line;
-      }
-      close FILE;
+      ($pfile, $ppos, $ptime) = ($cfile, $cpos, $ctime);
 
    }
 
-exit(0);
    $ENV{MKDEBUG} && _d("Sleeping ", $opts{i});
    sleep($opts{i});
    $now = time();
