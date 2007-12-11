@@ -672,7 +672,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 1429
+# LogParser package 1433
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -878,7 +878,7 @@ sub parse_binlog_event {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 1432
+# QueryRewriter package 1437
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -906,6 +906,7 @@ sub new {
 sub norm {
    my ( $self, $query ) = @_;
    $query = lc $query;
+   $query =~ s/^\s*(?:--|#).*//gm;              # One-line comments
    $query =~ s{
               (?<![\w.+-])
               [+-]?
@@ -951,7 +952,7 @@ sub convert {
                  \A.*?
                  (?:insert|replace)\s+
                  into(.*?)\(([^\)]+)\)\s*
-                 values\s*\(([^\)]+)\).*
+                 values\s*($bal).*
                  \Z
               }
               {__insert_to_select($1, $2, $3)}exsi;
@@ -968,11 +969,15 @@ sub convert {
 
 sub __insert_to_select {
    my ( $tbl, $cols, $vals ) = @_;
+   $ENV{MKDEBUG} && _d('Args: ', @_);
    my @cols = split(/,/, $cols);
-   my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|\w+)/g;
+   $ENV{MKDEBUG} && _d('Cols: ', @cols);
+   $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
+   my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
+   $ENV{MKDEBUG} && _d('Vals: ', @vals);
    if ( @cols == @vals ) {
       return "select * from $tbl where "
-         . join(', ', map { "$cols[$_] = $vals[$_]" } (0..$#cols));
+         . join(',', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
    }
    else {
       return "select * from $tbl limit 1";
@@ -985,6 +990,11 @@ sub wrap {
    return $query =~ m/\A\s*select/i
       ? "select 1 from ($query) as x limit 1"
       : $query;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# QueryRewriter:$line ", @_, "\n";
 }
 
 1;
