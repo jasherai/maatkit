@@ -885,7 +885,18 @@ use warnings FATAL => 'all';
 
 package QueryRewriter;
 
-my $num_regex = qr/[+-]?(?=\d|\.)\d*(?:\.\d+)?(?:e[+-]?\d+|)/;
+my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/;
+my $bal;
+$bal         = qr/
+                  \(
+                  (?:
+                     (?> [^()]+ )    # Non-parens without backtracking
+                     |
+                     (??{ $bal })    # Group with matching parens
+                  )*
+                  \)
+                 /x;
+
 
 sub new {
    my ( $class ) = @_;
@@ -909,14 +920,10 @@ sub norm {
              {N}gx;                             # Float/real into N
    $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
    $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
-   $query =~ s{
-               ("(?:(?!(?<!\\)").)*"
-               |'(?:(?!(?<!\\)').)*')
-              }
-              {S}gx;            # Turn quoted strings into S
-   $query =~ s/\A\s+//;         # Chop off leading whitespace
-   $query =~ s/\s{2,}/ /g;      # Collapse all whitespace
-   $query =~ s/[\n\r\f]+/ /g;   # Collapse newlines etc
+   $query =~ s/$quote_re/S/gx;                  # Turn quoted strings into S
+   $query =~ s/\A\s+//;                         # Chop off leading whitespace
+   $query =~ s/\s{2,}/ /g;                      # Collapse all whitespace
+   $query =~ s/[\n\r\f]+/ /g;                   # Collapse newlines etc
    $query =~ s{
                \b(in|values)\s*\(\s*([NS])\s*,[^\)]*\)
               }
@@ -942,12 +949,12 @@ sub convert {
               }exsi;
    $query =~ s{
                  \A.*?
-                 insert\s+
-                 into(.*?)\(([^\)]*)\)\s*
-                 values.*
+                 (?:insert|replace)\s+
+                 into(.*?)\(([^\)]+)\)\s*
+                 values\s*\(([^\)]+)\).*
                  \Z
               }
-              {select $2 from $1}xsi;
+              {__insert_to_select($1, $2, $3)}exsi;
    $query =~ s{
                  \A.*?
                  delete\s+(.*?)
@@ -957,6 +964,19 @@ sub convert {
               {select * from $2}xsi;
    $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
    return $query;
+}
+
+sub __insert_to_select {
+   my ( $tbl, $cols, $vals ) = @_;
+   my @cols = split(/,/, $cols);
+   my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|\w+)/g;
+   if ( @cols == @vals ) {
+      return "select * from $tbl where "
+         . join(', ', map { "$cols[$_] = $vals[$_]" } (0..$#cols));
+   }
+   else {
+      return "select * from $tbl limit 1";
+   }
 }
 
 sub wrap {
@@ -977,7 +997,7 @@ package main;
 
 use DBI;
 use English qw(-no_match_vars);
-use List::Util qw(max);
+use List::Util qw(min max);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -1034,10 +1054,9 @@ if ( $opts{daemonize} ) {
 my $now       = time();
 my $end       = $now + ( $opts{t} || 0 );    # When we should exit
 my $oktorun   = 1;
+my ($cfile, $cpos, $ctime, $pfile, $ppos, $ptime, $lseen);
 my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
-
 $ENV{MKDEBUG} && _d("Data directory ", $datadir);
-my ($cfile, $cpos, $ctime, $pfile, $ppos, $ptime);
 
 while (                       # Quit if:
    (!$opts{t} || $now < $end) # time is exceeded
@@ -1054,7 +1073,8 @@ while (                       # Quit if:
 
       if ( $pfile && $cfile eq $pfile && $cpos != $ppos ) {
 
-         my $stop = $cpos + $opts{o} + $opts{b};
+         my $start = max($lseen || 0, $cpos);
+         my $stop  = min($start, $cpos) + $opts{b};
 
          open my $fh, "mysqlbinlog --start-pos=$cpos "
                     . "--stop-pos=$stop $datadir/$cfile |"
@@ -1062,6 +1082,7 @@ while (                       # Quit if:
 
          1 while $lp->parse_binlog_event($fh, sub {
             my ($event) = @_;
+            $lseen = max($lseen, $event->{offset} || 0);
             return unless $event
                ; # && ($event->{arg}||'') =~ m/\A\s*(?:set [t@]|use|insert|update|delete|replace)/i;
             my $query = $qn->convert($event->{arg});
@@ -1073,7 +1094,8 @@ while (                       # Quit if:
          close $fh;
       }
       else {
-         print "No change from last loop\n";
+         $lseen = 0;
+         $ENV{MKDEBUG} && _d("No change or new file from last loop");
       }
 
       ($pfile, $ppos, $ptime) = ($cfile, $cpos, $ctime);
