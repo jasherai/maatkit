@@ -19,12 +19,12 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
-require "../QueryNormalizer.pm";
+require "../QueryRewriter.pm";
 
-my $q = new QueryNormalizer();
+my $q = new QueryRewriter();
 
 is(
    $q->norm('SELECT * from foo where a = 5'),
@@ -38,12 +38,11 @@ is(
    'Floats',
 );
 
-# TODO
-# is(
-   # $q->norm("select 0x0, x'123', 0b1010, b'10101' from foo"),
-   # 'select N, N, N, N from foo',
-   # 'Hex/bit',
-# );
+is(
+   $q->norm("select 0x0, x'123', 0b1010, b'10101' from foo"),
+   'select N, N, N, N from foo',
+   'Hex/bit',
+);
 
 is(
    $q->norm(" select  * from\nfoo where a = 5"),
@@ -64,8 +63,8 @@ is(
 );
 
 is(
-   $q->norm("insert into rktemp.catad select foo.bar from foo"),
-   'insert into rktemp.catad select foo.bar from foo',
+   $q->norm("insert into abtemp.coxed select foo.bar from foo"),
+   'insert into abtemp.coxed select foo.bar from foo',
    'A string that needs no changes',
 );
 

@@ -15,12 +15,12 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# QueryNormalizer package $Revision$
+# QueryRewriter package $Revision$
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
-package QueryNormalizer;
+package QueryRewriter;
 
 my $num_regex = qr/[+-]?(?=\d|\.)\d*(?:\.\d+)?(?:e[+-]?\d+|)/;
 
@@ -30,25 +30,24 @@ sub new {
 }
 
 # Normalizes variable queries to "query prototypes".  See
-# http://dev.mysql.com/doc/refman/5.0/en/literals.html: support for hex
-# notation isn't working right.  There's an unfinished test for this too.  The
-# float/real regex gobbles part of hex notation.
+# http://dev.mysql.com/doc/refman/5.0/en/literals.html
 sub norm {
    my ( $self, $query ) = @_;
    $query = lc $query;
    $query =~ s{
-              (?!<[xb0-9.+-])
+              (?<![\w.+-])
               [+-]?
-              (?=\d|[.])
-              \d*
-              (?:\.\d{0,})?
-              (?i:e[+-]?\d+|)
-              (?![exb0-9.+-])
+              (?:
+                \d+
+                (?:[.]\d*)?
+                |[.]\d+
+              )
+              (?:e[+-]?\d+)?
+              \b
              }
-             {N}gx;                              # Float/real into N
-   # $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;   # Hex/bin into N
-   # $query =~ s/\b(?:x'[0-9a-f]+|b'[01]+)'\b/N/g; # Hex/bin into N
-   $query =~ s/\b\d+\b/N/g;                      # Int into N
+             {N}gx;                             # Float/real into N
+   $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
+   $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
    $query =~ s{
                ("(?:(?!(?<!\\)").)*"
                |'(?:(?!(?<!\\)').)*')
@@ -69,5 +68,5 @@ sub norm {
 1;
 
 # ###########################################################################
-# End QueryNormalizer package
+# End QueryRewriter package
 # ###########################################################################
