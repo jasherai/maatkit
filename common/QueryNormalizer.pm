@@ -55,12 +55,12 @@ sub norm {
               }
               {S}gx;            # Turn quoted strings into S
    $query =~ s/\A\s+//;         # Chop off leading whitespace
-   $query =~ s/(?<=\b\s)\s+//g; # Collapse all whitespace
+   $query =~ s/\s{2,}/ /g;      # Collapse all whitespace
    $query =~ s/[\n\r\f]+/ /g;   # Collapse newlines etc
    $query =~ s{
-               \bin\s*\(\s*([NS])\s*,[^\)]*\)
+               \b(in|values)\s*\(\s*([NS])\s*,[^\)]*\)
               }
-              {in($1+)}gx;      # Collapse IN() lists
+              {$1($2+)}gx;      # Collapse IN() and VALUES() lists
    # Table names that end with one or two groups of digits
    $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
    return $query;
