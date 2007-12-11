@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 5;
+use Test::More tests => 7;
 use English qw(-no_match_vars);
 
 require "../QueryNormalizer.pm";
@@ -61,4 +61,16 @@ is(
    $q->norm("select foo_1 from foo_2_3"),
    'select foo_N from foo_N_N',
    'Numeric table names',
+);
+
+is(
+   $q->norm("select foo.bar from foo"),
+   'select foo.bar from foo',
+   'A string that needs no changes',
+);
+
+is(
+   $q->norm('insert into foo(a, b, c) values(2, 4, 5)'),
+   'insert into foo(a, b, c) values(N+)',
+   'VALUES lists',
 );
