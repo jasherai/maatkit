@@ -34,6 +34,7 @@ sub new {
 sub norm {
    my ( $self, $query ) = @_;
    $query = lc $query;
+   $query =~ s/^\s*(?:--|#).*//gm;              # One-line comments
    $query =~ s{
               (?<![\w.+-])
               [+-]?
@@ -63,6 +64,48 @@ sub norm {
    # Table names that end with one or two groups of digits
    $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
    return $query;
+}
+
+sub convert {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
+   $query =~ s{
+                 \A.*?
+                 update\s+(.*?)
+                 \s+set(.*?)
+                 (?:\s+where(.*))?
+                 \Z
+              }
+              {
+                 "select $2 from $1"
+                 . ( $3 ? " where $3" : '' )
+              }exsi;
+   $query =~ s{
+                 \A.*?
+                 insert\s+
+                 into(.*?)\(([^\)]*)\)\s*
+                 values.*
+                 \Z
+              }
+              {select $2 from $1}xsi;
+   $query =~ s{
+                 \A.*?
+                 delete\s+(.*?)
+                 from(.*)
+                 \Z
+              }
+              {select * from $2}xsi;
+   $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
+   return $query;
+}
+
+sub wrap {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   return $query =~ m/\A\s*select/i
+      ? "select 1 from ($query) as x limit 1"
+      : $query;
 }
 
 1;
