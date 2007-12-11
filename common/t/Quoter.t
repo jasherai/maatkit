@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 9;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 
 require "../Quoter.pm";
@@ -55,3 +55,4 @@ is( $q->quote_val(qw(1 2 3)), '1, 2, 3', 'three numbers');
 is( $q->quote_val(qw(a)), "'a'", 'letter');
 is( $q->quote_val("a'"), "'a\\''", 'letter with quotes');
 is( $q->quote_val(undef), 'NULL', 'NULL');
+is( $q->quote_val(''), "''", 'Empty string');
