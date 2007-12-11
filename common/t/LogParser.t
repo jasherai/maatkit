@@ -227,9 +227,7 @@ $events = [
   },
   {
     time => undef,
-    arg => '# at 498006722
-#071207 12:02:50 server id 21  end_log_pos 498006652 	Query	thread_id=104168	exec_time=20664	error_code=0
-SET TIMESTAMP=1197046970/*!*/',
+    arg => 'SET TIMESTAMP=1197046970/*!*/',
     ts => '071207 12:02:50',
     end => '498006652',
     server_id => '21',
@@ -263,10 +261,7 @@ BEGIN'
   },
   {
     time => undef,
-    arg => '
-# at 498006789
-#071207 12:02:07 server id 21  end_log_pos 278 	Query	thread_id=104168	exec_time=20675	error_code=0
-use test1',
+    arg => 'use test1',
     ts => '071207 12:02:07',
     end => '278',
     server_id => '21',
@@ -289,10 +284,7 @@ update test3.tblo as o
   },
   {
     time => undef,
-    arg => '
-# at 498007067
-#071207 12:02:08 server id 21  end_log_pos 836 	Query	thread_id=104168	exec_time=20704	error_code=0
-SET TIMESTAMP=1197046928',
+    arg => 'SET TIMESTAMP=1197046928',
     ts => '071207 12:02:08',
     end => '836',
     server_id => '21',
@@ -314,10 +306,7 @@ replace into test4.tbl9(tbl5, day, todo, comment)
   },
   {
     time => undef,
-    arg => '
-# at 498007625
-#071207 12:02:50 server id 21  end_log_pos 1161 	Query	thread_id=104168	exec_time=20664	error_code=0
-SET TIMESTAMP=1197046970',
+    arg => 'SET TIMESTAMP=1197046970',
     ts => '071207 12:02:50',
     end => '1161',
     server_id => '21',
@@ -336,10 +325,7 @@ update test3.tblo as o inner join test3.tbl2 as e
   },
   {
     server_id => '21',
-    arg => '
-# at 498007950
-#071207 12:02:50 server id 21  end_log_pos 498007840 	Xid = 4584956
-COMMIT',
+    arg => 'COMMIT',
     ts => '071207 12:02:50',
     xid => '4584956',
     type => 'Xid',
@@ -348,10 +334,7 @@ COMMIT',
   },
   {
     time => undef,
-    arg => '
-# at 498007977
-#071207 12:02:53 server id 21  end_log_pos 417 	Query	thread_id=103374	exec_time=20661	error_code=0
-SET TIMESTAMP=1197046973',
+    arg => 'SET TIMESTAMP=1197046973',
     ts => '071207 12:02:53',
     end => '417',
     server_id => '21',
@@ -371,10 +354,7 @@ insert into test1.tbl6
   },
   {
     server_id => '21',
-    arg => '
-# at 498008394
-#071207 12:02:53 server id 21  end_log_pos 498008284 	Xid = 4584964
-COMMIT',
+    arg => 'COMMIT',
     ts => '071207 12:02:53',
     xid => '4584964',
     type => 'Xid',
@@ -383,10 +363,7 @@ COMMIT',
   },
   {
     time => undef,
-    arg => '
-# at 498008421
-#071207 12:02:53 server id 21  end_log_pos 314 	Query	thread_id=103374	exec_time=20661	error_code=0
-SET TIMESTAMP=1197046973',
+    arg => 'SET TIMESTAMP=1197046973',
     ts => '071207 12:02:53',
     end => '314',
     server_id => '21',
@@ -405,10 +382,7 @@ update test2.tbl8
   },
   {
     server_id => '21',
-    arg => '
-# at 498008735
-#071207 12:02:53 server id 21  end_log_pos 498008625 	Xid = 4584965
-COMMIT',
+    arg => 'COMMIT',
     ts => '071207 12:02:53',
     xid => '4584965',
     type => 'Xid',
@@ -417,10 +391,7 @@ COMMIT',
   },
   {
     server_id => '21',
-    arg => '
-# at 498008762
-#071207 12:02:53 server id 21  end_log_pos 28 	Intvar
-SET INSERT_ID=86547461',
+    arg => 'SET INSERT_ID=86547461',
     ts => '071207 12:02:53',
     type => 'Intvar',
     end => '28',

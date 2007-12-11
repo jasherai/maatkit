@@ -216,8 +216,9 @@ sub parse_binlog_event {
             offset => $offset,
          };
          my ( $ts, $sid, $end, $type, $rest ) = $line =~ m/$binlog_line_2/m;
-         @{$event}{qw(ts server_id end type arg)}
-            = ($ts, $sid, $end, $type, $line);
+         @{$event}{qw(ts server_id end type)} = ($ts, $sid, $end, $type);
+         (my $arg = $line) =~ s/\n*^#.*\n//gm; # Remove comment lines
+         $event->{arg} = $arg;
          if ( $type eq 'Xid' ) {
             my ($xid) = $rest =~ m/(\d+)/;
             $event->{xid} = $xid;
@@ -227,7 +228,7 @@ sub parse_binlog_event {
          }
          else {
             die "Unknown event type $type"
-               unless $type =~ m/Intvar/;
+               unless $type =~ m/User_var|Intvar/;
          }
       }
       else {
