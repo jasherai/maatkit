@@ -22,7 +22,18 @@ use warnings FATAL => 'all';
 
 package QueryRewriter;
 
-my $num_regex = qr/[+-]?(?=\d|\.)\d*(?:\.\d+)?(?:e[+-]?\d+|)/;
+my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/;
+my $bal;
+$bal         = qr/
+                  \(
+                  (?:
+                     (?> [^()]+ )    # Non-parens without backtracking
+                     |
+                     (??{ $bal })    # Group with matching parens
+                  )*
+                  \)
+                 /x;
+
 
 sub new {
    my ( $class ) = @_;
@@ -49,14 +60,10 @@ sub norm {
              {N}gx;                             # Float/real into N
    $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
    $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
-   $query =~ s{
-               ("(?:(?!(?<!\\)").)*"
-               |'(?:(?!(?<!\\)').)*')
-              }
-              {S}gx;            # Turn quoted strings into S
-   $query =~ s/\A\s+//;         # Chop off leading whitespace
-   $query =~ s/\s{2,}/ /g;      # Collapse all whitespace
-   $query =~ s/[\n\r\f]+/ /g;   # Collapse newlines etc
+   $query =~ s/$quote_re/S/gx;                  # Turn quoted strings into S
+   $query =~ s/\A\s+//;                         # Chop off leading whitespace
+   $query =~ s/\s{2,}/ /g;                      # Collapse all whitespace
+   $query =~ s/[\n\r\f]+/ /g;                   # Collapse newlines etc
    $query =~ s{
                \b(in|values)\s*\(\s*([NS])\s*,[^\)]*\)
               }
@@ -83,12 +90,12 @@ sub convert {
               }exsi;
    $query =~ s{
                  \A.*?
-                 insert\s+
-                 into(.*?)\(([^\)]*)\)\s*
-                 values.*
+                 (?:insert|replace)\s+
+                 into(.*?)\(([^\)]+)\)\s*
+                 values\s*($bal).*
                  \Z
               }
-              {select $2 from $1}xsi;
+              {__insert_to_select($1, $2, $3)}exsi;
    $query =~ s{
                  \A.*?
                  delete\s+(.*?)
@@ -100,12 +107,34 @@ sub convert {
    return $query;
 }
 
+sub __insert_to_select {
+   my ( $tbl, $cols, $vals ) = @_;
+   $ENV{MKDEBUG} && _d('Args: ', @_);
+   my @cols = split(/,/, $cols);
+   $ENV{MKDEBUG} && _d('Cols: ', @cols);
+   $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
+   my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
+   $ENV{MKDEBUG} && _d('Vals: ', @vals);
+   if ( @cols == @vals ) {
+      return "select * from $tbl where "
+         . join(',', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
+   }
+   else {
+      return "select * from $tbl limit 1";
+   }
+}
+
 sub wrap {
    my ( $self, $query ) = @_;
    return unless $query;
    return $query =~ m/\A\s*select/i
       ? "select 1 from ($query) as x limit 1"
       : $query;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# QueryRewriter:$line ", @_, "\n";
 }
 
 1;
