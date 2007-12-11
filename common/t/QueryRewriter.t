@@ -19,12 +19,18 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
 
 my $q = new QueryRewriter();
+
+is(
+   $q->norm("select \n--bar\n foo"),
+   'select foo',
+   'Removes one-line comments',
+);
 
 is(
    $q->norm('SELECT * from foo where a = 5'),
@@ -72,4 +78,86 @@ is(
    $q->norm('insert into foo(a, b, c) values(2, 4, 5)'),
    'insert into foo(a, b, c) values(N+)',
    'VALUES lists',
+);
+
+is($q->convert(), undef, 'No query');
+
+is(
+   $q->convert(
+      'replace into foo select * from bar',
+   ),
+   'select * from bar',
+   'replace select',
+);
+
+is(
+   $q->convert(
+      'replace into foo select`faz` from bar',
+   ),
+   'select`faz` from bar',
+   'replace select',
+);
+
+is(
+   $q->convert(
+      'insert into foo(a, b, c) values(1, 3, 5)',
+   ),
+   'select a, b, c from  foo',
+   'insert',
+);
+
+is(
+   $q->convert(
+      'insert into foo select * from bar join baz using (bat)',
+   ),
+   'select * from bar join baz using (bat)',
+   'insert select',
+);
+
+is(
+   $q->convert(
+      'insert into foo select * from bar where baz=bat on duplicate key update',
+   ),
+   'select * from bar where baz=bat',
+   'insert select on duplicate key update',
+);
+
+is(
+   $q->convert(
+      'update foo set bar=baz where bat=fiz',
+   ),
+   'select  bar=baz from foo where  bat=fiz',
+   'update set',
+);
+
+is(
+   $q->convert(
+      'update foo inner join bar using(baz) set big=little',
+   ),
+   'select  big=little from foo inner join bar using(baz)',
+   'delete inner join',
+);
+
+is(
+   $q->convert(
+      'delete from foo where bar = baz',
+   ),
+   'select * from  foo where bar = baz',
+   'delete',
+);
+
+is($q->wrap(), undef, 'Cannot wrap undef');
+
+is(
+   $q->wrap(
+      'select * from foo',
+   ),
+   'select 1 from (select * from foo) as x limit 1',
+   'wrap in derived table',
+);
+
+is(
+   $q->wrap('set timestamp=134'),
+   'set timestamp=134',
+   'Do not wrap non-SELECT queries',
 );
