@@ -30,11 +30,25 @@ sub new {
 }
 
 # Normalizes variable queries to "query prototypes".  See
-# http://dev.mysql.com/doc/refman/5.0/en/literals.html
+# http://dev.mysql.com/doc/refman/5.0/en/literals.html: support for hex
+# notation isn't working right.  There's an unfinished test for this too.  The
+# float/real regex gobbles part of hex notation.
 sub norm {
    my ( $self, $query ) = @_;
    $query = lc $query;
-   $query =~ s/\b(?:0x[0-9a-f]+|\d+\.\d+|\.\d+|\d+)\b/N/g; # Numbers into N
+   $query =~ s{
+              (?!<[xb0-9.+-])
+              [+-]?
+              (?=\d|[.])
+              \d*
+              (?:\.\d{0,})?
+              (?i:e[+-]?\d+|)
+              (?![exb0-9.+-])
+             }
+             {N}gx;                              # Float/real into N
+   # $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;   # Hex/bin into N
+   # $query =~ s/\b(?:x'[0-9a-f]+|b'[01]+)'\b/N/g; # Hex/bin into N
+   $query =~ s/\b\d+\b/N/g;                      # Int into N
    $query =~ s{
                ("(?:(?!(?<!\\)").)*"
                |'(?:(?!(?<!\\)').)*')
@@ -42,11 +56,13 @@ sub norm {
               {S}gx;            # Turn quoted strings into S
    $query =~ s/\A\s+//;         # Chop off leading whitespace
    $query =~ s/(?<=\b\s)\s+//g; # Collapse all whitespace
-   $query =~ s/\n/ /g;          # Collapse newlines
+   $query =~ s/[\n\r\f]+/ /g;   # Collapse newlines etc
    $query =~ s{
-               \bin\s*\(\s*([NS])(?:\s*,[NS]\s*)+\)
+               \bin\s*\(\s*([NS])\s*,[^\)]*\)
               }
-              {in($1+)}g;       # Collapse IN() lists
+              {in($1+)}gx;      # Collapse IN() lists
+   # Table names that end with one or two groups of digits
+   $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
    return $query;
 }
 

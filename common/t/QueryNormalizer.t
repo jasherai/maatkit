@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 9;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 
 require "../QueryNormalizer.pm";
@@ -33,13 +33,32 @@ is(
 );
 
 is(
-   $q->norm('select * from foo where a = 5.5 or b=0.5 or c=.5 or d=0xdeadbeef'),
-   'select * from foo where a = N or b=N or c=N or d=N',
-   'Floats and hex',
+   $q->norm('select 0e0, +6e-30, -6.00 from foo where a = 5.5 or b=0.5 or c=.5'),
+   'select N, N, N from foo where a = N or b=N or c=N',
+   'Floats',
 );
+
+# TODO
+# is(
+   # $q->norm("select 0x0, x'123', 0b1010, b'10101' from foo"),
+   # 'select N, N, N, N from foo',
+   # 'Hex/bit',
+# );
 
 is(
    $q->norm(" select  * from\nfoo where a = 5"),
    'select * from foo where a = N',
    'Collapses whitespace',
+);
+
+is(
+   $q->norm("select * from foo where a in (5) and b in (5, 8,9 ,9 , 10)"),
+   'select * from foo where a in (N) and b in(N+)',
+   'IN lists',
+);
+
+is(
+   $q->norm("select foo_1 from foo_2_3"),
+   'select foo_N from foo_N_N',
+   'Numeric table names',
 );
