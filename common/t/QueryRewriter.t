@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 24;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -102,8 +102,32 @@ is(
    $q->convert(
       'insert into foo(a, b, c) values(1, 3, 5)',
    ),
-   'select a, b, c from  foo',
+   'select * from  foo where a=1, b= 3, c= 5',
    'insert',
+);
+
+is(
+   $q->convert(
+      'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
+   ),
+   'select * from  foo where a=1, b= 3, c= 5',
+   'replace with ODKU',
+);
+
+is(
+   $q->convert(
+      'replace into foo(a, b, c) values(now(), "3", 5)',
+   ),
+   'select * from  foo where a=now(), b= "3", c= 5',
+   'replace with complicated expressions',
+);
+
+is(
+   $q->convert(
+      'replace into foo(a, b, c) values(current_date - interval 1 day, "3", 5)',
+   ),
+   'select * from  foo where a=current_date - interval 1 day, b= "3", c= 5',
+   'replace with complicated expressions',
 );
 
 is(
