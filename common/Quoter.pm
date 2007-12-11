@@ -41,7 +41,7 @@ sub quote_val {
       map {
          if ( defined $_ ) {
             $_ =~ s/'/\\'/g;
-            $_ =~ m/\D/ ? "'$_'" : $_;
+            $_ eq '' || $_ =~ m/\D/ ? "'$_'" : $_;
          }
          else {
             'NULL';
