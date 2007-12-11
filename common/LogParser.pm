@@ -228,7 +228,7 @@ sub parse_binlog_event {
          }
          else {
             die "Unknown event type $type"
-               unless $type =~ m/User_var|Intvar/;
+               unless $type =~ m/Rand|User_var|Intvar/;
          }
       }
       else {
