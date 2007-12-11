@@ -64,8 +64,8 @@ is(
 );
 
 is(
-   $q->norm("select foo.bar from foo"),
-   'select foo.bar from foo',
+   $q->norm("insert into rktemp.catad select foo.bar from foo"),
+   'insert into rktemp.catad select foo.bar from foo',
    'A string that needs no changes',
 );
 
