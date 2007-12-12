@@ -89,7 +89,8 @@ sub convert {
                  \A.*?
                  (?:insert|replace)\s+
                  into(.*?)\(([^\)]+)\)\s*
-                 values\s*($bal).*
+                 values\s*(\(.*?\))\s*
+                 (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
                  \Z
               }
               {__insert_to_select($1, $2, $3)}exsi;

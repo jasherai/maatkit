@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 27;
+use Test::More tests => 28;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -215,6 +215,14 @@ update db2.tbl1 as p
    ) as chosen on chosen.col1 = p.col1
       and chosen.col2 = p.col2 ',
    'SELECT in the FROM clause',
+);
+
+is(
+   $q->convert(q{INSERT INTO foo.bar (col1, col2, col3)
+       VALUES ('unbalanced(', 'val2', 3)}),
+   q{select * from  foo.bar  where col1='unbalanced(' and  }
+   . q{col2= 'val2' and  col3= 3},
+   'unbalanced paren inside a string in VALUES',
 );
 
 is($q->wrap(), undef, 'Cannot wrap undef');
