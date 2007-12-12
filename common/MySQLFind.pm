@@ -22,6 +22,10 @@ use warnings FATAL => 'all';
 
 package MySQLFind;
 
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
+
 # SYNOPSIS:
 #   $f = new MySQLFind(
 #      dbh       => $dbh,
@@ -105,6 +109,7 @@ sub find_tables {
    @tables = grep {
          ( $views || ($_->{engine} ne 'VIEW') )
       } @tables;
+   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
    foreach my $crit ( @{$self->{tables}->{status}} ) {
       my ($key, $test) = %$crit;
       @tables
@@ -118,7 +123,8 @@ sub find_tables {
 
 # Returns hashrefs in the format SHOW TABLE STATUS would, but doesn't
 # necessarily call SHOW TABLE STATUS unless it needs to.  Hash keys are all
-# lowercase.
+# lowercase.  Table names are returned as <database>.<table> so fully-qualified
+# matching can be done later on the database name.
 sub _fetch_tbl_list {
    my ( $self, %args ) = @_;
    die "database is required" unless $args{database};
@@ -142,6 +148,7 @@ sub _fetch_tbl_list {
          my %tbl; # Make a copy with lowercased keys
          @tbl{ map { lc $_ } keys %$_ } = values %$_;
          $tbl{engine} ||= $tbl{type} || $tbl{comment};
+         $tbl{name} = join('.', $args{database}, $tbl{name});
          delete $tbl{type};
          \%tbl;
       } @tables;
@@ -170,7 +177,7 @@ sub _fetch_tbl_list {
             $engine = $struct->{engine};
          }
          push @result,
-         {  name   => $tbl->[0],
+         {  name   => "$args{database}.$tbl->[0]",
             engine => $engine,
          }
       }
@@ -180,17 +187,27 @@ sub _fetch_tbl_list {
 
 sub _filter {
    my ( $self, $thing, $sub, @vals ) = @_;
-   $ENV{MKDEBUG} && _d("Filtering $thing list");
+   $ENV{MKDEBUG} && _d("Filtering $thing list on ", Dumper($self->{$thing}));
    my $permit = $self->{$thing}->{permit};
    my $reject = $self->{$thing}->{reject};
    my $regexp = $self->{$thing}->{regexp};
    return grep {
       my $val = $sub->($_);
       $val = '' unless defined $val;
-      ( !$reject || !$reject->{$val} )
-         && ( !$permit || $permit->{$val} )
-         && ( !$regexp || $val =~ m/$regexp/ )
-   } @vals
+      # 'tables' is a special case, because it can be matched on either the
+      # table name or the database and table name.
+      if ( $thing eq 'tables' ) {
+         (my $tbl = $val) =~ s/^.*\.//;
+         ( !$reject || (!$reject->{$val} && !$reject->{$tbl}) )
+            && ( !$permit || $permit->{$val} || $permit->{$tbl} )
+            && ( !$regexp || $val =~ m/$regexp/ )
+      }
+      else {
+         ( !$reject || !$reject->{$val} )
+            && ( !$permit || $permit->{$val} )
+            && ( !$regexp || $val =~ m/$regexp/ )
+      }
+   } @vals;
 }
 
 sub _test_date {

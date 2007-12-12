@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 35;
+   $tests = 39;
 }
 
 use Test::More tests => $tests;
@@ -123,7 +123,7 @@ SKIP: {
    ok($found{test_mysql_finder_2}, 'test_mysql_finder_2 database like');
 
    # #####################################################################
-   # TABLES.  All in the test_mysql_finder_1 database.
+   # TABLES.
    # #####################################################################
 
    foreach my $tbl ( 
@@ -133,8 +133,11 @@ SKIP: {
       { n => 'aa', e => 'InnoDB' }, ) {
       $dbh->do("create table if not exists 
          test_mysql_finder_1.$tbl->{n}(a int) engine=$tbl->{e}");
+      $dbh->do("create table if not exists 
+         test_mysql_finder_2.$tbl->{n}(a int) engine=$tbl->{e}");
    }
    $dbh->do("create or replace view test_mysql_finder_1.vw_1 as select 1");
+   $dbh->do("create or replace view test_mysql_finder_2.vw_1 as select 1");
 
    $f = new MySQLFind(
       dbh    => $dbh,
@@ -177,6 +180,31 @@ SKIP: {
       dbh    => $dbh,
       quoter => $q,
       tables => {
+         permit => { 'test_mysql_finder_1.a' => 1 },
+      },
+   );
+
+   %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
+   is_deeply(
+      \%found,
+      {
+         a => 1,
+      },
+      'table permit fully qualified',
+   );
+
+   %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_2');
+   is_deeply(
+      \%found,
+      {
+      },
+      'table not fully qualified in wrong DB',
+   );
+
+   $f = new MySQLFind(
+      dbh    => $dbh,
+      quoter => $q,
+      tables => {
          reject => { a => 1 },
       },
    );
@@ -191,6 +219,39 @@ SKIP: {
          vw_1 => 1,
       },
       'table reject',
+   );
+
+   $f = new MySQLFind(
+      dbh    => $dbh,
+      quoter => $q,
+      tables => {
+         reject => { 'test_mysql_finder_1.a' => 1 },
+      },
+   );
+
+   %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_1');
+   is_deeply(
+      \%found,
+      {
+         b => 1,
+         c => 1,
+         aa => 1,
+         vw_1 => 1,
+      },
+      'table reject fully qualified',
+   );
+
+   %found = map { $_ => 1 } $f->find_tables(database => 'test_mysql_finder_2');
+   is_deeply(
+      \%found,
+      {
+         a => 1,
+         b => 1,
+         c => 1,
+         aa => 1,
+         vw_1 => 1,
+      },
+      'table reject fully qualified permits in other DB',
    );
 
    $f = new MySQLFind(
