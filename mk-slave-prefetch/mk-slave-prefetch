@@ -2,53 +2,17 @@
 
 =pod
 
-connect to slave
-read slave status
-read N bytes from binlog, N bytes ahead of current position
-   * but only if the file/pos has advanced since last time
-   * if it hasn't, then the next time it does, replay the ones just done
-   * keep track of the # bytes the slave advances each time
-   * try to read that many bytes, that far ahead, IOW
-   |-----|-----|-----|-----|
-    slave perl
-          slave perl
-                slave perl
-   * try to shorten the number of bytes read to the point they can be replayed
-     in opts{i} number of seconds?  but what if this is much faster than the
-     slave is processing events?  I guess try to read as many bytes as the
-     slave reads in X amount of time, and sleep if this doesn't take X time to
-     replay.  If it takes more than X time to replay, keep X interval the
-     same, but decrease the number of bytes to read.
-   * -l set the tmp dir for mysqlbinlog to /dev/null (what about Windows)?
 filter:
    Throw away non-replicated DBs
    throw away events of certain size (user, certain tables, ...)
    allow only certain types of statements
    throw away timestamp identical to previous timestamp
-parse
-convert
-   UPDATE: convert to SELECT
-   INSERT: convert to SELECT... where PK >= keys limit 1
-      (cache table structures)
-   REPLACE: convert to SELECT
-   DELETE: convert to SELECT... where limit 1
-   INSERT/SELECT: split into two queries
-   REPLACE/SELECT: split into two queries
-replay
-   rewrite columns as LEFT(CONCAT(LEFT(col, 1), LEFT(col, 1)...), 1)
-   (goal: don't fetch a lot of data from the SELECT)
-sleep N
-
-Look at relay log size and file times to see how fast the slave is advancing on
-average, or just watch it for a few seconds and see.
 
 Learn which statements take a long time to execute, canonicalize them, and
 don't re-execute them.  Read a file of such statements on startup.
 
 Optionally read the binlog from the server's master.  advantages: can run
 tool on another server than the slave.
-
-Maybe open the mysqlbinlog pipe and keep it open forever?
 
 =cut
 
@@ -1063,53 +1027,73 @@ if ( $opts{daemonize} ) {
 # ############################################################################
 my $now       = time();
 my $end       = $now + ( $opts{t} || 0 );    # When we should exit
-my $oktorun   = 1;
-my ($cfile, $cpos, $ctime, $pfile, $ppos, $ptime, $lseen);
 my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
 $ENV{MKDEBUG} && _d("Data directory ", $datadir);
 
+my ($chk_int, $last_chk) = (128, 0);
+my %time_for;
+
 while (                       # Quit if:
    (!$opts{t} || $now < $end) # time is exceeded
-   && $oktorun                # or instructed to quit
 ) {
-   my $status = $dbh->selectrow_hashref("SHOW SLAVE STATUS");
-   if ( !$status || ! %$status ) {
-      die "No SLAVE STATUS found.\n";
-   }
+   my %slave = get_status($dbh);
 
-   if ( ($status->{slave_sql_running} || '') eq 'Yes' ) {
-      $ctime = time();
-      ($cfile, $cpos) = @{$status}{qw(relay_log_file relay_log_pos)};
+   my $pos = 0; # Current position we're reading in binlog.
+   my $ts  = 0; # Last seen timestamp. TODO
 
-      if ( $pfile && $cfile eq $pfile && $cpos != $ppos ) {
+   if ( $slave{running} ) {
 
-         my $start = max($lseen || 0, $cpos);
-         my $stop  = min($start, $cpos) + $opts{b};
+      open my $fh, "mysqlbinlog --start-pos=$slave{pos} $datadir/$slave{file} |"
+         or die $OS_ERROR;
 
-         open my $fh, "mysqlbinlog --start-pos=$cpos "
-                    . "--stop-pos=$stop $datadir/$cfile |"
-            or die $OS_ERROR;
+      my $i = 0;
+      while ( my $event = $lp->parse_binlog_event($fh) ) {
+         next unless $event;
+         $pos = $event->{offset} || $pos;
 
-         1 while $lp->parse_binlog_event($fh, sub {
-            my ($event) = @_;
-            $lseen = max($lseen, $event->{offset} || 0);
-            return unless $event
-               ; # && ($event->{arg}||'') =~ m/\A\s*(?:set [t@]|use|insert|update|delete|replace)/i;
-            my $query = $qn->convert($event->{arg});
-            # die $event->{arg} unless $query =~ m/\A\s*(?:set|select|use)/i;
-            $query = $qn->norm($query);
-            print $query, "\n";
-         });
+         # Time to check the slave's status again?
+         if ( $pos > $slave{pos} && (++$i - $last_chk) >= $chk_int ) {
+            %slave    = get_status($dbh);
+            $last_chk = $i;
+            $chk_int  = $pos <= $slave{pos} # The slave caught up to us
+               ? max(1,    $chk_int / 2)  # TODO: parameterize 1.
+               : min(1024, $chk_int * 2); # TODO: parameterize 1024
+         }
+
+         # Stay X amount in front of the slave.
+         next unless $pos > $slave{pos} + $opts{o};
+
+         # But don't get too far ahead.
+         my $sleep = 16; # Sleep milliseconds #TODO: parameterize
+         while ( $pos > $slave{pos} + $opts{b} ) {
+            usleep($sleep * 1000);
+            $sleep   *= 2;
+            %slave    = get_status($dbh);
+            $last_chk = $i;
+         }
+
+         next unless
+            ($event->{arg}||'') =~ m/\A\s*(?:set [t@]|use|ins|upd|del|rep)/i;
+
+         my $select = $qn->convert($event->{arg});
+         if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
+            my $normal = $qn->norm($select);
+            if ( $time_for{$normal}->{avg} <= 1 ) { # TODO: param
+               my $start = gettimeofday();
+               $dbh->do($qn->wrap($select));
+               calculate_avg($normal, gettimeofday() - $start);
+            }
+            elsif ( $ENV{MKDEBUG} ) {
+               # TODO: debug
+            }
+         }
+         elsif ( $ENV{MKDEBUG} ) {
+            die $event->{arg};
+         }
+         # $ENV{MKDEBUG} && _d($query);
 
          close $fh;
       }
-      else {
-         $lseen = 0;
-         $ENV{MKDEBUG} && _d("No change or new file from last loop");
-      }
-
-      ($pfile, $ppos, $ptime) = ($cfile, $cpos, $ctime);
-
    }
 
    $ENV{MKDEBUG} && _d("Sleeping ", $opts{i});
@@ -1126,6 +1110,17 @@ sub _d {
    print "# main:$line ", @_, "\n";
 }
 
+sub calculate_avg {
+   my ( $query, $time ) = @_;
+   $time_for{$query}->{samples} ||= [];
+   my $samples = $time_for{$query}->{samples};
+   push @$samples, $time;
+   if ( @$samples > 16 ) { #TODO: param
+      shift @$samples;
+   }
+   $time_for{$query}->{avg} = sum(@$samples) / @$samples;
+}
+
 sub get_dbh {
    my ( $info, $db ) = @_;
 
@@ -1140,9 +1135,23 @@ sub get_dbh {
    };
 
    my $dbh = DBI->connect( $dsn_parser->get_cxn_params(\%opts), $db_options);
-   $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref
-   $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork
+   # Lowercase all column names for fetchrow_hashref. Don't disconnect on fork.
+   $dbh->{FetchHashKeyName} = 'NAME_lc';
+   $dbh->{InactiveDestroy}  = 1;
    return $dbh;
+}
+
+sub get_status {
+   my ( $dbh ) = @_;
+   my $status = $dbh->selectrow_hashref("SHOW SLAVE STATUS");
+   if ( !$status || ! %$status ) {
+      die "No output from SHOW SLAVE STATUS.\n";
+   }
+   return (
+      running => ($status->{slave_sql_running} || '') eq 'Yes',
+      file    => $status->{relay_log_file},
+      pos     => $status->{relay_log_pos},
+   );
 }
 
 # ############################################################################
