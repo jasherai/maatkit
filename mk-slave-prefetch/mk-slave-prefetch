@@ -39,6 +39,9 @@ tool on another server than the slave.
 use strict;
 use warnings FATAL => 'all';
 
+use English qw(-no_match_vars);
+$OUTPUT_AUTOFLUSH = 1;
+
 # ###########################################################################
 # OptionParser package 1369
 # ###########################################################################
@@ -637,7 +640,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 1433
+# LogParser package 1442
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -773,7 +776,7 @@ sub parse_event {
       $event->{arg} =~ s/;\s*//g;
    }
 
-   $code->($event) if $event;
+   $code->($event) if $event && $code;
    return $event;
 }
 
@@ -792,9 +795,9 @@ sub parse_binlog_event {
       if ( $line =~ m/^DELIMITER/m ) {
          my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
          $self->{term} = $del;
-         local $RS     = $term;
-         $tpat         = quotemeta $term;
+         local $RS     = $del;
          $line         = <$fh>; # Throw away DELIMITER line
+         $ENV{MKDEBUG} && _d('New record separator: ', $del);
          redo LINE;
       }
 
@@ -818,7 +821,7 @@ sub parse_binlog_event {
          }
          else {
             die "Unknown event type $type"
-               unless $type =~ m/Rand|User_var|Intvar/;
+               unless $type =~ m/Begin_load_query|Rand|User_var|Intvar/;
          }
       }
       else {
@@ -832,8 +835,13 @@ sub parse_binlog_event {
       delete $self->{term};
    }
 
-   $code->($event) if $event;
+   $code->($event) if $event && $code;
    return $event;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# LogParser:$line ", @_, "\n";
 }
 
 1;
@@ -971,9 +979,13 @@ sub _d {
 package main;
 
 use DBI;
+use Data::Dumper;
 use English qw(-no_match_vars);
-use List::Util qw(min max);
+use List::Util qw(min max sum);
 use Time::HiRes qw(usleep gettimeofday);
+
+$Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Indent    = 0;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -981,7 +993,7 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for password for connections' },
-   { s => 'bytes|b=z',         d => 'Number of bytes to read per chunk (default 1k)' },
+   { s => 'bytes|b=z',         d => 'Number of bytes to read per chunk (default 1M)' },
    { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
@@ -1032,7 +1044,7 @@ my $end       = $now + ( $opts{t} || 0 );    # When we should exit
 my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
 $ENV{MKDEBUG} && _d("Data directory ", $datadir);
 
-my ($chk_int, $last_chk) = (128, 0);
+my ($chk_int, $last_chk) = (128, 0); # TODO parametrize
 my %time_for;
 
 while (                       # Quit if:
@@ -1046,14 +1058,22 @@ while (                       # Quit if:
 
    if ( $slave{running} ) {
 
-      open my $fh, "mysqlbinlog --start-pos=$slave{pos} $datadir/$slave{file} |"
-         or die $OS_ERROR;
+      my $cmd = "mysqlbinlog --start-pos=$slave{pos} $datadir/$slave{file} |";
+      $ENV{MKDEBUG} && _d($cmd);
+      open my $fh, $cmd or die $OS_ERROR;
 
       my $i = 0;
+      EVENT:
       while ( my $event = $lp->parse_binlog_event($fh) ) {
-         next unless $event;
          $pos  = $event->{offset} || $pos;
-         $next = $pos + ($event->{end} || 0);
+         $next = max($next, $pos + ($event->{end} || 0));
+         $ENV{MKDEBUG} && _d("i=$i, pos=$pos, next=$next, slave=$slave{pos}");
+
+         # Stay X amount in front of the slave.
+         if ( $pos < $slave{pos} + $opts{o} ) {
+            $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
+            next EVENT;
+         }
 
          # Time to check the slave's status again?
          if ( $pos > $slave{pos} && (++$i - $last_chk) >= $chk_int ) {
@@ -1062,32 +1082,41 @@ while (                       # Quit if:
             $chk_int  = $pos <= $slave{pos} # The slave caught up to us
                ? max(1,    $chk_int / 2)  # TODO: parameterize 1.
                : min(1024, $chk_int * 2); # TODO: parameterize 1024
+            if ( $pos < $slave{pos} + $opts{o} ) {
+               $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
+               next EVENT;
+            }
          }
-
-         # Stay X amount in front of the slave.
-         next unless $pos > $slave{pos} + $opts{o};
 
          # But don't get too far ahead.
          my $sleep = 16; # Sleep milliseconds #TODO: parameterize
+         # TODO: but only if it's "our fault" we're ahead (the length of the
+         # event isn't really big).
          while (
                ($pos > $slave{pos} + $opts{b}) # Ahead of the slave.
                || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - 1024) # TODO
          ) {
+            $ENV{MKDEBUG} && _d("Event end is too far ahead, sleeping $sleep ms at i=$i");
             usleep($sleep * 1000);
             $sleep   *= 2;
             %slave    = get_status($dbh);
             $last_chk = $i;
          }
 
-         next unless
-            ($event->{arg}||'') =~ m/\A\s*(?:set [t@]|use|ins|upd|del|rep)/i;
+         if ( ($event->{arg}||'') !~ m/\A\s*(?:set [t@]|use|ins|upd|del|rep)/i) {
+            $ENV{MKDEBUG} && _d('Skipping this event because not allowable');
+            next EVENT;
+         }
 
          my $select = $qn->convert($event->{arg});
          if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
             my $normal = $qn->norm($select);
             if ( ((my $avg = $time_for{$normal}->{avg}) || 0) <= 1 ) { # TODO: param
                my $start = gettimeofday();
-               $dbh->do($qn->wrap($select));
+               my $sql   = $qn->wrap($select);
+               # $ENV{MKDEBUG} && _d($sql);
+               print STDERR $sql, "\n";
+               $dbh->do($sql);
                calculate_avg($normal, gettimeofday() - $start);
             }
             else {
@@ -1102,9 +1131,10 @@ while (                       # Quit if:
          elsif ( $ENV{MKDEBUG} ) {
             die $event->{arg};
          }
-
-         close $fh;
       }
+
+      $ENV{MKDEBUG} && _d('Closing filehandle');
+      close $fh;
    }
 
    $ENV{MKDEBUG} && _d("Sleeping ", $opts{i});
@@ -1160,7 +1190,7 @@ sub get_status {
    if ( !$status || ! %$status ) {
       die "No output from SHOW SLAVE STATUS.\n";
    }
-   $ENV{MKDEBUG} && _d(Dumper($status));
+   # $ENV{MKDEBUG} && _d(Dumper($status));
    my %status = (
       running => ($status->{slave_sql_running} || '') eq 'Yes',
       file    => $status->{relay_log_file},
