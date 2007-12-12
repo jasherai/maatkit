@@ -1406,6 +1406,13 @@ read-only user.  Here is an example of how to grant the necessary privileges:
    GRANT SELECT, REPLICATION CLIENT, REPLICATION SLAVE ON *.*
    TO 'prefetch'@'%' IDENTIFIED BY 'sp33dmeup!';
 
+C<mk-slave-prefetch> learns how long it takes statements to execute, and doesn't
+try to execute those that take a very long time.
+
+This program is based on concepts I heard Paul Tuckfield explain at the November
+2006 MySQL Camp un-conference.  However, the code is my own work.  I have not
+seen any other implementation of Paul's idea.
+
 =head1 OPTIONS
 
 Some options are negatable by specifying them in their long form with a --no
@@ -1466,15 +1473,43 @@ skip the query.  This is based on the theory that pre-warming the cache is
 most beneficial for short queries.
 
 C<mk-slave-prefetch> learns how long queries require to execute.  It keeps an
-average over the last L<"--querysampsize"> samples of each query.  The
-averages are based on an abstracted version of the query, with specific
-parameters replaced by placeholders.  The result is a sort of "signature" for
-the query, not executable SQL.  You can see the learned statistics with the
+average over the last L<"--querysampsize"> samples of each query.  The averages
+are based on an abstracted version of the query, with specific parameters
+replaced by placeholders.  The result is a sort of "fingerprint" for the query,
+not executable SQL.  You can see the learned statistics with the
 L<"--statistics"> option.
+
+I plan to add a feature to pre-load query fingerprints, and average execution
+times, from a file.  This way you don't have to wait for C<mk-slave-prefetch> to
+learn all over every time you start it.
+
+You might also want to filter out some statements completely, or let only some
+statements through.  See the L<"--rejectregexp"> and L<"--permitregexp"> options.
 
 =item --offset
 
-TODO
+The number of bytes C<mk-slave-prefetch> will try to stay in front of the slave
+SQL thread.  It will not execute log events it doesn't think are at least this
+far ahead of the SQL thread.
+
+=item --password
+
+The password to use when connecting.
+
+=item --permitregexp
+
+A Perl regular expression to filter log events.  The regular expression is
+matched against the raw log event, before any transformations are applied.  If
+specified, this option will permit only log events matching the regular
+expression.
+
+=item --port
+
+Port number to use for connection.
+
+=item --print
+
+Print the transformed relay log events to STDOUT.
 
 =item --querysampsize
 
@@ -1482,28 +1517,84 @@ How many queries to average together to get the average query execution time
 (see L<"--maxquerytime">).  The last C<N> queries with a given signature are
 averaged together.
 
+=item --rejectregexp
+
+Similar to L<"--permitregexp">, but has the opposite effect: log events must
+B<not> match the regular expression.
+
+=item --socket
+
+Socket file to use for connection.
+
+=item --statistics
+
+Prints statistics after executing.  The statistics are in two sections:
+counters, and queries.  The counters simply count the number of times events
+occur.  You may see the following counters:
+
+   NAME                    MEANING
+   =====================   =======================================
+   mysqlbinlog             Executed mysqlbinlog to read log events.
+   events                  The total number of relay log events.
+   not_far_enough_ahead    An event was not at least --offset
+                           bytes ahead of the SQL thread.
+   too_far_ahead           An event was more than --offset
+                           + --window bytes ahead of the SQL thread.
+   too_close_to_io_thread  An event was less than --iolag bytes
+                           away from the I/O thread's position.
+   event_not_allowed       An event wasn't a SET, USE, INSERT,
+                           UPDATE, DELETE or REPLACE query.
+   event_filtered_out      An event was filtered out because of
+                           --permitregexp or --rejectregexp.
+   same_timestamp          A SET TIMESTAMP event was ignored because
+                           it had the same timestamp as the last one.
+   do_query                A transformed event was executed
+                           or printed.
+   query_error             An executed query had an error.
+   query_too_long          An event was not executed because its
+                           average query length exceeded
+                           --maxquerytime.
+   query_not_rewritten     A query could not be rewritten to a
+                           SELECT.
+   master_pos_wait         The tool waited for the SQL thread to
+                           catch up.
+   show_slave_status       The tool queried SHOW SLAVE STATUS.
+
+After the counters, C<mk-slave-prefetch> prints information about each query
+fingerprint it has seen, two lines per fingerprint.  The first line contains the
+number of times the fingerprint was seen, number of times executed, the sum of
+the execution times, and the average execution time over the last
+L<"--querysampsize"> samples.  The second line is the query fingerprint.
+
 =item --time
 
-How long mk-slave-delay should run before exiting.  Default is to run
-forever.  See above for suffix syntax.
+How long C<mk-slave-prefetch> should run before exiting.  Default is to run
+forever.  The suffix can be s for seconds, m for minutes, h for hours, or d for
+days.
 
-=item --usemaster
+=item --user
 
-Don't trust the binlog positions in the slave's relay log.  Connect to the
-master and get binlog positions instead.  If you specify this option without
-giving a MASTER-HOST on the command line, mk-slave-delay examines the
-slave's SHOW SLAVE STATUS to determine the hostname and port for connecting to
-the master.
-
-mk-slave-delay only uses the MASTER_HOST and MASTER_PORT values from SHOW
-SLAVE STATUS for the master connection.  It does not use the MASTER_USER
-value.  If you want to specify a different username for the master than the
-one you use to connect to the slave, you should specify the MASTER-HOST option
-explicitly on the command line.
+User for login if not current user.
 
 =item --version
 
 Output version information and exit.
+
+=item --window
+
+Defines the window within which C<mk-slave-prefetch> considers a query OK to
+execute.  The window begins at the slave SQL thread's last known position plus
+L<"--offset"> bytes, and extends for the specified number of bytes.
+
+If C<mk-slave-prefetch> sees a log event that is too far in the future, it will
+increment the C<too_far_ahead> counter and wait for the slave SQL thread to
+catch up (which increments the C<master_pos_wait> counter).  If an event isn't
+far enough ahead of the SQL thread, it will be discarded and the
+C<not_far_enough_ahead> counter increments.
+
+Watching the mentioned statistics can help you understand how to tune the
+window.  You want C<mk-slave-prefetch> to run just ahead of the SQL thread, not
+throwing out a lot of events for being too far ahead or not far enough ahead.
 
 =back
 
@@ -1511,13 +1602,6 @@ Output version information and exit.
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
-
-=head1 OUTPUT
-
-If you specify L<"--quiet">, there is no output.  Otherwise, the normal output
-is a status message consisting of a timestamp and information about what
-mk-slave-delay is doing: starting the slave, stopping the slave, or just
-observing.
 
 =head1 ENVIRONMENT
 
@@ -1552,7 +1636,7 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Sergey Zhuravlev and Baron Schwartz.
+Baron Schwartz.
 
 =head1 VERSION
 
