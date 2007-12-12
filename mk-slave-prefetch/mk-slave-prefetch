@@ -997,6 +997,7 @@ use Data::Dumper;
 use English qw(-no_match_vars);
 use List::Util qw(min max sum);
 use Time::HiRes qw(gettimeofday);
+use sigtrap qw(handler finish untrapped normal-signals);
 
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
@@ -1007,18 +1008,32 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
 my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for password for connections' },
-   { s => 'bytes|b=z',         d => 'Number of bytes to read per chunk (default 1M)' },
+   { s => 'checkint|i=A',      d => 'How often to check the slave: '
+                                  . 'init,min,max (default 128,1,1024)' },
    { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
+   { s => 'execute|x!',        d => 'Execute transformed queries (default)' },
    { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'interval|i=m',      d => 'Sleep interval (default 1s); suffix: s/m/h/d' },
-   { s => 'offset|o=z',        d => 'Number of bytes ahead to start (default 1k)' },
+   { s => 'iolag|l=z',         d => 'How many bytes to lag the I/O thread '
+                                  . '(default 1k)' },
+   { s => 'maxquerytime|q=f',  d => 'Do not run queries longer than this '
+                                  . 'many seconds; fractions allowed (default 2)' },
+   { s => 'querysampsize=i',   d => 'Average query exec time over this '
+                                  . 'many queries (default 16)' },
+   { s => 'offset|o=z',        d => 'How many bytes to lead the SQL thread (default 1k)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
+   { s => 'print',             d => 'Print transformed queries' },
+   { s => 'permitregexp=s',    d => 'Permit queries matching this Perl regexp' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'rejectregexp=s',    d => 'Reject queries matching this Perl regexp' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'statistics',        d => 'Print statistics after exiting' },
    { s => 'time|t=m',          d => 'Time to run before exiting; suffix: s/m/h/d' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
+   { s => 'window|w=z',        d => 'How many bytes ahead is too far ahead (default 5k)' },
+   '--print and --daemonize are mutually exclusive',
+   'At least one of --print or --execute are required',
 );
 
 my $dsn_parser = new DSNParser();
@@ -1032,6 +1047,16 @@ my %opts = $opt_parser->parse();
 
 if ( $opts{t} ) {
    $opts{t} = max($opts{t}, 1);
+}
+
+my ($chk_int, $chk_min, $chk_max) = @{$opts{i}};
+if ( grep { !defined $_ || $_ !~ m/^\d+$/ } ($chk_int, $chk_min, $chk_max) ) {
+   $opt_parser->error("You must specify three elements for --checkint");
+}
+elsif ( $chk_int > $chk_max || $chk_int < $chk_min
+   || $chk_max > $chk_min || $chk_min < 0 )
+{
+   $opt_parser->error("You specified an invalid range for --checkint");
 }
 
 $opt_parser->usage_or_errors(%opts);
@@ -1058,11 +1083,14 @@ my $end       = $now + ( $opts{t} || 0 );    # When we should exit
 my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
 $ENV{MKDEBUG} && _d("Data directory ", $datadir);
 
-my ($chk_int, $last_chk) = (128, 0); # TODO parametrize
 my %time_for;
+my %stats;
+my $last_chk = 0;
+my $oktorun  = 1;
 
 while (                       # Quit if:
    (!$opts{t} || $now < $end) # time is exceeded
+   && ($oktorun)              # instructed to quit
 ) {
    my %slave = get_status($dbh);
 
@@ -1075,10 +1103,17 @@ while (                       # Quit if:
       my $cmd = "mysqlbinlog --start-pos=$slave{pos} $datadir/$slave{file} |";
       $ENV{MKDEBUG} && _d($cmd);
       open my $fh, $cmd or die $OS_ERROR;
+      $stats{mysqlbinlog}++;
 
       my $i = 0;
       EVENT:
-      while ( my $event = $lp->parse_binlog_event($fh) ) {
+      while (
+         ($now = time())
+         && (!$opts{t} || $now < $end)
+         && $oktorun
+         && (my $event = $lp->parse_binlog_event($fh) )
+      ) {
+         $stats{events}++;
          $pos  = $event->{offset} || $pos;
          $next = max($next, $pos + ($event->{end} || 0));
          $ENV{MKDEBUG} && _d("i=$i, pos=$pos, next=$next, slave=$slave{pos}");
@@ -1086,6 +1121,7 @@ while (                       # Quit if:
          # Stay X amount in front of the slave.
          if ( $pos < $slave{pos} + $opts{o} ) {
             $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
+            $stats{not_far_enough_ahead}++;
             next EVENT;
          }
 
@@ -1094,10 +1130,11 @@ while (                       # Quit if:
             %slave    = get_status($dbh);
             $last_chk = $i;
             $chk_int  = $pos <= $slave{pos} # The slave caught up to us
-               ? max(1,    $chk_int / 2)  # TODO: parameterize 1.
-               : min(1024, $chk_int * 2); # TODO: parameterize 1024
+               ? max($chk_min, $chk_int / 2)
+               : min($chk_max, $chk_int * 2);
             if ( $pos < $slave{pos} + $opts{o} ) {
                $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
+               $stats{not_far_enough_ahead}++;
                next EVENT;
             }
          }
@@ -1105,12 +1142,20 @@ while (                       # Quit if:
          # But don't get too far ahead or too close to the end of the binlog.
          while (
             # Too far ahead of the slave
-            ($pos > $slave{pos} + $opts{b})
-            # Too close to where the I/O thread is writing.  TODO parametrize
+            ($pos > $slave{pos} + $opts{w})
+            # Too close to where the I/O thread is writing.
             # TODO: do I need to add the event's end pos into this equation?
-            || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - 1024)
+            || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - $opts{l})
          ) {
-            $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
+            if ($pos > $slave{pos} + $opts{w}) {
+               $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
+               $stats{too_far_ahead}++;
+            }
+            else {
+               $ENV{MKDEBUG} && _d(
+                  "Event $pos is too close to I/O thread ($slave{pos} + $slave{lag}) at i=$i");
+               $stats{too_close_to_io_thread}++;
+            }
             wait_for_master(\%slave, $pos);
             %slave    = get_status($dbh);
             $last_chk = $i;
@@ -1120,6 +1165,16 @@ while (                       # Quit if:
             $ENV{MKDEBUG} && _d('Event arg: ',
                (defined $event->{arg} ?  substr($event->{arg}, 0, 50) : 'undef'));
             $ENV{MKDEBUG} && _d('Skipping this event because not allowable');
+            $stats{event_not_allowed}++;
+            next EVENT;
+         }
+
+         if (
+               ( $opts{rejectregexp} && $event->{arg} =~ m/$opts{rejectregexp}/ )
+            || ( $opts{permitregexp} && $event->{arg} !~ m/$opts{permitregexp}/ )
+         ) {
+            $ENV{MKDEBUG} && _d('Skipping because of permit/reject regexp');
+            $stats{event_filtered_out}++;
             next EVENT;
          }
 
@@ -1128,6 +1183,7 @@ while (                       # Quit if:
          if ( (my ($newts) = $event->{arg} =~ m/SET TIMESTAMP=(\d+)/) ) {
             if ( $newts == $ts ) {
                $ENV{MKDEBUG} && _d('Already saw timestamp ', $newts);
+               $stats{same_timestamp}++;
                next EVENT;
             }
             else {
@@ -1135,34 +1191,44 @@ while (                       # Quit if:
             }
          }
 
-         # Convert the event to a SELECT and execute it.
+         # Convert the event to a SELECT and print/execute it.
          my $select = $qn->convert($event->{arg});
          if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
             my $normal = $qn->norm($select);
-            if ( (my $avg = get_avg($normal)) < 3 ) { # TODO: param
-               my $start = gettimeofday();
-               my $sql   = $qn->wrap($select);
+            if ( (my $avg = get_avg($normal)) < $opts{q} ) {
+               my $sql = $qn->wrap($select);
                $ENV{MKDEBUG} && _d($sql);
-               eval {
-                  $dbh->do($sql);
-               };
-               if ( $EVAL_ERROR ) {
-                  if ( $ENV{MKDEBUG} ) {
-                     _d($EVAL_ERROR);
-                     _d("SQL was: ", $event->{arg});
+               $stats{do_query}++;
+               if ( $opts{x} ) {
+                  eval {
+                     my $start = gettimeofday();
+                     $dbh->do($sql);
+                     store_avg($normal, gettimeofday() - $start);
+                  };
+                  if ( $EVAL_ERROR ) {
+                     $stats{query_error}++;
+                     if ( $ENV{MKDEBUG} ) {
+                        _d($EVAL_ERROR);
+                        _d("SQL was: ", $event->{arg});
+                     }
                   }
                }
-               store_avg($normal, gettimeofday() - $start);
+               elsif ( $opts{print} ) {
+                  print $sql, ";\n";
+               }
             }
             else {
                $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $normal);
+               $stats{query_too_long}++;
                wait_for_master(\%slave, $pos);
                %slave    = get_status($dbh);
                $last_chk = $i;
             }
          }
          elsif ( $ENV{MKDEBUG} ) {
-            die $event->{arg};
+            $stats{query_not_rewritten}++;
+            print $event->{arg};
+            $oktorun = 0;
          }
       }
 
@@ -1170,14 +1236,43 @@ while (                       # Quit if:
       close $fh;
    }
 
-   $ENV{MKDEBUG} && _d("Sleeping ", $opts{i});
-   sleep($opts{i});
+   $ENV{MKDEBUG} && _d("Sleeping 1");
+   $stats{sleep}++;
+   sleep(1);
    $now = time();
+}
+
+# Print statistics
+if ( $opts{statistics} ) {
+
+   # Print operations in order of descending count, with percentage.
+   my $maxlen = max(0, map { length($_) } keys %stats);
+   my $total  = sum(0, values %stats);
+   printf("%-${maxlen}s \%10s %10s\n", qw(Action Count Pct));
+   my $fmt = "%-${maxlen}s \%10d %10.2f\n";
+   foreach my $key ( reverse sort { $stats{$a} <=> $stats{$b} } keys %stats ) {
+      printf($fmt, $key, $stats{$key}, $stats{$key} / $total * 100);
+   }
+
+   # Print normalized queries, their average exec times, times seen and times
+   # executed.  Sort in order of times seen descending.
+   foreach my $query (
+      reverse sort { $time_for{$a}->{seen} <=> $time_for{$b}->{seen} } keys %time_for
+   ) {
+      my $stats = $time_for{$query};
+      print "# ",
+         join(' ', (map { "$_=$stats->{$_}" } qw(seen exec sum avg))),
+         "\n# ", $query, "\n";
+   }
 }
 
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub finish {
+   $oktorun = 0;
+}
 
 sub _d {
    my ( $line ) = (caller(0))[2];
@@ -1187,6 +1282,7 @@ sub _d {
 
 sub wait_for_master {
    my ( $slave, $pos ) = @_;
+   $stats{master_pos_wait}++;
    my $sql = "SELECT MASTER_POS_WAIT('$slave->{mfile}', "
       . ($slave->{mpos} + ($pos - $slave->{pos})) . ", 1)";
    $ENV{MKDEBUG} && _d($sql);
@@ -1197,12 +1293,8 @@ sub wait_for_master {
 }
 
 # The average is weighted so we don't quit trying a statement when we have
-# only a few samples.  The equation is
-# sum(times)    sample_size
-# ----------- * -----------
-# num_times     num_times
-# So if we want to collect 16 samples and the first one is huge, it will be
-# weighted as 1/16th of its size.
+# only a few samples.  So if we want to collect 16 samples and the first one
+# is huge, it will be weighted as 1/16th of its size.
 sub store_avg {
    my ( $query, $time ) = @_;
    return unless $query =~ m/\Aselect/;
@@ -1210,16 +1302,18 @@ sub store_avg {
    $time_for{$query}->{samples} ||= [];
    my $samples = $time_for{$query}->{samples};
    push @$samples, $time;
-   if ( @$samples > 16 ) { #TODO: param
+   if ( @$samples > $opts{querysampsize} ) {
       shift @$samples;
    }
-   # TODO: param
-   $time_for{$query}->{avg} = (sum(@$samples) / @$samples) * (16/@$samples);
+   $time_for{$query}->{avg} = sum(@$samples) / $opts{querysampsize};
+   $time_for{$query}->{exec}++;
+   $time_for{$query}->{sum} += $time;
    $ENV{MKDEBUG} && _d('Average time: ', $time_for{$query}->{avg});
 }
 
 sub get_avg {
    my ( $query ) = @_;
+   $time_for{$query}->{seen}++;
    return $time_for{$query}->{avg} || 0;
 }
 
@@ -1245,6 +1339,7 @@ sub get_dbh {
 
 sub get_status {
    my ( $dbh ) = @_;
+   $stats{show_slave_status}++;
    my $status = $dbh->selectrow_hashref("SHOW SLAVE STATUS");
    if ( !$status || ! %$status ) {
       die "No output from SHOW SLAVE STATUS.\n";
