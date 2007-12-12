@@ -79,16 +79,12 @@ sub convert {
    $query =~ s{
                  \A.*?
                  update\s+(.*?)
-                 \s+set(.*?)
-                 (?:\s+where(.*?))?
+                 \s+set\b(.*?)
+                 (?:\s+where\b(.*?))?
                  (limit\s*\d+(?:\s*,\s*\d+)?)?
                  \Z
               }
-              {
-                 "select $2 from $1"
-                 . ( $3 ? " where $3" : '' )
-                 . ( $4 ? " $4 "      : '' )
-              }exsi;
+              {__update_to_select($1, $2, $3, $4)}exsi;
    $query =~ s{
                  \A.*?
                  (?:insert|replace)\s+
@@ -124,6 +120,13 @@ sub __insert_to_select {
    else {
       return "select * from $tbl limit 1";
    }
+}
+
+sub __update_to_select {
+   my ( $from, $set, $where, $limit ) = @_;
+   return "select $set from $from "
+      . ( $where ? "where $where" : '' )
+      . ( $limit ? " $limit "      : '' );
 }
 
 sub wrap {

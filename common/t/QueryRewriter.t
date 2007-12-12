@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 26;
+use Test::More tests => 27;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -158,7 +158,7 @@ is(
    $q->convert(
       'update foo inner join bar using(baz) set big=little',
    ),
-   'select  big=little from foo inner join bar using(baz)',
+   'select  big=little from foo inner join bar using(baz) ',
    'delete inner join',
 );
 
@@ -166,8 +166,18 @@ is(
    $q->convert(
       'update foo set bar=baz limit 50',
    ),
-   'select  bar=baz  from foo limit 50 ',
+   'select  bar=baz  from foo  limit 50 ',
    'update with limit',
+);
+
+is(
+   $q->convert(
+q{UPDATE foo.bar
+SET    whereproblem= '3364', apple = 'fish'
+WHERE  gizmo='5091'}
+   ),
+   q{select     whereproblem= '3364', apple = 'fish' from foo.bar where   gizmo='5091'},
+   'unknown issue',
 );
 
 is(
@@ -203,7 +213,7 @@ update db2.tbl1 as p
       order by priority desc, col1, col2
       limit 10
    ) as chosen on chosen.col1 = p.col1
-      and chosen.col2 = p.col2',
+      and chosen.col2 = p.col2 ',
    'SELECT in the FROM clause',
 );
 
