@@ -981,6 +981,7 @@ sub wrap {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
    print "# QueryRewriter:$line ", @_, "\n";
 }
 
@@ -1033,7 +1034,7 @@ my @opt_spec = (
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'window|w=z',        d => 'How many bytes ahead is too far ahead (default 5k)' },
    '--print and --daemonize are mutually exclusive',
-   'At least one of --print or --execute are required',
+   'at least one of --print or --execute are required',
 );
 
 my $dsn_parser = new DSNParser();
@@ -1042,7 +1043,7 @@ my $qn         = new QueryRewriter();
 my $lp         = new LogParser();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{prompt} = '[OPTION...]';
-$opt_parser->{descr}  = q{pipelines the relay log to pre-warm the slave's caches};
+$opt_parser->{descr}  = q{pipelines the relay log to pre-warm the slave's caches.};
 my %opts = $opt_parser->parse();
 
 if ( $opts{t} ) {
@@ -1054,7 +1055,7 @@ if ( grep { !defined $_ || $_ !~ m/^\d+$/ } ($chk_int, $chk_min, $chk_max) ) {
    $opt_parser->error("You must specify three elements for --checkint");
 }
 elsif ( $chk_int > $chk_max || $chk_int < $chk_min
-   || $chk_max > $chk_min || $chk_min < 0 )
+   || $chk_max < $chk_min || $chk_min < 0 )
 {
    $opt_parser->error("You specified an invalid range for --checkint");
 }
@@ -1088,10 +1089,7 @@ my %stats;
 my $last_chk = 0;
 my $oktorun  = 1;
 
-while (                       # Quit if:
-   (!$opts{t} || $now < $end) # time is exceeded
-   && ($oktorun)              # instructed to quit
-) {
+while ( oktorun() ) {
    my %slave = get_status($dbh);
 
    my $pos  = 0; # Current position we're reading in relay log.
@@ -1100,19 +1098,14 @@ while (                       # Quit if:
 
    if ( $slave{running} ) {
 
-      my $cmd = "mysqlbinlog --start-pos=$slave{pos} $datadir/$slave{file} |";
+      my $cmd = "mysqlbinlog --start-pos=$slave{pos} $datadir/$slave{file}";
       $ENV{MKDEBUG} && _d($cmd);
-      open my $fh, $cmd or die $OS_ERROR;
+      open my $fh, "$cmd 2>/dev/null |" or die $OS_ERROR;
       $stats{mysqlbinlog}++;
 
       my $i = 0;
       EVENT:
-      while (
-         ($now = time())
-         && (!$opts{t} || $now < $end)
-         && $oktorun
-         && (my $event = $lp->parse_binlog_event($fh) )
-      ) {
+      while ( oktorun() && (my $event = $lp->parse_binlog_event($fh) )) {
          $stats{events}++;
          $pos  = $event->{offset} || $pos;
          $next = max($next, $pos + ($event->{end} || 0));
@@ -1140,13 +1133,13 @@ while (                       # Quit if:
          }
 
          # But don't get too far ahead or too close to the end of the binlog.
-         while (
-            # Too far ahead of the slave
-            ($pos > $slave{pos} + $opts{w})
-            # Too close to where the I/O thread is writing.
-            # TODO: do I need to add the event's end pos into this equation?
-            || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - $opts{l})
-         ) {
+         while ( oktorun()
+            && (
+               # Too far ahead of the slave
+               ($pos > $slave{pos} + $opts{w})
+               # Too close to where the I/O thread is writing.
+               # TODO: do I need to add the event's end pos into this equation?
+               || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - $opts{l}))) {
             if ($pos > $slave{pos} + $opts{w}) {
                $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
                $stats{too_far_ahead}++;
@@ -1233,13 +1226,26 @@ while (                       # Quit if:
       }
 
       $ENV{MKDEBUG} && _d('Closing filehandle');
-      close $fh;
-   }
 
-   $ENV{MKDEBUG} && _d("Sleeping 1");
-   $stats{sleep}++;
-   sleep(1);
-   $now = time();
+      # Unfortunately, mysqlbinlog does NOT like me to close the pipe before
+      # reading all data from it.  It hangs and prints angry messages about a
+      # closed file.  So I'll find the mysqlbinlog process created by the
+      # open() and kill it.
+      my $procs = `ps -eaf | grep mysqlbinlog`;
+      $ENV{MKDEBUG} && _d($procs);
+      if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
+         chomp $line;
+         $ENV{MKDEBUG} && _d($line);
+         if ( my ( $proc ) = $line =~ m/(\d+)/ ) {
+            $ENV{MKDEBUG} && _d("Will kill process ", $proc);
+            kill(15, $proc);
+         }
+      }
+
+      close($fh)
+         or warn $OS_ERROR ? "Error closing mysqlbinlog pipe: $OS_ERROR"
+                           : "Exit status $CHILD_ERROR from mysqlbinlog";
+   }
 }
 
 # Print statistics
@@ -1248,8 +1254,8 @@ if ( $opts{statistics} ) {
    # Print operations in order of descending count, with percentage.
    my $maxlen = max(0, map { length($_) } keys %stats);
    my $total  = sum(0, values %stats);
-   printf("%-${maxlen}s \%10s %10s\n", qw(Action Count Pct));
-   my $fmt = "%-${maxlen}s \%10d %10.2f\n";
+   printf("# %-${maxlen}s \%10s %10s\n", qw(Action Count Pct));
+   my $fmt = "# %-${maxlen}s \%10d %10.2f\n";
    foreach my $key ( reverse sort { $stats{$a} <=> $stats{$b} } keys %stats ) {
       printf($fmt, $key, $stats{$key}, $stats{$key} / $total * 100);
    }
@@ -1261,7 +1267,7 @@ if ( $opts{statistics} ) {
    ) {
       my $stats = $time_for{$query};
       print "# ",
-         join(' ', (map { "$_=$stats->{$_}" } qw(seen exec sum avg))),
+         join(' ', (map { "$_=" . ($stats->{$_} || '0') } qw(seen exec sum avg))),
          "\n# ", $query, "\n";
    }
 }
@@ -1272,6 +1278,11 @@ if ( $opts{statistics} ) {
 
 sub finish {
    $oktorun = 0;
+}
+
+sub oktorun {
+   $now = time();
+   return (!$opts{t} || $now < $end) && $oktorun;
 }
 
 sub _d {
