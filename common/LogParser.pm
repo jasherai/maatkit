@@ -178,7 +178,7 @@ sub parse_event {
       $event->{arg} =~ s/;\s*//g;
    }
 
-   $code->($event) if $event;
+   $code->($event) if $event && $code;
    return $event;
 }
 
@@ -244,7 +244,7 @@ sub parse_binlog_event {
       delete $self->{term};
    }
 
-   $code->($event) if $event;
+   $code->($event) if $event && $code;
    return $event;
 }
 
