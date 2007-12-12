@@ -88,7 +88,7 @@ sub convert {
    $query =~ s{
                  \A.*?
                  (?:insert|replace)\s+
-                 into(.*?)\(([^\)]+)\)\s*
+                 \binto\b(.*?)\(([^\)]+)\)\s*
                  values\s*(\(.*?\))\s*
                  (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
                  \Z
@@ -97,13 +97,21 @@ sub convert {
    $query =~ s{
                  \A.*?
                  delete\s+(.*?)
-                 from(.*)
+                 \bfrom\b(.*)
                  \Z
               }
-              {select * from $2}xsi;
+              {__delete_to_select($1, $2)}exsi;
    $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
    $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
    return $query;
+}
+
+sub __delete_to_select {
+   my ( $delete, $join ) = @_;
+   if ( $join =~ m/\bjoin\b/ ) {
+      return "select 1 from $join";
+   }
+   return "select * from $join";
 }
 
 sub __insert_to_select {

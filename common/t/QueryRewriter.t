@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 28;
+use Test::More tests => 29;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -223,6 +223,12 @@ is(
    q{select * from  foo.bar  where col1='unbalanced(' and  }
    . q{col2= 'val2' and  col3= 3},
    'unbalanced paren inside a string in VALUES',
+);
+
+is(
+   $q->convert(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
+   'select 1 from  foo.bar b left join baz.bat c on a=b where nine>eight',
+   'Do not select * from a join',
 );
 
 is($q->wrap(), undef, 'Cannot wrap undef');
