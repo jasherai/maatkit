@@ -117,7 +117,7 @@ sub __insert_to_select {
    $ENV{MKDEBUG} && _d('Vals: ', @vals);
    if ( @cols == @vals ) {
       return "select * from $tbl where "
-         . join(',', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
+         . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
    }
    else {
       return "select * from $tbl limit 1";
