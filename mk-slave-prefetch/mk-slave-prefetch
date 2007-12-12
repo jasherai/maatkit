@@ -640,7 +640,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 1442
+# LogParser package 1445
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -851,7 +851,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 1437
+# QueryRewriter package 1447
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -950,7 +950,7 @@ sub __insert_to_select {
    $ENV{MKDEBUG} && _d('Vals: ', @vals);
    if ( @cols == @vals ) {
       return "select * from $tbl where "
-         . join(',', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
+         . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
    }
    else {
       return "select * from $tbl limit 1";
@@ -982,7 +982,7 @@ use DBI;
 use Data::Dumper;
 use English qw(-no_match_vars);
 use List::Util qw(min max sum);
-use Time::HiRes qw(usleep gettimeofday);
+use Time::HiRes qw(gettimeofday);
 
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
@@ -1088,22 +1088,24 @@ while (                       # Quit if:
             }
          }
 
-         # But don't get too far ahead.
-         my $sleep = 16; # Sleep milliseconds #TODO: parameterize
-         # TODO: but only if it's "our fault" we're ahead (the length of the
-         # event isn't really big).
+         # But don't get too far ahead or too close to the end of the binlog.
          while (
-               ($pos > $slave{pos} + $opts{b}) # Ahead of the slave.
-               || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - 1024) # TODO
+            ($pos > $slave{pos} + $opts{b}) # Ahead of the slave.
+            || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - 1024) # TODO
          ) {
-            $ENV{MKDEBUG} && _d("Event end is too far ahead, sleeping $sleep ms at i=$i");
-            usleep($sleep * 1000);
-            $sleep   *= 2;
+            $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
+            my $sql = "SELECT MASTER_POS_WAIT('$slave{mfile}', "
+               . ($slave{mpos} + ($pos - $slave{pos}))
+               . ", 1000)";
+            $ENV{MKDEBUG} && _d($sql);
+            $dbh->do($sql);
             %slave    = get_status($dbh);
             $last_chk = $i;
          }
 
          if ( ($event->{arg}||'') !~ m/\A\s*(?:set [t@]|use|ins|upd|del|rep)/i) {
+            $ENV{MKDEBUG} && _d('Event arg: ',
+               (defined $event->{arg} ?  substr($event->{arg}, 0, 50) : 'undef'));
             $ENV{MKDEBUG} && _d('Skipping this event because not allowable');
             next EVENT;
          }
@@ -1114,14 +1116,21 @@ while (                       # Quit if:
             if ( ((my $avg = $time_for{$normal}->{avg}) || 0) <= 1 ) { # TODO: param
                my $start = gettimeofday();
                my $sql   = $qn->wrap($select);
-               # $ENV{MKDEBUG} && _d($sql);
-               print STDERR $sql, "\n";
-               $dbh->do($sql);
+               $ENV{MKDEBUG} && _d($sql);
+               eval {
+                  $dbh->do($sql);
+               };
+               if ( $EVAL_ERROR ) {
+                  if ( $ENV{MKDEBUG} ) {
+                     _d($EVAL_ERROR);
+                     _d("SQL was: ", $event->{arg});
+                  }
+               }
                calculate_avg($normal, gettimeofday() - $start);
             }
             else {
                $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $normal);
-               my $sql = "MASTER_POS_WAIT('$slave{mfile}', "
+               my $sql = "SELECT MASTER_POS_WAIT('$slave{mfile}', "
                   . ($slave{mpos} + ($pos - $slave{pos}))
                   . ", 1000)";
                $ENV{MKDEBUG} && _d($sql);
@@ -1148,12 +1157,14 @@ while (                       # Quit if:
 
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
    print "# main:$line ", @_, "\n";
 }
 
 sub calculate_avg {
    my ( $query, $time ) = @_;
-   $ENV{MKDEBUG} && _d($query, ' ', $time);
+   return unless $query =~ m/\Aselect/;
+   $ENV{MKDEBUG} && _d('Execution time: ', $query, ' ', $time);
    $time_for{$query}->{samples} ||= [];
    my $samples = $time_for{$query}->{samples};
    push @$samples, $time;
@@ -1161,7 +1172,7 @@ sub calculate_avg {
       shift @$samples;
    }
    $time_for{$query}->{avg} = sum(@$samples) / @$samples;
-   $ENV{MKDEBUG} && _d($time_for{$query}->{avg});
+   $ENV{MKDEBUG} && _d('Average time: ', $time_for{$query}->{avg});
 }
 
 sub get_dbh {
