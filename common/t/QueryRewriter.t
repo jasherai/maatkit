@@ -102,7 +102,7 @@ is(
    $q->convert(
       'insert into foo(a, b, c) values(1, 3, 5)',
    ),
-   'select * from  foo where a=1, b= 3, c= 5',
+   'select * from  foo where a=1 and  b= 3 and  c= 5',
    'insert',
 );
 
@@ -110,7 +110,7 @@ is(
    $q->convert(
       'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
    ),
-   'select * from  foo where a=1, b= 3, c= 5',
+   'select * from  foo where a=1 and  b= 3 and  c= 5',
    'replace with ODKU',
 );
 
@@ -118,7 +118,7 @@ is(
    $q->convert(
       'replace into foo(a, b, c) values(now(), "3", 5)',
    ),
-   'select * from  foo where a=now(), b= "3", c= 5',
+   'select * from  foo where a=now() and  b= "3" and  c= 5',
    'replace with complicated expressions',
 );
 
@@ -126,7 +126,7 @@ is(
    $q->convert(
       'replace into foo(a, b, c) values(current_date - interval 1 day, "3", 5)',
    ),
-   'select * from  foo where a=current_date - interval 1 day, b= "3", c= 5',
+   'select * from  foo where a=current_date - interval 1 day and  b= "3" and  c= 5',
    'replace with complicated expressions',
 );
 
