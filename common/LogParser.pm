@@ -200,9 +200,9 @@ sub parse_binlog_event {
       if ( $line =~ m/^DELIMITER/m ) {
          my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
          $self->{term} = $del;
-         local $RS     = $term;
-         $tpat         = quotemeta $term;
+         local $RS     = $del;
          $line         = <$fh>; # Throw away DELIMITER line
+         $ENV{MKDEBUG} && _d('New record separator: ', $del);
          redo LINE;
       }
 
@@ -228,7 +228,7 @@ sub parse_binlog_event {
          }
          else {
             die "Unknown event type $type"
-               unless $type =~ m/Rand|User_var|Intvar/;
+               unless $type =~ m/Begin_load_query|Rand|User_var|Intvar/;
          }
       }
       else {
@@ -238,7 +238,7 @@ sub parse_binlog_event {
       }
    }
 
-   # If it was EOF, discard the last line so statefulness doesn't interfere with
+   # If it was EOF, discard the terminator so statefulness doesn't interfere with
    # the next log file.
    if ( !defined $line ) {
       delete $self->{term};
@@ -246,6 +246,11 @@ sub parse_binlog_event {
 
    $code->($event) if $event && $code;
    return $event;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# LogParser:$line ", @_, "\n";
 }
 
 1;
