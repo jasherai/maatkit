@@ -1,22 +1,5 @@
 #!/usr/bin/perl
 
-=pod
-
-filter:
-   Throw away non-replicated DBs
-   throw away events of certain size (user, certain tables, ...)
-   allow only certain types of statements
-   throw away timestamp identical to previous timestamp
-
-Read a file of long statements on startup.
-Print avg stmt times.
-Accept a regex for stmts not to run.
-
-Optionally read the binlog from the server's master.  advantages: can run
-tool on another server than the slave.
-
-=cut
-
 # This is mk-slave-prefetch, a program to pipeline relay logs on a MySQL slave.
 #
 # This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
@@ -640,7 +623,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 1451
+# LogParser package 1459
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -821,7 +804,7 @@ sub parse_binlog_event {
          }
          else {
             die "Unknown event type $type"
-               unless $type =~ m/Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+               unless $type =~ m/Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
          }
       }
       else {
@@ -851,7 +834,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 1455
+# QueryRewriter package 1459
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1076,6 +1059,14 @@ if ( $opts{daemonize} ) {
    delete $ENV{MKDEBUG};     # Debugging is useless
 }
 
+
+# TODO:
+# * add SQL_NO_CACHE or just set the session cache type.
+# * filter: Throw away non-replicated DBs
+# * Read a file of long statements on startup.
+# * Optionally read the binlog from the server's master.  advantages: can run
+#   tool on another server than the slave.
+
 # ############################################################################
 # Ready to work now.
 # ############################################################################
@@ -1089,163 +1080,173 @@ my %stats;
 my $last_chk = 0;
 my $oktorun  = 1;
 
-while ( oktorun() ) {
-   my %slave = get_status($dbh);
+eval {
+   while ( oktorun() ) {
+      my %slave = get_status($dbh);
 
-   my $pos  = 0; # Current position we're reading in relay log.
-   my $next = 0; # Start of next relay log event.
-   my $ts   = 0; # Last seen timestamp.
+      my $pos  = 0; # Current position we're reading in relay log.
+      my $next = 0; # Start of next relay log event.
+      my $ts   = 0; # Last seen timestamp.
 
-   if ( $slave{running} ) {
+      if ( $slave{running} ) {
 
-      my $cmd = "mysqlbinlog --start-pos=$slave{pos} $datadir/$slave{file}";
-      $ENV{MKDEBUG} && _d($cmd);
-      open my $fh, "$cmd 2>/dev/null |" or die $OS_ERROR;
-      $stats{mysqlbinlog}++;
+         my $cmd = "mysqlbinlog --start-pos=$slave{pos} $datadir/$slave{file}";
+         $ENV{MKDEBUG} && _d($cmd);
+         open my $fh, "$cmd 2>/dev/null |" or die $OS_ERROR;
+         $stats{mysqlbinlog}++;
 
-      my $i = 0;
-      EVENT:
-      while ( oktorun() && (my $event = $lp->parse_binlog_event($fh) )) {
-         $stats{events}++;
-         $pos  = $event->{offset} || $pos;
-         $next = max($next, $pos + ($event->{end} || 0));
-         $ENV{MKDEBUG} && _d("i=$i, pos=$pos, next=$next, slave=$slave{pos}");
+         my $i = 0;
+         EVENT:
+         while ( oktorun() && (my $event = $lp->parse_binlog_event($fh) )) {
+            $stats{events}++;
+            $pos  = $event->{offset} || $pos;
+            $next = max($next, $pos + ($event->{end} || 0));
+            $ENV{MKDEBUG} && _d("i=$i, pos=$pos, next=$next, slave=$slave{pos}");
 
-         # Stay X amount in front of the slave.
-         if ( $pos < $slave{pos} + $opts{o} ) {
-            $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
-            $stats{not_far_enough_ahead}++;
-            next EVENT;
-         }
-
-         # Time to check the slave's status again?
-         if ( $pos > $slave{pos} && (++$i - $last_chk) >= $chk_int ) {
-            %slave    = get_status($dbh);
-            $last_chk = $i;
-            $chk_int  = $pos <= $slave{pos} # The slave caught up to us
-               ? max($chk_min, $chk_int / 2)
-               : min($chk_max, $chk_int * 2);
+            # Stay X amount in front of the slave.
             if ( $pos < $slave{pos} + $opts{o} ) {
                $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
                $stats{not_far_enough_ahead}++;
                next EVENT;
             }
-         }
 
-         # But don't get too far ahead or too close to the end of the binlog.
-         while ( oktorun()
-            && (
-               # Too far ahead of the slave
-               ($pos > $slave{pos} + $opts{w})
-               # Too close to where the I/O thread is writing.
-               # TODO: do I need to add the event's end pos into this equation?
-               || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - $opts{l}))) {
-            if ($pos > $slave{pos} + $opts{w}) {
-               $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
-               $stats{too_far_ahead}++;
-            }
-            else {
-               $ENV{MKDEBUG} && _d(
-                  "Event $pos is too close to I/O thread ($slave{pos} + $slave{lag}) at i=$i");
-               $stats{too_close_to_io_thread}++;
-            }
-            wait_for_master(\%slave, $pos);
-            %slave    = get_status($dbh);
-            $last_chk = $i;
-         }
-
-         if ( ($event->{arg}||'') !~ m/\A\s*(?:set [t@]|use|ins|upd|del|rep)/i) {
-            $ENV{MKDEBUG} && _d('Event arg: ',
-               (defined $event->{arg} ?  substr($event->{arg}, 0, 50) : 'undef'));
-            $ENV{MKDEBUG} && _d('Skipping this event because not allowable');
-            $stats{event_not_allowed}++;
-            next EVENT;
-         }
-
-         if (
-               ( $opts{rejectregexp} && $event->{arg} =~ m/$opts{rejectregexp}/ )
-            || ( $opts{permitregexp} && $event->{arg} !~ m/$opts{permitregexp}/ )
-         ) {
-            $ENV{MKDEBUG} && _d('Skipping because of permit/reject regexp');
-            $stats{event_filtered_out}++;
-            next EVENT;
-         }
-
-         # If the event is SET TIMESTAMP and we've already set the timestamp
-         # to that value, skip it.
-         if ( (my ($newts) = $event->{arg} =~ m/SET TIMESTAMP=(\d+)/) ) {
-            if ( $newts == $ts ) {
-               $ENV{MKDEBUG} && _d('Already saw timestamp ', $newts);
-               $stats{same_timestamp}++;
-               next EVENT;
-            }
-            else {
-               $ts = $newts;
-            }
-         }
-
-         # Convert the event to a SELECT and print/execute it.
-         my $select = $qn->convert($event->{arg});
-         if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
-            my $normal = $qn->norm($select);
-            if ( (my $avg = get_avg($normal)) < $opts{q} ) {
-               my $sql = $qn->wrap($select);
-               $ENV{MKDEBUG} && _d($sql);
-               $stats{do_query}++;
-               if ( $opts{x} ) {
-                  eval {
-                     my $start = gettimeofday();
-                     $dbh->do($sql);
-                     store_avg($normal, gettimeofday() - $start);
-                  };
-                  if ( $EVAL_ERROR ) {
-                     $stats{query_error}++;
-                     if ( $ENV{MKDEBUG} ) {
-                        _d($EVAL_ERROR);
-                        _d("SQL was: ", $event->{arg});
-                     }
-                  }
-               }
-               elsif ( $opts{print} ) {
-                  print $sql, ";\n";
+            # Time to check the slave's status again?
+            if ( $pos > $slave{pos} && (++$i - $last_chk) >= $chk_int ) {
+               %slave    = get_status($dbh);
+               $last_chk = $i;
+               $chk_int  = $pos <= $slave{pos} # The slave caught up to us
+                  ? max($chk_min, $chk_int / 2)
+                  : min($chk_max, $chk_int * 2);
+               if ( $pos < $slave{pos} + $opts{o} ) {
+                  $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
+                  $stats{not_far_enough_ahead}++;
+                  next EVENT;
                }
             }
-            else {
-               $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $normal);
-               $stats{query_too_long}++;
+
+            # But don't get too far ahead or too close to the end of the binlog.
+            while ( oktorun()
+               && (
+                  # Too far ahead of the slave
+                  ($pos > $slave{pos} + $opts{w})
+                  # Too close to where the I/O thread is writing.
+                  # TODO: do I need to add the event's end pos into this equation?
+                  || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - $opts{l}))) {
+               if ($pos > $slave{pos} + $opts{w}) {
+                  $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
+                  $stats{too_far_ahead}++;
+               }
+               else {
+                  $ENV{MKDEBUG} && _d(
+                     "Event $pos is too close to I/O thread ($slave{pos} + $slave{lag}) at i=$i");
+                  $stats{too_close_to_io_thread}++;
+               }
                wait_for_master(\%slave, $pos);
                %slave    = get_status($dbh);
                $last_chk = $i;
             }
+
+            if ( ($event->{arg}||'') !~ m/\A\s*(?:set [t@]|use|ins|upd|del|rep)/i) {
+               $ENV{MKDEBUG} && _d('Event arg: ',
+                  (defined $event->{arg} ?  substr($event->{arg}, 0, 50) : 'undef'));
+               $ENV{MKDEBUG} && _d('Skipping this event because not allowable');
+               $stats{event_not_allowed}++;
+               next EVENT;
+            }
+
+            if (
+                  ( $opts{rejectregexp} && $event->{arg} =~ m/$opts{rejectregexp}/ )
+               || ( $opts{permitregexp} && $event->{arg} !~ m/$opts{permitregexp}/ )
+            ) {
+               $ENV{MKDEBUG} && _d('Skipping because of permit/reject regexp');
+               $stats{event_filtered_out}++;
+               next EVENT;
+            }
+
+            # If the event is SET TIMESTAMP and we've already set the timestamp
+            # to that value, skip it.
+            if ( (my ($newts) = $event->{arg} =~ m/SET TIMESTAMP=(\d+)/) ) {
+               if ( $newts == $ts ) {
+                  $ENV{MKDEBUG} && _d('Already saw timestamp ', $newts);
+                  $stats{same_timestamp}++;
+                  next EVENT;
+               }
+               else {
+                  $ts = $newts;
+               }
+            }
+
+            # Convert the event to a SELECT and print/execute it.
+            my $select = $qn->convert($event->{arg});
+            if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
+               my $normal = $qn->norm($select);
+               if ( (my $avg = get_avg($normal)) < $opts{q} ) {
+                  my $sql = $qn->wrap($select);
+                  $ENV{MKDEBUG} && _d($sql);
+                  $stats{do_query}++;
+                  if ( $opts{x} ) {
+                     eval {
+                        my $start = gettimeofday();
+                        $dbh->do($sql);
+                        store_avg($normal, gettimeofday() - $start);
+                     };
+                     if ( $EVAL_ERROR ) {
+                        $stats{query_error}++;
+                        if ( $ENV{MKDEBUG} ) {
+                           _d($EVAL_ERROR);
+                           _d("SQL was: ", $event->{arg});
+                        }
+                     }
+                  }
+                  elsif ( $opts{print} ) {
+                     print $sql, ";\n";
+                  }
+               }
+               else {
+                  $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $normal);
+                  $stats{query_too_long}++;
+                  wait_for_master(\%slave, $pos);
+                  %slave    = get_status($dbh);
+                  $last_chk = $i;
+               }
+            }
+            elsif ( $ENV{MKDEBUG} ) {
+               $stats{query_not_rewritten}++;
+               print $event->{arg};
+               $oktorun = 0;
+            }
          }
-         elsif ( $ENV{MKDEBUG} ) {
-            $stats{query_not_rewritten}++;
-            print $event->{arg};
-            $oktorun = 0;
+
+         $ENV{MKDEBUG} && _d('Closing filehandle');
+
+         # Unfortunately, mysqlbinlog does NOT like me to close the pipe before
+         # reading all data from it.  It hangs and prints angry messages about a
+         # closed file.  So I'll find the mysqlbinlog process created by the
+         # open() and kill it.
+         my $procs = `ps -eaf | grep mysqlbinlog`;
+         $ENV{MKDEBUG} && _d($procs);
+         if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
+            chomp $line;
+            $ENV{MKDEBUG} && _d($line);
+            if ( my ( $proc ) = $line =~ m/(\d+)/ ) {
+               $ENV{MKDEBUG} && _d("Will kill process ", $proc);
+               kill(15, $proc);
+            }
+         }
+
+         if ( !close($fh) ) {
+            if ( $OS_ERROR ) {
+               warn "Error closing mysqlbinlog pipe: $OS_ERROR\n";
+            }
+            else {
+               $ENV{MKDEBUG} && _d("Exit status $CHILD_ERROR from mysqlbinlog");
+            }
          }
       }
-
-      $ENV{MKDEBUG} && _d('Closing filehandle');
-
-      # Unfortunately, mysqlbinlog does NOT like me to close the pipe before
-      # reading all data from it.  It hangs and prints angry messages about a
-      # closed file.  So I'll find the mysqlbinlog process created by the
-      # open() and kill it.
-      my $procs = `ps -eaf | grep mysqlbinlog`;
-      $ENV{MKDEBUG} && _d($procs);
-      if ( my ($line) = $procs =~ m/^(.*?\d\s+$cmd)$/m ) {
-         chomp $line;
-         $ENV{MKDEBUG} && _d($line);
-         if ( my ( $proc ) = $line =~ m/(\d+)/ ) {
-            $ENV{MKDEBUG} && _d("Will kill process ", $proc);
-            kill(15, $proc);
-         }
-      }
-
-      close($fh)
-         or warn $OS_ERROR ? "Error closing mysqlbinlog pipe: $OS_ERROR"
-                           : "Exit status $CHILD_ERROR from mysqlbinlog";
    }
+};
+if ( $EVAL_ERROR ) {
+   print $EVAL_ERROR;
 }
 
 # Print statistics
@@ -1382,61 +1383,33 @@ sub get_status {
 
 =head1 NAME
 
-mk-slave-delay - Make a MySQL slave server lag behind its master.
+mk-slave-prefetch - Pipeline relay logs on a MySQL slave to pre-warm caches.
 
 =head1 SYNOPSIS
 
-To hold slavehost one minute behind its master for ten minutes:
-
- mk-slave-delay --delay 1m --interval 15s --time 10m slavehost
+ mk-slave-prefetch
 
 =head1 DESCRIPTION
 
-mk-slave-delay watches a slave and starts and stops its replication SQL
-thread as necessary to hold it at least as far behind the master as you
-request.  In practice, it will typically cause the slave to lag between
-L<"--delay"> and L<"--delay">+L<"--interval"> behind the master.
+mk-slave-prefetch reads the slave's relay log slightly ahead of where the
+slave's SQL thread is reading, converts statements into C<SELECT>, and
+executes them.  In theory, this should help alleviate the effects of the
+slave's single-threaded SQL execution.  It will help take advantage of
+multiple CPUs and disks by pre-reading the data from disk, so the data is
+already in the cache when the slave SQL thread executes the un-modified
+version of the statement.
 
-It bases the delay on binlog positions in the slave's relay logs by default,
-so there is no need to connect to the master.  This works well if the IO
-thread doesn't lag the master much, which is typical in most replication
-setups; the IO thread lag is usually milliseconds on a fast network.  If your
-IO thread's lag is too large for your purposes, mk-slave-delay can also
-connect to the master for information about binlog positions.
+Statements that can't be converted into C<SELECT> are ignored.  However, there
+is always a chance of bugs.  It would be a very good idea to connect as a
+read-only user.  Here is an example of how to grant the necessary privileges:
 
-Note that since mk-slave-delay starts and stops the SQL thread, monitoring
-systems may think the slave is having trouble when it's just being held back
-intentionally.
-
-There is a special syntax for connecting to MySQL servers.  Each server name
-on the command line can be either just a hostname, or a key=value,key=value
-string.  Keys are a single letter:
-
-   KEY MEANING
-   === =======
-   h   Connect to host
-   P   Port number to use for connection
-   S   Socket file to use for connection
-   u   User for login if not current user
-   p   Password to use when connecting
-   F   Only read default options from the given file
-
-If you omit any values in MASTER-HOST, they are filled in with defaults from
-SLAVE-HOST, so you don't need to specify them in both places.  mk-slave-delay
-reads all normal MySQL option files, such as ~/.my.cnf, so you may not need to
-specify username, password and other common options at all.
-
-mk-slave-delay tries to exit gracefully by trapping signals such as Ctrl-C.
-You cannot bypass L<"--continue"> with a trappable signal.
+   GRANT SELECT, REPLICATION CLIENT, REPLICATION SLAVE ON *.*
+   TO 'prefetch'@'%' IDENTIFIED BY 'sp33dmeup!';
 
 =head1 OPTIONS
 
 Some options are negatable by specifying them in their long form with a --no
 prefix.
-
-Some options have a special suffix syntax.  These options accept a number
-suffixed with s, m, h, or d.  The suffixes mean seconds, minutes, hours and
-days respectively.
 
 =over
 
@@ -1444,34 +1417,70 @@ days respectively.
 
 Prompts the user for a password when connecting to MySQL.
 
-=item --continue
+=item --checkint
 
-After exiting, restart the slave's SQL thread with no UNTIL condition, so it
-will run as usual and catch up to the master.  This is enabled by default and
-works even if you terminate mk-slave-delay with Control-C.
+How many relay log events should pass before checking the output of C<SHOW
+SLAVE STATUS>.  The syntax is a three-number range: initial, minimum, and
+maximum.  You should be able to leave this at the defaults.
+
+C<mk-slave-prefetch> varies the check interval in powers of two, depending on
+whether it decides the check was necessary.
 
 =item --daemonize
 
 Fork to the background and detach from the shell.  This probably doesn't work
 on Microsoft Windows.
 
-=item --delay
+=item --database
 
-How far the slave should lag its master.  This value is a number with a
-suffix; see above for suffix syntax.
+Connect to this database.  C<mk-slave-prefetch> will issue C<USE> statements
+as required by the binary log events.
+
+=item --defaults-file
+
+Only read MySQL options from the given file.
+
+=item --execute
+
+Execute the transformed queries.  This is enabled by default, because this is
+what actually warms the caches.
 
 =item --help
 
 Displays a help message.
 
-=item --interval
+=item --host
 
-How frequently mk-slave-delay should check whether the slave needs to be
-started or stopped.  See above for suffix syntax.
+Host to connect to.
 
-=item --quiet
+=item --iolag
 
-Do not output regular status messages.
+How many bytes to lag the slave I/O thread (to avoid C<mysqlbinlog> reading
+right off the end of the relay log file).
+
+=item --maxquerytime
+
+The time limit for queries.  The value can be a floating-point number.  If
+C<mk-slave-prefetch> predicts the query will take longer to execute, it will
+skip the query.  This is based on the theory that pre-warming the cache is
+most beneficial for short queries.
+
+C<mk-slave-prefetch> learns how long queries require to execute.  It keeps an
+average over the last L<"--querysampsize"> samples of each query.  The
+averages are based on an abstracted version of the query, with specific
+parameters replaced by placeholders.  The result is a sort of "signature" for
+the query, not executable SQL.  You can see the learned statistics with the
+L<"--statistics"> option.
+
+=item --offset
+
+TODO
+
+=item --querysampsize
+
+How many queries to average together to get the average query execution time
+(see L<"--maxquerytime">).  The last C<N> queries with a given signature are
+averaged together.
 
 =item --time
 
