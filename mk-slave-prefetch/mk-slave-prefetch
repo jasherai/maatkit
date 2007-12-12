@@ -8,8 +8,9 @@ filter:
    allow only certain types of statements
    throw away timestamp identical to previous timestamp
 
-Learn which statements take a long time to execute, canonicalize them, and
-don't re-execute them.  Read a file of such statements on startup.
+Read a file of long statements on startup.
+Print avg stmt times.
+Accept a regex for stmts not to run.
 
 Optionally read the binlog from the server's master.  advantages: can run
 tool on another server than the slave.
@@ -972,6 +973,7 @@ package main;
 use DBI;
 use English qw(-no_match_vars);
 use List::Util qw(min max);
+use Time::HiRes qw(usleep gettimeofday);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -1038,8 +1040,9 @@ while (                       # Quit if:
 ) {
    my %slave = get_status($dbh);
 
-   my $pos = 0; # Current position we're reading in binlog.
-   my $ts  = 0; # Last seen timestamp. TODO
+   my $pos  = 0; # Current position we're reading in relay log.
+   my $next = 0; # Start of next relay log event.
+   my $ts   = 0; # Last seen timestamp. TODO
 
    if ( $slave{running} ) {
 
@@ -1049,7 +1052,8 @@ while (                       # Quit if:
       my $i = 0;
       while ( my $event = $lp->parse_binlog_event($fh) ) {
          next unless $event;
-         $pos = $event->{offset} || $pos;
+         $pos  = $event->{offset} || $pos;
+         $next = $pos + ($event->{end} || 0);
 
          # Time to check the slave's status again?
          if ( $pos > $slave{pos} && (++$i - $last_chk) >= $chk_int ) {
@@ -1065,7 +1069,10 @@ while (                       # Quit if:
 
          # But don't get too far ahead.
          my $sleep = 16; # Sleep milliseconds #TODO: parameterize
-         while ( $pos > $slave{pos} + $opts{b} ) {
+         while (
+               ($pos > $slave{pos} + $opts{b}) # Ahead of the slave.
+               || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - 1024) # TODO
+         ) {
             usleep($sleep * 1000);
             $sleep   *= 2;
             %slave    = get_status($dbh);
@@ -1078,19 +1085,23 @@ while (                       # Quit if:
          my $select = $qn->convert($event->{arg});
          if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
             my $normal = $qn->norm($select);
-            if ( $time_for{$normal}->{avg} <= 1 ) { # TODO: param
+            if ( ((my $avg = $time_for{$normal}->{avg}) || 0) <= 1 ) { # TODO: param
                my $start = gettimeofday();
                $dbh->do($qn->wrap($select));
                calculate_avg($normal, gettimeofday() - $start);
             }
-            elsif ( $ENV{MKDEBUG} ) {
-               # TODO: debug
+            else {
+               $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $normal);
+               my $sql = "MASTER_POS_WAIT('$slave{mfile}', "
+                  . ($slave{mpos} + ($pos - $slave{pos}))
+                  . ", 1000)";
+               $ENV{MKDEBUG} && _d($sql);
+               $dbh->do($sql);
             }
          }
          elsif ( $ENV{MKDEBUG} ) {
             die $event->{arg};
          }
-         # $ENV{MKDEBUG} && _d($query);
 
          close $fh;
       }
@@ -1112,6 +1123,7 @@ sub _d {
 
 sub calculate_avg {
    my ( $query, $time ) = @_;
+   $ENV{MKDEBUG} && _d($query, ' ', $time);
    $time_for{$query}->{samples} ||= [];
    my $samples = $time_for{$query}->{samples};
    push @$samples, $time;
@@ -1119,6 +1131,7 @@ sub calculate_avg {
       shift @$samples;
    }
    $time_for{$query}->{avg} = sum(@$samples) / @$samples;
+   $ENV{MKDEBUG} && _d($time_for{$query}->{avg});
 }
 
 sub get_dbh {
@@ -1147,11 +1160,23 @@ sub get_status {
    if ( !$status || ! %$status ) {
       die "No output from SHOW SLAVE STATUS.\n";
    }
-   return (
+   $ENV{MKDEBUG} && _d(Dumper($status));
+   my %status = (
       running => ($status->{slave_sql_running} || '') eq 'Yes',
       file    => $status->{relay_log_file},
       pos     => $status->{relay_log_pos},
+                 # If the slave SQL thread is executing from the same log the
+                 # I/O thread is reading from, in general (except when the
+                 # master or slave starts a new binlog or relay log) we can tell
+                 # how many bytes the SQL thread lags the I/O thread.
+      lag     => $status->{master_log_file} eq $status->{relay_master_log_file}
+               ? $status->{read_master_log_pos} - $status->{exec_master_log_pos}
+               : 0,
+      mfile   => $status->{relay_master_log_file},
+      mpos    => $status->{exec_master_log_pos},
    );
+   $ENV{MKDEBUG} && _d(Dumper(\%status));
+   return %status;
 }
 
 # ############################################################################
