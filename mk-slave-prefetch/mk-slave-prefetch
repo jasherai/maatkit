@@ -640,7 +640,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 1445
+# LogParser package 1451
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -851,7 +851,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 1449
+# QueryRewriter package 1455
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -912,32 +912,39 @@ sub convert {
    $query =~ s{
                  \A.*?
                  update\s+(.*?)
-                 \s+set(.*?)
-                 (?:\s+where(.*))?
+                 \s+set\b(.*?)
+                 (?:\s+where\b(.*?))?
+                 (limit\s*\d+(?:\s*,\s*\d+)?)?
                  \Z
               }
-              {
-                 "select $2 from $1"
-                 . ( $3 ? " where $3" : '' )
-              }exsi;
+              {__update_to_select($1, $2, $3, $4)}exsi;
    $query =~ s{
                  \A.*?
                  (?:insert|replace)\s+
-                 into(.*?)\(([^\)]+)\)\s*
-                 values\s*($bal).*
+                 \binto\b(.*?)\(([^\)]+)\)\s*
+                 values\s*(\(.*?\))\s*
+                 (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
                  \Z
               }
               {__insert_to_select($1, $2, $3)}exsi;
    $query =~ s{
                  \A.*?
                  delete\s+(.*?)
-                 from(.*)
+                 \bfrom\b(.*)
                  \Z
               }
-              {select * from $2}xsi;
+              {__delete_to_select($1, $2)}exsi;
    $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
    $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
    return $query;
+}
+
+sub __delete_to_select {
+   my ( $delete, $join ) = @_;
+   if ( $join =~ m/\bjoin\b/ ) {
+      return "select 1 from $join";
+   }
+   return "select * from $join";
 }
 
 sub __insert_to_select {
@@ -955,6 +962,13 @@ sub __insert_to_select {
    else {
       return "select * from $tbl limit 1";
    }
+}
+
+sub __update_to_select {
+   my ( $from, $set, $where, $limit ) = @_;
+   return "select $set from $from "
+      . ( $where ? "where $where" : '' )
+      . ( $limit ? " $limit "      : '' );
 }
 
 sub wrap {
@@ -1054,7 +1068,7 @@ while (                       # Quit if:
 
    my $pos  = 0; # Current position we're reading in relay log.
    my $next = 0; # Start of next relay log event.
-   my $ts   = 0; # Last seen timestamp. TODO
+   my $ts   = 0; # Last seen timestamp.
 
    if ( $slave{running} ) {
 
@@ -1090,15 +1104,14 @@ while (                       # Quit if:
 
          # But don't get too far ahead or too close to the end of the binlog.
          while (
-            ($pos > $slave{pos} + $opts{b}) # Ahead of the slave.
-            || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - 1024) # TODO
+            # Too far ahead of the slave
+            ($pos > $slave{pos} + $opts{b})
+            # Too close to where the I/O thread is writing.  TODO parametrize
+            # TODO: do I need to add the event's end pos into this equation?
+            || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - 1024)
          ) {
             $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
-            my $sql = "SELECT MASTER_POS_WAIT('$slave{mfile}', "
-               . ($slave{mpos} + ($pos - $slave{pos}))
-               . ", 1000)";
-            $ENV{MKDEBUG} && _d($sql);
-            $dbh->do($sql);
+            wait_for_master(\%slave, $pos);
             %slave    = get_status($dbh);
             $last_chk = $i;
          }
@@ -1110,10 +1123,23 @@ while (                       # Quit if:
             next EVENT;
          }
 
+         # If the event is SET TIMESTAMP and we've already set the timestamp
+         # to that value, skip it.
+         if ( (my ($newts) = $event->{arg} =~ m/SET TIMESTAMP=(\d+)/) ) {
+            if ( $newts == $ts ) {
+               $ENV{MKDEBUG} && _d('Already saw timestamp ', $newts);
+               next EVENT;
+            }
+            else {
+               $ts = $newts;
+            }
+         }
+
+         # Convert the event to a SELECT and execute it.
          my $select = $qn->convert($event->{arg});
          if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
             my $normal = $qn->norm($select);
-            if ( ((my $avg = $time_for{$normal}->{avg}) || 0) <= 1 ) { # TODO: param
+            if ( (my $avg = get_avg($normal)) < 3 ) { # TODO: param
                my $start = gettimeofday();
                my $sql   = $qn->wrap($select);
                $ENV{MKDEBUG} && _d($sql);
@@ -1126,15 +1152,13 @@ while (                       # Quit if:
                      _d("SQL was: ", $event->{arg});
                   }
                }
-               calculate_avg($normal, gettimeofday() - $start);
+               store_avg($normal, gettimeofday() - $start);
             }
             else {
                $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $normal);
-               my $sql = "SELECT MASTER_POS_WAIT('$slave{mfile}', "
-                  . ($slave{mpos} + ($pos - $slave{pos}))
-                  . ", 1000)";
-               $ENV{MKDEBUG} && _d($sql);
-               $dbh->do($sql);
+               wait_for_master(\%slave, $pos);
+               %slave    = get_status($dbh);
+               $last_chk = $i;
             }
          }
          elsif ( $ENV{MKDEBUG} ) {
@@ -1161,7 +1185,25 @@ sub _d {
    print "# main:$line ", @_, "\n";
 }
 
-sub calculate_avg {
+sub wait_for_master {
+   my ( $slave, $pos ) = @_;
+   my $sql = "SELECT MASTER_POS_WAIT('$slave->{mfile}', "
+      . ($slave->{mpos} + ($pos - $slave->{pos})) . ", 1)";
+   $ENV{MKDEBUG} && _d($sql);
+   my $start = gettimeofday();
+   my ($events) = $dbh->selectrow_array($sql);
+   $ENV{MKDEBUG} && _d("Waited ", (gettimeofday - $start), " and got ",
+      (defined $events ? $events : 'NULL'));
+}
+
+# The average is weighted so we don't quit trying a statement when we have
+# only a few samples.  The equation is
+# sum(times)    sample_size
+# ----------- * -----------
+# num_times     num_times
+# So if we want to collect 16 samples and the first one is huge, it will be
+# weighted as 1/16th of its size.
+sub store_avg {
    my ( $query, $time ) = @_;
    return unless $query =~ m/\Aselect/;
    $ENV{MKDEBUG} && _d('Execution time: ', $query, ' ', $time);
@@ -1171,8 +1213,14 @@ sub calculate_avg {
    if ( @$samples > 16 ) { #TODO: param
       shift @$samples;
    }
-   $time_for{$query}->{avg} = sum(@$samples) / @$samples;
+   # TODO: param
+   $time_for{$query}->{avg} = (sum(@$samples) / @$samples) * (16/@$samples);
    $ENV{MKDEBUG} && _d('Average time: ', $time_for{$query}->{avg});
+}
+
+sub get_avg {
+   my ( $query ) = @_;
+   return $time_for{$query}->{avg} || 0;
 }
 
 sub get_dbh {
