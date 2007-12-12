@@ -170,6 +170,35 @@ is(
    'delete',
 );
 
+# Insanity...
+is(
+   $q->convert('
+update db2.tbl1 as p
+   inner join (
+      select p2.col1, p2.col2
+      from db2.tbl1 as p2
+         inner join db2.tbl3 as ba
+            on p2.col1 = ba.tbl3
+      where col4 = 0
+      order by priority desc, col1, col2
+      limit 10
+   ) as chosen on chosen.col1 = p.col1
+      and chosen.col2 = p.col2
+   set p.col4 = 149945'),
+   'select  p.col4 = 149945 from db2.tbl1 as p
+   inner join (
+      select p2.col1, p2.col2
+      from db2.tbl1 as p2
+         inner join db2.tbl3 as ba
+            on p2.col1 = ba.tbl3
+      where col4 = 0
+      order by priority desc, col1, col2
+      limit 10
+   ) as chosen on chosen.col1 = p.col1
+      and chosen.col2 = p.col2',
+   'SELECT in the FROM clause',
+);
+
 is($q->wrap(), undef, 'Cannot wrap undef');
 
 is(

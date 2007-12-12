@@ -76,7 +76,6 @@ sub norm {
 sub convert {
    my ( $self, $query ) = @_;
    return unless $query;
-   $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
    $query =~ s{
                  \A.*?
                  update\s+(.*?)
@@ -104,6 +103,7 @@ sub convert {
               }
               {select * from $2}xsi;
    $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
+   $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
    return $query;
 }
 
