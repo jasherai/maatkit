@@ -148,6 +148,7 @@ sub wrap {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
    print "# QueryRewriter:$line ", @_, "\n";
 }
 
