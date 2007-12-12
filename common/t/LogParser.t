@@ -227,7 +227,7 @@ $events = [
   },
   {
     time => undef,
-    arg => 'SET TIMESTAMP=1197046970/*!*/',
+    arg => 'SET TIMESTAMP=1197046970/*!*/;',
     ts => '071207 12:02:50',
     end => '498006652',
     server_id => '21',
@@ -237,7 +237,8 @@ $events = [
     offset => '498006722'
   },
   {
-    arg => 'SET @@session.foreign_key_checks=1, @@session.sql_auto_is_null=1, @@session.unique_checks=1'
+    arg => '
+SET @@session.foreign_key_checks=1, @@session.sql_auto_is_null=1, @@session.unique_checks=1'
   },
   {
     arg => '
