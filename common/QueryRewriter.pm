@@ -80,12 +80,14 @@ sub convert {
                  \A.*?
                  update\s+(.*?)
                  \s+set(.*?)
-                 (?:\s+where(.*))?
+                 (?:\s+where(.*?))?
+                 (limit\s*\d+(?:\s*,\s*\d+)?)?
                  \Z
               }
               {
                  "select $2 from $1"
                  . ( $3 ? " where $3" : '' )
+                 . ( $4 ? " $4 "      : '' )
               }exsi;
    $query =~ s{
                  \A.*?

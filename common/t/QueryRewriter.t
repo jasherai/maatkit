@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 24;
+use Test::More tests => 26;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -160,6 +160,14 @@ is(
    ),
    'select  big=little from foo inner join bar using(baz)',
    'delete inner join',
+);
+
+is(
+   $q->convert(
+      'update foo set bar=baz limit 50',
+   ),
+   'select  bar=baz  from foo limit 50 ',
+   'update with limit',
 );
 
 is(
