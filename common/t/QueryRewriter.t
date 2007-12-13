@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 31;
+use Test::More tests => 32;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -229,6 +229,15 @@ is(
    $q->convert_to_select(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
    'select 1 from  foo.bar b left join baz.bat c on a=b where nine>eight',
    'Do not select * from a join',
+);
+
+is (
+   $q->convert_to_select(q{
+REPLACE DELAYED INTO
+`db1`.`tbl2`(`col1`,col2)
+VALUES ('617653','2007-09-11')}),
+   qq{select * from \n`db1`.`tbl2` where `col1`='617653' and col2='2007-09-11'},
+   'replace delayed',
 );
 
 is($q->wrap_in_derived(), undef, 'Cannot wrap undef');

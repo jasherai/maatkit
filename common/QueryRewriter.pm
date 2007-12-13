@@ -89,7 +89,7 @@ sub convert_to_select {
       || $query =~ s{
                     \A.*?
                     (?:insert|replace)\s+
-                    \binto\b(.*?)\(([^\)]+)\)\s*
+                    .*?\binto\b(.*?)\(([^\)]+)\)\s*
                     values\s*(\(.*?\))\s*
                     (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
                     \Z
