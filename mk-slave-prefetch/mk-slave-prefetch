@@ -1123,6 +1123,8 @@ if ( $opts{daemonize} ) {
 
 
 # TODO:
+# * be smarter about the window?  In the last N events, how many have actually
+#   been *behind* the SQL thread?  Is it possible to know this?
 # * filter: Throw away non-replicated DBs/tables
 # * Optionally read the binlog from the server's master.  advantages: can run
 #   tool on another server than the slave.
@@ -1136,12 +1138,13 @@ my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
 $ENV{MKDEBUG} && _d("Data directory ", $datadir);
 
 my %stats;
+my %slave;
 my $last_chk = 0;
 my $oktorun  = 1;
 
 eval {
    while ( oktorun() ) {
-      my %slave = get_status($dbh);
+      %slave = get_status($dbh);
 
       my $pos  = 0; # Current position we're reading in relay log.
       my $next = 0; # Start of next relay log event.
@@ -1199,28 +1202,27 @@ eval {
 
             # But don't get too far ahead or too close to the end of the binlog.
             while ( oktorun()
-               && (
-                  # Too far ahead of the slave
-                  ($pos > $slave{pos} + $opts{w})
-                  # Too close to where the I/O thread is writing.
-                  || ($slave{lag} 
-                     && $pos >= $slave{pos} + $slave{lag} - $opts{l}))
+               && ( too_far_ahead($pos) || too_close_to_io($pos) )
             ) {
 
                # Don't increment stats if the slave didn't catch up while we
-               # slept.
-               if ( wait_for_master(\%slave, $pos + 1) > 0 ) {
-                  if ($pos > $slave{pos} + $opts{w}) {
+               # slept. TODO: if the slave is very caught up to the I/O, this
+               # will be a problem.
+               if ( wait_for_master(\%slave, $pos - $opts{w} + 1) > 0 ) {
+                  if (too_far_ahead($pos)) {
                      $ENV{MKDEBUG}
                         && _d("Event $pos too far ahead of $slave{pos}");
                      $stats{too_far_ahead}++;
                   }
-                  else {
+                  elsif (too_close_to_io($pos)) {
                      $ENV{MKDEBUG}
                         && _d("Event $pos too close to I/O thread "
                             . "($slave{pos} + $slave{lag})");
                      $stats{too_close_to_io_thread}++;
                   }
+               }
+               else {
+                  $ENV{MKDEBUG} && _d('SQL thread did not advance');
                }
 
                %slave    = get_status($dbh);
@@ -1406,6 +1408,18 @@ sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
    print "# main:$line ", @_, "\n";
+}
+
+# Whether we are too far ahead of the slave.
+sub too_far_ahead {
+   my ( $pos ) = @_;
+   return ($pos > $slave{pos} + $opts{w});
+}
+
+# Whether we are too close to where the I/O thread is writing.
+sub too_close_to_io {
+   my ( $pos ) = @_;
+   return $slave{lag} && $pos >= $slave{pos} + $slave{lag} - $opts{l};
 }
 
 sub wait_for_master {
