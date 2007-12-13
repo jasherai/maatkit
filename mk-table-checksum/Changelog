@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * --replicate did not store chunk boundaries correctly (bug #1850243).
    * --tables and --ignoretables now accept names in the form db.tbl.
 
 2007-12-07: version 1.1.21
