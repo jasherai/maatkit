@@ -1603,6 +1603,12 @@ throwing out a lot of events for being too far ahead or not far enough ahead.
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
 
+C<mk-slave-prefetch> wraps queries in a so-called "derived table" to help avoid
+fetching a lot of data back to the client when a query is very large.  This
+requires a version of MySQL that supports subqueries.  I plan to add a feature
+that can disable this in the future.  I also plan to make it do this by default
+only for queries whose fingerprints are unknown.  (TODO).
+
 =head1 ENVIRONMENT
 
 The environment variable C<MKDEBUG> enables verbose debugging output in all of
