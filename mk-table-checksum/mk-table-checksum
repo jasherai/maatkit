@@ -2152,6 +2152,8 @@ if ( $opts{v} && @hosts > 1 ) {
 my ($fetch_sth, $update_sth);
 if ( $opts{R} ) {
    $main_dbh->do("REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0");
+   # TODO: in case of any --tables etc options, do this in do_tbl_replicate()
+   # instead of up-front, so there is no chance to get it wrong.
    if ( $opts{emptyrepltbl} ) {
       # Clean out the replication table.
       my $del_sql = "DELETE FROM $opts{R}";
