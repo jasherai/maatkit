@@ -40,8 +40,9 @@ sub new {
    bless {}, $class;
 }
 
-# Normalizes variable queries to "query prototypes".  See
-# http://dev.mysql.com/doc/refman/5.0/en/literals.html
+# Normalizes variable queries to a "query fingerprint" by abstracting away
+# parameters, canonicalizing whitespace, etc.  See
+# http://dev.mysql.com/doc/refman/5.0/en/literals.html for literal syntax.
 sub fingerprint {
    my ( $self, $query ) = @_;
    $query = lc $query;
@@ -84,25 +85,34 @@ sub convert_to_select {
                  (limit\s*\d+(?:\s*,\s*\d+)?)?
                  \Z
               }
-              {__update_to_select($1, $2, $3, $4)}exsi;
-   $query =~ s{
-                 \A.*?
-                 (?:insert|replace)\s+
-                 \binto\b(.*?)\(([^\)]+)\)\s*
-                 values\s*(\(.*?\))\s*
-                 (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
-                 \Z
-              }
-              {__insert_to_select($1, $2, $3)}exsi;
-   $query =~ s{
-                 \A.*?
-                 delete\s+(.*?)
-                 \bfrom\b(.*)
-                 \Z
-              }
-              {__delete_to_select($1, $2)}exsi;
+              {__update_to_select($1, $2, $3, $4)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert|replace)\s+
+                    \binto\b(.*?)\(([^\)]+)\)\s*
+                    values\s*(\(.*?\))\s*
+                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select($1, $2, $3)}exsi
+      || $query =~ s{
+                    \A.*?
+                    delete\s+(.*?)
+                    \bfrom\b(.*)
+                    \Z
+                 }
+                 {__delete_to_select($1, $2)}exsi;
    $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
    $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
+   return $query;
+}
+
+sub convert_select_list {
+   my ( $self, $query ) = @_;
+   $query =~ s{
+               \A\s*select(.*?)\bfrom\b
+              }
+              {$1 =~ m/\*/ ? "select 1 from" : "select isnull(coalesce($1)) from"}exi;
    return $query;
 }
 
