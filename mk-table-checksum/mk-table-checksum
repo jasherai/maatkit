@@ -2424,7 +2424,7 @@ sub do_tbl_replicate {
 
    $dbh->do('SET @crc := "", @cnt := 0 /*!50108 , '
           . '@@binlog_format := "STATEMENT"*/');
-   $dbh->do($sql, {}, @{$info}{qw(database table)}, $chunk_num, $where);
+   $dbh->do($sql, {}, @{$info}{qw(database table)}, $where);
    $fetch_sth->execute(@{$info}{qw(database table)}, $chunk_num);
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
    $update_sth->execute($crc, $cnt, @{$info}{qw(database table)}, $chunk_num);
