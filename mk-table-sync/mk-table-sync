@@ -414,7 +414,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 1339
+# Quoter package 1427
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -440,7 +440,7 @@ sub quote_val {
       map {
          if ( defined $_ ) {
             $_ =~ s/'/\\'/g;
-            $_ =~ m/\D/ ? "'$_'" : $_;
+            $_ eq '' || $_ =~ m/\D/ ? "'$_'" : $_;
          }
          else {
             'NULL';
@@ -2599,12 +2599,16 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 1349
+# MySQLFind package 1439
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package MySQLFind;
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 
 use English qw(-no_match_vars);
@@ -2659,6 +2663,7 @@ sub find_tables {
    @tables = grep {
          ( $views || ($_->{engine} ne 'VIEW') )
       } @tables;
+   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
    foreach my $crit ( @{$self->{tables}->{status}} ) {
       my ($key, $test) = %$crit;
       @tables
@@ -2692,6 +2697,7 @@ sub _fetch_tbl_list {
          my %tbl; # Make a copy with lowercased keys
          @tbl{ map { lc $_ } keys %$_ } = values %$_;
          $tbl{engine} ||= $tbl{type} || $tbl{comment};
+         $tbl{name} = join('.', $args{database}, $tbl{name});
          delete $tbl{type};
          \%tbl;
       } @tables;
@@ -2720,7 +2726,7 @@ sub _fetch_tbl_list {
             $engine = $struct->{engine};
          }
          push @result,
-         {  name   => $tbl->[0],
+         {  name   => "$args{database}.$tbl->[0]",
             engine => $engine,
          }
       }
@@ -2730,17 +2736,25 @@ sub _fetch_tbl_list {
 
 sub _filter {
    my ( $self, $thing, $sub, @vals ) = @_;
-   $ENV{MKDEBUG} && _d("Filtering $thing list");
+   $ENV{MKDEBUG} && _d("Filtering $thing list on ", Dumper($self->{$thing}));
    my $permit = $self->{$thing}->{permit};
    my $reject = $self->{$thing}->{reject};
    my $regexp = $self->{$thing}->{regexp};
    return grep {
       my $val = $sub->($_);
       $val = '' unless defined $val;
-      ( !$reject || !$reject->{$val} )
-         && ( !$permit || $permit->{$val} )
-         && ( !$regexp || $val =~ m/$regexp/ )
-   } @vals
+      if ( $thing eq 'tables' ) {
+         (my $tbl = $val) =~ s/^.*\.//;
+         ( !$reject || (!$reject->{$val} && !$reject->{$tbl}) )
+            && ( !$permit || $permit->{$val} || $permit->{$tbl} )
+            && ( !$regexp || $val =~ m/$regexp/ )
+      }
+      else {
+         ( !$reject || !$reject->{$val} )
+            && ( !$permit || $permit->{$val} )
+            && ( !$regexp || $val =~ m/$regexp/ )
+      }
+   } @vals;
 }
 
 sub _test_date {
@@ -3658,7 +3672,8 @@ Use this option to skip a comma-separated list of storage engines (table types).
 
 =item --ignoretbl
 
-Use this option to skip a comma-separated list of tables.
+Use this option to skip a comma-separated list of tables.  Table names may be
+qualified with the database name.
 
 =item --lock
 
@@ -3754,7 +3769,8 @@ L<"--transaction"> by default.
 
 =item --tables
 
-Restrict syncing to this comma-separated list of tables.
+Restrict syncing to this comma-separated list of tables.  Table names may be
+qualified with the database name.
 
 =item --test
 

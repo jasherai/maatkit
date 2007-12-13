@@ -412,7 +412,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 1339
+# Quoter package 1427
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -438,7 +438,7 @@ sub quote_val {
       map {
          if ( defined $_ ) {
             $_ =~ s/'/\\'/g;
-            $_ =~ m/\D/ ? "'$_'" : $_;
+            $_ eq '' || $_ =~ m/\D/ ? "'$_'" : $_;
          }
          else {
             'NULL';
@@ -1348,7 +1348,8 @@ Do not load this comma-separated list of databases.
 
 =item --ignoretbl
 
-Do not load this comma-separated list of table (not database.table) names.
+Do not restore this comma-separated list of table names.  Table names may be
+qualified with the database name.
 
 =item --local
 
@@ -1415,7 +1416,8 @@ L<"--nouniquechecks">, L<"--noforeignkeys">.
 
 =item --tables
 
-Restore this comma-separated list of table (not database.table) names.
+Restore this comma-separated list of table names.  Table names may be
+qualified with the database name.
 
 =item --tblregex
 
