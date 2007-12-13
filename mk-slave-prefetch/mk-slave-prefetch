@@ -1014,6 +1014,8 @@ my @opt_spec = (
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'statistics',        d => 'Print statistics after exiting' },
    { s => 'time|t=m',          d => 'Time to run before exiting; suffix: s/m/h/d' },
+   { s => 'tmpdir=s',          d => 'Where to create temp files for LOAD '
+                                  . 'DATA INFILE queries (default /dev/null)' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'window|w=z',        d => 'How many bytes ahead is too far ahead (default 5k)' },
    '--print and --daemonize are mutually exclusive',
@@ -1045,8 +1047,15 @@ elsif ( $chk_int > $chk_max || $chk_int < $chk_min
 
 $opt_parser->usage_or_errors(%opts);
 
-# Daemonize only after (potentially) asking for passwords for --askpass.
+# Get the database connection and set it up as desired: Lowercase all column
+# names for fetchrow_hashref. Don't disconnect on fork.  Disable the query
+# cache.
 my $dbh = get_dbh(\%opts);
+$dbh->{FetchHashKeyName} = 'NAME_lc';
+$dbh->{InactiveDestroy}  = 1;
+$dbh->do('/*!40001 set @@session.query_cache_type=DEMAND */');
+
+# Daemonize only after (potentially) asking for passwords for --askpass.
 if ( $opts{daemonize} ) {
    require POSIX;
    chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
@@ -1061,12 +1070,10 @@ if ( $opts{daemonize} ) {
 
 
 # TODO:
-# * add SQL_NO_CACHE or just set the session cache type.
 # * filter: Throw away non-replicated DBs
 # * Read a file of long statements on startup.
 # * Optionally read the binlog from the server's master.  advantages: can run
 #   tool on another server than the slave.
-# * Don't wrap everything in a derived table.
 
 # ############################################################################
 # Ready to work now.
@@ -1091,7 +1098,7 @@ eval {
 
       if ( $slave{running} ) {
 
-         my $cmd = "mysqlbinlog --start-pos=$slave{pos} $datadir/$slave{file}";
+         my $cmd = "mysqlbinlog -l $opts{tmpdir} --start-pos=$slave{pos} $datadir/$slave{file}";
          $ENV{MKDEBUG} && _d($cmd);
          open my $fh, "$cmd 2>/dev/null |" or die $OS_ERROR;
          $stats{mysqlbinlog}++;
@@ -1104,7 +1111,18 @@ eval {
             $next = max($next, $pos + ($event->{end} || 0));
             $ENV{MKDEBUG} && _d("i=$i, pos=$pos, next=$next, slave=$slave{pos}");
 
-            # TODO: If it's a LOAD DATA INFILE, need to rm the temp file.
+            # If it's a LOAD DATA INFILE, rm the temp file.
+            if (
+               $event->{arg}
+               && (my ($file) = $event->{arg} =~ m/INFILE ('[^']+')/i)
+            ) {
+               $stats{load_data_infile}++;
+               if ( !unlink($file) ) {
+                  $ENV{MKDEBUG} && _d("Could not unlink ", $file);
+                  $stats{could_not_unlink}++;
+               }
+               next EVENT;
+            }
 
             # Stay X amount in front of the slave.
             if ( $pos < $slave{pos} + $opts{o} ) {
@@ -1144,6 +1162,7 @@ eval {
                      "Event $pos is too close to I/O thread ($slave{pos} + $slave{lag}) at i=$i");
                   $stats{too_close_to_io_thread}++;
                }
+               # TODO: don't increment stats if nothing advanced its position.
                wait_for_master(\%slave, $pos);
                %slave    = get_status($dbh);
                $last_chk = $i;
@@ -1182,16 +1201,21 @@ eval {
             # Convert the event to a SELECT and print/execute it.
             my $select = $qn->convert_to_select($event->{arg});
             if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
-               my $normal = $qn->fingerprint($select);
-               if ( (my $avg = get_avg($normal)) < $opts{q} ) {
-                  my $sql = $qn->wrap_in_derived($select);
+               my $fingerprint = $qn->fingerprint($event->{arg});
+               if ( (my $avg = get_avg($fingerprint)) < $opts{q} ) {
+                  my $sql = $qn->convert_select_list($select);
+                  if ( $vp->version_ge($dbh, '4.1.0')
+                     && !have_seen_query($fingerprint)
+                  ) {
+                     $sql = $qn->wrap_in_derived($sql);
+                  }
                   $ENV{MKDEBUG} && _d($sql);
                   $stats{do_query}++;
                   if ( $opts{x} ) {
                      eval {
                         my $start = gettimeofday();
                         $dbh->do($sql);
-                        store_avg($normal, gettimeofday() - $start);
+                        store_avg($fingerprint, gettimeofday() - $start);
                      };
                      if ( $EVAL_ERROR ) {
                         $stats{query_error}++;
@@ -1206,7 +1230,7 @@ eval {
                   }
                }
                else {
-                  $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $normal);
+                  $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $fingerprint);
                   $stats{query_too_long}++;
                   wait_for_master(\%slave, $pos);
                   %slave    = get_status($dbh);
@@ -1246,6 +1270,8 @@ eval {
             }
          }
       }
+      $stats{sleep}++;
+      sleep(1);
    }
 };
 if ( $EVAL_ERROR ) {
@@ -1326,6 +1352,11 @@ sub store_avg {
    $ENV{MKDEBUG} && _d('Average time: ', $time_for{$query}->{avg});
 }
 
+sub have_seen_query {
+   my ( $query ) = @_;
+   return $time_for{$query}->{seen};
+}
+
 sub get_avg {
    my ( $query ) = @_;
    $time_for{$query}->{seen}++;
@@ -1346,9 +1377,6 @@ sub get_dbh {
    };
 
    my $dbh = DBI->connect( $dsn_parser->get_cxn_params(\%opts), $db_options);
-   # Lowercase all column names for fetchrow_hashref. Don't disconnect on fork.
-   $dbh->{FetchHashKeyName} = 'NAME_lc';
-   $dbh->{InactiveDestroy}  = 1;
    return $dbh;
 }
 
@@ -1489,6 +1517,24 @@ learn all over every time you start it.
 You might also want to filter out some statements completely, or let only some
 statements through.  See the L<"--rejectregexp"> and L<"--permitregexp"> options.
 
+If C<mk-slave-prefetch> hasn't seen a query's fingerprint before, and thus
+doesn't know how long it will take to execute, it wraps it in a subuery, like
+this:
+
+   SELECT 1 FROM ( <query> ) AS X LIMIT 1;
+
+This helps avoid fetching a lot of data back to the client when a query is
+very large.  It requires a version of MySQL that supports subqueries (version
+4.1 and newer).  If yours doesn't, the subquery trick can't be used, so the
+query might fetch a lot of data back to the client.
+
+Once a query's fingerprint has been seen, so it's known that the query isn't
+enormously slow, C<mk-slave-prefetch> just rewrites the C<SELECT> list for
+efficiency.  (Avoiding the subquery reduces the query's overhead for short
+queries).  The rewritten query will then look like the following;
+
+   SELECT ISNULL(COALESCE(<columns>)) FROM ...
+
 =item --offset
 
 The number of bytes C<mk-slave-prefetch> will try to stay in front of the slave
@@ -1562,6 +1608,12 @@ occur.  You may see the following counters:
    master_pos_wait         The tool waited for the SQL thread to
                            catch up.
    show_slave_status       The tool queried SHOW SLAVE STATUS.
+   load_data_infile        The tool found a LOAD DATA INFILE query
+                           and unlinked (deleted) the temp file.
+   could_not_unlink        The tool failed to unlink a temp file.
+   sleep                   The tool slept for a second because the 
+                           slave's SQL thread was not running, or
+                           because it read past the end of the log.
 
 After the counters, C<mk-slave-prefetch> prints information about each query
 fingerprint it has seen, two lines per fingerprint.  The first line contains the
@@ -1574,6 +1626,16 @@ L<"--querysampsize"> samples.  The second line is the query fingerprint.
 How long C<mk-slave-prefetch> should run before exiting.  Default is to run
 forever.  The suffix can be s for seconds, m for minutes, h for hours, or d for
 days.
+
+=item --tmpdir
+
+Where to create temporary files for C<LOAD DATA INFILE> queries inlined in the
+log file.  The default is C</dev/null>, which will cause C<mysqlbinlog> to
+skip the file and the associated C<LOAD DATA INFILE> command entirely.
+
+If C<mk-slave-prefetch> sees a C<LOAD DATA INFILE> command (which it won't, if
+this is left at the default), it will try to remove the temporary file, then
+skip the event.
 
 =item --user
 
@@ -1605,12 +1667,6 @@ throwing out a lot of events for being too far ahead or not far enough ahead.
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
-
-C<mk-slave-prefetch> wraps queries in a so-called "derived table" to help avoid
-fetching a lot of data back to the client when a query is very large.  This
-requires a version of MySQL that supports subqueries.  I plan to add a feature
-that can disable this in the future.  I also plan to make it do this by default
-only for queries whose fingerprints are unknown.  (TODO).
 
 =head1 ENVIRONMENT
 
