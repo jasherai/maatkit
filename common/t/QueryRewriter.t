@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 29;
+use Test::More tests => 31;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -245,4 +245,16 @@ is(
    $q->wrap_in_derived('set timestamp=134'),
    'set timestamp=134',
    'Do not wrap non-SELECT queries',
+);
+
+is(
+   $q->convert_select_list('select * from tbl'),
+   'select 1 from tbl',
+   'Star to one',
+);
+
+is(
+   $q->convert_select_list('select a, b, c from tbl'),
+   'select isnull(coalesce( a, b, c )) from tbl',
+   'column list to isnull/coalesce'
 );
