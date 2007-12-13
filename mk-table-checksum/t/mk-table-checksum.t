@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 12;
+use Test::More tests => 13;
 
 my $opt_file = shift || "~/.my.cnf";
 my ($output, $output2);
@@ -65,8 +65,15 @@ SKIP: {
    $output = `$cmd --explain -C 200 -d sakila -t film`;
    like($output, qr/sakila   film  `film_id` < \d+/, 'chunking works');
    my $num_chunks = scalar(map { 1 } $output =~ m/^sakila/gm);
-   ok($num_chunks >= 5 && $num_chunks < 8, 'Found $num_chunks chunks');
+   ok($num_chunks >= 5 && $num_chunks < 8, "Found $num_chunks chunks");
+
+   # Ensure chunk boundaries are put into test.checksum (bug #1850243)
+   $output = `perl ../mk-table-checksum --defaults-file=$opt_file -d sakila -t film -C 50 -R test.checksum 127.0.0.1`;
+   $output = `mysql --defaults-file=$opt_file --skip-column-names -e "select boundaries from test.checksum where db='sakila' and tbl='film' and chunk=0"`;
+   chomp $output;
+   like ( $output, qr/`film_id` < \d+/, 'chunk boundaries stored right');
 
    # Clean up
    `mysql --defaults-file=$opt_file < after.sql`;
+
 }
