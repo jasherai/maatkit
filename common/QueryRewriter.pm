@@ -42,7 +42,7 @@ sub new {
 
 # Normalizes variable queries to "query prototypes".  See
 # http://dev.mysql.com/doc/refman/5.0/en/literals.html
-sub norm {
+sub fingerprint {
    my ( $self, $query ) = @_;
    $query = lc $query;
    $query =~ s/^\s*(?:--|#).*//gm;              # One-line comments
@@ -73,7 +73,7 @@ sub norm {
    return $query;
 }
 
-sub convert {
+sub convert_to_select {
    my ( $self, $query ) = @_;
    return unless $query;
    $query =~ s{
@@ -138,7 +138,7 @@ sub __update_to_select {
       . ( $limit ? " $limit "      : '' );
 }
 
-sub wrap {
+sub wrap_in_derived {
    my ( $self, $query ) = @_;
    return unless $query;
    return $query =~ m/\A\s*select/i
