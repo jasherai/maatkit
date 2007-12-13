@@ -1095,7 +1095,7 @@ if ( @ARGV ) {
 my $dbh = get_dbh(\%opts);
 $dbh->{FetchHashKeyName} = 'NAME_lc';
 $dbh->{InactiveDestroy}  = 1;
-$dbh->do('/*!40001 set @@session.query_cache_type=DEMAND */');
+$dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
 
 # ############################################################################
 # Daemonize only after (potentially) asking for passwords for --askpass.
