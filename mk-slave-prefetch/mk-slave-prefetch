@@ -834,7 +834,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 1459
+# QueryRewriter package 1467
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -859,7 +859,7 @@ sub new {
    bless {}, $class;
 }
 
-sub norm {
+sub fingerprint {
    my ( $self, $query ) = @_;
    $query = lc $query;
    $query =~ s/^\s*(?:--|#).*//gm;              # One-line comments
@@ -889,7 +889,7 @@ sub norm {
    return $query;
 }
 
-sub convert {
+sub convert_to_select {
    my ( $self, $query ) = @_;
    return unless $query;
    $query =~ s{
@@ -954,7 +954,7 @@ sub __update_to_select {
       . ( $limit ? " $limit "      : '' );
 }
 
-sub wrap {
+sub wrap_in_derived {
    my ( $self, $query ) = @_;
    return unless $query;
    return $query =~ m/\A\s*select/i
@@ -1066,6 +1066,7 @@ if ( $opts{daemonize} ) {
 # * Read a file of long statements on startup.
 # * Optionally read the binlog from the server's master.  advantages: can run
 #   tool on another server than the slave.
+# * Don't wrap everything in a derived table.
 
 # ############################################################################
 # Ready to work now.
@@ -1177,11 +1178,11 @@ eval {
             }
 
             # Convert the event to a SELECT and print/execute it.
-            my $select = $qn->convert($event->{arg});
+            my $select = $qn->convert_to_select($event->{arg});
             if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
-               my $normal = $qn->norm($select);
+               my $normal = $qn->fingerprint($select);
                if ( (my $avg = get_avg($normal)) < $opts{q} ) {
-                  my $sql = $qn->wrap($select);
+                  my $sql = $qn->wrap_in_derived($select);
                   $ENV{MKDEBUG} && _d($sql);
                   $stats{do_query}++;
                   if ( $opts{x} ) {
