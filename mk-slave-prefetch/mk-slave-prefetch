@@ -1104,6 +1104,8 @@ eval {
             $next = max($next, $pos + ($event->{end} || 0));
             $ENV{MKDEBUG} && _d("i=$i, pos=$pos, next=$next, slave=$slave{pos}");
 
+            # TODO: If it's a LOAD DATA INFILE, need to rm the temp file.
+
             # Stay X amount in front of the slave.
             if ( $pos < $slave{pos} + $opts{o} ) {
                $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
