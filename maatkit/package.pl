@@ -137,6 +137,20 @@ sub get_version_or_quit {
       $ver = sprintf('%s', m/version ([0-9\.]+)/);
       last;
    }
+   # Now look for the next version, and make sure it is smaller.
+   my $ver2;
+   while ( <$fh> ) {
+      next unless m/version/;
+      $ver2 = sprintf('%s', m/version ([0-9\.]+)/);
+      last;
+   }
+   if ( $ver2 ) {
+      my $old_ver = sprintf('%03d%03d%03d', $ver2 =~ m/(\d+)/g);
+      my $new_ver = sprintf('%03d%03d%03d', $ver  =~ m/(\d+)/g);
+      if ( $old_ver ge $new_ver ) {
+         die "Old version $ver2 is not older than new version $ver!";
+      }
+   }
    close $fh;
    return $ver;
 }
