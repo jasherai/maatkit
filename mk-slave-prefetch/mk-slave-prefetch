@@ -1490,7 +1490,7 @@ statements through.  See the L<"--rejectregexp"> and L<"--permitregexp"> options
 
 The number of bytes C<mk-slave-prefetch> will try to stay in front of the slave
 SQL thread.  It will not execute log events it doesn't think are at least this
-far ahead of the SQL thread.
+far ahead of the SQL thread.  See also L<"--window">.
 
 =item --password
 
@@ -1514,7 +1514,7 @@ Print the transformed relay log events to STDOUT.
 =item --querysampsize
 
 How many queries to average together to get the average query execution time
-(see L<"--maxquerytime">).  The last C<N> queries with a given signature are
+(see L<"--maxquerytime">).  The last C<N> queries with a given fingerprint are
 averaged together.
 
 =item --rejectregexp
@@ -1533,7 +1533,7 @@ counters, and queries.  The counters simply count the number of times events
 occur.  You may see the following counters:
 
    NAME                    MEANING
-   =====================   =======================================
+   ======================  =======================================
    mysqlbinlog             Executed mysqlbinlog to read log events.
    events                  The total number of relay log events.
    not_far_enough_ahead    An event was not at least --offset
