@@ -834,7 +834,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 1467
+# QueryRewriter package 1471
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -900,25 +900,34 @@ sub convert_to_select {
                  (limit\s*\d+(?:\s*,\s*\d+)?)?
                  \Z
               }
-              {__update_to_select($1, $2, $3, $4)}exsi;
-   $query =~ s{
-                 \A.*?
-                 (?:insert|replace)\s+
-                 \binto\b(.*?)\(([^\)]+)\)\s*
-                 values\s*(\(.*?\))\s*
-                 (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
-                 \Z
-              }
-              {__insert_to_select($1, $2, $3)}exsi;
-   $query =~ s{
-                 \A.*?
-                 delete\s+(.*?)
-                 \bfrom\b(.*)
-                 \Z
-              }
-              {__delete_to_select($1, $2)}exsi;
+              {__update_to_select($1, $2, $3, $4)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert|replace)\s+
+                    \binto\b(.*?)\(([^\)]+)\)\s*
+                    values\s*(\(.*?\))\s*
+                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select($1, $2, $3)}exsi
+      || $query =~ s{
+                    \A.*?
+                    delete\s+(.*?)
+                    \bfrom\b(.*)
+                    \Z
+                 }
+                 {__delete_to_select($1, $2)}exsi;
    $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
    $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
+   return $query;
+}
+
+sub convert_select_list {
+   my ( $self, $query ) = @_;
+   $query =~ s{
+               \A\s*select(.*?)\bfrom\b
+              }
+              {$1 =~ m/\*/ ? "select 1 from" : "select isnull(coalesce($1)) from"}exi;
    return $query;
 }
 
@@ -1027,7 +1036,8 @@ my $vp         = new VersionParser();
 my $qn         = new QueryRewriter();
 my $lp         = new LogParser();
 my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{prompt} = '[OPTION...]';
+$opt_parser->{strict} = 0;
+$opt_parser->{prompt} = '[OPTION...] [FILE]';
 $opt_parser->{descr}  = q{pipelines the relay log to pre-warm the slave's caches.};
 my %opts = $opt_parser->parse();
 
@@ -1045,17 +1055,51 @@ elsif ( $chk_int > $chk_max || $chk_int < $chk_min
    $opt_parser->error("You specified an invalid range for --checkint");
 }
 
+if ( @ARGV > 1 ) {
+   $opt_parser->error("You can specify only one FILE");
+}
+
 $opt_parser->usage_or_errors(%opts);
 
+# ############################################################################
+# Initialize the query stats from the file on the commandline, if any.
+# ############################################################################
+my %query_stats;
+if ( @ARGV ) {
+   open my $fh, "<", $ARGV[0] or die $OS_ERROR;
+   my ($type, $rest);
+   while ( my $line = <$fh> ) {
+      ($type, $rest) = $line =~ m/^# (query|stats): (.*)$/;
+      next unless $type;
+      if ( $type eq 'query' ) {
+         $query_stats{$rest} = { seen => 1, samples => [] };
+      }
+      else {
+         my ( $seen, $exec, $sum, $avg )
+            = $rest =~ m/seen=(\S+) exec=(\S+) sum=(\S+) avg=(\S+)/;
+         if ( $seen ) {
+            $query_stats{$rest}->{samples}
+               = [ map { $avg } (1 ..  $opts{querysampsize}) ];
+            $query_stats{$rest}->{avg} = $avg;
+         }
+      }
+   }
+   close $fh or die $OS_ERROR;
+}
+
+# ############################################################################
 # Get the database connection and set it up as desired: Lowercase all column
 # names for fetchrow_hashref. Don't disconnect on fork.  Disable the query
 # cache.
+# ############################################################################
 my $dbh = get_dbh(\%opts);
 $dbh->{FetchHashKeyName} = 'NAME_lc';
 $dbh->{InactiveDestroy}  = 1;
 $dbh->do('/*!40001 set @@session.query_cache_type=DEMAND */');
 
+# ############################################################################
 # Daemonize only after (potentially) asking for passwords for --askpass.
+# ############################################################################
 if ( $opts{daemonize} ) {
    require POSIX;
    chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
@@ -1070,8 +1114,7 @@ if ( $opts{daemonize} ) {
 
 
 # TODO:
-# * filter: Throw away non-replicated DBs
-# * Read a file of long statements on startup.
+# * filter: Throw away non-replicated DBs/tables
 # * Optionally read the binlog from the server's master.  advantages: can run
 #   tool on another server than the slave.
 
@@ -1083,7 +1126,6 @@ my $end       = $now + ( $opts{t} || 0 );    # When we should exit
 my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
 $ENV{MKDEBUG} && _d("Data directory ", $datadir);
 
-my %time_for;
 my %stats;
 my $last_chk = 0;
 my $oktorun  = 1;
@@ -1151,19 +1193,22 @@ eval {
                   # Too far ahead of the slave
                   ($pos > $slave{pos} + $opts{w})
                   # Too close to where the I/O thread is writing.
-                  # TODO: do I need to add the event's end pos into this equation?
                   || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - $opts{l}))) {
-               if ($pos > $slave{pos} + $opts{w}) {
-                  $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
-                  $stats{too_far_ahead}++;
+
+               # Don't increment stats if the slave didn't catch up while we
+               # slept.
+               if ( wait_for_master(\%slave, $pos + 1) > 0 ) {
+                  if ($pos > $slave{pos} + $opts{w}) {
+                     $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
+                     $stats{too_far_ahead}++;
+                  }
+                  else {
+                     $ENV{MKDEBUG} && _d(
+                        "Event $pos is too close to I/O thread ($slave{pos} + $slave{lag}) at i=$i");
+                     $stats{too_close_to_io_thread}++;
+                  }
                }
-               else {
-                  $ENV{MKDEBUG} && _d(
-                     "Event $pos is too close to I/O thread ($slave{pos} + $slave{lag}) at i=$i");
-                  $stats{too_close_to_io_thread}++;
-               }
-               # TODO: don't increment stats if nothing advanced its position.
-               wait_for_master(\%slave, $pos);
+
                %slave    = get_status($dbh);
                $last_chk = $i;
             }
@@ -1203,12 +1248,20 @@ eval {
             if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
                my $fingerprint = $qn->fingerprint($event->{arg});
                if ( (my $avg = get_avg($fingerprint)) < $opts{q} ) {
+
+                  # Safeguard as much as possible against really enormous
+                  # result sets.
                   my $sql = $qn->convert_select_list($select);
                   if ( $vp->version_ge($dbh, '4.1.0')
                      && !have_seen_query($fingerprint)
                   ) {
+                     # Wrap in a "derived table," but only if it hasn't been
+                     # seen before.  This way, really short queries avoid the
+                     # overhead of creating the temp table.
                      $sql = $qn->wrap_in_derived($sql);
                   }
+
+                  # Do it!
                   $ENV{MKDEBUG} && _d($sql);
                   $stats{do_query}++;
                   if ( $opts{x} ) {
@@ -1228,14 +1281,20 @@ eval {
                   elsif ( $opts{print} ) {
                      print $sql, ";\n";
                   }
+
                }
+
+               # The query's average execution time is longer than the
+               # specified limit, so we skip it and just wait for the master
+               # to pass it by.
                else {
                   $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $fingerprint);
                   $stats{query_too_long}++;
-                  wait_for_master(\%slave, $pos);
+                  wait_for_master(\%slave, $pos + 1);
                   %slave    = get_status($dbh);
                   $last_chk = $i;
                }
+
             }
             elsif ( $ENV{MKDEBUG} ) {
                $stats{query_not_rewritten}++;
@@ -1293,12 +1352,12 @@ if ( $opts{statistics} ) {
    # Print normalized queries, their average exec times, times seen and times
    # executed.  Sort in order of times seen descending.
    foreach my $query (
-      reverse sort { $time_for{$a}->{seen} <=> $time_for{$b}->{seen} } keys %time_for
+      reverse sort { $query_stats{$a}->{seen} <=> $query_stats{$b}->{seen} } keys %query_stats
    ) {
-      my $stats = $time_for{$query};
-      print "# ",
+      my $stats = $query_stats{$query};
+      print "# query: ", $query, "\n# stats: ",
          join(' ', (map { "$_=" . ($stats->{$_} || '0') } qw(seen exec sum avg))),
-         "\n# ", $query, "\n";
+         "\n";
    }
 }
 
@@ -1324,13 +1383,14 @@ sub _d {
 sub wait_for_master {
    my ( $slave, $pos ) = @_;
    $stats{master_pos_wait}++;
-   my $sql = "SELECT MASTER_POS_WAIT('$slave->{mfile}', "
-      . ($slave->{mpos} + ($pos - $slave->{pos})) . ", 1)";
+   my $sql = "SELECT COALESCE(MASTER_POS_WAIT('$slave->{mfile}', "
+      . ($slave->{mpos} + ($pos - $slave->{pos})) . ", 1), 0)";
    $ENV{MKDEBUG} && _d($sql);
    my $start = gettimeofday();
    my ($events) = $dbh->selectrow_array($sql);
    $ENV{MKDEBUG} && _d("Waited ", (gettimeofday - $start), " and got ",
       (defined $events ? $events : 'NULL'));
+   return $events;
 }
 
 # The average is weighted so we don't quit trying a statement when we have
@@ -1340,27 +1400,27 @@ sub store_avg {
    my ( $query, $time ) = @_;
    return unless $query =~ m/\Aselect/;
    $ENV{MKDEBUG} && _d('Execution time: ', $query, ' ', $time);
-   $time_for{$query}->{samples} ||= [];
-   my $samples = $time_for{$query}->{samples};
+   $query_stats{$query}->{samples} ||= [];
+   my $samples = $query_stats{$query}->{samples};
    push @$samples, $time;
    if ( @$samples > $opts{querysampsize} ) {
       shift @$samples;
    }
-   $time_for{$query}->{avg} = sum(@$samples) / $opts{querysampsize};
-   $time_for{$query}->{exec}++;
-   $time_for{$query}->{sum} += $time;
-   $ENV{MKDEBUG} && _d('Average time: ', $time_for{$query}->{avg});
+   $query_stats{$query}->{avg} = sum(@$samples) / $opts{querysampsize};
+   $query_stats{$query}->{exec}++;
+   $query_stats{$query}->{sum} += $time;
+   $ENV{MKDEBUG} && _d('Average time: ', $query_stats{$query}->{avg});
 }
 
 sub have_seen_query {
    my ( $query ) = @_;
-   return $time_for{$query}->{seen};
+   return $query_stats{$query}->{seen};
 }
 
 sub get_avg {
    my ( $query ) = @_;
-   $time_for{$query}->{seen}++;
-   return $time_for{$query}->{avg} || 0;
+   $query_stats{$query}->{seen}++;
+   return $query_stats{$query}->{avg} || 0;
 }
 
 sub get_dbh {
@@ -1419,6 +1479,8 @@ mk-slave-prefetch - Pipeline relay logs on a MySQL slave to pre-warm caches.
 =head1 SYNOPSIS
 
  mk-slave-prefetch
+ mk-slave-prefetch --statistics > /path/to/saved/statistics
+ mk-slave-prefetch /path/to/saved/statistics
 
 =head1 DESCRIPTION
 
@@ -1438,7 +1500,11 @@ read-only user.  Here is an example of how to grant the necessary privileges:
    TO 'prefetch'@'%' IDENTIFIED BY 'sp33dmeup!';
 
 C<mk-slave-prefetch> learns how long it takes statements to execute, and doesn't
-try to execute those that take a very long time.
+try to execute those that take a very long time.  You can ask it to print what
+it has learned after it executes.  You can also specify a filename on the
+command line.  The file should contain the statistics printed by a previous
+run.  These will be used to pre-populate the statistics so it doesn't have to
+re-learn.
 
 This program is based on concepts I heard Paul Tuckfield explain at the November
 2006 MySQL Camp un-conference.  However, the code is my own work.  I have not
@@ -1510,9 +1576,10 @@ replaced by placeholders.  The result is a sort of "fingerprint" for the query,
 not executable SQL.  You can see the learned statistics with the
 L<"--statistics"> option.
 
-I plan to add a feature to pre-load query fingerprints, and average execution
-times, from a file.  This way you don't have to wait for C<mk-slave-prefetch> to
-learn all over every time you start it.
+You can pre-load query fingerprints, and average execution times, from a file.
+This way you don't have to wait for C<mk-slave-prefetch> to learn all over
+every time you start it.  Just specify the file on the command line.  The
+format should be the same as the output from L<"--statistics">.
 
 You might also want to filter out some statements completely, or let only some
 statements through.  See the L<"--rejectregexp"> and L<"--permitregexp"> options.
@@ -1616,10 +1683,11 @@ occur.  You may see the following counters:
                            because it read past the end of the log.
 
 After the counters, C<mk-slave-prefetch> prints information about each query
-fingerprint it has seen, two lines per fingerprint.  The first line contains the
-number of times the fingerprint was seen, number of times executed, the sum of
-the execution times, and the average execution time over the last
-L<"--querysampsize"> samples.  The second line is the query fingerprint.
+fingerprint it has seen, two lines per fingerprint.  The first line contains
+the query's fingerprint.  The second line contains the number of times the
+fingerprint was seen, number of times executed, the sum of the execution
+times, and the average execution time over the last L<"--querysampsize">
+samples.
 
 =item --time
 
