@@ -1003,30 +1003,39 @@ my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for password for connections' },
    { s => 'checkint|i=A',      d => 'How often to check the slave: '
                                   . 'init,min,max (default 128,1,1024)' },
-   { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
+   { s => 'daemonize',         d => 'Fork to background and detach '
+                                  . '(POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
-   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
+   { s => 'defaults-file|F=s', d => 'Only read mysql options from the '
+                                  . 'given file' },
    { s => 'execute|x!',        d => 'Execute transformed queries (default)' },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'iolag|l=z',         d => 'How many bytes to lag the I/O thread '
                                   . '(default 1k)' },
    { s => 'maxquerytime|q=f',  d => 'Do not run queries longer than this '
-                                  . 'many seconds; fractions allowed (default 2)' },
+                                  . 'many seconds; fractions allowed '
+                                  . '(default 2)' },
    { s => 'querysampsize=i',   d => 'Average query exec time over this '
                                   . 'many queries (default 16)' },
-   { s => 'offset|o=z',        d => 'How many bytes to lead the SQL thread (default 1k)' },
+   { s => 'offset|o=z',        d => 'How many bytes to lead the SQL thread '
+                                  . '(default 1k)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'print',             d => 'Print transformed queries' },
-   { s => 'permitregexp=s',    d => 'Permit queries matching this Perl regexp' },
+   { s => 'printnonrewritten', d => 'Print non-rewritable queries' },
+   { s => 'permitregexp=s',    d => 'Permit queries matching '
+                                  . 'this Perl regexp' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'rejectregexp=s',    d => 'Reject queries matching this Perl regexp' },
+   { s => 'rejectregexp=s',    d => 'Reject queries matching this '
+                                  . 'Perl regexp' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'statistics',        d => 'Print statistics after exiting' },
-   { s => 'time|t=m',          d => 'Time to run before exiting; suffix: s/m/h/d' },
+   { s => 'time|t=m',          d => 'Time to run before exiting; '
+                                  . 'suffix: s/m/h/d' },
    { s => 'tmpdir=s',          d => 'Where to create temp files for LOAD '
                                   . 'DATA INFILE queries (default /dev/null)' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
-   { s => 'window|w=z',        d => 'How many bytes ahead is too far ahead (default 5k)' },
+   { s => 'window|w=z',        d => 'How many bytes ahead is too far '
+                                  . 'ahead (default 5k)' },
    '--print and --daemonize are mutually exclusive',
    'at least one of --print or --execute are required',
 );
@@ -1038,7 +1047,7 @@ my $lp         = new LogParser();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '[OPTION...] [FILE]';
-$opt_parser->{descr}  = q{pipelines the relay log to pre-warm the slave's caches.};
+$opt_parser->{descr}  = q{pipelines relay logs to pre-warm the slave's caches.};
 my %opts = $opt_parser->parse();
 
 if ( $opts{t} ) {
@@ -1140,7 +1149,8 @@ eval {
 
       if ( $slave{running} ) {
 
-         my $cmd = "mysqlbinlog -l $opts{tmpdir} --start-pos=$slave{pos} $datadir/$slave{file}";
+         my $cmd = "mysqlbinlog -l $opts{tmpdir} "
+                 . "--start-pos=$slave{pos} $datadir/$slave{file}";
          $ENV{MKDEBUG} && _d($cmd);
          open my $fh, "$cmd 2>/dev/null |" or die $OS_ERROR;
          $stats{mysqlbinlog}++;
@@ -1151,7 +1161,7 @@ eval {
             $stats{events}++;
             $pos  = $event->{offset} || $pos;
             $next = max($next, $pos + ($event->{end} || 0));
-            $ENV{MKDEBUG} && _d("i=$i, pos=$pos, next=$next, slave=$slave{pos}");
+            $ENV{MKDEBUG} && _d("i=$i pos=$pos next=$next slave=$slave{pos}");
 
             # If it's a LOAD DATA INFILE, rm the temp file.
             if (
@@ -1181,7 +1191,7 @@ eval {
                   ? max($chk_min, $chk_int / 2)
                   : min($chk_max, $chk_int * 2);
                if ( $pos < $slave{pos} + $opts{o} ) {
-                  $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
+                  $ENV{MKDEBUG} && _d('Not far enough ahead, skip event');
                   $stats{not_far_enough_ahead}++;
                   next EVENT;
                }
@@ -1193,18 +1203,22 @@ eval {
                   # Too far ahead of the slave
                   ($pos > $slave{pos} + $opts{w})
                   # Too close to where the I/O thread is writing.
-                  || ($slave{lag} && $pos >= $slave{pos} + $slave{lag} - $opts{l}))) {
+                  || ($slave{lag} 
+                     && $pos >= $slave{pos} + $slave{lag} - $opts{l}))
+            ) {
 
                # Don't increment stats if the slave didn't catch up while we
                # slept.
                if ( wait_for_master(\%slave, $pos + 1) > 0 ) {
                   if ($pos > $slave{pos} + $opts{w}) {
-                     $ENV{MKDEBUG} && _d("Event $pos is too far ahead of $slave{pos} at i=$i");
+                     $ENV{MKDEBUG}
+                        && _d("Event $pos too far ahead of $slave{pos}");
                      $stats{too_far_ahead}++;
                   }
                   else {
-                     $ENV{MKDEBUG} && _d(
-                        "Event $pos is too close to I/O thread ($slave{pos} + $slave{lag}) at i=$i");
+                     $ENV{MKDEBUG}
+                        && _d("Event $pos too close to I/O thread "
+                            . "($slave{pos} + $slave{lag})");
                      $stats{too_close_to_io_thread}++;
                   }
                }
@@ -1213,17 +1227,23 @@ eval {
                $last_chk = $i;
             }
 
-            if ( ($event->{arg}||'') !~ m/\A\s*(?:set [t@]|use|ins|upd|del|rep)/i) {
+            if ( ($event->{arg}||'')
+               !~ m/\A\s*(?:set [t@]|use|insert|update|delete|replace)/i
+            ) {
                $ENV{MKDEBUG} && _d('Event arg: ',
-                  (defined $event->{arg} ?  substr($event->{arg}, 0, 50) : 'undef'));
+                  (defined $event->{arg}
+                     ?  substr($event->{arg}, 0, 50)
+                     : 'undef'));
                $ENV{MKDEBUG} && _d('Skipping this event because not allowable');
                $stats{event_not_allowed}++;
                next EVENT;
             }
 
             if (
-                  ( $opts{rejectregexp} && $event->{arg} =~ m/$opts{rejectregexp}/ )
-               || ( $opts{permitregexp} && $event->{arg} !~ m/$opts{permitregexp}/ )
+                  ( $opts{rejectregexp}
+                     && $event->{arg} =~ m/$opts{rejectregexp}/ )
+               || ( $opts{permitregexp}
+                     && $event->{arg} !~ m/$opts{permitregexp}/ )
             ) {
                $ENV{MKDEBUG} && _d('Skipping because of permit/reject regexp');
                $stats{event_filtered_out}++;
@@ -1288,7 +1308,8 @@ eval {
                # specified limit, so we skip it and just wait for the master
                # to pass it by.
                else {
-                  $ENV{MKDEBUG} && _d("Avg time $avg too long for ", $fingerprint);
+                  $ENV{MKDEBUG}
+                     && _d("Avg time $avg too long for ", $fingerprint);
                   $stats{query_too_long}++;
                   wait_for_master(\%slave, $pos + 1);
                   %slave    = get_status($dbh);
@@ -1296,10 +1317,11 @@ eval {
                }
 
             }
-            elsif ( $ENV{MKDEBUG} ) {
+            else {
                $stats{query_not_rewritten}++;
-               print $event->{arg};
-               $oktorun = 0;
+               if ( $ENV{MKDEBUG} || $opts{printnonrewritten} ) {
+                  _d($event->{arg});
+               }
             }
          }
 
@@ -1329,8 +1351,10 @@ eval {
             }
          }
       }
-      $stats{sleep}++;
-      sleep(1);
+      if ( oktorun() ) {
+         $stats{sleep}++;
+         sleep(1);
+      }
    }
 };
 if ( $EVAL_ERROR ) {
@@ -1352,11 +1376,15 @@ if ( $opts{statistics} ) {
    # Print normalized queries, their average exec times, times seen and times
    # executed.  Sort in order of times seen descending.
    foreach my $query (
-      reverse sort { $query_stats{$a}->{seen} <=> $query_stats{$b}->{seen} } keys %query_stats
+      reverse sort {
+         $query_stats{$a}->{seen} <=> $query_stats{$b}->{seen}
+      } keys %query_stats
    ) {
       my $stats = $query_stats{$query};
-      print "# query: ", $query, "\n# stats: ",
-         join(' ', (map { "$_=" . ($stats->{$_} || '0') } qw(seen exec sum avg))),
+      print
+         "# query: ", $query, "\n# stats: ",
+         join(' ',
+            (map { "$_=" . ($stats->{$_} || '0') } qw(seen exec sum avg))),
          "\n";
    }
 }
@@ -1582,7 +1610,8 @@ every time you start it.  Just specify the file on the command line.  The
 format should be the same as the output from L<"--statistics">.
 
 You might also want to filter out some statements completely, or let only some
-statements through.  See the L<"--rejectregexp"> and L<"--permitregexp"> options.
+statements through.  See the L<"--rejectregexp"> and L<"--permitregexp">
+options.
 
 If C<mk-slave-prefetch> hasn't seen a query's fingerprint before, and thus
 doesn't know how long it will take to execute, it wraps it in a subuery, like
@@ -1625,7 +1654,11 @@ Port number to use for connection.
 
 =item --print
 
-Print the transformed relay log events to STDOUT.
+Print the transformed relay log events to standard output.
+
+=item --printnonrewritten
+
+Print queries that could not be transformed into C<SELECT>.
 
 =item --querysampsize
 
