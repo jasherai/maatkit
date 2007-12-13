@@ -2872,7 +2872,8 @@ Use this option to skip a comma-separated list of storage engines (table types).
 
 =item --ignoretbl
 
-Use this option to skip a comma-separated list of tables.
+Use this option to skip a comma-separated list of tables.  Table names may be
+qualified with the database name.
 
 =item --lock
 
@@ -3052,7 +3053,8 @@ Instead of column-aligned output, print tab-separated output.
 
 =item --tables
 
-Restrict checksums to this comma-separated list of tables.
+Restrict checksums to this comma-separated list of tables.  Table names may be
+qualified with the database name.
 
 =item --user
 
