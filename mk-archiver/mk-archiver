@@ -600,12 +600,17 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1345
+# DSNParser package 1487
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package DSNParser;
+
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -754,8 +759,28 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit => 0,
+      RaiseError => 1,
+      PrintError => 0,
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   $ENV{MKDEBUG} && _d('DBH info: ',
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'));
+   return $dbh;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
    print "# DSNParser:$line ", @_, "\n";
 }
 
@@ -1050,7 +1075,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1238
+# MySQLDump package 1484
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1148,23 +1173,26 @@ sub dump {
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{tables}->{$db}->{$tbl} ) {
-      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $href = $dbh->selectrow_hashref(
-         "SHOW CREATE TABLE "
-         . $quoter->quote($db)
-         . '.'
-         . $quoter->quote($tbl)
-      );
-      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
+      $ENV{MKDEBUG} && _d($sql);
+      my $href = $dbh->selectrow_hashref($sql);
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
       my ($key) = grep { m/create table/i } keys %$href;
       if ( $key ) {
+         $ENV{MKDEBUG} && _d('This table is a base table');
          $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
       }
       else {
+         $ENV{MKDEBUG} && _d('This table is a view');
          ($key) = grep { m/create view/i } keys %$href;
          $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
       }
@@ -1174,14 +1202,11 @@ sub get_create_table {
 
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
    if ( !$self->{columns}->{$db}->{$tbl} ) {
-      my $cols = $dbh->selectall_arrayref(
-         "SHOW COLUMNS FROM "
-         . $quoter->quote($db)
-         . '.'
-         . $quoter->quote($tbl),
-         { Slice => {} }
-      );
+      my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
+      $ENV{MKDEBUG} && _d($sql);
+      my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
@@ -1200,29 +1225,40 @@ sub get_tmp_table {
       map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
       @{$self->get_columns($dbh, $quoter, $db, $tbl)});
    $result .= "\n)";
+   $ENV{MKDEBUG} && _d($result);
+   return $result;
 }
 
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
-      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $trgs = $dbh->selectall_arrayref(
-         "SHOW TRIGGERS FROM " . $quoter->quote($db),
-         { Slice => {} }
-      );
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
+      $ENV{MKDEBUG} && _d($sql);
+      my $trgs = $dbh->selectall_arrayref($sql, { Slice => {} });
       foreach my $trg ( @$trgs ) {
          my %trg;
          @trg{ map { lc $_ } keys %$trg } = values %$trg;
          push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
       }
-      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
    }
    return $self->{triggers}->{$db}->{$tbl};
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
+   print "# MySQLDump:$line ", @_, "\n";
 }
 
 1;
@@ -1414,7 +1450,22 @@ if ( !caller ) {
    my $tp = new TableParser;
    my $du = new MySQLDump;
    foreach my $table ( grep { $_ } ($src, $dst) ) {
-      my $dbh        = get_dbh($table);
+      my $ac = !$opts{z} && !$opts{'commit-each'};
+      if ( !defined $table->{p} && $opts{askpass} ) {
+         $table->{p} = OptionParser::prompt_noecho("Enter password: ");
+      }
+      my $dbh = $dp->get_dbh(
+         $dp->get_cxn_params($table), { AutoCommit => $ac });
+
+      # Set options that can enable removing data on the master and archiving it
+      # on the slaves.
+      if ( $table->{a} ) {
+         $dbh->do("USE $table->{a}");
+      }
+      if ( $table->{b} ) {
+         $dbh->do("SET SQL_LOG_BIN=0");
+      }
+
       $table->{dbh}  = $dbh;
       $table->{irot} = get_irot($dbh);
 
@@ -1934,31 +1985,6 @@ sub escape {
       s/([\t\n\\])/\\$1/g if defined $_;  # Escape tabs etc
       defined $_ ? $_ : '\N';             # NULL = \N
    } @$row);
-}
-
-sub get_dbh {
-   my ( $info ) = @_;
-   my $db_options = {
-      AutoCommit => !$opts{z} && !$opts{'commit-each'},
-      RaiseError => 1,
-      PrintError => 0,
-   };
-
-   if ( !defined $info->{p} && $opts{askpass} ) {
-      $info->{p} = OptionParser::prompt_noecho("Enter password: ");
-   }
-
-   my $dbh = DBI->connect($dp->get_cxn_params($info), $db_options);
-
-   # Set options that can enable removing data on the master and archiving it
-   # on the slaves.
-   if ( $info->{a} ) {
-      $dbh->do("USE $info->{a}");
-   }
-   if ( $info->{b} ) {
-      $dbh->do("SET SQL_LOG_BIN=0");
-   }
-   return $dbh;
 }
 
 sub ts {
