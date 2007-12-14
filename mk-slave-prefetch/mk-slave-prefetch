@@ -457,12 +457,17 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1345
+# DSNParser package 1487
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package DSNParser;
+
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -611,8 +616,28 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit => 0,
+      RaiseError => 1,
+      PrintError => 0,
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   $ENV{MKDEBUG} && _d('DBH info: ',
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'));
+   return $dbh;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
    print "# DSNParser:$line ", @_, "\n";
 }
 
@@ -985,7 +1010,6 @@ sub _d {
 
 package main;
 
-use DBI;
 use Data::Dumper;
 use English qw(-no_match_vars);
 use List::Util qw(min max sum);
@@ -1002,7 +1026,7 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for password for connections' },
    { s => 'checkint|i=A',      d => 'How often to check the slave: '
-                                  . 'init,min,max (default 128,1,1024)' },
+                                  . 'init,min,max (default 16,1,1024)' },
    { s => 'daemonize',         d => 'Fork to background and detach '
                                   . '(POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
@@ -1014,11 +1038,11 @@ my @opt_spec = (
                                   . '(default 1k)' },
    { s => 'maxquerytime|q=f',  d => 'Do not run queries longer than this '
                                   . 'many seconds; fractions allowed '
-                                  . '(default 2)' },
+                                  . '(default 1)' },
    { s => 'querysampsize=i',   d => 'Average query exec time over this '
-                                  . 'many queries (default 16)' },
+                                  . 'many queries (default 4)' },
    { s => 'offset|o=z',        d => 'How many bytes to lead the SQL thread '
-                                  . '(default 1k)' },
+                                  . '(default 128)' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'print',             d => 'Print transformed queries' },
    { s => 'printnonrewritten', d => 'Print non-rewritable queries' },
@@ -1027,21 +1051,24 @@ my @opt_spec = (
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'rejectregexp=s',    d => 'Reject queries matching this '
                                   . 'Perl regexp' },
+   { s => 'sentinel=s',        d => 'Sentinel file; default '
+                                  . '/tmp/mk-slave-prefetch-sentinel' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'statistics',        d => 'Print statistics after exiting' },
+   { s => 'stop',              d => 'Stop running instances by creating '
+                                  . 'the sentinel file' },
    { s => 'time|t=m',          d => 'Time to run before exiting; '
                                   . 'suffix: s/m/h/d' },
    { s => 'tmpdir=s',          d => 'Where to create temp files for LOAD '
                                   . 'DATA INFILE queries (default /dev/null)' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
    { s => 'window|w=z',        d => 'How many bytes ahead is too far '
-                                  . 'ahead (default 5k)' },
+                                  . 'ahead (default 4k)' },
    '--print and --daemonize are mutually exclusive',
    'at least one of --print or --execute are required',
 );
 
 my $dsn_parser = new DSNParser();
-my $vp         = new VersionParser();
 my $qn         = new QueryRewriter();
 my $lp         = new LogParser();
 my $opt_parser = new OptionParser(@opt_spec);
@@ -1069,6 +1096,20 @@ if ( @ARGV > 1 ) {
 }
 
 $opt_parser->usage_or_errors(%opts);
+
+# ############################################################################
+# First things first: if --stop was given, create the sentinel file.
+# ############################################################################
+if ( $opts{stop} ) {
+   open my $file, ">", $opts{sentinel}
+      or die "Cannot open $opts{sentinel}: $OS_ERROR\n";
+   print $file "Remove this file to permit mk-slave-prefetch to run\n"
+      or die "Cannot write to $opts{sentinel}: $OS_ERROR\n";
+   close $file
+      or die "Cannot close $opts{sentinel}: $OS_ERROR\n";
+   print STDOUT "Successfully created file $opts{sentinel}\n";
+   exit(0);
+}
 
 # ############################################################################
 # Initialize the query stats from the file on the commandline, if any.
@@ -1101,7 +1142,11 @@ if ( @ARGV ) {
 # names for fetchrow_hashref. Don't disconnect on fork.  Disable the query
 # cache.
 # ############################################################################
-my $dbh = get_dbh(\%opts);
+if ( $opts{askpass} ) {
+   $opts{p} = OptionParser::prompt_noecho("Enter password: ");
+}
+my $dbh = $dsn_parser->get_dbh(
+   $dsn_parser->get_cxn_params(\%opts), { AutoCommit => 1 });
 $dbh->{FetchHashKeyName} = 'NAME_lc';
 $dbh->{InactiveDestroy}  = 1;
 $dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
@@ -1132,6 +1177,9 @@ if ( $opts{daemonize} ) {
 # ############################################################################
 # Ready to work now.
 # ############################################################################
+my $vp              = new VersionParser();
+my $have_subqueries = $vp->version_ge($dbh, '4.1.0');
+
 my $now       = time();
 my $end       = $now + ( $opts{t} || 0 );    # When we should exit
 my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
@@ -1160,7 +1208,7 @@ eval {
 
          my $i = 0;
          EVENT:
-         while ( oktorun() && (my $event = $lp->parse_binlog_event($fh) )) {
+         while ( oktorun(1) && (my $event = $lp->parse_binlog_event($fh) )) {
             $stats{events}++;
             $pos  = $event->{offset} || $pos;
             $next = max($next, $pos + ($event->{end} || 0));
@@ -1179,12 +1227,8 @@ eval {
                next EVENT;
             }
 
-            # Stay X amount in front of the slave.
-            if ( $pos < $slave{pos} + $opts{o} ) {
-               $ENV{MKDEBUG} && _d('Not far enough ahead of slave, skip event');
-               $stats{not_far_enough_ahead}++;
-               next EVENT;
-            }
+            # Stay ahead of the slave.
+            next EVENT if not_far_enough_ahead($pos);
 
             # Time to check the slave's status again?
             if ( $pos > $slave{pos} && (++$i - $last_chk) >= $chk_int ) {
@@ -1193,15 +1237,11 @@ eval {
                $chk_int  = $pos <= $slave{pos} # The slave caught up to us
                   ? max($chk_min, $chk_int / 2)
                   : min($chk_max, $chk_int * 2);
-               if ( $pos < $slave{pos} + $opts{o} ) {
-                  $ENV{MKDEBUG} && _d('Not far enough ahead, skip event');
-                  $stats{not_far_enough_ahead}++;
-                  next EVENT;
-               }
+               next EVENT if not_far_enough_ahead($pos);
             }
 
             # But don't get too far ahead or too close to the end of the binlog.
-            while ( oktorun()
+            while ( oktorun(1)
                && ( too_far_ahead($pos) || too_close_to_io($pos) )
             ) {
 
@@ -1274,9 +1314,7 @@ eval {
                   # Safeguard as much as possible against really enormous
                   # result sets.
                   my $sql = $qn->convert_select_list($select);
-                  if ( $vp->version_ge($dbh, '4.1.0')
-                     && !have_seen_query($fingerprint)
-                  ) {
+                  if ( $have_subqueries && !have_seen_query($fingerprint)) {
                      # Wrap in a "derived table," but only if it hasn't been
                      # seen before.  This way, really short queries avoid the
                      # overhead of creating the temp table.
@@ -1395,19 +1433,40 @@ if ( $opts{statistics} ) {
 # Subroutines
 # ############################################################################
 
+# Catches signals so we can exit gracefully.
+# TODO: not working.  Why?
 sub finish {
+   my ($signal) = @_;
+   print STDERR "Exiting on SIG$signal.\n";
    $oktorun = 0;
 }
 
+# It's ok to run if we haven't been told to stop, we haven't exceeded the
+# time.  The parameter adds the further restriction that the slave must be
+# running.
 sub oktorun {
+   my ( $only_if_slave_running ) = @_;
    $now = time();
-   return (!$opts{t} || $now < $end) && $oktorun;
+   return (!$only_if_slave_running || $slave{running})
+      && !-f $opts{sentinel}
+      && ((!$opts{t} || $now < $end) && $oktorun);
 }
 
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
    print "# main:$line ", @_, "\n";
+}
+
+# Whether we are far enough ahead of the slave.
+sub not_far_enough_ahead {
+   my ( $pos ) = @_;
+   if ( $pos < $slave{pos} + $opts{o} ) {
+      $ENV{MKDEBUG} && _d("$pos is not $opts{o} ahead of $slave{pos}");
+      $stats{not_far_enough_ahead}++;
+      return 1;
+   }
+   return 0;
 }
 
 # Whether we are too far ahead of the slave.
@@ -1440,7 +1499,6 @@ sub wait_for_master {
 # is huge, it will be weighted as 1/16th of its size.
 sub store_avg {
    my ( $query, $time ) = @_;
-   return unless $query =~ m/\Aselect/;
    $ENV{MKDEBUG} && _d('Execution time: ', $query, ' ', $time);
    $query_stats{$query}->{samples} ||= [];
    my $samples = $query_stats{$query}->{samples};
@@ -1463,23 +1521,6 @@ sub get_avg {
    my ( $query ) = @_;
    $query_stats{$query}->{seen}++;
    return $query_stats{$query}->{avg} || 0;
-}
-
-sub get_dbh {
-   my ( $info, $db ) = @_;
-
-   if ( $opts{askpass} ) {
-      $info->{p} = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
-   }
-
-   my $db_options = {
-      RaiseError => 1,
-      PrintError => 0,
-      AutoCommit => 1,
-   };
-
-   my $dbh = DBI->connect( $dsn_parser->get_cxn_params(\%opts), $db_options);
-   return $dbh;
 }
 
 sub get_status {
