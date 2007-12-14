@@ -49,8 +49,6 @@ sub parse {
    return $result;
 }
 
-# Compares versions like 5.0.27 and 4.1.15-standard-log.  Caches version number
-# for each DBH for later use.
 sub version_ge {
    my ( $self, $dbh, $target ) = @_;
    if ( !$self->{$dbh} ) {
