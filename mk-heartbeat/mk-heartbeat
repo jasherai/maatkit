@@ -412,12 +412,17 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1345
+# DSNParser package 1487
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package DSNParser;
+
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -566,8 +571,28 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit => 0,
+      RaiseError => 1,
+      PrintError => 0,
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   $ENV{MKDEBUG} && _d('DBH info: ',
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'));
+   return $dbh;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
    print "# DSNParser:$line ", @_, "\n";
 }
 
@@ -583,7 +608,6 @@ sub _d {
 
 package main;
 
-use DBI;
 use English qw(-no_match_vars);
 use List::Util qw(min max sum);
 use Time::HiRes qw(usleep gettimeofday);
@@ -673,10 +697,9 @@ my $select_sql = "SELECT "
 $ENV{MKDEBUG} && _d("UPDATE SQL: $update_sql");
 $ENV{MKDEBUG} && _d("SELECT SQL: $select_sql");
 
-my $dbopt = { AutoCommit => 1, RaiseError => 1, PrintError => 0 };
 my $dsn   = new DSNParser;
 $dsn->prop('dbidriver', $opts{dbidriver});
-my $dbh   = DBI->connect($dsn->get_cxn_params(\%opts), $dbopt);
+my $dbh   = $dsn->get_dbh($dsn->get_cxn_params(\%opts), { AutoCommit => 1 });
 my $sth   = $dbh->prepare($opts{update} ? $update_sql : $select_sql);
 
 $dbh->{InactiveDestroy}  = 1; # Don't disconnect on fork
@@ -719,7 +742,8 @@ while ( !$opts{m} || $now < $end ) { # Quit if time is exceeded
 
       # Connect or reconnect if necessary.
       if ( !$dbh->ping ) {
-         $dbh = DBI->connect($dsn->get_cxn_params(\%opts), $dbopt);
+         $dbh   = $dsn->get_dbh(
+                  $dsn->get_cxn_params(\%opts), { AutoCommit => 1 });
          $sth = undef;
       }
 
