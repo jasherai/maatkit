@@ -459,12 +459,17 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1345
+# DSNParser package 1487
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package DSNParser;
+
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -613,8 +618,28 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit => 0,
+      RaiseError => 1,
+      PrintError => 0,
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   $ENV{MKDEBUG} && _d('DBH info: ',
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'));
+   return $dbh;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
    print "# DSNParser:$line ", @_, "\n";
 }
 
@@ -624,7 +649,6 @@ sub _d {
 # End DSNParser package
 # ###########################################################################
 
-use DBI;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use Socket qw(inet_aton);
@@ -727,7 +751,7 @@ my %is_proc_info = (
 # ############################################################################
 # Start working.
 # ############################################################################
-my $dbh   = get_dbh($source, 1);
+my $dbh   = get_cxn($source, 1);
 my $start = time();
 my $end   = $start + ($opts{m} || 0); # When we should exit
 my $now   = $start;
@@ -754,7 +778,7 @@ if ( $dest && $dest->{t} ) {
       grep { $_ }
       ( $dest->{D}, $dest->{t} ));
 
-   $dbh2     = get_dbh($dest, 0);
+   $dbh2     = get_cxn($dest, 0);
    my $cols  = join(',', map { $q->quote($_) } @cols);
    my $parms = join(',', map { '?' } @cols);
    $ins_sth  = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
@@ -950,19 +974,12 @@ sub finish {
    $oktorun = 0;
 }
 
-sub get_dbh {
+sub get_cxn {
    my ( $info, $ac ) = @_;
-   my $db_options = {
-      AutoCommit => $ac,
-      RaiseError => 1,
-      PrintError => 0,
-   };
-
    if ( $opts{askpass} ) {
       $info->{p} = OptionParser::prompt_noecho("Enter password: ");
    }
-
-   my $dbh = DBI->connect($dp->get_cxn_params($info), $db_options);
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($info), {AutoCommit => $ac});
    $dbh->{InactiveDestroy} = 1; # Because of forking.
    return $dbh;
 }
