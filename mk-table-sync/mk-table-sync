@@ -456,12 +456,17 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1345
+# DSNParser package 1487
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package DSNParser;
+
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -610,8 +615,28 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit => 0,
+      RaiseError => 1,
+      PrintError => 0,
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   $ENV{MKDEBUG} && _d('DBH info: ',
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'));
+   return $dbh;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
    print "# DSNParser:$line ", @_, "\n";
 }
 
@@ -1047,7 +1072,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1238
+# MySQLDump package 1484
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1145,23 +1170,26 @@ sub dump {
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{tables}->{$db}->{$tbl} ) {
-      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $href = $dbh->selectrow_hashref(
-         "SHOW CREATE TABLE "
-         . $quoter->quote($db)
-         . '.'
-         . $quoter->quote($tbl)
-      );
-      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
+      $ENV{MKDEBUG} && _d($sql);
+      my $href = $dbh->selectrow_hashref($sql);
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
       my ($key) = grep { m/create table/i } keys %$href;
       if ( $key ) {
+         $ENV{MKDEBUG} && _d('This table is a base table');
          $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
       }
       else {
+         $ENV{MKDEBUG} && _d('This table is a view');
          ($key) = grep { m/create view/i } keys %$href;
          $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
       }
@@ -1171,14 +1199,11 @@ sub get_create_table {
 
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
    if ( !$self->{columns}->{$db}->{$tbl} ) {
-      my $cols = $dbh->selectall_arrayref(
-         "SHOW COLUMNS FROM "
-         . $quoter->quote($db)
-         . '.'
-         . $quoter->quote($tbl),
-         { Slice => {} }
-      );
+      my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
+      $ENV{MKDEBUG} && _d($sql);
+      my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
@@ -1197,29 +1222,40 @@ sub get_tmp_table {
       map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
       @{$self->get_columns($dbh, $quoter, $db, $tbl)});
    $result .= "\n)";
+   $ENV{MKDEBUG} && _d($result);
+   return $result;
 }
 
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
-      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $trgs = $dbh->selectall_arrayref(
-         "SHOW TRIGGERS FROM " . $quoter->quote($db),
-         { Slice => {} }
-      );
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
+      $ENV{MKDEBUG} && _d($sql);
+      my $trgs = $dbh->selectall_arrayref($sql, { Slice => {} });
       foreach my $trg ( @$trgs ) {
          my %trg;
          @trg{ map { lc $_ } keys %$trg } = values %$trg;
          push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
       }
-      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
    }
    return $self->{triggers}->{$db}->{$tbl};
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
+   print "# MySQLDump:$line ", @_, "\n";
 }
 
 1;
@@ -2599,7 +2635,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 1439
+# MySQLFind package 1484
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2619,6 +2655,7 @@ sub new {
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
    die "Specify dbh" unless $args{dbh};
    if ( $args{useddl} ) {
+      $ENV{MKDEBUG} && _d('Will prefer DDL');
       die "Specifying useddl requires parser and dumper"
          unless $args{parser} && $args{dumper};
    }
@@ -2989,7 +3026,6 @@ sub _d {
 
 package main;
 
-use DBI;
 use English qw(-no_match_vars);
 use List::Util qw(sum max min);
 use POSIX qw(ceil);
@@ -3126,7 +3162,7 @@ if ( $dsns[0]->{t} ) {
    if ( @dsns == 1 ) {
       die "You specified one DSN with a t part, but not --synctomaster.\n"
          unless $opts{s};
-      $dsns[0]->{dbh} = get_dbh($dsns[0]);
+      $dsns[0]->{dbh} = get_cxn($dsns[0]);
       unshift @dsns, get_master_dsn($dsns[0]);
    }
 
@@ -3174,9 +3210,9 @@ elsif ( $opts{R} ) {
    # Connect to the master and treat it as the source, then find differences on
    # the slave and sync them.
    if ( $opts{s} ) {
-      $dsns[0]->{dbh} = get_dbh($dsns[0]);
+      $dsns[0]->{dbh} = get_cxn($dsns[0]);
       unshift @dsns, get_master_dsn($dsns[0]);
-      $dsns[0]->{dbh} = get_dbh($dsns[0]);
+      $dsns[0]->{dbh} = get_cxn($dsns[0]);
 
       # First, check that the master (source) has no discrepancies itself, and
       # ignore tables that do.
@@ -3237,7 +3273,7 @@ elsif ( $opts{R} ) {
    # sync them.
    else {
       my %skip_table;
-      $dsns[0]->{dbh} = get_dbh($dsns[0]);
+      $dsns[0]->{dbh} = get_cxn($dsns[0]);
       $checksum->check_server(
          {  dbh        => $dsns[0]->{dbh},
             dsn        => $dsns[0],
@@ -3284,7 +3320,7 @@ elsif ( $opts{R} ) {
 
 }
 else {
-   $dsns[0]->{dbh} = get_dbh($dsns[0]);
+   $dsns[0]->{dbh} = get_cxn($dsns[0]);
    my $finder = new MySQLFind(
       dbh       => $dsns[0]->{dbh},
       quoter    => $q,
@@ -3339,9 +3375,9 @@ sub lock_server {
    my (%args) = @_;
    eval {
       # Open connections as needed.
-      $args{src}->{dbh}      ||= get_dbh($args{src});
-      $args{dst}->{dbh}      ||= get_dbh($args{dst});
-      $args{src}->{misc_dbh} ||= get_dbh($args{src});
+      $args{src}->{dbh}      ||= get_cxn($args{src});
+      $args{dst}->{dbh}      ||= get_cxn($args{dst});
+      $args{src}->{misc_dbh} ||= get_cxn($args{src});
       $syncer->lock_and_wait(%args, lock_level => 3);
    }
 }
@@ -3350,9 +3386,9 @@ sub unlock_server {
    my (%args) = @_;
    eval {
       # Open connections as needed.
-      $args{src}->{dbh}      ||= get_dbh($args{src});
-      $args{dst}->{dbh}      ||= get_dbh($args{dst});
-      $args{src}->{misc_dbh} ||= get_dbh($args{src});
+      $args{src}->{dbh}      ||= get_cxn($args{src});
+      $args{dst}->{dbh}      ||= get_cxn($args{dst});
+      $args{src}->{misc_dbh} ||= get_cxn($args{src});
       $syncer->unlock(%args, lock_level => 3);
    }
 }
@@ -3362,9 +3398,9 @@ sub sync_a_table {
 
    eval {
       # Open connections as needed.
-      $args{src}->{dbh}      ||= get_dbh($args{src});
-      $args{dst}->{dbh}      ||= get_dbh($args{dst});
-      $args{src}->{misc_dbh} ||= get_dbh($args{src});
+      $args{src}->{dbh}      ||= get_cxn($args{src});
+      $args{dst}->{dbh}      ||= get_cxn($args{dst});
+      $args{src}->{misc_dbh} ||= get_cxn($args{src});
 
       my $tbl_struct = $tp->parse(
          $du->get_create_table($args{src}->{dbh}, $q, @args{qw(src_db src_tbl)}));
@@ -3466,12 +3502,10 @@ sub get_master_dsn {
    return       $dsn_parser->parse($spec, $dsn);
 }
 
-sub get_dbh {
+sub get_cxn {
    my ( $info ) = @_;
    my $db_options = {
       AutoCommit => !$opts{k},
-      RaiseError => 1,
-      PrintError => 0,
       # TODO: enable support for this on old versions of DBD::mysql?
       # http://www.perlmonks.org/?node_id=620803
       mysql_enable_utf8 => 1,
@@ -3481,7 +3515,8 @@ sub get_dbh {
       $info->{p}
          = OptionParser::prompt_noecho("Enter password for $info->{h}: ");
    }
-   my $dbh = DBI->connect($dsn_parser->get_cxn_params($info), $db_options);
+   my $dbh = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($info), $db_options);
    my $sql;
    if ( $opts{skipbinlog} ) {
       $sql = "/*!32316 SET SQL_LOG_BIN=0 */";
