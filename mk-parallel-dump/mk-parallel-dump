@@ -27,7 +27,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# MySQLFind package 1439
+# MySQLFind package 1484
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -47,6 +47,7 @@ sub new {
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
    die "Specify dbh" unless $args{dbh};
    if ( $args{useddl} ) {
+      $ENV{MKDEBUG} && _d('Will prefer DDL');
       die "Specifying useddl requires parser and dumper"
          unless $args{parser} && $args{dumper};
    }
@@ -216,12 +217,17 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1345
+# DSNParser package 1487
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package DSNParser;
+
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -370,8 +376,28 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit => 0,
+      RaiseError => 1,
+      PrintError => 0,
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   $ENV{MKDEBUG} && _d('DBH info: ',
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'));
+   return $dbh;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
    print "# DSNParser:$line ", @_, "\n";
 }
 
@@ -994,7 +1020,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1238
+# MySQLDump package 1484
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1092,23 +1118,26 @@ sub dump {
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{tables}->{$db}->{$tbl} ) {
-      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $href = $dbh->selectrow_hashref(
-         "SHOW CREATE TABLE "
-         . $quoter->quote($db)
-         . '.'
-         . $quoter->quote($tbl)
-      );
-      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
+      $ENV{MKDEBUG} && _d($sql);
+      my $href = $dbh->selectrow_hashref($sql);
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
       my ($key) = grep { m/create table/i } keys %$href;
       if ( $key ) {
+         $ENV{MKDEBUG} && _d('This table is a base table');
          $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
       }
       else {
+         $ENV{MKDEBUG} && _d('This table is a view');
          ($key) = grep { m/create view/i } keys %$href;
          $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
       }
@@ -1118,14 +1147,11 @@ sub get_create_table {
 
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
    if ( !$self->{columns}->{$db}->{$tbl} ) {
-      my $cols = $dbh->selectall_arrayref(
-         "SHOW COLUMNS FROM "
-         . $quoter->quote($db)
-         . '.'
-         . $quoter->quote($tbl),
-         { Slice => {} }
-      );
+      my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
+      $ENV{MKDEBUG} && _d($sql);
+      my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
@@ -1144,29 +1170,40 @@ sub get_tmp_table {
       map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
       @{$self->get_columns($dbh, $quoter, $db, $tbl)});
    $result .= "\n)";
+   $ENV{MKDEBUG} && _d($result);
+   return $result;
 }
 
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
-      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $trgs = $dbh->selectall_arrayref(
-         "SHOW TRIGGERS FROM " . $quoter->quote($db),
-         { Slice => {} }
-      );
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
+      $ENV{MKDEBUG} && _d($sql);
+      my $trgs = $dbh->selectall_arrayref($sql, { Slice => {} });
       foreach my $trg ( @$trgs ) {
          my %trg;
          @trg{ map { lc $_ } keys %$trg } = values %$trg;
          push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
       }
-      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
    }
    return $self->{triggers}->{$db}->{$tbl};
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
+   print "# MySQLDump:$line ", @_, "\n";
 }
 
 1;
@@ -1568,13 +1605,15 @@ sub quote_val {
 
 package main;
 
-use DBI;
 use English qw(-no_match_vars);
 use File::Basename qw(dirname);
 use File::Spec;
 use List::Util qw(max sum);
 use POSIX;
 use Time::HiRes qw(time);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -1774,11 +1813,12 @@ if ( !@ARGV && !$opts{T} ) {
 else {
    @mysqldump_args = @ARGV;
 }
+$ENV{MKDEBUG} && _d('Args for mysqldump: ', join(', ', @mysqldump_args));
 
 # ############################################################################
 # Connect.
 # ############################################################################
-my $dbh                  = get_dbh();
+my $dbh                  = $dp->get_dbh($dp->get_cxn_params(\%opts));
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 my $du                   = new MySQLDump();
@@ -1791,6 +1831,7 @@ my %exited_children;
 $SIG{CHLD} = sub {
    my $kid;
    while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+      $ENV{MKDEBUG} && _d('Process ', $kid, ' exited with ', $CHILD_ERROR);
       # Must right-shift to get the actual exit status of the child.
       $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
       $exited_children{$kid}->{exit_time}   = time();
@@ -1801,7 +1842,9 @@ $SIG{CHLD} = sub {
 # Lock the whole server if desired.
 # ############################################################################
 if ( $opts{k} && !$opts{test} ) {
-   $dbh->do('FLUSH TABLES WITH READ LOCK');
+   my $sql = 'FLUSH TABLES WITH READ LOCK';
+   $ENV{MKDEBUG} && _d($sql);
+   $dbh->do($sql);
 }
 
 # ############################################################################
@@ -1824,9 +1867,10 @@ if ( $opts{sets} ) {
               . "WHERE `setname` = '$set' "
               . ($opts{age} ? "AND `ts` <= DATE_SUB(NOW(), INTERVAL $opts{age} SECOND) " : '')
               . "ORDER BY `priority`, `db`, `tbl`";
-      print $sql, "\n" if $opts{test};
+      $ENV{MKDEBUG} && _d($sql);
       my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
       foreach my $row ( @$result ) {
+         $ENV{MKDEBUG} && _d("Set $set contains $row->{db}.$row->{tbl}");
          $stats_for_set{$set}->{tables}++;
          $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
          push @{$tables_for_set{$set}}, [ $row->{db}, $row->{tbl} ];
@@ -1936,13 +1980,18 @@ foreach my $set ( @sets_to_do ) {
             push @to_lock, "$opts{settable} AS `mysql_parallel_dump_writable` WRITE";
          }
          eval {
-            $dbh->do('LOCK TABLES ' . join(', ', @to_lock));
+            my $sql = 'LOCK TABLES ' . join(', ', @to_lock);
+            $ENV{MKDEBUG} && _d('At time ', time(), ' ', $sql);
+            $dbh->do($sql);
+            $ENV{MKDEBUG} && _d('At time ', time(), ' lock succeeded');
             $done = 1;
          };
          if ( $EVAL_ERROR ) {
+            $ENV{MKDEBUG} && _d($EVAL_ERROR);
             my $err = mysql_error_msg($EVAL_ERROR);
             my ($db, $tbl) = $err =~ m/Table '([^.]+)\.([^.]+)' doesn't exist/;
             if ( $db && $tbl ) {
+               $ENV{MKDEBUG} && _d("Removing table $db.$tbl from set $set");
                # Remove the nonexistent table and try again.
                $tables_for_set{$set} = [
                   grep { $_->[0] ne $db || $_->[1] ne $tbl } @{$tables_for_set{$set}}
@@ -1960,7 +2009,9 @@ foreach my $set ( @sets_to_do ) {
    # Flush logs.
    # #########################################################################
    if ( $opts{flushlog} && !$opts{test} ) {
-      $dbh->do('FLUSH LOGS');
+      my $sql = 'FLUSH LOGS';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
    }
 
    my @work_to_do;
@@ -1968,7 +2019,7 @@ foreach my $set ( @sets_to_do ) {
       my @chunks = get_chunks($opts{C}, $set, @$db_tbl, \%table_status);
       my $i = 0;
       foreach my $chunk ( @chunks ) {
-         push @work_to_do, {
+         my $todo = {
             D => $chunk->{D}, # Database name
             N => $chunk->{N}, # Table name
             S => $chunk->{S}, # Set name
@@ -1976,6 +2027,8 @@ foreach my $set ( @sets_to_do ) {
             W => $chunk->{W}, # WHERE clause
             E => $chunk->{E}, # Storage engine
          };
+         $ENV{MKDEBUG} && _d(Dumper($todo));
+         push @work_to_do, $todo;
          $stats_for_set{$set}->{chunks}++;
       }
    }
@@ -1986,6 +2039,7 @@ foreach my $set ( @sets_to_do ) {
    if ( $opts{b} && !$opts{test} ) {
       my $filename = filename($set, '00_master_data.sql');
       makedir($filename);
+      $ENV{MKDEBUG} && _d("Writing to $filename");
       open my $file, ">", $filename or die $OS_ERROR;
       my %wanted = map { $_ => 1 }
          qw(file position master_host master_port master_log_file
@@ -1994,10 +2048,14 @@ foreach my $set ( @sets_to_do ) {
 
       my ( $master_pos, $slave_pos );
       eval {
-         $master_pos = $dbh->selectrow_hashref('SHOW MASTER STATUS');
+         my $sql = 'SHOW MASTER STATUS';
+         $ENV{MKDEBUG} && _d($sql);
+         $master_pos = $dbh->selectrow_hashref($sql);
       };
       eval {
-         $slave_pos = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
+         my $sql = 'SHOW SLAVE STATUS';
+         $ENV{MKDEBUG} && _d($sql);
+         $slave_pos = $dbh->selectrow_hashref($sql);
          print {$file} "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
                      . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
                      . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n"
@@ -2047,7 +2105,7 @@ foreach my $set ( @sets_to_do ) {
       while ( !$dbh->ping && $tries++ < $opts{w} ) {
          sleep(1);
          eval {
-            $dbh = get_dbh();
+            $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts));
          };
          if ( $EVAL_ERROR ) {
             info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
@@ -2067,6 +2125,7 @@ foreach my $set ( @sets_to_do ) {
             $kids{$pid} = $todo;
          }
          else {                     # I'm the child
+            $ENV{MKDEBUG} && _d("$PID got ", Dumper($todo));
             my $exit_status = 0;
             $exit_status = do_table($todo) || $exit_status;
             exit($exit_status);
@@ -2096,12 +2155,15 @@ foreach my $set ( @sets_to_do ) {
          # Don't busy-wait.  But don't wait forever either, as a child may exit
          # and signal while we're not sleeping, so if we sleep forever we may
          # not get the signal.
+         $ENV{MKDEBUG} && _d('No children reaped, sleeping');
          sleep(1);
       }
    }
 
    if ( $opts{locktables} && !$opts{test} ) {
-      $dbh->do('UNLOCK TABLES');
+      my $sql = 'UNLOCK TABLES';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
       $dbh->commit;
    }
 
@@ -2137,7 +2199,11 @@ if ( @views ) {
    close $file or die $OS_ERROR;
 }
 
-$dbh->do('UNLOCK TABLES') unless $opts{test};
+if ( !$opts{test} ) {
+   my $sql = 'UNLOCK TABLES';
+   $ENV{MKDEBUG} && _d($sql);
+   $dbh->do($sql);
+}
 $dbh->commit;
 $dbh->disconnect;
 
@@ -2237,7 +2303,7 @@ sub do_table {
 
    # Dump via SELECT INTO OUTFILE.
    if ( $opts{T} ) {
-      my $dbh = get_dbh();
+      $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts));
 
       my $filename = filename(interp($todo, '%S', '%D', '%N.%3C'));
       makedir($filename);
@@ -2338,16 +2404,6 @@ sub filename {
    }
 }
 
-sub get_dbh {
-   my $db_options = {
-      AutoCommit => 0,
-      RaiseError => 1,
-      PrintError => 0,
-   };
-   my $dbh = DBI->connect($dp->get_cxn_params(\%opts), $db_options);
-   return $dbh;
-}
-
 sub system_call {
    my ( @cmd ) = @_;
    my $exit_status = 0;
@@ -2362,6 +2418,11 @@ sub system_call {
       $exit_status = $exit_status >> 8;
    }
    return $exit_status;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
 }
 
 # ############################################################################
