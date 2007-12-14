@@ -65,6 +65,7 @@ sub new {
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
    die "Specify dbh" unless $args{dbh};
    if ( $args{useddl} ) {
+      $ENV{MKDEBUG} && _d('Will prefer DDL');
       die "Specifying useddl requires parser and dumper"
          unless $args{parser} && $args{dumper};
    }
