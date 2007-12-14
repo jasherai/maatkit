@@ -113,23 +113,26 @@ sub dump {
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{tables}->{$db}->{$tbl} ) {
-      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $href = $dbh->selectrow_hashref(
-         "SHOW CREATE TABLE "
-         . $quoter->quote($db)
-         . '.'
-         . $quoter->quote($tbl)
-      );
-      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
+      $ENV{MKDEBUG} && _d($sql);
+      my $href = $dbh->selectrow_hashref($sql);
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
       my ($key) = grep { m/create table/i } keys %$href;
       if ( $key ) {
+         $ENV{MKDEBUG} && _d('This table is a base table');
          $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
       }
       else {
+         $ENV{MKDEBUG} && _d('This table is a view');
          ($key) = grep { m/create view/i } keys %$href;
          $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
       }
@@ -139,14 +142,11 @@ sub get_create_table {
 
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
    if ( !$self->{columns}->{$db}->{$tbl} ) {
-      my $cols = $dbh->selectall_arrayref(
-         "SHOW COLUMNS FROM "
-         . $quoter->quote($db)
-         . '.'
-         . $quoter->quote($tbl),
-         { Slice => {} }
-      );
+      my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
+      $ENV{MKDEBUG} && _d($sql);
+      my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
@@ -165,20 +165,23 @@ sub get_tmp_table {
       map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
       @{$self->get_columns($dbh, $quoter, $db, $tbl)});
    $result .= "\n)";
+   $ENV{MKDEBUG} && _d($result);
+   return $result;
 }
 
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
-      $dbh->do('/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */');
-      my $trgs = $dbh->selectall_arrayref(
-         "SHOW TRIGGERS FROM " . $quoter->quote($db),
-         { Slice => {} }
-      );
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
+      $ENV{MKDEBUG} && _d($sql);
+      my $trgs = $dbh->selectall_arrayref($sql, { Slice => {} });
       foreach my $trg ( @$trgs ) {
          # Lowercase the hash keys because the NAME_lc property might be set
          # on the $dbh, so the lettercase is unpredictable.  This makes them
@@ -187,10 +190,18 @@ sub get_triggers {
          @trg{ map { lc $_ } keys %$trg } = values %$trg;
          push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
       }
-      $dbh->do('/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */');
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
    }
    return $self->{triggers}->{$db}->{$tbl};
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
+   print "# MySQLDump:$line ", @_, "\n";
 }
 
 1;

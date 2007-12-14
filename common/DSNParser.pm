@@ -22,6 +22,11 @@ use warnings FATAL => 'all';
 
 package DSNParser;
 
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
+
 # Defaults are built-in, but you can add/replace items by passing them as hashrefs
 # of {key, desc, copy, dsn}.  The desc and dsn items are optional.  You can set
 # properties with the prop() function.  Don't set the 'opts' property.
@@ -176,6 +181,25 @@ sub get_cxn_params {
    }
    $ENV{MKDEBUG} && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});
+}
+
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit => 0,
+      RaiseError => 1,
+      PrintError => 0,
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   $ENV{MKDEBUG} && _d('DBH info: ',
+      Dumper($dbh->selectrow_hashref(
+         'select database(), connection_id(), version(), @@hostname')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'));
+   return $dbh;
 }
 
 sub _d {
