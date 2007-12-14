@@ -797,7 +797,7 @@ if ( !defined $opts{p} && $opts{askpass} ) {
 # ############################################################################
 # Connect.
 # ############################################################################
-my $dbh = get_dbh();
+my $dbh = get_cxn();
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 
@@ -909,7 +909,7 @@ while ( @tables_to_do || %kids ) {
    while ( !$dbh->ping && $tries++ < $opts{w} ) {
       sleep(1);
       eval {
-         $dbh = get_dbh();
+         $dbh = get_cxn();
       };
       if ( $EVAL_ERROR ) {
          info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
@@ -1100,7 +1100,7 @@ sub do_table {
 
                # First loop through.
                if ( !$loaded++ ) {
-                  $dbh ||= get_dbh();
+                  $dbh ||= get_cxn();
                   if ( $opts{locktables} ) {
                      $dbh->do("LOCK TABLES `$db`.`$tbl` WRITE");
                   }
@@ -1110,7 +1110,7 @@ sub do_table {
                }
 
                # Every loop through, set options.
-               $dbh ||= get_dbh();
+               $dbh ||= get_cxn();
                $dbh->do("USE `$db`"); # For binary logging.
                if ( $opts{disablekeys} ) {
                   $dbh->do("/*!40000 ALTER TABLE `$db`.`$tbl` DISABLE KEYS */");
@@ -1170,12 +1170,7 @@ sub filetype {
    return $type || '';
 }
 
-sub get_dbh {
-   my $db_options = {
-      AutoCommit => 0,
-      RaiseError => 1,
-      PrintError => 0,
-   };
+sub get_cxn {
    my $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts));
    if ( $opts{charset} ) {
       $dbh->do("SET NAMES $opts{charset}");
