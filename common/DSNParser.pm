@@ -204,6 +204,7 @@ sub get_dbh {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
    print "# DSNParser:$line ", @_, "\n";
 }
 
