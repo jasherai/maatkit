@@ -197,7 +197,7 @@ sub get_dbh {
    my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
    $ENV{MKDEBUG} && _d('DBH info: ',
       Dumper($dbh->selectrow_hashref(
-         'select database(), connection_id(), version(), @@hostname')),
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
       ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'));
    return $dbh;
 }
