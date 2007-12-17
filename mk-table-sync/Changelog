@@ -1,8 +1,8 @@
 Changelog for mk-table-sync:
 
-2007-12-13: version 1.0.1
+2007-12-16: version 1.0.1
 
-	* Empty strings were not quoted (bug #1848431).
+   * Empty strings were not quoted (bug #1848431).
    * --tables and --ignoretables now accept names in the form db.tbl.
 
 2007-12-07: version 1.0.0

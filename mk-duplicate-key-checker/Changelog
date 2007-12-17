@@ -1,6 +1,6 @@
 Changelog for mk-duplicate-key-checker:
 
-2007-12-13: version 1.1.4
+2007-12-16: version 1.1.4
 
    * --tables and --ignoretables now accept names in the form db.tbl.
 
