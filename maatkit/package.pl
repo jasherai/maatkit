@@ -19,7 +19,12 @@ if ( $svnst =~ m/\S/ ) {
 
 # Find list of packages
 my $base     = '..';
-my @packages = <$base/mk-*>;
+my @packages = qw(
+   mk-archiver mk-deadlock-logger mk-duplicate-key-checker mk-find
+   mk-finger mk-heartbeat mk-log-parser mk-parallel-dump
+   mk-parallel-restore mk-query-profiler mk-show-grants mk-slave-delay
+   mk-slave-restart mk-table-checksum mk-table-sync mk-visual-explain);
+
 my %versions;
 
 # Find latest of each package
