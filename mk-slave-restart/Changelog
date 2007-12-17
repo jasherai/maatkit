@@ -1,5 +1,9 @@
 Changelog for mk-slave-restart:
 
+2007-12-16: version 1.0.4
+
+   * Updated common code, added debugging.
+
 2007-12-07: version 1.0.3
 
    * Updated common code.
