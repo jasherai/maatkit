@@ -719,6 +719,8 @@ if ( $opts{daemonize} ) {
    exit if $pid;
    POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
    open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+   # Don't debug when daemonized!
+   delete $ENV{MKDEBUG};
 }
 
 # Setup for moving averages.
@@ -835,6 +837,9 @@ every second on the master.  You must create a table on the master as follows:
    ts datetime NOT NULL
  );
  INSERT INTO heartbeat(id) VALUES(1);
+
+The C<MEMORY> storage engine is suggested, but not required of course, for
+MySQL.
 
 Now you connect mk-heartbeat to the master and run it in L<"--update"> mode
 to generate the heartbeat.  This completes the first part.
