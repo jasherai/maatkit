@@ -3,7 +3,10 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Data::Dumper;
+$Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Indent    = 1;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 
 require "../LogParser.pm";
@@ -111,10 +114,10 @@ $events = [
       host => 'localhost',
       ip   => '',
       arg => 'test',
-      query_time => 2,
-      lock_time => 0,
-      rows_sent => 1,
-      rows_exam => 0,
+      Query_time => 2,
+      Lock_time => 0,
+      Rows_sent => 1,
+      Rows_examined => 0,
    },
    {
       ts  => '071015 21:43:52',
@@ -123,10 +126,10 @@ $events = [
       host => 'localhost',
       ip   => '',
       arg => 'select sleep(2) from n',
-      query_time => 2,
-      lock_time => 0,
-      rows_sent => 1,
-      rows_exam => 0,
+      Query_time => 2,
+      Lock_time => 0,
+      Rows_sent => 1,
+      Rows_examined => 0,
    },
    {
       ts  => '071015 21:45:10',
@@ -135,10 +138,10 @@ $events = [
       host => 'localhost',
       ip   => '',
       arg => 'sakila',
-      query_time => 2,
-      lock_time => 0,
-      rows_sent => 1,
-      rows_exam => 0,
+      Query_time => 2,
+      Lock_time => 0,
+      Rows_sent => 1,
+      Rows_examined => 0,
    },
    {
       ts  => '071015 21:45:10',
@@ -147,10 +150,10 @@ $events = [
       host => 'localhost',
       ip   => '',
       arg => 'select sleep(2) from test.n',
-      query_time => 2,
-      lock_time => 0,
-      rows_sent => 1,
-      rows_exam => 0,
+      Query_time => 2,
+      Lock_time => 0,
+      Rows_sent => 1,
+      Rows_examined => 0,
    },
 ];
 
@@ -173,10 +176,10 @@ $events = [
       host => 'localhost',
       ip   => '',
       arg => "SELECT id FROM users WHERE name='baouong'",
-      query_time => '0.000652',
-      lock_time => '0.000109',
-      rows_sent => 1,
-      rows_exam => 1,
+      Query_time => '0.000652',
+      Lock_time => '0.000109',
+      Rows_sent => 1,
+      Rows_examined => 1,
    },
    {
       ts  => '071015 21:43:52',
@@ -185,10 +188,10 @@ $events = [
       host => 'localhost',
       ip   => '',
       arg => "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
-      query_time => '0.001943',
-      lock_time => '0.000145',
-      rows_sent => 0,
-      rows_exam => 0,
+      Query_time => '0.001943',
+      Lock_time => '0.000145',
+      Rows_sent => 0,
+      Rows_examined => 0,
    },
 ];
 
@@ -211,10 +214,10 @@ $events = [
       host => 'localhost',
       ip   => '',
       arg => "SELECT id FROM users WHERE name='baouong'",
-      query_time => '0.000652',
-      lock_time => '0.000109',
-      rows_sent => 1,
-      rows_exam => 1,
+      Query_time => '0.000652',
+      Lock_time => '0.000109',
+      Rows_sent => 1,
+      Rows_examined => 1,
    },
 ];
 
@@ -409,4 +412,20 @@ is_deeply(
    \@e,
    $events,
    "Got events from the binary log",
+);
+
+$events = [
+];
+
+open $file, "<", 'samples/slow002.txt' or die $OS_ERROR;
+@e = ();
+1 while ( $p->parse_event($file, \&simple_callback) );
+close $file;
+
+print Dumper(\@e);
+
+is_deeply(
+   \@e,
+   $events,
+   "Got events from the microslow log",
 );
