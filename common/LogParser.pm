@@ -217,6 +217,11 @@ sub parse_event {
          $event->{cmd} = 'Query';
       }
 
+      $event->{NR} = $NR;
+   #$event->{foo} = "$.";
+   #$event->{foo} = $fh->input_line_number();
+   #print "$.\n";
+
       $line = <$fh> unless $done;
    }
 
