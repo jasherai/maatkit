@@ -49,3 +49,13 @@ WHERE  vab3concept1upload='6994465';
 SET insert_id=34484549,timestamp=1197996507;
 INSERT INTO db1.conch (word3, vid83)
 VALUES ('211', '18');
+# User@Host: [SQL_SLAVE] @  []
+# Thread_id: 10
+# Query_time: 0.000530  Lock_time: 0.000027  Rows_sent: 0  Rows_examined: 0
+# QC_Hit: No  Full_scan: No  Full_join: No  Tmp_table: No  Disk_tmp_table: No
+# Filesort: No  Disk_filesort: No  Merge_passes: 0
+#   InnoDB_IO_r_ops: 0  InnoDB_IO_r_bytes: 0  InnoDB_IO_r_wait: 0.000000
+#   InnoDB_rec_lock_wait: 0.000000  InnoDB_queue_wait: 0.000000
+#   InnoDB_pages_distinct: 18
+UPDATE foo.bar
+SET    biz = '91848182522';

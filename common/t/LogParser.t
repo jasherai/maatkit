@@ -495,7 +495,32 @@ VALUES (\'211\', \'18\')',
     Query_time => '0.000530',
     InnoDB_IO_r_wait => '0.000000',
     Host => '[SQL_SLAVE]'
-  }
+  },
+  {
+    arg => 'UPDATE foo.bar
+SET    biz = \'91848182522\'',
+    InnoDB_IO_r_bytes => '0',
+    Merge_passes => '0',
+    Full_join => 'No',
+    InnoDB_pages_distinct => '18',
+    Filesort => 'No',
+    InnoDB_queue_wait => '0.000000',
+    Rows_sent => '0',
+    Lock_time => '0.000027',
+    InnoDB_rec_lock_wait => '0.000000',
+    cmd => 'Query',
+    Full_scan => 'No',
+    Disk_filesort => 'No',
+    Thread_id => '10',
+    Tmp_table => 'No',
+    QC_Hit => 'No',
+    Rows_examined => '0',
+    InnoDB_IO_r_ops => '0',
+    Disk_tmp_table => 'No',
+    Query_time => '0.000530',
+    InnoDB_IO_r_wait => '0.000000',
+    Host => '[SQL_SLAVE]'
+  },
 ];
 
 open $file, "<", 'samples/slow002.txt' or die $OS_ERROR;

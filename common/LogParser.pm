@@ -75,7 +75,7 @@ sub parse_event {
 
    my $done = 0;
    my $mode = '';
-   my $type = 0; # 0 = non-query, 1 = query
+   my $type = 0; # 0 = comments, 1 = USE and SET etc, 2 = the actual query
    my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
 
    LINE:
@@ -118,7 +118,7 @@ sub parse_event {
                $done = 1;
                chomp $event->{arg} if $event->{arg};
             }
-            $type = 1;
+            $type = 2;
          }
          else {
             # The last line was the end of the query; this is the beginning of
@@ -196,22 +196,25 @@ sub parse_event {
             if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
                $ENV{MKDEBUG} && _d('Setting event DB to ', $db);
                $event->{db} = $db;
+               $type = 1;
             }
-            elsif ( my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) {
+            elsif ( $type < 2 && (my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) ) {
                $ENV{MKDEBUG} && _d('Setting a property for event');
                push @{$event->{settings}}, $setting;
+               $type = 1;
             }
             else {
                $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
                $event->{arg} .= $line;
+               $type = 2;
             }
          }
          else {
             $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
             $event->{arg} .= $line;
+            $type = 2;
          }
          $event->{cmd} = 'Query';
-         $type = 1;
       }
 
       $line = <$fh> unless $done;
