@@ -78,6 +78,7 @@ sub parse_event {
    my $done = 0;
    my $type = 0; # 0 = comments, 1 = USE and SET etc, 2 = the actual query
    my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
+   $mode  ||= '';
 
    LINE:
    while ( !$done && defined $line ) {
