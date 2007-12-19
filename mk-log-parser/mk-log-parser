@@ -21,7 +21,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# LogParser package 1511
+# LogParser package 1518
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -63,33 +63,23 @@ my $binlog_line_1 = qr{^# at (\d+)};
 my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
 my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)};
 
-# This method accepts an open filehandle and a callback function.  It reads
-# events from the filehandle and calls the callback with each event.
-#
-# Each event looks like this:
-#  my $event = {
-#     ts  => '',    # Timestamp
-#     id  => '',    # Connection ID
-#     cmd => '',    # Command (type of event)
-#     arg => '',    # Argument to the command
-#  };
-#
-# Returns true if it was able to find an event.
 sub parse_event {
-   my ( $self, $fh, $code ) = @_;
+   my ( $self, $fh, $code, $mode ) = @_;
    my $event; # Don't initialize, that'll cause a loop.
 
    my $done = 0;
-   my $mode = '';
-   my $type = 0; # 0 = non-query, 1 = query
+   my $type = 0; # 0 = comments, 1 = USE and SET etc, 2 = the actual query
    my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
+   $mode  ||= '';
 
    LINE:
    while ( !$done && defined $line ) {
       $ENV{MKDEBUG} && _d('type: ', $type, ' ', $line);
 
-      # These can appear in the log file when it's opened -- for example, when
-      # someone runs FLUSH LOGS.
+      if ( !$mode && $line =~ m/^# [A-Z]/ ) {
+         $mode = 'slow';
+      }
+
       if ( $line =~ m/Version:.+ started with:/ ) {
          $ENV{MKDEBUG} && _d('Chomping out header lines');
          <$fh>; # Tcp port: etc
@@ -106,10 +96,9 @@ sub parse_event {
          next LINE;
       }
 
-      # Match the beginning of an event in the general log.
       elsif ( my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s ) {
          $ENV{MKDEBUG} && _d('Beginning of general log event');
-         $mode = 'log';
+         $mode ||= 'log';
          $self->{last_line} = undef;
          if ( $type == 0 ) {
             my ( $cmd, $arg ) = $rest =~ m/$general_log_any_line/;
@@ -124,11 +113,9 @@ sub parse_event {
                $done = 1;
                chomp $event->{arg} if $event->{arg};
             }
-            $type = 1;
+            $type = 2;
          }
          else {
-            # The last line was the end of the query; this is the beginning of
-            # the next.  Save it for the next round.
             $ENV{MKDEBUG} && _d('Saving line for next invocation');
             $self->{last_line} = $line;
             $done = 1;
@@ -136,22 +123,16 @@ sub parse_event {
          }
       }
 
-      # Maybe it's the beginning of a slow query log event.
-      # # Time: 071015 21:43:52
       elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
          $ENV{MKDEBUG} && _d('Beginning of slow log event');
-         $mode = 'slow';
          $self->{last_line} = undef;
          if ( $type == 0 ) {
             $event->{ts} = $time;
-            # The User@Host might be concatenated onto the end of the Time.
             if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
                @{$event}{qw(user host ip)} = ($user, $host, $ip);
             }
          }
          else {
-            # Last line was the end of a query; this is the beginning of the
-            # next.
             $ENV{MKDEBUG} && _d('Saving line for next invocation');
             $self->{last_line} = $line;
             $done = 1;
@@ -159,17 +140,11 @@ sub parse_event {
          $type = 0;
       }
 
-      # Maybe it's the user/host line of a slow query log, which could be the
-      # first line of a new event in many cases.
-      # # User@Host: root[root] @ localhost []
       elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-         $mode = 'slow';
          if ( $type == 0 ) {
             @{$event}{qw(user host ip)} = ($user, $host, $ip);
          }
          else {
-            # Last line was the end of a query; this is the beginning of the
-            # next.
             $ENV{MKDEBUG} && _d('Saving line for next invocation');
             $self->{last_line} = $line;
             $done = 1;
@@ -177,18 +152,12 @@ sub parse_event {
          $type = 0;
       }
 
-      # Maybe it's the timing line of a slow query log, or another line such
-      # as that... they typically look like this:
-      # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
-      elsif ( my %hash = $line =~ m/(\w+):\s+(\S+)/g ) {
-         $mode = 'slow';
+      elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
          if ( $type == 0 ) {
             $ENV{MKDEBUG} && _d('Splitting line into fields');
             @{$event}{keys %hash} = values %hash;
          }
          else {
-            # Last line was the end of a query; this is the beginning of the
-            # next.
             $ENV{MKDEBUG} && _d('Saving line for next invocation');
             $self->{last_line} = $line;
             $done = 1;
@@ -202,34 +171,37 @@ sub parse_event {
             if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
                $ENV{MKDEBUG} && _d('Setting event DB to ', $db);
                $event->{db} = $db;
+               $type = 1;
             }
-            elsif ( my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) {
+            elsif ( $type < 2 && (my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) ) {
                $ENV{MKDEBUG} && _d('Setting a property for event');
                push @{$event->{settings}}, $setting;
+               $type = 1;
             }
             else {
                $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
                $event->{arg} .= $line;
+               $type = 2;
             }
          }
          else {
             $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
             $event->{arg} .= $line;
+            $type = 2;
          }
          $event->{cmd} = 'Query';
-         $type = 1;
       }
+
+      $event->{NR} = $NR;
 
       $line = <$fh> unless $done;
    }
 
-   # If it was EOF, discard the last line so statefulness doesn't interfere with
-   # the next log file.
    if ( !defined $line ) {
       $self->{last_line} = undef;
    }
 
-   if ( $mode eq 'slow' ) {
+   if ( $mode && $mode eq 'slow' ) {
       $event->{arg} =~ s/;\s*\Z// if $event->{arg};
    }
 
@@ -237,8 +209,6 @@ sub parse_event {
    return $event;
 }
 
-# This method accepts an open filehandle and a callback function.  It reads
-# events from the filehandle and calls the callback with each event.
 sub parse_binlog_event {
    my ( $self, $fh, $code ) = @_;
    my $event;
@@ -251,7 +221,6 @@ sub parse_binlog_event {
    LINE: {
       return unless $line;
 
-      # Catch changes in DELIMITER
       if ( $line =~ m/^DELIMITER/m ) {
          my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
          $self->{term} = $del;
@@ -261,10 +230,8 @@ sub parse_binlog_event {
          redo LINE;
       }
 
-      # Throw away the delimiter
       $line =~ s/$tpat\Z//;
 
-      # Match the beginning of an event in the binary log.
       if ( my ( $offset ) = $line =~ m/$binlog_line_1/m ) {
          $self->{last_line} = undef;
          $event = {
@@ -293,8 +260,6 @@ sub parse_binlog_event {
       }
    }
 
-   # If it was EOF, discard the terminator so statefulness doesn't interfere with
-   # the next log file.
    if ( !defined $line ) {
       delete $self->{term};
    }
@@ -326,28 +291,6 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-# Holds command-line options.  Each option is a hashref:
-# {
-#   s => GetOpt::Long specification,
-#   d => --help output
-#   g => Optional grouping (default is "o => Options")
-# }
-# Supported 's' values are long|short key, whether something is negatable and
-# whether it can be specified multiple times. Expands the compact specs into
-# their full form.
-# * k is the option's key
-# * l is the option's long name
-# * t is the option's short name
-# * n is whether the option is negatable
-# * r is whether the option is required
-# * y is the option's type.  In addition to Getopt::Long's types (siof), the
-#     following types can be used:
-#     * t = time, with an optional suffix of s/h/m/d
-#     * d = DSN, as provided by a DSNParser which is in $self->{dsn}.
-#     * H = hash, formed from a comma-separated list
-#     * h = hash as above, but only if a value is given
-# Returns the options as a hashref.  Options can also be plain-text
-# instructions, and instructions are recognized inside the 'd' as well.
 sub new {
    my ( $class, @opts ) = @_;
    my %key_seen;
@@ -375,24 +318,20 @@ sub new {
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
          $opt->{g} ||= 'o';
-         # Option has a type
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
             $ENV{MKDEBUG} && _d("Option $opt->{k} type: $y");
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
-         # Option is required if it contains the word 'required'
          if ( $opt->{d} =~ m/required/ ) {
             $opt->{r} = 1;
             $ENV{MKDEBUG} && _d("Option $opt->{k} is required");
          }
-         # Option has a default value if it says 'default'
          if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
             $ENV{MKDEBUG} && _d("Option $opt->{k} has a default");
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
-            # Defer checking till later because of possible forward references
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
             $ENV{MKDEBUG} && _d("Option $opt->{k} $dis");
          }
@@ -414,7 +353,6 @@ sub new {
             }
          }
          elsif ( $opt =~ m/default to/ ) {
-            # It's an --x defaults to --y option.
             my @participants = map {
                   die "No such option '$_' in $opt" unless $long_for{$_};
                   $key_for{$_};
@@ -426,7 +364,6 @@ sub new {
       }
    }
 
-   # Check forward references (and convert to long options) in 'disables' rules.
    foreach my $dis ( keys %disables ) {
       $disables{$dis} = [ map {
             die "No such option '$_' while processing $dis" unless $long_for{$_};
@@ -474,7 +411,6 @@ sub parse {
 
    my %opt_seen;
    my %vals = %{$self->{defaults}};
-   # Defaults passed as arg override defaults from descriptions.
    @vals{keys %defaults} = values %defaults;
    foreach my $spec ( @specs ) {
       $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
@@ -501,21 +437,18 @@ sub parse {
       $self->error("Unrecognized command-line options @ARGV");
    }
 
-   # Disable options as specified.
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
       $ENV{MKDEBUG} && _d("Unsetting options: ", @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
-   # Check required options (oxymoron?)
    foreach my $spec ( grep { $_->{r} } @specs ) {
       if ( !defined $vals{$spec->{k}} ) {
          $self->error("Required option --$spec->{l} must be specified");
       }
    }
 
-   # Check mutex options
    foreach my $mutex ( @{$self->{mutex}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
       if ( @set > 1 ) {
@@ -528,7 +461,6 @@ sub parse {
       }
    }
 
-   # Check mutually required options
    foreach my $required ( @{$self->{atleast1}} ) {
       my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
       if ( !@set ) {
@@ -540,7 +472,6 @@ sub parse {
       }
    }
 
-   # Validate typed arguments.
    foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'm' ) {
@@ -582,7 +513,6 @@ sub parse {
       }
    }
 
-   # Process list arguments
    foreach my $spec ( grep { $_->{y} } @specs ) {
       $ENV{MKDEBUG} && _d("Treating option $spec->{k} as a list");
       my $val = $vals{$spec->{k}};
@@ -638,8 +568,6 @@ sub usage_or_errors {
    }
 }
 
-# Explains what errors were found while processing command-line arguments and
-# gives a brief overview so you can get more information.
 sub errors {
    my ( $self ) = @_;
    my $usage = $self->prompt() . "\n";
@@ -649,35 +577,22 @@ sub errors {
    return $usage . "\n" . $self->descr();
 }
 
-# Prints out command-line help.  The format is like this:
-# --foo  -F   Description of --foo
-# --bars -B   Description of --bar
-# --longopt   Description of --longopt
-# Note that the short options are aligned along the right edge of their longest
-# long option, but long options that don't have a short option are allowed to
-# protrude past that.
 sub usage {
    my ( $self, %vals ) = @_;
    my @specs = @{$self->{specs}};
 
-   # Find how wide the widest long option is.
    my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
 
-   # Find how wide the widest option with a short option is.
    my $maxs = max(0,
       map { length($_->{l}) + ($_->{n} ? 4 : 0)}
       grep { $_->{t} } @specs);
 
-   # Find how wide the 'left column' (long + short opts) is, and therefore how
-   # much space to give options and how much to give descriptions.
    my $lcol = max($maxl, ($maxs + 3));
    my $rcol = 80 - $lcol - 6;
    my $rpad = ' ' x ( 80 - $rcol );
 
-   # Adjust the width of the options that have long and short both.
    $maxs = max($lcol - 3, $maxs);
 
-   # Format and return the options.
    my $usage = $self->descr() . "\n" . $self->prompt();
    foreach my $g ( @{$self->{groups}} ) {
       $usage .= "\n$g->{d}:\n";
@@ -685,7 +600,6 @@ sub usage {
          my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
          my $short = $spec->{t};
          my $desc  = $spec->{d};
-         # Wrap long descriptions
          $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
          $desc =~ s/ +$//mg;
          if ( $short ) {
@@ -719,9 +633,6 @@ sub usage {
    return $usage;
 }
 
-# Tries to prompt and read the answer without echoing the answer to the
-# terminal.  This isn't really related to this package, but it's too handy not
-# to put here.  OK, it's related, it gets config information from the user.
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
@@ -783,9 +694,6 @@ sub new {
    bless {}, $class;
 }
 
-# Normalizes variable queries to a "query fingerprint" by abstracting away
-# parameters, canonicalizing whitespace, etc.  See
-# http://dev.mysql.com/doc/refman/5.0/en/literals.html for literal syntax.
 sub fingerprint {
    my ( $self, $query ) = @_;
    $query = lc $query;
@@ -812,7 +720,6 @@ sub fingerprint {
                \b(in|values)\s*\(\s*([NS])\s*,[^\)]*\)
               }
               {$1($2+)}gx;      # Collapse IN() and VALUES() lists
-   # Table names that end with one or two groups of digits
    $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
    return $query;
 }
@@ -917,7 +824,7 @@ sub _d {
 package main;
 
 use English qw(-no_match_vars);
-use List::Util qw(max);
+use List::Util qw(max min);
 use sigtrap qw(handler finish untrapped normal-signals);
 
 our $VERSION = '@VERSION@';
@@ -929,17 +836,32 @@ our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 # ############################################################################
 
 my @opt_spec = (
-   { s => 'fingerprint|f', d => 'Convert queries into abstracted form' },
    { s => 'aggregate|a',   d => 'Report aggregate statistics' },
-   { s => 'sum=A',         d => 'Report sums of this list of attributes' },
-   # TODO: avg, count, sort, top-N
+   { s => 'avg=a',         d => 'Report averages for this list of attributes. '
+                              . 'Implies --aggregate' },
+   { s => 'count|c',       d => 'Print count of queries' },
+   { s => 'fingerprint|f', d => 'Convert queries into abstracted form' },
+   { s => 'precision|p=i', d => 'Digits of precision for printing attributes '
+                              . '(default 5)' },
+   { s => 'reverse|r',     d => 'Reverse sort (default)' },
+   { s => 'sort=s',        d => 'Sort by this attribute (default count)' },
+   { s => 'sum=a',         d => 'Report sums for this list of attributes. '
+                              . 'Implies --aggregate' },
+   { s => 'top=i',         d => 'Print only the top N results' },
+
+   # TODO: keep and print a random one, rewrite for explain, percent distinct vals
 );
 
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '[OPTION...] [FILE]';
-$opt_parser->{descr}  = q{parses and analyzes log files};
+$opt_parser->{descr}  = q{parses and analyzes log files.  With no FILE, }
+                      . q{or when FILE is -, read standard input.};
 my %opts = $opt_parser->parse();
+
+if ( $opts{avg} || $opts{sum} ) {
+   $opts{a} = 1;
+}
 
 $opt_parser->usage_or_errors(%opts);
 
@@ -947,29 +869,52 @@ my $lp = new LogParser();
 my $qr = new QueryRewriter();
 
 # ############################################################################
+# Set up the subroutines to do the processing.
+# ############################################################################
+# List of subroutines to call for every log event.
+my @subs;
+
+# Averages require sums, so build a unique list of things to sum and/or
+# average, and keep sums for them.
+if ( $opts{sum} || $opts{avg} ) {
+
+   my %seen;
+   my @sums = grep { !$seen{$_}++ }
+      ( $opts{sum} ? @{$opts{sum}} : () ),
+      ( $opts{avg} ? @{$opts{avg}} : () );
+
+   push @subs, sub {
+      my ( $event, $stats ) = @_;
+      foreach my $thing ( @sums ) {
+         # Convert yes/no into 1/0, and false values into 0.
+         my $num = $event->{$thing} || 0;
+         $num = $num =~ m/[^0-9.]/ ? (($num eq 'Yes') || 0) : $num;
+         $stats->{$thing} += $num;
+      }
+   };
+}
+
+# ############################################################################
 # Set up the data store and the callback.
 # ############################################################################
 my %queries;
 my $callback;
 
-my @props = qw(Query_time Rows_examined Full_scan Full_join
-            Tmp_table Disk_tmp_table Filesort Disk_filesort Merge_passes
-            InnoDB_IO_r_ops InnoDB_IO_r_bytes InnoDB_IO_r_wait
-            InnoDB_pages_distinct);
-
 if ( $opts{a} ) {
    $callback = sub {
       my ( $event ) = @_;
-      $ENV{MKDEBUG} && _d("Event callback fired");
       return unless $event && $event->{arg};
-      my $fingerprint = $qr->fingerprint($event->{arg});
-      $queries{$fingerprint}->{count}++;
-      foreach my $thing ( @props ) {
-         my $num = $event->{$thing} || 0;
-         $num = $num =~ m/[^0-9.]/ ? (($num eq 'Yes') || 0) : $num;
-         $queries{$fingerprint}->{$thing} += $num;
+      my $key = $opts{f} ?  $qr->fingerprint($event->{arg}) : $event->{arg};
+      $queries{$key} ||= { key => $key, query => $event->{arg} };
+      my $stats = $queries{$key};
+      $stats->{count}++;
+      foreach my $sub ( @subs ) {
+         $sub->($event, $stats);
       }
    }
+}
+else {
+   die "TODO.  Use --aggregate.";
 }
 
 # ############################################################################
@@ -983,25 +928,48 @@ if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
 }
 else {
    foreach my $arg ( @ARGV ) {
-      open my $fh, "<", $arg or die "Can't open $arg: $OS_ERROR";
+      open my $fh, "<", $arg or die "Can't open $arg: $OS_ERROR\n";
       push @fhs, $fh;
    }
 }
-while ( $oktorun && my $fh = shift(@fhs) ) {
+while ( $oktorun && (my $fh = shift(@fhs) ) ) {
    1 while ( $oktorun && $lp->parse_event($fh, $callback) );
-   close $fh or warn "Can't close filehandle: $OS_ERROR";
+   close $fh or warn "Can't close filehandle: $OS_ERROR\n";
 }
 
 # ############################################################################
 # Print results.
 # ############################################################################
 
-foreach my $query (
-   reverse sort { $queries{$a}->{Query_time} <=> $queries{$b}->{Query_time} } keys %queries
-) {
-   print $query, "\n";
-   print "# Totals: ", join(" ", map { "$_: " . $queries{$query}->{$_} } @props ), "\n";
-   print "# Avgs:   ", join(" ", map { "$_: " . ($queries{$query}->{$_}/$queries{$query}->{count}) } @props ), "\n";
+my @queries = values %queries;
+if ( my $sort = $opts{sort} ) {
+   if ( $opts{r} ) {
+      @queries = reverse sort { $a->{$sort} <=> $b->{$sort} } @queries;
+   }
+   else {
+      @queries = sort { $a->{$sort} <=> $b->{$sort} } @queries;
+   }
+}
+
+if ( $opts{top} ) {
+   @queries = @queries[0 .. min($#queries, $opts{top} - 1)];
+}
+
+# TODO: break wait for <$fh> with SIGINT.
+my $fmt = "%.$opts{p}f";
+foreach my $query ( @queries ) {
+   print $query->{key}, "\n";
+   if ( $opts{c} ) {
+      print "# Count: ", $query->{count}, "\n";
+   }
+   if ( $opts{sum} ) {
+      print "# Sum:   ", join(" ", map { "$_: " . sprintf($fmt, $query->{$_}) } @{$opts{sum}});
+      print "\n";
+   }
+   if ( $opts{avg} ) {
+      print "# Avg:   ", join(" ", map { "$_: " . sprintf($fmt, $query->{$_}/$query->{count}) } @{$opts{avg}});
+      print "\n";
+   }
 }
 
 # ############################################################################
@@ -1016,7 +984,13 @@ sub _d {
 # Catches signals so we can exit gracefully.
 sub finish {
    my ($signal) = @_;
-   print STDERR "Exiting on SIG$signal.\n";
-   $oktorun = 0;
+   if ( $oktorun ) {
+      print STDERR "Caught SIG$signal.\n";
+      $oktorun = 0;
+   }
+   else {
+      print STDERR "Exiting on SIG$signal.\n";
+      exit(1);
+   }
 }
 
