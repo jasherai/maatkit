@@ -25,8 +25,8 @@ update db2.tuningdetail_21_265507 n
 #   InnoDB_rec_lock_wait: 0.000000  InnoDB_queue_wait: 0.000000
 #   InnoDB_pages_distinct: 24
 SET timestamp=1197996507;
-INSERT INTO db3.vendor11gonzo (makef, bizzle, startcost, substparam3, vendor11gonzo, word3, gap, substparam2, strip)
-VALUES ('', 'Exact', '90', NULL, '34484548', '211', '2362258', 'Blinds', 'three words here, eh');
+INSERT INTO db3.vendor11gonzo (makef, bizzle)
+VALUES ('', 'Exact');
 # User@Host: [SQL_SLAVE] @  []
 # Thread_id: 10
 # Query_time: 0.033384  Lock_time: 0.000028  Rows_sent: 0  Rows_examined: 0
@@ -47,5 +47,5 @@ WHERE  vab3concept1upload='6994465';
 #   InnoDB_rec_lock_wait: 0.000000  InnoDB_queue_wait: 0.000000
 #   InnoDB_pages_distinct: 18
 SET insert_id=34484549,timestamp=1197996507;
-INSERT INTO db1.conch (word3, vid83, word3cupleaf, column1, gap, strip, point)
-VALUES ('211', '18', '0', '854', '0', '2 wooden mates', 'vendor11');
+INSERT INTO db1.conch (word3, vid83)
+VALUES ('211', '18');

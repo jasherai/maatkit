@@ -134,7 +134,7 @@ sub parse_event {
       # # Time: 071015 21:43:52
       elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
          $ENV{MKDEBUG} && _d('Beginning of slow log event');
-         $mode              = 'slow';
+         $mode = 'slow';
          $self->{last_line} = undef;
          if ( $type == 0 ) {
             $event->{ts} = $time;
@@ -157,6 +157,7 @@ sub parse_event {
       # first line of a new event in many cases.
       # # User@Host: root[root] @ localhost []
       elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+         $mode = 'slow';
          if ( $type == 0 ) {
             @{$event}{qw(user host ip)} = ($user, $host, $ip);
          }
@@ -174,6 +175,7 @@ sub parse_event {
       # as that... they typically look like this:
       # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
       elsif ( my %hash = $line =~ m/(\w+):\s+(\S+)/g ) {
+         $mode = 'slow';
          if ( $type == 0 ) {
             $ENV{MKDEBUG} && _d('Splitting line into fields');
             @{$event}{keys %hash} = values %hash;
@@ -189,24 +191,26 @@ sub parse_event {
       }
 
       else {
-         $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
-         $event->{arg} .= $line;
          if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
-            # The line is the end of a query within the event, so fire an
-            # event just for this line.
             $ENV{MKDEBUG} && _d('Line is the end of a query within event');
-            if ( my ( $db ) = $line =~ m/use (.*);/ ) {
-               $event->{cmd} = 'Init DB';
-               $event->{arg} = $db;
+            if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
+               $ENV{MKDEBUG} && _d('Setting event DB to ', $db);
+               $event->{db} = $db;
+            }
+            elsif ( my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) {
+               $ENV{MKDEBUG} && _d('Setting a property for event');
+               push @{$event->{settings}}, $setting;
             }
             else {
-               $event->{cmd} = 'Query';
-               $event->{arg} =~ s/;\s*\Z//;
+               $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
+               $event->{arg} .= $line;
             }
-            $code->($event);
-            $event = { %$event };
-            delete @{$event}{qw(cmd arg)}; # after copying, not before.
          }
+         else {
+            $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
+            $event->{arg} .= $line;
+         }
+         $event->{cmd} = 'Query';
          $type = 1;
       }
 
