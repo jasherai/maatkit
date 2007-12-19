@@ -109,22 +109,11 @@ is_deeply(
 $events = [
    {
       ts  => '071015 21:43:52',
-      cmd => 'Init DB',
-      user => 'root',
-      host => 'localhost',
-      ip   => '',
-      arg => 'test',
-      Query_time => 2,
-      Lock_time => 0,
-      Rows_sent => 1,
-      Rows_examined => 0,
-   },
-   {
-      ts  => '071015 21:43:52',
       cmd => 'Query',
       user => 'root',
       host => 'localhost',
       ip   => '',
+      db   => 'test',
       arg => 'select sleep(2) from n',
       Query_time => 2,
       Lock_time => 0,
@@ -133,18 +122,7 @@ $events = [
    },
    {
       ts  => '071015 21:45:10',
-      cmd => 'Init DB',
-      user => 'root',
-      host => 'localhost',
-      ip   => '',
-      arg => 'sakila',
-      Query_time => 2,
-      Lock_time => 0,
-      Rows_sent => 1,
-      Rows_examined => 0,
-   },
-   {
-      ts  => '071015 21:45:10',
+      db  => 'sakila',
       cmd => 'Query',
       user => 'root',
       host => 'localhost',
@@ -206,21 +184,6 @@ is_deeply(
 );
 
 # Parse binlog output.
-$events = [
-   {
-      ts  => '071015 21:43:52',
-      cmd => 'Query',
-      user => 'root',
-      host => 'localhost',
-      ip   => '',
-      arg => "SELECT id FROM users WHERE name='baouong'",
-      Query_time => '0.000652',
-      Lock_time => '0.000109',
-      Rows_sent => 1,
-      Rows_examined => 1,
-   },
-];
-
 $events = [
   {
     arg => '/*!40019 SET @@session.max_insert_delayed_threads=0*/'
@@ -415,14 +378,130 @@ is_deeply(
 );
 
 $events = [
+  {
+    cmd => 'Query',
+    arg => 'BEGIN',
+    ts => '071218 11:48:27',
+    Disk_filesort => 'No',
+    Merge_passes => '0',
+    Full_scan => 'No',
+    Full_join => 'No',
+    Thread_id => '10',
+    Tmp_table => 'No',
+    QC_Hit => 'No',
+    Rows_examined => '0',
+    Filesort => 'No',
+    Query_time => '0.000012',
+    Disk_tmp_table => 'No',
+    Rows_sent => '0',
+    Lock_time => '0.000000'
+  },
+  {
+    cmd => 'Query',
+    db => 'db1',
+    settings => ['SET timestamp=1197996507'],
+    arg => 'update db2.tuningdetail_21_265507 n
+      inner join db1.gonzo a using(gonzo) 
+      set n.column1 = a.column1, n.word3 = a.word3',
+    Disk_filesort => 'No',
+    Merge_passes => '0',
+    Full_scan => 'Yes',
+    Full_join => 'No',
+    Thread_id => '10',
+    Tmp_table => 'No',
+    QC_Hit => 'No',
+    Rows_examined => '62951',
+    Filesort => 'No',
+    Query_time => '0.726052',
+    Disk_tmp_table => 'No',
+    Host => '[SQL_SLAVE]',
+    Rows_sent => '0',
+    Lock_time => '0.000091'
+  },
+  {
+    settings => ['SET timestamp=1197996507'],
+    arg => 'INSERT INTO db3.vendor11gonzo (makef, bizzle)
+VALUES (\'\', \'Exact\')',
+    InnoDB_IO_r_bytes => '0',
+    Merge_passes => '0',
+    Full_join => 'No',
+    InnoDB_pages_distinct => '24',
+    Filesort => 'No',
+    InnoDB_queue_wait => '0.000000',
+    Rows_sent => '0',
+    Lock_time => '0.000077',
+    InnoDB_rec_lock_wait => '0.000000',
+    cmd => 'Query',
+    Full_scan => 'No',
+    Disk_filesort => 'No',
+    Thread_id => '10',
+    Tmp_table => 'No',
+    QC_Hit => 'No',
+    Rows_examined => '0',
+    InnoDB_IO_r_ops => '0',
+    Disk_tmp_table => 'No',
+    Query_time => '0.000512',
+    InnoDB_IO_r_wait => '0.000000',
+    Host => '[SQL_SLAVE]'
+  },
+  {
+    arg => 'UPDATE db4.vab3concept1upload
+SET    vab3concept1id = \'91848182522\'
+WHERE  vab3concept1upload=\'6994465\'',
+    InnoDB_IO_r_bytes => '0',
+    Merge_passes => '0',
+    Full_join => 'No',
+    InnoDB_pages_distinct => '11',
+    Filesort => 'No',
+    InnoDB_queue_wait => '0.000000',
+    Rows_sent => '0',
+    Lock_time => '0.000028',
+    InnoDB_rec_lock_wait => '0.000000',
+    cmd => 'Query',
+    Full_scan => 'No',
+    Disk_filesort => 'No',
+    Thread_id => '10',
+    Tmp_table => 'No',
+    QC_Hit => 'No',
+    Rows_examined => '0',
+    InnoDB_IO_r_ops => '0',
+    Disk_tmp_table => 'No',
+    Query_time => '0.033384',
+    InnoDB_IO_r_wait => '0.000000',
+    Host => '[SQL_SLAVE]'
+  },
+  {
+    settings => ['SET insert_id=34484549,timestamp=1197996507'],
+    arg => 'INSERT INTO db1.conch (word3, vid83)
+VALUES (\'211\', \'18\')',
+    InnoDB_IO_r_bytes => '0',
+    Merge_passes => '0',
+    Full_join => 'No',
+    InnoDB_pages_distinct => '18',
+    Filesort => 'No',
+    InnoDB_queue_wait => '0.000000',
+    Rows_sent => '0',
+    Lock_time => '0.000027',
+    InnoDB_rec_lock_wait => '0.000000',
+    cmd => 'Query',
+    Full_scan => 'No',
+    Disk_filesort => 'No',
+    Thread_id => '10',
+    Tmp_table => 'No',
+    QC_Hit => 'No',
+    Rows_examined => '0',
+    InnoDB_IO_r_ops => '0',
+    Disk_tmp_table => 'No',
+    Query_time => '0.000530',
+    InnoDB_IO_r_wait => '0.000000',
+    Host => '[SQL_SLAVE]'
+  }
 ];
 
 open $file, "<", 'samples/slow002.txt' or die $OS_ERROR;
 @e = ();
 1 while ( $p->parse_event($file, \&simple_callback) );
 close $file;
-
-print Dumper(\@e);
 
 is_deeply(
    \@e,
