@@ -3,10 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Data::Dumper;
-$Data::Dumper::Quotekeys = 0;
-$Data::Dumper::Indent    = 1;
-use Test::More tests => 5;
+use Test::More tests => 6;
 use English qw(-no_match_vars);
 
 require "../LogParser.pm";
@@ -539,3 +536,10 @@ open $file, "<", 'samples/slow002.txt' or die $OS_ERROR;
 close $file;
 
 is_deeply( \@e, $events, "Got events from the microslow log", );
+
+eval {
+   open $file, "<", 'samples/slow003.txt' or die $OS_ERROR;
+   1 while ( $p->parse_event( $file, \&simple_callback ) );
+   close $file;
+};
+is($EVAL_ERROR, '', 'Blank entry did not crash');
