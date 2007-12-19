@@ -57,8 +57,9 @@ my $binlog_line_1 = qr{^# at (\d+)};
 my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
 my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)};
 
-# This method accepts an open filehandle and a callback function.  It reads
-# events from the filehandle and calls the callback with each event.
+# This method accepts an open filehandle, a callback function, and a mode
+# (slow, log, undef).  It reads events from the filehandle and calls the
+# callback with each event.
 #
 # Each event looks like this:
 #  my $event = {
@@ -68,19 +69,23 @@ my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_co
 #     arg => '',    # Argument to the command
 #  };
 #
-# Returns true if it was able to find an event.
+# Returns true if it was able to find an event.  It auto-detects the log
+# format most of the time.
 sub parse_event {
-   my ( $self, $fh, $code ) = @_;
+   my ( $self, $fh, $code, $mode ) = @_;
    my $event; # Don't initialize, that'll cause a loop.
 
    my $done = 0;
-   my $mode = '';
    my $type = 0; # 0 = comments, 1 = USE and SET etc, 2 = the actual query
    my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
 
    LINE:
    while ( !$done && defined $line ) {
       $ENV{MKDEBUG} && _d('type: ', $type, ' ', $line);
+
+      if ( !$mode && $line =~ m/^# [A-Z]/ ) {
+         $mode = 'slow';
+      }
 
       # These can appear in the log file when it's opened -- for example, when
       # someone runs FLUSH LOGS.
@@ -103,7 +108,7 @@ sub parse_event {
       # Match the beginning of an event in the general log.
       elsif ( my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s ) {
          $ENV{MKDEBUG} && _d('Beginning of general log event');
-         $mode = 'log';
+         $mode ||= 'log';
          $self->{last_line} = undef;
          if ( $type == 0 ) {
             my ( $cmd, $arg ) = $rest =~ m/$general_log_any_line/;
@@ -134,7 +139,6 @@ sub parse_event {
       # # Time: 071015 21:43:52
       elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
          $ENV{MKDEBUG} && _d('Beginning of slow log event');
-         $mode = 'slow';
          $self->{last_line} = undef;
          if ( $type == 0 ) {
             $event->{ts} = $time;
@@ -157,7 +161,6 @@ sub parse_event {
       # first line of a new event in many cases.
       # # User@Host: root[root] @ localhost []
       elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-         $mode = 'slow';
          if ( $type == 0 ) {
             @{$event}{qw(user host ip)} = ($user, $host, $ip);
          }
@@ -175,7 +178,6 @@ sub parse_event {
       # as that... they typically look like this:
       # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
       elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
-         $mode = 'slow';
          if ( $type == 0 ) {
             $ENV{MKDEBUG} && _d('Splitting line into fields');
             @{$event}{keys %hash} = values %hash;
@@ -218,9 +220,6 @@ sub parse_event {
       }
 
       $event->{NR} = $NR;
-   #$event->{foo} = "$.";
-   #$event->{foo} = $fh->input_line_number();
-   #print "$.\n";
 
       $line = <$fh> unless $done;
    }
@@ -231,7 +230,7 @@ sub parse_event {
       $self->{last_line} = undef;
    }
 
-   if ( $mode eq 'slow' ) {
+   if ( $mode && $mode eq 'slow' ) {
       $event->{arg} =~ s/;\s*\Z// if $event->{arg};
    }
 
