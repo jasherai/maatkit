@@ -918,6 +918,7 @@ package main;
 
 use English qw(-no_match_vars);
 use List::Util qw(max);
+use sigtrap qw(handler finish untrapped normal-signals);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -959,6 +960,7 @@ my @props = qw(Query_time Rows_examined Full_scan Full_join
 if ( $opts{a} ) {
    $callback = sub {
       my ( $event ) = @_;
+      $ENV{MKDEBUG} && _d("Event callback fired");
       return unless $event && $event->{arg};
       my $fingerprint = $qr->fingerprint($event->{arg});
       $queries{$fingerprint}->{count}++;
@@ -973,6 +975,7 @@ if ( $opts{a} ) {
 # ############################################################################
 # Actually parse the data.
 # ############################################################################
+my $oktorun = 1;
 my @fhs;
 if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
    my $fh = *STDIN;
@@ -984,8 +987,8 @@ else {
       push @fhs, $fh;
    }
 }
-foreach my $fh ( @fhs ) {
-   1 while ( $lp->parse_event($fh, $callback) );
+while ( $oktorun && my $fh = shift(@fhs) ) {
+   1 while ( $oktorun && $lp->parse_event($fh, $callback) );
    close $fh or warn "Can't close filehandle: $OS_ERROR";
 }
 
@@ -1000,3 +1003,20 @@ foreach my $query (
    print "# Totals: ", join(" ", map { "$_: " . $queries{$query}->{$_} } @props ), "\n";
    print "# Avgs:   ", join(" ", map { "$_: " . ($queries{$query}->{$_}/$queries{$query}->{count}) } @props ), "\n";
 }
+
+# ############################################################################
+# Subroutines.
+# ############################################################################
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
+}
+
+# Catches signals so we can exit gracefully.
+sub finish {
+   my ($signal) = @_;
+   print STDERR "Exiting on SIG$signal.\n";
+   $oktorun = 0;
+}
+
