@@ -174,7 +174,7 @@ sub parse_event {
       # Maybe it's the timing line of a slow query log, or another line such
       # as that... they typically look like this:
       # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
-      elsif ( my %hash = $line =~ m/(\w+):\s+(\S+)/g ) {
+      elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
          $mode = 'slow';
          if ( $type == 0 ) {
             $ENV{MKDEBUG} && _d('Splitting line into fields');

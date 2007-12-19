@@ -480,7 +480,7 @@ SET    biz = \'91848182522\'',
       NR                    => 62,
    },
    {  arg => 'UPDATE bizzle.bat
-SET    boop=bop
+SET    boop=\'bop: 899\'
 WHERE  fillze=\'899\'',
       settings              => ['SET timestamp=1197996508'],
       InnoDB_IO_r_bytes     => '0',

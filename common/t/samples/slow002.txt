@@ -69,7 +69,7 @@ SET    biz = '91848182522';
 #   InnoDB_pages_distinct: 18
 SET timestamp=1197996508;
 UPDATE bizzle.bat
-SET    boop=bop
+SET    boop='bop: 899'
 WHERE  fillze='899';
 # User@Host: [SQL_SLAVE] @  []
 # Thread_id: 10
