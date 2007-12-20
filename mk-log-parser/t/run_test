@@ -1,0 +1,9 @@
+#!/bin/sh
+
+FILE=$1
+
+CMD=`head -n 1 $FILE`;
+$CMD > result;
+tail -n +2 $FILE > temp;
+diff result temp;
+rm result temp;
