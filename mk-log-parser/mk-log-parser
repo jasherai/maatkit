@@ -917,7 +917,7 @@ if ( $opts{a} ) {
    }
 }
 else {
-   die "TODO.  Use --aggregate.";
+   die "Transforming and printing/explaining events is TODO.  Use --aggregate.";
 }
 
 # ############################################################################
@@ -1018,7 +1018,7 @@ mk-log-parser - Parse, transform, and analyze MySQL logs.
 
 =head1 SYNOPSIS
 
- mk-log-parser -f -c -a --sum Query_time,Rows_examined mysql-slow.log
+ mk-log-parser -acf --sum Query_time,Rows_examined mysql-slow.log
 
 =head1 DESCRIPTION
 
