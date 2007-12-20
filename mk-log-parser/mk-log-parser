@@ -843,7 +843,7 @@ my @opt_spec = (
    { s => 'fingerprint|f', d => 'Convert queries into abstracted form' },
    { s => 'precision|p=i', d => 'Digits of precision for printing attributes '
                               . '(default 5)' },
-   { s => 'reverse|r',     d => 'Reverse sort (default)' },
+   { s => 'reverse|r!',    d => 'Reverse sort (default)' },
    { s => 'sort=s',        d => 'Sort by this attribute (default count)' },
    { s => 'sum=a',         d => 'Report sums for this list of attributes. '
                               . 'Implies --aggregate' },
@@ -994,3 +994,146 @@ sub finish {
    }
 }
 
+# ############################################################################
+# Documentation.
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+mk-log-parser - Parse, transform, and analyze MySQL logs.
+
+=head1 SYNOPSIS
+
+ mk-log-parser -f -c -a --sum Query_time,Rows_examined mysql-slow.log
+
+=head1 DESCRIPTION
+
+C<mk-log-parser> reads MySQL log files, such as slow logs, output from
+mysqlbinlog, and the general query log.  It takes some action upon each log
+event.  It can rewrite and transform queries.
+
+Each log event has various B<attributes>.  For example, the microsecond
+slow-query log patch from
+L<http://www.mysqlperformanceblog.com/2007/10/31/new-patch-for-mysql-performance/>
+produces output like this:
+
+   # User@Host: [SQL_SLAVE] @  []
+   # Thread_id: 8552
+   # Query_time: 0.000005  Lock_time: 0.000000  Rows_sent: 0 ...
+
+Each of the values, such as the C<Query_time>, ends up as an attribute of the
+event.  The event itself will contain the query, the current database, and so
+on.  You can use these attributes in various ways.  In addition to the
+attributes gathered from particular log formats, there is always a C<count>
+attribute: the number of times an event has been seen.
+
+C<mk-log-parser> reads the files you specify on the command line, or standard
+input.  When it is in L<"--aggregate"> mode, it prints results after it
+finishes processing the whole log file.  You can cancel it with C<CTRL-C> and
+it will abort processing the log file, then print the statistics.
+
+=head1 OPTIONS
+
+Some options are negatable by specifying them in their long form with a --no
+prefix.
+
+=over
+
+=item --aggregate
+
+Reports aggregate statistics, such as the sum of log attributes like
+C<Query_time>.  You must specify the attributes, and how to aggregate,
+separately.  After processing the log events, it will print out the aggregated
+events and statistics about them.
+
+=item --avg
+
+A comma-separated list of attributes to average.
+
+=item --count
+
+Prints the count of times each distinct event was seen.
+
+=item --fingerprint
+
+Transforms queries into an abstracted "query fingerprint".  Very useful for
+log analysis, since it groups similar queries together.
+
+=item --help
+
+Displays a help message.
+
+=item --precision
+
+Sets the display precision (number of decimal places) of aggregate statistics.
+
+=item --reverse
+
+Reverses the sort given by L<"--sort"> so the sort is in descending order.
+Enabled by default.
+
+=item --sort
+
+Sort by this attribute.
+
+=item --sum
+
+A comma-separated list of attributes to sum.
+
+=item --top
+
+Limits the output to the specified number of events.
+
+=item --version
+
+Output version information and exit.
+
+=back
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 ENVIRONMENT
+
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
+
+   MKDEBUG=1 mk-....
+
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/maatkit/>.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz.
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
+
+=cut
