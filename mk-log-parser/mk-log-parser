@@ -844,6 +844,7 @@ my @opt_spec = (
    { s => 'precision|p=i', d => 'Digits of precision for printing attributes '
                               . '(default 5)' },
    { s => 'reverse|r!',    d => 'Reverse sort (default)' },
+   { s => 'sample',        d => 'Print a sample query, not a fingerprint'},
    { s => 'sort=s',        d => 'Sort by this attribute (default count)' },
    { s => 'sum=a',         d => 'Report sums for this list of attributes. '
                               . 'Implies --aggregate' },
@@ -905,6 +906,8 @@ if ( $opts{a} ) {
       my ( $event ) = @_;
       return unless $event && $event->{arg};
       my $key = $opts{f} ?  $qr->fingerprint($event->{arg}) : $event->{arg};
+      # Keep the original query as well as the "key", which is either the
+      # query, fingerprint, transformed query, etc.
       $queries{$key} ||= { key => $key, query => $event->{arg} };
       my $stats = $queries{$key};
       $stats->{count}++;
@@ -955,20 +958,28 @@ if ( $opts{top} ) {
    @queries = @queries[0 .. min($#queries, $opts{top} - 1)];
 }
 
-# TODO: break wait for <$fh> with SIGINT.
 my $fmt = "%.$opts{p}f";
 foreach my $query ( @queries ) {
-   print $query->{key}, "\n";
    if ( $opts{c} ) {
       print "# Count: ", $query->{count}, "\n";
    }
    if ( $opts{sum} ) {
-      print "# Sum:   ", join(" ", map { "$_: " . sprintf($fmt, $query->{$_}) } @{$opts{sum}});
-      print "\n";
+      print "# Sum:   ", join(" ",
+         map { "$_: " . sprintf($fmt, $query->{$_}) }
+            @{$opts{sum}}),
+         "\n";
    }
    if ( $opts{avg} ) {
-      print "# Avg:   ", join(" ", map { "$_: " . sprintf($fmt, $query->{$_}/$query->{count}) } @{$opts{avg}});
-      print "\n";
+      print "# Avg:   ", join(" ",
+         map { "$_: " . sprintf($fmt, $query->{$_}/$query->{count}) }
+            @{$opts{avg}}),
+         "\n";
+   }
+   if ( $opts{sample} ) {
+      print $query->{query}, "\n";
+   }
+   else {
+      print $query->{key}, "\n";
    }
 }
 
@@ -982,6 +993,7 @@ sub _d {
 }
 
 # Catches signals so we can exit gracefully.
+# TODO: break wait for <$fh> with SIGINT.
 sub finish {
    my ($signal) = @_;
    if ( $oktorun ) {
@@ -1011,17 +1023,17 @@ mk-log-parser - Parse, transform, and analyze MySQL logs.
 =head1 DESCRIPTION
 
 C<mk-log-parser> reads MySQL log files, such as slow logs, output from
-mysqlbinlog, and the general query log.  It takes some action upon each log
-event.  It can rewrite and transform queries.
+mysqlbinlog, or the general query log.  It recognizes log events in the logs.
 
-Each log event has various B<attributes>.  For example, the microsecond
-slow-query log patch from
-L<http://www.mysqlperformanceblog.com/2007/10/31/new-patch-for-mysql-performance/>
+It takes some action upon each log event.  It can rewrite and transform
+queries, for example.
+
+Each log event has various B<attributes>.  For example, the slow query log
 produces output like this:
 
    # User@Host: [SQL_SLAVE] @  []
    # Thread_id: 8552
-   # Query_time: 0.000005  Lock_time: 0.000000  Rows_sent: 0 ...
+   # Query_time: 5  Lock_time: 0  Rows_sent: 0 ...
 
 Each of the values, such as the C<Query_time>, ends up as an attribute of the
 event.  The event itself will contain the query, the current database, and so
@@ -1059,7 +1071,8 @@ Prints the count of times each distinct event was seen.
 =item --fingerprint
 
 Transforms queries into an abstracted "query fingerprint".  Very useful for
-log analysis, since it groups similar queries together.
+log analysis, since it groups similar queries together.  The result is B<not>
+valid SQL.
 
 =item --help
 
