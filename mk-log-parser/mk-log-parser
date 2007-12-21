@@ -831,12 +831,16 @@ our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
 
+$OUTPUT_AUTOFLUSH = 1;
+
 # ############################################################################
 # Get configuration information.
 # ############################################################################
 
 my @opt_spec = (
-   { s => 'aggregate|a',   d => 'Report aggregate statistics' },
+   { s => 'aggregate|a',   d => 'Report aggregate statistics. '
+                              . 'Implies --sort count' },
+   { s => 'asc',           d => 'Sort in ASC order instead of DESC' },
    { s => 'avg=a',         d => 'Report averages for this list of attributes. '
                               . 'Implies --aggregate' },
    { s => 'count|c',       d => 'Print count of queries' },
@@ -844,14 +848,14 @@ my @opt_spec = (
    { s => 'precision|p=i', d => 'Digits of precision for printing attributes '
                               . '(default 5)' },
    { s => 'progress|P=i',  d => 'Print progress every N events (default 0)' },
-   { s => 'reverse|r!',    d => 'Reverse sort (default)' },
    { s => 'sample',        d => 'Print a sample query, not a fingerprint'},
-   { s => 'sort=s',        d => 'Sort by this attribute (default count)' },
+   { s => 'sort=s',        d => 'Sort by this attribute' },
    { s => 'sum=a',         d => 'Report sums for this list of attributes. '
                               . 'Implies --aggregate' },
    { s => 'top=i',         d => 'Print only the top N results' },
 
    # TODO: keep and print a random one, rewrite for explain, percent distinct vals
+# min, max values
 );
 
 my $opt_parser = new OptionParser(@opt_spec);
@@ -878,12 +882,23 @@ my @subs;
 
 # Averages require sums, so build a unique list of things to sum and/or
 # average, and keep sums for them.
-if ( $opts{sum} || $opts{avg} ) {
+if ( $opts{sum} || $opts{avg} || $opts{sort} ne 'count' ) {
 
+   # Generate a list of things to keep sums for.
+   my @sums;
+   if ( $opts{sum} ) {
+      push @sums, @{$opts{sum}};
+   }
+   if ( $opts{avg} ) {
+      push @sums, @{$opts{avg}};
+   }
+   if ( $opts{sort} && $opts{sort} ne 'count' ) {
+      push @sums, $opts{sort};
+   }
+
+   # Unique-ify the list.
    my %seen;
-   my @sums = grep { !$seen{$_}++ }
-      ( $opts{sum} ? @{$opts{sum}} : () ),
-      ( $opts{avg} ? @{$opts{avg}} : () );
+   @sums = grep { !$seen{$_}++ } @sums;
 
    push @subs, sub {
       my ( $event, $stats ) = @_;
@@ -907,12 +922,19 @@ if ( $opts{a} ) {
    $callback = sub {
       my ( $event ) = @_;
       return unless $event && $event->{arg};
-      my $key = $opts{f} ?  $qr->fingerprint($event->{arg}) : $event->{arg};
+
       # Keep the original query as well as the "key", which is either the
       # query, fingerprint, transformed query, etc.
+      my $key = $opts{f} ?  $qr->fingerprint($event->{arg}) : $event->{arg};
       $queries{$key} ||= { key => $key, query => $event->{arg} };
       my $stats = $queries{$key};
+
+      # Automatically generate a count attribute.  If someone runs
+      # mk-log-parser output back through this, and uses --aggregate, the
+      # count in that file will not get tromped on because it is uppercased.
       $stats->{count}++;
+
+      # Execute each of the subroutines created earlier.
       foreach my $sub ( @subs ) {
          $sub->($event, $stats);
       }
@@ -929,6 +951,9 @@ if ( $opts{a} ) {
 else {
    die "Transforming and printing/explaining events is TODO.  Use --aggregate.";
 }
+
+# TODO: if someone specifies just one sum/avg/min/max param, and no explicit
+# --sort, sort by that parameter.
 
 # ############################################################################
 # Actually parse the data.
@@ -956,11 +981,11 @@ while ( $oktorun && (my $fh = shift(@fhs) ) ) {
 
 my @queries = values %queries;
 if ( my $sort = $opts{sort} ) {
-   if ( $opts{r} ) {
-      @queries = reverse sort { $a->{$sort} <=> $b->{$sort} } @queries;
+   if ( $opts{asc} ) {
+      @queries = sort { $a->{$sort} <=> $b->{$sort} } @queries;
    }
    else {
-      @queries = sort { $a->{$sort} <=> $b->{$sort} } @queries;
+      @queries = reverse sort { $a->{$sort} <=> $b->{$sort} } @queries;
    }
 }
 
@@ -986,10 +1011,10 @@ foreach my $query ( @queries ) {
          "\n";
    }
    if ( $opts{sample} ) {
-      print $query->{query}, "\n";
+      print $query->{query}, ";\n";
    }
    else {
-      print $query->{key}, "\n";
+      print $query->{key}, ";\n";
    }
 }
 
@@ -1070,6 +1095,11 @@ C<Query_time>.  You must specify the attributes, and how to aggregate,
 separately.  After processing the log events, it will print out the aggregated
 events and statistics about them.
 
+=item --asc
+
+Reverses the sort given by L<"--sort"> so the sort is in ascending order,
+instead of the default descending order.
+
 =item --avg
 
 A comma-separated list of attributes to average.
@@ -1096,14 +1126,9 @@ Sets the display precision (number of decimal places) of aggregate statistics.
 
 Prints progress every N events.  If N is zero, never prints progress.
 
-=item --reverse
-
-Reverses the sort given by L<"--sort"> so the sort is in descending order.
-Enabled by default.
-
 =item --sort
 
-Sort by this attribute.
+Sort by (the sum of) this attribute.
 
 =item --sum
 

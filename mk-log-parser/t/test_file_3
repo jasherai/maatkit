@@ -1,0 +1,7 @@
+perl ../mk-log-parser ../../common/t/samples/slow001.txt -acf --sum Query_time,Rows_examined
+# Count: 1
+# Sum:   Query_time: 2.00000 Rows_examined: 0.00000
+select sleep(N) from n;
+# Count: 1
+# Sum:   Query_time: 2.00000 Rows_examined: 0.00000
+select sleep(N) from test.n;

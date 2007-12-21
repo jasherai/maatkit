@@ -1,0 +1,7 @@
+perl ../mk-log-parser ../../common/t/samples/slow002.txt --sample -acf --top 2
+# Count: 2
+UPDATE foo.bar
+SET    biz = '91848182522';
+# Count: 1
+INSERT INTO db1.conch (word3, vid83)
+VALUES ('211', '18');
