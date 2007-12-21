@@ -843,6 +843,7 @@ my @opt_spec = (
    { s => 'fingerprint|f', d => 'Convert queries into abstracted form' },
    { s => 'precision|p=i', d => 'Digits of precision for printing attributes '
                               . '(default 5)' },
+   { s => 'progress|P=i',  d => 'Print progress every N events (default 0)' },
    { s => 'reverse|r!',    d => 'Reverse sort (default)' },
    { s => 'sample',        d => 'Print a sample query, not a fingerprint'},
    { s => 'sort=s',        d => 'Sort by this attribute (default count)' },
@@ -900,6 +901,7 @@ if ( $opts{sum} || $opts{avg} ) {
 # ############################################################################
 my %queries;
 my $callback;
+my $i = 0;
 
 if ( $opts{a} ) {
    $callback = sub {
@@ -913,6 +915,14 @@ if ( $opts{a} ) {
       $stats->{count}++;
       foreach my $sub ( @subs ) {
          $sub->($event, $stats);
+      }
+
+      # Print progress: event #, line NR
+      if ( $opts{P} && ++$i % $opts{P} == 0 ) {
+         print
+            '# Progress: event ', $i,
+            ($event->{NR} ? ' at line ' . $event->{NR} : ''),
+            "\n";
       }
    }
 }
@@ -1081,6 +1091,10 @@ Displays a help message.
 =item --precision
 
 Sets the display precision (number of decimal places) of aggregate statistics.
+
+=item --progress
+
+Prints progress every N events.  If N is zero, never prints progress.
 
 =item --reverse
 
