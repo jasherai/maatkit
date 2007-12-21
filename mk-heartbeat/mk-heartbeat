@@ -611,6 +611,7 @@ package main;
 use English qw(-no_match_vars);
 use List::Util qw(min max sum);
 use Time::HiRes qw(usleep gettimeofday);
+use IO::File;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -635,17 +636,20 @@ my @opt_spec = (
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'replace|r',         d => 'Use REPLACE instead of UPDATE for --update' },
+   { s => 'sentinel=s',        d => 'Sentinel file; default /tmp/mk-heartbeat-sentinel' },
    { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'stop',              d => 'Stop running instances by creating the sentinel file' },
    { s => 'table|t=s',         d => 'Table to use for heartbeat (default heartbeat)' },
    { s => 'time|m=m',          d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'update',            d => "Update a master's heartbeat" },
    { s => 'user|u=s',          d => 'User for login if not current user' },
-   'Specify one and only one of --update, --monitor, or --check',
+   'Specify at least one of --stop, --update, --monitor, or --check',
+   '--update, --monitor, and --check are mutually exclusive',
 );
 
 my $opt_parser = OptionParser->new(@opt_spec);
-$opt_parser->{prompt} = '<options> {--update|--monitor|--check}';
+$opt_parser->{prompt} = '<options> {--update|--monitor|--check|--stop}';
 $opt_parser->{descr}  = q{measures replication lag on a MySQL or PostgreSQL }
                       . q{server.  You can use it to update a master or }
                       . q{monitor a slave.  If possible, MySQL connection }
@@ -678,6 +682,35 @@ if ( !$opts{help} ) {
 $opts{i} ||= 1; # Prevent 0-second interval
 
 $opt_parser->usage_or_errors(%opts);
+
+# ############################################################################
+# First things first: if --stop was given, create the sentinel file.
+# ############################################################################
+if ( $opts{stop} ) {
+   $ENV{MKDEBUG} && _d("Creating sentinel file $opts{sentinel}");
+   my $file = IO::File->new($opts{sentinel}, ">>")
+      or die "Cannot open $opts{sentinel}: $OS_ERROR\n";
+   print $file "Remove this file to permit mk-heartbeat to run\n"
+      or die "Cannot write to $opts{sentinel}: $OS_ERROR\n";
+   close $file
+      or die "Cannot close $opts{sentinel}: $OS_ERROR\n";
+   print STDOUT "Successfully created file $opts{sentinel}\n";
+   # Exit only if no other action (update, monitor, check) is given.
+   if ( !$opts{update} && !$opts{check} && !$opts{monitor} ) {
+      $ENV{MKDEBUG} && _d("Nothing more to do, quitting");
+      exit(0);
+   }
+   else {
+      # Wait for all other running instances to quit, assuming they have the
+      # same --interval as this invocation.  Then remove the file and
+      # continue.
+      $ENV{MKDEBUG} && _d("Waiting for other instances to quit");
+      sleep($opts{i});
+      $ENV{MKDEBUG} && _d("Unlinking $opts{sentinel}");
+      unlink $opts{sentinel}
+         or die "Cannot unlink $opts{sentinel}: $OS_ERROR";
+   }
+}
 
 # ############################################################################
 # Work.
@@ -734,7 +767,9 @@ my $format = "%4ds [ " . join(", ", map { "%5.2fs" } @{$opts{frames}}) . " ]\n";
 my $now = time();
 my $end = $now + ($opts{m} || 0);    # When to exit
 $ENV{MKDEBUG} && _d("Will exit at $end");
-while ( !$opts{m} || $now < $end ) { # Quit if time is exceeded
+
+# Quit if time is exceeded or sentinel exists.
+while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
    eval {
 
       my @now = gettimeofday();
@@ -950,6 +985,11 @@ extension to SQL.
 This option is useful when you don't know whether the table contains any rows
 or not.
 
+=item --sentinel
+
+The presence of the file specified by L<"--sentinel"> will cause
+C<mk-heartbeat> to stop and exit.  The default is /tmp/mk-heartbeat-sentinel.
+
 =item --skew
 
 How much to delay checks.  The default is to delay checks one half second.
@@ -963,6 +1003,19 @@ environment variable to see the effect this has.
 =item --socket
 
 Socket file to use for connection.
+
+=item --stop
+
+Causes C<mk-heartbeat> to create the sentinel file specified by
+L<"--sentinel">.  This should have the effect of stopping all running
+instances which are watching the same sentinel file.  If none of
+L<"--update">, L<"--monitor"> or L<"--check"> is specified, C<mk-heartbeat>
+will exit after creating the file.  If one of these is specified,
+C<mk-heartbeat> will wait the interval given by L<"--interval">, then remove
+the file and continue working.
+
+You might find this handy to stop cron jobs gracefully if necessary, or to
+replace one running instance with another.  See also L<"--stop">.
 
 =item --table
 
