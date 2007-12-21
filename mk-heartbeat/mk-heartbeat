@@ -634,6 +634,7 @@ my @opt_spec = (
    { s => 'monitor',           d => 'Monitor slave delay continuously' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'replace|r',         d => 'Use REPLACE instead of UPDATE for --update' },
    { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'table|t=s',         d => 'Table to use for heartbeat (default heartbeat)' },
@@ -687,7 +688,9 @@ if ( !$opts{p} && $opts{askpass} ) {
    $opts{p} = OptionParser::prompt_noecho("Enter password: ");
 }
 
-my $update_sql = "UPDATE $opts{t} SET ts = NOW() WHERE id = 1";
+my $update_sql = $opts{r}
+               ? "REPLACE INTO $opts{t}(id, ts) VALUES(1, NOW())"
+               : "UPDATE $opts{t} SET ts = NOW() WHERE id = 1";
 my $select_sql = "SELECT "
                . ( $opts{dbidriver} eq 'Pg'
                   ? "ROUND(DATE_PART('epoch', NOW() - ts)) "
@@ -937,6 +940,15 @@ Password to use when connecting.
 =item --port
 
 Port number to use for connection.
+
+=item --replace
+
+When running in L<"--update"> mode, use C<REPLACE> instead of C<UPDATE> to set
+the heartbeat table's timestamp.  The C<REPLACE> statement is a MySQL
+extension to SQL.
+
+This option is useful when you don't know whether the table contains any rows
+or not.
 
 =item --skew
 
