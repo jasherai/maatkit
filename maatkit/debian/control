@@ -12,6 +12,7 @@ Vcs-Svn: https://maatkit.svn.sourceforge.net/svnroot/maatkit/
 
 Package: maatkit
 Architecture: all
+Replaces: mysqltoolkit
 Depends: ${perl:Depends}, libdbi-perl (>= 1.13), libdbd-mysql-perl (>= 1.0), libterm-readkey-perl (>=2.10)
 Description: Command-line utilities for MySQL
  Contains utilities to check replication slaves for consistency with the
