@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+   * Added --replace option.
+
 2007-12-16: version 1.0.4
 
    * Updated common code, added debugging.

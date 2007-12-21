@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use English qw('no_match_vars);
 use DBI;
-use Test::More tests => 3;
+use Test::More tests => 4;
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $output;
@@ -23,7 +23,10 @@ SKIP: {
                 id int NOT NULL PRIMARY KEY,
                 ts datetime NOT NULL
              )});
-   $dbh->do('INSERT INTO test.heartbeat(id) VALUES(1)');
+
+   # Run one instance with --replace to create the table.
+   `perl ../mk-heartbeat -D test --update --replace -m 1s`;
+   ok($dbh->selectrow_array('select id from test.heartbeat'), 'Record is there');
 
    # Start one daemonized instance to update it
    `perl ../mk-heartbeat --daemonize -D test --update -m 5s`;
