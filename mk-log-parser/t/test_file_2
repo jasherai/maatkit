@@ -1,4 +1,5 @@
-perl ../mk-log-parser ../../common/t/samples/slow001.txt -acf --sum Query_time
+perl ../mk-log-parser ../../common/t/samples/slow001.txt -acf --sum Query_time -P 2
+# Progress: event 2 at line 13
 # Count: 1
 # Sum:   Query_time: 2.00000
 select sleep(N) from n;

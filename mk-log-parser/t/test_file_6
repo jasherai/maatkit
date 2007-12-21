@@ -1,0 +1,7 @@
+perl ../mk-log-parser ../../common/t/samples/slow002.txt --asc -acf --sum Query_time --sort Query_time --top 2
+# Count: 1
+# Sum:   Query_time: 0.00001
+begin;
+# Count: 1
+# Sum:   Query_time: 0.00051
+insert into db3.vendor11gonzo (makef, bizzle) values(S+);

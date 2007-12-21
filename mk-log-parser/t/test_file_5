@@ -1,0 +1,5 @@
+perl ../mk-log-parser ../../common/t/samples/slow002.txt -acf --sort Query_time --top 2
+# Count: 1
+update db2.tuningdetail_N_N n inner join db1.gonzo a using(gonzo) set n.column1 = a.column1, n.word3 = a.word3;
+# Count: 1
+update db4.vab3concept1upload set vab3concept1id = S where vab3concept1upload=S;

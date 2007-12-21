@@ -1,0 +1,7 @@
+perl ../mk-log-parser ../../common/t/samples/slow002.txt -acf --sum Query_time --top 2
+# Count: 2
+# Sum:   Query_time: 0.00106
+update foo.bar set biz = S;
+# Count: 1
+# Sum:   Query_time: 0.00053
+insert into db1.conch (word3, vid83) values(S+);
