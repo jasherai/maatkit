@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use English qw('no_match_vars);
 use DBI;
-use Test::More tests => 4;
+use Test::More tests => 8;
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $output;
@@ -43,5 +43,18 @@ SKIP: {
    $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
    chomp $output;
    unlike($output, qr/perl ...mk-heartbeat/, 'It is not running anymore');
+
+   # Run again, create the sentinel, and check that the sentinel makes the
+   # daemon quit.
+   `perl ../mk-heartbeat --daemonize -D test --update`;
+   $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
+   like($output, qr/perl ...mk-heartbeat/, 'It is running');
+   $output = `perl ../mk-heartbeat -D test --stop`;
+   like($output, qr/Successfully created/, 'created sentinel');
+   sleep(2);
+   $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
+   unlike($output, qr/perl ...mk-heartbeat/, 'It is not running');
+   ok(-f '/tmp/mk-heartbeat-sentinel', 'Sentinel file is there');
+   unlink('/tmp/mk-heartbeat-sentinel');
    $dbh->do('drop table if exists test.heartbeat'); # This will kill it
 }
