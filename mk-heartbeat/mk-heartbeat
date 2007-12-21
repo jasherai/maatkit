@@ -1000,12 +1000,12 @@ C<mk-heartbeat> to stop and exit.  The default is /tmp/mk-heartbeat-sentinel.
 
 =item --skew
 
-How much to delay checks.  The default is to delay checks one half second.
-Since the update happens as soon as possible after the beginning of the second
-on the master, this allows one half second of replication delay before
-reporting that the slave lags the master by one second.  If your clocks are
-not completely accurate or there is some other reason you'd like to delay the
-slave more or less, you can tweak this value.  Try setting the C<MKDEBUG>
+How long to delay checks, in milliseconds.  The default is to delay checks one
+half second.  Since the update happens as soon as possible after the beginning
+of the second on the master, this allows one half second of replication delay
+before reporting that the slave lags the master by one second.  If your clocks
+are not completely accurate or there is some other reason you'd like to delay
+the slave more or less, you can tweak this value.  Try setting the C<MKDEBUG>
 environment variable to see the effect this has.
 
 =item --socket
