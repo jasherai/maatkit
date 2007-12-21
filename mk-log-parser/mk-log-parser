@@ -855,7 +855,7 @@ my @opt_spec = (
    { s => 'top=i',         d => 'Print only the top N results' },
 
    # TODO: keep and print a random one, rewrite for explain, percent distinct vals
-# min, max values
+# min, max values, rank
 );
 
 my $opt_parser = new OptionParser(@opt_spec);
