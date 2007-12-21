@@ -869,6 +869,10 @@ if ( $opts{avg} || $opts{sum} ) {
    $opts{a} = 1;
 }
 
+if ( $opts{a} && !defined $opts{sort} ) {
+   $opts{sort} = 'count';
+}
+
 $opt_parser->usage_or_errors(%opts);
 
 my $lp = new LogParser();
