@@ -635,6 +635,7 @@ my @opt_spec = (
    { s => 'monitor',           d => 'Monitor slave delay continuously' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'quiet|q',           d => 'Suppress normal output' },
    { s => 'replace|r',         d => 'Use REPLACE instead of UPDATE for --update' },
    { s => 'sentinel=s',        d => 'Sentinel file; default /tmp/mk-heartbeat-sentinel' },
    { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
@@ -694,7 +695,8 @@ if ( $opts{stop} ) {
       or die "Cannot write to $opts{sentinel}: $OS_ERROR\n";
    close $file
       or die "Cannot close $opts{sentinel}: $OS_ERROR\n";
-   print STDOUT "Successfully created file $opts{sentinel}\n";
+   print STDOUT "Successfully created file $opts{sentinel}\n"
+      unless $opts{q};
    # Exit only if no other action (update, monitor, check) is given.
    if ( !$opts{update} && !$opts{check} && !$opts{monitor} ) {
       $ENV{MKDEBUG} && _d("Nothing more to do, quitting");
@@ -800,7 +802,8 @@ while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
 
          # Calculate and print results
          if ( $opts{check} ) {
-            print "$delay\n";
+            print "$delay\n"
+               unless $opts{q};
             exit(0);
          }
          else {
@@ -817,7 +820,8 @@ while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
                close $file or die "Can't close $opts{file}: $OS_ERROR";
             }
             else {
-               print $output;
+               print $output
+                  unless $opts{q};
             }
          }
       }
@@ -976,6 +980,10 @@ Password to use when connecting.
 
 Port number to use for connection.
 
+=item --quiet
+
+Suppresses normal output (handy for avoiding emails from C<cron>).
+
 =item --replace
 
 When running in L<"--update"> mode, use C<REPLACE> instead of C<UPDATE> to set
@@ -1015,7 +1023,18 @@ C<mk-heartbeat> will wait the interval given by L<"--interval">, then remove
 the file and continue working.
 
 You might find this handy to stop cron jobs gracefully if necessary, or to
-replace one running instance with another.  See also L<"--stop">.
+replace one running instance with another.  For example, if you want to stop
+and restart C<mk-heartbeat> every hour (just to make sure that it is restarted
+every hour, in case of a server crash or some other problem), you could use a
+C<crontab> line like this:
+
+ 0 * * * * mk-heartbeat --update -D test --stop --sentinel /tmp/mk-heartbeatup
+
+The non-default L<"--sentinel"> will make sure the hourly C<cron> job stops
+only instances previously started with the same options (that is, from the
+same C<cron> job).
+
+See also L<"--sentinel">.
 
 =item --table
 
