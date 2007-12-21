@@ -856,6 +856,9 @@ my @opt_spec = (
 
    # TODO: keep and print a random one, rewrite for explain, percent distinct vals
 # min, max values, rank
+# show stats overall: number of events, total time, min ts, max ts, pct of
+# time running queries
+# change print format to say Sum_attr_1: X, Avg_attr_1: X,, etc
 );
 
 my $opt_parser = new OptionParser(@opt_spec);

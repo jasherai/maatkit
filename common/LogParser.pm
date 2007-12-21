@@ -22,6 +22,9 @@ use warnings FATAL => 'all';
 
 package LogParser;
 
+# TODO: support events that are 'commented out' in the slow query log, such as
+# administrative commands like ping and statistics.
+
 use English qw(-no_match_vars);
 
 sub new {
