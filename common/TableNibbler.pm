@@ -101,64 +101,100 @@ sub generate_asc_stmt {
    # WHERE clause that will define a range beginning with a row retrieved by
    # asc_stmt.  If asconly is given, the row's lower end should not include
    # the row.
-   # Assuming a non-NULLable two-column index, the WHERE clause should look
-   # like this:
-   # WHERE (col1 > ?) OR (col1 = ? AND col2 >= ?)
-   # Ascending-only and nullable require variations on this.  The general
-   # pattern is (>), (= >), (= = >), (= = = >=).
    # ##########################################################################
    if ( @asc_slice ) {
-      my @clauses;
-      foreach my $i ( 0 .. $#asc_slice ) {
-         my @clause;
-
-         # Most of the clauses should be strict equality.
-         foreach my $j ( 0 .. $i - 1 ) {
-            my $ord = $asc_slice[$j];
-            my $col = $cols[$ord];
-            my $quo = $q->quote($col);
-            if ( $tbl->{is_nullable}->{$col} ) {
-               push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
-               push @{$asc_stmt->{slice}}, $ord, $ord;
-               push @{$asc_stmt->{scols}}, $col, $col;
-            }
-            else {
-               push @clause, "$quo = ?";
-               push @{$asc_stmt->{slice}}, $ord;
-               push @{$asc_stmt->{scols}}, $col;
-            }
-         }
-
-         # The last clause in each parenthesized group should be >, but the
-         # very last of the whole WHERE clause should be >=, unless we are
-         # ascending strictly, in which case everything must be strictly >.
-         my $ord = $asc_slice[$i];
-         my $col = $cols[$ord];
-         my $quo = $q->quote($col);
-         my $end = $i == $#asc_slice; # Last clause of the whole group.
-         if ( $tbl->{is_nullable}->{$col} ) {
-            if ( !$args{asconly} && $end ) {
-               push @clause, "(? IS NULL OR $quo >= ?)";
-            }
-            else {
-               push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo > ?))";
-            }
-            push @{$asc_stmt->{slice}}, $ord, $ord;
-            push @{$asc_stmt->{scols}}, $col, $col;
-         }
-         else {
-            push @{$asc_stmt->{slice}}, $ord;
-            push @{$asc_stmt->{scols}}, $col;
-            push @clause, (!$args{asconly} && $end ? "$quo >= ?" : "$quo > ?");
-         }
-
-         # Add the clause to the larger WHERE clause.
-         push @clauses, '(' . join(' AND ', @clause) . ')';
-      }
-      $asc_stmt->{where} = '(' . join(' OR ', @clauses) . ')';
+      my $cmp_where = $self->generate_cmp_where(
+         type        => ($args{asconly} ? '>' : '>='),
+         slice       => \@asc_slice,
+         cols        => \@cols,
+         quoter      => $q,
+         is_nullable => $tbl->{is_nullable},
+      );
+      $asc_stmt->{where} = $cmp_where->{where};
+      $asc_stmt->{slice} = $cmp_where->{slice};
+      $asc_stmt->{scols} = $cmp_where->{scols};
    }
 
    return $asc_stmt;
+}
+
+# Generates a multi-column version of a WHERE statement.  It can generate >,
+# >=, < and <= versions.
+# Assuming >= and a non-NULLable two-column index, the WHERE clause should look
+# like this:
+# WHERE (col1 > ?) OR (col1 = ? AND col2 >= ?)
+# Ascending-only and nullable require variations on this.  The general
+# pattern is (>), (= >), (= = >), (= = = >=).
+sub generate_cmp_where {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(type slice cols quoter is_nullable) ) {
+      die "I need a $arg arg" unless defined $args{$arg};
+   }
+
+   my @slice       = @{$args{slice}};
+   my @cols        = @{$args{cols}};
+   my $q           = $args{quoter};
+   my $is_nullable = $args{is_nullable};
+   my $type        = $args{type};
+
+   (my $cmp = $type) =~ s/=//;
+
+   my @r_slice;    # Resulting slice columns, by ordinal
+   my @r_scols;    # Ditto, by name
+
+   my @clauses;
+   foreach my $i ( 0 .. $#slice ) {
+      my @clause;
+
+      # Most of the clauses should be strict equality.
+      foreach my $j ( 0 .. $i - 1 ) {
+         my $ord = $slice[$j];
+         my $col = $cols[$ord];
+         my $quo = $q->quote($col);
+         if ( $is_nullable->{$col} ) {
+            push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+            push @r_slice, $ord, $ord;
+            push @r_scols, $col, $col;
+         }
+         else {
+            push @clause, "$quo = ?";
+            push @r_slice, $ord;
+            push @r_scols, $col;
+         }
+      }
+
+      # The last clause in each parenthesized group should be > or <, unless
+      # it's the very last of the whole WHERE clause and we are doing "or
+      # equal," when it should be >= or <=.
+      my $ord = $slice[$i];
+      my $col = $cols[$ord];
+      my $quo = $q->quote($col);
+      my $end = $i == $#slice; # Last clause of the whole group.
+      if ( $is_nullable->{$col} ) {
+         if ( $type =~ m/=/ && $end ) {
+            push @clause, "(? IS NULL OR $quo $type ?)";
+         }
+         else {
+            push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo $cmp ?))";
+         }
+         push @r_slice, $ord, $ord;
+         push @r_scols, $col, $col;
+      }
+      else {
+         push @r_slice, $ord;
+         push @r_scols, $col;
+         push @clause, ($type =~ m/=/ && $end ? "$quo $type ?" : "$quo $cmp ?");
+      }
+
+      # Add the clause to the larger WHERE clause.
+      push @clauses, '(' . join(' AND ', @clause) . ')';
+   }
+   my $result = '(' . join(' OR ', @clauses) . ')';
+   return {
+      slice => \@r_slice,
+      scols => \@r_scols,
+      where => $result,
+   };
 }
 
 # Figure out how to delete rows. DELETE requires either an index or all
