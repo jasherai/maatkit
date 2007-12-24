@@ -85,6 +85,7 @@ sub sync_table {
    }
 
    my $ch = new ChangeHandler(
+      queue     => $args{buffer} ? 0 : 1,
       quoter    => $args{quoter},
       database  => $args{dst_db},
       table     => $args{dst_tbl},
@@ -93,7 +94,7 @@ sub sync_table {
       replace   => $args{replace},
       actions   => [
          ( $update_func ? $update_func            : () ),
-         # Print after executing, so the print isn't misleading in case of an
+         # Print AFTER executing, so the print isn't misleading in case of an
          # index violation etc that doesn't actually get executed.
          ( $args{print} ? sub { print @_, ";\n" } : () ),
       ],

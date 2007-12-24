@@ -24,7 +24,6 @@ package ChangeHandler;
 
 use English qw(-no_match_vars);
 
-my $DEFER_PAT = qr/Commands out of sync/;
 my $DUPE_KEY  = qr/Duplicate entry/;
 our @ACTIONS  = qw(DELETE REPLACE INSERT UPDATE);
 
@@ -36,15 +35,17 @@ our @ACTIONS  = qw(DELETE REPLACE INSERT UPDATE);
 # * stable     source table name
 # * actions    arrayref of subroutines to call when handling a change.
 # * replace    Do UPDATE/INSERT as REPLACE.
+# * queue      Queue changes until process_changes is called with a greater
+#              queue level.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(quoter database table sdatabase stable replace) ) {
+   foreach my $arg ( qw(quoter database table sdatabase stable replace queue)
+   ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
    my $self = { %args, map { $_ => [] } @ACTIONS };
    $self->{db_tbl}  = $self->{quoter}->quote(@args{qw(database table)});
    $self->{sdb_tbl} = $self->{quoter}->quote(@args{qw(sdatabase stable)});
-   $self->{queue}   = 0; # Do changes immediately if possible.
    $self->{changes} = { map { $_ => 0 } @ACTIONS };
    return bless $self, $class;
 }
@@ -72,7 +73,9 @@ sub take_action {
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
    $ENV{MKDEBUG} && _d("$action where ", $self->make_where_clause($row, $cols));
-   $self->{changes}->{$self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action}++;
+   $self->{changes}->{
+      $self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action
+   }++;
    if ( $self->{queue} ) {
       $self->__queue($action, $row, $cols);
    }
@@ -81,13 +84,8 @@ sub change {
          my $func = "make_$action";
          $self->take_action($self->$func($row, $cols));
       };
-      if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
-         $ENV{MKDEBUG} && _d('The DBH is busy; queueing further changes');
-         $self->{queue}++; # Defer further rows
-         $self->__queue($action, $row, $cols);
-      }
-      elsif ( $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
-         $ENV{MKDEBUG} && _d('Duplicate key violation; queueing and rewriting');
+      if ( $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
+         $ENV{MKDEBUG} && _d('Duplicate key violation; will queue and rewrite');
          $self->{queue}++;
          $self->{replace} = 1;
          $self->__queue($action, $row, $cols);
@@ -132,13 +130,9 @@ sub process_rows {
          }
          $error_count = 0;
       };
-      if ( $EVAL_ERROR =~ m/$DEFER_PAT/ ) {
-         unshift @{$self->{$cur_act}}, $row;
-         $ENV{MKDEBUG} && _d('The DBH is still busy; increasing queue level');
-         $self->{queue}++; # Defer rows to the very end
-      }
-      elsif ( !$error_count++ && $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
-         $ENV{MKDEBUG} && _d('Duplicate key violation; re-queueing and rewriting');
+      if ( !$error_count++ && $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
+         $ENV{MKDEBUG}
+            && _d('Duplicate key violation; re-queueing and rewriting');
          $self->{queue}++; # Defer rows to the very end
          $self->{replace} = 1;
          $self->__queue($cur_act, @$row);
@@ -196,6 +190,7 @@ sub make_REPLACE {
    return $self->make_row('REPLACE', $row, $cols);
 }
 
+# TODO: do fetch_back very carefully.
 sub make_row {
    my ( $self, $verb, $row, $cols ) = @_;
    my @cols = sort keys %$row;
