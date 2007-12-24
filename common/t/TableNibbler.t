@@ -479,19 +479,21 @@ is_deeply(
                    rental_date inventory_id inventory_id customer_id)],
       boundaries => {
          '>=' => '((`rental_date` > ?) OR (`rental_date` = ? AND '
-            . '`inventory_id` > ?) OR (`rental_date` = ? AND `inventory_id` '
-            . '= ? AND (? IS NULL OR `customer_id` >= ?)))',
-         '>' => '((`rental_date` > ?) OR (`rental_date` = ? AND '
-            . '`inventory_id` > ?) OR (`rental_date` = ? AND `inventory_id` '
-            . '= ? AND ((? IS NULL AND `customer_id` IS NOT NULL) '
-            . 'OR (`customer_id` > ?))))',
-         '<=' => '((`rental_date` < ?) OR (`rental_date` = ? AND '
-            . '`inventory_id` < ?) OR (`rental_date` = ? AND `inventory_id` '
-            . '= ? AND (? IS NULL OR `customer_id` <= ?)))',
-         '<' => '((`rental_date` < ?) OR (`rental_date` = ? AND '
-            . '`inventory_id` < ?) OR (`rental_date` = ? AND `inventory_id` '
-            . '= ? AND ((? IS NOT NULL AND `customer_id` IS NULL) '
-            . 'OR (`customer_id` < ?))))',
+            . '((? IS NULL AND `inventory_id` IS NOT NULL) OR (`inventory_id` '
+            . '> ?))) OR (`rental_date` = ? AND ((? IS NULL AND `inventory_id` '
+            . 'IS NULL) OR (`inventory_id` = ?)) AND `customer_id` >= ?))',
+         '>' => '((`rental_date` > ?) OR (`rental_date` = ? AND ((? IS NULL '
+            . 'AND `inventory_id` IS NOT NULL) OR (`inventory_id` > ?))) OR '
+            . '(`rental_date` = ? AND ((? IS NULL AND `inventory_id` IS NULL) '
+            . 'OR (`inventory_id` = ?)) AND `customer_id` > ?))',
+         '<=' => '((`rental_date` < ?) OR (`rental_date` = ? AND ((? IS NOT '
+            . 'NULL AND `inventory_id` IS NULL) OR (`inventory_id` < ?))) OR '
+            . '(`rental_date` = ? AND ((? IS NULL AND `inventory_id` IS NULL) '
+            . 'OR (`inventory_id` = ?)) AND `customer_id` <= ?))',
+         '<' => '((`rental_date` < ?) OR (`rental_date` = ? AND ((? IS NOT '
+            . 'NULL AND `inventory_id` IS NULL) OR (`inventory_id` < ?))) '
+            . 'OR (`rental_date` = ? AND ((? IS NULL AND `inventory_id` IS '
+            . 'NULL) OR (`inventory_id` = ?)) AND `customer_id` < ?))',
       },
    },
    'Alternate index on sakila.rental with nullable inventory_id',
@@ -517,6 +519,24 @@ is_deeply(
       slice => [1, 1, 2, 2, 1, 2, 2, 3],
       scols => [qw(rental_date rental_date inventory_id inventory_id
                    rental_date inventory_id inventory_id customer_id)],
+      boundaries => {
+         '>=' => '((`rental_date` > ?) OR (`rental_date` = ? AND '
+            . '((? IS NULL AND `inventory_id` IS NOT NULL) OR (`inventory_id` '
+            . '> ?))) OR (`rental_date` = ? AND ((? IS NULL AND `inventory_id` '
+            . 'IS NULL) OR (`inventory_id` = ?)) AND `customer_id` >= ?))',
+         '>' => '((`rental_date` > ?) OR (`rental_date` = ? AND ((? IS NULL '
+            . 'AND `inventory_id` IS NOT NULL) OR (`inventory_id` > ?))) OR '
+            . '(`rental_date` = ? AND ((? IS NULL AND `inventory_id` IS NULL) '
+            . 'OR (`inventory_id` = ?)) AND `customer_id` > ?))',
+         '<=' => '((`rental_date` < ?) OR (`rental_date` = ? AND ((? IS NOT '
+            . 'NULL AND `inventory_id` IS NULL) OR (`inventory_id` < ?))) OR '
+            . '(`rental_date` = ? AND ((? IS NULL AND `inventory_id` IS NULL) '
+            . 'OR (`inventory_id` = ?)) AND `customer_id` <= ?))',
+         '<' => '((`rental_date` < ?) OR (`rental_date` = ? AND ((? IS NOT '
+            . 'NULL AND `inventory_id` IS NULL) OR (`inventory_id` < ?))) '
+            . 'OR (`rental_date` = ? AND ((? IS NULL AND `inventory_id` IS '
+            . 'NULL) OR (`inventory_id` = ?)) AND `customer_id` < ?))',
+      },
    },
    'Alternate index on sakila.rental with nullable inventory_id and strict ascending',
 );
@@ -541,6 +561,20 @@ is_deeply(
          . ' OR (`rental_date` = ? AND `inventory_id` = ? AND `customer_id` >= ?))',
       slice => [1, 1, 3, 1, 3, 2],
       scols => [qw(rental_date rental_date inventory_id rental_date inventory_id customer_id)],
+      boundaries => {
+         '>=' => '((`rental_date` > ?) OR (`rental_date` = ? AND '
+            . '`inventory_id` > ?) OR (`rental_date` = ? AND `inventory_id` '
+            . '= ? AND `customer_id` >= ?))',
+         '>' => '((`rental_date` > ?) OR (`rental_date` = ? AND '
+            . '`inventory_id` > ?) OR (`rental_date` = ? AND `inventory_id` '
+            . '= ? AND `customer_id` > ?))',
+         '<=' => '((`rental_date` < ?) OR (`rental_date` = ? AND '
+            . '`inventory_id` < ?) OR (`rental_date` = ? AND `inventory_id` '
+            . '= ? AND `customer_id` <= ?))',
+         '<' => '((`rental_date` < ?) OR (`rental_date` = ? AND '
+            . '`inventory_id` < ?) OR (`rental_date` = ? AND `inventory_id` '
+            . '= ? AND `customer_id` < ?))',
+      },
    },
    'Out-of-order index on sakila.rental',
 );
