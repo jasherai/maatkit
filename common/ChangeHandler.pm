@@ -190,7 +190,6 @@ sub make_REPLACE {
    return $self->make_row('REPLACE', $row, $cols);
 }
 
-# TODO: do fetch_back very carefully.
 sub make_row {
    my ( $self, $verb, $row, $cols ) = @_;
    my @cols = sort keys %$row;
