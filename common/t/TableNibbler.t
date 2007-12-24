@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 24;
 use English qw(-no_match_vars);
 
 require "../TableParser.pm";
@@ -450,3 +450,66 @@ throws_ok(
    'Error when no good index',
 );
 
+is_deeply(
+   $n->generate_cmp_where(
+      quoter => $q,
+      cols   => [qw(a b c d)],
+      slice  => [0, 3],
+      is_nullable => {},
+      type   => '>=',
+   ),
+   {
+      scols => [qw(a a d)],
+      slice => [0, 0, 3],
+      where => '((`a` > ?) OR (`a` = ? AND `d` >= ?))',
+   },
+   'WHERE for >=',
+);
+
+is_deeply(
+   $n->generate_cmp_where(
+      quoter => $q,
+      cols   => [qw(a b c d)],
+      slice  => [0, 3],
+      is_nullable => {},
+      type   => '>',
+   ),
+   {
+      scols => [qw(a a d)],
+      slice => [0, 0, 3],
+      where => '((`a` > ?) OR (`a` = ? AND `d` > ?))',
+   },
+   'WHERE for >',
+);
+
+is_deeply(
+   $n->generate_cmp_where(
+      quoter => $q,
+      cols   => [qw(a b c d)],
+      slice  => [0, 3],
+      is_nullable => {},
+      type   => '<=',
+   ),
+   {
+      scols => [qw(a a d)],
+      slice => [0, 0, 3],
+      where => '((`a` < ?) OR (`a` = ? AND `d` <= ?))',
+   },
+   'WHERE for <=',
+);
+
+is_deeply(
+   $n->generate_cmp_where(
+      quoter => $q,
+      cols   => [qw(a b c d)],
+      slice  => [0, 3],
+      is_nullable => {},
+      type   => '<',
+   ),
+   {
+      scols => [qw(a a d)],
+      slice => [0, 0, 3],
+      where => '((`a` < ?) OR (`a` = ? AND `d` < ?))',
+   },
+   'WHERE for <',
+);
