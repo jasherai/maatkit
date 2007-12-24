@@ -1,5 +1,8 @@
 Changelog for mk-table-sync:
 
+   * MASTER_POS_WAIT() failed when the server was not a master (bug #1855480).
+   * DBD::mysql died after 'commands out of sync' error (bug #1856046).
+
 2007-12-16: version 1.0.1
 
    * Empty strings were not quoted (bug #1848431).
