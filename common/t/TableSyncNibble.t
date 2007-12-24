@@ -41,6 +41,7 @@ require "../TableSyncNibble.pm";
 require "../Quoter.pm";
 require "../ChangeHandler.pm";
 require "../TableChecksum.pm";
+require "../TableChunker.pm";
 require "../TableNibbler.pm";
 require "../TableParser.pm";
 require "../MySQLDump.pm";
@@ -62,6 +63,7 @@ my $ddl        = $du->get_create_table($dbh, $q, 'test', 'test1');
 my $tbl_struct = $tp->parse($ddl);
 my $nibbler    = new TableNibbler();
 my $checksum   = new TableChecksum();
+my $chunker    = new TableChunker( quoter => $q );
 
 my @rows;
 my $ch = new ChangeHandler(
@@ -82,7 +84,7 @@ my $t = new TableSyncNibble(
    dbh      => $dbh,
    database => 'test',
    table    => 'test1',
-   chunker  => 0,
+   chunker  => $chunker,
    nibbler  => $nibbler,
    parser   => $tp,
    struct   => $tbl_struct,

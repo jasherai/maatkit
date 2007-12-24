@@ -43,7 +43,7 @@ use List::Util qw(max);
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(dbh database table handler nibbler quoter struct
-                        parser checksum cols vp chunksize where
+                        parser checksum cols vp chunksize where chunker
                         versionparser possible_keys) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -63,6 +63,15 @@ sub new {
       quoter   => $args{quoter},
       asconly  => 1,
    );
+   my $cmp_where = $args{nibbler}->generate_cmp_where(
+      type        => '<=', # The "or equal" is because asconly is given above.
+      quoter      => $args{quoter},
+      slice       => $args{sel_stmt}->{slice},
+      cols        => $args{sel_stmt}->{cols},
+      is_nullable => $args{struct}->{is_nullable},
+   );
+   $args{sel_stmt}->{limit} = $cmp_where->{where};
+
    die "No suitable index found"
       unless $args{sel_stmt}->{index}
          && $args{struct}->{keys}->{$args{sel_stmt}->{index}}->{unique};
@@ -146,17 +155,33 @@ sub get_sql {
 # "select key_cols ... where > remembered_row limit 499, 1".
 sub __get_boundaries {
    my ( $self ) = @_;
+   my $sel_stmt = $self->{sel_stmt};
    my $sql = 'SELECT '
-      . join(',', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
+      . join(',', map { $self->{quoter}->quote($_) } @{$sel_stmt->{cols}})
       . " FROM " . $self->{quoter}->quote($self->{database}, $self->{table})
       . ($self->{versionparser}->version_ge($self->{dbh}, '4.0.9') ? " FORCE" : " USE")
-      . " INDEX(" . $self->{quoter}->quote($self->{sel_stmt}->{index}) . ")";
+      . " INDEX(" . $self->{quoter}->quote($sel_stmt->{index}) . ")";
    if ( $self->{nibble} ) {
       # TODO
    }
    $sql .= ' LIMIT ' . ($self->{chunksize} - 1) . ', 1';
    $ENV{MKDEBUG} && _d($sql);
-   my $rows = $self->{dbh}->selectall_arrayref($sql, { Slice => {} });
+   my $row = $self->{dbh}->selectrow_hashref($sql);
+
+   # Inject the row into the WHERE clause. TODO: what if there's no row
+   my $n = $self->{nibbler};
+   my $s = $self->{sel_stmt};
+   my $i = 0;
+   (my $where = $s->{limit})
+   =~ s{
+      ?
+      }
+      {
+         $n->quote($s->{scols}->[$i++])
+      }eg;
+
+   $ENV{MKDEBUG} && _d('WHERE clause: ', $where);
+   return $where;
 }
 
 sub prepare {
