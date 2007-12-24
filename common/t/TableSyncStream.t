@@ -51,6 +51,7 @@ my $ch = new ChangeHandler(
    stable    => 'foo',
    replace   => 0,
    actions   => [ sub { push @rows, @_ }, ],
+   queue     => 0,
 );
 $t = new TableSyncStream(
    handler => $ch,

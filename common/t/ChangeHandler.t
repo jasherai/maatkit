@@ -47,6 +47,7 @@ my $ch = new ChangeHandler(
    stable    => 'test1',
    actions   => [ sub { push @rows, @_ } ],
    replace   => 0,
+   queue     => 0,
 );
 
 $ch->change('INSERT', { a => 1, b => 2 }, [qw(a)] );

@@ -72,6 +72,7 @@ my $ch = new ChangeHandler(
    stable    => 'test1',
    replace   => 0,
    actions   => [ sub { push @rows, @_ }, ],
+   queue     => 0,
 );
 
 my $t = new TableSyncNibble(
