@@ -206,19 +206,38 @@ sub lock_table {
 
 sub wait_for_master {
    my ( $self, $src_dbh, $dst_dbh, $time, $timeoutok ) = @_;
-   my $query = 'SHOW MASTER STATUS';
-   $ENV{MKDEBUG} && _d($query);
-   my $ms = $src_dbh->selectrow_hashref($query);
-   $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
-   $ENV{MKDEBUG} && _d("Waiting $time sec for $ms->{file}, $ms->{position}");
-   $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
-   $ENV{MKDEBUG} && _d($query);
-   my $stat = $dst_dbh->selectall_arrayref($query)->[0]->[0];
-   $stat = 'NULL' unless defined $stat;
-   if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
-      die "MASTER_POS_WAIT failed: $stat";
+   if ( !$self->{not_a_master}->{$src_dbh} ) {
+      my $query = 'SHOW MASTER STATUS';
+      $ENV{MKDEBUG} && _d($query);
+      my $ms = $src_dbh->selectrow_hashref($query);
+      if ( $ms && %$ms ) {
+         $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
+         if ( $ms->{file} && $ms->{position} ) {
+            $ENV{MKDEBUG} && _d("Waiting $time sec for $ms->{file}, $ms->{position}");
+            $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+            $ENV{MKDEBUG} && _d($query);
+            my $stat = $dst_dbh->selectall_arrayref($query)->[0]->[0];
+            $stat = 'NULL' unless defined $stat;
+            if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+               die "MASTER_POS_WAIT failed: $stat";
+            }
+            $ENV{MKDEBUG} && _d("Result of waiting: $stat");
+         }
+         else {
+            $ENV{MKDEBUG}
+               && _d('This server returns NULLs for SHOW MASTER STATUS');
+            $self->{not_a_master}->{$src_dbh}++;
+         }
+      }
+      else {
+         $ENV{MKDEBUG}
+            && _d('This server returns nothing for SHOW MASTER STATUS');
+         $self->{not_a_master}->{$src_dbh}++;
+      }
    }
-   $ENV{MKDEBUG} && _d("Result of waiting: $stat");
+   else {
+      $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
+   }
 }
 
 # Doesn't work quite the same way as lock_and_wait. It will unlock any LOWER
