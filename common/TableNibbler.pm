@@ -103,14 +103,20 @@ sub generate_asc_stmt {
    # the row.
    # ##########################################################################
    if ( @asc_slice ) {
-      my $cmp_where = $self->generate_cmp_where(
-         type        => ($args{asconly} ? '>' : '>='),
-         slice       => \@asc_slice,
-         cols        => \@cols,
-         quoter      => $q,
-         is_nullable => $tbl->{is_nullable},
-      );
-      $asc_stmt->{where} = $cmp_where->{where};
+      my $cmp_where;
+      foreach my $cmp ( qw(< <= >= >) ) {
+         # Generate all 4 types, then choose the right one.
+         $cmp_where = $self->generate_cmp_where(
+            type        => $cmp,
+            slice       => \@asc_slice,
+            cols        => \@cols,
+            quoter      => $q,
+            is_nullable => $tbl->{is_nullable},
+         );
+         $asc_stmt->{boundaries}->{$cmp} = $cmp_where->{where};
+      }
+      my $cmp = $args{asconly} ? '>' : '>=';
+      $asc_stmt->{where} = $asc_stmt->{boundaries}->{$cmp};
       $asc_stmt->{slice} = $cmp_where->{slice};
       $asc_stmt->{scols} = $cmp_where->{scols};
    }
@@ -174,8 +180,11 @@ sub generate_cmp_where {
          if ( $type =~ m/=/ && $end ) {
             push @clause, "(? IS NULL OR $quo $type ?)";
          }
-         else {
+         elsif ( $type =~ m/>/ ) {
             push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo $cmp ?))";
+         }
+         else { # If $type =~ m/</ ) {
+            push @clause, "((? IS NOT NULL AND $quo IS NULL) OR ($quo $cmp ?))";
          }
          push @r_slice, $ord, $ord;
          push @r_scols, $col, $col;
