@@ -147,7 +147,7 @@ sub get_sql {
 sub __get_boundaries {
    my ( $self ) = @_;
    my $sql = 'SELECT '
-      . join(',', map { $self->{quoter}->quote($_) } $self->key_cols())
+      . join(',', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
       . " FROM " . $self->{quoter}->quote($self->{database}, $self->{table})
       . ($self->{versionparser}->version_ge($self->{dbh}, '4.0.9') ? " FORCE" : " USE")
       . " INDEX(" . $self->{quoter}->quote($self->{sel_stmt}->{index}) . ")";
