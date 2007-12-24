@@ -3,14 +3,8 @@
 use strict;
 use warnings FATAL => 'all';
 
-# TODO: impossible HAVING
-# explain extended select * from t1 having 0;
-# id select_type table type  possible_keys  key   key_len  ref   rows  filtered
-# Extra
-# 1  SIMPLE   NULL  NULL  NULL  NULL  NULL  NULL  NULL  NULL  Impossible HAVING
-
 use English qw(-no_match_vars);
-use Test::More tests => 59;
+use Test::More tests => 60;
 
 require "../mk-visual-explain";
 
@@ -66,6 +60,17 @@ is_deeply(
       warning => 'Impossible WHERE noticed after reading const tables',
    },
    'Impossible WHERE',
+);
+
+$t = $e->parse( load_file('samples/impossible_having.sql') );
+is_deeply(
+   $t,
+   {  type  => 'IMPOSSIBLE',
+      id    => 1,
+      rowid => 0,
+      warning => 'Impossible HAVING',
+   },
+   'Impossible HAVING',
 );
 
 $t = $e->parse( load_file('samples/const_row_not_found.sql') );
