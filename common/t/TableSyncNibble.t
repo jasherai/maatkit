@@ -31,7 +31,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
-   plan tests => 20;
+   plan tests => 1;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -104,7 +104,13 @@ is (
       database => 'test',
       table    => 'test1',
    ),
-   '',
+   q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
+   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
+   . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
+   . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
+   . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
+   . q{`b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
+   . q{`test`.`test1` WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND (foo=1)},
    'First nibble SQL',
 );
 
