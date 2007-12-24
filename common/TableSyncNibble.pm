@@ -63,14 +63,6 @@ sub new {
       quoter   => $args{quoter},
       asconly  => 1,
    );
-   my $cmp_where = $args{nibbler}->generate_cmp_where(
-      type        => '<=', # The "or equal" is because asconly is given above.
-      quoter      => $args{quoter},
-      slice       => $args{sel_stmt}->{slice},
-      cols        => $args{sel_stmt}->{cols},
-      is_nullable => $args{struct}->{is_nullable},
-   );
-   $args{sel_stmt}->{limit} = $cmp_where->{where};
 
    die "No suitable index found"
       unless $args{sel_stmt}->{index}
@@ -156,11 +148,12 @@ sub get_sql {
 sub __get_boundaries {
    my ( $self ) = @_;
    my $sel_stmt = $self->{sel_stmt};
+   my $q        = $self->{quoter};
    my $sql = 'SELECT '
-      . join(',', map { $self->{quoter}->quote($_) } @{$sel_stmt->{cols}})
-      . " FROM " . $self->{quoter}->quote($self->{database}, $self->{table})
+      . join(',', map { $q->quote($_) } @{$sel_stmt->{cols}})
+      . " FROM " . $q->quote($self->{database}, $self->{table})
       . ($self->{versionparser}->version_ge($self->{dbh}, '4.0.9') ? " FORCE" : " USE")
-      . " INDEX(" . $self->{quoter}->quote($sel_stmt->{index}) . ")";
+      . " INDEX(" . $q->quote($sel_stmt->{index}) . ")";
    if ( $self->{nibble} ) {
       # TODO
    }
@@ -168,17 +161,14 @@ sub __get_boundaries {
    $ENV{MKDEBUG} && _d($sql);
    my $row = $self->{dbh}->selectrow_hashref($sql);
 
-   # Inject the row into the WHERE clause. TODO: what if there's no row
+   # Inject the row into the WHERE clause.  The WHERE is for the <= case because
+   # the bottom of the nibble is bounded strictly by >.
+   # TODO: what if there's no row
    my $n = $self->{nibbler};
    my $s = $self->{sel_stmt};
    my $i = 0;
-   (my $where = $s->{limit})
-   =~ s{
-      ?
-      }
-      {
-         $n->quote($s->{scols}->[$i++])
-      }eg;
+   (my $where = $s->{boundaries}->{'<='})
+      =~ s{([=><]) \?}{"$1 " . $q->quote_val($row->{$s->{scols}->[$i++]})}eg;
 
    $ENV{MKDEBUG} && _d('WHERE clause: ', $where);
    return $where;
