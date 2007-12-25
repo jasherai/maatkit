@@ -2658,7 +2658,7 @@ checksum MySQL tables efficiently on one or many servers.
 
    mk-table-checksum --replicate=mydb.checksum master-host
    ... time passses, replication catches up ...
-   mk-table-checksum --replicate=mydb.checksum --replcheck master-host
+   mk-table-checksum --replicate=mydb.checksum --replcheck 2 master-host
 
 Or,
 
