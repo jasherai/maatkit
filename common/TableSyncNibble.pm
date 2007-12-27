@@ -39,6 +39,9 @@ use warnings FATAL => 'all';
 package TableSyncNibble;
 
 use List::Util qw(max);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -224,6 +227,7 @@ sub same_row {
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
+      $ENV{MKDEBUG} && _d('Rows: ', Dumper($lr, $rr));
       $ENV{MKDEBUG} && _d('Will examine this nibble before moving to next');
       $self->{state} = 1; # Must examine this nibble row-by-row
    }

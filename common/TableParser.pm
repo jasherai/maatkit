@@ -169,7 +169,7 @@ sub find_best_index {
          ($best) = $self->sort_indexes($tbl);
       }
    }
-   $ENV{MKDEBUG} && _d("Best index found is " . ($index || 'undef'));
+   $ENV{MKDEBUG} && _d("Best index found is " . ($best || 'undef'));
    return $best;
 }
 

@@ -164,15 +164,19 @@ sub sync_table {
          table    => $args{dst_tbl},
          where    => $args{where},
       );
-      if ( $change_dbh && $args{transaction} ) {
+      if ( $args{transaction} ) {
          # TODO: update this for 2-way sync.
-         if ( $change_dbh eq $args{src_dbh} ) {
+         if ( $change_dbh && $change_dbh eq $args{src_dbh} ) {
             $src_sql .= ' FOR UPDATE';
             $dst_sql .= ' LOCK IN SHARE MODE';
          }
-         else {
+         elsif ( $change_dbh ) {
             $src_sql .= ' LOCK IN SHARE MODE';
             $dst_sql .= ' FOR UPDATE';
+         }
+         else {
+            $src_sql .= ' LOCK IN SHARE MODE';
+            $dst_sql .= ' LOCK IN SHARE MODE';
          }
       }
       $plugin->prepare($args{src_dbh});
