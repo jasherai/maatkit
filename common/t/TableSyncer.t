@@ -241,17 +241,19 @@ $ts->sync_table(
 ok($dbh->do('replace into test.test3 select * from test.test3 limit 0'),
    'sync_table does not lock in level 3 locking');
 
-ok($ts->lock_and_wait(
-   %args,
-   lock          => 3, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   algorithm     => 'Chunk',
-   dst_db        => 'test',
-   dst_tbl       => 'test4',
-   src_db        => 'test',
-   src_tbl       => 'test3',
-   lock_level => 3
-   ),
-   'Locks in level 3');
+eval {
+   $ts->lock_and_wait(
+      %args,
+      lock          => 3, # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      algorithm     => 'Chunk',
+      dst_db        => 'test',
+      dst_tbl       => 'test4',
+      src_db        => 'test',
+      src_tbl       => 'test3',
+      lock_level    => 3
+   );
+};
+is ($EVAL_ERROR, '', 'Locks in level 3');
 
 # See DBI man page.
 use POSIX ':signal_h';
