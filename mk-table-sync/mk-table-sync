@@ -3861,6 +3861,9 @@ mk-table-sync - Synchronize MySQL tables efficiently.
 
 =head1 SYNOPSIS
 
+It is a good idea to back up your data and run each of the following with
+L<"--test"> first, to see what will happen.  
+
 To sync db.tbl1 from host1 to host2:
 
    mk-table-sync -x u=user,p=pass,h=host1,D=db,t=tbl host2
@@ -3869,13 +3872,18 @@ Sync all tables in host1 to host2 and host3:
 
    mk-table-sync -x host1 host2 host3
 
-Sync slaves that had differences according to L<mk-table-checksum>:
+Resolve differences L<mk-table-checksum> found on this master's slaves:
 
    mk-table-sync -x --replicate test.checksum master1
 
 Sync this slave to its replication master:
 
-   mk-table-sync -x --replicate test.checksum slave1
+   mk-table-sync -x --synctomaster slave1
+
+Sync this slave to its replication master, resolving differences
+L<mk-table-checksum> found:
+
+   mk-table-sync -x --synctomaster --replicate test.checksum slave1
 
 =head1 DESCRIPTION
 
