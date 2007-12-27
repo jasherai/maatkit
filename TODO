@@ -1,13 +1,16 @@
 A tool to check that cmdline opts are defined before use, and all defined ones
 are used
 
+mk-slave-restart: restart a bunch of slaves (see the tool for more info)
+
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 http://www.mysqldiff.org/
+(mk-schema-sync or similar tool should be in SVN history)
+
 query sniper:
    * http://www.stillhq.com/mysql/000008.html
    * Allow up to max_connections-X connections
    * Specify users/hosts NOT to kill (by default root/localhost)
-mk-relay-prefetch: read ahead in the binlog (SHOW BINLOG EVENTS) and rewrite queries and pre-warm the cache.
 * read binlogs from many servers and apply them to one.
 
 Swallow a log file and output only the selected fields.  This could be piped
