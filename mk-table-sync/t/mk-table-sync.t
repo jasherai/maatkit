@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 6;
+use Test::More tests => 8;
 use DBI;
 
 my $opt_file = shift || "~/.my.cnf";
@@ -58,6 +58,23 @@ INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
    $output = run('test1', 'test2', '-a Nibble');
    is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
+
+   is_deeply(
+      query('select * from test.test2'),
+      [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
+      'Synced OK with Nibble'
+   );
+
+   `mysql --defaults-file=$opt_file < before.sql`;
+
+   $ENV{MKDEBUG} = 1;
+   $output = run('test1', 'test2', '-a Nibble --chunksize 1 --transaction -k 1');
+   delete $ENV{MKDEBUG};
+   like(
+      $output,
+      qr/Executing statement on source/,
+      'Nibble with transactions and locking'
+   );
 
    is_deeply(
       query('select * from test.test2'),
