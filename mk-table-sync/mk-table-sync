@@ -2337,7 +2337,258 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1539
+# TableSyncNibble package 1552
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package TableSyncNibble;
+
+use List::Util qw(max);
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(dbh database table handler nibbler quoter struct
+                        parser checksum cols vp chunksize where chunker
+                        versionparser possible_keys) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+
+   $args{crc_col} = '__crc';
+   while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
+      $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
+   }
+   $ENV{MKDEBUG} && _d('CRC column will be named ' . $args{crc_col});
+
+   $args{sel_stmt} = $args{nibbler}->generate_asc_stmt(
+      parser   => $args{parser},
+      tbl      => $args{struct},
+      index    => $args{possible_keys}->[0],
+      quoter   => $args{quoter},
+      asconly  => 1,
+   );
+
+   die "No suitable index found"
+      unless $args{sel_stmt}->{index}
+         && $args{struct}->{keys}->{$args{sel_stmt}->{index}}->{unique};
+   $args{key_cols} = $args{struct}->{keys}->{$args{sel_stmt}->{index}}->{cols};
+
+   $args{algorithm} = $args{checksum}->best_algorithm(
+      algorithm   => 'BIT_XOR',
+      vp          => $args{vp},
+      dbh         => $args{dbh},
+      where       => 1,
+      chunk       => 1,
+      count       => 1,
+   );
+   $args{func} = $args{checksum}->choose_hash_func(
+      func => 'SHA1',
+      dbh  => $args{dbh},
+   );
+   $args{crc_wid} = max(16, length(
+      $args{dbh}->selectall_arrayref("SELECT $args{func}('a')")->[0]->[0]));
+   if ( $args{algorithm} eq 'BIT_XOR' ) {
+      $args{opt_slice}
+         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => 'SHA1');
+   }
+
+   $args{chunk_sql} ||= $args{checksum}->make_checksum_query(
+      dbname    => $args{database},
+      tblname   => $args{table},
+      table     => $args{struct},
+      quoter    => $args{quoter},
+      algorithm => $args{algorithm},
+      func      => $args{func},
+      crc_wid   => $args{crc_wid},
+      opt_slice => $args{opt_slice},
+      cols      => $args{cols},
+   );
+   $args{row_sql} ||= $args{checksum}->make_row_checksum(
+      table     => $args{struct},
+      quoter    => $args{quoter},
+      func      => $args{func},
+      cols      => $args{cols},
+   );
+
+   $args{state}  = 0;
+   $args{nibble} = 0;
+   $args{handler}->fetch_back($args{dbh});
+   return bless { %args }, $class;
+}
+
+sub get_sql {
+   my ( $self, %args ) = @_;
+   if ( $self->{state} ) {
+      return 'SELECT '
+         . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
+         . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
+         . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
+         . ' WHERE (' . $self->__get_boundaries() . ')'
+         . ($args{where} ? " AND ($args{where})" : '');
+   }
+   else {
+      my $where = $self->__get_boundaries();
+      return $self->{chunker}->inject_chunks(
+         database  => $args{database},
+         table     => $args{table},
+         chunks    => [$where],
+         chunk_num => 0,
+         query     => $self->{chunk_sql},
+         where     => $args{where},
+         quoter    => $self->{quoter},
+      );
+   }
+}
+
+sub __get_boundaries {
+   my ( $self ) = @_;
+
+   if ( $self->{cached_boundaries} ) {
+      $ENV{MKDEBUG} && _d('Using cached boundaries');
+      return $self->{cached_boundaries};
+   }
+
+   my $q = $self->{quoter};
+   my $s = $self->{sel_stmt};
+   my $row;
+   my $lb; # Lower boundaries
+   if ( $self->{cached_row} && $self->{cached_nibble} == $self->{nibble} ) {
+      $ENV{MKDEBUG} && _d('Using cached row for boundaries');
+      $row = $self->{cached_row};
+   }
+   else {
+      my $sql      = 'SELECT '
+         . join(',', map { $q->quote($_) } @{$s->{cols}})
+         . " FROM " . $q->quote($self->{database}, $self->{table})
+         . ($self->{versionparser}->version_ge($self->{dbh}, '4.0.9')
+            ? " FORCE" : " USE")
+         . " INDEX(" . $q->quote($s->{index}) . ")";
+      if ( $self->{nibble} ) {
+         my $tmp = $self->{cached_row};
+         my $i   = 0;
+         ($lb = $s->{boundaries}->{'>'})
+            =~ s{([=><]) \?}
+                {"$1 " . $q->quote_val($tmp->{$s->{scols}->[$i++]})}eg;
+         $sql .= ' WHERE ' . $lb;
+      }
+      $sql .= ' LIMIT ' . ($self->{chunksize} - 1) . ', 1';
+      $ENV{MKDEBUG} && _d($sql);
+      $row = $self->{dbh}->selectrow_hashref($sql);
+   }
+
+   my $where;
+   if ( $row ) {
+      my $i = 0;
+      ($where = $s->{boundaries}->{'<='})
+         =~ s{([=><]) \?}{"$1 " . $q->quote_val($row->{$s->{scols}->[$i++]})}eg;
+   }
+   else {
+      $where = '1=1';
+   }
+
+   if ( $lb ) {
+      $where = "($lb AND $where)";
+   }
+
+   $self->{cached_row}        = $row;
+   $self->{cached_nibble}     = $self->{nibble};
+   $self->{cached_boundaries} = $where;
+
+   $ENV{MKDEBUG} && _d('WHERE clause: ', $where);
+   return $where;
+}
+
+sub prepare {
+   my ( $self, $dbh ) = @_;
+   $dbh->do(q{SET @crc := ''});
+}
+
+sub same_row {
+   my ( $self, $lr, $rr ) = @_;
+   if ( $self->{state} ) {
+      if ( $lr->{$self->{crc_col}} ne $rr->{$self->{crc_col}} ) {
+         $self->{handler}->change('UPDATE', $lr, $self->key_cols());
+      }
+   }
+   elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
+      $ENV{MKDEBUG} && _d('Will examine this nibble before moving to next');
+      $self->{state} = 1; # Must examine this nibble row-by-row
+   }
+}
+
+sub not_in_right {
+   my ( $self, $lr ) = @_;
+   die "Called not_in_right in state 0" unless $self->{state};
+   $self->{handler}->change('INSERT', $lr, $self->key_cols());
+}
+
+sub not_in_left {
+   my ( $self, $rr ) = @_;
+   die "Called not_in_left in state 0" unless $self->{state};
+   $self->{handler}->change('DELETE', $rr, $self->key_cols());
+}
+
+sub done_with_rows {
+   my ( $self ) = @_;
+   if ( $self->{state} == 1 ) {
+      $self->{state} = 2;
+      $ENV{MKDEBUG} && _d("Setting state=$self->{state}");
+   }
+   else {
+      $self->{state} = 0;
+      $self->{nibble}++;
+      delete $self->{cached_boundaries};
+      $ENV{MKDEBUG}
+         && _d("Setting state=$self->{state}, chunk_num=$self->{chunk_num}");
+   }
+}
+
+sub done {
+   my ( $self ) = @_;
+   $ENV{MKDEBUG}
+      && _d("Done with nibble $self->{nibble}");
+   $ENV{MKDEBUG} && $self->{state} && _d('Nibble differs; must examine rows');
+   return $self->{state} == 0 && $self->{nibble} && !$self->{cached_row};
+}
+
+sub pending_changes {
+   my ( $self ) = @_;
+   if ( $self->{state} ) {
+      $ENV{MKDEBUG} && _d('There are pending changes');
+      return 1;
+   }
+   else {
+      $ENV{MKDEBUG} && _d('No pending changes');
+      return 0;
+   }
+}
+
+sub key_cols {
+   my ( $self ) = @_;
+   my @cols;
+   if ( $self->{state} == 0 ) {
+      @cols = qw(chunk_num);
+   }
+   else {
+      @cols = @{$self->{key_cols}};
+   }
+   $ENV{MKDEBUG} && _d("State $self->{state}, key cols " . join(', ', @cols));
+   return \@cols;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableSyncNibble:$line ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableSyncNibble package
+# ###########################################################################
+
+# ###########################################################################
+# TableSyncer package 1554
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2346,7 +2597,7 @@ package TableSyncer;
 
 use English qw(-no_match_vars);
 
-our %ALGOS = map { $_ => 1 } qw(Stream Chunk);
+our %ALGOS = map { $_ => 1 } qw(Stream Chunk Nibble);
 
 sub new {
    bless {}, shift;
@@ -2359,10 +2610,15 @@ sub best_algorithm {
    }
    my $result;
 
-   my $chunk = $args{chunker}->get_first_chunkable_column($args{tbl_struct});
-   if ( $chunk ) {
-      $ENV{MKDEBUG} && _d("Chunker says it can use $chunk to chunk on");
+   my ($exact, $cols) = $args{chunker}
+      ->find_chunk_columns($args{tbl_struct}, { exact => 1 });
+   if ( $exact ) {
+      $ENV{MKDEBUG} && _d("Chunker says $cols->[0] supports chunking exactly");
       $result = 'Chunk';
+   }
+   elsif ( my ($idx) = $args{parser}->find_best_index($args{tbl_struct}) ) {
+      $ENV{MKDEBUG} && _d("Parser found best index $idx, so Nibbler will work");
+      $result = 'Nibble';
    }
    else {
       $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
@@ -2377,7 +2633,8 @@ sub sync_table {
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
-      timeoutok transaction versionparser wait where possible_keys cols) )
+      timeoutok transaction versionparser wait where possible_keys cols
+      nibbler parser) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -2430,6 +2687,8 @@ sub sync_table {
       database  => $args{src_db},
       table     => $args{src_tbl},
       chunker   => $args{chunker},
+      nibbler   => $args{nibbler},
+      parser    => $args{parser},
       struct    => $args{tbl_struct},
       checksum  => $args{checksum},
       vp        => $args{versionparser},
@@ -2437,6 +2696,7 @@ sub sync_table {
       chunksize => $args{chunksize},
       where     => $args{where},
       possible_keys => [],
+      versionparser => $args{versionparser},
    );
 
    $self->lock_and_wait(%args, lock_level => 2);
@@ -2837,7 +3097,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 1348
+# TableNibbler package 1546
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2889,52 +3149,94 @@ sub generate_asc_stmt {
    };
 
    if ( @asc_slice ) {
-      my @clauses;
-      foreach my $i ( 0 .. $#asc_slice ) {
-         my @clause;
-
-         foreach my $j ( 0 .. $i - 1 ) {
-            my $ord = $asc_slice[$j];
-            my $col = $cols[$ord];
-            my $quo = $q->quote($col);
-            if ( $tbl->{is_nullable}->{$col} ) {
-               push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
-               push @{$asc_stmt->{slice}}, $ord, $ord;
-               push @{$asc_stmt->{scols}}, $col, $col;
-            }
-            else {
-               push @clause, "$quo = ?";
-               push @{$asc_stmt->{slice}}, $ord;
-               push @{$asc_stmt->{scols}}, $col;
-            }
-         }
-
-         my $ord = $asc_slice[$i];
-         my $col = $cols[$ord];
-         my $quo = $q->quote($col);
-         my $end = $i == $#asc_slice; # Last clause of the whole group.
-         if ( $tbl->{is_nullable}->{$col} ) {
-            if ( !$args{asconly} && $end ) {
-               push @clause, "(? IS NULL OR $quo >= ?)";
-            }
-            else {
-               push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo > ?))";
-            }
-            push @{$asc_stmt->{slice}}, $ord, $ord;
-            push @{$asc_stmt->{scols}}, $col, $col;
-         }
-         else {
-            push @{$asc_stmt->{slice}}, $ord;
-            push @{$asc_stmt->{scols}}, $col;
-            push @clause, (!$args{asconly} && $end ? "$quo >= ?" : "$quo > ?");
-         }
-
-         push @clauses, '(' . join(' AND ', @clause) . ')';
+      my $cmp_where;
+      foreach my $cmp ( qw(< <= >= >) ) {
+         $cmp_where = $self->generate_cmp_where(
+            type        => $cmp,
+            slice       => \@asc_slice,
+            cols        => \@cols,
+            quoter      => $q,
+            is_nullable => $tbl->{is_nullable},
+         );
+         $asc_stmt->{boundaries}->{$cmp} = $cmp_where->{where};
       }
-      $asc_stmt->{where} = '(' . join(' OR ', @clauses) . ')';
+      my $cmp = $args{asconly} ? '>' : '>=';
+      $asc_stmt->{where} = $asc_stmt->{boundaries}->{$cmp};
+      $asc_stmt->{slice} = $cmp_where->{slice};
+      $asc_stmt->{scols} = $cmp_where->{scols};
    }
 
    return $asc_stmt;
+}
+
+sub generate_cmp_where {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(type slice cols quoter is_nullable) ) {
+      die "I need a $arg arg" unless defined $args{$arg};
+   }
+
+   my @slice       = @{$args{slice}};
+   my @cols        = @{$args{cols}};
+   my $q           = $args{quoter};
+   my $is_nullable = $args{is_nullable};
+   my $type        = $args{type};
+
+   (my $cmp = $type) =~ s/=//;
+
+   my @r_slice;    # Resulting slice columns, by ordinal
+   my @r_scols;    # Ditto, by name
+
+   my @clauses;
+   foreach my $i ( 0 .. $#slice ) {
+      my @clause;
+
+      foreach my $j ( 0 .. $i - 1 ) {
+         my $ord = $slice[$j];
+         my $col = $cols[$ord];
+         my $quo = $q->quote($col);
+         if ( $is_nullable->{$col} ) {
+            push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+            push @r_slice, $ord, $ord;
+            push @r_scols, $col, $col;
+         }
+         else {
+            push @clause, "$quo = ?";
+            push @r_slice, $ord;
+            push @r_scols, $col;
+         }
+      }
+
+      my $ord = $slice[$i];
+      my $col = $cols[$ord];
+      my $quo = $q->quote($col);
+      my $end = $i == $#slice; # Last clause of the whole group.
+      if ( $is_nullable->{$col} ) {
+         if ( $type =~ m/=/ && $end ) {
+            push @clause, "(? IS NULL OR $quo $type ?)";
+         }
+         elsif ( $type =~ m/>/ ) {
+            push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo $cmp ?))";
+         }
+         else { # If $type =~ m/</ ) {
+            push @clause, "((? IS NOT NULL AND $quo IS NULL) OR ($quo $cmp ?))";
+         }
+         push @r_slice, $ord, $ord;
+         push @r_scols, $col, $col;
+      }
+      else {
+         push @r_slice, $ord;
+         push @r_scols, $col;
+         push @clause, ($type =~ m/=/ && $end ? "$quo $type ?" : "$quo $cmp ?");
+      }
+
+      push @clauses, '(' . join(' AND ', @clause) . ')';
+   }
+   my $result = '(' . join(' OR ', @clauses) . ')';
+   return {
+      slice => \@r_slice,
+      scols => \@r_scols,
+      where => $result,
+   };
 }
 
 sub generate_del_stmt {
@@ -3578,9 +3880,9 @@ Sync this slave to its replication master:
 =head1 DESCRIPTION
 
 B<WARNING> this tool is unfinished and could perform slowly.  The Chunk
-algorithm is great when it can be used, but otherwise Stream is the only choice
-and it does not perform very well.  Please run with L<"--test"> before
-subjecting your poor servers to this tool!
+algorithm is great when it can be used, and so is Nibble, but otherwise Stream
+is the only choice and it does not perform very well.  Please run with
+L<"--test"> before subjecting your servers to this tool!
 
 This tool is designed to do one-way synchronization of data (two-way sync is
 planned for the future).  It finds differences efficiently with one of several
@@ -3642,21 +3944,36 @@ primary key columns and a checksum are sent over the network, not the entire
 row.  If a row is found to be different, the entire row will be fetched, but not
 before.
 
+=item Nibble
+
+Finds an index and ascends the index in fixed-size nibbles of L<"--chunksize">
+rows, using a non-backtracking algorithm (see L<mk-archiver> for more on this
+algorithm).  It is very similar to L<"Chunk">, but instead of pre-calculating
+the boundaries of each piece of the table based on index cardinality, it uses
+C<LIMIT> to define each nibble's upper limit, and the previous nibble's upper
+limit to define the lower limit.
+
+It has one small inefficiency: it does two queries per nibble, even when there
+are no differences.  One query finds the row that will define the next
+nibble's upper boundary, and the next query checksums the entire nibble.  For
+this reason, when a table supports exact chunking (there is a single-column
+chunkable index), L<"Chunk"> is preferred.
+
 =item Stream
 
 Selects the entire table in one big stream and compares all columns.  Selects
-all columns.  Much less efficient than the Chunk algorithm, but works when there
-is no suitable index for chunking.
+all columns.  Much less efficient than the other algorithms, but works when
+there is no suitable index for them to use.
 
 =item Future Plans
 
-I plan to implement an algorithm called Nibble, which will generally be superior
-to Chunk.  Other possibilities are TempTable (what I originally called bottom-up
-in earlier versions of this tool), DrillDown (what I originallly called
-top-down), and GroupByPrefix (similar to how SqlYOG Job Agent works).  Each
-algorithm has strengths and weaknesses.  If you'd like to implement your
+Possibilities for future algorithms are TempTable (what I originally called
+bottom-up in earlier versions of this tool), DrillDown (what I originallly
+called top-down), and GroupByPrefix (similar to how SqlYOG Job Agent works).
+Each algorithm has strengths and weaknesses.  If you'd like to implement your
 favorite technique for finding differences between two sources of data on
-possibly different servers, I'm willing to help.
+possibly different servers, I'm willing to help.  The algorithms adhere to a
+simple interface that makes it pretty easy to write your own.
 
 =back
 
@@ -3684,10 +4001,10 @@ For most non-trivial data sizes, you want to leave this disabled.
 
 =item --chunksize
 
-The size of each chunk of rows for the Chunk algorithm.  The size can be
-either a number of rows, or a data size.  Data sizes are specified with a
-suffix of k=kibibytes, M=mebibytes, G=gibibytes.  Data sizes are converted to
-a number of rows by dividing by the average row length.
+The size of each chunk of rows for the L<"Chunk"> and L<"Nibble"> algorithms.
+The size can be either a number of rows, or a data size.  Data sizes are
+specified with a suffix of k=kibibytes, M=mebibytes, G=gibibytes.  Data sizes
+are converted to a number of rows by dividing by the average row length.
 
 =item --columns
 
@@ -3924,11 +4241,11 @@ kind enough to address some questions over email.
 
 The first versions of this tool implemented a version of the Coelho/Maxia
 algorithm, which I called "bottom-up", and my own, which I called "top-down."
-Those algorithms are considerably more complex than the Stream and Chunk
-algorithms and I have removed them from this tool, and may add them back later.
-The improvements to the bottom-up algorithm are my original work, as is the
-top-down algorithm.  The techniques to actually resolve the differences are also
-my own work.
+Those algorithms are considerably more complex than the current algorithms and
+I have removed them from this tool, and may add them back later.  The
+improvements to the bottom-up algorithm are my original work, as is the
+top-down algorithm.  The techniques to actually resolve the differences are
+also my own work.
 
 Another tool that can synchronize tables is the SQLyog Job Agent from webyog.
 Thanks to Rohit Nadhani, SJA's author, for the conversations about the general

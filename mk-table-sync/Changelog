@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Added the Nibble sync algorithm.
    * MASTER_POS_WAIT() failed when the server was not a master (bug #1855480).
    * DBD::mysql died after 'commands out of sync' error (bug #1856046).
 

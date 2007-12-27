@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 6;
 use DBI;
 
 my $opt_file = shift || "~/.my.cnf";
@@ -50,7 +50,19 @@ INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
    is_deeply(
       query('select * from test.test2'),
       [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
-      'Synced OK with Stream'
+      'Synced OK with Chunk'
+   );
+
+   `mysql --defaults-file=$opt_file < before.sql`;
+
+   $output = run('test1', 'test2', '-a Nibble');
+   is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
+
+   is_deeply(
+      query('select * from test.test2'),
+      [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
+      'Synced OK with Nibble'
    );
 
 # TODO: do a test run for all possible combinations of these:
