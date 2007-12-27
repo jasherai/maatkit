@@ -233,6 +233,7 @@ sub lock_table {
 
 sub wait_for_master {
    my ( $self, $src_dbh, $dst_dbh, $time, $timeoutok ) = @_;
+   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
    if ( !$self->{not_a_master}->{$src_dbh} ) {
       my $query = 'SHOW MASTER STATUS';
       $ENV{MKDEBUG} && _d($query);
@@ -240,8 +241,8 @@ sub wait_for_master {
       if ( $ms && %$ms ) {
          $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
          if ( $ms->{file} && $ms->{position} ) {
-            $ENV{MKDEBUG} && _d("Waiting $time sec for $ms->{file}, $ms->{position}");
-            $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+            $query = "SELECT MASTER_POS_WAIT('$ms->{file}', "
+                   . "$ms->{position}, $time)";
             $ENV{MKDEBUG} && _d($query);
             my $stat = $dst_dbh->selectall_arrayref($query)->[0]->[0];
             $stat = 'NULL' unless defined $stat;
@@ -354,7 +355,7 @@ sub lock_and_wait {
       }
    }
 
-   if ( (!$args{transaction} || $args{lock} == 3) && $args{wait} ) {
+   if ( $args{wait} ) {
       # Always use the $misc_dbh dbh to check the master's position, because
       # the $src_dbh might be in use due to executing $src_sth.
       $self->wait_for_master(
