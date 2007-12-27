@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * --transaction disabled waiting for a slave to catch up.
    * Allow one DSN without --replicate, as long as --synctomaster is given.
    * Added the Nibble sync algorithm.
    * MASTER_POS_WAIT() failed when the server was not a master (bug #1855480).

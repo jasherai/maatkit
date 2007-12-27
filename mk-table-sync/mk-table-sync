@@ -2592,7 +2592,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1561
+# TableSyncer package 1564
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2708,10 +2708,6 @@ sub sync_table {
    my $cycle = 0;
    while ( !$plugin->done ) {
 
-      if ( !$cycle || !$plugin->pending_changes() ) {
-         $self->lock_and_wait(%args, lock_level => 1);
-      }
-
       $ENV{MKDEBUG} && _d("Beginning sync cycle $cycle");
       my $src_sql = $plugin->get_sql(
          quoter   => $args{quoter},
@@ -2745,10 +2741,18 @@ sub sync_table {
       $ENV{MKDEBUG} && _d("dst: " . $dst_sql);
       my $src_sth = $args{src_dbh}
          ->prepare( $src_sql, { mysql_use_result => !$args{buffer} } );
-      $src_sth->execute();
       my $dst_sth = $args{dst_dbh}
          ->prepare( $dst_sql, { mysql_use_result => !$args{buffer} } );
+
+      my $executed_src = 0;
+      if ( !$cycle || !$plugin->pending_changes() ) {
+         $executed_src
+            = $self->lock_and_wait(%args, src_sth => $src_sth, lock_level => 1);
+      }
+
+      $src_sth->execute() unless $executed_src;
       $dst_sth->execute();
+
       $rd->compare_sets(
          left   => $src_sth,
          right  => $dst_sth,
@@ -2847,10 +2851,11 @@ sub unlock {
 
 sub lock_and_wait {
    my ( $self, %args ) = @_;
+   my $result = 0;
 
    foreach my $arg ( qw(
       dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
-      timeoutok transaction wait lock_level) )
+      timeoutok transaction wait lock_level misc_dbh) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -2874,15 +2879,24 @@ sub lock_and_wait {
       $ENV{MKDEBUG} && _d("$args{src_dbh}, $sql");
       $args{src_dbh}->do($sql);
    }
-   elsif ( !$args{transaction} ) {
-      $self->lock_table($args{src_dbh}, 'source',
-         $args{quoter}->quote($args{src_db}, $args{src_tbl}),
-         $args{replicate} ? 'WRITE' : 'READ');
+   else {
+      if ( $args{transaction} ) {
+         if ( $args{src_sth} ) {
+            $ENV{MKDEBUG} && _d('Executing statement on source to lock rows');
+            $args{src_sth}->execute();
+            $result = 1;
+         }
+      }
+      else {
+         $self->lock_table($args{src_dbh}, 'source',
+            $args{quoter}->quote($args{src_db}, $args{src_tbl}),
+            $args{replicate} ? 'WRITE' : 'READ');
+      }
    }
 
    if ( (!$args{transaction} || $args{lock} == 3) && $args{wait} ) {
       $self->wait_for_master(
-         $args{src_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
+         $args{misc_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
    }
 
    if ( $args{replicate} ) {
@@ -2901,6 +2915,8 @@ sub lock_and_wait {
             $args{execute} ? 'WRITE' : 'READ');
       }
    }
+
+   return $result;
 }
 
 sub _d {
@@ -4099,7 +4115,7 @@ If L<"--wait"> is given, the master (source) is locked and then the tool waits
 for the slave to catch up to the master before continuing.
 
 If L<"--transaction"> is specified, C<LOCK TABLES> is not used.  Instead, lock
-and unlock are replaced by beginning and committing transactions.  The exception
+and unlock are implemented by beginning and committing transactions.  The exception
 is if L<"--lock"> is 3.
 
 =item --print
@@ -4186,6 +4202,10 @@ servers, you probably don't want to keep going after a timeout.
 Use transactions instead of C<LOCK TABLES>.  The granularity of beginning and
 committing transactions is controlled by L<"--lock">.  This is enabled by
 default, but since L<"--lock"> is disabled by default, it has no effect.
+
+Most options that enable locking also disable transactions by default, so if
+you want to use transactional locking (via C<LOCK IN SHARE MODE> and C<FOR
+UPDATE>, you must specify --transaction explicitly.
 
 =item --verbose
 
