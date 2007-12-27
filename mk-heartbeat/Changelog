@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+2007-12-27: version 1.0.5
+
    * Added --stop, --sentinel, and --quiet options.
    * Added --replace option.
 

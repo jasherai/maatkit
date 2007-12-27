@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2007-12-27: version 1.0.3
+
    * Views with functions caused a crash (bug #1850998, MySQL bug #29408).
    * --ignoreengine was ignored (bug #1851461).
 
