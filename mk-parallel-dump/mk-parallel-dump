@@ -1900,7 +1900,8 @@ my %findspec = (
       regexp => $opts{tblregex},
    },
    engines => {
-      views => $opts{T},
+      views  => $opts{T},
+      reject => $opts{E},
    },
 );
 if ( $opts{age} && !$opts{sets} ) {
