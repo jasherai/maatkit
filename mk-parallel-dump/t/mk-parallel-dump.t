@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 my $output;
 
@@ -20,6 +20,7 @@ SKIP: {
    ok(-s '/tmp/default/00_master_data.sql', 'master_data exists');
    `rm -rf /tmp/default`;
 
+   # Fixes bug #1851461.
    `mysql -e 'drop database if exists foo'`;
    `mysql -e 'create database foo'`;
    `mysql -e 'create table foo.bar(a int) engine=myisam'`;
@@ -28,4 +29,12 @@ SKIP: {
    ok(!-f '/tmp/default/foo/mrg.000.sql.gz', 'Merge table was not dumped');
    `mysql -e 'drop database if exists foo'`;
    `rm -rf /tmp/default`;
+
+   # Fixes bug #1850998 (workaround for MySQL bug #29408)
+   `mysql < bug_29408.sql`;
+   $output = `perl ../mk-parallel-dump -E foo --C 100 --basedir /tmp -T --d mk_parallel_dump_foo 2>&1`;
+   unlike($output, qr/No database selected/, 'Bug did not affect it');
+   `mysql -e 'drop database if exists mk_parallel_dump_foo'`;
+   `rm -rf /tmp/default`;
+
 }
