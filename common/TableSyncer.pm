@@ -164,7 +164,7 @@ sub sync_table {
          table    => $args{dst_tbl},
          where    => $args{where},
       );
-      if ( $args{transaction} ) {
+      if ( $change_dbh && $args{transaction} ) {
          # TODO: update this for 2-way sync.
          if ( $change_dbh eq $args{src_dbh} ) {
             $src_sql .= ' FOR UPDATE';
