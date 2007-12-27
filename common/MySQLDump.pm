@@ -110,6 +110,26 @@ sub dump {
    }
 }
 
+# USEs the given database, and returns the previous default database.
+sub _use_db {
+   my ( $self, $dbh, $quoter, $new ) = @_;
+   if ( !$new ) {
+      $ENV{MKDEBUG} && _d('No new DB to use');
+      return;
+   }
+   my $sql = 'SELECT DATABASE()';
+   $ENV{MKDEBUG} && _d($sql);
+   my $curr = $dbh->selectrow_array($sql);
+   if ( $curr && $new && $curr eq $new ) {
+      $ENV{MKDEBUG} && _d('Current and new DB are the same');
+      return $curr;
+   }
+   $sql = 'USE ' . $quoter->quote($new);
+   $ENV{MKDEBUG} && _d($sql);
+   $dbh->do($sql);
+   return $curr;
+}
+
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{tables}->{$db}->{$tbl} ) {
@@ -119,9 +139,11 @@ sub get_create_table {
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       $ENV{MKDEBUG} && _d($sql);
       $dbh->do($sql);
+      my $curr_db = $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       $ENV{MKDEBUG} && _d($sql);
       my $href = $dbh->selectrow_hashref($sql);
+      $self->_use_db($dbh, $quoter, $curr_db);
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
       $ENV{MKDEBUG} && _d($sql);
@@ -144,9 +166,11 @@ sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
    if ( !$self->{columns}->{$db}->{$tbl} ) {
+      my $curr_db = $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       $ENV{MKDEBUG} && _d($sql);
       my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
+      $self->_use_db($dbh, $quoter, $curr_db);
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
