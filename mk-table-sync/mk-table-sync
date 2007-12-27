@@ -2337,7 +2337,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 1552
+# TableSyncNibble package 1558
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2392,7 +2392,7 @@ sub new {
          = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => 'SHA1');
    }
 
-   $args{chunk_sql} ||= $args{checksum}->make_checksum_query(
+   $args{nibble_sql} ||= $args{checksum}->make_checksum_query(
       dbname    => $args{database},
       tblname   => $args{table},
       table     => $args{struct},
@@ -2433,7 +2433,7 @@ sub get_sql {
          table     => $args{table},
          chunks    => [$where],
          chunk_num => 0,
-         query     => $self->{chunk_sql},
+         query     => $self->{nibble_sql},
          where     => $args{where},
          quoter    => $self->{quoter},
       );
@@ -2539,7 +2539,7 @@ sub done_with_rows {
       $self->{nibble}++;
       delete $self->{cached_boundaries};
       $ENV{MKDEBUG}
-         && _d("Setting state=$self->{state}, chunk_num=$self->{chunk_num}");
+         && _d("Setting state=$self->{state}, nibble=$self->{nibble}");
    }
 }
 
