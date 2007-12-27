@@ -2691,7 +2691,10 @@ different forms of the hostname (for example, "localhost 127.0.0.1", or
 mk-table-checksum only examines table structure on the first host specified,
 so if anything differs on the others, it won't notice.  It ignores views.
 
-The checksums work on MySQL version 3.23.58 through 6.0-alpha.
+The checksums work on MySQL version 3.23.58 through 6.0-alpha.  They will not
+necessarily produce the same values on all versions.  Differences in
+formatting and/or space-padding between 4.1 and 5.0, for example, will cause
+the checksums to be different.
 
 =head1 SPECIFYING HOSTS
 
