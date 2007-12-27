@@ -3,6 +3,14 @@
 use strict;
 use warnings FATAL => 'all';
 
+# If the first argument is a number, it's that many days back to look for
+# changes.  Default is 3.
+my $d = 3;
+if ( @ARGV && $ARGV[0] =~ m/^\d+$/ ) {
+   $d = shift @ARGV;
+}
+$d = `mysql -e 'select current_date - interval $d day' -B --skip-column-names`;
+
 my @packages = @ARGV;
 if ( !@packages ) {
   @packages =
@@ -20,6 +28,9 @@ foreach my $package ( @packages ) {
    die "$package has a tab in its changelog"
       if $contents =~ m/\t/;
    my ($log) = $contents =~ m/^(200.*?)(?=^200|\Z)/sm;
+   my ($date) = $log =~ m/^(\d{4}-\d\d-\d\d): version/;
+   next unless $date ge $d;
+
    if ( @packages > 1 ) {
       print "Changelog for $package:\n\n";
    }
