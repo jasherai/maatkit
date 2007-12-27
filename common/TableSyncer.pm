@@ -79,6 +79,12 @@ sub sync_table {
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
 
+   # We can lock only per-sync-cycle with transactional locking, because FOR
+   # UPDATE or LOCK IN SHARE MODE work only on the rows they touch, and a sync
+   # cycle might not touch the whole table.
+   die "Cannot use transaction-locking with lock level > 1"
+      if $args{transaction} && $args{lock} > 1;
+
    # TODO: for two-way sync, the change handler needs both DBHs.
    # Check permissions on writable tables (TODO: 2-way needs to check both)
    my $update_func;
@@ -144,13 +150,8 @@ sub sync_table {
    my $cycle = 0;
    while ( !$plugin->done ) {
 
-      # The first cycle should lock to begin work; after that, unlock only if
-      # the plugin says it's OK (it may want to dig deeper on the rows it
-      # currently has locked).
-      if ( !$cycle || !$plugin->pending_changes() ) {
-         $self->lock_and_wait(%args, lock_level => 1);
-      }
-
+      # Do as much of the work as possible before opening a transaction or
+      # locking the tables.
       $ENV{MKDEBUG} && _d("Beginning sync cycle $cycle");
       my $src_sql = $plugin->get_sql(
          quoter   => $args{quoter},
@@ -185,10 +186,22 @@ sub sync_table {
       $ENV{MKDEBUG} && _d("dst: " . $dst_sql);
       my $src_sth = $args{src_dbh}
          ->prepare( $src_sql, { mysql_use_result => !$args{buffer} } );
-      $src_sth->execute();
       my $dst_sth = $args{dst_dbh}
          ->prepare( $dst_sql, { mysql_use_result => !$args{buffer} } );
+
+      # The first cycle should lock to begin work; after that, unlock only if
+      # the plugin says it's OK (it may want to dig deeper on the rows it
+      # currently has locked).
+      my $executed_src = 0;
+      if ( !$cycle || !$plugin->pending_changes() ) {
+         $executed_src
+            = $self->lock_and_wait(%args, src_sth => $src_sth, lock_level => 1);
+      }
+
+      # The source sth might have already been executed by lock_and_wait().
+      $src_sth->execute() unless $executed_src;
       $dst_sth->execute();
+
       $rd->compare_sets(
          left   => $src_sth,
          right  => $dst_sth,
@@ -293,12 +306,17 @@ sub unlock {
 # 1 => per sync cycle
 # 2 => per table
 # 3 => global
+# This function might actually execute the $src_sth.  If we're using
+# transactions instead of table locks, the $src_sth has to be executed before
+# the MASTER_POS_WAIT() on the slave.  The return value is whether the
+# $src_sth was executed.
 sub lock_and_wait {
    my ( $self, %args ) = @_;
+   my $result = 0;
 
    foreach my $arg ( qw(
       dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
-      timeoutok transaction wait lock_level) )
+      timeoutok transaction wait lock_level misc_dbh) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -325,15 +343,28 @@ sub lock_and_wait {
       $ENV{MKDEBUG} && _d("$args{src_dbh}, $sql");
       $args{src_dbh}->do($sql);
    }
-   elsif ( !$args{transaction} ) {
-      $self->lock_table($args{src_dbh}, 'source',
-         $args{quoter}->quote($args{src_db}, $args{src_tbl}),
-         $args{replicate} ? 'WRITE' : 'READ');
+   else {
+      if ( $args{transaction} ) {
+         # Execute the $src_sth on the source, so LOCK IN SHARE MODE/FOR
+         # UPDATE will lock the rows examined.
+         die "I need a src_sth to do transactional 'locking' on the source"
+            unless $args{src_sth};
+         $ENV{MKDEBUG} && _d('Executing statement on source to lock rows');
+         $args{src_sth}->execute();
+         $result = 1;
+      }
+      else {
+         $self->lock_table($args{src_dbh}, 'source',
+            $args{quoter}->quote($args{src_db}, $args{src_tbl}),
+            $args{replicate} ? 'WRITE' : 'READ');
+      }
    }
 
    if ( (!$args{transaction} || $args{lock} == 3) && $args{wait} ) {
+      # Always use the $misc_dbh dbh to check the master's position, because
+      # the $src_dbh might be in use due to executing $src_sth.
       $self->wait_for_master(
-         $args{src_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
+         $args{misc_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
    }
 
    # Don't lock on destination if it's a replication slave, or the replication
@@ -354,6 +385,8 @@ sub lock_and_wait {
             $args{execute} ? 'WRITE' : 'READ');
       }
    }
+
+   return $result;
 }
 
 sub _d {
