@@ -34,7 +34,7 @@ eval {
       undef, undef, { PrintError => 0, RaiseError => 1 } );
 };
 if ($src_dbh) {
-   plan tests => 11;
+   plan tests => 12;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -51,6 +51,7 @@ require "../TableParser.pm";
 require "../TableSyncChunk.pm";
 require "../TableSyncer.pm";
 require "../TableSyncStream.pm";
+require "../TableSyncNibble.pm";
 require "../VersionParser.pm";
 
 sub throws_ok {
@@ -105,6 +106,8 @@ my %args = (
    possible_keys => [],
    cols          => $tbl_struct->{cols},
    test          => 0,
+   nibbler       => $nibbler,
+   parser        => $tp,
 );
 
 $ts->sync_table(
@@ -117,6 +120,7 @@ $ts->sync_table(
    test          => 1,
 );
 
+# Nothing should happen because I gave the 'test' argument.
 $cnt = $dbh->selectall_arrayref('select count(*) from test.test2')
    ->[0]->[0];
 is( $cnt, 0, 'Nothing happened' );
@@ -147,6 +151,20 @@ $ts->sync_table(
 
 $cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
 is( $cnt, 4, 'Four rows in destination after Stream' );
+
+`mysql < samples/before-TableSyncChunk.sql`;
+
+$ts->sync_table(
+   %args,
+   algorithm     => 'Nibble',
+   dst_db        => 'test',
+   dst_tbl       => 'test2',
+   src_db        => 'test',
+   src_tbl       => 'test1',
+);
+
+$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
+is( $cnt, 4, 'Four rows in destination after Nibble' );
 
 `mysql < samples/before-TableSyncChunk.sql`;
 

@@ -24,7 +24,7 @@ package TableSyncer;
 
 use English qw(-no_match_vars);
 
-our %ALGOS = map { $_ => 1 } qw(Stream Chunk);
+our %ALGOS = map { $_ => 1 } qw(Stream Chunk Nibble);
 
 sub new {
    bless {}, shift;
@@ -39,10 +39,21 @@ sub best_algorithm {
    my $result;
 
    # See if Chunker says it can handle the table
-   my $chunk = $args{chunker}->get_first_chunkable_column($args{tbl_struct});
-   if ( $chunk ) {
-      $ENV{MKDEBUG} && _d("Chunker says it can use $chunk to chunk on");
+   my ($exact, $cols) = $args{chunker}
+      ->find_chunk_columns($args{tbl_struct});
+   if ( $exact ) {
+      $ENV{MKDEBUG} && _d("Chunker says $cols->[0] supports chunking exactly");
       $result = 'Chunk';
+      # If Chunker can handle it OK, but not with exact chunk sizes, it means
+      # it's using only the first column of a multi-column index, which could
+      # be really bad.  It's better to use Nibble for these, because at least
+      # it can reliably select a chunk of rows of the desired size.
+   }
+   elsif ( my ($idx) = $args{parser}->find_best_index($args{tbl_struct}) ) {
+      # If there's an index, $nibbler->generate_asc_stmt() will use it, so it
+      # is an indication that the nibble algorithm will work.
+      $ENV{MKDEBUG} && _d("Parser found best index $idx, so Nibbler will work");
+      $result = 'Nibble';
    }
    else {
       # If not, Stream is the only choice.
@@ -58,7 +69,8 @@ sub sync_table {
    foreach my $arg ( qw(
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
-      timeoutok transaction versionparser wait where possible_keys cols) )
+      timeoutok transaction versionparser wait where possible_keys cols
+      nibbler parser) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -115,6 +127,8 @@ sub sync_table {
       database  => $args{src_db},
       table     => $args{src_tbl},
       chunker   => $args{chunker},
+      nibbler   => $args{nibbler},
+      parser    => $args{parser},
       struct    => $args{tbl_struct},
       checksum  => $args{checksum},
       vp        => $args{versionparser},
@@ -122,6 +136,7 @@ sub sync_table {
       chunksize => $args{chunksize},
       where     => $args{where},
       possible_keys => [],
+      versionparser => $args{versionparser},
    );
 
    $self->lock_and_wait(%args, lock_level => 2);
