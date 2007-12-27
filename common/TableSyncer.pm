@@ -40,7 +40,7 @@ sub best_algorithm {
 
    # See if Chunker says it can handle the table
    my ($exact, $cols) = $args{chunker}
-      ->find_chunk_columns($args{tbl_struct});
+      ->find_chunk_columns($args{tbl_struct}, { exact => 1 });
    if ( $exact ) {
       $ENV{MKDEBUG} && _d("Chunker says $cols->[0] supports chunking exactly");
       $result = 'Chunk';
