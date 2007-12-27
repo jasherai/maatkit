@@ -3635,6 +3635,18 @@ elsif ( $opts{R} ) {
 }
 else {
    $dsns[0]->{dbh} = get_cxn($dsns[0]);
+
+   if ( @dsns == 1 ) {
+      if ( $opts{s} ) {
+         unshift @dsns, get_master_dsn($dsns[0]);
+         $dsns[0]->{dbh} = get_cxn($dsns[0]);
+      }
+      else {
+         die "You specified only one DSN, "
+            . "but not --synctomaster or --replicate.\n";
+      }
+   }
+
    my $finder = new MySQLFind(
       dbh       => $dsns[0]->{dbh},
       quoter    => $q,
@@ -3923,8 +3935,12 @@ There are many ways to invoke it.  The following is the abbreviated logic:
          The DSN is the master.  Find slaves and connect to each,
          find records of differences, and fix.
    else:
-      find tables, filtering with --databases etc, and sync each
-      DSN to the first.
+      if only 1 DSN and --synctomaster:
+         The DSN is a slave.  Connect to its master, find tables and
+         filter with --databases etc, and sync each table to the master.
+      else:
+         find tables, filtering with --databases etc, and sync each
+         DSN to the first.
 
 =head1 ALGORITHMS
 
