@@ -24,7 +24,7 @@ use warnings FATAL => 'all';
 # * Prepare to nibble the table (see TableNibbler.pm)
 # * Fetch the nibble'th next row (say the 500th) from the current row
 # * Checksum from the current row to the nibble'th as a chunk
-# * If a chunk differs, make a note to checksum the rows in the chunk (state 1)
+# * If a nibble differs, make a note to checksum the rows in the nibble (state 1)
 # * Checksum them (state 2)
 # * If a row differs, it must be synced
 # See TableSyncStream for the TableSync interface this conforms to.
@@ -90,7 +90,7 @@ sub new {
          = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => 'SHA1');
    }
 
-   $args{chunk_sql} ||= $args{checksum}->make_checksum_query(
+   $args{nibble_sql} ||= $args{checksum}->make_checksum_query(
       dbname    => $args{database},
       tblname   => $args{table},
       table     => $args{struct},
@@ -134,7 +134,7 @@ sub get_sql {
          table     => $args{table},
          chunks    => [$where],
          chunk_num => 0,
-         query     => $self->{chunk_sql},
+         query     => $self->{nibble_sql},
          where     => $args{where},
          quoter    => $self->{quoter},
       );
@@ -255,7 +255,7 @@ sub done_with_rows {
       $self->{nibble}++;
       delete $self->{cached_boundaries};
       $ENV{MKDEBUG}
-         && _d("Setting state=$self->{state}, chunk_num=$self->{chunk_num}");
+         && _d("Setting state=$self->{state}, nibble=$self->{nibble}");
    }
 }
 
