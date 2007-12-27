@@ -122,6 +122,26 @@ sub find_tables {
    return map { $_->{name} } @tables;
 }
 
+# USEs the given database, and returns the previous default database.
+sub _use_db {
+   my ( $self, $dbh, $new ) = @_;
+   if ( !$new ) {
+      $ENV{MKDEBUG} && _d('No new DB to use');
+      return;
+   }
+   my $sql = 'SELECT DATABASE()';
+   $ENV{MKDEBUG} && _d($sql);
+   my $curr = $dbh->selectrow_array($sql);
+   if ( $curr && $new && $curr eq $new ) {
+      $ENV{MKDEBUG} && _d('Current and new DB are the same');
+      return $curr;
+   }
+   $sql = 'USE ' . $self->{quoter}->quote($new);
+   $ENV{MKDEBUG} && _d($sql);
+   $dbh->do($sql);
+   return $curr;
+}
+
 # Returns hashrefs in the format SHOW TABLE STATUS would, but doesn't
 # necessarily call SHOW TABLE STATUS unless it needs to.  Hash keys are all
 # lowercase.  Table names are returned as <database>.<table> so fully-qualified
@@ -129,6 +149,7 @@ sub find_tables {
 sub _fetch_tbl_list {
    my ( $self, %args ) = @_;
    die "database is required" unless $args{database};
+   my $curr_db = $self->_use_db($self->{dbh}, $args{database});
    my $need_engine = $self->{engines}->{permit}
         || $self->{engines}->{reject}
         || $self->{engines}->{regexp};
@@ -184,6 +205,7 @@ sub _fetch_tbl_list {
       }
       return @result;
    }
+   $self->_use_db($args{dbh}, $curr_db);
 }
 
 sub _filter {
