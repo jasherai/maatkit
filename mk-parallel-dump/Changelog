@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * --ignoreengine was ignored (bug #1851461).
+
 2007-12-16: version 1.0.2
 
    * Added debugging.
