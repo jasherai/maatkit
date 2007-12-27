@@ -103,7 +103,7 @@ sub sync_table {
       table     => $args{dst_tbl},
       sdatabase => $args{src_db},
       stable    => $args{src_tbl},
-      replace   => $args{replace},
+      replace   => $args{replace} || $args{replicate},
       actions   => [
          ( $update_func ? $update_func            : () ),
          # Print AFTER executing, so the print isn't misleading in case of an
