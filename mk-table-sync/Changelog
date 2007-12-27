@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Syncing via replication did not use REPLACE on the master.
    * --transaction disabled waiting for a slave to catch up.
    * Allow one DSN without --replicate, as long as --synctomaster is given.
    * Added the Nibble sync algorithm.

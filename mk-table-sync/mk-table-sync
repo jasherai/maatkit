@@ -2596,7 +2596,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1568
+# TableSyncer package 1571
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2673,7 +2673,7 @@ sub sync_table {
       table     => $args{dst_tbl},
       sdatabase => $args{src_db},
       stable    => $args{src_tbl},
-      replace   => $args{replace},
+      replace   => $args{replace} || $args{replicate},
       actions   => [
          ( $update_func ? $update_func            : () ),
          ( $args{print} ? sub { print @_, ";\n" } : () ),
