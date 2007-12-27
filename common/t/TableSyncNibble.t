@@ -31,7 +31,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
-   plan tests => 1;
+   plan tests => 4;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -112,6 +112,88 @@ is (
    . q{`b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
    . q{`test`.`test1` WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND (foo=1)},
    'First nibble SQL',
+);
+
+is (
+   $t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+   q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
+   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
+   . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
+   . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
+   . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
+   . q{`b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
+   . q{`test`.`test1` WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND (foo=1)},
+   'First nibble SQL, again',
+);
+
+$t->{nibble} = 1;
+delete $t->{cached_boundaries};
+
+is (
+   $t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+   q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
+   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
+   . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
+   . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
+   . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
+   . q{`b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
+   . q{`test`.`test1` WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) AND }
+   . q{((`a` < 2) OR (`a` = 2 AND `b` <= 'ca')))) AND (foo=1)},
+   'Second nibble SQL',
+);
+
+# Bump the nibble boundaries ahead until we run off the end of the table.
+$t->{nibble} = 2;
+delete $t->{cached_boundaries};
+$t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+$t->{nibble} = 3;
+delete $t->{cached_boundaries};
+$t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+$t->{nibble} = 4;
+delete $t->{cached_boundaries};
+$t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+
+is (
+   $t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+   q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
+   . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc, 1, 16), 16, }
+   . q{10) AS UNSIGNED)), 10, 16), 16, '0'), LPAD(CONV(BIT_XOR(CAST(CONV(}
+   . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
+   . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
+   . q{`b`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
+   . q{`test`.`test1` WHERE ((((`a` > 4) OR (`a` = 4 AND `b` > 'bz')) AND }
+   . q{1=1)) AND (foo=1)},
+   'End-of-table nibble SQL',
 );
 
 __END__

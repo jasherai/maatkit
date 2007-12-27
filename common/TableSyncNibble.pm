@@ -126,6 +126,7 @@ sub get_sql {
          . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
          . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
          . ($args{where} ? " AND ($args{where})" : '');
+         # TODO
    }
    else {
       my $where = $self->__get_boundaries();
@@ -144,31 +145,68 @@ sub get_sql {
 # Returns a WHERE clause for finding out the boundaries of the nibble.
 # Initially, it'll just be something like "select key_cols ... limit 499, 1".
 # We then remember this row (it is also used elsewhere).  Next time it's like
-# "select key_cols ... where > remembered_row limit 499, 1".
+# "select key_cols ... where > remembered_row limit 499, 1".  Assuming that
+# the source and destination tables have different data, executing the same
+# query against them might give back a different boundary row, which is not
+# what we want, so each boundary needs to be cached until the 'nibble'
+# increases.
 sub __get_boundaries {
    my ( $self ) = @_;
-   my $sel_stmt = $self->{sel_stmt};
-   my $q        = $self->{quoter};
-   my $sql = 'SELECT '
-      . join(',', map { $q->quote($_) } @{$sel_stmt->{cols}})
-      . " FROM " . $q->quote($self->{database}, $self->{table})
-      . ($self->{versionparser}->version_ge($self->{dbh}, '4.0.9') ? " FORCE" : " USE")
-      . " INDEX(" . $q->quote($sel_stmt->{index}) . ")";
-   if ( $self->{nibble} ) {
-      # TODO
-   }
-   $sql .= ' LIMIT ' . ($self->{chunksize} - 1) . ', 1';
-   $ENV{MKDEBUG} && _d($sql);
-   my $row = $self->{dbh}->selectrow_hashref($sql);
 
-   # Inject the row into the WHERE clause.  The WHERE is for the <= case because
-   # the bottom of the nibble is bounded strictly by >.
-   # TODO: what if there's no row
-   my $n = $self->{nibbler};
+   if ( $self->{cached_boundaries} ) {
+      $ENV{MKDEBUG} && _d('Using cached boundaries');
+      return $self->{cached_boundaries};
+   }
+
+   my $q = $self->{quoter};
    my $s = $self->{sel_stmt};
-   my $i = 0;
-   (my $where = $s->{boundaries}->{'<='})
-      =~ s{([=><]) \?}{"$1 " . $q->quote_val($row->{$s->{scols}->[$i++]})}eg;
+   my $row;
+   my $lb; # Lower boundaries
+   if ( $self->{cached_row} && $self->{cached_nibble} == $self->{nibble} ) {
+      $ENV{MKDEBUG} && _d('Using cached row for boundaries');
+      $row = $self->{cached_row};
+   }
+   else {
+      my $sql      = 'SELECT '
+         . join(',', map { $q->quote($_) } @{$s->{cols}})
+         . " FROM " . $q->quote($self->{database}, $self->{table})
+         . ($self->{versionparser}->version_ge($self->{dbh}, '4.0.9')
+            ? " FORCE" : " USE")
+         . " INDEX(" . $q->quote($s->{index}) . ")";
+      if ( $self->{nibble} ) {
+         # The lower boundaries of the nibble must be defined, based on the last
+         # remembered row.
+         my $tmp = $self->{cached_row};
+         my $i   = 0;
+         ($lb = $s->{boundaries}->{'>'})
+            =~ s{([=><]) \?}
+                {"$1 " . $q->quote_val($tmp->{$s->{scols}->[$i++]})}eg;
+         $sql .= ' WHERE ' . $lb;
+      }
+      $sql .= ' LIMIT ' . ($self->{chunksize} - 1) . ', 1';
+      $ENV{MKDEBUG} && _d($sql);
+      $row = $self->{dbh}->selectrow_hashref($sql);
+   }
+
+   my $where;
+   if ( $row ) {
+      # Inject the row into the WHERE clause.  The WHERE is for the <= case
+      # because the bottom of the nibble is bounded strictly by >.
+      my $i = 0;
+      ($where = $s->{boundaries}->{'<='})
+         =~ s{([=><]) \?}{"$1 " . $q->quote_val($row->{$s->{scols}->[$i++]})}eg;
+   }
+   else {
+      $where = '1=1';
+   }
+
+   if ( $lb ) {
+      $where = "($lb AND $where)";
+   }
+
+   $self->{cached_row}        = $row;
+   $self->{cached_nibble}     = $self->{nibble};
+   $self->{cached_boundaries} = $where;
 
    $ENV{MKDEBUG} && _d('WHERE clause: ', $where);
    return $where;
