@@ -79,12 +79,6 @@ sub sync_table {
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
 
-   # We can lock only per-sync-cycle with transactional locking, because FOR
-   # UPDATE or LOCK IN SHARE MODE work only on the rows they touch, and a sync
-   # cycle might not touch the whole table.
-   die "Cannot use transaction-locking with lock level > 1"
-      if $args{transaction} && $args{lock} > 1;
-
    # TODO: for two-way sync, the change handler needs both DBHs.
    # Check permissions on writable tables (TODO: 2-way needs to check both)
    my $update_func;
@@ -345,13 +339,13 @@ sub lock_and_wait {
    }
    else {
       if ( $args{transaction} ) {
-         # Execute the $src_sth on the source, so LOCK IN SHARE MODE/FOR
-         # UPDATE will lock the rows examined.
-         die "I need a src_sth to do transactional 'locking' on the source"
-            unless $args{src_sth};
-         $ENV{MKDEBUG} && _d('Executing statement on source to lock rows');
-         $args{src_sth}->execute();
-         $result = 1;
+         if ( $args{src_sth} ) {
+            # Execute the $src_sth on the source, so LOCK IN SHARE MODE/FOR
+            # UPDATE will lock the rows examined.
+            $ENV{MKDEBUG} && _d('Executing statement on source to lock rows');
+            $args{src_sth}->execute();
+            $result = 1;
+         }
       }
       else {
          $self->lock_table($args{src_dbh}, 'source',
