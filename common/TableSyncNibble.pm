@@ -124,9 +124,8 @@ sub get_sql {
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
-         . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
+         . ' WHERE (' . $self->__get_boundaries() . ')'
          . ($args{where} ? " AND ($args{where})" : '');
-         # TODO
    }
    else {
       my $where = $self->__get_boundaries();
@@ -225,8 +224,8 @@ sub same_row {
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
-      $ENV{MKDEBUG} && _d('Will examine this chunk before moving to next');
-      $self->{state} = 1; # Must examine this chunk row-by-row
+      $ENV{MKDEBUG} && _d('Will examine this nibble before moving to next');
+      $self->{state} = 1; # Must examine this nibble row-by-row
    }
 }
 
@@ -253,7 +252,8 @@ sub done_with_rows {
    }
    else {
       $self->{state} = 0;
-      $self->{chunk_num}++;
+      $self->{nibble}++;
+      delete $self->{cached_boundaries};
       $ENV{MKDEBUG}
          && _d("Setting state=$self->{state}, chunk_num=$self->{chunk_num}");
    }
@@ -262,11 +262,9 @@ sub done_with_rows {
 sub done {
    my ( $self ) = @_;
    $ENV{MKDEBUG}
-      && _d("Done with $self->{chunk_num} of "
-       . scalar(@{$self->{chunks}}) . ' chunks');
-   $ENV{MKDEBUG} && $self->{state} && _d('Chunk differs; must examine rows');
-   return $self->{state} == 0
-      && $self->{chunk_num} >= scalar(@{$self->{chunks}})
+      && _d("Done with nibble $self->{nibble}");
+   $ENV{MKDEBUG} && $self->{state} && _d('Nibble differs; must examine rows');
+   return $self->{state} == 0 && $self->{nibble} && !$self->{cached_row};
 }
 
 sub pending_changes {
