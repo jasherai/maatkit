@@ -24,7 +24,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1369
+# OptionParser package 1586
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -105,6 +105,37 @@ sub new {
             $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
          }
 
+      }
+   }
+
+   if ( $ENV{MKDEBUG} ) {
+      my $text = do {
+         local $RS = undef;
+         open my $fh, "<", $PROGRAM_NAME
+            or die "Can't open $PROGRAM_NAME: $OS_ERROR";
+         <$fh>;
+      };
+      my %used = map { $_ => 1 } $text =~ m/\$opts\{'?([\w-]+)'?\}/g;
+      my @unused;
+      my @undefined;
+      my %option_exists;
+      foreach my $opt ( @opts ) {
+         next unless ref $opt;
+         my $key = $opt->{k};
+         $option_exists{$key}++;
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+                                    |password|port|socket|user|host)$/x
+              || $disables{$key};
+         push @unused, $key unless $used{$key};
+      }
+      foreach my $key ( keys %used ) {
+         push @undefined, $key unless $option_exists{$key};
+      }
+      if ( @unused || @undefined ) {
+         die "The following command-line options are unused: "
+            . join(',', @unused)
+            . ' The following are undefined: '
+            . join(',', @undefined);
       }
    }
 
@@ -519,6 +550,10 @@ my @opt_spec = (
 
 );
 
+# Make sure OptionParser understands that these options are used.
+# $opts{cmin} $opts{ctime} $opts{empty} $opts{kmin} $opts{ktime} 
+# $opts{mmin} $opts{mtime} $opts{exec} $opts{printf} 
+
 my $q          = new Quoter();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{prompt} = '[option]... [database...]';
@@ -740,7 +775,7 @@ my %conn = (
    S => 'mysql_socket'
 );
 
-my $dsn = 'DBI:mysql:' . ( $opts{D} || '' ) . ';'
+my $dsn = 'DBI:mysql:;'
    . join(';', map  { "$conn{$_}=$opts{$_}" } grep { defined $opts{$_} } qw(F h P S))
    . ';mysql_read_default_group=mysql';
 $dbh = DBI->connect($dsn, @opts{qw(u p)}, { AutoCommit => 1, RaiseError => 1, PrintError => 0 } );
