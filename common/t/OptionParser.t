@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 48;
+use Test::More tests => 49;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -660,3 +660,20 @@ Options and values after processing arguments:
 EOF
 , 'Option groupings',
 );
+
+# check that the optionparser can look for unused or undefined options.
+$ENV{MKDEBUG} = 1;
+
+eval {
+   $p = new OptionParser(
+      { s => 'columns|C=H',    g => 'o', d => 'Comma-separated list of columns to output' },
+      { s => 'tables|t=h',     g => 'p', d => 'Comma-separated list of tables to output' },
+      { s => 'databases|d=A',  g => 'q', d => 'Comma-separated list of databases to output' },
+      { s => 'books|b=a',      g => 'p', d => 'Comma-separated list of books to output' },
+   );
+   $p->groups(
+      { k => 'p', d => 'Foofoo' },
+      { k => 'q', d => 'Bizbat' },
+   );
+};
+like($EVAL_ERROR, qr/C,t,d,b.*undefined: bar,foo,f/, 'Found bad cmd-line options');
