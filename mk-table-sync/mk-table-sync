@@ -2808,7 +2808,7 @@ sub wait_for_master {
             my $stat = $dst_dbh->selectall_arrayref($query)->[0]->[0];
             $stat = 'NULL' unless defined $stat;
             if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
-               die "MASTER_POS_WAIT failed: $stat";
+               die "MASTER_POS_WAIT() returned $stat";
             }
             $ENV{MKDEBUG} && _d("Result of waiting: $stat");
          }
@@ -3762,6 +3762,12 @@ sub sync_a_table {
       my @possible_keys = $tp->find_possible_keys(
          $args{src}->{dbh}, @args{qw(src_db src_tbl)}, $q, $opts{W});
 
+      # If the table is InnoDB, prefer to sync it with transactions, unless
+      # the user explicitly said not to.
+      my $use_txn = defined $opts{transaction}        ? $opts{transaction}
+                  : $tbl_struct->{engine} eq 'InnoDB' ? 1
+                  :                                     0;
+
       my %status = $syncer->sync_table(
          algorithm     => $opts{a} || '',
          buffer        => $opts{bufferresults} || 0,
@@ -3782,7 +3788,7 @@ sub sync_a_table {
          quoter        => $q,
          replace       => $opts{r} || 0,
          replicate     => ($opts{R} || $opts{s}) || 0,
-         transaction   => $opts{transaction} || 0,
+         transaction   => $use_txn,
          src_db        => $args{src_db},
          src_dbh       => $args{src}->{dbh},
          src_tbl       => $args{src_tbl},
@@ -4211,6 +4217,10 @@ default, but since L<"--lock"> is disabled by default, it has no effect.
 Most options that enable locking also disable transactions by default, so if
 you want to use transactional locking (via C<LOCK IN SHARE MODE> and C<FOR
 UPDATE>, you must specify --transaction explicitly.
+
+If you don't specify --transaction explicitly, C<mk-table-sync> will decide on
+a per-table basis whether to use transactions or table locks.  It currently
+uses transactions on InnoDB tables, and table locks on all others.
 
 =item --verbose
 

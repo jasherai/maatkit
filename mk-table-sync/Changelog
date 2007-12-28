@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * InnoDB tables use --transaction unless it's explicitly specified.
+
 2007-12-27: version 1.0.2
 
    * Syncing via replication did not use REPLACE on the master.
