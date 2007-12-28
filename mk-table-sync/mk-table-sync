@@ -4012,11 +4012,10 @@ the boundaries of each piece of the table based on index cardinality, it uses
 C<LIMIT> to define each nibble's upper limit, and the previous nibble's upper
 limit to define the lower limit.
 
-It has one small inefficiency: it does two queries per nibble, even when there
-are no differences.  One query finds the row that will define the next
-nibble's upper boundary, and the next query checksums the entire nibble.  For
-this reason, when a table supports exact chunking (there is a single-column
-chunkable index), L<"Chunk"> is preferred.
+It works in steps: one query finds the row that will define the next nibble's
+upper boundary, and the next query checksums the entire nibble.  If the nibble
+differs between the source and destination, it examines the nibble row-by-row,
+just as L<"Chunk"> does.
 
 =item Stream
 
