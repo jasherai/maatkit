@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * --ignoretables was ignored.
+
 2007-12-16: version 1.0.2
 
    * Updated common code.
