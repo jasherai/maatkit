@@ -247,7 +247,7 @@ sub wait_for_master {
             my $stat = $dst_dbh->selectall_arrayref($query)->[0]->[0];
             $stat = 'NULL' unless defined $stat;
             if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
-               die "MASTER_POS_WAIT failed: $stat";
+               die "MASTER_POS_WAIT returned $stat";
             }
             $ENV{MKDEBUG} && _d("Result of waiting: $stat");
          }
