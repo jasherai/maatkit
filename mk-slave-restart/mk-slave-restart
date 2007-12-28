@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 # This is mk-slave-restart, a program to watch replication and try to
-# restart the slave on errors.
+# restart slaves on errors.
 #
 # This program is copyright (c) 2007 Baron Schwartz.  Feedback and
 # improvements are welcome.
@@ -20,8 +20,8 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: discover slaves via SHOW SLAVE HOSTS, fork off a separate instance for
-# each, and fix 'em all.
+# TODO: add an option to try N times re-fetching relay logs if the relay log
+# looks corrupted.
 
 use strict;
 use warnings FATAL => 'all';
@@ -678,11 +678,114 @@ sub _d {
 # ###########################################################################
 # End DSNParser package
 # ###########################################################################
+
+# ###########################################################################
+# MasterSlave package 1605
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MasterSlave;
+
+use English qw(-no_match_vars);
+use List::Util qw(min max);
+
+sub new {
+   bless {}, shift;
+}
+
+# Descends to slaves by examining SHOW SLAVE HOSTS.  Arguments is a hashref:
+#
+# * dbh           (Optional) a DBH.
+# * dsn           The DSN to connect to; if no DBH, will connect using this.
+# * dsn_parser    A DSNParser object.
+# * recurse       How many levels to recurse. 0 = none, undef = infinite.
+# * callback      Code to execute after finding a new slave.
+#
+# The callback gets the slave's DSN, dbh, and the recursion level as args.
+# The recursion is tail recursion.
+sub recurse_to_slaves {
+   my ( $self, $args, $level ) = @_;
+   $level ||= 0;
+   my $dp   = $args->{dsn_parser};
+   my $dsn  = $args->{dsn};
+
+   my $dbh;
+   eval {
+      $dbh = $args->{dbh} || $dp->get_dbh(
+         $dp->get_cxn_params($dsn), { AutoCommit => 1 });
+      $ENV{MKDEBUG} && _d('Connected to ', $dp->as_string($dsn));
+   };
+   if ( $EVAL_ERROR ) {
+      print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n";
+      return;
+   }
+
+   # SHOW SLAVE HOSTS sometimes has obsolete information.  Verify that this
+   # server has the ID its master thought, and that we have not seen it before
+   # in any case.
+   my $sql  = 'SELECT @@SERVER_ID';
+   $ENV{MKDEBUG} && _d($sql);
+   my ($id) = $dbh->selectrow_array($sql);
+   $ENV{MKDEBUG} && _d('Working on server ID ', $id);
+   my $master_thinks_i_am = $dsn->{server_id};
+   if ( !defined $id
+       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
+       || $args->{server_ids_seen}->{$id}++
+   ) {
+      $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
+      print STDERR "Skipping ", $dp->as_string($dsn), "\n";
+      return;
+   }
+
+   # Call the callback!
+   $args->{callback}->($dsn, $dbh, $level);
+
+   if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
+
+      # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
+      # revealed by server_id and master_id).  SHOW SLAVE HOSTS can be wacky.
+      my @slaves =
+         grep { $_->{master_id} == $id } # Only my own slaves.
+         map  {                          # Convert each to all-lowercase keys.
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            \%hash;
+         }
+         @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+
+      foreach my $slave ( @slaves ) {
+         my $spec = "h=$slave->{host},P=$slave->{port}"
+            . ( $slave->{user} ? ",u=$slave->{user}" : '')
+            . ( $slave->{password} ? ",p=$slave->{password}" : '');
+         my $newdsn = $dp->parse($spec, $dsn);
+         $newdsn->{server_id} = $slave->{server_id};
+         $ENV{MKDEBUG} && _d('Recursing from ',
+            $dp->as_string($dsn), ' to ', $dp->as_string($newdsn));
+         $self->recurse_to_slaves(
+            { %$args, dsn => $newdsn, dbh => undef }, $level + 1 );
+      }
+   }
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# MasterSlave:$line ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MasterSlave package
+# ###########################################################################
+
 package main;
 
 use English qw(-no_match_vars);
 use List::Util qw(min max);
 use Time::HiRes qw(sleep);
+
+$OUTPUT_AUTOFLUSH = 1;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -706,6 +809,7 @@ my @opt_spec = (
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'skipcount|k=i',     d => 'Number of statements to skip (default 1)' },
+   { s => 'recurse|r=i',       d => 'Number of levels to recurse (default 0)' },
    { s => 'sleep|s=f',         d => 'Initial sleep seconds (default 1)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'time|t=m',          d => 'Time to run before exiting (suffix: s/m/h/d)' },
@@ -715,12 +819,12 @@ my @opt_spec = (
    { s => 'verbose|v+',        d => 'Verbosity; can specify multiple times; default 0' },
 );
 
-my $dsn_parser = new DSNParser();
+my $dp = new DSNParser();
 my $vp = new VersionParser();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{prompt} = '<options>';
-$opt_parser->{descr}  = 'watches a MySQL replication slave for errors, and '
-                      . 'tries to restart replication if it stops.';
+$opt_parser->{descr}  = 'watches one or more MySQL replication slaves for '
+                      . 'errors, and tries to restart replication if it stops.';
 my %opts = $opt_parser->parse();
 
 if ( !$opts{help} ) {
@@ -744,8 +848,7 @@ $opt_parser->usage_or_errors(%opts);
 if ( $opts{askpass} ) {
    $opts{p} = OptionParser::prompt_noecho("Enter password: ");
 }
-my $dbh = $dsn_parser->get_dbh(
-   $dsn_parser->get_cxn_params(\%opts), { AutoCommit => 1, } );
+my $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts), { AutoCommit => 1, } );
 
 # VERY IMPORTANT: Lowercases all column names for fetchrow_hashref.  This is
 # because different MySQL versions use different lettercase in SHOW SLAVE
@@ -765,109 +868,193 @@ if ( $opts{daemonize} ) {
    open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
 }
 
-my $start_sql = $vp->version_ge($dbh, '4.0.5') ? 'START SLAVE' : 'SLAVE START';
-if ( $opts{untilmaster} ) {
-   my ( $file, $pos ) = split(',', $opts{untilmaster});
-   $start_sql .= " UNTIL MASTER_LOG_FILE = '$file', MASTER_LOG_POS = $pos";
-}
-elsif ( $opts{untilrelay} ) {
-   my ( $file, $pos ) = split(',', $opts{untilrelay});
-   $start_sql .= " UNTIL RELAY_LOG_FILE = '$file', RELAY_LOG_POS = $pos";
-}
+my $exit_status = 0;
+my %children;
+my @servers_to_watch;
 
-my $fetch_stat = $dbh->prepare('SHOW SLAVE STATUS');
-my $set_skip   = $dbh->prepare("SET GLOBAL SQL_SLAVE_SKIP_COUNTER = $opts{k}");
-my $start      = $dbh->prepare($start_sql);
-
-my $exit_time = time() + ($opts{t} || 0);
-my $sleep = $opts{s};
-my ($last_log, $last_pos);
-
-while ( ( !$opts{t} || time() < $exit_time ) ) {
-   my $was_running = 1;
-   $fetch_stat->execute();
-   my $stat = $fetch_stat->fetchall_arrayref({})->[0];
-   die "No SLAVE STATUS output found\n" unless $stat;
-
-   if ( !$last_log
-      || $last_log ne $stat->{relay_log_file}
-      || $last_pos != $stat->{relay_log_pos}
-   ) {
-      $stat->{slave_sql_running} ||= 'No';
-      $stat->{last_error}        ||= '';
-      $stat->{last_errno}        ||= 0;
-
-      if ( $opts{untilmaster} && pos_ge($stat, 'master') ) {
-         die "Slave has advanced past $opts{untilmaster} on master.\n";
-      }
-      elsif ( $opts{untilrelay} && pos_ge($stat, 'relay') ) {
-         die "Slave has advanced past $opts{untilrelay} in relay logs.\n";
-      }
-
-      if ( $stat->{slave_sql_running} eq 'No' ) {
-         # Print the time, error, etc
-         if ( $opts{v} ) {
-            my $err = '';
-            if ( $opts{v} > 1 ) {
-               ($err = $stat->{last_error} ) =~ s/\s+/ /g;
-               if ( $opts{L} ) {
-                  $err = substr($err, 0, $opts{L});
-               }
+# Despite the name, recursing to slaves actually begins at the specified
+# server, so the named server may also be watched, if it's a slave.
+my $ms = new MasterSlave();
+$ms->recurse_to_slaves(
+   {  dbh        => $dbh,
+      dsn        => \%opts,
+      dsn_parser => $dp,
+      recurse    => $opts{r} || 0,
+      callback   => sub {
+         my ( $dsn, $dbh, $level ) = @_;
+         # Test whether we want to watch this server.
+         eval {
+            my $stat = $dbh->selectrow_hashref('SHOW SLAVE STATUS');
+            if ( $stat ) {
+               push @servers_to_watch, { dsn => $dsn, dbh => $dbh };
             }
-            printf("%s %s %11d %d %s\n",
-               ts(time),
-               $stat->{relay_log_file},
-               $stat->{relay_log_pos},
-               $stat->{last_errno} || 0,
-               $err
-            );
+            else {
+               die "could not find slave status on this server\n";
+            }
+         };
+         if ( $EVAL_ERROR ) {
+            chomp $EVAL_ERROR;
+            $ENV{MKDEBUG} && _d('Not watching ', $dp->as_string($dsn),
+               ' because ', $EVAL_ERROR);
          }
-
-         if ( $opts{e} && !exists($opts{e}->{$stat->{last_errno}}) ) {
-            die "Error $stat->{last_errno} is not in --error-numbers.\n";
-         }
-         elsif ( $opts{E} && $stat->{last_error} && $stat->{last_error} !~ m/$opts{E}/ ) {
-            die "Error does not match --error-text.\n";
-         }
-         else {
-            $set_skip->execute();
-            $start->execute();
-            $was_running = 0;
-            # Only set this on events I tried to restart.  Otherwise there
-            # could be a race condition: I see it, I record it, but it hasn't
-            # caused an error yet; so I won't try to restart it when it does.
-            # (The point of this is to avoid trying to restart the same event
-            # twice in case another race condition happens -- I restart it,
-            # then check the server and it hasn't yet cleared the error
-            # message and restarted the SQL thread).
-            $last_log = $stat->{relay_log_file};
-            $last_pos = $stat->{relay_log_pos};
-         }
-      }
+      },
    }
+);
 
-   # Adjust sleep time.
-   if ( $was_running ) {
-      $sleep = min($opts{M}, $sleep * 2);
-   }
-   else {
-      $sleep = max($opts{m}, $sleep / 2);
-   }
+# Watch each server found.
+my $must_fork = @servers_to_watch > 1;
+foreach my $host ( @servers_to_watch ) {
 
-   # Errors are very likely to follow each other in quick succession.  NOTE:
-   # this policy has a side effect with respect to $sleep.  Suppose $sleep is
-   # 512 and mk-slave-restart finds an error; now $sleep is 256, but
-   # mk-slave-restart sleeps only 1 (the initial value of --sleep).  Suppose
-   # there is no error when it wakes up after 1 second, because 1 was too
-   # short.  Now it doubles $sleep, back to 512.  $sleep has the same value it
-   # did before the error was ever found.
-   print "sleeping $sleep\n" if $opts{v} > 2;
-   sleep($was_running ? $sleep : min($sleep, $opts{s}));
+   $host->{dbh}->{FetchHashKeyName} = 'NAME_lc';
+   $host->{dbh}->{InactiveDestroy}  = 1;         # Don't disconnect on fork
+
+   # Fork, but only if there might be more than one host to watch.
+   my $pid = $must_fork ? fork() : undef;
+   if ( !$must_fork || (defined($pid) && $pid == 0) ) {
+      # I either forked and I'm a child, or I didn't fork... confusing, eh?
+      watch_server($host->{dsn}, $host->{dbh}, $must_fork);
+   }
+   elsif ( $must_fork && !defined($pid) ) {
+      die("Unable to fork!");
+   }
+   # I already exited if I'm a child, so I'm the parent.  (Or maybe I never
+   # forked).
+   $children{$dp->as_string($host->{dsn})} = $pid if $must_fork;
+};
+
+# Wait for the children to exit.
+foreach my $host ( keys %children ) {
+   $ENV{MKDEBUG} && _d('Waiting to reap ', $host);
+   my $pid = waitpid($children{$host}, 0);
+   $exit_status ||= $CHILD_ERROR >> 8;
 }
+
+exit($exit_status);
 
 # ############################################################################
 # Subroutines.
 # ############################################################################
+
+# Actually watch a server.  If many instances are being watched, this is
+# fork()ed.
+sub watch_server {
+   my ( $dsn, $dbh, $was_forked ) = @_;
+
+   $ENV{MKDEBUG} && _d('Watching server ', $dp->as_string($dsn),
+      " forked=$was_forked");
+
+   my $start_sql = $vp->version_ge($dbh, '4.0.5') ? 'START SLAVE' : 'SLAVE START';
+   if ( $opts{untilmaster} ) {
+      my ( $file, $pos ) = split(',', $opts{untilmaster});
+      $start_sql .= " UNTIL MASTER_LOG_FILE = '$file', MASTER_LOG_POS = $pos";
+   }
+   elsif ( $opts{untilrelay} ) {
+      my ( $file, $pos ) = split(',', $opts{untilrelay});
+      $start_sql .= " UNTIL RELAY_LOG_FILE = '$file', RELAY_LOG_POS = $pos";
+   }
+
+   my $fetch_stat = $dbh->prepare('SHOW SLAVE STATUS');
+   my $set_skip   = $dbh->prepare("SET GLOBAL SQL_SLAVE_SKIP_COUNTER = $opts{k}");
+   my $start      = $dbh->prepare($start_sql);
+
+   my $exit_time = time() + ($opts{t} || 0);
+   my $sleep = $opts{s};
+   my ($last_log, $last_pos);
+
+   my $stat = {}; # Will hold SHOW SLAVE STATUS
+   STAT:
+   while ( $stat && ( !$opts{t} || time() < $exit_time ) ) {
+      my $was_running = 1;
+      $fetch_stat->execute();
+      $stat = $fetch_stat->fetchall_arrayref({})->[0];
+      if ( !$stat ) {
+         print STDERR "No SLAVE STATUS output found on ",
+            $dp->as_string($dsn), "\n";
+         next STAT;
+      }
+
+      if ( !$last_log
+         || $last_log ne $stat->{relay_log_file}
+         || $last_pos != $stat->{relay_log_pos}
+      ) {
+         $stat->{slave_sql_running} ||= 'No';
+         $stat->{last_error}        ||= '';
+         $stat->{last_errno}        ||= 0;
+
+         if ( $opts{untilmaster} && pos_ge($stat, 'master') ) {
+            die "Slave has advanced past $opts{untilmaster} on master.\n";
+         }
+         elsif ( $opts{untilrelay} && pos_ge($stat, 'relay') ) {
+            die "Slave has advanced past $opts{untilrelay} in relay logs.\n";
+         }
+
+         if ( $stat->{slave_sql_running} eq 'No' ) {
+            # Print the time, error, etc
+            if ( $opts{v} ) {
+               my $err = '';
+               if ( $opts{v} > 1 ) {
+                  ($err = $stat->{last_error} ) =~ s/\s+/ /g;
+                  if ( $opts{L} ) {
+                     $err = substr($err, 0, $opts{L});
+                  }
+               }
+               printf("%s %s %s %11d %d %s\n",
+                  ts(time),
+                  $dp->as_string($dsn),
+                  $stat->{relay_log_file},
+                  $stat->{relay_log_pos},
+                  $stat->{last_errno} || 0,
+                  $err
+               );
+            }
+
+            if ( $opts{e} && !exists($opts{e}->{$stat->{last_errno}}) ) {
+               die "Error $stat->{last_errno} is not in --error-numbers.\n";
+            }
+            elsif ( $opts{E} && $stat->{last_error} && $stat->{last_error} !~ m/$opts{E}/ ) {
+               die "Error does not match --error-text.\n";
+            }
+            else {
+           #TODO    $set_skip->execute();
+               #TODO$start->execute();
+               $was_running = 0;
+               # Only set this on events I tried to restart.  Otherwise there
+               # could be a race condition: I see it, I record it, but it hasn't
+               # caused an error yet; so I won't try to restart it when it does.
+               # (The point of this is to avoid trying to restart the same event
+               # twice in case another race condition happens -- I restart it,
+               # then check the server and it hasn't yet cleared the error
+               # message and restarted the SQL thread).
+               $last_log = $stat->{relay_log_file};
+               $last_pos = $stat->{relay_log_pos};
+            }
+         }
+      }
+
+      # Adjust sleep time.
+      if ( $was_running ) {
+         $sleep = min($opts{M}, $sleep * 2);
+      }
+      else {
+         $sleep = max($opts{m}, $sleep / 2);
+      }
+
+      # Errors are very likely to follow each other in quick succession.  NOTE:
+      # this policy has a side effect with respect to $sleep.  Suppose $sleep is
+      # 512 and mk-slave-restart finds an error; now $sleep is 256, but
+      # mk-slave-restart sleeps only 1 (the initial value of --sleep).  Suppose
+      # there is no error when it wakes up after 1 second, because 1 was too
+      # short.  Now it doubles $sleep, back to 512.  $sleep has the same value it
+      # did before the error was ever found.
+      print $dp->as_string($dsn), " sleeping $sleep\n" if $opts{v} > 2;
+      sleep($was_running ? $sleep : min($sleep, $opts{s}));
+   }
+
+   $ENV{MKDEBUG} && _d('All done with server ', $dp->as_string($dsn));
+   if ( $was_forked ) {
+      exit(0);
+   }
+}
 
 # Determines if the $stat's log coordinates are greater than or equal to the
 # desired coordinates. $which is 'master' or 'relay'
@@ -891,6 +1078,11 @@ sub ts {
       $year, $mon, $mday, $hour, $min, $sec);
 }
 
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
+}
+
 # ############################################################################
 # Documentation.
 # ############################################################################
@@ -907,16 +1099,16 @@ mk-slave-restart - Watch and restart MySQL replication after errors.
 
 =head1 DESCRIPTION
 
-mk-slave-restart watches a MySQL replication slave and tries to skip
-statements that cause errors.  It polls the slave intelligently with an
+mk-slave-restart watches one or more MySQL replication slaves and tries to skip
+statements that cause errors.  It polls slaves intelligently with an
 exponentially varying sleep time.  You can specify errors to skip and run the
-slave until a certain binlog position.
+slaves until a certain binlog position.
 
 Note: it has come to my attention that Yahoo! had or has an internal tool
 called fix_repl, described to me by a past Yahoo! employee and mentioned in
 the first edition of High Performance MySQL.  Apparently this tool does the
 same thing.  Make no mistake, though: this is not a way to "fix replication."
-In fact I would not even encourage its use on a regular basis; I only use it
+In fact I would not even encourage its use on a regular basis; I use it only
 when I have an error I know I just need to skip past.
 
 Indiscriminate use of this tool can easily screw up a server you might have
@@ -991,6 +1183,22 @@ Password to use when connecting.
 
 Port number to use for connection.
 
+=item --recurse
+
+This option specifies that instead of just watching the server specified on
+the command-line, C<mk-slave-restart> should try to find its slaves and watch
+them too, up to the specified depth.  The default depth of 0 means "just watch
+the slave specified."
+
+This works only if you have configured your slaves to show up in C<SHOW SLAVE
+HOSTS>.  The minimal configuration for this is the C<report_host> parameter,
+but there are other "report" parameters as well for the port, username, and
+password.
+
+Recursion works by finding all slaves when the program starts, then watching
+them.  If there is more than one slave, C<mk-slave-restart> uses C<fork()> to
+monitor them.
+
 =item --skipcount
 
 The number of statements to skip when restarting the slave.
@@ -1034,9 +1242,10 @@ User for login if not current user.
 =item --verbose
 
 Verbosity; specify multiple times for more verbosity.  Default is no output.
-Verbosity 1 outputs a timestamp, relay_log_file, relay_log_pos, and last_errno.
-Verbosity 2 adds last_error.  See also L<"--error-length">.  Verbosity 3
-prints the current sleep time each time mk-slave-restart sleeps.
+Verbosity 1 outputs connection information, a timestamp, relay_log_file,
+relay_log_pos, and last_errno.  Verbosity 2 adds last_error.  See also
+L<"--error-length">.  Verbosity 3 prints the current sleep time each time
+mk-slave-restart sleeps.
 
 =item --version
 
@@ -1084,6 +1293,12 @@ very likely to happen next, so it sleeps the current sleep time or the initial
 sleep time, whichever is less.
 
 =back
+
+=head1 EXIT STATUS
+
+Successful exit status is 0.  Any other value represents the exit status of
+the Perl process itself, or of the last forked process that exited if there
+were multiple servers to monitor.
 
 =head1 COMPATIBILITY
 
