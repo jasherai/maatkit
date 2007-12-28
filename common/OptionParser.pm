@@ -143,8 +143,10 @@ sub new {
          next unless ref $opt;
          my $key = $opt->{k};
          $option_exists{$key}++;
-         # These are used only indirectly.
-         next if $key =~ m/^(?:help|version|F|p|P|S|u)$/;
+         # These are often used only indirectly.
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+                                    |password|port|socket|user|host)$/x
+              || $disables{$key};
          push @unused, $key unless $used{$key};
       }
       foreach my $key ( keys %used ) {
