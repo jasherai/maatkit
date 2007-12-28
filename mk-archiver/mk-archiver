@@ -30,7 +30,7 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1369
+# OptionParser package 1586
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -111,6 +111,37 @@ sub new {
             $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
          }
 
+      }
+   }
+
+   if ( $ENV{MKDEBUG} ) {
+      my $text = do {
+         local $RS = undef;
+         open my $fh, "<", $PROGRAM_NAME
+            or die "Can't open $PROGRAM_NAME: $OS_ERROR";
+         <$fh>;
+      };
+      my %used = map { $_ => 1 } $text =~ m/\$opts\{'?([\w-]+)'?\}/g;
+      my @unused;
+      my @undefined;
+      my %option_exists;
+      foreach my $opt ( @opts ) {
+         next unless ref $opt;
+         my $key = $opt->{k};
+         $option_exists{$key}++;
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+                                    |password|port|socket|user|host)$/x
+              || $disables{$key};
+         push @unused, $key unless $used{$key};
+      }
+      foreach my $key ( keys %used ) {
+         push @undefined, $key unless $option_exists{$key};
+      }
+      if ( @unused || @undefined ) {
+         die "The following command-line options are unused: "
+            . join(',', @unused)
+            . ' The following are undefined: '
+            . join(',', @undefined);
       }
    }
 
@@ -419,7 +450,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1348
+# TableParser package 1561
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -556,7 +587,7 @@ sub find_best_index {
          ($best) = $self->sort_indexes($tbl);
       }
    }
-   $ENV{MKDEBUG} && _d("Best index found is " . ($index || 'undef'));
+   $ENV{MKDEBUG} && _d("Best index found is " . ($best || 'undef'));
    return $best;
 }
 
@@ -875,7 +906,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 1348
+# TableNibbler package 1546
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -927,52 +958,94 @@ sub generate_asc_stmt {
    };
 
    if ( @asc_slice ) {
-      my @clauses;
-      foreach my $i ( 0 .. $#asc_slice ) {
-         my @clause;
-
-         foreach my $j ( 0 .. $i - 1 ) {
-            my $ord = $asc_slice[$j];
-            my $col = $cols[$ord];
-            my $quo = $q->quote($col);
-            if ( $tbl->{is_nullable}->{$col} ) {
-               push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
-               push @{$asc_stmt->{slice}}, $ord, $ord;
-               push @{$asc_stmt->{scols}}, $col, $col;
-            }
-            else {
-               push @clause, "$quo = ?";
-               push @{$asc_stmt->{slice}}, $ord;
-               push @{$asc_stmt->{scols}}, $col;
-            }
-         }
-
-         my $ord = $asc_slice[$i];
-         my $col = $cols[$ord];
-         my $quo = $q->quote($col);
-         my $end = $i == $#asc_slice; # Last clause of the whole group.
-         if ( $tbl->{is_nullable}->{$col} ) {
-            if ( !$args{asconly} && $end ) {
-               push @clause, "(? IS NULL OR $quo >= ?)";
-            }
-            else {
-               push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo > ?))";
-            }
-            push @{$asc_stmt->{slice}}, $ord, $ord;
-            push @{$asc_stmt->{scols}}, $col, $col;
-         }
-         else {
-            push @{$asc_stmt->{slice}}, $ord;
-            push @{$asc_stmt->{scols}}, $col;
-            push @clause, (!$args{asconly} && $end ? "$quo >= ?" : "$quo > ?");
-         }
-
-         push @clauses, '(' . join(' AND ', @clause) . ')';
+      my $cmp_where;
+      foreach my $cmp ( qw(< <= >= >) ) {
+         $cmp_where = $self->generate_cmp_where(
+            type        => $cmp,
+            slice       => \@asc_slice,
+            cols        => \@cols,
+            quoter      => $q,
+            is_nullable => $tbl->{is_nullable},
+         );
+         $asc_stmt->{boundaries}->{$cmp} = $cmp_where->{where};
       }
-      $asc_stmt->{where} = '(' . join(' OR ', @clauses) . ')';
+      my $cmp = $args{asconly} ? '>' : '>=';
+      $asc_stmt->{where} = $asc_stmt->{boundaries}->{$cmp};
+      $asc_stmt->{slice} = $cmp_where->{slice};
+      $asc_stmt->{scols} = $cmp_where->{scols};
    }
 
    return $asc_stmt;
+}
+
+sub generate_cmp_where {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(type slice cols quoter is_nullable) ) {
+      die "I need a $arg arg" unless defined $args{$arg};
+   }
+
+   my @slice       = @{$args{slice}};
+   my @cols        = @{$args{cols}};
+   my $q           = $args{quoter};
+   my $is_nullable = $args{is_nullable};
+   my $type        = $args{type};
+
+   (my $cmp = $type) =~ s/=//;
+
+   my @r_slice;    # Resulting slice columns, by ordinal
+   my @r_scols;    # Ditto, by name
+
+   my @clauses;
+   foreach my $i ( 0 .. $#slice ) {
+      my @clause;
+
+      foreach my $j ( 0 .. $i - 1 ) {
+         my $ord = $slice[$j];
+         my $col = $cols[$ord];
+         my $quo = $q->quote($col);
+         if ( $is_nullable->{$col} ) {
+            push @clause, "((? IS NULL AND $quo IS NULL) OR ($quo = ?))";
+            push @r_slice, $ord, $ord;
+            push @r_scols, $col, $col;
+         }
+         else {
+            push @clause, "$quo = ?";
+            push @r_slice, $ord;
+            push @r_scols, $col;
+         }
+      }
+
+      my $ord = $slice[$i];
+      my $col = $cols[$ord];
+      my $quo = $q->quote($col);
+      my $end = $i == $#slice; # Last clause of the whole group.
+      if ( $is_nullable->{$col} ) {
+         if ( $type =~ m/=/ && $end ) {
+            push @clause, "(? IS NULL OR $quo $type ?)";
+         }
+         elsif ( $type =~ m/>/ ) {
+            push @clause, "((? IS NULL AND $quo IS NOT NULL) OR ($quo $cmp ?))";
+         }
+         else { # If $type =~ m/</ ) {
+            push @clause, "((? IS NOT NULL AND $quo IS NULL) OR ($quo $cmp ?))";
+         }
+         push @r_slice, $ord, $ord;
+         push @r_scols, $col, $col;
+      }
+      else {
+         push @r_slice, $ord;
+         push @r_scols, $col;
+         push @clause, ($type =~ m/=/ && $end ? "$quo $type ?" : "$quo $cmp ?");
+      }
+
+      push @clauses, '(' . join(' AND ', @clause) . ')';
+   }
+   my $result = '(' . join(' OR ', @clauses) . ')';
+   return {
+      slice => \@r_slice,
+      scols => \@r_scols,
+      where => $result,
+   };
 }
 
 sub generate_del_stmt {
@@ -1075,7 +1148,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1484
+# MySQLDump package 1574
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1170,6 +1243,25 @@ sub dump {
    }
 }
 
+sub _use_db {
+   my ( $self, $dbh, $quoter, $new ) = @_;
+   if ( !$new ) {
+      $ENV{MKDEBUG} && _d('No new DB to use');
+      return;
+   }
+   my $sql = 'SELECT DATABASE()';
+   $ENV{MKDEBUG} && _d($sql);
+   my $curr = $dbh->selectrow_array($sql);
+   if ( $curr && $new && $curr eq $new ) {
+      $ENV{MKDEBUG} && _d('Current and new DB are the same');
+      return $curr;
+   }
+   $sql = 'USE ' . $quoter->quote($new);
+   $ENV{MKDEBUG} && _d($sql);
+   $dbh->do($sql);
+   return $curr;
+}
+
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{tables}->{$db}->{$tbl} ) {
@@ -1179,9 +1271,11 @@ sub get_create_table {
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       $ENV{MKDEBUG} && _d($sql);
       $dbh->do($sql);
+      my $curr_db = $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       $ENV{MKDEBUG} && _d($sql);
       my $href = $dbh->selectrow_hashref($sql);
+      $self->_use_db($dbh, $quoter, $curr_db);
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
       $ENV{MKDEBUG} && _d($sql);
@@ -1204,9 +1298,11 @@ sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
    if ( !$self->{columns}->{$db}->{$tbl} ) {
+      my $curr_db = $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       $ENV{MKDEBUG} && _d($sql);
       my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
+      $self->_use_db($dbh, $quoter, $curr_db);
       $self->{columns}->{$db}->{$tbl} = [
          map {
             my %row;
@@ -1582,8 +1678,7 @@ if ( !caller ) {
    ) {
       my $col = $q->quote($sel_stmt->{scols}->[0]);
       my ($val) = $dbh->selectrow_array("SELECT MAX($col) FROM $src->{db_tbl}");
-      $val =~ s/'/''/g;
-      $first_sql .= " AND ($col < '$val')";
+      $first_sql .= " AND ($col < " . $q->quote_val($val) . ")";
    }
 
    $next_sql = $first_sql;
