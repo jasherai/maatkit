@@ -4318,6 +4318,17 @@ A C<WHERE> clause to restrict the portion of the table being synchronized.
 
 =back
 
+=head1 EXIT STATUS
+
+Exit status is as follows:
+
+   STATUS  MEANING
+   ======  =======================================================
+   0       Success.
+   1       Internal error.
+   2       At least one table differed on the destination.
+   3       Combination of 1 and 2.
+
 =head1 OUTPUT
 
 If you specify the L<"--verbose"> option, you'll see information about the 
