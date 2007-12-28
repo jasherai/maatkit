@@ -26,7 +26,7 @@ use English qw(-no_match_vars);
 $OUTPUT_AUTOFLUSH = 1;
 
 # ###########################################################################
-# OptionParser package 1369
+# OptionParser package 1586
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -107,6 +107,37 @@ sub new {
             $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
          }
 
+      }
+   }
+
+   if ( $ENV{MKDEBUG} ) {
+      my $text = do {
+         local $RS = undef;
+         open my $fh, "<", $PROGRAM_NAME
+            or die "Can't open $PROGRAM_NAME: $OS_ERROR";
+         <$fh>;
+      };
+      my %used = map { $_ => 1 } $text =~ m/\$opts\{'?([\w-]+)'?\}/g;
+      my @unused;
+      my @undefined;
+      my %option_exists;
+      foreach my $opt ( @opts ) {
+         next unless ref $opt;
+         my $key = $opt->{k};
+         $option_exists{$key}++;
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+                                    |password|port|socket|user|host)$/x
+              || $disables{$key};
+         push @unused, $key unless $used{$key};
+      }
+      foreach my $key ( keys %used ) {
+         push @undefined, $key unless $option_exists{$key};
+      }
+      if ( @unused || @undefined ) {
+         die "The following command-line options are unused: "
+            . join(',', @unused)
+            . ' The following are undefined: '
+            . join(',', @undefined);
       }
    }
 
@@ -648,12 +679,13 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 1459
+# LogParser package 1536
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package LogParser;
+
 
 use English qw(-no_match_vars);
 
@@ -684,36 +716,50 @@ my $general_log_any_line = qr{
 }xs;
 
 my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
-my $slow_log_uh_line = qr/^# User\@Host: ([^\[]+).*?@ (\S*) \[(.*)\]/;
-my $slow_log_tr_line = qr{^# Query_time: (\d+(?:\.\d+)?)  Lock_time: (\d+(?:\.\d+)?)  Rows_sent: (\d+)  Rows_examined: (\d+)};
+my $slow_log_uh_line = qr/# User\@Host: ([^\[]+).*?@ (\S*) \[(.*)\]/;
 
 my $binlog_line_1 = qr{^# at (\d+)};
 my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
 my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)};
 
 sub parse_event {
-   my ( $self, $fh, $code ) = @_;
-   my $event;
+   my ( $self, $fh, $code, $mode ) = @_;
+   my $event; # Don't initialize, that'll cause a loop.
 
    my $done = 0;
-   my $mode = '';
-   my $i    = 0;
+   my $type = 0; # 0 = comments, 1 = USE and SET etc, 2 = the actual query
    my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
+   $mode  ||= '';
 
    LINE:
    while ( !$done && defined $line ) {
+      $ENV{MKDEBUG} && _d('type: ', $type, ' ', $line);
+
+      if ( !$mode && $line =~ m/^# [A-Z]/ ) {
+         $mode = 'slow';
+      }
 
       if ( $line =~ m/Version:.+ started with:/ ) {
+         $ENV{MKDEBUG} && _d('Chomping out header lines');
          <$fh>; # Tcp port: etc
          <$fh>; # Column headers
          $line = <$fh>;
+         $type = 0;
          redo LINE;
       }
 
+      elsif ( $line =~ m/^# No InnoDB statistics available/ ) {
+         $ENV{MKDEBUG} && _d('Ignoring line');
+         $line = <$fh>;
+         $type = 0;
+         next LINE;
+      }
+
       elsif ( my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s ) {
-         $mode = 'log';
+         $ENV{MKDEBUG} && _d('Beginning of general log event');
+         $mode ||= 'log';
          $self->{last_line} = undef;
-         if ( $i == 0 ) {
+         if ( $type == 0 ) {
             my ( $cmd, $arg ) = $rest =~ m/$general_log_any_line/;
             $event = {
                ts  => $ts || '',
@@ -722,57 +768,91 @@ sub parse_event {
                arg => $arg || '',
             };
             if ( $cmd ne 'Query' ) {
+               $ENV{MKDEBUG} && _d('Not a query, done with this event');
                $done = 1;
-               chomp $event->{arg};
+               chomp $event->{arg} if $event->{arg};
             }
+            $type = 2;
          }
          else {
+            $ENV{MKDEBUG} && _d('Saving line for next invocation');
             $self->{last_line} = $line;
             $done = 1;
-            chomp $event->{arg};
+            chomp $event->{arg} if $event->{arg};
          }
       }
 
       elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
-         $mode              = 'slow';
+         $ENV{MKDEBUG} && _d('Beginning of slow log event');
          $self->{last_line} = undef;
-         if ( $i == 0 ) {
+         if ( $type == 0 ) {
             $event->{ts} = $time;
+            if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+               @{$event}{qw(user host ip)} = ($user, $host, $ip);
+            }
          }
          else {
+            $ENV{MKDEBUG} && _d('Saving line for next invocation');
             $self->{last_line} = $line;
             $done = 1;
          }
+         $type = 0;
       }
 
       elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-         @{$event}{qw(user host ip)} = ($user, $host, $ip);
+         if ( $type == 0 ) {
+            @{$event}{qw(user host ip)} = ($user, $host, $ip);
+         }
+         else {
+            $ENV{MKDEBUG} && _d('Saving line for next invocation');
+            $self->{last_line} = $line;
+            $done = 1;
+         }
+         $type = 0;
       }
 
-      elsif ( my ( $q, $l, $s, $e ) = $line =~ m/$slow_log_tr_line/ ) {
-         @{$event}{qw(query_time lock_time rows_sent rows_exam)}
-            = ( $q, $l, $s, $e );
+      elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
+         if ( $type == 0 ) {
+            $ENV{MKDEBUG} && _d('Splitting line into fields');
+            @{$event}{keys %hash} = values %hash;
+         }
+         else {
+            $ENV{MKDEBUG} && _d('Saving line for next invocation');
+            $self->{last_line} = $line;
+            $done = 1;
+         }
+         $type = 0;
       }
 
       else {
-         if ( $mode eq 'slow' && ( my ( $db ) = $line =~ m/^use (.*);/ ) ) {
-            $event->{cmd} = 'Init DB';
-            $event->{arg} = $db;
-            $code->($event);
-            $event = {
-               map { $_ => $event->{$_} }
-                  qw(ts user host ip query_time lock_time rows_sent rows_exam)
-            };
-         }
-         else {
-            $event->{arg} .= $line;
-            if ( $mode eq 'slow' ) {
-               $event->{cmd} = 'Query';
+         if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
+            $ENV{MKDEBUG} && _d('Line is the end of a query within event');
+            if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
+               $ENV{MKDEBUG} && _d('Setting event DB to ', $db);
+               $event->{db} = $db;
+               $type = 1;
+            }
+            elsif ( $type < 2 && (my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) ) {
+               $ENV{MKDEBUG} && _d('Setting a property for event');
+               push @{$event->{settings}}, $setting;
+               $type = 1;
+            }
+            else {
+               $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
+               $event->{arg} .= $line;
+               $type = 2;
             }
          }
+         else {
+            $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
+            $event->{arg} .= $line;
+            $type = 2;
+         }
+         $event->{cmd} = 'Query';
       }
 
-      $i++;
+      $event->{NR} = $NR;
+
       $line = <$fh> unless $done;
    }
 
@@ -780,8 +860,8 @@ sub parse_event {
       $self->{last_line} = undef;
    }
 
-   if ( $mode eq 'slow' ) {
-      $event->{arg} =~ s/;\s*//g;
+   if ( $mode && $mode eq 'slow' ) {
+      $event->{arg} =~ s/;\s*\Z// if $event->{arg};
    }
 
    $code->($event) if $event && $code;
