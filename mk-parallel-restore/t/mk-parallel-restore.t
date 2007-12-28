@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('no_match_vars);
-use Test::More tests => 2;
+use Test::More tests => 4;
 
 my $output = `perl ../mk-parallel-restore foo --test`;
 like(
@@ -17,3 +17,9 @@ like(
    qr{1 tables,\s+1 files,\s+1 successes},
    'Counted the work to be done',
 );
+
+$output = `perl ../mk-parallel-restore -n bar foo --test`;
+unlike( $output, qr/bar/, '--ignoretbl filtered out bar');
+
+$output = `perl ../mk-parallel-restore -n foo.bar foo --test`;
+unlike( $output, qr/bar/, '--ignoretbl filtered out bar again');
