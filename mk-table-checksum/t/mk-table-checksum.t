@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 13;
+use Test::More tests => 17;
 
 my $opt_file = shift || "~/.my.cnf";
 my ($output, $output2);
@@ -72,6 +72,14 @@ SKIP: {
    $output = `mysql --defaults-file=$opt_file --skip-column-names -e "select boundaries from test.checksum where db='sakila' and tbl='film' and chunk=0"`;
    chomp $output;
    like ( $output, qr/`film_id` < \d+/, 'chunk boundaries stored right');
+
+   # Ensure float-precision is effective
+   $output = `perl ../mk-table-checksum -a BIT_XOR --defaults-file=$opt_file -d test -t fl_test --explain 127.0.0.1`;
+   unlike($output, qr/ROUND\(`a`/, 'Column is not rounded');
+   $output = `perl ../mk-table-checksum --float-precision 3 -a BIT_XOR --defaults-file=$opt_file -d test -t fl_test --explain 127.0.0.1`;
+   like($output, qr/ROUND\(`a`, 3/, 'Column a is rounded');
+   like($output, qr/ROUND\(`b`, 3/, 'Column b is rounded');
+   like($output, qr/ISNULL\(`b`\)/, 'Column b is not rounded inside ISNULL');
 
    # Clean up
    `mysql --defaults-file=$opt_file < after.sql`;
