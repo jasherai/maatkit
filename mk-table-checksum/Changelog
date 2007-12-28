@@ -1,5 +1,8 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * The --float-precision option was ignored.
+   * (mk-checksum-filter) -i, -d options worked only on multiple files.
+
 2007-12-27: version 1.1.23
 
    * Updated documentation about version compatibility.

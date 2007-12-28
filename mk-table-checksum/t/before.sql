@@ -1,6 +1,6 @@
 use test;
 
-drop table if exists checksum_test, checksum;
+drop table if exists checksum_test, checksum, fl_test;
 
 create table checksum_test(
    a int not null primary key
@@ -20,3 +20,5 @@ CREATE TABLE checksum (
  ts         timestamp    NOT NULL,
  PRIMARY KEY (db, tbl, chunk)
 );
+
+create table fl_test(a float not null primary key, b double);
