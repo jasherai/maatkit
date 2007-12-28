@@ -2686,9 +2686,17 @@ server is the master and others are slaves.  Checksums are parallelized for
 speed, forking off a child process for each table.  Duplicate server names are
 ignored, but if you want to checksum a server against itself you can use two
 different forms of the hostname (for example, "localhost 127.0.0.1", or
-"h=localhost,p=3306 h=localhost,p=3307")
+"h=localhost,p=3306 h=localhost,p=3307").
 
-mk-table-checksum only examines table structure on the first host specified,
+If you want to compare the tables in one database to those in another database
+on the same server, just checksum both databases:
+
+   mk-table-checksum --databases db1,db2
+
+You can then use L<mk-checksum-filter> to compare the results in both databases
+easily.
+
+mk-table-checksum examines table structure only on the first host specified,
 so if anything differs on the others, it won't notice.  It ignores views.
 
 The checksums work on MySQL version 3.23.58 through 6.0-alpha.  They will not
