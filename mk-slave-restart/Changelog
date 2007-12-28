@@ -1,5 +1,7 @@
 Changelog for mk-slave-restart:
 
+   * Added the ability to monitor many servers with --recurse.
+
 2007-12-16: version 1.0.4
 
    * Updated common code, added debugging.
