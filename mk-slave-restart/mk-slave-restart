@@ -1185,6 +1185,10 @@ Password to use when connecting.
 
 Port number to use for connection.
 
+=item --quiet
+
+Disables L<"--verbose">.
+
 =item --recurse
 
 This option specifies that instead of just watching the server specified on
@@ -1243,11 +1247,10 @@ User for login if not current user.
 
 =item --verbose
 
-Verbosity; specify multiple times for more verbosity.  Default is no output.
-Verbosity 1 outputs connection information, a timestamp, relay_log_file,
-relay_log_pos, and last_errno.  Verbosity 2 adds last_error.  See also
-L<"--error-length">.  Verbosity 3 prints the current sleep time each time
-mk-slave-restart sleeps.
+Verbosity; specify multiple times for more verbosity.  Verbosity 1 outputs
+connection information, a timestamp, relay_log_file, relay_log_pos, and
+last_errno.  Verbosity 2 adds last_error.  See also L<"--error-length">.
+Verbosity 3 prints the current sleep time each time mk-slave-restart sleeps.
 
 =item --version
 
