@@ -1,5 +1,6 @@
 Changelog for mk-slave-restart:
 
+   * Added --quiet and changed --verbose to 1 by default.
    * Added the ability to monitor many servers with --recurse.
 
 2007-12-16: version 1.0.4
