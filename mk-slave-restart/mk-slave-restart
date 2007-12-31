@@ -20,7 +20,7 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: add an option to try N times re-fetching relay logs if the relay log
+# TODO: add an option to try re-fetching relay logs if the relay log
 # looks corrupted.
 
 use strict;
@@ -782,6 +782,7 @@ sub _d {
 package main;
 
 use English qw(-no_match_vars);
+use IO::File;
 use List::Util qw(min max);
 use Time::HiRes qw(sleep);
 
@@ -806,13 +807,16 @@ my @opt_spec = (
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'maxsleep|M=f',      d => 'Maximum sleep seconds (default 64)'},
    { s => 'minsleep|m=f',      d => 'Minimum sleep seconds (default 0.015625)'},
+   { s => 'monitor',           d => 'Whether to monitor the slave' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Quiet output; disables --verbose' },
    { s => 'recurse|r=i',       d => 'Number of levels to recurse (default 0)' },
+   { s => 'sentinel=s',        d => 'Sentinel file; default /tmp/mk-slave-restart-sentinel' },
    { s => 'skipcount|k=i',     d => 'Number of statements to skip (default 1)' },
    { s => 'sleep|s=f',         d => 'Initial sleep seconds (default 1)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'stop',              d => 'Stop running instances by creating the sentinel file' },
    { s => 'time|t=m',          d => 'Time to run before exiting (suffix: s/m/h/d)' },
    { s => 'untilmaster=s',     d => 'Run until this master log file and position' },
    { s => 'untilrelay=s',      d => 'Run until this relay log file and position' },
@@ -841,7 +845,40 @@ if ( !$opts{help} ) {
    }
 }
 
+# See the POD notes about --monitor and --stop.
+$opts{monitor} = 1 unless $opts{stop};
+
 $opt_parser->usage_or_errors(%opts);
+
+# ############################################################################
+# First things first: if --stop was given, create the sentinel file.
+# ############################################################################
+if ( $opts{stop} ) {
+   $ENV{MKDEBUG} && _d("Creating sentinel file $opts{sentinel}");
+   my $file = IO::File->new($opts{sentinel}, ">>")
+      or die "Cannot open $opts{sentinel}: $OS_ERROR\n";
+   print $file "Remove this file to permit mk-slave-restart to run\n"
+      or die "Cannot write to $opts{sentinel}: $OS_ERROR\n";
+   close $file
+      or die "Cannot close $opts{sentinel}: $OS_ERROR\n";
+   print STDOUT "Successfully created file $opts{sentinel}\n"
+      unless $opts{q};
+   # Exit unlesss --monitor is given.
+   if ( !$opts{monitor} ) {
+      $ENV{MKDEBUG} && _d("Nothing more to do, quitting");
+      exit(0);
+   }
+   else {
+      # Wait for all other running instances to quit, assuming they have the
+      # same --interval as this invocation.  Then remove the file and
+      # continue.
+      $ENV{MKDEBUG} && _d("Waiting for other instances to quit");
+      sleep($opts{M});
+      $ENV{MKDEBUG} && _d("Unlinking $opts{sentinel}");
+      unlink $opts{sentinel}
+         or die "Cannot unlink $opts{sentinel}: $OS_ERROR";
+   }
+}
 
 # ############################################################################
 # Connect and go to work.
@@ -965,7 +1002,7 @@ sub watch_server {
 
    my $stat = {}; # Will hold SHOW SLAVE STATUS
    STAT:
-   while ( $stat && ( !$opts{t} || time() < $exit_time ) ) {
+   while ($stat && (!$opts{t} || time() < $exit_time) && !-f $opts{sentinel}) {
       my $was_running = 1;
       $fetch_stat->execute();
       $stat = $fetch_stat->fetchall_arrayref({})->[0];
@@ -1177,6 +1214,11 @@ See L<"SLEEP">.
 The minimum time mk-slave-restart will sleep before polling the slave again.
 See L<"SLEEP">.
 
+=item --monitor
+
+Whether to monitor the slave.  The default is true, but unless you specify it
+explicitly, L<"--stop"> will disable it by default.
+
 =item --password
 
 Password to use when connecting.
@@ -1205,6 +1247,12 @@ Recursion works by finding all slaves when the program starts, then watching
 them.  If there is more than one slave, C<mk-slave-restart> uses C<fork()> to
 monitor them.
 
+=item --sentinel
+
+The presence of the file specified by L<"--sentinel"> will cause
+C<mk-slave-restart> to stop and exit.  The default is
+C</tmp/mk-slave-restart-sentinel>.
+
 =item --skipcount
 
 The number of statements to skip when restarting the slave.
@@ -1216,6 +1264,29 @@ The initial sleep time between checking the slave.  See L<"SLEEP">.
 =item --socket
 
 Socket file to use for connection.
+
+=item --stop
+
+Causes C<mk-slave-restart> to create the sentinel file specified by
+L<"--sentinel">.  This should have the effect of stopping all running
+instances which are watching the same sentinel file.  If L<"--monitor"> isn't
+specified, C<mk-slave-restart> will exit after creating the file.  If it is
+specified, C<mk-slave-restart> will wait the interval given by
+L<"--maxsleep">, then remove the file and continue working.
+
+You might find this handy to stop cron jobs gracefully if necessary, or to
+replace one running instance with another.  For example, if you want to stop
+and restart C<mk-slave-restart> every hour (just to make sure that it is
+restarted every hour, in case of a server crash or some other problem), you
+could use a C<crontab> line like this:
+
+ 0 * * * * mk-slave-restart --monitor --stop --sentinel /tmp/mk-slave-restartup
+
+The non-default L<"--sentinel"> will make sure the hourly C<cron> job stops
+only instances previously started with the same options (that is, from the
+same C<cron> job).
+
+See also L<"--sentinel">.
 
 =item --time
 
