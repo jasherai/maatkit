@@ -20,9 +20,6 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: add an option to try re-fetching relay logs if the relay log
-# looks corrupted.
-
 use strict;
 use warnings FATAL => 'all';
 
@@ -995,6 +992,18 @@ sub watch_server {
    my $fetch_stat = $dbh->prepare('SHOW SLAVE STATUS');
    my $set_skip   = $dbh->prepare("SET GLOBAL SQL_SLAVE_SKIP_COUNTER = $opts{k}");
    my $start      = $dbh->prepare($start_sql);
+   my $stop       = $dbh->prepare('STOP SLAVE');
+   my $chmt       = $dbh->prepare('CHANGE MASTER TO MASTER_LOG_FILE=?, MASTER_LOG_POS=?');
+
+   # In theory, errors in SQL syntax probably mean relay log corruption, no?
+   # Otherwise it means you're trying to use a new server as the master of an
+   # older slave, and the old slave doesn't recognize the new syntax.  Are
+   # there any other ways a slave could get "SQL syntax" errors?
+   #
+   # Last_Error: Error 'You have an error in your SQL syntax; check the manual
+   # that corresponds to your MySQL server version for the right syntax to use
+   my $relay_log_corruption
+      = qr/You have an error in your SQL|Could not parse relay log event entry/;
 
    my $exit_time = time() + ($opts{t} || 0);
    my $sleep = $opts{s};
@@ -1013,7 +1022,7 @@ sub watch_server {
       }
 
       if ( !$last_log
-         || $last_log ne $stat->{relay_log_file}
+         || $last_log ne $stat->{relay_log_file}   # Avoid infinite loops
          || $last_pos != $stat->{relay_log_pos}
       ) {
          $stat->{slave_sql_running} ||= 'No';
@@ -1054,9 +1063,22 @@ sub watch_server {
                die "Error does not match --error-text.\n";
             }
             else {
-               $set_skip->execute();
+
+               # What kind of error is it?
+               if ( $stat->{last_error} =~ m/$relay_log_corruption/ ) {
+                  $ENV{MKDEBUG} && _d('Found relay log corruption');
+                  # Can't do CHANGE MASTER TO with a running slave.
+                  $stop->execute();
+                  $chmt->execute(
+                     @{$stat}{qw(relay_master_log_file exec_master_log_pos)});
+               }
+               else {
+                  $ENV{MKDEBUG} && _d('Found non-relay-log error');
+                  $set_skip->execute();
+               }
                $start->execute();
                $was_running = 0;
+
                # Only set this on events I tried to restart.  Otherwise there
                # could be a race condition: I see it, I record it, but it hasn't
                # caused an error yet; so I won't try to restart it when it does.
