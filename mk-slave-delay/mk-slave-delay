@@ -742,17 +742,19 @@ my $oktorun    = 1;
 
 # Connect before daemonizing, in case --askpass is needed.
 my ( $slave, $master );
-$slave  = get_dbh($slave_dsn);
+$slave     = get_dbh($slave_dsn);
+my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
+if ( !$status || ! %$status ) {
+   die "No SLAVE STATUS found.\n";
+}
+
 if ( $master_dsn ) {
+   $ENV{MKDEBUG} && _d('Connecting to master via DSN from cmd-line');
    $master = get_dbh($master_dsn);
 }
-elsif ( $opts{u} ) {
+elsif ( $opts{u} || $status->{slave_io_state} =~ m/free enough relay log/ ) {
    # Try to connect to the slave's master just by looking at its SLAVE STATUS.
-   my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
-   if ( !$status || ! %$status ) {
-      die "No SLAVE STATUS found while trying to connect to master.\n";
-   }
-
+   $ENV{MKDEBUG} && _d('The I/O thread is waiting, connecting to master');
    my $spec = "h=$status->{master_host},P=$status->{master_port}";
    $master  = get_dbh($dsn_parser->parse($spec, $slave_dsn));
 }
@@ -776,9 +778,20 @@ while (                       # Quit if:
 
    $now = time();
 
-   my $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
+   $status = $slave->selectrow_hashref("SHOW SLAVE STATUS");
    if ( !$status || ! %$status ) {
       die "No SLAVE STATUS found.\n";
+   }
+
+   if ( !$master && $status->{slave_io_state} =~ m/free enough relay log/ ) {
+      $ENV{MKDEBUG} && _d("The I/O thread is stuck, connecting to master");
+      # If we're daemonized and --askpass is given, there's no way to ask for
+      # a password.
+      if ( $opts{daemonize} && $opts{askpass} ) {
+         die "Cannot ask for password while daemonized";
+      }
+      my $spec = "h=$status->{master_host},P=$status->{master_port}";
+      $master  = get_dbh($dsn_parser->parse($spec, $slave_dsn));
    }
 
    if ( defined $status->{seconds_behind_master} ) {
@@ -787,34 +800,50 @@ while (                       # Quit if:
 
    # Get binlog position.
    if ( $master ) {
+      $ENV{MKDEBUG} && _d('Getting binlog pos from master');
       my $res = $master->selectrow_hashref("SHOW MASTER STATUS");
       my $pos = $positions[-1];
-      if ( !@positions || $pos->[$FILE] ne $res->{file} || $pos->[$POS] != $res->{position} ) {
+      if ( !@positions || $pos->[$FILE] ne $res->{file}
+         || $pos->[$POS] != $res->{position} )
+      {
          push @positions,
             [ $now, $res->{file}, $res->{position} ];
       }
    }
    else {
+      $ENV{MKDEBUG} && _d('Getting binlog pos from slave');
       # Use the position on master at which the I/O thread is reading.  If the
       # I/O thread is not far behind, which it usually is not, this is basically
       # the same as the master's File/Position, but it's more efficient -- one
       # fewer connections to keep open.
       my $pos = $positions[-1];
       if ( !@positions
-         || $pos->[$FILE] ne $status->{master_log_file} || $pos->[$POS] != $status->{read_master_log_pos} )
+         || $pos->[$FILE] ne $status->{master_log_file}
+         || $pos->[$POS] != $status->{read_master_log_pos} )
       {
          push @positions,
-            [ $now, $status->{master_log_file}, $status->{read_master_log_pos} ];
+            [ $now, $status->{master_log_file},
+              $status->{read_master_log_pos} ];
       }
    }
 
    if ( ( $status->{slave_sql_running} || '' ) eq 'No' ) {
+      $ENV{MKDEBUG} && _d('Slave not running');
       # Find the most recent binlog position that's older than the delay amount.
       my $pos;
       my $i = 0;
       while ( $i < @positions && $positions[$i]->[$TS] <= $now - $opts{d} ) {
          $pos = $i;
          $i++;
+      }
+
+      if ( $pos ) {
+         my $position = $positions[$pos];
+         $ENV{MKDEBUG} && _d('Chosen position: ', ts($position->[$TS]),
+               " $position->[$FILE]/$position->[$POS]");
+      }
+      else {
+         $ENV{MKDEBUG} && _d('No position found');
       }
 
       # Make the slave server delay if possible; otherwise sleep and check
@@ -843,18 +872,17 @@ while (                       # Quit if:
       }
       else {
          my $position = $positions[-1];
-         info("slave stopped at master position $position->[$FILE]/$position->[$POS]");
+         info("slave stopped at master position "
+            . "$position->[$FILE]/$position->[$POS]");
       }
    }
    elsif ( ($status->{seconds_behind_master} || 0) < $opts{d} ) {
       my $position = $positions[-1];
       my $behind = $status->{seconds_behind_master} || 0;
       $next_start = $now + $opts{d} - $behind;
-      # TODO: under what conditions is something here undef?
       info("STOP SLAVE until "
          . ts($next_start)
          . " at master position $position->[$FILE]/$position->[$POS]");
-
       $slave->do("STOP SLAVE SQL_THREAD");
    }
    else {
@@ -906,10 +934,15 @@ sub get_dbh {
    }
 
    my $dbh = $dsn_parser->get_dbh(
-      $dsn_parser->get_cxn_params(\%opts), {AutoCommit => 1});
+      $dsn_parser->get_cxn_params($info), {AutoCommit => 1});
    $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names
    $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork
    return $dbh;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
 }
 
 # ############################################################################
@@ -930,7 +963,7 @@ To hold slavehost one minute behind its master for ten minutes:
 
 =head1 DESCRIPTION
 
-mk-slave-delay watches a slave and starts and stops its replication SQL
+C<mk-slave-delay> watches a slave and starts and stops its replication SQL
 thread as necessary to hold it at least as far behind the master as you
 request.  In practice, it will typically cause the slave to lag between
 L<"--delay"> and L<"--delay">+L<"--interval"> behind the master.
@@ -939,10 +972,18 @@ It bases the delay on binlog positions in the slave's relay logs by default,
 so there is no need to connect to the master.  This works well if the IO
 thread doesn't lag the master much, which is typical in most replication
 setups; the IO thread lag is usually milliseconds on a fast network.  If your
-IO thread's lag is too large for your purposes, mk-slave-delay can also
+IO thread's lag is too large for your purposes, C<mk-slave-delay> can also
 connect to the master for information about binlog positions.
 
-Note that since mk-slave-delay starts and stops the SQL thread, monitoring
+If the slave's I/O thread reports that it is waiting for the SQL thread to
+free some relay log space, C<mk-slave-delay> will automatically connect to the
+master to find binary log positions.  If L<"--askpass"> and L<"--daemonize">
+are given, it is possible that this could cause it to ask for a password while
+daemonized.  In this case, it exits.  Therefore, if you think your slave might
+encounter this condition, you should be sure to either specify
+L<"--usemaster"> explicitly when daemonizing, or don't specify L<"--askpass">.
+
+Note that since C<mk-slave-delay> starts and stops the SQL thread, monitoring
 systems may think the slave is having trouble when it's just being held back
 intentionally.
 
@@ -960,11 +1001,11 @@ string.  Keys are a single letter:
    F   Only read default options from the given file
 
 If you omit any values in MASTER-HOST, they are filled in with defaults from
-SLAVE-HOST, so you don't need to specify them in both places.  mk-slave-delay
+SLAVE-HOST, so you don't need to specify them in both places.  C<mk-slave-delay>
 reads all normal MySQL option files, such as ~/.my.cnf, so you may not need to
 specify username, password and other common options at all.
 
-mk-slave-delay tries to exit gracefully by trapping signals such as Ctrl-C.
+C<mk-slave-delay> tries to exit gracefully by trapping signals such as Ctrl-C.
 You cannot bypass L<"--continue"> with a trappable signal.
 
 =head1 OPTIONS
@@ -986,7 +1027,7 @@ Prompts the user for a password when connecting to MySQL.
 
 After exiting, restart the slave's SQL thread with no UNTIL condition, so it
 will run as usual and catch up to the master.  This is enabled by default and
-works even if you terminate mk-slave-delay with Control-C.
+works even if you terminate C<mk-slave-delay> with Control-C.
 
 =item --daemonize
 
@@ -1004,7 +1045,7 @@ Displays a help message.
 
 =item --interval
 
-How frequently mk-slave-delay should check whether the slave needs to be
+How frequently C<mk-slave-delay> should check whether the slave needs to be
 started or stopped.  See above for suffix syntax.
 
 =item --quiet
@@ -1013,18 +1054,18 @@ Do not output regular status messages.
 
 =item --time
 
-How long mk-slave-delay should run before exiting.  Default is to run
+How long C<mk-slave-delay> should run before exiting.  Default is to run
 forever.  See above for suffix syntax.
 
 =item --usemaster
 
 Don't trust the binlog positions in the slave's relay log.  Connect to the
 master and get binlog positions instead.  If you specify this option without
-giving a MASTER-HOST on the command line, mk-slave-delay examines the
+giving a MASTER-HOST on the command line, C<mk-slave-delay> examines the
 slave's SHOW SLAVE STATUS to determine the hostname and port for connecting to
 the master.
 
-mk-slave-delay only uses the MASTER_HOST and MASTER_PORT values from SHOW
+C<mk-slave-delay> uses only the MASTER_HOST and MASTER_PORT values from SHOW
 SLAVE STATUS for the master connection.  It does not use the MASTER_USER
 value.  If you want to specify a different username for the master than the
 one you use to connect to the slave, you should specify the MASTER-HOST option
@@ -1045,7 +1086,7 @@ installed in any reasonably new version of Perl.
 
 If you specify L<"--quiet">, there is no output.  Otherwise, the normal output
 is a status message consisting of a timestamp and information about what
-mk-slave-delay is doing: starting the slave, stopping the slave, or just
+C<mk-slave-delay> is doing: starting the slave, stopping the slave, or just
 observing.
 
 =head1 ENVIRONMENT
