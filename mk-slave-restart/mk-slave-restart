@@ -1015,8 +1015,8 @@ sub watch_server {
                die "Error does not match --error-text.\n";
             }
             else {
-           #TODO    $set_skip->execute();
-               #TODO$start->execute();
+               $set_skip->execute();
+               $start->execute();
                $was_running = 0;
                # Only set this on events I tried to restart.  Otherwise there
                # could be a race condition: I see it, I record it, but it hasn't
