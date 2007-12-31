@@ -1,5 +1,6 @@
 Changelog for mk-slave-restart:
 
+   * Added logic to discard corrupt relay logs.
    * Added --monitor, --sentinel, and --stop.
    * Added --quiet and changed --verbose to 1 by default.
    * Added the ability to monitor many servers with --recurse.
