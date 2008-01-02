@@ -692,7 +692,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1605
+# MasterSlave package 1631
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -706,16 +706,6 @@ sub new {
    bless {}, shift;
 }
 
-# Descends to slaves by examining SHOW SLAVE HOSTS.  Arguments is a hashref:
-#
-# * dbh           (Optional) a DBH.
-# * dsn           The DSN to connect to; if no DBH, will connect using this.
-# * dsn_parser    A DSNParser object.
-# * recurse       How many levels to recurse. 0 = none, undef = infinite.
-# * callback      Code to execute after finding a new slave.
-#
-# The callback gets the slave's DSN, dbh, and the recursion level as args.
-# The recursion is tail recursion.
 sub recurse_to_slaves {
    my ( $self, $args, $level ) = @_;
    $level ||= 0;
@@ -733,9 +723,6 @@ sub recurse_to_slaves {
       return;
    }
 
-   # SHOW SLAVE HOSTS sometimes has obsolete information.  Verify that this
-   # server has the ID its master thought, and that we have not seen it before
-   # in any case.
    my $sql  = 'SELECT @@SERVER_ID';
    $ENV{MKDEBUG} && _d($sql);
    my ($id) = $dbh->selectrow_array($sql);
@@ -746,38 +733,82 @@ sub recurse_to_slaves {
        || $args->{server_ids_seen}->{$id}++
    ) {
       $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
-      print STDERR "Skipping ", $dp->as_string($dsn), "\n";
+      if ( $args->{skip_callback} ) {
+         $args->{skip_callback}->($dsn, $dbh, $level);
+      }
       return;
    }
 
-   # Call the callback!
    $args->{callback}->($dsn, $dbh, $level);
 
    if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
 
-      # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
-      # revealed by server_id and master_id).  SHOW SLAVE HOSTS can be wacky.
       my @slaves =
-         grep { $_->{master_id} == $id } # Only my own slaves.
-         map  {                          # Convert each to all-lowercase keys.
+         grep { !$_->{master_id} || $_->{master_id} == $id } # Only my slaves.
+         $self->find_slave_hosts($dp, $dbh, $dsn);
+
+      foreach my $slave ( @slaves ) {
+         $ENV{MKDEBUG} && _d('Recursing from ',
+            $dp->as_string($dsn), ' to ', $dp->as_string($slave));
+         $self->recurse_to_slaves(
+            { %$args, dsn => $slave, dbh => undef }, $level + 1 );
+      }
+   }
+}
+
+sub find_slave_hosts {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+   $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
+
+   my $sql = 'SHOW SLAVE HOSTS';
+   $ENV{MKDEBUG} && _d($sql);
+   my @slaves = 
+      @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+   if ( @slaves ) {
+      $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+      @slaves = map {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         my $spec = "h=$hash{host},P=$hash{port}"
+            . ( $hash{user} ? ",u=$hash{user}" : '')
+            . ( $hash{password} ? ",p=$hash{password}" : '');
+         my $dsn           = $dsn_parser->parse($spec, $dsn);
+         $dsn->{server_id} = $hash{server_id};
+         $dsn->{master_id} = $hash{master_id};
+         $dsn->{source}    = 'hosts';
+         $dsn;
+      } @slaves;
+   }
+
+   else {
+      my $sql = 'SHOW FULL PROCESSLIST';
+      $ENV{MKDEBUG} && _d($sql);
+      @slaves =
+         map  {
+            my $slave        = $dsn_parser->parse("h=$_", $dsn);
+            $slave->{source} = 'processlist';
+            $slave;
+         }
+         grep { $_ }
+         map  {
+            my ( $host ) = $_->{host} =~ m/^([^:]+):/;
+            if ( $host eq 'localhost' ) {
+               $host = '127.0.0.1'; # Replication never uses sockets.
+            }
+            $host;
+         }
+         grep { $_->{command} =~ m/Binlog Dump/i }
+         map  {
             my %hash;
             @hash{ map { lc $_ } keys %$_ } = values %$_;
             \%hash;
          }
-         @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
-
-      foreach my $slave ( @slaves ) {
-         my $spec = "h=$slave->{host},P=$slave->{port}"
-            . ( $slave->{user} ? ",u=$slave->{user}" : '')
-            . ( $slave->{password} ? ",p=$slave->{password}" : '');
-         my $newdsn = $dp->parse($spec, $dsn);
-         $newdsn->{server_id} = $slave->{server_id};
-         $ENV{MKDEBUG} && _d('Recursing from ',
-            $dp->as_string($dsn), ' to ', $dp->as_string($newdsn));
-         $self->recurse_to_slaves(
-            { %$args, dsn => $newdsn, dbh => undef }, $level + 1 );
-      }
+         @{$dbh->selectall_arrayref($sql, { Slice => {} })};
    }
+
+   $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
+   return @slaves;
 }
 
 sub _d {
@@ -797,6 +828,7 @@ use English qw(-no_match_vars);
 use IO::File;
 use List::Util qw(min max);
 use Time::HiRes qw(sleep);
+use sigtrap qw(handler finish untrapped normal-signals);
 
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -949,6 +981,10 @@ $ms->recurse_to_slaves(
                ' because ', $EVAL_ERROR);
          }
       },
+      skip_callback => sub {
+         my ( $dsn, $dbh, $level ) = @_;
+         print STDERR "Skipping ", $dp->as_string($dsn), "\n";
+      },
    }
 );
 
@@ -973,6 +1009,7 @@ foreach my $host ( @servers_to_watch ) {
    $children{$dp->as_string($host->{dsn})} = $pid if $must_fork;
 };
 
+$ENV{MKDEBUG} && _d('Child PIDs: ' . join(', ', values %children));
 # Wait for the children to exit.
 foreach my $host ( keys %children ) {
    $ENV{MKDEBUG} && _d('Waiting to reap ', $host);
@@ -1157,6 +1194,17 @@ sub ts {
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# main:$line ", @_, "\n";
+}
+
+# Catches signals for exiting gracefully.
+sub finish {
+   my ($signal) = @_;
+   print STDERR "Exiting on SIG$signal.\n";
+   if ( %children ) {
+      kill 9, values %children;
+      print STDERR "Signaled ", join(', ', values %children), "\n";
+   }
+   exit(1);
 }
 
 # ############################################################################
