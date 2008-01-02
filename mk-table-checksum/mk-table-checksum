@@ -2044,7 +2044,7 @@ my @opt_spec = (
    { s => 'engine|e=h',
      d => 'Do only this comma-separated list of storage engines' },
    { s => 'explain',
-     d => 'Show, but do not execute, checksum queries' },
+     d => 'Show, but do not execute, checksum queries (disables --emptyrepltbl)' },
    { s => 'explainhosts',
      d => 'Print connection information and exit' },
    { s => 'float-precision=i',
@@ -2273,29 +2273,24 @@ if ( $opts{v} && @hosts > 1 ) {
 
 # ############################################################################
 # Check for existence and privileges on the replication table before starting,
-# and prepare the statements that will be used to update it.
+# and prepare the statements that will be used to update it.  Also clean out the
+# checksum table.
 # ############################################################################
 my ($fetch_sth, $update_sth);
 if ( $opts{R} ) {
    $main_dbh->do("REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0");
-   # TODO: in case of any --tables etc options, do this in do_tbl_replicate()
-   # instead of up-front, so there is no chance to get it wrong.
-   if ( $opts{emptyrepltbl} ) {
-      # Clean out the replication table.
+
+   # Clean out the replication table globally, but only if there are no
+   # filtering options.  There's also a clean-up step just before checksumming
+   # each table later.
+   if ( $opts{emptyrepltbl}
+      && !grep { $opts{$_} && %{$opts{$_}} } qw(d e g E n t) )
+   {
       my $del_sql = "DELETE FROM $opts{R}";
-      if ( $opts{d} ) {
-         $del_sql .= " WHERE db IN("
-                  . join(',', map { $main_dbh->quote($_) } keys %{$opts{d}})
-                  . ')';
-      }
-      if ( $opts{t} ) {
-         $del_sql .= $opts{d} ? ' AND ' : ' WHERE ';
-         $del_sql .= "tbl IN("
-                  . join(',', map { $main_dbh->quote($_) } keys %{$opts{t}})
-                  . ')';
-      }
+      $ENV{MKDEBUG} && _d($del_sql);
       $main_dbh->do($del_sql);
    }
+
    $fetch_sth = $main_dbh->prepare(
       "SELECT this_crc, this_cnt FROM $opts{R} "
       . "WHERE db = ? AND tbl = ? AND chunk = ?");
@@ -2413,6 +2408,13 @@ foreach my $database ( $finder->find_databases() ) {
    TABLE:
    foreach my $table ( @tables ) {
       eval {
+
+         # Clean out the replication table entry for this table.
+         if ( $opts{R} && !$opts{explain} ) {
+            my $del_sql = "DELETE FROM $opts{R} WHERE db=? AND tbl=?";
+            $ENV{MKDEBUG} && _d($del_sql, $database, $table->{table});
+            $main_dbh->do($del_sql, {}, $database, $table->{table});
+         }
 
          # ##################################################################
          # The query is independent of the chunk, so I make it once for every
@@ -2927,7 +2929,7 @@ of rows.
 =item --columns
 
 A comma-separated list of columns to checksum.  Other columns will be
-ignored.TODO: test
+ignored.
 
 =item --count
 
@@ -2958,9 +2960,8 @@ work.  Ignored if L<"--replicate"> is not specified.  This can be useful to
 remove entries related to tables that no longer exist, or just to clean out the
 results of a previous run.
 
-If you specify L<"--databases"> or L<"--tables">, MySLQ Table Checksum will
-construct a WHERE clause for the DELETE statement, so only matching rows will
-be deleted.
+If you specify any options that filter databases or tables, C<mk-table-checksum>
+will remove only their entries.  Otherwise, it empties the entire table.
 
 =item --engine
 
