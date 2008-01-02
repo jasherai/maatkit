@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * Made suffixes for time options optional (bug #1858696).
    * --locktables didn't disable --flushlock.
 
 2007-12-27: version 1.0.3

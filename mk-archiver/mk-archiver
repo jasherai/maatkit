@@ -30,7 +30,7 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1586
+# OptionParser package 1621
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -77,7 +77,7 @@ sub new {
             $opt->{r} = 1;
             $ENV{MKDEBUG} && _d("Option $opt->{k} is required");
          }
-         if ( (my ($def) = $opt->{d} =~ m/default(?: ([^)]+))?/) ) {
+         if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
             $ENV{MKDEBUG} && _d("Option $opt->{k} has a default");
          }
@@ -256,8 +256,14 @@ sub parse {
    foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'm' ) {
-         my ( $num, $suffix ) = $val =~ m/(\d+)([smhd])$/;
-         if ( $suffix ) {
+         my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+         if ( !$suffix ) {
+            my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
+            $suffix = $s || 's';
+            $ENV{MKDEBUG} && _d("No suffix given; using $suffix for $spec->{k} "
+               . "(value: '$val')");
+         }
+         if ( $suffix =~ m/[smhd]/ ) {
             $val = $suffix eq 's' ? $num            # Seconds
                  : $suffix eq 'm' ? $num * 60       # Minutes
                  : $suffix eq 'h' ? $num * 3600     # Hours
@@ -377,10 +383,19 @@ sub usage {
    my $usage = $self->descr() . "\n" . $self->prompt();
    foreach my $g ( @{$self->{groups}} ) {
       $usage .= "\n$g->{d}:\n";
-      foreach my $spec ( sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs ) {
+      foreach my $spec (
+         sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs )
+      {
          my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
          my $short = $spec->{t};
          my $desc  = $spec->{d};
+         if ( $spec->{y} && $spec->{y} eq 'm' ) {
+            my ($s) = $desc =~ m/\(suffix (.)\)/;
+            $s    ||= 's';
+            $desc =~ s/\s+\(suffix .\)//;
+            $desc .= ".  Optional suffix s=seconds, m=minutes, h=hours, "
+                   . "d=days; if no suffix, $s is used.";
+         }
          $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
          $desc =~ s/ +$//mg;
          if ( $short ) {
@@ -1446,7 +1461,7 @@ if ( !caller ) {
       { s => 'statistics',  d => 'Collect and print timing statistics' },
       { s => 'stop',        d => 'Stop running instances by creating the sentinel file' },
       { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
-      { s => 'time|m=m',    d => 'Time to run before exiting (suffix: s/m/h/d)' },
+      { s => 'time|m=m',    d => 'Time to run before exiting' },
       { s => 'txnsize|z=i', d => 'Number of rows per transaction; disable with 0; default 1)' },
       { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive (required)' },
       { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
