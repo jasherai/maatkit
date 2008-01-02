@@ -736,7 +736,7 @@ $opt_parser->{descr} = q{extracts and saves information about the most }
                      . q{a database.};
 my %opts = $opt_parser->parse();
 
-# Process options... TODO
+# Process options.
 $opts{c} = $opts{p} unless defined $opts{c};
 
 # ############################################################################

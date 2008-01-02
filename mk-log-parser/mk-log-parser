@@ -887,7 +887,7 @@ my @opt_spec = (
                               . 'Implies --aggregate' },
    { s => 'top=i',         d => 'Print only the top N results' },
 
-   # TODO: keep and print a random one, rewrite for explain, percent distinct vals
+   # TODO: rewrite for explain, percent distinct vals
 # min, max values
 # show stats overall: number of events, total time, min ts, max ts, pct of
 # time running queries
