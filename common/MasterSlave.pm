@@ -20,11 +20,6 @@
 use strict;
 use warnings FATAL => 'all';
 
-# TODO:
-# * separate find-slaves from recurse-slaves
-# * use PROCESSLIST to find slaves, too Command: Binlog Dump
-# * use this in table-sync, table-checksum
-
 package MasterSlave;
 
 use English qw(-no_match_vars);
@@ -84,28 +79,77 @@ sub recurse_to_slaves {
    if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
 
       # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
-      # revealed by server_id and master_id).  SHOW SLAVE HOSTS can be wacky.
+      # revealed by server_id and master_id).
       my @slaves =
-         grep { $_->{master_id} == $id } # Only my own slaves.
-         map  {                          # Convert each to all-lowercase keys.
+         grep { !$_->{master_id} || $_->{master_id} == $id } # Only my slaves.
+         $self->find_slave_hosts($dp, $dbh, $dsn);
+
+      foreach my $slave ( @slaves ) {
+         $ENV{MKDEBUG} && _d('Recursing from ',
+            $dp->as_string($dsn), ' to ', $dp->as_string($slave));
+         $self->recurse_to_slaves(
+            { %$args, dsn => $slave, dbh => undef }, $level + 1 );
+      }
+   }
+}
+
+# Finds slave hosts by trying SHOW SLAVE HOSTS, and if that doesn't reveal
+# anything, looks at SHOW PROCESSLIST and tries to guess which ones are slaves.
+# Returns a list of DSN hashes.  Optional extra keys in the DSN hash are
+# master_id and server_id.
+sub find_slave_hosts {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+   $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
+
+   # Try SHOW SLAVE HOSTS first.
+   my $sql = 'SHOW SLAVE HOSTS';
+   $ENV{MKDEBUG} && _d($sql);
+   my @slaves = 
+      @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+
+   # Convert SHOW SLAVE HOSTS into DSN hashes.
+   if ( @slaves ) {
+      $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+      @slaves = map {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         my $spec = "h=$hash{host},P=$hash{port}"
+            . ( $hash{user} ? ",u=$hash{user}" : '')
+            . ( $hash{password} ? ",p=$hash{password}" : '');
+         my $dsn = $dsn_parser->parse($spec, $dsn);
+         $dsn->{server_id} = $hash{server_id};
+         $dsn->{master_id} = $hash{master_id};
+         $dsn;
+      } @slaves;
+   }
+
+   else {
+      my $sql = 'SHOW FULL PROCESSLIST';
+      $ENV{MKDEBUG} && _d($sql);
+      @slaves =
+         map  {
+            $dsn_parser->parse("h=$_", $dsn);
+         }
+         grep { $_ }
+         map  {
+            my ( $host ) = $_->{host} =~ m/^([^:]+):/;
+            if ( $host eq 'localhost' ) {
+               $host = '127.0.0.1'; # Replication never uses sockets.
+            }
+            $host;
+         }
+         # It's probably a slave if it's doing a binlog dump.
+         grep { $_->{command} =~ m/Binlog Dump/i }
+         map  {
             my %hash;
             @hash{ map { lc $_ } keys %$_ } = values %$_;
             \%hash;
          }
-         @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
-
-      foreach my $slave ( @slaves ) {
-         my $spec = "h=$slave->{host},P=$slave->{port}"
-            . ( $slave->{user} ? ",u=$slave->{user}" : '')
-            . ( $slave->{password} ? ",p=$slave->{password}" : '');
-         my $dsn = $dp->parse($spec, $dsn);
-         $dsn->{server_id} = $slave->{server_id};
-         $ENV{MKDEBUG} && _d('Recursing from ',
-            $dp->as_string($dsn), ' to ', $dp->as_string($dsn));
-         $self->recurse_to_slaves(
-            { %$args, dsn => $dsn, dbh => undef }, $level + 1 );
-      }
+         @{$dbh->selectall_arrayref("SHOW FULL PROCESSLIST", { Slice => {} })};
    }
+
+   $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
+   return @slaves;
 }
 
 sub _d {
