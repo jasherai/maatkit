@@ -482,8 +482,6 @@ $opt_parser->usage_or_errors(%opts);
 
 my $exit_status = 0;
 my $one_file    = @ARGV < 2 && !($opts{i} || %{$opts{d}});
-# TODO: $one_file doesn't work right when trying to compare two databases from
-# the same server with -i or --equaldbs.
 
 my $DATABASE = 0;
 my $TABLE    = 1;
