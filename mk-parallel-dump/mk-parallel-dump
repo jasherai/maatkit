@@ -2772,8 +2772,7 @@ C<--no-gzip>.
 =item --age
 
 Specifies how 'old' a table must be before mk-parallel-dump will consider
-it.  The argument is a number with a suffix (s=seconds, m=minutes, h=hours,
-d=days).
+it.
 
 When L<"--sets"> is not specified, mk-parallel-dump uses C<SHOW TABLE STATUS>
 instead of C<SHOW TABLES> to get a list of tables in each database, and compares
@@ -3003,8 +3002,7 @@ Output version information and exit.
 =item --wait
 
 If the MySQL server crashes during dumping, waits until the server comes back
-and then continues with the rest of the tables.  The value is a number with a
-suffix (s=seconds, m=minutes, h=hours, d=days).  mk-parallel-dump will
+and then continues with the rest of the tables.  C<mk-parallel-dump> will
 check the server every second until this time is exhausted, at which point it
 will give up and exit.
 

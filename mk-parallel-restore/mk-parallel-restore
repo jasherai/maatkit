@@ -1521,8 +1521,7 @@ Output version information and exit.
 =item --wait
 
 If the MySQL server crashes during loading, waits until the server comes back
-and then continues with the rest of the files.  The value is a number with a
-suffix (s=seconds, m=minutes, h=hours, d=days).  mk-parallel-restore will
+and then continues with the rest of the files.  C<mk-parallel-restore> will
 check the server every second until this time is exhausted, at which point it
 will give up and exit.
 
