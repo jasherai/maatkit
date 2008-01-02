@@ -3522,7 +3522,7 @@ my @opt_spec = (
    { s => 'tables|t=h',
      d => 'Do only this comma-separated list of tables' },
    { s => 'test',
-     d => 'Analyze and decide the sync algorithm to use, then bail out' },
+     d => 'Analyze, decide the sync algorithm to use, print and exit' },
    { s => 'timeoutok',
      d => 'Keep going if --wait fails' },
    { s => 'transaction!',
