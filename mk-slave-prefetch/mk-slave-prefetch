@@ -1262,8 +1262,6 @@ if ( $opts{daemonize} ) {
 
 
 # TODO:
-# * be smarter about the window?  In the last N events, how many have actually
-#   been *behind* the SQL thread?  Is it possible to know this?
 # * filter: Throw away non-replicated DBs/tables
 # * Optionally read the binlog from the server's master.  advantages: can run
 #   tool on another server than the slave.
@@ -1528,7 +1526,6 @@ if ( $opts{statistics} ) {
 # ############################################################################
 
 # Catches signals so we can exit gracefully.
-# TODO: not working.  Why?
 sub finish {
    my ($signal) = @_;
    print STDERR "Exiting on SIG$signal.\n";

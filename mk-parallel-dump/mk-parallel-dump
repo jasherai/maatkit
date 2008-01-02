@@ -20,9 +20,6 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# TODO: there are still some issues with filename quoting.  It is not
-# cross-platform compatible.
-
 use strict;
 use warnings FATAL => 'all';
 
@@ -3032,6 +3029,10 @@ the Maatkit tools:
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
+
+This program works best on GNU/Linux.  Filename quoting might not work well on
+Microsoft Windows if you have spaces or funny characters in your database or
+table names.
 
 =head1 BUGS
 
