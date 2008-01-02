@@ -55,11 +55,29 @@ SKIP: {
    my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 
    my $ms = new MasterSlave();
+
    my $callback = sub {
       my ( $dsn, $dbh, $level ) = @_;
       return unless $level;
-      ok($dsn, "Connected to one slave " . ($dp->as_string($dsn) || '<none>'));
+      ok($dsn, "Connected to one slave "
+         . ($dp->as_string($dsn) || '<none>')
+         . " from $dsn->{source}");
    };
+
+   my $skip_callback = sub {
+      my ( $dsn, $dbh, $level ) = @_;
+      return unless $level;
+      ok($dsn, "Skipped one slave "
+         . ($dp->as_string($dsn) || '<none>')
+         . " from $dsn->{source}");
+   };
+
    $ms->recurse_to_slaves(
-      { dsn_parser => $dp, dbh => $dbh, dsn => $dsn, recurse => 1, callback => $callback });
+      {  dsn_parser    => $dp,
+         dbh           => $dbh,
+         dsn           => $dsn,
+         recurse       => 1,
+         callback      => $callback,
+         skip_callback => $skip_callback,
+      });
 }
