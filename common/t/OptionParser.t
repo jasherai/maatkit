@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 49;
+use Test::More tests => 50;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -386,14 +386,37 @@ is_deeply(
 
 $p = new OptionParser(
    { s => 'foo=m', d => 'Time' },
+   { s => 'bar=m', d => 'Time (suffix m)' },
 );
-@ARGV = qw(--foo 5h);
+@ARGV = qw(--foo 5h --bar 5);
 %opts = $p->parse();
 is_deeply(
    \%opts,
-   { %basic, foo => 3600*5, },
+   { %basic, foo => 3600*5, bar => 60*5 },
    'Time value decoded',
 );
+
+is($p->usage, <<EOF
+OptionParser.t   For more details, please use the --help option, or try 'perldoc
+OptionParser.t' for complete documentation.
+
+Usage: OptionParser.t <options>
+
+Options:
+  --bar      Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
+             suffix, m is used.
+  --foo      Time.  Optional suffix s=seconds, m=minutes, h=hours, d=days; if no
+             suffix, s is used.
+  --help     Show this help message
+  --version  Output version information and exit
+
+Options and values after processing arguments:
+  --bar      (No value)
+  --foo      (No value)
+  --help     FALSE
+  --version  FALSE
+EOF
+, 'Usage for time value');
 
 @ARGV = qw(--foo 5z);
 %opts = $p->parse();
