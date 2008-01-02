@@ -1265,7 +1265,7 @@ Makes mk-slave-restart only try to restart if the error number is in this
 comma-separated list of errors.  If it sees an error not in the list, it will
 exit.
 
-The error number is in the last_errno column of SHOW SLAVE STATUS.
+The error number is in the C<last_errno> column of C<SHOW SLAVE STATUS>.
 
 =item --error-text
 
@@ -1273,7 +1273,7 @@ A Perl regular expression against which the error text, if any, is matched.  If
 the error text exists and matches, mk-slave-restart will try to restart the
 slave.  If it exists but doesn't match, mk-slave-restart will exit.
 
-The error text is in the last_error column of SHOW SLAVE STATUS.
+The error text is in the C<last_error> column of C<SHOW SLAVE STATUS>.
 
 =item --error-length
 
@@ -1323,10 +1323,14 @@ the command-line, C<mk-slave-restart> should try to find its slaves and watch
 them too, up to the specified depth.  The default depth of 0 means "just watch
 the slave specified."
 
-This works only if you have configured your slaves to show up in C<SHOW SLAVE
-HOSTS>.  The minimal configuration for this is the C<report_host> parameter,
-but there are other "report" parameters as well for the port, username, and
-password.
+This works if you have configured your slaves to show up in C<SHOW SLAVE HOSTS>.
+The minimal configuration for this is the C<report_host> parameter, but there
+are other "report" parameters as well for the port, username, and password.
+
+If C<SHOW SLAVE HOSTS> doesn't return anything, C<mk-slave-restart> examines
+C<SHOW FULL PROCESSLIST> and tries to determine which connections are from
+slaves, then connect to them.  This is less likely to work than C<SHOW SLAVE
+HOSTS>, but it works sometimes when that doesn't.
 
 Recursion works by finding all slaves when the program starts, then watching
 them.  If there is more than one slave, C<mk-slave-restart> uses C<fork()> to
@@ -1375,9 +1379,7 @@ See also L<"--sentinel">.
 
 =item --time
 
-Causes mk-slave-restart to stop after the specified time has elapsed.  The
-argument can have a suffix of s, m, h, or d, indicating seconds, minutes, hours,
-or days.  The number is interpreted as seconds if there is no suffix.
+Causes C<mk-slave-restart> to stop after the specified time has elapsed.
 
 =item --untilmaster
 
