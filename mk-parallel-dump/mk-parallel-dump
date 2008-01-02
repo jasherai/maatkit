@@ -1743,7 +1743,7 @@ my @opt_spec = (
    { s => 'ignoredb|g=H',      d => 'Ignore this comma-separated list of databases' },
    { s => 'ignoreengine|E=H',  d => 'No data for this comma-separated list of storage engines (default FEDERATED,MRG_MyISAM)' },
    { s => 'ignoretbl|n=H',     d => 'Ignore this comma-separated list of tables' },
-   { s => 'locktables!',       d => 'Use LOCK TABLES (implies --no-flushlock)' },
+   { s => 'locktables!',       d => 'Use LOCK TABLES (disables --flushlock)' },
    { s => 'numthread|m=i',     d => "Number of threads (default $opts{m})" },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
