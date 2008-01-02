@@ -880,6 +880,7 @@ my @opt_spec = (
    { s => 'precision|p=i', d => 'Digits of precision for printing attributes '
                               . '(default 5)' },
    { s => 'progress|P=i',  d => 'Print progress every N events (default 0)' },
+   { s => 'rank|r',        d => 'Print rank in sorted order'},
    { s => 'sample',        d => 'Print a sample query, not a fingerprint'},
    { s => 'sort=s',        d => 'Sort by this attribute' },
    { s => 'sum=a',         d => 'Report sums for this list of attributes. '
@@ -887,7 +888,7 @@ my @opt_spec = (
    { s => 'top=i',         d => 'Print only the top N results' },
 
    # TODO: keep and print a random one, rewrite for explain, percent distinct vals
-# min, max values, rank
+# min, max values
 # show stats overall: number of events, total time, min ts, max ts, pct of
 # time running queries
 # change print format to say Sum_attr_1: X, Avg_attr_1: X,, etc
@@ -1033,7 +1034,11 @@ if ( $opts{top} ) {
 }
 
 my $fmt = "%.$opts{p}f";
-foreach my $query ( @queries ) {
+foreach my $i ( 0 .. $#queries ) {
+   my $query = $queries[$i];
+   if ( $opts{r} ) {
+      print "# Rank: $i\n";
+   }
    if ( $opts{c} ) {
       print "# Count: ", $query->{count}, "\n";
    }
@@ -1164,6 +1169,14 @@ Sets the display precision (number of decimal places) of aggregate statistics.
 =item --progress
 
 Prints progress every N events.  If N is zero, never prints progress.
+
+=item --rank
+
+Prints the query's rank.
+
+=item --sample
+
+Prints a real sample query instead of the abstracted L<"--fingerprint">.
 
 =item --sort
 
