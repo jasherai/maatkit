@@ -1687,6 +1687,45 @@ This program is based on concepts I heard Paul Tuckfield explain at the November
 2006 MySQL Camp un-conference.  However, the code is my own work.  I have not
 seen any other implementation of Paul's idea.
 
+=head1 DOES IT WORK?
+
+Does it work?  Does it actually speed up the slave?
+
+That depends on your workload, hardware, and other factors.  It might work when
+the following are true:
+
+=over
+
+=item *
+
+The slave's data is much larger than memory, and the workload is mostly randomly
+scattered small (single-row is ideal) changes.
+
+=item *
+
+There are lots of high-concurrency C<UPDATE> and C<DELETE> statements on the
+master.
+
+=item *
+
+The slave SQL thread is I/O-bound, but the slave overall has plenty of spare I/O
+capacity (definitely more than one disk spindle).
+
+=item *
+
+The slave uses InnoDB or another storage engine with row-level locking.
+
+=back
+
+It does B<not> speed up replication on my slaves, which mostly have large
+queries like C<INSERT .. SELECT .. GROUP BY>.  In my benchmarks it seemed to
+make no difference at all, positive or negative.
+
+On the wrong workload or slave configuration, this technique might actually make
+the slaves slower.  Your mileage will vary.
+
+User-contributed benchmarks are welcome.
+
 =head1 OPTIONS
 
 Some options are negatable by specifying them in their long form with a --no
