@@ -1,7 +1,7 @@
 A tool to check that cmdline opts are defined before use, and all defined ones
 are used
 
-mk-slave-restart: restart a bunch of slaves (see the tool for more info)
+mk-log-server: start a server that can serve the given log files.
 
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 http://www.mysqldiff.org/
@@ -11,12 +11,11 @@ query sniper:
    * http://www.stillhq.com/mysql/000008.html
    * Allow up to max_connections-X connections
    * Specify users/hosts NOT to kill (by default root/localhost)
-* read binlogs from many servers and apply them to one.
-
-Swallow a log file and output only the selected fields.  This could be piped
-to a colorizer or pushed into mk-query-profiler.
 
 Log parsing and coloring:
+
+   Swallow a log file and output only the selected fields.  This could be
+   piped to a colorizer or pushed into mk-query-profiler.
 
 Promoting masters:
    * compare positions
