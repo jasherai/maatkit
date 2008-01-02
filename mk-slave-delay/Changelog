@@ -1,5 +1,6 @@
 Changelog for mk-slave-delay:
 
+   * Made suffixes for time options optional (bug #1858696).
    * The program was ignoring some connection parameters.
    * Made the program use master when the I/O thread waits for relay log space.
 

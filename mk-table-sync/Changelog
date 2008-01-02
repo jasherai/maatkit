@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Made suffixes for time options optional (bug #1858696).
    * InnoDB tables use --transaction unless it's explicitly specified.
 
 2007-12-27: version 1.0.2

@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+   * Made suffixes for time options optional (bug #1858696).
+
 2007-12-16: version 1.0.5
 
    * Updated common code.

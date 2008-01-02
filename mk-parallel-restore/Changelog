@@ -1,5 +1,6 @@
 Changelog for mk-parallel-restore:
 
+   * Made suffixes for time options optional (bug #1858696).
    * --ignoretables was ignored.
 
 2007-12-16: version 1.0.2
