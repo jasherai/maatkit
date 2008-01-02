@@ -22,7 +22,7 @@ use warnings FATAL => 'all';
 
 # TODO:
 # * separate find-slaves from recurse-slaves
-# * use PROCESSLIST to find slaves, too
+# * use PROCESSLIST to find slaves, too Command: Binlog Dump
 # * use this in table-sync, table-checksum
 
 package MasterSlave;
