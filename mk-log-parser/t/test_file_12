@@ -1,0 +1,9 @@
+perl ../mk-log-parser ../../common/t/samples/slow001.txt -acfr --sum Query_time
+# Rank: 0
+# Count: 1
+# Sum:   Query_time: 2.00000
+select sleep(N) from n;
+# Rank: 1
+# Count: 1
+# Sum:   Query_time: 2.00000
+select sleep(N) from test.n;
