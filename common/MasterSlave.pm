@@ -109,7 +109,7 @@ sub find_slave_hosts {
    my $sql = 'SHOW SLAVE HOSTS';
    $ENV{MKDEBUG} && _d($sql);
    my @slaves = 
-      @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
+      @{$dbh->selectall_arrayref($sql, { Slice => {} })};
 
    # Convert SHOW SLAVE HOSTS into DSN hashes.
    if ( @slaves ) {
@@ -152,7 +152,7 @@ sub find_slave_hosts {
             @hash{ map { lc $_ } keys %$_ } = values %$_;
             \%hash;
          }
-         @{$dbh->selectall_arrayref("SHOW FULL PROCESSLIST", { Slice => {} })};
+         @{$dbh->selectall_arrayref($sql, { Slice => {} })};
    }
 
    $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
