@@ -1910,8 +1910,7 @@ samples.
 =item --time
 
 How long C<mk-slave-prefetch> should run before exiting.  Default is to run
-forever.  The suffix can be s for seconds, m for minutes, h for hours, or d for
-days.
+forever.
 
 =item --tmpdir
 

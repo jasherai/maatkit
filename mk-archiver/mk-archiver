@@ -2568,9 +2568,7 @@ it will use.
 
 =item --time
 
-Causes mk-archiver to stop after the specified time has elapsed.  The
-argument can have a suffix of s, m, h, or d, indicating seconds, minutes, hours,
-or days.  The number is interpreted as seconds if there is no suffix.
+Causes mk-archiver to stop after the specified time has elapsed.
 
 =item --txnsize
 

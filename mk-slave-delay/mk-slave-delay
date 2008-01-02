@@ -1028,10 +1028,6 @@ You cannot bypass L<"--continue"> with a trappable signal.
 Some options are negatable by specifying them in their long form with a --no
 prefix.
 
-Some options have a special suffix syntax.  These options accept a number
-suffixed with s, m, h, or d.  The suffixes mean seconds, minutes, hours and
-days respectively.
-
 =over
 
 =item --askpass
@@ -1051,8 +1047,7 @@ on Microsoft Windows.
 
 =item --delay
 
-How far the slave should lag its master.  This value is a number with a
-suffix; see above for suffix syntax.
+How far the slave should lag its master.
 
 =item --help
 
@@ -1061,7 +1056,7 @@ Displays a help message.
 =item --interval
 
 How frequently C<mk-slave-delay> should check whether the slave needs to be
-started or stopped.  See above for suffix syntax.
+started or stopped.
 
 =item --quiet
 
@@ -1070,7 +1065,7 @@ Do not output regular status messages.
 =item --time
 
 How long C<mk-slave-delay> should run before exiting.  Default is to run
-forever.  See above for suffix syntax.
+forever.
 
 =item --usemaster
 
