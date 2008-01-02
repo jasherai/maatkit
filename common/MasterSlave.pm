@@ -36,6 +36,7 @@ sub new {
 # * dsn_parser    A DSNParser object.
 # * recurse       How many levels to recurse. 0 = none, undef = infinite.
 # * callback      Code to execute after finding a new slave.
+# * skip_callback Optional: execute with slaves that will be skipped.
 #
 # The callback gets the slave's DSN, dbh, and the recursion level as args.
 # The recursion is tail recursion.
@@ -69,7 +70,9 @@ sub recurse_to_slaves {
        || $args->{server_ids_seen}->{$id}++
    ) {
       $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
-      print STDERR "Skipping ", $dp->as_string($dsn), "\n";
+      if ( $args->{skip_callback} ) {
+         $args->{skip_callback}->($dsn, $dbh, $level);
+      }
       return;
    }
 
@@ -96,7 +99,8 @@ sub recurse_to_slaves {
 # Finds slave hosts by trying SHOW SLAVE HOSTS, and if that doesn't reveal
 # anything, looks at SHOW PROCESSLIST and tries to guess which ones are slaves.
 # Returns a list of DSN hashes.  Optional extra keys in the DSN hash are
-# master_id and server_id.
+# master_id and server_id.  Also, the 'source' key is either 'processlist' or
+# 'hosts'.
 sub find_slave_hosts {
    my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
    $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
@@ -116,9 +120,10 @@ sub find_slave_hosts {
          my $spec = "h=$hash{host},P=$hash{port}"
             . ( $hash{user} ? ",u=$hash{user}" : '')
             . ( $hash{password} ? ",p=$hash{password}" : '');
-         my $dsn = $dsn_parser->parse($spec, $dsn);
+         my $dsn           = $dsn_parser->parse($spec, $dsn);
          $dsn->{server_id} = $hash{server_id};
          $dsn->{master_id} = $hash{master_id};
+         $dsn->{source}    = 'hosts';
          $dsn;
       } @slaves;
    }
@@ -128,7 +133,9 @@ sub find_slave_hosts {
       $ENV{MKDEBUG} && _d($sql);
       @slaves =
          map  {
-            $dsn_parser->parse("h=$_", $dsn);
+            my $slave        = $dsn_parser->parse("h=$_", $dsn);
+            $slave->{source} = 'processlist';
+            $slave;
          }
          grep { $_ }
          map  {
