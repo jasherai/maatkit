@@ -20,6 +20,11 @@
 use strict;
 use warnings FATAL => 'all';
 
+# TODO:
+# * separate find-slaves from recurse-slaves
+# * use PROCESSLIST to find slaves, too
+# * use this in table-sync, table-checksum
+
 package MasterSlave;
 
 use English qw(-no_match_vars);
