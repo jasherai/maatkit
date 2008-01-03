@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 3;
 use English qw(-no_match_vars);
 
 require "../MasterSlave.pm";
@@ -47,14 +47,16 @@ my $proc = `ps -eaf | grep rsandbox | grep master | grep port`;
 
 my ($port) = $proc =~ m/--port=(\d+)/;
 
+my $dbh;
+my @slaves;
+my $ms = new MasterSlave();
+
 SKIP: {
-   skip 2, 'No sandbox server running' unless $port;
+   skip 'No sandbox server running', 3 unless $port;
 
    # Connect
    my $dsn = $dp->parse("h=127.0.0.1,P=$port");
-   my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
-
-   my $ms = new MasterSlave();
+   $dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 
    my $callback = sub {
       my ( $dsn, $dbh, $level ) = @_;
@@ -62,6 +64,7 @@ SKIP: {
       ok($dsn, "Connected to one slave "
          . ($dp->as_string($dsn) || '<none>')
          . " from $dsn->{source}");
+      push @slaves, $dbh;
    };
 
    my $skip_callback = sub {
@@ -80,4 +83,15 @@ SKIP: {
          callback      => $callback,
          skip_callback => $skip_callback,
       });
+
+   SKIP: {
+      skip 'No slaves found', 1 unless @slaves;
+
+      my $res;
+      eval {
+         $res = $ms->wait_for_master($dbh, $slaves[0], 1, 0);
+      };
+      ok(defined $res && $res >= 0, 'Got a good result from waiting');
+   }
+
 }

@@ -70,7 +70,7 @@ sub sync_table {
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser) )
+      nibbler parser master_slave) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -231,43 +231,6 @@ sub lock_table {
    $ENV{MKDEBUG} && _d("Acquired table lock on $where in $mode mode");
 }
 
-sub wait_for_master {
-   my ( $self, $src_dbh, $dst_dbh, $time, $timeoutok ) = @_;
-   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
-   if ( !$self->{not_a_master}->{$src_dbh} ) {
-      my $query = 'SHOW MASTER STATUS';
-      $ENV{MKDEBUG} && _d($query);
-      my $ms = $src_dbh->selectrow_hashref($query);
-      if ( $ms && %$ms ) {
-         $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
-         if ( $ms->{file} && $ms->{position} ) {
-            $query = "SELECT MASTER_POS_WAIT('$ms->{file}', "
-                   . "$ms->{position}, $time)";
-            $ENV{MKDEBUG} && _d($query);
-            my $stat = $dst_dbh->selectall_arrayref($query)->[0]->[0];
-            $stat = 'NULL' unless defined $stat;
-            if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
-               die "MASTER_POS_WAIT returned $stat";
-            }
-            $ENV{MKDEBUG} && _d("Result of waiting: $stat");
-         }
-         else {
-            $ENV{MKDEBUG}
-               && _d('This server returns NULLs for SHOW MASTER STATUS');
-            $self->{not_a_master}->{$src_dbh}++;
-         }
-      }
-      else {
-         $ENV{MKDEBUG}
-            && _d('This server returns nothing for SHOW MASTER STATUS');
-         $self->{not_a_master}->{$src_dbh}++;
-      }
-   }
-   else {
-      $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
-   }
-}
-
 # Doesn't work quite the same way as lock_and_wait. It will unlock any LOWER
 # priority lock level, not just the exact same one.
 sub unlock {
@@ -311,7 +274,7 @@ sub lock_and_wait {
 
    foreach my $arg ( qw(
       dst_db dst_dbh dst_tbl lock quoter replicate src_db src_dbh src_tbl
-      timeoutok transaction wait lock_level misc_dbh) )
+      timeoutok transaction wait lock_level misc_dbh master_slave) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -358,7 +321,7 @@ sub lock_and_wait {
    if ( $args{wait} ) {
       # Always use the $misc_dbh dbh to check the master's position, because
       # the $src_dbh might be in use due to executing $src_sth.
-      $self->wait_for_master(
+      $args{master_slave}->wait_for_master(
          $args{misc_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
    }
 
