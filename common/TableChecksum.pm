@@ -310,48 +310,9 @@ sub make_checksum_query {
    return $result . "FROM /*DB_TBL*//*WHERE*/";
 }
 
-# Checks tables for differences, optionally recursively.  Arguments is a
-# hashref:
-# * dbh        (Optional) a DBH to check
-# * dsn        The DSN to check; if no DBH, will connect using this
-# * dsn_parser A DSNParser object
-# * recurse    How many levels to recurse. 0 = check this server, undef =
-#              infinite recursion.
-# * table      Table to check
-# * callback   Code to execute when differences are found
-sub check_server {
-   my ( $self, $args, $level ) = @_;
-   $level ||= 0;
-
-   my $dbh;
-   eval {
-      $dbh = $args->{dbh} || DBI->connect(
-         $args->{dsn_parser}->get_cxn_params($args->{dsn},
-            { RaiseError => 1, PrintError => 0, AutoCommit => 1 }));
-      $ENV{MKDEBUG} && _d('Connected to '
-         . $args->{dsn_parser}->as_string($args->{dsn}));
-   };
-   if ( $EVAL_ERROR ) {
-      print "Cannot connect to "
-         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
-      return;
-   }
-
-   # SHOW SLAVE HOSTS sometimes has obsolete information.  Verify that this
-   # server has the ID its master thought, and that we have not seen it before
-   # in any case.
-   my ($id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
-   $ENV{MKDEBUG} && _d('Working on server ID ' . $id);
-   my $master_thinks_i_am = $args->{dsn}->{server_id};
-   if ( !defined $id
-       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
-       || $args->{server_ids_seen}->{$id}++
-   ) {
-      $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
-      print "Skipping "
-         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
-      return;
-   }
+# Queries the replication table for chunks that differ from the master's data.
+sub find_replication_differences {
+   my ( $self, $dbh, $table ) = @_;
 
    (my $sql = <<"   EOF") =~ s/\s+/ /gm;
       SELECT db, tbl, chunk, boundaries,
@@ -360,44 +321,14 @@ sub check_server {
             this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
             0
          ) AS crc_diff
-      FROM $args->{table}
+      FROM $table
       WHERE master_cnt <> this_cnt OR master_crc <> this_crc
       OR ISNULL(master_crc) <> ISNULL(this_crc)
    EOF
 
    $ENV{MKDEBUG} && _d($sql);
    my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
-   if ( @$diffs ) {
-      $args->{callback}->($args->{dsn}, $dbh, $level, @$diffs);
-   }
-
-   if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
-
-      # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
-      # revealed by server_id and master_id).  SHOW SLAVE HOSTS can be wacky.
-      my @slaves =
-         grep { $_->{master_id} == $id } # Only my own slaves.
-         map  {                          # Convert each to all-lowercase keys.
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            \%hash;
-         }
-         @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
-
-      foreach my $slave ( @slaves ) {
-         my $spec = "h=$slave->{host},P=$slave->{port}"
-            . ( $slave->{user} ? ",u=$slave->{user}" : '')
-            . ( $slave->{password} ? ",p=$slave->{password}" : '');
-         my $dsn = $args->{dsn_parser}->parse($spec, $args->{dsn});
-         $dsn->{server_id} = $slave->{server_id};
-         $ENV{MKDEBUG} && _d('Recursing from '
-            . $args->{dsn_parser}->as_string($args->{dsn})
-            . ' to '
-            . $args->{dsn_parser}->as_string($dsn));
-         $self->check_server( { %$args, dsn => $dsn, dbh => undef }, $level + 1 );
-      }
-   }
-
+   return @$diffs;
 }
 
 sub _d {
