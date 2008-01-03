@@ -53,6 +53,7 @@ require "../TableSyncer.pm";
 require "../TableSyncStream.pm";
 require "../TableSyncNibble.pm";
 require "../VersionParser.pm";
+require "../MasterSlave.pm";
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -72,6 +73,7 @@ my $tbl_struct = $tp->parse($ddl);
 my $chunker    = new TableChunker( quoter => $q );
 my $checksum   = new TableChecksum();
 my $nibbler    = new TableNibbler();
+my $ms         = new MasterSlave();
 my ( $rows, $cnt );
 
 my $algo = $ts->best_algorithm(
@@ -108,6 +110,7 @@ my %args = (
    test          => 0,
    nibbler       => $nibbler,
    parser        => $tp,
+   master_slave  => $ms,
 );
 
 $ts->sync_table(
