@@ -159,6 +159,17 @@ sub find_slave_hosts {
    return @slaves;
 }
 
+sub get_master_dsn {
+   my ( $self, $dbh, $dsn, $dsn_parser ) = @_;
+   $ENV{MKDEBUG} && _d("Getting master cxn params via SHOW SLAVE STATUS");
+   my $query  = 'SHOW SLAVE STATUS';
+   $ENV{MKDEBUG} && _d($query);
+   my $status = $dbh->selectrow_hashref($query);
+   $status    = { map { lc($_) => $status->{$_} } keys %$status };
+   my $spec   = "h=$status->{master_host},P=$status->{master_port}";
+   return       $dsn_parser->parse($spec, $dsn);
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# MasterSlave:$line ", @_, "\n";
