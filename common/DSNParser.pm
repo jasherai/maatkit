@@ -196,9 +196,13 @@ sub get_dbh {
       join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
    my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
    $ENV{MKDEBUG} && _d('DBH info: ',
+      $dbh,
       Dumper($dbh->selectrow_hashref(
          'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
-      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'));
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
+      ' Character set info: ',
+      Dumper($dbh->selectall_arrayref(
+         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})));
    return $dbh;
 }
 
