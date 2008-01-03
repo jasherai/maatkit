@@ -8,6 +8,7 @@ query sniper:
    * http://www.stillhq.com/mysql/000008.html
    * Allow up to max_connections-X connections
    * Specify users/hosts NOT to kill (by default root/localhost)
+   * http://google-mysql-tools.googlecode.com/svn/trunk/mypgrep.py
 
 Log parsing and coloring:
 
