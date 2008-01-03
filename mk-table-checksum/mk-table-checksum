@@ -2848,6 +2848,57 @@ port number:
 If you are confused about how mk-table-checksum will connect to your servers,
 give the L<"--explainhosts"> option and it will tell you.
 
+=head1 HOW FAST IS IT?
+
+Speed and efficiency are important, because the typical use case is checksumming
+large amounts of data.
+
+C<mk-table-checksum> is designed to do very little work itself, and generates
+very little network traffic aside from inspecting table structures with C<SHOW
+CREATE TABLE>.  The results of checksum queries are typically 40-character or
+shorter strings.
+
+The MySQL server does the bulk of the work, in the form of the checksum queries.
+The following benchmarks show the checksum query times for various checksum
+algorithms.  The first two results are simply running C<COUNT(col8)> and
+C<CHECKSUM TABLE> on the table.
+
+ ALGORITHM    HASH FUNCTION  EXTRA      TIME
+ ===========  =============  ========  =====
+ COUNT(col8)                             2.3
+ CHECKSUM                                5.3
+ FNV_64                                 12.4
+ ACCUM        FNV_64                    27.1
+ BIT_XOR      MD5            --optxor   80.0
+ ACCUM        MD5                       87.4
+ BIT_XOR      SHA1           --optxor   90.1
+ ACCUM        SHA1                     101.3
+ BIT_XOR      MD5                      172.0
+ BIT_XOR      SHA1                     197.3
+
+The tests are entirely CPU-bound.  The sample data is an InnoDB table with the
+following structure:
+
+ CREATE TABLE test (
+   col1 int NOT NULL,
+   col2 date NOT NULL,
+   col3 int NOT NULL,
+   col4 int NOT NULL,
+   col5 int,
+   col6 decimal(3,1),
+   col7 smallint unsigned NOT NULL,
+   col8 timestamp NOT NULL,
+   PRIMARY KEY  (col2, col1),
+   KEY (col7),
+   KEY (col1)
+ ) ENGINE=InnoDB
+
+The table has 4303585 rows, 365969408 bytes of data and 173457408 bytes of
+indexes.  The server is a Dell PowerEdge 1800 with dual 32-bit Xeon 2.8GHz
+processors and 2GB of RAM.  The tests are fully CPU-bound, and the server is
+otherwise idle.  The results are generally consistent to within a tenth of a
+second on repeated runs.
+
 =head1 OPTIONS
 
 Many options are enabled by default and can be disabled by prefixing with --no.
@@ -2869,33 +2920,27 @@ command.  It cannot be used before MySQL 4.1.1, and various options disable it
 as well.  It does not simultaneously count rows; that requires an extra COUNT(*)
 query.  This is a good option when you are using MyISAM tables with live
 checksums enabled; in this case both the COUNT(*) and CHECKSUM queries will run
-very quickly.  CHECKSUM TABLE is about 20% faster than the other two
-algorithms, even on InnoDB tables, if you are not doing COUNT(*).
+very quickly.
 
 The BIT_XOR algorithm is available for MySQL 4.1.1 and newer.  It uses
 BIT_XOR(), which is order-independent, to reduce all the rows to a single
-checksum.  It runs within an order of magnitude of COUNT(*) on InnoDB tables;
-on large tables it's typically about half as fast as COUNT(*).
+checksum.
 
 ACCUM uses a user variable as an accumulator.  It reduces each row to a single
 checksum, which is concatenated with the accumulator and re-checksummed.  This
 technique is order-dependent.  If the table has a primary key, it will be used
-to order the results for consistency; otherwise it's up to chance.  It tends to
-use a little less CPU and run a little faster than the BIT_XOR algorithm.
+to order the results for consistency; otherwise it's up to chance.
 
-The ACCUM algorithm has two possible advantages over BIT_XOR: speed (there may
-be fewer cryptographic hash operations and it may read less data) and possibly
-fewer collisions.  The pathological worst case is where identical rows will
-cancel each other out in the BIT_XOR.  In this case you will not be able to
-distinguish a table full of one value from a table full of another value.  The
-ACCUM algorithm will distinguish them.
+The pathological worst case is where identical rows will cancel each other out
+in the BIT_XOR.  In this case you will not be able to distinguish a table full
+of one value from a table full of another value.  The ACCUM algorithm will
+distinguish them.
 
 However, the ACCUM algorithm is order-dependent, so if you have two tables
 with identical data but the rows are out of order, you'll get different
 checksums with ACCUM.
 
-Choose your (mild) poison.  Each algorithm is very good in reality.  If a given
-algorithm won't work for some reason, mk-table-checksum falls back to
+If a given algorithm won't work for some reason, mk-table-checksum falls back to
 another.  The least common denominator is ACCUM, which works on MySQL 3.23.2 and
 newer.
 
