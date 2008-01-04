@@ -38,6 +38,19 @@ sub new {
    bless {}, shift;
 }
 
+# Returns how wide/long, in characters, a CRC function is.
+sub get_crc_wid {
+   my ( $self, $dbh, $func ) = @_;
+   my $crc_wid = 16;
+   if ( uc $func ne 'FNV_64' ) {
+      eval {
+         my ($val) = $dbh->selectrow_array("SELECT $func('a')");
+         $crc_wid = max(16, length($val));
+      };
+   }
+   return $crc_wid;
+}
+
 # Options:
 #   algorithm   Optional: one of CHECKSUM, ACCUM, BIT_XOR
 #   vp          VersionParser object
@@ -127,6 +140,9 @@ sub optimize_xor {
    my ( $self, %args ) = @_;
    my ( $dbh, $func ) = @args{qw(dbh func)};
 
+   # TODO: this function needs a hint to know when a function returns an
+   # integer.  CRC32 is an example.  In these cases no optimization or slicing
+   # is necessary.
    die "FNV_64 never needs the BIT_XOR optimization" if uc $func eq 'FNV_64';
 
    my $opt_slice = 0;
@@ -302,7 +318,7 @@ sub make_checksum_query {
       # As a special case, the FNV_64 function does not need to be sliced.  It
       # can be fed right into BIT_XOR after a cast to UNSIGNED.
       if ( uc $func eq 'FNV_64' ) {
-         $result = "BIT_XOR(CAST($expr AS UNSIGNED)) AS crc ";
+         $result = "CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16) AS crc ";
       }
       else {
          my $slices = $self->make_xor_slices( query => $expr, %args );
