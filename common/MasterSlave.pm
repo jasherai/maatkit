@@ -170,41 +170,43 @@ sub get_master_dsn {
    return       $dsn_parser->parse($spec, $dsn);
 }
 
-# Waits for a slave to catch up to the master, with MASTER_POS_WAIT().  Returns
-# the return value of MASTER_POS_WAIT().
-sub wait_for_master {
-   my ( $self, $master, $slave, $time, $timeoutok ) = @_;
-   my $result;
-
-   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
-   if ( !$self->{not_a_master}->{$master} ) {
+# Returns a hashref of SHOW MASTER STATUS output, with keys lowercased.
+sub get_master_status {
+   my ( $self, $dbh ) = @_;
+   if ( !$self->{not_a_master}->{$dbh} ) {
       my $query = 'SHOW MASTER STATUS';
       $ENV{MKDEBUG} && _d($query);
-      my $ms = $master->selectrow_hashref($query);
+      my $ms = $dbh->selectrow_hashref($query);
+
       if ( $ms && %$ms ) {
          $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
          if ( $ms->{file} && $ms->{position} ) {
-            $query = "SELECT MASTER_POS_WAIT('$ms->{file}', "
-                   . "$ms->{position}, $time)";
-            $ENV{MKDEBUG} && _d($query);
-            ($result) = $slave->selectrow_array($query);
-            my $stat = defined $result ? $result : 'NULL';
-            if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
-               die "MASTER_POS_WAIT returned $stat";
-            }
-            $ENV{MKDEBUG} && _d("Result of waiting: $stat");
-         }
-         else {
-            $ENV{MKDEBUG}
-               && _d('This server returns NULLs for SHOW MASTER STATUS');
-            $self->{not_a_master}->{$master}++;
+            return $ms;
          }
       }
-      else {
-         $ENV{MKDEBUG}
-            && _d('This server returns nothing for SHOW MASTER STATUS');
-         $self->{not_a_master}->{$master}++;
+
+      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW MASTER STATUS');
+      $self->{not_a_master}->{$dbh}++;
+   }
+}
+
+# Waits for a slave to catch up to the master, with MASTER_POS_WAIT().  Returns
+# the return value of MASTER_POS_WAIT().  $ms is the optional result of calling
+# get_master_status().
+sub wait_for_master {
+   my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
+   my $result;
+   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+   $ms ||= $self->get_master_status($master);
+   if ( $ms ) {
+      my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+      $ENV{MKDEBUG} && _d($query);
+      ($result) = $slave->selectrow_array($query);
+      my $stat = defined $result ? $result : 'NULL';
+      if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+         die "MASTER_POS_WAIT returned $stat";
       }
+      $ENV{MKDEBUG} && _d("Result of waiting: $stat");
    }
    else {
       $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
