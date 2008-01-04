@@ -1991,7 +1991,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1639
+# MasterSlave package 1653
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2081,7 +2081,7 @@ sub find_slave_hosts {
    }
 
    else {
-      my $sql = 'SHOW FULL PROCESSLIST';
+      my $sql = 'SHOW PROCESSLIST';
       $ENV{MKDEBUG} && _d($sql);
       @slaves =
          map  {
@@ -2121,39 +2121,39 @@ sub get_master_dsn {
    return       $dsn_parser->parse($spec, $dsn);
 }
 
-sub wait_for_master {
-   my ( $self, $master, $slave, $time, $timeoutok ) = @_;
-   my $result;
-
-   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
-   if ( !$self->{not_a_master}->{$master} ) {
+sub get_master_status {
+   my ( $self, $dbh ) = @_;
+   if ( !$self->{not_a_master}->{$dbh} ) {
       my $query = 'SHOW MASTER STATUS';
       $ENV{MKDEBUG} && _d($query);
-      my $ms = $master->selectrow_hashref($query);
+      my $ms = $dbh->selectrow_hashref($query);
+
       if ( $ms && %$ms ) {
          $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
          if ( $ms->{file} && $ms->{position} ) {
-            $query = "SELECT MASTER_POS_WAIT('$ms->{file}', "
-                   . "$ms->{position}, $time)";
-            $ENV{MKDEBUG} && _d($query);
-            ($result) = $slave->selectrow_array($query);
-            my $stat = defined $result ? $result : 'NULL';
-            if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
-               die "MASTER_POS_WAIT returned $stat";
-            }
-            $ENV{MKDEBUG} && _d("Result of waiting: $stat");
-         }
-         else {
-            $ENV{MKDEBUG}
-               && _d('This server returns NULLs for SHOW MASTER STATUS');
-            $self->{not_a_master}->{$master}++;
+            return $ms;
          }
       }
-      else {
-         $ENV{MKDEBUG}
-            && _d('This server returns nothing for SHOW MASTER STATUS');
-         $self->{not_a_master}->{$master}++;
+
+      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW MASTER STATUS');
+      $self->{not_a_master}->{$dbh}++;
+   }
+}
+
+sub wait_for_master {
+   my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
+   my $result;
+   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+   $ms ||= $self->get_master_status($master);
+   if ( $ms ) {
+      my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+      $ENV{MKDEBUG} && _d($query);
+      ($result) = $slave->selectrow_array($query);
+      my $stat = defined $result ? $result : 'NULL';
+      if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+         die "MASTER_POS_WAIT returned $stat";
       }
+      $ENV{MKDEBUG} && _d("Result of waiting: $stat");
    }
    else {
       $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
@@ -2176,7 +2176,7 @@ package main;
 
 use English qw(-no_match_vars);
 use List::Util qw(max);
-use POSIX qw(ceil);
+use Time::HiRes qw(gettimeofday sleep);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -2621,7 +2621,7 @@ foreach my $database ( $finder->find_databases() ) {
          # ##################################################################
          foreach my $chunk_num ( 0 .. scalar(@{$table->{chunks}}) - 1 ) {
 
-            my $chunk_start_time = time;
+            my $chunk_start_time = gettimeofday();
 
             if ( $opts{R} ) { # We're in --replicate mode.
                do_tbl_replicate($hosts[0], $query, $table,
@@ -2637,9 +2637,7 @@ foreach my $database ( $finder->find_databases() ) {
                         . $q->quote($database, $table) . " READ");
                   }
                   if ( defined $opts{w} ) {
-                     my $master_status
-                        = $main_dbh->selectrow_hashref('SHOW MASTER STATUS');
-                     @{$table}{keys %$master_status} = values %$master_status;
+                     $table->{master_status} = $ms->get_master_status($main_dbh);
                   }
                }
 
@@ -2692,7 +2690,7 @@ foreach my $database ( $finder->find_databases() ) {
             }
             elsif ( $opts{'sleep-coef'} && !$opts{explain} ) {
                my $sleep_time
-                  = ceil( (time - $chunk_start_time) * $opts{'sleep-coef'} );
+                  = (gettimeofday() - $chunk_start_time) * $opts{'sleep-coef'};
                sleep($sleep_time);
             }
 
@@ -2764,15 +2762,8 @@ sub do_tbl {
 
    # I'm a slave.  Wait to catch up to the master.  Calculate slave lag.
    if ( !$is_master && defined $opts{w} && !$opts{explain} ) {
-      my $sql = $ch->inject_chunks(
-         query     => "SELECT /*progress_comment*/ MASTER_POS_WAIT("
-               . "'$info->{File}', $info->{Position}, $opts{w})",
-         database  => $info->{database},
-         table     => $info->{table},
-         chunks    => $info->{chunks},
-         chunk_num => $chunk_num,
-      );
-      $sta = $dbh->selectall_arrayref($sql)->[0]->[0];
+      $sta = $ms->wait_for_master(
+         $main_dbh, $dbh, $opts{w}, 1, $info->{master_status});
       $sta = 'NULL' unless defined $sta;
    }
    if ( !$is_master && $opts{l} && !$opts{explain} ) {
@@ -3035,18 +3026,18 @@ The following benchmarks show the checksum query times for various checksum
 algorithms.  The first two results are simply running C<COUNT(col8)> and
 C<CHECKSUM TABLE> on the table.
 
- ALGORITHM    HASH FUNCTION  EXTRA      TIME
- ===========  =============  ========  =====
- COUNT(col8)                             2.3
- CHECKSUM                                5.3
- FNV_64                                 12.4
- ACCUM        FNV_64                    27.1
- BIT_XOR      MD5            --optxor   80.0
- ACCUM        MD5                       87.4
- BIT_XOR      SHA1           --optxor   90.1
- ACCUM        SHA1                     101.3
- BIT_XOR      MD5                      172.0
- BIT_XOR      SHA1                     197.3
+ ALGORITHM       HASH FUNCTION  EXTRA      TIME
+ ==============  =============  ========  =====
+ COUNT(col8)                                2.3
+ CHECKSUM TABLE                             5.3
+ BIT_XOR         FNV_64                    12.7
+ ACCUM           FNV_64                    42.4
+ BIT_XOR         MD5            --optxor   80.0
+ ACCUM           MD5                       87.4
+ BIT_XOR         SHA1           --optxor   90.1
+ ACCUM           SHA1                     101.3
+ BIT_XOR         MD5                      172.0
+ BIT_XOR         SHA1                     197.3
 
 The tests are entirely CPU-bound.  The sample data is an InnoDB table with the
 following structure:
@@ -3209,10 +3200,14 @@ the same values on different MySQL versions and hardware.
 =item --function
 
 You can use this option to choose the cryptographic hash function used for
-L<"--algorithm">=ACCUM or L<"--algorithm">=BIT_XOR.  The default is to use SHA1,
-but MD5 is also a good choice, and you can use your own function, such as a
-compiled UDF, if you wish.  Whatever function you specify is run in SQL, not
-in Perl, so it must be available to MySQL.
+L<"--algorithm">=ACCUM or L<"--algorithm">=BIT_XOR.  The default is to use
+C<MD5>, but C<SHA1> also works, and you can use your own function, such as a
+compiled UDF, if you wish.  Whatever function you specify is run in SQL, not in
+Perl, so it must be available to MySQL.
+
+The C<FNV_64> UDF mentioned in the benchmarks is much faster than C<MD5>.  The
+C++ source code is distributed with Maatkit.  It is very simple to compile and
+install; look at the header in the source code for instructions.
 
 =item --help
 
@@ -3291,12 +3286,15 @@ running the query so you don't have to do it manually.
 The output is one informational line per slave host, followed by the results
 of the query, if any.  If L<"--quiet"> is specified, there is no output.
 
-Finds slaves by running SHOW SLAVE HOSTS.  Connection information for each
-slave is derived from the same default-and-override method described in
-L<"SPECIFYING HOSTS">.  The host and port, and user and password if available,
-from SHOW SLAVE HOSTS are combined into a DSN and used as the argument.  This
-requires slaves to be configured with C<report-host>, C<report-port> and so
-on.
+This option makes C<mk-table-checksum> looks for slaves by running C<SHOW SLAVE
+HOSTS>.  If it finds entries, it derives connection information for each slave
+the same default-and-override method described in L<"SPECIFYING HOSTS">.  The
+host and port, and user and password if available, from C<SHOW SLAVE HOSTS> are
+combined into a DSN and used as the argument.  This requires slaves to be
+configured with C<report-host>, C<report-port> and so on.
+
+If C<SHOW SLAVE HOSTS> doesn't return any rows, C<mk-table-checksum> looks at
+C<SHOW PROCESSLIST> and tries to find connections that appear to be from slaves.
 
 This requires the @@SERVER_ID system variable, so it works only on MySQL
 3.23.26 or newer.  It also requires the slaves to have the correct
