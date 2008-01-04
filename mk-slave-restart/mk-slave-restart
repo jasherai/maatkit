@@ -696,7 +696,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1631
+# MasterSlave package 1653
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -786,7 +786,7 @@ sub find_slave_hosts {
    }
 
    else {
-      my $sql = 'SHOW FULL PROCESSLIST';
+      my $sql = 'SHOW PROCESSLIST';
       $ENV{MKDEBUG} && _d($sql);
       @slaves =
          map  {
@@ -813,6 +813,57 @@ sub find_slave_hosts {
 
    $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
    return @slaves;
+}
+
+sub get_master_dsn {
+   my ( $self, $dbh, $dsn, $dsn_parser ) = @_;
+   $ENV{MKDEBUG} && _d("Getting master cxn params via SHOW SLAVE STATUS");
+   my $query  = 'SHOW SLAVE STATUS';
+   $ENV{MKDEBUG} && _d($query);
+   my $status = $dbh->selectrow_hashref($query);
+   $status    = { map { lc($_) => $status->{$_} } keys %$status };
+   my $spec   = "h=$status->{master_host},P=$status->{master_port}";
+   return       $dsn_parser->parse($spec, $dsn);
+}
+
+sub get_master_status {
+   my ( $self, $dbh ) = @_;
+   if ( !$self->{not_a_master}->{$dbh} ) {
+      my $query = 'SHOW MASTER STATUS';
+      $ENV{MKDEBUG} && _d($query);
+      my $ms = $dbh->selectrow_hashref($query);
+
+      if ( $ms && %$ms ) {
+         $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
+         if ( $ms->{file} && $ms->{position} ) {
+            return $ms;
+         }
+      }
+
+      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW MASTER STATUS');
+      $self->{not_a_master}->{$dbh}++;
+   }
+}
+
+sub wait_for_master {
+   my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
+   my $result;
+   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+   $ms ||= $self->get_master_status($master);
+   if ( $ms ) {
+      my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+      $ENV{MKDEBUG} && _d($query);
+      ($result) = $slave->selectrow_array($query);
+      my $stat = defined $result ? $result : 'NULL';
+      if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+         die "MASTER_POS_WAIT returned $stat";
+      }
+      $ENV{MKDEBUG} && _d("Result of waiting: $stat");
+   }
+   else {
+      $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
+   }
+   return $result;
 }
 
 sub _d {
@@ -1332,7 +1383,7 @@ The minimal configuration for this is the C<report_host> parameter, but there
 are other "report" parameters as well for the port, username, and password.
 
 If C<SHOW SLAVE HOSTS> doesn't return anything, C<mk-slave-restart> examines
-C<SHOW FULL PROCESSLIST> and tries to determine which connections are from
+C<SHOW PROCESSLIST> and tries to determine which connections are from
 slaves, then connect to them.  This is less likely to work than C<SHOW SLAVE
 HOSTS>, but it works sometimes when that doesn't.
 
