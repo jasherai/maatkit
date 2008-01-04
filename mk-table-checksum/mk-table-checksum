@@ -3207,7 +3207,8 @@ Perl, so it must be available to MySQL.
 
 The C<FNV_64> UDF mentioned in the benchmarks is much faster than C<MD5>.  The
 C++ source code is distributed with Maatkit.  It is very simple to compile and
-install; look at the header in the source code for instructions.
+install; look at the header in the source code for instructions.  If it is
+installed, it is the default.
 
 =item --help
 
