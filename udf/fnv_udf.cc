@@ -61,11 +61,12 @@
  * Share and Enjoy!	:-)
  */
 
-/* To compile and install, execute the following commands:
+/* To compile and install, execute the following commands.  The function name
+ * fnv_64 in the mysql command is case-sensitive!
  *
- * gcc -fPIC -Wall -I/usr/include/mysql -shared -o fnv_udf.so fnv_udf.c
+ * gcc -fPIC -Wall -I/usr/include/mysql -shared -o fnv_udf.so fnv_udf.cc
  * cp fnv_udf.so /lib
- * mysql mysql -e "CREATE FUNCTION FNV_64 RETURNS INTEGER SONAME 'fnv_udf.so'"
+ * mysql mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so'"
  *
  */
 
@@ -83,9 +84,11 @@ static const ulonglong FNV_64_PRIME = 0x100000001b3ULL;
 
 /* Prototypes */
 
-ulonglong hash64(const void *buf, size_t len, ulonglong hval);
-my_bool fnv_64_init( UDF_INIT* initid, UDF_ARGS* args, char* message );
-ulonglong fnv_64(UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error );
+extern "C" {
+   ulonglong hash64(const void *buf, size_t len, ulonglong hval);
+   my_bool fnv_64_init( UDF_INIT* initid, UDF_ARGS* args, char* message );
+   ulonglong fnv_64(UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error );
+}
 
 /* Implementations */
 
@@ -125,17 +128,6 @@ fnv_64(UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error )
    uint i            = 0;
 
    for ( ; i < args->arg_count; ++i ) {
-
-/*
-      Item_result result_type = args->arg_type[i];
-      if ( result_type == STRING_RESULT &&
-            args[i]->field_type() == MYSQL_TYPE_TIMESTAMP)
-      {
-         because val_int() is faster.
-         result_type = INT_RESULT;
-      }
-*/
-
       if ( !args->maybe_null[i] ) {
          result
             = hash64((const void*)args->args[i], args->lengths[i], result);
