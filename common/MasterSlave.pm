@@ -129,7 +129,7 @@ sub find_slave_hosts {
    }
 
    else {
-      my $sql = 'SHOW FULL PROCESSLIST';
+      my $sql = 'SHOW PROCESSLIST';
       $ENV{MKDEBUG} && _d($sql);
       @slaves =
          map  {
