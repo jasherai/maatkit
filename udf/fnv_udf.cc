@@ -143,12 +143,34 @@ fnv_64(UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error )
 
    uint null_default = HASH_NULL_DEFAULT;
    ulonglong result  = HASH_64_INIT;
-   uint i            = 0;
+   uint i;
 
-   for ( ; i < args->arg_count; ++i ) {
-      if ( !args->maybe_null[i] ) {
-         result
-            = hash64((const void*)args->args[i], args->lengths[i], result);
+   for (i = 0 ; i < args->arg_count; ++i ) {
+      if ( args->args[i] != NULL ) {
+         switch ( args->arg_type[i] ) {
+         case STRING_RESULT:
+         case DECIMAL_RESULT:
+            result
+               = hash64((const void*) args->args[i], args->lengths[i], result);
+            break;
+         case REAL_RESULT:
+            {
+               double real_val;
+               real_val = *((double*) args->args[i]);
+               result
+                  = hash64((const void*)&real_val, sizeof(double), result);
+            }
+            break;
+         case INT_RESULT:
+            {
+               long long int_val;
+               int_val = *((long long*) args->args[i]);
+               result = hash64((const void*)&int_val, sizeof(ulonglong), result);
+            }
+            break;
+         default:
+            break;
+         }
       }
       else {
          result
