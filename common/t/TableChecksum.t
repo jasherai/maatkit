@@ -416,7 +416,7 @@ is (
       cols      => [qw(film_id)],
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
-   . q{BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)) AS crc }
+   . q{CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16) AS crc }
    . q{FROM /*DB_TBL*//*WHERE*/},
    'Sakila.film FNV_64 BIT_XOR',
 );
