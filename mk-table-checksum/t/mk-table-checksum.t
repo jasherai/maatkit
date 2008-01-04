@@ -45,7 +45,7 @@ SKIP: {
       like($output, qr/B702F33D8D00F5D8/, 'FNV_64 ACCUM' );
 
       $output = `$cmd -f FNV_64 --checksum -a BIT_XOR 2>&1`;
-      like($output, qr/d8395d1ef4dbc54c/, 'FNV_64 BIT_XOR' );
+      like($output, qr/da8f5e1ef6d7bcc1/, 'FNV_64 BIT_XOR' );
 
    }
 
