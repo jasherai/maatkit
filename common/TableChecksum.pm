@@ -23,8 +23,7 @@ use warnings FATAL => 'all';
 package TableChecksum;
 
 use English qw(-no_match_vars);
-use POSIX qw(ceil);
-use List::Util qw(min max);
+use List::Util qw(max);
 
 # BXT_XOR is actually faster than ACCUM as long as the user-variable
 # optimization can be used.  I've never seen a case where it can't be.
