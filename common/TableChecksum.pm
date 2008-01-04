@@ -318,7 +318,7 @@ sub make_checksum_query {
       # As a special case, the FNV_64 function does not need to be sliced.  It
       # can be fed right into BIT_XOR after a cast to UNSIGNED.
       if ( uc $func eq 'FNV_64' ) {
-         $result = "CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16) AS crc ";
+         $result = "LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)) AS crc ";
       }
       else {
          my $slices = $self->make_xor_slices( query => $expr, %args );
