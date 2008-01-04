@@ -15,6 +15,16 @@
  * cp fnv_udf.so /lib
  * mysql mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so'"
  *
+ * Once installed successfully, you should be able to call the function.  Here's
+ * a faster alternative to MD5 hashing, with the added ability to hash multiple
+ * arguments in a single call:
+ *
+ * mysql> SELECT FNV_64('hello', 'world');
+ *
+ * Here's a way to reduce an entire table to a single order-independent hash:
+ *
+ * mysql> SELECT BIT_XOR(CAST(FNV_64(col1, col2, col3) AS UNSIGNED)) FROM tbl1;
+ *
  */
 
 /* The following header is from hash_64.c:
@@ -119,9 +129,6 @@ ulonglong hash64(const void *buf, size_t len, ulonglong hval)
    return hval;
 }
 
-/*
-** FNV_64 function
-*/
 my_bool
 fnv_64_init( UDF_INIT* initid, UDF_ARGS* args, char* message )
 {
