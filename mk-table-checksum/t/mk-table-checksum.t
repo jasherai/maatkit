@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 20;
 
 my $opt_file = shift || "~/.my.cnf";
 my ($output, $output2);
@@ -37,15 +37,27 @@ SKIP: {
       is ( $crc, '9c1c01dc3ac1445a500251fc34a15d3e75a849df', 'SHA1 is okay' );
    }
 
-   $output = `$cmd --checksum -a ACCUM 2>&1`;
+   $output = `mysql -e 'select fnv_64()' 2>&1`;
+   SKIP: {
+      skip 'no fnv_64 UDF installed', 2 if $output =~ m/ERROR/;
+
+      $output = `$cmd -f FNV_64 --checksum -a ACCUM 2>&1`;
+      like($output, qr/B702F33D8D00F5D8/, 'FNV_64 ACCUM' );
+
+      $output = `$cmd -f FNV_64 --checksum -a BIT_XOR 2>&1`;
+      like($output, qr/d8395d1ef4dbc54c/, 'FNV_64 BIT_XOR' );
+
+   }
+
+   $output = `$cmd -f sha1 --checksum -a ACCUM 2>&1`;
    like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'SHA1 ACCUM' );
 
    # same as sha1(1)
-   $output = `$cmd --checksum -a BIT_XOR 2>&1`;
+   $output = `$cmd -f sha1 --checksum -a BIT_XOR 2>&1`;
    like($output, qr/356a192b7913b04c54574d18c28d46e6395428ab/, 'SHA1 BIT_XOR' );
 
    # test that I get the same result with --no-optxor
-   $output2 = `$cmd --no-optxor --checksum -a BIT_XOR 2>&1`;
+   $output2 = `$cmd -f sha1 --no-optxor --checksum -a BIT_XOR 2>&1`;
    is($output, $output2, 'Same result with --no-optxor');
 
    $output = `$cmd --checksum -f MD5 -a ACCUM 2>&1`;
@@ -55,28 +67,29 @@ SKIP: {
    $output = `$cmd --checksum -f MD5 -a BIT_XOR 2>&1`;
    like($output, qr/c4ca4238a0b923820dcc509a6f75849b/, 'MD5 BIT_XOR' );
 
-   $output  = `$cmd -R test.checksum`;
+   $output  = `$cmd -f sha1 -R test.checksum`;
    $output2 = `mysql --defaults-file=$opt_file --skip-column-names -e "select this_crc from test.checksum where tbl='checksum_test'"`;
    ( $cnt, $crc ) = $output =~ m/checksum_test *\d+ \S+ \S+ *(\d+|NULL) *(\w+)/;
    chomp $output2;
    is ( $crc, $output2, 'output matches what was in the table' );
 
    # Ensure chunking works
-   $output = `$cmd --explain -C 200 -d sakila -t film`;
+   $output = `$cmd -f sha1 --explain -C 200 -d sakila -t film`;
    like($output, qr/sakila   film  `film_id` < \d+/, 'chunking works');
    my $num_chunks = scalar(map { 1 } $output =~ m/^sakila/gm);
    ok($num_chunks >= 5 && $num_chunks < 8, "Found $num_chunks chunks");
 
    # Ensure chunk boundaries are put into test.checksum (bug #1850243)
-   $output = `perl ../mk-table-checksum --defaults-file=$opt_file -d sakila -t film -C 50 -R test.checksum 127.0.0.1`;
+   $output = `perl ../mk-table-checksum -f sha1 --defaults-file=$opt_file -d sakila -t film -C 50 -R test.checksum 127.0.0.1`;
    $output = `mysql --defaults-file=$opt_file --skip-column-names -e "select boundaries from test.checksum where db='sakila' and tbl='film' and chunk=0"`;
    chomp $output;
    like ( $output, qr/`film_id` < \d+/, 'chunk boundaries stored right');
 
    # Ensure float-precision is effective
-   $output = `perl ../mk-table-checksum -a BIT_XOR --defaults-file=$opt_file -d test -t fl_test --explain 127.0.0.1`;
+   $output = `perl ../mk-table-checksum -f sha1 -a BIT_XOR --defaults-file=$opt_file -d test -t fl_test --explain 127.0.0.1`;
    unlike($output, qr/ROUND\(`a`/, 'Column is not rounded');
-   $output = `perl ../mk-table-checksum --float-precision 3 -a BIT_XOR --defaults-file=$opt_file -d test -t fl_test --explain 127.0.0.1`;
+   like($output, qr/test/, 'Column is not rounded and I got output');
+   $output = `perl ../mk-table-checksum -f sha1 --float-precision 3 -a BIT_XOR --defaults-file=$opt_file -d test -t fl_test --explain 127.0.0.1`;
    like($output, qr/ROUND\(`a`, 3/, 'Column a is rounded');
    like($output, qr/ROUND\(`b`, 3/, 'Column b is rounded');
    like($output, qr/ISNULL\(`b`\)/, 'Column b is not rounded inside ISNULL');

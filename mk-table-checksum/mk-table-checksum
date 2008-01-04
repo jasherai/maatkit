@@ -204,7 +204,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1362
+# TableChecksum package 1650
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -217,12 +217,24 @@ use List::Util qw(min max);
 
 our %ALGOS = (
    CHECKSUM => { pref => 0, hash => 0 },
-   ACCUM    => { pref => 1, hash => 1 },
    BIT_XOR  => { pref => 2, hash => 1 },
+   ACCUM    => { pref => 3, hash => 1 },
 );
 
 sub new {
    bless {}, shift;
+}
+
+sub get_crc_wid {
+   my ( $self, $dbh, $func ) = @_;
+   my $crc_wid = 16;
+   if ( uc $func ne 'FNV_64' ) {
+      eval {
+         my ($val) = $dbh->selectrow_array("SELECT $func('a')");
+         $crc_wid = max(16, length($val));
+      };
+   }
+   return $crc_wid;
 }
 
 sub best_algorithm {
@@ -256,6 +268,7 @@ sub best_algorithm {
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
+   $ENV{MKDEBUG} && _d('Algorithms, in order: ', @choices);
    return $choices[0];
 }
 
@@ -266,7 +279,7 @@ sub is_hash_algorithm {
 
 sub choose_hash_func {
    my ( $self, %args ) = @_;
-   my @funcs = qw(SHA1 MD5);
+   my @funcs = qw(FNV_64 MD5 SHA1);
    if ( $args{func} ) {
       unshift @funcs, $args{func};
    }
@@ -275,7 +288,9 @@ sub choose_hash_func {
       my $func;
       eval {
          $func = shift(@funcs);
-         $args{dbh}->do("SELECT $func('test-string')");
+         my $sql = "SELECT $func('test-string')";
+         $ENV{MKDEBUG} && _d($sql);
+         $args{dbh}->do($sql);
          $result = $func;
       };
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
@@ -291,6 +306,8 @@ sub choose_hash_func {
 sub optimize_xor {
    my ( $self, %args ) = @_;
    my ( $dbh, $func ) = @args{qw(dbh func)};
+
+   die "FNV_64 never needs the BIT_XOR optimization" if uc $func eq 'FNV_64';
 
    my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
@@ -380,17 +397,23 @@ sub make_row_checksum {
       }
       @{$table->{cols}};
 
-   my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
-   if ( @nulls ) {
-      my $bitmap = "CONCAT("
-         . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
-         . ")";
-      push @cols, $bitmap;
-   }
+   my $query;
+   if ( uc $func ne 'FNV_64' ) {
+      my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
+      if ( @nulls ) {
+         my $bitmap = "CONCAT("
+            . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
+            . ")";
+         push @cols, $bitmap;
+      }
 
-   my $query = @cols > 1
+      $query = @cols > 1
              ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
              : "$func($cols[0])";
+   }
+   else {
+      $query = 'FNV_64(' . join(', ', @cols) . ')';
+   }
 
    return $query;
 }
@@ -413,14 +436,27 @@ sub make_checksum_query {
    my $expr = $self->make_row_checksum(%args);
 
    if ( $algorithm eq 'BIT_XOR' ) {
-      my $slices = $self->make_xor_slices( query => $expr, %args );
-      $result = "LOWER(CONCAT($slices)) AS crc ";
+      if ( uc $func eq 'FNV_64' ) {
+         $result = "LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)) AS crc ";
+      }
+      else {
+         my $slices = $self->make_xor_slices( query => $expr, %args );
+         $result = "LOWER(CONCAT($slices)) AS crc ";
+      }
    }
    else {
-      $result = "RIGHT(MAX("
-         . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
-         . "$func(CONCAT(\@crc, $expr)))"
-         . "), $crc_wid) AS crc ";
+      if ( uc $func eq 'FNV_64' ) {
+         $result = "RIGHT(MAX("
+            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
+            . "CONV(CAST(FNV_64(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
+            . "), $crc_wid) AS crc ";
+      }
+      else {
+         $result = "RIGHT(MAX("
+            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
+            . "$func(CONCAT(\@crc, $expr)))"
+            . "), $crc_wid) AS crc ";
+      }
    }
    if ( $args{replicate} ) {
       $result = "REPLACE /*PROGRESS_COMMENT*/ INTO $args{replicate} "
@@ -433,36 +469,8 @@ sub make_checksum_query {
    return $result . "FROM /*DB_TBL*//*WHERE*/";
 }
 
-sub check_server {
-   my ( $self, $args, $level ) = @_;
-   $level ||= 0;
-
-   my $dbh;
-   eval {
-      $dbh = $args->{dbh} || DBI->connect(
-         $args->{dsn_parser}->get_cxn_params($args->{dsn},
-            { RaiseError => 1, PrintError => 0, AutoCommit => 1 }));
-      $ENV{MKDEBUG} && _d('Connected to '
-         . $args->{dsn_parser}->as_string($args->{dsn}));
-   };
-   if ( $EVAL_ERROR ) {
-      print "Cannot connect to "
-         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
-      return;
-   }
-
-   my ($id) = $dbh->selectrow_array('SELECT @@SERVER_ID');
-   $ENV{MKDEBUG} && _d('Working on server ID ' . $id);
-   my $master_thinks_i_am = $args->{dsn}->{server_id};
-   if ( !defined $id
-       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
-       || $args->{server_ids_seen}->{$id}++
-   ) {
-      $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
-      print "Skipping "
-         . $args->{dsn_parser}->as_string($args->{dsn}), "\n";
-      return;
-   }
+sub find_replication_differences {
+   my ( $self, $dbh, $table ) = @_;
 
    (my $sql = <<"   EOF") =~ s/\s+/ /gm;
       SELECT db, tbl, chunk, boundaries,
@@ -471,42 +479,14 @@ sub check_server {
             this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
             0
          ) AS crc_diff
-      FROM $args->{table}
+      FROM $table
       WHERE master_cnt <> this_cnt OR master_crc <> this_crc
       OR ISNULL(master_crc) <> ISNULL(this_crc)
    EOF
 
    $ENV{MKDEBUG} && _d($sql);
    my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
-   if ( @$diffs ) {
-      $args->{callback}->($args->{dsn}, $dbh, $level, @$diffs);
-   }
-
-   if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
-
-      my @slaves =
-         grep { $_->{master_id} == $id } # Only my own slaves.
-         map  {                          # Convert each to all-lowercase keys.
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            \%hash;
-         }
-         @{$dbh->selectall_arrayref("SHOW SLAVE HOSTS", { Slice => {} })};
-
-      foreach my $slave ( @slaves ) {
-         my $spec = "h=$slave->{host},P=$slave->{port}"
-            . ( $slave->{user} ? ",u=$slave->{user}" : '')
-            . ( $slave->{password} ? ",p=$slave->{password}" : '');
-         my $dsn = $args->{dsn_parser}->parse($spec, $args->{dsn});
-         $dsn->{server_id} = $slave->{server_id};
-         $ENV{MKDEBUG} && _d('Recursing from '
-            . $args->{dsn_parser}->as_string($args->{dsn})
-            . ' to '
-            . $args->{dsn_parser}->as_string($dsn));
-         $self->check_server( { %$args, dsn => $dsn, dbh => undef }, $level + 1 );
-      }
-   }
-
+   return @$diffs;
 }
 
 sub _d {
@@ -2009,6 +1989,189 @@ sub _d {
 # ###########################################################################
 # End MySQLFind package
 # ###########################################################################
+
+# ###########################################################################
+# MasterSlave package 1639
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MasterSlave;
+
+use English qw(-no_match_vars);
+use List::Util qw(min max);
+
+sub new {
+   bless {}, shift;
+}
+
+sub recurse_to_slaves {
+   my ( $self, $args, $level ) = @_;
+   $level ||= 0;
+   my $dp   = $args->{dsn_parser};
+   my $dsn  = $args->{dsn};
+
+   my $dbh;
+   eval {
+      $dbh = $args->{dbh} || $dp->get_dbh(
+         $dp->get_cxn_params($dsn), { AutoCommit => 1 });
+      $ENV{MKDEBUG} && _d('Connected to ', $dp->as_string($dsn));
+   };
+   if ( $EVAL_ERROR ) {
+      print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n";
+      return;
+   }
+
+   my $sql  = 'SELECT @@SERVER_ID';
+   $ENV{MKDEBUG} && _d($sql);
+   my ($id) = $dbh->selectrow_array($sql);
+   $ENV{MKDEBUG} && _d('Working on server ID ', $id);
+   my $master_thinks_i_am = $dsn->{server_id};
+   if ( !defined $id
+       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
+       || $args->{server_ids_seen}->{$id}++
+   ) {
+      $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
+      if ( $args->{skip_callback} ) {
+         $args->{skip_callback}->($dsn, $dbh, $level);
+      }
+      return;
+   }
+
+   $args->{callback}->($dsn, $dbh, $level);
+
+   if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
+
+      my @slaves =
+         grep { !$_->{master_id} || $_->{master_id} == $id } # Only my slaves.
+         $self->find_slave_hosts($dp, $dbh, $dsn);
+
+      foreach my $slave ( @slaves ) {
+         $ENV{MKDEBUG} && _d('Recursing from ',
+            $dp->as_string($dsn), ' to ', $dp->as_string($slave));
+         $self->recurse_to_slaves(
+            { %$args, dsn => $slave, dbh => undef }, $level + 1 );
+      }
+   }
+}
+
+sub find_slave_hosts {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+   $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
+
+   my $sql = 'SHOW SLAVE HOSTS';
+   $ENV{MKDEBUG} && _d($sql);
+   my @slaves = 
+      @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+   if ( @slaves ) {
+      $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+      @slaves = map {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         my $spec = "h=$hash{host},P=$hash{port}"
+            . ( $hash{user} ? ",u=$hash{user}" : '')
+            . ( $hash{password} ? ",p=$hash{password}" : '');
+         my $dsn           = $dsn_parser->parse($spec, $dsn);
+         $dsn->{server_id} = $hash{server_id};
+         $dsn->{master_id} = $hash{master_id};
+         $dsn->{source}    = 'hosts';
+         $dsn;
+      } @slaves;
+   }
+
+   else {
+      my $sql = 'SHOW FULL PROCESSLIST';
+      $ENV{MKDEBUG} && _d($sql);
+      @slaves =
+         map  {
+            my $slave        = $dsn_parser->parse("h=$_", $dsn);
+            $slave->{source} = 'processlist';
+            $slave;
+         }
+         grep { $_ }
+         map  {
+            my ( $host ) = $_->{host} =~ m/^([^:]+):/;
+            if ( $host eq 'localhost' ) {
+               $host = '127.0.0.1'; # Replication never uses sockets.
+            }
+            $host;
+         }
+         grep { $_->{command} =~ m/Binlog Dump/i }
+         map  {
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            \%hash;
+         }
+         @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+   }
+
+   $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
+   return @slaves;
+}
+
+sub get_master_dsn {
+   my ( $self, $dbh, $dsn, $dsn_parser ) = @_;
+   $ENV{MKDEBUG} && _d("Getting master cxn params via SHOW SLAVE STATUS");
+   my $query  = 'SHOW SLAVE STATUS';
+   $ENV{MKDEBUG} && _d($query);
+   my $status = $dbh->selectrow_hashref($query);
+   $status    = { map { lc($_) => $status->{$_} } keys %$status };
+   my $spec   = "h=$status->{master_host},P=$status->{master_port}";
+   return       $dsn_parser->parse($spec, $dsn);
+}
+
+sub wait_for_master {
+   my ( $self, $master, $slave, $time, $timeoutok ) = @_;
+   my $result;
+
+   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+   if ( !$self->{not_a_master}->{$master} ) {
+      my $query = 'SHOW MASTER STATUS';
+      $ENV{MKDEBUG} && _d($query);
+      my $ms = $master->selectrow_hashref($query);
+      if ( $ms && %$ms ) {
+         $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
+         if ( $ms->{file} && $ms->{position} ) {
+            $query = "SELECT MASTER_POS_WAIT('$ms->{file}', "
+                   . "$ms->{position}, $time)";
+            $ENV{MKDEBUG} && _d($query);
+            ($result) = $slave->selectrow_array($query);
+            my $stat = defined $result ? $result : 'NULL';
+            if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+               die "MASTER_POS_WAIT returned $stat";
+            }
+            $ENV{MKDEBUG} && _d("Result of waiting: $stat");
+         }
+         else {
+            $ENV{MKDEBUG}
+               && _d('This server returns NULLs for SHOW MASTER STATUS');
+            $self->{not_a_master}->{$master}++;
+         }
+      }
+      else {
+         $ENV{MKDEBUG}
+            && _d('This server returns nothing for SHOW MASTER STATUS');
+         $self->{not_a_master}->{$master}++;
+      }
+   }
+   else {
+      $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
+   }
+   return $result;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# MasterSlave:$line ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MasterSlave package
+# ###########################################################################
+
 package main;
 
 use English qw(-no_match_vars);
@@ -2165,6 +2328,7 @@ $opt_parser->usage_or_errors(%opts);
 # Ready to work now.
 # ############################################################################
 my $tc          = new TableChecksum();
+my $ms          = new MasterSlave();
 my $exit_status = 0;
 my $main_dbh    = get_cxn($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 
@@ -2173,22 +2337,23 @@ my $main_dbh    = get_cxn($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 # ############################################################################
 if ( defined $opts{replcheck} ) {
    my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
-   $tc->check_server(
+   $ms->recurse_to_slaves(
       {  dbh        => $main_dbh,
          dsn        => $hosts[0],
          dsn_parser => $dsn_parser,
          recurse    => $opts{replcheck},
-         table      => $opts{R},
          callback   => sub {
-            my ( $host, $dbh, $level, @differences ) = @_;
+            my ( $dsn, $dbh, $level ) = @_;
+            my @diffs = $tc->find_replication_differences($dbh, $opts{R});
+            return unless @diffs;
             $exit_status = 1;
             if ( !$opts{q} ) {
-               print "Differences on " . $dsn_parser->as_string($host) . "\n";
-               my $max_db   = max(5, map { length($_->{db})  } @differences);
-               my $max_tbl  = max(5, map { length($_->{tbl}) } @differences);
+               print "Differences on " . $dsn_parser->as_string($dsn) . "\n";
+               my $max_db   = max(5, map { length($_->{db})  } @diffs);
+               my $max_tbl  = max(5, map { length($_->{tbl}) } @diffs);
                my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
                printf($fmt, map { uc } @headers);
-               foreach my $diff ( @differences ) {
+               foreach my $diff ( @diffs ) {
                   printf($fmt, @{$diff}{@headers});
                }
                print "\n";
@@ -2231,13 +2396,20 @@ if ( $tc->is_hash_algorithm($strat) ) {
    if ( $opts{f} && $opts{f} ne $func ) {
       warn "Checksum function $opts{f} cannot be used; using $func\n";
    }
-   $crc_wid = max(16, length(
-      $main_dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0]));
+   $crc_wid = $tc->get_crc_wid($main_dbh, $func);
 
    if ( $opts{o} && $strat eq 'BIT_XOR' ) {
-      $opt_slice = $tc->optimize_xor(dbh => $main_dbh, func => $func);
-      if ( !defined $opt_slice ) {
-         warn "Cannot use --optxor, disabling.\n";
+      if ( uc $func ne 'FNV_64' ) {
+         $opt_slice = $tc->optimize_xor(dbh => $main_dbh, func => $func);
+         if ( !defined $opt_slice ) {
+            warn "Cannot use --optxor, disabling.\n";
+            $opts{o} = 0;
+         }
+      }
+      else {
+         # FNV_64 doesn't need the optimize_xor gizmo.  TODO: user-specified
+         # functions should be able to take advantage of this with some cmdline
+         # args.
          $opts{o} = 0;
       }
    }
