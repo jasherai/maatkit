@@ -1,4 +1,24 @@
-/*
+/* This file implements a 64-bit FNV-1 hash UDF (user-defined function) for
+ * MySQL.  The function accepts any number of arguments and returns a 64-bit
+ * unsigned integer.  MySQL actually interprets the result as a signed integer,
+ * but you should ignore that.  I chose not to return the number as a
+ * hexadecimal string because using an integer makes it possible to use it
+ * efficiently with BIT_XOR().
+ *
+ * The function never returns NULL, even when you give it NULL arguments.
+ *
+ * To compile and install, execute the following commands.  The function name
+ * fnv_64 in the mysql command is case-sensitive!  (Of course, when you actually
+ * call the function, it is case-insensitive just like any other SQL function).
+ *
+ * gcc -fPIC -Wall -I/usr/include/mysql -shared -o fnv_udf.so fnv_udf.cc
+ * cp fnv_udf.so /lib
+ * mysql mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so'"
+ *
+ */
+
+/* The following header is from hash_64.c:
+ *
  * hash_64 - 64 bit Fowler/Noll/Vo-0 hash code
  *
  * @(#) $Revision: 1.8 $
@@ -59,15 +79,6 @@
  *      http://www.isthe.com/chongo/
  *
  * Share and Enjoy!	:-)
- */
-
-/* To compile and install, execute the following commands.  The function name
- * fnv_64 in the mysql command is case-sensitive!
- *
- * gcc -fPIC -Wall -I/usr/include/mysql -shared -o fnv_udf.so fnv_udf.cc
- * cp fnv_udf.so /lib
- * mysql mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so'"
- *
  */
 
 #include <my_global.h>
