@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added support for the FNV_64 UDF, which is distributed with Maatkit.
    * --emptyrepltbl didn't Do The Right Thing by default.
    * --explain didn't disable --emptyrepltbl
    * Made suffixes for time options optional (bug #1858696).
