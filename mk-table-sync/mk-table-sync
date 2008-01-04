@@ -1894,7 +1894,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1637
+# TableChecksum package 1658
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1902,17 +1902,28 @@ use warnings FATAL => 'all';
 package TableChecksum;
 
 use English qw(-no_match_vars);
-use POSIX qw(ceil);
-use List::Util qw(min max);
+use List::Util qw(max);
 
 our %ALGOS = (
    CHECKSUM => { pref => 0, hash => 0 },
-   ACCUM    => { pref => 1, hash => 1 },
    BIT_XOR  => { pref => 2, hash => 1 },
+   ACCUM    => { pref => 3, hash => 1 },
 );
 
 sub new {
    bless {}, shift;
+}
+
+sub get_crc_wid {
+   my ( $self, $dbh, $func ) = @_;
+   my $crc_wid = 16;
+   if ( uc $func ne 'FNV_64' ) {
+      eval {
+         my ($val) = $dbh->selectrow_array("SELECT $func('a')");
+         $crc_wid = max(16, length($val));
+      };
+   }
+   return $crc_wid;
 }
 
 sub best_algorithm {
@@ -1946,6 +1957,7 @@ sub best_algorithm {
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
+   $ENV{MKDEBUG} && _d('Algorithms, in order: ', @choices);
    return $choices[0];
 }
 
@@ -1956,7 +1968,7 @@ sub is_hash_algorithm {
 
 sub choose_hash_func {
    my ( $self, %args ) = @_;
-   my @funcs = qw(SHA1 MD5);
+   my @funcs = qw(FNV_64 MD5 SHA1);
    if ( $args{func} ) {
       unshift @funcs, $args{func};
    }
@@ -1965,7 +1977,9 @@ sub choose_hash_func {
       my $func;
       eval {
          $func = shift(@funcs);
-         $args{dbh}->do("SELECT $func('test-string')");
+         my $sql = "SELECT $func('test-string')";
+         $ENV{MKDEBUG} && _d($sql);
+         $args{dbh}->do($sql);
          $result = $func;
       };
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
@@ -1981,6 +1995,8 @@ sub choose_hash_func {
 sub optimize_xor {
    my ( $self, %args ) = @_;
    my ( $dbh, $func ) = @args{qw(dbh func)};
+
+   die "FNV_64 never needs the BIT_XOR optimization" if uc $func eq 'FNV_64';
 
    my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
@@ -2070,17 +2086,23 @@ sub make_row_checksum {
       }
       @{$table->{cols}};
 
-   my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
-   if ( @nulls ) {
-      my $bitmap = "CONCAT("
-         . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
-         . ")";
-      push @cols, $bitmap;
-   }
+   my $query;
+   if ( uc $func ne 'FNV_64' ) {
+      my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
+      if ( @nulls ) {
+         my $bitmap = "CONCAT("
+            . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
+            . ")";
+         push @cols, $bitmap;
+      }
 
-   my $query = @cols > 1
+      $query = @cols > 1
              ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
              : "$func($cols[0])";
+   }
+   else {
+      $query = 'FNV_64(' . join(', ', @cols) . ')';
+   }
 
    return $query;
 }
@@ -2103,14 +2125,27 @@ sub make_checksum_query {
    my $expr = $self->make_row_checksum(%args);
 
    if ( $algorithm eq 'BIT_XOR' ) {
-      my $slices = $self->make_xor_slices( query => $expr, %args );
-      $result = "LOWER(CONCAT($slices)) AS crc ";
+      if ( uc $func eq 'FNV_64' ) {
+         $result = "LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)) AS crc ";
+      }
+      else {
+         my $slices = $self->make_xor_slices( query => $expr, %args );
+         $result = "LOWER(CONCAT($slices)) AS crc ";
+      }
    }
    else {
-      $result = "RIGHT(MAX("
-         . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
-         . "$func(CONCAT(\@crc, $expr)))"
-         . "), $crc_wid) AS crc ";
+      if ( uc $func eq 'FNV_64' ) {
+         $result = "RIGHT(MAX("
+            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
+            . "CONV(CAST(FNV_64(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
+            . "), $crc_wid) AS crc ";
+      }
+      else {
+         $result = "RIGHT(MAX("
+            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
+            . "$func(CONCAT(\@crc, $expr)))"
+            . "), $crc_wid) AS crc ";
+      }
    }
    if ( $args{replicate} ) {
       $result = "REPLACE /*PROGRESS_COMMENT*/ INTO $args{replicate} "
@@ -3375,7 +3410,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1639
+# MasterSlave package 1653
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3465,7 +3500,7 @@ sub find_slave_hosts {
    }
 
    else {
-      my $sql = 'SHOW FULL PROCESSLIST';
+      my $sql = 'SHOW PROCESSLIST';
       $ENV{MKDEBUG} && _d($sql);
       @slaves =
          map  {
@@ -3505,39 +3540,39 @@ sub get_master_dsn {
    return       $dsn_parser->parse($spec, $dsn);
 }
 
-sub wait_for_master {
-   my ( $self, $master, $slave, $time, $timeoutok ) = @_;
-   my $result;
-
-   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
-   if ( !$self->{not_a_master}->{$master} ) {
+sub get_master_status {
+   my ( $self, $dbh ) = @_;
+   if ( !$self->{not_a_master}->{$dbh} ) {
       my $query = 'SHOW MASTER STATUS';
       $ENV{MKDEBUG} && _d($query);
-      my $ms = $master->selectrow_hashref($query);
+      my $ms = $dbh->selectrow_hashref($query);
+
       if ( $ms && %$ms ) {
          $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
          if ( $ms->{file} && $ms->{position} ) {
-            $query = "SELECT MASTER_POS_WAIT('$ms->{file}', "
-                   . "$ms->{position}, $time)";
-            $ENV{MKDEBUG} && _d($query);
-            ($result) = $slave->selectrow_array($query);
-            my $stat = defined $result ? $result : 'NULL';
-            if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
-               die "MASTER_POS_WAIT returned $stat";
-            }
-            $ENV{MKDEBUG} && _d("Result of waiting: $stat");
-         }
-         else {
-            $ENV{MKDEBUG}
-               && _d('This server returns NULLs for SHOW MASTER STATUS');
-            $self->{not_a_master}->{$master}++;
+            return $ms;
          }
       }
-      else {
-         $ENV{MKDEBUG}
-            && _d('This server returns nothing for SHOW MASTER STATUS');
-         $self->{not_a_master}->{$master}++;
+
+      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW MASTER STATUS');
+      $self->{not_a_master}->{$dbh}++;
+   }
+}
+
+sub wait_for_master {
+   my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
+   my $result;
+   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+   $ms ||= $self->get_master_status($master);
+   if ( $ms ) {
+      my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+      $ENV{MKDEBUG} && _d($query);
+      ($result) = $slave->selectrow_array($query);
+      my $stat = defined $result ? $result : 'NULL';
+      if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+         die "MASTER_POS_WAIT returned $stat";
       }
+      $ENV{MKDEBUG} && _d("Result of waiting: $stat");
    }
    else {
       $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
@@ -4338,7 +4373,7 @@ specified is the slave, and connect to the master as usual to sync.
 Otherwise, it will try to use C<SHOW SLAVE HOSTS> to find slaves of the server
 you specified.  You must configure each slave's C<report-host>, C<report-port>
 and other options for this to work right.  If it is unable to find any slaves
-via C<SHOW SLAVE HOSTS>, it will inspect C<SHOW FULL PROCESSLIST> instead and
+via C<SHOW SLAVE HOSTS>, it will inspect C<SHOW PROCESSLIST> instead and
 try to deduce which slaves are connected.  After finding slaves, it will inspect
 the specified table on each slave to find data that needs to be synced, and sync
 it. 

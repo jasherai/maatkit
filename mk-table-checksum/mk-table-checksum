@@ -204,7 +204,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1650
+# TableChecksum package 1658
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -212,8 +212,7 @@ use warnings FATAL => 'all';
 package TableChecksum;
 
 use English qw(-no_match_vars);
-use POSIX qw(ceil);
-use List::Util qw(min max);
+use List::Util qw(max);
 
 our %ALGOS = (
    CHECKSUM => { pref => 0, hash => 0 },
