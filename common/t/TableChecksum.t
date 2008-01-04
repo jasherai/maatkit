@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 40;
+   $tests = 43;
    $skipped = 2;
 }
 
@@ -93,7 +93,7 @@ is (
       dbh       => '4.1.1',
       where     => 1,
    ),
-   'ACCUM',
+   'BIT_XOR',
    'CHECKSUM eliminated by where',
 );
 
@@ -104,7 +104,7 @@ is (
       dbh       => '4.1.1',
       chunk     => 1,
    ),
-   'ACCUM',
+   'BIT_XOR',
    'CHECKSUM eliminated by chunk',
 );
 
@@ -115,7 +115,7 @@ is (
       dbh       => '4.1.1',
       replicate => 1,
    ),
-   'ACCUM',
+   'BIT_XOR',
    'CHECKSUM eliminated by replicate',
 );
 
@@ -125,7 +125,7 @@ is (
       dbh       => '4.1.1',
       count     => 1,
    ),
-   'ACCUM',
+   'BIT_XOR',
    'Default CHECKSUM eliminated by count',
 );
 
@@ -147,7 +147,7 @@ is (
       dbh       => '4.0.0',
    ),
    'ACCUM',
-   'CHECKSUM eliminated by version',
+   'CHECKSUM and BIT_XOR eliminated by version',
 );
 
 is (
@@ -270,6 +270,19 @@ is (
    . q{ISNULL(`original_language_id`), ISNULL(`length`), }
    . q{ISNULL(`rating`), ISNULL(`special_features`))))},
    'SHA1 query for sakila.film',
+);
+
+is (
+   $c->make_row_checksum(
+      func      => 'FNV_64',
+      table     => $t,
+      quoter    => $q,
+   ),
+   q{FNV_64(}
+   . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
+   . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
+   . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0)},
+   'FNV_64 query for sakila.film',
 );
 
 is (
@@ -398,6 +411,23 @@ is (
       table     => $t,
       quoter    => $q,
       algorithm => 'BIT_XOR',
+      func      => 'FNV_64',
+      crc_wid   => 99,
+      cols      => [qw(film_id)],
+   ),
+   q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
+   . q{BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)) AS crc }
+   . q{FROM /*DB_TBL*//*WHERE*/},
+   'Sakila.film FNV_64 BIT_XOR',
+);
+
+is (
+   $c->make_checksum_query(
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'BIT_XOR',
       func      => 'SHA1',
       crc_wid   => 40,
       cols      => [qw(film_id)],
@@ -446,6 +476,27 @@ is (
       table     => $t,
       quoter    => $q,
       algorithm => 'ACCUM',
+      func      => 'FNV_64',
+      crc_wid   => 16,
+   ),
+   q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
+   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{CONV(CAST(FNV_64(CONCAT(@crc, FNV_64(}
+   . q{`film_id`, `title`, `description`, `release_year`, `language_id`, }
+   . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
+   . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0}
+   . q{))) AS UNSIGNED), 10, 16))), 16) AS crc }
+   . q{FROM /*DB_TBL*//*WHERE*/},
+   'Sakila.film SHA1 ACCUM',
+);
+
+is (
+   $c->make_checksum_query(
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'ACCUM',
       func      => 'SHA1',
       crc_wid   => 40,
       replicate => 'test.checksum',
@@ -475,21 +526,21 @@ eval {
 SKIP: {
    skip 'Cannot open a DB connection', $tests-$skipped if $EVAL_ERROR;
 
-   is(
+   like(
       $c->choose_hash_func(
          dbh => $dbh,
       ),
-      'SHA1',
-      'SHA1 is default',
+      qr/FNV_64|MD5/,
+      'FNV_64 or MD5 is default',
    );
 
-   is(
+   like(
       $c->choose_hash_func(
          dbh => $dbh,
          func => 'SHA99',
       ),
-      'SHA1',
-      'SHA99 does not exist so I get SHA1',
+      qr/FNV_64|MD5/,
+      'SHA99 does not exist so I get FNV_64 or MD5',
    );
 
    is(

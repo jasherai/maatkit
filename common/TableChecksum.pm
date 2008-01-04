@@ -26,10 +26,12 @@ use English qw(-no_match_vars);
 use POSIX qw(ceil);
 use List::Util qw(min max);
 
+# BXT_XOR is actually faster than ACCUM as long as the user-variable
+# optimization can be used.  I've never seen a case where it can't be.
 our %ALGOS = (
    CHECKSUM => { pref => 0, hash => 0 },
-   ACCUM    => { pref => 1, hash => 1 },
    BIT_XOR  => { pref => 2, hash => 1 },
+   ACCUM    => { pref => 3, hash => 1 },
 );
 
 sub new {
@@ -81,6 +83,7 @@ sub best_algorithm {
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
+   $ENV{MKDEBUG} && _d('Algorithms, in order: ', @choices);
    return $choices[0];
 }
 
@@ -89,9 +92,10 @@ sub is_hash_algorithm {
    return $ALGOS{$algorithm} && $ALGOS{$algorithm}->{hash};
 }
 
+# Picks a hash function, in order of speed.
 sub choose_hash_func {
    my ( $self, %args ) = @_;
-   my @funcs = qw(SHA1 MD5);
+   my @funcs = qw(FNV_64 MD5 SHA1);
    if ( $args{func} ) {
       unshift @funcs, $args{func};
    }
@@ -100,7 +104,9 @@ sub choose_hash_func {
       my $func;
       eval {
          $func = shift(@funcs);
-         $args{dbh}->do("SELECT $func('test-string')");
+         my $sql = "SELECT $func('test-string')";
+         $ENV{MKDEBUG} && _d($sql);
+         $args{dbh}->do($sql);
          $result = $func;
       };
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
@@ -120,6 +126,8 @@ sub choose_hash_func {
 sub optimize_xor {
    my ( $self, %args ) = @_;
    my ( $dbh, $func ) = @args{qw(dbh func)};
+
+   die "FNV_64 never needs the BIT_XOR optimization" if uc $func eq 'FNV_64';
 
    my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
@@ -228,18 +236,26 @@ sub make_row_checksum {
       }
       @{$table->{cols}};
 
-   # Add a bitmap of which nullable columns are NULL.
-   my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
-   if ( @nulls ) {
-      my $bitmap = "CONCAT("
-         . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
-         . ")";
-      push @cols, $bitmap;
-   }
+   my $query;
+   if ( uc $func ne 'FNV_64' ) {
+      # Add a bitmap of which nullable columns are NULL.
+      my @nulls = grep { $cols{$_} } @{$table->{null_cols}};
+      if ( @nulls ) {
+         my $bitmap = "CONCAT("
+            . join(', ', map { 'ISNULL(' . $quoter->quote($_) . ')' } @nulls)
+            . ")";
+         push @cols, $bitmap;
+      }
 
-   my $query = @cols > 1
+      $query = @cols > 1
              ? "$func(CONCAT_WS('$sep', " . join(', ', @cols) . '))'
              : "$func($cols[0])";
+   }
+   else {
+      # As a special case, FNV_64 doesn't need its arguments concatenated, and
+      # doesn't need a bitmap of NULLs.
+      $query = 'FNV_64(' . join(', ', @cols) . ')';
+   }
 
    return $query;
 }
@@ -282,8 +298,16 @@ sub make_checksum_query {
       # puts them back together.  The effect is the same as XORing a very wide
       # (32 characters = 128 bits for MD5, and SHA1 is even larger) unsigned
       # integer over all the rows.
-      my $slices = $self->make_xor_slices( query => $expr, %args );
-      $result = "LOWER(CONCAT($slices)) AS crc ";
+      #
+      # As a special case, the FNV_64 function does not need to be sliced.  It
+      # can be fed right into BIT_XOR after a cast to UNSIGNED.
+      if ( uc $func eq 'FNV_64' ) {
+         $result = "BIT_XOR(CAST($expr AS UNSIGNED)) AS crc ";
+      }
+      else {
+         my $slices = $self->make_xor_slices( query => $expr, %args );
+         $result = "LOWER(CONCAT($slices)) AS crc ";
+      }
    }
    else {
       # Use an accumulator variable.  This query relies on @crc being '', and
@@ -294,10 +318,22 @@ sub make_checksum_query {
       # taken is stringwise greater than the last.  In this way the MAX()
       # function can be used to return the last checksum calculated.  @cnt is
       # not used for a row count, it is only used to make MAX() work correctly.
-      $result = "RIGHT(MAX("
-         . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
-         . "$func(CONCAT(\@crc, $expr)))"
-         . "), $crc_wid) AS crc ";
+      #
+      # As a special case, FNV_64 must be converted to base 16 so it's a
+      # predictable width (it's also a shorter string, but that's not really
+      # important).
+      if ( uc $func eq 'FNV_64' ) {
+         $result = "RIGHT(MAX("
+            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
+            . "CONV(CAST(FNV_64(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
+            . "), $crc_wid) AS crc ";
+      }
+      else {
+         $result = "RIGHT(MAX("
+            . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
+            . "$func(CONCAT(\@crc, $expr)))"
+            . "), $crc_wid) AS crc ";
+      }
    }
    if ( $args{replicate} ) {
       $result = "REPLACE /*PROGRESS_COMMENT*/ INTO $args{replicate} "
