@@ -10,7 +10,7 @@ my $output;
 
 $output = `mysql -e 'show databases'`;
 SKIP: {
-   skip 'Sakila is not installed', 3 unless $output =~ m/sakila/;
+   skip 'Sakila is not installed', 6 unless $output =~ m/sakila/;
 
    $output = `perl ../mk-parallel-dump --C 100 --basedir /tmp -T --d sakila --t film`;
    my ($tbl, $chunk) = $output =~ m/default:\s+(\d+) tables,\s+(\d+) chunks,\s+\2 successes/;
