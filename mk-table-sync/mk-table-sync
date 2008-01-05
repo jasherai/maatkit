@@ -2190,7 +2190,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1566
+# TableSyncChunk package 1664
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2252,14 +2252,14 @@ sub new {
       count       => 1,
    );
    $args{func} = $args{checksum}->choose_hash_func(
-      func => 'SHA1',
+      func => $args{func},
       dbh  => $args{dbh},
    );
    $args{crc_wid} = max(16, length(
       $args{dbh}->selectall_arrayref("SELECT $args{func}('a')")->[0]->[0]));
-   if ( $args{algorithm} eq 'BIT_XOR' ) {
+   if ( $args{algorithm} eq 'BIT_XOR' && uc $args{func} ne 'FNV_64' ) {
       $args{opt_slice}
-         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => 'SHA1');
+         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
    }
    $args{chunk_sql} ||= $args{checksum}->make_checksum_query(
       dbname    => $args{database},
@@ -2399,7 +2399,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 1561
+# TableSyncNibble package 1664
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2447,14 +2447,13 @@ sub new {
       count       => 1,
    );
    $args{func} = $args{checksum}->choose_hash_func(
-      func => 'SHA1',
       dbh  => $args{dbh},
+      func => $args{func},
    );
-   $args{crc_wid} = max(16, length(
-      $args{dbh}->selectall_arrayref("SELECT $args{func}('a')")->[0]->[0]));
-   if ( $args{algorithm} eq 'BIT_XOR' ) {
+   $args{crc_wid} = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
+   if ( $args{algorithm} eq 'BIT_XOR' && uc $args{func} ne 'FNV_64' ) {
       $args{opt_slice}
-         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => 'SHA1');
+         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
    }
 
    $args{nibble_sql} ||= $args{checksum}->make_checksum_query(
@@ -2654,7 +2653,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1639
+# TableSyncer package 1664
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2700,7 +2699,7 @@ sub sync_table {
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser master_slave) )
+      nibbler parser master_slave func) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -2763,6 +2762,7 @@ sub sync_table {
       where     => $args{where},
       possible_keys => [],
       versionparser => $args{versionparser},
+      func          => $args{func},
    );
 
    $self->lock_and_wait(%args, lock_level => 2);
@@ -3624,6 +3624,8 @@ my @opt_spec = (
      d => 'Do only this comma-separated list of storage engines' },
    { s => 'execute|x',
      d => 'Execute queries to sync tables' },
+   { s => 'function|f=s',
+     d => 'Hash function to use for checksums' },
    { s => 'ignoredb|g=H',
      d => 'Ignore this comma-separated list of databases' },
    { s => 'ignoreengine|E=H',
@@ -4023,6 +4025,7 @@ sub sync_a_table {
          wait          => $opts{w} || 0,
          where         => $args{where} || '',
          master_slave  => $ms,
+         func          => $opts{f} || '',
       );
 
       if ( $opts{v} ) {
@@ -4121,8 +4124,8 @@ mk-table-sync - Synchronize MySQL tables efficiently.
 
 =head1 SYNOPSIS
 
-It is a good idea to back up your data and run each of the following with
-L<"--test"> first, to see what will happen.  
+It is a good idea to back up your data and run C<mk-table-sync> with L<"--test">
+first, to see what will happen.  
 
 To sync db.tbl1 from host1 to host2:
 
@@ -4292,6 +4295,13 @@ Sync only tables whose storage engine is in this comma-separated list.
 =item --execute
 
 After finding differences, execute the queries required to sync the tables.
+
+=item --function
+
+Which hash function you'd like to use for row checksums.  Good choices include
+C<MD5> and C<SHA1>.  If you have installed the C<FNV_64> user-defined function,
+C<mk-table-sync> will detect it and prefer to use it, because it is much faster
+than the others.  See L<mk-table-checksum> for more information and benchmarks.
 
 =item --help
 
