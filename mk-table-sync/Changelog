@@ -1,7 +1,9 @@
 Changelog for mk-table-sync:
 
+2008-01-05: version 1.0.3
+
    * Added the --function command-line option.
-   * Added support for the FNV_64 hash function.
+   * Added support for the FNV_64 hash function (see mk-table-checksum).
    * Made suffixes for time options optional (bug #1858696).
    * InnoDB tables use --transaction unless it's explicitly specified.
 
