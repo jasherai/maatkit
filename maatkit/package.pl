@@ -142,7 +142,8 @@ sub get_version_or_quit {
       $ver = sprintf('%s', m/version ([0-9\.]+)/);
       last;
    }
-   # Now look for the next version, and make sure it is smaller.
+   # Now look for the next version, and make sure it is smaller, and that the
+   # version increased only by 1 in the first (maj/min/rev) part that increased.
    my $ver2;
    while ( <$fh> ) {
       next unless m/version/;
@@ -150,10 +151,20 @@ sub get_version_or_quit {
       last;
    }
    if ( $ver2 ) {
-      my $old_ver = sprintf('%03d%03d%03d', $ver2 =~ m/(\d+)/g);
-      my $new_ver = sprintf('%03d%03d%03d', $ver  =~ m/(\d+)/g);
+      my @old_ver = $ver2 =~ m/(\d+)/g;
+      my @new_ver = $ver  =~ m/(\d+)/g;
+      my $old_ver = sprintf('%03d%03d%03d', @old_ver);
+      my $new_ver = sprintf('%03d%03d%03d', @new_ver);
       if ( $old_ver ge $new_ver ) {
          die "Old version $ver2 is not older than new version $ver!";
+      }
+      foreach my $i ( 0 .. $#old_ver ) {
+         if ( $new_ver[$i] > $old_ver[$i] ) {
+            if ( $new_ver[$i] > $old_ver[$i] + 1 ) {
+               die "New version $new_ver increased too much from $old_ver";
+            }
+            last;
+         }
       }
    }
    close $fh;
