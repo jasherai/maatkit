@@ -111,6 +111,7 @@ my %args = (
    nibbler       => $nibbler,
    parser        => $tp,
    master_slave  => $ms,
+   func          => 'SHA1',
 );
 
 $ts->sync_table(

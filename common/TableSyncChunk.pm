@@ -89,14 +89,14 @@ sub new {
       count       => 1,
    );
    $args{func} = $args{checksum}->choose_hash_func(
-      func => 'SHA1',
+      func => $args{func},
       dbh  => $args{dbh},
    );
    $args{crc_wid} = max(16, length(
       $args{dbh}->selectall_arrayref("SELECT $args{func}('a')")->[0]->[0]));
-   if ( $args{algorithm} eq 'BIT_XOR' ) {
+   if ( $args{algorithm} eq 'BIT_XOR' && uc $args{func} ne 'FNV_64' ) {
       $args{opt_slice}
-         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => 'SHA1');
+         = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
    }
    $args{chunk_sql} ||= $args{checksum}->make_checksum_query(
       dbname    => $args{database},
