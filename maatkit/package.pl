@@ -49,7 +49,7 @@ my $rev = `head -n 1 packlist | awk '{print \$2}'` + 0;
 my $distbase = "maatkit-$rev";
 my $dist = "release/$distbase";
 print `rm -rf release html cache`;
-print `mkdir -p html cache $dist/bin $dist/lib`;
+print `mkdir -p html cache $dist/bin $dist/lib $dist/udf`;
 
 # Copy the executables and their Changelog files into the $dist dir, and set the
 # $VERSION variable correctly
@@ -58,7 +58,6 @@ foreach my $p ( sort keys %versions ) {
    print `echo "" >> $dist/Changelog`;
    print `cat $base/$p/Changelog >> $dist/Changelog`;
 }
-print `cp README $dist/`;
 
 # Write maatkit.pod
 print `cat maatkit.head.pod packlist maatkit.mid.pod > $dist/lib/maatkit.pm`;
@@ -75,9 +74,10 @@ close $file;
 print `cat maatkit.tail.pod >> $dist/lib/maatkit.pm`;
 
 # Copy other files
-foreach my $file ( qw(Makefile.PL COPYING INSTALL maatkit.spec) ) {
+foreach my $file ( qw(README Makefile.PL COPYING INSTALL maatkit.spec) ) {
    print `cp $file $dist`;
 }
+print `cp ../udf/fnv_udf.cc $dist/udf`;
 
 # Set the DISTRIB variable
 print `grep DISTRIB -rl $dist | xargs sed -i -e 's/\@DISTRIB\@/$rev/'`;
