@@ -31,7 +31,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
-   plan tests => 20;
+   plan tests => 21;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -75,7 +75,47 @@ my $ch = new ChangeHandler(
    queue     => 0,
 );
 
-my $t = new TableSyncChunk(
+my $t;
+
+# Test with FNV_64 just to make sure there are no errors
+eval { $dbh->do('select fnv_64(1)') };
+SKIP: {
+   skip 'No FNV_64 function installed', 1 if $EVAL_ERROR;
+
+   $t = new TableSyncChunk(
+      handler  => $ch,
+      cols     => [qw(a b c)],
+      cols     => $tbl_struct->{cols},
+      dbh      => $dbh,
+      database => 'test',
+      table    => 'test1',
+      chunker  => $chunker,
+      struct   => $tbl_struct,
+      checksum => $checksum,
+      vp       => $vp,
+      quoter   => $q,
+      chunksize => 1,
+      where     => 'a>2',
+      possible_keys => [],
+      func          => 'FNV_64',
+   );
+
+   is (
+      $t->get_sql(
+         quoter   => $q,
+         where    => 'foo=1',
+         database => 'test',
+         table    => 'test1',
+      ),
+      q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
+      . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`) AS UNSIGNED)), 10, 16)) AS }
+      . q{crc FROM `test`.`test1` WHERE (1=1) AND (foo=1)},
+      'First nibble SQL with FNV_64',
+   );
+
+}
+
+$t = new TableSyncChunk(
    handler  => $ch,
    cols     => [qw(a b c)],
    cols     => $tbl_struct->{cols},
@@ -89,6 +129,7 @@ my $t = new TableSyncChunk(
    quoter   => $q,
    chunksize => 1,
    where     => 'a>2',
+   func      => 'SHA1',
    possible_keys => [],
 );
 
@@ -116,6 +157,7 @@ $t = new TableSyncChunk(
    chunksize => 2,
    where     => '',
    possible_keys => [],
+   func      => 'SHA1',
 );
 
 is_deeply(
@@ -170,6 +212,7 @@ $t = new TableSyncChunk(
    chunksize => 2,
    where     => '',
    possible_keys => [],
+   func      => 'SHA1',
 );
 
 throws_ok(
