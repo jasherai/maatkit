@@ -1,5 +1,7 @@
 Changelog for mk-deadlock-logger:
 
+2008-01-05: version 1.0.8
+
    * Made suffixes for time options optional (bug #1858696).
 
 2007-12-16: version 1.0.7
