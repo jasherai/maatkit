@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * Second and later chunks had DROP/CREATE TABLE (bug #1863949).
    * Made suffixes for time options optional (bug #1858696).
    * --locktables didn't disable --flushlock.
 

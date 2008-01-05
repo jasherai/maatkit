@@ -2452,7 +2452,8 @@ sub do_table {
       }
    }
    else {
-      # It's either a custom command, or it's a regular SQL dump and we're going to dump data.
+      # It's either a custom command, or it's a regular SQL dump and we're going
+      # to dump data.
 
       # If the user left the options alone, we can predict the filename and
       # directory naming convention, and ensure the directories exist.
@@ -2462,6 +2463,12 @@ sub do_table {
       }
 
       my @args = map { interp($todo, $_) } @mysqldump_args;
+
+      # Don't do a DROP/CREATE for chunks after the first one.
+      if ( !@ARGV && $todo->{C} > 0 ) {
+         push @args, '--no-create-info';
+      }
+
       $exit_status = system_call( @args ) || $exit_status;
    }
 
