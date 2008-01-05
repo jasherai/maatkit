@@ -95,13 +95,14 @@
 #include <my_sys.h>
 #include <mysql.h>
 #include <ctype.h>
+#include <string.h>
 
 /* On the first call, use this as the initial_value. */
 #define HASH_64_INIT 0x84222325cbf29ce4ULL
 /* Default for NULLs, just so the result is never NULL. */
 #define HASH_NULL_DEFAULT 0x0a0b0c0d
 /* Magic number for the hashing. */
-static const ulonglong FNV_64_PRIME = 0x100000001b3ULL;
+#define FNV_64_PRIME 0x100000001b3ULL
 
 /* Prototypes */
 
@@ -113,8 +114,7 @@ extern "C" {
 
 /* Implementations */
 
-ulonglong hash64(const void *buf, size_t len, ulonglong hval)
-{
+ulonglong hash64(const void *buf, size_t len, ulonglong hval) {
    const unsigned char *bp = (const unsigned char*)buf;
    const unsigned char *be = bp + len;
 
@@ -130,16 +130,17 @@ ulonglong hash64(const void *buf, size_t len, ulonglong hval)
 }
 
 my_bool
-fnv_64_init( UDF_INIT* initid, UDF_ARGS* args, char* message )
-{
+fnv_64_init( UDF_INIT* initid, UDF_ARGS* args, char* message ) {
+   if (args->arg_count == 0 ) {
+      strcpy(message,"FNV_64 requires at least one argument");
+      return 1;
+   }
    initid->maybe_null = 0;      /* The result will never be NULL */
    return 0;
 }
 
-
 ulonglong
-fnv_64(UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error )
-{
+fnv_64(UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error ) {
 
    uint null_default = HASH_NULL_DEFAULT;
    ulonglong result  = HASH_64_INIT;
