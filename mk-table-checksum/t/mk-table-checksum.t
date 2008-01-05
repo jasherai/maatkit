@@ -37,15 +37,15 @@ SKIP: {
       is ( $crc, '9c1c01dc3ac1445a500251fc34a15d3e75a849df', 'SHA1 is okay' );
    }
 
-   $output = `mysql -e 'select fnv_64()' 2>&1`;
+   $output = `mysql -e 'select fnv_64(1)' 2>&1`;
    SKIP: {
       skip 'no fnv_64 UDF installed', 2 if $output =~ m/ERROR/;
 
       $output = `$cmd -f FNV_64 --checksum -a ACCUM 2>&1`;
-      like($output, qr/B702F33D8D00F5D8/, 'FNV_64 ACCUM' );
+      like($output, qr/DD2CD41DB91F2EAE/, 'FNV_64 ACCUM' );
 
       $output = `$cmd -f FNV_64 --checksum -a BIT_XOR 2>&1`;
-      like($output, qr/da8f5e1ef6d7bcc1/, 'FNV_64 BIT_XOR' );
+      like($output, qr/a84792031e4ff43f/, 'FNV_64 BIT_XOR' );
 
    }
 
