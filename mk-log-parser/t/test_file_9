@@ -1,17 +1,24 @@
 perl ../mk-log-parser ../../common/t/samples/slow002.txt -a
+#
 UPDATE foo.bar
 SET    biz = '91848182522';
+#
 BEGIN;
+#
 INSERT INTO db3.vendor11gonzo (makef, bizzle)
 VALUES ('', 'Exact');
+#
 UPDATE db4.vab3concept1upload
 SET    vab3concept1id = '91848182522'
 WHERE  vab3concept1upload='6994465';
+#
 INSERT INTO db1.conch (word3, vid83)
 VALUES ('211', '18');
+#
 update db2.tuningdetail_21_265507 n
       inner join db1.gonzo a using(gonzo) 
       set n.column1 = a.column1, n.word3 = a.word3;
+#
 UPDATE bizzle.bat
 SET    boop='bop: 899'
 WHERE  fillze='899';

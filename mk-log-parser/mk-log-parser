@@ -886,7 +886,7 @@ $OUTPUT_AUTOFLUSH = 1;
 
 my @opt_spec = (
    { s => 'aggregate|a',   d => 'Report aggregate statistics. '
-                              . 'Implies --sort count' },
+                              . 'Implies --sort count (default)' },
    { s => 'asc',           d => 'Sort in ASC order instead of DESC' },
    { s => 'avg=a',         d => 'Report averages for this list of attributes. '
                               . 'Implies --aggregate' },
@@ -920,8 +920,15 @@ if ( $opts{avg} || $opts{sum} ) {
    $opts{a} = 1;
 }
 
+# If there is just one sum/avg param and no explicit --sort, sort by that.
 if ( $opts{a} && !defined $opts{sort} ) {
-   $opts{sort} = 'count';
+   my @parms = map { $opts{$_} ? @{$opts{$_}} : () } qw(sum avg);
+   if ( 1 == @parms ) {
+      $opts{sort} = $parms[0];
+   }
+   else {
+      $opts{sort} = 'count';
+   }
 }
 
 $opt_parser->usage_or_errors(%opts);
@@ -937,7 +944,7 @@ my @subs;
 
 # Averages require sums, so build a unique list of things to sum and/or
 # average, and keep sums for them.
-if ( $opts{sum} || $opts{avg} || $opts{sort} ne 'count' ) {
+if ( $opts{a} && ($opts{sum} || $opts{avg} || $opts{sort} ne 'count') ) {
 
    # Generate a list of things to keep sums for.
    my @sums;
@@ -1007,9 +1014,6 @@ else {
    die "Transforming and printing/explaining events is TODO.  Use --aggregate.";
 }
 
-# TODO: if someone specifies just one sum/avg/min/max param, and no explicit
-# --sort, sort by that parameter.
-
 # ############################################################################
 # Actually parse the data.
 # ############################################################################
@@ -1051,24 +1055,24 @@ if ( $opts{top} ) {
 my $fmt = "%.$opts{p}f";
 foreach my $i ( 0 .. $#queries ) {
    my $query = $queries[$i];
+   print "#";
    if ( $opts{r} ) {
-      print "# Rank: $i\n";
+      print " Rank: $i";
    }
    if ( $opts{c} ) {
-      print "# Count: ", $query->{count}, "\n";
+      print " Count: ", $query->{count};
    }
    if ( $opts{sum} ) {
-      print "# Sum:   ", join(" ",
-         map { "$_: " . sprintf($fmt, $query->{$_}) }
-            @{$opts{sum}}),
-         "\n";
+      print " ", join(" ",
+         map { "Sum_$_: " . sprintf($fmt, $query->{$_}) }
+            @{$opts{sum}});
    }
    if ( $opts{avg} ) {
-      print "# Avg:   ", join(" ",
-         map { "$_: " . sprintf($fmt, $query->{$_}/$query->{count}) }
-            @{$opts{avg}}),
-         "\n";
+      print " ", join(" ",
+         map { "Avg_$_: " . sprintf($fmt, $query->{$_}/$query->{count}) }
+            @{$opts{avg}});
    }
+   print "\n";
    if ( $opts{sample} ) {
       print $query->{query}, ";\n";
    }
@@ -1195,7 +1199,10 @@ Prints a real sample query instead of the abstracted L<"--fingerprint">.
 
 =item --sort
 
-Sort by (the sum of) this attribute.
+Sort by this attribute or the sum of this attribute.  If you don't specify
+anything, it'll default to C<count>.  If you don't specify anything, but you
+specify only one attribute for L<"--sum"> and L<"--avg">, it defaults to that
+attribute instead.
 
 =item --sum
 
