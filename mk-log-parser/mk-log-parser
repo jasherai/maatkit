@@ -891,21 +891,24 @@ my @opt_spec = (
    { s => 'avg=a',         d => 'Report averages for this list of attributes. '
                               . 'Implies --aggregate' },
    { s => 'count|c',       d => 'Print count of queries' },
+   # TODO { s => 'explain|e',     d => 'Rewrite queries as EXPLAIN .. SELECT' },
    { s => 'fingerprint|f', d => 'Convert queries into abstracted form' },
    { s => 'precision|p=i', d => 'Digits of precision for printing attributes '
                               . '(default 5)' },
    { s => 'progress|P=i',  d => 'Print progress every N events (default 0)' },
    { s => 'rank|r',        d => 'Print rank in sorted order'},
    { s => 'sample',        d => 'Print a sample query, not a fingerprint'},
+   { s => 'microslow',     d => 'Implies -acfrs --sum Query_time' },
    { s => 'sort=s',        d => 'Sort by this attribute' },
+   { s => 'statistics|s',  d => 'Show overall statistics' },
    { s => 'sum=a',         d => 'Report sums for this list of attributes. '
                               . 'Implies --aggregate' },
    { s => 'top=i',         d => 'Print only the top N results' },
 
-   # TODO: rewrite for explain, percent distinct vals
-# min, max values
-# show stats overall: number of events, total time, min ts, max ts, pct of
-# time running queries
+   # TODO: percent distinct vals
+   # min, max values
+   # show stats overall: number of events, total time, min ts, max ts, pct of
+   # time running queries
 );
 
 # TODO: optimize.  Profiling results:
@@ -920,6 +923,11 @@ $opt_parser->{prompt} = '[OPTION...] [FILE]';
 $opt_parser->{descr}  = q{parses and analyzes log files.  With no FILE, }
                       . q{or when FILE is -, read standard input.};
 my %opts = $opt_parser->parse();
+
+if ( $opts{microslow} ) {
+   map { $opts{$_} = 1 } qw(a c f r s);
+   $opts{sum} = [ qw(Query_time) ];
+}
 
 if ( $opts{avg} || $opts{sum} ) {
    $opts{a} = 1;
@@ -982,8 +990,23 @@ if ( $opts{a} && ($opts{sum} || $opts{avg} || $opts{sort} ne 'count') ) {
 # Set up the data store and the callback.
 # ############################################################################
 my %queries;
+my %stats;
 my $callback;
 my $i = 0;
+
+# Track overall stats.
+if ( $opts{s} ) {
+   push @subs, sub {
+      my ( $event, $stats ) = @_;
+      $stats{count}++;
+      $stats{'time'} += $event->{Query_time} || 0;
+      # Assume that timestamps are strictly increasing, to avoid too much
+      # computation.
+      my $ts = $event->{ts} || '';
+      $stats{start} ||= $ts;
+      $stats{end}     = $ts if $ts;
+   };
+}
 
 if ( $opts{a} ) {
    $callback = sub {
@@ -1055,6 +1078,10 @@ if ( my $sort = $opts{sort} ) {
 
 if ( $opts{top} ) {
    @queries = @queries[0 .. min($#queries, $opts{top} - 1)];
+}
+
+if ( $opts{s} ) {
+   print "# ", join(' ', map { "Total_$_: $stats{$_}" } sort keys %stats), "\n";
 }
 
 my $fmt = "%.$opts{p}f";
@@ -1186,6 +1213,10 @@ valid SQL.
 
 Displays a help message.
 
+=item --microslow
+
+Enables the options I use most for analyzing micro-slow query logs.
+
 =item --precision
 
 Sets the display precision (number of decimal places) of aggregate statistics.
@@ -1208,6 +1239,10 @@ Sort by this attribute or the sum of this attribute.  If you don't specify
 anything, it'll default to C<count>.  If you don't specify anything, but you
 specify only one attribute for L<"--sum"> and L<"--avg">, it defaults to that
 attribute instead.
+
+=item --statistics
+
+Prints out a single line with overall statistics before printing other results.
 
 =item --sum
 
