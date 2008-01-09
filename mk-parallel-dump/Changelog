@@ -1,5 +1,8 @@
 Changelog for mk-parallel-dump:
 
+   * The fix for bug #1863949 added an invalid argument to gzip (bug #1866137)
+   * --quiet caused a crash.
+
 2008-01-05: version 1.0.4
 
    * Second and later chunks had DROP/CREATE TABLE (bug #1863949).
