@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 20;
 
 my $output;
 
@@ -49,6 +49,24 @@ SKIP: {
    $output = `grep -i 'CREATE TABLE' /tmp/default/sakila/film.000.sql`;
    like($output, qr/CREATE TABLE/i, 'first chunk has CREATE TABLE');
    $output = `grep -i 'CREATE TABLE' /tmp/default/sakila/film.001.sql`;
+   unlike($output, qr/CREATE TABLE/i, 'second chunk has no CREATE TABLE');
+   `rm -rf /tmp/default`;
+
+   # But also make sure mysqldump gets the --no-create-info argument, not
+   # gzip...! (fixes bug #1866137)
+   $output = `perl ../mk-parallel-dump --quiet -C 100 --basedir /tmp -d sakila -t film 2>&1`;
+   is($output, '', 'There is no output');
+   ok(-f '/tmp/default/sakila/film.000.sql.gz', 'first chunk file exists');
+   ok(-f '/tmp/default/sakila/film.001.sql.gz', 'second chunk file exists');
+   $output = `zgrep -i 'DROP TABLE' /tmp/default/sakila/film.000.sql.gz`;
+   like($output, qr/DROP TABLE/i, 'first chunk has DROP TABLE');
+   $output = `zgrep -i 'DROP TABLE' /tmp/default/sakila/film.001.sql.gz`;
+   unlike($output, qr/DROP TABLE/i, 'second chunk has no DROP TABLE');
+   $output = `zgrep -i 'INSERT INTO' /tmp/default/sakila/film.001.sql.gz`;
+   like($output,   qr/INSERT INTO/i, 'second chunk does have data, though');
+   $output = `zgrep -i 'CREATE TABLE' /tmp/default/sakila/film.000.sql.gz`;
+   like($output, qr/CREATE TABLE/i, 'first chunk has CREATE TABLE');
+   $output = `zgrep -i 'CREATE TABLE' /tmp/default/sakila/film.001.sql.gz`;
    unlike($output, qr/CREATE TABLE/i, 'second chunk has no CREATE TABLE');
    `rm -rf /tmp/default`;
 

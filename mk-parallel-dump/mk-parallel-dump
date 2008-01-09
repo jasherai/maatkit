@@ -1883,6 +1883,7 @@ if ( !@ARGV && !$opts{T} ) {
             set-charset
             triggers
             tz-utc
+            no-create-info
          )
       ),
       qw( '%D' '%N' ),
@@ -2366,7 +2367,7 @@ sub get_chunks {
 # Prints a message.
 sub info {
    my ( $level, $msg ) = @_;
-   if ( $level <= $opts{v} ) {
+   if ( $level <= ($opts{v} || 0) ) {
       print $msg, "\n";
    }
 }
@@ -2462,12 +2463,13 @@ sub do_table {
          makedir(interp($todo, filename('%S', '%D', '%N.%3C.sql')));
       }
 
-      my @args = map { interp($todo, $_) } @mysqldump_args;
-
-      # Don't do a DROP/CREATE for chunks after the first one.
-      if ( !@ARGV && $todo->{C} > 0 ) {
-         push @args, '--no-create-info';
+      my @args = @mysqldump_args;
+      # Do a DROP/CREATE only for the first chunk.
+      if ( !@ARGV && $todo->{C} == 0 ) {
+         @args = grep { $_ !~ m/--no-create-info/ } @args;
       }
+
+      @args = map { interp($todo, $_) } @args;
 
       $exit_status = system_call( @args ) || $exit_status;
    }
