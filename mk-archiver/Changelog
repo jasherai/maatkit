@@ -1,5 +1,8 @@
 Changelog for mk-archiver:
 
+   * Added --nodelete option.
+   * Changed negatable --ascend option to --noascend.
+
 2008-01-05: version 1.0.6
 
    * Made suffixes for time options optional (bug #1858696).

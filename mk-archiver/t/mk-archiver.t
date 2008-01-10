@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 82;
+use Test::More tests => 85;
 
 my $opt_file = shift || "~/.my.cnf";
 diag("Testing with $opt_file");
@@ -339,6 +339,15 @@ $output = `perl ../mk-archiver --nosafeautoinc --purge -W 1=1 --source D=test,t=
 is($output, '', 'Disabled safeautoinc worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_12"`;
 is($output + 0, 0, "Disabled safeautoinc purged whole table");
+
+# Test --nodelete.
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mk-archiver --nodelete --purge -W 1=1 --source D=test,t=table_1,F=$opt_file --test 2>&1`;
+like($output, qr/> /, '--nodelete implies strict ascending');
+unlike($output, qr/>=/, '--nodelete implies strict ascending');
+$output = `perl ../mk-archiver --nodelete --purge -W 1=1 --source D=test,t=table_1,F=$opt_file 2>&1`;
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
+is($output + 0, 4, 'All 4 rows are still there');
 
 # Clean up.
 `mysql --defaults-file=$opt_file < after.sql`;
