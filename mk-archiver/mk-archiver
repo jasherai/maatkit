@@ -1416,7 +1416,7 @@ my $dp = new DSNParser(
    { key => 'a', copy => 0, desc => 'Database to USE when executing queries' },
    { key => 'i', copy => 1, desc => 'Index to use' },
    { key => 'm', copy => 0, desc => 'Plugin module name' },
-   { key => 'b', copy => 0, desc => 'Disable binary logging with SET SQL_LOG_BIN=0' },
+   { key => 'b', copy => 0, desc => 'Disable binlog with SET SQL_LOG_BIN=0' },
 );
 $dp->prop('required', { t => 1 });
 my $vp = new VersionParser;
@@ -1427,46 +1427,86 @@ my $q  = new Quoter;
 # ############################################################################
 
 # Define cmdline args.
-my $opt_parser = new OptionParser(
-   { s => 'analyze|A=s', d => 'Run ANALYZE TABLE afterwards on --source and/or --dest' },
-   { s => 'ascend|N!',   d => 'Use ascending index optimization (default)' },
-   { s => 'ascendfirst', d => 'Ascend only first column of index' },
-   { s => 'askpass',     d => 'Prompt for password for connections' },
-   { s => 'buffer|b',    d => 'Buffer output to --file and flush at commit' },
-   { s => 'chkcols|C!',  d => 'Ensure --source and --dest have same columns (default)' },
-   { s => 'columns|c=a', d => 'Comma-separated list of columns to archive' },
-   { s => 'commit-each', d => 'Commit each set of fetched and archived rows (disables -z)' },
-   { s => 'dest|d=d',    d => 'Table to archive to' },
-   { s => 'delayedins',  d => 'Add the DELAYED modifier to INSERT statements' },
-   { s => 'file|f=s',    d => 'File to archive to, with DATE_FORMAT()-like formatting' },
-   { s => 'forupdate',   d => 'Adds the FOR UPDATE modifier to SELECT statements' },
-   { s => 'header|h',    d => 'Print column header at top of --file' },
-   { s => 'hpselect',    d => 'Adds the HIGH_PRIORITY modifier to SELECT statements' },
-   { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
-   { s => 'limit|l=i',   d => 'Number of rows to fetch and archive per statement (default 1)' },
-   { s => 'local|L',     d => 'Do not write OPTIMIZE or ANALYZE queries to binlog' },
-   { s => 'lpdel',       d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
-   { s => 'lpins',       d => 'Add the LOW_PRIORITY modifier to INSERT statements' },
-   { s => 'optimize|O=s',d => 'Run OPTIMIZE TABLE afterwards on --source and/or --dest' },
-   { s => 'pkonly|k',    d => 'Primary key columns only' },
-   { s => 'progress|P=i',d => 'Print progress information every X rows' },
-   { s => 'purge|p',     d => 'Purge, not archive; allows to omit --file and --dest' },
-   { s => 'quickdel',    d => 'Add the QUICK modifier to DELETE statements' },
-   { s => 'replace|r',   d => 'Use REPLACE instead of INSERT statements' },
-   { s => 'retries|R=i', d => 'Number of retries per timeout or deadlock (default 1)' },
-   { s => 'safeautoinc!',d => 'Do not archive row with max AUTO_INCREMENT (default)'},
-   { s => 'sentinel|S=s',d => 'Sentinel file; default /tmp/mk-archiver-sentinel' },
-   { s => 'sharelock',   d => 'Adds LOCK IN SHARE MODE to SELECT statements' },
-   { s => 'skipfkchk|K', d => 'Turn off foreign key checks' },
-   { s => 'sleep|e=i',   d => 'Sleep time between fetches' },
-   { s => 'source|s=d',  d => 'Table to archive from (required)' },
-   { s => 'statistics',  d => 'Collect and print timing statistics' },
-   { s => 'stop',        d => 'Stop running instances by creating the sentinel file' },
-   { s => 'test|t',      d => 'Test: print queries and exit without doing anything' },
-   { s => 'time|m=m',    d => 'Time to run before exiting' },
-   { s => 'txnsize|z=i', d => 'Number of rows per transaction; disable with 0; default 1)' },
-   { s => 'where|W=s',   d => 'WHERE clause to limit which rows to archive (required)' },
-   { s => 'whyquit|q',   d => 'Print reason for exiting unless rows exhausted' },
+my @opt_spec = (
+   {  s => 'analyze|A=s',
+      d => 'Run ANALYZE TABLE afterwards on --source and/or --dest' },
+   {  s => 'ascendfirst',
+      d => 'Ascend only first column of index' },
+   {  s => 'askpass',
+      d => 'Prompt for password for connections' },
+   {  s => 'buffer|b',
+      d => 'Buffer output to --file and flush at commit' },
+   {  s => 'chkcols|C!',
+      d => 'Ensure --source and --dest have same columns (default)' },
+   {  s => 'columns|c=a',
+      d => 'Comma-separated list of columns to archive' },
+   {  s => 'commit-each',
+      d => 'Commit each set of fetched and archived rows (disables -z)' },
+   {  s => 'dest|d=d',
+      d => 'Table to archive to' },
+   {  s => 'delayedins',
+      d => 'Add the DELAYED modifier to INSERT statements' },
+   {  s => 'file|f=s',
+      d => 'File to archive to, with DATE_FORMAT()-like formatting' },
+   {  s => 'forupdate',
+      d => 'Adds the FOR UPDATE modifier to SELECT statements' },
+   {  s => 'header|h',
+      d => 'Print column header at top of --file' },
+   {  s => 'hpselect',
+      d => 'Adds the HIGH_PRIORITY modifier to SELECT statements' },
+   {  s => 'ignore|i',
+      d => 'Use IGNORE for INSERT statements' },
+   {  s => 'limit|l=i',
+      d => 'Number of rows to fetch and archive per statement (default 1)' },
+   {  s => 'local|L',
+      d => 'Do not write OPTIMIZE or ANALYZE queries to binlog' },
+   {  s => 'lpdel',
+      d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
+   {  s => 'lpins',
+      d => 'Add the LOW_PRIORITY modifier to INSERT statements' },
+   {  s => 'noascend',
+      d => 'Do not use ascending index optimization' },
+   {  s => 'nodelete',
+      d => 'Do not delete archived rows' },
+   {  s => 'optimize|O=s',
+      d => 'Run OPTIMIZE TABLE afterwards on --source and/or --dest' },
+   {  s => 'pkonly|k',
+      d => 'Primary key columns only' },
+   {  s => 'progress|P=i',d => 'Print progress information every X rows' },
+   {  s => 'purge|p',
+      d => 'Purge, not archive; allows to omit --file and --dest' },
+   {  s => 'quickdel',
+      d => 'Add the QUICK modifier to DELETE statements' },
+   {  s => 'replace|r',
+      d => 'Use REPLACE instead of INSERT statements' },
+   {  s => 'retries|R=i',
+      d => 'Number of retries per timeout or deadlock (default 1)' },
+   {  s => 'safeautoinc!',
+      d => 'Do not archive row with max AUTO_INCREMENT (default)'},
+   {  s => 'sentinel|S=s',
+      d => 'Sentinel file; default /tmp/mk-archiver-sentinel' },
+   {  s => 'sharelock',
+      d => 'Adds LOCK IN SHARE MODE to SELECT statements' },
+   {  s => 'skipfkchk|K',
+      d => 'Turn off foreign key checks' },
+   {  s => 'sleep|e=i',
+      d => 'Sleep time between fetches' },
+   {  s => 'source|s=d',
+      d => 'Table to archive from (required)' },
+   {  s => 'statistics',
+      d => 'Collect and print timing statistics' },
+   {  s => 'stop',
+      d => 'Stop running instances by creating the sentinel file' },
+   {  s => 'test|t',
+      d => 'Test: print queries and exit without doing anything' },
+   {  s => 'time|m=m',
+      d => 'Time to run before exiting' },
+   {  s => 'txnsize|z=i',
+      d => 'Number of rows per transaction; disable with 0; default 1)' },
+   {  s => 'where|W=s',
+      d => 'WHERE clause to limit which rows to archive (required)' },
+   {  s => 'whyquit|q',
+      d => 'Print reason for exiting unless rows exhausted' },
    '--ignore and --replace are mutually exclusive.',
    '--txnsize and --commit-each are mutually exclusive.',
    '--lpins and --delayedins are mutually exclusive.',
@@ -1474,12 +1514,17 @@ my $opt_parser = new OptionParser(
    '--analyze and --optimize are mutually exclusive.',
    'Specify at least one of --dest, --file, or --purge.',
    'DSN values in --dest default to values from --source if COPY is yes.',
+   '--noascend and --nodelete are mutually exclusive.',
 );
+
+my $opt_parser = new OptionParser(@opt_spec);
+
 $opt_parser->{prompt} = '--source DSN --where WHERE <options>';
 $opt_parser->{dsn}    = $dp;
 $opt_parser->{descr}  = 'nibbles records from a MySQL table.  The --source '
                       . q{and --dest arguments use DSN syntax; if COPY is }
-                      . q{yes, --dest defaults to the key's value from --source.};
+                      . q{yes, --dest defaults to the key's value from }
+                      . q{--source.};
 %opts = $opt_parser->parse();
 
 # First things first: if --stop was given, create the sentinel file.
@@ -1513,7 +1558,8 @@ if ( $opts{f} ) {
    $opts{f} =~ s/%([dHimsYDt])/$fmt{$1}/g;
 }
 
-if ( !$opts{help} && $opts{d} ) { # Ensure --source and --dest don't point to the same place
+if ( !$opts{help} && $opts{d} ) {
+   # Ensure --source and --dest don't point to the same place
    my $same = 1;
    foreach my $arg ( qw(h P D t S) ) {
       if ( defined $src->{$arg} && defined $dst->{$arg} &&
@@ -1544,7 +1590,8 @@ if ( $opts{statistics} ) {
       my ( $thing, $sub ) = @_;
       my $start = Time::HiRes::gettimeofday();
       $sub->();
-      $statistics{$thing . '_time'} += (Time::HiRes::gettimeofday() - $start - $obs_cost);
+      $statistics{$thing . '_time'}
+         += (Time::HiRes::gettimeofday() - $start - $obs_cost);
       ++$statistics{$thing . '_count'};
       $stat_start ||= $start;
    }
@@ -1651,7 +1698,7 @@ $del_stmt = $nibbler->generate_del_stmt(
 @del_slice = @{$del_stmt->{slice}};
 
 # Generate statement for ascending index, if desired
-if ( $opts{N} ) {
+if ( !$opts{noascend} ) {
    $sel_stmt = $nibbler->generate_asc_stmt(
       parser   => $tp,
       tbl      => $src->{info},
@@ -1660,7 +1707,7 @@ if ( $opts{N} ) {
       ascfirst => $opts{ascendfirst},
       quoter   => $q,
       # Might prevent rows in the source from being deleted.
-      asconly  => $src->{m},
+      asconly  => $src->{m} || $opts{nodelete},
    );
 }
 else {
@@ -1699,7 +1746,7 @@ if ( $opts{safeautoinc}
 }
 
 $next_sql = $first_sql;
-if ( $opts{N} ) {
+if ( !$opts{noascend} ) {
    $next_sql .= " AND $sel_stmt->{where}";
 }
 
@@ -1743,7 +1790,9 @@ else {
 }
 
 if ( $opts{t} ) {
-   print join("\n", ($opts{f} || ''), $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
+   print
+      join("\n", ($opts{f} || ''), $first_sql, $next_sql, $del_sql, $ins_sql),
+      "\n";
    exit(0);
 }
 
@@ -1839,13 +1888,14 @@ while (                          # Quit if:
 
       # INSERT must come first, to be as safe as possible.
       if ( $dst ) {
-         my $ins_sth; # Allow the plugin to change which sth is used for the INSERT.
+         my $ins_sth; # Let the plugin change which sth is used for the INSERT.
          if ( $dst->{plugin} ) {
             trace('before_insert', sub {
                $dst->{plugin}->before_insert(row => $row);
             });
             trace('custom_sth', sub {
-               $ins_sth = $dst->{plugin}->custom_sth(row => $row, sql => $ins_sql);
+               $ins_sth = $dst->{plugin}->custom_sth(
+                  row => $row, sql => $ins_sql);
             });
          }
          $ins_sth ||= $ins_row; # Default to the sth decided before.
@@ -1868,16 +1918,18 @@ while (                          # Quit if:
             $src->{plugin}->before_delete(row => $row);
          });
       }
-      my $success = do_with_retries( 'deleting', sub {
-         $del_row->execute(@{$row}[@del_slice])
-      });
-      if ( $success == 0 ) {
-         $retries = -1;
-         last ROW;
-      }
-      elsif ( $success == -1 ) {
-         --$retries;
-         next ROW;
+      if ( !$opts{nodelete} ) {
+         my $success = do_with_retries( 'deleting', sub {
+            $del_row->execute(@{$row}[@del_slice])
+         });
+         if ( $success == 0 ) {
+            $retries = -1;
+            last ROW;
+         }
+         elsif ( $success == -1 ) {
+            --$retries;
+            next ROW;
+         }
       }
 
    }
@@ -1968,7 +2020,9 @@ if ( $opts{statistics} ) {
    printf("%-${maxlen}s \%10s %10s %10s\n", qw(Action Count Time Pct));
    my $fmt = "%-${maxlen}s \%10d %10.4f %10.2f\n";
 
-   foreach my $stat ( reverse sort { $a->{time} <=> $b->{time} } values %summary ) {
+   foreach my $stat (
+      reverse sort { $a->{time} <=> $b->{time} } values %summary )
+   {
       my $pct = $stat->{time} / $stat_total * 100;
       printf($fmt, @{$stat}{qw(action count time)}, $pct);
       $total2 += $stat->{time};
@@ -2041,16 +2095,20 @@ sub do_with_retries {
       if ( $EVAL_ERROR ) {
          if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded|Deadlock found/ ) {
             if (
-               (($opts{z} && $opts{z} > 1) || ($opts{'commit-each'} && $opts{l} > 1))  # More than one row per txn
-               && $txn_cnt                                                             # Not first row
-               && (!$can_retry || $EVAL_ERROR =~ m/Deadlock/)                          # And it's not retry-able
+               # More than one row per txn
+               (($opts{z} && $opts{z} > 1)
+                  || ($opts{'commit-each'} && $opts{l} > 1))
+               # Not first row
+               && $txn_cnt
+               # And it's not retry-able
+               && (!$can_retry || $EVAL_ERROR =~ m/Deadlock/)
             ) {
                # The txn, which is more than 1 statement, was rolled back.
                last RETRY;
             }
             else {
-               #  Only one statement had trouble, and the rest of the txn was not
-               #  rolled back.  The statement can be retried.
+               # Only one statement had trouble, and the rest of the txn was
+               # not rolled back.  The statement can be retried.
                --$retries;
             }
          }
@@ -2063,7 +2121,8 @@ sub do_with_retries {
    if ( $success != 1 ) {
       # Must throw away everything and start the transaction over.
       if ( $retries >= 0 ) {
-         warn "Deadlock or non-retryable lock wait while $doing; rolling back $txn_cnt rows.\n";
+         warn "Deadlock or non-retryable lock wait while $doing; "
+            . "rolling back $txn_cnt rows.\n";
          $success = -1;
       }
       else {
@@ -2154,16 +2213,16 @@ L<"--limit">, L<"--retries">, and L<"--txnsize">.
 The strategy is to find the first row(s), then scan some index forward-only to
 find more rows efficiently.  Each subsequent query should not scan the entire
 table; it should seek into the index, then scan until it finds more archivable
-rows.  Specifying the index with the 'i' part of the L<"--source"> argument can be
-crucial for this; use L<"--test"> to examine the generated queries and be sure to
-EXPLAIN them to see if they are efficient (most of the time you probably want
-to scan the PRIMARY key, which is the default).  Even better, profile
-mk-archiver with mk-query-profiler and make sure it is not scanning the
-whole table every query.
+rows.  Specifying the index with the 'i' part of the L<"--source"> argument can
+be crucial for this; use L<"--test"> to examine the generated queries and be
+sure to EXPLAIN them to see if they are efficient (most of the time you probably
+want to scan the PRIMARY key, which is the default).  Even better, profile
+mk-archiver with mk-query-profiler and make sure it is not scanning the whole
+table every query.
 
 You can disable the seek-then-scan optimizations partially or wholly with
-L<"--noascend"> and L<"--ascendfirst">.  Sometimes this may be more efficient for
-multi-column keys.
+L<"--noascend"> and L<"--ascendfirst">.  Sometimes this may be more efficient
+for multi-column keys.
 
 =head1 ERROR-HANDLING
 
@@ -2174,7 +2233,7 @@ L<"--analyze"> or L<"--optimize">, because these may take a long time to finish.
 It will run all other code normally, including calling after_finish() on any
 plugins (see L<"EXTENDING">).
 
-In other words, a signal, if caught, will only break out of the main archiving
+In other words, a signal, if caught, will break out of the main archiving
 loop and skip optimize/analyze.
 
 =head1 OPTIONS
@@ -2196,43 +2255,14 @@ following will analyze both:
 See L<http://dev.mysql.com/doc/en/analyze-table.html> for details on ANALYZE
 TABLE.
 
-=item --ascend
-
-Causes mk-archiver to optimize repeated SELECT queries so they seek into the
-index where the previous query ended, then scan along it, rather than scanning
-from the beginning of the table every time.  This is enabled by default because
-it is generally a good strategy for repeated accesses.
-
-Large, multiple-column indexes may cause the WHERE clause to be complex enough
-that this could actually be less efficient.  Consider for example a four-column
-PRIMARY KEY on (a, b, c, d).  The WHERE clause to start where the last query
-ended is as follows:
-
-   WHERE (a > ?)
-      OR (a = ? AND b > ?)
-      OR (a = ? AND b = ? AND c > ?)
-      OR (a = ? AND b = ? AND c = ? AND d >= ?)
-
-Populating the placeholders with values uses memory and CPU, adds network
-traffic and parsing overhead, and may make the query harder for MySQL to
-optimize.  A four-column key isn't a big deal, but a ten-column key in which
-every column allows C<NULL> might be.
-
-Ascending the index might not be necessary if you know you are simply removing
-rows from the beginning of the table in chunks, but not leaving any holes, so
-starting at the beginning of the table is actually the most efficient thing to
-do.
-
-See also L<"--ascendfirst">.  See L<"EXTENDING"> for a discussion of how this
-interacts with plugins.
-
 =item --ascendfirst
 
-If you do want to use the ascending index optimization (see L<"--ascend">), but do
-not want to incur the overhead of ascending a large multi-column index, you can
-use this option to tell mk-archiver to ascend only the leftmost column of the
-index.  This can provide a significant performance boost over not ascending the
-index at all, while avoiding the cost of ascending the whole index.
+If you do want to use the ascending index optimization (see L<"--noascend">),
+but do not want to incur the overhead of ascending a large multi-column index,
+you can use this option to tell mk-archiver to ascend only the leftmost column
+of the index.  This can provide a significant performance boost over not
+ascending the index at all, while avoiding the cost of ascending the whole
+index.
 
 See L<"EXTENDING"> for a discussion of how this interacts with plugins.
 
@@ -2274,19 +2304,19 @@ See also --pkonly.
 =item --commit-each
 
 Commits transactions and flushes L<"--file"> after each set of rows has been
-archived, before fetching the next set of rows, and before sleeping if L<"--sleep">
-is specified.  Disables L<"--txnsize">; use L<"--limit"> to control the transaction size
-with L<"--commit-each">.
+archived, before fetching the next set of rows, and before sleeping if
+L<"--sleep"> is specified.  Disables L<"--txnsize">; use L<"--limit"> to control
+the transaction size with L<"--commit-each">.
 
-This option is useful as a shortcut to make L<"--limit"> and L<"--txnsize"> the same
-value, but more importantly it avoids transactions being held open while
+This option is useful as a shortcut to make L<"--limit"> and L<"--txnsize"> the
+same value, but more importantly it avoids transactions being held open while
 searching for more rows.  For example, imagine you are archiving old rows from
-the beginning of a very large table, with L<"--limit"> 1000 and L<"--txnsize"> 1000.
-After some period of finding and archiving 1000 rows at a time, mk-archiver
-finds the last 999 rows and archives them, then executes the next SELECT to find
-more rows.  This scans the rest of the table, but never finds any more rows.  It
-has held open a transaction for a very long time, only to determine it is
-finished anyway.  You can use L<"--commit-each"> to avoid this.
+the beginning of a very large table, with L<"--limit"> 1000 and L<"--txnsize">
+1000.  After some period of finding and archiving 1000 rows at a time,
+mk-archiver finds the last 999 rows and archives them, then executes the next
+SELECT to find more rows.  This scans the rest of the table, but never finds any
+more rows.  It has held open a transaction for a very long time, only to
+determine it is finished anyway.  You can use L<"--commit-each"> to avoid this.
 
 =item --delayedins
 
@@ -2329,8 +2359,8 @@ terminated by tabs, NULL characters are represented by \N, and special
 characters are escaped by \.  This lets you reload a file with LOAD DATA
 INFILE's default settings.
 
-If you want a column header at the top of the file, see L<"--header">.  The file is
-auto-flushed by default; see L<"--buffer">.
+If you want a column header at the top of the file, see L<"--header">.  The file
+is auto-flushed by default; see L<"--buffer">.
 
 =item --forupdate
 
@@ -2362,7 +2392,8 @@ Limits the number of rows returned by the SELECT statements that retrieve rows
 to archive.  Default is one row.  It may be more efficient to increase the
 limit, but be careful if you are archiving sparsely, skipping over many rows;
 this can potentially cause more contention with other queries, depending on the
-storage engine, transaction isolation level, and options such as L<"--forupdate">.
+storage engine, transaction isolation level, and options such as
+L<"--forupdate">.
 
 =item --local
 
@@ -2379,11 +2410,51 @@ L<http://dev.mysql.com/doc/en/delete.html> for details.
 Adds the LOW_PRIORITY modifier to INSERT or REPLACE statements.  See
 L<http://dev.mysql.com/doc/en/insert.html> for details.
 
+=item --noascend
+
+The default ascending-index optimization causes C<mk-archiver> to optimize
+repeated C<SELECT> queries so they seek into the index where the previous query
+ended, then scan along it, rather than scanning from the beginning of the table
+every time.  This is enabled by default because it is generally a good strategy
+for repeated accesses.
+
+Large, multiple-column indexes may cause the WHERE clause to be complex enough
+that this could actually be less efficient.  Consider for example a four-column
+PRIMARY KEY on (a, b, c, d).  The WHERE clause to start where the last query
+ended is as follows:
+
+   WHERE (a > ?)
+      OR (a = ? AND b > ?)
+      OR (a = ? AND b = ? AND c > ?)
+      OR (a = ? AND b = ? AND c = ? AND d >= ?)
+
+Populating the placeholders with values uses memory and CPU, adds network
+traffic and parsing overhead, and may make the query harder for MySQL to
+optimize.  A four-column key isn't a big deal, but a ten-column key in which
+every column allows C<NULL> might be.
+
+Ascending the index might not be necessary if you know you are simply removing
+rows from the beginning of the table in chunks, but not leaving any holes, so
+starting at the beginning of the table is actually the most efficient thing to
+do.
+
+See also L<"--ascendfirst">.  See L<"EXTENDING"> for a discussion of how this
+interacts with plugins.
+
+=item --nodelete
+
+Causes C<mk-archiver> not to delete rows after processing them.  This disallows
+L<"--noascend">, because enabling them both would cause an infinite loop.
+
+If there is a plugin on the source DSN, its C<before_delete> method is called
+anyway, even though C<mk-archiver> will not execute the delete.  See
+L<"EXTENDING"> for more on plugins.
+
 =item --optimize
 
-Runs OPTIMIZE TABLE after finishing.  See L<"--analyze"> for the option syntax and
-L<http://dev.mysql.com/doc/en/optimize-table.html> for details on
-OPTIMIZE TABLE.
+Runs OPTIMIZE TABLE after finishing.  See L<"--analyze"> for the option syntax
+and L<http://dev.mysql.com/doc/en/optimize-table.html> for details on OPTIMIZE
+TABLE.
 
 =item --pkonly
 
@@ -2398,8 +2469,8 @@ Prints current time, elapsed time, and rows archived every X rows.
 
 =item --purge
 
-Allows archiving without a L<"--file"> or L<"--dest"> argument, which is effectively a
-purge since the rows are just deleted.
+Allows archiving without a L<"--file"> or L<"--dest"> argument, which is
+effectively a purge since the rows are just deleted.
 
 If you just want to purge rows, consider specifying the table's primary key
 columns with L<"--pkonly">.  This will prevent fetching all columns from the
@@ -2424,8 +2495,8 @@ mk-archiver will exit with an error.
 
 Consider carefully what you want to happen when you are archiving between a
 mixture of transactional and non-transactional storage engines.  The INSERT to
-L<"--dest"> and DELETE from L<"--source"> are on separate connections, so they do not
-actually participate in the same transaction even if they're on the same
+L<"--dest"> and DELETE from L<"--source"> are on separate connections, so they
+do not actually participate in the same transaction even if they're on the same
 server.  However, mk-archiver implements simple distributed transactions in
 code, so commits and rollbacks should happen as desired across the two
 connections.
@@ -2466,7 +2537,8 @@ Specifies how long to sleep between SELECT statements.  Default is not to
 sleep at all.  Transactions are NOT committed, and the L<"--file"> file is NOT
 flushed, before sleeping.  See L<"--txnsize"> to control that.
 
-If L<"--commit-each"> is specified, committing and flushing happens before sleeping.
+If L<"--commit-each"> is specified, committing and flushing happens before
+sleeping.
 
 =item --source
 
@@ -2573,9 +2645,9 @@ Causes mk-archiver to stop after the specified time has elapsed.
 
 =item --txnsize
 
-Specifies the size, in number of rows, of each transaction.  Default is one
-row.  Zero disables transactions altogether.  After mk-archiver processes
-this many rows, it commits both the L<"--source"> and the L<"--dest"> if given, and
+Specifies the size, in number of rows, of each transaction.  Default is one row.
+Zero disables transactions altogether.  After mk-archiver processes this many
+rows, it commits both the L<"--source"> and the L<"--dest"> if given, and
 flushes the file given by L<"--file">.
 
 This parameter is critical to performance.  If you are archiving from a live
@@ -2618,8 +2690,8 @@ finishing before running out of time.
 
 =head1 EXTENDING
 
-mk-archiver is extensible by plugging in external Perl modules to handle
-some logic and/or actions.  You can specify a module for both the L<"--source"> and
+mk-archiver is extensible by plugging in external Perl modules to handle some
+logic and/or actions.  You can specify a module for both the L<"--source"> and
 the L<"--dest">, with the 'm' part of the specification.  For example:
 
    --source D=test,t=test1,m=My::Module1 --dest m=My::Module2,t=test2
@@ -2656,8 +2728,9 @@ the full row containing all the extra columns, if any, added to the end.
 =item is_archivable(row => \@row)
 
 This method is called for each row to determine whether it is archivable.  This
-only applies to L<"--source">.  The argument is the row itself, as an arrayref.  If
-the method returns true, the row will be archived; otherwise it will be skipped.
+applies only to L<"--source">.  The argument is the row itself, as an arrayref.
+If the method returns true, the row will be archived; otherwise it will be
+skipped.
 
 Skipping a row adds complications for non-unique indexes.  Normally
 mk-archiver uses a WHERE clause designed to target the last processed row as
@@ -2670,17 +2743,22 @@ row, it will start "strictly greater than."  This will work fine on unique
 indexes such as primary keys, but it may skip rows (leave holes) on non-unique
 indexes or when ascending only the first column of an index.
 
+C<mk-archiver> will change the clause in the same way if you specify
+L<"--nodelete">, because again an infinite loop is possible.
+
 =item before_delete(row => \@row)
 
-This method is called for each row just before it is deleted.  This only applies
+This method is called for each row just before it is deleted.  This applies only
 to L<"--source">.  This is a good place for you to handle dependencies, such as
 deleting things that are foreign-keyed to the row you are about to delete.  You
 could also use this to recursively archive all dependent tables.
 
+This plugin method is called even if L<"--nodelete"> is given.
+
 =item before_insert(row => \@row)
 
-This method is called for each row just before it is inserted.  This only
-applies to L<"--dest">.  You could use this to insert the row into multiple tables,
+This method is called for each row just before it is inserted.  This applies
+only to L<"--dest">.  You could use this to insert the row into multiple tables,
 perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a data
 warehouse.
 
@@ -2694,21 +2772,22 @@ C<INSERT> statement.
 
 If no value is returned, the default C<INSERT> statement handle is used.
 
-This method only applies to the plugin specified for L<"--dest">, so if your
+This method applies only to the plugin specified for L<"--dest">, so if your
 plugin isn't doing what you expect, check that you've specified it for the
 destination and not the source.
 
 =item after_finish()
 
 This method is called after mk-archiver exits the archiving loop, commits all
-database handles, closes L<"--file">, and prints the final statistics, but before
-mk-archiver runs ANALYZE or OPTIMIZE (see L<"--analyze> and L<"--optimize>).
+database handles, closes L<"--file">, and prints the final statistics, but
+before mk-archiver runs ANALYZE or OPTIMIZE (see L<"--analyze> and
+L<"--optimize>).
 
 =back
 
-If you specify a plugin for both L<"--source"> and L<"--dest">, mk-archiver constructs,
-calls before_begin(), and calls after_finish() on the two plugins in the order
-L<"--source">, L<"--dest">.
+If you specify a plugin for both L<"--source"> and L<"--dest">, mk-archiver
+constructs, calls before_begin(), and calls after_finish() on the two plugins in
+the order L<"--source">, L<"--dest">.
 
 mk-archiver assumes it controls transactions, and that the plugin will NOT
 commit or roll back the database handle.  The database handle passed to the
@@ -2745,8 +2824,8 @@ A sample module might look like this:
 
 =head1 ENVIRONMENT
 
-The environment variable C<MKDEBUG> enables verbose debugging output in all of the
-Maatkit tools:
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
 
    MKDEBUG=1 mk-....
 
