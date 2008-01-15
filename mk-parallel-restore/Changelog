@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * The -D option was used as a default DB for the connection (bug #1870415).
+
 2008-01-05: version 1.0.3
 
    * Made suffixes for time options optional (bug #1858696).
