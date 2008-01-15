@@ -1223,7 +1223,9 @@ sub filetype {
 }
 
 sub get_cxn {
-   my $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts));
+   my %params = %opts;
+   delete $params{D}; # Because it has a special meaning; see documentation.
+   my $dbh = $dp->get_dbh($dp->get_cxn_params(\%params));
    if ( $opts{charset} ) {
       $dbh->do("SET NAMES $opts{charset}");
       $dbh->do("/*!40101 SET character_set_database=$opts{charset} */");
