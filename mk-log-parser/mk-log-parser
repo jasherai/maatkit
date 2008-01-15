@@ -746,17 +746,16 @@ sub fingerprint {
    $query = lc $query;
    $query =~ s/^\s*(?:--|#).*//gm;              # One-line comments
    $query =~ s{
-              (?<![\w.+-])
               [+-]?
               (?:
-                \d+
-                (?:[.]\d*)?
+                \d+[.]\d+
                 |[.]\d+
               )
-              (?:e[+-]?\d+)?
               \b
              }
              {N}gx;                             # Float/real into N
+   $query =~ s/\b[+-]?\d+\b/N/g;                # Integer into N
+   $query =~ s/\b[+-]?\d+e(?:N|\d+)\b/N/g;      # Partial number into N
    $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
    $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
    $query =~ s/$quote_re/S/gx;                  # Turn quoted strings into S
@@ -898,7 +897,7 @@ my @opt_spec = (
    { s => 'progress|P=i',  d => 'Print progress every N events (default 0)' },
    { s => 'rank|r',        d => 'Print rank in sorted order'},
    { s => 'sample',        d => 'Print a sample query, not a fingerprint'},
-   { s => 'microslow',     d => 'Implies -acfrs --sum Query_time' },
+   { s => 'microslow',     d => 'Common options for slow-log processing' },
    { s => 'sort=s',        d => 'Sort by this attribute' },
    { s => 'statistics|s',  d => 'Show overall statistics' },
    { s => 'sum=a',         d => 'Report sums for this list of attributes. '
@@ -926,7 +925,9 @@ my %opts = $opt_parser->parse();
 
 if ( $opts{microslow} ) {
    map { $opts{$_} = 1 } qw(a c f r s);
-   $opts{sum} = [ qw(Query_time) ];
+   $opts{sum} = [ qw(Query_time Rows_examined) ];
+   $opts{avg} = [ qw(Query_time Rows_examined) ];
+   $opts{sort} = 'Query_time';
 }
 
 if ( $opts{avg} || $opts{sum} ) {
@@ -1096,12 +1097,11 @@ foreach my $i ( 0 .. $#queries ) {
    }
    if ( $opts{sum} ) {
       print " ", join(" ",
-         map { "Sum_$_: " . sprintf($fmt, $query->{$_}) }
-            @{$opts{sum}});
+         map { "Sum_$_: " . fmt_stat($query->{$_}) } @{$opts{sum}});
    }
    if ( $opts{avg} ) {
       print " ", join(" ",
-         map { "Avg_$_: " . sprintf($fmt, $query->{$_}/$query->{count}) }
+         map { "Avg_$_: " . fmt_stat($query->{$_}/$query->{count}) }
             @{$opts{avg}});
    }
    print "\n";
@@ -1116,6 +1116,11 @@ foreach my $i ( 0 .. $#queries ) {
 # ############################################################################
 # Subroutines.
 # ############################################################################
+
+sub fmt_stat {
+   my ( $stat ) = @_;
+   return $stat =~ m/\D/ ? sprintf($fmt, $stat) : $stat;
+}
 
 sub _d {
    my ( $line ) = (caller(0))[2];
