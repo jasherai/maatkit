@@ -1,5 +1,5 @@
 perl ../mk-log-parser ../../common/t/samples/slow001.txt -acf --sum Query_time
-# Count: 1 Sum_Query_time: 2.00000
+# Count: 1 Sum_Query_time: 2
 select sleep(N) from n;
-# Count: 1 Sum_Query_time: 2.00000
+# Count: 1 Sum_Query_time: 2
 select sleep(N) from test.n;
