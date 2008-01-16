@@ -1,5 +1,6 @@
 Changelog for mk-archiver:
 
+   * Added --bulkdel option.
    * Added --nodelete option.
    * Changed negatable --ascend option to --noascend.
 
