@@ -1407,6 +1407,8 @@ my $src;
 my $dst;
 my $can_retry = 1;
 my $get_sth;
+my ( $OUT_OF_RETRIES, $ROLLED_BACK, $ALL_IS_WELL ) = ( 0, -1, 1 );
+
 # Holds the arguments for the $sth's bind variables, so it can be re-tried
 # easily.
 my @beginning_of_txn;
@@ -1436,6 +1438,8 @@ my @opt_spec = (
       d => 'Prompt for password for connections' },
    {  s => 'buffer|b',
       d => 'Buffer output to --file and flush at commit' },
+   {  s => 'bulkdel',
+      d => 'Delete each chunk with a single statement (implies commit-each)' },
    {  s => 'chkcols|C!',
       d => 'Ensure --source and --dest have same columns (default)' },
    {  s => 'columns|c=a',
@@ -1558,19 +1562,30 @@ if ( $opts{f} ) {
    $opts{f} =~ s/%([dHimsYDt])/$fmt{$1}/g;
 }
 
-if ( !$opts{help} && $opts{d} ) {
-   # Ensure --source and --dest don't point to the same place
-   my $same = 1;
-   foreach my $arg ( qw(h P D t S) ) {
-      if ( defined $src->{$arg} && defined $dst->{$arg} &&
-         $src->{$arg} ne $dst->{$arg} ) {
-         $same = 0;
-         last;
+if ( !$opts{help} ) {
+   if ( $opts{d} ) {
+      # Ensure --source and --dest don't point to the same place
+      my $same = 1;
+      foreach my $arg ( qw(h P D t S) ) {
+         if ( defined $src->{$arg} && defined $dst->{$arg} &&
+            $src->{$arg} ne $dst->{$arg} ) {
+            $same = 0;
+            last;
+         }
+      }
+      if ( $same ) {
+         $opt_parser->error("--source and --dest refer to the same table");
       }
    }
-   if ( $same ) {
-      $opt_parser->error("--source and --dest refer to the same table");
+   if ( $opts{bulkdel} ) {
+      if ( $opts{l} < 2 ) {
+         $opt_parser->error("--bulkdel is meaningless with --limit 1");
+      }
    }
+}
+
+if ( $opts{bulkdel} ) {
+   $opts{'commit-each'} = 1;
 }
 
 $opt_parser->usage_or_errors(%opts);
@@ -1683,7 +1698,7 @@ my $dbh = $src->{dbh};
 my $nibbler = new TableNibbler;
 my ($first_sql, $next_sql, $del_sql, $ins_sql);
 my ($sel_stmt, $ins_stmt, $del_stmt);
-my (@asc_slice, @sel_slice, @del_slice, @ins_slice);
+my (@asc_slice, @sel_slice, @del_slice, @bulkdel_slice, @ins_slice);
 my @sel_cols = $opts{c} ? @{$opts{c}}                                # Explicit
              : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
              :            @{$src->{info}->{cols}};                   # All
@@ -1760,16 +1775,41 @@ foreach my $thing ( $first_sql, $next_sql ) {
    }
 }
 
-# The LIMIT is *always* 1 here, because even though a SELECT can return many
-# rows, an INSERT only does one at a time.  It would not be safe to iterate
-# over a SELECT that was LIMIT-ed to 500 rows, read and INSERT one, and then
-# delete with a LIMIT of 500.  Only one row would be written to the file; only
-# one would be INSERT-ed at the destination.  Every DELETE must be LIMIT 1.
-$del_sql = 'DELETE'
-   . ($opts{lpdel}    ? ' LOW_PRIORITY' : '')
-   . ($opts{quickdel} ? ' QUICK'        : '')
-   . " FROM $src->{db_tbl} WHERE $del_stmt->{where}"
-   . " LIMIT 1";
+if ( !$opts{bulkdel} ) {
+   # The LIMIT is *always* 1 here, because even though a SELECT can return many
+   # rows, an INSERT only does one at a time.  It would not be safe to iterate
+   # over a SELECT that was LIMIT-ed to 500 rows, read and INSERT one, and then
+   # delete with a LIMIT of 500.  Only one row would be written to the file;
+   # only one would be INSERT-ed at the destination.  Every DELETE must be LIMIT
+   # 1.
+   $del_sql = 'DELETE'
+      . ($opts{lpdel}    ? ' LOW_PRIORITY' : '')
+      . ($opts{quickdel} ? ' QUICK'        : '')
+      . " FROM $src->{db_tbl} WHERE $del_stmt->{where}"
+      . " LIMIT 1";
+}
+else {
+   # Unless, of course, it's a bulk DELETE, in which case the 500 rows have
+   # already been INSERT-ed.
+   my $asc_stmt = $nibbler->generate_asc_stmt(
+      parser   => $tp,
+      tbl      => $src->{info},
+      cols     => $del_stmt->{cols},
+      index    => $del_stmt->{index},
+      ascfirst => 0,
+      quoter   => $q,
+   );
+   $del_sql = 'DELETE'
+      . ($opts{lpdel}    ? ' LOW_PRIORITY' : '')
+      . ($opts{quickdel} ? ' QUICK'        : '')
+      . " FROM $src->{db_tbl} WHERE ("
+      . $asc_stmt->{boundaries}->{'>='}
+      . ') AND (' . $asc_stmt->{boundaries}->{'<='}
+      # Unlike the row-at-a-time DELETE, this one must include the user's
+      # specified WHERE clause and an appropriate LIMIT clause.
+      . ") AND $opts{W} LIMIT $opts{l}";
+   @bulkdel_slice = @{$asc_stmt->{slice}};
+}
 
 if ( $dst ) {
    $ins_stmt = $nibbler->generate_ins_stmt(
@@ -1838,6 +1878,7 @@ printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt) if $opts{P};
 $get_sth = $get_first; # Later it may be assigned $get_next
 trace('select', sub {
    $get_sth->execute;
+   $statistics{SELECT} += $get_sth->rows;
 });
 my $row = $get_sth->fetchrow_arrayref();
 if ( !$row ) {
@@ -1858,6 +1899,9 @@ if ( $opts{f} ) {
          or die "Cannot write to $opts{f}: $OS_ERROR\n";
    }
 }
+
+# This row is the first row fetched from each 'chunk'.
+my $first_row = [ @$row ];
 
 ROW:
 while (                          # Quit if:
@@ -1900,35 +1944,39 @@ while (                          # Quit if:
          }
          $ins_sth ||= $ins_row; # Default to the sth decided before.
          my $success = do_with_retries( 'inserting', sub {
-            $ins_sth->execute(@{$row}[@ins_slice])
+            $ins_sth->execute(@{$row}[@ins_slice]);
+            $statistics{INSERT} += $ins_sth->rows;
          });
-         if ( $success == 0 ) {
+         if ( $success == $OUT_OF_RETRIES ) {
             $retries = -1;
             last ROW;
          }
-         elsif ( $success == -1 ) {
+         elsif ( $success == $ROLLED_BACK ) {
             --$retries;
             next ROW;
          }
       }
 
-      # DELETE comes after INSERT for safety.
-      if ( $src->{plugin} ) {
-         trace('before_delete', sub {
-            $src->{plugin}->before_delete(row => $row);
-         });
-      }
-      if ( !$opts{nodelete} ) {
-         my $success = do_with_retries( 'deleting', sub {
-            $del_row->execute(@{$row}[@del_slice])
-         });
-         if ( $success == 0 ) {
-            $retries = -1;
-            last ROW;
+      if ( !$opts{bulkdel} ) {
+         # DELETE comes after INSERT for safety.
+         if ( $src->{plugin} ) {
+            trace('before_delete', sub {
+               $src->{plugin}->before_delete(row => $row);
+            });
          }
-         elsif ( $success == -1 ) {
-            --$retries;
-            next ROW;
+         if ( !$opts{nodelete} ) {
+            my $success = do_with_retries( 'deleting', sub {
+               $del_row->execute(@{$row}[@del_slice]);
+               $statistics{DELETE} += $del_row->rows;
+            });
+            if ( $success == $OUT_OF_RETRIES ) {
+               $retries = -1;
+               last ROW;
+            }
+            elsif ( $success == $ROLLED_BACK ) {
+               --$retries;
+               next ROW;
+            }
          }
       }
 
@@ -1952,6 +2000,31 @@ while (                          # Quit if:
       $row = $get_sth->fetchrow_arrayref();
    }
    if ( !$row ) {
+
+      if ( $opts{bulkdel} ) {
+         if ( $src->{plugin} ) {
+            trace('before_bulk_delete', sub {
+               $src->{plugin}->before_bulk_delete(
+                  first_row => $first_row,
+                  last_row  => $lastrow,
+               );
+            });
+         }
+         if ( !$opts{nodelete} ) {
+            my $success = do_with_retries( 'bulk_deleting', sub {
+               $del_row->execute(
+                  @{$first_row}[@bulkdel_slice],
+                  @{$lastrow}[@bulkdel_slice],
+               );
+               $statistics{DELETE} += $del_row->rows;
+            });
+            if ( $success != $ALL_IS_WELL ) {
+               $retries = -1;
+               last ROW; # unlike other places, don't do 'next'
+            }
+         }
+      }
+
       commit(1) if $opts{'commit-each'};
       if( $opts{e} ) {
          trace('sleep', sub {
@@ -1962,10 +2035,12 @@ while (                          # Quit if:
 
       trace('select', sub {
          $get_next->execute(@{$lastrow}[@asc_slice]);
+         $statistics{SELECT} += $get_next->rows;
       });
 
       @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
       $row              = $get_sth->fetchrow_arrayref();
+      $first_row        = $row ? [ @$row ] : undef;
    }
 }
 
@@ -2011,7 +2086,11 @@ if ( $opts{statistics} ) {
    my $total2     = 0;
    my %summary;
    my $maxlen = 0;
-   foreach my $thing ( keys %statistics ) {
+
+   print(join("\n", map { "$_ " . ($statistics{$_} || 0) }
+         qw(SELECT INSERT DELETE)), "\n");
+
+   foreach my $thing ( grep { m/_(count|time)/ } keys %statistics ) {
       my ( $action, $type ) = $thing =~ m/^(.*?)_(count|time)$/;
       $summary{$action}->{$type}  = $statistics{$thing};
       $summary{$action}->{action} = $action;
@@ -2078,19 +2157,17 @@ sub commit {
 
 # Repeatedly retries the code until retries runs out, a really bad error
 # happens, or it succeeds.  This sub uses lots of global variables; I only wrote
-# it to factor out some repeated code.  If it returns 0, it exhausted retries
-# and rolled back; if it returns -1, it didn't retry, but rolled back; if it
-# returns 1, all is well.
+# it to factor out some repeated code.
 sub do_with_retries {
    my ( $doing, $code ) = @_;
    my $retries = $opts{R};
-   my $success = 0;
+   my $success = $OUT_OF_RETRIES;
 
    RETRY:
    while ( !$success && $retries >= 0 ) {
       eval {
          trace($doing, $code);
-         $success = 1;
+         $success = $ALL_IS_WELL;
       };
       if ( $EVAL_ERROR ) {
          if ( $EVAL_ERROR =~ m/Lock wait timeout exceeded|Deadlock found/ ) {
@@ -2118,16 +2195,16 @@ sub do_with_retries {
       }
    }
 
-   if ( $success != 1 ) {
+   if ( $success != $ALL_IS_WELL ) {
       # Must throw away everything and start the transaction over.
       if ( $retries >= 0 ) {
          warn "Deadlock or non-retryable lock wait while $doing; "
             . "rolling back $txn_cnt rows.\n";
-         $success = -1;
+         $success = $ROLLED_BACK;
       }
       else {
          warn "Exhausted retries while $doing; rolling back $txn_cnt rows.\n";
-         $success = 0;
+         $success = $OUT_OF_RETRIES;
       }
       $get_sth->finish;
       trace('rollback', sub {
@@ -2281,6 +2358,22 @@ The danger is that a crash might cause lost data.
 
 The performance increase I have seen from using L<"--buffer"> is around 5 to 15
 percent.  Your mileage may vary.
+
+=item --bulkdel
+
+Delete each chunk of rows in bulk with a single C<DELETE> statement.  The
+statement deletes every row between the first and last row of the chunk,
+inclusive.  It implies L<"--commit-each">, since it would be a bad idea to
+C<INSERT> rows one at a time and commit them before the bulk C<DELETE>.
+
+The normal method is to delete every row by its primary key.  Bulk deletes might
+be a lot faster.
+
+This option completely defers all C<DELETE> processing until the chunk of rows
+is finished.  If you have a plugin on the source, its C<before_delete> method
+will not be called.  Instead, its C<before_bulk_delete> method is called later.
+
+I highly recommend using L<"--forupdate" if you use this option.
 
 =item --chkcols
 
@@ -2612,6 +2705,9 @@ method of choice.
 Causes mk-archiver to collect and print timing statistics about what it does.
 The statistics look like this:
 
+ SELECT 4
+ INSERT 4
+ DELETE 4
  Action         Count       Time        Pct
  commit            10     0.1079      88.27
  select             5     0.0047       3.87
@@ -2619,11 +2715,13 @@ The statistics look like this:
  inserting          4     0.0028       2.28
  other              0     0.0040       3.29
 
-The columns are the action, the total number of times that action was timed, the
-total time it took, and the percent of the program's total runtime.  The rows
-are sorted in order of descending total time.  The last row is the rest of the
-time not explicitly attributed to anything.  Actions will vary depending on
-command-line options.
+The first three lines show how many rows were fetched, inserted, and deleted.
+
+The remaining lines show counts and timing.  The columns are the action, the
+total number of times that action was timed, the total time it took, and the
+percent of the program's total runtime.  The rows are sorted in order of
+descending total time.  The last row is the rest of the time not explicitly
+attributed to anything.  Actions will vary depending on command-line options.
 
 This option requires the standard Time::HiRes module, which is part of core Perl
 on reasonably new Perl releases.
@@ -2753,7 +2851,14 @@ to L<"--source">.  This is a good place for you to handle dependencies, such as
 deleting things that are foreign-keyed to the row you are about to delete.  You
 could also use this to recursively archive all dependent tables.
 
-This plugin method is called even if L<"--nodelete"> is given.
+This plugin method is called even if L<"--nodelete"> is given, but not if
+L<"--bulkdel"> is given.
+
+=item before_bulk_delete(first_row => \@row, last_row => \@row)
+
+This method is called just before a bulk delete is executed.  It is similar to
+the C<before_delete> method, except its arguments are the first and last row of
+the range to be deleted.  It is called even if L<"--nodelete"> is given.
 
 =item before_insert(row => \@row)
 
@@ -2840,6 +2945,10 @@ If you specify L<"--print">, the output is a header row, plus status output at
 intervals.  Each row in the status output lists the current date and time, how
 many seconds mk-archiver has been running, and how many rows it has
 archived.
+
+If you specify L<"--statistics">, C<mk-archiver> outputs timing and other
+information to help you identify which part of your archiving process takes the
+most time.
 
 =head1 BUGS
 

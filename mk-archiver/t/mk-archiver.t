@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 85;
+use Test::More tests => 95;
 
 my $opt_file = shift || "~/.my.cnf";
 diag("Testing with $opt_file");
@@ -348,6 +348,27 @@ unlike($output, qr/>=/, '--nodelete implies strict ascending');
 $output = `perl ../mk-archiver --nodelete --purge -W 1=1 --source D=test,t=table_1,F=$opt_file 2>&1`;
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 4, 'All 4 rows are still there');
+
+# Test --bulkdel deletes in chunks
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mk-archiver --noascend --limit 50 --bulkdel --purge -W 1=1 --source D=test,t=table_5,F=$opt_file --statistics 2>&1`;
+like($output, qr/SELECT 105/, 'Fetched 105 rows');
+like($output, qr/DELETE 105/, 'Deleted 105 rows');
+like($output, qr/bulk_deleting *3 /, 'Issued only 3 DELETE statements');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5"`;
+is($output + 0, 0, 'Bulk delete removed all rows');
+
+# Test --bulkdel works ok with a destination table
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mk-archiver --noascend --limit 50 --bulkdel -W 1=1 --source D=test,t=table_5,F=$opt_file --statistics --dest t=table_5_dest 2>&1`;
+like($output, qr/SELECT 105/, 'Fetched 105 rows');
+like($output, qr/DELETE 105/, 'Deleted 105 rows');
+like($output, qr/INSERT 105/, 'Inserted 105 rows');
+like($output, qr/bulk_deleting *3 /, 'Issued only 3 DELETE statements');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5"`;
+is($output + 0, 0, 'Bulk delete removed all rows');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5_dest"`;
+is($output + 0, 105, 'Bulk delete works OK with normal insert');
 
 # Clean up.
 `mysql --defaults-file=$opt_file < after.sql`;

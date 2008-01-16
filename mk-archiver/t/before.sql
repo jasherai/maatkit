@@ -54,6 +54,9 @@ CREATE TABLE `table_5` (
   PRIMARY KEY  (a,b,c,d)
 ) type=InnoDB;
 
+DROP TABLE IF EXISTS `table_5_dest`;
+CREATE TABLE `table_5_dest` like table_5;
+
 INSERT INTO `table_5` VALUES (current_date - interval 2 day,581,'m','ga',1,16,0,'0.00402','2007-03-10 18:00:33')
 ,(current_date - interval 2 day,584,'c','dr',1,1,0,'0.00025','2007-03-10 18:00:33')
 ,(current_date - interval 2 day,584,'m','ga',1,9,0,'0.00226','2007-03-10 18:00:33')
