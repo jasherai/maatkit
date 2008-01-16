@@ -2373,8 +2373,6 @@ This option completely defers all C<DELETE> processing until the chunk of rows
 is finished.  If you have a plugin on the source, its C<before_delete> method
 will not be called.  Instead, its C<before_bulk_delete> method is called later.
 
-I highly recommend using L<"--forupdate" if you use this option.
-
 =item --chkcols
 
 Enabled by default; causes mk-archiver to check that the source and destination
