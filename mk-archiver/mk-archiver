@@ -1807,7 +1807,7 @@ else {
       . ') AND (' . $asc_stmt->{boundaries}->{'<='}
       # Unlike the row-at-a-time DELETE, this one must include the user's
       # specified WHERE clause and an appropriate LIMIT clause.
-      . ") AND $opts{W} LIMIT $opts{l}";
+      . ") AND ($opts{W}) LIMIT $opts{l}";
    @bulkdel_slice = @{$asc_stmt->{slice}};
 }
 
