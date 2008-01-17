@@ -12,3 +12,4 @@ drop table if exists table_10;
 drop table if exists table_11;
 drop table if exists table_12;
 drop table if exists table_13, table_odd, table_even;
+drop table if exists stat_test, table_5_copy, table_5_dest;
