@@ -6,7 +6,7 @@ sub new {
 }
 
 sub statistics {
-   my ( $self, $stats, $time ) = @_;
+   my ( $self, $stats, $start ) = @_;
    $self->{src}->{dbh}->do(
       "insert into test.stat_test(a) values($stats->{DELETE})");
 }
