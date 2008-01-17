@@ -2184,13 +2184,15 @@ if ( $oktorun && ($opts{A} || $opts{O}) ) {
    }
 }
 
+# ############################################################################
 # Print statistics
+# ############################################################################
+if ( $plugin ) {
+   $plugin->statistics(\%statistics, $stat_start);
+}
+
 if ( $opts{statistics} ) {
    my $stat_total = Time::HiRes::gettimeofday() - $stat_start;
-
-   if ( $plugin ) {
-      $plugin->statistics(\%statistics, $stat_total);
-   }
 
    my $total2 = 0;
    my $maxlen = 0;
@@ -2690,7 +2692,7 @@ and destination DSNs, and their database connections, just like the
 connection-specific plugins do.  It also gets a hashref of command-line options.
 
 The C<statistics(\%stats, $time)> method gets a hashref of the statistics
-collected by the archiving job, and the time the whole job took.
+collected by the archiving job, and the time the whole job started.
 
 =item --progress
 
