@@ -2179,7 +2179,7 @@ use Time::HiRes qw(gettimeofday sleep);
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 

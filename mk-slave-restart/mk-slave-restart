@@ -889,7 +889,7 @@ $OUTPUT_AUTOFLUSH = 1;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.

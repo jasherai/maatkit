@@ -1120,7 +1120,7 @@ $Data::Dumper::Indent    = 0;
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", q$Revision$ =~ m/(\d+)/g || 0);
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for password for connections' },
