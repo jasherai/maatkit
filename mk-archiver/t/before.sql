@@ -5,6 +5,9 @@ drop table if exists table_2;
 drop table if exists table_3;
 drop table if exists table_4;
 
+drop table if exists stat_test;
+create table stat_test(a int);
+
 create table table_1(
    a int not null primary key,
    b int,

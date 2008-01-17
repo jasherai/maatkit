@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 105;
+use Test::More tests => 106;
 
 my $opt_file = shift || "~/.my.cnf";
 diag("Testing with $opt_file");
@@ -351,12 +351,16 @@ is($output + 0, 4, 'All 4 rows are still there');
 
 # Test --bulkdel deletes in chunks
 `mysql --defaults-file=$opt_file < before.sql`;
-$output = `perl ../mk-archiver --noascend --limit 50 --bulkdel --purge -W 1=1 --source D=test,t=table_5,F=$opt_file --statistics 2>&1`;
+$output = `perl ../mk-archiver --plugin Plugin7 --noascend --limit 50 --bulkdel --purge -W 1=1 --source D=test,t=table_5,F=$opt_file --statistics 2>&1`;
 like($output, qr/SELECT 105/, 'Fetched 105 rows');
 like($output, qr/DELETE 105/, 'Deleted 105 rows');
 like($output, qr/bulk_deleting *3 /, 'Issued only 3 DELETE statements');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5"`;
 is($output + 0, 0, 'Bulk delete removed all rows');
+
+# Test that the generic plugin worked OK
+$output = `mysql --defaults-file=$opt_file -N -e "select a from test.stat_test"`;
+is($output + 0, 105, 'Generic plugin worked');
 
 # Test --bulkdel jails the WHERE safely in parens.
 $output = `perl ../mk-archiver --test --noascend --limit 50 --bulkdel --purge -W 1=1 --source D=test,t=table_5,F=$opt_file --statistics 2>&1`;

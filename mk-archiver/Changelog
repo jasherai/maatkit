@@ -1,5 +1,6 @@
 Changelog for mk-archiver:
 
+   * Added --plugin option.  The plugin interface is not backwards compatible.
    * Added --bulkins option.
    * Added --bulkdel option.
    * Added --nodelete option.
