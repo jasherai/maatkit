@@ -1479,6 +1479,8 @@ my @opt_spec = (
       d => 'Run OPTIMIZE TABLE afterwards on --source and/or --dest' },
    {  s => 'pkonly|k',
       d => 'Primary key columns only' },
+   {  s => 'plugin=s',
+      d => 'Perl module name to use as a generic plugin' },
    {  s => 'progress|P=i',d => 'Print progress information every X rows' },
    {  s => 'purge|p',
       d => 'Purge, not archive; allows to omit --file and --dest' },
@@ -1519,6 +1521,7 @@ my @opt_spec = (
    '--lpins and --delayedins are mutually exclusive.',
    '--sharelock and --forupdate are mutually exclusive.',
    '--analyze and --optimize are mutually exclusive.',
+   # opts{p} -- satisfy the auto-checking, because line below uses --purge
    'Specify at least one of --dest, --file, or --purge.',
    'DSN values in --dest default to values from --source if COPY is yes.',
    '--noascend and --nodelete are mutually exclusive.',
@@ -1696,6 +1699,20 @@ if ( $dst && $opts{C} ) {
          . join(', ', @not_in_dst)
          . "\n";
    }
+}
+
+# ############################################################################
+# Set up general plugin.
+# ############################################################################
+my $plugin;
+if ( $opts{plugin} ) {
+   eval "require $opts{plugin}";
+   die $EVAL_ERROR if $EVAL_ERROR;
+   $plugin = $opts{plugin}->new(
+      src  => $src,
+      dst  => $dst,
+      opts => \%opts,
+   );
 }
 
 # ############################################################################
@@ -2170,9 +2187,14 @@ if ( $oktorun && ($opts{A} || $opts{O}) ) {
 # Print statistics
 if ( $opts{statistics} ) {
    my $stat_total = Time::HiRes::gettimeofday() - $stat_start;
-   my $total2     = 0;
-   my %summary;
+
+   if ( $plugin ) {
+      $plugin->statistics(\%statistics, $stat_total);
+   }
+
+   my $total2 = 0;
    my $maxlen = 0;
+   my %summary;
 
    print(join("\n", map { "$_ " . ($statistics{$_} || 0) }
          qw(SELECT INSERT DELETE)), "\n");
@@ -2657,6 +2679,19 @@ an efficiency if you just want to purge rows; it avoids fetching the entire row,
 when only the primary key columns are needed for C<DELETE> statements.  See also
 L<"--purge">.
 
+=item --plugin
+
+Specify the Perl module name of a general-purpose plugin.  It is currently used
+only for statistics (see L<"--statistics">) and must have C<new()> and a
+C<statistics()> method.
+
+The C<new( src => $src, dst => $dst, opts => \%opts )> method gets the source
+and destination DSNs, and their database connections, just like the
+connection-specific plugins do.  It also gets a hashref of command-line options.
+
+The C<statistics(\%stats, $time)> method gets a hashref of the statistics
+collected by the archiving job, and the time the whole job took.
+
 =item --progress
 
 Prints current time, elapsed time, and rows archived every X rows.
@@ -2897,7 +2932,11 @@ the L<"--dest">, with the 'm' part of the specification.  For example:
 
 This will cause mk-archiver to load the My::Module1 and My::Module2 packages,
 create instances of them, and then make calls to them during the archiving
-process.  The module must provide this interface:
+process.
+
+You can also specify a plugin with L<"--plugin">.
+
+The module must provide this interface:
 
 =over
 
