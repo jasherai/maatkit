@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 97;
+use Test::More tests => 105;
 
 my $opt_file = shift || "~/.my.cnf";
 diag("Testing with $opt_file");
@@ -374,6 +374,22 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 0, 'Bulk delete removed all rows');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5_dest"`;
 is($output + 0, 105, 'Bulk delete works OK with normal insert');
+
+# Test --bulkins
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mk-archiver --noascend --limit 50 --bulkins --bulkdel -W 1=1 --source D=test,t=table_5,F=$opt_file --statistics --dest t=table_5_dest 2>&1`;
+like($output, qr/SELECT 105/, 'Fetched 105 rows');
+like($output, qr/DELETE 105/, 'Deleted 105 rows');
+like($output, qr/INSERT 105/, 'Inserted 105 rows');
+like($output, qr/bulk_deleting *3 /, 'Issued only 3 DELETE statements');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5"`;
+is($output + 0, 0, 'Bulk delete removed all rows');
+$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_5_dest"`;
+is($output + 0, 105, 'Bulk insert works');
+# Check that the destination table has the same data as the source
+$output = `mysql --defaults-file=$opt_file -N -e "checksum table test.table_5_dest, test.table_5_copy"`;
+like($output, qr/dest\s+2152864929/, 'dest checksum');
+like($output, qr/copy\s+2152864929/, 'copy checksum');
 
 # Clean up.
 `mysql --defaults-file=$opt_file < after.sql`;

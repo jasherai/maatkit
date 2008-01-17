@@ -1439,7 +1439,10 @@ my @opt_spec = (
    {  s => 'buffer|b',
       d => 'Buffer output to --file and flush at commit' },
    {  s => 'bulkdel',
-      d => 'Delete each chunk with a single statement (implies commit-each)' },
+      d => 'Delete each chunk with a single statement (implies --commit-each)' },
+   {  s => 'bulkins',
+      d => 'Insert each chunk with LOAD DATA INFILE (implies '
+         . '--bulkdel --commit-each)' },
    {  s => 'chkcols|C!',
       d => 'Ensure --source and --dest have same columns (default)' },
    {  s => 'columns|c=a',
@@ -1577,14 +1580,18 @@ if ( !$opts{help} ) {
          $opt_parser->error("--source and --dest refer to the same table");
       }
    }
-   if ( $opts{bulkdel} ) {
-      if ( $opts{l} < 2 ) {
-         $opt_parser->error("--bulkdel is meaningless with --limit 1");
-      }
+   if ( $opts{bulkins} ) {
+      $opt_parser->error("--bulkins is meaningless without a destination")
+         unless $dst;
+      $opts{bulkdel} = 1; # VERY IMPORTANT for safety.
    }
+   if ( $opts{bulkdel} && $opts{l} < 2 ) {
+      $opt_parser->error("--bulkdel is meaningless with --limit 1");
+   }
+
 }
 
-if ( $opts{bulkdel} ) {
+if ( $opts{bulkdel} || $opts{bulkins} ) {
    $opts{'commit-each'} = 1;
 }
 
@@ -1817,13 +1824,26 @@ if ( $dst ) {
       cols => \@sel_cols,
    );
    @ins_slice = @{$ins_stmt->{slice}};
-   $ins_sql = ($opts{r}          ? 'REPLACE'       : 'INSERT')
-            . ($opts{lpins}      ? ' LOW_PRIORITY' : '')
-            . ($opts{delayedins} ? ' DELAYED'      : '')
-            . ($opts{i}          ? ' IGNORE'       : '')
-            . " INTO $dst->{db_tbl}("
-            . join(",", map { $q->quote($_) } @{$ins_stmt->{cols}} )
-            . ") VALUES (" . join(",", map { "?" } @{$ins_stmt->{cols}} ) . ")";
+   if ( $opts{bulkins} ) {
+      $ins_sql = 'LOAD DATA'
+               . ($opts{lpins}      ? ' LOW_PRIORITY' : '')
+               . ' LOCAL INFILE ?'
+               . ($opts{r}          ? ' REPLACE'      : '')
+               . ($opts{i}          ? ' IGNORE'       : '')
+               . " INTO TABLE $dst->{db_tbl}("
+               . join(",", map { $q->quote($_) } @{$ins_stmt->{cols}} )
+               . ")";
+   }
+   else {
+      $ins_sql = ($opts{r}          ? 'REPLACE'       : 'INSERT')
+               . ($opts{lpins}      ? ' LOW_PRIORITY' : '')
+               . ($opts{delayedins} ? ' DELAYED'      : '')
+               . ($opts{i}          ? ' IGNORE'       : '')
+               . " INTO $dst->{db_tbl}("
+               . join(",", map { $q->quote($_) } @{$ins_stmt->{cols}} )
+               . ") VALUES ("
+               . join(",", map { "?" } @{$ins_stmt->{cols}} ) . ")";
+   }
 }
 else {
    $ins_sql = '';
@@ -1900,8 +1920,17 @@ if ( $opts{f} ) {
    }
 }
 
+# Open the bulk insert file, which doesn't get any header info.
+my $bulkins_file;
+if ( $opts{bulkins} ) {
+   require File::Temp;
+   $bulkins_file = File::Temp->new( SUFFIX => 'mk-archiver' )
+      or die "Cannot open temp file: $OS_ERROR\n";
+}
+
 # This row is the first row fetched from each 'chunk'.
 my $first_row = [ @$row ];
+my $csv_row;
 
 ROW:
 while (                          # Quit if:
@@ -1923,15 +1952,22 @@ while (                          # Quit if:
       # Do the archiving.  Write to the file first, since like the file, MyISAM
       # and other tables cannot be rolled back etc.  If there is a problem,
       # hopefully the data has at least made it to the file.
+      my $escaped_row;
+      if ( $file || $bulkins_file ) {
+         $escaped_row = escape([@{$row}[@sel_slice]]);
+      }
       if ( $file ) {
          trace('print_file', sub {
-            print $file '', escape([@{$row}[@sel_slice]]), "\n"
+            print $file $escaped_row, "\n"
                or die "Cannot write to $opts{f}: $OS_ERROR\n";
          });
       }
 
+      # #######################################################################
+      # This code is for the row-at-a-time archiving functionality.
+      # #######################################################################
       # INSERT must come first, to be as safe as possible.
-      if ( $dst ) {
+      if ( $dst && !$bulkins_file ) {
          my $ins_sth; # Let the plugin change which sth is used for the INSERT.
          if ( $dst->{plugin} ) {
             trace('before_insert', sub {
@@ -1980,6 +2016,16 @@ while (                          # Quit if:
          }
       }
 
+      # #######################################################################
+      # This code is for the bulk archiving functionality.
+      # #######################################################################
+      if ( $bulkins_file ) {
+         trace('print_bulkfile', sub {
+            print $bulkins_file $escaped_row, "\n"
+               or die "Cannot write to bulk file: $OS_ERROR\n";
+         });
+      }
+
    }
 
    $now = time();
@@ -2000,6 +2046,39 @@ while (                          # Quit if:
       $row = $get_sth->fetchrow_arrayref();
    }
    if ( !$row ) {
+
+      # #######################################################################
+      # This code is for the bulk archiving functionality.
+      # #######################################################################
+      if ( $bulkins_file ) {
+         $bulkins_file->close()
+            or die "Cannot close bulk insert file: $OS_ERROR\n";
+         my $ins_sth; # Let the plugin change which sth is used for the INSERT.
+         if ( $dst->{plugin} ) {
+            trace('before_bulk_insert', sub {
+               $dst->{plugin}->before_bulk_insert(
+                  first_row => $first_row,
+                  last_row  => $lastrow,
+               );
+            });
+            trace('custom_sth', sub {
+               $ins_sth = $dst->{plugin}->custom_sth_bulk(
+                  first_row => $first_row,
+                  last_row  => $lastrow,
+                  sql       => $ins_sql,
+               );
+            });
+         }
+         $ins_sth ||= $ins_row; # Default to the sth decided before.
+         my $success = do_with_retries( 'bulk_inserting', sub {
+            $ins_sth->execute($bulkins_file->filename());
+            $statistics{INSERT} += $ins_sth->rows;
+         });
+         if ( $success != $ALL_IS_WELL ) {
+            $retries = -1;
+            last ROW; # unlike other places, don't do 'next'
+         }
+      }
 
       if ( $opts{bulkdel} ) {
          if ( $src->{plugin} ) {
@@ -2025,6 +2104,9 @@ while (                          # Quit if:
          }
       }
 
+      # #######################################################################
+      # This code is for normal operation AND bulk operation.
+      # #######################################################################
       commit(1) if $opts{'commit-each'};
       if( $opts{e} ) {
          trace('sleep', sub {
@@ -2041,6 +2123,11 @@ while (                          # Quit if:
       @beginning_of_txn = @{$lastrow}[@asc_slice] unless $txn_cnt;
       $row              = $get_sth->fetchrow_arrayref();
       $first_row        = $row ? [ @$row ] : undef;
+
+      if ( $opts{bulkins} ) {
+         $bulkins_file = File::Temp->new( SUFFIX => 'mk-archiver' )
+            or die "Cannot open temp file: $OS_ERROR\n";
+      }
    }
 }
 
@@ -2372,6 +2459,22 @@ be a lot faster.
 This option completely defers all C<DELETE> processing until the chunk of rows
 is finished.  If you have a plugin on the source, its C<before_delete> method
 will not be called.  Instead, its C<before_bulk_delete> method is called later.
+
+=item --bulkins
+
+Insert each chunk of rows with C<LOAD DATA LOCAL INFILE>.  This may be much
+faster than inserting a row at a time with C<INSERT> statements.  It is
+implemented by creating a temporary file for each chunk of rows, and writing the
+rows to this file instead of inserting them.  When the chunk is finished, it
+uploads the rows.
+
+To protect the safety of your data, this option forces bulk deletes to be used.
+It would be unsafe to delete each row as it is found, before inserting the rows
+into the destination first.  Forcing bulk deletes guarantees that the deletion
+waits until the insertion is successful.
+
+The L<"--lpins">, L<"--replace">, and L<"--ignore"> options work with this
+option, but L<"--delayedins"> does not.
 
 =item --chkcols
 
@@ -2842,6 +2945,16 @@ indexes or when ascending only the first column of an index.
 C<mk-archiver> will change the clause in the same way if you specify
 L<"--nodelete">, because again an infinite loop is possible.
 
+If you specify the L<"--bulkdel"> option and return false from this method,
+C<mk-archiver> may not do what you want.  The row won't be archived, but it will
+be deleted, since bulk deletes operate on ranges of rows and don't know which
+rows the plugin selected to keep.
+
+If you specify the L<"--bulkins"> option, this method's return value will
+influence whether the row is written to the temporary file for the bulk insert,
+so bulk inserts will work as expected.  However, bulk inserts require bulk
+deletes.
+
 =item before_delete(row => \@row)
 
 This method is called for each row just before it is deleted.  This applies only
@@ -2865,19 +2978,34 @@ only to L<"--dest">.  You could use this to insert the row into multiple tables,
 perhaps with an ON DUPLICATE KEY UPDATE clause to build summary tables in a data
 warehouse.
 
+This method is not called if L<"--bulkins"> is given.
+
+=item before_bulk_insert(first_row => \@row, last_row => \@row)
+
+This method is called just before a bulk insert is executed.  It is similar to
+the C<before_insert> method, except its arguments are the first and last row of
+the range to be deleted.
+
 =item custom_sth(row => \@row, sql => $sql)
 
 This method is called just before inserting the row, but after
 L<"before_insert()">.  It allows the plugin to specify different C<INSERT>
 statement if desired.  The return value (if any) should be a DBI statement
 handle.  The C<sql> parameter is the SQL text used to prepare the default
-C<INSERT> statement.
+C<INSERT> statement.  This method is not called if you specify L<"--bulkins">.
 
 If no value is returned, the default C<INSERT> statement handle is used.
 
 This method applies only to the plugin specified for L<"--dest">, so if your
 plugin isn't doing what you expect, check that you've specified it for the
 destination and not the source.
+
+=item custom_sth_bulk(first_row => \@row, last_row => \@row, sql => $sql)
+
+If you've specified L<"--bulkins">, this method is called just before the bulk
+insert, but after L<"before_bulk_insert()">, and the arguments are different.
+
+This method's return value etc is similar to the L<"custom_sth()"> method.
 
 =item after_finish()
 

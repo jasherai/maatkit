@@ -163,6 +163,10 @@ INSERT INTO `table_5` VALUES (current_date - interval 2 day,581,'m','ga',1,16,0,
 ,(current_date - interval 2 day,741,'m','ga',1,3,0,'0.00075','2007-03-10 18:00:33')
 ,(current_date - interval 2 day,743,'b','yu',137,163,0,'0.04075','2007-03-10 18:00:33');
 
+DROP TABLE IF EXISTS `table_5_copy`;
+CREATE TABLE `table_5_copy` like table_5;
+INSERT INTO `table_5_copy` SELECT * FROM table_5;
+
 drop table if exists table_6;
 create table table_6(
    a int not null,
