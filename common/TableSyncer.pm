@@ -79,12 +79,6 @@ sub sync_table {
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
 
-   if ( !$ALGOS{ lc $args{algorithm} } ) {
-      die "No such algorithm $args{algorithm}; try one of "
-         . join(', ', values %ALGOS) . "\n";
-   }
-   $args{algorithm} = $ALGOS{ lc $args{algorithm} };
-
    # TODO: for two-way sync, the change handler needs both DBHs.
    # Check permissions on writable tables (TODO: 2-way needs to check both)
    my $update_func;
@@ -121,6 +115,13 @@ sub sync_table {
 
    $args{algorithm} ||= $self->best_algorithm(
       map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
+
+   if ( !$ALGOS{ lc $args{algorithm} } ) {
+      die "No such algorithm $args{algorithm}; try one of "
+         . join(', ', values %ALGOS) . "\n";
+   }
+   $args{algorithm} = $ALGOS{ lc $args{algorithm} };
+
    if ( $args{test} ) {
       return ($ch->get_changes(), ALGORITHM => $args{algorithm});
    }

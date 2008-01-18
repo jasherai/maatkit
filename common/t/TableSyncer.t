@@ -139,6 +139,17 @@ $ts->sync_table(
    test          => 1,
 );
 
+# This should be OK because it ought to choose an algorithm automatically.
+$ts->sync_table(
+   %args,
+   # NOTE: no algorithm
+   dst_db        => 'test',
+   dst_tbl       => 'test2',
+   src_db        => 'test',
+   src_tbl       => 'test1',
+   test          => 1,
+);
+
 # Nothing should happen because I gave the 'test' argument.
 $cnt = $dbh->selectall_arrayref('select count(*) from test.test2')
    ->[0]->[0];
