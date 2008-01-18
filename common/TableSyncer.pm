@@ -24,7 +24,7 @@ package TableSyncer;
 
 use English qw(-no_match_vars);
 
-my %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble);
+our %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble);
 
 sub new {
    bless {}, shift;
