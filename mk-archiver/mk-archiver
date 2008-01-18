@@ -2489,11 +2489,17 @@ inclusive.  It implies L<"--commit-each">, since it would be a bad idea to
 C<INSERT> rows one at a time and commit them before the bulk C<DELETE>.
 
 The normal method is to delete every row by its primary key.  Bulk deletes might
-be a lot faster.
+be a lot faster.  B<They also might not be faster> if you have a complex
+C<WHERE> clause.
 
 This option completely defers all C<DELETE> processing until the chunk of rows
 is finished.  If you have a plugin on the source, its C<before_delete> method
 will not be called.  Instead, its C<before_bulk_delete> method is called later.
+
+B<WARNING>: if you have a plugin on the source that sometimes doesn't return
+true from C<is_archivable()>, you should use this option only if you understand
+what it does.  If the plugin instructs C<mk-archiver> not to archive a row,
+it'll still be deleted by the bulk delete!
 
 =item --bulkins
 
