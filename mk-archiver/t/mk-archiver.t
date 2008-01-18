@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 106;
+use Test::More tests => 105;
 
 my $opt_file = shift || "~/.my.cnf";
 diag("Testing with $opt_file");
@@ -392,8 +392,8 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 105, 'Bulk insert works');
 # Check that the destination table has the same data as the source
 $output = `mysql --defaults-file=$opt_file -N -e "checksum table test.table_5_dest, test.table_5_copy"`;
-like($output, qr/dest\s+2152864929/, 'dest checksum');
-like($output, qr/copy\s+2152864929/, 'copy checksum');
+my ( $chks ) = $output =~ m/dest\s+(\d+)/;
+like($output, qr/copy\s+$chks/, 'copy checksum');
 
 # Clean up.
 `mysql --defaults-file=$opt_file < after.sql`;
