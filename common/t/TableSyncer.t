@@ -34,7 +34,7 @@ eval {
       undef, undef, { PrintError => 0, RaiseError => 1 } );
 };
 if ($src_dbh) {
-   plan tests => 12;
+   plan tests => 13;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -114,9 +114,24 @@ my %args = (
    func          => 'SHA1',
 );
 
+# This should die because of a bad algorithm.
+throws_ok (
+   sub { $ts->sync_table(
+      %args,
+      algorithm     => 'fibble',
+      dst_db        => 'test',
+      dst_tbl       => 'test2',
+      src_db        => 'test',
+      src_tbl       => 'test1',
+   ) },
+   qr/No such algorithm/,
+   'Unknown algorithm',
+);
+
+# This should be OK even though the algorithm is in the wrong lettercase.
 $ts->sync_table(
    %args,
-   algorithm     => 'Chunk',
+   algorithm     => 'ChUnK',
    dst_db        => 'test',
    dst_tbl       => 'test2',
    src_db        => 'test',

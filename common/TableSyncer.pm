@@ -24,7 +24,7 @@ package TableSyncer;
 
 use English qw(-no_match_vars);
 
-our %ALGOS = map { $_ => 1 } qw(Stream Chunk Nibble);
+my %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble);
 
 sub new {
    bless {}, shift;
@@ -78,6 +78,12 @@ sub sync_table {
       . join(', ',
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
+
+   if ( !$ALGOS{ lc $args{algorithm} } ) {
+      die "No such algorithm $args{algorithm}; try one of "
+         . join(', ', values %ALGOS) . "\n";
+   }
+   $args{algorithm} = $ALGOS{ lc $args{algorithm} };
 
    # TODO: for two-way sync, the change handler needs both DBHs.
    # Check permissions on writable tables (TODO: 2-way needs to check both)
