@@ -1486,6 +1486,8 @@ my @opt_spec = (
       d => 'Purge, not archive; allows to omit --file and --dest' },
    {  s => 'quickdel',
       d => 'Add the QUICK modifier to DELETE statements' },
+   {  s => 'quiet',
+      d => 'Do not print any output, such as for --statistics' },
    {  s => 'replace|r',
       d => 'Use REPLACE instead of INSERT statements' },
    {  s => 'retries|R=i',
@@ -1545,7 +1547,8 @@ if ( $opts{stop} ) {
       or die "Cannot write to $opts{S}: $OS_ERROR\n";
    close $file
       or die "Cannot close $opts{S}: $OS_ERROR\n";
-   print STDOUT "Successfully created file $opts{S}\n";
+   print STDOUT "Successfully created file $opts{S}\n"
+      unless $opts{quiet};
    exit(0);
 }
 
@@ -1867,9 +1870,10 @@ else {
 }
 
 if ( $opts{t} ) {
-   print
-      join("\n", ($opts{f} || ''), $first_sql, $next_sql, $del_sql, $ins_sql),
-      "\n";
+   if ( !$opts{quiet} ) {
+      print join("\n", ($opts{f} || ''),
+            $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
+   }
    exit(0);
 }
 
@@ -1909,8 +1913,10 @@ my $start   = time();
 my $end     = $start + ($opts{m} || 0); # When mk-archiver should exit
 my $now     = $start;
 my $retries = $opts{R};
-printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT') if $opts{P};
-printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt) if $opts{P};
+printf("%-19s %7s %7s\n", 'TIME', 'ELAPSED', 'COUNT')
+   if $opts{P} && !$opts{quiet};
+printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt)
+   if $opts{P} && !$opts{quiet};
 
 $get_sth = $get_first; # Later it may be assigned $get_next
 trace('select', sub {
@@ -2054,7 +2060,7 @@ while (                          # Quit if:
    commit() unless $opts{'commit-each'};
 
    # Report on progress.
-   if ( $opts{P} && $cnt % $opts{P} == 0 ) {
+   if ( !$opts{quiet} && $opts{P} && $cnt % $opts{P} == 0 ) {
       printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
    }
 
@@ -2155,7 +2161,7 @@ if ( $opts{f} && $file ) {
       or die "Cannot close $opts{f}: $OS_ERROR\n";
 }
 
-if ( $opts{P} ) {
+if ( !$opts{quiet} && $opts{P} ) {
    printf("%19s %7d %7d\n", ts($now), $now - $start, $cnt);
 }
 
@@ -2191,7 +2197,7 @@ if ( $plugin ) {
    $plugin->statistics(\%statistics, $stat_start);
 }
 
-if ( $opts{statistics} ) {
+if ( !$opts{quiet} && $opts{statistics} ) {
    my $stat_total = Time::HiRes::gettimeofday() - $stat_start;
 
    my $total2 = 0;
@@ -2203,13 +2209,13 @@ if ( $opts{statistics} ) {
 
    foreach my $thing ( grep { m/_(count|time)/ } keys %statistics ) {
       my ( $action, $type ) = $thing =~ m/^(.*?)_(count|time)$/;
+      $summary{$action}->{$type}  = $statistics{$thing};
+      $summary{$action}->{action} = $action;
+      $maxlen                     = max($maxlen, length($action));
       # Just in case I get only one type of statistic for a given action (in
       # case there was a crash or CTRL-C or something).
       $summary{$action}->{time}  ||= 0;
       $summary{$action}->{count} ||= 0;
-      $summary{$action}->{$type}  = $statistics{$thing};
-      $summary{$action}->{action} = $action;
-      $maxlen                     = max($maxlen, length($action));
    }
    printf("%-${maxlen}s \%10s %10s %10s\n", qw(Action Count Time Pct));
    my $fmt = "%-${maxlen}s \%10d %10.4f %10.2f\n";
@@ -2225,7 +2231,8 @@ if ( $opts{statistics} ) {
       ($stat_total - $total2) / $stat_total * 100);
 }
 
-# Optionally print the reason for exiting
+# Optionally print the reason for exiting.  Do this even if --quiet is
+# specified.
 if ( $opts{q} ) {
    if ( $retries < 0 ) {
       print "Exiting because retries exceeded.\n";
@@ -2718,6 +2725,11 @@ L<http://dev.mysql.com/doc/en/delete.html> for details.  As stated in the
 documentation, in some cases it may be faster to use DELETE QUICK followed by
 OPTIMIZE TABLE.  You can use L<"--optimize"> for this.
 
+=item --quiet
+
+Suppresses normal output, including the output of L<"--statistics">, but doesn't
+suppress the output from L<"--whyquit">.
+
 =item --replace
 
 Causes INSERTs into L<"--dest"> to be written as REPLACE.
@@ -2844,8 +2856,11 @@ method of choice.
 
 =item --statistics
 
-Causes mk-archiver to collect and print timing statistics about what it does.
-The statistics look like this:
+Causes mk-archiver to collect timing statistics about what it does.  These
+statistics are available to the plugin specified by L<"--plugin">
+
+Unless you specify L<"--quiet">, C<mk-archiver> prints the statistics when it
+exits.  The statistics look like this:
 
  SELECT 4
  INSERT 4
@@ -2925,6 +2940,9 @@ Causes mk-archiver to print a message if it exits for any reason other than
 running out of rows to archive.  This can be useful if you have a cron job with
 L<"--time"> specified, for example, and you want to be sure mk-archiver is
 finishing before running out of time.
+
+This output prints even if L<"--quiet"> is given.  That's so you can put
+C<mk-archiver> in a C<cron> job and get an email if there's an abnormal exit.
 
 =back
 
