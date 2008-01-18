@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 10;
 use DBI;
 
 my $opt_file = shift || "~/.my.cnf";
@@ -28,6 +28,18 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 SKIP: { skip 'Cannot connect to MySQL', 1 unless $dbh;
+
+   `mysql --defaults-file=$opt_file < before.sql`;
+
+   $output = run('test1', 'test2', '');
+   is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'No alg sync');
+
+   is_deeply(
+      query('select * from test.test2'),
+      [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
+      'Synced OK with no alg'
+   );
 
    `mysql --defaults-file=$opt_file < before.sql`;
 

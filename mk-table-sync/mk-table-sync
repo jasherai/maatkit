@@ -2652,7 +2652,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1697
+# TableSyncer package 1699
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2707,12 +2707,6 @@ sub sync_table {
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
 
-   if ( !$ALGOS{ lc $args{algorithm} } ) {
-      die "No such algorithm $args{algorithm}; try one of "
-         . join(', ', values %ALGOS) . "\n";
-   }
-   $args{algorithm} = $ALGOS{ lc $args{algorithm} };
-
    my $update_func;
    my $change_dbh;
    if ( $args{execute} ) {
@@ -2745,6 +2739,13 @@ sub sync_table {
 
    $args{algorithm} ||= $self->best_algorithm(
       map { $_ => $args{$_} } qw(tbl_struct parser nibbler chunker));
+
+   if ( !$ALGOS{ lc $args{algorithm} } ) {
+      die "No such algorithm $args{algorithm}; try one of "
+         . join(', ', values %ALGOS) . "\n";
+   }
+   $args{algorithm} = $ALGOS{ lc $args{algorithm} };
+
    if ( $args{test} ) {
       return ($ch->get_changes(), ALGORITHM => $args{algorithm});
    }

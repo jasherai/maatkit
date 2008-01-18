@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Made the --algorithm option case-insensitive (bug #1873152).
+
 2008-01-05: version 1.0.3
 
    * Added the --function command-line option.
