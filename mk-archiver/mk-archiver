@@ -2203,6 +2203,10 @@ if ( $opts{statistics} ) {
 
    foreach my $thing ( grep { m/_(count|time)/ } keys %statistics ) {
       my ( $action, $type ) = $thing =~ m/^(.*?)_(count|time)$/;
+      # Just in case I get only one type of statistic for a given action (in
+      # case there was a crash or CTRL-C or something).
+      $summary{$action}->{time}  ||= 0;
+      $summary{$action}->{count} ||= 0;
       $summary{$action}->{$type}  = $statistics{$thing};
       $summary{$action}->{action} = $action;
       $maxlen                     = max($maxlen, length($action));
