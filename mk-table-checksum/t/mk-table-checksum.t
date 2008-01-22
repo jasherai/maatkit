@@ -42,10 +42,10 @@ SKIP: {
       skip 'no fnv_64 UDF installed', 2 if $output =~ m/ERROR/;
 
       $output = `$cmd -f FNV_64 --checksum -a ACCUM 2>&1`;
-      like($output, qr/DD2CD41DB91F2EAE/, 'FNV_64 ACCUM' );
+      like($output, qr/B702F33D8D00F5D8/, 'FNV_64 ACCUM' );
 
       $output = `$cmd -f FNV_64 --checksum -a BIT_XOR 2>&1`;
-      like($output, qr/a84792031e4ff43f/, 'FNV_64 BIT_XOR' );
+      like($output, qr/da8f621ef6d7c3f0/, 'FNV_64 BIT_XOR' );
 
    }
 
