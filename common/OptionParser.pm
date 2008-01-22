@@ -22,6 +22,20 @@ use warnings FATAL => 'all';
 
 package OptionParser;
 
+BEGIN {
+   # This is debug code I want to run for all tools, and this is a module I
+   # certainly include in all tools, but otherwise there's no real reason to put
+   # it here.
+   if ( $ENV{MKDEBUG} ) {
+      print '# ', $^X, ' ', $], "\n";
+      my $uname = `uname -a`;
+      if ( $uname ) {
+         $uname =~ s/\s+/ /g;
+         print "# $uname\n";
+      }
+   }
+}
+
 use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
