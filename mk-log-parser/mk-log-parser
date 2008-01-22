@@ -746,16 +746,17 @@ sub fingerprint {
    $query = lc $query;
    $query =~ s/^\s*(?:--|#).*//gm;              # One-line comments
    $query =~ s{
+              (?<![\w.+-])
               [+-]?
               (?:
-                \d+[.]\d+
+                \d+
+                (?:[.]\d*)?
                 |[.]\d+
               )
+              (?:e[+-]?\d+)?
               \b
              }
              {N}gx;                             # Float/real into N
-   $query =~ s/\b[+-]?\d+\b/N/g;                # Integer into N
-   $query =~ s/\b[+-]?\d+e(?:N|\d+)\b/N/g;      # Partial number into N
    $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
    $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
    $query =~ s/$quote_re/S/gx;                  # Turn quoted strings into S
