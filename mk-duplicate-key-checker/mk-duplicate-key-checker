@@ -722,7 +722,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1635
+# DSNParser package 1703
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -900,7 +900,10 @@ sub get_dbh {
       ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
       ' Character set info: ',
       Dumper($dbh->selectall_arrayref(
-         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})));
+         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
+      ' $DBI::VERSION: ', $DBI::VERSION,
+   );
    return $dbh;
 }
 
@@ -917,7 +920,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1621
+# OptionParser package 1704
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1343,6 +1346,18 @@ sub groups {
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# OptionParser:$line ", @_, "\n";
+}
+
+if ( $ENV{MKDEBUG} ) {
+   print '# ', $^X, ' ', $], "\n";
+   my $uname = `uname -a`;
+   if ( $uname ) {
+      $uname =~ s/\s+/ /g;
+      print "# $uname\n";
+   }
+   printf("# %s  Ver %s Distrib %s Changeset %s line %d\n",
+      $PROGRAM_NAME, ($main::VERSION || ''), ($main::DISTRIB || ''),
+      ($main::SVN_REV || ''), __LINE__);
 }
 
 1;
