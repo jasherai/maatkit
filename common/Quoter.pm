@@ -40,7 +40,7 @@ sub quote_val {
    return join(', ',
       map {
          if ( defined $_ ) {
-            $_ =~ s/'/\\'/g;
+            $_ =~ s/(['\\])/\\$1/g;
             $_ eq '' || $_ =~ m/\D/ ? "'$_'" : $_;
          }
          else {
