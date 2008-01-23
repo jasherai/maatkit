@@ -28,7 +28,6 @@
 
 use strict;
 use warnings FATAL => 'all';
-binmode(STDOUT, ':utf8');
 
 # ###########################################################################
 # OptionParser package 1704
@@ -3678,6 +3677,8 @@ my @opt_spec = (
      d => 'Keep going if --wait fails' },
    { s => 'transaction!',
      d => 'Use transactions INSTEAD OF locking tables' },
+   { s => 'utf8!',
+     d => 'Enable UTF-8 options in Perl and MySQL (default)' },
    { s => 'verbose|v',
      d => 'Print results of sync operations' },
    { s => 'wait|w=m',
@@ -3745,6 +3746,11 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 # Do the work.
 # ############################################################################
+if ( $opts{utf8} ) {
+   $ENV{MKDEBUG} && _d('Enabling UTF-8 for STDOUT');
+   binmode(STDOUT, ':utf8');
+}
+
 my $exit_status = 0; # 1: internal error, 2: tables differed, 3: both
 my $hdr         = "# %6s %7s %6s %6s %-9s %s.%s\n";
 
@@ -4106,7 +4112,7 @@ sub get_cxn {
    my $db_options = {
       # TODO: enable support for this on old versions of DBD::mysql?
       # http://www.perlmonks.org/?node_id=620803
-      mysql_enable_utf8 => 1,
+      mysql_enable_utf8 => $opts{utf8},
    };
 
    if ( !$info->{p} && $opts{askpass} ) {
@@ -4116,6 +4122,11 @@ sub get_cxn {
    my $dbh = $dsn_parser->get_dbh(
       $dsn_parser->get_cxn_params($info), $db_options);
    my $sql;
+   if ( $opts{utf8} ) {
+      $sql = "/*!40101 SET NAMES utf8 */";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
    if ( $opts{skipbinlog} ) {
       $sql = "/*!32316 SET SQL_LOG_BIN=0 */";
       $ENV{MKDEBUG} && _d("$dbh: $sql");

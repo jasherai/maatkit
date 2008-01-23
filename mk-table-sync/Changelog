@@ -1,6 +1,8 @@
 Changelog for mk-table-sync:
 
    * Made the --algorithm option case-insensitive (bug #1873152).
+   * Fixed a quoting bug.
+   * Made the UTF-8 options configurable.
 
 2008-01-05: version 1.0.3
 
