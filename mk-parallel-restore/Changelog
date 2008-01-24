@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+2008-01-24: version 1.0.4
+
    * The -D option was used as a default DB for the connection (bug #1870415).
 
 2008-01-05: version 1.0.3
