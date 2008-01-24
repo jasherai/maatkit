@@ -4481,6 +4481,12 @@ If you don't specify --transaction explicitly, C<mk-table-sync> will decide on
 a per-table basis whether to use transactions or table locks.  It currently
 uses transactions on InnoDB tables, and table locks on all others.
 
+=item --utf8
+
+Enables UTF-8 settings in Perl and MySQL.  Sets Perl's binmode on STDOUT to
+utf8, passes the C<mysql_enable_utf8> option to DBD::mysql, and runs C<SET NAMES
+UTF8> after connecting to MySQL.
+
 =item --verbose
 
 Explain the differences found while comparing the tables.  See L<"OUTPUT"> for
