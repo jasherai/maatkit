@@ -21,7 +21,7 @@ if ( $svnst =~ m/\S/ ) {
 my $base     = '..';
 my @packages = qw(
    mk-archiver mk-deadlock-logger mk-duplicate-key-checker mk-find
-   mk-finger mk-heartbeat mk-log-parser mk-parallel-dump
+   mk-finger mk-heartbeat mk-log-parser mk-parallel-dump mk-slave-prefetch
    mk-parallel-restore mk-query-profiler mk-show-grants mk-slave-delay
    mk-slave-restart mk-table-checksum mk-table-sync mk-visual-explain);
 

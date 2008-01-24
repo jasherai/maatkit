@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+2008-01-24: version 1.0.7
+
    * Added --quiet option.
    * Added --plugin option.  The plugin interface is not backwards compatible.
    * Added --bulkins option.
