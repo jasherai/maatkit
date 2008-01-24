@@ -39,7 +39,7 @@ SKIP: {
 
    $output = `mysql -e 'select fnv_64(1)' 2>&1`;
    SKIP: {
-      skip 'no fnv_64 UDF installed', 2 if $output =~ m/ERROR/;
+      skip 'FNV_64 inconsistent', 2;
 
       $output = `$cmd -f FNV_64 --checksum -a ACCUM 2>&1`;
       like($output, qr/B702F33D8D00F5D8/, 'FNV_64 ACCUM' );
