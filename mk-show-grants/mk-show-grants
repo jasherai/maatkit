@@ -701,6 +701,7 @@ my @opt_spec = (
    { s => 'revoke|r',          d => 'Add REVOKE statements' },
    { s => 'separate|s',        d => 'List each GRANT or REVOKE separately' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
+   { s => 'timestamp|t!',      d => 'Show dump timestamp (default)' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
 );
 
@@ -741,7 +742,8 @@ my $dbh = $dsn_parser->get_dbh(
 my ( $version, $ts ) = $dbh->selectrow_array("SELECT VERSION(), NOW()");
 print join("\n",
    "-- Grants dumped by mk-show-grants $VERSION",
-   "-- Dumped from server " . ($dbh->{mysql_hostinfo} || '') . ", MySQL $version at $ts",
+   "-- Dumped from server " . ($dbh->{mysql_hostinfo} || ''),
+   ($opts{t} ? ", MySQL $version at $ts" : ", MySQL $version"),
    ), "\n";
 
 my $users = $opts{o} || $dbh->selectall_arrayref(
@@ -939,6 +941,10 @@ at the end of all the output.
 =item --socket
 
 Socket file to use for connection.
+
+=item --timestamp
+
+Print the dump time and data in a comment near the beginning of the output.
 
 =item --user
 
