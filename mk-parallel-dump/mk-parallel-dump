@@ -1755,41 +1755,76 @@ $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
 $opts{m} = max(2, $opts{m} || 0);
 
 my @opt_spec = (
-   { s => 'age=m',             d => 'Dump only tables modified since this long '
-                                  . 'ago, or not dumped since this long ago' },
-   { s => 'askpass',           d => 'Prompt for password for connections' },
-   { s => 'basedir=s',         d => 'Base directory for creating files' },
-   { s => 'binlogpos|b!',      d => 'Dump the master/slave position (default)' },
-   { s => 'chunksize|C=s',     d => 'Number of rows or data size to dump per file' },
-   { s => 'csv',               d => 'Do --tab dump in CSV format (implies --tab)' },
-   { s => 'databases|d=h',     d => 'Dump only this comma-separated list of databases' },
-   { s => 'dbregex=s',         d => 'Dump only databases whose names match this pattern' },
-   { s => 'defaultset!',       d => 'When --sets given, dump tables not in any set' },
-   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
-   { s => 'flushlock|k!',      d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
-   { s => 'flushlog!',         d => 'Execute FLUSH LOGS when getting binlog positions' },
-   { s => 'gzip!',             d => "Compress files with gzip (default $opts{gzip})" },
-   { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'ignoredb|g=H',      d => 'Ignore this comma-separated list of databases' },
-   { s => 'ignoreengine|E=H',  d => 'No data for this comma-separated list of storage engines (default FEDERATED,MRG_MyISAM)' },
-   { s => 'ignoretbl|n=H',     d => 'Ignore this comma-separated list of tables' },
-   { s => 'locktables!',       d => 'Use LOCK TABLES (disables --flushlock)' },
-   { s => 'numthread|m=i',     d => "Number of threads (default $opts{m})" },
-   { s => 'password|p=s',      d => 'Password to use when connecting' },
-   { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'quiet|q',           d => 'Quiet output; disables --verbose' },
-   { s => 'sets=a',            d => 'Dump this comma-separated list of sets' },
-   { s => 'setperdb',          d => 'Dump each database as a separate set' },
-   { s => 'settable=s',        d => 'database.table where backup sets are stored' },
-   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'tab|T',             d => 'Dump tab-separated (sets --umask 0)' },
-   { s => 'tables|t=h',        d => 'Dump only this comma-separated list of tables' },
-   { s => 'test',     ,        d => 'Print commands instead of executing them' },
-   { s => 'tblregex=s',        d => 'Dump only tables whose names match this pattern' },
-   { s => 'umask=s',           d => 'Set umask to this value, in octal' },
-   { s => 'user|u=s',          d => 'User for login if not current user' },
-   { s => 'verbose|v+',        d => 'Be verbose; can specify multiple times; default' },
-   { s => 'wait|w=m',          d => 'Wait limit when server is down (default 5m)' },
+   {  s => 'age=m',
+      d => 'Dump only tables modified since this long '
+         . 'ago, or not dumped since this long ago' },
+   {  s => 'askpass',
+      d => 'Prompt for password for connections' },
+   {  s => 'basedir=s',
+      d => 'Base directory for creating files' },
+   {  s => 'binlogpos|b!',
+      d => 'Dump the master/slave position (default)' },
+   {  s => 'chunksize|C=s',
+      d => 'Number of rows or data size to dump per file' },
+   {  s => 'csv',
+      d => 'Do --tab dump in CSV format (implies --tab)' },
+   {  s => 'databases|d=h',
+      d => 'Dump only this comma-separated list of databases' },
+   {  s => 'dbregex=s',
+      d => 'Dump only databases whose names match this pattern' },
+   {  s => 'defaultset!',
+      d => 'When --sets given, dump tables not in any set' },
+   {  s => 'defaults-file|F=s',
+      d => 'Only read mysql options from the given file' },
+   {  s => 'flushlock|k!',
+      d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
+   {  s => 'flushlog!',
+      d => 'Execute FLUSH LOGS when getting binlog positions' },
+   {  s => 'gzip!',
+      d => "Compress files with gzip (default $opts{gzip})" },
+   {  s => 'host|h=s',
+      d => 'Connect to host' },
+   {  s => 'ignoredb|g=H',
+      d => 'Ignore this comma-separated list of databases' },
+   {  s => 'ignoreengine|E=H',
+      d => 'No data for this comma-separated list of storage engines '
+         . '(default FEDERATED,MRG_MyISAM)' },
+   {  s => 'ignoretbl|n=H',
+      d => 'Ignore this comma-separated list of tables' },
+   {  s => 'locktables!',
+      d => 'Use LOCK TABLES (disables --flushlock)' },
+   {  s => 'numthread|m=i',
+      d => "Number of threads (default $opts{m})" },
+   {  s => 'password|p=s',
+      d => 'Password to use when connecting' },
+   {  s => 'port|P=i',
+      d => 'Port number to use for connection' },
+   {  s => 'quiet|q',
+      d => 'Quiet output; disables --verbose' },
+   {  s => 'sets=a',
+      d => 'Dump this comma-separated list of sets' },
+   {  s => 'setperdb',
+      d => 'Dump each database as a separate set' },
+   {  s => 'settable=s',
+      d => 'database.table where backup sets are stored' },
+   {  s => 'socket|S=s',
+      d => 'Socket file to use for connection' },
+   {  s => 'tab|T',
+      d => 'Dump tab-separated (sets --umask 0)' },
+   {  s => 'tables|t=h',
+      d => 'Dump only this comma-separated list of tables' },
+   {  s => 'test',     ,
+      d => 'Print commands instead of executing them' },
+   {  s => 'tblregex=s',
+      d => 'Dump only tables whose names match this pattern' },
+   {  s => 'umask=s',
+      d => 'Set umask to this value, in octal' },
+   {  s => 'user|u=s',
+      d => 'User for login if not current user' },
+   {  s => 'verbose|v+',
+      d => 'Be verbose; can specify multiple times; default' },
+   {  s => 'wait|w=m',
+      d => 'Wait limit when server is down (default 5m)' },
    '--locktables and --flushlock are mutually exclusive',
    '--sets and --setperdb are mutually exclusive',
 );
@@ -1971,7 +2006,9 @@ if ( $opts{sets} ) {
       my $sql = "SELECT `db`, `tbl` "
               . "FROM $opts{settable} "
               . "WHERE `setname` = '$set' "
-              . ($opts{age} ? "AND `ts` <= DATE_SUB(NOW(), INTERVAL $opts{age} SECOND) " : '')
+              . ($opts{age}
+                 ? "AND `ts` <= DATE_SUB(NOW(), INTERVAL $opts{age} SECOND) "
+                 : '')
               . "ORDER BY `priority`, `db`, `tbl`";
       $ENV{MKDEBUG} && _d($sql);
       my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
@@ -1984,8 +2021,8 @@ if ( $opts{sets} ) {
    }
    if ( $opts{age} ) {
       $backedup_sth = $dbh->prepare(
-         "UPDATE $opts{settable} AS `mysql_parallel_dump_writable` SET `ts` = NOW() "
-         . " WHERE `setname` = ? AND `db` = ? AND `tbl` = ?");
+         "UPDATE $opts{settable} AS `mysql_parallel_dump_writable` "
+         . "SET `ts` = NOW() WHERE `setname` = ? AND `db` = ? AND `tbl` = ?");
    }
 }
 
@@ -2215,7 +2252,8 @@ foreach my $set ( @sets_to_do ) {
             $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts));
          };
          if ( $EVAL_ERROR ) {
-            info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
+            info(0, 'Waiting: ' . scalar(localtime)
+               . ' ' . mysql_error_msg($EVAL_ERROR));
          }
       }
       if ( $tries >= $opts{w} ) {
@@ -2316,7 +2354,8 @@ $dbh->disconnect;
 
 if ( @sets_to_do > 1 ) {
    info(1, sprintf(
-      'Final result: %2d sets, %5d tables, %5d chunks, %5d successes, %2d failures, '
+      'Final result: %2d sets, %5d tables, %5d chunks, '
+      . '%5d successes, %2d failures, '
       . '%6.2f wall-clock time, %6.2f dump time',
       scalar(@sets_to_do),
          map {
@@ -2423,9 +2462,9 @@ sub do_table {
             my $fspec = $opts{gzip}
                ? "| gzip --force --fast > $filename.sql.gz"
                : "> $filename.sql";
-            open my $file, $fspec   or die "Couldn't open $fspec: $OS_ERROR";
-            print {$file} $ddl      or die "Couldn't print to $fspec: $OS_ERROR";
-            close $file             or die "Couldn't close $fspec: $OS_ERROR";
+            open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
+            print {$file} $ddl    or die "Couldn't print to $fspec: $OS_ERROR";
+            close $file           or die "Couldn't close $fspec: $OS_ERROR";
          }
          if ( $has_triggers ) {
             my $trg = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'triggers');
@@ -2433,9 +2472,9 @@ sub do_table {
                my $fspec = $opts{gzip}
                   ? "| gzip --force --fast > $filename.trg.gz"
                   : "> $filename.trg";
-               open my $file, $fspec   or die "Couldn't open $fspec: $OS_ERROR";
-               print {$file} $trg      or die "Couldn't print to $fspec: $OS_ERROR";
-               close $file             or die "Couldn't close $fspec: $OS_ERROR";
+               open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
+               print {$file} $trg    or die "Couldn't print to $fspec: $OS_ERROR";
+               close $file           or die "Couldn't close $fspec: $OS_ERROR";
             }
          }
       }
@@ -2585,9 +2624,9 @@ To dump one or more backup sets (see L<"BACKUP SETS">):
 
 To "write your own command line," use C<--> to indicate where the arguments for
 mk-parallel-dump stop and where the arguments for C<mysqldump> (or any other
-program) begin.  The following example shows C<mysqldump>, and aside from simpler
-options to C<mysqldump>, is basically what happens when you specify no arguments
-at all:
+program) begin.  The following example shows C<mysqldump>, and aside from
+simpler options to C<mysqldump>, is basically what happens when you specify no
+arguments at all:
 
   mk-parallel-dump -- mysqldump --skip-lock-tables '%D' '%N' \
      \| gzip --fast -c - \> '%D.%N.gz'
@@ -2896,13 +2935,13 @@ rotate its error log, potentially overwriting error messages.
 
 =item --gzip
 
-Compresses files with gzip.  This is enabled by default unless your platform
-is Win32.  By default, this causes the standard SQL dumps to be piped to
-gzip's C<STDIN> and the result is redirected to the destination file.  If this
-option isn't enabled, by default C<mysqldump>'s C<--result-file> parameter is used
-to direct the dump to the destination file.  When using L<"--tab">, this
-option causes gzip to be called separately on each resulting file after it is
-dumped (because C<SELECT INTO OUTFILE> cannot be directed to a pipe).
+Compresses files with gzip.  This is enabled by default unless your platform is
+Win32.  By default, this causes the standard SQL dumps to be piped to gzip's
+C<STDIN> and the result is redirected to the destination file.  If this option
+isn't enabled, by default C<mysqldump>'s C<--result-file> parameter is used to
+direct the dump to the destination file.  When using L<"--tab">, this option
+causes gzip to be called separately on each resulting file after it is dumped
+(because C<SELECT INTO OUTFILE> cannot be directed to a pipe).
 
 =item --help
 
