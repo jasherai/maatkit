@@ -742,8 +742,8 @@ my $dbh = $dsn_parser->get_dbh(
 my ( $version, $ts ) = $dbh->selectrow_array("SELECT VERSION(), NOW()");
 print join("\n",
    "-- Grants dumped by mk-show-grants $VERSION",
-   "-- Dumped from server " . ($dbh->{mysql_hostinfo} || ''),
-   ($opts{t} ? ", MySQL $version at $ts" : ", MySQL $version"),
+   "-- Dumped from server " . ($dbh->{mysql_hostinfo} || '')
+      . ($opts{t} ? ", MySQL $version at $ts" : ", MySQL $version"),
    ), "\n";
 
 my $users = $opts{o} || $dbh->selectall_arrayref(
