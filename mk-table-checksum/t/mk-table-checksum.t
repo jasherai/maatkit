@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 21;
 
 my $opt_file = shift || "~/.my.cnf";
 my ($output, $output2);
@@ -36,6 +36,10 @@ SKIP: {
       # same as sha1(sha1(1))
       is ( $crc, '9c1c01dc3ac1445a500251fc34a15d3e75a849df', 'SHA1 is okay' );
    }
+
+   # Test that it works with locking
+   $output = `$cmd -kl -f sha1 --checksum -a ACCUM 2>&1`;
+   like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'Locks' );
 
    $output = `mysql -e 'select fnv_64(1)' 2>&1`;
    SKIP: {
