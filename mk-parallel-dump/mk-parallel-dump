@@ -2270,6 +2270,7 @@ foreach my $set ( @sets_to_do ) {
             $kids{$pid} = $todo;
          }
          else {                     # I'm the child
+            $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
             $ENV{MKDEBUG} && _d("$PID got ", Dumper($todo));
             my $exit_status = 0;
             $exit_status = do_table($todo) || $exit_status;

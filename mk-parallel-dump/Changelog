@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * Fixed child process exit status on Solaris (bug #1886444).
+
 2008-01-24: version 1.0.5
 
    * The fix for bug #1863949 added an invalid argument to gzip (bug #1866137)
