@@ -2648,7 +2648,7 @@ foreach my $database ( $finder->find_databases() ) {
                if ( !$opts{explain} ) {
                   if ( $opts{k} ) {
                      $main_dbh->do( "LOCK TABLES "
-                        . $q->quote($database, $table) . " READ");
+                        . $q->quote($database, $table->{table}) . " READ");
                   }
                   if ( defined $opts{w} ) {
                      $table->{master_status} = $ms->get_master_status($main_dbh);
