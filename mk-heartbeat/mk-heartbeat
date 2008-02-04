@@ -869,7 +869,7 @@ while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
          if ( $opts{check} ) {
             print "$delay\n"
                unless $opts{q};
-            exit(0);
+            quit();
          }
          else {
             my @vals = map {
@@ -909,11 +909,17 @@ while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
    $now = time();
 }
 
-exit(0);
+quit();
 
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# main:$line ", @_, "\n";
+}
+
+sub quit {
+   $sth->finish()     if $sth;
+   $dbh->disconnect() if $dbh;
+   exit(0);
 }
 
 # ############################################################################

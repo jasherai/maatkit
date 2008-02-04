@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+   * Made mk-heartbeat explicitly close DB connection when done.
+
 2008-01-05: version 1.0.6
 
    * Made suffixes for time options optional (bug #1858696).
