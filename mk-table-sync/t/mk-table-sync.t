@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 13;
 use DBI;
 
 my $opt_file = shift || "~/.my.cnf";
@@ -92,6 +92,26 @@ INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
       query('select * from test.test2'),
       [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
       'Synced OK with Nibble'
+   );
+
+   # Sync tables that have values with leading zeroes
+   $ENV{MKDEBUG} = 1;
+   $output = run('test3', 'test4', '--print --verbose -f MD5');
+   delete $ENV{MKDEBUG};
+   like(
+      $output,
+      qr/UPDATE `test`.`test4`.*51707/,
+      'Found the first row',
+   );
+   like(
+      $output,
+      qr/UPDATE `test`.`test4`.*'001'/,
+      'Found the second row',
+   );
+   like(
+      $output,
+      qr/2 Chunk *test.test3/,
+      'Right number of rows to update',
    );
 
 # TODO: do a test run for all possible combinations of these:
