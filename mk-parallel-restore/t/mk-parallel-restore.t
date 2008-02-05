@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 8;
 
 my $output = `perl ../mk-parallel-restore mk_parallel_restore_foo --test`;
 like(
@@ -36,6 +36,12 @@ is($output + 0, 0, 'Loaded mk_parallel_restore_foo.bar');
 `mysql -e 'DROP DATABASE IF EXISTS mk_parallel_restore_foo'`;
 `mysql -e 'DROP DATABASE IF EXISTS mk_parallel_restore_bar'`;
 $output = `perl ../mk-parallel-restore --database mk_parallel_restore_bar --createdb mk_parallel_restore_foo`;
+$output = `mysql -N -e 'select count(*) from mk_parallel_restore_bar.bar'`;
+is($output + 0, 0, 'Loaded mk_parallel_restore_bar.bar');
+
+# Test that the --defaults-file parameter works (bug #1886866).
+$output = `perl ../mk-parallel-restore --createdb --defaults-file=~/.my.cnf mk_parallel_restore_foo`;
+like($output, qr/1 files,     1 successes,  0 failures/, 'restored');
 $output = `mysql -N -e 'select count(*) from mk_parallel_restore_bar.bar'`;
 is($output + 0, 0, 'Loaded mk_parallel_restore_bar.bar');
 
