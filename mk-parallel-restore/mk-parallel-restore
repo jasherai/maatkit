@@ -1121,10 +1121,11 @@ sub do_table {
       if ( filetype($file) =~ m/^(?:sql|trg)$/ ) {
          my @args;
          if ( $file =~ m/\.gz/ ) {
-            @args = (qw(gunzip --stdout), qq{'$file'}, qw(| mysql), $db, @conn_params);
+            @args = (qw(gunzip --stdout), qq{'$file'}, qw(| mysql),
+                     @conn_params, $db);
          }
          else {
-            @args = (qw(mysql), $db, @conn_params, '<', qq{'$file'});
+            @args = (qw(mysql), @conn_params, $db, '<', qq{'$file'});
          }
          $exit_status = system_call( @args ) || $exit_status;
       }
