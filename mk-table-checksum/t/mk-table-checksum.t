@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 23;
 
 my $opt_file = shift || "~/.my.cnf";
 my ($output, $output2);
@@ -41,17 +41,17 @@ SKIP: {
    $output = `$cmd -kl -f sha1 --checksum -a ACCUM 2>&1`;
    like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'Locks' );
 
-   $output = `mysql -e 'select fnv_64(1)' 2>&1`;
-   SKIP: {
-      skip 'FNV_64 inconsistent', 2;
+   $output = `mysql -N -e 'select fnv_64(1)' 2>&1`;
+   is($output + 0, -6320923009900088257, 'FNV_64(1)');
 
-      $output = `$cmd -f FNV_64 --checksum -a ACCUM 2>&1`;
-      like($output, qr/B702F33D8D00F5D8/, 'FNV_64 ACCUM' );
+   $output = `mysql -N -e 'select fnv_64("hello, world")' 2>&1`;
+   is($output + 0, 6062351191941526764, 'FNV_64(hello, world)');
 
-      $output = `$cmd -f FNV_64 --checksum -a BIT_XOR 2>&1`;
-      like($output, qr/da8f621ef6d7c3f0/, 'FNV_64 BIT_XOR' );
+   $output = `$cmd -f FNV_64 --checksum -a ACCUM 2>&1`;
+   like($output, qr/DD2CD41DB91F2EAE/, 'FNV_64 ACCUM' );
 
-   }
+   $output = `$cmd -f FNV_64 --checksum -a BIT_XOR 2>&1`;
+   like($output, qr/a84792031e4ff43f/, 'FNV_64 BIT_XOR' );
 
    $output = `$cmd -f sha1 --checksum -a ACCUM 2>&1`;
    like($output, qr/9c1c01dc3ac1445a500251fc34a15d3e75a849df/, 'SHA1 ACCUM' );
