@@ -1,8 +1,5 @@
 #!/usr/bin/perl
 
-use strict;
-use warnings FATAL => 'all';
-
 # This is mk-duplicate-key-checker, a program to analyze MySQL tables for
 # duplicated or redundant indexes and foreign key constraints.
 # 
@@ -22,6 +19,13 @@ use warnings FATAL => 'all';
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
@@ -1533,10 +1537,6 @@ package main;
 use English qw(-no_match_vars);
 use Getopt::Long;
 use List::Util qw(max);
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 

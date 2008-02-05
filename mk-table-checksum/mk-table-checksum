@@ -22,6 +22,10 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 # ###########################################################################
 # TableParser package 1561
 # ###########################################################################
@@ -2191,10 +2195,6 @@ package main;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use Time::HiRes qw(gettimeofday sleep);
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 

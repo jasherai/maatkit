@@ -26,6 +26,10 @@
 # way that can be done on earlier MySQL versions, with version-specific
 # comments.
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 use strict;
 use warnings FATAL => 'all';
 
@@ -678,10 +682,6 @@ package main;
 
 use DBI;
 use English qw(-no_match_vars);
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.

@@ -22,6 +22,10 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 # ###########################################################################
 # OptionParser package 1704
 # ###########################################################################
@@ -677,10 +681,6 @@ use English qw(-no_match_vars);
 use List::Util qw(min max sum);
 use Time::HiRes qw(usleep gettimeofday);
 use IO::File;
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.

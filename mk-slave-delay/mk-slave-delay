@@ -22,6 +22,10 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 # ###########################################################################
 # OptionParser package 1704
 # ###########################################################################
@@ -714,10 +718,6 @@ package main;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use sigtrap qw(handler finish untrapped normal-signals);
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 my @opt_spec = (
    { s => 'askpass',       d => 'Prompt for password for connections' },

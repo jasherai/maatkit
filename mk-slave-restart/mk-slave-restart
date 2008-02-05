@@ -23,6 +23,10 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 # ###########################################################################
 # OptionParser package 1704
 # ###########################################################################
@@ -901,10 +905,6 @@ use Time::HiRes qw(sleep);
 use sigtrap qw(handler finish untrapped normal-signals);
 
 $OUTPUT_AUTOFLUSH = 1;
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ############################################################################
 # Get configuration information.

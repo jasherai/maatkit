@@ -23,6 +23,10 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 # ###########################################################################
 # MySQLFind package 1574
 # ###########################################################################
@@ -97,7 +101,7 @@ sub find_tables {
             $self->_test_date($_, $key, $test)
          } @tables;
    }
-   return map { $_->{name} } @tables;
+   return @tables;
 }
 
 sub _use_db {
@@ -1721,10 +1725,6 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
 
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
-
 # Globals -- as few as possible.
 my %opts = (
    basedir  => File::Spec->curdir(),
@@ -1787,7 +1787,7 @@ my @opt_spec = (
    {  s => 'ignoredb|g=H',
       d => 'Ignore this comma-separated list of databases' },
    {  s => 'ignoreengine|E=H',
-      d => 'No data for this comma-separated list of storage engines '
+      d => 'Dump no data for this comma-separated list of storage engines '
          . '(default FEDERATED,MRG_MyISAM)' },
    {  s => 'ignoretbl|n=H',
       d => 'Ignore this comma-separated list of tables' },
@@ -1943,11 +1943,11 @@ if ( !@ARGV && !$opts{T} ) {
    }
    if ( $opts{gzip} ) {
       push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
-         '"' . filename('%S', '%D', '%N.%3C.sql.gz') . '"';
+         '"' . filename('%S', '%D', '%N.%6C.sql.gz') . '"';
    }
    else {
       push @mysqldump_args,
-         '--result-file="' . filename('%S', '%D', '%N.%3C.sql') . '"';
+         '--result-file="' . filename('%S', '%D', '%N.%6C.sql') . '"';
    }
 }
 
@@ -2043,8 +2043,7 @@ my %findspec = (
       regexp => $opts{tblregex},
    },
    engines => {
-      views  => $opts{T},
-      reject => $opts{E},
+      views  => 1,
    },
 );
 if ( $opts{age} && !$opts{sets} ) {
@@ -2074,26 +2073,19 @@ foreach my $set ( @sets_to_do ) {
       foreach my $database ( @{$databases_for{$set}} ) {
          if ( !$tables_for{$database} ) {
             my @tables = $f->find_tables(database => $database);
-            if ( $opts{T} ) {
-               # Split the views and tables out separately.  Since I need the
-               # DDL for each anyway, go ahead and get it now.
-               foreach my $table ( @tables ) {
-                  my $ddl = $du->get_create_table($dbh, $q, $database, $table);
-                  if ( $ddl->[0] eq 'table' ) {
-                     push @{$tables_for{$database}}, $table;
-                  }
-                  else {
-                     push @views, [ $database, $table ];
-                  }
+            foreach my $table ( @tables ) {
+               if ( $table->{engine} eq 'VIEW' ) {
+                  push @views, [ $database, $table->{name} ];
                }
-            }
-            else {
-               $tables_for{$database} = \@tables;
+               else {
+                  push @{$tables_for{$database}}, $table->{name};
+               }
             }
          }
          TABLE:
          foreach my $table ( @{$tables_for{$database}} ) {
-            if ( !$tables_in_sets{$database}->{$table} ) { # Skip if in another set
+            # Skip if in another set
+            if ( !$tables_in_sets{$database}->{$table} ) {
                $stats_for_set{$set}->{tables}++;
                $tables_in_sets{$database}->{$table}++;
                push @{$tables_for_set{$set}}, [ $database, $table ];
@@ -2443,16 +2435,29 @@ sub interp {
 # Actually dumps a table.
 sub do_table {
    my ( $todo ) = @_;
+
    my $exit_status = 0;
-   my $dump_data = !$opts{E}->{$todo->{E}};
    my $D         = $q->quote($todo->{D});
    my $N         = $q->quote($todo->{N});
+   my $filename  = filename(interp($todo, '%S', '%D', '%N.%6C'));
+
+   if ( $todo->{C} == 0 && $has_triggers ) {
+      makedir($filename);
+      my $trg = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'triggers');
+      if ( $trg ) {
+         my $fspec = $opts{gzip}
+            ? "| gzip --force --fast > $filename.trg.gz"
+            : "> $filename.trg";
+         open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
+         print {$file} $trg    or die "Couldn't print to $fspec: $OS_ERROR";
+         close $file           or die "Couldn't close $fspec: $OS_ERROR";
+      }
+   }
 
    # Dump via SELECT INTO OUTFILE.
    if ( $opts{T} ) {
       $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts));
 
-      my $filename = filename(interp($todo, '%S', '%D', '%N.%3C'));
       makedir($filename);
 
       # Dump the schema before the first chunk.
@@ -2467,21 +2472,10 @@ sub do_table {
             print {$file} $ddl    or die "Couldn't print to $fspec: $OS_ERROR";
             close $file           or die "Couldn't close $fspec: $OS_ERROR";
          }
-         if ( $has_triggers ) {
-            my $trg = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'triggers');
-            if ( $trg ) {
-               my $fspec = $opts{gzip}
-                  ? "| gzip --force --fast > $filename.trg.gz"
-                  : "> $filename.trg";
-               open my $file, $fspec or die "Couldn't open $fspec: $OS_ERROR";
-               print {$file} $trg    or die "Couldn't print to $fspec: $OS_ERROR";
-               close $file           or die "Couldn't close $fspec: $OS_ERROR";
-            }
-         }
       }
 
       # Dump the data.
-      if ( $dump_data ) {
+      if ( !$opts{E}->{$todo->{E}} ) { # Don't dump data for these engines...
          my $sql
            = $opts{csv}
            ?    "SELECT * INTO OUTFILE '$filename.txt' "
@@ -2515,7 +2509,7 @@ sub do_table {
       # directory naming convention, and ensure the directories exist.
       # Otherwise the user must ensure the directories exist.
       if ( !@ARGV ) {
-         makedir(interp($todo, filename('%S', '%D', '%N.%3C.sql')));
+         makedir(interp($todo, filename('%S', '%D', '%N.%6C.sql')));
       }
 
       my @args = @mysqldump_args;
@@ -2894,7 +2888,7 @@ Changes L<"--tab"> options so the dump file is in comma-separated values
 (CSV) format.  The SELECT INTO OUTFILE statement looks like the following, and
 can be re-loaded with the same options:
 
-   SELECT * INTO OUTFILE %D.%N.%3C.txt
+   SELECT * INTO OUTFILE %D.%N.%6C.txt
    FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"'
    LINES TERMINATED BY '\n' FROM %D.%N;
 
