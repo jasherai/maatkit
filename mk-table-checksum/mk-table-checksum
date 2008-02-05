@@ -2647,8 +2647,10 @@ foreach my $database ( $finder->find_databases() ) {
                # Lock table and get position on the master.
                if ( !$opts{explain} ) {
                   if ( $opts{k} ) {
-                     $main_dbh->do( "LOCK TABLES "
-                        . $q->quote($database, $table->{table}) . " READ");
+                     my $sql = "LOCK TABLES "
+                        . $q->quote($database, $table->{table}) . " READ";
+                     $ENV{MKDEBUG} && _d($sql);
+                     $main_dbh->do($sql);
                   }
                   if ( defined $opts{w} ) {
                      $table->{master_status} = $ms->get_master_status($main_dbh);
