@@ -23,6 +23,10 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 # ###########################################################################
 # OptionParser package 1704
 # ###########################################################################
@@ -473,10 +477,6 @@ if ( $ENV{MKDEBUG} ) {
 package main;
 
 use English qw(-no_match_vars);
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 

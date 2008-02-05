@@ -23,6 +23,10 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 # ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
@@ -1354,10 +1358,6 @@ use Data::Dumper;
 
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 if ( !caller ) {
 

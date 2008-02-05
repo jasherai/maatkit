@@ -22,6 +22,10 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 use English qw(-no_match_vars);
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -1132,10 +1136,6 @@ use sigtrap qw(handler finish untrapped normal-signals);
 
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 my @opt_spec = (
    { s => 'askpass',           d => 'Prompt for password for connections' },

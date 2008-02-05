@@ -26,6 +26,10 @@
 # * Add back top-down, bottom-up, sja algorithms for efficiency when locking
 #   isn't an issue.
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 use strict;
 use warnings FATAL => 'all';
 
@@ -3616,10 +3620,6 @@ package main;
 use English qw(-no_match_vars);
 use List::Util qw(sum max min);
 use POSIX qw(ceil);
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 $OUTPUT_AUTOFLUSH = 1;
 

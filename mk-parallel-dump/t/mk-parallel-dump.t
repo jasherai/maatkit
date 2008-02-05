@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 20;
+use Test::More tests => 21;
 
 my $output;
 
@@ -16,7 +16,7 @@ SKIP: {
    my ($tbl, $chunk) = $output =~ m/default:\s+(\d+) tables,\s+(\d+) chunks,\s+\2 successes/;
    is($tbl, 1, 'One table dumped');
    ok($chunk >= 5 && $chunk <= 15, 'Got some chunks');
-   ok(-s '/tmp/default/sakila/film.005.txt.gz', 'chunk 5 exists');
+   ok(-s '/tmp/default/sakila/film.000005.txt.gz', 'chunk 5 exists');
    ok(-s '/tmp/default/00_master_data.sql', 'master_data exists');
    `rm -rf /tmp/default`;
 
@@ -24,9 +24,13 @@ SKIP: {
    `mysql -e 'drop database if exists foo'`;
    `mysql -e 'create database foo'`;
    `mysql -e 'create table foo.bar(a int) engine=myisam'`;
+   `mysql -e 'insert into foo.bar(a) values(123)'`;
    `mysql -e 'create table foo.mrg(a int) engine=merge union=(foo.bar)'`;
    $output = `perl ../mk-parallel-dump -C 100 --basedir /tmp -T --d foo`;
-   ok(!-f '/tmp/default/foo/mrg.000.sql.gz', 'Merge table was not dumped');
+   ok(-f '/tmp/default/foo/mrg.000000.sql.gz', 'Merge table was dumped');
+   $output = `zgrep 123 /tmp/default/foo/mrg.000000.sql.gz`;
+   chomp $output;
+   is($output, '', '123 is not in the dumped file, so no data dumped');
    `mysql -e 'drop database if exists foo'`;
    `rm -rf /tmp/default`;
 
@@ -40,15 +44,15 @@ SKIP: {
    # Make sure subsequent chunks don't have DROP/CREATE in them (fixes bug
    # #1863949).
    $output = `perl ../mk-parallel-dump -C 100 --no-gzip --basedir /tmp -d sakila -t film 2>&1`;
-   ok(-f '/tmp/default/sakila/film.000.sql', 'first chunk file exists');
-   ok(-f '/tmp/default/sakila/film.001.sql', 'second chunk file exists');
-   $output = `grep -i 'DROP TABLE' /tmp/default/sakila/film.000.sql`;
+   ok(-f '/tmp/default/sakila/film.000000.sql', 'first chunk file exists');
+   ok(-f '/tmp/default/sakila/film.000001.sql', 'second chunk file exists');
+   $output = `grep -i 'DROP TABLE' /tmp/default/sakila/film.000000.sql`;
    like($output, qr/DROP TABLE/i, 'first chunk has DROP TABLE');
-   $output = `grep -i 'DROP TABLE' /tmp/default/sakila/film.001.sql`;
+   $output = `grep -i 'DROP TABLE' /tmp/default/sakila/film.000001.sql`;
    unlike($output, qr/DROP TABLE/i, 'second chunk has no DROP TABLE');
-   $output = `grep -i 'CREATE TABLE' /tmp/default/sakila/film.000.sql`;
+   $output = `grep -i 'CREATE TABLE' /tmp/default/sakila/film.000000.sql`;
    like($output, qr/CREATE TABLE/i, 'first chunk has CREATE TABLE');
-   $output = `grep -i 'CREATE TABLE' /tmp/default/sakila/film.001.sql`;
+   $output = `grep -i 'CREATE TABLE' /tmp/default/sakila/film.000001.sql`;
    unlike($output, qr/CREATE TABLE/i, 'second chunk has no CREATE TABLE');
    `rm -rf /tmp/default`;
 
@@ -56,17 +60,17 @@ SKIP: {
    # gzip...! (fixes bug #1866137)
    $output = `perl ../mk-parallel-dump --quiet -C 100 --basedir /tmp -d sakila -t film 2>&1`;
    is($output, '', 'There is no output');
-   ok(-f '/tmp/default/sakila/film.000.sql.gz', 'first chunk file exists');
-   ok(-f '/tmp/default/sakila/film.001.sql.gz', 'second chunk file exists');
-   $output = `zgrep -i 'DROP TABLE' /tmp/default/sakila/film.000.sql.gz`;
+   ok(-f '/tmp/default/sakila/film.000000.sql.gz', 'first chunk file exists');
+   ok(-f '/tmp/default/sakila/film.000001.sql.gz', 'second chunk file exists');
+   $output = `zgrep -i 'DROP TABLE' /tmp/default/sakila/film.000000.sql.gz`;
    like($output, qr/DROP TABLE/i, 'first chunk has DROP TABLE');
-   $output = `zgrep -i 'DROP TABLE' /tmp/default/sakila/film.001.sql.gz`;
+   $output = `zgrep -i 'DROP TABLE' /tmp/default/sakila/film.000001.sql.gz`;
    unlike($output, qr/DROP TABLE/i, 'second chunk has no DROP TABLE');
-   $output = `zgrep -i 'INSERT INTO' /tmp/default/sakila/film.001.sql.gz`;
+   $output = `zgrep -i 'INSERT INTO' /tmp/default/sakila/film.000001.sql.gz`;
    like($output,   qr/INSERT INTO/i, 'second chunk does have data, though');
-   $output = `zgrep -i 'CREATE TABLE' /tmp/default/sakila/film.000.sql.gz`;
+   $output = `zgrep -i 'CREATE TABLE' /tmp/default/sakila/film.000000.sql.gz`;
    like($output, qr/CREATE TABLE/i, 'first chunk has CREATE TABLE');
-   $output = `zgrep -i 'CREATE TABLE' /tmp/default/sakila/film.001.sql.gz`;
+   $output = `zgrep -i 'CREATE TABLE' /tmp/default/sakila/film.000001.sql.gz`;
    unlike($output, qr/CREATE TABLE/i, 'second chunk has no CREATE TABLE');
    `rm -rf /tmp/default`;
 

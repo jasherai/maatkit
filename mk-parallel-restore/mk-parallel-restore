@@ -25,6 +25,10 @@
 use strict;
 use warnings FATAL => 'all';
 
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+
 # ###########################################################################
 # OptionParser package 1704
 # ###########################################################################
@@ -721,10 +725,6 @@ use File::Spec;
 use List::Util qw(max sum);
 use POSIX;
 use Time::HiRes qw(time);
-
-our $VERSION = '@VERSION@';
-our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 my @conn_params;
 my $dp = new DSNParser;
