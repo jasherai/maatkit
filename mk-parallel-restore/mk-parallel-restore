@@ -999,6 +999,7 @@ while ( @tables_to_do || %kids ) {
          $kids{$pid} = $todo;
       }
       else {                     # I'm the child
+         $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
          my $exit_status = 0;
          $exit_status = do_table(
             @{$todo}{qw(D N)},

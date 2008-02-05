@@ -1,5 +1,6 @@
 Changelog for mk-parallel-restore:
 
+   * Fixed child process exit status on Solaris (bug #1886444).
    * The --defaults-file option caused a mysql error (bug #1886866).
 
 2008-01-24: version 1.0.4
