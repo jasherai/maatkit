@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 9;
+   $tests = 10;
 }
 
 use Test::More tests => $tests;
@@ -52,6 +52,9 @@ SKIP: {
 
    my $dump = $d->dump($dbh, $q, 'sakila', 'film', 'table');
    like($dump, qr/language_id/, 'Dump sakila.film');
+
+   $dump = $d->dump($dbh, $q, 'mysql', 'film', 'triggers');
+   unlike($dump, qr/TRIGGER/, 'no triggers in mysql');
 
    $dump = $d->dump($dbh, $q, 'sakila', 'film', 'triggers');
    like($dump, qr/AFTER INSERT/, 'dump triggers');
