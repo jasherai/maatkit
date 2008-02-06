@@ -1,5 +1,6 @@
 Changelog for mk-parallel-restore:
 
+   * Fixed forking issues with File::Find on Solaris (bug #1887102).
    * Fixed child process exit status on Solaris (bug #1886444).
    * The --defaults-file option caused a mysql error (bug #1886866).
 

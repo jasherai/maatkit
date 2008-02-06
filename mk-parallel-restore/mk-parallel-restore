@@ -869,19 +869,6 @@ my $dbh = get_cxn();
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
 
-# This signal handler will do nothing but wake up the sleeping parent process
-# and record the exit status and time of the child that exited (as a side
-# effect of not discarding the signal).
-my %exited_children;
-$SIG{CHLD} = sub {
-   my $kid;
-   while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
-      # Must right-shift to get the actual exit status of the child.
-      $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
-      $exited_children{$kid}->{exit_time}   = time();
-   }
-};
-
 # ############################################################################
 # Discover files to be restored.
 # ############################################################################
@@ -964,6 +951,21 @@ $maxdb  = max(8, map { length($_->{D}) } @tables_to_do);
 $maxtbl = max(5, map { length($_->{N}) } @tables_to_do);
 my $format = "%-${maxdb}s %-${maxtbl}s %5s %5s %6s %7s";
 info(2, sprintf($format, qw(DATABASE TABLE FILES TIME STATUS THREADS)));
+
+# This signal handler will do nothing but wake up the sleeping parent process
+# and record the exit status and time of the child that exited (as a side
+# effect of not discarding the signal).  Due to Solaris's signal handling and
+# File::Find's use of forking, this must go after File::Find.  See
+# bug #1887102.
+my %exited_children;
+$SIG{CHLD} = sub {
+   my $kid;
+   while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+      # Must right-shift to get the actual exit status of the child.
+      $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
+      $exited_children{$kid}->{exit_time}   = time();
+   }
+};
 
 # #########################################################################
 # Assign the work to child processes.  Initially just start --numthreads
