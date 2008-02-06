@@ -205,14 +205,18 @@ sub get_triggers {
       $dbh->do($sql);
       $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
       $ENV{MKDEBUG} && _d($sql);
-      my $trgs = $dbh->selectall_arrayref($sql, { Slice => {} });
-      foreach my $trg ( @$trgs ) {
-         # Lowercase the hash keys because the NAME_lc property might be set
-         # on the $dbh, so the lettercase is unpredictable.  This makes them
-         # predictable.
-         my %trg;
-         @trg{ map { lc $_ } keys %$trg } = values %$trg;
-         push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
+      my $sth = $dbh->prepare($sql);
+      $sth->execute();
+      if ( $sth->rows ) {
+         my $trgs = $sth->fetchall_arrayref({});
+         foreach my $trg (@$trgs) {
+            # Lowercase the hash keys because the NAME_lc property might be set
+            # on the $dbh, so the lettercase is unpredictable.  This makes them
+            # predictable.
+            my %trg;
+            @trg{ map { lc $_ } keys %$trg } = values %$trg;
+            push @{ $self->{triggers}->{$db}->{ $trg{table} } }, \%trg;
+         }
       }
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
