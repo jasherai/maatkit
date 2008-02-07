@@ -1008,7 +1008,7 @@ my $select_sql = "SELECT "
                . ( $opts{dbidriver} eq 'Pg'
                   ? "ROUND(DATE_PART('epoch', NOW() - ts)) AS delay"
                   : 'UNIX_TIMESTAMP() - UNIX_TIMESTAMP(ts) AS delay/*!50038, @@hostname AS host*/' )
-               . "FROM $opts{t} WHERE id = 1";
+               . " FROM $opts{t} WHERE id = 1";
 
 $ENV{MKDEBUG} && _d("UPDATE SQL: $update_sql");
 $ENV{MKDEBUG} && _d("SELECT SQL: $select_sql");
