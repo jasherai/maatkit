@@ -1809,6 +1809,8 @@ eval {
 $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
 $opts{m} = max(2, $opts{m} || 0);
 
+# TODO: write out progress, checkpoint, and allow resuming.
+
 my @opt_spec = (
    {  s => 'age=m',
       d => 'Dump only tables modified since this long '
