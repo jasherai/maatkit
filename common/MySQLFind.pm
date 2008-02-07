@@ -110,6 +110,14 @@ sub find_tables {
    return map { $_->{name} } @tables;
 }
 
+sub find_views {
+   my ( $self, %args ) = @_;
+   my @tables = $self->_fetch_tbl_list(%args);
+   @tables = grep { $_->{engine} eq 'VIEW' } @tables;
+   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
+   return map { $_->{name} } @tables;
+}
+
 # USEs the given database, and returns the previous default database.
 sub _use_db {
    my ( $self, $dbh, $new ) = @_;

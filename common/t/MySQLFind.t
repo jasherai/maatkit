@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 38;
+   $tests = 39;
 }
 
 use Test::More tests => $tests;
@@ -168,6 +168,15 @@ SKIP: {
          vw_1 => 1,
       },
       'table default',
+   );
+
+   %found = map { $_ => 1 } $f->find_views(database => 'test_mysql_finder_1');
+   is_deeply(
+      \%found,
+      {
+         vw_1 => 1,
+      },
+      'views default',
    );
 
    $f = new MySQLFind(
