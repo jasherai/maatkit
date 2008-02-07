@@ -21,6 +21,7 @@
 
 # TODO: wrap float columns in CONVERT so they'll restore correctly.
 # TODO: wrap character columns in CONVERT so can specify a charset explicitly.
+# TODO: write out progress, checkpoint, and allow resuming.
 
 use strict;
 use warnings FATAL => 'all';
