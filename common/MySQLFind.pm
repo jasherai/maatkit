@@ -30,9 +30,9 @@ $Data::Dumper::Quotekeys = 0;
 #   $f = new MySQLFind(
 #      dbh       => $dbh,
 #      quoter    => new Quoter(),
-#      useddl    => 1/0 (default 0, 1 requires parser/dumper)
-#      parser    => new TableParser(), # optional
-#      dumper    => new MySQLDump(), # optional
+#      useddl    => 1/0 (default 0),
+#      parser    => new TableParser(),
+#      dumper    => new MySQLDump(),
 #      nullpass  => 1/0 # whether an undefined status test is true
 #      databases => {
 #         permit => { a => 1, b => 1, },
@@ -62,12 +62,11 @@ use English qw(-no_match_vars);
 sub new {
    my ( $class, %args ) = @_;
    my $self = bless \%args, $class;
+   map { die "I need a $_ argument" unless defined $args{$_} } qw(dumper quoter);
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
    die "Specify dbh" unless $args{dbh};
    if ( $args{useddl} ) {
       $ENV{MKDEBUG} && _d('Will prefer DDL');
-      die "Specifying useddl requires parser and dumper"
-         unless $args{parser} && $args{dumper};
    }
    if ( $args{tables}->{status} ) {
       my $sql = 'SELECT CURRENT_TIMESTAMP';
@@ -82,22 +81,11 @@ sub find_databases {
    my ( $self ) = @_;
    return grep {
       $_ !~ m/^(information_schema|lost\+found)$/i
-   }
-   $self->_filter('databases', sub { $_[0] }, $self->_fetch_db_list());
-}
-
-sub _fetch_db_list {
-   my ( $self ) = @_;
-   my $sql = 'SHOW DATABASES';
-   my @params;
-   if ( $self->{databases}->{like} ) {
-      $sql .= ' LIKE ?';
-      push @params, $self->{databases}->{like};
-   }
-   my $sth = $self->{dbh}->prepare($sql);
-   $ENV{MKDEBUG} && _d($sql, @params);
-   $sth->execute( @params );
-   return map { $_->[0] } @{$sth->fetchall_arrayref()};
+   }  $self->_filter('databases', sub { $_[0] },
+         $self->{dumper}->get_databases(
+            $self->{dbh},
+            $self->{quoter},
+            $self->{databases}->{like}));
 }
 
 sub find_tables {
@@ -154,53 +142,36 @@ sub _fetch_tbl_list {
         || $self->{engines}->{reject}
         || $self->{engines}->{regexp};
    my $need_status = $self->{tables}->{status};
-   my @params;
    if ( $need_status || ($need_engine && !$self->{useddl}) ) {
-      my $sql = "SHOW TABLE STATUS FROM "
-              . $self->{quoter}->quote($args{database});
-      if ( $self->{tables}->{like} ) {
-         $sql .= ' LIKE ?';
-         push @params, $self->{tables}->{like};
-      }
-      $ENV{MKDEBUG} && _d($sql, @params);
-      my $sth = $self->{dbh}->prepare($sql);
-      $sth->execute(@params);
-      my @tables = @{$sth->fetchall_arrayref({})};
-      return map {
-         my %tbl; # Make a copy with lowercased keys
-         @tbl{ map { lc $_ } keys %$_ } = values %$_;
-         $tbl{engine} ||= $tbl{type} || $tbl{comment};
-         $tbl{name} = join('.', $args{database}, $tbl{name});
-         delete $tbl{type};
-         \%tbl;
+      my @tables = $self->{dumper}->get_table_status(
+         $self->{dbh},
+         $self->{quoter},
+         $args{database},
+         $self->{tables}->{like});
+      @tables = map {
+         my %hash = %$_;
+         $hash{name} = join('.', $args{database}, $hash{name});
+         \%hash;
       } @tables;
+      return @tables;
    }
    else {
-      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM "
-              . $self->{quoter}->quote($args{database});
-      if ( $self->{tables}->{like} ) {
-         $sql .= ' LIKE ?';
-         push @params, $self->{tables}->{like};
-      }
-      $ENV{MKDEBUG} && _d($sql, @params);
-      my $sth = $self->{dbh}->prepare($sql);
-      $sth->execute(@params);
-      my @tables = @{$sth->fetchall_arrayref()};
       my @result;
+      my @tables = $self->{dumper}->get_table_list(
+         $self->{dbh},
+         $self->{quoter},
+         $args{database},
+         $self->{tables}->{like});
       foreach my $tbl ( @tables ) {
-         my $engine = '';
-         if ( ($tbl->[1] || '') eq 'VIEW' ) {
-            $engine = 'VIEW';
-         }
-         elsif ( $need_engine ) {
+         if ( $need_engine && !$tbl->{engine} ) {
             my $struct = $self->{parser}->parse(
                $self->{dumper}->get_create_table(
-                  $self->{dbh}, $self->{quoter}, $args{database}, $tbl->[0]));
-            $engine = $struct->{engine};
+                  $self->{dbh}, $self->{quoter}, $args{database}, $tbl->{name}));
+            $tbl->{engine} = $struct->{engine};
          }
          push @result,
-         {  name   => "$args{database}.$tbl->[0]",
-            engine => $engine,
+         {  name   => join('.', $args{database}, $tbl->{name}),
+            engine => $tbl->{engine},
          }
       }
       return @result;

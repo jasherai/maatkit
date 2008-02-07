@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my $tests;
 BEGIN {
-   $tests = 39;
+   $tests = 38;
 }
 
 use Test::More tests => $tests;
@@ -65,6 +65,8 @@ SKIP: {
 
    $f = new MySQLFind(
       dbh       => $dbh,
+      quoter    => $q,
+      dumper    => $d,
    );
 
    %found = map { lc($_) => 1 } $f->find_databases();
@@ -76,6 +78,8 @@ SKIP: {
 
    $f = new MySQLFind(
       dbh       => $dbh,
+      quoter    => $q,
+      dumper    => $d,
       databases => {
          permit => { test_mysql_finder_1 => 1 },
       },
@@ -88,6 +92,8 @@ SKIP: {
 
    $f = new MySQLFind(
       dbh       => $dbh,
+      quoter    => $q,
+      dumper    => $d,
       databases => {
          reject => { test_mysql_finder_1 => 1 },
       },
@@ -100,6 +106,8 @@ SKIP: {
 
    $f = new MySQLFind(
       dbh       => $dbh,
+      quoter    => $q,
+      dumper    => $d,
       databases => {
          regexp => 'finder',
       },
@@ -112,6 +120,8 @@ SKIP: {
 
    $f = new MySQLFind(
       dbh       => $dbh,
+      quoter    => $q,
+      dumper    => $d,
       databases => {
          like   => 'test\\_%',
       },
@@ -142,6 +152,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
       },
    );
@@ -162,6 +173,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
          permit => { a => 1 },
       },
@@ -179,6 +191,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
          permit => { 'test_mysql_finder_1.a' => 1 },
       },
@@ -204,6 +217,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
          reject => { a => 1 },
       },
@@ -224,6 +238,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
          reject => { 'test_mysql_finder_1.a' => 1 },
       },
@@ -257,6 +272,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
          regexp => 'a|b',
       },
@@ -276,6 +292,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
          like => 'a%',
       },
@@ -294,6 +311,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
       },
       engines => {
@@ -316,6 +334,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
       },
       engines => {
@@ -337,6 +356,7 @@ SKIP: {
    $f = new MySQLFind(
       dbh    => $dbh,
       quoter => $q,
+      dumper => $d,
       tables => {
       },
       engines => {
@@ -353,22 +373,6 @@ SKIP: {
       },
       'engine reject',
    );
-
-   # Test that preferring DDL over SHOW TABLE STATUS wants a TableParser.
-   eval {
-      $f = new MySQLFind(
-         dbh    => $dbh,
-         useddl => 1,
-         quoter => $q,
-         tables => {
-         },
-         engines => {
-            reject => { MyISAM => 1 },
-            views  => 0,
-         }
-      );
-   };
-   like($EVAL_ERROR, qr/parser and dumper/, 'wants a TableParser');
 
    # Test that the cache gets populated
    $f = new MySQLFind(
