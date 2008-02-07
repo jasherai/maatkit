@@ -27,6 +27,217 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
+# MasterSlave package 1653
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package MasterSlave;
+
+use English qw(-no_match_vars);
+use List::Util qw(min max);
+
+sub new {
+   bless {}, shift;
+}
+
+# Descends to slaves by examining SHOW SLAVE HOSTS.  Arguments is a hashref:
+#
+# * dbh           (Optional) a DBH.
+# * dsn           The DSN to connect to; if no DBH, will connect using this.
+# * dsn_parser    A DSNParser object.
+# * recurse       How many levels to recurse. 0 = none, undef = infinite.
+# * callback      Code to execute after finding a new slave.
+# * skip_callback Optional: execute with slaves that will be skipped.
+#
+# The callback gets the slave's DSN, dbh, and the recursion level as args.
+# The recursion is tail recursion.
+sub recurse_to_slaves {
+   my ( $self, $args, $level ) = @_;
+   $level ||= 0;
+   my $dp   = $args->{dsn_parser};
+   my $dsn  = $args->{dsn};
+
+   my $dbh;
+   eval {
+      $dbh = $args->{dbh} || $dp->get_dbh(
+         $dp->get_cxn_params($dsn), { AutoCommit => 1 });
+      $ENV{MKDEBUG} && _d('Connected to ', $dp->as_string($dsn));
+   };
+   if ( $EVAL_ERROR ) {
+      print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n";
+      return;
+   }
+
+   # SHOW SLAVE HOSTS sometimes has obsolete information.  Verify that this
+   # server has the ID its master thought, and that we have not seen it before
+   # in any case.
+   my $sql  = 'SELECT @@SERVER_ID';
+   $ENV{MKDEBUG} && _d($sql);
+   my ($id) = $dbh->selectrow_array($sql);
+   $ENV{MKDEBUG} && _d('Working on server ID ', $id);
+   my $master_thinks_i_am = $dsn->{server_id};
+   if ( !defined $id
+       || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
+       || $args->{server_ids_seen}->{$id}++
+   ) {
+      $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
+      if ( $args->{skip_callback} ) {
+         $args->{skip_callback}->($dsn, $dbh, $level);
+      }
+      return;
+   }
+
+   # Call the callback!
+   $args->{callback}->($dsn, $dbh, $level);
+
+   if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
+
+      # Find the slave hosts.  Eliminate hosts that aren't slaves of me (as
+      # revealed by server_id and master_id).
+      my @slaves =
+         grep { !$_->{master_id} || $_->{master_id} == $id } # Only my slaves.
+         $self->find_slave_hosts($dp, $dbh, $dsn);
+
+      foreach my $slave ( @slaves ) {
+         $ENV{MKDEBUG} && _d('Recursing from ',
+            $dp->as_string($dsn), ' to ', $dp->as_string($slave));
+         $self->recurse_to_slaves(
+            { %$args, dsn => $slave, dbh => undef }, $level + 1 );
+      }
+   }
+}
+
+# Finds slave hosts by trying SHOW SLAVE HOSTS, and if that doesn't reveal
+# anything, looks at SHOW PROCESSLIST and tries to guess which ones are slaves.
+# Returns a list of DSN hashes.  Optional extra keys in the DSN hash are
+# master_id and server_id.  Also, the 'source' key is either 'processlist' or
+# 'hosts'.
+sub find_slave_hosts {
+   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+   $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
+
+   # Try SHOW SLAVE HOSTS first.
+   my $sql = 'SHOW SLAVE HOSTS';
+   $ENV{MKDEBUG} && _d($sql);
+   my @slaves = 
+      @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+   # Convert SHOW SLAVE HOSTS into DSN hashes.
+   if ( @slaves ) {
+      $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+      @slaves = map {
+         my %hash;
+         @hash{ map { lc $_ } keys %$_ } = values %$_;
+         my $spec = "h=$hash{host},P=$hash{port}"
+            . ( $hash{user} ? ",u=$hash{user}" : '')
+            . ( $hash{password} ? ",p=$hash{password}" : '');
+         my $dsn           = $dsn_parser->parse($spec, $dsn);
+         $dsn->{server_id} = $hash{server_id};
+         $dsn->{master_id} = $hash{master_id};
+         $dsn->{source}    = 'hosts';
+         $dsn;
+      } @slaves;
+   }
+
+   else {
+      my $sql = 'SHOW PROCESSLIST';
+      $ENV{MKDEBUG} && _d($sql);
+      @slaves =
+         map  {
+            my $slave        = $dsn_parser->parse("h=$_", $dsn);
+            $slave->{source} = 'processlist';
+            $slave;
+         }
+         grep { $_ }
+         map  {
+            my ( $host ) = $_->{host} =~ m/^([^:]+):/;
+            if ( $host eq 'localhost' ) {
+               $host = '127.0.0.1'; # Replication never uses sockets.
+            }
+            $host;
+         }
+         # It's probably a slave if it's doing a binlog dump.
+         grep { $_->{command} =~ m/Binlog Dump/i }
+         map  {
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            \%hash;
+         }
+         @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+   }
+
+   $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
+   return @slaves;
+}
+
+sub get_master_dsn {
+   my ( $self, $dbh, $dsn, $dsn_parser ) = @_;
+   $ENV{MKDEBUG} && _d("Getting master cxn params via SHOW SLAVE STATUS");
+   my $query  = 'SHOW SLAVE STATUS';
+   $ENV{MKDEBUG} && _d($query);
+   my $status = $dbh->selectrow_hashref($query);
+   $status    = { map { lc($_) => $status->{$_} } keys %$status };
+   my $spec   = "h=$status->{master_host},P=$status->{master_port}";
+   return       $dsn_parser->parse($spec, $dsn);
+}
+
+# Returns a hashref of SHOW MASTER STATUS output, with keys lowercased.
+sub get_master_status {
+   my ( $self, $dbh ) = @_;
+   if ( !$self->{not_a_master}->{$dbh} ) {
+      my $query = 'SHOW MASTER STATUS';
+      $ENV{MKDEBUG} && _d($query);
+      my $ms = $dbh->selectrow_hashref($query);
+
+      if ( $ms && %$ms ) {
+         $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
+         if ( $ms->{file} && $ms->{position} ) {
+            return $ms;
+         }
+      }
+
+      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW MASTER STATUS');
+      $self->{not_a_master}->{$dbh}++;
+   }
+}
+
+# Waits for a slave to catch up to the master, with MASTER_POS_WAIT().  Returns
+# the return value of MASTER_POS_WAIT().  $ms is the optional result of calling
+# get_master_status().
+sub wait_for_master {
+   my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
+   my $result;
+   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+   $ms ||= $self->get_master_status($master);
+   if ( $ms ) {
+      my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
+      $ENV{MKDEBUG} && _d($query);
+      ($result) = $slave->selectrow_array($query);
+      my $stat = defined $result ? $result : 'NULL';
+      if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
+         die "MASTER_POS_WAIT returned $stat";
+      }
+      $ENV{MKDEBUG} && _d("Result of waiting: $stat");
+   }
+   else {
+      $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
+   }
+   return $result;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# MasterSlave:$line ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End MasterSlave package
+# ###########################################################################
+
+# ###########################################################################
 # OptionParser package 1704
 # ###########################################################################
 use strict;
@@ -701,6 +912,7 @@ my @opt_spec = (
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Suppress normal output' },
+   { s => 'recurse=i',         d => 'Check slaves recursively to this depth' },
    { s => 'replace|r',         d => 'Use REPLACE instead of UPDATE for --update' },
    { s => 'sentinel=s',        d => 'Sentinel file; default /tmp/mk-heartbeat-sentinel' },
    { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
@@ -712,6 +924,7 @@ my @opt_spec = (
    { s => 'user|u=s',          d => 'User for login if not current user' },
    'Specify at least one of --stop, --update, --monitor, or --check',
    '--update, --monitor, and --check are mutually exclusive',
+   '--daemonize and --check are mutually exclusive',
 );
 
 my $opt_parser = OptionParser->new(@opt_spec);
@@ -793,19 +1006,22 @@ my $update_sql = $opts{r}
                : "UPDATE $opts{t} SET ts = NOW() WHERE id = 1";
 my $select_sql = "SELECT "
                . ( $opts{dbidriver} eq 'Pg'
-                  ? "ROUND(DATE_PART('epoch', NOW() - ts)) "
-                  : "UNIX_TIMESTAMP() - UNIX_TIMESTAMP(ts) " )
-               . "AS delay FROM $opts{t} WHERE id = 1";
+                  ? "ROUND(DATE_PART('epoch', NOW() - ts)) AS delay"
+                  : 'UNIX_TIMESTAMP() - UNIX_TIMESTAMP(ts) AS delay/*!50038, @@hostname AS host*/' )
+               . "FROM $opts{t} WHERE id = 1";
 
 $ENV{MKDEBUG} && _d("UPDATE SQL: $update_sql");
 $ENV{MKDEBUG} && _d("SELECT SQL: $select_sql");
 
-my $dsn   = new DSNParser;
-$dsn->prop('dbidriver', $opts{dbidriver});
-my $dbh   = $dsn->get_dbh($dsn->get_cxn_params(\%opts), { AutoCommit => 1 });
+my $dp    = new DSNParser;
+$dp->prop('dbidriver', $opts{dbidriver});
+my $dsn   = $dp->parse($dp->as_string(\%opts));
+my $dbh   = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 my $sth   = $dbh->prepare($opts{update} ? $update_sql : $select_sql);
 
 $dbh->{InactiveDestroy}  = 1; # Don't disconnect on fork
+my @dbhs;                     # Holds slave DBHs if --recurse
+my @sths;                     # Holds [$host, $sth] if --recurse
 
 # Do a little check just to make sure the table is there, so there's one last
 # chance to catch errors before daemonizing.
@@ -835,6 +1051,13 @@ my $now = time();
 my $end = $now + ($opts{m} || 0);    # When to exit
 $ENV{MKDEBUG} && _d("Will exit at $end");
 
+# --monitor and --update run in a loop, but --check only checks once and
+# exits.
+if ( $opts{check} ) {
+   check_delay();
+   quit();
+}
+
 # Quit if time is exceeded or sentinel exists.
 while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
    eval {
@@ -843,18 +1066,17 @@ while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
       usleep(
          (($opts{i} - ($now[0] % $opts{i})) * 1_000_000) - $now[1]
          # --update happens at the second boundary, but --monitor and --check
-         # are delayed to 
+         # are delayed to avoid spurious results.
          + ($opts{update} ? 0 : $opts{k} ));
       $ENV{MKDEBUG} && _d('Woke up at ' . gettimeofday());
 
       # Connect or reconnect if necessary.
       if ( !$dbh->ping ) {
-         $dbh   = $dsn->get_dbh(
-                  $dsn->get_cxn_params(\%opts), { AutoCommit => 1 });
+         $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
          $sth = undef;
       }
 
-      if ( $opts{monitor} || $opts{check} ) {
+      if ( $opts{monitor} ) {
 
          # Get the data
          $sth ||= $dbh->prepare($select_sql);
@@ -866,29 +1088,24 @@ while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
          pop @samples if @samples > $limit;
 
          # Calculate and print results
-         if ( $opts{check} ) {
-            print "$delay\n"
-               unless $opts{q};
-            quit();
+
+         my @vals = map {
+            my $bound = min($_, scalar(@samples));
+            sum(@samples[0 .. $bound-1]) / $_;
+         } @{$opts{frames}};
+         my $output = sprintf($format, $delay, @vals);
+         if ( $opts{file} ) {
+            open my $file, ">", $opts{file}
+               or die "Can't open $opts{file}: $OS_ERROR";
+            print $file $output
+               or die "Can't print to  $opts{file}: $OS_ERROR";
+            close $file or die "Can't close $opts{file}: $OS_ERROR";
          }
          else {
-            my @vals = map {
-               my $bound = min($_, scalar(@samples));
-               sum(@samples[0 .. $bound-1]) / $_;
-            } @{$opts{frames}};
-            my $output = sprintf($format, $delay, @vals);
-            if ( $opts{file} ) {
-               open my $file, ">", $opts{file}
-                  or die "Can't open $opts{file}: $OS_ERROR";
-               print $file $output
-                  or die "Can't print to  $opts{file}: $OS_ERROR";
-               close $file or die "Can't close $opts{file}: $OS_ERROR";
-            }
-            else {
-               print $output
-                  unless $opts{q};
-            }
+            print $output
+               unless $opts{q};
          }
+
       }
 
       else { # --update mode
@@ -911,14 +1128,74 @@ while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
 
 quit();
 
+# ############################################################################
+# Subroutines.
+# ############################################################################
+
+# Check the delay on a single server.  Optionally recurse to all its slaves.
+sub check_delay {
+
+   # Collect a list of connections to the slaves.
+   if ( $opts{recurse} ) {
+      my $ms = new MasterSlave();
+      $ms->recurse_to_slaves(
+         {  dbh => $dbh,
+            dsn => $dsn,
+            dsn_parser => $dp,
+            recurse    => $opts{recurse},
+            callback   => sub {
+               my ( $dsn, $dbh, $level ) = @_;
+               push @dbhs, $dbh;
+               push @sths, [ $dsn->{h}, $dbh->prepare($select_sql) ];
+            },
+         },
+      );
+   }
+   else {
+      push @sths, [ $dsn->{h}, $sth ];
+   }
+
+   # Assume that each query will be very fast, so there's no real need to
+   # sleep between EACH server checked.
+   my @now = gettimeofday();
+   usleep((($opts{i} - ($now[0] % $opts{i})) * 1_000_000) - $now[1] + $opts{k});
+   $ENV{MKDEBUG} && _d('Woke up at ' . gettimeofday());
+
+   foreach my $thing ( @sths ) {
+      my ( $host, $sth ) = @$thing;
+      $sth->execute();
+      my ( $delay, $hostname ) = $sth->fetchrow_array;
+      $host ||= $hostname || '';
+      $ENV{MKDEBUG} && _d("Found delay of $delay on $host");
+
+      if ( $opts{recurse} && $host  ) {
+         # Must print not only the delay, but the server's hostname if
+         # available.
+         print "$host $delay\n" unless $opts{q};
+      }
+      else {
+         # Just print the delay.
+         print "$delay\n" unless $opts{q};
+      }
+   }
+   quit();
+}
+
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# main:$line ", @_, "\n";
 }
 
 sub quit {
-   $sth->finish()     if $sth;
-   $dbh->disconnect() if $dbh;
+   $sth->finish() if $sth;
+   foreach my $handle ( @sths ) {
+      my $sth = $handle->[1];
+      $sth->finish() if $sth;
+   }
+   foreach my $handle ( $dbh, @dbhs ) {
+      $handle->disconnect() if $handle;
+   }
    exit(0);
 }
 
@@ -1054,6 +1331,16 @@ Port number to use for connection.
 =item --quiet
 
 Suppresses normal output (handy for avoiding emails from C<cron>).
+
+=item --recurse
+
+When running in L<"--check"> mode, try to discover slave servers recursively,
+to the specified depth.  After discovering servers, run the check on each one
+of them and print the hostname (if possible), followed by the slave delay.
+
+This currently works only with MySQL.  It uses C<SHOW SLAVE HOSTS> to discover
+slaves; if that returns nothing, it falls back to examining the output of
+C<SHOW PROCESSLIST> to try to find connections that "look like" slaves.
 
 =item --replace
 

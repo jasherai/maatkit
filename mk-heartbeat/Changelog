@@ -1,5 +1,6 @@
 Changelog for mk-heartbeat:
 
+   * Added --recurse option to check slaves to any depth.
    * Made mk-heartbeat explicitly close DB connection when done.
 
 2008-01-05: version 1.0.6
