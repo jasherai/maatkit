@@ -1015,7 +1015,7 @@ $ENV{MKDEBUG} && _d("SELECT SQL: $select_sql");
 
 my $dp    = new DSNParser;
 $dp->prop('dbidriver', $opts{dbidriver});
-my $dsn   = $dp->parse($dp->as_string(\%opts));
+my $dsn   = $dp->parse('bogus', {}, \%opts);
 my $dbh   = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 my $sth   = $dbh->prepare($opts{update} ? $update_sql : $select_sql);
 
