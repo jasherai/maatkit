@@ -1848,6 +1848,10 @@ my @opt_spec = (
       d => 'Ignore this comma-separated list of tables' },
    {  s => 'locktables!',
       d => 'Use LOCK TABLES (disables --flushlock)' },
+   {  s => 'losslessfp|L',
+      d => 'Convert double and float to decimal with extra precision so '
+         . 'the reinserted values will be equal to the original values.  '
+         . 'Requires --tab.' },
    {  s => 'numthread|m=i',
       d => "Number of threads (default $opts{m})" },
    {  s => 'password|p=s',
@@ -1882,6 +1886,7 @@ my @opt_spec = (
       d => 'Wait limit when server is down (default 5m)' },
    '--locktables and --flushlock are mutually exclusive',
    '--sets and --setperdb are mutually exclusive',
+   '--losslessfp requires --tab',
 );
 
 my $opt_parser = OptionParser->new(@opt_spec);
@@ -1911,9 +1916,14 @@ if ( !$opts{help} ) {
       $opt_parser->error("You must specify --numthread");
    }
 
+   if ( !$opts{help} && $opts{L} && !$opts{T} ) {
+      $opt_parser->error("--losslessfp requires --tab");
+   }
+
    if ( !$opts{help} && $opts{sets} && !$opts{settable} ) {
       $opt_parser->error("--sets requires --settable");
    }
+
    if ( $opts{T} && @ARGV ) {
       $opt_parser->error("Unused arguments: @ARGV");
    }
@@ -2024,6 +2034,7 @@ my $has_triggers         = VersionParser->new()->version_ge($dbh, '5.0.10');
 # and record the exit status and time of the child that exited (as a side
 # effect of not discarding the signal).
 my %exited_children;
+# TODO: I'm getting defunct children.  What's up?
 $SIG{CHLD} = sub {
    my $kid;
    while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
@@ -2082,7 +2093,6 @@ if ( $opts{sets} ) {
 }
 
 my %databases_for;
-my %table_status;
 
 my %findspec = (
    dbh    => $dbh,
@@ -2205,8 +2215,9 @@ foreach my $set ( @sets_to_do ) {
 
    my @work_to_do;
    foreach my $db_tbl ( @{$tables_for_set{$set}} ) {
-      my @chunks = get_chunks($opts{C}, $set, @$db_tbl, \%table_status);
-      my $i = 0;
+      my @chunks = get_chunks($opts{C}, $set, @$db_tbl);
+      my $cols   = join(', ', get_columns(@$db_tbl));
+      my $i      = 0;
       foreach my $chunk ( @chunks ) {
          my $todo = {
             D => $chunk->{D}, # Database name
@@ -2215,6 +2226,7 @@ foreach my $set ( @sets_to_do ) {
             C => $i++,        # Chunk number
             W => $chunk->{W}, # WHERE clause
             E => $chunk->{E}, # Storage engine
+            L => $cols,       # SELECT list
          };
          $ENV{MKDEBUG} && _d(Dumper($todo));
          push @work_to_do, $todo;
@@ -2425,8 +2437,22 @@ sub mysql_error_msg {
    return $text;
 }
 
+# Decides on a SELECT list.  For FLOAT and DOUBLE, if lossless floating point
+# dumps are desired, wrap the column with REPLACE(FORMAT(col, 17), ',', '').
+sub get_columns {
+   my ( $db, $tbl ) = @_;
+   return '*' unless $opts{L};
+   my $table = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
+   my @cols = map {
+      $table->{type_for}->{$_} =~ m/float|double/
+         ? sprintf("REPLACE(FORMAT(%s, 17), ',', '')", $q->quote($_))
+         : $q->quote($_)
+   } @{$table->{cols}};
+   return @cols;
+}
+
 sub get_chunks {
-   my ( $spec, $set, $db, $tbl, $cache ) = @_;
+   my ( $spec, $set, $db, $tbl ) = @_;
    my $table = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
    my $cant_chunk = {
       D => $db,
@@ -2437,7 +2463,7 @@ sub get_chunks {
    };
    return $cant_chunk unless $spec;
 
-   my $rows_per_chunk = $tc->size_to_rows($dbh, $db, $tbl, $spec, $cache);
+   my $rows_per_chunk = $tc->size_to_rows($dbh, $db, $tbl, $spec);
 
    # Get the chunk column candidates
    my $col   = $tc->get_first_chunkable_column($table);
@@ -2531,10 +2557,10 @@ sub do_table {
       if ( !$opts{E}->{$todo->{E}} ) { # Don't dump data for these engines...
          my $sql
            = $opts{csv}
-           ?    "SELECT * INTO OUTFILE '$filename.txt' "
+           ?    "SELECT $todo->{L} INTO OUTFILE '$filename.txt' "
               . "FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\\"' "
               . "LINES TERMINATED BY '\\n' FROM $D.$N"
-           :    "SELECT * INTO OUTFILE '$filename.txt' "
+           :    "SELECT $todo->{L} INTO OUTFILE '$filename.txt' "
               . "FROM $D.$N WHERE $todo->{W}";
          if ( $opts{test} ) {
             print $sql, "\n";
@@ -3021,6 +3047,16 @@ qualified with the database name.
 Disables L<"--flushlock"> (unless it was explicitly set) and locks tables with
 C<LOCK TABLES READ>.  Enabled by default when L<"--sets"> is specified.  The
 lock is taken and released with every set of tables dumped.
+
+=item --losslessfp
+
+Wraps double and float types with a call to C<FORMAT()> with 17 digits of
+precision.  According to the comments in Google's patches, this will give
+lossless dumping and reloading in most cases.  (I shamelessly stole this
+technique from them.  I don't know enough about floating-point math to have an
+opinion).
+
+This works only with L<"--tab">.
 
 =item --numthread
 
