@@ -2542,7 +2542,7 @@ sub do_table {
       makedir($filename);
 
       # Dump the schema before the first chunk.
-      if ( $todo->{C} == 0 ) {
+      if ( !$opts{test} && $todo->{C} == 0 ) {
          # Table definition.
          my $ddl = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'table');
          if ( $ddl ) {
