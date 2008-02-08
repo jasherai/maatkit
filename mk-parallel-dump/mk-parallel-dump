@@ -2384,7 +2384,7 @@ foreach my $set ( @sets_to_do ) {
 # ############################################################################
 # Dump views now.
 # ############################################################################
-if ( @views ) {
+if ( @views && !@ARGV && !$opts{test} ) {
    my $filename = filename('default', '00_views');
    my $fspec = $opts{gzip}
       ? "| gzip --force --fast > $filename.sql.gz"
@@ -2522,7 +2522,7 @@ sub do_table {
    my $N         = $q->quote($todo->{N});
    my $filename  = filename(interp($todo, '%S', '%D', '%N.%6C'));
 
-   if ( $todo->{C} == 0 && $has_triggers ) {
+   if ( $todo->{C} == 0 && $has_triggers && !$opts{test} ) {
       makedir($filename);
       my $trg = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'triggers');
       if ( $trg ) {
