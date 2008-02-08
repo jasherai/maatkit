@@ -20,3 +20,39 @@ Promoting masters:
    * choose slave that's most up-to-date
    * use SHOW BINARY LOG EVENTS and some math to find the corresponding
      positions and issue CHANGE MASTER TO on each slave.
+
+A script to copy files in parallel with netcat.
+
+#!/bin/bash
+
+set -e
+set -u
+
+# #######################################################################
+# Arguments
+# #######################################################################
+SRC=$1
+DST=$2
+SDIR=$3
+DDIR=$4
+EXCL=$5
+
+running=0
+port=12345
+
+function copyfile () {
+   file=$1;
+   port=$2;
+   echo "$file, $port";
+   #(sleep 10; touch forked)&
+   #while [ ! -e forked ]; do
+      #echo "sleeping";
+      #sleep 1;
+   #done
+   #rm forked
+}
+
+for file in `ssh $SRC "du $SDIR/*" | grep -v "'$EXCL'" | sort -nr | awk '{print $2}'`; do
+   let port=port+1;
+   copyfile $file $port;
+done
