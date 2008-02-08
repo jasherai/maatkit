@@ -917,7 +917,7 @@ File::Find::find(
             $stats{files}++;
             push @view_files, $filename;
          }
-         elsif ( ! -d $filename ) {
+         elsif ( ! -d $filename && $filename !~ m/00_master_data.sql/ ) {
             info(1, "Skipping file $filename");
          }
       },
