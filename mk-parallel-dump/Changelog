@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2008-02-10: version 1.0.6
+
    * Added the --losslessfp option.
    * Fixed child process exit status on Solaris (bug #1886444).
 
