@@ -30,11 +30,13 @@ use English qw(-no_match_vars);
 
 require "../TableParser.pm";
 require "../TableChunker.pm";
+require "../MySQLDump.pm";
 require "../Quoter.pm";
 
 my $q = new Quoter();
 my $p = new TableParser();
 my $c = new TableChunker( quoter => $q );
+my $d = new MySQLDump();
 my $t;
 
 sub throws_ok {
@@ -335,12 +337,12 @@ SKIP: {
    );
 
    throws_ok(
-      sub { $c->size_to_rows($dbh, 'sakila', 'film', 'foo') },
+      sub { $c->size_to_rows($dbh, 'sakila', 'film', 'foo', $d) },
       qr/Invalid size spec/,
       'Rejects bad size spec',
    );
-   is( $c->size_to_rows($dbh, 'sakila', 'film', '5'), 5, 'Numeric size' );
-   my $size = $c->size_to_rows($dbh, 'sakila', 'film', '5k');
+   is( $c->size_to_rows($dbh, 'sakila', 'film', '5', $d), 5, 'Numeric size' );
+   my $size = $c->size_to_rows($dbh, 'sakila', 'film', '5k', $d);
    ok($size >= 20 && $size <= 30, 'Convert bytes to rows');
 
 }

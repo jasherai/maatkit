@@ -268,12 +268,11 @@ sub get_first_chunkable_column {
 }
 
 # Convert a size in rows or bytes to a number of rows in the table, using SHOW
-# TABLE STATUS.  The $cache may hold the table's status already; if so we use
-# it (because it's expensive).  If the size is a string with a suffix of
-# M/G/k, interpret it as mebibytes, gibibytes, or kibibytes respectively.  If
-# it's just a number, treat it as a number of rows and return right away.
+# TABLE STATUS.  If the size is a string with a suffix of M/G/k, interpret it as
+# mebibytes, gibibytes, or kibibytes respectively.  If it's just a number, treat
+# it as a number of rows and return right away.
 sub size_to_rows {
-   my ( $self, $dbh, $db, $tbl, $size, $cache ) = @_;
+   my ( $self, $dbh, $db, $tbl, $size, $dumper ) = @_;
   
    my ( $num, $suffix ) = $size =~ m/^(\d+)([MGk])?$/;
    if ( $suffix ) { # Convert to bytes.
@@ -288,20 +287,9 @@ sub size_to_rows {
       die "Invalid size spec $size; must be an integer with optional suffix kMG";
    }
 
-   my $avg_row_length;
-   my $status;
-   if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
-      $tbl =~ s/_/\\_/g;
-      my $sql = "SHOW TABLE STATUS FROM "
-         . $self->{quoter}->quote($db) . " LIKE ?";
-      $ENV{MKDEBUG} && _d($sql, ' ', $tbl);
-      $status = $dbh->selectrow_hashref($sql, {}, $tbl);
-      if ( $cache ) {
-         $cache->{$db}->{$tbl} = $status;
-      }
-   }
-   my ($key) = grep { /avg_row_length/i } keys %$status;
-   $avg_row_length = $status->{$key};
+   my @status = $dumper->get_table_status($dbh, $self->{quoter}, $db);
+   my ($status) = grep { $_->{name} eq $tbl } @status;
+   my $avg_row_length = $status->{avg_row_length};
    return $avg_row_length ? ceil($size / $avg_row_length) : undef;
 }
 
