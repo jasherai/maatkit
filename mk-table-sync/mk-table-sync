@@ -1146,7 +1146,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1574
+# MySQLDump package 1729
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1335,11 +1335,15 @@ sub get_triggers {
       $dbh->do($sql);
       $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
       $ENV{MKDEBUG} && _d($sql);
-      my $trgs = $dbh->selectall_arrayref($sql, { Slice => {} });
-      foreach my $trg ( @$trgs ) {
-         my %trg;
-         @trg{ map { lc $_ } keys %$trg } = values %$trg;
-         push @{$self->{triggers}->{$db}->{$trg{table}}}, \%trg;
+      my $sth = $dbh->prepare($sql);
+      $sth->execute();
+      if ( $sth->rows ) {
+         my $trgs = $sth->fetchall_arrayref({});
+         foreach my $trg (@$trgs) {
+            my %trg;
+            @trg{ map { lc $_ } keys %$trg } = values %$trg;
+            push @{ $self->{triggers}->{$db}->{ $trg{table} } }, \%trg;
+         }
       }
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
@@ -1348,6 +1352,78 @@ sub get_triggers {
    }
    return $self->{triggers}->{$db}->{$tbl};
 }
+
+sub get_databases {
+   my ( $self, $dbh, $quoter, $like ) = @_;
+   if ( !$self->{databases} || $like ) {
+      my $sql = 'SHOW DATABASES';
+      my @params;
+      if ( $like ) {
+         $sql .= ' LIKE ?';
+         push @params, $like;
+      }
+      my $sth = $dbh->prepare($sql);
+      $ENV{MKDEBUG} && _d($sql, @params);
+      $sth->execute( @params );
+      my @dbs = map { $_->[0] } @{$sth->fetchall_arrayref()};
+      $self->{databases} = \@dbs unless $like;
+      return @dbs;
+   }
+   return @{$self->{databases}};
+}
+
+sub get_table_status {
+   my ( $self, $dbh, $quoter, $db, $like ) = @_;
+   if ( !$self->{table_status}->{$db} || $like ) {
+      my $sql = "SHOW TABLE STATUS FROM " . $quoter->quote($db);
+      my @params;
+      if ( $like ) {
+         $sql .= ' LIKE ?';
+         push @params, $like;
+      }
+      $ENV{MKDEBUG} && _d($sql, @params);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref({})};
+      @tables = map {
+         my %tbl; # Make a copy with lowercased keys
+         @tbl{ map { lc $_ } keys %$_ } = values %$_;
+         $tbl{engine} ||= $tbl{type} || $tbl{comment};
+         delete $tbl{type};
+         \%tbl;
+      } @tables;
+      $self->{table_status}->{$db} = \@tables unless $like;
+      return @tables;
+   }
+   return @{$self->{table_status}->{$db}};
+}
+
+sub get_table_list {
+   my ( $self, $dbh, $quoter, $db, $like ) = @_;
+   if ( !$self->{table_list}->{$db} || $like ) {
+      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM " . $quoter->quote($db);
+      my @params;
+      if ( $like ) {
+         $sql .= ' LIKE ?';
+         push @params, $like;
+      }
+      $ENV{MKDEBUG} && _d($sql, @params);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref()};
+      @tables = map {
+         my %tbl = (
+            name   => $_->[0],
+            engine => ($_->[1] || '') eq 'VIEW' ? 'VIEW' : '',
+         );
+         \%tbl;
+      } @tables;
+      $self->{table_list}->{$db} = \@tables unless $like;
+      return @tables;
+   }
+   return @{$self->{table_list}->{$db}};
+}
+
 
 sub _d {
    my ( $line ) = (caller(0))[2];
@@ -1563,7 +1639,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 1398
+# TableChunker package 1742
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1764,7 +1840,7 @@ sub get_first_chunkable_column {
 }
 
 sub size_to_rows {
-   my ( $self, $dbh, $db, $tbl, $size, $cache ) = @_;
+   my ( $self, $dbh, $db, $tbl, $size, $dumper ) = @_;
   
    my ( $num, $suffix ) = $size =~ m/^(\d+)([MGk])?$/;
    if ( $suffix ) { # Convert to bytes.
@@ -1779,20 +1855,9 @@ sub size_to_rows {
       die "Invalid size spec $size; must be an integer with optional suffix kMG";
    }
 
-   my $avg_row_length;
-   my $status;
-   if ( !$cache || !($status = $cache->{$db}->{$tbl}) ) {
-      $tbl =~ s/_/\\_/g;
-      my $sql = "SHOW TABLE STATUS FROM "
-         . $self->{quoter}->quote($db) . " LIKE ?";
-      $ENV{MKDEBUG} && _d($sql, ' ', $tbl);
-      $status = $dbh->selectrow_hashref($sql, {}, $tbl);
-      if ( $cache ) {
-         $cache->{$db}->{$tbl} = $status;
-      }
-   }
-   my ($key) = grep { /avg_row_length/i } keys %$status;
-   $avg_row_length = $status->{$key};
+   my @status = $dumper->get_table_status($dbh, $self->{quoter}, $db);
+   my ($status) = grep { $_->{name} eq $tbl } @status;
+   my $avg_row_length = $status->{avg_row_length};
    return $avg_row_length ? ceil($size / $avg_row_length) : undef;
 }
 
@@ -2670,7 +2735,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1699
+# TableSyncer package 1750
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2698,13 +2763,16 @@ sub best_algorithm {
       $ENV{MKDEBUG} && _d("Chunker says $cols->[0] supports chunking exactly");
       $result = 'Chunk';
    }
-   elsif ( my ($idx) = $args{parser}->find_best_index($args{tbl_struct}) ) {
-      $ENV{MKDEBUG} && _d("Parser found best index $idx, so Nibbler will work");
-      $result = 'Nibble';
-   }
    else {
-      $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
-      $result = 'Stream';
+      my ($idx) = $args{parser}->find_best_index($args{tbl_struct});
+      if ( $idx ) {
+         $ENV{MKDEBUG} && _d("Parser found best index $idx, so Nibbler will work");
+         $result = 'Nibble';
+      }
+      else {
+         $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
+         $result = 'Stream';
+      }
    }
    $ENV{MKDEBUG} && _d("Algorithm: $result");
    return $result;
@@ -2981,7 +3049,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 1574
+# MySQLFind package 1730
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2998,12 +3066,11 @@ use English qw(-no_match_vars);
 sub new {
    my ( $class, %args ) = @_;
    my $self = bless \%args, $class;
+   map { die "I need a $_ argument" unless defined $args{$_} } qw(dumper quoter);
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
    die "Specify dbh" unless $args{dbh};
    if ( $args{useddl} ) {
       $ENV{MKDEBUG} && _d('Will prefer DDL');
-      die "Specifying useddl requires parser and dumper"
-         unless $args{parser} && $args{dumper};
    }
    if ( $args{tables}->{status} ) {
       my $sql = 'SELECT CURRENT_TIMESTAMP';
@@ -3018,22 +3085,11 @@ sub find_databases {
    my ( $self ) = @_;
    return grep {
       $_ !~ m/^(information_schema|lost\+found)$/i
-   }
-   $self->_filter('databases', sub { $_[0] }, $self->_fetch_db_list());
-}
-
-sub _fetch_db_list {
-   my ( $self ) = @_;
-   my $sql = 'SHOW DATABASES';
-   my @params;
-   if ( $self->{databases}->{like} ) {
-      $sql .= ' LIKE ?';
-      push @params, $self->{databases}->{like};
-   }
-   my $sth = $self->{dbh}->prepare($sql);
-   $ENV{MKDEBUG} && _d($sql, @params);
-   $sth->execute( @params );
-   return map { $_->[0] } @{$sth->fetchall_arrayref()};
+   }  $self->_filter('databases', sub { $_[0] },
+         $self->{dumper}->get_databases(
+            $self->{dbh},
+            $self->{quoter},
+            $self->{databases}->{like}));
 }
 
 sub find_tables {
@@ -3054,6 +3110,14 @@ sub find_tables {
             $self->_test_date($_, $key, $test)
          } @tables;
    }
+   return map { $_->{name} } @tables;
+}
+
+sub find_views {
+   my ( $self, %args ) = @_;
+   my @tables = $self->_fetch_tbl_list(%args);
+   @tables = grep { $_->{engine} eq 'VIEW' } @tables;
+   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
    return map { $_->{name} } @tables;
 }
 
@@ -3084,53 +3148,36 @@ sub _fetch_tbl_list {
         || $self->{engines}->{reject}
         || $self->{engines}->{regexp};
    my $need_status = $self->{tables}->{status};
-   my @params;
    if ( $need_status || ($need_engine && !$self->{useddl}) ) {
-      my $sql = "SHOW TABLE STATUS FROM "
-              . $self->{quoter}->quote($args{database});
-      if ( $self->{tables}->{like} ) {
-         $sql .= ' LIKE ?';
-         push @params, $self->{tables}->{like};
-      }
-      $ENV{MKDEBUG} && _d($sql, @params);
-      my $sth = $self->{dbh}->prepare($sql);
-      $sth->execute(@params);
-      my @tables = @{$sth->fetchall_arrayref({})};
-      return map {
-         my %tbl; # Make a copy with lowercased keys
-         @tbl{ map { lc $_ } keys %$_ } = values %$_;
-         $tbl{engine} ||= $tbl{type} || $tbl{comment};
-         $tbl{name} = join('.', $args{database}, $tbl{name});
-         delete $tbl{type};
-         \%tbl;
+      my @tables = $self->{dumper}->get_table_status(
+         $self->{dbh},
+         $self->{quoter},
+         $args{database},
+         $self->{tables}->{like});
+      @tables = map {
+         my %hash = %$_;
+         $hash{name} = join('.', $args{database}, $hash{name});
+         \%hash;
       } @tables;
+      return @tables;
    }
    else {
-      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM "
-              . $self->{quoter}->quote($args{database});
-      if ( $self->{tables}->{like} ) {
-         $sql .= ' LIKE ?';
-         push @params, $self->{tables}->{like};
-      }
-      $ENV{MKDEBUG} && _d($sql, @params);
-      my $sth = $self->{dbh}->prepare($sql);
-      $sth->execute(@params);
-      my @tables = @{$sth->fetchall_arrayref()};
       my @result;
+      my @tables = $self->{dumper}->get_table_list(
+         $self->{dbh},
+         $self->{quoter},
+         $args{database},
+         $self->{tables}->{like});
       foreach my $tbl ( @tables ) {
-         my $engine = '';
-         if ( ($tbl->[1] || '') eq 'VIEW' ) {
-            $engine = 'VIEW';
-         }
-         elsif ( $need_engine ) {
+         if ( $need_engine && !$tbl->{engine} ) {
             my $struct = $self->{parser}->parse(
                $self->{dumper}->get_create_table(
-                  $self->{dbh}, $self->{quoter}, $args{database}, $tbl->[0]));
-            $engine = $struct->{engine};
+                  $self->{dbh}, $self->{quoter}, $args{database}, $tbl->{name}));
+            $tbl->{engine} = $struct->{engine};
          }
          push @result,
-         {  name   => "$args{database}.$tbl->[0]",
-            engine => $engine,
+         {  name   => join('.', $args{database}, $tbl->{name}),
+            engine => $tbl->{engine},
          }
       }
       return @result;

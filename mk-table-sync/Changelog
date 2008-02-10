@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * The Stream algorithm wasn't chosen when a table had no key.
    * Numeric strings beginning with 0 weren't quoted (bug #1883019).
 
 2008-01-24: version 1.0.4
