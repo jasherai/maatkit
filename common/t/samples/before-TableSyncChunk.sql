@@ -1,6 +1,6 @@
 use test;
 
-drop table if exists test1,test2,test3,test4;
+drop table if exists test1,test2,test3,test4,test5;
 
 create table test1(
    a int not null,
@@ -15,3 +15,4 @@ create table test3(a int not null primary key, b int not null, unique(b));
 create table test4 like test3;
 insert into test3 values(1, 2), (2, 1);
 insert into test4 values(1, 1), (2, 2);
+create table test5(a varchar(5));

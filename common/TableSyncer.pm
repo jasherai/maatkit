@@ -49,16 +49,19 @@ sub best_algorithm {
       # be really bad.  It's better to use Nibble for these, because at least
       # it can reliably select a chunk of rows of the desired size.
    }
-   elsif ( my ($idx) = $args{parser}->find_best_index($args{tbl_struct}) ) {
+   else {
       # If there's an index, $nibbler->generate_asc_stmt() will use it, so it
       # is an indication that the nibble algorithm will work.
-      $ENV{MKDEBUG} && _d("Parser found best index $idx, so Nibbler will work");
-      $result = 'Nibble';
-   }
-   else {
-      # If not, Stream is the only choice.
-      $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
-      $result = 'Stream';
+      my ($idx) = $args{parser}->find_best_index($args{tbl_struct});
+      if ( $idx ) {
+         $ENV{MKDEBUG} && _d("Parser found best index $idx, so Nibbler will work");
+         $result = 'Nibble';
+      }
+      else {
+         # If not, Stream is the only choice.
+         $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
+         $result = 'Stream';
+      }
    }
    $ENV{MKDEBUG} && _d("Algorithm: $result");
    return $result;

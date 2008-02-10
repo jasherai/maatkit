@@ -34,7 +34,7 @@ eval {
       undef, undef, { PrintError => 0, RaiseError => 1 } );
 };
 if ($src_dbh) {
-   plan tests => 13;
+   plan tests => 14;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -84,6 +84,17 @@ my $algo = $ts->best_algorithm(
 );
 
 ok( $algo, 'Found an algorithm' );
+
+is($ts->best_algorithm(
+      tbl_struct  => $tp->parse(
+                     $du->get_create_table( $src_dbh, $q, 'test', 'test5' )),
+      nibbler     => $nibbler,
+      chunker     => $chunker,
+      parser      => $tp,
+   ),
+   'Stream',
+   'Got Stream algorithm',
+);
 
 my %args = (
    buffer        => 0,
@@ -300,3 +311,11 @@ throws_ok (
    qr/maatkit timeout/,
    "Level 3 lock NOT released",
 );
+
+# kill the DBHs, but do it in the right order... there's a connection waiting on
+# a lock.
+$src_dbh->disconnect;
+$dst_dbh->disconnect;
+$dbh->disconnect;
+
+`mysql < samples/after-TableSyncChunk.sql`;
