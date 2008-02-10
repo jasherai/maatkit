@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2008-02-10: version 1.1.25
+
    * The --lock option did not work correctly (bug #1884712).
 
 2008-01-05: version 1.1.24

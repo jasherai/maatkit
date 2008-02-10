@@ -1,5 +1,7 @@
 Changelog for mk-show-grants:
 
+2008-02-10: version 1.0.8
+
    * Added --timestamp option.
 
 2007-12-16: version 1.0.7
