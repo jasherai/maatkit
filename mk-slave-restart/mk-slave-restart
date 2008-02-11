@@ -1135,6 +1135,9 @@ sub watch_server {
    STAT:
    while ($stat && (!$opts{t} || time() < $exit_time) && !-f $opts{sentinel}) {
       my $was_running = 1;
+      # TODO: if one of the servers shuts down, we get
+      # DBD::mysql::st execute failed: MySQL server has gone away at
+      # /home/baron/bin/mk-slave-restart line 1138.
       $fetch_stat->execute();
       $stat = $fetch_stat->fetchall_arrayref({})->[0];
       if ( !$stat ) {
