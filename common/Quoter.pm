@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 
 package Quoter;
 
+use English qw(-no_match_vars);
+
 sub new {
    my ( $class ) = @_;
    bless {}, $class;

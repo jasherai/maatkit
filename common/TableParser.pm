@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 
 package TableParser;
 
+use English qw(-no_match_vars);
+
 sub new {
    bless {}, shift;
 }
@@ -209,7 +211,7 @@ sub find_possible_keys {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableParser:$line ", @_, "\n";
+   print "# TableParser:$line $PID ", @_, "\n";
 }
 
 1;

@@ -29,6 +29,7 @@ use warnings FATAL => 'all';
 # See TableSyncStream for the TableSync interface this conforms to.
 package TableSyncChunk;
 
+use English qw(-no_match_vars);
 use List::Util qw(max);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
@@ -231,7 +232,7 @@ sub key_cols {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableSyncChunk:$line ", @_, "\n";
+   print "# TableSyncChunk:$line $PID ", @_, "\n";
 }
 
 1;

@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 
 package RowDiff;
 
+use English qw(-no_match_vars);
+
 sub new {
    my ( $class, %args ) = @_;
    die "I need a dbh" unless $args{dbh};
@@ -158,7 +160,7 @@ sub db_cmp {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# RowDiff:$line ", @_, "\n";
+   print "# RowDiff:$line $PID ", @_, "\n";
 }
 
 1;

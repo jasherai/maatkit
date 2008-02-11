@@ -38,6 +38,7 @@ use warnings FATAL => 'all';
 # * truncate and start over.
 package TableSyncNibble;
 
+use English qw(-no_match_vars);
 use List::Util qw(max);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
@@ -297,7 +298,7 @@ sub key_cols {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableSyncNibble:$line ", @_, "\n";
+   print "# TableSyncNibble:$line $PID ", @_, "\n";
 }
 
 1;

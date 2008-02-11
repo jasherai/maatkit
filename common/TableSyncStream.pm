@@ -26,6 +26,8 @@ use warnings FATAL => 'all';
 # row from the tables and compare them.
 package TableSyncStream;
 
+use English qw(-no_match_vars);
+
 # Arguments:
 # * handler ChangeHandler
 sub new {
@@ -92,7 +94,7 @@ sub pending_changes {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableSyncStream:$line ", @_, "\n";
+   print "# TableSyncStream:$line $PID ", @_, "\n";
 }
 
 1;

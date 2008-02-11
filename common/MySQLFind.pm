@@ -25,6 +25,7 @@ package MySQLFind;
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
 
 # SYNOPSIS:
 #   $f = new MySQLFind(
@@ -233,7 +234,7 @@ sub _test_date {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# MySQLFind:$line ", @_, "\n";
+   print "# MySQLFind:$line $PID ", @_, "\n";
 }
 
 1;

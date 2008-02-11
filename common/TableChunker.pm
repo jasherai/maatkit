@@ -22,6 +22,7 @@ use warnings FATAL => 'all';
 
 package TableChunker;
 
+use English qw(-no_match_vars);
 use POSIX qw(ceil);
 use List::Util qw(min max);
 
@@ -413,7 +414,7 @@ sub timestampdiff {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableChunker:$line ", @_, "\n";
+   print "# TableChunker:$line $PID ", @_, "\n";
 }
 
 1;
