@@ -310,7 +310,7 @@ sub parse_binlog_event {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# LogParser:$line ", @_, "\n";
+   print "# LogParser:$line $PID ", @_, "\n";
 }
 
 1;

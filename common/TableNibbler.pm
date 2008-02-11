@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 
 package TableNibbler;
 
+use English qw(-no_match_vars);
+
 sub new {
    bless {}, shift;
 }
@@ -321,7 +323,7 @@ sub generate_ins_stmt {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableNibbler:$line ", @_, "\n";
+   print "# TableNibbler:$line $PID ", @_, "\n";
 }
 
 1;

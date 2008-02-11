@@ -499,7 +499,7 @@ sub groups {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line ", @_, "\n";
+   print "# OptionParser:$line $PID ", @_, "\n";
 }
 
 # This is debug code I want to run for all tools, and this is a module I

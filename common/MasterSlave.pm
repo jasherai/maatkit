@@ -216,7 +216,7 @@ sub wait_for_master {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# MasterSlave:$line ", @_, "\n";
+   print "# MasterSlave:$line $PID ", @_, "\n";
 }
 
 1;

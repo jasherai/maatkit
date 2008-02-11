@@ -360,7 +360,7 @@ sub lock_and_wait {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableSyncer:$line ", @_, "\n";
+   print "# TableSyncer:$line $PID ", @_, "\n";
 }
 
 1;

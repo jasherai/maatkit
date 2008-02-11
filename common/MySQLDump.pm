@@ -301,7 +301,7 @@ sub get_table_list {
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# MySQLDump:$line ", @_, "\n";
+   print "# MySQLDump:$line $PID ", @_, "\n";
 }
 
 1;

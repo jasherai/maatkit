@@ -384,7 +384,7 @@ sub find_replication_differences {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableChecksum:$line ", @_, "\n";
+   print "# TableChecksum:$line $PID ", @_, "\n";
 }
 
 1;

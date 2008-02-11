@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 
 package VersionParser;
 
+use English qw(-no_match_vars);
+
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
@@ -49,7 +51,7 @@ sub version_ge {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# VersionParser:$line ", @_, "\n";
+   print "# VersionParser:$line $PID ", @_, "\n";
 }
 
 1;

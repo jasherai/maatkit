@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 
 package QueryRewriter;
 
+use English qw(-no_match_vars);
+
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/;
 my $bal;
 $bal         = qr/
@@ -159,7 +161,7 @@ sub wrap_in_derived {
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# QueryRewriter:$line ", @_, "\n";
+   print "# QueryRewriter:$line $PID ", @_, "\n";
 }
 
 1;

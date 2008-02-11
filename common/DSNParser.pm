@@ -26,6 +26,7 @@ use DBI;
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
 
 # Defaults are built-in, but you can add/replace items by passing them as hashrefs
 # of {key, desc, copy, dsn}.  The desc and dsn items are optional.  You can set
@@ -212,7 +213,7 @@ sub get_dbh {
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line ", @_, "\n";
+   print "# DSNParser:$line $PID ", @_, "\n";
 }
 
 1;
