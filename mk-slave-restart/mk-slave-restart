@@ -1010,15 +1010,18 @@ $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork/daemonize
 
 # Daemonize only after connecting and doing --askpass.
 if ( $opts{daemonize} ) {
+   my $outfile = $ENV{MKDEBUG}
+               ? '/tmp/' . OptionParser::prog() . '.debug'
+               : '/dev/null';
    require POSIX;
    chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
    open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
-   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
+   open STDOUT, ">$outfile"  or die "Can't write to $outfile: $OS_ERROR";
    defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
    exit if $pid;
    POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
    open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
-   delete $opts{v};
+   $opts{v} = $ENV{MKDEBUG} ? 4 : 0;
 }
 
 my $exit_status = 0;
@@ -1545,6 +1548,9 @@ The environment variable C<MKDEBUG> enables verbose debugging output in all of
 the Maatkit tools:
 
    MKDEBUG=1 mk-....
+
+When L<"--daemonize"> is given and this variable is set, output is directed to a
+debug file in C</tmp>.
 
 =head1 BUGS
 
