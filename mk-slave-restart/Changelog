@@ -1,6 +1,7 @@
 Changelog for mk-slave-restart:
 
    * --daemonize did not work.
+   * --quiet caused an undefined variable error.
 
 2008-01-05: version 1.0.5
 

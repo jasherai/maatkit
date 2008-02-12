@@ -924,7 +924,8 @@ my @opt_spec = (
    { s => 'monitor',           d => 'Whether to monitor the slave' },
    { s => 'password|p=s',      d => 'Password to use when connecting' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'quiet|q',           d => 'Quiet output; disables --verbose' },
+   # TODO: sets --verbose 0
+   { s => 'quiet|q',           d => 'Quiet output' },
    { s => 'recurse|r=i',       d => 'Number of levels to recurse (default 0)' },
    { s => 'sentinel=s',        d => 'Sentinel file; default /tmp/mk-slave-restart-sentinel' },
    { s => 'skipcount|k=i',     d => 'Number of statements to skip (default 1)' },
@@ -945,6 +946,8 @@ $opt_parser->{prompt} = '<options>';
 $opt_parser->{descr}  = 'watches one or more MySQL replication slaves for '
                       . 'errors, and tries to restart replication if it stops.';
 my %opts = $opt_parser->parse();
+
+$opts{v} = 0 if $opts{q};
 
 if ( !$opts{help} ) {
    if ( $opts{untilmaster} ) {
