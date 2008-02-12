@@ -1016,6 +1016,7 @@ if ( $opts{daemonize} ) {
    require POSIX;
    chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
    open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
+   print STDOUT              "Sending STDOUT to $outfile\n" unless $opts{q};
    open STDOUT, ">$outfile"  or die "Can't write to $outfile: $OS_ERROR";
    defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
    exit if $pid;
