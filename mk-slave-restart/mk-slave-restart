@@ -28,6 +28,49 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
+# Quoter package 1755
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+sub quote_val {
+   my ( $self, @vals ) = @_;
+   return join(', ',
+      map {
+         if ( defined $_ ) {
+            $_ =~ s/(['\\])/\\$1/g;
+            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
+         }
+         else {
+            'NULL';
+         }
+      } @vals
+   );
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+# ###########################################################################
 # OptionParser package 1704
 # ###########################################################################
 use strict;
@@ -1025,44 +1068,6 @@ if ( $opts{stop} ) {
 }
 
 # ############################################################################
-# Lookup tables of things to do when a problem is detected.
-# ############################################################################
-
-my @error_patterns = (
-   [ qr/You have an error in your SQL/         => 'refetch_relay_log' ],
-   [ qr/Could not parse relay log event entry/ => 'refetch_relay_log' ],
-   [ qr/Incorrect key file for table/          => 'repair_table'      ],
-   # This must be the last one.  It's a catch-all rule: skip and restart.
-   [ qr/./                                     => 'skip'              ],
-);
-
-my %actions = (
-   refetch_relay_log => sub {
-      my ( $stat, $dbh ) = @_;
-      $ENV{MKDEBUG} && _d('Found relay log corruption');
-      # Can't do CHANGE MASTER TO with a running slave.
-      $stop->execute();
-      $chmt->execute(@{$stat}{qw(relay_master_log_file exec_master_log_pos)});
-   },
-   skip => sub {
-      my ( $stat, $dbh ) = @_;
-      $ENV{MKDEBUG} && _d('Found non-relay-log error');
-      $set_skip->execute();
-   },
-   repair_table => sub {
-      my ( $stat, $dbh ) = @_;
-      $ENV{MKDEBUG} && _d('Found corrupt table');
-      # [ qr/Incorrect key file for table './foo/bar.MYI'
-      my ( $db, $tbl ) = $stat->{last_error} =~ m!([^/]+)/(.*?)\.MYI!;
-      if ( $db && $tbl ) {
-         my $sql = "REPAIR TABLE " . $q->quote($db, $tbl);
-         $ENV{MKDEBUG} && _d($sql);
-         $dbh->do($sql);
-      }
-   },
-);
-
-# ############################################################################
 # Connect and go to work.
 # ############################################################################
 if ( $opts{askpass} ) {
@@ -1096,6 +1101,7 @@ if ( $opts{daemonize} ) {
 my $exit_status = 0;
 my %children;
 my @servers_to_watch;
+my $q = new Quoter();
 
 # Despite the name, recursing to slaves actually begins at the specified
 # server, so the named server may also be watched, if it's a slave.
@@ -1162,6 +1168,20 @@ foreach my $host ( keys %children ) {
 exit($exit_status);
 
 # ############################################################################
+# Lookup tables of things to do when a problem is detected.
+# ############################################################################
+
+my @error_patterns = (
+   [ qr/You have an error in your SQL/         => 'refetch_relay_log' ],
+   [ qr/Could not parse relay log event entry/ => 'refetch_relay_log' ],
+   [ qr/Incorrect key file for table/          => 'repair_table'      ],
+   # This must be the last one.  It's a catch-all rule: skip and restart.
+   [ qr/./                                     => 'skip'              ],
+);
+
+# TODO: let the user specify more patterns and actions.
+
+# ############################################################################
 # Subroutines.
 # ############################################################################
 
@@ -1191,6 +1211,36 @@ sub watch_server {
    my $stop       = $dbh->prepare('STOP SLAVE');
    my $chmt       = $dbh->prepare(
                     'CHANGE MASTER TO MASTER_LOG_FILE=?, MASTER_LOG_POS=?');
+
+   # ########################################################################
+   # These are actions to take when an error is found.
+   # ########################################################################
+   my %actions = (
+      refetch_relay_log => sub {
+         my ( $stat, $dbh ) = @_;
+         $ENV{MKDEBUG} && _d('Found relay log corruption');
+         # Can't do CHANGE MASTER TO with a running slave.
+         $stop->execute();
+         $chmt->execute(
+            @{$stat}{qw(relay_master_log_file exec_master_log_pos)});
+      },
+      skip => sub {
+         my ( $stat, $dbh ) = @_;
+         $ENV{MKDEBUG} && _d('Found non-relay-log error');
+         $set_skip->execute();
+      },
+      repair_table => sub {
+         my ( $stat, $dbh ) = @_;
+         $ENV{MKDEBUG} && _d('Found corrupt table');
+         # [ qr/Incorrect key file for table './foo/bar.MYI'
+         my ( $db, $tbl ) = $stat->{last_error} =~ m!([^/]+)/(.*?)\.MYI!;
+         if ( $db && $tbl ) {
+            my $sql = "REPAIR TABLE " . $q->quote($db, $tbl);
+            $ENV{MKDEBUG} && _d($sql);
+            $dbh->do($sql);
+         }
+      },
+   );
 
    my $exit_time = time() + ($opts{t} || 0);
    my $sleep = $opts{s};
@@ -1254,7 +1304,7 @@ sub watch_server {
             elsif ( $stat->{last_error} || $opts{always} ) {
 
                # What kind of error is it?
-               foreach my $pat ( keys %error_patterns ) {
+               foreach my $pat ( @error_patterns ) {
                   if ( $stat->{last_error} =~ m/$pat->[0]/ ) {
                      $actions{$pat->[1]}->($stat, $dbh);
                      last;
