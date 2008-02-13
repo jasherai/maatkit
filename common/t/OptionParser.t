@@ -700,3 +700,7 @@ eval {
    );
 };
 like($EVAL_ERROR, qr/C,t,d,b.*undefined: bar,foo,f/, 'Found bad cmd-line options');
+
+# TODO:
+# Check that it can find undocumented options.
+
