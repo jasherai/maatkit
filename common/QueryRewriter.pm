@@ -24,7 +24,7 @@ package QueryRewriter;
 
 use English qw(-no_match_vars);
 
-my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/;
+my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
                   \(
@@ -63,7 +63,8 @@ sub fingerprint {
              {N}gx;                             # Float/real into N
    $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
    $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
-   $query =~ s/$quote_re/S/gx;                  # Turn quoted strings into S
+   $query =~ s/\\["']//g;                       # Turn quoted strings into S
+   $query =~ s/(["']).*?\1/S/g;                 # Turn quoted strings into S
    $query =~ s/\A\s+//;                         # Chop off leading whitespace
    $query =~ s/\s{2,}/ /g;                      # Collapse all whitespace
    $query =~ s/[\n\r\f]+/ /g;                   # Collapse newlines etc
