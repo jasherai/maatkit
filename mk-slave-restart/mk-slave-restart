@@ -911,6 +911,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # ############################################################################
 
 my @opt_spec = (
+   { s => 'always',            d => 'Start slaves even when no error' },
    { s => 'askpass',           d => 'Prompt for a password for the connection' },
    { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
    { s => 'database|D=s',      d => 'Database to use' },
@@ -1141,7 +1142,7 @@ sub watch_server {
    my $stat = {}; # Will hold SHOW SLAVE STATUS
    STAT:
    while ($stat && (!$opts{t} || time() < $exit_time) && !-f $opts{sentinel}) {
-      my $was_running = 1;
+      my $increase_sleep = 1;
       $fetch_stat->execute();
       $stat = $fetch_stat->fetchall_arrayref({})->[0];
       if ( !$stat ) {
@@ -1170,7 +1171,7 @@ sub watch_server {
             if ( $opts{v} ) {
                my $err = '';
                if ( $opts{v} > 1 ) {
-                  ($err = $stat->{last_error} ) =~ s/\s+/ /g;
+                  ($err = $stat->{last_error} || '' ) =~ s/\s+/ /g;
                   if ( $opts{L} ) {
                      $err = substr($err, 0, $opts{L});
                   }
@@ -1191,7 +1192,7 @@ sub watch_server {
             elsif ( $opts{E} && $stat->{last_error} && $stat->{last_error} !~ m/$opts{E}/ ) {
                die "Error does not match --error-text.\n";
             }
-            else {
+            elsif ( $stat->{last_error} || $opts{always} ) {
 
                # What kind of error is it?
                if ( $stat->{last_error} =~ m/$relay_log_corruption/ ) {
@@ -1205,8 +1206,11 @@ sub watch_server {
                   $ENV{MKDEBUG} && _d('Found non-relay-log error');
                   $set_skip->execute();
                }
+               # TODO: take actions upon errors, such as repairing tables
+               # Error 'Incorrect key file for table './foo/bar.MYI'
+
                $start->execute();
-               $was_running = 0;
+               $increase_sleep = 0;
 
                # Only set this on events I tried to restart.  Otherwise there
                # could be a race condition: I see it, I record it, but it hasn't
@@ -1218,11 +1222,15 @@ sub watch_server {
                $last_log = $stat->{relay_log_file};
                $last_pos = $stat->{relay_log_pos};
             }
+            else {
+               $ENV{MKDEBUG} && _d('The slave is stopped, but without error');
+               $increase_sleep = 1;
+            }
          }
       }
 
       # Adjust sleep time.
-      if ( $was_running ) {
+      if ( $increase_sleep ) {
          $sleep = min($opts{M}, $sleep * 2);
       }
       else {
@@ -1234,10 +1242,10 @@ sub watch_server {
       # 512 and mk-slave-restart finds an error; now $sleep is 256, but
       # mk-slave-restart sleeps only 1 (the initial value of --sleep).  Suppose
       # there is no error when it wakes up after 1 second, because 1 was too
-      # short.  Now it doubles $sleep, back to 512.  $sleep has the same value it
-      # did before the error was ever found.
+      # short.  Now it doubles $sleep, back to 512.  $sleep has the same value
+      # it did before the error was ever found.
       print $dp->as_string($dsn), " sleeping $sleep\n" if $opts{v} > 2;
-      sleep($was_running ? $sleep : min($sleep, $opts{s}));
+      sleep($increase_sleep ? $sleep : min($sleep, $opts{s}));
    }
 
    $ENV{MKDEBUG} && _d('All done with server ', $dp->as_string($dsn));
@@ -1318,6 +1326,12 @@ had a chance to truly fix.  You have been warned.
 =head1 OPTIONS
 
 =over
+
+=item --always
+
+Always (re)start the slave processes, even when there is no error.  With this
+option enabled, C<mk-slave-restart> will not let you stop the slave if you want
+to!
 
 =item --askpass
 
