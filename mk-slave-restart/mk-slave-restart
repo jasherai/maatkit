@@ -911,33 +911,59 @@ $OUTPUT_AUTOFLUSH = 1;
 # ############################################################################
 
 my @opt_spec = (
-   { s => 'always',            d => 'Start slaves even when no error' },
-   { s => 'askpass',           d => 'Prompt for a password for the connection' },
-   { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
-   { s => 'database|D=s',      d => 'Database to use' },
-   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
-   { s => 'error-numbers|e=h', d => 'Only restart this comma-separated list of errors' },
-   { s => 'error-text|E=s',    d => 'Only restart errors that match this pattern' },
-   { s => 'error-length|L=i',  d => 'Max length of error message to print' },
-   { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'maxsleep|M=f',      d => 'Maximum sleep seconds (default 64)'},
-   { s => 'minsleep|m=f',      d => 'Minimum sleep seconds (default 0.015625)'},
-   { s => 'monitor',           d => 'Whether to monitor the slave' },
-   { s => 'password|p=s',      d => 'Password to use when connecting' },
-   { s => 'port|P=i',          d => 'Port number to use for connection' },
-   # TODO: sets --verbose 0
-   { s => 'quiet|q',           d => 'Quiet output' },
-   { s => 'recurse|r=i',       d => 'Number of levels to recurse (default 0)' },
-   { s => 'sentinel=s',        d => 'Sentinel file; default /tmp/mk-slave-restart-sentinel' },
-   { s => 'skipcount|k=i',     d => 'Number of statements to skip (default 1)' },
-   { s => 'sleep|s=f',         d => 'Initial sleep seconds (default 1)' },
-   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'stop',              d => 'Stop running instances by creating the sentinel file' },
-   { s => 'time|t=m',          d => 'Time to run before exiting' },
-   { s => 'untilmaster=s',     d => 'Run until this master log file and position' },
-   { s => 'untilrelay=s',      d => 'Run until this relay log file and position' },
-   { s => 'user|u=s',          d => 'User for login if not current user' },
-   { s => 'verbose|v+',        d => 'Verbosity; can specify multiple times; default 1' },
+   {  s => 'always',
+      d => 'Start slaves even when no error' },
+   {  s => 'askpass',
+      d => 'Prompt for a password for the connection' },
+   {  s => 'daemonize',
+      d => 'Fork to background and detach (POSIX only)' },
+   {  s => 'database|D=s',
+      d => 'Database to use' },
+   {  s => 'defaults-file|F=s',
+      d => 'Only read mysql options from the given file' },
+   {  s => 'error-numbers|e=h',
+      d => 'Only restart this comma-separated list of errors' },
+   {  s => 'error-text|E=s',
+      d => 'Only restart errors that match this pattern' },
+   {  s => 'error-length|L=i',
+      d => 'Max length of error message to print' },
+   {  s => 'host|h=s',
+      d => 'Connect to host' },
+   {  s => 'maxsleep|M=f',
+      d => 'Maximum sleep seconds (default 64)'},
+   {  s => 'minsleep|m=f',
+      d => 'Minimum sleep seconds (default 0.015625)'},
+   {  s => 'monitor',
+      d => 'Whether to monitor the slave' },
+   {  s => 'password|p=s',
+      d => 'Password to use when connecting' },
+   {  s => 'port|P=i',
+      d => 'Port number to use for connection' },
+      # TODO: sets --verbose 0
+   {  s => 'quiet|q',
+      d => 'Quiet output' },
+   {  s => 'recurse|r=i',
+      d => 'Number of levels to recurse (default 0)' },
+   {  s => 'sentinel=s',
+      d => 'Sentinel file; default /tmp/mk-slave-restart-sentinel' },
+   {  s => 'skipcount|k=i',
+      d => 'Number of statements to skip (default 1)' },
+   {  s => 'sleep|s=f',
+      d => 'Initial sleep seconds (default 1)' },
+   {  s => 'socket|S=s',
+      d => 'Socket file to use for connection' },
+   {  s => 'stop',
+      d => 'Stop running instances by creating the sentinel file' },
+   {  s => 'time|t=m',
+      d => 'Time to run before exiting' },
+   {  s => 'untilmaster=s',
+      d => 'Run until this master log file and position' },
+   {  s => 'untilrelay=s',
+      d => 'Run until this relay log file and position' },
+   {  s => 'user|u=s',
+      d => 'User for login if not current user' },
+   {  s => 'verbose|v+',
+      d => 'Verbosity; can specify multiple times; default 1' },
 );
 
 my $dp = new DSNParser();
@@ -1147,7 +1173,8 @@ sub watch_server {
    $ENV{MKDEBUG} && _d('Watching server ', $dp->as_string($dsn),
       " forked=$was_forked");
 
-   my $start_sql = $vp->version_ge($dbh, '4.0.5') ? 'START SLAVE' : 'SLAVE START';
+   my $start_sql = $vp->version_ge($dbh, '4.0.5')
+                 ? 'START SLAVE' : 'SLAVE START';
    if ( $opts{untilmaster} ) {
       my ( $file, $pos ) = split(',', $opts{untilmaster});
       $start_sql .= " UNTIL MASTER_LOG_FILE = '$file', MASTER_LOG_POS = $pos";
@@ -1158,10 +1185,12 @@ sub watch_server {
    }
 
    my $fetch_stat = $dbh->prepare('SHOW SLAVE STATUS');
-   my $set_skip   = $dbh->prepare("SET GLOBAL SQL_SLAVE_SKIP_COUNTER = $opts{k}");
+   my $set_skip   = $dbh->prepare(
+                    "SET GLOBAL SQL_SLAVE_SKIP_COUNTER = $opts{k}");
    my $start      = $dbh->prepare($start_sql);
    my $stop       = $dbh->prepare('STOP SLAVE');
-   my $chmt       = $dbh->prepare('CHANGE MASTER TO MASTER_LOG_FILE=?, MASTER_LOG_POS=?');
+   my $chmt       = $dbh->prepare(
+                    'CHANGE MASTER TO MASTER_LOG_FILE=?, MASTER_LOG_POS=?');
 
    my $exit_time = time() + ($opts{t} || 0);
    my $sleep = $opts{s};
@@ -1217,7 +1246,9 @@ sub watch_server {
             if ( $opts{e} && !exists($opts{e}->{$stat->{last_errno}}) ) {
                die "Error $stat->{last_errno} is not in --error-numbers.\n";
             }
-            elsif ( $opts{E} && $stat->{last_error} && $stat->{last_error} !~ m/$opts{E}/ ) {
+            elsif ( $opts{E} && $stat->{last_error}
+                  && $stat->{last_error} !~ m/$opts{E}/ )
+            {
                die "Error does not match --error-text.\n";
             }
             elsif ( $stat->{last_error} || $opts{always} ) {
