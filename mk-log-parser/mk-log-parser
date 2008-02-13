@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
-# LogParser package 1536
+# LogParser package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -275,7 +275,7 @@ sub parse_binlog_event {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# LogParser:$line ", @_, "\n";
+   print "# LogParser:$line $PID ", @_, "\n";
 }
 
 1;
@@ -285,7 +285,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1704
+# OptionParser package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -710,7 +710,7 @@ sub groups {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line ", @_, "\n";
+   print "# OptionParser:$line $PID ", @_, "\n";
 }
 
 if ( $ENV{MKDEBUG} ) {
@@ -732,14 +732,16 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 1478
+# QueryRewriter package 1767
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package QueryRewriter;
 
-my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/;
+use English qw(-no_match_vars);
+
+my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
                   \(
@@ -775,7 +777,8 @@ sub fingerprint {
              {N}gx;                             # Float/real into N
    $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
    $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
-   $query =~ s/$quote_re/S/gx;                  # Turn quoted strings into S
+   $query =~ s/\\["']//g;                       # Turn quoted strings into S
+   $query =~ s/(["']).*?\1/S/g;                 # Turn quoted strings into S
    $query =~ s/\A\s+//;                         # Chop off leading whitespace
    $query =~ s/\s{2,}/ /g;                      # Collapse all whitespace
    $query =~ s/[\n\r\f]+/ /g;                   # Collapse newlines etc
@@ -872,7 +875,7 @@ sub wrap_in_derived {
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# QueryRewriter:$line ", @_, "\n";
+   print "# QueryRewriter:$line $PID ", @_, "\n";
 }
 
 1;
