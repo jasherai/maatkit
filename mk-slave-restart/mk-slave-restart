@@ -999,6 +999,44 @@ if ( $opts{stop} ) {
 }
 
 # ############################################################################
+# Lookup tables of things to do when a problem is detected.
+# ############################################################################
+
+my @error_patterns = (
+   [ qr/You have an error in your SQL/         => 'refetch_relay_log' ],
+   [ qr/Could not parse relay log event entry/ => 'refetch_relay_log' ],
+   [ qr/Incorrect key file for table/          => 'repair_table'      ],
+   # This must be the last one.  It's a catch-all rule: skip and restart.
+   [ qr/./                                     => 'skip'              ],
+);
+
+my %actions = (
+   refetch_relay_log => sub {
+      my ( $stat, $dbh ) = @_;
+      $ENV{MKDEBUG} && _d('Found relay log corruption');
+      # Can't do CHANGE MASTER TO with a running slave.
+      $stop->execute();
+      $chmt->execute(@{$stat}{qw(relay_master_log_file exec_master_log_pos)});
+   },
+   skip => sub {
+      my ( $stat, $dbh ) = @_;
+      $ENV{MKDEBUG} && _d('Found non-relay-log error');
+      $set_skip->execute();
+   },
+   repair_table => sub {
+      my ( $stat, $dbh ) = @_;
+      $ENV{MKDEBUG} && _d('Found corrupt table');
+      # [ qr/Incorrect key file for table './foo/bar.MYI'
+      my ( $db, $tbl ) = $stat->{last_error} =~ m!([^/]+)/(.*?)\.MYI!;
+      if ( $db && $tbl ) {
+         my $sql = "REPAIR TABLE " . $q->quote($db, $tbl);
+         $ENV{MKDEBUG} && _d($sql);
+         $dbh->do($sql);
+      }
+   },
+);
+
+# ############################################################################
 # Connect and go to work.
 # ############################################################################
 if ( $opts{askpass} ) {
@@ -1125,16 +1163,6 @@ sub watch_server {
    my $stop       = $dbh->prepare('STOP SLAVE');
    my $chmt       = $dbh->prepare('CHANGE MASTER TO MASTER_LOG_FILE=?, MASTER_LOG_POS=?');
 
-   # In theory, errors in SQL syntax probably mean relay log corruption, no?
-   # Otherwise it means you're trying to use a new server as the master of an
-   # older slave, and the old slave doesn't recognize the new syntax.  Are
-   # there any other ways a slave could get "SQL syntax" errors?
-   #
-   # Last_Error: Error 'You have an error in your SQL syntax; check the manual
-   # that corresponds to your MySQL server version for the right syntax to use
-   my $relay_log_corruption
-      = qr/You have an error in your SQL|Could not parse relay log event entry/;
-
    my $exit_time = time() + ($opts{t} || 0);
    my $sleep = $opts{s};
    my ($last_log, $last_pos);
@@ -1195,19 +1223,12 @@ sub watch_server {
             elsif ( $stat->{last_error} || $opts{always} ) {
 
                # What kind of error is it?
-               if ( $stat->{last_error} =~ m/$relay_log_corruption/ ) {
-                  $ENV{MKDEBUG} && _d('Found relay log corruption');
-                  # Can't do CHANGE MASTER TO with a running slave.
-                  $stop->execute();
-                  $chmt->execute(
-                     @{$stat}{qw(relay_master_log_file exec_master_log_pos)});
+               foreach my $pat ( keys %error_patterns ) {
+                  if ( $stat->{last_error} =~ m/$pat->[0]/ ) {
+                     $actions{$pat->[1]}->($stat, $dbh);
+                     last;
+                  }
                }
-               else {
-                  $ENV{MKDEBUG} && _d('Found non-relay-log error');
-                  $set_skip->execute();
-               }
-               # TODO: take actions upon errors, such as repairing tables
-               # Error 'Incorrect key file for table './foo/bar.MYI'
 
                $start->execute();
                $increase_sleep = 0;
