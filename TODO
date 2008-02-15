@@ -2,6 +2,9 @@ Debugging output when daemonizing, like mk-slave-restart has.
 
 mk-log-server: start a server that can serve the given log files.
 
+Make a gizmo that can promote siblings to slaves, slaves to siblings, sibling to
+master, etc etc.
+
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 http://www.mysqldiff.org/
 (mk-schema-sync or similar tool should be in SVN history)
