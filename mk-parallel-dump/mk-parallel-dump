@@ -2025,7 +2025,6 @@ my $has_triggers         = VersionParser->new()->version_ge($dbh, '5.0.10');
 # and record the exit status and time of the child that exited (as a side
 # effect of not discarding the signal).
 my %exited_children;
-# TODO: I'm getting defunct children.  What's up?
 $SIG{CHLD} = sub {
    my $kid;
    while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
