@@ -1112,6 +1112,12 @@ TODO: need an option to specify the grandparent, in case the master is dead.
 TODO: need an option to find the newest slave of a given set of siblings, or of
 a given master.
 
+TODO: an option to set servers read_only
+
+TODO: an option to kill all other connections
+
+TODO: an option to kill connections that have open transactions
+
 =item --sibling-of-master
 
 Make the server a slave of its grandparent.  The procedure is as follows:
