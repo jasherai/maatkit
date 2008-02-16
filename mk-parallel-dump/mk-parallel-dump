@@ -2511,9 +2511,15 @@ sub do_table {
    my $N         = $q->quote($todo->{N});
    my $filename  = filename(interp($todo, '%S', '%D', '%N.%6C'));
 
+   # Since we're forked we need to create our own DBH.  Not doing so leads to
+   # re-using the parent's (global) DBH, which leads to really hard-to-find bugs
+   # with forking and zombies.  Bleh.
+   my $localdbh  = undef;
+
    if ( $todo->{C} == 0 && $has_triggers && !$opts{test} ) {
       makedir($filename);
-      my $trg = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'triggers');
+      $localdbh ||= $dp->get_dbh($dp->get_cxn_params(\%opts));
+      my $trg = $du->dump($localdbh, $q, $todo->{D}, $todo->{N}, 'triggers');
       if ( $trg ) {
          my $fspec = $opts{gzip}
             ? "| gzip --force --fast > $filename.trg.gz"
@@ -2526,14 +2532,14 @@ sub do_table {
 
    # Dump via SELECT INTO OUTFILE.
    if ( $opts{T} ) {
-      $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts));
+      $localdbh ||= $dp->get_dbh($dp->get_cxn_params(\%opts));
 
       makedir($filename);
 
       # Dump the schema before the first chunk.
       if ( !$opts{test} && $todo->{C} == 0 ) {
          # Table definition.
-         my $ddl = $du->dump($dbh, $q, $todo->{D}, $todo->{N}, 'table');
+         my $ddl = $du->dump($localdbh, $q, $todo->{D}, $todo->{N}, 'table');
          if ( $ddl ) {
             my $fspec = $opts{gzip}
                ? "| gzip --force --fast > $filename.sql.gz"
@@ -2558,8 +2564,7 @@ sub do_table {
          }
          else {
             eval {
-               $dbh->do($sql);
-               $dbh->disconnect;
+               $localdbh->do($sql);
             };
             if ( $EVAL_ERROR ) {
                die mysql_error_msg($EVAL_ERROR) . "\n";
@@ -2593,6 +2598,7 @@ sub do_table {
       $exit_status = system_call( @args ) || $exit_status;
    }
 
+   $localdbh && $localdbh->disconnect;
    return $exit_status;
 }
 
