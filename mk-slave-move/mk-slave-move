@@ -961,6 +961,14 @@ my @opt_spec = (
       d => 'Password to use when connecting' },
    {  s => 'port|P=i',
       d => 'Port number to use for connection' },
+   {  s => 'resume|R',
+      d => 'Resume replication after moving the slave' },
+   {  s => 'sibling-of-master',
+      d => 'Make the server a slave of its grandparent' },
+   {  s => 'slave-of-sibling=d',
+      d => 'Make the server a slave of one of its siblings' },
+   {  s => 'slave-of-uncle=d',
+      d => 'Make the server a slave of one of its parent\'s siblings' },
    {  s => 'socket|S=s',
       d => 'Socket file to use for connection' },
    {  s => 'user|u=s',
@@ -980,6 +988,7 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 # Connect and go to work.
 # ############################################################################
+
 if ( $opts{askpass} ) {
    $opts{p} = OptionParser::prompt_noecho("Enter password: ");
 }
@@ -989,7 +998,6 @@ my $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts), { AutoCommit => 1, } );
 # because different MySQL versions use different lettercase in SHOW SLAVE
 # STATUS.
 $dbh->{FetchHashKeyName} = 'NAME_lc';
-$dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork/daemonize
 
 my $exit_status = 0;
 
@@ -1092,6 +1100,47 @@ Password to use when connecting.
 =item --port
 
 Port number to use for connection.
+
+=item --promote
+
+Make the server a slave of its grandparent, if any, and then make all of its
+previous siblings its slaves.  If extra DSNs are given on the command-line,
+use these as its siblings; otherwise discover siblings by examining its master.
+
+TODO: need an option to specify the grandparent, in case the master is dead.
+
+TODO: need an option to find the newest slave of a given set of siblings, or of
+a given master.
+
+=item --sibling-of-master
+
+Make the server a slave of its grandparent.  The procedure is as follows:
+
+ 1. Connect to the server's master.
+ 2. Stop the slave processes on the master.
+ 3. Wait for the server to catch up to its master in replication.
+ 4. Point the slave to the master's master.
+
+=item --slave-of-sibling
+
+Make the server a slave of one of its siblings.  The sibling must be specified
+as a DSN.  The procedure:
+
+ 1. Connect to the sibling and verify that it has the same master.
+ 2. Stop the slave processes on the server and its sibling.
+ 3. If one of the servers is behind the other, make it catch up.
+ 4. Point the slave to its sibling.
+
+=item --slave-of-uncle
+
+Make the server a slave of one of its uncles.  The uncle must be specified as a
+DSN.  An "uncle" is a sibling of the server's master.  The procedure:
+
+ 1. Connect to the slave's master and its uncle, and verify that both have the
+    same master.  (Their common master is the slave's grandparent).
+ 2. Stop the slave processes on the master and uncle.
+ 3. If one of them is behind the other, make it catch up.
+ 4. Point the slave to its uncle.
 
 =item --socket
 
