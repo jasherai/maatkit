@@ -9,5 +9,4 @@ rm -f data/*relay-bin*
 rm -f data/ib*
 rm -f data/*.info
 rm -f data/*.err
-rm -f data/test/*
-
+rm -f data/test
