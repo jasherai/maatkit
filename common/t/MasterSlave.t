@@ -33,65 +33,44 @@ sub throws_ok {
    like ( $EVAL_ERROR, $pat, $msg );
 }
 
-# First, see whether a sandbox server is running.
-my $proc = `ps -eaf | grep rsandbox | grep master | grep port`;
-
-# The output might look like this:
-# baron    14396 14363  0 14:08 pts/1    00:00:00
-# /home/baron/mysql_source/5.0.45/bin/mysqld
-# --defaults-file=/home/baron/rsandbox_5_0_45/master/my.sandbox.cnf
-# --basedir=/home/baron/mysql_source/5.0.45
-# --datadir=/home/baron/rsandbox_5_0_45/master/data
-# --pid-file=/home/baron/rsandbox_5_0_45/master/data/mysql_sandbox16045.pid
-# --skip-external-locking --port=16045 --socket=/tmp/mysql_sandbox16045.sock
-
-my ($port) = $proc =~ m/--port=(\d+)/;
+`./make_repl_sandbox`;
 
 my $dbh;
 my @slaves;
 my $ms = new MasterSlave();
 
-SKIP: {
-   skip 'No sandbox server running', 3 unless $port;
+# Connect
+my $dsn = $dp->parse("h=127.0.0.1,P=12345");
+$dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 
-   # Connect
-   my $dsn = $dp->parse("h=127.0.0.1,P=$port");
-   $dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
+my $callback = sub {
+   my ( $dsn, $dbh, $level ) = @_;
+   return unless $level;
+   ok($dsn, "Connected to one slave "
+      . ($dp->as_string($dsn) || '<none>')
+      . " from $dsn->{source}");
+   push @slaves, $dbh;
+};
 
-   my $callback = sub {
-      my ( $dsn, $dbh, $level ) = @_;
-      return unless $level;
-      ok($dsn, "Connected to one slave "
-         . ($dp->as_string($dsn) || '<none>')
-         . " from $dsn->{source}");
-      push @slaves, $dbh;
-   };
+my $skip_callback = sub {
+   my ( $dsn, $dbh, $level ) = @_;
+   return unless $level;
+   ok($dsn, "Skipped one slave "
+      . ($dp->as_string($dsn) || '<none>')
+      . " from $dsn->{source}");
+};
 
-   my $skip_callback = sub {
-      my ( $dsn, $dbh, $level ) = @_;
-      return unless $level;
-      ok($dsn, "Skipped one slave "
-         . ($dp->as_string($dsn) || '<none>')
-         . " from $dsn->{source}");
-   };
+$ms->recurse_to_slaves(
+   {  dsn_parser    => $dp,
+      dbh           => $dbh,
+      dsn           => $dsn,
+      recurse       => 2,
+      callback      => $callback,
+      skip_callback => $skip_callback,
+   });
 
-   $ms->recurse_to_slaves(
-      {  dsn_parser    => $dp,
-         dbh           => $dbh,
-         dsn           => $dsn,
-         recurse       => 1,
-         callback      => $callback,
-         skip_callback => $skip_callback,
-      });
-
-   SKIP: {
-      skip 'No slaves found', 1 unless @slaves;
-
-      my $res;
-      eval {
-         $res = $ms->wait_for_master($dbh, $slaves[0], 1, 0);
-      };
-      ok(defined $res && $res >= 0, 'Got a good result from waiting');
-   }
-
-}
+my $res;
+eval {
+   $res = $ms->wait_for_master($dbh, $slaves[0], 1, 0);
+};
+ok(defined $res && $res >= 0, 'Got a good result from waiting');
