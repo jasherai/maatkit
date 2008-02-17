@@ -1,6 +1,5 @@
 #!/bin/bash
 
-cd ./master
 ./stop
 rm -f data/`hostname`*
 rm -f data/log.0*
