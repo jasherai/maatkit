@@ -1,0 +1,7 @@
+#!/bin/sh
+echo 'executing "stop" on slave 1'
+./node1/stop
+echo 'executing "stop" on slave 2'
+./node2/stop
+echo 'executing "stop" on master'
+./master/stop

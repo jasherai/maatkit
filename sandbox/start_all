@@ -1,0 +1,12 @@
+#!/bin/sh
+echo 'executing "start" on master'
+./master/start
+echo 'executing "start" on slave 1'
+./node1/start
+echo 'executing "start" on slave 2'
+./node2/start
+if [ -f ./needs_initialization ] 
+then
+    ./initialize_slaves
+    rm -f ./needs_initialization
+fi

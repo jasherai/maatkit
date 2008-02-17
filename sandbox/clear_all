@@ -1,0 +1,8 @@
+#!/bin/sh
+echo 'executing "clear" on slave 1'
+./node1/clear
+echo 'executing "clear" on slave 2'
+./node2/clear
+echo 'executing "clear" on master'
+./master/clear
+date > ./needs_initialization

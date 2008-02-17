@@ -1,0 +1,13 @@
+#!/bin/bash
+
+cd ./master
+./stop
+rm -f data/`hostname`*
+rm -f data/log.0*
+rm -f data/mysql-bin*
+rm -f data/*relay-bin*
+rm -f data/ib*
+rm -f data/*.info
+rm -f data/*.err
+rm -f data/test/*
+
