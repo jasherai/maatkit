@@ -1,6 +1,0 @@
-echo "initializing slave 1"
- echo 'CHANGE MASTER TO  master_host="127.0.0.1",  master_port=16045, master_user="msandbox",  master_password="msandbox" ' | ./node1/use -u root 
- echo 'START SLAVE'  | ./node1/use -u root 
-echo "initializing slave 2"
- echo 'CHANGE MASTER TO  master_host="127.0.0.1",  master_port=16045, master_user="msandbox",  master_password="msandbox" ' | ./node2/use -u root 
- echo 'START SLAVE'  | ./node2/use -u root 
