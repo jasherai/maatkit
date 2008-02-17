@@ -7,3 +7,4 @@ tar xzf server.tar.gz -C /tmp/$NUM
 for file in `grep -rl NODE /tmp/$NUM`; do
    sed -i -e s/NODE/$NUM/ $file;
 done
+/tmp/$NUM/start
