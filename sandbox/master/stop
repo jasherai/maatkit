@@ -9,3 +9,4 @@ then
     sleep 1
 fi
 
+rm -rf /tmp/master
