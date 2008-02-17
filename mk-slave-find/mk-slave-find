@@ -933,13 +933,20 @@ $ms->recurse_to_slaves(
 );
 
 # Now that we've found them all, recurse through them and do stuff!
+# TODO: do other actions, such as --exec or whatever.
 print pretty_print($root);
 
 sub pretty_print {
    my ( $node, $prefix ) = @_;
    $prefix ||= '';
    my $branch = $prefix ? substr($prefix, 0, length($prefix) -3) . '+- ' : '';
-   my $output = $branch . $dp->as_string($node) . "\n";
+
+   # Strip out the noise.  We really only need to see the host and port, and if
+   # the port is default, we don't even need to see that.
+   my %simple_node =
+      map  { $_ => $node->{$_} }
+      grep { $_ eq 'h' || ($_ eq 'P' && $node->{P} != 3306) } keys %$node;
+   my $output = $branch . $dp->as_string(\%simple_node) . "\n";
 
    my @kids;
    if ( $node->{children} ) {
