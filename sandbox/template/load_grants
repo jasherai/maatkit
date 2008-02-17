@@ -1,3 +1,0 @@
-#!/bin/bash
-
-echo "source ./master/grants.mysql" | ./use -u root --password= 
