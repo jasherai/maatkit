@@ -33,12 +33,13 @@ sub new {
 #
 # * dbh           (Optional) a DBH.
 # * dsn           The DSN to connect to; if no DBH, will connect using this.
+# * parent        The DSN from which this call descended.
 # * dsn_parser    A DSNParser object.
 # * recurse       How many levels to recurse. 0 = none, undef = infinite.
 # * callback      Code to execute after finding a new slave.
 # * skip_callback Optional: execute with slaves that will be skipped.
 #
-# The callback gets the slave's DSN, dbh, and the recursion level as args.
+# The callback gets the slave's DSN, dbh, parent, and the recursion level as args.
 # The recursion is tail recursion.
 sub recurse_to_slaves {
    my ( $self, $args, $level ) = @_;
@@ -71,13 +72,13 @@ sub recurse_to_slaves {
    ) {
       $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
       if ( $args->{skip_callback} ) {
-         $args->{skip_callback}->($dsn, $dbh, $level);
+         $args->{skip_callback}->($dsn, $dbh, $level, $args->{parent});
       }
       return;
    }
 
    # Call the callback!
-   $args->{callback}->($dsn, $dbh, $level);
+   $args->{callback}->($dsn, $dbh, $level, $args->{parent});
 
    if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
 
@@ -91,7 +92,7 @@ sub recurse_to_slaves {
          $ENV{MKDEBUG} && _d('Recursing from ',
             $dp->as_string($dsn), ' to ', $dp->as_string($slave));
          $self->recurse_to_slaves(
-            { %$args, dsn => $slave, dbh => undef }, $level + 1 );
+            { %$args, dsn => $slave, dbh => undef, parent => $dsn }, $level + 1 );
       }
    }
 }
@@ -159,24 +160,43 @@ sub find_slave_hosts {
    return @slaves;
 }
 
+# Figures out how to connect to the master, by examining SHOW SLAVE STATUS.
 sub get_master_dsn {
    my ( $self, $dbh, $dsn, $dsn_parser ) = @_;
-   $ENV{MKDEBUG} && _d("Getting master cxn params via SHOW SLAVE STATUS");
-   my $query  = 'SHOW SLAVE STATUS';
-   $ENV{MKDEBUG} && _d($query);
-   my $status = $dbh->selectrow_hashref($query);
-   $status    = { map { lc($_) => $status->{$_} } keys %$status };
-   my $spec   = "h=$status->{master_host},P=$status->{master_port}";
+   my $master = $self->get_slave_status($dbh) or return undef;
+   my $spec   = "h=$master->{master_host},P=$master->{master_port}";
    return       $dsn_parser->parse($spec, $dsn);
 }
 
-# Returns a hashref of SHOW MASTER STATUS output, with keys lowercased.
+# Gets SHOW SLAVE STATUS, with column names all lowercased, as a hashref.
+sub get_slave_status {
+   my ( $self, $dbh ) = @_;
+   if ( !$self->{not_a_slave}->{$dbh} ) {
+      my $sth = $self->{sths}->{$dbh}->{SLAVE_STATUS}
+            ||= $dbh->prepare('SHOW SLAVE STATUS');
+      $ENV{MKDEBUG} && _d('SHOW SLAVE STATUS');
+      $sth->execute();
+      my $ss = $sth->fetchrow_hashref();
+
+      if ( $ss && %$ss ) {
+         $ss = { map { lc($_) => $ss->{$_} } keys %$ss }; # lowercase the keys
+         return $ss;
+      }
+
+      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW SLAVE STATUS');
+      $self->{not_a_slave}->{$dbh}++;
+   }
+}
+
+# Gets SHOW MASTER STATUS, with column names all lowercased, as a hashref.
 sub get_master_status {
    my ( $self, $dbh ) = @_;
    if ( !$self->{not_a_master}->{$dbh} ) {
-      my $query = 'SHOW MASTER STATUS';
-      $ENV{MKDEBUG} && _d($query);
-      my $ms = $dbh->selectrow_hashref($query);
+      my $sth = $self->{sths}->{$dbh}->{MASTER_STATUS}
+            ||= $dbh->prepare('SHOW MASTER STATUS');
+      $ENV{MKDEBUG} && _d('SHOW MASTER STATUS');
+      $sth->execute();
+      my $ms = $sth->fetchrow_hashref();
 
       if ( $ms && %$ms ) {
          $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
@@ -212,6 +232,70 @@ sub wait_for_master {
       $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
    }
    return $result;
+}
+
+# Executes STOP SLAVE.
+sub stop_slave {
+   my ( $self, $dbh ) = @_;
+   my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
+         ||= $dbh->prepare('STOP SLAVE');
+   $sth->execute();
+}
+
+# Waits for the slave to catch up to its master, using START SLAVE UNTIL.
+sub catchup_to_master {
+   my ( $self, $slave, $master, $time ) = @_;
+   my $slave_status  = $self->get_slave_status($slave);
+   my $slave_pos     = $self->repl_posn($slave_status);
+   my $master_status = $self->get_master_status($master);
+   my $master_pos    = $self->repl_posn($master_status);
+   if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
+      $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+      # TODO
+      $self->start_slave_until($slave, $master_pos);
+      $self->wait_for_master($master, $slave, $time, 0, $master_status);
+   }
+}
+
+# Uses CHANGE MASTER TO to change a slave's master.
+sub change_master_to {
+   my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
+   # Don't prepare a $sth because CHANGE MASTER TO doesn't like quotes around
+   # port numbers, etc.  It's possible to specify the bind type, but it's easier
+   # to just not use a prepared statement.
+   my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
+      . "MASTER_PORT= $master_dsn->{P}, MASTER_LOG_FILE='$master_pos->{file}', "
+      . "MASTER_LOG_POS=$master_pos->{position}";
+   $ENV{MKDEBUG} && _d($sql);
+   $dbh->do($sql);
+}
+
+# Extracts the replication position out of either SHOW MASTER STATUS or SHOW
+# SLAVE STATUS, and returns it as a hashref { file, position }
+sub repl_posn {
+   my ( $self, $status ) = @_;
+   if ( exists $status->{file} && exists $status->{position} ) {
+      # It's the output of SHOW MASTER STATUS
+      return {
+         file     => $status->{file},
+         position => $status->{position},
+      };
+   }
+   else {
+      return {
+         file     => $status->{relay_master_log_file},
+         position => $status->{exec_master_log_pos},
+      };
+   }
+}
+
+# Compares two replication positions and returns -1, 0, or 1 just as the cmp
+# operator does.
+sub pos_cmp {
+   my ( $self, $a, $b ) = @_;
+   my $fmt  = '%s/%020d';
+   return sprintf($fmt, @{$a}{qw(file position)})
+      cmp sprintf($fmt, @{$b}{qw(file position)});
 }
 
 sub _d {
