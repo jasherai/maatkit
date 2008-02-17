@@ -1,0 +1,7 @@
+
+use mysql;
+set password=password('msandbox');
+grant all on *.* to msandbox identified by 'msandbox';
+delete from user where password='';
+flush privileges;
+
