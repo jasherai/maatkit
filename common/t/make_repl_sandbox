@@ -1,12 +1,9 @@
 #!/bin/sh
 
-if ps -eaf | grep -v grep | grep -q /tmp/12345; then
-   exit 0
-fi
-
 DIR=`realpath $0`
 cd `dirname $DIR`
 cd ../../sandbox
+./stop_all
 for a in 12345 12346 12347; do
    ./make_sandbox $a
 done
