@@ -684,7 +684,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1804
+# MasterSlave package 1806
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -750,6 +750,7 @@ sub recurse_to_slaves {
 
 sub find_slave_hosts {
    my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
+   $method ||= '';
    $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
 
    my @slaves;
