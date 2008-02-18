@@ -303,7 +303,8 @@ sub make_sibling_of_master {
    my ( $self, $slave_dbh, $slave_dsn, $dsn_parser, $timeout) = @_;
 
    # Connect to the master and the grand-master, and verify that the master is
-   # also a slave.
+   # also a slave.  Also verify that the grand-master isn't the slave!
+   # (master-master replication).
    my $master_dsn  = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
       or die "This server is not a slave";
    my $master_dbh  = $dsn_parser->get_dbh(
@@ -313,6 +314,9 @@ sub make_sibling_of_master {
       or die "This server's master is not a slave";
    my $gmaster_dbh = $dsn_parser->get_dbh(
       $dsn_parser->get_cxn_params($gmaster_dsn), { AutoCommit => 1 });
+   if ( $self->short_host($slave_dsn) eq $self->short_host($gmaster_dsn) ) {
+      die "The slave's master's master is the slave: master-master replication";
+   }
 
    # Stop the master, and make the slave catch up to it.
    $self->stop_slave($master_dbh);
@@ -327,9 +331,9 @@ sub make_sibling_of_master {
    my $slave_pos     = $self->repl_posn($slave_status);
 
    # Verify that they are both stopped and are at the same position.
-   if (     !$self->slave_is_running($mslave_status)
-         && !$self->slave_is_running($slave_status)
-         && $self->pos_cmp($master_pos, $slave_pos) == 0)
+   if ( !$self->slave_is_running($mslave_status)
+     && !$self->slave_is_running($slave_status)
+     && $self->pos_cmp($master_pos, $slave_pos) == 0)
    {
       $self->change_master_to($slave_dbh, $gmaster_dsn,
          $self->repl_posn($mslave_status)); # Note it's not $master_pos!
@@ -343,11 +347,87 @@ sub make_sibling_of_master {
    $slave_status  = $self->get_slave_status($slave_dbh);
    my $mslave_pos = $self->repl_posn($mslave_status);
    $slave_pos     = $self->repl_posn($slave_status);
-   if (     $mslave_status->{master_host} ne $slave_status->{master_host}
-         || $mslave_status->{master_port} ne $slave_status->{master_port}
-         || $self->pos_cmp($mslave_pos, $slave_pos) != 0)
+   if ( $self->short_host($mslave_status) ne $self->short_host($slave_status)
+     || $self->pos_cmp($mslave_pos, $slave_pos) != 0)
    {
-      die "The servers don't have the same master and position";
+      die "The servers don't have the same master/position after the change";
+   }
+}
+
+# Moves a slave to be a slave of its sibling.
+# 1. Connect to the sibling and verify that it has the same master.
+# 2. Stop the slave processes on the server and its sibling.
+# 3. If one of the servers is behind the other, make it catch up.
+# 4. Point the slave to its sibling.
+sub make_slave_of_sibling {
+   my ( $self, $slave_dbh, $slave_dsn, $sib_dbh, $sib_dsn,
+        $dsn_parser, $timeout) = @_;
+
+   # Verify that the sibling is a different server.
+   if ( $self->short_host($slave_dsn) eq $self->short_host($sib_dsn) ) {
+      die "You are trying to make the slave a slave of itself";
+   }
+
+   # Verify that the sibling has the same master, and that it is a master.
+   my $master_dsn1 = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "This server is not a slave";
+   my $master_dbh1 = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($master_dsn1), { AutoCommit => 1 });
+   my $master_dsn2 = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "The sibling is not a slave";
+   if ( $self->short_host($master_dsn1) ne $self->short_host($master_dsn2) ) {
+      die "This server isn't a sibling of the slave";
+   }
+   my $sib_master_stat = $self->get_master_status($sib_dbh)
+      or die "Binary logging is not enabled on the sibling";
+   die "The log_slave_updates option is not enabled on the sibling"
+      unless $self->has_slave_updates($sib_dbh);
+
+   # Stop the slave and its sibling, then if one is behind the other, make it
+   # catch up.
+   $self->stop_slave($slave_dbh);
+   $self->stop_slave($sib_dbh);
+   my $slave_status = $self->get_slave_status($slave_dbh);
+   my $sib_status   = $self->get_slave_status($sib_dbh);
+   my $slave_pos    = $self->repl_posn($slave_status);
+   my $sib_pos      = $self->repl_posn($sib_status);
+   if ( $self->pos_cmp($slave_pos, $sib_pos) < 0 ) {
+      # The slave is behind the sibling.
+      $self->start_slave($slave_dbh, $sib_pos);
+   }
+   elsif ( $self->pos_cmp($slave_pos, $sib_pos) > 0 ) {
+      $self->start_slave($sib_dbh, $slave_pos);
+   }
+
+   # Re-fetch the replication statuses and positions.
+   $slave_status    = $self->get_slave_status($slave_dbh);
+   $sib_status      = $self->get_slave_status($sib_dbh);
+   $slave_pos       = $self->repl_posn($slave_status);
+   $sib_pos         = $self->repl_posn($sib_status);
+   $sib_master_stat = $self->get_master_status($sib_dbh);
+
+   # Verify that they are both stopped and are at the same position.
+   if ( !$self->slave_is_running($slave_status)
+     && !$self->slave_is_running($sib_status)
+     && $self->pos_cmp($slave_pos, $sib_pos) == 0)
+   {
+      $self->change_master_to($slave_dbh, $sib_dsn,
+         $self->repl_posn($sib_master_stat));
+   }
+   else {
+      die "The servers aren't both stopped at the same position";
+   }
+
+   # Verify that the slave's master is the sibling and that it is at the same
+   # position.
+   $slave_status    = $self->get_slave_status($slave_dbh);
+   $slave_pos       = $self->repl_posn($slave_status);
+   $sib_master_stat = $self->get_master_status($sib_dbh);
+   if ( $self->short_host($slave_status) ne $self->short_host($sib_dsn)
+     || $self->pos_cmp($self->repl_posn($sib_master_stat), $slave_pos) != 0)
+   {
+      die "After changing the slave's master, it isn't a slave of the sibling, "
+         . "or it has a different replication position than the sibling";
    }
 }
 
@@ -355,6 +435,15 @@ sub make_sibling_of_master {
 sub slave_is_running {
    my ( $self, $slave_status ) = @_;
    return ($slave_status->{slave_sql_running} || 'No') eq 'Yes';
+}
+
+# Returns true if the server's log_slave_updates option is enabled.
+sub has_slave_updates {
+   my ( $self, $dbh ) = @_;
+   my $sql = q{SHOW VARIABLES LIKE 'log_slave_updates'};
+   $ENV{MKDEBUG} && _d($sql);
+   my ($name, $value) = $dbh->selectrow_array($sql);
+   return $value && $value =~ m/^(1|ON)$/;
 }
 
 # Extracts the replication position out of either SHOW MASTER STATUS or SHOW
@@ -381,6 +470,25 @@ sub repl_posn {
 sub pos_cmp {
    my ( $self, $a, $b ) = @_;
    return $self->pos_to_string($a) cmp $self->pos_to_string($b);
+}
+
+# Simplifies a hostname as much as possible.  For purposes of replication, a
+# hostname is really just the combination of hostname and port, since
+# replication always uses TCP connections (it does not work via sockets).  If
+# the port is the default 3306, it is omitted.  As a convenience, this sub
+# accepts either SHOW SLAVE STATUS or a DSN.
+sub short_host {
+   my ( $self, $dsn ) = @_;
+   my ($host, $port);
+   if ( $dsn->{master_host} ) {
+      $host = $dsn->{master_host};
+      $port = $dsn->{master_port};
+   }
+   else {
+      $host = $dsn->{h};
+      $port = $dsn->{P};
+   }
+   return $host . ( $port == 3306 ? '' : ":$port" );
 }
 
 # Stringifies a position in a way that's string-comparable.
