@@ -37,7 +37,7 @@ sub new {
 # * recurse       How many levels to recurse. 0 = none, undef = infinite.
 # * callback      Code to execute after finding a new slave.
 # * skip_callback Optional: execute with slaves that will be skipped.
-# * use_proclist  Optional: whether to ignore SHOW SLAVE HOSTS.
+# * method        Optional: whether to prefer HOSTS over PROCESSLIST
 # * parent        Optional: the DSN from which this call descended.
 #
 # The callback gets the slave's DSN, dbh, parent, and the recursion level as args.
@@ -87,7 +87,7 @@ sub recurse_to_slaves {
       # revealed by server_id and master_id).
       my @slaves =
          grep { !$_->{master_id} || $_->{master_id} == $id } # Only my slaves.
-         $self->find_slave_hosts($dp, $dbh, $dsn);
+         $self->find_slave_hosts($dp, $dbh, $dsn, $args->{method});
 
       foreach my $slave ( @slaves ) {
          $ENV{MKDEBUG} && _d('Recursing from ',
@@ -98,42 +98,29 @@ sub recurse_to_slaves {
    }
 }
 
-# Finds slave hosts by trying SHOW SLAVE HOSTS, and if that doesn't reveal
-# anything, looks at SHOW PROCESSLIST and tries to guess which ones are slaves.
+# Finds slave hosts by trying SHOW PROCESSLIST and guessing which ones are
+# slaves, and if that doesn't reveal anything, looks at SHOW SLAVE STATUS.
 # Returns a list of DSN hashes.  Optional extra keys in the DSN hash are
 # master_id and server_id.  Also, the 'source' key is either 'processlist' or
-# 'hosts'.  If $use_processlist is given, skips SHOW SLAVE HOSTS.
+# 'hosts'.  If $method is given, uses that method instead of defaults.  The
+# default is to use 'processlist' unless the port is non-standard (indicating
+# that the port # from SHOW SLAVE HOSTS may be important).
 sub find_slave_hosts {
-   my ( $self, $dsn_parser, $dbh, $dsn, $use_processlist ) = @_;
+   my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
    $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
 
    my @slaves;
 
-   if ( !$use_processlist ) {
-      # Try SHOW SLAVE HOSTS first.
-      my $sql = 'SHOW SLAVE HOSTS';
-      $ENV{MKDEBUG} && _d($sql);
-      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+   if ( (!$method && ($dsn->{P}||3306) == 3306) || $method eq 'processlist' ) {
 
-      # Convert SHOW SLAVE HOSTS into DSN hashes.
-      if ( @slaves ) {
-         $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
-         @slaves = map {
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            my $spec = "h=$hash{host},P=$hash{port}"
-               . ( $hash{user} ? ",u=$hash{user}" : '')
-               . ( $hash{password} ? ",p=$hash{password}" : '');
-            my $dsn           = $dsn_parser->parse($spec, $dsn);
-            $dsn->{server_id} = $hash{server_id};
-            $dsn->{master_id} = $hash{master_id};
-            $dsn->{source}    = 'hosts';
-            $dsn;
-         } @slaves;
+      # Check for the PROCESS privilege.
+      my $proc =
+         grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
+         @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+      if ( !$proc ) {
+         die "You do not have the PROCESS privilege";
       }
-   }
 
-   if ( !@slaves ) {
       my $sql = 'SHOW PROCESSLIST';
       $ENV{MKDEBUG} && _d($sql);
       @slaves =
@@ -158,6 +145,34 @@ sub find_slave_hosts {
             \%hash;
          }
          @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+   }
+
+   # Fall back to SHOW SLAVE HOSTS, which is significantly less reliable.
+   # Machines tend to share the host list around with every machine in the
+   # replication hierarchy, but they don't update each other when machines
+   # disconnect or change to use a different master or something.  So there is
+   # lots of cruft in SHOW SLAVE HOSTS.
+   if ( !@slaves ) {
+      my $sql = 'SHOW SLAVE HOSTS';
+      $ENV{MKDEBUG} && _d($sql);
+      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+      # Convert SHOW SLAVE HOSTS into DSN hashes.
+      if ( @slaves ) {
+         $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+         @slaves = map {
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            my $spec = "h=$hash{host},P=$hash{port}"
+               . ( $hash{user} ? ",u=$hash{user}" : '')
+               . ( $hash{password} ? ",p=$hash{password}" : '');
+            my $dsn           = $dsn_parser->parse($spec, $dsn);
+            $dsn->{server_id} = $hash{server_id};
+            $dsn->{master_id} = $hash{master_id};
+            $dsn->{source}    = 'hosts';
+            $dsn;
+         } @slaves;
+      }
    }
 
    $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
