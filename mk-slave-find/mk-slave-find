@@ -674,7 +674,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1794
+# MasterSlave package 1799
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1068,7 +1068,17 @@ sub short_host {
       $host = $dsn->{h};
       $port = $dsn->{P};
    }
-   return $host . ( $port == 3306 ? '' : ":$port" );
+   return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
+}
+
+sub get_hostname {
+   my ( $self, $dbh ) = @_;
+   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
+      return $host;
+   }
+   my ( $hostname, $one ) = $dbh->selectrow_array(
+      'SELECT /*!50038 @@hostname, */ 1');
+   return $hostname;
 }
 
 sub pos_to_string {
@@ -1158,16 +1168,16 @@ $ms->recurse_to_slaves(
          }
          $slaves_found{$dp->as_string($dsn)} = $dsn;
       },
-      skip_callback => sub {
-         my ( $dsn, $dbh, $level ) = @_;
-         print STDERR "Skipping ", $dp->as_string($dsn), "\n";
-      },
    }
 );
 
 # Now that we've found them all, recurse through them and do stuff!
 # TODO: do other actions, such as --exec or whatever.
 print pretty_print($root);
+
+# If the user relied on values from the defaults file, the $root hostname
+# might not be defined.  Try to fill it in.
+$root->{h} ||= $ms->get_hostname($dbh);
 
 sub pretty_print {
    my ( $node, $prefix ) = @_;
