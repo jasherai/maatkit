@@ -107,6 +107,7 @@ sub recurse_to_slaves {
 # that the port # from SHOW SLAVE HOSTS may be important).
 sub find_slave_hosts {
    my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
+   $method ||= '';
    $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
 
    my @slaves;
