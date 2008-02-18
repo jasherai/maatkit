@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 
 require "../MasterSlave.pm";
@@ -105,3 +105,18 @@ eval {
 };
 diag $EVAL_ERROR if $EVAL_ERROR;
 ok(!$EVAL_ERROR, 'Made slave sibling of master');
+
+eval {
+   $ms->make_slave_of_sibling(
+      $slaves[0], $sldsns[0],
+      $slaves[0], $sldsns[0], $dp, 100);
+};
+like($EVAL_ERROR, qr/slave of itself/, 'Cannot make slave slave of itself');
+
+eval {
+   $ms->make_slave_of_sibling(
+      $slaves[0], $sldsns[0],
+      $slaves[1], $sldsns[1], $dp, 100);
+};
+diag $EVAL_ERROR if $EVAL_ERROR;
+ok(!$EVAL_ERROR, 'Made slave of sibling');
