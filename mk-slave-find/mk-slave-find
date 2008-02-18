@@ -1171,13 +1171,13 @@ $ms->recurse_to_slaves(
    }
 );
 
-# Now that we've found them all, recurse through them and do stuff!
-# TODO: do other actions, such as --exec or whatever.
-print pretty_print($root);
-
 # If the user relied on values from the defaults file, the $root hostname
 # might not be defined.  Try to fill it in.
 $root->{h} ||= $ms->get_hostname($dbh);
+
+# Now that we've found them all, recurse through them and do stuff!
+# TODO: do other actions, such as --exec or whatever.
+print pretty_print($root);
 
 sub pretty_print {
    my ( $node, $prefix ) = @_;
