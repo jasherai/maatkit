@@ -491,17 +491,6 @@ sub short_host {
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
 
-# Tries to figure out a hostname for the connection.
-sub get_hostname {
-   my ( $self, $dbh ) = @_;
-   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
-      return $host;
-   }
-   my ( $hostname, $one ) = $dbh->selectrow_array(
-      'SELECT /*!50038 @@hostname, */ 1');
-   return $hostname;
-}
-
 # Stringifies a position in a way that's string-comparable.
 sub pos_to_string {
    my ( $self, $pos ) = @_;
