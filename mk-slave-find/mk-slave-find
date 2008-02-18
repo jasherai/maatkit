@@ -475,7 +475,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1755
+# DSNParser package 1803
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -661,6 +661,16 @@ sub get_dbh {
    return $dbh;
 }
 
+sub get_hostname {
+   my ( $self, $dbh ) = @_;
+   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
+      return $host;
+   }
+   my ( $hostname, $one ) = $dbh->selectrow_array(
+      'SELECT /*!50038 @@hostname, */ 1');
+   return $hostname;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { defined $_ ? $_ : 'undef' } @_;
@@ -674,7 +684,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1799
+# MasterSlave package 1804
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -727,7 +737,7 @@ sub recurse_to_slaves {
 
       my @slaves =
          grep { !$_->{master_id} || $_->{master_id} == $id } # Only my slaves.
-         $self->find_slave_hosts($dp, $dbh, $dsn);
+         $self->find_slave_hosts($dp, $dbh, $dsn, $args->{method});
 
       foreach my $slave ( @slaves ) {
          $ENV{MKDEBUG} && _d('Recursing from ',
@@ -739,34 +749,20 @@ sub recurse_to_slaves {
 }
 
 sub find_slave_hosts {
-   my ( $self, $dsn_parser, $dbh, $dsn, $use_processlist ) = @_;
+   my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
    $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
 
    my @slaves;
 
-   if ( !$use_processlist ) {
-      my $sql = 'SHOW SLAVE HOSTS';
-      $ENV{MKDEBUG} && _d($sql);
-      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+   if ( (!$method && ($dsn->{P}||3306) == 3306) || $method eq 'processlist' ) {
 
-      if ( @slaves ) {
-         $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
-         @slaves = map {
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            my $spec = "h=$hash{host},P=$hash{port}"
-               . ( $hash{user} ? ",u=$hash{user}" : '')
-               . ( $hash{password} ? ",p=$hash{password}" : '');
-            my $dsn           = $dsn_parser->parse($spec, $dsn);
-            $dsn->{server_id} = $hash{server_id};
-            $dsn->{master_id} = $hash{master_id};
-            $dsn->{source}    = 'hosts';
-            $dsn;
-         } @slaves;
+      my $proc =
+         grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
+         @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+      if ( !$proc ) {
+         die "You do not have the PROCESS privilege";
       }
-   }
 
-   if ( !@slaves ) {
       my $sql = 'SHOW PROCESSLIST';
       $ENV{MKDEBUG} && _d($sql);
       @slaves =
@@ -790,6 +786,28 @@ sub find_slave_hosts {
             \%hash;
          }
          @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+   }
+
+   if ( !@slaves ) {
+      my $sql = 'SHOW SLAVE HOSTS';
+      $ENV{MKDEBUG} && _d($sql);
+      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+      if ( @slaves ) {
+         $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+         @slaves = map {
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            my $spec = "h=$hash{host},P=$hash{port}"
+               . ( $hash{user} ? ",u=$hash{user}" : '')
+               . ( $hash{password} ? ",p=$hash{password}" : '');
+            my $dsn           = $dsn_parser->parse($spec, $dsn);
+            $dsn->{server_id} = $hash{server_id};
+            $dsn->{master_id} = $hash{master_id};
+            $dsn->{source}    = 'hosts';
+            $dsn;
+         } @slaves;
+      }
    }
 
    $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
@@ -1071,16 +1089,6 @@ sub short_host {
    return ($host || '[default]') . ( ($port || 3306) == 3306 ? '' : ":$port" );
 }
 
-sub get_hostname {
-   my ( $self, $dbh ) = @_;
-   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
-      return $host;
-   }
-   my ( $hostname, $one ) = $dbh->selectrow_array(
-      'SELECT /*!50038 @@hostname, */ 1');
-   return $hostname;
-}
-
 sub pos_to_string {
    my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
@@ -1173,7 +1181,7 @@ $ms->recurse_to_slaves(
 
 # If the user relied on values from the defaults file, the $root hostname
 # might not be defined.  Try to fill it in.
-$root->{h} ||= $ms->get_hostname($dbh);
+$root->{h} ||= $dp->get_hostname($dbh);
 
 # Now that we've found them all, recurse through them and do stuff!
 # TODO: do other actions, such as --exec or whatever.
