@@ -71,7 +71,7 @@ sub quote_val {
 # End Quoter package
 # ###########################################################################
 # ###########################################################################
-# OptionParser package 1704
+# OptionParser package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -496,7 +496,7 @@ sub groups {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line ", @_, "\n";
+   print "# OptionParser:$line $PID ", @_, "\n";
 }
 
 if ( $ENV{MKDEBUG} ) {
@@ -518,12 +518,14 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 1344
+# VersionParser package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package VersionParser;
+
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class ) = @_;
@@ -550,7 +552,7 @@ sub version_ge {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# VersionParser:$line ", @_, "\n";
+   print "# VersionParser:$line $PID ", @_, "\n";
 }
 
 1;
@@ -560,7 +562,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1703
+# DSNParser package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -571,6 +573,7 @@ use DBI;
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -748,7 +751,7 @@ sub get_dbh {
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line ", @_, "\n";
+   print "# DSNParser:$line $PID ", @_, "\n";
 }
 
 1;
@@ -758,7 +761,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1653
+# MasterSlave package 1794
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -800,12 +803,12 @@ sub recurse_to_slaves {
    ) {
       $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
       if ( $args->{skip_callback} ) {
-         $args->{skip_callback}->($dsn, $dbh, $level);
+         $args->{skip_callback}->($dsn, $dbh, $level, $args->{parent});
       }
       return;
    }
 
-   $args->{callback}->($dsn, $dbh, $level);
+   $args->{callback}->($dsn, $dbh, $level, $args->{parent});
 
    if ( !defined $args->{recurse} || $level < $args->{recurse} ) {
 
@@ -817,37 +820,40 @@ sub recurse_to_slaves {
          $ENV{MKDEBUG} && _d('Recursing from ',
             $dp->as_string($dsn), ' to ', $dp->as_string($slave));
          $self->recurse_to_slaves(
-            { %$args, dsn => $slave, dbh => undef }, $level + 1 );
+            { %$args, dsn => $slave, dbh => undef, parent => $dsn }, $level + 1 );
       }
    }
 }
 
 sub find_slave_hosts {
-   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+   my ( $self, $dsn_parser, $dbh, $dsn, $use_processlist ) = @_;
    $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
 
-   my $sql = 'SHOW SLAVE HOSTS';
-   $ENV{MKDEBUG} && _d($sql);
-   my @slaves = 
-      @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+   my @slaves;
 
-   if ( @slaves ) {
-      $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
-      @slaves = map {
-         my %hash;
-         @hash{ map { lc $_ } keys %$_ } = values %$_;
-         my $spec = "h=$hash{host},P=$hash{port}"
-            . ( $hash{user} ? ",u=$hash{user}" : '')
-            . ( $hash{password} ? ",p=$hash{password}" : '');
-         my $dsn           = $dsn_parser->parse($spec, $dsn);
-         $dsn->{server_id} = $hash{server_id};
-         $dsn->{master_id} = $hash{master_id};
-         $dsn->{source}    = 'hosts';
-         $dsn;
-      } @slaves;
+   if ( !$use_processlist ) {
+      my $sql = 'SHOW SLAVE HOSTS';
+      $ENV{MKDEBUG} && _d($sql);
+      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+      if ( @slaves ) {
+         $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+         @slaves = map {
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            my $spec = "h=$hash{host},P=$hash{port}"
+               . ( $hash{user} ? ",u=$hash{user}" : '')
+               . ( $hash{password} ? ",p=$hash{password}" : '');
+            my $dsn           = $dsn_parser->parse($spec, $dsn);
+            $dsn->{server_id} = $hash{server_id};
+            $dsn->{master_id} = $hash{master_id};
+            $dsn->{source}    = 'hosts';
+            $dsn;
+         } @slaves;
+      }
    }
 
-   else {
+   if ( !@slaves ) {
       my $sql = 'SHOW PROCESSLIST';
       $ENV{MKDEBUG} && _d($sql);
       @slaves =
@@ -949,7 +955,24 @@ sub stop_slave {
    my ( $self, $dbh ) = @_;
    my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
          ||= $dbh->prepare('STOP SLAVE');
+   $ENV{MKDEBUG} && _d($sth->{Statement});
    $sth->execute();
+}
+
+sub start_slave {
+   my ( $self, $dbh, $pos ) = @_;
+   if ( $pos ) {
+      my $sql = "START SLAVE UNTIL MASTER_LOG_FILE='$pos->{file}', "
+              . "MASTER_LOG_POS=$pos->{position}";
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+   }
+   else {
+      my $sth = $self->{sths}->{$dbh}->{START_SLAVE}
+            ||= $dbh->prepare('START SLAVE');
+      $ENV{MKDEBUG} && _d($sth->{Statement});
+      $sth->execute();
+   }
 }
 
 sub catchup_to_master {
@@ -958,19 +981,17 @@ sub catchup_to_master {
    my $slave_pos     = $self->repl_posn($slave_status);
    my $master_status = $self->get_master_status($master);
    my $master_pos    = $self->repl_posn($master_status);
+   $ENV{MKDEBUG} && _d("Master position: ", $self->pos_to_string($master_pos),
+      " Slave position: ", $self->pos_to_string($slave_pos));
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
       $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
-      # TODO
-      $self->start_slave_until($slave, $master_pos);
+      $self->start_slave($slave, $master_pos);
       $self->wait_for_master($master, $slave, $time, 0, $master_status);
    }
 }
 
 sub change_master_to {
    my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
-   # Don't prepare a $sth because CHANGE MASTER TO doesn't like quotes around
-   # port numbers, etc.  It's possible to specify the bind type, but it's easier
-   # to just not use a prepared statement.
    my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
       . "MASTER_PORT= $master_dsn->{P}, MASTER_LOG_FILE='$master_pos->{file}', "
       . "MASTER_LOG_POS=$master_pos->{position}";
@@ -978,11 +999,137 @@ sub change_master_to {
    $dbh->do($sql);
 }
 
+sub make_sibling_of_master {
+   my ( $self, $slave_dbh, $slave_dsn, $dsn_parser, $timeout) = @_;
+
+   my $master_dsn  = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "This server is not a slave";
+   my $master_dbh  = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($master_dsn), { AutoCommit => 1 });
+   my $gmaster_dsn
+      = $self->get_master_dsn($master_dbh, $master_dsn, $dsn_parser)
+      or die "This server's master is not a slave";
+   my $gmaster_dbh = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($gmaster_dsn), { AutoCommit => 1 });
+   if ( $self->short_host($slave_dsn) eq $self->short_host($gmaster_dsn) ) {
+      die "The slave's master's master is the slave: master-master replication";
+   }
+
+   $self->stop_slave($master_dbh);
+   $self->catchup_to_master($slave_dbh, $master_dbh, $timeout);
+   $self->stop_slave($slave_dbh);
+
+   my $master_status = $self->get_master_status($master_dbh);
+   my $mslave_status = $self->get_slave_status($master_dbh);
+   my $slave_status  = $self->get_slave_status($slave_dbh);
+   my $master_pos    = $self->repl_posn($master_status);
+   my $slave_pos     = $self->repl_posn($slave_status);
+
+   if ( !$self->slave_is_running($mslave_status)
+     && !$self->slave_is_running($slave_status)
+     && $self->pos_cmp($master_pos, $slave_pos) == 0)
+   {
+      $self->change_master_to($slave_dbh, $gmaster_dsn,
+         $self->repl_posn($mslave_status)); # Note it's not $master_pos!
+   }
+   else {
+      die "The servers aren't both stopped at the same position";
+   }
+
+   $mslave_status = $self->get_slave_status($master_dbh);
+   $slave_status  = $self->get_slave_status($slave_dbh);
+   my $mslave_pos = $self->repl_posn($mslave_status);
+   $slave_pos     = $self->repl_posn($slave_status);
+   if ( $self->short_host($mslave_status) ne $self->short_host($slave_status)
+     || $self->pos_cmp($mslave_pos, $slave_pos) != 0)
+   {
+      die "The servers don't have the same master/position after the change";
+   }
+}
+
+sub make_slave_of_sibling {
+   my ( $self, $slave_dbh, $slave_dsn, $sib_dbh, $sib_dsn,
+        $dsn_parser, $timeout) = @_;
+
+   if ( $self->short_host($slave_dsn) eq $self->short_host($sib_dsn) ) {
+      die "You are trying to make the slave a slave of itself";
+   }
+
+   my $master_dsn1 = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "This server is not a slave";
+   my $master_dbh1 = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($master_dsn1), { AutoCommit => 1 });
+   my $master_dsn2 = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "The sibling is not a slave";
+   if ( $self->short_host($master_dsn1) ne $self->short_host($master_dsn2) ) {
+      die "This server isn't a sibling of the slave";
+   }
+   my $sib_master_stat = $self->get_master_status($sib_dbh)
+      or die "Binary logging is not enabled on the sibling";
+   die "The log_slave_updates option is not enabled on the sibling"
+      unless $self->has_slave_updates($sib_dbh);
+
+   $self->stop_slave($slave_dbh);
+   $self->stop_slave($sib_dbh);
+   my $slave_status = $self->get_slave_status($slave_dbh);
+   my $sib_status   = $self->get_slave_status($sib_dbh);
+   my $slave_pos    = $self->repl_posn($slave_status);
+   my $sib_pos      = $self->repl_posn($sib_status);
+   if ( $self->pos_cmp($slave_pos, $sib_pos) < 0 ) {
+      $self->start_slave($slave_dbh, $sib_pos);
+   }
+   elsif ( $self->pos_cmp($slave_pos, $sib_pos) > 0 ) {
+      $self->start_slave($sib_dbh, $slave_pos);
+   }
+
+   $slave_status    = $self->get_slave_status($slave_dbh);
+   $sib_status      = $self->get_slave_status($sib_dbh);
+   $slave_pos       = $self->repl_posn($slave_status);
+   $sib_pos         = $self->repl_posn($sib_status);
+   $sib_master_stat = $self->get_master_status($sib_dbh);
+
+   if ( !$self->slave_is_running($slave_status)
+     && !$self->slave_is_running($sib_status)
+     && $self->pos_cmp($slave_pos, $sib_pos) == 0)
+   {
+      $self->change_master_to($slave_dbh, $sib_dsn,
+         $self->repl_posn($sib_master_stat));
+   }
+   else {
+      die "The servers aren't both stopped at the same position";
+   }
+
+   $slave_status    = $self->get_slave_status($slave_dbh);
+   $slave_pos       = $self->repl_posn($slave_status);
+   $sib_master_stat = $self->get_master_status($sib_dbh);
+   if ( $self->short_host($slave_status) ne $self->short_host($sib_dsn)
+     || $self->pos_cmp($self->repl_posn($sib_master_stat), $slave_pos) != 0)
+   {
+      die "After changing the slave's master, it isn't a slave of the sibling, "
+         . "or it has a different replication position than the sibling";
+   }
+}
+
+sub slave_is_running {
+   my ( $self, $slave_status ) = @_;
+   return ($slave_status->{slave_sql_running} || 'No') eq 'Yes';
+}
+
+sub has_slave_updates {
+   my ( $self, $dbh ) = @_;
+   my $sql = q{SHOW VARIABLES LIKE 'log_slave_updates'};
+   $ENV{MKDEBUG} && _d($sql);
+   my ($name, $value) = $dbh->selectrow_array($sql);
+   return $value && $value =~ m/^(1|ON)$/;
+}
+
 sub repl_posn {
    my ( $self, $status ) = @_;
    if ( exists $status->{file} && exists $status->{position} ) {
-      # It's the output of SHOW MASTER STATUS
-      return $status;
+      return {
+         file     => $status->{file},
+         position => $status->{position},
+      };
    }
    else {
       return {
@@ -994,14 +1141,32 @@ sub repl_posn {
 
 sub pos_cmp {
    my ( $self, $a, $b ) = @_;
+   return $self->pos_to_string($a) cmp $self->pos_to_string($b);
+}
+
+sub short_host {
+   my ( $self, $dsn ) = @_;
+   my ($host, $port);
+   if ( $dsn->{master_host} ) {
+      $host = $dsn->{master_host};
+      $port = $dsn->{master_port};
+   }
+   else {
+      $host = $dsn->{h};
+      $port = $dsn->{P};
+   }
+   return $host . ( $port == 3306 ? '' : ":$port" );
+}
+
+sub pos_to_string {
+   my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
-   return sprintf($fmt, @{$a}{qw(file position)})
-      cmp sprintf($fmt, @{$b}{qw(file position)});
+   return sprintf($fmt, @{$pos}{qw(file position)});
 }
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# MasterSlave:$line ", @_, "\n";
+   print "# MasterSlave:$line $PID ", @_, "\n";
 }
 
 1;
@@ -1032,6 +1197,8 @@ my @opt_spec = (
       d => 'Make the server a slave of one of its parent\'s siblings' },
    {  s => 'timeout|m=m',
       d => 'Timeout when waiting for replication to catch up (default 10m)' },
+   'Specify one and only one of --sibling-of-master, --slave-of-sibling, '
+      . 'or --slave-of-uncle',
 );
 
 my $dp = new DSNParser();
@@ -1053,6 +1220,9 @@ while ( my $arg = shift(@ARGV) ) {
 if ( !@dsns ) {
    $opt_parser->error('At least one DSN is required.');
 }
+if ( @dsns < 2 && !$opts{'sibling-of-master'} ) {
+   $opt_parser->error('At least two DSNs are required.');
+}
 
 $opt_parser->usage_or_errors(%opts);
 
@@ -1067,23 +1237,22 @@ if ( $opts{askpass} ) {
 }
 
 my $slave_dsn = shift @dsns;
-my $slave_dbh = $dp->get_dbh(
-                  $dp->get_cxn_params($slave_dsn), { AutoCommit => 1 });
+my $slave_dbh
+   = $dp->get_dbh($dp->get_cxn_params($slave_dsn), { AutoCommit => 1 });
 
 if ( $opts{'sibling-of-master'} ) {
-   my $master_dsn  = $ms->get_master_dsn($slave_dbh, $slave_dsn, $dp)
-      or die "This server is not a slave";
-   my $master_dbh  = $dp->get_dbh(
-                        $dp->get_cxn_params($master_dsn), { AutoCommit => 1 });
-   my $gmaster_dsn = $ms->get_master_dsn($master_dbh, $master_dsn, $dp)
-      or die "This server's master is not a slave";
-   my $gmaster_dbh = $dp->get_dbh(
-                        $dp->get_cxn_params($gmaster_dsn), { AutoCommit => 1 });
-   $ms->stop_slave($master_dbh);
-   $ms->catchup_to_master($slave_dbh, $master_dbh, $opts{m});
-   $ms->stop_slave($slave_dbh);
-   my $master_pos = $ms->repl_posn($ms->get_slave_status($master_dbh));
-   $ms->change_master_to($slave_dbh, $gmaster_dsn, $master_pos);
+   $ms->make_sibling_of_master( $slave_dbh, $slave_dsn, $dp, $opts{m});
+}
+elsif ( $opts{'slave-of-sibling'} ) {
+   my $sib_dsn = shift @dsns;
+   my $sib_dbh
+      = $dp->get_dbh($dp->get_cxn_params($sib_dsn), { AutoCommit => 1 });
+   $ms->make_slave_of_sibling(
+      $slave_dbh, $slave_dsn, $sib_dbh, $sib_dsn, $dp, $opts{m});
+}
+else {
+   die "Sorry, this functionality isn't implemented yet";
+   # TODO
 }
 
 exit($exit_status);
@@ -1101,11 +1270,12 @@ sub _d {
 
 =head1 NAME
 
-mk-slave-move - Rearrange a MySQL replication hierarchy.
+mk-slave-move - Move a MySQL slave around in the replication hierarchy.
 
 =head1 SYNOPSIS
 
- mk-slave-move
+ mk-slave-move mysql_host --sibling-of-master
+ mk-slave-move mysql_host --slave-of-sibling sibling_host
 
 =head1 DESCRIPTION
 
@@ -1140,7 +1310,7 @@ TODO: an option to kill connections that have open transactions
 
 =item --sibling-of-master
 
-Make the server a sibiling of its master, i.e. slave of its grandparent.  The
+Make the server a sibling of its master, i.e. slave of its grandparent.  The
 procedure is as follows:
 
  1. Connect to the server's master.
