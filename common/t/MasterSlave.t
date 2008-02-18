@@ -19,37 +19,31 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 3;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
 require "../MasterSlave.pm";
 require "../DSNParser.pm";
 
-my $dp = new DSNParser();
-
-sub throws_ok {
-   my ( $code, $pat, $msg ) = @_;
-   eval { $code->(); };
-   like ( $EVAL_ERROR, $pat, $msg );
-}
-
 `./make_repl_sandbox`;
 
 my $dbh;
 my @slaves;
+my @sldsns;
 my $ms = new MasterSlave();
+my $dp = new DSNParser();
 
-# Connect
 my $dsn = $dp->parse("h=127.0.0.1,P=12345");
 $dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 
 my $callback = sub {
-   my ( $dsn, $dbh, $level ) = @_;
+   my ( $dsn, $dbh, $level, $parent ) = @_;
    return unless $level;
    ok($dsn, "Connected to one slave "
       . ($dp->as_string($dsn) || '<none>')
       . " from $dsn->{source}");
    push @slaves, $dbh;
+   push @sldsns, $dsn;
 };
 
 my $skip_callback = sub {
@@ -69,8 +63,45 @@ $ms->recurse_to_slaves(
       skip_callback => $skip_callback,
    });
 
+is_deeply(
+   $ms->get_master_dsn($slaves[0], undef, $dp),
+   {  h => '127.0.0.1', u => undef, P => '12345', S => undef,
+      F => undef, p => undef, D => undef,
+   },
+   'Got master DSN',
+);
+
+map { $ms->stop_slave($_) } @slaves;
+map { $ms->start_slave($_) } @slaves;
+
 my $res;
+$res = $ms->wait_for_master($dbh, $slaves[0], 1, 0);
+ok(defined $res && $res >= 0, 'Wait was successful');
+
+$ms->stop_slave($slaves[0]);
+$dbh->do('drop database if exists test'); # Any stmt will do
+`(sleep 1; echo "start slave" | /tmp/12346/use)&`;
 eval {
    $res = $ms->wait_for_master($dbh, $slaves[0], 1, 0);
 };
-ok(defined $res && $res >= 0, 'Got a good result from waiting');
+ok($res, 'Waited for some events');
+
+$ms->stop_slave($slaves[0]);
+$dbh->do('drop database if exists test'); # Any stmt will do
+eval {
+   $res = $ms->catchup_to_master($slaves[0], $dbh, 10);
+};
+diag $EVAL_ERROR if $EVAL_ERROR;
+ok(!$EVAL_ERROR, 'No eval error catching up');
+my $master_stat = $ms->get_master_status($dbh);
+my $slave_stat = $ms->get_slave_status($slaves[0]);
+is_deeply(
+   $ms->repl_posn($master_stat),
+   $ms->repl_posn($slave_stat),
+   'Caught up');
+
+eval {
+   $ms->make_sibling_of_master($slaves[1], $sldsns[1], $dp, 100);
+};
+diag $EVAL_ERROR if $EVAL_ERROR;
+ok(!$EVAL_ERROR, 'Made slave sibling of master');

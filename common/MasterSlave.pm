@@ -33,11 +33,12 @@ sub new {
 #
 # * dbh           (Optional) a DBH.
 # * dsn           The DSN to connect to; if no DBH, will connect using this.
-# * parent        The DSN from which this call descended.
 # * dsn_parser    A DSNParser object.
 # * recurse       How many levels to recurse. 0 = none, undef = infinite.
 # * callback      Code to execute after finding a new slave.
 # * skip_callback Optional: execute with slaves that will be skipped.
+# * use_proclist  Optional: whether to ignore SHOW SLAVE HOSTS.
+# * parent        Optional: the DSN from which this call descended.
 #
 # The callback gets the slave's DSN, dbh, parent, and the recursion level as args.
 # The recursion is tail recursion.
@@ -101,35 +102,38 @@ sub recurse_to_slaves {
 # anything, looks at SHOW PROCESSLIST and tries to guess which ones are slaves.
 # Returns a list of DSN hashes.  Optional extra keys in the DSN hash are
 # master_id and server_id.  Also, the 'source' key is either 'processlist' or
-# 'hosts'.
+# 'hosts'.  If $use_processlist is given, skips SHOW SLAVE HOSTS.
 sub find_slave_hosts {
-   my ( $self, $dsn_parser, $dbh, $dsn ) = @_;
+   my ( $self, $dsn_parser, $dbh, $dsn, $use_processlist ) = @_;
    $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
 
-   # Try SHOW SLAVE HOSTS first.
-   my $sql = 'SHOW SLAVE HOSTS';
-   $ENV{MKDEBUG} && _d($sql);
-   my @slaves = 
-      @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+   my @slaves;
 
-   # Convert SHOW SLAVE HOSTS into DSN hashes.
-   if ( @slaves ) {
-      $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
-      @slaves = map {
-         my %hash;
-         @hash{ map { lc $_ } keys %$_ } = values %$_;
-         my $spec = "h=$hash{host},P=$hash{port}"
-            . ( $hash{user} ? ",u=$hash{user}" : '')
-            . ( $hash{password} ? ",p=$hash{password}" : '');
-         my $dsn           = $dsn_parser->parse($spec, $dsn);
-         $dsn->{server_id} = $hash{server_id};
-         $dsn->{master_id} = $hash{master_id};
-         $dsn->{source}    = 'hosts';
-         $dsn;
-      } @slaves;
+   if ( !$use_processlist ) {
+      # Try SHOW SLAVE HOSTS first.
+      my $sql = 'SHOW SLAVE HOSTS';
+      $ENV{MKDEBUG} && _d($sql);
+      @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+
+      # Convert SHOW SLAVE HOSTS into DSN hashes.
+      if ( @slaves ) {
+         $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+         @slaves = map {
+            my %hash;
+            @hash{ map { lc $_ } keys %$_ } = values %$_;
+            my $spec = "h=$hash{host},P=$hash{port}"
+               . ( $hash{user} ? ",u=$hash{user}" : '')
+               . ( $hash{password} ? ",p=$hash{password}" : '');
+            my $dsn           = $dsn_parser->parse($spec, $dsn);
+            $dsn->{server_id} = $hash{server_id};
+            $dsn->{master_id} = $hash{master_id};
+            $dsn->{source}    = 'hosts';
+            $dsn;
+         } @slaves;
+      }
    }
 
-   else {
+   if ( !@slaves ) {
       my $sql = 'SHOW PROCESSLIST';
       $ENV{MKDEBUG} && _d($sql);
       @slaves =
@@ -160,7 +164,11 @@ sub find_slave_hosts {
    return @slaves;
 }
 
-# Figures out how to connect to the master, by examining SHOW SLAVE STATUS.
+# Figures out how to connect to the master, by examining SHOW SLAVE STATUS.  But
+# does NOT use the value from Master_User for the username, because typically we
+# want to perform operations as the username that was specified (usually to the
+# program's --user option, or in a DSN), rather than as the replication user,
+# which is often restricted.
 sub get_master_dsn {
    my ( $self, $dbh, $dsn, $dsn_parser ) = @_;
    my $master = $self->get_slave_status($dbh) or return undef;
@@ -239,7 +247,26 @@ sub stop_slave {
    my ( $self, $dbh ) = @_;
    my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
          ||= $dbh->prepare('STOP SLAVE');
+   $ENV{MKDEBUG} && _d($sth->{Statement});
    $sth->execute();
+}
+
+# Executes START SLAVE, optionally with UNTIL.
+sub start_slave {
+   my ( $self, $dbh, $pos ) = @_;
+   if ( $pos ) {
+      # Just like with CHANGE MASTER TO, you can't quote the position.
+      my $sql = "START SLAVE UNTIL MASTER_LOG_FILE='$pos->{file}', "
+              . "MASTER_LOG_POS=$pos->{position}";
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+   }
+   else {
+      my $sth = $self->{sths}->{$dbh}->{START_SLAVE}
+            ||= $dbh->prepare('START SLAVE');
+      $ENV{MKDEBUG} && _d($sth->{Statement});
+      $sth->execute();
+   }
 }
 
 # Waits for the slave to catch up to its master, using START SLAVE UNTIL.
@@ -249,10 +276,11 @@ sub catchup_to_master {
    my $slave_pos     = $self->repl_posn($slave_status);
    my $master_status = $self->get_master_status($master);
    my $master_pos    = $self->repl_posn($master_status);
+   $ENV{MKDEBUG} && _d("Master position: ", $self->pos_to_string($master_pos),
+      " Slave position: ", $self->pos_to_string($slave_pos));
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
       $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
-      # TODO
-      $self->start_slave_until($slave, $master_pos);
+      $self->start_slave($slave, $master_pos);
       $self->wait_for_master($master, $slave, $time, 0, $master_status);
    }
 }
@@ -268,6 +296,65 @@ sub change_master_to {
       . "MASTER_LOG_POS=$master_pos->{position}";
    $ENV{MKDEBUG} && _d($sql);
    $dbh->do($sql);
+}
+
+# Moves a slave to be a slave of its grandmaster: a sibling of its master.
+sub make_sibling_of_master {
+   my ( $self, $slave_dbh, $slave_dsn, $dsn_parser, $timeout) = @_;
+
+   # Connect to the master and the grand-master, and verify that the master is
+   # also a slave.
+   my $master_dsn  = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "This server is not a slave";
+   my $master_dbh  = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($master_dsn), { AutoCommit => 1 });
+   my $gmaster_dsn
+      = $self->get_master_dsn($master_dbh, $master_dsn, $dsn_parser)
+      or die "This server's master is not a slave";
+   my $gmaster_dbh = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($gmaster_dsn), { AutoCommit => 1 });
+
+   # Stop the master, and make the slave catch up to it.
+   $self->stop_slave($master_dbh);
+   $self->catchup_to_master($slave_dbh, $master_dbh, $timeout);
+   $self->stop_slave($slave_dbh);
+
+   # Get the replication statuses and positions.
+   my $master_status = $self->get_master_status($master_dbh);
+   my $mslave_status = $self->get_slave_status($master_dbh);
+   my $slave_status  = $self->get_slave_status($slave_dbh);
+   my $master_pos    = $self->repl_posn($master_status);
+   my $slave_pos     = $self->repl_posn($slave_status);
+
+   # Verify that they are both stopped and are at the same position.
+   if (     !$self->slave_is_running($mslave_status)
+         && !$self->slave_is_running($slave_status)
+         && $self->pos_cmp($master_pos, $slave_pos) == 0)
+   {
+      $self->change_master_to($slave_dbh, $gmaster_dsn,
+         $self->repl_posn($mslave_status)); # Note it's not $master_pos!
+   }
+   else {
+      die "The servers aren't both stopped at the same position";
+   }
+
+   # Verify that they have the same master and are at the same position.
+   $mslave_status = $self->get_slave_status($master_dbh);
+   $slave_status  = $self->get_slave_status($slave_dbh);
+   my $mslave_pos = $self->repl_posn($mslave_status);
+   $slave_pos     = $self->repl_posn($slave_status);
+   if (     $mslave_status->{master_host} ne $slave_status->{master_host}
+         || $mslave_status->{master_port} ne $slave_status->{master_port}
+         || $self->pos_cmp($mslave_pos, $slave_pos) != 0)
+   {
+      die "The servers don't have the same master and position";
+   }
+}
+
+# Returns true if the slave is running.
+sub slave_is_running {
+   my ( $self, $slave_status ) = @_;
+   return ($slave_status->{slave_sql_running} || 'No') eq 'Yes';
 }
 
 # Extracts the replication position out of either SHOW MASTER STATUS or SHOW
@@ -293,9 +380,14 @@ sub repl_posn {
 # operator does.
 sub pos_cmp {
    my ( $self, $a, $b ) = @_;
+   return $self->pos_to_string($a) cmp $self->pos_to_string($b);
+}
+
+# Stringifies a position in a way that's string-comparable.
+sub pos_to_string {
+   my ( $self, $pos ) = @_;
    my $fmt  = '%s/%020d';
-   return sprintf($fmt, @{$a}{qw(file position)})
-      cmp sprintf($fmt, @{$b}{qw(file position)});
+   return sprintf($fmt, @{$pos}{qw(file position)});
 }
 
 sub _d {
