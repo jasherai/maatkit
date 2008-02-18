@@ -210,6 +210,17 @@ sub get_dbh {
    return $dbh;
 }
 
+# Tries to figure out a hostname for the connection.
+sub get_hostname {
+   my ( $self, $dbh ) = @_;
+   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
+      return $host;
+   }
+   my ( $hostname, $one ) = $dbh->selectrow_array(
+      'SELECT /*!50038 @@hostname, */ 1');
+   return $hostname;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { defined $_ ? $_ : 'undef' } @_;
