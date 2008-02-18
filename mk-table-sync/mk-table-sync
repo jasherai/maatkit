@@ -34,7 +34,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1704
+# OptionParser package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -459,7 +459,7 @@ sub groups {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line ", @_, "\n";
+   print "# OptionParser:$line $PID ", @_, "\n";
 }
 
 if ( $ENV{MKDEBUG} ) {
@@ -481,12 +481,14 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 1722
+# Quoter package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package Quoter;
+
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class ) = @_;
@@ -523,7 +525,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1703
+# DSNParser package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -534,6 +536,7 @@ use DBI;
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -711,7 +714,7 @@ sub get_dbh {
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line ", @_, "\n";
+   print "# DSNParser:$line $PID ", @_, "\n";
 }
 
 1;
@@ -721,12 +724,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 1344
+# VersionParser package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package VersionParser;
+
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class ) = @_;
@@ -753,7 +758,7 @@ sub version_ge {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# VersionParser:$line ", @_, "\n";
+   print "# VersionParser:$line $PID ", @_, "\n";
 }
 
 1;
@@ -763,13 +768,15 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 1367
+# TableSyncStream package 1755
 # ###########################################################################
 
 use strict;
 use warnings FATAL => 'all';
 
 package TableSyncStream;
+
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -826,7 +833,7 @@ sub pending_changes {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableSyncStream:$line ", @_, "\n";
+   print "# TableSyncStream:$line $PID ", @_, "\n";
 }
 
 1;
@@ -836,12 +843,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1561
+# TableParser package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package TableParser;
+
+use English qw(-no_match_vars);
 
 sub new {
    bless {}, shift;
@@ -1007,7 +1016,7 @@ sub find_possible_keys {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableParser:$line ", @_, "\n";
+   print "# TableParser:$line $PID ", @_, "\n";
 }
 
 1;
@@ -1017,12 +1026,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 1344
+# RowDiff package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package RowDiff;
+
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1136,7 +1147,7 @@ sub db_cmp {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# RowDiff:$line ", @_, "\n";
+   print "# RowDiff:$line $PID ", @_, "\n";
 }
 
 1;
@@ -1146,7 +1157,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1729
+# MySQLDump package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1428,7 +1439,7 @@ sub get_table_list {
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# MySQLDump:$line ", @_, "\n";
+   print "# MySQLDump:$line $PID ", @_, "\n";
 }
 
 1;
@@ -1438,7 +1449,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 1540
+# ChangeHandler package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1629,7 +1640,7 @@ sub get_changes {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# ChangeHandler:$line ", @_, "\n";
+   print "# ChangeHandler:$line $PID ", @_, "\n";
 }
 
 1;
@@ -1639,13 +1650,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 1742
+# TableChunker package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package TableChunker;
 
+use English qw(-no_match_vars);
 use POSIX qw(ceil);
 use List::Util qw(min max);
 
@@ -1967,7 +1979,7 @@ sub timestampdiff {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableChunker:$line ", @_, "\n";
+   print "# TableChunker:$line $PID ", @_, "\n";
 }
 
 1;
@@ -1977,7 +1989,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1658
+# TableChecksum package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2263,7 +2275,7 @@ sub find_replication_differences {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableChecksum:$line ", @_, "\n";
+   print "# TableChecksum:$line $PID ", @_, "\n";
 }
 
 1;
@@ -2273,13 +2285,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1665
+# TableSyncChunk package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package TableSyncChunk;
 
+use English qw(-no_match_vars);
 use List::Util qw(max);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
@@ -2471,7 +2484,7 @@ sub key_cols {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableSyncChunk:$line ", @_, "\n";
+   print "# TableSyncChunk:$line $PID ", @_, "\n";
 }
 
 1;
@@ -2481,13 +2494,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 1664
+# TableSyncNibble package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package TableSyncNibble;
 
+use English qw(-no_match_vars);
 use List::Util qw(max);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
@@ -2725,7 +2739,7 @@ sub key_cols {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableSyncNibble:$line ", @_, "\n";
+   print "# TableSyncNibble:$line $PID ", @_, "\n";
 }
 
 1;
@@ -2735,7 +2749,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1750
+# TableSyncer package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3039,7 +3053,7 @@ sub lock_and_wait {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableSyncer:$line ", @_, "\n";
+   print "# TableSyncer:$line $PID ", @_, "\n";
 }
 
 1;
@@ -3049,7 +3063,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 1730
+# MySQLFind package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3059,6 +3073,7 @@ package MySQLFind;
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
 
 
 use English qw(-no_match_vars);
@@ -3229,7 +3244,7 @@ sub _test_date {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# MySQLFind:$line ", @_, "\n";
+   print "# MySQLFind:$line $PID ", @_, "\n";
 }
 
 1;
@@ -3239,12 +3254,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 1546
+# TableNibbler package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package TableNibbler;
+
+use English qw(-no_match_vars);
 
 sub new {
    bless {}, shift;
@@ -3471,7 +3488,7 @@ sub generate_ins_stmt {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# TableNibbler:$line ", @_, "\n";
+   print "# TableNibbler:$line $PID ", @_, "\n";
 }
 
 1;
@@ -3481,7 +3498,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1653
+# MasterSlave package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3653,7 +3670,7 @@ sub wait_for_master {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# MasterSlave:$line ", @_, "\n";
+   print "# MasterSlave:$line $PID ", @_, "\n";
 }
 
 1;
@@ -4136,7 +4153,7 @@ exit $exit_status;
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# main:$line ", @_, "\n";
+   print "# main:$line $PID ", @_, "\n";
 }
 
 # Tries to extract the MySQL error message and print it
