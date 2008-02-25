@@ -20,6 +20,8 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
+# TODO: use LOCK TABLES to defer key writes to MyISAM tables.
+
 use strict;
 use warnings FATAL => 'all';
 
