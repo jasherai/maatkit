@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 24;
+use Test::More tests => 28;
 use English qw(-no_match_vars);
 
 require "../MasterSlave.pm";
@@ -162,5 +162,19 @@ ok(!$EVAL_ERROR, 'Made slave of uncle');
 # +- 127.0.0.1:12348
 #    +- 127.0.0.1:12346
 is($ms->get_slave_status($slaves[0])->{master_port}, 12348, 'slave 1 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
+
+eval {
+   $ms->detach_slave($slaves[0]);
+};
+diag $EVAL_ERROR if $EVAL_ERROR;
+ok(!$EVAL_ERROR, 'Detached slave');
+
+# The picture now:
+# 127.0.0.1:12345
+# +- 127.0.0.1:12347
+# +- 127.0.0.1:12348
+is($ms->get_slave_status($slaves[0]), 0, 'slave 1 detached');
 is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
 is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');

@@ -523,6 +523,18 @@ sub make_slave_of_uncle {
    }
 }
 
+# Makes a server forget that it is a slave.  Returns the slave status.
+sub detach_slave {
+   my ( $self, $dbh ) = @_;
+   # Verify that it is a slave.
+   $self->stop_slave($dbh);
+   my $stat = $self->get_slave_status($dbh)
+      or die "This server is not a slave";
+   $dbh->do('CHANGE MASTER TO MASTER_HOST=""');
+   $dbh->do('RESET SLAVE'); # Wipes out master.info, etc etc
+   return $stat;
+}
+
 # Returns true if the slave is running.
 sub slave_is_running {
    my ( $self, $slave_status ) = @_;
