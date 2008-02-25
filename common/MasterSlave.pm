@@ -301,6 +301,39 @@ sub catchup_to_master {
    }
 }
 
+# Makes one server catch up to the other in replication.  When complete, both
+# servers are stopped and at the same position.
+sub catchup_to_same_pos {
+   my ( $self, $s1_dbh, $s2_dbh ) = @_;
+   $self->stop_slave($s1_dbh);
+   $self->stop_slave($s2_dbh);
+   my $s1_status = $self->get_slave_status($s1_dbh);
+   my $s2_status = $self->get_slave_status($s2_dbh);
+   my $s1_pos    = $self->repl_posn($s1_status);
+   my $s2_pos    = $self->repl_posn($s2_status);
+   if ( $self->pos_cmp($s1_pos, $s2_pos) < 0 ) {
+      $self->start_slave($s1_dbh, $s2_pos);
+   }
+   elsif ( $self->pos_cmp($s2_pos, $s1_pos) < 0 ) {
+      $self->start_slave($s2_dbh, $s1_pos);
+   }
+
+   # Re-fetch the replication statuses and positions.
+   $s1_status = $self->get_slave_status($s1_dbh);
+   $s2_status = $self->get_slave_status($s2_dbh);
+   $s1_pos    = $self->repl_posn($s1_status);
+   $s2_pos    = $self->repl_posn($s2_status);
+
+   # Verify that they are both stopped and are at the same position.
+   if ( $self->slave_is_running($s1_status)
+     || $self->slave_is_running($s2_status)
+     || $self->pos_cmp($s1_pos, $s2_pos) != 0)
+   {
+      die "The servers aren't both stopped at the same position";
+   }
+
+}
+
 # Uses CHANGE MASTER TO to change a slave's master.
 sub change_master_to {
    my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
@@ -401,49 +434,92 @@ sub make_slave_of_sibling {
 
    # Stop the slave and its sibling, then if one is behind the other, make it
    # catch up.
-   $self->stop_slave($slave_dbh);
-   $self->stop_slave($sib_dbh);
-   my $slave_status = $self->get_slave_status($slave_dbh);
-   my $sib_status   = $self->get_slave_status($sib_dbh);
-   my $slave_pos    = $self->repl_posn($slave_status);
-   my $sib_pos      = $self->repl_posn($sib_status);
-   if ( $self->pos_cmp($slave_pos, $sib_pos) < 0 ) {
-      # The slave is behind the sibling.
-      $self->start_slave($slave_dbh, $sib_pos);
-   }
-   elsif ( $self->pos_cmp($slave_pos, $sib_pos) > 0 ) {
-      $self->start_slave($sib_dbh, $slave_pos);
-   }
+   $self->catchup_to_same_pos($slave_dbh, $sib_dbh);
 
-   # Re-fetch the replication statuses and positions.
-   $slave_status    = $self->get_slave_status($slave_dbh);
-   $sib_status      = $self->get_slave_status($sib_dbh);
-   $slave_pos       = $self->repl_posn($slave_status);
-   $sib_pos         = $self->repl_posn($sib_status);
+   # Actually change the slave's master to its sibling.
    $sib_master_stat = $self->get_master_status($sib_dbh);
-
-   # Verify that they are both stopped and are at the same position.
-   if ( !$self->slave_is_running($slave_status)
-     && !$self->slave_is_running($sib_status)
-     && $self->pos_cmp($slave_pos, $sib_pos) == 0)
-   {
-      $self->change_master_to($slave_dbh, $sib_dsn,
+   $self->change_master_to($slave_dbh, $sib_dsn,
          $self->repl_posn($sib_master_stat));
-   }
-   else {
-      die "The servers aren't both stopped at the same position";
-   }
 
    # Verify that the slave's master is the sibling and that it is at the same
    # position.
-   $slave_status    = $self->get_slave_status($slave_dbh);
-   $slave_pos       = $self->repl_posn($slave_status);
+   my $slave_status = $self->get_slave_status($slave_dbh);
+   my $slave_pos    = $self->repl_posn($slave_status);
    $sib_master_stat = $self->get_master_status($sib_dbh);
    if ( $self->short_host($slave_status) ne $self->short_host($sib_dsn)
      || $self->pos_cmp($self->repl_posn($sib_master_stat), $slave_pos) != 0)
    {
       die "After changing the slave's master, it isn't a slave of the sibling, "
          . "or it has a different replication position than the sibling";
+   }
+}
+
+# Moves a slave to be a slave of its uncle.
+#  1. Connect to the slave's master and its uncle, and verify that both have the
+#     same master.  (Their common master is the slave's grandparent).
+#  2. Stop the slave processes on the master and uncle.
+#  3. If one of them is behind the other, make it catch up.
+#  4. Point the slave to its uncle.
+sub make_slave_of_uncle {
+   my ( $self, $slave_dbh, $slave_dsn, $unc_dbh, $unc_dsn,
+        $dsn_parser, $timeout) = @_;
+
+   # Verify that the uncle is a different server.
+   if ( $self->short_host($slave_dsn) eq $self->short_host($unc_dsn) ) {
+      die "You are trying to make the slave a slave of itself";
+   }
+
+   # Verify that the uncle has the same master.
+   my $master_dsn = $self->get_master_dsn($slave_dbh, $slave_dsn, $dsn_parser)
+      or die "This server is not a slave";
+   my $master_dbh = $dsn_parser->get_dbh(
+      $dsn_parser->get_cxn_params($master_dsn), { AutoCommit => 1 });
+   my $gmaster_dsn
+      = $self->get_master_dsn($master_dbh, $master_dsn, $dsn_parser)
+      or die "The master is not a slave";
+   my $unc_master_dsn
+      = $self->get_master_dsn($unc_dbh, $unc_dsn, $dsn_parser)
+      or die "The uncle is not a slave";
+   if ($self->short_host($gmaster_dsn) ne $self->short_host($unc_master_dsn)) {
+      die "The uncle isn't really the slave's uncle";
+   }
+
+   # Verify that the uncle is a master.
+   my $unc_master_stat = $self->get_master_status($unc_dbh)
+      or die "Binary logging is not enabled on the uncle";
+   die "The log_slave_updates option is not enabled on the uncle"
+      unless $self->has_slave_updates($unc_dbh);
+
+   # Stop the master and uncle, then if one is behind the other, make it
+   # catch up.  Then make the slave catch up to its master.
+   $self->catchup_to_same_pos($master_dbh, $unc_dbh);
+   $self->catchup_to_master($slave_dbh, $master_dbh, $timeout);
+
+   # Verify that the slave is caught up to its master.
+   my $slave_status  = $self->get_slave_status($slave_dbh);
+   my $master_status = $self->get_master_status($master_dbh);
+   if ( $self->pos_cmp(
+         $self->repl_posn($slave_status),
+         $self->repl_posn($master_status)) != 0 )
+   {
+      die "The slave is not caught up to its master";
+   }
+
+   # Point the slave to its uncle.
+   $unc_master_stat = $self->get_master_status($unc_dbh);
+   $self->change_master_to($slave_dbh, $unc_dsn,
+      $self->repl_posn($unc_master_stat));
+
+
+   # Verify that the slave's master is the uncle and that it is at the same
+   # position.
+   $slave_status    = $self->get_slave_status($slave_dbh);
+   my $slave_pos    = $self->repl_posn($slave_status);
+   if ( $self->short_host($slave_status) ne $self->short_host($unc_dsn)
+     || $self->pos_cmp($self->repl_posn($unc_master_stat), $slave_pos) != 0)
+   {
+      die "After changing the slave's master, it isn't a slave of the uncle, "
+         . "or it has a different replication position than the uncle";
    }
 }
 

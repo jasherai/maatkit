@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 24;
 use English qw(-no_match_vars);
 
 require "../MasterSlave.pm";
@@ -71,6 +71,15 @@ is_deeply(
    'Got master DSN',
 );
 
+# The picture:
+# 127.0.0.1:12345
+# +- 127.0.0.1:12346
+# |  +- 127.0.0.1:12347
+# +- 127.0.0.1:12348
+is($ms->get_slave_status($slaves[0])->{master_port}, 12345, 'slave 1 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, 12346, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
+
 map { $ms->stop_slave($_) } @slaves;
 map { $ms->start_slave($_) } @slaves;
 
@@ -106,6 +115,15 @@ eval {
 diag $EVAL_ERROR if $EVAL_ERROR;
 ok(!$EVAL_ERROR, 'Made slave sibling of master');
 
+# The picture now:
+# 127.0.0.1:12345
+# +- 127.0.0.1:12346
+# +- 127.0.0.1:12347
+# +- 127.0.0.1:12348
+is($ms->get_slave_status($slaves[0])->{master_port}, 12345, 'slave 1 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
+
 eval {
    $ms->make_slave_of_sibling(
       $slaves[0], $sldsns[0],
@@ -120,3 +138,29 @@ eval {
 };
 diag $EVAL_ERROR if $EVAL_ERROR;
 ok(!$EVAL_ERROR, 'Made slave of sibling');
+
+# The picture now:
+# 127.0.0.1:12345
+# +- 127.0.0.1:12347
+# |  +- 127.0.0.1:12346
+# +- 127.0.0.1:12348
+is($ms->get_slave_status($slaves[0])->{master_port}, 12347, 'slave 1 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
+
+eval {
+   $ms->make_slave_of_uncle(
+      $slaves[0], $sldsns[0],
+      $slaves[2], $sldsns[2], $dp, 100);
+};
+diag $EVAL_ERROR if $EVAL_ERROR;
+ok(!$EVAL_ERROR, 'Made slave of uncle');
+
+# The picture now:
+# 127.0.0.1:12345
+# +- 127.0.0.1:12347
+# +- 127.0.0.1:12348
+#    +- 127.0.0.1:12346
+is($ms->get_slave_status($slaves[0])->{master_port}, 12348, 'slave 1 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
