@@ -1,5 +1,8 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * The exit status from mk-checksum-filter was always 0.
+   * mk-table-checksum now prefers to discover slaves via SHOW PROCESSLIST.
+
 2008-02-10: version 1.1.25
 
    * The --lock option did not work correctly (bug #1884712).
