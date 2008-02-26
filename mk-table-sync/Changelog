@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Prefer SHOW PROCESSLIST when looking for slaves of a server.
+
 2008-02-10: version 1.0.5
 
    * The Stream algorithm wasn't chosen when a table had no key.
