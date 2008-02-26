@@ -586,13 +586,13 @@ sub process_set {
 
    # If the verbose flag is set, or if anything differs, print it
    my $first = $set->[0];
-
-   my $print = $opts{v} || grep {
-            $_->[$CHECKSUM] ne $first->[$CHECKSUM]
-         || $_->[$COUNT]    ne $first->[$COUNT]
+   my $is_diff = grep {
+         $_->[$CHECKSUM] ne $first->[$CHECKSUM]
+      || $_->[$COUNT]    ne $first->[$COUNT]
    } @{$set}[ 1 .. ( scalar(@$set) - 1 ) ];
+   $exit_status = 1 if $is_diff;
 
-   if ($print) {
+   if ( $opts{v} || $is_diff ) {
       foreach my $line (@$set) {
          print $line->[$ORIG], "\n";
       }
@@ -672,6 +672,10 @@ Output all lines except header lines.
 Output version information and exit.
 
 =back
+
+=head1 EXIT STATUS
+
+Exit status is 0 if no differences were found, 1 if any were.
 
 =head1 ENVIRONMENT
 

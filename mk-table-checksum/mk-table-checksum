@@ -3677,19 +3677,19 @@ running the query so you don't have to do it manually.
 The output is one informational line per slave host, followed by the results
 of the query, if any.  If L<"--quiet"> is specified, there is no output.
 
-This option makes C<mk-table-checksum> looks for slaves by running C<SHOW SLAVE
-HOSTS>.  If it finds entries, it derives connection information for each slave
-the same default-and-override method described in L<"SPECIFYING HOSTS">.  The
-host and port, and user and password if available, from C<SHOW SLAVE HOSTS> are
-combined into a DSN and used as the argument.  This requires slaves to be
-configured with C<report-host>, C<report-port> and so on.
+This option makes C<mk-table-checksum> looks for slaves by running C<SHOW
+PROCESSLIST>.  If it finds connections that appear to be from slaves, it derives
+connection information for each slave the same default-and-override method
+described in L<"SPECIFYING HOSTS">.
 
-If C<SHOW SLAVE HOSTS> doesn't return any rows, C<mk-table-checksum> looks at
-C<SHOW PROCESSLIST> and tries to find connections that appear to be from slaves.
+If C<SHOW PROCESSLIST> doesn't return any rows, C<mk-table-checksum> looks at
+C<SHOW SLAVE HOSTS> instead.  The host and port, and user and password if
+available, from C<SHOW SLAVE HOSTS> are combined into a DSN and used as the
+argument.  This requires slaves to be configured with C<report-host>,
+C<report-port> and so on.
 
 This requires the @@SERVER_ID system variable, so it works only on MySQL
-3.23.26 or newer.  It also requires the slaves to have the correct
-C<report_host> and C<report_port> parameters set in their configuration files.
+3.23.26 or newer.
 
 If any slave has chunks that differ from the master, mk-table-checksum's
 exit status is 1; otherwise it is 0.
