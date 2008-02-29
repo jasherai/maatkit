@@ -1068,6 +1068,20 @@ if ( $opts{stop} ) {
 }
 
 # ############################################################################
+# Lookup tables of things to do when a problem is detected.
+# ############################################################################
+
+my @error_patterns = (
+   [ qr/You have an error in your SQL/         => 'refetch_relay_log' ],
+   [ qr/Could not parse relay log event entry/ => 'refetch_relay_log' ],
+   [ qr/Incorrect key file for table/          => 'repair_table'      ],
+   # This must be the last one.  It's a catch-all rule: skip and restart.
+   [ qr/./                                     => 'skip'              ],
+);
+
+# TODO: let the user specify more patterns and actions.
+
+# ############################################################################
 # Connect and go to work.
 # ############################################################################
 if ( $opts{askpass} ) {
@@ -1166,20 +1180,6 @@ foreach my $host ( keys %children ) {
 }
 
 exit($exit_status);
-
-# ############################################################################
-# Lookup tables of things to do when a problem is detected.
-# ############################################################################
-
-my @error_patterns = (
-   [ qr/You have an error in your SQL/         => 'refetch_relay_log' ],
-   [ qr/Could not parse relay log event entry/ => 'refetch_relay_log' ],
-   [ qr/Incorrect key file for table/          => 'repair_table'      ],
-   # This must be the last one.  It's a catch-all rule: skip and restart.
-   [ qr/./                                     => 'skip'              ],
-);
-
-# TODO: let the user specify more patterns and actions.
 
 # ############################################################################
 # Subroutines.
