@@ -1,45 +1,5 @@
-Changelog for mk-slave-restart:
+Changelog for mk-slave-find:
 
-   * Added --always option, disabled by default.  Not backwards compatible.
-   * --daemonize did not work.
-   * --quiet caused an undefined variable error.
-
-2008-01-05: version 1.0.5
-
-   * Made suffixes for time options optional (bug #1858696).
-   * Added logic to discard corrupt relay logs.
-   * Added --monitor, --sentinel, and --stop.
-   * Added --quiet and changed --verbose to 1 by default.
-   * Added the ability to monitor many servers with --recurse.
-
-2007-12-16: version 1.0.4
-
-   * Updated common code, added debugging.
-
-2007-12-07: version 1.0.3
-
-   * Updated common code.
-
-2007-11-04: version 1.0.2
-
-   * Made command-line help easier to use.
-   * Removed the dependency on Term::ReadKey.
-   * Replaced some code with modules that are unit-tested.
-
-2007-09-20: version 1.0.1
-
-   * Added a --daemonize option to detach from the shell and run in the background.
-
-2007-08-23: version 1.0.0
-
-   * MySQL socket connection option didn't work.
-   * Added --askpass option.
-
-2007-08-04: version 0.9.3
-
-   * Fixed a crash caused by omitting --verbose.
-   * Changed exit status to 0 when --help is given.
-
-2007-07-05: version 0.9.2
+2008-02-29: version 1.0.0
 
    * Initial release.
