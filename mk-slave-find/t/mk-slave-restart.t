@@ -6,7 +6,8 @@ use warnings FATAL => 'all';
 use English qw('-no_match_vars);
 use Test::More tests => 1;
 
-my $output = `perl ../mk-slave-restart --help`;
+my $output = `perl ../mk-slave-find --help`;
 like($output, qr/Prompt for a password/, 'It compiles');
 
-# TODO: comparatively hard to set up replication tests :-(
+$output = `perl ../mk-slave-find -h 127.0.0.1 -P 12345 -u msandbox -p msandbox`;
+print $output;
