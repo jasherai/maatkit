@@ -4565,12 +4565,25 @@ L<mk-table-checksum> found:
 
    mk-table-sync -x --synctomaster --replicate test.checksum slave1
 
+Sync server2 in a master-master replication configuration, where server2's copy
+of db1.tbl2 is known or suspected to be incorrect:
+
+   mk-table-sync -x --synctomaster h=server2,D=db1,t=tbl1
+
+Note that in the master-master configuration, the following will NOT do what you
+want, because it will make changes directly on server2, which will then flow
+through replication and change server1's data:
+
+   # Don't do this in a master-master setup!
+   mk-table-sync -x h=server1,D=db1,t=tbl1 h=server2
+
 =head1 DESCRIPTION
 
 B<WARNING> this tool is unfinished and could perform slowly.  The Chunk
 algorithm is great when it can be used, and so is Nibble, but otherwise Stream
 is the only choice and it does not perform very well.  Please run with
-L<"--test"> before subjecting your servers to this tool!
+L<"--test"> before subjecting your servers to this tool, and make backups of
+your data!
 
 This tool is designed to do one-way synchronization of data (two-way sync is
 planned for the future).  It finds differences efficiently with one of several
