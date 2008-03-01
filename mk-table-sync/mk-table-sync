@@ -525,7 +525,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1822
+# DSNParser package 1828
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -730,8 +730,8 @@ sub disconnect {
 sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
-   printf("# !!ACTIVE %sh!! %s %s\n", $thing->{Type}, "\t" x $level,
-      ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
    }
@@ -2311,7 +2311,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1755
+# TableSyncChunk package 1829
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2327,7 +2327,8 @@ $Data::Dumper::Quotekeys = 0;
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(dbh database table handler chunker quoter struct
-                        checksum cols vp chunksize where possible_keys) ) {
+                        checksum cols vp chunksize where possible_keys
+                        dumper) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
@@ -2352,7 +2353,7 @@ sub new {
             table    => $args{struct},
             col      => $col,
             size     => $args{chunker}->size_to_rows(
-                           @args{qw(dbh database table chunksize)}),
+                           @args{qw(dbh database table chunksize dumper)}),
             %params,
          );
       }
@@ -2775,7 +2776,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1755
+# TableSyncer package 1827
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2824,7 +2825,7 @@ sub sync_table {
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser master_slave func) )
+      nibbler parser master_slave func dumper) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -2882,6 +2883,7 @@ sub sync_table {
       cols      => $args{cols},
       dbh       => $args{src_dbh},
       database  => $args{src_db},
+      dumper    => $args{dumper},
       table     => $args{src_tbl},
       chunker   => $args{chunker},
       nibbler   => $args{nibbler},
@@ -4432,6 +4434,7 @@ sub sync_a_table {
          dst_db        => $args{dst_db},
          dst_dbh       => $args{dst}->{dbh},
          dst_tbl       => $args{dst_tbl},
+         dumper        => $du,
          execute       => $opts{x} || 0,
          lock          => $opts{k} || 0,
          misc_dbh      => $args{src}->{misc_dbh},
