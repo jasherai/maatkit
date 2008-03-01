@@ -64,38 +64,41 @@ sub new {
    my ( $class, %args ) = @_;
    my $self = bless \%args, $class;
    map { die "I need a $_ argument" unless defined $args{$_} } qw(dumper quoter);
+   die "Do not pass me a dbh argument" if $args{dbh};
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
-   die "Specify dbh" unless $args{dbh};
    if ( $args{useddl} ) {
       $ENV{MKDEBUG} && _d('Will prefer DDL');
-   }
-   if ( $args{tables}->{status} ) {
-      my $sql = 'SELECT CURRENT_TIMESTAMP';
-      $ENV{MKDEBUG} && _d($sql);
-      ($self->{timestamp}->{now}) = $args{dbh}->selectrow_array($sql);
-      $ENV{MKDEBUG} && _d("Current timestamp: $self->{timestamp}->{now}");
    }
    return $self;
 }
 
+sub init_timestamp {
+   my ( $self, $dbh ) = @_;
+   return if $self->{timestamp}->{$dbh}->{now};
+   my $sql = 'SELECT CURRENT_TIMESTAMP';
+   $ENV{MKDEBUG} && _d($sql);
+   ($self->{timestamp}->{$dbh}->{now}) = $dbh->selectrow_array($sql);
+   $ENV{MKDEBUG} && _d("Current timestamp: $self->{timestamp}->{$dbh}->{now}");
+}
+
 sub find_databases {
-   my ( $self ) = @_;
+   my ( $self, $dbh ) = @_;
    return grep {
       $_ !~ m/^(information_schema|lost\+found)$/i
    }  $self->_filter('databases', sub { $_[0] },
          $self->{dumper}->get_databases(
-            $self->{dbh},
+            $dbh,
             $self->{quoter},
             $self->{databases}->{like}));
 }
 
 sub find_tables {
-   my ( $self, %args ) = @_;
+   my ( $self, $dbh, %args ) = @_;
    my $views = $self->{engines}->{views};
    my @tables 
       = $self->_filter('engines', sub { $_[0]->{engine} },
          $self->_filter('tables', sub { $_[0]->{name} },
-            $self->_fetch_tbl_list(%args)));
+            $self->_fetch_tbl_list($dbh, %args)));
    @tables = grep {
          ( $views || ($_->{engine} ne 'VIEW') )
       } @tables;
@@ -105,15 +108,15 @@ sub find_tables {
       @tables
          = grep {
             # TODO: tests other than date...
-            $self->_test_date($_, $key, $test)
+            $self->_test_date($_, $key, $test, $dbh)
          } @tables;
    }
    return map { $_->{name} } @tables;
 }
 
 sub find_views {
-   my ( $self, %args ) = @_;
-   my @tables = $self->_fetch_tbl_list(%args);
+   my ( $self, $dbh, %args ) = @_;
+   my @tables = $self->_fetch_tbl_list($dbh, %args);
    @tables = grep { $_->{engine} eq 'VIEW' } @tables;
    map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
    return map { $_->{name} } @tables;
@@ -144,16 +147,16 @@ sub _use_db {
 # lowercase.  Table names are returned as <database>.<table> so fully-qualified
 # matching can be done later on the database name.
 sub _fetch_tbl_list {
-   my ( $self, %args ) = @_;
+   my ( $self, $dbh, %args ) = @_;
    die "database is required" unless $args{database};
-   my $curr_db = $self->_use_db($self->{dbh}, $args{database});
+   my $curr_db = $self->_use_db($dbh, $args{database});
    my $need_engine = $self->{engines}->{permit}
         || $self->{engines}->{reject}
         || $self->{engines}->{regexp};
    my $need_status = $self->{tables}->{status};
    if ( $need_status || ($need_engine && !$self->{useddl}) ) {
       my @tables = $self->{dumper}->get_table_status(
-         $self->{dbh},
+         $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
@@ -167,7 +170,7 @@ sub _fetch_tbl_list {
    else {
       my @result;
       my @tables = $self->{dumper}->get_table_list(
-         $self->{dbh},
+         $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
@@ -175,7 +178,7 @@ sub _fetch_tbl_list {
          if ( $need_engine && !$tbl->{engine} ) {
             my $struct = $self->{parser}->parse(
                $self->{dumper}->get_create_table(
-                  $self->{dbh}, $self->{quoter}, $args{database}, $tbl->{name}));
+                  $dbh, $self->{quoter}, $args{database}, $tbl->{name}));
             $tbl->{engine} = $struct->{engine};
          }
          push @result,
@@ -185,7 +188,7 @@ sub _fetch_tbl_list {
       }
       return @result;
    }
-   $self->_use_db($args{dbh}, $curr_db);
+   $self->_use_db($dbh, $curr_db);
 }
 
 sub _filter {
@@ -214,7 +217,7 @@ sub _filter {
 }
 
 sub _test_date {
-   my ( $self, $table, $prop, $test ) = @_;
+   my ( $self, $table, $prop, $test, $dbh ) = @_;
    $prop = lc $prop;
    if ( !defined $table->{$prop} ) {
       $ENV{MKDEBUG} && _d("$prop is not defined");
@@ -222,10 +225,12 @@ sub _test_date {
    }
    my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
    die "Invalid date test $test for $prop" unless defined $num;
-   my $sql = "SELECT DATE_SUB('$self->{timestamp}->{now}', INTERVAL $num SECOND)";
+   $self->init_timestamp($dbh);
+   my $sql = "SELECT DATE_SUB('$self->{timestamp}->{$dbh}->{now}', "
+           . "INTERVAL $num SECOND)";
    $ENV{MKDEBUG} && _d($sql);
-   ($self->{timestamp}->{$num}) ||= $self->{dbh}->selectrow_array($sql);
-   my $time = $self->{timestamp}->{$num};
+   ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
+   my $time = $self->{timestamp}->{$dbh}->{$num};
    return 
          ( $equality eq '-' && $table->{$prop} gt $time )
       || ( $equality eq '+' && $table->{$prop} lt $time )
