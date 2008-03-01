@@ -67,7 +67,7 @@ sub new {
             table    => $args{struct},
             col      => $col,
             size     => $args{chunker}->size_to_rows(
-                           @args{qw(dbh database table chunksize)}),
+                           @args{qw(dbh database table chunksize dumper)}),
             %params,
          );
       }
