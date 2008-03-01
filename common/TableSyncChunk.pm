@@ -38,7 +38,8 @@ $Data::Dumper::Quotekeys = 0;
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(dbh database table handler chunker quoter struct
-                        checksum cols vp chunksize where possible_keys) ) {
+                        checksum cols vp chunksize where possible_keys
+                        dumper) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 

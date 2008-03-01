@@ -102,6 +102,7 @@ my %args = (
    chunker       => $chunker,
    chunksize     => 2,
    dst_dbh       => $dst_dbh,
+   dumper        => $du,
    execute       => 1,
    lock          => 0,
    misc_dbh      => $src_dbh,
