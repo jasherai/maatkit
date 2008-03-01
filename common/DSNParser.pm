@@ -221,6 +221,24 @@ sub get_hostname {
    return $hostname;
 }
 
+# Disconnects a database handle, but complains verbosely if there are any active
+# children.  These are usually $sth handles that haven't been finish()ed.
+sub disconnect {
+   my ( $self, $dbh ) = @_;
+   $ENV{MKDEBUG} && $self->print_active_handles($dbh);
+   $dbh->disconnect;
+}
+
+sub print_active_handles {
+   my ( $self, $thing, $level ) = @_;
+   $level ||= 0;
+   printf("# !!ACTIVE %sh!! %s %s\n", $thing->{Type}, "\t" x $level,
+      ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+   foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
+      $self->print_active_handles->( $handle, $level + 1 );
+   }
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { defined $_ ? $_ : 'undef' } @_;
