@@ -27,7 +27,7 @@ use DBI;
 my $dbh;
 eval {
    $dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
+   "DBI:mysql:test;mysql_read_default_group=mysql", undef, undef,
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
@@ -98,6 +98,7 @@ SKIP: {
       where     => 'a>2',
       possible_keys => [],
       func          => 'FNV_64',
+      dumper        => $du,
    );
 
    is (
@@ -131,6 +132,7 @@ $t = new TableSyncChunk(
    where     => 'a>2',
    func      => 'SHA1',
    possible_keys => [],
+   dumper        => $du,
 );
 
 is_deeply(
@@ -158,6 +160,7 @@ $t = new TableSyncChunk(
    where     => '',
    possible_keys => [],
    func      => 'SHA1',
+   dumper    => $du,
 );
 
 is_deeply(
@@ -213,6 +216,7 @@ $t = new TableSyncChunk(
    where     => '',
    possible_keys => [],
    func      => 'SHA1',
+   dumper    => $du,
 );
 
 throws_ok(

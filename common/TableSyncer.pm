@@ -73,7 +73,7 @@ sub sync_table {
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser master_slave func) )
+      nibbler parser master_slave func dumper) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -135,6 +135,7 @@ sub sync_table {
       cols      => $args{cols},
       dbh       => $args{src_dbh},
       database  => $args{src_db},
+      dumper    => $args{dumper},
       table     => $args{src_tbl},
       chunker   => $args{chunker},
       nibbler   => $args{nibbler},
