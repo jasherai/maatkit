@@ -3,12 +3,12 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 13;
+use Test::More tests => 14;
 use DBI;
 
-my $opt_file = shift || "~/.my.cnf";
-my ( $output );
+my $output;
 my $dbh;
+(my $cnf=`realpath $0`) =~ s/mk-table-sync\.t.*$/cnf/s;
 
 sub query {
    $dbh->selectall_arrayref(@_, {Slice => {}});
@@ -16,22 +16,26 @@ sub query {
 
 sub run {
    my ($src, $dst, $other) = @_;
-   my $cmd = "perl ../mk-table-sync -px D=test,t=$src t=$dst $other";
+   my $cmd = "perl ../mk-table-sync -px F=$cnf,D=test,t=$src t=$dst $other";
    chomp(my $output=`$cmd`);
    return $output;
 }
 
+# Set up the sandbox
+print `./make_repl_sandbox`;
+
 # Open a connection to MySQL, or skip the rest of the tests.
 eval {
    $dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
+   "DBI:mysql:;host=127.0.0.1;port=12345", 'msandbox', 'msandbox',
    { PrintError => 0, RaiseError => 1 })
 };
-SKIP: { skip 'Cannot connect to MySQL', 1 unless $dbh;
+SKIP: { skip 'Cannot connect to MySQL', 14 unless $dbh;
 
-   `mysql --defaults-file=$opt_file < before.sql`;
+   `/tmp/12345/use < before.sql`;
 
    $output = run('test1', 'test2', '');
+
    is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'No alg sync');
 
@@ -41,7 +45,7 @@ INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'No alg sync');
       'Synced OK with no alg'
    );
 
-   `mysql --defaults-file=$opt_file < before.sql`;
+   `/tmp/12345/use < before.sql`;
 
    $output = run('test1', 'test2', '-a Stream');
    is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
@@ -53,7 +57,7 @@ INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Stream sync');
       'Synced OK with Stream'
    );
 
-   `mysql --defaults-file=$opt_file < before.sql`;
+   `/tmp/12345/use < before.sql`;
 
    $output = run('test1', 'test2', '-a Chunk');
    is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
@@ -65,7 +69,7 @@ INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
       'Synced OK with Chunk'
    );
 
-   `mysql --defaults-file=$opt_file < before.sql`;
+   `/tmp/12345/use < before.sql`;
 
    $output = run('test1', 'test2', '-a Nibble');
    is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
@@ -77,7 +81,7 @@ INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
       'Synced OK with Nibble'
    );
 
-   `mysql --defaults-file=$opt_file < before.sql`;
+   `/tmp/12345/use < before.sql`;
 
    $ENV{MKDEBUG} = 1;
    $output = run('test1', 'test2', '-a Nibble --chunksize 1 --transaction -k 1');
@@ -114,32 +118,19 @@ INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
       'Right number of rows to update',
    );
 
-# TODO: do a test run for all possible combinations of these:
-=pod
-   my %args = (
-      lock => [qw(1 2 3)],
-      transaction => [''],
-      algorithm => [qw(Stream Chunk)],
-      bufferresults => [''],
-      columns => [qw(b)],
-      replace => [''],
-      skipbinlog => [''],
-      skipforeignkey => [''],
-      skipuniquekey   => [''],
-      verbose => [''],
-      wait => [''],
-      where => [qw('a>0')],
+   # Ensure that syncing master-master works OK
+   `/tmp/12345/use < before.sql`;
+   # Make slave different from master
+   `/tmp/12346/use -e 'set sql_log_bin=0;update test.test1 set b=2 where a = 1'`;
+   # This will make 12345's data match the changed data on 12346 (that is not a
+   # typo).
+   print `perl ../mk-table-sync --synctomaster -px F=$cnf,D=test,t=test1`;
+   is_deeply(query('select * from test.test1'),
+      [
+         { a => 1, b => 2 },
+         { a => 2, b => 'ca' },
+      ],
+      'Master-master sync worked'
    );
-   my @argkeys = sort keys %args;
-=cut
-
-# TODO Ensure wacky collations and callbacks to MySQL to compare collations don't
-# cause problems.
-# my $output = `../mk-table-sync --print -a bottomup D=test,t=test1 t=test2`;
-# my $expected = "DELETE FROM `test`.`test2` WHERE (`a` = '2' AND `b` = 'é');\n"
-#             . "INSERT INTO `test`.`test2`(`a`,`b`) VALUES('2','ca');\n";
-#is($output, $expected, "Funny characters got synced okay");
-
-   `mysql --defaults-file=$opt_file < after.sql`;
 
 }
