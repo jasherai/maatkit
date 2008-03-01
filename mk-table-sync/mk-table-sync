@@ -525,7 +525,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1803
+# DSNParser package 1822
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -719,6 +719,22 @@ sub get_hostname {
    my ( $hostname, $one ) = $dbh->selectrow_array(
       'SELECT /*!50038 @@hostname, */ 1');
    return $hostname;
+}
+
+sub disconnect {
+   my ( $self, $dbh ) = @_;
+   $ENV{MKDEBUG} && $self->print_active_handles($dbh);
+   $dbh->disconnect;
+}
+
+sub print_active_handles {
+   my ( $self, $thing, $level ) = @_;
+   $level ||= 0;
+   printf("# !!ACTIVE %sh!! %s %s\n", $thing->{Type}, "\t" x $level,
+      ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+   foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
+      $self->print_active_handles->( $handle, $level + 1 );
+   }
 }
 
 sub _d {
@@ -3508,7 +3524,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1810
+# MasterSlave package 1823
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3653,7 +3669,7 @@ sub get_slave_status {
             ||= $dbh->prepare('SHOW SLAVE STATUS');
       $ENV{MKDEBUG} && _d('SHOW SLAVE STATUS');
       $sth->execute();
-      my $ss = $sth->fetchrow_hashref();
+      my ($ss) = @{$sth->fetchall_arrayref({})};
 
       if ( $ss && %$ss ) {
          $ss = { map { lc($_) => $ss->{$_} } keys %$ss }; # lowercase the keys
@@ -3672,7 +3688,7 @@ sub get_master_status {
             ||= $dbh->prepare('SHOW MASTER STATUS');
       $ENV{MKDEBUG} && _d('SHOW MASTER STATUS');
       $sth->execute();
-      my $ms = $sth->fetchrow_hashref();
+      my ($ms) = @{$sth->fetchall_arrayref({})};
 
       if ( $ms && %$ms ) {
          $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
@@ -4462,7 +4478,7 @@ foreach my $dsn (@dsns) {
       my $dbh = $dsn->{$thing};
       next unless $dbh;
       $dbh->commit unless $dbh->{AutoCommit};
-      $dbh->disconnect;
+      $dsn_parser->disconnect($dbh);
    }
 }
 
