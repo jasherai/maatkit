@@ -232,8 +232,8 @@ sub disconnect {
 sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
-   printf("# !!ACTIVE %sh!! %s %s\n", $thing->{Type}, "\t" x $level,
-      ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
    }
