@@ -489,6 +489,7 @@ my @opt_spec = (
    { s => 'header|h',     d => 'Keep the headers' },
    { s => 'ignoredb|i',   d => 'Do comparisons on table name only' },
    { s => 'master|m=s',   d => 'Name of the master server' },
+   { s => 'unique|u=s',   d => 'Show unique differing host/db/table names' },
    { s => 'verbose|v',    d => 'Output lines that have no differences' },
    '--ignoredb and --equaldbs are mutually exclusive',
 );
@@ -501,6 +502,9 @@ $opt_parser->{descr}
    . 'differ.  With no FILE, or when FILE is -, read standard input.';
 my %opts = $opt_parser->parse();
 $opts{m} ||= '';
+if ( $opts{u} && $opts{u} !~ m/^(?:host|db|table)$/ ) {
+   $opt_parser->error('--host must be one of host|db|table');
+}
 $opt_parser->usage_or_errors(%opts);
 
 # ############################################################################
@@ -529,6 +533,13 @@ my $num_cols = 11;
 my %lines_for;          # All lines from all files, !$one_file 
 my $last_chunk;         # db.tbl.chunk of last line read
 my $current_set = [];   # working set of lines to process
+
+# For use with $opts{u}.
+my %unique_items;
+my $unique_idx = !$opts{u}          ? undef
+               : $opts{u} eq 'host' ? $HOST
+               : $opts{u} eq 'db'   ? $DATABASE
+               :                      $TABLE;
 
 LINE:
 while ( my $line = <> ) {    # Magically reads STDIN or files in @ARGV
@@ -594,8 +605,20 @@ sub process_set {
 
    if ( $opts{v} || $is_diff ) {
       foreach my $line (@$set) {
-         print $line->[$ORIG], "\n";
+         if ( $opts{u} ) {
+            $unique_items{$line->[$unique_idx]}++;
+         }
+         else {
+            print $line->[$ORIG], "\n";
+         }
       }
+   }
+}
+
+# Deferred processing: print out unique items
+if ( $opts{u} ) {
+   foreach my $thing ( sort keys %unique_items ) {
+      print $thing, "\n";
    }
 }
 
