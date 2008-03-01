@@ -200,7 +200,7 @@ sub get_slave_status {
             ||= $dbh->prepare('SHOW SLAVE STATUS');
       $ENV{MKDEBUG} && _d('SHOW SLAVE STATUS');
       $sth->execute();
-      my $ss = $sth->fetchrow_hashref();
+      my ($ss) = @{$sth->fetchall_arrayref({})};
 
       if ( $ss && %$ss ) {
          $ss = { map { lc($_) => $ss->{$_} } keys %$ss }; # lowercase the keys
@@ -220,7 +220,7 @@ sub get_master_status {
             ||= $dbh->prepare('SHOW MASTER STATUS');
       $ENV{MKDEBUG} && _d('SHOW MASTER STATUS');
       $sth->execute();
-      my $ms = $sth->fetchrow_hashref();
+      my ($ms) = @{$sth->fetchall_arrayref({})};
 
       if ( $ms && %$ms ) {
          $ms = { map { lc($_) => $ms->{$_} } keys %$ms }; # lowercase the keys
