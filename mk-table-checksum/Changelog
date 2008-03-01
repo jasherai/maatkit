@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --unique option ot mk-checksum-filter.
    * The exit status from mk-checksum-filter was always 0.
    * mk-table-checksum now prefers to discover slaves via SHOW PROCESSLIST.
 
