@@ -1,5 +1,6 @@
 Changelog for mk-slave-restart:
 
+   * Added logic to repair tables, and rewrote a lot of code.
    * Added --always option, disabled by default.  Not backwards compatible.
    * --daemonize did not work.
    * --quiet caused an undefined variable error.
