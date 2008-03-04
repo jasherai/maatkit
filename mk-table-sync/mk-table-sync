@@ -25,6 +25,7 @@
 #   don't use Perl to quote values, use arrays instead of hashes.
 # * Add back top-down, bottom-up, sja algorithms for efficiency when locking
 #   isn't an issue.
+# * Add a feature to warn you if you're making changes on a slave.
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
