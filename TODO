@@ -1,5 +1,7 @@
 Debugging output when daemonizing, like mk-slave-restart has.
 
+Add a --charset option to all tools, like mk-table-sync has.
+
 mk-log-server: start a server that can serve the given log files.
 
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
