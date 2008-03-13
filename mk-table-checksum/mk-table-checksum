@@ -2876,6 +2876,7 @@ if ( $opts{R} ) {
       $main_dbh->do($del_sql);
    }
 
+# TODO: suspicious
    $fetch_sth = $main_dbh->prepare(
       "SELECT this_crc, this_cnt FROM $opts{R} "
       . "WHERE db = ? AND tbl = ? AND chunk = ?");
@@ -3061,6 +3062,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                   # Open a single connection for each host.  Re-use the
                   # connection for the master/single host.
                   if ( $is_master ) {
+# TODO: suspicious
                      $host->{dbh} ||= $main_dbh;
                   }
                   else {
