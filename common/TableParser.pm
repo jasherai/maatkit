@@ -46,8 +46,13 @@ sub parse {
    }
 
    if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
-      die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+      die "Cannot parse table definition; is ANSI quoting "
+         . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
+
+   # Lowercase identifiers to avoid issues with case-sensitivity in Perl.
+   # (Bug #1910276).
+   $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
    $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
@@ -84,8 +89,9 @@ sub parse {
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
 
       # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
-      # will report its index as USING HASH even when this is not supported.  The
-      # true type should be BTREE.  See http://bugs.mysql.com/bug.php?id=22632
+      # will report its index as USING HASH even when this is not supported.
+      # The true type should be BTREE.  See
+      # http://bugs.mysql.com/bug.php?id=22632
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
       }
