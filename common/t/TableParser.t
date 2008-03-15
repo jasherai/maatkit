@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 11;
+use Test::More tests => 12;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -258,6 +258,39 @@ is_deeply(
       type_for     => { a => 'int' },
    },
    'Temporary table',
+);
+
+$t = $p->parse( load_file('samples/mixed-case.sql') );
+is_deeply(
+   $t,
+   {  cols         => [qw(a b mixedcol)],
+      col_posn     => { a => 0, b => 1, mixedcol => 2 },
+      is_col       => { a => 1, b => 1, mixedcol => 1 },
+      is_autoinc   => { a => 0, b => 0, mixedcol => 0 },
+      null_cols    => [qw(a b mixedcol)],
+      is_nullable  => { a => 1, b => 1, mixedcol => 1 },
+      keys         => {
+         mykey => {
+            colnames    => '`a`,`b`,`mixedcol`',
+            cols        => [qw(a b mixedcol)],
+            is_col      => { a => 1, b => 1, mixedcol => 1 },
+            is_nullable => 3,
+            unique      => 0,
+            type        => 'BTREE',
+            name        => 'mykey',
+         },
+      },
+      defs         => {
+         a => '  `a` int(11) default NULL',
+         b => '  `b` int(11) default NULL',
+         mixedcol => '  `mixedcol` int(11) default NULL',
+      },
+      numeric_cols => [qw(a b mixedcol)],
+      is_numeric   => { a => 1, b => 1, mixedcol => 1 },
+      engine       => 'MyISAM',
+      type_for     => { a => 'int', b => 'int', mixedcol => 'int' },
+   },
+   'Mixed-case identifiers',
 );
 
 # Open a connection to MySQL, or skip the rest of the tests.
