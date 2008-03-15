@@ -870,7 +870,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1755
+# TableParser package 1841
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -898,8 +898,11 @@ sub parse {
    }
 
    if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
-      die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+      die "Cannot parse table definition; is ANSI quoting "
+         . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
+
+   $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
    $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
