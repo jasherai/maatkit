@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 14;
+use Test::More tests => 17;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
@@ -41,8 +41,23 @@ is_deeply(
       P => undef,
       F => undef,
       D => undef,
+      C => undef,
    },
    'Basic DSN'
+);
+
+is_deeply(
+   $p->parse('u=a,p=b,C=utf8'),
+   {  u => 'a',
+      p => 'b',
+      S => undef,
+      h => undef,
+      P => undef,
+      F => undef,
+      D => undef,
+      C => 'utf8',
+   },
+   'Basic DSN with charset'
 );
 
 $p = new DSNParser(
@@ -59,6 +74,7 @@ is_deeply(
       F => undef,
       D => undef,
       t => undef,
+      C => undef,
    },
    'DSN with an extra option'
 );
@@ -73,6 +89,7 @@ is_deeply(
       S => 'bar',
       t => undef,
       u => 'a',
+      C => undef,
    },
    'DSN with defaults'
 );
@@ -104,6 +121,7 @@ is ($p->usage(),
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
   ===  ====  =============================================
+  C    yes   Default character set
   D    yes   Database to use
   F    yes   Only read default options from the given file
   P    yes   Port number to use for connection
@@ -126,6 +144,7 @@ is_deeply(
       S => undef,
       t => undef,
       u => undef,
+      C => undef,
    },
    'DSN with autokey'
 );
@@ -142,6 +161,7 @@ is_deeply(
       S => 'bar',
       t => undef,
       u => 'a',
+      C => undef,
    },
    'DSN with defaults and an autokey'
 );
@@ -151,6 +171,7 @@ is ($p->usage(),
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
   ===  ====  =============================================
+  C    yes   Default character set
   D    yes   Database to use
   F    yes   Only read default options from the given file
   P    yes   Port number to use for connection
@@ -178,6 +199,28 @@ is_deeply (
    ],
    'Got connection arguments',
 );
+
+is_deeply (
+   [
+      $p->get_cxn_params(
+         $p->parse(
+            'u=a,p=b,C=foo',
+            { D => 'foo', h => 'me' },
+            { S => 'bar', h => 'host' } ))
+   ],
+   [
+      'DBI:mysql:foo;host=me;mysql_socket=bar;charset=foo;mysql_read_default_group=mysql',
+      'a',
+      'b',
+   ],
+   'Got connection arguments with charset',
+);
+
+# Make sure we can connect to MySQL with a charset
+my $d = $p->parse('h=127.0.0.1,C=utf8');
+my $dbh = $p->get_dbh($p->get_cxn_params($d), {});
+ok($dbh, 'Got a connection');
+$p->disconnect($dbh);
 
 $p->prop('dbidriver', 'Pg');
 is_deeply (

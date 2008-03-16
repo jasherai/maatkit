@@ -64,9 +64,15 @@ $ms->recurse_to_slaves(
    });
 
 is_deeply(
-   $ms->get_master_dsn($slaves[0], undef, $dp),
-   {  h => '127.0.0.1', u => undef, P => '12345', S => undef,
-      F => undef, p => undef, D => undef,
+   $ms->get_master_dsn( $slaves[0], undef, $dp ),
+   {  h => '127.0.0.1',
+      u => undef,
+      P => '12345',
+      S => undef,
+      F => undef,
+      p => undef,
+      D => undef,
+      C => undef,
    },
    'Got master DSN',
 );

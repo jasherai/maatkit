@@ -28,13 +28,18 @@ $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
 use English qw(-no_match_vars);
 
-# Defaults are built-in, but you can add/replace items by passing them as hashrefs
-# of {key, desc, copy, dsn}.  The desc and dsn items are optional.  You can set
-# properties with the prop() function.  Don't set the 'opts' property.
+# Defaults are built-in, but you can add/replace items by passing them as
+# hashrefs of {key, desc, copy, dsn}.  The desc and dsn items are optional.  You
+# can set properties with the prop() function.  Don't set the 'opts' property.
 sub new {
    my ( $class, @opts ) = @_;
    my $self = {
       opts => {
+         C => {
+            desc => 'Default character set',
+            dsn  => 'charset',
+            copy => 1,
+         },
          D => {
             desc => 'Database to use',
             dsn  => 'database',
@@ -177,7 +182,7 @@ sub get_cxn_params {
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
-                     qw(F h P S))
+                     qw(F h P S C))
          . ';mysql_read_default_group=mysql';
    }
    $ENV{MKDEBUG} && _d($dsn);
@@ -188,14 +193,29 @@ sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
    my $defaults = {
-      AutoCommit => 0,
-      RaiseError => 1,
-      PrintError => 0,
+      AutoCommit        => 0,
+      RaiseError        => 1,
+      PrintError        => 0,
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
    $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
       join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
    my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   # Immediately set character set and binmode on STDOUT.
+   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+      my $sql = "/*!40101 SET NAMES $charset*/";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+      $ENV{MKDEBUG} && _d('Enabling charset for STDOUT');
+      if ( $charset eq 'utf8' ) {
+         binmode(STDOUT, ':utf8')
+            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+      }
+      else {
+         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+      }
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(

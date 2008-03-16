@@ -486,6 +486,7 @@ Options:
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
   ===  ====  =============================================
+  C    yes   Default character set
   D    yes   Database to use
   F    yes   Only read default options from the given file
   P    yes   Port number to use for connection
@@ -513,6 +514,7 @@ is_deeply($opts{bar},
       P => undef,
       h => 'localhost',
       p => undef,
+      C => undef,
    },
    'DSN parsing on type=d',
 );
@@ -525,6 +527,7 @@ is_deeply($opts{foo},
       P => undef,
       h => 'otherhost',
       p => undef,
+      C => undef,
    },
    'DSN parsing on type=d inheriting from --bar',
 );
@@ -546,6 +549,7 @@ Options:
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
   ===  ====  =============================================
+  C    yes   Default character set
   D    yes   Database to use
   F    yes   Only read default options from the given file
   P    yes   Port number to use for connection
@@ -580,6 +584,7 @@ is_deeply($opts{f},
       P => undef,
       h => 'otherhost',
       p => undef,
+      C => undef,
    },
    'DSN parsing on type=d inheriting from --bar with short options',
 );
