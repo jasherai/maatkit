@@ -1,5 +1,7 @@
 Changelog for mk-slave-delay:
 
+2008-03-16: version 1.0.6
+
    * Added --setvars option (bug #1904689, bug #1911371).
    * Added 'A' part to DSNs (bug #1877548).
 

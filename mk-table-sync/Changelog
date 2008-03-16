@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2008-03-16: version 1.0.6
+
    * --chunksize was not being converted to rowcount (bug #1902341).
    * Added --setvars option (bug #1904689, bug #1911371).
    * Deprecated the --utf8 option in favor of the A part in DSNs.
