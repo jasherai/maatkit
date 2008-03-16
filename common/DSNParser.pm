@@ -88,6 +88,7 @@ sub new {
 # * autokey:   which key to treat a bareword as (typically h=host).
 # * dbidriver: which DBI driver to use; assumes mysql, supports Pg.
 # * required:  which parts are required (hashref).
+# * setvars:   a list of variables to set after connecting
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
@@ -215,6 +216,12 @@ sub get_dbh {
       else {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
+   }
+   # If setvars exists, set them
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
