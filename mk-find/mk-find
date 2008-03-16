@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
-# OptionParser package 1704
+# OptionParser package 1844
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -127,7 +127,7 @@ sub new {
          next unless ref $opt;
          my $key = $opt->{k};
          $option_exists{$key}++;
-         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
                                     |password|port|socket|user|host)$/x
               || $disables{$key};
          push @unused, $key unless $used{$key};
@@ -453,7 +453,7 @@ sub groups {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line ", @_, "\n";
+   print "# OptionParser:$line $PID ", @_, "\n";
 }
 
 if ( $ENV{MKDEBUG} ) {
@@ -475,12 +475,14 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 1722
+# Quoter package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package Quoter;
+
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class ) = @_;
@@ -532,6 +534,7 @@ $OUTPUT_AUTOFLUSH = 1;
 my @opt_spec = (
    { s => 'askpass',           g => 'o', d => 'Prompt for password for connections' },
    { s => 'case-insensitive',  g => 'o', d => 'Regular expression patterns ignore case' },
+   { s => 'charset|A=s',       g => 'o', d => 'Default character set' },
    { s => 'daystart',          g => 'o', d => 'Measure times from the beginning of the day' },
    { s => 'defaults-file|F=s', g => 'o', d => 'Only read mysql options from the given file' },
    { s => 'host|h=s',          g => 'o', d => 'Connect to host' },
@@ -1037,6 +1040,14 @@ Prompt for password for connections.
 =item --case-insensitive
 
 Specifies that all regular expression searches are case-insensitive.
+
+=item --charset
+
+Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
+Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
+DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
+value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
+connecting to MySQL.
 
 =item --daystart
 

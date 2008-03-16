@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+   * Added --charset option (bug #1877548).
+
 2007-12-16: version 0.9.9
 
    * Updated common code.
