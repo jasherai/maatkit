@@ -1,6 +1,7 @@
 Changelog for mk-table-sync:
 
-   * Lowercase identifiers to avoid case-sensitivity issues (bug #1910276).
+   * Deprecated the --utf8 option in favor of the A part in DSNs.
+   * Mixed-case identifiers caused case-sensitivity issues (bug #1910276).
    * Prefer SHOW PROCESSLIST when looking for slaves of a server.
 
 2008-02-10: version 1.0.5
