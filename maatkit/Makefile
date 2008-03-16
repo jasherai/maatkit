@@ -1,7 +1,7 @@
 dist: test
 	./package.pl
 
-all: dist debian individual
+all: dist debian
 
 .PHONY: debian
 debian: dist
@@ -9,9 +9,6 @@ debian: dist
 
 clean:
 	rm -rf release release-debian
-
-individual: dist
-	./make-individual.pl
 
 doc-upload:
 	scp html/*.html bps7j@shell.sourceforge.net:maatkit/htdocs/doc
