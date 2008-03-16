@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * Changed --charset to be compatible with other tools (bug #1877548).
+
 2008-02-10: version 1.0.5
 
    * Fixed forking issues with File::Find on Solaris (bug #1887102).
