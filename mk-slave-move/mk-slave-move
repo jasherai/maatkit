@@ -1409,6 +1409,12 @@ sub _d {
    print "# main:$line ", @_, "\n";
 }
 
+# TODO: need an option to specify the grandparent, in case the master is dead.
+# TODO: need an option to find the newest slave of a given set of siblings, or
+# of a given master.  TODO: an option to set servers read_only TODO: an option
+# to kill all other connections TODO: an option to kill connections that have
+# open transactions.  TODO: check for open temp tables before moving slaves.
+
 # ############################################################################
 # Documentation.
 # ############################################################################
@@ -1425,6 +1431,14 @@ mk-slave-move - Move a MySQL slave around in the replication hierarchy.
  mk-slave-move mysql_host --slave-of-sibling sibling_host
 
 =head1 DESCRIPTION
+
+This tool knows how to disconnect and reconnect slaves to each other, compare
+replication positions, and so on.  This makes it able to move a slave around the
+replication hierarchy safely and correctly.  It doesn't do anything you can't do
+by hand, but it is tedious and error-prone to do this by hand.
+
+Some of the features are incomplete, including some safety checks such as not
+moving slaves that have temporary tables open.
 
 =head1 OPTIONS
 
@@ -1447,22 +1461,12 @@ Show a brief help message and exit.
 Make the server a slave of its grandparent, if any, and then make all of its
 previous siblings its slaves.  If extra DSNs are given on the command-line,
 use these as its siblings; otherwise discover siblings by examining its master.
-
-TODO: need an option to specify the grandparent, in case the master is dead.
-
-TODO: need an option to find the newest slave of a given set of siblings, or of
-a given master.
-
-TODO: an option to set servers read_only
-
-TODO: an option to kill all other connections
-
-TODO: an option to kill connections that have open transactions
+TODO: this option is not implemented yet.
 
 =item --resume
 
 Start the slave running after moving it.  Default is to leave the slave stopped.
-TODO
+TODO: this option is not implemented yet.
 
 =item --setvars
 

@@ -1346,7 +1346,7 @@ sub _d {
 
 =head1 NAME
 
-mk-slave-find - Find MySQL replication slaves.
+mk-slave-find - Find MySQL replication slaves and execute commands on them.
 
 =head1 SYNOPSIS
 
