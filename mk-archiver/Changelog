@@ -1,5 +1,8 @@
 Changelog for mk-archiver:
 
+   * Added --charset option (bug #1877548).
+   * Changed short form of --analyze to -Z to avoid conflict with --charset.
+
 2008-01-24: version 1.0.7
 
    * Added --quiet option.
