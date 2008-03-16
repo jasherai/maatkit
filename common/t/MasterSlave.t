@@ -72,7 +72,7 @@ is_deeply(
       F => undef,
       p => undef,
       D => undef,
-      C => undef,
+      A => undef,
    },
    'Got master DSN',
 );
