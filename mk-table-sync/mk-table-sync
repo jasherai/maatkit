@@ -35,7 +35,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1755
+# OptionParser package 1844
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -134,7 +134,7 @@ sub new {
          next unless ref $opt;
          my $key = $opt->{k};
          $option_exists{$key}++;
-         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
                                     |password|port|socket|user|host)$/x
               || $disables{$key};
          push @unused, $key unless $used{$key};
@@ -526,7 +526,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1828
+# DSNParser package 1845
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -543,6 +543,11 @@ sub new {
    my ( $class, @opts ) = @_;
    my $self = {
       opts => {
+         A => {
+            desc => 'Default character set',
+            dsn  => 'charset',
+            copy => 1,
+         },
          D => {
             desc => 'Database to use',
             dsn  => 'database',
@@ -679,7 +684,7 @@ sub get_cxn_params {
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
-                     qw(F h P S))
+                     qw(F h P S A))
          . ';mysql_read_default_group=mysql';
    }
    $ENV{MKDEBUG} && _d($dsn);
@@ -690,14 +695,28 @@ sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
    my $defaults = {
-      AutoCommit => 0,
-      RaiseError => 1,
-      PrintError => 0,
+      AutoCommit        => 0,
+      RaiseError        => 1,
+      PrintError        => 0,
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
    $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
       join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
    my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+      my $sql = "/*!40101 SET NAMES $charset*/";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+      $ENV{MKDEBUG} && _d('Enabling charset for STDOUT');
+      if ( $charset eq 'utf8' ) {
+         binmode(STDOUT, ':utf8')
+            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+      }
+      else {
+         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+      }
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -4142,6 +4161,9 @@ if ( $opts{test} ) {
 
 my @dsns;
 while ( my $arg = shift(@ARGV) ) {
+   if ( $opts{utf8} ) {
+      $arg .= ',A=utf8';
+   }
    my $dsn = $dsn_parser->parse($arg, $dsns[0]);
    die "You specified a t part, but not a D part in $arg"
       if ($dsn->{t} && !$dsn->{D});
@@ -4158,11 +4180,6 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 # Do the work.
 # ############################################################################
-if ( $opts{utf8} ) {
-   $ENV{MKDEBUG} && _d('Enabling UTF-8 for STDOUT');
-   binmode(STDOUT, ':utf8');
-}
-
 my $exit_status = 0; # 1: internal error, 2: tables differed, 3: both
 my $hdr         = "# %6s %7s %6s %6s %-9s %s.%s\n";
 
@@ -4523,11 +4540,7 @@ sub print_err {
 
 sub get_cxn {
    my ( $info ) = @_;
-   my $db_options = {
-      # TODO: enable support for this on old versions of DBD::mysql?
-      # http://www.perlmonks.org/?node_id=620803
-      mysql_enable_utf8 => $opts{utf8},
-   };
+   my $db_options = {};
 
    if ( !$info->{p} && $opts{askpass} ) {
       $info->{p}
@@ -4536,11 +4549,6 @@ sub get_cxn {
    my $dbh = $dsn_parser->get_dbh(
       $dsn_parser->get_cxn_params($info), $db_options);
    my $sql;
-   if ( $opts{utf8} ) {
-      $sql = "/*!40101 SET NAMES utf8 */";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
-      $dbh->do($sql);
-   }
    if ( $opts{skipbinlog} ) {
       $sql = "/*!32316 SET SQL_LOG_BIN=0 */";
       $ENV{MKDEBUG} && _d("$dbh: $sql");
@@ -4909,9 +4917,14 @@ uses transactions on InnoDB tables, and table locks on all others.
 
 =item --utf8
 
-Enables UTF-8 settings in Perl and MySQL.  Sets Perl's binmode on STDOUT to
-utf8, passes the C<mysql_enable_utf8> option to DBD::mysql, and runs C<SET NAMES
-UTF8> after connecting to MySQL.
+This option is deprecated.  Pass the C<A> option in a DSN instead.  For
+backwards compatibility, this option adds C<A=utf8> to all DSNs.
+
+Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
+Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
+DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
+value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
+connecting to MySQL.
 
 =item --verbose
 
