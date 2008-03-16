@@ -1,5 +1,7 @@
 Changelog for mk-visual-explain:
 
+2008-03-16: version 1.0.7
+
    * Added --setvars option (bug #1904689, bug #1911371).
    * Added --charset option (bug #1877548).
 

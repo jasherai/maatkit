@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2008-03-16: version 1.1.26
+
    * Added --setvars option (bug #1904689, bug #1911371).
    * Added 'A' part to DSNs (bug #1877548).
    * Added --unique option to mk-checksum-filter.
