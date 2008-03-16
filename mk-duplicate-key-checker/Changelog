@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Added --charset option (bug #1877548).
+
 2007-12-16: version 1.1.4
 
    * --tables and --ignoretables now accept names in the form db.tbl.
