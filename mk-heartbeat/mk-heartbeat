@@ -967,7 +967,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1158,6 +1158,11 @@ sub get_dbh {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
    }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -1244,6 +1249,7 @@ my @opt_spec = (
    { s => 'recurse=i',         d => 'Check slaves recursively to this depth' },
    { s => 'replace|r',         d => 'Use REPLACE instead of UPDATE for --update' },
    { s => 'sentinel=s',        d => 'Sentinel file; default /tmp/mk-heartbeat-sentinel' },
+   { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
    { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'stop',              d => 'Stop running instances by creating the sentinel file' },
@@ -1344,6 +1350,7 @@ $ENV{MKDEBUG} && _d("SELECT SQL: $select_sql");
 
 my $dp    = new DSNParser;
 $dp->prop('dbidriver', $opts{dbidriver});
+$dp->prop('setvars', $opts{setvars});
 my $dsn   = $dp->parse('bogus', {}, \%opts);
 my $dbh   = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 my $sth   = $dbh->prepare($opts{update} ? $update_sql : $select_sql);
@@ -1692,6 +1699,11 @@ or not.
 
 The presence of the file specified by L<"--sentinel"> will cause
 C<mk-heartbeat> to stop and exit.  The default is /tmp/mk-heartbeat-sentinel.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --skew
 

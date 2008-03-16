@@ -481,7 +481,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -672,6 +672,11 @@ sub get_dbh {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
    }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -747,6 +752,7 @@ my @opt_spec = (
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'revoke|r',          d => 'Add REVOKE statements' },
    { s => 'separate|s',        d => 'List each GRANT or REVOKE separately' },
+   { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'timestamp|t!',      d => 'Show dump timestamp (default)' },
    { s => 'user|u=s',          d => 'User for login if not current user' },
@@ -757,6 +763,7 @@ my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{prompt} = '<options>';
 $opt_parser->{descr} = q{shows grants (user privileges) from a MySQL server.};
 my %opts = $opt_parser->parse();
+$dsn_parser->prop('setvars', $opts{setvars});
 $opt_parser->usage_or_errors(%opts);
 
 # Turn comma-separated lists into arrays and hashes
@@ -992,6 +999,11 @@ Lists each GRANT or REVOKE separately, instead of the default output from
 MySQL's SHOW GRANTS command, which may list many privileges on a single line.
 With L<"--flush">, places a FLUSH PRIVILEGES after each user, instead of once
 at the end of all the output.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --socket
 

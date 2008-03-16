@@ -526,7 +526,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -716,6 +716,11 @@ sub get_dbh {
       else {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
+   }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
@@ -4092,6 +4097,8 @@ my @opt_spec = (
      d => 'Use REPLACE instead of INSERT and UPDATE' },
    { s => 'replicate|R=s',
      d => 'Sync tables listed as different in this table' },
+   { s => 'setvars=s',
+     d => 'Set these MySQL variables (default wait_timeout=10000)' },
    { s => 'skipbinlog',
      d => 'Do not log to the binary log' },
    { s => 'skipforeignkey|K',
@@ -4148,6 +4155,7 @@ $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '[OPTION].. DSN [DSN...]';
 $opt_parser->{descr} = 'finds and fixes data differences between MySQL tables.';
 my %opts = $opt_parser->parse();
+$dsn_parser->prop('setvars', $opts{setvars});
 
 if ( $opts{R} || $opts{s} ) {
    $opts{w} = 60 unless defined $opts{w};
@@ -4861,6 +4869,11 @@ up as A->B, B->C, B->D.  Suppose you use this argument and specify server B.
 The tool will examine server B's copy of the table.  If it looks like server B's
 data in table C<test.tbl1> is different from server A's copy, the tool will not
 sync that table on servers C and D.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --skipbinlog
 

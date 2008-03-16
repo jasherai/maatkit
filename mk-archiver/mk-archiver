@@ -30,12 +30,6 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
-# This is a combination of modules and programs in one -- a runnable module.
-# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
-# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
-# ###########################################################################
-
-# ###########################################################################
 # OptionParser package 1844
 # ###########################################################################
 use strict;
@@ -669,7 +663,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -859,6 +853,11 @@ sub get_dbh {
       else {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
+   }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
@@ -1648,6 +1647,8 @@ my @opt_spec = (
       d => 'Do not archive row with max AUTO_INCREMENT (default)'},
    {  s => 'sentinel|S=s',
       d => 'Sentinel file; default /tmp/mk-archiver-sentinel' },
+   {  s => 'setvars=s',
+      d => 'Set these MySQL variables (default wait_timeout=10000)' },
    {  s => 'sharelock',
       d => 'Adds LOCK IN SHARE MODE to SELECT statements' },
    {  s => 'skipfkchk|K',
@@ -1690,6 +1691,7 @@ $opt_parser->{descr}  = 'nibbles records from a MySQL table.  The --source '
                       . q{yes, --dest defaults to the key's value from }
                       . q{--source.};
 %opts = $opt_parser->parse();
+$dp->prop('setvars', $opts{setvars});
 
 # First things first: if --stop was given, create the sentinel file.
 if ( $opts{stop} ) {
@@ -2937,6 +2939,11 @@ The presence of the file specified by L<"--sentinel"> will cause mk-archiver to
 stop archiving and exit.  The default is /tmp/mk-archiver-sentinel.  You
 might find this handy to stop cron jobs gracefully if necessary.  See also
 L<"--stop">.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --sharelock
 

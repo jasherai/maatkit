@@ -956,7 +956,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1146,6 +1146,11 @@ sub get_dbh {
       else {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
+   }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
@@ -2679,6 +2684,8 @@ my @opt_spec = (
      d => 'Report how far slaves lag master' },
    { s => 'separator|s=s',
      d => 'Separator for CONCAT_WS() (default #)' },
+   { s => 'setvars=s',
+     d => 'Set these MySQL variables (default wait_timeout=10000)' },
    { s => 'sleep=i',
      d => 'Sleep time between checksums' },
    { s => 'sleep-coef=f',
@@ -2715,6 +2722,7 @@ $opt_parser->{descr}
    . 'HOST.  If you specify multiple HOSTs, the first is assumed to be the '
    . 'master.';
 my %opts = $opt_parser->parse();
+$dsn_parser->prop('setvars', $opts{setvars});
 
 # Post-process command-line options and arguments.
 $opts{k} ||= defined $opts{w};
@@ -2898,7 +2906,7 @@ if ( $opts{R} ) {
       $main_dbh->do($del_sql);
    }
 
-# TODO: suspicious
+   # TODO: Is there a chance this can cause problems while forked?
    $fetch_sth = $main_dbh->prepare(
       "SELECT this_crc, this_cnt FROM $opts{R} "
       . "WHERE db = ? AND tbl = ? AND chunk = ?");
@@ -3084,7 +3092,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                   # Open a single connection for each host.  Re-use the
                   # connection for the master/single host.
                   if ( $is_master ) {
-# TODO: suspicious
+                     # TODO: Is there a chance this can cause problems while forked?
                      $host->{dbh} ||= $main_dbh;
                   }
                   else {
@@ -3813,6 +3821,11 @@ The table specified by L<"--replicate"> will never be checksummed itself.
 
 This option controls the separator character used for CONCAT_WS() when taking
 row checksums with user-variables.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --slavelag
 

@@ -562,7 +562,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -752,6 +752,11 @@ sub get_dbh {
       else {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
+   }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
@@ -1314,6 +1319,8 @@ my @opt_spec = (
       d => 'Make this server forget that it is a slave' },
    {  s => 'resume|R',
       d => 'Resume replication after moving the slave' },
+   {  s => 'setvars=s',
+      d => 'Set these MySQL variables (default wait_timeout=10000)' },
    {  s => 'sibling-of-master',
       d => 'Make the server a slave of its grandparent' },
    {  s => 'slave-of-sibling=d',
@@ -1335,6 +1342,7 @@ $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '<options> SLAVE_DSN [DSN ...]';
 $opt_parser->{descr}  = 'moves replication slave(s) around in the hierarchy.';
 my %opts = $opt_parser->parse();
+$dp->prop('setvars', $opts{setvars});
 
 my @dsns;
 while ( my $arg = shift(@ARGV) ) {
@@ -1454,6 +1462,11 @@ TODO: an option to kill connections that have open transactions
 
 Start the slave running after moving it.  Default is to leave the slave stopped.
 TODO
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --sibling-of-master
 

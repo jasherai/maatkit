@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * Added --setvars option (bug #1904689, bug #1911371).
    * Added --charset option (bug #1877548).
    * A global database connection was re-used by children, causing a hang.
 

@@ -1,5 +1,6 @@
 Changelog for mk-show-grants:
 
+   * Added --setvars option (bug #1904689, bug #1911371).
    * Added --charset option (bug #1877548).
 
 2008-02-10: version 1.0.8

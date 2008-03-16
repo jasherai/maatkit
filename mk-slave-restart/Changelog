@@ -1,5 +1,6 @@
 Changelog for mk-slave-restart:
 
+   * Added --setvars option (bug #1904689, bug #1911371).
    * Added --charset option (bug #1877548).
    * Added logic to repair tables, and rewrote a lot of code.
    * Added --always option, disabled by default.  Not backwards compatible.
