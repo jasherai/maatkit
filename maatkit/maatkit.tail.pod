@@ -2,6 +2,11 @@
 
 =back
 
+=head1 SEE ALSO
+
+See also the L<maatkitdsn> documentation, which explains how to use DSNs to
+connect to MySQL.
+
 =head1 INSTALLATION
 
 Strictly speaking these tools require no installation; you should be able to
