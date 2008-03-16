@@ -1,3 +1,9 @@
+package maatkitdsn;
+
+our $VERSION = '@DISTRIB@';
+
+1;
+
 =pod
 
 =head1 NAME
