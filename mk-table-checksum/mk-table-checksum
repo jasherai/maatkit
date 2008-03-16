@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
-# TableParser package 1755
+# TableParser package 1841
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -55,8 +55,11 @@ sub parse {
    }
 
    if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
-      die "Cannot parse table definition; is ANSI quoting enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+      die "Cannot parse table definition; is ANSI quoting "
+         . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
+
+   $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
    $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
@@ -506,7 +509,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1755
+# OptionParser package 1844
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -605,7 +608,7 @@ sub new {
          next unless ref $opt;
          my $key = $opt->{k};
          $option_exists{$key}++;
-         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
                                     |password|port|socket|user|host)$/x
               || $disables{$key};
          push @unused, $key unless $used{$key};
@@ -953,7 +956,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1828
+# DSNParser package 1845
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -970,6 +973,11 @@ sub new {
    my ( $class, @opts ) = @_;
    my $self = {
       opts => {
+         A => {
+            desc => 'Default character set',
+            dsn  => 'charset',
+            copy => 1,
+         },
          D => {
             desc => 'Database to use',
             dsn  => 'database',
@@ -1106,7 +1114,7 @@ sub get_cxn_params {
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
-                     qw(F h P S))
+                     qw(F h P S A))
          . ';mysql_read_default_group=mysql';
    }
    $ENV{MKDEBUG} && _d($dsn);
@@ -1117,14 +1125,28 @@ sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
    my $defaults = {
-      AutoCommit => 0,
-      RaiseError => 1,
-      PrintError => 0,
+      AutoCommit        => 0,
+      RaiseError        => 1,
+      PrintError        => 0,
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
    $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
       join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
    my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+      my $sql = "/*!40101 SET NAMES $charset*/";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+      $ENV{MKDEBUG} && _d('Enabling charset for STDOUT');
+      if ( $charset eq 'utf8' ) {
+         binmode(STDOUT, ':utf8')
+            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+      }
+      else {
+         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+      }
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
