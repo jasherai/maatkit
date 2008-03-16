@@ -129,6 +129,10 @@ sub sync_table {
       return ($ch->get_changes(), ALGORITHM => $args{algorithm});
    }
 
+   # The sync algorithms must be sheltered from size-to-rows conversions.
+   my $chunksize = $args{chunker}->size_to_rows(
+         @args{qw(src_dbh src_db src_table chunksize dumper)}),
+
    my $class  = "TableSync$args{algorithm}";
    my $plugin = $class->new(
       handler   => $ch,
@@ -144,7 +148,7 @@ sub sync_table {
       checksum  => $args{checksum},
       vp        => $args{versionparser},
       quoter    => $args{quoter},
-      chunksize => $args{chunksize},
+      chunksize => $chunksize,
       where     => $args{where},
       possible_keys => [],
       versionparser => $args{versionparser},
