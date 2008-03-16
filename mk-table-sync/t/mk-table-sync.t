@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 14;
+use Test::More tests => 15;
 use DBI;
 
 my $output;
@@ -114,6 +114,11 @@ like(
    qr/2 Chunk *test.test3/,
    'Right number of rows to update',
 );
+
+# Sync a table with Nibble and a chunksize in data size, not number of rows
+$output = run('test3', 'test4', '--algorithm Nibble --chunksize 1k --print --verbose -f MD5');
+# If it lived, it's OK.
+ok($output, 'Synced with Nibble and data-size chunksize');
 
 # Ensure that syncing master-master works OK
 `/tmp/12345/use < before.sql`;
