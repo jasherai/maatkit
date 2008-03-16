@@ -182,6 +182,19 @@ is( $cnt, 4, 'Four rows in destination after Chunk' );
 
 `mysql < samples/before-TableSyncChunk.sql`;
 
+# This should be OK because it ought to convert the size to rows.
+$ts->sync_table(
+   %args,
+   chunksize     => '1k',
+   algorithm     => 'Chunk',
+   dst_db        => 'test',
+   dst_tbl       => 'test2',
+   src_db        => 'test',
+   src_tbl       => 'test1',
+);
+
+`mysql < samples/before-TableSyncChunk.sql`;
+
 $ts->sync_table(
    %args,
    algorithm     => 'Stream',

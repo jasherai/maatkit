@@ -131,7 +131,7 @@ sub sync_table {
 
    # The sync algorithms must be sheltered from size-to-rows conversions.
    my $chunksize = $args{chunker}->size_to_rows(
-         @args{qw(src_dbh src_db src_table chunksize dumper)}),
+         @args{qw(src_dbh src_db src_tbl chunksize dumper)}),
 
    my $class  = "TableSync$args{algorithm}";
    my $plugin = $class->new(
