@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+   * Added --charset option (bug #1877548).
+
 2008-02-10: version 1.0.7
 
    * Added --recurse option to check slaves to any depth.
