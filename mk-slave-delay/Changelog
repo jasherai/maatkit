@@ -1,5 +1,7 @@
 Changelog for mk-slave-delay:
 
+   * Added 'A' part to DSNs (bug #1877548).
+
 2008-01-05: version 1.0.5
 
    * Made suffixes for time options optional (bug #1858696).
