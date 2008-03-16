@@ -1,5 +1,7 @@
 Changelog for mk-slave-find:
 
+   * Added --charset option (bug #1877548).
+
 2008-02-29: version 1.0.0
 
    * Initial release.
