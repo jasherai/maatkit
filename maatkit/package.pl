@@ -94,6 +94,7 @@ print `cd release && zip -qr $distbase.zip    $distbase`;
 
 # Make the documentation.  Requires two passes.
 my @module_files = map { basename $_ } <$dist/bin/mk-*>;
+my @doc_files    = qw(maatkit maatkitdsn);
 for ( 0 .. 1 ) {
    foreach my $module ( @module_files ) {
       pod2html(
@@ -108,17 +109,19 @@ for ( 0 .. 1 ) {
          "--css=http://search.cpan.org/s/style.css",
       );
    }
-   pod2html(
-      "--backlink=Top",
-      "--cachedir=cache",
-      "--htmldir=html",
-      "--infile=$dist/lib/maatkit.pm",
-      "--outfile=html/maatkit.html",
-      "--libpods=perlfunc:perlguts:perlvar:perlrun:perlop",
-      "--podpath=bin:lib",
-      "--podroot=$dist",
-      "--css=http://search.cpan.org/s/style.css",
-   );
+   foreach my $doc ( @doc_files ) {
+      pod2html(
+         "--backlink=Top",
+         "--cachedir=cache",
+         "--htmldir=html",
+         "--infile=$dist/lib/$doc.pm",
+         "--outfile=html/$doc.html",
+         "--libpods=perlfunc:perlguts:perlvar:perlrun:perlop",
+         "--podpath=bin:lib",
+         "--podroot=$dist",
+         "--css=http://search.cpan.org/s/style.css",
+      );
+   }
 }
 # Wow, Pod::HTML is a pain in the butt.  Fix links now.
 my $img = '<a href="http://sourceforge.net/projects/maatkit/"><img '
