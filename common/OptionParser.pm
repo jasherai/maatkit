@@ -144,7 +144,7 @@ sub new {
          my $key = $opt->{k};
          $option_exists{$key}++;
          # These are often used only indirectly.
-         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
                                     |password|port|socket|user|host)$/x
               || $disables{$key};
          push @unused, $key unless $used{$key};
