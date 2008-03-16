@@ -218,7 +218,8 @@ sub get_dbh {
       }
    }
    # If setvars exists, set them
-   if ( my ($setvars) = $self->prop('setvars') ) {
+   my $setvars = $self->prop('setvars');
+   if ( $setvars ) {
       my $sql = "SET $setvars";
       $ENV{MKDEBUG} && _d("$dbh: $sql");
       $dbh->do($sql);
