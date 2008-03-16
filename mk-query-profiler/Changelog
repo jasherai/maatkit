@@ -1,5 +1,7 @@
 Changelog for mk-query-profiler and mk-profile-compact:
 
+   * Added --charset option (bug #1877548).
+
 2007-12-16: version 1.1.8
 
    * Updated common code, added debugging.

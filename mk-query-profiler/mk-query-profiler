@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
-# OptionParser package 1704
+# OptionParser package 1844
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -126,7 +126,7 @@ sub new {
          next unless ref $opt;
          my $key = $opt->{k};
          $option_exists{$key}++;
-         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
                                     |password|port|socket|user|host)$/x
               || $disables{$key};
          push @unused, $key unless $used{$key};
@@ -452,7 +452,7 @@ sub groups {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line ", @_, "\n";
+   print "# OptionParser:$line $PID ", @_, "\n";
 }
 
 if ( $ENV{MKDEBUG} ) {
@@ -474,7 +474,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1703
+# DSNParser package 1845
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -485,11 +485,17 @@ use DBI;
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class, @opts ) = @_;
    my $self = {
       opts => {
+         A => {
+            desc => 'Default character set',
+            dsn  => 'charset',
+            copy => 1,
+         },
          D => {
             desc => 'Database to use',
             dsn  => 'database',
@@ -626,7 +632,7 @@ sub get_cxn_params {
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
-                     qw(F h P S))
+                     qw(F h P S A))
          . ';mysql_read_default_group=mysql';
    }
    $ENV{MKDEBUG} && _d($dsn);
@@ -637,14 +643,28 @@ sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
    my $defaults = {
-      AutoCommit => 0,
-      RaiseError => 1,
-      PrintError => 0,
+      AutoCommit        => 0,
+      RaiseError        => 1,
+      PrintError        => 0,
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
    $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
       join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
    my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+      my $sql = "/*!40101 SET NAMES $charset*/";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+      $ENV{MKDEBUG} && _d('Enabling charset for STDOUT');
+      if ( $charset eq 'utf8' ) {
+         binmode(STDOUT, ':utf8')
+            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+      }
+      else {
+         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+      }
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -659,10 +679,36 @@ sub get_dbh {
    return $dbh;
 }
 
+sub get_hostname {
+   my ( $self, $dbh ) = @_;
+   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
+      return $host;
+   }
+   my ( $hostname, $one ) = $dbh->selectrow_array(
+      'SELECT /*!50038 @@hostname, */ 1');
+   return $hostname;
+}
+
+sub disconnect {
+   my ( $self, $dbh ) = @_;
+   $ENV{MKDEBUG} && $self->print_active_handles($dbh);
+   $dbh->disconnect;
+}
+
+sub print_active_handles {
+   my ( $self, $thing, $level ) = @_;
+   $level ||= 0;
+   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+   foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
+      $self->print_active_handles->( $handle, $level + 1 );
+   }
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line ", @_, "\n";
+   print "# DSNParser:$line $PID ", @_, "\n";
 }
 
 1;
@@ -689,6 +735,7 @@ my @opt_spec = (
    { s => 'allowcache|a',  d => 'Enable query cache' },
    { s => 'askpass',       d => 'Prompt for password for connection' },
    { s => 'calibrate|c!',  d => "Try to compensate for SHOW STATUS (default)" },
+   { s => 'charset|A=s',   d => 'Default character set' },
    { s => 'database|D=s',  d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
    { s => 'external|e',    d => 'Calibrate, then pause while an external program runs' },
@@ -1076,7 +1123,7 @@ sub get_changes {
       my $val = $after->{$_} - $before->{$_} - ( $num_base * $base->{$_} );
       if ( $val < 0 && !defined($non_monotonic_vars{$_}) ) {
          # Handle when a ulong wraps over the 32-bit boundary
-         $val += MAX_ULONG;
+         $val += MAX_ULONG; # TODO: this isn't right on 64-bit servers.
       }
       $_ => $val;
    } @important_vars };
@@ -1403,6 +1450,14 @@ Makes mk-query-profiler measure and compensate for the "cost of
 observation" caused by running SHOW STATUS.  Enabled by default.  Only works
 reliably on a quiet server; on a busy server, other processes can cause the
 calibration to be wrong.
+
+=item --charset
+
+Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
+Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
+DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
+value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
+connecting to MySQL.
 
 =item --database
 
