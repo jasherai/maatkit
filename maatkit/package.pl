@@ -115,7 +115,7 @@ for ( 0 .. 1 ) {
       "--infile=$dist/lib/maatkit.pm",
       "--outfile=html/maatkit.html",
       "--libpods=perlfunc:perlguts:perlvar:perlrun:perlop",
-      "--podpath=bin",
+      "--podpath=bin:lib",
       "--podroot=$dist",
       "--css=http://search.cpan.org/s/style.css",
    );
