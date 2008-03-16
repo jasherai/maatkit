@@ -285,7 +285,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1755
+# OptionParser package 1844
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -384,7 +384,7 @@ sub new {
          next unless ref $opt;
          my $key = $opt->{k};
          $option_exists{$key}++;
-         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
                                     |password|port|socket|user|host)$/x
               || $disables{$key};
          push @unused, $key unless $used{$key};
