@@ -48,3 +48,5 @@ See the individual program's documentation for details.
 =head1 VERSION
 
 This manual page documents Distrib @DISTRIB@ $Revision: 534 $.
+
+=cut
