@@ -159,12 +159,12 @@ sub get_version_or_quit {
       my $old_ver = sprintf('%03d%03d%03d', @old_ver);
       my $new_ver = sprintf('%03d%03d%03d', @new_ver);
       if ( $old_ver ge $new_ver ) {
-         die "Old version $ver2 is not older than new version $ver!";
+         die "Old version $ver2 is not older than new version $ver in $file!";
       }
       foreach my $i ( 0 .. $#old_ver ) {
          if ( $new_ver[$i] > $old_ver[$i] ) {
             if ( $new_ver[$i] > $old_ver[$i] + 1 ) {
-               die "New version $new_ver increased too much from $old_ver";
+               die "New version $new_ver increased too much from $old_ver in $file";
             }
             last;
          }
