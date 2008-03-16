@@ -1,5 +1,6 @@
 Changelog for mk-find:
 
+   * Added --setvars option (bug #1904689, bug #1911371).
    * Added --charset option (bug #1877548).
 
 2007-12-16: version 0.9.9

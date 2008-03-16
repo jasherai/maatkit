@@ -563,7 +563,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -753,6 +753,11 @@ sub get_dbh {
       else {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
+   }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
@@ -1351,6 +1356,8 @@ my @opt_spec = (
       d => 'Number of levels to recurse (default 0)' },
    {  s => 'sentinel=s',
       d => 'Sentinel file; default /tmp/mk-slave-restart-sentinel' },
+   {  s => 'setvars=s',
+      d => 'Set these MySQL variables (default wait_timeout=10000)' },
    {  s => 'skipcount|k=i',
       d => 'Number of statements to skip (default 1)' },
    {  s => 'sleep|s=f',
@@ -1378,6 +1385,7 @@ $opt_parser->{prompt} = '<options>';
 $opt_parser->{descr}  = 'watches one or more MySQL replication slaves for '
                       . 'errors, and tries to restart replication if it stops.';
 my %opts = $opt_parser->parse();
+$dp->prop('setvars', $opts{setvars});
 
 $opts{v} = 0 if $opts{q};
 
@@ -1899,6 +1907,11 @@ monitor them.
 The presence of the file specified by L<"--sentinel"> will cause
 C<mk-slave-restart> to stop and exit.  The default is
 C</tmp/mk-slave-restart-sentinel>.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --skipcount
 

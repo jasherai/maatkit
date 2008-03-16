@@ -1,5 +1,6 @@
 Changelog for mk-archiver:
 
+   * Added --setvars option (bug #1904689, bug #1911371).
    * Added --charset option (bug #1877548).
    * Changed short form of --analyze to -Z to avoid conflict with --charset.
 

@@ -522,7 +522,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -713,6 +713,11 @@ sub get_dbh {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
    }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -827,6 +832,7 @@ my @opt_spec = (
    { s => 'port|P=i',          d => 'Port number to use for connection' },
    { s => 'quiet|q',           d => 'Sets --verbose to 0' },
    { s => 'replace|r',         d => 'Use the REPLACE option to LOAD DATA INFILE' },
+   { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'tables|t=h',        d => 'Restore only this comma-separated list of tables' },
    { s => 'tab|T',             d => 'Restore tab-separated files with LOAD DATA INFILE' },
@@ -845,6 +851,7 @@ $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '<options> PATH [PATH...]';
 $opt_parser->{descr} = 'loads files into MySQL in parallel.';
 %opts = $opt_parser->parse(%opts);
+$dp->prop('setvars', $opts{setvars});
 
 # ############################################################################
 # Process options.
@@ -1543,6 +1550,11 @@ Sets L<"--verbose"> to 0.
 =item --replace
 
 Adds the C<REPLACE> modifier to C<LOAD DATA INFILE>.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --socket
 

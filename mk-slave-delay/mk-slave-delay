@@ -518,7 +518,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -709,6 +709,11 @@ sub get_dbh {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
    }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -774,6 +779,7 @@ my @opt_spec = (
    { s => 'delay|d=m',     d => 'Slave delay (default 1h)' },
    { s => 'interval|i=m',  d => 'Sleep interval (default 1m)' },
    { s => 'quiet|q',       d => 'Suppress normal output' },
+   { s => 'setvars=s',     d => 'Set these MySQL variables (default wait_timeout=10000)' },
    { s => 'time|t=m',      d => 'Time to run before exiting' },
    { s => 'usemaster|u',   d => 'Get binlog positions from master, not slave' },
 );
@@ -791,6 +797,7 @@ $opt_parser->{descr}  = 'starts and stops a slave server as needed '
                       . 'and MASTER-HOST use DSN syntax, and values are copied '
                       . 'from the SLAVE-HOST to the MASTER-HOST if omitted.';
 my %opts = $opt_parser->parse();
+$dsn_parser->prop('setvars', $opts{setvars});
 
 my ($slave_dsn, $master_dsn);
 if ( @ARGV ) {
@@ -1128,6 +1135,11 @@ started or stopped.
 =item --quiet
 
 Do not output regular status messages.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --time
 

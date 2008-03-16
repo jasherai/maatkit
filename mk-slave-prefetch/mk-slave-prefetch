@@ -521,7 +521,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -711,6 +711,11 @@ sub get_dbh {
       else {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
+   }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
    }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
@@ -1219,6 +1224,8 @@ my @opt_spec = (
                                   . 'Perl regexp' },
    { s => 'sentinel=s',        d => 'Sentinel file; default '
                                   . '/tmp/mk-slave-prefetch-sentinel' },
+   {  s => 'setvars=s',        d => 'Set these MySQL variables (default '
+                                  . 'wait_timeout=10000)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'statistics',        d => 'Print statistics after exiting' },
    { s => 'stop',              d => 'Stop running instances by creating '
@@ -1241,6 +1248,7 @@ $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '[OPTION...] [FILE]';
 $opt_parser->{descr}  = q{pipelines relay logs to pre-warm the slave's caches.};
 my %opts = $opt_parser->parse();
+$dsn_parser->prop('setvars', $opts{setvars});
 
 if ( $opts{t} ) {
    $opts{t} = max($opts{t}, 1);
@@ -1934,6 +1942,11 @@ averaged together.
 
 Similar to L<"--permitregexp">, but has the opposite effect: log events must
 B<not> match the regular expression.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --socket
 

@@ -519,7 +519,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1845
+# DSNParser package 1866
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -710,6 +710,11 @@ sub get_dbh {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
    }
+   if ( my ($setvars) = $self->prop('setvars') ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -786,6 +791,7 @@ my @opt_spec = (
    { s => 'interval|i=m', d => 'Sleep interval (default 0s)' },
    { s => 'numip|n',      d => 'Express IP addresses as integers' },
    { s => 'print|p',      d => 'Print to STDOUT' },
+   { s => 'setvars=s',    d => 'Set these MySQL variables (default wait_timeout=10000)' },
    { s => 'source|s=d',   d => 'DSN to check for deadlocks; required' },
    { s => 'tab|t',        d => 'Output tab-separated' },
    { s => 'time|m=m',     d => 'Time to run before exiting' },
@@ -802,6 +808,7 @@ $opt_parser->{descr} = q{extracts and saves information about the most }
                      . q{specify whether to print the output or save it in }
                      . q{a database.};
 my %opts = $opt_parser->parse();
+$dp->prop('setvars', $opts{setvars});
 
 # Process options.
 $opts{c} = $opts{p} unless defined $opts{c};
@@ -1201,6 +1208,11 @@ Makes mk-deadlock-logger express IP addresses as integers.
 
 Makes mk-deadlock-logger print results on standard output.  See L<"OUTPUT">
 for more.  By default, enables L<"--collapse"> unless you explicitly disable it.
+
+=item --setvars
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
 
 =item --source
 
