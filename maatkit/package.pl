@@ -71,7 +71,7 @@ foreach my $program ( <$dist/bin/mk-*> ) {
    die "Can't parse $line\n" unless $rest;
    print $file "\n\n=item $prog\n\n$rest See L<$prog>.";
 }
-print $file "\n\n=item maatkitdsn\n\nDocumentation on how to use DSNs; see L<maatkitdsn.";
+print $file "\n\n=item maatkitdsn\n\nDocumentation on how to use DSNs; see L<maatkitdsn>.";
 close $file;
 print `cat maatkit.tail.pod >> $dist/lib/maatkit.pm`;
 print `cat maatkitdsn.pod >> $dist/lib/maatkitdsn.pm`;
