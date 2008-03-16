@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
-# OptionParser package 1704
+# OptionParser package 1844
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -127,7 +127,7 @@ sub new {
          next unless ref $opt;
          my $key = $opt->{k};
          $option_exists{$key}++;
-         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
                                     |password|port|socket|user|host)$/x
               || $disables{$key};
          push @unused, $key unless $used{$key};
@@ -453,7 +453,7 @@ sub groups {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line ", @_, "\n";
+   print "# OptionParser:$line $PID ", @_, "\n";
 }
 
 if ( $ENV{MKDEBUG} ) {
@@ -475,12 +475,14 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 1722
+# Quoter package 1755
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
 
 package Quoter;
+
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class ) = @_;
@@ -517,7 +519,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1703
+# DSNParser package 1845
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -528,11 +530,17 @@ use DBI;
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
 
 sub new {
    my ( $class, @opts ) = @_;
    my $self = {
       opts => {
+         A => {
+            desc => 'Default character set',
+            dsn  => 'charset',
+            copy => 1,
+         },
          D => {
             desc => 'Database to use',
             dsn  => 'database',
@@ -669,7 +677,7 @@ sub get_cxn_params {
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
-                     qw(F h P S))
+                     qw(F h P S A))
          . ';mysql_read_default_group=mysql';
    }
    $ENV{MKDEBUG} && _d($dsn);
@@ -680,14 +688,28 @@ sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
    my $defaults = {
-      AutoCommit => 0,
-      RaiseError => 1,
-      PrintError => 0,
+      AutoCommit        => 0,
+      RaiseError        => 1,
+      PrintError        => 0,
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
    $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
       join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
    my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+      my $sql = "/*!40101 SET NAMES $charset*/";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+      $ENV{MKDEBUG} && _d('Enabling charset for STDOUT');
+      if ( $charset eq 'utf8' ) {
+         binmode(STDOUT, ':utf8')
+            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+      }
+      else {
+         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+      }
+   }
    $ENV{MKDEBUG} && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -702,10 +724,36 @@ sub get_dbh {
    return $dbh;
 }
 
+sub get_hostname {
+   my ( $self, $dbh ) = @_;
+   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
+      return $host;
+   }
+   my ( $hostname, $one ) = $dbh->selectrow_array(
+      'SELECT /*!50038 @@hostname, */ 1');
+   return $hostname;
+}
+
+sub disconnect {
+   my ( $self, $dbh ) = @_;
+   $ENV{MKDEBUG} && $self->print_active_handles($dbh);
+   $dbh->disconnect;
+}
+
+sub print_active_handles {
+   my ( $self, $thing, $level ) = @_;
+   $level ||= 0;
+   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+   foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
+      $self->print_active_handles->( $handle, $level + 1 );
+   }
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line ", @_, "\n";
+   print "# DSNParser:$line $PID ", @_, "\n";
 }
 
 1;
@@ -772,7 +820,6 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 
 # Some common patterns and variables
-my $MAX_ULONG = 4294967296;                   # 2^32
 my $d         = qr/(\d+)/;                    # Digit
 my $t         = qr/(\d+ \d+)/;                # Transaction ID
 my $i         = qr/((?:\d{1,3}\.){3}\d+)/;    # IP address
@@ -1002,7 +1049,7 @@ sub parse_deadlocks {
                =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n(?:/|`\.`)$n` trx id $t lock.mode (\S+)}m;
             if ( $hash->{txn_id} ) {
                my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
-               $hash->{txn_id} = $high ? ( $low + $high * $MAX_ULONG ) : $low;
+               $hash->{txn_id} = $high ? ( $low + ($high << 32) ) : $low;
             }
          }
       }
