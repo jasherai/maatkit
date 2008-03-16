@@ -41,13 +41,13 @@ is_deeply(
       P => undef,
       F => undef,
       D => undef,
-      C => undef,
+      A => undef,
    },
    'Basic DSN'
 );
 
 is_deeply(
-   $p->parse('u=a,p=b,C=utf8'),
+   $p->parse('u=a,p=b,A=utf8'),
    {  u => 'a',
       p => 'b',
       S => undef,
@@ -55,7 +55,7 @@ is_deeply(
       P => undef,
       F => undef,
       D => undef,
-      C => 'utf8',
+      A => 'utf8',
    },
    'Basic DSN with charset'
 );
@@ -74,7 +74,7 @@ is_deeply(
       F => undef,
       D => undef,
       t => undef,
-      C => undef,
+      A => undef,
    },
    'DSN with an extra option'
 );
@@ -89,7 +89,7 @@ is_deeply(
       S => 'bar',
       t => undef,
       u => 'a',
-      C => undef,
+      A => undef,
    },
    'DSN with defaults'
 );
@@ -121,7 +121,7 @@ is ($p->usage(),
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
   ===  ====  =============================================
-  C    yes   Default character set
+  A    yes   Default character set
   D    yes   Database to use
   F    yes   Only read default options from the given file
   P    yes   Port number to use for connection
@@ -144,7 +144,7 @@ is_deeply(
       S => undef,
       t => undef,
       u => undef,
-      C => undef,
+      A => undef,
    },
    'DSN with autokey'
 );
@@ -161,7 +161,7 @@ is_deeply(
       S => 'bar',
       t => undef,
       u => 'a',
-      C => undef,
+      A => undef,
    },
    'DSN with defaults and an autokey'
 );
@@ -171,7 +171,7 @@ is ($p->usage(),
 DSN syntax is key=value[,key=value...]  Allowable DSN keys:
   KEY  COPY  MEANING
   ===  ====  =============================================
-  C    yes   Default character set
+  A    yes   Default character set
   D    yes   Database to use
   F    yes   Only read default options from the given file
   P    yes   Port number to use for connection
@@ -204,7 +204,7 @@ is_deeply (
    [
       $p->get_cxn_params(
          $p->parse(
-            'u=a,p=b,C=foo',
+            'u=a,p=b,A=foo',
             { D => 'foo', h => 'me' },
             { S => 'bar', h => 'host' } ))
    ],
@@ -217,7 +217,7 @@ is_deeply (
 );
 
 # Make sure we can connect to MySQL with a charset
-my $d = $p->parse('h=127.0.0.1,C=utf8');
+my $d = $p->parse('h=127.0.0.1,A=utf8');
 my $dbh = $p->get_dbh($p->get_cxn_params($d), {});
 ok($dbh, 'Got a connection');
 $p->disconnect($dbh);

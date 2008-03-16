@@ -35,7 +35,7 @@ sub new {
    my ( $class, @opts ) = @_;
    my $self = {
       opts => {
-         C => {
+         A => {
             desc => 'Default character set',
             dsn  => 'charset',
             copy => 1,
@@ -182,7 +182,7 @@ sub get_cxn_params {
       $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
-                     qw(F h P S C))
+                     qw(F h P S A))
          . ';mysql_read_default_group=mysql';
    }
    $ENV{MKDEBUG} && _d($dsn);
