@@ -4590,7 +4590,8 @@ mk-table-sync - Synchronize MySQL tables efficiently.
 =head1 SYNOPSIS
 
 It is a good idea to back up your data and run C<mk-table-sync> with L<"--test">
-first, to see what will happen.  
+first, to see what will happen.  If you want to see which rows are different
+without changing the tables, use L<"--print"> instead of L<"--execute">.
 
 To sync db.tbl1 from host1 to host2:
 
