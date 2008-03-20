@@ -49,6 +49,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_mandir}/man1/*.1*
 %{_mandir}/man3/*.3*
 %{perl_vendorlib}/maatkit.pm
+%{perl_vendorlib}/maatkitdsn.pm
 
 
 %changelog
