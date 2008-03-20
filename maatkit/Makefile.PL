@@ -9,3 +9,7 @@ WriteMakefile(
         DBD::mysql    => 1.0,
     },
 );
+
+eval { require Time::HiRes; };
+print "Time::HiRes is needed by some utilities. Until it is installed, "
+   . "some commands will not function.\n" if $@;
