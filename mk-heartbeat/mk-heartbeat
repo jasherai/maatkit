@@ -1512,7 +1512,7 @@ sub check_delay {
       }
       else {
          # Just print the delay.
-         printf("%5d\n", $delay) unless $opts{q};
+         printf("%d\n", $delay) unless $opts{q};
       }
    }
    quit();

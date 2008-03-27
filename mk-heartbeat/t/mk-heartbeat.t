@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
 use DBI;
-use Test::More tests => 8;
+use Test::More tests => 9;
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $output;
@@ -27,6 +27,12 @@ SKIP: {
    # Run one instance with --replace to create the table.
    `perl ../mk-heartbeat -D test --update --replace -m 1s`;
    ok($dbh->selectrow_array('select id from test.heartbeat'), 'Record is there');
+
+   # Check the delay and ensure it is only a single line with nothing but the
+   # delay (no leading whitespace or anything).
+   $output = `perl ../mk-heartbeat -D test --check`;
+   chomp $output;
+   like($output, qr/^\d+$/, 'Output is just a number');
 
    # Start one daemonized instance to update it
    `perl ../mk-heartbeat --daemonize -D test --update -m 5s`;
