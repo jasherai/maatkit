@@ -522,7 +522,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1868
+# DSNParser package 1891
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -714,7 +714,7 @@ sub get_dbh {
       }
    }
    my $setvars = $self->prop('setvars');
-   if ( $setvars ) {
+   if ( $cxn_string =~ m/mysql/i && $setvars ) {
       my $sql = "SET $setvars";
       $ENV{MKDEBUG} && _d("$dbh: $sql");
       $dbh->do($sql);
