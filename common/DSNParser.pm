@@ -217,9 +217,9 @@ sub get_dbh {
          binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
       }
    }
-   # If setvars exists, set them
+   # If setvars exists and it's MySQL connection, set them
    my $setvars = $self->prop('setvars');
-   if ( $setvars ) {
+   if ( $cxn_string =~ m/mysql/i && $setvars ) {
       my $sql = "SET $setvars";
       $ENV{MKDEBUG} && _d("$dbh: $sql");
       $dbh->do($sql);
