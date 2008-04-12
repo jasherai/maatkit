@@ -57,3 +57,16 @@ for file in `ssh $SRC "du $SDIR/*" | grep -v "'$EXCL'" | sort -nr | awk '{print 
    let port=port+1;
    copyfile $file $port;
 done
+
+Progress calculations:
+   *  Look at PROCESSLIST, grab the query, EXPLAIN it, watch handlers, do the
+   * the problem is really it only works for some query types 
+   * If second query would be Ref for example you would not find it
+   because you can't see first table Ref from second table Ref
+   * But in particular case of FT Scan + bunch of refs it is very helpful
+   * Yes, true: but, you could calculate from the rows and access types
+   how many of each type of Handler operation you expect to see for the whole
+   query, right?
+   * It would be very hard to do for subqueries, though :)
+   * what about progress for mysqldump ?
+   * and reverse - mysql < from_dump.sql
