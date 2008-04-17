@@ -70,3 +70,5 @@ Progress calculations:
    * It would be very hard to do for subqueries, though :)
    * what about progress for mysqldump ?
    * and reverse - mysql < from_dump.sql
+
+Make visual-explain tell which columns are used in the index.
