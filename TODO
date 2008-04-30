@@ -22,6 +22,9 @@ Log parsing and coloring:
    Swallow a log file and output only the selected fields.  This could be
    piped to a colorizer or pushed into mk-query-profiler.
 
+   We need to update our slow-log tool to tell us the most recent time a query
+   was executed
+
 A script to copy files in parallel with netcat.
 
 #!/bin/bash
