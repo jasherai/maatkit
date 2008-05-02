@@ -75,3 +75,12 @@ Progress calculations:
    * and reverse - mysql < from_dump.sql
 
 Make visual-explain tell which columns are used in the index.
+
+Advisor:
+   mk-advisor
+   * Look at 32-bit OS on 64-bit CPU.
+   * Look for anomalies in variables/status
+   * tell how many DBs, how many tables, total data/index size, summary of
+     storage engines.
+   * look for anonymous users
+   * aggregate a few processlist snapshots.
