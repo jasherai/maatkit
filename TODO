@@ -82,5 +82,10 @@ Advisor:
    * Look for anomalies in variables/status
    * tell how many DBs, how many tables, total data/index size, summary of
      storage engines.
+     * produce a detailed schema report showing size, index size, engine, number
+       of indexes, number of columns etc for each table.  Maybe also mention
+       unusual data types in the table, or a summary of the data types.
    * look for anonymous users
    * aggregate a few processlist snapshots.
+   * look for weird values of all status and variables, like innodb_flush_method
+     not set to O_DIRECT.
