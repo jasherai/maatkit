@@ -91,3 +91,32 @@ Advisor:
      not set to O_DIRECT.
    * Look for authenticating connections, extract the hostname, try to reverse
      lookup the DNS, check for skip-name-resolve.
+   * look for innoDB free space vs. real space on disk to figure out how much is
+     used.  Compare this to config file setting for buffer pool.
+   * look at vmstat, iostat
+   * add mysqladmin -ext -i60
+   * add timestamps to all snapshots
+   * check if if key_buffer and innodb_buffer_pool too big (big % of available
+     memory or a lot of unused buffers).
+   * check redundant indexes
+   * alerts on COUNT(*) .. queries. 
+   * check if online settings out of sync with config file
+   * Info "Key Buffer May be Too Large"
+     $key_buffer_size>max($total_myisam_size,32M)
+   * How to figure out the actual physical RAM
+     <Aurimas> Baron: I would use dmidecode :)
+     <Mushu> Baron: dmesg | grep Memory   ? :)
+     <Aurimas> Baron: btw, server was booted normaly I think
+     <Mushu> cat /proc/meminfo ?
+     <Mushu> but meminfo is probably using that information anyway
+     <Aurimas> Mushu: sometimes dmesg gets full of audit messages :)
+     <Mushu> yup
+     <Mushu> boot can be often found in /var/log logs too
+     <Aurimas> Baron: regarding server - I found it booted in normal mode, but I
+     think that's default ubuntu cd boot loader behaviour anyway
+     <Baron> /proc/meminfo doesn't show the full physical RAM either
+     <Baron> Aurimas, right I forgot that...
+     <Mushu> so go with dmidecode as Aurimas said :)
+     <Aurimas> Mushu: though it typically works better if you need to know how
+     much memory is actually installed in the server (for example 32-bit OS
+     without PXE support may hide it)
