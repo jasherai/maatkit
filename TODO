@@ -25,6 +25,10 @@ Log parsing and coloring:
    We need to update our slow-log tool to tell us the most recent time a query
    was executed
 
+   Query rewriter: collapse INSERT ... VALUES (), (), (), ()..... to reduce the
+   number of VALUES lists to just one, with a (VALUES_LIST_REPEATED) token after
+   that.
+
 A script to copy files in parallel with netcat.
 
 #!/bin/bash
