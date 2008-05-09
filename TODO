@@ -124,3 +124,5 @@ Advisor:
      <Aurimas> Mushu: though it typically works better if you need to know how
      much memory is actually installed in the server (for example 32-bit OS
      without PXE support may hide it)
+   * check if MERGE tables sum up the size of their contained tables in SHOW
+     TABLE STATUS
