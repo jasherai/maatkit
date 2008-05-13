@@ -10,7 +10,6 @@ Source0:        http://prdownloads.sourceforge.net/maatkit/%{name}-%{version}.ta
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildArch:      noarch
-BuildRequires:  perl-ExtUtils-MakeMaker
 Requires:       perl-DBI >= 1.13, perl-DBD-MySQL >= 1.0, perl-TermReadKey >= 2.10
 # perl-DBI is required by perl-DBD-MySQL anyway
 
