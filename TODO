@@ -1,5 +1,12 @@
 Debugging output when daemonizing, like mk-slave-restart has.
 
+a tool to load tables/indexes into cache by the techniques Peter mentioned:
+http://www.mysqlperformanceblog.com/2008/05/01/quickly-preloading-innodb-tables-in-the-buffer-pool/
+
+Make mk-table-checksum checksum only newly inserted rows (as defined by the
+checksum table).  Make it able to read from a table that defines tables to
+checksum and the desired strategies.
+
 Add a --charset option to all tools, like mk-table-sync has.
 
 Add a --setvars option to all tools, so one can set wait_timeout etc.
@@ -126,3 +133,33 @@ Advisor:
      without PXE support may hide it)
    * check if MERGE tables sum up the size of their contained tables in SHOW
      TABLE STATUS
+   * report interesting parameters about MySQL, such as datadir
+   * check ps -eaf and look for number of MySQL instances running, report memory
+     usage, show pid file location and socket location.
+   * look for insert delayed: there will be several of these
+      *************************** 10. row ***************************
+      Id: 549
+      User: DELAYED
+      Host: localhost
+      db: policyd
+      Command: Delayed insert
+      Time: 140
+      State: Waiting for INSERT
+      Info: 
+   * Look for tables that have silly schema, like a lot of varchar(255)
+   * Use SHOW INDEX to compute indexes that are not very selective.
+   * Automatically run PROCEDURE ANALYSE on tables that look bad.
+   * Determine the thoroughness of the search by how large the DB/table is.
+   * look for this error in SHOW TABLE STATUS: Unable to open underlying table
+   * look for partitioned tables that don't have many future partitions:
+     ) ENGINE=InnoDB DEFAULT CHARSET=latin1 /*!50100 PARTITION BY RANGE
+     (YEAR(day)) (PARTITION p_2006 VALUES LESS THAN (2007) ENGINE = InnoDB,
+     PARTITION p_2007 VALUES LESS THAN (2008) ENGINE = InnoDB, PARTITION p_2008
+     VALUES LESS THAN (2009) ENGINE = InnoDB, PARTITION p_catchall VALUES LESS
+     THAN MAXVALUE ENGINE = InnoDB) */
+   * watch how much data InnoDB writes to the log files per second, recommend
+     log buffer size.
+   * aggregate the processlist by the host.
+   * report master/slave info: how many slaves are connected, what the master is
+   * report obsolete privileges (privs that refer to dbs or tables that don't
+     exist)
