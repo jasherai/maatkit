@@ -213,7 +213,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1755
+# TableChecksum package 1906
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -397,6 +397,9 @@ sub make_row_checksum {
          }
          elsif ( $type =~ m/float|double/ && $args{precision} ) {
             $result = "ROUND($result, $args{precision})";
+         }
+         elsif ( $type =~ m/varchar/ && $args{trim} ) {
+            $result = "TRIM($result)";
          }
          $result;
       }
@@ -2697,6 +2700,8 @@ my @opt_spec = (
      d => 'Print tab-separated output' },
    { s => 'tables|t=h',
      d => 'Do only this comma-separated list of tables' },
+   { s => 'trim',
+     d => 'Trim VARCHAR columns (helps when comparing 4.1 to >= 5.0)' },
    { s => 'user|u=s',
      d => 'User for login if not current user' },
    { s => 'verify|v!',
@@ -3051,6 +3056,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             sep       => $opts{s},
             replicate => $opts{R},
             precision => $opts{'float-precision'},
+            trim      => $opts{trim},
          );
 
          # ##################################################################
@@ -3860,6 +3866,16 @@ Instead of column-aligned output, print tab-separated output.
 
 Restrict checksums to this comma-separated list of tables.  Table names may be
 qualified with the database name.
+
+=item --trim
+
+This option adds a C<TRIM()> to C<VARCHAR> columns in C<BIT_XOR> and C<ACCUM>
+modes.
+
+This is useful when you don't care about the trailing space differences between
+MySQL versions which vary in their handling of trailing spaces. MySQL 5.0 and 
+later all retain trailing spaces in C<VARCHAR>, while previous versions would 
+remove them.
 
 =item --user
 
