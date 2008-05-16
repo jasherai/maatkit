@@ -2,6 +2,9 @@ Debugging output when daemonizing, like mk-slave-restart has.
 
 Integrate mk-slave-delay with mk-heartbeat.
 
+Make mk-slave-delay implement a different definition of 'delay' as per Defition
+2 in bug report #1959496.
+
 a tool to load tables/indexes into cache by the techniques Peter mentioned:
 http://www.mysqlperformanceblog.com/2008/05/01/quickly-preloading-innodb-tables-in-the-buffer-pool/
 
