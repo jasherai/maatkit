@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 43;
+   $tests = 44;
    $skipped = 2;
 }
 
@@ -355,6 +355,17 @@ is (
 );
 
 $t = $tp->parse(load_file('samples/sakila.film.sql'));
+
+like (
+   $c->make_row_checksum(
+      func      => 'SHA1',
+      table     => $t,
+      quoter    => $q,
+      trim      => 1,
+   ),
+   qr{TRIM\(`title`\)},
+   'VARCHAR column is trimmed',
+);
 
 is (
    $c->make_checksum_query(

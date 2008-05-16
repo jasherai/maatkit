@@ -221,6 +221,7 @@ sub make_xor_slices {
 # *   func      SHA1, MD5, etc
 # *   sep       (Optional) Separator for CONCAT_WS(); default #
 # *   cols      (Optional) arrayref of columns to checksum
+# *   trim      (Optional) wrap VARCHAR in TRIM() for 4.x / 5.x compatibility
 sub make_row_checksum {
    my ( $self, %args ) = @_;
    my ( $table, $quoter, $func )
@@ -243,6 +244,9 @@ sub make_row_checksum {
          }
          elsif ( $type =~ m/float|double/ && $args{precision} ) {
             $result = "ROUND($result, $args{precision})";
+         }
+         elsif ( $type =~ m/varchar/ && $args{trim} ) {
+            $result = "TRIM($result)";
          }
          $result;
       }
