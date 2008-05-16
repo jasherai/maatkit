@@ -1,5 +1,7 @@
 Debugging output when daemonizing, like mk-slave-restart has.
 
+Integrate mk-slave-delay with mk-heartbeat.
+
 a tool to load tables/indexes into cache by the techniques Peter mentioned:
 http://www.mysqlperformanceblog.com/2008/05/01/quickly-preloading-innodb-tables-in-the-buffer-pool/
 
@@ -163,3 +165,4 @@ Advisor:
    * report master/slave info: how many slaves are connected, what the master is
    * report obsolete privileges (privs that refer to dbs or tables that don't
      exist)
+   * ondisk temp tables are min(temp_table_size, heap_table_size)
