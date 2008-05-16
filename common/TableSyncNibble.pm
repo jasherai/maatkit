@@ -48,7 +48,7 @@ sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(dbh database table handler nibbler quoter struct
                         parser checksum cols vp chunksize where chunker
-                        versionparser possible_keys) ) {
+                        versionparser possible_keys trim) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
@@ -103,12 +103,14 @@ sub new {
       crc_wid   => $args{crc_wid},
       opt_slice => $args{opt_slice},
       cols      => $args{cols},
+      trim      => $args{trim},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
       table     => $args{struct},
       quoter    => $args{quoter},
       func      => $args{func},
       cols      => $args{cols},
+      trim      => $args{trim},
    );
 
    $args{state}  = 0;

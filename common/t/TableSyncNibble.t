@@ -103,6 +103,7 @@ SKIP: {
       possible_keys => [],
       versionparser => $vp,
       func          => 'FNV_64',
+      trim          => 0,
    );
 
    is (
@@ -140,6 +141,7 @@ $t = new TableSyncNibble(
    possible_keys => [],
    versionparser => $vp,
    func          => 'SHA1',
+   trim          => 0,
 );
 
 is (
