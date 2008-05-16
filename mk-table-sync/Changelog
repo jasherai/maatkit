@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Added --trim to compare pre-5.0 and 5.0+ VARCHAR values consistently.
+
 2008-03-16: version 1.0.6
 
    * --chunksize was not being converted to rowcount (bug #1902341).

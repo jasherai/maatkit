@@ -2044,7 +2044,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1755
+# TableChecksum package 1906
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2229,6 +2229,9 @@ sub make_row_checksum {
          elsif ( $type =~ m/float|double/ && $args{precision} ) {
             $result = "ROUND($result, $args{precision})";
          }
+         elsif ( $type =~ m/varchar/ && $args{trim} ) {
+            $result = "TRIM($result)";
+         }
          $result;
       }
       grep {
@@ -2340,7 +2343,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1868
+# TableSyncChunk package 1906
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2357,7 +2360,7 @@ sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(dbh database table handler chunker quoter struct
                         checksum cols vp chunksize where possible_keys
-                        dumper) ) {
+                        dumper trim) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
@@ -2421,12 +2424,14 @@ sub new {
       crc_wid   => $args{crc_wid},
       opt_slice => $args{opt_slice},
       cols      => $args{cols},
+      trim      => $args{trim},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
       table     => $args{struct},
       quoter    => $args{quoter},
       func      => $args{func},
       cols      => $args{cols},
+      trim      => $args{trim},
    );
 
    $args{state} = 0;
@@ -2549,7 +2554,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 1755
+# TableSyncNibble package 1906
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2566,7 +2571,7 @@ sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(dbh database table handler nibbler quoter struct
                         parser checksum cols vp chunksize where chunker
-                        versionparser possible_keys) ) {
+                        versionparser possible_keys trim) ) {
       die "I need a $arg argument" unless defined $args{$arg};
    }
 
@@ -2617,12 +2622,14 @@ sub new {
       crc_wid   => $args{crc_wid},
       opt_slice => $args{opt_slice},
       cols      => $args{cols},
+      trim      => $args{trim},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
       table     => $args{struct},
       quoter    => $args{quoter},
       func      => $args{func},
       cols      => $args{cols},
+      trim      => $args{trim},
    );
 
    $args{state}  = 0;
@@ -2804,7 +2811,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1869
+# TableSyncer package 1906
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2853,7 +2860,7 @@ sub sync_table {
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser master_slave func dumper) )
+      nibbler parser master_slave func dumper trim) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -2928,6 +2935,7 @@ sub sync_table {
       possible_keys => [],
       versionparser => $args{versionparser},
       func          => $args{func},
+      trim          => $args{trim},
    );
 
    $self->lock_and_wait(%args, lock_level => 2);
@@ -4118,6 +4126,8 @@ my @opt_spec = (
      d => 'Keep going if --wait fails' },
    { s => 'transaction!',
      d => 'Use transactions INSTEAD OF locking tables' },
+   { s => 'trim',
+     d => 'Trim VARCHAR columns (helps when comparing 4.1 to >= 5.0)' },
    { s => 'utf8!',
      d => 'Enable UTF-8 options in Perl and MySQL (default)' },
    { s => 'verbose|v',
@@ -4931,6 +4941,16 @@ UPDATE>, you must specify --transaction explicitly.
 If you don't specify --transaction explicitly, C<mk-table-sync> will decide on
 a per-table basis whether to use transactions or table locks.  It currently
 uses transactions on InnoDB tables, and table locks on all others.
+
+=item --trim
+
+This option adds a C<TRIM()> to C<VARCHAR> columns in C<BIT_XOR> and C<ACCUM>
+modes.
+
+This is useful when you don't care about the trailing space differences between
+MySQL versions which vary in their handling of trailing spaces. MySQL 5.0 and 
+later all retain trailing spaces in C<VARCHAR>, while previous versions would 
+remove them.
 
 =item --utf8
 
