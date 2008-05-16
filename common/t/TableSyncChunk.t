@@ -99,6 +99,7 @@ SKIP: {
       possible_keys => [],
       func          => 'FNV_64',
       dumper        => $du,
+      trim          => 0,
    );
 
    is (
@@ -133,6 +134,7 @@ $t = new TableSyncChunk(
    func      => 'SHA1',
    possible_keys => [],
    dumper        => $du,
+   trim          => 0,
 );
 
 is_deeply(
@@ -161,6 +163,7 @@ $t = new TableSyncChunk(
    possible_keys => [],
    func      => 'SHA1',
    dumper    => $du,
+   trim      => 0,
 );
 
 is_deeply(
@@ -217,6 +220,7 @@ $t = new TableSyncChunk(
    possible_keys => [],
    func      => 'SHA1',
    dumper    => $du,
+   trim      => 0,
 );
 
 throws_ok(

@@ -291,6 +291,7 @@ sub make_row_checksum {
 # *   cols      (Optional) see make_row_checksum()
 # *   sep       (Optional) see make_row_checksum()
 # *   replicate (Optional) generate query to REPLACE into this table.
+# *   trim      (Optional) see make_row_checksum().
 sub make_checksum_query {
    my ( $self, %args ) = @_;
    my ( $dbname, $tblname, $table, $quoter, $algorithm,

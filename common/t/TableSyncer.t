@@ -124,6 +124,7 @@ my %args = (
    parser        => $tp,
    master_slave  => $ms,
    func          => 'SHA1',
+   trim          => 0,
 );
 
 # This should die because of a bad algorithm.

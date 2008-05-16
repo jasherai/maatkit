@@ -73,7 +73,7 @@ sub sync_table {
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser master_slave func dumper) )
+      nibbler parser master_slave func dumper trim) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -153,6 +153,7 @@ sub sync_table {
       possible_keys => [],
       versionparser => $args{versionparser},
       func          => $args{func},
+      trim          => $args{trim},
    );
 
    $self->lock_and_wait(%args, lock_level => 2);
