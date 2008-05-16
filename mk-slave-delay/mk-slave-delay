@@ -940,8 +940,8 @@ while (                       # Quit if:
       # again.
       if ( $now >= $next_start && defined $pos ) {
          my $position = $positions[$pos];
-         if ( $position->[$FILE] ne $status->{master_log_file}
-            || $position->[$POS] != $status->{read_master_log_pos} )
+         if ( $position->[$FILE] ne $status->{relay_master_log_file}
+            || $position->[$POS] != $status->{exec_master_log_pos} )
          {
             $slave->do(
                "START SLAVE SQL_THREAD UNTIL /*$position->[$TS]*/ "
