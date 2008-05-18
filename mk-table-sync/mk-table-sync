@@ -4137,6 +4137,7 @@ my @opt_spec = (
    { s => 'where|W=s',
      d => 'WHERE clause to restrict syncing to part of the table' },
 );
+# Satisfy picky cmdline parsing: $opts{trim}
 
 my $du         = new MySQLDump();
 my $tp         = new TableParser();
@@ -4452,6 +4453,14 @@ sub sync_a_table {
       $args{dst}->{dbh}      ||= get_cxn($args{dst});
       $args{src}->{misc_dbh} ||= get_cxn($args{src});
 
+      # Disable auto-increment on zero (bug #1919897).
+      my $no_auto_val_sql = '/*!40101 SET @@SQL_MODE := CONCAT(@@SQL_MODE, '
+         . '",NO_AUTO_VALUE_ON_ZERO")*/';
+      foreach my $dbh ( $args{src}->{dbh}, $args{dst}->{dbh}, $args{src}->{misc_dbh} ) {
+         $ENV{MKDEBUG} && _d("$dbh: $no_auto_val_sql");
+         $dbh->do($no_auto_val_sql);
+      }
+
       my $tbl_struct = $tp->parse(
          $du->get_create_table($args{src}->{dbh}, $q, @args{qw(src_db src_tbl)}));
       my @possible_keys = $tp->find_possible_keys(
@@ -4500,6 +4509,7 @@ sub sync_a_table {
          test          => $opts{test} || 0,
          tbl_struct    => $tbl_struct,
          timeoutok     => $opts{timeoutok} || 0,
+         trim          => $opts{trim} || 0,
          versionparser => $vp,
          wait          => $opts{w} || 0,
          where         => $args{where} || '',
