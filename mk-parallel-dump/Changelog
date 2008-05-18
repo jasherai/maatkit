@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * Added --stopslave to run STOP SLAVE during the dump (bug #1923627).
    * --ignoreengine worked only when --tab was specified (bug #1851461).
 
 2008-03-16: version 1.0.7
