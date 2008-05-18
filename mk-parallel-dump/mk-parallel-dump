@@ -1844,6 +1844,7 @@ my %opts = (
    gzip     => $OSNAME =~ m/Win32/ ? 0 : 1,
 );
 my @mysqldump_args;
+my @mysqldump_args_nodata;
 my $dp = new DSNParser();
 my $q  = new Quoter();
 my $tp = new TableParser();
@@ -2032,7 +2033,8 @@ my @conn_params = (
 # ############################################################################
 if ( !@ARGV && !$opts{T} ) {
    # Choose sensible defaults.  Inspect mysqldump --help to see what options
-   # it accepts.
+   # it accepts.  Add --no-data by default, but then remove it for the ordinary
+   # mysqldump commands.  This is used to implement --ignoreengine
    my $help = `mysqldump --help`;
    if ( $CHILD_ERROR ) {
       exit(1);
@@ -2040,7 +2042,7 @@ if ( !@ARGV && !$opts{T} ) {
    $help =~ s/\A.*?\n----//s;
    my %is_opt = map { $_ => 1 } $help =~ m/^(\w[a-z_-]+)/gm;
    my %skip   = map { $_ => 1 } qw(lock-all-tables lock-tables);
-   @mysqldump_args = (
+   @mysqldump_args_nodata = (
       qw(mysqldump),
       @conn_params,
       (
@@ -2055,6 +2057,7 @@ if ( !@ARGV && !$opts{T} ) {
             comments
             complete-insert
             create-options
+            no-data
             disable-keys
             extended-insert
             quick
@@ -2068,16 +2071,17 @@ if ( !@ARGV && !$opts{T} ) {
       qw( '%D' '%N' ),
    );
    if ( $opts{C} ) {
-      push @mysqldump_args, qw( --where '%W' );
+      push @mysqldump_args_nodata, qw( --where '%W' );
    }
    if ( $opts{gzip} ) {
-      push @mysqldump_args, qw( | gzip --force --fast --stdout - > ),
+      push @mysqldump_args_nodata, qw( | gzip --force --fast --stdout - > ),
          '"' . filename('%S', '%D', '%N.%6C.sql.gz') . '"';
    }
    else {
-      push @mysqldump_args,
+      push @mysqldump_args_nodata,
          '--result-file="' . filename('%S', '%D', '%N.%6C.sql') . '"';
    }
+   @mysqldump_args = grep { $_ !~ m/no-data/ } @mysqldump_args_nodata;
 }
 
 else {
@@ -2659,7 +2663,8 @@ sub do_table {
          makedir(interp($todo, filename('%S', '%D', '%N.%6C.sql')));
       }
 
-      my @args = @mysqldump_args;
+      my @args
+         = $opts{E}->{$todo->{E}} ? @mysqldump_args_nodata : @mysqldump_args;
       # Do a DROP/CREATE only for the first chunk.
       if ( !@ARGV && $todo->{C} == 0 ) {
          @args = grep { $_ !~ m/--no-create-info/ } @args;
