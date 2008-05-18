@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 21;
+use Test::More tests => 23;
 
 my $output;
 
@@ -27,6 +27,13 @@ SKIP: {
    `mysql -e 'insert into foo.bar(a) values(123)'`;
    `mysql -e 'create table foo.mrg(a int) engine=merge union=(foo.bar)'`;
    $output = `perl ../mk-parallel-dump -C 100 --basedir /tmp -T --d foo`;
+   ok(-f '/tmp/default/foo/mrg.000000.sql.gz', 'Merge table was dumped');
+   $output = `zgrep 123 /tmp/default/foo/mrg.000000.sql.gz`;
+   chomp $output;
+   ok(!-f '/tmp/default/foo/mrg.000000.txt.gz',
+      'No tab-delim file found, so no data dumped');
+   # And again, without --tab
+   $output = `perl ../mk-parallel-dump -C 100 --basedir /tmp --d foo`;
    ok(-f '/tmp/default/foo/mrg.000000.sql.gz', 'Merge table was dumped');
    $output = `zgrep 123 /tmp/default/foo/mrg.000000.sql.gz`;
    chomp $output;
