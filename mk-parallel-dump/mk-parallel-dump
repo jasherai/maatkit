@@ -1932,6 +1932,8 @@ my @opt_spec = (
       d => 'Set these MySQL variables (default wait_timeout=10000)' },
    {  s => 'socket|S=s',
       d => 'Socket file to use for connection' },
+   {  s => 'stopslave',
+      d => 'Issue STOP SLAVE on server before dumping data' },
    {  s => 'tab|T',
       d => 'Dump tab-separated (sets --umask 0)' },
    {  s => 'tables|t=h',
@@ -2111,6 +2113,22 @@ $SIG{CHLD} = sub {
       $exited_children{$kid}->{exit_time}   = time();
    }
 };
+
+# ############################################################################
+# Stop the slave if desired.
+# ############################################################################
+if ( $opts{stopslave} && !$opts{test} ) {
+   my $sql = 'SHOW STATUS LIKE "Slave_running"';
+   $ENV{MKDEBUG} && _d($sql);
+   my ($slave_running) = $dbh->selectrow_array($sql);
+   $ENV{MKDEBUG} && _d($slave_running);
+   if ( $slave_running ne 'ON' ) {
+      die "This server is not a running slave";
+   }
+   $sql = 'STOP SLAVE';
+   $ENV{MKDEBUG} && _d($sql);
+   $dbh->do($sql);
+}
 
 # ############################################################################
 # Lock the whole server if desired.
@@ -2474,6 +2492,16 @@ if ( !$opts{test} ) {
    $ENV{MKDEBUG} && _d($sql);
    $dbh->do($sql);
 }
+
+# ############################################################################
+# Restart the slave if desired.
+# ############################################################################
+if ( $opts{stopslave} && !$opts{test} ) {
+   my $sql = 'START SLAVE';
+   $ENV{MKDEBUG} && _d($sql);
+   $dbh->do($sql);
+}
+
 $dbh->commit;
 $dbh->disconnect;
 
@@ -3184,6 +3212,17 @@ These will be included in a C<SET> command.
 =item --socket
 
 Socket file to use for connection.
+
+=item --stopslave
+
+Issue C<STOP SLAVE> on server before dumping data.  This ensures that the data
+is not changing during the dump.  Issues C<START SLAVE> after the dump is
+complete.
+
+If the slave is not running, throws an error and exits.  This is to prevent
+possibly bad things from happening if the slave is not running because of a
+problem, or because someone intentionally stopped the slave for maintenance or
+some other purpose.
 
 =item --tab
 
