@@ -2070,18 +2070,20 @@ if ( !@ARGV && !$opts{T} ) {
             no-create-info
          )
       ),
-      qw( '%D' '%N' ),
+      qw( %D %N ),
    );
    if ( $opts{C} ) {
-      push @mysqldump_args_nodata, qw( --where '%W' );
+      push @mysqldump_args_nodata, qw( --where %W );
    }
    if ( $opts{gzip} ) {
-      push @mysqldump_args_nodata, qw( | gzip --force --fast --stdout - > ),
-         '"' . filename('%S', '%D', '%N.%6C.sql.gz') . '"';
+      push @mysqldump_args_nodata,
+         qw( | gzip --force --fast --stdout - > ),
+         filename('%S', '%D', '%N.%6C.sql.gz');
    }
    else {
       push @mysqldump_args_nodata,
-         '--result-file="' . filename('%S', '%D', '%N.%6C.sql') . '"';
+         qw(--result-file),
+         filename('%S', '%D', '%N.%6C.sql');
    }
    @mysqldump_args = grep { $_ !~ m/no-data/ } @mysqldump_args_nodata;
 }
@@ -2676,7 +2678,7 @@ sub do_table {
          }
          if ( $opts{gzip} ) {
             $exit_status = system_call(
-               'gzip', '--force', '--fast', qq{"$filename.txt"});
+               'gzip', '--force', '--fast', "$filename.txt");
          }
       }
    }
@@ -2734,14 +2736,34 @@ sub filename {
    }
 }
 
+# This tries to be a 99% solution by quoting Windows arguments with double
+# quotes, and everything else with single quotes. TODO: this does not handle
+# embedded single quotes on Unix or double quotes on Windows.
+# Unix: hell'o is 'hell'\''o'
+sub make_shell_command {
+   my @cmd = @_;
+   my $char = $OSNAME =~ m/MSWin/ ? q{"} : q{'};
+   map {
+      # Don't quote every argument.  We need at least the > and | not to be
+      # quoted for normal operation, and option names should not be quoted.
+      if ( $_ =~ m/[^a-z0-9_.><|-]/ ) {
+         $char . $_ . $char;
+      }
+      else {
+         $_;
+      }
+   } @cmd;
+}
+
 sub system_call {
    my ( @cmd ) = @_;
    my $exit_status = 0;
+   my $cmd         = join(' ', make_shell_command(@cmd));
    if ( $opts{test} ) {
-      print join(' ', @cmd), "\n";
+      print $cmd, "\n";
    }
    else {
-      $exit_status = system(join(' ', @cmd));
+      $exit_status = system($cmd);
       # Must right-shift to get the actual exit status of the command.
       # Otherwise the upstream exit() call that's about to happen will get a
       # larger value than it likes, and will just report zero to waitpid().
