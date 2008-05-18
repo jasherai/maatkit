@@ -2024,6 +2024,11 @@ the Maatkit tools:
 Please use the Sourceforge bug tracker, forums, and mailing lists to request
 support or report bugs: L<http://sourceforge.net/projects/maatkit/>.
 
+Please include the complete command-line used to reproduce the problem you are
+seeing, the version of all MySQL servers involved, the complete output of the
+tool when run with L<"--version">, and if possible, debugging output produced by
+running with the C<MKDEBUG=1> environment variable.
+
 =head1 SYSTEM REQUIREMENTS
 
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
