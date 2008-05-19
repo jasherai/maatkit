@@ -24,6 +24,9 @@ package MasterSlave;
 
 use English qw(-no_match_vars);
 use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Indent    = 0;
 
 sub new {
    bless {}, shift;
@@ -123,7 +126,7 @@ sub find_slave_hosts {
       }
 
       my $sql = 'SHOW PROCESSLIST';
-      $ENV{MKDEBUG} && _d($sql);
+      $ENV{MKDEBUG} && _d($dbh, $sql);
       @slaves =
          map  {
             my $slave        = $dsn_parser->parse("h=$_", $dsn);
@@ -155,7 +158,7 @@ sub find_slave_hosts {
    # lots of cruft in SHOW SLAVE HOSTS.
    if ( !@slaves ) {
       my $sql = 'SHOW SLAVE HOSTS';
-      $ENV{MKDEBUG} && _d($sql);
+      $ENV{MKDEBUG} && _d($dbh, $sql);
       @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
 
       # Convert SHOW SLAVE HOSTS into DSN hashes.
@@ -198,7 +201,7 @@ sub get_slave_status {
    if ( !$self->{not_a_slave}->{$dbh} ) {
       my $sth = $self->{sths}->{$dbh}->{SLAVE_STATUS}
             ||= $dbh->prepare('SHOW SLAVE STATUS');
-      $ENV{MKDEBUG} && _d('SHOW SLAVE STATUS');
+      $ENV{MKDEBUG} && _d($dbh, 'SHOW SLAVE STATUS');
       $sth->execute();
       my ($ss) = @{$sth->fetchall_arrayref({})};
 
@@ -218,7 +221,7 @@ sub get_master_status {
    if ( !$self->{not_a_master}->{$dbh} ) {
       my $sth = $self->{sths}->{$dbh}->{MASTER_STATUS}
             ||= $dbh->prepare('SHOW MASTER STATUS');
-      $ENV{MKDEBUG} && _d('SHOW MASTER STATUS');
+      $ENV{MKDEBUG} && _d($dbh, 'SHOW MASTER STATUS');
       $sth->execute();
       my ($ms) = @{$sth->fetchall_arrayref({})};
 
@@ -244,7 +247,7 @@ sub wait_for_master {
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
-      $ENV{MKDEBUG} && _d($query);
+      $ENV{MKDEBUG} && _d($slave, $query);
       ($result) = $slave->selectrow_array($query);
       my $stat = defined $result ? $result : 'NULL';
       if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
@@ -263,7 +266,7 @@ sub stop_slave {
    my ( $self, $dbh ) = @_;
    my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
          ||= $dbh->prepare('STOP SLAVE');
-   $ENV{MKDEBUG} && _d($sth->{Statement});
+   $ENV{MKDEBUG} && _d($dbh, $sth->{Statement});
    $sth->execute();
 }
 
@@ -274,13 +277,13 @@ sub start_slave {
       # Just like with CHANGE MASTER TO, you can't quote the position.
       my $sql = "START SLAVE UNTIL MASTER_LOG_FILE='$pos->{file}', "
               . "MASTER_LOG_POS=$pos->{position}";
-      $ENV{MKDEBUG} && _d($sql);
+      $ENV{MKDEBUG} && _d($dbh, $sql);
       $dbh->do($sql);
    }
    else {
       my $sth = $self->{sths}->{$dbh}->{START_SLAVE}
             ||= $dbh->prepare('START SLAVE');
-      $ENV{MKDEBUG} && _d($sth->{Statement});
+      $ENV{MKDEBUG} && _d($dbh, $sth->{Statement});
       $sth->execute();
    }
 }
@@ -340,10 +343,11 @@ sub change_master_to {
    # Don't prepare a $sth because CHANGE MASTER TO doesn't like quotes around
    # port numbers, etc.  It's possible to specify the bind type, but it's easier
    # to just not use a prepared statement.
+   $ENV{MKDEBUG} && _d(Dumper($master_dsn), Dumper($master_pos));
    my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
       . "MASTER_PORT= $master_dsn->{P}, MASTER_LOG_FILE='$master_pos->{file}', "
       . "MASTER_LOG_POS=$master_pos->{position}";
-   $ENV{MKDEBUG} && _d($sql);
+   $ENV{MKDEBUG} && _d($dbh, $sql);
    $dbh->do($sql);
 }
 
@@ -545,7 +549,7 @@ sub slave_is_running {
 sub has_slave_updates {
    my ( $self, $dbh ) = @_;
    my $sql = q{SHOW VARIABLES LIKE 'log_slave_updates'};
-   $ENV{MKDEBUG} && _d($sql);
+   $ENV{MKDEBUG} && _d($dbh, $sql);
    my ($name, $value) = $dbh->selectrow_array($sql);
    return $value && $value =~ m/^(1|ON)$/;
 }
