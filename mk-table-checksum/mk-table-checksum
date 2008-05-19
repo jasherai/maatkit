@@ -512,7 +512,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1844
+# OptionParser package 1921
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -950,6 +950,8 @@ if ( $ENV{MKDEBUG} ) {
    printf("# %s  Ver %s Distrib %s Changeset %s line %d\n",
       $PROGRAM_NAME, ($main::VERSION || ''), ($main::DISTRIB || ''),
       ($main::SVN_REV || ''), __LINE__);
+   print('# Arguments: ',
+      join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
 1;
@@ -2124,7 +2126,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1823
+# MasterSlave package 1919
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2133,6 +2135,9 @@ package MasterSlave;
 
 use English qw(-no_match_vars);
 use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Indent    = 0;
 
 sub new {
    bless {}, shift;
@@ -2205,7 +2210,7 @@ sub find_slave_hosts {
       }
 
       my $sql = 'SHOW PROCESSLIST';
-      $ENV{MKDEBUG} && _d($sql);
+      $ENV{MKDEBUG} && _d($dbh, $sql);
       @slaves =
          map  {
             my $slave        = $dsn_parser->parse("h=$_", $dsn);
@@ -2231,7 +2236,7 @@ sub find_slave_hosts {
 
    if ( !@slaves ) {
       my $sql = 'SHOW SLAVE HOSTS';
-      $ENV{MKDEBUG} && _d($sql);
+      $ENV{MKDEBUG} && _d($dbh, $sql);
       @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
 
       if ( @slaves ) {
@@ -2267,7 +2272,7 @@ sub get_slave_status {
    if ( !$self->{not_a_slave}->{$dbh} ) {
       my $sth = $self->{sths}->{$dbh}->{SLAVE_STATUS}
             ||= $dbh->prepare('SHOW SLAVE STATUS');
-      $ENV{MKDEBUG} && _d('SHOW SLAVE STATUS');
+      $ENV{MKDEBUG} && _d($dbh, 'SHOW SLAVE STATUS');
       $sth->execute();
       my ($ss) = @{$sth->fetchall_arrayref({})};
 
@@ -2286,7 +2291,7 @@ sub get_master_status {
    if ( !$self->{not_a_master}->{$dbh} ) {
       my $sth = $self->{sths}->{$dbh}->{MASTER_STATUS}
             ||= $dbh->prepare('SHOW MASTER STATUS');
-      $ENV{MKDEBUG} && _d('SHOW MASTER STATUS');
+      $ENV{MKDEBUG} && _d($dbh, 'SHOW MASTER STATUS');
       $sth->execute();
       my ($ms) = @{$sth->fetchall_arrayref({})};
 
@@ -2309,7 +2314,7 @@ sub wait_for_master {
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
-      $ENV{MKDEBUG} && _d($query);
+      $ENV{MKDEBUG} && _d($slave, $query);
       ($result) = $slave->selectrow_array($query);
       my $stat = defined $result ? $result : 'NULL';
       if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
@@ -2327,7 +2332,7 @@ sub stop_slave {
    my ( $self, $dbh ) = @_;
    my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
          ||= $dbh->prepare('STOP SLAVE');
-   $ENV{MKDEBUG} && _d($sth->{Statement});
+   $ENV{MKDEBUG} && _d($dbh, $sth->{Statement});
    $sth->execute();
 }
 
@@ -2336,13 +2341,13 @@ sub start_slave {
    if ( $pos ) {
       my $sql = "START SLAVE UNTIL MASTER_LOG_FILE='$pos->{file}', "
               . "MASTER_LOG_POS=$pos->{position}";
-      $ENV{MKDEBUG} && _d($sql);
+      $ENV{MKDEBUG} && _d($dbh, $sql);
       $dbh->do($sql);
    }
    else {
       my $sth = $self->{sths}->{$dbh}->{START_SLAVE}
             ||= $dbh->prepare('START SLAVE');
-      $ENV{MKDEBUG} && _d($sth->{Statement});
+      $ENV{MKDEBUG} && _d($dbh, $sth->{Statement});
       $sth->execute();
    }
 }
@@ -2393,10 +2398,11 @@ sub catchup_to_same_pos {
 
 sub change_master_to {
    my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
+   $ENV{MKDEBUG} && _d(Dumper($master_dsn), Dumper($master_pos));
    my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
       . "MASTER_PORT= $master_dsn->{P}, MASTER_LOG_FILE='$master_pos->{file}', "
       . "MASTER_LOG_POS=$master_pos->{position}";
-   $ENV{MKDEBUG} && _d($sql);
+   $ENV{MKDEBUG} && _d($dbh, $sql);
    $dbh->do($sql);
 }
 
@@ -2559,7 +2565,7 @@ sub slave_is_running {
 sub has_slave_updates {
    my ( $self, $dbh ) = @_;
    my $sql = q{SHOW VARIABLES LIKE 'log_slave_updates'};
-   $ENV{MKDEBUG} && _d($sql);
+   $ENV{MKDEBUG} && _d($dbh, $sql);
    my ($name, $value) = $dbh->selectrow_array($sql);
    return $value && $value =~ m/^(1|ON)$/;
 }
@@ -2621,6 +2627,9 @@ package main;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use Time::HiRes qw(gettimeofday sleep);
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
 
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -2868,8 +2877,9 @@ if ( $opts{v} && @hosts > 1 ) {
    my @verify_sums;
    foreach my $host ( @hosts ) {
       my $dbh = get_cxn($host, ($opts{d} ? keys %{$opts{d}} : '' ));
-      my $cks = $dbh->selectall_arrayref(
-         "SELECT MD5(CONCAT_WS(',', '1', ''))")->[0]->[0];
+      my $sql = "SELECT MD5(CONCAT_WS(',', '1', ''))";
+      $ENV{MKDEBUG} && _d($dbh, $sql);
+      my $cks = $dbh->selectall_arrayref($sql)->[0]->[0];
       push @verify_sums, {
          host => $host->{h},
          ver  => $dbh->{mysql_serverinfo},
@@ -2899,7 +2909,9 @@ if ( $opts{v} && @hosts > 1 ) {
 # ############################################################################
 my ($fetch_sth, $update_sth);
 if ( $opts{R} ) {
-   $main_dbh->do("REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0");
+   my $sql = "REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0";
+   $ENV{MKDEBUG} && _d($main_dbh, $sql);
+   $main_dbh->do($sql);
 
    # Clean out the replication table globally, but only if there are no
    # filtering options.  There's also a clean-up step just before checksumming
@@ -2908,7 +2920,7 @@ if ( $opts{R} ) {
       && !grep { $opts{$_} && %{$opts{$_}} } qw(d e g E n t) )
    {
       my $del_sql = "DELETE FROM $opts{R}";
-      $ENV{MKDEBUG} && _d($del_sql);
+      $ENV{MKDEBUG} && _d($main_dbh, $del_sql);
       $main_dbh->do($del_sql);
    }
 
@@ -2955,6 +2967,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
    foreach my $table (
       $finder->find_tables($main_dbh, database => $database)
    ) {
+      $ENV{MKDEBUG} && _d("Examining $database.$table");
 
       # Skip the table in which checksums are stored.
       if ( !$opts{R} || $opts{R} ne "$database.$table" ) {
@@ -3031,11 +3044,13 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
    TABLE:
    foreach my $table ( @tables ) {
       eval {
+         $ENV{MKDEBUG} && _d("Doing $database.$table->{table}");
+         $ENV{MKDEBUG} && _d("Table: ", Dumper($table));
 
          # Clean out the replication table entry for this table.
          if ( $opts{R} && !$opts{explain} ) {
             my $del_sql = "DELETE FROM $opts{R} WHERE db=? AND tbl=?";
-            $ENV{MKDEBUG} && _d($del_sql, $database, $table->{table});
+            $ENV{MKDEBUG} && _d($main_dbh, $del_sql, $database, $table->{table});
             $main_dbh->do($del_sql, {}, $database, $table->{table});
          }
 
@@ -3070,6 +3085,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          foreach my $chunk_num ( 0 .. scalar(@{$table->{chunks}}) - 1 ) {
 
             my $chunk_start_time = gettimeofday();
+            $ENV{MKDEBUG} && _d("Starting at $chunk_start_time");
 
             if ( $opts{R} ) { # We're in --replicate mode.
                do_tbl_replicate($hosts[0], $query, $table,
@@ -3131,17 +3147,27 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                # Wait for the children to exit.
                foreach my $host ( keys %children ) {
                   my $pid = waitpid($children{$host}, 0);
+                  $ENV{MKDEBUG} && _d("Child $pid exited with $CHILD_ERROR");
                   $exit_status ||= $CHILD_ERROR >> 8;
                }
-               $main_dbh->do("UNLOCK TABLES") if ($opts{k} && !$opts{explain});
+               if ( ($opts{k} && !$opts{explain}) ) {
+                  my $sql = "UNLOCK TABLES";
+                  $ENV{MKDEBUG} && _d($main_dbh, $sql);
+                  $main_dbh->do($sql);
+               }
             }
 
+            my $chunk_stop_time = gettimeofday();
+            $ENV{MKDEBUG} && _d("Finished chunk at $chunk_stop_time");
+
             if ( $opts{sleep} && !$opts{explain} ) {
+               $ENV{MKDEBUG} && _d("Sleeping $opts{sleep}");
                sleep($opts{sleep});
             }
             elsif ( $opts{'sleep-coef'} && !$opts{explain} ) {
                my $sleep_time
-                  = (gettimeofday() - $chunk_start_time) * $opts{'sleep-coef'};
+                  = ($chunk_stop_time - $chunk_start_time) * $opts{'sleep-coef'};
+               $ENV{MKDEBUG} && _d("Sleeping $sleep_time");
                sleep($sleep_time);
             }
 
@@ -3155,6 +3181,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
 
 sub do_tbl_replicate {
    my ( $host, $query, $info, $chunk_num, $hdr, $explain ) = @_;
+   $ENV{MKDEBUG} && _d("do_tbl_replicate for $info->{table}");
    my $dbh = $main_dbh;
    $dbh->do("USE " . $q->quote($info->{database}) );
    my $cnt = 'NULL';
@@ -3203,6 +3230,7 @@ sub do_tbl_replicate {
 
 sub do_tbl {
    my ( $host, $query, $info, $chunk_num, $is_master, $hdr, $explain ) = @_;
+   $ENV{MKDEBUG} && _d("do_tbl for $info->{table}");
    my $dbh = $host->{dbh};
    $dbh->do("USE " . $q->quote($info->{database}) );
    my $cnt = 'NULL';
@@ -3281,6 +3309,7 @@ sub get_cxn {
 
 sub do_var_crc {
    my ( $dbh, $query, $info, $chunk_num, $explain ) = @_;
+   $ENV{MKDEBUG} && _d("do_var_crc for $info->{table}");
 
    my $sql = $ch->inject_chunks(
       query     => $query,
@@ -3307,6 +3336,7 @@ sub do_var_crc {
 
 sub do_checksum {
    my ( $dbh, $info, $query, $explain ) = @_;
+   $ENV{MKDEBUG} && _d("do_checksum for $info->{table}");
    if ( $opts{explain} ) {
       printf($explain, @{$info}{qw(database table)}, $query);
    }
@@ -3321,6 +3351,7 @@ sub do_checksum {
 
 sub do_count {
    my ( $dbh, $info, $chunk_num, $explain ) = @_;
+   $ENV{MKDEBUG} && _d("do_count for $info->{table}");
    my $sql = "SELECT COUNT(*) FROM "
       . $q->quote(@{$info}{qw(database table)})
       . ($opts{W} ? " WHERE $opts{W}" : '');
@@ -3353,6 +3384,11 @@ sub print_err {
       $msg .= " on $host";
    }
    print STDERR $msg, "\n";
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line $PID ", @_, "\n";
 }
 
 # ############################################################################
@@ -3530,11 +3566,11 @@ concatenated together with a separator, followed by a bitmap of each nullable
 column that is NULL (necessary because CONCAT_WS() skips NULL columns).
 
 CHECKSUM is the default.  This method uses MySQL's built-in CHECKSUM TABLE
-command.  It cannot be used before MySQL 4.1.1, and various options disable it
-as well.  It does not simultaneously count rows; that requires an extra COUNT(*)
-query.  This is a good option when you are using MyISAM tables with live
-checksums enabled; in this case both the COUNT(*) and CHECKSUM queries will run
-very quickly.
+command, which is a CRC32 behind the scenes.  It cannot be used before MySQL
+4.1.1, and various options disable it as well.  It does not simultaneously count
+rows; that requires an extra COUNT(*) query.  This is a good option when you are
+using MyISAM tables with live checksums enabled; in this case both the COUNT(*)
+and CHECKSUM queries will run very quickly.
 
 The BIT_XOR algorithm is available for MySQL 4.1.1 and newer.  It uses
 BIT_XOR(), which is order-independent, to reduce all the rows to a single
