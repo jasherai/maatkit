@@ -28,7 +28,7 @@
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 use strict;
 use warnings FATAL => 'all';
