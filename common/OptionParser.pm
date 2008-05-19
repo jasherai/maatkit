@@ -515,6 +515,8 @@ if ( $ENV{MKDEBUG} ) {
    printf("# %s  Ver %s Distrib %s Changeset %s line %d\n",
       $PROGRAM_NAME, ($main::VERSION || ''), ($main::DISTRIB || ''),
       ($main::SVN_REV || ''), __LINE__);
+   print('# Arguments: ',
+      join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
 1;
