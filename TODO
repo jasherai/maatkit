@@ -1,5 +1,7 @@
 Debugging output when daemonizing, like mk-slave-restart has.
 
+Add timezone to DSN syntax
+
 Integrate mk-slave-delay with mk-heartbeat.
 
 Make mk-slave-delay implement a different definition of 'delay' as per Defition
