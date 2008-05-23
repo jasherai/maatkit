@@ -88,6 +88,7 @@ sub parse_event {
       $ENV{MKDEBUG} && _d('type: ', $type, ' ', $line);
 
       if ( !$mode && $line =~ m/^# [A-Z]/ ) {
+         $ENV{MKDEBUG} && _d('Setting mode to slow log');
          $mode = 'slow';
       }
 
@@ -115,6 +116,7 @@ sub parse_event {
          $mode ||= 'log';
          $self->{last_line} = undef;
          if ( $type == 0 ) {
+            $ENV{MKDEBUG} && _d('Type 0');
             my ( $cmd, $arg ) = $rest =~ m/$general_log_any_line/;
             $event = {
                ts  => $ts || '',
@@ -145,6 +147,7 @@ sub parse_event {
          $ENV{MKDEBUG} && _d('Beginning of slow log event');
          $self->{last_line} = undef;
          if ( $type == 0 ) {
+            $ENV{MKDEBUG} && _d('Type 0');
             $event->{ts} = $time;
             # The User@Host might be concatenated onto the end of the Time.
             if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
@@ -166,6 +169,7 @@ sub parse_event {
       # # User@Host: root[root] @ localhost []
       elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
          if ( $type == 0 ) {
+            $ENV{MKDEBUG} && _d('Type 0');
             @{$event}{qw(user host ip)} = ($user, $host, $ip);
          }
          else {
@@ -231,10 +235,12 @@ sub parse_event {
    # If it was EOF, discard the last line so statefulness doesn't interfere with
    # the next log file.
    if ( !defined $line ) {
+      $ENV{MKDEBUG} && _d('EOF found');
       $self->{last_line} = undef;
    }
 
    if ( $mode && $mode eq 'slow' ) {
+      $ENV{MKDEBUG} && _d('Slow log, trimming');
       $event->{arg} =~ s/;\s*\Z// if $event->{arg};
    }
 
