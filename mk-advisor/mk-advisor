@@ -1050,6 +1050,18 @@ mk-advisor - Inspect, analyze, and advise on MySQL servers.
 
 =head1 DESCRIPTION
 
+=head1 DOWNLOADING
+
+You can download Maatkit from the Sourceforge website at
+L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.
+
 =head1 OPTIONS
 
 Some options are negatable by specifying them in their long form with a --no
@@ -1125,7 +1137,7 @@ The following items are unimplemented at this time:
          * used, free, swap, buffers
    Operating System
       * Flavor (win, linux,...)
-      * Release
+      * Release (/etc/*release, motd, ...)
       * 32-64 bit
       * vmstat samples
       * Disk partitions, mount points, free space, filesystems
@@ -1149,6 +1161,7 @@ The following items are unimplemented at this time:
          * How many databases
          * how many tables
          * total data/index size
+         * filefrag on data files?
          * mention top N databases by size, and top N tables by size
          * verbose option: 
             produce a detailed per-db, per-tbl schema report showing size, index
@@ -1211,6 +1224,7 @@ The following items are unimplemented at this time:
      much memory is actually installed in the server (for example 32-bit OS
      without PXE support may hide it)
    * Look for tables that have silly schema, like a lot of varchar(255)
+   * Look for non-recommended data types, like float(M,N) and BIT
    * Automatically run PROCEDURE ANALYSE on tables that look bad.
    * Determine the thoroughness of the search by how large the DB/table is.
    * watch how much data InnoDB writes to the log files per second, recommend

@@ -654,6 +654,18 @@ directly into it, it'll output results during processing.  Processing multiple
 files is slightly more expensive, and you won't see any output until they're
 all read.
 
+=head1 DOWNLOADING
+
+You can download Maatkit from the Sourceforge website at
+L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.
+
 =head1 OPTIONS
 
 =over

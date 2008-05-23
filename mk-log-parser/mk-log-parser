@@ -1199,6 +1199,18 @@ input.  When it is in L<"--aggregate"> mode, it prints results after it
 finishes processing the whole log file.  You can cancel it with C<CTRL-C> and
 it will abort processing the log file, then print the statistics.
 
+=head1 DOWNLOADING
+
+You can download Maatkit from the Sourceforge website at
+L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.
+
 =head1 OPTIONS
 
 Some options are negatable by specifying them in their long form with a --no

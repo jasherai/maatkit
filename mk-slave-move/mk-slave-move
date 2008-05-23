@@ -1447,6 +1447,18 @@ by hand, but it is tedious and error-prone to do this by hand.
 Some of the features are incomplete, including some safety checks such as not
 moving slaves that have temporary tables open.
 
+=head1 DOWNLOADING
+
+You can download Maatkit from the Sourceforge website at
+L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.
+
 =head1 OPTIONS
 
 =over
