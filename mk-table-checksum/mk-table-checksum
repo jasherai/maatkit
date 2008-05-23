@@ -3549,6 +3549,18 @@ processors and 2GB of RAM.  The tests are fully CPU-bound, and the server is
 otherwise idle.  The results are generally consistent to within a tenth of a
 second on repeated runs.
 
+=head1 DOWNLOADING
+
+You can download Maatkit from the Sourceforge website at
+L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.
+
 =head1 OPTIONS
 
 Many options are enabled by default and can be disabled by prefixing with --no.
