@@ -1600,10 +1600,13 @@ L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
 easily with a command like the following:
 
    wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
 
 Where C<toolname> can be replaced with the name (or fragment of a name) of any
 of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
