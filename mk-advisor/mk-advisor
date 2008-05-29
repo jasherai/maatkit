@@ -1157,7 +1157,7 @@ The following items are unimplemented at this time:
       * 32-64 bit
       * memory and CPU usage
       * binary location
-      * error log location
+      * error log location (detect if syslog is being used from ps)
       * config file location
       * data directory location
       * pidfile and socket location
@@ -1230,6 +1230,7 @@ The following items are unimplemented at this time:
      <Aurimas> Mushu: though meminfo typically works better if you need to know how
      much memory is actually installed in the server (for example 32-bit OS
      without PXE support may hide it)
+       * If lshw is installed, it may help
    * Look for tables that have silly schema, like a lot of varchar(255)
    * Look for non-recommended data types, like float(M,N) and BIT
    * Automatically run PROCEDURE ANALYSE on tables that look bad.
