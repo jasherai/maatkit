@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 32;
+use Test::More tests => 34;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -30,6 +30,18 @@ is(
    $q->fingerprint("select \n--bar\n foo"),
    'select foo',
    'Removes one-line comments',
+);
+
+is(
+   $q->strip_comments("select /*\nhello*/ 1"),
+   'select  1',
+   'Stripped star comment',
+);
+
+is(
+   $q->strip_comments('select /*!40101 hello*/ 1'),
+   'select /*!40101 hello*/ 1',
+   'Left version star comment',
 );
 
 is(
