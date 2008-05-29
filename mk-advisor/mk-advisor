@@ -1036,6 +1036,10 @@ $opt_parser->{descr}  = 'inspects, analyzes and advises on a MySQL server.';
 $dp->prop('setvars', $opts{setvars});
 $opt_parser->usage_or_errors(%opts);
 
+# TODO: misha start here.
+# $opts{foo} is value of cmdline option 'foo'
+
+
 # ############################################################################
 # Documentation.
 # ############################################################################
