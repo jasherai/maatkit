@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 34;
+use Test::More tests => 35;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -27,9 +27,15 @@ require "../QueryRewriter.pm";
 my $q = new QueryRewriter();
 
 is(
-   $q->fingerprint("select \n--bar\n foo"),
-   'select foo',
+   $q->strip_comments("select \n--bar\n foo"),
+   "select \n foo",
    'Removes one-line comments',
+);
+
+is(
+   $q->fingerprint("select   foo"),
+   "select foo",
+   'Collapses whitespace',
 );
 
 is(

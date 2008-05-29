@@ -42,9 +42,10 @@ sub new {
    bless {}, $class;
 }
 
+# Strips comments out of queries.
 sub strip_comments {
    my ( $self, $query ) = @_;
-   $query =~ s/^\s*(?:--|#).*//gm; # One-line comments
+   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
    $query =~ s#/\*[^!]*?\*/##gsm;   # /*..*/ comments, but not /*!version */
    return $query;
 }
@@ -54,7 +55,7 @@ sub strip_comments {
 # http://dev.mysql.com/doc/refman/5.0/en/literals.html for literal syntax.
 sub fingerprint {
    my ( $self, $query ) = @_;
-   $query = lc $self->strip_comments($query);
+   $query = lc $query;
    $query =~ s{
               (?<![\w.+-])
               [+-]?
