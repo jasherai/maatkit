@@ -1,5 +1,6 @@
 Changelog for mk-slave-prefetch:
 
+   * Add the --progress option.
    * Add more error reporting and the --errors option.
    * Abstract USE queries when fingerprinting them.
    * mysqlbinlog errors were not detected.
