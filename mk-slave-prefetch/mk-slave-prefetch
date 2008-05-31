@@ -1239,11 +1239,12 @@ my @opt_spec = (
    { s => 'permitregexp=s',    d => 'Permit queries matching '
                                   . 'this Perl regexp' },
    { s => 'port|P=i',          d => 'Port number to use for connection' },
+   { s => 'progress=i',        d => 'Print progress information every X events' },
    { s => 'rejectregexp=s',    d => 'Reject queries matching this '
                                   . 'Perl regexp' },
    { s => 'sentinel=s',        d => 'Sentinel file; default '
                                   . '/tmp/mk-slave-prefetch-sentinel' },
-   {  s => 'setvars=s',        d => 'Set these MySQL variables (default '
+   { s => 'setvars=s',         d => 'Set these MySQL variables (default '
                                   . 'wait_timeout=10000)' },
    { s => 'socket|S=s',        d => 'Socket file to use for connection' },
    { s => 'statistics',        d => 'Print statistics after exiting' },
@@ -1413,6 +1414,12 @@ eval {
             $pos  = $event->{offset} || $pos;
             $next = max($next, $pos + ($event->{end} || 0));
             $ENV{MKDEBUG} && _d("i=$i pos=$pos next=$next slave=$slave{pos}");
+            $i++;
+
+            if ( $opts{progress} && $stats{events} % $opts{progress} == 0 ) {
+               print("# $slave{file} $pos ",
+                  join(' ', map { "$_:$stats{$_}" } keys %stats), "\n");
+            }
 
             # If it's a LOAD DATA INFILE, rm the temp file.
             if (
@@ -1431,7 +1438,7 @@ eval {
             next EVENT if not_far_enough_ahead($pos);
 
             # Time to check the slave's status again?
-            if ( $pos > $slave{pos} && (++$i - $last_chk) >= $chk_int ) {
+            if ( $pos > $slave{pos} && ($i - $last_chk) >= $chk_int ) {
                %slave    = get_status($dbh);
                $last_chk = $i;
                $chk_int  = $pos <= $slave{pos} # The slave caught up to us
@@ -2001,6 +2008,11 @@ Print the transformed relay log events to standard output.
 =item --printnonrewritten
 
 Print queries that could not be transformed into C<SELECT>.
+
+=item --progress
+
+Prints the current log file and position, plus a summary of the statistics
+gathered, every N events.
 
 =item --querysampsize
 
