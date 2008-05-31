@@ -75,6 +75,7 @@ sub fingerprint {
    $query =~ s/\A\s+//;                         # Chop off leading whitespace
    $query =~ s/\s{2,}/ /g;                      # Collapse all whitespace
    $query =~ s/[\n\r\f]+/ /g;                   # Collapse newlines etc
+   $query =~ s/\Ause \S+\Z/use I/;              # Abstract the DB in USE
    $query =~ s{
                \b(in|values?)\s*\(\s*([NS])\s*,[^\)]*\)
               }
