@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 35;
+use Test::More tests => 38;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -95,6 +95,12 @@ is(
 is(
    $q->fingerprint('insert into foo(a, b, c) values(2, 4, 5)'),
    'insert into foo(a, b, c) values(N+)',
+   'VALUES lists with VALUE()',
+);
+
+is(
+   $q->fingerprint('insert into foo(a, b, c) value(2, 4, 5)'),
+   'insert into foo(a, b, c) value(N+)',
    'VALUES lists',
 );
 
@@ -122,6 +128,22 @@ is(
    ),
    'select * from  foo where a=1 and  b= 3 and  c= 5',
    'insert',
+);
+
+is(
+   $q->convert_to_select(
+      'insert ignore into foo(a, b, c) values(1, 3, 5)',
+   ),
+   'select * from  foo where a=1 and  b= 3 and  c= 5',
+   'insert ignore',
+);
+
+is(
+   $q->convert_to_select(
+      'insert into foo(a, b, c) value(1, 3, 5)',
+   ),
+   'select * from  foo where a=1 and  b= 3 and  c= 5',
+   'insert with VALUE()',
 );
 
 is(
