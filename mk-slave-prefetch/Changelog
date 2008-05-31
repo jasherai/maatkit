@@ -1,5 +1,6 @@
 Changelog for mk-slave-prefetch:
 
+   * Add more error reporting and the --errors option.
    * Abstract USE queries when fingerprinting them.
    * mysqlbinlog errors were not detected.
    * Handle queries of the form INSERT ... VALUE().

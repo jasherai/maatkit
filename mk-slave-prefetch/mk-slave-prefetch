@@ -1219,6 +1219,9 @@ my @opt_spec = (
    { s => 'database|D=s',      d => 'Database to use' },
    { s => 'defaults-file|F=s', d => 'Only read mysql options from the '
                                   . 'given file' },
+   { s => 'errors+',           d => 'Print queries that caused errors.  If '
+                                  . 'specified once, at exit; if twice in '
+                                  . 'realtime; default 0' },
    { s => 'execute|x!',        d => 'Execute transformed queries (default)' },
    { s => 'host|h=s',          d => 'Connect to host' },
    { s => 'iolag|l=z',         d => 'How many bytes to lag the I/O thread '
@@ -1304,6 +1307,7 @@ if ( $opts{stop} ) {
 # Initialize the query stats from the file on the commandline, if any.
 # ############################################################################
 my %query_stats;
+my %query_errors;
 if ( @ARGV ) {
    open my $fh, "<", $ARGV[0] or die $OS_ERROR;
    my ($type, $rest);
@@ -1532,9 +1536,12 @@ eval {
                      };
                      if ( $EVAL_ERROR ) {
                         $stats{query_error}++;
-                        if ( $ENV{MKDEBUG} ) {
+                        if ( ($opts{errors} == 2) || $ENV{MKDEBUG} ) {
                            _d($EVAL_ERROR);
                            _d("SQL was: ", $event->{arg});
+                        }
+                        elsif ( $opts{errors} == 1 ) {
+                           $query_errors{$fingerprint}++;
                         }
                      }
                   }
@@ -1626,6 +1633,17 @@ if ( $opts{statistics} ) {
          join(' ',
             (map { "$_=" . ($stats->{$_} || '0') } qw(seen exec sum avg))),
          "\n";
+   }
+
+}
+
+# Print normalized versions of the queries that caused errors.
+if ( $opts{errors} == 1 ) {
+   foreach my $query (
+      reverse sort {
+         $query_errors{$a} <=> $query_errors{$b} } keys %query_errors
+   ) {
+      print "# error $query_errors{$query} times: ", $query, "\n";
    }
 }
 
@@ -1887,6 +1905,14 @@ as required by the binary log events.
 =item --defaults-file
 
 Only read MySQL options from the given file.
+
+=item --errors
+
+Print errors that occur.  The default value is 0, which prints no errors.  If
+you specify this option once, you will see a report at the end of the script
+execution, showing the normalized queries and the number of times they were
+seen.  If you specify this option twice, you will see the errors printed out as
+they occur, but no normalized report at the end of execution.
 
 =item --execute
 
