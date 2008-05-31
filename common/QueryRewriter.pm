@@ -76,7 +76,7 @@ sub fingerprint {
    $query =~ s/\s{2,}/ /g;                      # Collapse all whitespace
    $query =~ s/[\n\r\f]+/ /g;                   # Collapse newlines etc
    $query =~ s{
-               \b(in|values)\s*\(\s*([NS])\s*,[^\)]*\)
+               \b(in|values?)\s*\(\s*([NS])\s*,[^\)]*\)
               }
               {$1($2+)}gx;      # Collapse IN() and VALUES() lists
    # Table names that end with one or two groups of digits
@@ -100,7 +100,7 @@ sub convert_to_select {
                     \A.*?
                     (?:insert|replace)\s+
                     .*?\binto\b(.*?)\(([^\)]+)\)\s*
-                    values\s*(\(.*?\))\s*
+                    values?\s*(\(.*?\))\s*
                     (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
                     \Z
                  }
