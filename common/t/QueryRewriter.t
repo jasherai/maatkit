@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 38;
+use Test::More tests => 39;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -30,6 +30,12 @@ is(
    $q->strip_comments("select \n--bar\n foo"),
    "select \n foo",
    'Removes one-line comments',
+);
+
+is(
+   $q->fingerprint("use `foo`"),
+   "use I",
+   'Removes identifier from USE',
 );
 
 is(
