@@ -1,3 +1,6 @@
+A tool (or a feature on mk-slave-prefetch or mk-heartbeat) to watch how fast a
+slave is replicating, in bytes/sec.
+
 Debugging output when daemonizing, like mk-slave-restart has.
 
 Add timezone to DSN syntax
