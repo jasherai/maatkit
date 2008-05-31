@@ -1,6 +1,9 @@
 Changelog for mk-slave-prefetch:
 
-   * Stripped comments from queries when normalizing them.
+   * Abstract USE queries when fingerprinting them.
+   * mysqlbinlog errors were not detected.
+   * Handle queries of the form INSERT ... VALUE().
+   * Strip comments from queries when normalizing them.
 
 2008-03-16: version 1.0.1
 
