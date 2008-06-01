@@ -34,7 +34,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1959
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -214,7 +214,8 @@ sub parse {
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 
@@ -350,11 +351,13 @@ sub descr {
 sub usage_or_errors {
    my ( $self, %opts ) = @_;
    if ( $opts{help} ) {
-      print $self->usage(%opts);
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
    elsif ( $self->{__error__} ) {
-      print $self->errors();
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 }
@@ -433,18 +436,99 @@ sub usage {
    return $usage;
 }
 
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
+   );
+
+   my @spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $ENV{MKDEBUG} && _d($para);
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . ( $props{default}      ? " (default $props{default})" : '' ),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @spec, @special_options;
+}
+
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
    local $OUTPUT_AUTOFLUSH = 1;
-   print $prompt;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
    my $response;
    eval {
       require Term::ReadKey;
       Term::ReadKey::ReadMode('noecho');
       chomp($response = <STDIN>);
       Term::ReadKey::ReadMode('normal');
-      print "\n";
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
    };
    if ( $EVAL_ERROR ) {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
@@ -483,7 +567,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1891
+# DSNParser package 1957
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -648,6 +732,18 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
+}
+
 sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
@@ -714,7 +810,8 @@ sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
    printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+      or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
    }
@@ -741,27 +838,8 @@ use English qw(-no_match_vars);
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   { s => 'askpass',           d => 'Prompt for password for connections' },
-   { s => 'charset|A=s',       d => 'Default character set' },
-   { s => 'database|D=s',      d => 'Database to use' },
-   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
-   { s => 'drop|d',            d => 'Add DROP USER before each user' },
-   { s => 'flush|f',           d => 'Add FLUSH PRIVILEGES' },
-   { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'ignore|i=s',        d => 'Ignore this comma-separated list of users' },
-   { s => 'only|o=s',          d => 'Only show grants for this comma-separated list of users' },
-   { s => 'password|p=s',      d => 'Password to use when connecting' },
-   { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'revoke|r',          d => 'Add REVOKE statements' },
-   { s => 'separate|s',        d => 'List each GRANT or REVOKE separately' },
-   { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'timestamp|t!',      d => 'Show dump timestamp (default)' },
-   { s => 'user|u=s',          d => 'User for login if not current user' },
-);
-
 my $dsn_parser = new DSNParser();
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{prompt} = '<options>';
 $opt_parser->{descr} = q{shows grants (user privileges) from a MySQL server.};
@@ -956,9 +1034,13 @@ second gets the latest trunk code from Subversion.
 
 =item --askpass
 
-Prompt for password for connections.
+Prompt for a password when connecting to MySQL.
 
 =item --charset
+
+short form: -A; type: string
+
+Default character set.
 
 Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
 Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
@@ -968,76 +1050,103 @@ connecting to MySQL.
 
 =item --database
 
-Database to use.
+short form: -D; type: string
+
+The database to use for the connection.
 
 =item --defaults-file
 
-Only read default options from the given file.
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --drop
 
-Adds DROP USER before each user in the output.
+short form: -d
+
+Add DROP USER before each user in the output.
 
 =item --flush
 
-Adds FLUSH PRIVILEGES after output.  You might need this on pre-4.1.1 servers
-if you want to drop a user completely.
+short form: -f
 
-=item --help
+Add FLUSH PRIVILEGES after output.
 
-Displays a help message.
+You might need this on pre-4.1.1 servers if you want to drop a user completely.
 
 =item --host
+
+short form: -h; type: string
 
 Connect to host.
 
 =item --ignore
 
+short form: -i; type: string
+
 Ignore this comma-separated list of users.
 
 =item --only
 
-Only print grants for this comma-separated list of users.
+short form: -o; type: string
+
+Only show grants for this comma-separated list of users.
 
 =item --password
+
+short form: -p; type: string
 
 Password to use when connecting.
 
 =item --port
 
+short form: -P; type: int
+
 Port number to use for connection.
 
 =item --revoke
+
+short form: -r
 
 Add REVOKE statements for each GRANT statement.
 
 =item --separate
 
-Lists each GRANT or REVOKE separately, instead of the default output from
-MySQL's SHOW GRANTS command, which may list many privileges on a single line.
-With L<"--flush">, places a FLUSH PRIVILEGES after each user, instead of once
-at the end of all the output.
+short form: -s
+
+List each GRANT or REVOKE separately.
+
+The default output from MySQL's SHOW GRANTS command lists many privileges on a
+single line.  With L<"--flush">, places a FLUSH PRIVILEGES after each user,
+instead of once at the end of all the output.
 
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --socket
 
+short form: -S; type: string
+
 Socket file to use for connection.
 
 =item --timestamp
 
-Print the dump time and data in a comment near the beginning of the output.
+short form: -t; negatable: yes; default: yes
+
+Show dump timestamp.
 
 =item --user
 
+short form: -u; type: string
+
 User for login if not current user.
-
-=item --version
-
-Output version information and exit.
 
 =back
 
