@@ -116,6 +116,7 @@ is_deeply(
    'Caught up');
 
 eval {
+   map { $ms->start_slave($_) } @slaves;
    $ms->make_sibling_of_master($slaves[1], $sldsns[1], $dp, 100);
 };
 diag $EVAL_ERROR if $EVAL_ERROR;
@@ -131,6 +132,7 @@ is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
 is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
 
 eval {
+   map { $ms->start_slave($_) } @slaves;
    $ms->make_slave_of_sibling(
       $slaves[0], $sldsns[0],
       $slaves[0], $sldsns[0], $dp, 100);
@@ -138,6 +140,7 @@ eval {
 like($EVAL_ERROR, qr/slave of itself/, 'Cannot make slave slave of itself');
 
 eval {
+   map { $ms->start_slave($_) } @slaves;
    $ms->make_slave_of_sibling(
       $slaves[0], $sldsns[0],
       $slaves[1], $sldsns[1], $dp, 100);
@@ -155,6 +158,7 @@ is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
 is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
 
 eval {
+   map { $ms->start_slave($_) } @slaves;
    $ms->make_slave_of_uncle(
       $slaves[0], $sldsns[0],
       $slaves[2], $sldsns[2], $dp, 100);
@@ -172,6 +176,7 @@ is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
 is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
 
 eval {
+   map { $ms->start_slave($_) } @slaves;
    $ms->detach_slave($slaves[0]);
 };
 diag $EVAL_ERROR if $EVAL_ERROR;
