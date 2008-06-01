@@ -4621,36 +4621,36 @@ without changing the tables, use L<"--print"> instead of L<"--execute">.
 
 To sync db.tbl1 from host1 to host2:
 
-   mk-table-sync -x u=user,p=pass,h=host1,D=db,t=tbl host2
+   mk-table-sync --execute u=user,p=pass,h=host1,D=db,t=tbl host2
 
 Sync all tables in host1 to host2 and host3:
 
-   mk-table-sync -x host1 host2 host3
+   mk-table-sync --execute host1 host2 host3
 
 Resolve differences L<mk-table-checksum> found on this master's slaves:
 
-   mk-table-sync -x --replicate test.checksum master1
+   mk-table-sync --execute --replicate test.checksum master1
 
 Sync this slave to its replication master:
 
-   mk-table-sync -x --synctomaster slave1
+   mk-table-sync --execute --synctomaster slave1
 
 Sync this slave to its replication master, resolving differences
 L<mk-table-checksum> found:
 
-   mk-table-sync -x --synctomaster --replicate test.checksum slave1
+   mk-table-sync --execute --synctomaster --replicate test.checksum slave1
 
 Sync server2 in a master-master replication configuration, where server2's copy
 of db1.tbl2 is known or suspected to be incorrect:
 
-   mk-table-sync -x --synctomaster h=server2,D=db1,t=tbl1
+   mk-table-sync --execute --synctomaster h=server2,D=db1,t=tbl1
 
 Note that in the master-master configuration, the following will NOT do what you
 want, because it will make changes directly on server2, which will then flow
 through replication and change server1's data:
 
    # Don't do this in a master-master setup!
-   mk-table-sync -x h=server1,D=db1,t=tbl1 h=server2
+   mk-table-sync --execute h=server1,D=db1,t=tbl1 h=server2
 
 =head1 DESCRIPTION
 
