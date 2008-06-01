@@ -527,6 +527,7 @@ sub pod_to_spec {
          push @opt_spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
                . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
             d => $para
                . ( $props{default}      ? " (default $props{default})" : '' ),

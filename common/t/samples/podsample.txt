@@ -18,6 +18,8 @@ Specify at least one of --stop, --update, --monitor, or --check.
 
 =item --askpass
 
+negatable: true
+
 Prompts the user for a password when connecting to MySQL.
 
 =item --charset
