@@ -106,6 +106,18 @@ Hash option forced.
 
 =back
 
+=head1 OTHER
+
+The following options should not be parsed.
+
+=over
+
+=item --not-done-yet
+
+This item is not part of the main option list and should not be read.
+
+=back
+
 =head1 ENVIRONMENT
 
 The environment variable C<MKDEBUG> enables verbose debugging output in all of the
