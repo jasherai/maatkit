@@ -1,5 +1,6 @@
 Changelog for mk-slave-delay:
 
+   * Updated the documentation to use POD.
    * The slave could wait forever if the I/O thread was stopped.
    * The slave could wait forever on the master's last event (bug #1959496).
 
