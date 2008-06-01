@@ -1,5 +1,6 @@
 Changelog for mk-slave-delay:
 
+   * The slave could wait forever if the I/O thread was stopped.
    * The slave could wait forever on the master's last event (bug #1959496).
 
 2008-03-16: version 1.0.6
