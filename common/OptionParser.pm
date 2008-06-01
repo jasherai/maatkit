@@ -548,6 +548,10 @@ sub pod_to_spec {
       }
       while ( $para = <$fh> ) {
          last unless $para;
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
          last if $para =~ m/^=item --/;
       }
    } while ( $para );
