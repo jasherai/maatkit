@@ -863,6 +863,10 @@ if ( $opts{daemonize} ) {
    open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
 }
 
+# If the I/O thread isn't running when the program starts, it never knows what
+# to do.  So start it.
+$slave->do('START SLAVE IO_THREAD');
+
 while (                       # Quit if:
    (!$opts{t} || $now < $end) # time is exceeded
    && $oktorun                # or instructed to quit
