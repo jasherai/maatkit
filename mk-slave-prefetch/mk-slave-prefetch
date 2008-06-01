@@ -30,7 +30,7 @@ use English qw(-no_match_vars);
 $OUTPUT_AUTOFLUSH = 1;
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1962
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -210,7 +210,8 @@ sub parse {
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 
@@ -346,11 +347,13 @@ sub descr {
 sub usage_or_errors {
    my ( $self, %opts ) = @_;
    if ( $opts{help} ) {
-      print $self->usage(%opts);
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
    elsif ( $self->{__error__} ) {
-      print $self->errors();
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 }
@@ -429,18 +432,99 @@ sub usage {
    return $usage;
 }
 
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
+   );
+
+   my @spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $ENV{MKDEBUG} && _d($para);
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . (defined $props{default} ? " (default $props{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @spec, @special_options;
+}
+
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
    local $OUTPUT_AUTOFLUSH = 1;
-   print $prompt;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
    my $response;
    eval {
       require Term::ReadKey;
       Term::ReadKey::ReadMode('noecho');
       chomp($response = <STDIN>);
       Term::ReadKey::ReadMode('normal');
-      print "\n";
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
    };
    if ( $EVAL_ERROR ) {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
@@ -523,7 +607,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1891
+# DSNParser package 1957
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -688,6 +772,18 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
+}
+
 sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
@@ -754,7 +850,8 @@ sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
    printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+      or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
    }
@@ -1209,60 +1306,10 @@ use sigtrap qw(handler finish untrapped normal-signals);
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
 
-my @opt_spec = (
-   { s => 'askpass',           d => 'Prompt for password for connections' },
-   { s => 'charset|A=s',       d => 'Default character set' },
-   { s => 'checkint|i=A',      d => 'How often to check the slave: '
-                                  . 'init,min,max (default 16,1,1024)' },
-   { s => 'daemonize',         d => 'Fork to background and detach '
-                                  . '(POSIX only)' },
-   { s => 'database|D=s',      d => 'Database to use' },
-   { s => 'defaults-file|F=s', d => 'Only read mysql options from the '
-                                  . 'given file' },
-   { s => 'errors+',           d => 'Print queries that caused errors.  If '
-                                  . 'specified once, at exit; if twice in '
-                                  . 'realtime; default 0' },
-   { s => 'execute|x!',        d => 'Execute transformed queries (default)' },
-   { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'iolag|l=z',         d => 'How many bytes to lag the I/O thread '
-                                  . '(default 1k)' },
-   { s => 'maxquerytime|q=f',  d => 'Do not run queries longer than this '
-                                  . 'many seconds; fractions allowed '
-                                  . '(default 1)' },
-   { s => 'querysampsize=i',   d => 'Average query exec time over this '
-                                  . 'many queries (default 4)' },
-   { s => 'offset|o=z',        d => 'How many bytes to lead the SQL thread '
-                                  . '(default 128)' },
-   { s => 'password|p=s',      d => 'Password to use when connecting' },
-   { s => 'print',             d => 'Print transformed queries' },
-   { s => 'printnonrewritten', d => 'Print non-rewritable queries' },
-   { s => 'permitregexp=s',    d => 'Permit queries matching '
-                                  . 'this Perl regexp' },
-   { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'progress=i',        d => 'Print progress information every X events' },
-   { s => 'rejectregexp=s',    d => 'Reject queries matching this '
-                                  . 'Perl regexp' },
-   { s => 'sentinel=s',        d => 'Sentinel file; default '
-                                  . '/tmp/mk-slave-prefetch-sentinel' },
-   { s => 'setvars=s',         d => 'Set these MySQL variables (default '
-                                  . 'wait_timeout=10000)' },
-   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'statistics',        d => 'Print statistics after exiting' },
-   { s => 'stop',              d => 'Stop running instances by creating '
-                                  . 'the sentinel file' },
-   { s => 'time|t=m',          d => 'Time to run before exiting' },
-   { s => 'tmpdir=s',          d => 'Where to create temp files for LOAD '
-                                  . 'DATA INFILE queries (default /dev/null)' },
-   { s => 'user|u=s',          d => 'User for login if not current user' },
-   { s => 'window|w=z',        d => 'How many bytes ahead is too far '
-                                  . 'ahead (default 4k)' },
-   '--print and --daemonize are mutually exclusive',
-   'at least one of --print or --execute are required',
-);
-
 my $dsn_parser = new DSNParser();
 my $qn         = new QueryRewriter();
 my $lp         = new LogParser();
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '[OPTION...] [FILE]';
@@ -1873,16 +1920,21 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Some options are negatable by specifying them in their long form with a --no
-prefix.
+--print and --daemonize are mutually exclusive.
+
+Specify at least one of --print or --execute.
 
 =over
 
 =item --askpass
 
-Prompts the user for a password when connecting to MySQL.
+Prompt for a password when connecting to MySQL.
 
 =item --charset
+
+short form: -A; type: string
+
+Default character set.
 
 Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
 Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
@@ -1891,6 +1943,10 @@ value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
 connecting to MySQL.
 
 =item --checkint
+
+short form: -i; type: Array; default: 16,1,1024
+
+How often to check the slave: init,min,max.
 
 How many relay log events should pass before checking the output of C<SHOW
 SLAVE STATUS>.  The syntax is a three-number range: initial, minimum, and
@@ -1901,50 +1957,65 @@ whether it decides the check was necessary.
 
 =item --daemonize
 
-Fork to the background and detach from the shell.  This probably doesn't work
-on Microsoft Windows.
+Fork and run in the background; POSIX OSes only.
 
 =item --database
+
+short form: -D; type: string
+
+The database to use for the connection.
 
 Connect to this database.  C<mk-slave-prefetch> will issue C<USE> statements
 as required by the binary log events.
 
 =item --defaults-file
 
-Only read MySQL options from the given file.
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --errors
 
-Print errors that occur.  The default value is 0, which prints no errors.  If
-you specify this option once, you will see a report at the end of the script
+culumative: yes; default: 0; type: int
+
+Print queries that caused errors.  If specified once, at exit; if twice, in
+realtime.
+
+If you specify this option once, you will see a report at the end of the script
 execution, showing the normalized queries and the number of times they were
 seen.  If you specify this option twice, you will see the errors printed out as
 they occur, but no normalized report at the end of execution.
 
 =item --execute
 
-Execute the transformed queries.  This is enabled by default, because this is
-what actually warms the caches.
+short form: -x; negatable: yes; default: yes
 
-=item --help
-
-Displays a help message.
+Execute the transformed queries to warm the caches.
 
 =item --host
+
+short form: -h; type: string
 
 Host to connect to.
 
 =item --iolag
 
-How many bytes to lag the slave I/O thread (to avoid C<mysqlbinlog> reading
-right off the end of the relay log file).
+short form: -l; type: size; default: 1k
+
+How many bytes to lag the slave I/O thread.
+
+This helps avoid C<mysqlbinlog> reading right off the end of the relay log file.
 
 =item --maxquerytime
 
-The time limit for queries.  The value can be a floating-point number.  If
-C<mk-slave-prefetch> predicts the query will take longer to execute, it will
-skip the query.  This is based on the theory that pre-warming the cache is
-most beneficial for short queries.
+short form: -q; type: float; default: 1
+
+Do not run queries longer than this many seconds; fractions allowed.
+
+If C<mk-slave-prefetch> predicts the query will take longer to execute, it will
+skip the query.  This is based on the theory that pre-warming the cache is most
+beneficial for short queries.
 
 C<mk-slave-prefetch> learns how long queries require to execute.  It keeps an
 average over the last L<"--querysampsize"> samples of each query.  The averages
@@ -1982,22 +2053,33 @@ queries).  The rewritten query will then look like the following;
 
 =item --offset
 
-The number of bytes C<mk-slave-prefetch> will try to stay in front of the slave
-SQL thread.  It will not execute log events it doesn't think are at least this
+short form: -o; type: size; default: 128
+
+How many bytes C<mk-slave-prefetch> will try to stay in front of the slave
+SQL thread.
+
+It will not execute log events it doesn't think are at least this
 far ahead of the SQL thread.  See also L<"--window">.
 
 =item --password
+
+short form: -p; type: string
 
 The password to use when connecting.
 
 =item --permitregexp
 
-A Perl regular expression to filter log events.  The regular expression is
-matched against the raw log event, before any transformations are applied.  If
-specified, this option will permit only log events matching the regular
-expression.
+type: string
+
+Permit queries matching this Perl regexp.
+
+This is a filter for log events.  The regular expression is matched against the
+raw log event, before any transformations are applied.  If specified, this
+option will permit only log events matching the regular expression.
 
 =item --port
+
+short form: -P; type: int
 
 Port number to use for connection.
 
@@ -2011,34 +2093,58 @@ Print queries that could not be transformed into C<SELECT>.
 
 =item --progress
 
-Prints the current log file and position, plus a summary of the statistics
-gathered, every N events.
+type: int
+
+Print progress information every X events.
+
+The information is the current log file and position, plus a summary of the
+statistics gathered.
 
 =item --querysampsize
 
-How many queries to average together to get the average query execution time
-(see L<"--maxquerytime">).  The last C<N> queries with a given fingerprint are
-averaged together.
+type: int; default: 4
+
+Average query exec time over this many queries.
+
+The last C<N> queries with a given fingerprint are averaged together to get the
+average query execution time (see L<"--maxquerytime">).  
 
 =item --rejectregexp
+
+type: string
+
+Reject queries matching this Perl regexp.
 
 Similar to L<"--permitregexp">, but has the opposite effect: log events must
 B<not> match the regular expression.
 
+=item --sentinel
+
+type: string; default: /tmp/mk-slave-prefetch-sentinel
+
+Exit if this file exists.
+
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --socket
 
+short form: -S; type: string
+
 Socket file to use for connection.
 
 =item --statistics
 
-Prints statistics after executing.  The statistics are in two sections:
-counters, and queries.  The counters simply count the number of times events
-occur.  You may see the following counters:
+Print execution statistics after exiting.
+
+The statistics are in two sections: counters, and queries.  The counters simply
+count the number of times events occur.  You may see the following counters:
 
    NAME                    MEANING
    ======================  =======================================
@@ -2081,16 +2187,26 @@ fingerprint was seen, number of times executed, the sum of the execution
 times, and the average execution time over the last L<"--querysampsize">
 samples.
 
+=item --stop
+
+Stop running instances by creating the L<"--sentinel"> file.
+
 =item --time
 
-How long C<mk-slave-prefetch> should run before exiting.  Default is to run
-forever.
+short form: -t; type: time
+
+How long C<mk-slave-prefetch> should run before exiting.
+
+The default is to run forever.
 
 =item --tmpdir
 
-Where to create temporary files for C<LOAD DATA INFILE> queries inlined in the
-log file.  The default is C</dev/null>, which will cause C<mysqlbinlog> to
-skip the file and the associated C<LOAD DATA INFILE> command entirely.
+type: string; default: /dev/null
+
+Where to create temp files for C<LOAD DATA INFILE> queries.
+
+The default will cause C<mysqlbinlog> to skip the file and the associated C<LOAD
+DATA INFILE> command entirely.
 
 If C<mk-slave-prefetch> sees a C<LOAD DATA INFILE> command (which it won't, if
 this is left at the default), it will try to remove the temporary file, then
@@ -2098,13 +2214,15 @@ skip the event.
 
 =item --user
 
+short form: -u; type: string
+
 User for login if not current user.
 
-=item --version
-
-Output version information and exit.
-
 =item --window
+
+short form: -w; type: size; default: 4k
+
+The max bytes ahead of the slave C<mk-slave-prefetch> should get.
 
 Defines the window within which C<mk-slave-prefetch> considers a query OK to
 execute.  The window begins at the slave SQL thread's last known position plus
