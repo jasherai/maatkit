@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1952
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -208,7 +208,8 @@ sub parse {
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 
@@ -344,11 +345,13 @@ sub descr {
 sub usage_or_errors {
    my ( $self, %opts ) = @_;
    if ( $opts{help} ) {
-      print $self->usage(%opts);
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
    elsif ( $self->{__error__} ) {
-      print $self->errors();
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 }
@@ -427,18 +430,95 @@ sub usage {
    return $usage;
 }
 
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
+   );
+
+   my @spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $ENV{MKDEBUG} && _d($para);
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . ( $props{default}      ? " (default $props{default})" : '' ),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @spec, @special_options;
+}
+
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
    local $OUTPUT_AUTOFLUSH = 1;
-   print $prompt;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
    my $response;
    eval {
       require Term::ReadKey;
       Term::ReadKey::ReadMode('noecho');
       chomp($response = <STDIN>);
       Term::ReadKey::ReadMode('normal');
-      print "\n";
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
    };
    if ( $EVAL_ERROR ) {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
@@ -486,16 +566,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   { s => 'equaldbs|d=H', d => 'This comma-separated list of DBs are equal' },
-   { s => 'header|h',     d => 'Keep the headers' },
-   { s => 'ignoredb|i',   d => 'Do comparisons on table name only' },
-   { s => 'master|m=s',   d => 'Name of the master server' },
-   { s => 'unique|u=s',   d => 'Show unique differing host/db/table names' },
-   { s => 'verbose|v',    d => 'Output lines that have no differences' },
-   '--ignoredb and --equaldbs are mutually exclusive',
-);
-
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '<options> FILE';
@@ -671,45 +742,61 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
+--ignoredb and --equaldbs are mutually exclusive.
+
 =over
 
 =item --equaldbs
 
-This comma-separated list of database names is always considered to have the
-same tables.  In other words, this makes C<database1.table1.chunk1> equal to
-C<database2.table1.chunk1> if they have the same checksum.
+short form: -d; type: Hash
+
+This comma-separated list of databases are equal.
+
+These database names is always considered to have the same tables.  In other
+words, this makes C<database1.table1.chunk1> equal to C<database2.table1.chunk1>
+if they have the same checksum.
 
 This disables incremental processing, so you won't see any results until all
 input is processed.
 
 =item --header
 
+short form: -h
+
 Preserves headers output by mk-table-checksum.
-
-=item --help
-
-Displays a help message.
 
 =item --ignoredb
 
-Ignore the database entirely when comparing lines.
+short form: -i
+
+Ignore the database name when comparing lines.
 
 This disables incremental processing, so you won't see any results until all
 input is processed.
 
 =item --master
 
+short form: -m; type: string
+
+The name of the master server.
+
 Specifies which host is the replication master, and sorts lines for that host
 first, so you can see the checksum values on the master server before the
 slave.
 
+=item --unique
+
+short form: -u; type: string
+
+Show unique differing host/db/table names.
+
+The argument must be one of host, db, or table.
+
 =item --verbose
 
-Output all lines except header lines.
+short form: -v
 
-=item --version
-
-Output version information and exit.
+Output all lines, even those that have no differences, except for header lines.
 
 =back
 
