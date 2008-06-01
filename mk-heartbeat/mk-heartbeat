@@ -1808,7 +1808,7 @@ These will be included in a C<SET> command.
 
 =item --skew
 
-type: int; default: 500000
+short form: -k; type: int; default: 500000
 
 How long to delay checks, in milliseconds.
 
