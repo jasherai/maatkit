@@ -712,7 +712,7 @@ my @opt_spec = $p->pod_to_spec("samples/podsample.txt");
 is_deeply(
    \@opt_spec,
    [
-   { s => 'askpass',           d => 'Prompts the user for a password when '
+   { s => 'askpass!',          d => 'Prompts the user for a password when '
                                . 'connecting to MySQL' },
    { s => 'charset|A=s',       d => 'Default character set' },
    { s => 'database|D=s',      d => 'The database to use for the connection' },
