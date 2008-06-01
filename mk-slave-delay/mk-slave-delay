@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1947
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -426,6 +426,73 @@ sub usage {
    return $usage;
 }
 
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+   );
+
+   my @opt_spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $ENV{MKDEBUG} && _d($para);
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @opt_spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . ( $props{default}      ? " (default $props{default})" : '' ),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @opt_spec, @special_options;
+}
+
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
@@ -775,22 +842,11 @@ use English qw(-no_match_vars);
 use List::Util qw(max);
 use sigtrap qw(handler finish untrapped normal-signals);
 
-my @opt_spec = (
-   { s => 'askpass',       d => 'Prompt for password for connections' },
-   { s => 'continue|c!',   d => 'Continue replication normally on exit (default)' },
-   { s => 'daemonize',     d => 'Fork to background and detach (POSIX only)' },
-   { s => 'delay|d=m',     d => 'Slave delay (default 1h)' },
-   { s => 'interval|i=m',  d => 'Sleep interval (default 1m)' },
-   { s => 'quiet|q',       d => 'Suppress normal output' },
-   { s => 'setvars=s',     d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   { s => 'time|t=m',      d => 'Time to run before exiting' },
-   { s => 'usemaster|u',   d => 'Get binlog positions from master, not slave' },
-);
-
 my $dsn_parser = new DSNParser();
 $dsn_parser->prop('required', { h => 1 });
 $dsn_parser->prop('autokey', 'h' );
 my $vp = new VersionParser();
+my @opt_spec = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{dsn} = $dsn_parser;
 $opt_parser->{strict} = 0;
@@ -1121,16 +1177,17 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Some options are negatable by specifying them in their long form with a --no
-prefix.
-
 =over
 
 =item --askpass
 
-Prompts the user for a password when connecting to MySQL.
+Prompt for a password when connecting to MySQL.
 
 =item --continue
+
+short form: -c; negatable: yes; default: 1
+
+Continue replication normally on exit.
 
 After exiting, restart the slave's SQL thread with no UNTIL condition, so it
 will run as usual and catch up to the master.  This is enabled by default and
@@ -1138,37 +1195,49 @@ works even if you terminate C<mk-slave-delay> with Control-C.
 
 =item --daemonize
 
-Fork to the background and detach from the shell.  This probably doesn't work
-on Microsoft Windows.
+Fork to the background and detach.  POSIX only.
 
 =item --delay
 
+short form: -d; type: time; default: 1h
+
 How far the slave should lag its master.
 
-=item --help
-
-Displays a help message.
-
 =item --interval
+
+short form: -i; type: time; default: 1m
 
 How frequently C<mk-slave-delay> should check whether the slave needs to be
 started or stopped.
 
 =item --quiet
 
+short form: -q
+
 Do not output regular status messages.
 
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --time
 
-How long C<mk-slave-delay> should run before exiting.  Default is to run
-forever.
+short form: -t; type: time
+
+How long C<mk-slave-delay> should run before exiting.
+
+Default is to run forever.
 
 =item --usemaster
+
+short form: -u
+
+Get binlog positions from master, not slave.
 
 Don't trust the binlog positions in the slave's relay log.  Connect to the
 master and get binlog positions instead.  If you specify this option without
@@ -1181,10 +1250,6 @@ SLAVE STATUS for the master connection.  It does not use the MASTER_USER
 value.  If you want to specify a different username for the master than the
 one you use to connect to the slave, you should specify the MASTER-HOST option
 explicitly on the command line.
-
-=item --version
-
-Output version information and exit.
 
 =back
 
