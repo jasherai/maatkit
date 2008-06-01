@@ -712,6 +712,7 @@ my @opt_spec = $p->pod_to_spec("samples/podsample.txt");
 is_deeply(
    \@opt_spec,
    [
+   { s => 'array=a',           d => 'An array' },
    { s => 'askpass!',          d => 'Prompts the user for a password when '
                                . 'connecting to MySQL' },
    { s => 'charset|A=s',       d => 'Default character set' },
@@ -719,7 +720,11 @@ is_deeply(
    { s => 'interval|i=m',      d => 'Interval between updates and checks. '
                                . 'Second line. (default 1s)' },
    { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
+   { s => 'size|s=z',          d => 'Size' },
    { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
+   { s => 'verbose|v+',        d => 'Verbosity' },
+   { s => 'hash=h',            d => 'Hash option' },
+   { s => 'hash2=H',           d => 'Hash option forced' },
    'Specify at least one of --stop, --update, --monitor, or --check.',
    '--update, --monitor, and --check are mutually exclusive.',
    '--daemonize and --check are mutually exclusive.',

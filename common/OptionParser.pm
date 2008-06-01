@@ -40,12 +40,14 @@ use English qw(-no_match_vars);
 # * t is the option's short name
 # * n is whether the option is negatable
 # * r is whether the option is required
-# * y is the option's type.  In addition to Getopt::Long's types (siof), the
+# * y is the option's type.  In addition to Getopt::Long's types (sif), the
 #     following types can be used:
 #     * t = time, with an optional suffix of s/h/m/d
 #     * d = DSN, as provided by a DSNParser which is in $self->{dsn}.
 #     * H = hash, formed from a comma-separated list
 #     * h = hash as above, but only if a value is given
+#     * A,h = array, similar to hashes.
+#     * z = size with kMG suffix (powers of 2^10)
 # Returns the options as a hashref.  Options can also be plain-text
 # instructions, and instructions are recognized inside the 'd' as well.
 sub new {
@@ -479,9 +481,16 @@ sub pod_to_spec {
       'time' => 'm',
       'int'  => 'i',
       string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
    );
 
-   my @opt_spec = ();
+   my @spec = ();
    my @special_options = ();
    $file ||= __FILE__;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
@@ -524,10 +533,11 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
-         push @opt_spec, {
+         push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
                . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
                . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
             d => $para
                . ( $props{default}      ? " (default $props{default})" : '' ),
@@ -540,7 +550,7 @@ sub pod_to_spec {
    } while ( $para );
 
    close $fh;
-   return @opt_spec, @special_options;
+   return @spec, @special_options;
 }
 
 # Tries to prompt and read the answer without echoing the answer to the
