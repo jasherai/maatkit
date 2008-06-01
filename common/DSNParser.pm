@@ -190,6 +190,19 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+# Fills in missing info from a DSN after successfully connecting to the server.
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
+}
+
 sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};

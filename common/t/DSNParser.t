@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 
 require "../DSNParser.pm";
@@ -220,6 +220,13 @@ is_deeply (
 my $d = $p->parse('h=127.0.0.1,A=utf8');
 my $dbh = $p->get_dbh($p->get_cxn_params($d), {});
 ok($dbh, 'Got a connection');
+
+$p->fill_in_dsn($dbh, $d);
+is($d->{P}, 3306, 'Filled in port');
+is($d->{u}, 'baron', 'Filled in username');
+is($d->{S}, '/var/run/mysqld/mysqld.sock', 'filled in socket');
+is($d->{h}, '127.0.0.1', 'left hostname alone');
+
 $p->disconnect($dbh);
 
 $p->prop('dbidriver', 'Pg');
