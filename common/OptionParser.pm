@@ -543,7 +543,7 @@ sub pod_to_spec {
                . ( $props{'cumulative'} ? '+'                        : '' )
                . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
             d => $para
-               . ( $props{default}      ? " (default $props{default})" : '' ),
+               . (defined $props{default} ? " (default $props{default})" : ''),
          };
       }
       while ( $para = <$fh> ) {
