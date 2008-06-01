@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 50;
+use Test::More tests => 51;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -706,6 +706,23 @@ eval {
 };
 like($EVAL_ERROR, qr/C,t,d,b.*undefined: bar,foo,f/, 'Found bad cmd-line options');
 
-# TODO:
-# Check that it can find undocumented options.
-
+$ENV{MKDEBUG} = 0;
+# Check that it can convert a Perldoc into a opt_spec
+my @opt_spec = $p->pod_to_spec("samples/podsample.txt");
+is_deeply(
+   \@opt_spec,
+   [
+   { s => 'askpass',           d => 'Prompts the user for a password when '
+                               . 'connecting to MySQL' },
+   { s => 'charset|A=s',       d => 'Default character set' },
+   { s => 'database|D=s',      d => 'The database to use for the connection' },
+   { s => 'interval|i=m',      d => 'Interval between updates and checks. '
+                               . 'Second line. (default 1s)' },
+   { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
+   { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
+   'Specify at least one of --stop, --update, --monitor, or --check.',
+   '--update, --monitor, and --check are mutually exclusive.',
+   '--daemonize and --check are mutually exclusive.',
+   ],
+   'Converted POD into opt_spec',
+);
