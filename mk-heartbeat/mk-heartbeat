@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 # ###########################################################################
-# MasterSlave package 1919
+# MasterSlave package 1952
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -57,7 +57,8 @@ sub recurse_to_slaves {
       $ENV{MKDEBUG} && _d('Connected to ', $dp->as_string($dsn));
    };
    if ( $EVAL_ERROR ) {
-      print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n";
+      print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n"
+         or die "Cannot print: $OS_ERROR";
       return;
    }
 
@@ -524,7 +525,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1943
+# OptionParser package 1952
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -704,7 +705,8 @@ sub parse {
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 
@@ -840,11 +842,13 @@ sub descr {
 sub usage_or_errors {
    my ( $self, %opts ) = @_;
    if ( $opts{help} ) {
-      print $self->usage(%opts);
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
    elsif ( $self->{__error__} ) {
-      print $self->errors();
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 }
@@ -930,9 +934,16 @@ sub pod_to_spec {
       'time' => 'm',
       'int'  => 'i',
       string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
    );
 
-   my @opt_spec = ();
+   my @spec = ();
    my @special_options = ();
    $file ||= __FILE__;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
@@ -971,9 +982,11 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
-         push @opt_spec, {
+         push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
                . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
             d => $para
                . ( $props{default}      ? " (default $props{default})" : '' ),
@@ -986,21 +999,23 @@ sub pod_to_spec {
    } while ( $para );
 
    close $fh;
-   return @opt_spec, @special_options;
+   return @spec, @special_options;
 }
 
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
    local $OUTPUT_AUTOFLUSH = 1;
-   print $prompt;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
    my $response;
    eval {
       require Term::ReadKey;
       Term::ReadKey::ReadMode('noecho');
       chomp($response = <STDIN>);
       Term::ReadKey::ReadMode('normal');
-      print "\n";
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
    };
    if ( $EVAL_ERROR ) {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
@@ -1039,7 +1054,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1891
+# DSNParser package 1952
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1270,7 +1285,8 @@ sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
    printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+      or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
    }
@@ -1687,9 +1703,7 @@ The database to use for the connection.
 
 default: mysql; type: string
 
-Specify a DBI driver for the connection.
-
-At the moment C<mysql> and C<Pg> are supported.
+Specify a driver for the connection; C<mysql> and C<Pg> are supported.
 
 =item --defaults-file
 
@@ -1770,7 +1784,7 @@ Suppresses normal output.
 
 type: int
 
-Check slaves recursively to this depth when in L<"--check"> mode.
+Check slaves recursively to this depth in L<"--check"> mode.
 
 Try to discover slave servers recursively, to the specified depth.  After
 discovering servers, run the check on each one of them and print the hostname
