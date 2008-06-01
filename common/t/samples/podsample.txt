@@ -16,6 +16,12 @@ Specify at least one of --stop, --update, --monitor, or --check.
 
 =over
 
+=item --array
+
+type: array
+
+An array.
+
 =item --askpass
 
 negatable: true
@@ -60,6 +66,12 @@ Set these MySQL variables.
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
+=item --size
+
+short form: -s; type: size
+
+Size.
+
 =item --skew
 
 short form: -k; type: int; default: 500000
@@ -73,6 +85,24 @@ before reporting that the slave lags the master by one second.  If your clocks
 are not completely accurate or there is some other reason you'd like to delay
 the slave more or less, you can tweak this value.  Try setting the C<MKDEBUG>
 environment variable to see the effect this has.
+
+=item --verbose
+
+short form: -v; cumulative: yes
+
+Verbosity.
+
+=item --hash
+
+type: hash
+
+Hash option
+
+=item --hash2
+
+type: Hash
+
+Hash option forced.
 
 =back
 
