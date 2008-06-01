@@ -79,7 +79,8 @@ sub topdown {
                   $this_level{rows} += $sr->{__cnt};
                   if ( $level && $opts{v} > 2 ) {
                      printf("-- Level %1d: CHECK  group of  %5d rows %s\n",
-                        $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
+                        $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where))
+                        or die "Cannot print: $OS_ERROR";
                   }
                }
                else {
@@ -88,7 +89,8 @@ sub topdown {
                   $count{bad}++;
                   if ( $opts{v} > 2 ) {
                      printf("-- Level %1d: UPDATE              1 row  %s\n",
-                        $level, make_where_clause($source->{dbh}, \%new_where));
+                        $level, make_where_clause($source->{dbh}, \%new_where))
+                        or die "Cannot print: $OS_ERROR";
                   }
                }
             }
@@ -103,7 +105,8 @@ sub topdown {
             $count{bad} += $sr->{__cnt} || 1;
             if ( $level && $opts{v} > 2 ) {
                printf("-- Level %1d: INSERT group of  %5d rows %s\n",
-                  $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
+                  $level, $sr->{__cnt}, make_where_clause($source->{dbh}, \%new_where))
+                  or die "Cannot print: $OS_ERROR";
             }
             $sr = undef;
          }
@@ -116,7 +119,8 @@ sub topdown {
             $count{bad} += $dr->{__cnt} || 1;
             if ( $level && $opts{v} > 2 ) {
                printf("-- Level %1d: DELETE group of  %5d rows %s\n",
-                  $level, $dr->{__cnt}, make_where_clause($source->{dbh}, \%new_where));
+                  $level, $dr->{__cnt}, make_where_clause($source->{dbh}, \%new_where))
+                  or die "Cannot print: $OS_ERROR";
             }
             $dr = undef;
          }
@@ -126,7 +130,8 @@ sub topdown {
          }
 
          if ( $level < $#groupings && $opts{m} && $opts{m} < $count{bad}) {
-            print "-- Level $level halt: $count{bad} rows, --maxcost=$opts{m}\n";
+            print "-- Level $level halt: $count{bad} rows, --maxcost=$opts{m}\n"
+               or die "Cannot print: $OS_ERROR";
             return 0;
          }
 
@@ -134,13 +139,16 @@ sub topdown {
 
       if ( $opts{v} ) {
          printf("--          Level %1d total:   %5d bad rows      %5d to inspect\n",
-            $level, $count{bad}, sum(map { $_->[$COUNT] } @to_examine) || 0);
+            $level, $count{bad}, sum(map { $_->[$COUNT] } @to_examine) || 0)
+            or die "Cannot print: $OS_ERROR";
       }
       if ( $opts{v} > 1 ) {
          printf("--          Level %1d summary: %5d bad groups in %5d src groups %5d dst groups\n",
-            $level, scalar(@to_examine), $src_sth->rows, $dst_sth->rows);
+            $level, scalar(@to_examine), $src_sth->rows, $dst_sth->rows)
+            or die "Cannot print: $OS_ERROR";
          printf("--          Level %1d changes: %5d updates       %5d inserts    %5d deletes\n",
-            $level, scalar(@to_update), $count{ins}, $count{del});
+            $level, scalar(@to_update), $count{ins}, $count{del})
+            or die "Cannot print: $OS_ERROR";
       }
 
       $level--;

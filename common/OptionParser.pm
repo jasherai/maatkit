@@ -229,7 +229,8 @@ sub parse {
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 
@@ -372,11 +373,13 @@ sub descr {
 sub usage_or_errors {
    my ( $self, %opts ) = @_;
    if ( $opts{help} ) {
-      print $self->usage(%opts);
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
    elsif ( $self->{__error__} ) {
-      print $self->errors();
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 }
@@ -560,14 +563,16 @@ sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
    local $OUTPUT_AUTOFLUSH = 1;
-   print $prompt;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
    my $response;
    eval {
       require Term::ReadKey;
       Term::ReadKey::ReadMode('noecho');
       chomp($response = <STDIN>);
       Term::ReadKey::ReadMode('normal');
-      print "\n";
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
    };
    if ( $EVAL_ERROR ) {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";

@@ -111,7 +111,9 @@ sub sync_table {
          ( $update_func ? $update_func            : () ),
          # Print AFTER executing, so the print isn't misleading in case of an
          # index violation etc that doesn't actually get executed.
-         ( $args{print} ? sub { print @_, ";\n" } : () ),
+         ( $args{print}
+            ? sub { print(@_, ";\n") or die "Cannot print: $OS_ERROR" }
+            : () ),
       ],
    );
    my $rd = new RowDiff( dbh => $args{misc_dbh} );

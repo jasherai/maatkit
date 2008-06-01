@@ -58,7 +58,8 @@ sub recurse_to_slaves {
       $ENV{MKDEBUG} && _d('Connected to ', $dp->as_string($dsn));
    };
    if ( $EVAL_ERROR ) {
-      print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n";
+      print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n"
+         or die "Cannot print: $OS_ERROR";
       return;
    }
 
