@@ -1,5 +1,8 @@
 Changelog for mk-parallel-restore:
 
+   * .trg files were sometimes rejected from loading.
+   * Command-line options are generated from the POD.
+
 2008-03-16: version 1.0.6
 
    * Added --setvars option (bug #1904689, bug #1911371).
