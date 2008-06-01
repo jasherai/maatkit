@@ -524,7 +524,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1943
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -923,6 +923,72 @@ sub usage {
    return $usage;
 }
 
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+   );
+
+   my @opt_spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $ENV{MKDEBUG} && _d($para);
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @opt_spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . ( $props{default}      ? " (default $props{default})" : '' ),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @opt_spec, @special_options;
+}
+
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
@@ -1237,38 +1303,7 @@ use IO::File;
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   { s => 'askpass',           d => 'Prompt for password for connections' },
-   { s => 'charset|A=s',       d => 'Default character set' },
-   { s => 'check',             d => 'Check slave delay once and exit' },
-   { s => 'daemonize',         d => 'Fork to background and detach (POSIX only)' },
-   { s => 'database|D=s',      d => 'Database to use' },
-   { s => 'dbidriver=s',       d => 'Specify DBI driver; supports Pg (default mysql)' },
-   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
-   { s => 'file=s',            d => 'Print latest --monitor output to this file' },
-   { s => 'frames=s',          d => 'Timeframes for averages (default 1m,5m,15m)' },
-   { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'interval|i=m',      d => 'Interval between updates and checks (default 1s)' },
-   { s => 'monitor',           d => 'Monitor slave delay continuously' },
-   { s => 'password|p=s',      d => 'Password to use when connecting' },
-   { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'quiet|q',           d => 'Suppress normal output' },
-   { s => 'recurse=i',         d => 'Check slaves recursively to this depth' },
-   { s => 'replace|r',         d => 'Use REPLACE instead of UPDATE for --update' },
-   { s => 'sentinel=s',        d => 'Sentinel file; default /tmp/mk-heartbeat-sentinel' },
-   { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
-   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'stop',              d => 'Stop running instances by creating the sentinel file' },
-   { s => 'table|t=s',         d => 'Table to use for heartbeat (default heartbeat)' },
-   { s => 'time|m=m',          d => 'Time to run before exiting' },
-   { s => 'update',            d => "Update a master's heartbeat" },
-   { s => 'user|u=s',          d => 'User for login if not current user' },
-   'Specify at least one of --stop, --update, --monitor, or --check',
-   '--update, --monitor, and --check are mutually exclusive',
-   '--daemonize and --check are mutually exclusive',
-);
-
+my @opt_spec = OptionParser::pod_to_spec();
 my $opt_parser = OptionParser->new(@opt_spec);
 $opt_parser->{prompt} = '<options> {--update|--monitor|--check|--stop}';
 $opt_parser->{descr}  = q{measures replication lag on a MySQL or PostgreSQL }
@@ -1610,6 +1645,12 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
+Specify at least one of --stop, --update, --monitor, or --check.
+
+--update, --monitor, and --check are mutually exclusive.
+
+--daemonize and --check are mutually exclusive.
+
 =over
 
 =item --askpass
@@ -1617,6 +1658,10 @@ second gets the latest trunk code from Subversion.
 Prompts the user for a password when connecting to MySQL.
 
 =item --charset
+
+short form: -A; type: string
+
+Default character set.
 
 Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
 Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
@@ -1626,58 +1671,75 @@ connecting to MySQL.
 
 =item --check
 
-Reports slave delay and exits.
+Check slave delay once and exit.
 
 =item --daemonize
 
-Fork to the background and detach from the shell.  This probably doesn't work
-on Microsoft Windows.
+Fork to the background and detach from the shell.  POSIX only.
 
 =item --database
 
+short form: -D; type: string
+
 The database to use for the connection.
-
-=item --defaults-file
-
-Only read default options from the given file.  You must give an absolute
-pathname.
 
 =item --dbidriver
 
-Specify a DBI driver for the connection.  At the moment C<mysql> and C<Pg> are
-supported.  The default is C<mysql>.
+default: mysql; type: string
+
+Specify a DBI driver for the connection.
+
+At the moment C<mysql> and C<Pg> are supported.
+
+=item --defaults-file
+
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --file
 
+type: string
+
+Print latest --monitor output to this file.
+
 When L<"--monitor"> is given, prints output to the specified file instead of to
-STDOUT.  The file is opened, truncated, and closed every second, so it will only
-contain the most recent statistics.  Useful when L<"--daemonize"> is given.
+STDOUT.  The file is opened, truncated, and closed every interval, so it will
+only contain the most recent statistics.  Useful when L<"--daemonize"> is given.
 
 =item --frames
 
+type: string; default: 1m,5m,15m
+
+Timeframes for averages.
+
 Specifies the timeframes over which to calculate moving averages when
-L<"--monitor"> is given.  The default value is one, five and fifteen minutes.
-Specify as a comma-separated list of numbers with suffixes.  The suffix can be s
-for seconds, m for minutes, h for hours, or d for days.  The size of the largest
-frame determines the maximum memory usage, as up the specified number of
-per-second samples are kept in memory to calculate the averages.  You can
-specify as many timeframes as you like.
-
-=item --help
-
-Displays a help message.
+L<"--monitor"> is given.  Specify as a comma-separated list of numbers with
+suffixes.  The suffix can be s for seconds, m for minutes, h for hours, or d for
+days.  The size of the largest frame determines the maximum memory usage, as up
+to the specified number of per-second samples are kept in memory to calculate
+the averages.  You can specify as many timeframes as you like.
 
 =item --host
+
+short form: -h; type: string
 
 Connect to host.
 
 =item --interval
 
+short form: -i; type: time; default: 1s
+
+Interval between updates and checks.
+
 How often to check or update values.  The updates and checks will happen when
 the Unix time (seconds since epoch) is an even multiple of this value.  The
-default is one second.  The suffix is similar to L<"--frames">.
+suffix is similar to L<"--frames">.
 
 =item --monitor
+
+Monitor slave delay continuously.
 
 Specifies that mk-heartbeat should check the slave's delay every second and
 report to STDOUT (or if L<"--file"> is given, to the file instead).  The output
@@ -1688,63 +1750,87 @@ L<"--frames">.  For example,
 
 =item --password
 
+short form: -p; type: string
+
 Password to use when connecting.
 
 =item --port
+
+short form: -P; type: int
 
 Port number to use for connection.
 
 =item --quiet
 
-Suppresses normal output (handy for avoiding emails from C<cron>).
+short form: -q
+
+Suppresses normal output.
 
 =item --recurse
 
-When running in L<"--check"> mode, try to discover slave servers recursively,
-to the specified depth.  After discovering servers, run the check on each one
-of them and print the hostname (if possible), followed by the slave delay.
+type: int
 
-This currently works only with MySQL.  It uses C<SHOW SLAVE HOSTS> to discover
-slaves; if that returns nothing, it falls back to examining the output of
-C<SHOW PROCESSLIST> to try to find connections that "look like" slaves.
+Check slaves recursively to this depth when in L<"--check"> mode.
+
+Try to discover slave servers recursively, to the specified depth.  After
+discovering servers, run the check on each one of them and print the hostname
+(if possible), followed by the slave delay.
+
+This currently works only with MySQL.  It uses C<SHOW PROCESSLIST> to discover
+slaves; if that returns nothing, it falls back to examining the output of C<SHOW
+SLAVE HOSTS> to try to find slaves.
 
 =item --replace
 
-When running in L<"--update"> mode, use C<REPLACE> instead of C<UPDATE> to set
-the heartbeat table's timestamp.  The C<REPLACE> statement is a MySQL
-extension to SQL.
+short form: -r
 
-This option is useful when you don't know whether the table contains any rows
-or not.
+Use C<REPLACE> instead of C<UPDATE> for --update.
+
+When running in L<"--update"> mode, use C<REPLACE> instead of C<UPDATE> to set
+the heartbeat table's timestamp.  The C<REPLACE> statement is a MySQL extension
+to SQL.  This option is useful when you don't know whether the table contains
+any rows or not.
 
 =item --sentinel
 
-The presence of the file specified by L<"--sentinel"> will cause
-C<mk-heartbeat> to stop and exit.  The default is /tmp/mk-heartbeat-sentinel.
+type: string; default: /tmp/mk-heartbeat-sentinel
+
+Exit if this file exists.
 
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --skew
 
-How long to delay checks, in milliseconds.  The default is to delay checks one
-half second.  Since the update happens as soon as possible after the beginning
-of the second on the master, this allows one half second of replication delay
-before reporting that the slave lags the master by one second.  If your clocks
-are not completely accurate or there is some other reason you'd like to delay
-the slave more or less, you can tweak this value.  Try setting the C<MKDEBUG>
-environment variable to see the effect this has.
+type: int; default: 500000
+
+How long to delay checks, in milliseconds.
+
+The default is to delay checks one half second.  Since the update happens as
+soon as possible after the beginning of the second on the master, this allows
+one half second of replication delay before reporting that the slave lags the
+master by one second.  If your clocks are not completely accurate or there is
+some other reason you'd like to delay the slave more or less, you can tweak this
+value.  Try setting the C<MKDEBUG> environment variable to see the effect this
+has.
 
 =item --socket
+
+short form: -S; type: string
 
 Socket file to use for connection.
 
 =item --stop
 
-Causes C<mk-heartbeat> to create the sentinel file specified by
-L<"--sentinel">.  This should have the effect of stopping all running
+Stop running instances by creating the sentinel file.
+
+This should have the effect of stopping all running
 instances which are watching the same sentinel file.  If none of
 L<"--update">, L<"--monitor"> or L<"--check"> is specified, C<mk-heartbeat>
 will exit after creating the file.  If one of these is specified,
@@ -1767,25 +1853,27 @@ See also L<"--sentinel">.
 
 =item --table
 
-The table to use for the heartbeat.  The default is 'heartbeat'.  Don't
-specify database.table; use L<"--database"> to specify the database.
+short form: -t; type: string; default: heartbeat
+
+The table to use for the heartbeat.
+
+Don't specify database.table; use L<"--database"> to specify the database.
 
 =item --time
 
-A number of seconds to run before exiting.  The suffix is similar to
-L<"--frames">.  Default is forever.
+short form: -m; type: time
+
+Time to run before exiting.
 
 =item --update
 
-Assumes the server is a master and updates the heartbeat every second.
+Update a master's heartbeat.
 
 =item --user
 
+short form: -u; type: string
+
 User for login if not current user.
-
-=item --version
-
-Output version information and exit.
 
 =back
 
