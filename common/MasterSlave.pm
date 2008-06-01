@@ -289,9 +289,13 @@ sub start_slave {
    }
 }
 
-# Waits for the slave to catch up to its master, using START SLAVE UNTIL.
+# Waits for the slave to catch up to its master, using START SLAVE UNTIL.  When
+# complete, the slave is caught up to the master, and the slave process is
+# stopped on both servers.
 sub catchup_to_master {
    my ( $self, $slave, $master, $time ) = @_;
+   $self->stop_slave($master);
+   $self->stop_slave($slave);
    my $slave_status  = $self->get_slave_status($slave);
    my $slave_pos     = $self->repl_posn($slave_status);
    my $master_status = $self->get_master_status($master);
@@ -341,6 +345,7 @@ sub catchup_to_same_pos {
 # Uses CHANGE MASTER TO to change a slave's master.
 sub change_master_to {
    my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
+   $self->stop_slave($dbh);
    # Don't prepare a $sth because CHANGE MASTER TO doesn't like quotes around
    # port numbers, etc.  It's possible to specify the bind type, but it's easier
    # to just not use a prepared statement.
