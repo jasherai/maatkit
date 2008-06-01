@@ -512,7 +512,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1947
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -909,6 +909,81 @@ sub usage {
       $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
    }
    return $usage;
+}
+
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
+   );
+
+   my @spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $ENV{MKDEBUG} && _d($para);
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . ( $props{default}      ? " (default $props{default})" : '' ),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @spec, @special_options;
 }
 
 sub prompt_noecho {
@@ -2637,96 +2712,12 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   { s => 'algorithm|a=s',
-     d => 'Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR)' },
-   { s => 'askpass',
-     d => 'Prompt for username and password for connections' },
-   { s => 'checksum',
-     d => 'Print checksums and table names in the style of '
-        . 'md5sum (disables --count)' },
-   { s => 'chunksize|C=s',
-     d => 'Approximate number of rows or size of '
-        . 'data to checksum at a time; allowable '
-        . 'suffixes are k, M, G (disallows -a CHECKSUM)' },
-   { s => 'columns=a',
-     d => 'Do only this comma-separated list of columns' },
-   { s => 'databases|d=h',
-     d => 'Do only this comma-separated list of databases' },
-   { s => 'defaults-file|F=s',
-     d => 'Only read mysql options from the given file' },
-   { s => 'emptyrepltbl',
-     d => 'Empty table given by --replicate before starting' },
-   { s => 'engine|e=h',
-     d => 'Do only this comma-separated list of storage engines' },
-   { s => 'explain',
-     d => 'Show, but do not execute, checksum queries (disables --emptyrepltbl)' },
-   { s => 'explainhosts',
-     d => 'Print connection information and exit' },
-   { s => 'float-precision=i',
-     d => 'Precision for FLOAT and DOUBLE column comparisons' },
-   { s => 'function|f=s',
-     d => 'Hash function for checksums (SHA1, MD5...)' },
-   { s => 'ignoredb|g=H',
-     d => 'Ignore this comma-separated list of databases' },
-   { s => 'ignoreengine|E=H',
-     d => 'Ignore this comma-separated list of storage engines '
-        . '(default FEDERATED,MRG_MyISAM)' },
-   { s => 'ignoretbl|n=H',
-     d => 'Ignore this comma-separated list of tables' },
-   { s => 'lock|k',
-     d => 'Lock table on master until done on slaves (implies -l)' },
-   { s => 'count|r!',
-     d => 'Count rows in tables.  This is built into '
-        . 'ACCUM and BIT_XOR, but requires an extra query for CHECKSUM' },
-   { s => 'crc|c!',
-     d => 'Do a CRC (checksum) of tables (default)' },
-   { s => 'optxor|o!',
-     d => 'Optimize BIT_XOR with user variables (default)'},
-   { s => 'password|p=s',
-     d => 'Password to use when connecting' },
-   { s => 'port|P=i',
-     d => 'Port number to use for connection' },
-   { s => 'quiet|q',
-     d => 'Do not print checksum results' },
-   { s => 'replcheck=i',
-     d => 'Check results in --replicate table, to the specified depth' },
-   { s => 'replicate|R=s',
-     d => 'Replicate checksums to slaves (disallows -a CHECKSUM)' },
-   { s => 'slavelag|l',
-     d => 'Report how far slaves lag master' },
-   { s => 'separator|s=s',
-     d => 'Separator for CONCAT_WS() (default #)' },
-   { s => 'setvars=s',
-     d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   { s => 'sleep=i',
-     d => 'Sleep time between checksums' },
-   { s => 'sleep-coef=f',
-     d => 'Sleep time as a multiple of last checksum time' },
-   { s => 'socket|S=s',
-     d => 'Socket file to use for connection' },
-   { s => 'tab|b',
-     d => 'Print tab-separated output' },
-   { s => 'tables|t=h',
-     d => 'Do only this comma-separated list of tables' },
-   { s => 'trim',
-     d => 'Trim VARCHAR columns (helps when comparing 4.1 to >= 5.0)' },
-   { s => 'user|u=s',
-     d => 'User for login if not current user' },
-   { s => 'verify|v!',
-     d => 'Verify checksum compatibility across servers (default)' },
-   { s => 'wait|w=m',
-     d => 'Wait this long for slaves to catch up to their master '
-        . '(implies -kl)' },
-   { s => 'where|W=s',
-     d => 'Do only rows matching this WHERE clause (disallows -a CHECKSUM)' },
-);
-
 my $vp         = new VersionParser();
 my $dsn_parser = new DSNParser();
 $dsn_parser->prop('autokey', 'h');
 $dsn_parser->prop('required', { h => 1 } );
 
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{dsn}    = $dsn_parser;
 $opt_parser->{strict} = 0;
@@ -3433,7 +3424,7 @@ server is the master and others are slaves.  Checksums are parallelized for
 speed, forking off a child process for each table.  Duplicate server names are
 ignored, but if you want to checksum a server against itself you can use two
 different forms of the hostname (for example, "localhost 127.0.0.1", or
-"h=localhost,p=3306 h=localhost,p=3307").
+"h=localhost,P=3306 h=localhost,P=3307").
 
 If you want to compare the tables in one database to those in another database
 on the same server, just checksum both databases:
@@ -3493,7 +3484,7 @@ You can mix simple and complex host definitions and/or command-line arguments.
 For example, if all your servers except one of your slaves uses a non-standard
 port number:
 
-   mk-table-checksum --port 4500 master h=slave1,p=3306 slave2 slave3
+   mk-table-checksum --port 4500 master h=slave1,P=3306 slave2 slave3
 
 If you are confused about how mk-table-checksum will connect to your servers,
 give the L<"--explainhosts"> option and it will tell you.
@@ -3566,11 +3557,13 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Many options are enabled by default and can be disabled by prefixing with --no.
-
 =over
 
 =item --algorithm
+
+short form: -a; type: string
+
+Checksum algorithm (ACCUM|CHECKSUM|BIT_XOR).
 
 Specifies which checksum algorithm to use.  Valid arguments are CHECKSUM,
 BIT_XOR and ACCUM.  The latter two do cryptographic hash checksums.
@@ -3611,15 +3604,22 @@ newer.
 
 =item --askpass
 
-Prompt for a password for each host for which no password is given.
+Prompt for a password when no password is given.
 
 =item --checksum
 
+Print checksums and table names in the style of md5sum (disables L<"--count">).
+
 Makes the output behave more like the output of C<md5sum>.  The checksum is
 first on the line, followed by the host, database, table, and chunk number,
-concatenated with dots.  Disables L<"--count">.
+concatenated with dots.
 
 =item --chunksize
+
+short form: -C; type: string
+
+Approximate number of rows or size of data to checksum at a time.  Allowable
+suffixes are k, M, G. Disallows -a CHECKSUM.
 
 If you specify a chunk size, mk-table-checksum will try to find an index that
 will let it split the table into ranges of approximately L<"--chunksize">
@@ -3642,32 +3642,47 @@ of rows.
 
 =item --columns
 
-A comma-separated list of columns to checksum.  Other columns will be
-ignored.
+type: array
+
+Checksum only this comma-separated list of columns.
 
 =item --count
 
-Count the rows as well as taking their checksum. This is disabled by default to
-avoid an extra COUNT(*) query when L<"--algorithm"> is CHECKSUM.  For other
-algorithms, you get a count for free.  If you have only MyISAM tables and live
-checksums are enabled, both CHECKSUM and COUNT will be very fast, but otherwise
-you may want to use one of the other algorithms.
+short form: -r; negatable: yes
+
+Count rows in tables.  This is built into ACCUM and BIT_XOR, but requires an
+extra query for CHECKSUM.
+
+This is disabled by default to avoid an extra COUNT(*) query when
+L<"--algorithm"> is CHECKSUM.  If you have only MyISAM tables and live checksums
+are enabled, both CHECKSUM and COUNT will be very fast, but otherwise you may
+want to use one of the other algorithms.
 
 =item --crc
+
+short form: -c; negatable: yes; default: yes
+
+Do a CRC (checksum) of tables.
 
 Take the checksum of the rows as well as their count.  This is enabled by
 default.  If you disable it, you'll just get COUNT(*) queries.
 
 =item --databases
 
+short form: -d; type: hash
+
 Only checksum this comma-separated list of databases.
 
 =item --defaults-file
 
-If you specify this option, only this file is read for MySQL default options;
-otherwise all the default files will be read.
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --emptyrepltbl
+
+Empty table given by L<"--replicate"> before starting.
 
 Issues a DELETE against the table given by L<"--replicate"> before beginning
 work.  Ignored if L<"--replicate"> is not specified.  This can be useful to
@@ -3679,20 +3694,26 @@ will remove only their entries.  Otherwise, it empties the entire table.
 
 =item --engine
 
-Only checksum tables whose storage engine is in this comma-separated list.
-You can use this to restrict the checksum to InnoDB, for example.
+short form: -e; type: hash
+
+Do only this comma-separated list of storage engines.
 
 =item --explain
 
-Print checksum queries and WHERE clauses (if chunking is enabled) for each
-table, but do not execute the queries.
+Show, but do not execute, checksum queries (disables L<"--emptyrepltbl">).
 
 =item --explainhosts
+
+Print connection information and exit.
 
 Print out a list of hosts to which mk-table-checksum will connect, with all
 the various connection options, and exit.  See L<"SPECIFYING HOSTS">.
 
 =item --float-precision
+
+type: int
+
+Precision for C<FLOAT> and C<DOUBLE> column comparisons.
 
 If you specify this option, FLOAT and DOUBLE columns will be rounded to the
 specified number of digits after the decimal point for the checksum.  This can
@@ -3700,6 +3721,10 @@ avoid checksum mismatches due to different floating-point representations of
 the same values on different MySQL versions and hardware.
 
 =item --function
+
+short form: -f; type: string
+
+Hash function for checksums (FNV_64, SHA1, MD5, etc).
 
 You can use this option to choose the cryptographic hash function used for
 L<"--algorithm">=ACCUM or L<"--algorithm">=BIT_XOR.  The default is to use
@@ -3712,24 +3737,31 @@ C++ source code is distributed with Maatkit.  It is very simple to compile and
 install; look at the header in the source code for instructions.  If it is
 installed, it is the default.
 
-=item --help
-
-Displays a help message.
-
 =item --ignoredb
 
-Use this option to skip a comma-separated list of databases.
+short form: -g; type: Hash
+
+Ignore this comma-separated list of databases.
 
 =item --ignoreengine
 
-Use this option to skip a comma-separated list of storage engines (table types).
+short form: -E; type: Hash; default: FEDERATED,MRG_MyISAM
+
+Ignore this comma-separated list of storage engines.
 
 =item --ignoretbl
 
-Use this option to skip a comma-separated list of tables.  Table names may be
-qualified with the database name.
+short form: -n; type: Hash
+
+Ignore this comma-separated list of tables.
+
+Table names may be qualified with the database name.
 
 =item --lock
+
+short form: -k
+
+Lock on master until done on slaves (implies L<"--slavelag">).
 
 This option can help you to get a consistent read on a master and many slaves.
 If you specify this option, mk-table-checksum will lock the table on the
@@ -3741,9 +3773,13 @@ instead.
 
 =item --optxor
 
-This option, which is enabled by default, specifies to use user variables to
-reduce the number of times each row must be passed through the cryptographic
-hash function when you are using the BIT_XOR algorithm.
+short form: -o; default: yes; negatable: yes
+
+Optimize BIT_XOR with user variables.
+
+This option specifies to use user variables to reduce the number of times each
+row must be passed through the cryptographic hash function when you are using
+the BIT_XOR algorithm.
 
 With the optimization, the queries look like this in pseudo-code:
 
@@ -3769,13 +3805,27 @@ columns, such as BLOB or TEXT columns, this might make a big difference.
 
 =item --password
 
-The password to use when connecting.
+short form: -p; type: string
+
+Password to use when connecting.
 
 =item --port
 
-The port number to use for the connection.
+short form: -P; type: int
+
+Port number to use for connection.
+
+=item --quiet
+
+short form: -q
+
+Do not print checksum results.
 
 =item --replcheck
+
+type: int
+
+Check results in L<"--replicate"> table, to the specified depth.
 
 Recursively finds differences recorded in the table given by L<"--replicate">.
 Recurses to the depth you specify: 0 is no recursion (check only the server
@@ -3807,6 +3857,10 @@ If any slave has chunks that differ from the master, mk-table-checksum's
 exit status is 1; otherwise it is 0.
 
 =item --replicate
+
+short form: -R; type: string
+
+Replicate checksums to slaves (disallows -a CHECKSUM).
 
 This option enables a completely different checksum strategy for a consistent,
 lock-free checksum across a master and its slaves.  This works only with
@@ -3877,15 +3931,24 @@ The table specified by L<"--replicate"> will never be checksummed itself.
 
 =item --separator
 
-This option controls the separator character used for CONCAT_WS() when taking
-row checksums with user-variables.
+short form: -s; type: string; default: #
+
+The separator character used for CONCAT_WS().
 
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --slavelag
+
+short form: -l
+
+Report how far slaves lag master.
 
 If this option is enabled, the output will show how many seconds behind the
 master each slave is.  This can be useful when you want a fast, parallel,
@@ -3895,11 +3958,19 @@ slave are due to slave lag instead of corrupt data.
 
 =item --sleep
 
+type: int
+
+Sleep time between checksums.
+
 If this option is specified, mk-table-checksum will sleep the specified
 number of seconds between checksums.  That is, it will sleep between every
 table, and if you specify L<"--chunksize">, it will also sleep between chunks.
 
 =item --sleep-coef
+
+type: float
+
+Calculate L<"--sleep"> as a multiple of the last checksum time.
 
 If this option is specified, mk-table-checksum will sleep the amount of
 time elapsed during the previous checksum, multiplied by the specified
@@ -3907,18 +3978,27 @@ coefficient.  This option is ignored if L<"--sleep"> is specified.
 
 =item --socket
 
-The socket file to use for the connection.
+short form: -S; type: string
+
+Socket file to use for connection.
 
 =item --tab
 
-Instead of column-aligned output, print tab-separated output.
+short form: -b
+
+Print tab-separated output, not column-aligned output.
 
 =item --tables
 
-Restrict checksums to this comma-separated list of tables.  Table names may be
-qualified with the database name.
+short form: -t; type: hash
+
+Do only this comma-separated list of tables.
+
+Table names may be qualified with the database name.
 
 =item --trim
+
+Trim C<VARCHAR> columns (helps when comparing 4.1 to >= 5.0).
 
 This option adds a C<TRIM()> to C<VARCHAR> columns in C<BIT_XOR> and C<ACCUM>
 modes.
@@ -3930,12 +4010,18 @@ remove them.
 
 =item --user
 
-MySQL user account to use for the connection.
+short form: -u; type: string
+
+User for login if not current user.
 
 =item --verify
 
-This option is enabled by default.  It runs a trivial checksum on all servers to
-ensure they have compatible CONCAT_WS() and cryptographic hash functions.
+short form: -v; negatable: yes; default: yes
+
+Verify checksum compatibility across servers.
+
+This option runs a trivial checksum on all servers to ensure they have
+compatible CONCAT_WS() and cryptographic hash functions.
 
 Versions of MySQL before 4.0.14 will skip empty strings and NULLs in
 CONCAT_WS, and others will only skip NULLs.  The two kinds of behavior will
@@ -3944,11 +4030,12 @@ in your table.  If you know you don't (for instance, all columns are
 integers), you can safely disable this check and you will get a reliable
 checksum even on servers with different behavior.
 
-=item --version
-
-Output version information and exit.
-
 =item --wait
+
+short form: -w; type: time
+
+Wait this long for slaves to catch up to their master (implies L<"--lock">
+L<"--slavelag">).
 
 This option helps you get a consistent checksum across a master server and its
 slaves.  It combines locking and waiting to accomplish this.  First it locks the
@@ -3964,6 +4051,10 @@ examining the STAT column in the output, which is the return value of
 MASTER_POS_WAIT().
 
 =item --where
+
+short form: -W; type: string
+
+Do only rows matching this C<WHERE> clause (disallows L<"--algorithm"> CHECKSUM).
 
 You can use this option to limit the checksum to only part of the table.  This
 is particularly useful if you have append-only tables and don't want to
