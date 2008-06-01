@@ -721,7 +721,7 @@ is_deeply(
                                . 'Second line. (default 1s)' },
    { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
    { s => 'size|s=z',          d => 'Size' },
-   { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 500000)' },
+   { s => 'skew|k=i',          d => 'Delay --monitor checks this many usec (default 0)' },
    { s => 'verbose|v+',        d => 'Verbosity' },
    { s => 'hash=h',            d => 'Hash option' },
    { s => 'hash2=H',           d => 'Hash option forced' },

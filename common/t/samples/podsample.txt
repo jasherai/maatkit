@@ -74,7 +74,7 @@ Size.
 
 =item --skew
 
-short form: -k; type: int; default: 500000
+short form: -k; type: int; default: 0
 
 Delay --monitor checks this many usec.
 
