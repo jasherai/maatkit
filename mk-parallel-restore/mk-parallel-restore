@@ -31,7 +31,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1947
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -430,6 +430,76 @@ sub usage {
    return $usage;
 }
 
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+   );
+
+   my @opt_spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $ENV{MKDEBUG} && _d($para);
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @opt_spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . ( $props{default}      ? " (default $props{default})" : '' ),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @opt_spec, @special_options;
+}
+
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
@@ -789,10 +859,16 @@ my $dp = new DSNParser;
 # ############################################################################
 # Get configuration information.
 # ############################################################################
+my $q          = new Quoter();
+my @opt_spec   = OptionParser::pod_to_spec();
+my $opt_parser = new OptionParser(@opt_spec);
+$opt_parser->{strict} = 0;
+$opt_parser->{prompt} = '<options> PATH [PATH...]';
+$opt_parser->{descr} = 'loads files into MySQL in parallel.';
+
 my %opts = (
    basedir  => File::Spec->curdir(),
 );
-
 eval {
    # Try to read --numthread from the number of CPUs in /proc/cpuinfo.  This
    # only works on GNU/Linux.
@@ -806,53 +882,6 @@ eval {
 $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
 $opts{m} = max(2, $opts{m} || 0);
 
-my @opt_spec = (
-   { s => 'askpass',           d => 'Prompt for password for connections' },
-   { s => 'basedir=s',         d => 'Base directory for creating files' },
-   { s => 'bulkinsbufsize=i',  d => 'Set bulk_insert_buffer_size before LOAD DATA INFILE' },
-   { s => 'charset|A=s',       d => 'Set the character set; default BINARY' },
-   { s => 'commit',            d => 'Commit after each LOAD DATA INFILE' },
-   { s => 'createdb',          d => 'Create databases that do not exist' },
-   { s => 'csv',               d => 'Files are in in CSV format (implies --tab)' },
-   { s => 'database|D=s',      d => 'Specify the database for all tables' },
-   { s => 'databases|d=h',     d => 'Restore only this comma-separated list of databases' },
-   { s => 'dbregex=s',         d => 'Restore only databases whose names match this pattern' },
-   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
-   { s => 'disablekeys!',      d => 'Set DISABLE KEYS before loading files' },
-   { s => 'fifo!',             d => 'Stream files into a FIFO for --tab; default' },
-   { s => 'host|h=s',          d => 'Connect to host' },
-   { s => 'ignoredb|g=H',      d => 'Ignore this comma-separated list of databases' },
-   { s => 'ignore|i',          d => 'Use the IGNORE option to LOAD DATA INFILE' },
-   { s => 'ignoretbl|n=H',     d => 'Ignore this comma-separated list of tables' },
-   { s => 'local|L',           d => 'Use the LOCAL option to LOAD DATA INFILE' },
-   { s => 'locktables!',       d => 'Lock tables before LOAD DATA INFILE' },
-   { s => 'noautovalon0!',     d => 'Set NO_AUTO_VALUE_ON_ZERO before LOAD DATA INFILE' },
-   { s => 'nobinlog!',         d => 'Set SQL_LOG_BIN=0 before LOAD DATA INFILE' },
-   { s => 'noforeignkeys!',    d => 'Set FOREIGN_KEY_CHECKS=0 before LOAD DATA INFILE' },
-   { s => 'nouniquechecks!',   d => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
-   { s => 'numthread|m=i',     d => "Number of threads; default $opts{m}" },
-   { s => 'password|p=s',      d => 'Password to use when connecting' },
-   { s => 'port|P=i',          d => 'Port number to use for connection' },
-   { s => 'quiet|q',           d => 'Sets --verbose to 0' },
-   { s => 'replace|r',         d => 'Use the REPLACE option to LOAD DATA INFILE' },
-   { s => 'setvars=s',         d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   { s => 'socket|S=s',        d => 'Socket file to use for connection' },
-   { s => 'tables|t=h',        d => 'Restore only this comma-separated list of tables' },
-   { s => 'tab|T',             d => 'Restore tab-separated files with LOAD DATA INFILE' },
-   { s => 'tblregex=s',        d => 'Restore only tables whose names match this pattern' },
-   { s => 'test',     ,        d => 'Print commands instead of executing them' },
-   { s => 'truncate',          d => 'TRUNCATE TABLE before LOAD DATA INFILE' },
-   { s => 'umask=s',           d => 'Set umask to this value, in octal' },
-   { s => 'user|u=s',          d => 'User for login if not current user' },
-   { s => 'verbose|v+',        d => 'Verbosity; can specify multiple times; default 1' },
-   { s => 'wait|w=m',          d => 'Wait limit when server is down (default 5m)' },
-);
-
-my $q          = new Quoter();
-my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{strict} = 0;
-$opt_parser->{prompt} = '<options> PATH [PATH...]';
-$opt_parser->{descr} = 'loads files into MySQL in parallel.';
 %opts = $opt_parser->parse(%opts);
 $dp->prop('setvars', $opts{setvars});
 
@@ -957,7 +986,7 @@ File::Find::find(
                   && ( !$opts{t} || exists($opts{t}->{$tbl}) )
                   && ( !$opts{tblregex} || $tbl =~ m/$opts{tblregex}/ )
                ) {
-                  if ( filetype($file) ne 'sql' && !$opts{T} ) {
+                  if ( filetype($file) !~ m/sql|trg/ && !$opts{T} ) {
                      die "$filename isn't a SQL file and you didn't tell me "
                         . "to load tab-delimited files.  Maybe you should "
                         . "specify the --tab option.\n";
@@ -1431,29 +1460,38 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Some options can be disabled by prefixing them with C<--no>.
-
 =over
+
+=item --askpass
+
+Prompt for password when connecting to MySQL.
 
 =item --basedir
 
-Directory in which temporary files, such as FIFO files (see L<"--fifo">) will be
-created.
+type: string
+
+Directory where FIFO files will be created.
 
 =item --bulkinsbufsize
 
-Sets the bulk_insert_buffer_size variable before each C<LOAD DATA INFILE>.
+type: int
+
+Set bulk_insert_buffer_size before each C<LOAD DATA INFILE>.
+
 Has no effect without L<"--tab">.
 
 =item --charset
 
-Sets the connection, database, and C<LOAD DATA INFILE> character set.  The
-default is C<BINARY>, which is the safest value to use for C<LOAD DATA
+short form: -A; type: string; default: BINARY
+
+Sets the connection, database, and C<LOAD DATA INFILE> character set.
+
+The default is C<BINARY>, which is the safest value to use for C<LOAD DATA
 INFILE>.  Has no effect without L<"--tab">.
 
 =item --commit
 
-Commit between each file it loads via C<LOAD DATA INFILE>.
+Commit after each load via C<LOAD DATA INFILE>.
 
 =item --createdb
 
@@ -1461,140 +1499,199 @@ Create databases if they don't exist.
 
 =item --csv
 
+Files are in CSV format (implies L<"--tab">).
+
 Changes L<"--tab"> options so the following C<LOAD DATA INFILE> statement is used:
 
    LOAD DATA INFILE <filename> INTO TABLE <table>
    FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"'
    LINES TERMINATED BY '\n';
 
-This option implies L<"--tab">.
-
 =item --database
 
-Specifies a database into which all files should be loaded.  Overrides the
-database which is normally specified by the directory in which the files live.
-Does I<not> specify a default database for the connection.
+short form: -D; type: string
+
+Load all files into this database.
+
+Overrides the database which is normally specified by the directory in which the
+files live.  Does I<not> specify a default database for the connection.
 
 =item --databases
 
-Load only this comma-separated list of databases.
+short form: -d; type: hash
 
-=item dbregex
+Restore only this comma-separated list of databases.
 
-Load only databases whose names match this Perl regular expression.
+=item --dbregex
+
+type: string
+
+Restore only databases whose names match this regex.
 
 =item --defaults-file
 
-Only read default options from the given file.  You must give an absolute
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute
 pathname.
 
 =item --disablekeys
 
-Use C<ALTER TABLE DISABLE KEYS> before loading files into a table.
+negatable: yes
+
+Execute C<ALTER TABLE DISABLE KEYS> before each table.
 
 =item --fifo
+
+negatable: yes; default: 1
+
+Stream files into a FIFO for --tab.
 
 Load compressed tab-separated files by piping them into a FIFO and using the
 FIFO with C<LOAD DATA INFILE>, instead of by decompressing the files on disk.
 Sets L<"--umask"> to 0.
 
-=item --help
-
-Displays a help message.
-
 =item --host
+
+short form: -h; type: string
 
 Connect to host.
 
 =item --ignore
 
+short form: -i
+
 Adds the C<IGNORE> modifier to C<LOAD DATA INFILE>.
 
 =item --ignoredb
 
-Do not load this comma-separated list of databases.
+short form: -g; type: Hash
+
+Ignore this comma-separated list of databases.
 
 =item --ignoretbl
 
-Do not restore this comma-separated list of table names.  Table names may be
-qualified with the database name.
+short form: -n; type: Hash
+
+Ignore this comma-separated list of table names.
+
+Table names may be qualified with the database name.
 
 =item --local
 
-Uses the C<LOCAL> modifier to C<LOAD DATA INFILE>, so the files are read locally
-by the client library, not by the server.
+short form: -L
+
+Uses the C<LOCAL> option to C<LOAD DATA INFILE>.
+
+If you enable this option, the files are read locally by the client library, not
+by the server.
 
 =item --locktables
 
-Lock tables before C<LOAD DATA INFILE> (disabled by default).
+negatable: yes
+
+Lock tables before C<LOAD DATA INFILE>.
 
 =item --noautovalon0
 
-Set the SQL mode to C<NO_AUTO_VALUE_ON_ZERO> before C<LOAD DATA INFILE>.
+negatable: yes
+
+Set SQL C<NO_AUTO_VALUE_ON_ZERO> before C<LOAD DATA INFILE>.
 
 =item --nobinlog
 
-Set C<SQL_LOG_BIN=0> before C<LOAD DATA INFILE>.  This prevents large loads
-from being logged to the server's binary log.
+negatable: yes
+
+Set C<SQL_LOG_BIN=0> before C<LOAD DATA INFILE>.
+
+This prevents large loads from being logged to the server's binary log.
 
 =item --noforeignkeys
+
+negatable: yes
 
 Set C<FOREIGN_KEY_CHECKS=0> before C<LOAD DATA INFILE>.
 
 =item --nouniquechecks
 
+negatable: yes
+
 Set C<UNIQUE_CHECKS=0> before C<LOAD DATA INFILE>.
 
 =item --numthread
 
-Specifies the number of parallel processes to run.  The default is 2 (this is
-mk-parallel-restore after all -- 1 is not parallel).  On GNU/Linux machines,
-the default is the number of times 'processor' appears in F</proc/cpuinfo>.  On
-Windows, the default is read from the environment.  In any case, the default is
-at least 2, even when there's only a single processor.
+short form: -m; type: int
+
+Specifies the number of parallel processes to run.
+
+The default is 2 (this is mk-parallel-restore after all -- 1 is not parallel).
+On GNU/Linux machines, the default is the number of times 'processor' appears in
+F</proc/cpuinfo>.  On Windows, the default is read from the environment.  In any
+case, the default is at least 2, even when there's only a single processor.
 
 =item --password
+
+short form: -p; type: string
 
 Password to use when connecting.
 
 =item --port
 
+short form: -P; type: int
+
 Port number to use for connection.
 
 =item --quiet
+
+short form: -q
 
 Sets L<"--verbose"> to 0.
 
 =item --replace
 
+short form: -r
+
 Adds the C<REPLACE> modifier to C<LOAD DATA INFILE>.
 
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --socket
 
+short form: -S; type: string
+
 Socket file to use for connection.
 
 =item --tab
 
-Load via C<LOAD DATA INFILE>, which is similar to what C<mysqlimport> does, but
-more flexibly.
+short form: -T
 
+Load tab-separated files with C<LOAD DATA INFILE>.
+
+This is similar to what C<mysqlimport> does, but more flexible.
 Enables the following options, unless they are specifically disabled:
 L<"--commit">, L<"--disablekeys">, L<"--noautovalon0">, L<"--nobinlog">,
 L<"--nouniquechecks">, L<"--noforeignkeys">.
 
 =item --tables
 
-Restore this comma-separated list of table names.  Table names may be
-qualified with the database name.
+short form: -t; type: hash
+
+Restore only this comma-separated list of table names.
+
+Table names may be qualified with the database name.
 
 =item --tblregex
 
-Restore only tables whose names match this Perl regular expression.
+type: string
+
+Restore only tables whose names match this regex.
 
 =item --test
 
@@ -1602,29 +1699,40 @@ Print commands instead of executing them.
 
 =item --truncate
 
-Issues C<TRUNCATE TABLE> to delete all rows from a table before loading the
-first tab-delimited file into it with C<LOAD DATA INFILE>.
+Run C<TRUNCATE TABLE> before C<LOAD DATA INFILE>.
+
+This will delete all rows from a table before loading the first tab-delimited
+file into it.
 
 =item --umask
 
-Set the program's C<umask> to this octal value.  This is useful when you want
-created files (such as FIFO files) to be readable or writable by other users
-(for example, the MySQL server itself).
+type: string
+
+Set the program's C<umask> to this octal value.
+
+This is useful when you want created files (such as FIFO files) to be readable
+or writable by other users (for example, the MySQL server itself).
 
 =item --user
+
+short form: -u; type: string
 
 User for login if not current user.
 
 =item --verbose
 
-Sets the verbosity; repeatedly specifying it increments the verbosity.
-Default is 1 if not specified.  See L<"OUTPUT">.
+short form: -v; cumulative: yes; default: 1
 
-=item --version
+Verbosity; can specify multiple times.
 
-Output version information and exit.
+Repeatedly specifying it increments the verbosity.  Default is 1 if not
+specified.  See L<"OUTPUT">.
 
 =item --wait
+
+short form: -w; type: time; default: 5m
+
+Wait limit when server is down.
 
 If the MySQL server crashes during loading, waits until the server comes back
 and then continues with the rest of the files.  C<mk-parallel-restore> will
