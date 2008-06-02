@@ -1,5 +1,9 @@
 Changelog for mk-slave-restart:
 
+2008-06-02: version 1.0.7
+
+   * Updated common code.
+
 2008-03-16: version 1.0.6
 
    * Added --setvars option (bug #1904689, bug #1911371).

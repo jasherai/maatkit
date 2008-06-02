@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2008-06-02: version 1.1.27
+
    * Update documentation, generate command-line options from POD.
    * Added --trim to compare pre-5.0 and 5.0+ VARCHAR values consistently.
 

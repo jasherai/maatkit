@@ -543,3 +543,33 @@ eval {
    close $file;
 };
 is($EVAL_ERROR, '', 'Blank entry did not crash');
+
+# Check a slow log that has tabs in it.
+$events = [
+   {  cmd            => 'Query',
+      arg            => "foo\nbar\n\t\t\t0 AS counter\nbaz",
+      ts             => '',
+      Disk_filesort  => 'No',
+      Merge_passes   => '0',
+      Full_scan      => 'No',
+      Full_join      => 'No',
+      Thread_id      => '10',
+      Tmp_table      => 'No',
+      QC_Hit         => 'No',
+      Rows_examined  => '0',
+      Filesort       => 'No',
+      Query_time     => '0.000012',
+      Disk_tmp_table => 'No',
+      Rows_sent      => '0',
+      Lock_time      => '0.000000',
+      NR             => 8,
+   },
+];
+
+open $file, "<", 'samples/slow004.txt' or die $OS_ERROR;
+@e = ();
+1 while ( $p->parse_event( $file, \&simple_callback ) );
+close $file;
+
+is_deeply( \@e, $events, "Got events from the microslow log", );
+

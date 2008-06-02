@@ -1,5 +1,7 @@
 Changelog for mk-show-grants:
 
+2008-06-02: version 1.0.10
+
    * Create command-line options from POD.
 
 2008-03-16: version 1.0.9

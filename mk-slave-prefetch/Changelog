@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+2008-06-02: version 1.0.2
+
    * Add the --progress option.
    * Add more error reporting and the --errors option.
    * Abstract USE queries when fingerprinting them.
