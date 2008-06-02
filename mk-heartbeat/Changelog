@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+2008-06-02: version 1.0.9
+
    * Get command-line options from POD.
    * --check output contained leading whitespace which broke Cacti.
 

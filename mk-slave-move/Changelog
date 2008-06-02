@@ -1,5 +1,7 @@
 Changelog for mk-slave-move:
 
+2008-06-02: version 0.9.1
+
    * Command-line parsing was removing an expected DSN (bug #1960142).
    * The slave was not stopped before CHANGE MASTER TO (bug #1960142).
    * DSNs without a port caused a crash (bug #1960142).

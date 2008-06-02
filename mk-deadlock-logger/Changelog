@@ -1,5 +1,7 @@
 Changelog for mk-deadlock-logger:
 
+2008-06-02: version 1.0.10
+
    * Generate command-line options from POD.
 
 2008-03-16: version 1.0.9

@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 # ###########################################################################
-# OptionParser package 1952
+# OptionParser package 1967
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -458,10 +458,11 @@ sub pod_to_spec {
    }
 
    while ( $para = <$fh> ) {
+      $ENV{MKDEBUG} && _d($para);
       last if $para =~ m/^=over/;
       chomp $para;
       $para =~ s/\s+/ /g;
-      $ENV{MKDEBUG} && _d($para);
+      $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
       push @special_options, $para;
    }
 
@@ -491,11 +492,15 @@ sub pod_to_spec {
                . ( $props{'cumulative'} ? '+'                        : '' )
                . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
             d => $para
-               . ( $props{default}      ? " (default $props{default})" : '' ),
+               . (defined $props{default} ? " (default $props{default})" : ''),
          };
       }
       while ( $para = <$fh> ) {
          last unless $para;
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
          last if $para =~ m/^=item --/;
       }
    } while ( $para );
@@ -600,7 +605,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1952
+# DSNParser package 1957
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -763,6 +768,18 @@ sub get_cxn_params {
    }
    $ENV{MKDEBUG} && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});
+}
+
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
 }
 
 sub get_dbh {

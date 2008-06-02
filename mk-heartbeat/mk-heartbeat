@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 # ###########################################################################
-# MasterSlave package 1952
+# MasterSlave package 1958
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -256,6 +256,8 @@ sub start_slave {
 
 sub catchup_to_master {
    my ( $self, $slave, $master, $time ) = @_;
+   $self->stop_slave($master);
+   $self->stop_slave($slave);
    my $slave_status  = $self->get_slave_status($slave);
    my $slave_pos     = $self->repl_posn($slave_status);
    my $master_status = $self->get_master_status($master);
@@ -300,6 +302,7 @@ sub catchup_to_same_pos {
 
 sub change_master_to {
    my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
+   $self->stop_slave($dbh);
    $ENV{MKDEBUG} && _d(Dumper($master_dsn), Dumper($master_pos));
    my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
       . "MASTER_PORT= $master_dsn->{P}, MASTER_LOG_FILE='$master_pos->{file}', "
@@ -525,7 +528,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1952
+# OptionParser package 1967
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -956,10 +959,11 @@ sub pod_to_spec {
    }
 
    while ( $para = <$fh> ) {
+      $ENV{MKDEBUG} && _d($para);
       last if $para =~ m/^=over/;
       chomp $para;
       $para =~ s/\s+/ /g;
-      $ENV{MKDEBUG} && _d($para);
+      $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
       push @special_options, $para;
    }
 
@@ -989,11 +993,15 @@ sub pod_to_spec {
                . ( $props{'cumulative'} ? '+'                        : '' )
                . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
             d => $para
-               . ( $props{default}      ? " (default $props{default})" : '' ),
+               . (defined $props{default} ? " (default $props{default})" : ''),
          };
       }
       while ( $para = <$fh> ) {
          last unless $para;
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
          last if $para =~ m/^=item --/;
       }
    } while ( $para );
@@ -1054,7 +1062,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1952
+# DSNParser package 1957
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1217,6 +1225,18 @@ sub get_cxn_params {
    }
    $ENV{MKDEBUG} && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});
+}
+
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
 }
 
 sub get_dbh {
@@ -1671,7 +1691,7 @@ Specify at least one of --stop, --update, --monitor, or --check.
 
 =item --askpass
 
-Prompts the user for a password when connecting to MySQL.
+Prompt for a password when connecting to MySQL.
 
 =item --charset
 

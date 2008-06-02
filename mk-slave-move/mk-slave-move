@@ -71,7 +71,7 @@ sub quote_val {
 # End Quoter package
 # ###########################################################################
 # ###########################################################################
-# OptionParser package 1962
+# OptionParser package 1967
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -502,10 +502,11 @@ sub pod_to_spec {
    }
 
    while ( $para = <$fh> ) {
+      $ENV{MKDEBUG} && _d($para);
       last if $para =~ m/^=over/;
       chomp $para;
       $para =~ s/\s+/ /g;
-      $ENV{MKDEBUG} && _d($para);
+      $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
       push @special_options, $para;
    }
 

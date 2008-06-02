@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+2008-06-02: version 1.0.7
+
    * Added NO_AUTO_VALUE_ON_ZERO to @@SQL_MODE (bug #1919897).
    * Added --trim to compare pre-5.0 and 5.0+ VARCHAR values consistently.
 
