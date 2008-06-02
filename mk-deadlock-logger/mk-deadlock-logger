@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1967
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -208,7 +208,8 @@ sub parse {
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 
@@ -344,11 +345,13 @@ sub descr {
 sub usage_or_errors {
    my ( $self, %opts ) = @_;
    if ( $opts{help} ) {
-      print $self->usage(%opts);
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
    elsif ( $self->{__error__} ) {
-      print $self->errors();
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 }
@@ -427,18 +430,100 @@ sub usage {
    return $usage;
 }
 
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
+   );
+
+   my @spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      $ENV{MKDEBUG} && _d($para);
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . (defined $props{default} ? " (default $props{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @spec, @special_options;
+}
+
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
    local $OUTPUT_AUTOFLUSH = 1;
-   print $prompt;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
    my $response;
    eval {
       require Term::ReadKey;
       Term::ReadKey::ReadMode('noecho');
       chomp($response = <STDIN>);
       Term::ReadKey::ReadMode('normal');
-      print "\n";
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
    };
    if ( $EVAL_ERROR ) {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
@@ -521,7 +606,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1891
+# DSNParser package 1957
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -686,6 +771,18 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
+}
+
 sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
@@ -752,7 +849,8 @@ sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
    printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+      or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
    }
@@ -785,24 +883,9 @@ $dp->prop('autokey', 'h');
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   { s => 'askpass',      d => 'Prompt for password for connections' },
-   { s => 'collapse|c!',  d => 'Collapse whitespace in queries' },
-   { s => 'columns|C=h',  d => 'Comma-separated list of columns to output' },
-   { s => 'daemonize',    d => 'Fork to background and detach (POSIX only)' },
-   { s => 'dest|d=d',     d => 'DSN for where to store deadlocks' },
-   { s => 'interval|i=m', d => 'Sleep interval (default 0s)' },
-   { s => 'numip|n',      d => 'Express IP addresses as integers' },
-   { s => 'print|p',      d => 'Print to STDOUT' },
-   { s => 'setvars=s',    d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   { s => 'source|s=d',   d => 'DSN to check for deadlocks; required' },
-   { s => 'tab|t',        d => 'Output tab-separated' },
-   { s => 'time|m=m',     d => 'Time to run before exiting' },
-   'Specify at least one of --print or --dest',
-   'DSN values in --dest default to values from --source',
-);
 
 my $q          = new Quoter();
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = OptionParser->new(@opt_spec);
 $opt_parser->{dsn} = $dp;
 $opt_parser->{prompt} = '--source DSN <options>';
@@ -1148,33 +1231,44 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Some options are negatable with --no.
+Specify at least one of L<"--print"> or L<"--dest">.
+
+DSN values in L<"--dest"> default to values from L<"--source">.
 
 =over
 
 =item --askpass
 
-Prompt for password for connections.
+Prompt for a password when connecting to MySQL.
 
 =item --collapse
 
-Makes mk-deadlock-logger collapse all whitespace in queries to a single
-space.  This might make it easier to inspect on the command line or in a query.
-By default, whitespace is collapsed when printing with L<"--print">, but not
+short form: -c; negatable: yes
+
+Collapse whitespace in queries to a single space.
+
+This might make it easier to inspect on the command line or in a query.  By
+default, whitespace is collapsed when printing with L<"--print">, but not
 modified when storing to L<"--dest">.  (That is, the default is different for
 each action).
 
 =item --columns
 
-Makes mk-deadlock-logger only output and/or save certain columns.  See
-L<"OUTPUT"> for more details.
+short form: -C; type: hash
+
+Output only this comma-separated list of columns.
+
+See L<"OUTPUT"> for more details on columns.
 
 =item --daemonize
 
-Fork to the background and detach from the shell.  This probably doesn't work
-on Microsoft Windows.
+Fork and run in the background; POSIX OSes only.
 
 =item --dest
+
+short form: -d; type: DSN
+
+DSN for where to store deadlocks.
 
 Specifies a server, database and table in which to store deadlock information,
 in the same format as L<"--source">.  Missing values are filled in with the same
@@ -1210,61 +1304,55 @@ mk-deadlock-logger can extract about deadlocks:
 If you use L<"--columns">, you can omit whichever columns you don't want to
 store.
 
-=item --help
-
-Displays a help message.
-
 =item --interval
 
-How frequently mk-deadlock-logger should check for deadlocks.
+short form: -i; type: time; default: 0s
+
+How often to check for deadlocks.
 
 =item --numip
 
-Makes mk-deadlock-logger express IP addresses as integers.
+short form: -n
+
+Express IP addresses as integers.
 
 =item --print
 
-Makes mk-deadlock-logger print results on standard output.  See L<"OUTPUT">
-for more.  By default, enables L<"--collapse"> unless you explicitly disable it.
+short form: -p
+
+Print results on standard output.
+
+See L<"OUTPUT"> for more.  By default, enables L<"--collapse"> unless you
+explicitly disable it.
 
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --source
 
-Specifies a connection to a server to check for deadlocks.  This argument is
-specially formatted as a key=value,key=value string.  Keys are a single letter:
+short form: -s; type: DSN
 
-   KEY MEANING
-   === =======
-   h   Connect to host
-   P   Port number to use for connection
-   S   Socket file to use for connection
-   u   User for login if not current user
-   p   Password to use when connecting
-   F   Only read default options from the given file
-   D   Database to connect to
-   t   Table in which to store deadlock information
+DSN to check for deadlocks; required.
 
-The 't' part only applies to L<"--dest">.  All parts are optional;
-mk-deadlock-logger will try to read MySQL's option files to determine how
-to connect.  If you specify a value without an '=' character,
-mk-deadlock-logger will interpret this as a hostname.
+Specifies how to connect to a server to check for deadlocks.
 
 =item --tab
 
-Makes mk-deadlock-logger output tab-separated columns instead of
-whitespace-aligning them.  See L<"OUTPUT"> for more.
+short form: -t
+
+Print tab-separated columns, instead of aligned.
 
 =item --time
 
-Causes mk-deadlock-logger to stop after the specified time has elapsed.
+short form: -m; type: time
 
-=item --version
-
-Output version information and exit.
+How long to run before exiting.
 
 =back
 
