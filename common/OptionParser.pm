@@ -509,10 +509,11 @@ sub pod_to_spec {
 
    # ... then read special options...
    while ( $para = <$fh> ) {
+      $ENV{MKDEBUG} && _d($para);
       last if $para =~ m/^=over/;
       chomp $para;
       $para =~ s/\s+/ /g;
-      $ENV{MKDEBUG} && _d($para);
+      $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
       push @special_options, $para;
    }
 

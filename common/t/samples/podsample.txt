@@ -8,7 +8,7 @@ mk-heartbeat - Monitor MySQL replication delay.
 
 =head1 OPTIONS
 
-Specify at least one of --stop, --update, --monitor, or --check.
+Specify at least one of L<"--stop">, --update, --monitor, or --check.
 
 --update, --monitor, and --check are mutually exclusive.
 
