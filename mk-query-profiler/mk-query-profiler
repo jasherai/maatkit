@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1962
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -207,7 +207,8 @@ sub parse {
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 
@@ -343,11 +344,13 @@ sub descr {
 sub usage_or_errors {
    my ( $self, %opts ) = @_;
    if ( $opts{help} ) {
-      print $self->usage(%opts);
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
    elsif ( $self->{__error__} ) {
-      print $self->errors();
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 }
@@ -426,18 +429,99 @@ sub usage {
    return $usage;
 }
 
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
+   );
+
+   my @spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $ENV{MKDEBUG} && _d($para);
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . (defined $props{default} ? " (default $props{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @spec, @special_options;
+}
+
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
    local $OUTPUT_AUTOFLUSH = 1;
-   print $prompt;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
    my $response;
    eval {
       require Term::ReadKey;
       Term::ReadKey::ReadMode('noecho');
       chomp($response = <STDIN>);
       Term::ReadKey::ReadMode('normal');
-      print "\n";
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
    };
    if ( $EVAL_ERROR ) {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
@@ -476,7 +560,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1891
+# DSNParser package 1957
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -641,6 +725,18 @@ sub get_cxn_params {
    return ($dsn, $info->{u}, $info->{p});
 }
 
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
+}
+
 sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
@@ -707,7 +803,8 @@ sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
    printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''));
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+      or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
    }
@@ -739,31 +836,8 @@ use constant MAX_ULONG => 4294967295; # 2^32-1
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   { s => 'allowcache|a',  d => 'Enable query cache' },
-   { s => 'askpass',       d => 'Prompt for password for connection' },
-   { s => 'calibrate|c!',  d => "Try to compensate for SHOW STATUS (default)" },
-   { s => 'charset|A=s',   d => 'Default character set' },
-   { s => 'database|D=s',  d => 'Database to use' },
-   { s => 'defaults-file|F=s', d => 'Only read mysql options from the given file' },
-   { s => 'external|e',    d => 'Calibrate, then pause while an external program runs' },
-   { s => 'flush|f+',      d => 'Flush tables.  Specify twice to do between every query' },
-   { s => 'host|h=s',      d => 'Connect to host' },
-   { s => 'innodb|i!',     d => "Show InnoDB statistics (default)" },
-   { s => 'only|n=h',      d => "Only print separate stats for these queries (e.g. 1,5,7)" },
-   { s => 'password|p=s',  d => 'Password to use when connecting' },
-   { s => 'port|P=i',      d => 'Port number to use for connection' },
-   { s => 'separate|s',    d => 'Print stats separately for each query' },
-   { s => 'session!',      d => 'Use session-scoped SHOW VARIABLES and SHOW STATUS (default)' },
-   { s => 'setvars=s',     d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   { s => 'socket|S=s',    d => 'Socket file to use for connection' },
-   { s => 'tab|t',         d => 'Print tab-separated values (for a spreadsheet)' },
-   { s => 'user|u=s',      d => 'User for login if not current user' },
-   { s => 'verbose|v+',    d => 'Verbosity (specify multiple times for more detail; default 0)' },
-   { s => 'verify|r',      d => 'Verify nothing else is accessing the server' },
-);
-
 my $dsn_parser = new DSNParser();
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{prompt} = '<options> [FILE]...';
 $opt_parser->{strict} = 0;
@@ -1454,29 +1528,37 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Some options can be negated by prefixing --no to the option name.
-
 =over
 
 =item --allowcache
 
-Allows the MySQL query cache to cache the queries executed.  By default this
-is disabled.  When enabled, cache profiling information is added to the
-printout.  See L<http://dev.mysql.com/doc/en/query-cache.html> for more
+short form: -a
+
+Let MySQL query cache cache the queries executed.
+
+By default this is disabled.  When enabled, cache profiling information is added
+to the printout.  See L<http://dev.mysql.com/doc/en/query-cache.html> for more
 information about the query cache.
 
 =item --askpass
 
-Prompt for password for connections.
+Prompt for a password when connecting to MySQL.
 
 =item --calibrate
 
-Makes mk-query-profiler measure and compensate for the "cost of
-observation" caused by running SHOW STATUS.  Enabled by default.  Only works
-reliably on a quiet server; on a busy server, other processes can cause the
-calibration to be wrong.
+short form: -c; negatable: yes; default: yes
+
+Try to compensate for C<SHOW STATUS>.
+
+Measure and compensate for the "cost of observation" caused by running SHOW
+STATUS.  Only works reliably on a quiet server; on a busy server, other
+processes can cause the calibration to be wrong.
 
 =item --charset
+
+short form: -A; type: string
+
+Default character set.
 
 Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
 Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
@@ -1486,18 +1568,26 @@ connecting to MySQL.
 
 =item --database
 
+short form: -D; type: string
+
 Database to use for connection.
 
 =item --defaults-file
 
-Only read default options from the given file.
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute
+pathname.
 
 =item --external
 
-Makes mk-query-profiler measure the cost of observation, then pause,
-typically while you run an external program.  When you press [enter]
-mk-query-profiler will stop sleeping and take another measurement, then print
-statistics as usual.
+short form: -e
+
+Calibrate, then pause while an external program runs.
+
+This is typically useful while you run an external program.  When you press
+[enter] mk-query-profiler will stop sleeping and take another measurement, then
+print statistics as usual.
 
 When there is a filename on the command line, mk-query-profiler executes
 each line in the file as a shell command.  If you give - as the filename,
@@ -1508,80 +1598,107 @@ after which mk-query-profiler prints its own output.
 
 =item --flush
 
+short form: -f; cumulative: yes
+
+Flush tables.  Specify twice to do between every query.
+
 Calls FLUSH TABLES before profiling.  If you are executing queries from a
 batch file, specifying --flush twice will cause mk-query-profiler to call
 FLUSH TABLES between every query, not just once at the beginning.  Default is
 not to flush at all. See L<http://dev.mysql.com/doc/en/flush.html> for more
 information.
 
-=item --help
-
-Displays a help message.
-
 =item --host
+
+short form: -h; type: string
 
 Connect to host.
 
 =item --innodb
 
-Shows InnoDB statistics.  Enabled by default.
+short form: -i; negatable: yes; default: yes
+
+Show InnoDB statistics.
 
 =item --only
 
-Only shows statistics for the specified queries or commands in a batch file.
-Specify as a comma-separated list of numbers beginning at 1.
+short form: -n; type: hash
+
+Only show statistics for this comma-separated list of queries or commands.
 
 =item --password
+
+short form: -p; type: string
 
 Password to use for connection.
 
 =item --port
 
+short form: -P; type: int
+
 Port number to use for connection.
 
 =item --separate
 
-Print statistics for each query or command in a batch file.  The default is to
-show only the summary of the entire batch.  See also L<"--verbose">.
+short form: -s
+
+Print stats separately for each query.
+
+The default is to show only the summary of the entire batch.  See also
+L<"--verbose">.
 
 =item --session
 
-Enable session-scoped C<SHOW STATUS> and C<SHOW VARIABLES> when profiling.
-Enabled by default; disabled if the server version doesn't support it.
+negatable: yes; default: yes
+
+Use session C<SHOW STATUS> and C<SHOW VARIABLES>.
+
+Disabled if the server version doesn't support it.
 
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --socket
 
+short form: -S; type: string
+
 Socket file to use for connection.
 
 =item --tab
 
-Print tab-separated values for easy reading with a spreadsheet, instead of
-whitespace-aligned columns for humans to read.
+short form: -t
+
+Print tab-separated values instead of whitespace-aligned columns.
 
 =item --user
+
+short form: -u; type: string
 
 User for login if not current user.
 
 =item --verbose
 
-Verbosity; specify multiple times for more detailed output.  When L<"--tab">
-is given, prints variables that don't change.  Otherwise increasing the level
-of verbosity includes extra sections in the output.
+short form: -v; cumulative: yes; default: 0
+
+Verbosity; specify multiple times for more detailed output.
+
+When L<"--tab"> is given, prints variables that don't change.  Otherwise
+increasing the level of verbosity includes extra sections in the output.
 
 =item --verify
 
-Verify nothing else is accessing the server.  This is a weak verification; it
-simply calibrates twice (see L<"--calibrate">) and verifies that the cost of
-observation remains constant.
+short form: -r
 
-=item --version
+Verify nothing else is accessing the server.
 
-Output version information and exit.
+This is a weak verification; it simply calibrates twice (see L<"--calibrate">)
+and verifies that the cost of observation remains constant.
 
 =back
 

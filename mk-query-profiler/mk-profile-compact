@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
 
 # ###########################################################################
-# OptionParser package 1921
+# OptionParser package 1962
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -208,7 +208,8 @@ sub parse {
    if ( $vals{version} ) {
       my $prog = $self->prog;
       printf("%s  Ver %s Distrib %s Changeset %s\n",
-         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV);
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 
@@ -344,11 +345,13 @@ sub descr {
 sub usage_or_errors {
    my ( $self, %opts ) = @_;
    if ( $opts{help} ) {
-      print $self->usage(%opts);
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
    elsif ( $self->{__error__} ) {
-      print $self->errors();
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 }
@@ -427,18 +430,99 @@ sub usage {
    return $usage;
 }
 
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
+   );
+
+   my @spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $ENV{MKDEBUG} && _d($para);
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . (defined $props{default} ? " (default $props{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @spec, @special_options;
+}
+
 sub prompt_noecho {
    shift @_ if ref $_[0] eq __PACKAGE__;
    my ( $prompt ) = @_;
    local $OUTPUT_AUTOFLUSH = 1;
-   print $prompt;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
    my $response;
    eval {
       require Term::ReadKey;
       Term::ReadKey::ReadMode('noecho');
       chomp($response = <STDIN>);
       Term::ReadKey::ReadMode('normal');
-      print "\n";
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
    };
    if ( $EVAL_ERROR ) {
       die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
@@ -488,12 +572,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   { s => 'queries|q=h', d => 'Only do these queries (e.g. 2,4,6)' },
-   { s => 'mode|m=s',    d => 'Mode: what type of reports to process' },
-   { s => 'headers|h=i', d => 'Reprint headers every N queries (default 2000)' },
-);
-
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '<options>... [FILE]...';
@@ -656,25 +735,23 @@ second gets the latest trunk code from Subversion.
 
 =over
 
-=item --help
-
-Displays a help message.
-
 =item --queries
 
-Specify a comma-separated list of queries to process; others will be ignored.
+short form: -q; type: hash
+
+Process only this comma-separated list of queries.
 
 =item --mode
 
-Specifies what type of reports (EXTERNAL, QUERY, SUMMARY) to process.
+short form: -m; type: string
+
+What type of reports (EXTERNAL, QUERY, SUMMARY) to process.
 
 =item --headers
 
-Reprints the headers every N queries.
+short form: -h; type: int; default: 2000
 
-=item --version
-
-Output version information and exit.
+Reprint headers every N queries.
 
 =back
 
