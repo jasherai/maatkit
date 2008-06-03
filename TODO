@@ -1,3 +1,6 @@
+Include --help and --version in POD, make --help show what kind of value is
+required
+
 A tool (or a feature on mk-slave-prefetch or mk-heartbeat) to watch how fast a
 slave is replicating, in bytes/sec.
 
