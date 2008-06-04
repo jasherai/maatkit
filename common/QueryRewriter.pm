@@ -54,7 +54,8 @@ sub strip_comments {
 # parameters, canonicalizing whitespace, etc.  See
 # http://dev.mysql.com/doc/refman/5.0/en/literals.html for literal syntax.
 sub fingerprint {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $opts ) = @_;
+   $opts ||= {};
    $query = lc $query;
    $query =~ s{
               (?<![\w.+-])
@@ -82,6 +83,9 @@ sub fingerprint {
               {$1($2+)}gx;      # Collapse IN() and VALUES() lists
    # Table names that end with one or two groups of digits
    $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
+   if ( $opts->{prefixes} ) { # or begin with them...
+      $query =~ s/\b\d+(_\d+)?(?=[a-zA-Z_])/$1 ? "N_N" : "N"/eg;
+   }
    return $query;
 }
 
