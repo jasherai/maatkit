@@ -1,0 +1,3 @@
+perl ../mk-log-parser ../../common/t/samples/slow004.txt -f --numprefix
+#
+select N_N_foo from (select Nfoo from N_bar) as Nbaz;
