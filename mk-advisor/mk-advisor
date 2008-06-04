@@ -1303,6 +1303,7 @@ The following items are unimplemented at this time:
          * Look for anomalies in variables/status
          * look for weird values of all status and variables, like innodb_flush_method
            not set to O_DIRECT.
+         * Watch prepared statements and compare to max
       * Connections and users
          * report anonymous users
          * report obsolete privileges (privs that refer to dbs or tables that don't exist)
