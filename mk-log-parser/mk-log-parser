@@ -825,7 +825,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 1937
+# QueryRewriter package 1978
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -860,7 +860,8 @@ sub strip_comments {
 }
 
 sub fingerprint {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $opts ) = @_;
+   $opts ||= {};
    $query = lc $query;
    $query =~ s{
               (?<![\w.+-])
@@ -887,6 +888,9 @@ sub fingerprint {
               }
               {$1($2+)}gx;      # Collapse IN() and VALUES() lists
    $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
+   if ( $opts->{prefixes} ) { # or begin with them...
+      $query =~ s/\b\d+(_\d+)?(?=[a-zA-Z_])/$1 ? "N_N" : "N"/eg;
+   }
    return $query;
 }
 
@@ -1014,6 +1018,7 @@ my @opt_spec = (
    { s => 'rank|r',        d => 'Print rank in sorted order'},
    { s => 'sample',        d => 'Print a sample query, not a fingerprint'},
    { s => 'microslow',     d => 'Common options for slow-log processing' },
+   { s => 'numprefix',     d => 'Abstract away numeric table name prefixes' },
    { s => 'sort=s',        d => 'Sort by this attribute' },
    { s => 'statistics|s',  d => 'Show overall statistics' },
    { s => 'sum=a',         d => 'Report sums for this list of attributes. '
@@ -1132,7 +1137,9 @@ if ( $opts{a} ) {
 
       # Keep the original query as well as the "key", which is either the
       # query, fingerprint, transformed query, etc.
-      my $key = $opts{f} ?  $qr->fingerprint($event->{arg}) : $event->{arg};
+      my $key = $opts{f}
+         ? $qr->fingerprint($event->{arg}, {prefixes => $opts{numprefix}})
+         : $event->{arg};
       $queries{$key} ||= { key => $key, query => $event->{arg} };
       my $stats = $queries{$key};
 
