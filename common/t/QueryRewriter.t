@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 39;
+use Test::More tests => 41;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -90,6 +90,18 @@ is(
    $q->fingerprint("select foo_1 from foo_2_3"),
    'select foo_N from foo_N_N',
    'Numeric table names',
+);
+
+is(
+   $q->fingerprint("select 123foo from 123foo", { prefixes => 1 }),
+   'select Nfoo from Nfoo',
+   'Numeric table name prefixes',
+);
+
+is(
+   $q->fingerprint("select 123_foo from 123_foo", { prefixes => 1 }),
+   'select N_foo from N_foo',
+   'Numeric table name prefixes with underscores',
 );
 
 is(
