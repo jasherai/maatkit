@@ -1303,6 +1303,7 @@ The following items are unimplemented at this time:
          * Look for anomalies in variables/status
          * look for weird values of all status and variables, like innodb_flush_method
            not set to O_DIRECT.
+         * Look for unusual values: Handler_prepare
          * Watch prepared statements and compare to max
       * Connections and users
          * report anonymous users
