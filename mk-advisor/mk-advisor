@@ -1257,8 +1257,10 @@ The following items are unimplemented at this time:
       * binary location
       * error log location (detect if syslog is being used from ps)
       * config file location
+         * run mysqld --help --verbose and make sure config file is valid
       * data directory location
       * pidfile and socket location
+      * relay log location
       * slow log location
       * Stored code
          * Number of UDFs, SPs, triggers, events, functions
@@ -1268,7 +1270,7 @@ The following items are unimplemented at this time:
          * total data/index size
          * filefrag on data files?
          * mention top N databases by size, and top N tables by size (plus
-         aggregate status for the remainder: number, total, avg).
+           aggregate status for the remainder: number, total, avg).
          * verbose option: 
             produce a detailed per-db, per-tbl schema report showing size, index
             size, engine, number of indexes, number of columns etc for each
@@ -1288,9 +1290,10 @@ The following items are unimplemented at this time:
          * summaries of number and size of tables/indexes
          * views
          * merge tables (how many are broken)
-            * check if MERGE tables sum up the size of their contained tables in SHOW
-              TABLE STATUS
-            * look for this error in SHOW TABLE STATUS: Unable to open underlying table
+            * check if MERGE tables sum up the size of their contained tables in
+              SHOW TABLE STATUS
+            * look for this error in SHOW TABLE STATUS: Unable to open
+              underlying table
          * partitioned tables
             * count of partitioned tables
             * look for partitioned tables that don't have many future partitions:
@@ -1301,13 +1304,17 @@ The following items are unimplemented at this time:
               THAN MAXVALUE ENGINE = InnoDB) */
       * Status
          * Look for anomalies in variables/status
-         * look for weird values of all status and variables, like innodb_flush_method
+         * look for weird values of all status and variables, like
+           innodb_flush_method
            not set to O_DIRECT.
          * Look for unusual values: Handler_prepare
          * Watch prepared statements and compare to max
+         * Watch for "bad query patterns" such as RAND() or storing IP addresses
+         as varchar or using TO_DAYS(column) < TO_DAYS(NOW()) - 5
       * Connections and users
          * report anonymous users
-         * report obsolete privileges (privs that refer to dbs or tables that don't exist)
+         * report obsolete privileges (privs that refer to dbs or tables that
+           don't exist)
          * aggregate a few processlist snapshots.  Print aggregates by Command
            and State, and by host.  Look for interesting things like
             * insert delayed
@@ -1341,6 +1348,7 @@ The following items are unimplemented at this time:
        * If lshw is installed, it may help
    * Look for tables that have silly schema, like a lot of varchar(255)
    * Look for non-recommended data types, like float(M,N) and BIT
+   * Look for nullable columns that contain no NULLs, especially indexed columns
    * Automatically run PROCEDURE ANALYSE on tables that look bad.
    * Determine the thoroughness of the search by how large the DB/table is.
    * watch how much data InnoDB writes to the log files per second, recommend
@@ -1349,5 +1357,14 @@ The following items are unimplemented at this time:
    * ondisk temp tables are min(temp_table_size, heap_table_size)
    * Figure out whether key_buffer is as big as it can be already, and alert
      that multiple buffers will have to be used.
+   * Replication:
+      * Look for temporary tables and warn about this (tmp table variable on a
+        slave, or tmp table queries in the processlist).
+      * Look for unsafe settings: binlog_do_db or binlog_ignore_db
+      * Check for expire_logs_days policy
+      * Check that the binlog.index file matches what's on disk
+   * Parse db.tbl names out of statements in the processlist and make a list of
+   the most popular dbs and tbls, in the format of a table, with the columns
+   being ins/upd/del/sel/rep/other
 
 =cut
