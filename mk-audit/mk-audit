@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mk-advisor, a program to inspect, analyze, and advise on MySQL servers.
+# This is mk-audit, a program to inspect, analyze, and advise on a MySQL server.
 #
 # This program is copyright (c) 2008 Baron Schwartz.  Feedback and
 # improvements are welcome.
@@ -1116,16 +1116,7 @@ my $q  = new Quoter;
 # Get configuration information.
 # ############################################################################
 
-# Define cmdline args.
-my @opt_spec = (
-   {  s => 'askpass',
-      d => 'Prompt for password for connections' },
-   {  s => 'charset|A=s',
-      d => 'Default character set' },
-   {  s => 'setvars=s',
-      d => 'Set these MySQL variables (default wait_timeout=10000)' },
-);
-
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 
 $opt_parser->{prompt} = '<options>';
@@ -1134,9 +1125,30 @@ $opt_parser->{descr}  = 'inspects, analyzes and advises on a MySQL server.';
 $dp->prop('setvars', $opts{setvars});
 $opt_parser->usage_or_errors(%opts);
 
-# TODO: misha start here.
-# $opts{foo} is value of cmdline option 'foo'
+# ############################################################################
+# The general idea of the tool is to build a big data structure with interesting
+# information about the operating system, MySQL, etc.  This data structure is
+# defined by a similar data structure that holds code for each bit of data to
+# fetch.  So $code->{os}->{code} holds the code that will fill in
+# $data->{os}->{data}.
+# ############################################################################
 
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
+$Data::Dumper::Quotekeys = 0;
+
+my $code = {
+   os => {
+      code => sub {
+         if ( $OSNAME = 'linux' ) {
+         }
+      },
+   },
+};
+
+my $data = {
+   os => { },
+};
 
 # ############################################################################
 # Documentation.
@@ -1146,7 +1158,7 @@ $opt_parser->usage_or_errors(%opts);
 
 =head1 NAME
 
-mk-advisor - Inspect, analyze, and advise on MySQL servers.
+mk-audit - Inspect, analyze, and advise on a MySQL server.
 
 =head1 SYNOPSIS
 
@@ -1168,9 +1180,6 @@ needed.  The first URL gets the latest released version of the tool, and the
 second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
-
-Some options are negatable by specifying them in their long form with a --no
-prefix.
 
 =over
 
