@@ -1379,5 +1379,8 @@ The following items are unimplemented at this time:
    * Look for derived tables that have no aggregation inside them
    * Look for explain plans that have a bad ref type or not-full key usage or
    high number of rows or no 'ref'
-
+   * Look for auto-increment locking in Innodb:
+      *** (2) WAITING FOR THIS LOCK TO BE GRANTED:
+      TABLE LOCK table `foo/bar` trx id 0 1313586251 lock mode AUTO-INC waiting
+      TOO DEEP OR LONG SEARCH IN THE LOCK TABLE WAITS-FOR GRAPH
 =cut
