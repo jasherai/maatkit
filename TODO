@@ -1,5 +1,8 @@
 Query formatter/pretty printer!!!!
 
+Tool to automate InnoDB recovery: start mysqld, dump table in chunks until it
+crashes, start again, ....
+
 Include --help and --version in POD, make --help show what kind of value is
 required
 
