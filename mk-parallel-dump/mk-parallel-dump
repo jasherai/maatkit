@@ -2222,9 +2222,9 @@ $SIG{CHLD} = sub {
 if ( $opts{stopslave} && !$opts{test} ) {
    my $sql = 'SHOW STATUS LIKE "Slave_running"';
    $ENV{MKDEBUG} && _d($sql);
-   my ($slave_running) = $dbh->selectrow_array($sql);
+   my (undef, $slave_running) = $dbh->selectrow_array($sql);
    $ENV{MKDEBUG} && _d($slave_running);
-   if ( $slave_running ne 'ON' ) {
+   if ( ($slave_running || '') ne 'ON' ) {
       die "This server is not a running slave";
    }
    $sql = 'STOP SLAVE';

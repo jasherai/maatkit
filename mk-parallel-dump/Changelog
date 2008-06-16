@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * --stopslave died after complaining the slave was not running.
+
 2008-06-02: version 1.0.8
 
    * System commands did not use double quotes on Windows (bug #1949922).
