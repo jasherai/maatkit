@@ -1104,6 +1104,11 @@ package main;
 
 use DBI;
 use English qw(-no_match_vars);
+use List::Util qw(max);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Sortkeys  = 1;
 
 # Global variables; as few as possible.
 my %opts;
@@ -1127,28 +1132,139 @@ $opt_parser->usage_or_errors(%opts);
 
 # ############################################################################
 # The general idea of the tool is to build a big data structure with interesting
-# information about the operating system, MySQL, etc.  This data structure is
-# defined by a similar data structure that holds code for each bit of data to
-# fetch.  So $code->{os}->{code} holds the code that will fill in
-# $data->{os}->{data}.
+# information about the operating system, MySQL, etc.  Ultimately I'd like to
+# have some nifty way to make the code auto-sense when it's already found
+# something, perhaps by making a similar data structure with little anonymous
+# subs to execute only if the corresponding data isn't yet filled in.  But for
+# now I'll do it the manual way.
 # ############################################################################
 
-use Data::Dumper;
-$Data::Dumper::Indent = 1;
-$Data::Dumper::Quotekeys = 0;
+my $data = {};
 
-my $code = {
-   os => {
-      code => sub {
-         if ( $OSNAME = 'linux' ) {
-         }
-      },
-   },
-};
+{ # Just to make all these variables local and not pollute global namespace
+   $data->{os}->{name} = $OSNAME;
+   $data->{os}->{'64bit'} = `file /bin/ls` =~ m/64-bit/ ? 'Yes' : 'No';
 
-my $data = {
-   os => { },
-};
+   if ( chomp(my $rel = `cat /etc/*release`) ) {
+      if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
+         $data->{os}->{version} = $desc;
+      }
+      else {
+         $data->{os}->{version} = $rel;
+      }
+   }
+   if ( -f '/lib/libc.so.6' ) {
+      my $stuff = `/lib/libc.so.6`;
+      ($data->{libc}->{ver}) = $stuff =~ m/GNU C.*release version (.+), /;
+      $data->{libc}->{threading}
+         = $stuff =~ m/Native POSIX/    ? 'NPTL'
+         : $stuff =~ m/linuxthreads-\d/ ? 'Linuxthreads'
+         :                                'Unknown';
+      ($data->{libc}->{compiled_by}) = $stuff =~ m/Compiled by (.*)/;
+      $data->{libc}->{GNU_LIBPTHREAD_VERSION} = do {
+         my $ver = `getconf GNU_LIBPTHREAD_VERSION`;
+         chomp $ver;
+         $ver;
+      };
+   }
+
+   if ( -f '/proc/cpuinfo' ) {
+      my $info = `cat /proc/cpuinfo`;
+      my $cores = scalar( map { $_ } $info =~ m/(^processor)/gm );
+      $data->{cpu}->{count} = $cores / max( $info =~ m/cpu cores\s+: (\d+)/gm);
+      $data->{cpu}->{cores} = $cores;
+      ($data->{cpu}->{speed}) = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
+      ($data->{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
+      ($data->{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
+      ($data->{cpu}->{'64bit'}) = $info =~ m/flags.*\blm\b/ ? 'Yes' : 'No';
+   }
+   else {
+      # MSWin32, maybe?
+      $data->{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
+   }
+
+   if ( chomp(my $dmi = `dmidecode`) ) {
+      my @keys = ( 'Size', 'Form Factor', 'Type', 'Type Detail', 'Speed');
+      my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
+      foreach my $mem ( @mem_info ) {
+         my %stuff = map { split /: / } $mem =~ m/^\s+(\S.*:.*)$/gm;
+         push(@{$data->{memory}->{slots}}, join(' ', grep { $_ } @stuff{@keys}));
+      }
+   }
+   if ( chomp(my $mem = `free`) ) {
+      my @words = $mem =~ m/(\w+)/g;
+      my @keys;
+      while ( my $key = shift @words ) {
+         last if $key eq 'Mem';
+         push @keys, $key;
+      }
+      foreach my $key ( @keys ) {
+         $data->{memory}->{$key} = shorten(shift @words);
+      }
+   }
+
+   if ( chomp(my $dmesg = `dmesg`) ) {
+      my ($raid) = $dmesg =~ m/(Direct-Access\s+MegaRaid.*$)/m;
+      $data->{raid} = $raid ? $raid : 'unknown';
+   }
+
+   if ( chomp(my $df = `df -hT` ) ) {
+      $df = "\n\t" . join("\n\t",
+         grep { $_ !~ m/^(varrun|varlock|udev|devshm|lrm)/ }
+         split(/\n/, $df));
+      $data->{disks}->{df} = $df;
+   }
+
+   if ( -f '/sbin/vgs' ) {
+      chomp(my $vgs = `vgs`);
+      $vgs =~ s/^\s*/\t/g;
+      $data->{disks}->{vgs} = $vgs;
+   }
+
+   # #########################################################################
+   # And now I will show you the most excellent way.
+   # #########################################################################
+   my $cmd = "ps -o euser,%cpu,rss,vsz,cmd -e | grep -v grep | grep mysql";
+   if ( chomp(my $ps = `$cmd`) ) {
+      $data->{mysql}->{syslog} = $ps =~ m/logger/ ? 'Yes' : 'No';
+      foreach my $line ( split("\n", $ps) ) {
+         my ($user, $pcpu, $rss, $vsz, $cmd) = split(/\s+/, $line, 5);
+         my ($bin) = $cmd =~ m/(\S+mysqld)\s/;
+         next unless $bin;
+         my %props = $cmd =~ m/--([^=]+)=(\S+)/g;
+         my $instance = {
+            user => $user,
+            pcpu => $pcpu,
+            rss  => $rss,
+            vsz  => $vsz,
+            bin  => $bin,
+            '64bit' => `file $bin` =~ m/64-bit/ ? 'Yes' : 'No',
+            datadir => $props{datadir} || '',
+            pidfile => $props{'pid-file'} || '',
+            port    => $props{port} || '',
+            'socket'=> $props{'socket'} || '',
+         };
+         push @{$data->{mysql}->{instances}}, $instance;
+      }
+   }
+
+}
+
+print Dumper($data);
+
+# ############################################################################
+# Subroutines.
+# ############################################################################
+sub shorten {
+   my ( $num ) = @_;
+
+   my $n = 0;
+   while ( $num >= 1_024 ) {
+      $num /= 1_024;
+      ++$n;
+   }
+   return sprintf("%.2f%s", $num, ('','k','M','G', 'T')[$n]);
+}
 
 # ############################################################################
 # Documentation.
@@ -1238,37 +1354,16 @@ This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 The following items are unimplemented at this time:
 
-   Hardware
-      * CPU
-         * Number of processors, number of cores
-         * Make and model
-         * Speed
-         * Architecture -- 64bit?
-         * Cache size
-         * RAID controller
-      * Memory
-         * Total Size
-         * used, free, swap, buffers
    Operating System
-      * Flavor (win, linux,...)
-      * Release (/etc/*release, motd, ...)
-      * 32-64 bit
       * vmstat samples
-      * Disk partitions, mount points, free space, filesystems
-         * iostat usage if possible
-      * LVM
+      * iostat usage if possible
    MySQL
       * for each instance, do:
       * Version
       * Uptime
-      * 32-64 bit
-      * memory and CPU usage
-      * binary location
-      * error log location (detect if syslog is being used from ps)
+      * error log location
       * config file location
          * run mysqld --help --verbose and make sure config file is valid
-      * data directory location
-      * pidfile and socket location
       * relay log location
       * slow log location
       * Stored code
@@ -1345,16 +1440,6 @@ The following items are unimplemented at this time:
    * check if there are duplicate settings (later overrides earlier) in config.
    * Info "Key Buffer May be Too Large"
      $key_buffer_size>max($total_myisam_size,32M)
-   * How to figure out the actual physical RAM
-     <Aurimas> Baron: I would use dmidecode :)
-     <Mushu> Baron: dmesg | grep Memory   ? :)
-     <Aurimas> Baron: btw, server was booted normaly I think
-     <Aurimas> Mushu: sometimes dmesg gets full of audit messages :)
-     <Mushu> boot can be often found in /var/log logs too
-     <Aurimas> Mushu: though meminfo typically works better if you need to know how
-     much memory is actually installed in the server (for example 32-bit OS
-     without PXE support may hide it)
-       * If lshw is installed, it may help
    * Look for tables that have silly schema, like a lot of varchar(255)
    * Look for non-recommended data types, like float(M,N) and BIT
    * Look for nullable columns that contain no NULLs, especially indexed columns
