@@ -1632,6 +1632,13 @@ use these as its siblings; otherwise discover siblings by examining its master.
 Start the slave running after moving it.  Default is to leave the slave stopped.
 TODO: this option is not implemented yet.
 
+=item --slave-of-master
+
+TODO: change to current master.  Can be useful for throwing away corrupt relay
+logs, for example.  Note: must check error log and see what the real position of
+the log file is.
+http://www.pythian.com/blogs/876/when-show-slave-status-and-the-error-log-disagree
+
 =back
 
 =head1 SYSTEM REQUIREMENTS
