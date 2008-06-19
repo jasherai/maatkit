@@ -1559,7 +1559,14 @@ my $data = {};
          }
 
          my $d = new MySQLDump();
-
+         my $q = new Quoter();
+         my %dbs = map { $_ => {} } $d->get_databases($dbh, $q);
+         foreach my $db ( keys %dbs ) {
+            my @trgs = $d->get_triggers($dbh, $q, $db);
+            my @stat = $d->get_table_status($dbh, $q, $db);
+            my @proc = $d->get_procedures($dbh, $q, $db);
+            # TODO: events, functions, UDFs
+         }
       }
    }
 
