@@ -34,7 +34,7 @@ eval {
       undef, undef, { PrintError => 0, RaiseError => 1 } );
 };
 if ($src_dbh) {
-   plan tests => 14;
+   plan tests => 16;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -51,6 +51,7 @@ require "../TableParser.pm";
 require "../TableSyncChunk.pm";
 require "../TableSyncer.pm";
 require "../TableSyncStream.pm";
+require "../TableSyncGroupBy.pm";
 require "../TableSyncNibble.pm";
 require "../VersionParser.pm";
 require "../MasterSlave.pm";
@@ -92,8 +93,8 @@ is($ts->best_algorithm(
       chunker     => $chunker,
       parser      => $tp,
    ),
-   'Stream',
-   'Got Stream algorithm',
+   'GroupBy',
+   'Got GroupBy algorithm',
 );
 
 my %args = (
@@ -207,6 +208,49 @@ $ts->sync_table(
 
 $cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
 is( $cnt, 4, 'Four rows in destination after Stream' );
+
+`mysql < samples/before-TableSyncChunk.sql`;
+
+$ts->sync_table(
+   %args,
+   algorithm     => 'GroupBy',
+   dst_db        => 'test',
+   dst_tbl       => 'test2',
+   src_db        => 'test',
+   src_tbl       => 'test1',
+);
+
+$cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
+is( $cnt, 4, 'Four rows in destination after GroupBy' );
+
+print `mysql < samples/before-TableSyncGroupBy.sql`;
+
+$ts->sync_table(
+   %args,
+   cols          => [qw(a b c)],
+   algorithm     => 'GroupBy',
+   dst_db        => 'test',
+   dst_tbl       => 'test2',
+   src_db        => 'test',
+   src_tbl       => 'test1',
+);
+
+$rows = $dbh->selectall_arrayref('select * from test.test2 order by a, b, c', { Slice => {}} );
+is_deeply($rows,
+   [
+      { a => 1, b => 2, c => 3 },
+      { a => 1, b => 2, c => 3 },
+      { a => 1, b => 2, c => 3 },
+      { a => 1, b => 2, c => 3 },
+      { a => 2, b => 2, c => 3 },
+      { a => 2, b => 2, c => 3 },
+      { a => 2, b => 2, c => 3 },
+      { a => 2, b => 2, c => 3 },
+      { a => 3, b => 2, c => 3 },
+      { a => 3, b => 2, c => 3 },
+   ],
+   'Table synced with GroupBy',
+);
 
 `mysql < samples/before-TableSyncChunk.sql`;
 
