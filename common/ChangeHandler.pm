@@ -70,6 +70,7 @@ sub take_action {
    }
 }
 
+# Arguments: string, hashref, arrayref
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
    $ENV{MKDEBUG} && _d("$action where ", $self->make_where_clause($row, $cols));
