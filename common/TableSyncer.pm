@@ -24,7 +24,7 @@ package TableSyncer;
 
 use English qw(-no_match_vars);
 
-our %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble);
+our %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble GroupBy);
 
 sub new {
    bless {}, shift;
@@ -58,9 +58,10 @@ sub best_algorithm {
          $result = 'Nibble';
       }
       else {
-         # If not, Stream is the only choice.
+         # If not, GroupBy is the only choice.  We don't automatically choose
+         # Stream, it must be specified by the user.
          $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
-         $result = 'Stream';
+         $result = 'GroupBy';
       }
    }
    $ENV{MKDEBUG} && _d("Algorithm: $result");
@@ -96,7 +97,12 @@ sub sync_table {
          $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
       }
       $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
-      $update_func = sub {  map { $change_dbh->do($_) } @_ };
+      $update_func = sub {
+         map {
+            $ENV{MKDEBUG} && _d('About to execute: ', $_);
+            $change_dbh->do($_);
+         } @_;
+      };
    }
 
    my $ch = new ChangeHandler(
