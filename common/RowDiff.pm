@@ -81,7 +81,7 @@ sub compare_sets {
             $rr = undef;
          }
       }
-   } while ( $left->{Active} || $right->{Active} );
+   } while ( $left->{Active} || $right->{Active} || $lr || $rr );
    $ENV{MKDEBUG} && _d('No more rows');
    $syncer->done_with_rows();
 }
