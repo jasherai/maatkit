@@ -305,7 +305,29 @@ sub catchup_to_master {
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
       $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
       $self->start_slave($slave, $master_pos);
-      $self->wait_for_master($master, $slave, $time, 0, $master_status);
+      # The slave may catch up instantly and stop, in which case MASTER_POS_WAIT
+      # will return NULL.  We must catch this; if it returns NULL, then we check
+      # that its position is as desired.
+      eval {
+         $self->wait_for_master($master, $slave, $time, 0, $master_status);
+      };
+      if ( $EVAL_ERROR ) {
+         if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
+            $slave_status = $self->get_slave_status($slave);
+            if ( !$self->slave_is_running($slave_status) ) {
+               $slave_pos = $self->repl_posn($slave_status);
+               if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
+                  die "$EVAL_ERROR but slave has not caught up to master";
+               }
+            }
+            else {
+               die "$EVAL_ERROR but slave was still running";
+            }
+         }
+         else {
+            die $EVAL_ERROR;
+         }
+      }
    }
 }
 
