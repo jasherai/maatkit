@@ -1745,6 +1745,8 @@ The following items are unimplemented at this time:
          * aggregate a few processlist snapshots.  Print aggregates by Command
            and State, and by host.  Look for interesting things like
             * insert delayed
+         * aggregate SHOW INNODB STATUS the same way.  A note on issue 1028 is a
+         good example.
          * report master/slave status, how many slaves are attached and from
             where
 
