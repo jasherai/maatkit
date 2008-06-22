@@ -46,6 +46,7 @@ sub new {
 sub get_sql {
    my ( $self, %args ) = @_;
    return "SELECT "
+      . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
       . join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}})
       . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' );

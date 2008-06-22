@@ -127,6 +127,7 @@ my %args = (
    func          => 'SHA1',
    trim          => 0,
    skipslavecheck=> 0,
+   bufferinmysql => 0,
 );
 
 # This should die because of a bad algorithm.
