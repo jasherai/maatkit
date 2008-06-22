@@ -305,7 +305,7 @@ sub parse_binlog_event {
          }
          else {
             die "Unknown event type $type"
-               unless $type =~ m/Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+               unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
          }
       }
       else {
