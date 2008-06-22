@@ -109,6 +109,7 @@ sub new {
       opt_slice => $args{opt_slice},
       cols      => $args{cols},
       trim      => $args{trim},
+      buffer    => $args{bufferinmysql},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
       table     => $args{struct},
@@ -130,6 +131,7 @@ sub get_sql {
    my ( $self, %args ) = @_;
    if ( $self->{state} ) {
       return 'SELECT '
+         . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})

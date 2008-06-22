@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 
 require "../TableSyncStream.pm";
@@ -53,6 +53,22 @@ my $ch = new ChangeHandler(
    actions   => [ sub { push @rows, @_ }, ],
    queue     => 0,
 );
+$t = new TableSyncStream(
+   handler => $ch,
+   cols    => [qw(a b c)],
+   bufferinmysql => 1,
+);
+
+is($t->get_sql(
+      quoter   => new Quoter(),
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'foo',
+   ),
+   'SELECT SQL_BUFFER_RESULT `a`, `b`, `c` FROM `test`.`foo` WHERE foo=1',
+   'Got SQL with SQL_BUFFER_RESULT OK',
+);
+
 $t = new TableSyncStream(
    handler => $ch,
    cols    => [qw(a b c)],

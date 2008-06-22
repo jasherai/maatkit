@@ -31,7 +31,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
-   plan tests => 21;
+   plan tests => 23;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -164,6 +164,37 @@ $t = new TableSyncChunk(
    func      => 'SHA1',
    dumper    => $du,
    trim      => 0,
+   bufferinmysql => 1,
+);
+
+like ($t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+   qr/SELECT SQL_BUFFER_RESULT/,
+   'Has SQL_BUFFER_RESULT',
+);
+
+$t = new TableSyncChunk(
+   handler  => $ch,
+   cols     => [qw(a b c)],
+   cols     => $tbl_struct->{cols},
+   dbh      => $dbh,
+   database => 'test',
+   table    => 'test1',
+   chunker  => $chunker,
+   struct   => $tbl_struct,
+   checksum => $checksum,
+   vp       => $vp,
+   quoter   => $q,
+   chunksize => 2,
+   where     => '',
+   possible_keys => [],
+   func      => 'SHA1',
+   dumper    => $du,
+   trim      => 0,
 );
 
 is_deeply(
@@ -183,6 +214,16 @@ like ($t->get_sql(
    ),
    qr/SELECT .*?CONCAT_WS.*?`a` < 3/,
    'First chunk SQL',
+);
+
+unlike ($t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+   qr/SQL_BUFFER_RESULT/,
+   'No buffering',
 );
 
 is_deeply($t->key_cols(), [qw(chunk_num)], 'Key cols in state 0');

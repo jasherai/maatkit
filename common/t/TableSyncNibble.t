@@ -31,7 +31,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
-   plan tests => 21;
+   plan tests => 23;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -319,3 +319,55 @@ is_deeply(\@rows,
 $t->done_with_rows();
 is($t->{state}, 0, 'Now not working inside nibble');
 is($t->pending_changes(), 0, 'No pending changes');
+
+# Now test that SQL_BUFFER_RESULT is in the queries OK
+$t = new TableSyncNibble(
+   handler  => $ch,
+   cols     => [qw(a b c)],
+   cols     => $tbl_struct->{cols},
+   dbh      => $dbh,
+   database => 'test',
+   table    => 'test1',
+   chunker  => $chunker,
+   nibbler  => $nibbler,
+   parser   => $tp,
+   struct   => $tbl_struct,
+   checksum => $checksum,
+   vp       => $vp,
+   quoter   => $q,
+   chunksize => 1,
+   where     => 'a>2',
+   possible_keys => [],
+   versionparser => $vp,
+   func          => 'SHA1',
+   trim          => 0,
+   bufferinmysql => 1,
+);
+
+like (
+   $t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+   qr/SELECT SQL_BUFFER_RESULT/,
+   'Buffering in first nibble',
+);
+
+# "find a bad row"
+$t->same_row(
+   { chunk_num => 0, cnt => 0, crc => 'abc' },
+   { chunk_num => 0, cnt => 1, crc => 'abc' },
+);
+
+like (
+   $t->get_sql(
+      quoter   => $q,
+      where    => 'foo=1',
+      database => 'test',
+      table    => 'test1',
+   ),
+   qr/SELECT SQL_BUFFER_RESULT/,
+   'Buffering in next nibble',
+);

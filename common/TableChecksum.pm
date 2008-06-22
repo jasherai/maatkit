@@ -292,6 +292,7 @@ sub make_row_checksum {
 # *   sep       (Optional) see make_row_checksum()
 # *   replicate (Optional) generate query to REPLACE into this table.
 # *   trim      (Optional) see make_row_checksum().
+# *   buffer    (Optional) Adds SQL_BUFFER_RESULT.
 sub make_checksum_query {
    my ( $self, %args ) = @_;
    my ( $dbname, $tblname, $table, $quoter, $algorithm,
@@ -361,7 +362,9 @@ sub make_checksum_query {
          . "SELECT ?, ?, /*CHUNK_NUM*/ ?, COUNT(*) AS cnt, $result";
    }
    else {
-      $result = "SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, $result";
+      $result = "SELECT "
+         . ($args{buffer} ? 'SQL_BUFFER_RESULT ' : '')
+         . "/*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, $result";
    }
    return $result . "FROM /*DB_TBL*//*WHERE*/";
 }

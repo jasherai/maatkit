@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 44;
+   $tests = 45;
    $skipped = 2;
 }
 
@@ -427,6 +427,24 @@ is (
       cols      => [qw(film_id)],
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
+   . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
+   . q{FROM /*DB_TBL*//*WHERE*/},
+   'Sakila.film FNV_64 BIT_XOR',
+);
+
+is (
+   $c->make_checksum_query(
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'BIT_XOR',
+      func      => 'FNV_64',
+      crc_wid   => 99,
+      cols      => [qw(film_id)],
+      buffer    => 1,
+   ),
+   q{SELECT SQL_BUFFER_RESULT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
    . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
    . q{FROM /*DB_TBL*//*WHERE*/},
    'Sakila.film FNV_64 BIT_XOR',

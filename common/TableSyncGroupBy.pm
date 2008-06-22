@@ -53,7 +53,9 @@ sub new {
 sub get_sql {
    my ( $self, %args ) = @_;
    my $cols = join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}});
-   return "SELECT $cols, COUNT(*) AS $self->{count_col}"
+   return "SELECT"
+      . ($self->{bufferinmysql} ? ' SQL_BUFFER_RESULT' : '')
+      . " $cols, COUNT(*) AS $self->{count_col}"
       . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' )
       . " GROUP BY $cols ORDER BY $cols";
