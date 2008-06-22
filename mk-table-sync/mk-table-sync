@@ -25,7 +25,6 @@
 #   don't use Perl to quote values, use arrays instead of hashes.
 # * Add back top-down, bottom-up, sja algorithms for efficiency when locking
 #   isn't an issue.
-# * Add a feature to warn you if you're making changes on a slave.
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
@@ -613,7 +612,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1957
+# DSNParser package 2005
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -855,8 +854,8 @@ sub disconnect {
 sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
-   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+   printf("# Active %sh: %s %s %s\n", ($thing->{Type} || 'undef'), "\t" x $level,
+      $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
@@ -1312,7 +1311,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1755
+# MySQLDump package 2007
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1346,8 +1345,9 @@ EOF
 EOF
 
 sub new {
-   my ( $class ) = @_;
-   my $self = bless {}, $class;
+   my ( $class, %args ) = @_;
+   $args{cache} = 1 unless defined $args{cache};
+   my $self = bless \%args, $class;
    return $self;
 }
 
@@ -1428,7 +1428,7 @@ sub _use_db {
 
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{tables}->{$db}->{$tbl} ) {
+   if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
@@ -1461,7 +1461,7 @@ sub get_create_table {
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
-   if ( !$self->{columns}->{$db}->{$tbl} ) {
+   if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       $ENV{MKDEBUG} && _d($sql);
@@ -1491,7 +1491,7 @@ sub get_tmp_table {
 
 sub get_procedures {
    my ( $self, $dbh, $quoter, $db ) = @_;
-   if ( !$self->{procs}->{$db} ) {
+   if ( !$self->{cache} || !$self->{procs}->{$db} ) {
       $self->{procs}->{$db} = {};
       $self->_use_db($dbh, $quoter, $db);
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
@@ -1522,7 +1522,7 @@ sub get_procedures {
 
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{triggers}->{$db} ) {
+   if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
@@ -1555,7 +1555,7 @@ sub get_triggers {
 
 sub get_databases {
    my ( $self, $dbh, $quoter, $like ) = @_;
-   if ( !$self->{databases} || $like ) {
+   if ( !$self->{cache} || !$self->{databases} || $like ) {
       my $sql = 'SHOW DATABASES';
       my @params;
       if ( $like ) {
@@ -1574,7 +1574,7 @@ sub get_databases {
 
 sub get_table_status {
    my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{table_status}->{$db} || $like ) {
+   if ( !$self->{cache} || !$self->{table_status}->{$db} || $like ) {
       my $sql = "SHOW TABLE STATUS FROM " . $quoter->quote($db);
       my @params;
       if ( $like ) {
@@ -1600,7 +1600,7 @@ sub get_table_status {
 
 sub get_table_list {
    my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{table_list}->{$db} || $like ) {
+   if ( !$self->{cache} || !$self->{table_list}->{$db} || $like ) {
       my $sql = "SHOW /*!50002 FULL*/ TABLES FROM " . $quoter->quote($db);
       my @params;
       if ( $like ) {
@@ -3051,7 +3051,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1997
+# TableSyncer package 2006
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3100,7 +3100,7 @@ sub sync_table {
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser master_slave func dumper trim) )
+      nibbler parser master_slave func dumper trim skipslavecheck) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -3109,16 +3109,38 @@ sub sync_table {
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
 
+   my $can_replace = grep { $_->{unique} } values %{$args{tbl_struct}->{keys}};
+   $ENV{MKDEBUG} && _d("This table's replace-ability: $can_replace");
+   my $use_replace = $args{replace} || $args{replicate};
+
    my $update_func;
    my $change_dbh;
    if ( $args{execute} ) {
       if ( $args{replicate} ) {
          $change_dbh = $args{src_dbh};
          $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
+         if ( !$can_replace ) {
+            die "Can't make changes on the master: no unique index exists";
+         }
       }
       else {
          $change_dbh = $args{dst_dbh};
          $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
+         my $slave_status = $args{master_slave}->get_slave_status($change_dbh);
+         my (undef, $log_bin) = $change_dbh->selectrow_array(
+            'SHOW VARIABLES LIKE "log_bin"');
+         my ($sql_log_bin) = $change_dbh->selectrow_array(
+            'SELECT @@SQL_LOG_BIN');
+         $ENV{MKDEBUG} && _d('Variables: log_bin=',
+            (defined $log_bin ? $log_bin : 'NULL'),
+            ' @@SQL_LOG_BIN=',
+            (defined $sql_log_bin ? $sql_log_bin : 'NULL'));
+         if ( !$args{skipslavecheck} && $slave_status && $sql_log_bin
+            && ($log_bin || 'OFF') eq 'ON' )
+         {
+            die "Can't make changes on $change_dbh: see the documentation "
+               . "section 'REPLICATION SAFETY' for solutions to this problem.";
+         }
       }
       $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
       $update_func = sub {
@@ -3136,7 +3158,7 @@ sub sync_table {
       table     => $args{dst_tbl},
       sdatabase => $args{src_db},
       stable    => $args{src_tbl},
-      replace   => $args{replace} || $args{replicate},
+      replace   => $use_replace,
       actions   => [
          ( $update_func ? $update_func            : () ),
          ( $args{print}
@@ -4728,6 +4750,7 @@ sub sync_a_table {
          where         => $args{where} || '',
          master_slave  => $ms,
          func          => $opts{f} || '',
+         skipslavecheck=> $opts{skipslavecheck} || 0,
       );
 
       if ( $opts{v} ) {
@@ -4848,7 +4871,7 @@ L<mk-table-checksum> found:
    mk-table-sync --execute --synctomaster --replicate test.checksum slave1
 
 Sync server2 in a master-master replication configuration, where server2's copy
-of db1.tbl2 is known or suspected to be incorrect:
+of db1.tbl1 is known or suspected to be incorrect:
 
    mk-table-sync --execute --synctomaster h=server2,D=db1,t=tbl1
 
@@ -4904,6 +4927,37 @@ There are many ways to invoke it.  The following is the abbreviated logic:
       else:
          find tables, filtering with --databases etc, and sync each
          DSN to the first.
+
+=head1 REPLICATION SAFETY
+
+Synchronizing a replication master and slave safely is a non-trivial problem, in
+general.  There are all sorts of issues to think about, such as other processes
+changing data, trying to change data on the slave, whether the destination and
+source are a master-master pair, and much more.
+
+In general, the safe way to do it is to change the data on the master, and let
+the changes flow through replication to the slave like any other changes.
+However, this works only if it's possible to REPLACE into the table on the
+master.  REPLACE works only if there's a unique index on the table (otherwise it
+just acts like an ordinary INSERT).
+
+If your table have unique keys, you should use the L<"--synctomaster"> and/or
+L<"--replicate"> options to sync a slave to its master.  This will generally do
+the right thing.  When there is no unique key on the table, there is no choice
+but to change the data on the slave, and mk-table-sync will detect that you're
+trying to do so.  It will complain and die unless you specify the
+L<"--skipslavecheck"> option.
+
+If you're syncing a table without a primary or unique key on a master-master
+pair, you must change the data on the destination server.  Therefore, you need
+to use the L<"--skipbinlog"> option for safety.  If you don't, the changes you
+make on the destination server will replicate back to the source server and
+change the data there!
+
+The generally safe thing to do on a master-master pair is to use the
+L<"--synctomaster"> option so you don't change the data on the destination
+server.  You will also need to use the L<"--skipslavecheck"> option to keep
+mk-table-sync from complaining that it is changing data on a slave.
 
 =head1 ALGORITHMS
 
@@ -5184,6 +5238,16 @@ Do not log to the binary log (C<SET SQL_LOG_BIN=0>).
 short form: -K
 
 Disable foreign key checks (C<SET FOREIGN_KEY_CHECKS=0>).
+
+=item --skipslavecheck
+
+Don't check whether the destination server is a slave.
+
+If the destination server is a slave, it's generally unsafe to make changes on
+it.  However, sometimes you have to; L<"--replace"> won't work unless there's a
+unique index, for example, so you can't make changes on the master in that
+scenario.  By default mk-table-sync will complain if you try to change data on a
+slave.  This option will bypass that check.  Use it at your own risk.
 
 =item --skipuniquekey
 
