@@ -1,9 +1,12 @@
 Changelog for mk-table-sync:
 
+   * --synctomaster did not abort when unable to discover the master.
+   * An error waiting for the master to catch up caused other tables to fail.
    * Added --bufferinmysql to help make GroupBy algorithm more efficient.
    * Added safety checks to prevent changing data on a slave server.
    * Added --skipslavecheck to prevent safety checks on destination server.
-   * Added the GroupBy algorithm as default replacement for Stream.
+   * Made the GroupBy algorithm the default replacement for Stream.
+   * Added the GroupBy algorithm, which can sync tables without unique keys.
    * Syncing could stop and leave a row to delete in the destination.
    * Generate command-line help from the POD.
 

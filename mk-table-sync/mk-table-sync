@@ -3060,7 +3060,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 2009
+# TableSyncer package 2016
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3372,26 +3372,41 @@ sub lock_and_wait {
       }
    }
 
-   if ( $args{wait} ) {
-      $args{master_slave}->wait_for_master(
-         $args{misc_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
-   }
+   eval {
+      if ( $args{wait} ) {
+         $args{master_slave}->wait_for_master(
+            $args{misc_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
+      }
 
-   if ( $args{replicate} ) {
-      $ENV{MKDEBUG}
-         && _d('Not locking destination because syncing via replication');
-   }
-   else {
-      if ( $args{lock} == 3 ) {
-         my $sql = 'FLUSH TABLES WITH READ LOCK';
-         $ENV{MKDEBUG} && _d("$args{dst_dbh}, $sql");
-         $args{dst_dbh}->do($sql);
+      if ( $args{replicate} ) {
+         $ENV{MKDEBUG}
+            && _d('Not locking destination because syncing via replication');
       }
-      elsif ( !$args{transaction} ) {
-         $self->lock_table($args{dst_dbh}, 'dest',
-            $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
-            $args{execute} ? 'WRITE' : 'READ');
+      else {
+         if ( $args{lock} == 3 ) {
+            my $sql = 'FLUSH TABLES WITH READ LOCK';
+            $ENV{MKDEBUG} && _d("$args{dst_dbh}, $sql");
+            $args{dst_dbh}->do($sql);
+         }
+         elsif ( !$args{transaction} ) {
+            $self->lock_table($args{dst_dbh}, 'dest',
+               $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
+               $args{execute} ? 'WRITE' : 'READ');
+         }
       }
+   };
+
+   if ( $EVAL_ERROR ) {
+      if ( $args{src_sth}->{Active} ) {
+         $args{src_sth}->finish();
+      }
+      foreach my $dbh ( @args{qw(src_dbh dst_dbh misc_dbh)} ) {
+         next unless $dbh;
+         $ENV{MKDEBUG} && _d('Caught error, unlocking/committing on', $dbh);
+         $dbh->do('UNLOCK TABLES');
+         $dbh->commit() unless $dbh->{AutoCommit};
+      }
+      die $EVAL_ERROR;
    }
 
    return $result;
@@ -3849,7 +3864,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 2001
+# MasterSlave package 2018
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3925,16 +3940,6 @@ sub find_slave_hosts {
    my @slaves;
 
    if ( (!$method && ($dsn->{P}||3306) == 3306) || $method eq 'processlist' ) {
-
-      my $proc =
-         grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
-         @{$dbh->selectcol_arrayref('SHOW GRANTS')};
-      if ( !$proc ) {
-         die "You do not have the PROCESS privilege";
-      }
-
-      my $sql = 'SHOW PROCESSLIST';
-      $ENV{MKDEBUG} && _d($dbh, $sql);
       @slaves =
          map  {
             my $slave        = $dsn_parser->parse("h=$_", $dsn);
@@ -3948,14 +3953,7 @@ sub find_slave_hosts {
                $host = '127.0.0.1'; # Replication never uses sockets.
             }
             $host;
-         }
-         grep { $_->{command} =~ m/Binlog Dump/i }
-         map  {
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            \%hash;
-         }
-         @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+         } $self->get_connected_slaves($dbh);
    }
 
    if ( !@slaves ) {
@@ -3982,6 +3980,65 @@ sub find_slave_hosts {
 
    $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
    return @slaves;
+}
+
+sub get_connected_slaves {
+   my ( $self, $dbh ) = @_;
+
+   my $proc =
+      grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
+      @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+   if ( !$proc ) {
+      die "You do not have the PROCESS privilege";
+   }
+
+   my $sql = 'SHOW PROCESSLIST';
+   $ENV{MKDEBUG} && _d($dbh, $sql);
+   grep { $_->{command} =~ m/Binlog Dump/i }
+   map  { # Lowercase the column names
+      my %hash;
+      @hash{ map { lc $_ } keys %$_ } = values %$_;
+      \%hash;
+   }
+   @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+}
+
+sub is_master_of {
+   my ( $self, $master, $slave ) = @_;
+   my $master_status = $self->get_master_status($master)
+      or die "The server specified as a master is not a master";
+   my $slave_status  = $self->get_slave_status($slave)
+      or die "The server specified as a slave is not a slave";
+   my @connected     = $self->get_connected_slaves($master)
+      or die "The server specified as a master has no connected slaves";
+   my (undef, $port) = $master->selectrow_array('SHOW VARIABLES LIKE "port"');
+
+   if ( $port != $slave_status->{master_port} ) {
+      die "The slave is connected to $slave_status->{master_port} "
+         . "but the master's port is $port";
+   }
+
+   if ( !grep { $slave_status->{master_user} eq $_->{user} } @connected ) {
+      die "I don't see any slave I/O thread connected with user "
+         . $slave_status->{master_user};
+   }
+
+   if ( ($slave_status->{slave_io_state} || '')
+      eq 'Waiting for master to send event' )
+   {
+      my ( $master_log_name, $master_log_num )
+         = $master_status->{file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
+      my ( $slave_log_name, $slave_log_num )
+         = $slave_status->{master_log_file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
+      if ( $master_log_name ne $slave_log_name
+         || abs($master_log_num - $slave_log_num) > 1 )
+      {
+         die "The slave thinks it is reading from "
+            . "$slave_status->{master_log_file},  but the "
+            . "master is writing to $master_status->{file}";
+      }
+   }
+   return 1;
 }
 
 sub get_master_dsn {
@@ -4412,7 +4469,7 @@ my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{dsn}    = $dsn_parser;
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '[OPTION].. DSN [DSN...]';
-$opt_parser->{descr} = 'finds and fixes data differences between MySQL tables.';
+$opt_parser->{descr} = 'synchronizes data efficiently between MySQL tables.';
 my %opts = $opt_parser->parse();
 $dsn_parser->prop('setvars', $opts{setvars});
 
@@ -4456,8 +4513,11 @@ if ( $dsns[0]->{t} ) {
       die "You specified one DSN with a t part, but not --synctomaster.\n"
          unless $opts{s};
       $dsns[0]->{dbh} = get_cxn($dsns[0]);
-      unshift @dsns,
-         $ms->get_master_dsn($dsns[0]->{dbh}, $dsns[0], $dsn_parser);
+      my $master = $ms->get_master_dsn($dsns[0]->{dbh}, $dsns[0], $dsn_parser)
+         or die "Can't determine master of " . $dsn_parser->as_string($dsns[0]);
+      unshift @dsns, $master;
+      $dsns[0]->{dbh} = get_cxn($dsns[0]);
+      $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
    }
 
    if ( $dsns[0]->{t} ne $dsns[1]->{t}
@@ -4507,9 +4567,11 @@ elsif ( $opts{R} ) {
    if ( $opts{s} ) {
 
       $dsns[0]->{dbh} = get_cxn($dsns[0]);
-      unshift @dsns,
-         $ms->get_master_dsn($dsns[0]->{dbh}, $dsns[0], $dsn_parser);
+      my $master = $ms->get_master_dsn($dsns[0]->{dbh}, $dsns[0], $dsn_parser)
+         or die "Can't determine master of " . $dsn_parser->as_string($dsns[0]);
+      unshift @dsns, $master;
       $dsns[0]->{dbh} = get_cxn($dsns[0]);
+      $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
       my %args = (
          src     => $dsns[0],
          dst     => $dsns[1],
@@ -4606,9 +4668,11 @@ else {
 
    if ( @dsns == 1 ) {
       if ( $opts{s} ) {
-         unshift @dsns,
-            $ms->get_master_dsn($dsns[0]->{dbh}, $dsns[0], $dsn_parser);
+         my $master = $ms->get_master_dsn($dsns[0]->{dbh}, $dsns[0], $dsn_parser)
+            or die "Can't determine master of " . $dsn_parser->as_string($dsns[0]);
+         unshift @dsns, $master;
          $dsns[0]->{dbh} = get_cxn($dsns[0]);
+         $ms->is_master_of($dsns[0]->{dbh}, $dsns[1]->{dbh});
       }
       else {
          die "You specified only one DSN, "
