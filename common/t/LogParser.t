@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 6;
+use Test::More tests => 7;
 use English qw(-no_match_vars);
 
 require "../LogParser.pm";
@@ -544,13 +544,11 @@ eval {
 };
 is($EVAL_ERROR, '', 'Blank entry did not crash');
 
-# TODO
-__END__
 # Check a slow log that has tabs in it.
 $events = [
    {  cmd            => 'Query',
       arg            => "foo\nbar\n\t\t\t0 AS counter\nbaz",
-      ts             => '',
+      ts             => '071218 11:48:27',
       Disk_filesort  => 'No',
       Merge_passes   => '0',
       Full_scan      => 'No',
@@ -564,7 +562,7 @@ $events = [
       Disk_tmp_table => 'No',
       Rows_sent      => '0',
       Lock_time      => '0.000000',
-      NR             => 8,
+      NR             => 10,
    },
 ];
 
