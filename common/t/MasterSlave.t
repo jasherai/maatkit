@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 30;
+use Test::More tests => 31;
 use English qw(-no_match_vars);
 
 require "../MasterSlave.pm";
@@ -88,9 +88,13 @@ is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
 
 ok($ms->is_master_of($slaves[0], $slaves[1]), 'slave 1 is slave of slave 0');
 eval {
+   $ms->is_master_of($slaves[0], $slaves[2]);
+};
+like($EVAL_ERROR, qr/but the master's port/, 'slave 2 is not slave of slave 0');
+eval {
    $ms->is_master_of($slaves[2], $slaves[1]);
 };
-like($EVAL_ERROR, qr/but the master's port/, 'slave 2 is not slave of slave 1');
+like($EVAL_ERROR, qr/has no connected slaves/, 'slave 1 is not slave of slave 2');
 
 map { $ms->stop_slave($_) } @slaves;
 map { $ms->start_slave($_) } @slaves;

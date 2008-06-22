@@ -195,9 +195,12 @@ sub get_connected_slaves {
 # is not the master.  If not the master, it dies; otherwise returns true.
 sub is_master_of {
    my ( $self, $master, $slave ) = @_;
-   my $master_status = $self->get_master_status($master);
-   my $slave_status  = $self->get_slave_status($slave);
-   my @connected     = $self->get_connected_slaves($master);
+   my $master_status = $self->get_master_status($master)
+      or die "The server specified as a master is not a master";
+   my $slave_status  = $self->get_slave_status($slave)
+      or die "The server specified as a slave is not a slave";
+   my @connected     = $self->get_connected_slaves($master)
+      or die "The server specified as a master has no connected slaves";
    my (undef, $port) = $master->selectrow_array('SHOW VARIABLES LIKE "port"');
 
    if ( $port != $slave_status->{master_port} ) {
