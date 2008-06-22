@@ -86,10 +86,11 @@ sub parse_event {
    LINE:
    while ( !$done && defined $line ) {
       $ENV{MKDEBUG} && _d('type: ', $type, ' ', $line);
+      my $handled_line = 0;
 
       if ( !$mode && $line =~ m/^# [A-Z]/ ) {
          $ENV{MKDEBUG} && _d('Setting mode to slow log');
-         $mode = 'slow';
+         $mode ||= 'slow';
       }
 
       # These can appear in the log file when it's opened -- for example, when
@@ -103,16 +104,12 @@ sub parse_event {
          redo LINE;
       }
 
-      elsif ( $line =~ m/^# No InnoDB statistics available/ ) {
-         $ENV{MKDEBUG} && _d('Ignoring line');
-         $line = <$fh>;
-         $type = 0;
-         next LINE;
-      }
-
       # Match the beginning of an event in the general log.
-      elsif ( my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s ) {
+      elsif ( $mode ne 'slow'
+         && (my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s)
+      ) {
          $ENV{MKDEBUG} && _d('Beginning of general log event');
+         $handled_line = 1;
          $mode ||= 'log';
          $self->{last_line} = undef;
          if ( $type == 0 ) {
@@ -141,66 +138,80 @@ sub parse_event {
          }
       }
 
-      # Maybe it's the beginning of a slow query log event.
-      # # Time: 071015 21:43:52
-      elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
-         $ENV{MKDEBUG} && _d('Beginning of slow log event');
-         $self->{last_line} = undef;
-         if ( $type == 0 ) {
-            $ENV{MKDEBUG} && _d('Type 0');
-            $event->{ts} = $time;
-            # The User@Host might be concatenated onto the end of the Time.
-            if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+      elsif ( $mode eq 'slow' ) {
+         if ( $line =~ m/^# No InnoDB statistics available/ ) {
+            $handled_line = 1;
+            $ENV{MKDEBUG} && _d('Ignoring line');
+            $line = <$fh>;
+            $type = 0;
+            next LINE;
+         }
+
+         # Maybe it's the beginning of a slow query log event.
+         # # Time: 071015 21:43:52
+         elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
+            $handled_line = 1;
+            $ENV{MKDEBUG} && _d('Beginning of slow log event');
+            $self->{last_line} = undef;
+            if ( $type == 0 ) {
+               $ENV{MKDEBUG} && _d('Type 0');
+               $event->{ts} = $time;
+               # The User@Host might be concatenated onto the end of the Time.
+               if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+                  @{$event}{qw(user host ip)} = ($user, $host, $ip);
+               }
+            }
+            else {
+               # Last line was the end of a query; this is the beginning of the
+               # next.
+               $ENV{MKDEBUG} && _d('Saving line for next invocation');
+               $self->{last_line} = $line;
+               $done = 1;
+            }
+            $type = 0;
+         }
+
+         # Maybe it's the user/host line of a slow query log, which could be the
+         # first line of a new event in many cases.
+         # # User@Host: root[root] @ localhost []
+         elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+            $handled_line = 1;
+            if ( $type == 0 ) {
+               $ENV{MKDEBUG} && _d('Type 0');
                @{$event}{qw(user host ip)} = ($user, $host, $ip);
             }
+            else {
+               # Last line was the end of a query; this is the beginning of the
+               # next.
+               $ENV{MKDEBUG} && _d('Saving line for next invocation');
+               $self->{last_line} = $line;
+               $done = 1;
+            }
+            $type = 0;
          }
-         else {
-            # Last line was the end of a query; this is the beginning of the
-            # next.
-            $ENV{MKDEBUG} && _d('Saving line for next invocation');
-            $self->{last_line} = $line;
-            $done = 1;
+
+         # Maybe it's the timing line of a slow query log, or another line such
+         # as that... they typically look like this:
+         # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
+         elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
+            if ( $type == 0 ) {
+               $handled_line = 1;
+               $ENV{MKDEBUG} && _d('Splitting line into fields');
+               @{$event}{keys %hash} = values %hash;
+            }
+            else {
+               # Last line was the end of a query; this is the beginning of the
+               # next.
+               $handled_line = 1;
+               $ENV{MKDEBUG} && _d('Saving line for next invocation');
+               $self->{last_line} = $line;
+               $done = 1;
+            }
+            $type = 0;
          }
-         $type = 0;
       }
 
-      # Maybe it's the user/host line of a slow query log, which could be the
-      # first line of a new event in many cases.
-      # # User@Host: root[root] @ localhost []
-      elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-         if ( $type == 0 ) {
-            $ENV{MKDEBUG} && _d('Type 0');
-            @{$event}{qw(user host ip)} = ($user, $host, $ip);
-         }
-         else {
-            # Last line was the end of a query; this is the beginning of the
-            # next.
-            $ENV{MKDEBUG} && _d('Saving line for next invocation');
-            $self->{last_line} = $line;
-            $done = 1;
-         }
-         $type = 0;
-      }
-
-      # Maybe it's the timing line of a slow query log, or another line such
-      # as that... they typically look like this:
-      # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
-      elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
-         if ( $type == 0 ) {
-            $ENV{MKDEBUG} && _d('Splitting line into fields');
-            @{$event}{keys %hash} = values %hash;
-         }
-         else {
-            # Last line was the end of a query; this is the beginning of the
-            # next.
-            $ENV{MKDEBUG} && _d('Saving line for next invocation');
-            $self->{last_line} = $line;
-            $done = 1;
-         }
-         $type = 0;
-      }
-
-      else {
+      if ( !$handled_line ) {
          if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
             $ENV{MKDEBUG} && _d('Line is the end of a query within event');
             if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
