@@ -376,30 +376,49 @@ sub lock_and_wait {
       }
    }
 
-   if ( $args{wait} ) {
-      # Always use the $misc_dbh dbh to check the master's position, because
-      # the $src_dbh might be in use due to executing $src_sth.
-      $args{master_slave}->wait_for_master(
-         $args{misc_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
-   }
+   # If there is any error beyond this point, we need to unlock/commit.
+   eval {
+      if ( $args{wait} ) {
+         # Always use the $misc_dbh dbh to check the master's position, because
+         # the $src_dbh might be in use due to executing $src_sth.
+         $args{master_slave}->wait_for_master(
+            $args{misc_dbh}, $args{dst_dbh}, $args{wait}, $args{timeoutok});
+      }
 
-   # Don't lock on destination if it's a replication slave, or the replication
-   # thread will not be able to make changes.
-   if ( $args{replicate} ) {
-      $ENV{MKDEBUG}
-         && _d('Not locking destination because syncing via replication');
-   }
-   else {
-      if ( $args{lock} == 3 ) {
-         my $sql = 'FLUSH TABLES WITH READ LOCK';
-         $ENV{MKDEBUG} && _d("$args{dst_dbh}, $sql");
-         $args{dst_dbh}->do($sql);
+      # Don't lock on destination if it's a replication slave, or the
+      # replication thread will not be able to make changes.
+      if ( $args{replicate} ) {
+         $ENV{MKDEBUG}
+            && _d('Not locking destination because syncing via replication');
       }
-      elsif ( !$args{transaction} ) {
-         $self->lock_table($args{dst_dbh}, 'dest',
-            $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
-            $args{execute} ? 'WRITE' : 'READ');
+      else {
+         if ( $args{lock} == 3 ) {
+            my $sql = 'FLUSH TABLES WITH READ LOCK';
+            $ENV{MKDEBUG} && _d("$args{dst_dbh}, $sql");
+            $args{dst_dbh}->do($sql);
+         }
+         elsif ( !$args{transaction} ) {
+            $self->lock_table($args{dst_dbh}, 'dest',
+               $args{quoter}->quote($args{dst_db}, $args{dst_tbl}),
+               $args{execute} ? 'WRITE' : 'READ');
+         }
       }
+   };
+
+   if ( $EVAL_ERROR ) {
+      # Must abort/unlock/commit so that we don't interfere with any further
+      # tables we try to do.
+      if ( $args{src_sth}->{Active} ) {
+         $args{src_sth}->finish();
+      }
+      foreach my $dbh ( @args{qw(src_dbh dst_dbh misc_dbh)} ) {
+         next unless $dbh;
+         $ENV{MKDEBUG} && _d('Caught error, unlocking/committing on', $dbh);
+         $dbh->do('UNLOCK TABLES');
+         $dbh->commit() unless $dbh->{AutoCommit};
+      }
+      # ... and then re-throw the error.
+      die $EVAL_ERROR;
    }
 
    return $result;
