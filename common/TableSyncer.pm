@@ -74,7 +74,7 @@ sub sync_table {
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser master_slave func dumper trim) )
+      nibbler parser master_slave func dumper trim skipslavecheck) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -82,6 +82,10 @@ sub sync_table {
       . join(', ',
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
+
+   my $can_replace = grep { $_->{unique} } values %{$args{tbl_struct}->{keys}};
+   $ENV{MKDEBUG} && _d("This table's replace-ability: $can_replace");
+   my $use_replace = $args{replace} || $args{replicate};
 
    # TODO: for two-way sync, the change handler needs both DBHs.
    # Check permissions on writable tables (TODO: 2-way needs to check both)
@@ -91,10 +95,36 @@ sub sync_table {
       if ( $args{replicate} ) {
          $change_dbh = $args{src_dbh};
          $self->check_permissions(@args{qw(src_dbh src_db src_tbl quoter)});
+         # Is it possible to make changes on the master?  Only if REPLACE will
+         # work OK.
+         if ( !$can_replace ) {
+            die "Can't make changes on the master: no unique index exists";
+         }
       }
       else {
          $change_dbh = $args{dst_dbh};
          $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
+         # Is it safe to change data on $change_dbh?  It's only safe if it's not
+         # a slave.  We don't change tables on slaves directly.  If we are
+         # forced to change data on a slave, we require either that a) binary
+         # logging is disabled, or b) the check is bypassed.  By the way, just
+         # because the server is a slave doesn't mean it's not also the master
+         # of the master (master-master replication).
+         my $slave_status = $args{master_slave}->get_slave_status($change_dbh);
+         my (undef, $log_bin) = $change_dbh->selectrow_array(
+            'SHOW VARIABLES LIKE "log_bin"');
+         my ($sql_log_bin) = $change_dbh->selectrow_array(
+            'SELECT @@SQL_LOG_BIN');
+         $ENV{MKDEBUG} && _d('Variables: log_bin=',
+            (defined $log_bin ? $log_bin : 'NULL'),
+            ' @@SQL_LOG_BIN=',
+            (defined $sql_log_bin ? $sql_log_bin : 'NULL'));
+         if ( !$args{skipslavecheck} && $slave_status && $sql_log_bin
+            && ($log_bin || 'OFF') eq 'ON' )
+         {
+            die "Can't make changes on $change_dbh: see the documentation "
+               . "section 'REPLICATION SAFETY' for solutions to this problem.";
+         }
       }
       $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
       $update_func = sub {
@@ -112,7 +142,7 @@ sub sync_table {
       table     => $args{dst_tbl},
       sdatabase => $args{src_db},
       stable    => $args{src_tbl},
-      replace   => $args{replace} || $args{replicate},
+      replace   => $use_replace,
       actions   => [
          ( $update_func ? $update_func            : () ),
          # Print AFTER executing, so the print isn't misleading in case of an
@@ -240,6 +270,8 @@ sub sync_table {
    return ($ch->get_changes(), ALGORITHM => $args{algorithm});
 }
 
+# This query will check all needed privileges on the table without actually
+# changing anything in it.
 sub check_permissions {
    my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
    my $db_tbl = $quoter->quote($db, $tbl);
