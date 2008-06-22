@@ -5128,7 +5128,7 @@ Sync only this comma-separated list of storage engines.
 
 short form: -x
 
-Execute the queries required to sync the tables.
+Execute queries to make the tables have identical data.
 
 =item --function
 
