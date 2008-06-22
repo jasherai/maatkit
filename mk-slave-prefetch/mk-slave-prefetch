@@ -608,7 +608,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1957
+# DSNParser package 2005
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -850,8 +850,8 @@ sub disconnect {
 sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
-   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+   printf("# Active %sh: %s %s %s\n", ($thing->{Type} || 'undef'), "\t" x $level,
+      $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
@@ -871,7 +871,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 1928
+# LogParser package 2013
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -926,10 +926,11 @@ sub parse_event {
    LINE:
    while ( !$done && defined $line ) {
       $ENV{MKDEBUG} && _d('type: ', $type, ' ', $line);
+      my $handled_line = 0;
 
       if ( !$mode && $line =~ m/^# [A-Z]/ ) {
          $ENV{MKDEBUG} && _d('Setting mode to slow log');
-         $mode = 'slow';
+         $mode ||= 'slow';
       }
 
       if ( $line =~ m/Version:.+ started with:/ ) {
@@ -941,15 +942,11 @@ sub parse_event {
          redo LINE;
       }
 
-      elsif ( $line =~ m/^# No InnoDB statistics available/ ) {
-         $ENV{MKDEBUG} && _d('Ignoring line');
-         $line = <$fh>;
-         $type = 0;
-         next LINE;
-      }
-
-      elsif ( my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s ) {
+      elsif ( $mode ne 'slow'
+         && (my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s)
+      ) {
          $ENV{MKDEBUG} && _d('Beginning of general log event');
+         $handled_line = 1;
          $mode ||= 'log';
          $self->{last_line} = undef;
          if ( $type == 0 ) {
@@ -976,51 +973,65 @@ sub parse_event {
          }
       }
 
-      elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
-         $ENV{MKDEBUG} && _d('Beginning of slow log event');
-         $self->{last_line} = undef;
-         if ( $type == 0 ) {
-            $ENV{MKDEBUG} && _d('Type 0');
-            $event->{ts} = $time;
-            if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+      elsif ( $mode eq 'slow' ) {
+         if ( $line =~ m/^# No InnoDB statistics available/ ) {
+            $handled_line = 1;
+            $ENV{MKDEBUG} && _d('Ignoring line');
+            $line = <$fh>;
+            $type = 0;
+            next LINE;
+         }
+
+         elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
+            $handled_line = 1;
+            $ENV{MKDEBUG} && _d('Beginning of slow log event');
+            $self->{last_line} = undef;
+            if ( $type == 0 ) {
+               $ENV{MKDEBUG} && _d('Type 0');
+               $event->{ts} = $time;
+               if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+                  @{$event}{qw(user host ip)} = ($user, $host, $ip);
+               }
+            }
+            else {
+               $ENV{MKDEBUG} && _d('Saving line for next invocation');
+               $self->{last_line} = $line;
+               $done = 1;
+            }
+            $type = 0;
+         }
+
+         elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+            $handled_line = 1;
+            if ( $type == 0 ) {
+               $ENV{MKDEBUG} && _d('Type 0');
                @{$event}{qw(user host ip)} = ($user, $host, $ip);
             }
+            else {
+               $ENV{MKDEBUG} && _d('Saving line for next invocation');
+               $self->{last_line} = $line;
+               $done = 1;
+            }
+            $type = 0;
          }
-         else {
-            $ENV{MKDEBUG} && _d('Saving line for next invocation');
-            $self->{last_line} = $line;
-            $done = 1;
+
+         elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
+            if ( $type == 0 ) {
+               $handled_line = 1;
+               $ENV{MKDEBUG} && _d('Splitting line into fields');
+               @{$event}{keys %hash} = values %hash;
+            }
+            else {
+               $handled_line = 1;
+               $ENV{MKDEBUG} && _d('Saving line for next invocation');
+               $self->{last_line} = $line;
+               $done = 1;
+            }
+            $type = 0;
          }
-         $type = 0;
       }
 
-      elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-         if ( $type == 0 ) {
-            $ENV{MKDEBUG} && _d('Type 0');
-            @{$event}{qw(user host ip)} = ($user, $host, $ip);
-         }
-         else {
-            $ENV{MKDEBUG} && _d('Saving line for next invocation');
-            $self->{last_line} = $line;
-            $done = 1;
-         }
-         $type = 0;
-      }
-
-      elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
-         if ( $type == 0 ) {
-            $ENV{MKDEBUG} && _d('Splitting line into fields');
-            @{$event}{keys %hash} = values %hash;
-         }
-         else {
-            $ENV{MKDEBUG} && _d('Saving line for next invocation');
-            $self->{last_line} = $line;
-            $done = 1;
-         }
-         $type = 0;
-      }
-
-      else {
+      if ( !$handled_line ) {
          if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
             $ENV{MKDEBUG} && _d('Line is the end of a query within event');
             if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
@@ -1107,7 +1118,7 @@ sub parse_binlog_event {
          }
          else {
             die "Unknown event type $type"
-               unless $type =~ m/Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+               unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
          }
       }
       else {
@@ -1137,7 +1148,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 1937
+# QueryRewriter package 1978
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1172,7 +1183,8 @@ sub strip_comments {
 }
 
 sub fingerprint {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $opts ) = @_;
+   $opts ||= {};
    $query = lc $query;
    $query =~ s{
               (?<![\w.+-])
@@ -1199,6 +1211,9 @@ sub fingerprint {
               }
               {$1($2+)}gx;      # Collapse IN() and VALUES() lists
    $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
+   if ( $opts->{prefixes} ) { # or begin with them...
+      $query =~ s/\b\d+(_\d+)?(?=[a-zA-Z_])/$1 ? "N_N" : "N"/eg;
+   }
    return $query;
 }
 
@@ -1567,7 +1582,8 @@ eval {
             # Convert the event to a SELECT and print/execute it.
             my $select = $qn->convert_to_select($event->{arg});
             if ( $select =~ m/\A\s*(?:set|select|use)/i ) {
-               my $fingerprint = $qn->fingerprint($event->{arg});
+               my $fingerprint = $qn->fingerprint(
+                  $event->{arg}, {prefixes => $opts{numprefix}});
                if ( (my $avg = get_avg($fingerprint)) < $opts{q} ) {
 
                   # Safeguard as much as possible against really enormous
@@ -2051,6 +2067,15 @@ efficiency.  (Avoiding the subquery reduces the query's overhead for short
 queries).  The rewritten query will then look like the following;
 
    SELECT ISNULL(COALESCE(<columns>)) FROM ...
+
+=item --numprefix
+
+Abstract away numeric table name prefixes.
+
+This causes the following two queries to "fingeprint" to the same thing:
+
+  select from 1_2_users;
+  select from 2_3_users;
 
 =item --offset
 
