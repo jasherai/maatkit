@@ -1,5 +1,8 @@
 Changelog for mk-slave-prefetch:
 
+   * Added the --numprefix option for use in sharded data stores.
+   * The Rotate binary log event type was not handled.
+
 2008-06-02: version 1.0.2
 
    * Add the --progress option.
