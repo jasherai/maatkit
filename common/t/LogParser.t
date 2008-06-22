@@ -544,6 +544,8 @@ eval {
 };
 is($EVAL_ERROR, '', 'Blank entry did not crash');
 
+# TODO
+__END__
 # Check a slow log that has tabs in it.
 $events = [
    {  cmd            => 'Query',
@@ -566,10 +568,10 @@ $events = [
    },
 ];
 
-open $file, "<", 'samples/slow004.txt' or die $OS_ERROR;
+open $file, "<", 'samples/slow005.txt' or die $OS_ERROR;
 @e = ();
 1 while ( $p->parse_event( $file, \&simple_callback ) );
 close $file;
 
-is_deeply( \@e, $events, "Got events from the microslow log", );
+is_deeply( \@e, $events, "microslow log with tabs", );
 
