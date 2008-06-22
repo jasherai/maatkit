@@ -48,9 +48,12 @@ EOF
    /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 EOF
 
+# Arguments:
+# * cache: defaults to 1
 sub new {
-   my ( $class ) = @_;
-   my $self = bless {}, $class;
+   my ( $class, %args ) = @_;
+   $args{cache} = 1 unless defined $args{cache};
+   my $self = bless \%args, $class;
    return $self;
 }
 
@@ -132,7 +135,7 @@ sub _use_db {
 
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{tables}->{$db}->{$tbl} ) {
+   if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
@@ -165,7 +168,7 @@ sub get_create_table {
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
-   if ( !$self->{columns}->{$db}->{$tbl} ) {
+   if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       $ENV{MKDEBUG} && _d($sql);
@@ -193,9 +196,43 @@ sub get_tmp_table {
    return $result;
 }
 
+sub get_procedures {
+   my ( $self, $dbh, $quoter, $db ) = @_;
+   if ( !$self->{cache} || !$self->{procs}->{$db} ) {
+      $self->{procs}->{$db} = {};
+      $self->_use_db($dbh, $quoter, $db);
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW PROCEDURE STATUS FROM " . $quoter->quote($db);
+      $ENV{MKDEBUG} && _d($sql);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute();
+      if ( $sth->rows ) {
+         my $procs = $sth->fetchall_arrayref({});
+         foreach my $proc (@$procs) {
+            # Lowercase the hash keys because the NAME_lc property might be set
+            # on the $dbh, so the lettercase is unpredictable.  This makes them
+            # predictable.
+            my %proc;
+            @proc{ map { lc $_ } keys %$proc } = values %$proc;
+            push @{ $self->{procs}->{$db}}, \%proc;
+         }
+      }
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+   }
+   return $self->{procs}->{$db};
+}
+
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{triggers}->{$db} ) {
+   if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
@@ -223,12 +260,15 @@ sub get_triggers {
       $ENV{MKDEBUG} && _d($sql);
       $dbh->do($sql);
    }
-   return $self->{triggers}->{$db}->{$tbl};
+   if ( $tbl ) {
+      return $self->{triggers}->{$db}->{$tbl};
+   }
+   return @{$self->{triggers}->{$db}};
 }
 
 sub get_databases {
    my ( $self, $dbh, $quoter, $like ) = @_;
-   if ( !$self->{databases} || $like ) {
+   if ( !$self->{cache} || !$self->{databases} || $like ) {
       my $sql = 'SHOW DATABASES';
       my @params;
       if ( $like ) {
@@ -247,7 +287,7 @@ sub get_databases {
 
 sub get_table_status {
    my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{table_status}->{$db} || $like ) {
+   if ( !$self->{cache} || !$self->{table_status}->{$db} || $like ) {
       my $sql = "SHOW TABLE STATUS FROM " . $quoter->quote($db);
       my @params;
       if ( $like ) {
@@ -273,7 +313,7 @@ sub get_table_status {
 
 sub get_table_list {
    my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{table_list}->{$db} || $like ) {
+   if ( !$self->{cache} || !$self->{table_list}->{$db} || $like ) {
       my $sql = "SHOW /*!50002 FULL*/ TABLES FROM " . $quoter->quote($db);
       my @params;
       if ( $like ) {

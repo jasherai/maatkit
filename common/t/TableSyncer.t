@@ -66,7 +66,7 @@ sub throws_ok {
 
 my $ts         = new TableSyncer();
 my $tp         = new TableParser();
-my $du         = new MySQLDump();
+my $du         = new MySQLDump( cache => 0 );
 my $q          = new Quoter();
 my $vp         = new VersionParser();
 my $ddl        = $du->get_create_table( $src_dbh, $q, 'test', 'test1' );
@@ -226,8 +226,12 @@ is( $cnt, 4, 'Four rows in destination after GroupBy' );
 
 print `mysql < samples/before-TableSyncGroupBy.sql`;
 
+my $ddl2        = $du->get_create_table( $src_dbh, $q, 'test', 'test1' );
+my $tbl_struct2 = $tp->parse($ddl2);
+
 $ts->sync_table(
    %args,
+   tbl_struct    => $tbl_struct2,
    cols          => [qw(a b c)],
    algorithm     => 'GroupBy',
    dst_db        => 'test',
