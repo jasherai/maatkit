@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 18;
 use DBI;
 
 my $output;
@@ -16,12 +16,12 @@ sub query {
 
 sub run {
    my ($src, $dst, $other) = @_;
-   my $cmd = "perl ../mk-table-sync -px F=$cnf,D=test,t=$src t=$dst $other";
+   my $cmd = "perl ../mk-table-sync -px F=$cnf,D=test,t=$src t=$dst $other 2>&1";
    chomp(my $output=`$cmd`);
    return $output;
 }
 
-# Set up the sandbox
+# Set up the sandbox (master-master pair)
 print `./make_repl_sandbox`;
 
 # Open a connection to MySQL, or skip the rest of the tests.
@@ -32,6 +32,9 @@ $dbh = DBI->connect(
 `/tmp/12345/use < before.sql`;
 
 $output = run('test1', 'test2', '');
+like($output, qr/Can't make changes/, 'It dislikes changing a slave');
+
+$output = run('test1', 'test2', '--skipbinlog');
 
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'No alg sync');
@@ -44,7 +47,7 @@ is_deeply(
 
 `/tmp/12345/use < before.sql`;
 
-$output = run('test1', 'test2', '-a Stream');
+$output = run('test1', 'test2', '-a Stream --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Stream sync');
 
@@ -56,7 +59,7 @@ is_deeply(
 
 `/tmp/12345/use < before.sql`;
 
-$output = run('test1', 'test2', '-a GroupBy');
+$output = run('test1', 'test2', '-a GroupBy --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic GroupBy sync');
 
@@ -68,7 +71,7 @@ is_deeply(
 
 `/tmp/12345/use < before.sql`;
 
-$output = run('test1', 'test2', '-a Chunk');
+$output = run('test1', 'test2', '-a Chunk --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
 
@@ -80,7 +83,7 @@ is_deeply(
 
 `/tmp/12345/use < before.sql`;
 
-$output = run('test1', 'test2', '-a Nibble');
+$output = run('test1', 'test2', '-a Nibble --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
 
@@ -93,7 +96,7 @@ is_deeply(
 `/tmp/12345/use < before.sql`;
 
 $ENV{MKDEBUG} = 1;
-$output = run('test1', 'test2', '-a Nibble --chunksize 1 --transaction -k 1');
+$output = run('test1', 'test2', '-a Nibble --skipbinlog --chunksize 1 --transaction -k 1');
 delete $ENV{MKDEBUG};
 like(
    $output,
@@ -109,7 +112,7 @@ is_deeply(
 
 # Sync tables that have values with leading zeroes
 $ENV{MKDEBUG} = 1;
-$output = run('test3', 'test4', '--print --verbose -f MD5');
+$output = run('test3', 'test4', '--print --skipbinlog --verbose -f MD5');
 delete $ENV{MKDEBUG};
 like(
    $output,
