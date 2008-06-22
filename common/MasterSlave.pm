@@ -117,17 +117,6 @@ sub find_slave_hosts {
    my @slaves;
 
    if ( (!$method && ($dsn->{P}||3306) == 3306) || $method eq 'processlist' ) {
-
-      # Check for the PROCESS privilege.
-      my $proc =
-         grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
-         @{$dbh->selectcol_arrayref('SHOW GRANTS')};
-      if ( !$proc ) {
-         die "You do not have the PROCESS privilege";
-      }
-
-      my $sql = 'SHOW PROCESSLIST';
-      $ENV{MKDEBUG} && _d($dbh, $sql);
       @slaves =
          map  {
             my $slave        = $dsn_parser->parse("h=$_", $dsn);
@@ -141,15 +130,7 @@ sub find_slave_hosts {
                $host = '127.0.0.1'; # Replication never uses sockets.
             }
             $host;
-         }
-         # It's probably a slave if it's doing a binlog dump.
-         grep { $_->{command} =~ m/Binlog Dump/i }
-         map  {
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            \%hash;
-         }
-         @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+         } $self->get_connected_slaves($dbh);
    }
 
    # Fall back to SHOW SLAVE HOSTS, which is significantly less reliable.
@@ -182,6 +163,75 @@ sub find_slave_hosts {
 
    $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
    return @slaves;
+}
+
+# Returns PROCESSLIST entries of connected slaves, normalized to lowercase
+# column names.
+sub get_connected_slaves {
+   my ( $self, $dbh ) = @_;
+
+   # Check for the PROCESS privilege.
+   my $proc =
+      grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
+      @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+   if ( !$proc ) {
+      die "You do not have the PROCESS privilege";
+   }
+
+   my $sql = 'SHOW PROCESSLIST';
+   $ENV{MKDEBUG} && _d($dbh, $sql);
+   # It's probably a slave if it's doing a binlog dump.
+   grep { $_->{command} =~ m/Binlog Dump/i }
+   map  { # Lowercase the column names
+      my %hash;
+      @hash{ map { lc $_ } keys %$_ } = values %$_;
+      \%hash;
+   }
+   @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+}
+
+# Verifies that $master is really the master of $slave.  This is not an exact
+# science, but there is a decent chance of catching some obvious cases when it
+# is not the master.  If not the master, it dies; otherwise returns true.
+sub is_master_of {
+   my ( $self, $master, $slave ) = @_;
+   my $master_status = $self->get_master_status($master);
+   my $slave_status  = $self->get_slave_status($slave);
+   my @connected     = $self->get_connected_slaves($master);
+   my (undef, $port) = $master->selectrow_array('SHOW VARIABLES LIKE "port"');
+
+   if ( $port != $slave_status->{master_port} ) {
+      die "The slave is connected to $slave_status->{master_port} "
+         . "but the master's port is $port";
+   }
+
+   if ( !grep { $slave_status->{master_user} eq $_->{user} } @connected ) {
+      die "I don't see any slave I/O thread connected with user "
+         . $slave_status->{master_user};
+   }
+
+   if ( ($slave_status->{slave_io_state} || '')
+      eq 'Waiting for master to send event' )
+   {
+      # The slave thinks its I/O thread is caught up to the master.  Let's
+      # compare and make sure the master and slave are reasonably close to each
+      # other.  Note that this is one of the few places where I check the I/O
+      # thread positions instead of the SQL thread positions!
+      # Master_Log_File/Read_Master_Log_Pos is the I/O thread's position on the
+      # master.
+      my ( $master_log_name, $master_log_num )
+         = $master_status->{file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
+      my ( $slave_log_name, $slave_log_num )
+         = $slave_status->{master_log_file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
+      if ( $master_log_name ne $slave_log_name
+         || abs($master_log_num - $slave_log_num) > 1 )
+      {
+         die "The slave thinks it is reading from "
+            . "$slave_status->{master_log_file},  but the "
+            . "master is writing to $master_status->{file}";
+      }
+   }
+   return 1;
 }
 
 # Figures out how to connect to the master, by examining SHOW SLAVE STATUS.  But
