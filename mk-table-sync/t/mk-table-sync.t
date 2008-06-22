@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 15;
+use Test::More tests => 17;
 use DBI;
 
 my $output;
@@ -52,6 +52,18 @@ is_deeply(
    query('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with Stream'
+);
+
+`/tmp/12345/use < before.sql`;
+
+$output = run('test1', 'test2', '-a GroupBy');
+is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
+INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic GroupBy sync');
+
+is_deeply(
+   query('select * from test.test2'),
+   [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
+   'Synced OK with GroupBy'
 );
 
 `/tmp/12345/use < before.sql`;
