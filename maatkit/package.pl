@@ -134,7 +134,7 @@ print `for a in html/*; do sed -i -e 's~body>~body>$img~' \$a; done`;
 print `for a in html/*; do sed -i -e 's~\`\`~"~g' \$a; done`;
 print `for a in html/*; do sed -i -e "s~\\\`~\\\'~g" \$a; done`;
 # And fix stupid links to "the X manpage" to just "X".
-print `for a in html/*; do sed -i -e 's~the ([^ ]*) manpage~\\1~g' \$a; done`;
+print `for a in html/*; do sed -i -e 's~the \\([^ ]*\\) manpage~\\1~g' \$a; done`;
 
 # Cleanup temporary directories
 print `rm -rf cache $dist`;
