@@ -1,5 +1,9 @@
 Changelog for mk-table-sync:
 
+   * Added the GroupBy algorithm as default replacement for Stream.
+   * Syncing could stop and leave rows to delete in the destination.
+   * Generate command-line help from the POD.
+
 2008-06-02: version 1.0.7
 
    * Added NO_AUTO_VALUE_ON_ZERO to @@SQL_MODE (bug #1919897).

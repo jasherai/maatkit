@@ -1181,7 +1181,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 1755
+# RowDiff package 1996
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1238,7 +1238,7 @@ sub compare_sets {
             $rr = undef;
          }
       }
-   } while ( $left->{Active} || $right->{Active} );
+   } while ( $left->{Active} || $right->{Active} || $lr || $rr );
    $ENV{MKDEBUG} && _d('No more rows');
    $syncer->done_with_rows();
 }
@@ -1489,6 +1489,37 @@ sub get_tmp_table {
    return $result;
 }
 
+sub get_procedures {
+   my ( $self, $dbh, $quoter, $db ) = @_;
+   if ( !$self->{procs}->{$db} ) {
+      $self->{procs}->{$db} = {};
+      $self->_use_db($dbh, $quoter, $db);
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW PROCEDURE STATUS FROM " . $quoter->quote($db);
+      $ENV{MKDEBUG} && _d($sql);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute();
+      if ( $sth->rows ) {
+         my $procs = $sth->fetchall_arrayref({});
+         foreach my $proc (@$procs) {
+            my %proc;
+            @proc{ map { lc $_ } keys %$proc } = values %$proc;
+            push @{ $self->{procs}->{$db}}, \%proc;
+         }
+      }
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      $ENV{MKDEBUG} && _d($sql);
+      $dbh->do($sql);
+   }
+   return $self->{procs}->{$db};
+}
+
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{triggers}->{$db} ) {
@@ -1516,7 +1547,10 @@ sub get_triggers {
       $ENV{MKDEBUG} && _d($sql);
       $dbh->do($sql);
    }
-   return $self->{triggers}->{$db}->{$tbl};
+   if ( $tbl ) {
+      return $self->{triggers}->{$db}->{$tbl};
+   }
+   return @{$self->{triggers}->{$db}};
 }
 
 sub get_databases {
@@ -1604,7 +1638,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 1755
+# ChangeHandler package 1998
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2911,7 +2945,113 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 1952
+# TableSyncGroupBy package 1997
+# ###########################################################################
+
+use strict;
+use warnings FATAL => 'all';
+
+package TableSyncGroupBy;
+
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(handler cols) ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   $args{count_col} = '__maatkit_count';
+   while ( $args{struct}->{is_col}->{$args{count_col}} ) {
+      $args{count_col} = "_$args{count_col}";
+   }
+   $ENV{MKDEBUG} && _d('COUNT column will be named ' . $args{count_col});
+   return bless { %args }, $class;
+}
+
+sub get_sql {
+   my ( $self, %args ) = @_;
+   my $cols = join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}});
+   return "SELECT $cols, COUNT(*) AS $self->{count_col}"
+      . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
+      . ' WHERE ' . ( $args{where} || '1=1' )
+      . " GROUP BY $cols ORDER BY $cols";
+}
+
+sub same_row {
+   my ( $self, $lr, $rr ) = @_;
+   my $cc = $self->{count_col};
+   my $lc = $lr->{$cc};
+   my $rc = $rr->{$cc};
+   my $diff = abs($lc - $rc);
+   return unless $diff;
+   $lr = { %$lr };
+   delete $lr->{$cc};
+   $rr = { %$rr };
+   delete $rr->{$cc};
+   foreach my $i ( 1 .. $diff ) {
+      if ( $lc > $rc ) {
+         $self->{handler}->change('INSERT', $lr, $self->key_cols());
+      }
+      else {
+         $self->{handler}->change('DELETE', $rr, $self->key_cols());
+      }
+   }
+}
+
+sub not_in_right {
+   my ( $self, $lr ) = @_;
+   $lr = { %$lr };
+   my $cnt = delete $lr->{$self->{count_col}};
+   foreach my $i ( 1 .. $cnt ) {
+      $self->{handler}->change('INSERT', $lr, $self->key_cols());
+   }
+}
+
+sub not_in_left {
+   my ( $self, $rr ) = @_;
+   $rr = { %$rr };
+   my $cnt = delete $rr->{$self->{count_col}};
+   foreach my $i ( 1 .. $cnt ) {
+      $self->{handler}->change('DELETE', $rr, $self->key_cols());
+   }
+}
+
+sub done_with_rows {
+   my ( $self ) = @_;
+   $self->{done} = 1;
+}
+
+sub done {
+   my ( $self ) = @_;
+   return $self->{done};
+}
+
+sub key_cols {
+   my ( $self ) = @_;
+   return $self->{cols};
+}
+
+sub prepare {
+   my ( $self, $dbh ) = @_;
+}
+
+sub pending_changes {
+   my ( $self ) = @_;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableSyncGroupBy:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableSyncGroupBy package
+# ###########################################################################
+
+# ###########################################################################
+# TableSyncer package 1997
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2920,7 +3060,7 @@ package TableSyncer;
 
 use English qw(-no_match_vars);
 
-our %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble);
+our %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble GroupBy);
 
 sub new {
    bless {}, shift;
@@ -2947,7 +3087,7 @@ sub best_algorithm {
       }
       else {
          $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
-         $result = 'Stream';
+         $result = 'GroupBy';
       }
    }
    $ENV{MKDEBUG} && _d("Algorithm: $result");
@@ -2981,7 +3121,12 @@ sub sync_table {
          $self->check_permissions(@args{qw(dst_dbh dst_db dst_tbl quoter)});
       }
       $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
-      $update_func = sub {  map { $change_dbh->do($_) } @_ };
+      $update_func = sub {
+         map {
+            $ENV{MKDEBUG} && _d('About to execute: ', $_);
+            $change_dbh->do($_);
+         } @_;
+      };
    }
 
    my $ch = new ChangeHandler(
@@ -3672,7 +3817,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1958
+# MasterSlave package 2001
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3912,7 +4057,28 @@ sub catchup_to_master {
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
       $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
       $self->start_slave($slave, $master_pos);
-      $self->wait_for_master($master, $slave, $time, 0, $master_status);
+      eval {
+         $self->wait_for_master($master, $slave, $time, 0, $master_status);
+      };
+      if ( $EVAL_ERROR ) {
+         $ENV{MKDEBUG} && _d($EVAL_ERROR);
+         if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
+            $slave_status = $self->get_slave_status($slave);
+            if ( !$self->slave_is_running($slave_status) ) {
+               $slave_pos = $self->repl_posn($slave_status);
+               if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
+                  die "$EVAL_ERROR but slave has not caught up to master";
+               }
+               $ENV{MKDEBUG} && _d('Slave is caught up to master and stopped');
+            }
+            else {
+               die "$EVAL_ERROR but slave was still running";
+            }
+         }
+         else {
+            die $EVAL_ERROR;
+         }
+      }
    }
 }
 
@@ -4184,70 +4350,7 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   { s => 'algorithm|a=s',
-     d => 'Algorithm to use'},
-   { s => 'askpass',
-     d => 'Prompt for password for connections' },
-   { s => 'bufferresults',
-     d => 'Fetch all rows from MySQL before comparing' },
-   { s => 'chunksize=s',
-     d => 'Number of rows or data size per chunk (default 1000)'},
-   { s => 'columns|c=a',
-     d => 'Compare this comma-separated list of columns' },
-   { s => 'databases|d=h',
-     d => 'Do only this comma-separated list of databases' },
-   { s => 'engine|e=h',
-     d => 'Do only this comma-separated list of storage engines' },
-   { s => 'execute|x',
-     d => 'Execute queries to sync tables' },
-   { s => 'function|f=s',
-     d => 'Hash function to use for checksums' },
-   { s => 'ignoredb|g=H',
-     d => 'Ignore this comma-separated list of databases' },
-   { s => 'ignoreengine|E=H',
-     d => 'Ignore this comma-separated list of storage engines '
-        . '(default FEDERATED,MRG_MyISAM)' },
-   { s => 'ignoretbl|n=H',
-     d => 'Ignore this comma-separated list of tables' },
-   { s => 'lock|k=i',
-     d => 'Lock tables: 0=none, 1=per sync cycle, 2=per table, or 3=globally' },
-   { s => 'print|p',
-     d => 'Print queries that will resolve differences' },
-   { s => 'replace|r',
-     d => 'Use REPLACE instead of INSERT and UPDATE' },
-   { s => 'replicate|R=s',
-     d => 'Sync tables listed as different in this table' },
-   { s => 'setvars=s',
-     d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   { s => 'skipbinlog',
-     d => 'Do not log to the binary log' },
-   { s => 'skipforeignkey|K',
-     d => 'Disable foreign key checks' },
-   { s => 'skipuniquekey',
-     d => 'Disable unique key checks' },
-   { s => 'synctomaster|s',
-     d => 'Treat the DSN as a slave and sync it to its master'},
-   { s => 'tables|t=h',
-     d => 'Do only this comma-separated list of tables' },
-   { s => 'test',
-     d => 'Analyze, decide the sync algorithm to use, print and exit' },
-   { s => 'timeoutok',
-     d => 'Keep going if --wait fails' },
-   { s => 'transaction!',
-     d => 'Use transactions INSTEAD OF locking tables' },
-   { s => 'trim',
-     d => 'Trim VARCHAR columns (helps when comparing 4.1 to >= 5.0)' },
-   { s => 'utf8!',
-     d => 'Enable UTF-8 options in Perl and MySQL (default)' },
-   { s => 'verbose|v',
-     d => 'Print results of sync operations' },
-   { s => 'wait|w=m',
-     d => 'How long to wait for slaves to catch up to their master' },
-   { s => 'where|W=s',
-     d => 'WHERE clause to restrict syncing to part of the table' },
-);
-# Satisfy picky cmdline parsing: $opts{trim}
+my @opt_spec = OptionParser::pod_to_spec();
 
 my $du         = new MySQLDump();
 my $tp         = new TableParser();
@@ -4759,8 +4862,8 @@ through replication and change server1's data:
 =head1 DESCRIPTION
 
 B<WARNING> this tool is unfinished and could perform slowly.  The Chunk
-algorithm is great when it can be used, and so is Nibble, but otherwise Stream
-is the only choice and it does not perform very well.  Please run with
+algorithm is great when it can be used, and so is Nibble, but otherwise GroupBy
+is the default choice and it may not perform very well.  Please run with
 L<"--test"> before subjecting your servers to this tool, and make backups of
 your data!
 
@@ -4842,6 +4945,13 @@ upper boundary, and the next query checksums the entire nibble.  If the nibble
 differs between the source and destination, it examines the nibble row-by-row,
 just as L<"Chunk"> does.
 
+=item GroupBy
+
+Selects the entire table grouped by all columns, with a COUNT(*) column added.
+Compares all columns, and if they're the same, compares the COUNT(*) column's
+value to determine how many rows to insert or delete into the destination.
+Works on tables with no primary key or unique index.
+
 =item Stream
 
 Selects the entire table in one big stream and compares all columns.  Selects
@@ -4881,9 +4991,13 @@ second gets the latest trunk code from Subversion.
 
 =item --algorithm
 
-The algorithm to use when comparing the tables.  This is a suggestion.  The tool
-will auto-detect the best algorithm, and if your chosen algorithm can't be used,
-will use the best available one instead.  See L<"ALGORITHMS">.
+short form: -a; type: string
+
+The algorithm to use when comparing the tables.
+
+This is a suggestion.  The tool will auto-detect the best algorithm, and if your
+chosen algorithm can't be used, will use the best available one instead.  See
+L<"ALGORITHMS">.
 
 =item --askpass
 
@@ -4891,13 +5005,19 @@ Prompt for a password when connecting to MySQL.
 
 =item --bufferresults
 
-Fetch all rows from MySQL before comparing.  This is disabled by default.  If
-enabled, all rows will be fetched into memory for comparing.  This may result in
-the results "cursor" being held open for a shorter time on the server, but if
-the tables are large, it could take a long time anyway, and eat all your memory.
-For most non-trivial data sizes, you want to leave this disabled.
+Fetch all rows from MySQL before comparing.
+
+This is disabled by default.  If enabled, all rows will be fetched into memory
+for comparing.  This may result in the results "cursor" being held open for a
+shorter time on the server, but if the tables are large, it could take a long
+time anyway, and eat all your memory.  For most non-trivial data sizes, you
+want to leave this disabled.
 
 =item --chunksize
+
+type: string; default: 1000
+
+Number of rows or data size per chunk.
 
 The size of each chunk of rows for the L<"Chunk"> and L<"Nibble"> algorithms.
 The size can be either a number of rows, or a data size.  Data sizes are
@@ -4906,51 +5026,67 @@ are converted to a number of rows by dividing by the average row length.
 
 =item --columns
 
-Comma-separated list of columns to compare when looking for differences.
+short form: -c; type: array
+
+Compare this comma-separated list of columns.
 
 =item --databases
+
+short form: -d; type: hash
 
 Sync only this comma-separated list of databases.
 
 =item --engine
 
-Sync only tables whose storage engine is in this comma-separated list.
+short form: -e; type: hash
+
+Sync only this comma-separated list of storage engines.
 
 =item --execute
 
-After finding differences, execute the queries required to sync the tables.
+short form: -x
+
+Execute the queries required to sync the tables.
 
 =item --function
 
-Which hash function you'd like to use for row checksums.  Good choices include
-C<MD5> and C<SHA1>.  If you have installed the C<FNV_64> user-defined function,
-C<mk-table-sync> will detect it and prefer to use it, because it is much faster
-than the others.  See L<mk-table-checksum> for more information and benchmarks.
+short form: -f; type; string
 
-=item --help
+Which hash function you'd like to use for checksums.
 
-Show a brief help message.
+Good choices include C<MD5> and C<SHA1>.  If you have installed the C<FNV_64>
+user-defined function, C<mk-table-sync> will detect it and prefer to use it,
+because it is much faster than the others.  See L<mk-table-checksum> for more
+information and benchmarks.
 
 =item --ignoredb
 
-Use this option to skip a comma-separated list of databases.
+short form: -g; type: Hash
+
+Ignore this comma-separated list of databases.
 
 =item --ignoreengine
 
-Use this option to skip a comma-separated list of storage engines (table types).
+short form: -E; type: Hash; default: FEDERATED,MRG_MyISAM
+
+Ignore this comma-separated list of storage engines.
 
 =item --ignoretbl
 
-Use this option to skip a comma-separated list of tables.  Table names may be
-qualified with the database name.
+short form: -n; type: Hash
+
+Ignore this comma-separated list of tables.
+
+Table names may be qualified with the database name.
 
 =item --lock
 
-Lock tables when beginning work.  This uses C<LOCK TABLES>.  This can help
-prevent tables being changed while you're examining them.
+short form: -k; type: int
 
-The argument is an integer, default value 0.  The possible values are as
-follows:
+Lock tables: 0=none, 1=per sync cycle, 2=per table, or 3=globally.
+
+This uses C<LOCK TABLES>.  This can help prevent tables being changed while
+you're examining them.  The possible values are as follows:
 
   VALUE  MEANING
   =====  =======================================================
@@ -4977,17 +5113,28 @@ is if L<"--lock"> is 3.
 
 =item --print
 
-Print queries that will resolve the differences between the tables.  If you
-don't trust C<mk-table-sync>, or just want to see what it will do, this is a
-good way to be safe.  These queries are valid SQL and you can run them yourself
-if you want to sync the tables manually.
+short form: -p
+
+Print queries that will resolve differences.
+
+If you don't trust C<mk-table-sync>, or just want to see what it will do, this
+is a good way to be safe.  These queries are valid SQL and you can run them
+yourself if you want to sync the tables manually.
 
 =item --replace
 
-Write all C<INSERT> and C<UPDATE> statements as C<REPLACE>.  This is
-automatically switched on as needed when there are unique index violations.
+short form: -r
+
+Write all C<INSERT> and C<UPDATE> statements as C<REPLACE>.
+
+This is automatically switched on as needed when there are unique index
+violations.
 
 =item --replicate
+
+short form: -R; type: string
+
+Sync tables listed as different in this table.
 
 Specifies that C<mk-table-sync> should examine the specified table to find data
 that differs.  The table is exactly the same as the argument of the same name to
@@ -5021,14 +5168,20 @@ sync that table on servers C and D.
 
 =item --setvars
 
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
+
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --skipbinlog
 
-Do not log statements to the binary log (C<SET SQL_LOG_BIN=0>).
+Do not log to the binary log (C<SET SQL_LOG_BIN=0>).
 
 =item --skipforeignkey
+
+short form: -K
 
 Disable foreign key checks (C<SET FOREIGN_KEY_CHECKS=0>).
 
@@ -5037,6 +5190,10 @@ Disable foreign key checks (C<SET FOREIGN_KEY_CHECKS=0>).
 Disable unique index checks (C<SET UNIQUE_CHECKS=0>).
 
 =item --synctomaster
+
+short form: -s
+
+Treat the DSN as a slave and sync it to its master.
 
 Treat the server you specified as a slave.  Inspect C<SHOW SLAVE STATUS>,
 connect to the server's master, and treat the master as the source and the slave
@@ -5047,27 +5204,37 @@ option's behavior.
 
 =item --tables
 
-Restrict syncing to this comma-separated list of tables.  Table names may be
-qualified with the database name.
+short form: -t; type: hash
+
+Sync only this comma-separated list of tables.
+
+Table names may be qualified with the database name.
 
 =item --test
 
-Analyze tables and decide which sync algorithm to use, then bail out before
-doing any work.  Implies L<"--verbose"> so you can see the results.
+Analyze, decide the sync algorithm to use, print and exit.
+
+Implies L<"--verbose"> so you can see the results.
 
 =item --timeoutok
 
-Keep going if L<"--wait"> fails.  If you specify L<"--wait"> and the slave
-doesn't catch up to the master's position before the wait times out, the default
-behavior is to abort.  This option makes the tool keep going anyway.
-B<Warning>: if you are trying to get a consistent comparision between the two
-servers, you probably don't want to keep going after a timeout.
+Keep going if L<"--wait"> fails.
+
+If you specify L<"--wait"> and the slave doesn't catch up to the master's
+position before the wait times out, the default behavior is to abort.  This
+option makes the tool keep going anyway.  B<Warning>: if you are trying to get a
+consistent comparision between the two servers, you probably don't want to keep
+going after a timeout.
 
 =item --transaction
 
-Use transactions instead of C<LOCK TABLES>.  The granularity of beginning and
-committing transactions is controlled by L<"--lock">.  This is enabled by
-default, but since L<"--lock"> is disabled by default, it has no effect.
+negatable: yes
+
+Use transactions instead of C<LOCK TABLES>.
+
+The granularity of beginning and committing transactions is controlled by
+L<"--lock">.  This is enabled by default, but since L<"--lock"> is disabled by
+default, it has no effect.
 
 Most options that enable locking also disable transactions by default, so if
 you want to use transactional locking (via C<LOCK IN SHARE MODE> and C<FOR
@@ -5079,8 +5246,8 @@ uses transactions on InnoDB tables, and table locks on all others.
 
 =item --trim
 
-This option adds a C<TRIM()> to C<VARCHAR> columns in C<BIT_XOR> and C<ACCUM>
-modes.
+TRIM()> C<VARCHAR> columns in C<BIT_XOR> and C<ACCUM> modes.  Helps when
+comparing MySQL 4.1 to >= 5.0.
 
 This is useful when you don't care about the trailing space differences between
 MySQL versions which vary in their handling of trailing spaces. MySQL 5.0 and 
@@ -5088,6 +5255,10 @@ later all retain trailing spaces in C<VARCHAR>, while previous versions would
 remove them.
 
 =item --utf8
+
+negatable: yes; default: yes
+
+Enable UTF-8 options in Perl and MySQL.
 
 This option is deprecated.  Pass the C<A> option in a DSN instead.  For
 backwards compatibility, this option adds C<A=utf8> to all DSNs.
@@ -5100,14 +5271,17 @@ connecting to MySQL.
 
 =item --verbose
 
-Explain the differences found while comparing the tables.  See L<"OUTPUT"> for
-more details about the output.
+short form: -v
 
-=item --version
+Print results of sync operations.
 
-Output version information and exit.
+See L<"OUTPUT"> for more details about the output.
 
 =item --wait
+
+short form: -w; type: time
+
+How long to wait for slaves to catch up to their master.
 
 Make the master wait for the slave to catch up in replication before comparing
 the tables.  The value is the number of seconds to wait before timing out (see
@@ -5116,7 +5290,9 @@ default.
 
 =item --where
 
-A C<WHERE> clause to restrict the portion of the table being synchronized.
+short form: -W; type: string
+
+C<WHERE> clause to restrict syncing to part of the table.
 
 =back
 
