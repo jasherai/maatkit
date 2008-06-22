@@ -919,7 +919,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 1755
+# TableSyncStream package 2009
 # ###########################################################################
 
 use strict;
@@ -940,6 +940,7 @@ sub new {
 sub get_sql {
    my ( $self, %args ) = @_;
    return "SELECT "
+      . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
       . join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}})
       . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' );
@@ -2178,7 +2179,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 1906
+# TableChecksum package 2009
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2440,7 +2441,9 @@ sub make_checksum_query {
          . "SELECT ?, ?, /*CHUNK_NUM*/ ?, COUNT(*) AS cnt, $result";
    }
    else {
-      $result = "SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, $result";
+      $result = "SELECT "
+         . ($args{buffer} ? 'SQL_BUFFER_RESULT ' : '')
+         . "/*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, $result";
    }
    return $result . "FROM /*DB_TBL*//*WHERE*/";
 }
@@ -2477,7 +2480,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 1906
+# TableSyncChunk package 2009
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2559,6 +2562,7 @@ sub new {
       opt_slice => $args{opt_slice},
       cols      => $args{cols},
       trim      => $args{trim},
+      buffer    => $args{bufferinmysql},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
       table     => $args{struct},
@@ -2577,6 +2581,7 @@ sub get_sql {
    my ( $self, %args ) = @_;
    if ( $self->{state} ) {
       return 'SELECT '
+         . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
@@ -2688,7 +2693,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 1906
+# TableSyncNibble package 2009
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2757,6 +2762,7 @@ sub new {
       opt_slice => $args{opt_slice},
       cols      => $args{cols},
       trim      => $args{trim},
+      buffer    => $args{bufferinmysql},
    );
    $args{row_sql} ||= $args{checksum}->make_row_checksum(
       table     => $args{struct},
@@ -2776,6 +2782,7 @@ sub get_sql {
    my ( $self, %args ) = @_;
    if ( $self->{state} ) {
       return 'SELECT '
+         . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
@@ -2945,7 +2952,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncGroupBy package 1997
+# TableSyncGroupBy package 2009
 # ###########################################################################
 
 use strict;
@@ -2971,7 +2978,9 @@ sub new {
 sub get_sql {
    my ( $self, %args ) = @_;
    my $cols = join(', ', map { $args{quoter}->quote($_) } @{$self->{cols}});
-   return "SELECT $cols, COUNT(*) AS $self->{count_col}"
+   return "SELECT"
+      . ($self->{bufferinmysql} ? ' SQL_BUFFER_RESULT' : '')
+      . " $cols, COUNT(*) AS $self->{count_col}"
       . ' FROM ' . $args{quoter}->quote(@args{qw(database table)})
       . ' WHERE ' . ( $args{where} || '1=1' )
       . " GROUP BY $cols ORDER BY $cols";
@@ -3051,7 +3060,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 2006
+# TableSyncer package 2009
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3100,7 +3109,7 @@ sub sync_table {
       buffer checksum chunker chunksize dst_db dst_dbh dst_tbl execute lock
       misc_dbh quoter replace replicate src_db src_dbh src_tbl test tbl_struct
       timeoutok transaction versionparser wait where possible_keys cols
-      nibbler parser master_slave func dumper trim skipslavecheck) )
+      nibbler parser master_slave func dumper trim skipslavecheck bufferinmysql) )
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
@@ -3205,6 +3214,7 @@ sub sync_table {
       versionparser => $args{versionparser},
       func          => $args{func},
       trim          => $args{trim},
+      bufferinmysql => $args{bufferinmysql},
    );
 
    $self->lock_and_wait(%args, lock_level => 2);
@@ -4719,6 +4729,7 @@ sub sync_a_table {
       my %status = $syncer->sync_table(
          algorithm     => $opts{a} || '',
          buffer        => $opts{bufferresults} || 0,
+         bufferinmysql => $opts{bufferinmysql} || 0,
          checksum      => $checksum,
          chunker       => $chunker,
          chunksize     => $opts{chunksize},
@@ -5067,6 +5078,23 @@ shorter time on the server, but if the tables are large, it could take a long
 time anyway, and eat all your memory.  For most non-trivial data sizes, you
 want to leave this disabled.
 
+=item --bufferinmysql
+
+Instruct MySQL to buffer queries in its memory.
+
+This option adds the C<SQL_BUFFER_RESULT> option to the comparison queries.
+This causes MySQL to execute the queries and place them in a temporary table
+internally before sending the results back to mk-table-sync.  The advantage of
+this strategy is that mk-table-sync can fetch rows as desired without using a
+lot of memory inside the Perl process, while releasing locks on the MySQL table
+(to reduce contention with other queries).  The disadvantage is that it uses
+more memory on the MySQL server instead.
+
+You probably want to enable L<"--bufferresults"> too, because buffering into a
+temp table and then fetching it all into Perl's memory is probably a silly thing
+to do.  This option is most useful for the GroupBy and Stream algorithms, which
+may fetch a lot of data from the server.
+
 =item --chunksize
 
 type: string; default: 1000
@@ -5222,7 +5250,7 @@ sync that table on servers C and D.
 
 =item --setvars
 
-type: string; default: wait_timeout=10000
+type: string; default: wait_timeout=10000 /*!40001 ,QUERY_CACHE_TYPE=0 */ 
 
 Set these MySQL variables.
 
