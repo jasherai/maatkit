@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Added --bufferinmysql to help make GroupBy algorithm more efficient.
    * Added safety checks to prevent changing data on a slave server.
    * Added --skipslavecheck to prevent safety checks on destination server.
    * Added the GroupBy algorithm as default replacement for Stream.
