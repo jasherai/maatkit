@@ -1,0 +1,1506 @@
+#!/usr/bin/perl
+
+# This is mk-fifo-split, a program that extracts and saves a summary of
+# the last deadlock recorded in MySQL.
+#
+# This program is copyright (c) 2007 Baron Schwartz.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
+
+# ###########################################################################
+# OptionParser package 1967
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package OptionParser;
+
+use Getopt::Long;
+use List::Util qw(max);
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my %key_seen;
+   my %long_seen;
+   my %key_for;
+   my %defaults;
+   my @mutex;
+   my @atleast1;
+   my %long_for;
+   my %disables;
+   my %copyfrom;
+   unshift @opts,
+      { s => 'help',    d => 'Show this help message' },
+      { s => 'version', d => 'Output version information and exit' };
+   foreach my $opt ( @opts ) {
+      if ( ref $opt ) {
+         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         $opt->{k} = $short || $long;
+         $key_for{$long} = $opt->{k};
+         $long_for{$opt->{k}} = $long;
+         $long_for{$long} = $long;
+         $opt->{l} = $long;
+         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
+         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
+         $opt->{t} = $short;
+         $opt->{n} = $opt->{s} =~ m/!/;
+         $opt->{g} ||= 'o';
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
+            $ENV{MKDEBUG} && _d("Option $opt->{k} type: $y");
+            $opt->{y} = $y;
+            $opt->{s} =~ s/=./=s/;
+         }
+         if ( $opt->{d} =~ m/required/ ) {
+            $opt->{r} = 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} is required");
+         }
+         if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
+            $defaults{$opt->{k}} = defined $def ? $def : 1;
+            $ENV{MKDEBUG} && _d("Option $opt->{k} has a default");
+         }
+         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
+            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+            $ENV{MKDEBUG} && _d("Option $opt->{k} $dis");
+         }
+      }
+      else { # It's an instruction.
+
+         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $long_for{$_};
+               } $class->get_participants($opt);
+            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+               push @mutex, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' are mutually exclusive');
+            }
+            if ( $opt =~ m/at least one|one and only one/ ) {
+               push @atleast1, \@participants;
+               $ENV{MKDEBUG} && _d(@participants, ' require at least one');
+            }
+         }
+         elsif ( $opt =~ m/default to/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $key_for{$_};
+               } $class->get_participants($opt);
+            $copyfrom{$participants[0]} = $participants[1];
+            $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
+         }
+
+      }
+   }
+
+   if ( $ENV{MKDEBUG} ) {
+      my $text = do {
+         local $RS = undef;
+         open my $fh, "<", $PROGRAM_NAME
+            or die "Can't open $PROGRAM_NAME: $OS_ERROR";
+         <$fh>;
+      };
+      my %used = map { $_ => 1 } $text =~ m/\$opts\{'?([\w-]+)'?\}/g;
+      my @unused;
+      my @undefined;
+      my %option_exists;
+      foreach my $opt ( @opts ) {
+         next unless ref $opt;
+         my $key = $opt->{k};
+         $option_exists{$key}++;
+         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
+                                    |password|port|socket|user|host)$/x
+              || $disables{$key};
+         push @unused, $key unless $used{$key};
+      }
+      foreach my $key ( keys %used ) {
+         push @undefined, $key unless $option_exists{$key};
+      }
+      if ( @unused || @undefined ) {
+         die "The following command-line options are unused: "
+            . join(',', @unused)
+            . ' The following are undefined: '
+            . join(',', @undefined);
+      }
+   }
+
+   foreach my $dis ( keys %disables ) {
+      $disables{$dis} = [ map {
+            die "No such option '$_' while processing $dis" unless $long_for{$_};
+            $long_for{$_};
+         } @{$disables{$dis}} ];
+   }
+
+   return bless {
+      specs => [ grep { ref $_ } @opts ],
+      notes => [],
+      instr => [ grep { !ref $_ } @opts ],
+      mutex => \@mutex,
+      defaults => \%defaults,
+      long_for => \%long_for,
+      atleast1 => \@atleast1,
+      disables => \%disables,
+      key_for  => \%key_for,
+      copyfrom => \%copyfrom,
+      strict   => 1,
+      groups   => [ { k => 'o', d => 'Options' } ],
+   }, $class;
+}
+
+sub get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
+      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+         push @participants, $long;
+      }
+      else {
+         foreach my $short ( $thing =~ m/([^-])/g ) {
+            push @participants, $short;
+         }
+      }
+   }
+   $ENV{MKDEBUG} && _d("Participants for $str: ", @participants);
+   return @participants;
+}
+
+sub parse {
+   my ( $self, %defaults ) = @_;
+   my @specs = @{$self->{specs}};
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+
+   my %opt_seen;
+   my %vals = %{$self->{defaults}};
+   @vals{keys %defaults} = values %defaults;
+   foreach my $spec ( @specs ) {
+      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
+      $opt_seen{$spec->{k}} = 1;
+   }
+
+   foreach my $key ( keys %defaults ) {
+      die "Cannot set default for non-existent option '$key'\n"
+         unless $opt_seen{$key};
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
+      or $self->error('Error parsing options');
+
+   if ( $vals{version} ) {
+      my $prog = $self->prog;
+      printf("%s  Ver %s Distrib %s Changeset %s\n",
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
+      exit(0);
+   }
+
+   if ( @ARGV && $self->{strict} ) {
+      $self->error("Unrecognized command-line options @ARGV");
+   }
+
+   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
+      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      $ENV{MKDEBUG} && _d("Unsetting options: ", @disses);
+      @vals{@disses} = map { undef } @disses;
+   }
+
+   foreach my $spec ( grep { $_->{r} } @specs ) {
+      if ( !defined $vals{$spec->{k}} ) {
+         $self->error("Required option --$spec->{l} must be specified");
+      }
+   }
+
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
+      if ( @set > 1 ) {
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
+         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
+               . " are mutually exclusive.";
+         $self->error($note);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
+      if ( !@set ) {
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$required}[ 0 .. scalar(@$required) - 2] );
+         $note .= " or --$self->{long_for}->{$required->[-1]}";
+         $self->error("Specify at least one of $note");
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'm' ) {
+         my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+         if ( !$suffix ) {
+            my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
+            $suffix = $s || 's';
+            $ENV{MKDEBUG} && _d("No suffix given; using $suffix for $spec->{k} "
+               . "(value: '$val')");
+         }
+         if ( $suffix =~ m/[smhd]/ ) {
+            $val = $suffix eq 's' ? $num            # Seconds
+                 : $suffix eq 'm' ? $num * 60       # Minutes
+                 : $suffix eq 'h' ? $num * 3600     # Hours
+                 :                  $num * 86400;   # Days
+            $vals{$spec->{k}} = $val;
+            $ENV{MKDEBUG} && _d("Setting option $spec->{k} to $val");
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
+      elsif ( $spec->{y} eq 'd' ) {
+         $ENV{MKDEBUG} && _d("Parsing option $spec->{y} as a DSN");
+         my $from_key = $self->{copyfrom}->{$spec->{k}};
+         my $default = {};
+         if ( $from_key ) {
+            $ENV{MKDEBUG} && _d("Option $spec->{y} DSN copies from option $from_key");
+            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
+         }
+         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
+      }
+      elsif ( $spec->{y} eq 'z' ) {
+         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+         if ( defined $num ) {
+            if ( $factor ) {
+               $num *= $factor_for{$factor};
+               $ENV{MKDEBUG} && _d("Setting option $spec->{y} to num * factor");
+            }
+            $vals{$spec->{k}} = ($pre || '') . $num;
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} } @specs ) {
+      $ENV{MKDEBUG} && _d("Treating option $spec->{k} as a list");
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
+         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
+      }
+      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
+         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
+      }
+   }
+
+   return %vals;
+}
+
+sub error {
+   my ( $self, $note ) = @_;
+   $self->{__error__} = 1;
+   push @{$self->{notes}}, $note;
+}
+
+sub prog {
+   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   return $prog || $PROGRAM_NAME;
+}
+
+sub prompt {
+   my ( $self ) = @_;
+   my $prog   = $self->prog;
+   my $prompt = $self->{prompt} || '<options>';
+   return "Usage: $prog $prompt\n";
+}
+
+sub descr {
+   my ( $self ) = @_;
+   my $prog = $self->prog;
+   my $descr  = $prog . ' ' . ($self->{descr} || '')
+          . "  For more details, please use the --help option, "
+          . "or try 'perldoc $prog' for complete documentation.";
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr =~ s/ +$//mg;
+   return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self, %opts ) = @_;
+   if ( $opts{help} ) {
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
+      exit(0);
+   }
+   elsif ( $self->{__error__} ) {
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
+      exit(0);
+   }
+}
+
+sub errors {
+   my ( $self ) = @_;
+   my $usage = $self->prompt() . "\n";
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   }
+   return $usage . "\n" . $self->descr();
+}
+
+sub usage {
+   my ( $self, %vals ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxs = max(0,
+      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
+      grep { $_->{t} } @specs);
+
+   my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
+
+   $maxs = max($lcol - 3, $maxs);
+
+   my $usage = $self->descr() . "\n" . $self->prompt();
+   foreach my $g ( @{$self->{groups}} ) {
+      $usage .= "\n$g->{d}:\n";
+      foreach my $spec (
+         sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs )
+      {
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t};
+         my $desc  = $spec->{d};
+         if ( $spec->{y} && $spec->{y} eq 'm' ) {
+            my ($s) = $desc =~ m/\(suffix (.)\)/;
+            $s    ||= 's';
+            $desc =~ s/\s+\(suffix .\)//;
+            $desc .= ".  Optional suffix s=seconds, m=minutes, h=hours, "
+                   . "d=days; if no suffix, $s is used.";
+         }
+         $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+         $desc =~ s/ +$//mg;
+         if ( $short ) {
+            $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+         }
+         else {
+            $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+         }
+      }
+   }
+
+   if ( (my @instr = @{$self->{instr}}) ) {
+      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   }
+   if ( $self->{dsn} ) {
+      $usage .= "\n" . $self->{dsn}->usage();
+   }
+   $usage .= "\nOptions and values after processing arguments:\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $val   = $vals{$spec->{k}};
+      my $type  = $spec->{y} || '';
+      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val             ? '(No value)'
+                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type =~ m/H|h/           ? join(',', sort keys %$val)
+                : $type =~ m/A|a/           ? join(',', @$val)
+                :                             $val;
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
+   }
+   return $usage;
+}
+
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
+   );
+
+   my @spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      $ENV{MKDEBUG} && _d($para);
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+      push @special_options, $para;
+   }
+
+   do {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+         $ENV{MKDEBUG} && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . (defined $props{default} ? " (default $props{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @spec, @special_options;
+}
+
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH = 1;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
+}
+
+sub groups {
+   my ( $self, @groups ) = @_;
+   push @{$self->{groups}}, @groups;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# OptionParser:$line $PID ", @_, "\n";
+}
+
+if ( $ENV{MKDEBUG} ) {
+   print '# ', $^X, ' ', $], "\n";
+   my $uname = `uname -a`;
+   if ( $uname ) {
+      $uname =~ s/\s+/ /g;
+      print "# $uname\n";
+   }
+   printf("# %s  Ver %s Distrib %s Changeset %s line %d\n",
+      $PROGRAM_NAME, ($main::VERSION || ''), ($main::DISTRIB || ''),
+      ($main::SVN_REV || ''), __LINE__);
+   print('# Arguments: ',
+      join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+
+# ###########################################################################
+# Quoter package 1755
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+sub quote_val {
+   my ( $self, @vals ) = @_;
+   return join(', ',
+      map {
+         if ( defined $_ ) {
+            $_ =~ s/(['\\])/\\$1/g;
+            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
+         }
+         else {
+            'NULL';
+         }
+      } @vals
+   );
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
+# DSNParser package 1957
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package DSNParser;
+
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my $self = {
+      opts => {
+         A => {
+            desc => 'Default character set',
+            dsn  => 'charset',
+            copy => 1,
+         },
+         D => {
+            desc => 'Database to use',
+            dsn  => 'database',
+            copy => 1,
+         },
+         F => {
+            desc => 'Only read default options from the given file',
+            dsn  => 'mysql_read_default_file',
+            copy => 1,
+         },
+         h => {
+            desc => 'Connect to host',
+            dsn  => 'host',
+            copy => 1,
+         },
+         p => {
+            desc => 'Password to use when connecting',
+            dsn  => 'password',
+            copy => 1,
+         },
+         P => {
+            desc => 'Port number to use for connection',
+            dsn  => 'port',
+            copy => 1,
+         },
+         S => {
+            desc => 'Socket file to use for connection',
+            dsn  => 'mysql_socket',
+            copy => 1,
+         },
+         u => {
+            desc => 'User for login if not current user',
+            dsn  => 'user',
+            copy => 1,
+         },
+      },
+   };
+   foreach my $opt ( @opts ) {
+      $ENV{MKDEBUG} && _d('Adding extra property ' . $opt->{key});
+      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   }
+   return bless $self, $class;
+}
+
+sub prop {
+   my ( $self, $prop, $value ) = @_;
+   if ( @_ > 2 ) {
+      $ENV{MKDEBUG} && _d("Setting $prop property");
+      $self->{$prop} = $value;
+   }
+   return $self->{$prop};
+}
+
+sub parse {
+   my ( $self, $dsn, $prev, $defaults ) = @_;
+   if ( !$dsn ) {
+      $ENV{MKDEBUG} && _d('No DSN to parse');
+      return;
+   }
+   $ENV{MKDEBUG} && _d("Parsing $dsn");
+   $prev     ||= {};
+   $defaults ||= {};
+   my %vals;
+   my %opts = %{$self->{opts}};
+   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
+      $ENV{MKDEBUG} && _d("Interpreting $dsn as $p=$dsn");
+      $dsn = "$p=$dsn";
+   }
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   foreach my $key ( keys %opts ) {
+      $ENV{MKDEBUG} && _d("Finding value for $key");
+      $vals{$key} = $hash{$key};
+      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+         $vals{$key} = $prev->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from previous DSN");
+      }
+      if ( !defined $vals{$key} ) {
+         $vals{$key} = $defaults->{$key};
+         $ENV{MKDEBUG} && _d("Copying value for $key from defaults");
+      }
+   }
+   foreach my $key ( keys %hash ) {
+      die "Unrecognized DSN part '$key' in '$dsn'\n"
+         unless exists $opts{$key};
+   }
+   if ( (my $required = $self->prop('required')) ) {
+      foreach my $key ( keys %$required ) {
+         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+      }
+   }
+   return \%vals;
+}
+
+sub as_string {
+   my ( $self, $dsn ) = @_;
+   return $dsn unless ref $dsn;
+   return join(',',
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      sort keys %$dsn );
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my $usage
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      . "  KEY  COPY  MEANING\n"
+      . "  ===  ====  =============================================\n";
+   my %opts = %{$self->{opts}};
+   foreach my $key ( sort keys %opts ) {
+      $usage .= "  $key    "
+             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($opts{$key}->{desc} || '[No description]')
+             . "\n";
+   }
+   if ( (my $key = $self->prop('autokey')) ) {
+      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
+   }
+   return $usage;
+}
+
+sub get_cxn_params {
+   my ( $self, $info ) = @_;
+   my $dsn;
+   my %opts = %{$self->{opts}};
+   my $driver = $self->prop('dbidriver') || '';
+   if ( $driver eq 'Pg' ) {
+      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(h P));
+   }
+   else {
+      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(F h P S A))
+         . ';mysql_read_default_group=mysql';
+   }
+   $ENV{MKDEBUG} && _d($dsn);
+   return ($dsn, $info->{u}, $info->{p});
+}
+
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
+}
+
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit        => 0,
+      RaiseError        => 1,
+      PrintError        => 0,
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+      my $sql = "/*!40101 SET NAMES $charset*/";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+      $ENV{MKDEBUG} && _d('Enabling charset for STDOUT');
+      if ( $charset eq 'utf8' ) {
+         binmode(STDOUT, ':utf8')
+            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+      }
+      else {
+         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+      }
+   }
+   my $setvars = $self->prop('setvars');
+   if ( $cxn_string =~ m/mysql/i && $setvars ) {
+      my $sql = "SET $setvars";
+      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
+   $ENV{MKDEBUG} && _d('DBH info: ',
+      $dbh,
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
+      ' Character set info: ',
+      Dumper($dbh->selectall_arrayref(
+         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
+      ' $DBI::VERSION: ', $DBI::VERSION,
+   );
+   return $dbh;
+}
+
+sub get_hostname {
+   my ( $self, $dbh ) = @_;
+   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
+      return $host;
+   }
+   my ( $hostname, $one ) = $dbh->selectrow_array(
+      'SELECT /*!50038 @@hostname, */ 1');
+   return $hostname;
+}
+
+sub disconnect {
+   my ( $self, $dbh ) = @_;
+   $ENV{MKDEBUG} && $self->print_active_handles($dbh);
+   $dbh->disconnect;
+}
+
+sub print_active_handles {
+   my ( $self, $thing, $level ) = @_;
+   $level ||= 0;
+   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
+      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+      or die "Cannot print: $OS_ERROR";
+   foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
+      $self->print_active_handles->( $handle, $level + 1 );
+   }
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
+   print "# DSNParser:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End DSNParser package
+# ###########################################################################
+
+use English qw(-no_match_vars);
+use List::Util qw(max);
+use Socket qw(inet_aton);
+use sigtrap qw(handler finish untrapped normal-signals);
+
+my $dp = new DSNParser(
+   { key => 't', copy => 1, desc => 'Table in which to store deadlock information' },
+);
+$dp->prop('required', { h => 1 });
+$dp->prop('autokey', 'h');
+
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+
+my $q          = new Quoter();
+my @opt_spec   = OptionParser::pod_to_spec();
+my $opt_parser = OptionParser->new(@opt_spec);
+$opt_parser->{dsn} = $dp;
+$opt_parser->{prompt} = '--source DSN <options>';
+$opt_parser->{descr} = q{extracts and saves information about the most }
+                     . q{recent deadlock in a MySQL server.  You need to }
+                     . q{specify whether to print the output or save it in }
+                     . q{a database.};
+my %opts = $opt_parser->parse();
+$dp->prop('setvars', $opts{setvars});
+
+# Process options.
+$opts{c} = $opts{p} unless defined $opts{c};
+
+# ############################################################################
+# Parse arguments saying where to connect.  If the script doesn't have
+# everything it needs, show help text.
+# ############################################################################
+my $source = $opts{s};
+my $dest   = $opts{d};
+
+$opt_parser->usage_or_errors(%opts);
+
+# ############################################################################
+# Configuration info.
+# ############################################################################
+
+# Some common patterns and variables
+my $d         = qr/(\d+)/;                    # Digit
+my $t         = qr/(\d+ \d+)/;                # Transaction ID
+my $i         = qr/((?:\d{1,3}\.){3}\d+)/;    # IP address
+my $n         = qr/([^`\s]+)/;                # MySQL object name
+my $w         = qr/(\w+)/;                    # Words
+my $s         = qr/(\d{6} .\d:\d\d:\d\d)/;    # InnoDB timestamp
+
+# A thread's proc_info can be at least 98 different things I've found in the
+# source.  Fortunately, most of them begin with a gerunded verb.  These are
+# the ones that don't.
+my %is_proc_info = (
+   'After create'                 => 1,
+   'Execution of init_command'    => 1,
+   'FULLTEXT initialization'      => 1,
+   'Reopen tables'                => 1,
+   'Repair done'                  => 1,
+   'Repair with keycache'         => 1,
+   'System lock'                  => 1,
+   'Table lock'                   => 1,
+   'Thread initialized'           => 1,
+   'User lock'                    => 1,
+   'copy to tmp table'            => 1,
+   'discard_or_import_tablespace' => 1,
+   'end'                          => 1,
+   'got handler lock'             => 1,
+   'got old table'                => 1,
+   'init'                         => 1,
+   'key cache'                    => 1,
+   'locks'                        => 1,
+   'malloc'                       => 1,
+   'query end'                    => 1,
+   'rename result table'          => 1,
+   'rename'                       => 1,
+   'setup'                        => 1,
+   'statistics'                   => 1,
+   'status'                       => 1,
+   'table cache'                  => 1,
+   'update'                       => 1,
+);
+
+# ############################################################################
+# Start working.
+# ############################################################################
+my $dbh   = get_cxn($source, 1);
+my $start = time();
+my $end   = $start + ($opts{m} || 0); # When we should exit
+my $now   = $start;
+my $dbh2;
+my $sth;
+my $ins_sth;
+
+# Since the user might not have specified a hostname for the connection, try to
+# extract it from the $dbh
+if ( !$source->{h} ) {
+   ($source->{h}) = $dbh->{mysql_hostinfo} =~ m/(\w+) via/;
+}
+
+my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
+               lock_type lock_mode wait_hold victim query );
+if ( $opts{C} ) {
+   @cols = grep { $opts{C}->{$_} } @cols;
+}
+
+if ( $dest && $dest->{t} ) {
+   my $db_tbl = 
+      join('.',
+      map  {  $q->quote($_) }
+      grep { $_ }
+      ( $dest->{D}, $dest->{t} ));
+
+   $dbh2     = get_cxn($dest, 0);
+   my $cols  = join(',', map { $q->quote($_) } @cols);
+   my $parms = join(',', map { '?' } @cols);
+   $ins_sth  = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
+}
+
+# Daemonize only after (potentially) asking for passwords for --askpass.
+if ( $opts{daemonize} ) {
+   require POSIX;
+   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
+   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
+   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
+   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
+   exit if $pid;
+   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
+   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+}
+
+my $oktorun = 1;
+while (                       # Quit if:
+   (!$opts{m} || $now < $end) # time is exceeded
+   && $oktorun                # or instructed to quit
+   )
+{
+
+   my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
+
+   my %txns = %{parse_deadlocks($text)};
+
+   if ( $ins_sth ) {
+      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
+         $ins_sth->execute(@{$txn}{@cols});
+      }
+      $dbh2->commit;
+   }
+
+   if ( $opts{p} ) {
+      my $sep = $opts{t} ? "\t" : ' ';
+      print join($sep, @cols), "\n";
+      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
+         # If $opts{c} is on, it's already been taken care of, but if it's unset,
+         # by default strip whitespace.
+         if ( !defined $opts{c} ) {
+            $txn->{query} =~ s/\s+/ /g;
+         }
+         print join($sep, map { $txn->{$_} } @cols), "\n";
+      }
+   }
+
+   # If there's an --interval argument, run forever or till specified.
+   # Otherwise just run once.
+   if ( $opts{i} ) {
+      sleep($opts{i});
+      $now = time();
+   }
+   else {
+      $oktorun = 0;
+   }
+}
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+
+sub parse_deadlocks {
+   my ( $text ) = @_;
+   # Pull out the deadlock section
+   my $dl_text;
+   my @matches = $text =~ m#\n(---+)\n([A-Z /]+)\n\1\n(.*?)(?=\n(---+)\n[A-Z /]+\n\4\n|$)#gs;
+   while ( my ( $start, $name, $text, $end ) = splice(@matches, 0, 4) ) {
+      next unless $name eq 'LATEST DETECTED DEADLOCK';
+      $dl_text = $text;
+   }
+
+   return {} unless $dl_text;
+
+   my @sections
+      = $dl_text
+      =~ m{
+         ^\*{3}\s([^\n]*)  # *** (1) WAITING FOR THIS...
+         (.*?)             # Followed by anything, non-greedy
+         (?=(?:^\*{3})|\z) # Followed by another three-stars or EOF
+      }gmsx;
+
+   # Loop through each section.  There are no assumptions about how many
+   # there are, who holds and wants what locks, and who gets rolled back.
+   my %txns;
+   while ( my ($header, $body) = splice(@sections, 0, 2) ) {
+      my ( $txn_id, $what ) = $header =~ m/^\($d\) (.*):$/m;
+      next unless $txn_id;
+      $txns{$txn_id} ||= { id => $txn_id };
+      my $hash = $txns{$txn_id};
+
+      if ( $what eq 'TRANSACTION' ) {
+         @{$hash}{qw(txn_time)} = $body =~ m/ACTIVE $d sec/;
+
+         # Parsing the line that begins 'MySQL thread id' is complicated.  The only
+         # thing always in the line is the thread and query id.  See function
+         # innobase_mysql_print_thd in InnoDB source file sql/ha_innodb.cc.
+         my ( $thread_line ) = $body =~ m/^(MySQL thread id .*)$/m;
+         my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
+
+         if ( $thread_line ) {
+            # These parts can always be gotten.
+            ( $mysql_thread_id, $query_id ) = $thread_line =~ m/^MySQL thread id $d, query id $d/m;
+
+            # If it's a master/slave thread, "Has (read|sent) all" may be the thread's
+            # proc_info.  In these cases, there won't be any host/ip/user info
+            ( $query_status ) = $thread_line =~ m/(Has (?:read|sent) all .*$)/m;
+            if ( defined($query_status) ) {
+               $user = 'system user';
+            }
+
+            # It may be the case that the query id is the last thing in the line.
+            elsif ( $thread_line =~ m/query id \d+ / ) {
+               # The IP address is the only non-word thing left, so it's the most
+               # useful marker for where I have to start guessing.
+               ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
+               if ( defined $ip ) {
+                  ( $user, $query_status ) = $thread_line =~ m/$ip $w(?: (.*))?$/;
+               }
+               else { # OK, there wasn't an IP address.
+                  # There might not be ANYTHING except the query status.
+                  ( $query_status ) = $thread_line =~ m/query id \d+ (.*)$/;
+                  if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
+                     # The remaining tokens are, in order: hostname, user, query_status.
+                     # It's basically impossible to know which is which.
+                     ( $hostname, $user, $query_status ) = $thread_line
+                        =~ m/query id \d+(?: ([A-Za-z]\S+))?(?: $w(?: (.*))?)?$/m;
+                  }
+                  else {
+                     $user = 'system user';
+                  }
+               }
+            }
+         }
+
+         my ( $query_text ) = $body =~ m/\nMySQL thread id .*\n((?s).*)/;
+         $query_text =~ s/\s+$//;
+         $query_text =~ s/\s+/ /g if $opts{c};
+
+         @{$hash}{qw(thread hostname ip user query)}
+            = ($mysql_thread_id, $hostname, $ip, $user, $query_text);
+         foreach my $key ( keys %$hash ) {
+            if ( !defined $hash->{$key} ) {
+               $hash->{$key} = '';
+            }
+         }
+
+      }
+      else {
+         # Prefer information about locks waited-for over locks-held.
+         if ( $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' || !$hash->{lock_type} ) {
+            $hash->{wait_hold} = $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' ? 'w' : 'h';
+            @{$hash}{ qw(lock_type idx db tbl txn_id lock_mode) }
+               = $body
+               =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n(?:/|`\.`)$n` trx id $t lock.mode (\S+)}m;
+            if ( $hash->{txn_id} ) {
+               my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
+               $hash->{txn_id} = $high ? ( $low + ($high << 32) ) : $low;
+            }
+         }
+      }
+
+      # Ensure all values are defined
+      map { $hash->{$_} = 0 unless defined $hash->{$_} }
+         qw(thread txn_id txn_time);
+      map { $hash->{$_} = '' unless defined $hash->{$_} }
+         qw(user hostname db tbl idx lock_type lock_mode query);
+   }
+
+   # Extract some miscellaneous data from the deadlock.
+   my ( $ts ) = $dl_text =~ m/^$s$/m;
+   my ( $year, $mon, $day, $hour, $min, $sec ) = $ts =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/;
+   $ts = sprintf('%02d-%02d-%02dT%02d:%02d:%02d', $year + 2000, $mon, $day, $hour, $min, $sec);
+   my ( $victim ) = $dl_text =~ m/^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)$/m;
+   $victim ||= 0;
+
+   # Stick the misc data into the transactions.
+   foreach my $txn ( values %txns ) {
+      $txn->{victim} = $txn->{id} == $victim ? 1 : 0;
+      $txn->{ts}     = $ts;
+      $txn->{server} = $source->{h} || '';
+      $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
+   }
+
+   return \%txns;
+}
+
+# Catches signals so the program can exit gracefully.
+sub finish {
+   my ($signal) = @_;
+   print STDERR "Exiting on SIG$signal.\n";
+   $oktorun = 0;
+}
+
+sub get_cxn {
+   my ( $info, $ac ) = @_;
+   if ( $opts{askpass} ) {
+      $info->{p} = OptionParser::prompt_noecho("Enter password: ");
+   }
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($info), {AutoCommit => $ac});
+   $dbh->{InactiveDestroy} = 1; # Because of forking.
+   return $dbh;
+}
+
+# ############################################################################
+# Documentation
+# ############################################################################
+=pod
+
+=head1 NAME
+
+mk-deadlock-logger - Extract and log MySQL deadlock information.
+
+=head1 SYNOPSIS
+
+The following examples will print deadlocks, store deadlocks in a database
+table, and daemonize and check once every 30 seconds for 4 hours,
+respectively:
+
+ mk-deadlock-logger --print
+ mk-deadlock-logger --source u=user,p=pass,h=server --dest D=test,t=deadlocks
+ mk-deadlock-logger --dest D=test,t=deadlocks --daemonize -m 4h -i 30s
+
+=head1 DESCRIPTION
+
+mk-deadlock-logger extracts deadlock data from a MySQL server (currently only
+InnoDB deadlock information is available).  You can print it to standard output
+or save it in a database table.  By default it does neither.
+
+=head1 DOWNLOADING
+
+You can download Maatkit from the Sourceforge website at
+L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
+
+=head1 OPTIONS
+
+Specify at least one of L<"--print"> or L<"--dest">.
+
+DSN values in L<"--dest"> default to values from L<"--source">.
+
+=over
+
+=item --askpass
+
+Prompt for a password when connecting to MySQL.
+
+=item --collapse
+
+short form: -c; negatable: yes
+
+Collapse whitespace in queries to a single space.
+
+This might make it easier to inspect on the command line or in a query.  By
+default, whitespace is collapsed when printing with L<"--print">, but not
+modified when storing to L<"--dest">.  (That is, the default is different for
+each action).
+
+=item --columns
+
+short form: -C; type: hash
+
+Output only this comma-separated list of columns.
+
+See L<"OUTPUT"> for more details on columns.
+
+=item --daemonize
+
+Fork and run in the background; POSIX OSes only.
+
+=item --dest
+
+short form: -d; type: DSN
+
+DSN for where to store deadlocks.
+
+Specifies a server, database and table in which to store deadlock information,
+in the same format as L<"--source">.  Missing values are filled in with the same
+values as L<"--source">, so you can usually omit most parts of this argument if
+you're storing deadlocks on the same server on which they happen.
+
+By default, whitespace in the query column is left intact; use L<"--collapse">
+if you want whitespace collapsed.
+
+The following table is suggested if you want to store all the information
+mk-deadlock-logger can extract about deadlocks:
+
+ CREATE TABLE deadlocks (
+   server char(20) NOT NULL,
+   ts datetime NOT NULL,
+   thread int unsigned NOT NULL,
+   txn_id bigint unsigned NOT NULL,
+   txn_time smallint unsigned NOT NULL,
+   user char(16) NOT NULL,
+   hostname char(20) NOT NULL,
+   ip char(15) NOT NULL, -- alternatively, ip int unsigned NOT NULL
+   db char(64) NOT NULL,
+   tbl char(64) NOT NULL,
+   idx char(64) NOT NULL,
+   lock_type char(16) NOT NULL,
+   lock_mode char(1) NOT NULL,
+   wait_hold char(1) NOT NULL,
+   victim tinyint unsigned NOT NULL,
+   query text NOT NULL,
+   PRIMARY KEY  (server,ts,thread)
+ ) ENGINE=InnoDB
+
+If you use L<"--columns">, you can omit whichever columns you don't want to
+store.
+
+=item --interval
+
+short form: -i; type: time; default: 0s
+
+How often to check for deadlocks.
+
+=item --numip
+
+short form: -n
+
+Express IP addresses as integers.
+
+=item --print
+
+short form: -p
+
+Print results on standard output.
+
+See L<"OUTPUT"> for more.  By default, enables L<"--collapse"> unless you
+explicitly disable it.
+
+=item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
+
+=item --source
+
+short form: -s; type: DSN
+
+DSN to check for deadlocks; required.
+
+Specifies how to connect to a server to check for deadlocks.
+
+=item --tab
+
+short form: -t
+
+Print tab-separated columns, instead of aligned.
+
+=item --time
+
+short form: -m; type: time
+
+How long to run before exiting.
+
+=back
+
+=head1 INNODB CAVEATS AND DETAILS
+
+InnoDB's output is hard to parse and sometimes there's no way to do it right.
+
+Sometimes not all information (for example, username or IP address) is included
+in the deadlock information.  In this case there's nothing for the script to put
+in those columns.  It may also be the case that the deadlock output is so long
+(because there were a lot of locks) that the whole thing is truncated.
+
+Though there are usually two transactions involved in a deadlock, there are more
+locks than that; at a minimum, one more lock than transactions is necessary to
+create a cycle in the waits-for graph.  mk-deadlock-logger prints the
+transactions (always two in the InnoDB output, even when there are more
+transactions in the waits-for graph than that) and fills in locks.  It prefers
+waited-for over held when choosing lock information to output, but you can
+figure out the rest with a moment's thought.  If you see one wait-for and one
+held lock, you're looking at the same lock, so of course you'd prefer to see
+both wait-for locks and get more information.  If the two waited-for locks are
+not on the same table, more than two transactions were involved in the deadlock.
+
+=head1 OUTPUT
+
+You can choose which columns are output and/or saved to L<"--dest"> with the
+L<"--columns"> argument.  The default columns are as follows:
+
+=over
+
+=item server
+
+The (source) server on which the deadlock occurred.  This might be useful if
+you're tracking deadlocks on many servers.
+
+=item ts
+
+The date and time of the last detected deadlock.
+
+=item thread
+
+The MySQL thread number, which is the same as the connection ID in SHOW FULL
+PROCESSLIST.
+
+=item txn_id
+
+The InnoDB transaction ID, which InnoDB expresses as two unsigned integers.  I
+have multiplied them out to be one number.
+
+=item txn_time
+
+How long the transaction was active when the deadlock happened.
+
+=item user
+
+The connection's database username.
+
+=item hostname
+
+The connection's host.
+
+=item ip
+
+The connection's IP address.  If you specify L<"--numip">, this is converted to
+an unsigned integer.
+
+=item db
+
+The database in which the deadlock occurred.
+
+=item tbl
+
+The table on which the deadlock occurred.
+
+=item idx
+
+The index on which the deadlock occurred.
+
+=item lock_type
+
+The lock type the transaction held on the lock that caused the deadlock.
+
+=item lock_mode
+
+The lock mode of the lock that caused the deadlock.
+
+=item wait_hold
+
+Whether the transaction was waiting for the lock or holding the lock.  Usually
+you will see the two waited-for locks.
+
+=item victim
+
+Whether the transaction was selected as the deadlock victim and rolled back.
+
+=item query
+
+The query that caused the deadlock.
+
+=back
+
+=head1 ENVIRONMENT
+
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
+
+   MKDEBUG=1 mk-....
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl, DBI, DBD::mysql, and some core packages that ought to be
+installed in any reasonably new version of Perl.
+
+=head1 BUGS
+
+Please use the Sourceforge bug tracker, forums, and mailing lists to request
+support or report bugs: L<http://sourceforge.net/projects/maatkit/>.
+
+Please include the complete command-line used to reproduce the problem you are
+seeing, the version of all MySQL servers involved, the complete output of the
+tool when run with L<"--version">, and if possible, debugging output produced by
+running with the C<MKDEBUG=1> environment variable.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright (c) 2007 Baron Schwartz.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz.
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
+
+=cut
