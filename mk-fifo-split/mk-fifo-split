@@ -1,8 +1,5 @@
 #!/usr/bin/perl
 
-# This is mk-fifo-split, a program that extracts and saves a summary of
-# the last deadlock recorded in MySQL.
-#
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
@@ -561,633 +558,71 @@ if ( $ENV{MKDEBUG} ) {
 # End OptionParser package
 # ###########################################################################
 
-# ###########################################################################
-# Quoter package 1755
-# ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
-package Quoter;
+package main;
 
 use English qw(-no_match_vars);
+use POSIX qw(mkfifo);
+use IO::File;
 
-sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
-}
-
-sub quote {
-   my ( $self, @vals ) = @_;
-   foreach my $val ( @vals ) {
-      $val =~ s/`/``/g;
-   }
-   return join('.', map { '`' . $_ . '`' } @vals);
-}
-
-sub quote_val {
-   my ( $self, @vals ) = @_;
-   return join(', ',
-      map {
-         if ( defined $_ ) {
-            $_ =~ s/(['\\])/\\$1/g;
-            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
-         }
-         else {
-            'NULL';
-         }
-      } @vals
-   );
-}
-
-1;
-
-# ###########################################################################
-# End Quoter package
-# ###########################################################################
-
-# ###########################################################################
-# DSNParser package 1957
-# ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
-package DSNParser;
-
-use DBI;
-use Data::Dumper;
-$Data::Dumper::Indent    = 0;
-$Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
-
-sub new {
-   my ( $class, @opts ) = @_;
-   my $self = {
-      opts => {
-         A => {
-            desc => 'Default character set',
-            dsn  => 'charset',
-            copy => 1,
-         },
-         D => {
-            desc => 'Database to use',
-            dsn  => 'database',
-            copy => 1,
-         },
-         F => {
-            desc => 'Only read default options from the given file',
-            dsn  => 'mysql_read_default_file',
-            copy => 1,
-         },
-         h => {
-            desc => 'Connect to host',
-            dsn  => 'host',
-            copy => 1,
-         },
-         p => {
-            desc => 'Password to use when connecting',
-            dsn  => 'password',
-            copy => 1,
-         },
-         P => {
-            desc => 'Port number to use for connection',
-            dsn  => 'port',
-            copy => 1,
-         },
-         S => {
-            desc => 'Socket file to use for connection',
-            dsn  => 'mysql_socket',
-            copy => 1,
-         },
-         u => {
-            desc => 'User for login if not current user',
-            dsn  => 'user',
-            copy => 1,
-         },
-      },
-   };
-   foreach my $opt ( @opts ) {
-      $ENV{MKDEBUG} && _d('Adding extra property ' . $opt->{key});
-      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
-   }
-   return bless $self, $class;
-}
-
-sub prop {
-   my ( $self, $prop, $value ) = @_;
-   if ( @_ > 2 ) {
-      $ENV{MKDEBUG} && _d("Setting $prop property");
-      $self->{$prop} = $value;
-   }
-   return $self->{$prop};
-}
-
-sub parse {
-   my ( $self, $dsn, $prev, $defaults ) = @_;
-   if ( !$dsn ) {
-      $ENV{MKDEBUG} && _d('No DSN to parse');
-      return;
-   }
-   $ENV{MKDEBUG} && _d("Parsing $dsn");
-   $prev     ||= {};
-   $defaults ||= {};
-   my %vals;
-   my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
-      $ENV{MKDEBUG} && _d("Interpreting $dsn as $p=$dsn");
-      $dsn = "$p=$dsn";
-   }
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
-   foreach my $key ( keys %opts ) {
-      $ENV{MKDEBUG} && _d("Finding value for $key");
-      $vals{$key} = $hash{$key};
-      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-         $vals{$key} = $prev->{$key};
-         $ENV{MKDEBUG} && _d("Copying value for $key from previous DSN");
-      }
-      if ( !defined $vals{$key} ) {
-         $vals{$key} = $defaults->{$key};
-         $ENV{MKDEBUG} && _d("Copying value for $key from defaults");
-      }
-   }
-   foreach my $key ( keys %hash ) {
-      die "Unrecognized DSN part '$key' in '$dsn'\n"
-         unless exists $opts{$key};
-   }
-   if ( (my $required = $self->prop('required')) ) {
-      foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
-      }
-   }
-   return \%vals;
-}
-
-sub as_string {
-   my ( $self, $dsn ) = @_;
-   return $dsn unless ref $dsn;
-   return join(',',
-      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
-      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
-      sort keys %$dsn );
-}
-
-sub usage {
-   my ( $self ) = @_;
-   my $usage
-      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
-      . "  KEY  COPY  MEANING\n"
-      . "  ===  ====  =============================================\n";
-   my %opts = %{$self->{opts}};
-   foreach my $key ( sort keys %opts ) {
-      $usage .= "  $key    "
-             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
-             .  ($opts{$key}->{desc} || '[No description]')
-             . "\n";
-   }
-   if ( (my $key = $self->prop('autokey')) ) {
-      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
-   }
-   return $usage;
-}
-
-sub get_cxn_params {
-   my ( $self, $info ) = @_;
-   my $dsn;
-   my %opts = %{$self->{opts}};
-   my $driver = $self->prop('dbidriver') || '';
-   if ( $driver eq 'Pg' ) {
-      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
-         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
-                     grep { defined $info->{$_} }
-                     qw(h P));
-   }
-   else {
-      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
-         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
-                     grep { defined $info->{$_} }
-                     qw(F h P S A))
-         . ';mysql_read_default_group=mysql';
-   }
-   $ENV{MKDEBUG} && _d($dsn);
-   return ($dsn, $info->{u}, $info->{p});
-}
-
-sub fill_in_dsn {
-   my ( $self, $dbh, $dsn ) = @_;
-   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
-   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
-   $user =~ s/@.*//;
-   $dsn->{h} ||= $vars->{hostname}->{Value};
-   $dsn->{S} ||= $vars->{'socket'}->{Value};
-   $dsn->{P} ||= $vars->{port}->{Value};
-   $dsn->{u} ||= $user;
-   $dsn->{D} ||= $db;
-}
-
-sub get_dbh {
-   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
-   $opts ||= {};
-   my $defaults = {
-      AutoCommit        => 0,
-      RaiseError        => 1,
-      PrintError        => 0,
-      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
-   };
-   @{$defaults}{ keys %$opts } = values %$opts;
-   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
-      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
-   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
-   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
-      my $sql = "/*!40101 SET NAMES $charset*/";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
-      $dbh->do($sql);
-      $ENV{MKDEBUG} && _d('Enabling charset for STDOUT');
-      if ( $charset eq 'utf8' ) {
-         binmode(STDOUT, ':utf8')
-            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
-      }
-      else {
-         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
-      }
-   }
-   my $setvars = $self->prop('setvars');
-   if ( $cxn_string =~ m/mysql/i && $setvars ) {
-      my $sql = "SET $setvars";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
-      $dbh->do($sql);
-   }
-   $ENV{MKDEBUG} && _d('DBH info: ',
-      $dbh,
-      Dumper($dbh->selectrow_hashref(
-         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
-      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
-      ' Character set info: ',
-      Dumper($dbh->selectall_arrayref(
-         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
-      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
-      ' $DBI::VERSION: ', $DBI::VERSION,
-   );
-   return $dbh;
-}
-
-sub get_hostname {
-   my ( $self, $dbh ) = @_;
-   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
-      return $host;
-   }
-   my ( $hostname, $one ) = $dbh->selectrow_array(
-      'SELECT /*!50038 @@hostname, */ 1');
-   return $hostname;
-}
-
-sub disconnect {
-   my ( $self, $dbh ) = @_;
-   $ENV{MKDEBUG} && $self->print_active_handles($dbh);
-   $dbh->disconnect;
-}
-
-sub print_active_handles {
-   my ( $self, $thing, $level ) = @_;
-   $level ||= 0;
-   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
-      or die "Cannot print: $OS_ERROR";
-   foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
-      $self->print_active_handles->( $handle, $level + 1 );
-   }
-}
-
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
-}
-
-1;
-
-# ###########################################################################
-# End DSNParser package
-# ###########################################################################
-
-use English qw(-no_match_vars);
-use List::Util qw(max);
-use Socket qw(inet_aton);
-use sigtrap qw(handler finish untrapped normal-signals);
-
-my $dp = new DSNParser(
-   { key => 't', copy => 1, desc => 'Table in which to store deadlock information' },
-);
-$dp->prop('required', { h => 1 });
-$dp->prop('autokey', 'h');
-
-# ############################################################################
-# Get configuration information.
-# ############################################################################
-
-
-my $q          = new Quoter();
 my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = OptionParser->new(@opt_spec);
-$opt_parser->{dsn} = $dp;
-$opt_parser->{prompt} = '--source DSN <options>';
-$opt_parser->{descr} = q{extracts and saves information about the most }
-                     . q{recent deadlock in a MySQL server.  You need to }
-                     . q{specify whether to print the output or save it in }
-                     . q{a database.};
+$opt_parser->{prompt} = '[options] [FILE ...]';
+$opt_parser->{descr} = q{splits FILE and pipes lines to a fifo.};
+$opt_parser->{strict} = 0;
 my %opts = $opt_parser->parse();
-$dp->prop('setvars', $opts{setvars});
-
-# Process options.
-$opts{c} = $opts{p} unless defined $opts{c};
-
-# ############################################################################
-# Parse arguments saying where to connect.  If the script doesn't have
-# everything it needs, show help text.
-# ############################################################################
-my $source = $opts{s};
-my $dest   = $opts{d};
-
+if ( !$opts{l} || $opts{l} <= 0 ) {
+   $opt_parser->error('--lines must be a positive integer');
+}
 $opt_parser->usage_or_errors(%opts);
 
-# ############################################################################
-# Configuration info.
-# ############################################################################
+# TODO: binmode
 
-# Some common patterns and variables
-my $d         = qr/(\d+)/;                    # Digit
-my $t         = qr/(\d+ \d+)/;                # Transaction ID
-my $i         = qr/((?:\d{1,3}\.){3}\d+)/;    # IP address
-my $n         = qr/([^`\s]+)/;                # MySQL object name
-my $w         = qr/(\w+)/;                    # Words
-my $s         = qr/(\d{6} .\d:\d\d:\d\d)/;    # InnoDB timestamp
+my $file = $opts{f};
 
-# A thread's proc_info can be at least 98 different things I've found in the
-# source.  Fortunately, most of them begin with a gerunded verb.  These are
-# the ones that don't.
-my %is_proc_info = (
-   'After create'                 => 1,
-   'Execution of init_command'    => 1,
-   'FULLTEXT initialization'      => 1,
-   'Reopen tables'                => 1,
-   'Repair done'                  => 1,
-   'Repair with keycache'         => 1,
-   'System lock'                  => 1,
-   'Table lock'                   => 1,
-   'Thread initialized'           => 1,
-   'User lock'                    => 1,
-   'copy to tmp table'            => 1,
-   'discard_or_import_tablespace' => 1,
-   'end'                          => 1,
-   'got handler lock'             => 1,
-   'got old table'                => 1,
-   'init'                         => 1,
-   'key cache'                    => 1,
-   'locks'                        => 1,
-   'malloc'                       => 1,
-   'query end'                    => 1,
-   'rename result table'          => 1,
-   'rename'                       => 1,
-   'setup'                        => 1,
-   'statistics'                   => 1,
-   'status'                       => 1,
-   'table cache'                  => 1,
-   'update'                       => 1,
-);
-
-# ############################################################################
-# Start working.
-# ############################################################################
-my $dbh   = get_cxn($source, 1);
-my $start = time();
-my $end   = $start + ($opts{m} || 0); # When we should exit
-my $now   = $start;
-my $dbh2;
-my $sth;
-my $ins_sth;
-
-# Since the user might not have specified a hostname for the connection, try to
-# extract it from the $dbh
-if ( !$source->{h} ) {
-   ($source->{h}) = $dbh->{mysql_hostinfo} =~ m/(\w+) via/;
+if ( $opts{F} && -e $file ) {
+   unlink($file) or die "Can't unlink $file: $OS_ERROR";
 }
+mkfifo($file, 0777) or die "Can't make fifo $file: $OS_ERROR";
 
-my @cols = qw( server ts thread txn_id txn_time user hostname ip db tbl idx
-               lock_type lock_mode wait_hold victim query );
-if ( $opts{C} ) {
-   @cols = grep { $opts{C}->{$_} } @cols;
-}
+my $fh;
 
-if ( $dest && $dest->{t} ) {
-   my $db_tbl = 
-      join('.',
-      map  {  $q->quote($_) }
-      grep { $_ }
-      ( $dest->{D}, $dest->{t} ));
+$fh = IO::File->new($file, '>') or die "Can't open $file: $OS_ERROR";
+$fh->autoflush(1);
 
-   $dbh2     = get_cxn($dest, 0);
-   my $cols  = join(',', map { $q->quote($_) } @cols);
-   my $parms = join(',', map { '?' } @cols);
-   $ins_sth  = $dbh2->prepare("INSERT IGNORE INTO $db_tbl($cols) VALUES($parms)");
-}
+my $lines  = 0;
+my $chunks = 0;
+my $start  = time();
+my $cstart = time();
+while ( my $line = <> ) {
+   $lines++;
+   if ( $lines % $opts{l} == 0 ) {
+      print $fh "\cD" or die "Can't print CTRL-D: $OS_ERROR";
+      close $fh or die "Can't close: $OS_ERROR";
 
-# Daemonize only after (potentially) asking for passwords for --askpass.
-if ( $opts{daemonize} ) {
-   require POSIX;
-   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
-   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
-   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
-   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
-   exit if $pid;
-   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
-   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
-}
-
-my $oktorun = 1;
-while (                       # Quit if:
-   (!$opts{m} || $now < $end) # time is exceeded
-   && $oktorun                # or instructed to quit
-   )
-{
-
-   my $text = $dbh->selectrow_hashref("SHOW INNODB STATUS")->{Status};
-
-   my %txns = %{parse_deadlocks($text)};
-
-   if ( $ins_sth ) {
-      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-         $ins_sth->execute(@{$txn}{@cols});
-      }
-      $dbh2->commit;
-   }
-
-   if ( $opts{p} ) {
-      my $sep = $opts{t} ? "\t" : ' ';
-      print join($sep, @cols), "\n";
-      foreach my $txn ( sort { $a->{thread} <=> $b->{thread} } values %txns ) {
-         # If $opts{c} is on, it's already been taken care of, but if it's unset,
-         # by default strip whitespace.
-         if ( !defined $opts{c} ) {
-            $txn->{query} =~ s/\s+/ /g;
-         }
-         print join($sep, map { $txn->{$_} } @cols), "\n";
-      }
-   }
-
-   # If there's an --interval argument, run forever or till specified.
-   # Otherwise just run once.
-   if ( $opts{i} ) {
-      sleep($opts{i});
-      $now = time();
-   }
-   else {
-      $oktorun = 0;
-   }
-}
-
-# ############################################################################
-# Subroutines
-# ############################################################################
-
-sub parse_deadlocks {
-   my ( $text ) = @_;
-   # Pull out the deadlock section
-   my $dl_text;
-   my @matches = $text =~ m#\n(---+)\n([A-Z /]+)\n\1\n(.*?)(?=\n(---+)\n[A-Z /]+\n\4\n|$)#gs;
-   while ( my ( $start, $name, $text, $end ) = splice(@matches, 0, 4) ) {
-      next unless $name eq 'LATEST DETECTED DEADLOCK';
-      $dl_text = $text;
-   }
-
-   return {} unless $dl_text;
-
-   my @sections
-      = $dl_text
-      =~ m{
-         ^\*{3}\s([^\n]*)  # *** (1) WAITING FOR THIS...
-         (.*?)             # Followed by anything, non-greedy
-         (?=(?:^\*{3})|\z) # Followed by another three-stars or EOF
-      }gmsx;
-
-   # Loop through each section.  There are no assumptions about how many
-   # there are, who holds and wants what locks, and who gets rolled back.
-   my %txns;
-   while ( my ($header, $body) = splice(@sections, 0, 2) ) {
-      my ( $txn_id, $what ) = $header =~ m/^\($d\) (.*):$/m;
-      next unless $txn_id;
-      $txns{$txn_id} ||= { id => $txn_id };
-      my $hash = $txns{$txn_id};
-
-      if ( $what eq 'TRANSACTION' ) {
-         @{$hash}{qw(txn_time)} = $body =~ m/ACTIVE $d sec/;
-
-         # Parsing the line that begins 'MySQL thread id' is complicated.  The only
-         # thing always in the line is the thread and query id.  See function
-         # innobase_mysql_print_thd in InnoDB source file sql/ha_innodb.cc.
-         my ( $thread_line ) = $body =~ m/^(MySQL thread id .*)$/m;
-         my ( $mysql_thread_id, $query_id, $hostname, $ip, $user, $query_status );
-
-         if ( $thread_line ) {
-            # These parts can always be gotten.
-            ( $mysql_thread_id, $query_id ) = $thread_line =~ m/^MySQL thread id $d, query id $d/m;
-
-            # If it's a master/slave thread, "Has (read|sent) all" may be the thread's
-            # proc_info.  In these cases, there won't be any host/ip/user info
-            ( $query_status ) = $thread_line =~ m/(Has (?:read|sent) all .*$)/m;
-            if ( defined($query_status) ) {
-               $user = 'system user';
-            }
-
-            # It may be the case that the query id is the last thing in the line.
-            elsif ( $thread_line =~ m/query id \d+ / ) {
-               # The IP address is the only non-word thing left, so it's the most
-               # useful marker for where I have to start guessing.
-               ( $hostname, $ip ) = $thread_line =~ m/query id \d+(?: ([A-Za-z]\S+))? $i/m;
-               if ( defined $ip ) {
-                  ( $user, $query_status ) = $thread_line =~ m/$ip $w(?: (.*))?$/;
-               }
-               else { # OK, there wasn't an IP address.
-                  # There might not be ANYTHING except the query status.
-                  ( $query_status ) = $thread_line =~ m/query id \d+ (.*)$/;
-                  if ( $query_status !~ m/^\w+ing/ && !exists($is_proc_info{$query_status}) ) {
-                     # The remaining tokens are, in order: hostname, user, query_status.
-                     # It's basically impossible to know which is which.
-                     ( $hostname, $user, $query_status ) = $thread_line
-                        =~ m/query id \d+(?: ([A-Za-z]\S+))?(?: $w(?: (.*))?)?$/m;
-                  }
-                  else {
-                     $user = 'system user';
-                  }
-               }
-            }
-         }
-
-         my ( $query_text ) = $body =~ m/\nMySQL thread id .*\n((?s).*)/;
-         $query_text =~ s/\s+$//;
-         $query_text =~ s/\s+/ /g if $opts{c};
-
-         @{$hash}{qw(thread hostname ip user query)}
-            = ($mysql_thread_id, $hostname, $ip, $user, $query_text);
-         foreach my $key ( keys %$hash ) {
-            if ( !defined $hash->{$key} ) {
-               $hash->{$key} = '';
-            }
-         }
-
+      if ( $opts{s} ) {
+         sleep($opts{s});
       }
       else {
-         # Prefer information about locks waited-for over locks-held.
-         if ( $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' || !$hash->{lock_type} ) {
-            $hash->{wait_hold} = $what eq 'WAITING FOR THIS LOCK TO BE GRANTED' ? 'w' : 'h';
-            @{$hash}{ qw(lock_type idx db tbl txn_id lock_mode) }
-               = $body
-               =~ m{^(RECORD|TABLE) LOCKS? (?:space id \d+ page no \d+ n bits \d+ index `?$n`? of )?table `$n(?:/|`\.`)$n` trx id $t lock.mode (\S+)}m;
-            if ( $hash->{txn_id} ) {
-               my ( $high, $low ) = $hash->{txn_id} =~ m/^(\d+) (\d+)$/;
-               $hash->{txn_id} = $high ? ( $low + ($high << 32) ) : $low;
-            }
-         }
+         unlink($file) or die "Can't unlink $file: $OS_ERROR";
+         mkfifo($file, 0777) or die "Can't make fifo $file: $OS_ERROR";
       }
 
-      # Ensure all values are defined
-      map { $hash->{$_} = 0 unless defined $hash->{$_} }
-         qw(thread txn_id txn_time);
-      map { $hash->{$_} = '' unless defined $hash->{$_} }
-         qw(user hostname db tbl idx lock_type lock_mode query);
+      $fh = IO::File->new($file, '>') or die "Can't open $file: $OS_ERROR";
+      $fh->autoflush(1);
+
+      $chunks++;
+      my $end = time();
+      if ( $opts{S} ) {
+         printf("%5d %9d %5d %5.2f %5.2f\n", $chunks, $lines, ts($end - $start),
+            ($lines / ($end - $start)), ($opts{l} / ($end - $cstart)));
+      }
+      $cstart = $end;
    }
-
-   # Extract some miscellaneous data from the deadlock.
-   my ( $ts ) = $dl_text =~ m/^$s$/m;
-   my ( $year, $mon, $day, $hour, $min, $sec ) = $ts =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/;
-   $ts = sprintf('%02d-%02d-%02dT%02d:%02d:%02d', $year + 2000, $mon, $day, $hour, $min, $sec);
-   my ( $victim ) = $dl_text =~ m/^\*\*\* WE ROLL BACK TRANSACTION \((\d+)\)$/m;
-   $victim ||= 0;
-
-   # Stick the misc data into the transactions.
-   foreach my $txn ( values %txns ) {
-      $txn->{victim} = $txn->{id} == $victim ? 1 : 0;
-      $txn->{ts}     = $ts;
-      $txn->{server} = $source->{h} || '';
-      $txn->{ip}     = inet_aton($txn->{ip}) if $opts{n};
-   }
-
-   return \%txns;
+   print $fh $line or die "Can't print: $OS_ERROR";
 }
+close $fh or die "Can't close: $OS_ERROR";
 
-# Catches signals so the program can exit gracefully.
-sub finish {
-   my ($signal) = @_;
-   print STDERR "Exiting on SIG$signal.\n";
-   $oktorun = 0;
-}
-
-sub get_cxn {
-   my ( $info, $ac ) = @_;
-   if ( $opts{askpass} ) {
-      $info->{p} = OptionParser::prompt_noecho("Enter password: ");
-   }
-   my $dbh = $dp->get_dbh($dp->get_cxn_params($info), {AutoCommit => $ac});
-   $dbh->{InactiveDestroy} = 1; # Because of forking.
-   return $dbh;
-}
+unlink($file) or die "Can't unlink $file: $OS_ERROR";
 
 # ############################################################################
 # Documentation
@@ -1196,23 +631,21 @@ sub get_cxn {
 
 =head1 NAME
 
-mk-deadlock-logger - Extract and log MySQL deadlock information.
+mk-fifo-split - Split files and pipe lines to a fifo without really splitting.
 
 =head1 SYNOPSIS
 
-The following examples will print deadlocks, store deadlocks in a database
-table, and daemonize and check once every 30 seconds for 4 hours,
-respectively:
+Read hugefile.txt in chunks of a million lines without physically splitting it:
 
- mk-deadlock-logger --print
- mk-deadlock-logger --source u=user,p=pass,h=server --dest D=test,t=deadlocks
- mk-deadlock-logger --dest D=test,t=deadlocks --daemonize -m 4h -i 30s
+ mk-fifo-split -l 1000000 hugefile.txt
+ while [ -e /tmp/mk-fifo-split ]; do cat /tmp/mk-fifo-split; done
 
 =head1 DESCRIPTION
 
-mk-deadlock-logger extracts deadlock data from a MySQL server (currently only
-InnoDB deadlock information is available).  You can print it to standard output
-or save it in a database table.  By default it does neither.
+mk-fifo-split lets you read from a file as though it contains only some of the
+lines in the file.  When you read from it again, it contains the next set of
+lines; when you have gone all the way through it, the file disappears.  This
+works only on Unix-like operating systems.
 
 =head1 DOWNLOADING
 
@@ -1231,128 +664,46 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Specify at least one of L<"--print"> or L<"--dest">.
-
-DSN values in L<"--dest"> default to values from L<"--source">.
-
 =over
 
-=item --askpass
+=item --fifo
 
-Prompt for a password when connecting to MySQL.
+short form: -f; type: string; default: /tmp/mk-fifo-split
 
-=item --collapse
+The name of the fifo from which the lines can be read.
 
-short form: -c; negatable: yes
+=item --lines
 
-Collapse whitespace in queries to a single space.
+short form: -l; type: int; default: 1000
 
-This might make it easier to inspect on the command line or in a query.  By
-default, whitespace is collapsed when printing with L<"--print">, but not
-modified when storing to L<"--dest">.  (That is, the default is different for
-each action).
+The number of lines to read in each chunk.
 
-=item --columns
+=item --force
 
-short form: -C; type: hash
+short form: -F
 
-Output only this comma-separated list of columns.
+Remove the fifo if it exists already, then create it again.
 
-See L<"OUTPUT"> for more details on columns.
+=item --sleep
 
-=item --daemonize
+short form: -s; type: int
 
-Fork and run in the background; POSIX OSes only.
+Sleep between chunks instead of closing and opening the fifo.
 
-=item --dest
+In my experiments I found that sending an C<EOF> character to the fifo is not
+enough to make the program that reads from the fifo realize the file has ended.
+I needed to either sleep after sending the C<EOF>, or remove and recreate the
+fifo.  By default this program does the latter; if you specify this option it
+will sleep the specified number of seconds instead.
 
-short form: -d; type: DSN
+=item --statistics
 
-DSN for where to store deadlocks.
+short form: -S
 
-Specifies a server, database and table in which to store deadlock information,
-in the same format as L<"--source">.  Missing values are filled in with the same
-values as L<"--source">, so you can usually omit most parts of this argument if
-you're storing deadlocks on the same server on which they happen.
+Print out statistics between chunks.
 
-By default, whitespace in the query column is left intact; use L<"--collapse">
-if you want whitespace collapsed.
-
-The following table is suggested if you want to store all the information
-mk-deadlock-logger can extract about deadlocks:
-
- CREATE TABLE deadlocks (
-   server char(20) NOT NULL,
-   ts datetime NOT NULL,
-   thread int unsigned NOT NULL,
-   txn_id bigint unsigned NOT NULL,
-   txn_time smallint unsigned NOT NULL,
-   user char(16) NOT NULL,
-   hostname char(20) NOT NULL,
-   ip char(15) NOT NULL, -- alternatively, ip int unsigned NOT NULL
-   db char(64) NOT NULL,
-   tbl char(64) NOT NULL,
-   idx char(64) NOT NULL,
-   lock_type char(16) NOT NULL,
-   lock_mode char(1) NOT NULL,
-   wait_hold char(1) NOT NULL,
-   victim tinyint unsigned NOT NULL,
-   query text NOT NULL,
-   PRIMARY KEY  (server,ts,thread)
- ) ENGINE=InnoDB
-
-If you use L<"--columns">, you can omit whichever columns you don't want to
-store.
-
-=item --interval
-
-short form: -i; type: time; default: 0s
-
-How often to check for deadlocks.
-
-=item --numip
-
-short form: -n
-
-Express IP addresses as integers.
-
-=item --print
-
-short form: -p
-
-Print results on standard output.
-
-See L<"OUTPUT"> for more.  By default, enables L<"--collapse"> unless you
-explicitly disable it.
-
-=item --setvars
-
-type: string; default: wait_timeout=10000
-
-Set these MySQL variables.
-
-Specify any variables you want to be set immediately after connecting to MySQL.
-These will be included in a C<SET> command.
-
-=item --source
-
-short form: -s; type: DSN
-
-DSN to check for deadlocks; required.
-
-Specifies how to connect to a server to check for deadlocks.
-
-=item --tab
-
-short form: -t
-
-Print tab-separated columns, instead of aligned.
-
-=item --time
-
-short form: -m; type: time
-
-How long to run before exiting.
+The statistics are the number of chunks, the number of lines, elapsed time, and
+lines per second overall and during the last chunk.
 
 =back
 
