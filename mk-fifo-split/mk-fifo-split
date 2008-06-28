@@ -567,7 +567,8 @@ use IO::File;
 my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = OptionParser->new(@opt_spec);
 $opt_parser->{prompt} = '[options] [FILE ...]';
-$opt_parser->{descr} = q{splits FILE and pipes lines to a fifo.};
+$opt_parser->{descr} = q{splits FILE and pipes lines to a fifo.  With no FILE, }
+                     . q{or when FILE is -, read standard input.};
 $opt_parser->{strict} = 0;
 my %opts = $opt_parser->parse();
 if ( !$opts{l} || $opts{l} <= 0 ) {
@@ -647,6 +648,9 @@ mk-fifo-split lets you read from a file as though it contains only some of the
 lines in the file.  When you read from it again, it contains the next set of
 lines; when you have gone all the way through it, the file disappears.  This
 works only on Unix-like operating systems.
+
+You can specify multiple files on the command line.  If you don't specify any,
+or if you use the special filename C<->, lines are read from standard input.
 
 =head1 DOWNLOADING
 
