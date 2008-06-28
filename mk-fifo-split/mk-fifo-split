@@ -613,8 +613,9 @@ while ( my $line = <> ) {
       $chunks++;
       my $end = time();
       if ( $opts{S} ) {
-         printf("%5d %9d %5d %5.2f %5.2f\n", $chunks, $lines, ts($end - $start),
-            ($lines / ($end - $start)), ($opts{l} / ($end - $cstart)));
+         my $dif = ($end - $start) || 1;
+         printf("%5d %9d %5d %5.2f %5.2f\n", $chunks, $lines, ($end - $start),
+            ($lines / $dif), ($opts{l} / $dif));
       }
       $cstart = $end;
    }
