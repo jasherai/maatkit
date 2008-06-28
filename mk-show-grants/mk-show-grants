@@ -936,7 +936,7 @@ foreach my $u (@$users) {
       my @revoke = map {
          my @result;
          my ( $grants, $on_what, $user ) = $_
-            =~ m/GRANT (.*?) ON ((?:`|\*).*?) TO ('[^']+'\@'[^']+')/;
+            =~ m/GRANT (.*?) ON ((?:`|\*).*?) TO ('[^']*'\@'[^']+')/;
          if ( $opts{s} ) {
             @result = map { "REVOKE $_ ON $on_what FROM $user" } split(', ', $grants);
          }
