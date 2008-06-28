@@ -1703,6 +1703,8 @@ The following items are unimplemented at this time:
             size, engine, number of indexes, number of columns etc for each
             table.  Maybe also mention unusual data types in the table, or a
             summary of the data types.  Also show triggers.
+            * for datetime columns, check a naming convention and guess whether
+            they can be timestamp instead.  'ts', 'created_at', 'last_updated'
             * For each table with an auto-inc PK and a timestamp, try to guess
                how many rows/day it grows, both overall and more recently, by
                splitting up and getting the timestamps at various points in th

@@ -876,6 +876,8 @@ use English qw(-no_match_vars);
 $OUTPUT_AUTOFLUSH = 1;
 
 # TODO: implement processes too; then it can be a stale query sniper.
+# TODO: add --haskey(col), add --hascol
+# TODO: add --keepgoing (in case of an error on --exec)
 
 # ############################################################################
 # Get configuration information.

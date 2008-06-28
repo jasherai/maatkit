@@ -21,6 +21,14 @@
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
 # TODO: use LOCK TABLES to defer key writes to MyISAM tables.
+# TODO: add an --odku option: just a list of columns to expand into
+# values(col_name) clauses.
+# TODO: for --purge without --file, there is no need to run SELECT at all.  We
+# can just use a user variable to keep track of the found rows, and we only need
+# one query over and over.  This should be optional, not just automatic.
+# TODO: for archiving without going to a file, we can just run INSERT..SELECT
+# with a user variable to keep track of the last found row.  This should be
+# optional.
 
 use strict;
 use warnings FATAL => 'all';
