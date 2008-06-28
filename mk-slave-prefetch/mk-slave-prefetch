@@ -1428,6 +1428,7 @@ if ( $opts{daemonize} ) {
 # * filter: Throw away non-replicated DBs/tables
 # * Optionally read the binlog from the server's master.  advantages: can run
 #   tool on another server than the slave.
+# TODO: need to change --statistics to print only N top queries
 
 # ############################################################################
 # Ready to work now.

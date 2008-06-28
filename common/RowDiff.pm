@@ -99,6 +99,8 @@ sub compare_sets {
 # 1 cmp 0 =>  1
 # 1 cmp 1 =>  0
 # 1 cmp 2 => -1
+# TODO: must generate the comparator function dynamically for speed, so we don't
+# have to check the type of columns constantly
 sub key_cmp {
    my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
    $ENV{MKDEBUG} && _d("Comparing keys using columns " . join(',', @$key_cols));
