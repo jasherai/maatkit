@@ -196,40 +196,6 @@ sub get_tmp_table {
    return $result;
 }
 
-sub get_procedures {
-   my ( $self, $dbh, $quoter, $db ) = @_;
-   if ( !$self->{cache} || !$self->{procs}->{$db} ) {
-      $self->{procs}->{$db} = {};
-      $self->_use_db($dbh, $quoter, $db);
-      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
-         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
-         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
-      $ENV{MKDEBUG} && _d($sql);
-      $dbh->do($sql);
-      $sql = "SHOW PROCEDURE STATUS FROM " . $quoter->quote($db);
-      $ENV{MKDEBUG} && _d($sql);
-      my $sth = $dbh->prepare($sql);
-      $sth->execute();
-      if ( $sth->rows ) {
-         my $procs = $sth->fetchall_arrayref({});
-         foreach my $proc (@$procs) {
-            # Lowercase the hash keys because the NAME_lc property might be set
-            # on the $dbh, so the lettercase is unpredictable.  This makes them
-            # predictable.
-            my %proc;
-            @proc{ map { lc $_ } keys %$proc } = values %$proc;
-            push @{ $self->{procs}->{$db}}, \%proc;
-         }
-      }
-      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
-         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
-      $ENV{MKDEBUG} && _d($sql);
-      $dbh->do($sql);
-   }
-   return $self->{procs}->{$db};
-}
-
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
@@ -263,7 +229,7 @@ sub get_triggers {
    if ( $tbl ) {
       return $self->{triggers}->{$db}->{$tbl};
    }
-   return @{$self->{triggers}->{$db}};
+   return values %{$self->{triggers}->{$db}};
 }
 
 sub get_databases {
