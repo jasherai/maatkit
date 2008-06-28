@@ -1042,6 +1042,7 @@ my @opt_spec = (
    # time running queries
 );
 
+# TODO: catch ctrl-c and print results so far.
 # TODO: optimize.  Profiling results:
 # %Time ExclSec CumulS #Calls sec/call Csec/c  Name
 #  49.5   34.17 34.177 203249   0.0002 0.0002  QueryRewriter::fingerprint
