@@ -29,6 +29,8 @@
 # TODO: for archiving without going to a file, we can just run INSERT..SELECT
 # with a user variable to keep track of the last found row.  This should be
 # optional.
+# TODO: a user-variable solution to scan no more than X rows at a time so we can
+# stop ASAP.  For example, WHERE ... AND ((@var := @var + 1) < 500)
 
 use strict;
 use warnings FATAL => 'all';
