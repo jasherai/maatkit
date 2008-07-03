@@ -106,3 +106,10 @@ Make visual-explain tell which columns are used in the index.
 Query formatter/pretty printer
 
 timestamp column names: (updat|insert|delet|creat)ed
+
+New tool to help alter tables in chunks:
+   IDEA: We actually could add a tool to maatkit to handle ALTER TABLE
+   w replication similar way - create table_new with new structure and
+   when lock both tables and populate it with selects from the large
+   table in small chunks - this would allow to alter large tables
+   without stalling replication flow.
