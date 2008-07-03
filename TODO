@@ -104,3 +104,5 @@ Progress calculations:
 Make visual-explain tell which columns are used in the index.
 
 Query formatter/pretty printer
+
+timestamp column names: (updat|insert|delet|creat)ed
