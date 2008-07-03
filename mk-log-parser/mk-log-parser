@@ -1040,6 +1040,7 @@ my @opt_spec = (
    # min, max values
    # show stats overall: number of events, total time, min ts, max ts, pct of
    # time running queries
+   # show time-of-day clustering (e.g. query always happens around 4AM)
 );
 
 # TODO: catch ctrl-c and print results so far.
