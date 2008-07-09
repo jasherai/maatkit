@@ -1,5 +1,8 @@
 Include the DSN options in POD.
 
+Make a way to get a list of DSNs out of a database table, and iterate over them.
+This would be useful for mk-find, mk-table-checksum and several other tools.
+
 Tool to automate InnoDB recovery: start mysqld, dump table in chunks until it
 crashes, start again, ....
 
@@ -30,7 +33,7 @@ Add a --charset option to all tools, like mk-table-sync has.
 Add a --setvars option to all tools, so one can set wait_timeout etc.
 Make it set the wait_timeout by default.
 
-mk-log-server: start a server that can serve the given log files.
+mk-log-server: start a server that can serve the given binlog files.
 
 mysqldiff: http://www.adamspiers.org/computing/mysqldiff/
 http://www.mysqldiff.org/
