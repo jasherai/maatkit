@@ -878,6 +878,8 @@ $OUTPUT_AUTOFLUSH = 1;
 # TODO: implement processes too; then it can be a stale query sniper.
 # TODO: add --haskey(col), add --hascol
 # TODO: add --keepgoing (in case of an error on --exec)
+# TODO: make a way to get a list of DSNs out of a database table, and iterate
+# over them.
 
 # ############################################################################
 # Get configuration information.
@@ -928,6 +930,7 @@ my @opt_spec = (
 
    { s => 'exec=s',            g => 'a', d => 'Execute this SQL with each item found' },
    { s => 'exec_plus=s',       g => 'a', d => 'Execute this SQL with all items at once' },
+   { s => 'exec_dsn=s',        g => 'a', d => 'Execute --exec commands on this DBH' },
    { s => 'print',             g => 'a', d => 'Print the database and table name' },
    { s => 'printf=s',          g => 'a', d => 'Print format, with escapes and directives' },
 
@@ -1007,6 +1010,7 @@ my %time_for;     # Holds time constants for mmin, mtime etc
 my %connections;  # Holds a list of thread IDs connected
 my $server_id;    # Holds the server's @@SERVER_ID
 my $dbh;          # This program's $dbh
+my $exec_dbh;     # The $dbh to use for exec and exec_plus
 
 # Functions to call while evaluating tests.
 my %test_for = (
@@ -1127,7 +1131,8 @@ my %action_for = (
       my $sql = sprintf($fmt_for{exec}->{str},
          map { defined $_ ? $_ : '' }
          @{$table}{@{$fmt_for{exec}->{arg_names}}});
-      $dbh->do($sql);
+      $ENV{MKDEBUG} && _d($sql);
+      $exec_dbh->do($sql);
    },
    printf => sub {
       my ( $table ) = @_;
@@ -1154,6 +1159,15 @@ if ( !$opts{p} && $opts{askpass} ) {
 my $dp = new DSNParser();
 $dp->prop('setvars', $opts{setvars});
 $dbh = $dp->get_dbh( $dp->get_cxn_params(\%opts), { AutoCommit => 1 } );
+if ( $opts{exec_dsn} ) {
+   $exec_dbh = $dp->get_dbh(
+      $dp->get_cxn_params($dp->parse($opts{exec_dsn}, \%opts)),
+      { AutoCommit => 1 },
+   );
+}
+else {
+   $exec_dbh = $dbh;
+}
 
 # If no other action was given, the default action is to print.
 if ( !grep { $opts{$_} } qw( exec exec_plus print printf ) ) {
@@ -1261,7 +1275,7 @@ foreach my $database ( @databases ) {
 if ( $opts{exec_plus} ) {
    my $table_list = join(', ', map { "$_->{Database}.$_->{Name}" } @exec_plus);
    (my $sql = $opts{exec_plus}) =~ s/%s/$table_list/g;
-   $dbh->do($sql);
+   $exec_dbh->do($sql);
 }
 
 # ############################################################################
@@ -1337,6 +1351,12 @@ sub expand {
       $num *= $factor_for{$factor};
    }
    return "$pre$num";
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
+   print "# main:$line $PID ", @_, "\n";
 }
 
 # ############################################################################
@@ -1661,6 +1681,12 @@ and I'll add this feature.
 
 Execute this SQL with each item found.  The SQL can contain escapes and
 formatting directives (see L<"--printf">).
+
+=item --exec_dsn
+
+Specify a DSN in key-value format to use when executing SQL with L<"--exec"> and
+L<"--exec_plus">.  Any values not specified are inherited from command-line
+arguments.
 
 =item --exec_plus
 
