@@ -1,3 +1,5 @@
+Include the DSN options in POD.
+
 Tool to automate InnoDB recovery: start mysqld, dump table in chunks until it
 crashes, start again, ....
 
