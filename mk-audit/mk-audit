@@ -1756,6 +1756,8 @@ The following items are unimplemented at this time:
          * look for weird values of all status and variables, like
            innodb_flush_method
            not set to O_DIRECT.
+         * small innodb log files, large innodb_additional_mem_pool
+         * on a slave, innodb_flush_log_at_trx_commit doesn't need to be 1
          * Look for unusual values: Handler_prepare
          * Watch prepared statements and compare to max
          * Watch for "bad query patterns" such as RAND() or storing IP addresses
