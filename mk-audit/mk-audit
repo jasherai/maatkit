@@ -1517,6 +1517,9 @@ my $data = {};
       $data->{disks}->{vgs} = $vgs;
    }
 
+   # TODO: use ethtool, ip, etc to discover network interfaces, IP addresses and
+   # network speed
+
    # #########################################################################
    # And now I will show you the most excellent way.
    # #########################################################################
