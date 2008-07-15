@@ -1,5 +1,7 @@
 Changelog for mk-fifo-split:
 
+   * Removed --sleep; EOF doesn't mean anything to a non-terminal.
+
 2008-06-28: version 1.0.0
 
    * Initial release.
