@@ -32,7 +32,7 @@ open my $fh, '<', '/tmp/mk-fifo-split' or die $OS_ERROR;
 my $contents = do { local $INPUT_RECORD_SEPARATOR; <$fh>; };
 close $fh;
 
-open my $fh2, '<', '..//mk-fifo-split' or die $OS_ERROR;
+open my $fh2, '<', '../mk-fifo-split' or die $OS_ERROR;
 my $contents2 = do { local $INPUT_RECORD_SEPARATOR; <$fh2>; };
 close $fh2;
 

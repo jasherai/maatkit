@@ -597,16 +597,10 @@ my $cstart = time();
 while ( my $line = <> ) {
    $lines++;
    if ( $lines % $opts{l} == 0 ) {
-      print $fh "\cD" or die "Can't print CTRL-D: $OS_ERROR";
       close $fh or die "Can't close: $OS_ERROR";
 
-      if ( $opts{s} ) {
-         sleep($opts{s});
-      }
-      else {
-         unlink($file) or die "Can't unlink $file: $OS_ERROR";
-         mkfifo($file, 0777) or die "Can't make fifo $file: $OS_ERROR";
-      }
+      unlink($file) or die "Can't unlink $file: $OS_ERROR";
+      mkfifo($file, 0777) or die "Can't make fifo $file: $OS_ERROR";
 
       $fh = IO::File->new($file, '>') or die "Can't open $file: $OS_ERROR";
       $fh->autoflush(1);
@@ -688,18 +682,6 @@ The number of lines to read in each chunk.
 short form: -F
 
 Remove the fifo if it exists already, then create it again.
-
-=item --sleep
-
-short form: -s; type: int
-
-Sleep between chunks instead of closing and opening the fifo.
-
-In my experiments I found that sending an C<EOF> character to the fifo is not
-enough to make the program that reads from the fifo realize the file has ended.
-I needed to either sleep after sending the C<EOF>, or remove and recreate the
-fifo.  By default this program does the latter; if you specify this option it
-will sleep the specified number of seconds instead.
 
 =item --statistics
 
