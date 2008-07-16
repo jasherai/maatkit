@@ -577,6 +577,10 @@ if ( !$opts{l} || $opts{l} <= 0 ) {
 $opt_parser->usage_or_errors(%opts);
 
 # TODO: binmode
+# TODO: add offset and limit arguments so you can read a splice out of the
+# middle.
+# TODO: print out $. on exit (including exit by CTRL-C).
+# TODO make progress messages the default
 
 my $file = $opts{f};
 
