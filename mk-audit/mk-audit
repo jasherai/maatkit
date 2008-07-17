@@ -1699,6 +1699,15 @@ This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 The following items are unimplemented at this time:
 
+   Hardware
+      * raid status: try megarc; if that says " megarc -AllAdpInfo says No
+         MegaRAID Found" then try looking in /opt for MegaCli or MegaCli64 and
+         try: /opt/MegaRAID/MegaCli/MegaCli64  -AdpBbuCmd -GetBbuStatus -aALL
+         or: /opt/MegaRAID/MegaCli/MegaCli64 -AdpAllInfo -aALL
+         There can be indications of a) whether there is a BBU and b) lots of
+         stuff about how many volumes and the physical devices and their status.
+         If there is a MegaRAID in dmesg output, but can't find this info, print
+         a warning that there's one but can't check its status.
    Operating System
       * vmstat samples
       * iostat usage if possible
