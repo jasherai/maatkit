@@ -594,6 +594,10 @@ my $fh;
 $fh = IO::File->new($file, '>') or die "Can't open $file: $OS_ERROR";
 $fh->autoflush(1);
 
+if ( $opts{S} ) {
+   printf("%5s %9s %5s %8s %8s\n", qw(chunks lines time overall current));
+}
+
 my $lines  = 0;
 my $chunks = 0;
 my $start  = time();
@@ -612,9 +616,10 @@ while ( my $line = <> ) {
       $chunks++;
       my $end = time();
       if ( $opts{S} ) {
-         my $dif = ($end - $start) || 1;
+         my $overall = ($end - $start)  || 1;
+         my $current = ($end - $cstart) || 1;
          printf("%5d %9d %5d %5.2f %5.2f\n", $chunks, $lines, ($end - $start),
-            ($lines / $dif), ($opts{l} / $dif));
+            ($lines / $overall), ($opts{l} / $current));
       }
       $cstart = $end;
    }
