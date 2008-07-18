@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+   * Added more information to --statistics and changed --whyquit slightly.
+
 2008-06-02: version 1.0.9
 
    * Updated common code.

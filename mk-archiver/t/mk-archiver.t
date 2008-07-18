@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 105;
+use Test::More tests => 109;
 
 my $opt_file = shift || "~/.my.cnf";
 diag("Testing with $opt_file");
@@ -53,6 +53,14 @@ $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --pu
 is($output, '', 'Basic test run did not die');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged ok');
+
+# Test --whyquit and --statistics output
+`mysql --defaults-file=$opt_file < before.sql`;
+$output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --purge --whyquit --statistics 2>&1`;
+like($output, qr/Started at \d/, 'Start timestamp');
+like($output, qr/Source:/, 'source');
+like($output, qr/SELECT 4\nINSERT 0\nDELETE 4\n/, 'row counts');
+like($output, qr/Exiting because there are no more rows/, 'Exit reason');
 
 # Test basic functionality with --commit-each
 `mysql --defaults-file=$opt_file < before.sql`;

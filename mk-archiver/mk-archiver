@@ -2463,12 +2463,16 @@ if ( $plugin ) {
 }
 
 if ( !$opts{quiet} && $opts{statistics} ) {
-   my $stat_total = Time::HiRes::gettimeofday() - $stat_start;
+   my $stat_stop  = Time::HiRes::gettimeofday();
+   my $stat_total = $stat_stop - $stat_start;
 
    my $total2 = 0;
    my $maxlen = 0;
    my %summary;
 
+   printf("Started at %s, ended at %s\n", ts($stat_start), ts($stat_stop));
+   print("Source: ", $dp->as_string($src), "\n");
+   print("Dest:   ", $dp->as_string($dst), "\n") if $dst;
    print(join("\n", map { "$_ " . ($statistics{$_} || 0) }
          qw(SELECT INSERT DELETE)), "\n");
 
@@ -2507,6 +2511,9 @@ if ( $opts{q} ) {
    }
    elsif ( -f $opts{S} ) {
       print "Exiting because sentinel file $opts{S} exists.\n";
+   }
+   elsif ( $opts{statistics} ) {
+      print "Exiting because there are no more rows.\n";
    }
 }
 
@@ -3164,6 +3171,8 @@ statistics are available to the plugin specified by L<"--plugin">
 Unless you specify L<"--quiet">, C<mk-archiver> prints the statistics when it
 exits.  The statistics look like this:
 
+ Started at 2008-07-18T07:18:53, ended at 2008-07-18T07:18:53
+ Source: D=db,t=table
  SELECT 4
  INSERT 4
  DELETE 4
@@ -3174,13 +3183,18 @@ exits.  The statistics look like this:
  inserting          4     0.0028       2.28
  other              0     0.0040       3.29
 
-The first three lines show how many rows were fetched, inserted, and deleted.
+The first two (or three) lines show times and the source and destination tables.
+The next three lines show how many rows were fetched, inserted, and deleted.
 
 The remaining lines show counts and timing.  The columns are the action, the
 total number of times that action was timed, the total time it took, and the
 percent of the program's total runtime.  The rows are sorted in order of
 descending total time.  The last row is the rest of the time not explicitly
 attributed to anything.  Actions will vary depending on command-line options.
+
+If L<"--whyquit"> is given, its behavior is changed slightly.  This option
+causes it to print the reason for exiting even when it's just because there are
+no more rows.
 
 This option requires the standard Time::HiRes module, which is part of core Perl
 on reasonably new Perl releases.
@@ -3242,6 +3256,9 @@ Causes mk-archiver to print a message if it exits for any reason other than
 running out of rows to archive.  This can be useful if you have a cron job with
 L<"--time"> specified, for example, and you want to be sure mk-archiver is
 finishing before running out of time.
+
+If L<"--statistics"> is given, the behavior is changed slightly.  It will print
+the reason for exiting even when it's just because there are no more rows.
 
 This output prints even if L<"--quiet"> is given.  That's so you can put
 C<mk-archiver> in a C<cron> job and get an email if there's an abnormal exit.
