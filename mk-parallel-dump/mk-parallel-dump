@@ -1968,6 +1968,7 @@ $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
 $opts{m} = max(2, $opts{m} || 0);
 
 # TODO: write out progress, checkpoint, and allow resuming.
+# TODO: permit dumping a single table in many threads.
 
 my @opt_spec = (
    {  s => 'age=m',
