@@ -1,5 +1,13 @@
 Changelog for mk-advisor:
 
+   * Replaced: Data::Dumper w/ formats, SERVER and MYSQL_INSTANCE
+   * Code refactoring: server_report(), mysql_instance_reports()
+   * Implemented: for each instance report: version, uptime, location of
+	config file and error, slow and relay logs, if slow logging is ON/OFF,
+	long query time
+   * Fixed: parsing mysqld cmd line ops from ps didn't work w/ non-val ops like
+	--skip-name-resolved
+
 2008-06-02: version 0.9.0
 
    * Initial release.

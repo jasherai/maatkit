@@ -1004,9 +1004,9 @@ sub find_best_index {
 }
 
 sub find_possible_keys {
-   my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
+   my ( $self, $dbh, $serverbase, $table, $quoter, $where ) = @_;
    return () unless $where;
-   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
+   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($serverbase, $table)
       . ' WHERE ' . $where;
    $ENV{MKDEBUG} && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
@@ -1435,167 +1435,14 @@ $opt_parser->usage_or_errors(%opts);
 # now I'll do it the manual way.
 # ############################################################################
 
-my $data = {};
+# These must be global so that the formats can access them
+my %server;
+my %mysql_instance;
 
-{ # Just to make all these variables local and not pollute global namespace
-   $data->{os}->{name} = $OSNAME;
-   $data->{os}->{'64bit'} = `file /bin/ls` =~ m/64-bit/ ? 'Yes' : 'No';
+server_report(\%server);
+mysql_instance_reports(\%mysql_instance);
 
-   if ( chomp(my $rel = `cat /etc/*release`) ) {
-      if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
-         $data->{os}->{version} = $desc;
-      }
-      else {
-         $data->{os}->{version} = $rel;
-      }
-   }
-   if ( -f '/lib/libc.so.6' ) {
-      my $stuff = `/lib/libc.so.6`;
-      ($data->{libc}->{ver}) = $stuff =~ m/GNU C.*release version (.+), /;
-      $data->{libc}->{threading}
-         = $stuff =~ m/Native POSIX/    ? 'NPTL'
-         : $stuff =~ m/linuxthreads-\d/ ? 'Linuxthreads'
-         :                                'Unknown';
-      ($data->{libc}->{compiled_by}) = $stuff =~ m/Compiled by (.*)/;
-      $data->{libc}->{GNU_LIBPTHREAD_VERSION} = do {
-         my $ver = `getconf GNU_LIBPTHREAD_VERSION`;
-         chomp $ver;
-         $ver;
-      };
-   }
-
-   if ( -f '/proc/cpuinfo' ) {
-      my $info = `cat /proc/cpuinfo`;
-      my $cores = scalar( map { $_ } $info =~ m/(^processor)/gm );
-      $data->{cpu}->{count} = $cores / max( $info =~ m/cpu cores\s+: (\d+)/gm);
-      $data->{cpu}->{cores} = $cores;
-      ($data->{cpu}->{speed}) = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
-      ($data->{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
-      ($data->{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
-      ($data->{cpu}->{'64bit'}) = $info =~ m/flags.*\blm\b/ ? 'Yes' : 'No';
-   }
-   else {
-      # MSWin32, maybe?
-      $data->{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
-   }
-
-   if ( chomp(my $dmi = `dmidecode`) ) {
-      my @keys = ( 'Size', 'Form Factor', 'Type', 'Type Detail', 'Speed');
-      my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
-      foreach my $mem ( @mem_info ) {
-         my %stuff = map { split /: / } $mem =~ m/^\s+(\S.*:.*)$/gm;
-         push(@{$data->{memory}->{slots}}, join(' ', grep { $_ } @stuff{@keys}));
-      }
-   }
-   if ( chomp(my $mem = `free -b`) ) {
-      my @words = $mem =~ m/(\w+)/g;
-      my @keys;
-      while ( my $key = shift @words ) {
-         last if $key eq 'Mem';
-         push @keys, $key;
-      }
-      foreach my $key ( @keys ) {
-         $data->{memory}->{$key} = shorten(shift @words);
-      }
-   }
-
-   if ( chomp(my $dmesg = `dmesg`) ) {
-      my ($raid) = $dmesg =~ m/(Direct-Access\s+MegaRaid.*$)/m;
-      $data->{raid} = $raid ? $raid : 'unknown';
-   }
-
-   if ( chomp(my $df = `df -hT` ) ) {
-      $df = "\n\t" . join("\n\t",
-         grep { $_ !~ m/^(varrun|varlock|udev|devshm|lrm)/ }
-         split(/\n/, $df));
-      $data->{disks}->{df} = $df;
-   }
-
-   if ( -f '/sbin/vgs' ) {
-      chomp(my $vgs = `vgs`);
-      $vgs =~ s/^\s*/\t/g;
-      $data->{disks}->{vgs} = $vgs;
-   }
-
-   # TODO: use ethtool, ip, etc to discover network interfaces, IP addresses and
-   # network speed
-
-   # #########################################################################
-   # And now I will show you the most excellent way.
-   # #########################################################################
-   my $cmd = "ps -o euser,%cpu,rss,vsz,cmd -e | grep -v grep | grep mysql";
-   if ( chomp(my $ps = `$cmd`) ) {
-      $data->{mysql}->{syslog} = $ps =~ m/logger/ ? 'Yes' : 'No';
-      foreach my $line ( split("\n", $ps) ) {
-         my ($user, $pcpu, $rss, $vsz, $cmd) = split(/\s+/, $line, 5);
-         my ($bin) = $cmd =~ m/(\S+mysqld)\s/;
-         next unless $bin;
-         my %props = $cmd =~ m/--([^=]+)=(\S+)/g;
-         my $instance = {
-            user => $user,
-            pcpu => $pcpu,
-            rss  => $rss,
-            vsz  => $vsz,
-            bin  => $bin,
-            '64bit' => `file $bin` =~ m/64-bit/ ? 'Yes' : 'No',
-            datadir => $props{datadir} || '',
-            pidfile => $props{'pid-file'} || '',
-            port    => $props{port} || '',
-            'socket'=> $props{'socket'} || '',
-         };
-         push @{$data->{mysql}->{instances}}, $instance;
-
-         # Now try to connect to the instance.
-         my $dbh;
-         my $dsn = {
-            P => $instance->{port},
-            S => $instance->{'socket'},
-            h => $instance->{port} ne 3306 ? '127.0.0.1' : 'localhost',
-         };
-         eval {
-            $dbh = $dp->get_dbh($dp->get_cxn_params($dsn));
-         };
-         if ( $EVAL_ERROR ) {
-            chomp $EVAL_ERROR;
-            print "Cannot connect to " . $dp->as_string($dsn) . ": $EVAL_ERROR\n";
-            next;
-         }
-
-         my $d = new MySQLDump();
-         my $q = new Quoter();
-         my %dbs = map { $_ => {} } $d->get_databases($dbh, $q);
-         foreach my $db ( keys %dbs ) {
-            my @stat = $d->get_table_status($dbh, $q, $db);
-         }
-
-         # Print out a report on functions, triggers and the like
-         if ( $vp->version_ge($dbh, '5.0.0') ) {
-            my @obj_info = @{$dbh->selectall_arrayref(
-
-#TODO
-my $dummy = q{
-            SELECT EVENT_OBJECT_SCHEMA AS db,
-               CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
-               COUNT(*) AS num
-            FROM INFORMATION_SCHEMA.TRIGGERS GROUP BY db, what
-            UNION ALL
-            SELECT ROUTINE_SCHEMA AS db,
-               LEFT(LOWER(ROUTINE_TYPE), 4) AS what,
-               COUNT(*) AS num
-            FROM INFORMATION_SCHEMA.ROUTINES GROUP BY db, what
-            /*!50106
-            UNION ALL
-            SELECT EVENT_SCHEMA AS db, 'evt' AS what, COUNT(*) AS num
-            FROM INFORMATION_SCHEMA.EVENTS GROUP BY db, what
-            */
-};
-
-      }
-   }
-
-}
-
-print Dumper($data);
+exit;
 
 # ############################################################################
 # Subroutines.
@@ -1610,6 +1457,335 @@ sub shorten {
    }
    return sprintf("%.2f%s", $num, ('','k','M','G', 'T')[$n]);
 }
+
+sub sec_to_dhms # Seconds to days hours:minutes:seconds
+{
+   my $s = shift;
+   my ($d, $h, $m) = (0, 0, 0);
+
+   return '0 0:0:0' if $s <= 0;
+
+   if($s >= 86400) {
+      $d = int $s / 86400;
+      $s -= $d * 86400;
+   }
+   if($s >= 3600) {
+      $h = int $s / 3600;
+      $s -= $h * 3600;
+   }
+   $m = int $s / 60;
+   $s -= $m * 60;
+
+   return "$d $h:$m:$s";
+}
+
+# Gather server specs and print SERVER report
+sub server_report
+{
+   my $server = shift; # hash ref 
+
+   $$server{os}->{name} = $OSNAME;
+   $$server{os}->{'64bit'} = `file /bin/ls` =~ m/64-bit/ ? 'Yes' : 'No';
+
+   if ( chomp(my $rel = `cat /etc/*release`) ) {
+      if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
+         $$server{os}->{version} = $desc;
+      }
+      else {
+         $$server{os}->{version} = $rel;
+      }
+   }
+
+   if ( -f '/lib/libc.so.6' ) {
+      my $stuff = `/lib/libc.so.6`;
+      ($$server{sw}->{libc}->{ver}) = $stuff =~ m/GNU C.*release version (.+), /;
+      $$server{sw}->{libc}->{threading}
+         = $stuff =~ m/Native POSIX/    ? 'NPTL'
+         : $stuff =~ m/linuxthreads-\d/ ? 'Linuxthreads'
+         :                                'Unknown';
+      ($$server{sw}->{libc}->{compiled_by}) = $stuff =~ m/Compiled by (.*)/;
+      $$server{sw}->{libc}->{GNU_LIBPTHREAD_VERSION} = do {
+         my $ver = `getconf GNU_LIBPTHREAD_VERSION`;
+         chomp $ver;
+         $ver;
+      };
+   }
+
+   if ( -f '/proc/cpuinfo' ) {
+      my $info = `cat /proc/cpuinfo`;
+      my $cores = scalar( map { $_ } $info =~ m/(^processor)/gm );
+      $$server{cpu}->{count} = $cores / max( $info =~ m/cpu cores\s+: (\d+)/gm);
+      $$server{cpu}->{cores} = $cores;
+      ($$server{cpu}->{speed}) = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
+      ($$server{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
+      ($$server{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
+      ($$server{cpu}->{'64bit'}) = $info =~ m/flags.*\blm\b/ ? 'Yes' : 'No';
+   }
+   else {
+      # MSWin32, maybe?
+      $server{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
+   }
+
+   if ( chomp(my $dmi = `dmidecode`) ) {
+      my @keys = ( 'Size', 'Form Factor', 'Type', 'Type Detail', 'Speed');
+      my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
+      foreach my $mem ( @mem_info ) {
+         my %stuff = map { split /: / } $mem =~ m/^\s+(\S.*:.*)$/gm;
+         push(@{$server{memory}->{slots}}, join(' ', grep { $_ } @stuff{@keys}));
+      }
+   }
+
+   if ( chomp(my $mem = `free -b`) ) {
+      my @words = $mem =~ m/(\w+)/g;
+      my @keys;
+      while ( my $key = shift @words ) {
+         last if $key eq 'Mem';
+         push @keys, $key;
+      }
+      foreach my $key ( @keys ) {
+         $$server{memory}->{$key} = shorten(shift @words);
+      }
+   }
+
+   if ( chomp(my $dmesg = `dmesg`) ) {
+      my ($raid) = $dmesg =~ m/(Direct-Access\s+MegaRaid.*$)/m;
+      $$server{storage}->{raid} = $raid ? $raid : 'unknown';
+   }
+
+   if ( chomp(my $df = `df -hT` ) ) {
+      $df = "\n\t" . join("\n\t",
+         grep { $_ !~ m/^(varrun|varlock|udev|devshm|lrm)/ }
+         split(/\n/, $df));
+      $$server{storage}->{df} = $df;
+   }
+
+   if ( -f '/sbin/vgs' ) {
+      chomp(my $vgs = `vgs`);
+      $vgs =~ s/^\s*/\t/g;
+      $$server{storage}->{vgs} = $vgs;
+   }
+
+   # TODO: use ethtool, ip, etc to discover network interfaces, IP addresses and
+   # network speed
+
+   # Print SERVER report
+   $FORMAT_NAME = 'SERVER', write;
+
+   return;
+}
+
+# For each instance of MySQL (mysqld), gather MySQL info and print a
+# MYSQL_INSTANCE report
+sub mysql_instance_reports
+{
+   my $mysql_instance = shift; # hash ref
+   
+   my $n = 1; # instance number
+
+   $FORMAT_NAME = 'MYSQL_INSTANCE';
+
+   # #########################################################################
+   # And now I will show you the most excellent way.
+   # #########################################################################
+   my $cmd = "ps -o euser,%cpu,rss,vsz,cmd -e | grep -v grep | grep mysql";
+   if ( chomp(my $ps = `$cmd`) ) {
+      foreach my $line ( split("\n", $ps) ) {
+         %$mysql_instance = ();
+         # TODO $mysql_instance->{syslog} = $ps =~ m/logger/ ? 'Yes' : 'No';
+         my ($user, $pcpu, $rss, $vsz, $cmd) = split(/\s+/, $line, 5);
+         my ($bin) = $cmd =~ m/(\S+mysqld)\s/;
+         next unless $bin;
+         # mysqld cmd line ops like --port=3306 --skip-external-locking
+         my (%props) = $cmd =~ m/--([^\s=]+)(?:=(\S+))?/g;
+         # Make sure we have at least these cmd line ops
+         $props{datadir}         ||= '';
+         $props{'pid-file'}      ||= '';
+         $props{port}            ||= '';
+         $props{'socket'}        ||= '';
+         $props{'defaults-file'} ||= '';
+         %$mysql_instance = %props;
+         # vals from ps
+         $$mysql_instance{user}    = $user;
+         $$mysql_instance{pcpu}    = $pcpu;
+         $$mysql_instance{rss}     = $rss;
+         $$mysql_instance{vsz}     = $vsz;
+         $$mysql_instance{bin}     = $bin;
+         $$mysql_instance{'64bit'} = `file $bin` =~ m/64-bit/ ? 'Yes' : 'No';
+
+         # Now try to connect to the instance.
+         my $dbh;
+         my $dsn = {
+            P => $$mysql_instance{port},
+            S => $$mysql_instance{'socket'},
+            h => $$mysql_instance{port} ne 3306 ? '127.0.0.1' : 'localhost',
+         };
+         eval {
+            $dbh = $dp->get_dbh($dp->get_cxn_params($dsn));
+         };
+         if ( $EVAL_ERROR ) {
+            chomp $EVAL_ERROR;
+            print "Cannot connect to " . $dp->as_string($dsn) . ": $EVAL_ERROR\n";
+            # TODO prompt for u&p on connect failure?
+            next;
+         }
+         get_MySQL_instance_info(\$dbh, $mysql_instance);
+         $$mysql_instance{number} = $n++;
+         write;
+         $dbh->disconnect();
+      } # foreach mysqld instance
+   } # if ps cmd succeeded
+
+   return;
+}
+
+sub get_MySQL_instance_info()
+{
+# TODO this sub is going to get chopped up into smaller subs
+
+   my ($dbh, $mysql_instance) = @_; # (scalar ref, hash ref)
+
+   my $d = new MySQLDump();
+   my $q = new Quoter();
+   my %dbs = map { $_ => {} } $d->get_databases($$dbh, $q);
+
+# TODO
+#
+#         foreach my $db ( keys %dbs ) {
+#            my @stat = $d->get_table_status($dbh, $q, $db);
+#         }
+
+   # Print out a report on functions, triggers and the like
+   if ( $vp->version_ge($$dbh, '5.0.0') ) {
+      @{$$mysql_instance{trig_routine_event}} = @{ $$dbh->selectall_arrayref(
+         "SELECT EVENT_OBJECT_SCHEMA AS db,
+            CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
+            COUNT(*) AS num
+         FROM INFORMATION_SCHEMA.TRIGGERS GROUP BY db, what
+         UNION ALL
+         SELECT ROUTINE_SCHEMA AS db,
+            LEFT(LOWER(ROUTINE_TYPE), 4) AS what,
+            COUNT(*) AS num
+         FROM INFORMATION_SCHEMA.ROUTINES GROUP BY db, what
+         /*!50106
+         UNION ALL
+         SELECT EVENT_SCHEMA AS db, 'evt' AS what, COUNT(*) AS num
+         FROM INFORMATION_SCHEMA.EVENTS GROUP BY db, what
+         */") };
+   }
+
+   my %status_vals = map { $_->{Variable_name} => $_->{Value} }
+                     @{ $$dbh->selectall_arrayref(
+                        'SHOW /*!50002 GLOBAL */ STATUS',
+                        { Slice => {} }
+                     ) };
+
+   my %live_system_vars = map { $_->{Variable_name} => $_->{Value} }
+                          @{ $$dbh->selectall_arrayref(
+                             'SHOW VARIABLES',
+                             { Slice => {} }
+                          ) };
+
+   $$mysql_instance{version} = $live_system_vars{version};
+   $$mysql_instance{uptime}  = sec_to_dhms($status_vals{'Uptime'});
+
+   my %conf_system_vars;
+   my $defaults_file = $mysql_instance{'defaults-file'} ?
+                       "--defaults-file=\"$mysql_instance{'defaults-file'}\"" :
+                       '';
+   my $cmd = "my_print_defaults $defaults_file mysqld";
+   if ( my $mysql_config = `$cmd` ) {
+      %conf_system_vars = map { m/^--(\S+)=(\S*)/ } split "\n", $mysql_config;
+      foreach ( keys %conf_system_vars ) { s/-/_/; }
+      $conf_system_vars{log_error}        ||= '';
+      $conf_system_vars{relay_log}        ||= '';
+      $conf_system_vars{log_slow_queries} ||= '';
+      $$mysql_instance{log_locations} = {
+         error_log => "$conf_system_vars{log_error} " .
+                      "$live_system_vars{log_error}",
+         relay_log => "$conf_system_vars{relay_log}",
+         slow_log  => "$conf_system_vars{log_slow_queries} " .
+                      "$live_system_vars{log_slow_queries} " .
+                      "$live_system_vars{long_query_time}"
+      };
+   }
+
+   return;
+}
+
+# ############################################################################
+# Formats
+# ############################################################################
+
+format SERVER =
+    
+OS: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  64bit: @<<
+"$server{os}->{name} $server{os}->{version}", $server{os}->{'64bit'}
+
+CPU: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  64bit: @<<
+$server{cpu}->{model}, $server{cpu}->{'64bit'}
+   Speed: @<<<<<<<<<<<<<<<<<<<<<
+$server{cpu}->{speed}
+   Cache: @<<<<<<<<<<<<<<<<<<<<<
+$server{cpu}->{cache}
+   Count: @<<<
+$server{cpu}->{count}
+   Cores: @<<<
+$server{cpu}->{cores}
+
+Memory: used @<<<<<< of @<<<<<< total  (@<<<<<< free)
+$server{memory}->{used}, $server{memory}->{total}, $server{memory}->{free}
+   Buffers: @<<<<<<
+$server{memory}->{buffers}
+   Cached:  @<<<<<<
+$server{memory}->{cached}
+   Shared:  @<<<<<<
+$server{memory}->{shared}
+
+Storage:
+   Raid: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$server{storage}->{raid}
+   df: @*
+$server{storage}->{df}
+
+libc: @<<<<<<<<<<<<<<<<<
+$server{sw}->{libc}->{ver}
+   Compiled by: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$server{sw}->{libc}->{compiled_by}
+   Threading:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$server{sw}->{libc}->{threading}
+   GNU libpthread version: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$server{sw}->{libc}->{GNU_LIBPTHREAD_VERSION}
+
+.
+
+format MYSQL_INSTANCE =
+MySQL instance @<<
+$mysql_instance{number}
+   Version:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{version}
+   Uptime:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{uptime}
+   Bin:      @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{bin}
+   Data dir: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{datadir}
+   PID file: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{'pid-file'}
+   Socket:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{'socket'}
+   Port:     @<<<<<<
+$mysql_instance{port}
+   Log locations:
+      Error: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{log_locations}->{error_log}
+      Relay: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{log_locations}->{relay_log}
+      Slow:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{log_locations}->{slow_log}
+   Config file location: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{'defaults-file'}
+
+.
 
 # ############################################################################
 # Documentation.
@@ -1713,13 +1889,8 @@ The following items are unimplemented at this time:
       * iostat usage if possible
    MySQL
       * for each instance, do:
-      * Version
-      * Uptime
-      * error log location
       * config file location
          * run mysqld --help --verbose and make sure config file is valid
-      * relay log location
-      * slow log location
 
       * Stored code
          * Number of UDFs, SPs, triggers, events, functions
