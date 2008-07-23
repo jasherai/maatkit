@@ -22,11 +22,14 @@ use warnings FATAL => 'all';
 use Test::More tests => 2;
 use English qw(-no_match_vars);
 
+unlink('/tmp/mk-fifo-split');
+
 my $output = `perl ../mk-fifo-split --help`;
 like($output, qr/Options and values/, 'It lives');
 
 my $cmd = 'perl ../mk-fifo-split ../mk-fifo-split > /dev/null 2>&1 < /dev/null';
 system("($cmd)&");
+sleep(1);
 
 open my $fh, '<', '/tmp/mk-fifo-split' or die $OS_ERROR;
 my $contents = do { local $INPUT_RECORD_SEPARATOR; <$fh>; };
