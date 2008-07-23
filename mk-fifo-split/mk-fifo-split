@@ -581,6 +581,10 @@ $opt_parser->usage_or_errors(%opts);
 # middle.
 # TODO: print out $. on exit (including exit by CTRL-C).
 # TODO make progress messages the default
+# TODO: use tell to figure out percentage, and print %complete and ETA.  See
+# http://www.perlmonks.org/?node_id=698607 for inspiration.  This would probably
+# only work when a single file is named in @ARGV (would not work when <> is
+# reading STDIN, for example).
 
 my $file = $opts{f};
 
@@ -700,104 +704,6 @@ Print out statistics between chunks.
 
 The statistics are the number of chunks, the number of lines, elapsed time, and
 lines per second overall and during the last chunk.
-
-=back
-
-=head1 INNODB CAVEATS AND DETAILS
-
-InnoDB's output is hard to parse and sometimes there's no way to do it right.
-
-Sometimes not all information (for example, username or IP address) is included
-in the deadlock information.  In this case there's nothing for the script to put
-in those columns.  It may also be the case that the deadlock output is so long
-(because there were a lot of locks) that the whole thing is truncated.
-
-Though there are usually two transactions involved in a deadlock, there are more
-locks than that; at a minimum, one more lock than transactions is necessary to
-create a cycle in the waits-for graph.  mk-deadlock-logger prints the
-transactions (always two in the InnoDB output, even when there are more
-transactions in the waits-for graph than that) and fills in locks.  It prefers
-waited-for over held when choosing lock information to output, but you can
-figure out the rest with a moment's thought.  If you see one wait-for and one
-held lock, you're looking at the same lock, so of course you'd prefer to see
-both wait-for locks and get more information.  If the two waited-for locks are
-not on the same table, more than two transactions were involved in the deadlock.
-
-=head1 OUTPUT
-
-You can choose which columns are output and/or saved to L<"--dest"> with the
-L<"--columns"> argument.  The default columns are as follows:
-
-=over
-
-=item server
-
-The (source) server on which the deadlock occurred.  This might be useful if
-you're tracking deadlocks on many servers.
-
-=item ts
-
-The date and time of the last detected deadlock.
-
-=item thread
-
-The MySQL thread number, which is the same as the connection ID in SHOW FULL
-PROCESSLIST.
-
-=item txn_id
-
-The InnoDB transaction ID, which InnoDB expresses as two unsigned integers.  I
-have multiplied them out to be one number.
-
-=item txn_time
-
-How long the transaction was active when the deadlock happened.
-
-=item user
-
-The connection's database username.
-
-=item hostname
-
-The connection's host.
-
-=item ip
-
-The connection's IP address.  If you specify L<"--numip">, this is converted to
-an unsigned integer.
-
-=item db
-
-The database in which the deadlock occurred.
-
-=item tbl
-
-The table on which the deadlock occurred.
-
-=item idx
-
-The index on which the deadlock occurred.
-
-=item lock_type
-
-The lock type the transaction held on the lock that caused the deadlock.
-
-=item lock_mode
-
-The lock mode of the lock that caused the deadlock.
-
-=item wait_hold
-
-Whether the transaction was waiting for the lock or holding the lock.  Usually
-you will see the two waited-for locks.
-
-=item victim
-
-Whether the transaction was selected as the deadlock victim and rolled back.
-
-=item query
-
-The query that caused the deadlock.
 
 =back
 
