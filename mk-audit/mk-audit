@@ -1875,6 +1875,8 @@ This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 The following items are unimplemented at this time:
 
+   Operating System:
+      * Are we inside a Virtual Machine like VMWare or VirtualBox?
    Hardware
       * raid status: try megarc; if that says " megarc -AllAdpInfo says No
          MegaRAID Found" then try looking in /opt for MegaCli or MegaCli64 and
