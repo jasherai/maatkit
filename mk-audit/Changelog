@@ -1,5 +1,14 @@
 Changelog for mk-advisor:
 
+2008-07-24:
+
+   * Fixed: lines 1007, 1526, 1534 (r2048)
+   * Implemented: schema summaries (# dbs, tables, sizes, engines, top N
+	largest and aggregate for remaining, etc.), triggers, routines and events
+	summary
+
+2008-07-23:
+
    * Replaced: Data::Dumper w/ formats, SERVER and MYSQL_INSTANCE
    * Code refactoring: server_report(), mysql_instance_reports()
    * Implemented: for each instance report: version, uptime, location of
