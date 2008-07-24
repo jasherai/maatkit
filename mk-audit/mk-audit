@@ -1004,9 +1004,9 @@ sub find_best_index {
 }
 
 sub find_possible_keys {
-   my ( $self, $dbh, $serverbase, $table, $quoter, $where ) = @_;
+   my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
    return () unless $where;
-   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($serverbase, $table)
+   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
       . ' WHERE ' . $where;
    $ENV{MKDEBUG} && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
@@ -1411,7 +1411,6 @@ my %opts;
 
 my $dp = new DSNParser();
 my $vp = new VersionParser;
-my $q  = new Quoter;
 
 # ############################################################################
 # Get configuration information.
@@ -1426,18 +1425,11 @@ $opt_parser->{descr}  = 'inspects, analyzes and advises on a MySQL server.';
 $dp->prop('setvars', $opts{setvars});
 $opt_parser->usage_or_errors(%opts);
 
-# ############################################################################
-# The general idea of the tool is to build a big data structure with interesting
-# information about the operating system, MySQL, etc.  Ultimately I'd like to
-# have some nifty way to make the code auto-sense when it's already found
-# something, perhaps by making a similar data structure with little anonymous
-# subs to execute only if the corresponding data isn't yet filled in.  But for
-# now I'll do it the manual way.
-# ############################################################################
-
 # These must be global so that the formats can access them
 my %server;
 my %mysql_instance;
+
+my $top = 5; # TODO hack until cmd line ops (--top N) are implemented
 
 server_report(\%server);
 mysql_instance_reports(\%mysql_instance);
@@ -1482,29 +1474,29 @@ sub sec_to_dhms # Seconds to days hours:minutes:seconds
 # Gather server specs and print SERVER report
 sub server_report
 {
-   my $server = shift; # hash ref 
+   my ( $server ) = @_;
 
-   $$server{os}->{name} = $OSNAME;
-   $$server{os}->{'64bit'} = `file /bin/ls` =~ m/64-bit/ ? 'Yes' : 'No';
+   $server->{os}->{name} = $OSNAME;
+   $server->{os}->{'64bit'} = `file /bin/ls` =~ m/64-bit/ ? 'Yes' : 'No';
 
    if ( chomp(my $rel = `cat /etc/*release`) ) {
       if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
-         $$server{os}->{version} = $desc;
+         $server->{os}->{version} = $desc;
       }
       else {
-         $$server{os}->{version} = $rel;
+         $server->{os}->{version} = $rel;
       }
    }
 
    if ( -f '/lib/libc.so.6' ) {
       my $stuff = `/lib/libc.so.6`;
-      ($$server{sw}->{libc}->{ver}) = $stuff =~ m/GNU C.*release version (.+), /;
-      $$server{sw}->{libc}->{threading}
+      ($server->{sw}->{libc}->{ver}) = $stuff =~ m/GNU C.*release version (.+), /;
+      $server->{sw}->{libc}->{threading}
          = $stuff =~ m/Native POSIX/    ? 'NPTL'
          : $stuff =~ m/linuxthreads-\d/ ? 'Linuxthreads'
          :                                'Unknown';
-      ($$server{sw}->{libc}->{compiled_by}) = $stuff =~ m/Compiled by (.*)/;
-      $$server{sw}->{libc}->{GNU_LIBPTHREAD_VERSION} = do {
+      ($server->{sw}->{libc}->{compiled_by}) = $stuff =~ m/Compiled by (.*)/;
+      $server->{sw}->{libc}->{GNU_LIBPTHREAD_VERSION} = do {
          my $ver = `getconf GNU_LIBPTHREAD_VERSION`;
          chomp $ver;
          $ver;
@@ -1514,16 +1506,16 @@ sub server_report
    if ( -f '/proc/cpuinfo' ) {
       my $info = `cat /proc/cpuinfo`;
       my $cores = scalar( map { $_ } $info =~ m/(^processor)/gm );
-      $$server{cpu}->{count} = $cores / max( $info =~ m/cpu cores\s+: (\d+)/gm);
-      $$server{cpu}->{cores} = $cores;
-      ($$server{cpu}->{speed}) = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
-      ($$server{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
-      ($$server{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
-      ($$server{cpu}->{'64bit'}) = $info =~ m/flags.*\blm\b/ ? 'Yes' : 'No';
+      $server->{cpu}->{count} = $cores / max( $info =~ m/cpu cores\s+: (\d+)/gm);
+      $server->{cpu}->{cores} = $cores;
+      ($server->{cpu}->{speed}) = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
+      ($server->{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
+      ($server->{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
+      ($server->{cpu}->{'64bit'}) = $info =~ m/flags.*\blm\b/ ? 'Yes' : 'No';
    }
    else {
       # MSWin32, maybe?
-      $server{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
+      $server->{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
    }
 
    if ( chomp(my $dmi = `dmidecode`) ) {
@@ -1531,7 +1523,8 @@ sub server_report
       my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
       foreach my $mem ( @mem_info ) {
          my %stuff = map { split /: / } $mem =~ m/^\s+(\S.*:.*)$/gm;
-         push(@{$server{memory}->{slots}}, join(' ', grep { $_ } @stuff{@keys}));
+         # TODO need to put this in the report
+         push(@{$server->{memory}->{slots}}, join(' ', grep { $_ } @stuff{@keys}));
       }
    }
 
@@ -1543,26 +1536,26 @@ sub server_report
          push @keys, $key;
       }
       foreach my $key ( @keys ) {
-         $$server{memory}->{$key} = shorten(shift @words);
+         $server->{memory}->{$key} = shorten(shift @words);
       }
    }
 
    if ( chomp(my $dmesg = `dmesg`) ) {
       my ($raid) = $dmesg =~ m/(Direct-Access\s+MegaRaid.*$)/m;
-      $$server{storage}->{raid} = $raid ? $raid : 'unknown';
+      $server->{storage}->{raid} = $raid ? $raid : 'unknown';
    }
 
    if ( chomp(my $df = `df -hT` ) ) {
       $df = "\n\t" . join("\n\t",
          grep { $_ !~ m/^(varrun|varlock|udev|devshm|lrm)/ }
          split(/\n/, $df));
-      $$server{storage}->{df} = $df;
+      $server->{storage}->{df} = $df;
    }
 
    if ( -f '/sbin/vgs' ) {
       chomp(my $vgs = `vgs`);
       $vgs =~ s/^\s*/\t/g;
-      $$server{storage}->{vgs} = $vgs;
+      $server->{storage}->{vgs} = $vgs;
    }
 
    # TODO: use ethtool, ip, etc to discover network interfaces, IP addresses and
@@ -1578,11 +1571,9 @@ sub server_report
 # MYSQL_INSTANCE report
 sub mysql_instance_reports
 {
-   my $mysql_instance = shift; # hash ref
+   my ( $mysql_instance ) = @_;
    
    my $n = 1; # instance number
-
-   $FORMAT_NAME = 'MYSQL_INSTANCE';
 
    # #########################################################################
    # And now I will show you the most excellent way.
@@ -1605,19 +1596,19 @@ sub mysql_instance_reports
          $props{'defaults-file'} ||= '';
          %$mysql_instance = %props;
          # vals from ps
-         $$mysql_instance{user}    = $user;
-         $$mysql_instance{pcpu}    = $pcpu;
-         $$mysql_instance{rss}     = $rss;
-         $$mysql_instance{vsz}     = $vsz;
-         $$mysql_instance{bin}     = $bin;
-         $$mysql_instance{'64bit'} = `file $bin` =~ m/64-bit/ ? 'Yes' : 'No';
+         $mysql_instance->{user}    = $user;
+         $mysql_instance->{pcpu}    = $pcpu;
+         $mysql_instance->{rss}     = $rss;
+         $mysql_instance->{vsz}     = $vsz;
+         $mysql_instance->{bin}     = $bin;
+         $mysql_instance->{'64bit'} = `file $bin` =~ m/64-bit/ ? 'Yes' : 'No';
 
          # Now try to connect to the instance.
          my $dbh;
          my $dsn = {
-            P => $$mysql_instance{port},
-            S => $$mysql_instance{'socket'},
-            h => $$mysql_instance{port} ne 3306 ? '127.0.0.1' : 'localhost',
+            P => $mysql_instance->{port},
+            S => $mysql_instance->{'socket'},
+            h => $mysql_instance->{port} ne 3306 ? '127.0.0.1' : 'localhost',
          };
          eval {
             $dbh = $dp->get_dbh($dp->get_cxn_params($dsn));
@@ -1629,8 +1620,8 @@ sub mysql_instance_reports
             next;
          }
          get_MySQL_instance_info(\$dbh, $mysql_instance);
-         $$mysql_instance{number} = $n++;
-         write;
+         $mysql_instance->{number} = $n++;
+         write_MySQL_instance_report($mysql_instance);
          $dbh->disconnect();
       } # foreach mysqld instance
    } # if ps cmd succeeded
@@ -1640,76 +1631,205 @@ sub mysql_instance_reports
 
 sub get_MySQL_instance_info()
 {
-# TODO this sub is going to get chopped up into smaller subs
+   my ( $dbh, $mysql_instance ) = @_;
 
-   my ($dbh, $mysql_instance) = @_; # (scalar ref, hash ref)
+   get_vals_and_vars($dbh, $mysql_instance);
+   get_schema($dbh, $mysql_instance);
 
-   my $d = new MySQLDump();
-   my $q = new Quoter();
-   my %dbs = map { $_ => {} } $d->get_databases($$dbh, $q);
-
-# TODO
-#
-#         foreach my $db ( keys %dbs ) {
-#            my @stat = $d->get_table_status($dbh, $q, $db);
-#         }
-
-   # Print out a report on functions, triggers and the like
    if ( $vp->version_ge($$dbh, '5.0.0') ) {
-      @{$$mysql_instance{trig_routine_event}} = @{ $$dbh->selectall_arrayref(
-         "SELECT EVENT_OBJECT_SCHEMA AS db,
-            CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
-            COUNT(*) AS num
-         FROM INFORMATION_SCHEMA.TRIGGERS GROUP BY db, what
-         UNION ALL
-         SELECT ROUTINE_SCHEMA AS db,
-            LEFT(LOWER(ROUTINE_TYPE), 4) AS what,
-            COUNT(*) AS num
-         FROM INFORMATION_SCHEMA.ROUTINES GROUP BY db, what
-         /*!50106
-         UNION ALL
-         SELECT EVENT_SCHEMA AS db, 'evt' AS what, COUNT(*) AS num
-         FROM INFORMATION_SCHEMA.EVENTS GROUP BY db, what
-         */") };
+      $mysql_instance->{trigs_routines_events} = '';
+      my @tre = 
+         @{ $$dbh->selectall_arrayref(
+            "SELECT EVENT_OBJECT_SCHEMA AS db,
+               CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
+               COUNT(*) AS num
+            FROM INFORMATION_SCHEMA.TRIGGERS GROUP BY db, what
+            UNION ALL
+            SELECT ROUTINE_SCHEMA AS db,
+               LEFT(LOWER(ROUTINE_TYPE), 4) AS what,
+               COUNT(*) AS num
+            FROM INFORMATION_SCHEMA.ROUTINES GROUP BY db, what
+            /*!50106
+               UNION ALL
+               SELECT EVENT_SCHEMA AS db, 'evt' AS what, COUNT(*) AS num
+               FROM INFORMATION_SCHEMA.EVENTS GROUP BY db, what
+            */")
+         };
+         foreach my $x ( @tre ) {
+            $mysql_instance->{trigs_routines_events} .= "\n\t\t$x->[0] $x->[1] $x->[2]";
+         }
+   }
+   else {
+      $mysql_instance->{trigs_routines_events} = 'Not supported (MySQL version < 5.0.0)';
    }
 
-   my %status_vals = map { $_->{Variable_name} => $_->{Value} }
-                     @{ $$dbh->selectall_arrayref(
-                        'SHOW /*!50002 GLOBAL */ STATUS',
-                        { Slice => {} }
-                     ) };
+   return;
+}
 
-   my %live_system_vars = map { $_->{Variable_name} => $_->{Value} }
-                          @{ $$dbh->selectall_arrayref(
-                             'SHOW VARIABLES',
-                             { Slice => {} }
-                          ) };
+# Get SHOW STATUS, SHOW VARIABLES and config (defaults) file system variables
+sub get_vals_and_vars
+{
+   my ( $dbh, $mysql_instance ) = @_;
 
-   $$mysql_instance{version} = $live_system_vars{version};
-   $$mysql_instance{uptime}  = sec_to_dhms($status_vals{'Uptime'});
+   # This is just to simplify/transform the returned array into a hash where
+   # Variable_name => Value
+   %{$mysql_instance->{status_vals}} = map { $_->{Variable_name} => $_->{Value} }
+                                       @{ $$dbh->selectall_arrayref(
+                                          'SHOW /*!50002 GLOBAL */ STATUS',
+                                          { Slice => {} } )
+                                       };
 
-   my %conf_system_vars;
+   %{$mysql_instance->{live_system_vars}} = map { $_->{Variable_name} => $_->{Value} }
+                                            @{ $$dbh->selectall_arrayref(
+                                               'SHOW VARIABLES',
+                                               { Slice => {} } )
+                                            };
+
    my $defaults_file = $mysql_instance{'defaults-file'} ?
                        "--defaults-file=\"$mysql_instance{'defaults-file'}\"" :
                        '';
    my $cmd = "my_print_defaults $defaults_file mysqld";
    if ( my $mysql_config = `$cmd` ) {
-      %conf_system_vars = map { m/^--(\S+)=(\S*)/ } split "\n", $mysql_config;
-      foreach ( keys %conf_system_vars ) { s/-/_/; }
-      $conf_system_vars{log_error}        ||= '';
-      $conf_system_vars{relay_log}        ||= '';
-      $conf_system_vars{log_slow_queries} ||= '';
-      $$mysql_instance{log_locations} = {
-         error_log => "$conf_system_vars{log_error} " .
-                      "$live_system_vars{log_error}",
-         relay_log => "$conf_system_vars{relay_log}",
-         slow_log  => "$conf_system_vars{log_slow_queries} " .
-                      "$live_system_vars{log_slow_queries} " .
-                      "$live_system_vars{long_query_time}"
+      %{$mysql_instance->{conf_system_vars}} = map { m/^--(\S+)=(\S*)/ } split "\n", $mysql_config;
+      foreach ( keys %{$mysql_instance->{conf_system_vars}} ) { s/-/_/; } # For consistency
+      $mysql_instance->{conf_system_vars}->{log_error}        ||= '';
+      $mysql_instance->{conf_system_vars}->{relay_log}        ||= '';
+      $mysql_instance->{conf_system_vars}->{log_slow_queries} ||= '';
+      $mysql_instance->{log_locations} = {
+         error_log => "$mysql_instance->{conf_system_vars}->{log_error} " .
+                      "$mysql_instance->{live_system_vars}->{log_error}",
+         relay_log => "$mysql_instance->{conf_system_vars}->{relay_log}",
+         slow_log  => "$mysql_instance->{conf_system_vars}->{log_slow_queries} " .
+                      "$mysql_instance->{live_system_vars}->{log_slow_queries} " .
+                      "$mysql_instance->{live_system_vars}->{long_query_time}"
       };
    }
 
    return;
+}
+
+# Get every db and tbl and count number of dbs, tbls, etc.
+sub get_schema 
+{
+   my ( $dbh, $mysql_instance ) = @_;
+
+   my $schema;
+   my $d = new MySQLDump();
+   my $q = new Quoter();
+
+   $mysql_instance->{schema} = {};
+   $schema = $mysql_instance->{schema}; # brevity
+
+   %{$schema->{dbs}} = map { $_ => {} } $d->get_databases($$dbh, $q);
+
+   delete $schema->{dbs}->{information_schema}
+      if exists $schema->{dbs}->{information_schema};
+
+   $schema->{counts}->{TOTAL}->{dbs} = scalar keys %{$schema->{dbs}};
+
+   foreach my $db ( keys %{$schema->{dbs}} ) {
+      %{$schema->{dbs}->{$db}} = map { $_->{name} => {} }
+                                 $d->get_table_list($$dbh, $q, $db);
+      foreach my $tbl_stat ( $d->get_table_status($$dbh, $q, $db) ) {
+         %{$schema->{dbs}->{$db}->{"$tbl_stat->{name}"}} = %$tbl_stat;
+      }
+      foreach my $table ( keys %{$schema->{dbs}->{$db}} ) {
+         # Per-db counts
+         $schema->{counts}->{dbs}->{$db}->{tables}++;
+         $schema->{counts}->{dbs}->{$db}->{engines}->{"$schema->{dbs}->{$db}->{$table}->{engine}"}++;
+         $schema->{counts}->{dbs}->{$db}->{rows} += $schema->{dbs}->{$db}->{$table}->{rows} ||= 0;
+         $schema->{counts}->{dbs}->{$db}->{data_size} += $schema->{dbs}->{$db}->{$table}->{data_length} ||= 0;
+         $schema->{counts}->{dbs}->{$db}->{index_size} += $schema->{dbs}->{$db}->{$table}->{index_length} ||= 0;
+
+         # Grand total schema counts
+         $schema->{counts}->{TOTAL}->{tables}++;
+         $schema->{counts}->{TOTAL}->{engines}->{"$schema->{dbs}->{$db}->{$table}->{engine}"}++;
+         $schema->{counts}->{TOTAL}->{rows} += $schema->{dbs}->{$db}->{$table}->{rows} ||= 0;
+         $schema->{counts}->{TOTAL}->{data_size} += $schema->{dbs}->{$db}->{$table}->{data_length} ||= 0;
+         $schema->{counts}->{TOTAL}->{index_size} += $schema->{dbs}->{$db}->{$table}->{index_length} ||= 0;
+      } # foreach table
+   } # foreach db
+
+   return;
+}
+
+sub write_MySQL_instance_report
+{
+   my ( $mysql_instance ) = @_;
+
+   $FORMAT_NAME = 'MYSQL_INSTANCE', write;
+
+   return;
+}
+
+sub dbs_size_summary
+{
+   my ( $mysql_instance ) = @_;
+
+   my %dbs = %{$mysql_instance->{schema}->{counts}->{dbs}}; # copy we can chop
+   my $top = $top; # TODO such a terrible hack
+   my $ret;
+   my @sorted;
+
+   @sorted = sort { $dbs{$b}->{data_size} <=> $dbs{$a}->{data_size} } keys %dbs;
+   foreach my $db ( @sorted ) {
+      $ret .= "\n\t\t- $db " . shorten($dbs{$db}->{data_size});
+      delete $dbs{$db};
+      last if !--$top;
+   }
+   my $n_remaining = 0;
+   my $r_size      = 0;
+   my $r_avg       = 0;
+   foreach my $db ( keys %dbs ) {
+      $n_remaining++;
+      $r_size += $dbs{$db}->{data_size};
+   }
+   if($n_remaining) {
+      $r_avg = shorten($r_size / $n_remaining);
+      $r_size = shorten($r_size);
+      $ret .= "\n\t\tRemaining $n_remaining: size $r_size avg $r_avg";
+   }
+
+   return $ret;
+}
+
+sub tables_size_summary
+{
+   my ( $mysql_instance ) = @_;
+   
+   my %dbs_tbls;
+   my $dbs = $mysql_instance->{schema}->{dbs};
+   my $top = $top; # TODO remove terrible hack
+   my $ret = '';
+   my @sorted;
+
+   # Build a schema-wide list of db.table => size
+   foreach my $db ( keys %$dbs ) {
+      foreach my $tbl ( keys %{$dbs->{$db}} ) {
+         $dbs_tbls{"$db.$tbl"} = $dbs->{$db}->{$tbl}->{data_length};
+      }
+   }
+
+   @sorted = sort { $dbs_tbls{$b} <=> $dbs_tbls{$a} } keys %dbs_tbls;
+   foreach my $db_tbl ( @sorted ) {
+      $ret .= "\n\t\t- $db_tbl " . shorten($dbs_tbls{$db_tbl});
+      delete $dbs_tbls{$db_tbl};
+      last if !--$top;
+   }
+   my $n_remaining = 0;
+   my $r_size      = 0;
+   my $r_avg       = 0;
+   foreach my $db_tbl ( keys %dbs_tbls ) {
+      $n_remaining++;
+      $r_size += $dbs_tbls{$db_tbl};
+   }
+   if($n_remaining) {
+      $r_avg = shorten($r_size / $n_remaining);
+      $r_size = shorten($r_size);
+      $ret .= "\n\t\tRemaining $n_remaining: size $r_size avg $r_avg";
+   }
+
+   return $ret;
 }
 
 # ############################################################################
@@ -1717,7 +1837,7 @@ sub get_MySQL_instance_info()
 # ############################################################################
 
 format SERVER =
-    
+================================================================== Server Specs
 OS: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  64bit: @<<
 "$server{os}->{name} $server{os}->{version}", $server{os}->{'64bit'}
 
@@ -1759,12 +1879,12 @@ $server{sw}->{libc}->{GNU_LIBPTHREAD_VERSION}
 .
 
 format MYSQL_INSTANCE =
-MySQL instance @<<
+============================================================ MySQL Instance @>>
 $mysql_instance{number}
    Version:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-$mysql_instance{version}
+$mysql_instance{live_system_vars}->{version}
    Uptime:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-$mysql_instance{uptime}
+sec_to_dhms($mysql_instance{status_vals}->{Uptime})
    Bin:      @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{bin}
    Data dir: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -1784,7 +1904,17 @@ $mysql_instance{log_locations}->{relay_log}
 $mysql_instance{log_locations}->{slow_log}
    Config file location: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{'defaults-file'}
-
+   Schema ________________________________________________________________
+      dbs @<<<  tables @<<<  rows @<<<<<<  size data @<<<<<< index @<<<<<<
+$mysql_instance{schema}->{counts}->{TOTAL}->{dbs}, $mysql_instance{schema}->{counts}->{TOTAL}->{tables}, shorten($mysql_instance{schema}->{counts}->{TOTAL}->{rows}), shorten($mysql_instance{schema}->{counts}->{TOTAL}->{data_size}), shorten($mysql_instance{schema}->{counts}->{TOTAL}->{index_size})
+      Engines: @*
+"@{[ %{$mysql_instance{schema}->{counts}->{TOTAL}->{engines}} ]}"
+      @< Largest databases: @*
+$top, dbs_size_summary(\%mysql_instance)
+      @< Largest tables: @*
+$top, tables_size_summary(\%mysql_instance);
+      Triggers, Routines and Events: @*
+$mysql_instance{trigs_routines_events}
 .
 
 # ############################################################################
@@ -1891,18 +2021,12 @@ The following items are unimplemented at this time:
       * iostat usage if possible
    MySQL
       * for each instance, do:
-      * config file location
          * run mysqld --help --verbose and make sure config file is valid
 
       * Stored code
          * Number of UDFs, SPs, triggers, events, functions
       * Data and schema
-         * How many databases
-         * how many tables
-         * total data/index size
          * filefrag on data files?
-         * mention top N databases by size, and top N tables by size (plus
-           aggregate status for the remainder: number, total, avg).
          * verbose option: 
             produce a detailed per-db, per-tbl schema report showing size, index
             size, engine, number of indexes, number of columns etc for each
@@ -1920,8 +2044,7 @@ The following items are unimplemented at this time:
          * Top N tables with the most/least indexes
          * Compute indexes that are not very selective
       * Storage engines
-         * Count of tables by engine
-         * summaries of number and size of tables/indexes
+         * summaries of number and size of tables/indexes (is this per engine?)
          * views
          * merge tables (how many are broken)
             * check if MERGE tables sum up the size of their contained tables in
