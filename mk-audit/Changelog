@@ -1,5 +1,17 @@
 Changelog for mk-advisor:
 
+2008-07-25:
+
+   * Implemented: --user, --password and --askpass options
+   * Added to server specs report: memory slots (requires root access), LVM
+	volume groups (vgs)
+   * Added to MySQL instance report: data size, index size, rows and engine to
+	top N largest tables, syslog Yes/No
+   * Implemented: check most /proc/sys/net/ipv4/ vals against defaults (from
+	ip-sysctl.txt); reports differences in server specs report
+   * Fixed: died if MySQL instance had no dbs or user had no privs to see
+	any dbs
+
 2008-07-24:
 
    * Fixed: lines 1007, 1526, 1534 (r2048)

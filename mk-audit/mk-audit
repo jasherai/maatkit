@@ -1518,12 +1518,13 @@ sub server_report
       $server->{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
    }
 
+   # This requires root access
+   @{$server->{memory}->{slots}} = ();
    if ( chomp(my $dmi = `dmidecode`) ) {
       my @keys = ( 'Size', 'Form Factor', 'Type', 'Type Detail', 'Speed');
       my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
       foreach my $mem ( @mem_info ) {
          my %stuff = map { split /: / } $mem =~ m/^\s+(\S.*:.*)$/gm;
-         # TODO need to put this in the report
          push(@{$server->{memory}->{slots}}, join(' ', grep { $_ } @stuff{@keys}));
       }
    }
@@ -1540,10 +1541,7 @@ sub server_report
       }
    }
 
-   if ( chomp(my $dmesg = `dmesg`) ) {
-      my ($raid) = $dmesg =~ m/(Direct-Access\s+MegaRaid.*$)/m;
-      $server->{storage}->{raid} = $raid ? $raid : 'unknown';
-   }
+   get_raid_info($server);
 
    if ( chomp(my $df = `df -hT` ) ) {
       $df = "\n\t" . join("\n\t",
@@ -1552,17 +1550,112 @@ sub server_report
       $server->{storage}->{df} = $df;
    }
 
+   # LVM
    if ( -f '/sbin/vgs' ) {
       chomp(my $vgs = `vgs`);
       $vgs =~ s/^\s*/\t/g;
       $server->{storage}->{vgs} = $vgs;
    }
+   else {
+      $server->{storage}->{vgs} = 'No LVM2';
+   }
 
    # TODO: use ethtool, ip, etc to discover network interfaces, IP addresses and
    # network speed
 
+   chomp($server->{os}->{swappiness} = `cat /proc/sys/vm/swappiness`);
+   if ( $server->{os}->{swappiness} != 60 ) {
+      $server->{os}->{swappiness} =
+         "*** swappiness != 60; is currently: $server->{os}->{swappiness} ***";
+   }
+   else {
+      $server->{os}->{swappiness} = '';
+   }
+
+   check_proc_sys_net_ipv4_values($server);
+
    # Print SERVER report
    $FORMAT_NAME = 'SERVER', write;
+
+   return;
+}
+
+sub get_raid_info
+{
+   my ( $server ) = @_;
+
+   if ( chomp(my $dmesg = `dmesg`) ) {
+      my ($raid) = $dmesg =~ m/(Direct-Access\s+MegaRaid.*$)/m;
+      $server->{storage}->{raid} = $raid ? $raid : 'unknown';
+   }
+
+   return;
+}
+
+sub check_proc_sys_net_ipv4_values
+{
+   my ( $server ) = @_;
+
+   my %ipv4_defaults = qw(
+      ip_forward 0
+      ip_default_ttl 64
+      ip_no_pmtu_disc 0
+      min_pmtu 562
+      ipfrag_secret_interval 600
+      ipfrag_max_dist 64
+      somaxconn 128
+      tcp_abc 0
+      tcp_abort_on_overflow 0
+      tcp_adv_win_scale 2
+      tcp_allowed_congestion_control reno
+      tcp_app_win 31
+      tcp_fin_timeout 60
+      tcp_frto_response 0
+      tcp_keepalive_time 7200
+      tcp_keepalive_probes 9
+      tcp_keepalive_intvl 75
+      tcp_low_latency 0
+      tcp_max_syn_backlog 1024
+      tcp_moderate_rcvbuf 1
+      tcp_reordering 3
+      tcp_retries1 3
+      tcp_retries2 15
+      tcp_rfc1337 0
+      tcp_rmem 8192_87380_174760
+      tcp_slow_start_after_idle 1
+      tcp_stdurg 0
+      tcp_synack_retries 5
+      tcp_syncookies 0
+      tcp_syn_retries 5
+      tcp_tso_win_divisor 3
+      tcp_tw_recycle 0
+      tcp_tw_reuse 0
+      tcp_wmem 4096_16384_131072
+      tcp_workaround_signed_windows 0
+      tcp_dma_copybreak 4096
+      ip_nonlocal_bind 0
+      ip_dynaddr 0
+      icmp_echo_ignore_all 0
+      icmp_echo_ignore_broadcasts 1
+      icmp_ratelimit 100
+      icmp_ratemask 6168
+      icmp_ignore_bogus_error_responses 0
+      icmp_errors_use_inbound_ifaddr 0
+      igmp_max_memberships 20
+   );
+
+   $server->{os}->{non_default_ipv4_vals} = '';
+   if ( chomp(my $ipv4_files = `ls -1p /proc/sys/net/ipv4/`) ) {
+      foreach my $ipv4_file ( split "\n", $ipv4_files ) {
+         next if !exists $ipv4_defaults{$ipv4_file};
+         chomp(my $val = `cat /proc/sys/net/ipv4/$ipv4_file`);
+         $val =~ s/\s+/_/g;
+         if ( $ipv4_defaults{$ipv4_file} ne $val ) {
+            $server->{os}->{non_default_ipv4_vals} .=
+               "\n\t$ipv4_file = $val ($ipv4_defaults{$ipv4_file})";
+         }
+      }
+   }
 
    return;
 }
@@ -1582,10 +1675,9 @@ sub mysql_instance_reports
    if ( chomp(my $ps = `$cmd`) ) {
       foreach my $line ( split("\n", $ps) ) {
          %$mysql_instance = ();
-         # TODO $mysql_instance->{syslog} = $ps =~ m/logger/ ? 'Yes' : 'No';
          my ($user, $pcpu, $rss, $vsz, $cmd) = split(/\s+/, $line, 5);
          my ($bin) = $cmd =~ m/(\S+mysqld)\s/;
-         next unless $bin;
+         next unless $bin; 
          # mysqld cmd line ops like --port=3306 --skip-external-locking
          my (%props) = $cmd =~ m/--([^\s=]+)(?:=(\S+))?/g;
          # Make sure we have at least these cmd line ops
@@ -1595,6 +1687,7 @@ sub mysql_instance_reports
          $props{'socket'}        ||= '';
          $props{'defaults-file'} ||= '';
          %$mysql_instance = %props;
+         $mysql_instance->{syslog} = $ps =~ m/logger/ ? 'Yes' : 'No';
          # vals from ps
          $mysql_instance->{user}    = $user;
          $mysql_instance->{pcpu}    = $pcpu;
@@ -1609,18 +1702,33 @@ sub mysql_instance_reports
             P => $mysql_instance->{port},
             S => $mysql_instance->{'socket'},
             h => $mysql_instance->{port} ne 3306 ? '127.0.0.1' : 'localhost',
+            u => $opts{u} ? $opts{u} : $ENV{USER},
+            p => $opts{p} ? $opts{p} : ''
          };
+         if ( !$opts{p} && $opts{askpass} ) {
+            $opts{p}  = OptionParser::prompt_noecho("Enter password: ");
+            $dsn->{p} = $opts{p};
+         }
          eval {
             $dbh = $dp->get_dbh($dp->get_cxn_params($dsn));
          };
          if ( $EVAL_ERROR ) {
             chomp $EVAL_ERROR;
-            print "Cannot connect to " . $dp->as_string($dsn) . ": $EVAL_ERROR\n";
-            # TODO prompt for u&p on connect failure?
+            print "Cannot connect to " . $dp->as_string($dsn) . ": $EVAL_ERROR\n\n";
             next;
          }
          get_MySQL_instance_info(\$dbh, $mysql_instance);
          $mysql_instance->{number} = $n++;
+         if ( $mysql_instance->{schema}->{counts}->{TOTAL}->{dbs} == 0 ) {
+            # This can happen of the user doesn't have privs to see any dbs,
+            # or in the rare case that there really aren't any dbs. We must
+            # catch this error otherwise write_MySQL_instance_report() will
+            # cause fatal errors due to undef'ed values.
+            print "MySQL instance $mysql_instance->{number} has no databases. " .
+                  "DSN: " . $dp->as_string($dsn) . "\n\n";
+            $dbh->disconnect();
+            next;
+         }
          write_MySQL_instance_report($mysql_instance);
          $dbh->disconnect();
       } # foreach mysqld instance
@@ -1762,7 +1870,6 @@ sub write_MySQL_instance_report
    return;
 }
 
-# TODO: largest tables should say data size, index size, row count, engine
 sub dbs_size_summary
 {
    my ( $mysql_instance ) = @_;
@@ -1774,7 +1881,7 @@ sub dbs_size_summary
 
    @sorted = sort { $dbs{$b}->{data_size} <=> $dbs{$a}->{data_size} } keys %dbs;
    foreach my $db ( @sorted ) {
-      $ret .= "\n\t\t- $db " . shorten($dbs{$db}->{data_size});
+      $ret .= "\n\t- $db " . shorten($dbs{$db}->{data_size});
       delete $dbs{$db};
       last if !--$top;
    }
@@ -1788,7 +1895,7 @@ sub dbs_size_summary
    if($n_remaining) {
       $r_avg = shorten($r_size / $n_remaining);
       $r_size = shorten($r_size);
-      $ret .= "\n\t\tRemaining $n_remaining: size $r_size avg $r_avg";
+      $ret .= "\n\tRemaining $n_remaining: size $r_size avg $r_avg";
    }
 
    return $ret;
@@ -1810,10 +1917,14 @@ sub tables_size_summary
          $dbs_tbls{"$db.$tbl"} = $dbs->{$db}->{$tbl}->{data_length};
       }
    }
-
    @sorted = sort { $dbs_tbls{$b} <=> $dbs_tbls{$a} } keys %dbs_tbls;
    foreach my $db_tbl ( @sorted ) {
-      $ret .= "\n\t\t- $db_tbl " . shorten($dbs_tbls{$db_tbl});
+      my ( $db, $tbl ) = split '\.', $db_tbl;
+      $ret .= "\n\t- $db_tbl:"                                         .
+              " data "    . shorten($dbs_tbls{$db_tbl})                  .
+              ", index "  . shorten($dbs->{$db}->{$tbl}->{index_length}) .
+              ", rows "   . shorten($dbs->{$db}->{$tbl}->{rows})         .
+              ", engine " . $dbs->{$db}->{$tbl}->{engine};
       delete $dbs_tbls{$db_tbl};
       last if !--$top;
    }
@@ -1827,7 +1938,7 @@ sub tables_size_summary
    if($n_remaining) {
       $r_avg = shorten($r_size / $n_remaining);
       $r_size = shorten($r_size);
-      $ret .= "\n\t\tRemaining $n_remaining: size $r_size avg $r_avg";
+      $ret .= "\n\tRemaining $n_remaining: size $r_size avg $r_avg";
    }
 
    return $ret;
@@ -1861,10 +1972,14 @@ $server{memory}->{buffers}
 $server{memory}->{cached}
    Shared:  @<<<<<<
 $server{memory}->{shared}
+   Slots: @*
+{ local $LIST_SEPARATOR = "\n"; "@{$server{memory}->{slots}}" }
 
 Storage:
    Raid: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $server{storage}->{raid}
+   LVM volume groups: @*
+$server{storage}->{vgs}
    df: @*
 $server{storage}->{df}
 
@@ -1877,9 +1992,15 @@ $server{sw}->{libc}->{threading}
    GNU libpthread version: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $server{sw}->{libc}->{GNU_LIBPTHREAD_VERSION}
 
+Non-default /proc/sys/net/ipv4/values: name = set value (default value): @*
+$server{os}->{non_default_ipv4_vals}
+
+@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$server{os}->{swappiness}
 .
 
 format MYSQL_INSTANCE =
+
 ============================================================ MySQL Instance @>>
 $mysql_instance{number}
    Version:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -1897,12 +2018,14 @@ $mysql_instance{'socket'}
    Port:     @<<<<<<
 $mysql_instance{port}
    Log locations:
-      Error: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+      Error:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{log_locations}->{error_log}
-      Relay: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+      Relay:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{log_locations}->{relay_log}
-      Slow:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+      Slow:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{log_locations}->{slow_log}
+   Syslog: @<<
+$mysql_instance{syslog}
    Config file location: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{'defaults-file'}
    Schema ________________________________________________________________
@@ -1950,6 +2073,22 @@ second gets the latest trunk code from Subversion.
 =head1 OPTIONS
 
 =over
+
+=item --askpass
+
+Prompt for a password when connecting to MySQL.
+
+=item --password
+
+short form: -p; type: string
+
+Password to use when connecting.
+
+=item --user
+
+short form: -u; type: string
+
+User for login if not current user.
 
 =back
 
@@ -2012,8 +2151,7 @@ The following items are unimplemented at this time:
    Operating System:
       * Are we inside a Virtual Machine like VMWare or VirtualBox?
       * Some Linux-specific parameters that we commonly check/tweak:
-         * /proc/sys/vm/swappiness (default is 60, alert if not 60)
-         * alert any /proc/sys/net/ipv4/* variables with non-default values
+        - (others?)
    Hardware
       * raid status: try megarc; if that says " megarc -AllAdpInfo says No
          MegaRAID Found" then try looking in /opt for MegaCli or MegaCli64 and
@@ -2030,13 +2168,8 @@ The following items are unimplemented at this time:
       * vmstat samples
       * iostat usage if possible
    MySQL
-      * TODO: need command-line arguments to pass host, port, password, socket,
-         user etc; see another tool for copy/paste ready examples
       * for each instance, do:
          * run mysqld --help --verbose and make sure config file is valid
-
-      * Stored code
-         * Number of UDFs, SPs, triggers, events, functions
       * Data and schema
          * filefrag on data files?
          * verbose option: 
