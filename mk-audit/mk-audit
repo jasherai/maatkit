@@ -1762,6 +1762,7 @@ sub write_MySQL_instance_report
    return;
 }
 
+# TODO: largest tables should say data size, index size, row count, engine
 sub dbs_size_summary
 {
    my ( $mysql_instance ) = @_;
@@ -2007,6 +2008,9 @@ The following items are unimplemented at this time:
 
    Operating System:
       * Are we inside a Virtual Machine like VMWare or VirtualBox?
+      * Some Linux-specific parameters that we commonly check/tweak:
+         * /proc/sys/vm/swappiness (default is 60, alert if not 60)
+         * alert any /proc/sys/net/ipv4/* variables with non-default values
    Hardware
       * raid status: try megarc; if that says " megarc -AllAdpInfo says No
          MegaRAID Found" then try looking in /opt for MegaCli or MegaCli64 and
