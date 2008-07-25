@@ -2016,10 +2016,15 @@ The following items are unimplemented at this time:
          stuff about how many volumes and the physical devices and their status.
          If there is a MegaRAID in dmesg output, but can't find this info, print
          a warning that there's one but can't check its status.
+         (See sample in raid-info file in this directory; especially interesting
+         is the Device Present and the Relative State of Charge, but there is a
+         lot of good stuff there to warn about if it's out of whack)
    Operating System
       * vmstat samples
       * iostat usage if possible
    MySQL
+      * TODO: need command-line arguments to pass host, port, password, socket,
+         user etc; see another tool for copy/paste ready examples
       * for each instance, do:
          * run mysqld --help --verbose and make sure config file is valid
 
