@@ -2,6 +2,11 @@ Changelog for mk-advisor:
 
 2008-07-25:
 
+   * Fixed: didn't read ~/.my.cnf because u&p were set in DSN even if -u or -p
+	wasn't given
+
+2008-07-25:
+
    * Implemented: --user, --password and --askpass options
    * Added to server specs report: memory slots (requires root access), LVM
 	volume groups (vgs)

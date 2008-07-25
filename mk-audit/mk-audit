@@ -1702,9 +1702,9 @@ sub mysql_instance_reports
             P => $mysql_instance->{port},
             S => $mysql_instance->{'socket'},
             h => $mysql_instance->{port} ne 3306 ? '127.0.0.1' : 'localhost',
-            u => $opts{u} ? $opts{u} : $ENV{USER},
-            p => $opts{p} ? $opts{p} : ''
          };
+         $dsn->{u} = $opts{u} if $opts{u};
+         $dsn->{p} = $opts{p} if $opts{p};
          if ( !$opts{p} && $opts{askpass} ) {
             $opts{p}  = OptionParser::prompt_noecho("Enter password: ");
             $dsn->{p} = $opts{p};
