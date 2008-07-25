@@ -2006,6 +2006,9 @@ This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 The following items are unimplemented at this time:
 
+   General:
+      * add a --sudo option.  If commands such as dmidecode don't work, this
+        option makes them retry with sudo.
    Operating System:
       * Are we inside a Virtual Machine like VMWare or VirtualBox?
       * Some Linux-specific parameters that we commonly check/tweak:
