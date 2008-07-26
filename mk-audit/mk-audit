@@ -1429,8 +1429,6 @@ $opt_parser->usage_or_errors(%opts);
 my %server;
 my %mysql_instance;
 
-my $top = 5; # TODO hack until cmd line ops (--top N) are implemented
-
 server_report(\%server);
 mysql_instance_reports(\%mysql_instance);
 
@@ -1842,19 +1840,37 @@ sub get_schema
          %{$schema->{dbs}->{$db}->{"$tbl_stat->{name}"}} = %$tbl_stat;
       }
       foreach my $table ( keys %{$schema->{dbs}->{$db}} ) {
+         # For each db.table get info about its indexes
+         my $all_indexes = $$dbh->selectall_arrayref("SHOW INDEXES FROM $db.$table");
+         my %unique_indexes;
+         # Because "SHOW INDEXES FROM db.tbl GROUP BY Key_name" is not possible:
+         foreach my $index ( @$all_indexes ) {
+            $unique_indexes{$index->[2]} = 0; # $index->[2] is Key_name
+         }
+         my $n_indexes = scalar keys %unique_indexes;
+         # TODO $schema->{dbs}->{$db}->{$table}->{indexes} = something important
+         my $data_size  = $schema->{dbs}->{$db}->{$table}->{data_length}  ||= 0;
+         my $index_size = $schema->{dbs}->{$db}->{$table}->{index_length} ||= 0;
+         my $rows       = $schema->{dbs}->{$db}->{$table}->{rows}         ||= 0;
+         my $engine     = $schema->{dbs}->{$db}->{$table}->{engine}; 
          # Per-db counts
          $schema->{counts}->{dbs}->{$db}->{tables}++;
-         $schema->{counts}->{dbs}->{$db}->{engines}->{"$schema->{dbs}->{$db}->{$table}->{engine}"}++;
-         $schema->{counts}->{dbs}->{$db}->{rows} += $schema->{dbs}->{$db}->{$table}->{rows} ||= 0;
-         $schema->{counts}->{dbs}->{$db}->{data_size} += $schema->{dbs}->{$db}->{$table}->{data_length} ||= 0;
-         $schema->{counts}->{dbs}->{$db}->{index_size} += $schema->{dbs}->{$db}->{$table}->{index_length} ||= 0;
-
+         $schema->{counts}->{dbs}->{$db}->{indexes} += $n_indexes;
+         $schema->{counts}->{dbs}->{$db}->{engines}->{$engine}++;
+         $schema->{counts}->{dbs}->{$db}->{rows} += $rows;
+         $schema->{counts}->{dbs}->{$db}->{data_size} += $data_size;
+         $schema->{counts}->{dbs}->{$db}->{index_size} += $index_size;
+         # Per-engline counts
+         $schema->{counts}->{engines}->{$engine}->{tables}++;
+         $schema->{counts}->{engines}->{$engine}->{indexes} += $n_indexes;
+         $schema->{counts}->{engines}->{$engine}->{data_size} += $data_size;
+         $schema->{counts}->{engines}->{$engine}->{index_size} += $index_size; 
          # Grand total schema counts
          $schema->{counts}->{TOTAL}->{tables}++;
-         $schema->{counts}->{TOTAL}->{engines}->{"$schema->{dbs}->{$db}->{$table}->{engine}"}++;
-         $schema->{counts}->{TOTAL}->{rows} += $schema->{dbs}->{$db}->{$table}->{rows} ||= 0;
-         $schema->{counts}->{TOTAL}->{data_size} += $schema->{dbs}->{$db}->{$table}->{data_length} ||= 0;
-         $schema->{counts}->{TOTAL}->{index_size} += $schema->{dbs}->{$db}->{$table}->{index_length} ||= 0;
+         $schema->{counts}->{TOTAL}->{indexes} += $n_indexes;
+         $schema->{counts}->{TOTAL}->{rows} += $rows;
+         $schema->{counts}->{TOTAL}->{data_size} += $data_size;
+         $schema->{counts}->{TOTAL}->{index_size} += $index_size;
       } # foreach table
    } # foreach db
 
@@ -1875,13 +1891,13 @@ sub dbs_size_summary
    my ( $mysql_instance ) = @_;
 
    my %dbs = %{$mysql_instance->{schema}->{counts}->{dbs}}; # copy we can chop
-   my $top = $top; # TODO such a terrible hack
+   my $top = $opts{t};
    my $ret;
    my @sorted;
 
    @sorted = sort { $dbs{$b}->{data_size} <=> $dbs{$a}->{data_size} } keys %dbs;
    foreach my $db ( @sorted ) {
-      $ret .= "\n\t- $db " . shorten($dbs{$db}->{data_size});
+      $ret .= "\n\t- $db: data " . shorten($dbs{$db}->{data_size});
       delete $dbs{$db};
       last if !--$top;
    }
@@ -1907,7 +1923,7 @@ sub tables_size_summary
    
    my %dbs_tbls;
    my $dbs = $mysql_instance->{schema}->{dbs};
-   my $top = $top; # TODO remove terrible hack
+   my $top = $opts{t};
    my $ret = '';
    my @sorted;
 
@@ -1920,7 +1936,7 @@ sub tables_size_summary
    @sorted = sort { $dbs_tbls{$b} <=> $dbs_tbls{$a} } keys %dbs_tbls;
    foreach my $db_tbl ( @sorted ) {
       my ( $db, $tbl ) = split '\.', $db_tbl;
-      $ret .= "\n\t- $db_tbl:"                                         .
+      $ret .= "\n\t- $db_tbl:"                                           .
               " data "    . shorten($dbs_tbls{$db_tbl})                  .
               ", index "  . shorten($dbs->{$db}->{$tbl}->{index_length}) .
               ", rows "   . shorten($dbs->{$db}->{$tbl}->{rows})         .
@@ -1939,6 +1955,25 @@ sub tables_size_summary
       $r_avg = shorten($r_size / $n_remaining);
       $r_size = shorten($r_size);
       $ret .= "\n\tRemaining $n_remaining: size $r_size avg $r_avg";
+   }
+
+   return $ret;
+}
+
+sub engines_summary
+{
+   my ( $mysql_instance ) = @_;
+
+   my $ret = '';
+   my $counts = $mysql_instance->{schema}->{counts};
+
+   foreach my $engine ( keys %{$counts->{engines}} ) {
+      $ret .= "\n\t- $engine:"                                                    .
+              " tables "   . $counts->{engines}->{$engine}->{tables}              .
+              ", indexes " . $counts->{engines}->{$engine}->{indexes}             .
+              ", data "    . shorten($counts->{engines}->{$engine}->{data_size})  .
+              ", index "   . shorten($counts->{engines}->{$engine}->{index_size});
+
    }
 
    return $ret;
@@ -2029,14 +2064,16 @@ $mysql_instance{syslog}
    Config file location: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{'defaults-file'}
    Schema ________________________________________________________________
-      dbs @<<<  tables @<<<  rows @<<<<<<  size data @<<<<<< index @<<<<<<
-$mysql_instance{schema}->{counts}->{TOTAL}->{dbs}, $mysql_instance{schema}->{counts}->{TOTAL}->{tables}, shorten($mysql_instance{schema}->{counts}->{TOTAL}->{rows}), shorten($mysql_instance{schema}->{counts}->{TOTAL}->{data_size}), shorten($mysql_instance{schema}->{counts}->{TOTAL}->{index_size})
-      Engines: @*
-"@{[ %{$mysql_instance{schema}->{counts}->{TOTAL}->{engines}} ]}"
+      Total: dbs @<<<  tables @<<<  rows @<<<<<<  indexes @<<<<<<
+$mysql_instance{schema}->{counts}->{TOTAL}->{dbs}, $mysql_instance{schema}->{counts}->{TOTAL}->{tables}, shorten($mysql_instance{schema}->{counts}->{TOTAL}->{rows}), $mysql_instance{schema}->{counts}->{TOTAL}->{indexes}
+         size data @<<<<<< index @<<<<<<
+shorten($mysql_instance{schema}->{counts}->{TOTAL}->{data_size}), shorten($mysql_instance{schema}->{counts}->{TOTAL}->{index_size})
       @< Largest databases: @*
-$top, dbs_size_summary(\%mysql_instance)
+$opts{t}, dbs_size_summary(\%mysql_instance)
       @< Largest tables: @*
-$top, tables_size_summary(\%mysql_instance);
+$opts{t}, tables_size_summary(\%mysql_instance);
+      Engines (all dbs): @*
+engines_summary(\%mysql_instance) 
       Triggers, Routines and Events: @*
 $mysql_instance{trigs_routines_events}
 .
@@ -2083,6 +2120,12 @@ Prompt for a password when connecting to MySQL.
 short form: -p; type: string
 
 Password to use when connecting.
+
+=item --top
+
+short form: -t; type: int; default: 5
+
+Show top N largest databases and tables.
 
 =item --user
 
@@ -2185,11 +2228,9 @@ The following items are unimplemented at this time:
                table.
             * Draw a histogram of these values.
       * Indexes:
-         * Number
          * Top N tables with the most/least indexes
          * Compute indexes that are not very selective
       * Storage engines
-         * summaries of number and size of tables/indexes (is this per engine?)
          * views
          * merge tables (how many are broken)
             * check if MERGE tables sum up the size of their contained tables in

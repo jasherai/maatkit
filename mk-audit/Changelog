@@ -1,4 +1,10 @@
-Changelog for mk-advisor:
+Changelog for mk-audit:
+
+2008-07-26:
+
+   * Implemented: index counts: for all dbs and engines summary
+   * Implemented: engines summary (# tables & indexes, size data and indexes)
+   * Implemented: --top
 
 2008-07-25:
 
