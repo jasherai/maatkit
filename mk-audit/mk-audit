@@ -1437,15 +1437,26 @@ exit;
 # ############################################################################
 # Subroutines.
 # ############################################################################
-sub shorten {
-   my ( $num ) = @_;
-
+sub shorten
+{
+   my ( $number, $kb, $d ) = @_;
+   
    my $n = 0;
-   while ( $num >= 1_024 ) {
-      $num /= 1_024;
-      ++$n;
+   my $short;
+
+   $kb ||= 1;
+   $d  ||= 2;
+
+   if ( $kb ) {
+      while ( $number > 1_023 ) { $number /= 1_024; $n++; }
    }
-   return sprintf("%.2f%s", $num, ('','k','M','G', 'T')[$n]);
+   else {
+      while ($number > 999) { $number /= 1000; $n++; }
+   }
+   $short = sprintf "%.${d}f%s", $number, ('','k','M','G','T')[$n];
+   return $1 if $short =~ /^(.+)\.(00)$/o; # 12.00 -> 12 but not 12.00k -> 12k
+
+   return $short;
 }
 
 sub sec_to_dhms # Seconds to days hours:minutes:seconds
@@ -1504,9 +1515,11 @@ sub server_report
    if ( -f '/proc/cpuinfo' ) {
       my $info = `cat /proc/cpuinfo`;
       my $cores = scalar( map { $_ } $info =~ m/(^processor)/gm );
-      $server->{cpu}->{count} = $cores / max( $info =~ m/cpu cores\s+: (\d+)/gm);
       $server->{cpu}->{cores} = $cores;
-      ($server->{cpu}->{speed}) = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
+      $server->{cpu}->{count}
+         = `grep 'physical id' /proc/cpuinfo | sort | uniq | wc -l`;
+      ($server->{cpu}->{speed})
+         = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
       ($server->{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
       ($server->{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
       ($server->{cpu}->{'64bit'}) = $info =~ m/flags.*\blm\b/ ? 'Yes' : 'No';
@@ -1649,8 +1662,8 @@ sub check_proc_sys_net_ipv4_values
          chomp(my $val = `cat /proc/sys/net/ipv4/$ipv4_file`);
          $val =~ s/\s+/_/g;
          if ( $ipv4_defaults{$ipv4_file} ne $val ) {
-            $server->{os}->{non_default_ipv4_vals} .=
-               "\n\t$ipv4_file = $val ($ipv4_defaults{$ipv4_file})";
+            $server->{os}->{non_default_ipv4_vals}
+               .= "\n\t$ipv4_file = $val ($ipv4_defaults{$ipv4_file})";
          }
       }
    }
@@ -1712,22 +1725,29 @@ sub mysql_instance_reports
          };
          if ( $EVAL_ERROR ) {
             chomp $EVAL_ERROR;
-            print "Cannot connect to " . $dp->as_string($dsn) . ": $EVAL_ERROR\n\n";
+            print "Cannot connect to " . $dp->as_string($dsn)
+               . ": $EVAL_ERROR\n\n";
             next;
          }
+
+         # Get everything we need for the MySQL instance report
          get_MySQL_instance_info(\$dbh, $mysql_instance);
-         $mysql_instance->{number} = $n++;
          if ( $mysql_instance->{schema}->{counts}->{TOTAL}->{dbs} == 0 ) {
             # This can happen of the user doesn't have privs to see any dbs,
             # or in the rare case that there really aren't any dbs. We must
             # catch this error otherwise write_MySQL_instance_report() will
             # cause fatal errors due to undef'ed values.
-            print "MySQL instance $mysql_instance->{number} has no databases. " .
-                  "DSN: " . $dp->as_string($dsn) . "\n\n";
+            print "MySQL instance $mysql_instance->{number} has no databases. "
+               . "DSN: " . $dp->as_string($dsn) . "\n\n";
             $dbh->disconnect();
             next;
          }
-         write_MySQL_instance_report($mysql_instance);
+         check_MySQL_instance_for_problems(\$dbh, $mysql_instance);
+         $mysql_instance->{number} = $n++;
+
+         # Print the MySQL instance report
+         $FORMAT_NAME = 'MYSQL_INSTANCE';
+         write;
          $dbh->disconnect();
       } # foreach mysqld instance
    } # if ps cmd succeeded
@@ -1735,12 +1755,28 @@ sub mysql_instance_reports
    return;
 }
 
-sub get_MySQL_instance_info()
+sub get_MySQL_instance_info
 {
    my ( $dbh, $mysql_instance ) = @_;
 
    get_vals_and_vars($dbh, $mysql_instance);
    get_schema($dbh, $mysql_instance);
+
+   if ( $vp->version_ge($$dbh, '5.0.2') ) {
+      $mysql_instance->{have_InnoDB_status_vals} = 1;
+      $mysql_instance->{innodb_buffer_pool_size}
+         = $mysql_instance->{status_vals}->{Innodb_buffer_pool_pages_total}
+         * $mysql_instance->{status_vals}->{Innodb_page_size};
+   }
+   else {
+      $mysql_instance->{have_InnoDB_status_vals} = 0;
+      $mysql_instance->{innodb_buffer_pool_size}
+         =  exists $mysql_instance->{conf_system_vars}->{innodb_buffer_pool_size} ?
+            $mysql_instance->{conf_system_vars}->{innodb_buffer_pool_size}        :
+            0;
+      $mysql_instance->{innodb_buffer_pool_size} = $1 * 1_024 * 1_024
+         if $mysql_instance->{innodb_buffer_pool_size} =~ /(\d+)M/;
+   }
 
    if ( $vp->version_ge($$dbh, '5.0.0') ) {
       $mysql_instance->{trigs_routines_events} = '';
@@ -1791,13 +1827,17 @@ sub get_vals_and_vars
                                                { Slice => {} } )
                                             };
 
-   my $defaults_file = $mysql_instance{'defaults-file'} ?
+   my $defaults_file = $mysql_instance{'defaults-file'}                       ?
                        "--defaults-file=\"$mysql_instance{'defaults-file'}\"" :
                        '';
    my $cmd = "my_print_defaults $defaults_file mysqld";
    if ( my $mysql_config = `$cmd` ) {
-      %{$mysql_instance->{conf_system_vars}} = map { m/^--(\S+)=(\S*)/ } split "\n", $mysql_config;
-      foreach ( keys %{$mysql_instance->{conf_system_vars}} ) { s/-/_/; } # For consistency
+      %{$mysql_instance->{conf_system_vars}}
+         = map {
+              my ( $var, $val ) = m/^--([^\s=]+)(?:=(\S+))?/;
+              $var =~ s/-/_/go;
+              $var => $val;
+           } split "\n", $mysql_config;
       $mysql_instance->{conf_system_vars}->{log_error}        ||= '';
       $mysql_instance->{conf_system_vars}->{relay_log}        ||= '';
       $mysql_instance->{conf_system_vars}->{log_slow_queries} ||= '';
@@ -1840,19 +1880,27 @@ sub get_schema
          %{$schema->{dbs}->{$db}->{"$tbl_stat->{name}"}} = %$tbl_stat;
       }
       foreach my $table ( keys %{$schema->{dbs}->{$db}} ) {
-         # For each db.table get info about its indexes
-         my $all_indexes = $$dbh->selectall_arrayref("SHOW INDEXES FROM $db.$table");
-         my %unique_indexes;
-         # Because "SHOW INDEXES FROM db.tbl GROUP BY Key_name" is not possible:
-         foreach my $index ( @$all_indexes ) {
-            $unique_indexes{$index->[2]} = 0; # $index->[2] is Key_name
+         # TODO Do this w/ SHOW CREATE TABLE
+         my $n_indexes;
+         if( $opts{'show-indexes'} ) {
+            # For each db.table get info about its indexes
+            my $all_indexes = $$dbh->selectall_arrayref("SHOW INDEXES FROM $db.$table");
+            my %unique_indexes;
+            # Because "SHOW INDEXES FROM db.tbl GROUP BY Key_name" is not possible:
+            foreach my $index ( @$all_indexes ) {
+               $unique_indexes{$index->[2]} = 0; # $index->[2] is Key_name
+            }
+            $n_indexes = scalar keys %unique_indexes;
          }
-         my $n_indexes = scalar keys %unique_indexes;
-         # TODO $schema->{dbs}->{$db}->{$table}->{indexes} = something important
+         else {
+            $n_indexes = 0;
+         }
+
          my $data_size  = $schema->{dbs}->{$db}->{$table}->{data_length}  ||= 0;
          my $index_size = $schema->{dbs}->{$db}->{$table}->{index_length} ||= 0;
          my $rows       = $schema->{dbs}->{$db}->{$table}->{rows}         ||= 0;
          my $engine     = $schema->{dbs}->{$db}->{$table}->{engine}; 
+
          # Per-db counts
          $schema->{counts}->{dbs}->{$db}->{tables}++;
          $schema->{counts}->{dbs}->{$db}->{indexes} += $n_indexes;
@@ -1860,11 +1908,13 @@ sub get_schema
          $schema->{counts}->{dbs}->{$db}->{rows} += $rows;
          $schema->{counts}->{dbs}->{$db}->{data_size} += $data_size;
          $schema->{counts}->{dbs}->{$db}->{index_size} += $index_size;
+
          # Per-engline counts
          $schema->{counts}->{engines}->{$engine}->{tables}++;
          $schema->{counts}->{engines}->{$engine}->{indexes} += $n_indexes;
          $schema->{counts}->{engines}->{$engine}->{data_size} += $data_size;
          $schema->{counts}->{engines}->{$engine}->{index_size} += $index_size; 
+
          # Grand total schema counts
          $schema->{counts}->{TOTAL}->{tables}++;
          $schema->{counts}->{TOTAL}->{indexes} += $n_indexes;
@@ -1873,15 +1923,6 @@ sub get_schema
          $schema->{counts}->{TOTAL}->{index_size} += $index_size;
       } # foreach table
    } # foreach db
-
-   return;
-}
-
-sub write_MySQL_instance_report
-{
-   my ( $mysql_instance ) = @_;
-
-   $FORMAT_NAME = 'MYSQL_INSTANCE', write;
 
    return;
 }
@@ -1939,7 +1980,7 @@ sub tables_size_summary
       $ret .= "\n\t- $db_tbl:"                                           .
               " data "    . shorten($dbs_tbls{$db_tbl})                  .
               ", index "  . shorten($dbs->{$db}->{$tbl}->{index_length}) .
-              ", rows "   . shorten($dbs->{$db}->{$tbl}->{rows})         .
+              ", rows "   . shorten($dbs->{$db}->{$tbl}->{rows}, 0)      .
               ", engine " . $dbs->{$db}->{$tbl}->{engine};
       delete $dbs_tbls{$db_tbl};
       last if !--$top;
@@ -1977,6 +2018,48 @@ sub engines_summary
    }
 
    return $ret;
+}
+
+sub check_MySQL_instance_for_problems
+{
+   my ( $dbh, $mysql_instance ) = @_;
+
+   @{$mysql_instance->{problems}} = ();
+   my $problems = $mysql_instance->{problems};
+   my $schema   = $mysql_instance->{schema};
+
+   push @$problems, "--skip-name-resolve not set"
+      if !exists $mysql_instance->{'skip-name-resolve'}
+         && !exists $mysql_instance->{conf_system_vars}->{skip_name_resolve};
+
+   push @$problems,
+      "Key buffer may be too large ("                                 .
+      shorten($mysql_instance->{live_system_vars}->{key_buffer_size}) .
+      ")"
+      if $mysql_instance->{live_system_vars}->{key_buffer_size}
+         > max($schema->{counts}->{engines}->{MyISAM}->{data_size},
+              33554432); # 32M
+
+   if ( $mysql_instance->{innodb_buffer_pool_size} 
+        && exists $schema->{counts}->{engines}->{InnoDB} ) {
+      push @$problems,
+         "InnoDB: buffer pool too small ("                   .
+         shorten($mysql_instance->{innodb_buffer_pool_size}) .
+         ")"
+         if $schema->{counts}->{engines}->{InnoDB}->{data_size}
+            >= $mysql_instance->{innodb_buffer_pool_size};
+   }
+
+   if ( $mysql_instance->{have_InnoDB_status_vals} ) {
+      push @$problems,
+         "InnoDB: zero free buffer pool pages",
+         if !$mysql_instance->{status_vals}->{Innodb_buffer_pool_pages_free};
+      push @$problems,
+         "innodb_flush_method not set to O_DIRECT",
+         if $mysql_instance->{live_system_vars}->{innodb_flush_method} ne "O_DIRECT";
+   }
+
+   return;
 }
 
 # ############################################################################
@@ -2065,7 +2148,7 @@ $mysql_instance{syslog}
 $mysql_instance{'defaults-file'}
    Schema ________________________________________________________________
       Total: dbs @<<<  tables @<<<  rows @<<<<<<  indexes @<<<<<<
-$mysql_instance{schema}->{counts}->{TOTAL}->{dbs}, $mysql_instance{schema}->{counts}->{TOTAL}->{tables}, shorten($mysql_instance{schema}->{counts}->{TOTAL}->{rows}), $mysql_instance{schema}->{counts}->{TOTAL}->{indexes}
+$mysql_instance{schema}->{counts}->{TOTAL}->{dbs}, $mysql_instance{schema}->{counts}->{TOTAL}->{tables}, shorten($mysql_instance{schema}->{counts}->{TOTAL}->{rows}, 0), $mysql_instance{schema}->{counts}->{TOTAL}->{indexes}
          size data @<<<<<< index @<<<<<<
 shorten($mysql_instance{schema}->{counts}->{TOTAL}->{data_size}), shorten($mysql_instance{schema}->{counts}->{TOTAL}->{index_size})
       @< Largest databases: @*
@@ -2076,6 +2159,13 @@ $opts{t}, tables_size_summary(\%mysql_instance);
 engines_summary(\%mysql_instance) 
       Triggers, Routines and Events: @*
 $mysql_instance{trigs_routines_events}
+
+   InnoDB buffer pool size: @<<<<<<
+shorten($mysql_instance{innodb_buffer_pool_size})
+
+   Problems ______________________________________________________________
+        - @*
+{ local $LIST_SEPARATOR = "\n\t- "; "@{ $mysql_instance{problems} }" }
 .
 
 # ############################################################################
@@ -2120,6 +2210,10 @@ Prompt for a password when connecting to MySQL.
 short form: -p; type: string
 
 Password to use when connecting.
+
+=item --show-indexes
+
+Use SHOW INDEXES to count indexes.
 
 =item --top
 
@@ -2246,10 +2340,7 @@ The following items are unimplemented at this time:
               VALUES LESS THAN (2009) ENGINE = InnoDB, PARTITION p_catchall VALUES LESS
               THAN MAXVALUE ENGINE = InnoDB) */
       * Status
-         * Look for anomalies in variables/status
-         * look for weird values of all status and variables, like
-           innodb_flush_method
-           not set to O_DIRECT.
+         * look for weird values of all status and variables
          * small innodb log files, large innodb_additional_mem_pool
          * on a slave, innodb_flush_log_at_trx_commit doesn't need to be 1
          * Look for unusual values: Handler_prepare
@@ -2269,7 +2360,7 @@ The following items are unimplemented at this time:
             where
 
    * Look for authenticating connections, extract the hostname, try to reverse
-     lookup the DNS, check for skip-name-resolve.
+     lookup the DNS
    * Advise to use skip-name-resolve regardless...
    * look for innoDB free space vs. real space on disk to figure out how much is
      used.  Compare this to config file setting for buffer pool.
@@ -2281,8 +2372,6 @@ The following items are unimplemented at this time:
    * alerts on COUNT(*) .. queries. 
    * check if online settings out of sync with config file
    * check if there are duplicate settings (later overrides earlier) in config.
-   * Info "Key Buffer May be Too Large"
-     $key_buffer_size>max($total_myisam_size,32M)
    * Look for tables that have silly schema, like a lot of varchar(255)
    * Look for non-recommended data types, like float(M,N) and BIT
    * Look for nullable columns that contain no NULLs, especially indexed columns
