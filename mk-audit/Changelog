@@ -1,5 +1,18 @@
 Changelog for mk-audit:
 
+2008-07-29:
+
+   * Changed/Added: server problems like swappiness and non-default ipv4 values
+	are now all listed under the Server specs PROBLEMS section
+   * Changed: indexes say NA instead of 0 if --show-indexes is not used
+   * Implemented: tries to get RAID info using megarc (needs further testing
+	and refinement)
+   * Implemented:
+		1) check if sys vars given on cmd line override those in config file
+		2) check for duplicate sys vars in config file
+		3) check if online sys var vals differ from config sys var vals (needs
+			further testing and refinement, too)
+
 2008-07-28:
 
    * Added to MySQL instance report: InnoDB buffer pool size and Problems

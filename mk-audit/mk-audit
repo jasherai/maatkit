@@ -1406,7 +1406,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Sortkeys  = 1;
 
-# Global variables; as few as possible.
+# Global variables
 my %opts;
 
 my $dp = new DSNParser();
@@ -1480,10 +1480,12 @@ sub sec_to_dhms # Seconds to days hours:minutes:seconds
    return "$d $h:$m:$s";
 }
 
-# Gather server specs and print SERVER report
+# Gather server specs and problems and print SERVER report
 sub server_report
 {
    my ( $server ) = @_;
+
+   @{ $server->{problems} } = ();
 
    $server->{os}->{name} = $OSNAME;
    $server->{os}->{'64bit'} = `file /bin/ls` =~ m/64-bit/ ? 'Yes' : 'No';
@@ -1552,8 +1554,6 @@ sub server_report
       }
    }
 
-   get_raid_info($server);
-
    if ( chomp(my $df = `df -hT` ) ) {
       $df = "\n\t" . join("\n\t",
          grep { $_ !~ m/^(varrun|varlock|udev|devshm|lrm)/ }
@@ -1571,22 +1571,30 @@ sub server_report
       $server->{storage}->{vgs} = 'No LVM2';
    }
 
-   # TODO: use ethtool, ip, etc to discover network interfaces, IP addresses and
-   # network speed
+   get_raid_info($server);
 
    chomp($server->{os}->{swappiness} = `cat /proc/sys/vm/swappiness`);
-   if ( $server->{os}->{swappiness} != 60 ) {
-      $server->{os}->{swappiness} =
-         "*** swappiness != 60; is currently: $server->{os}->{swappiness} ***";
-   }
-   else {
-      $server->{os}->{swappiness} = '';
-   }
+   push @{ $server->{problems} },
+      "*** Server swappiness != 60; is currently: $server->{os}->{swappiness}"
+      if $server->{os}->{swappiness} != 60;
 
    check_proc_sys_net_ipv4_values($server);
 
    # Print SERVER report
-   $FORMAT_NAME = 'SERVER', write;
+   $FORMAT_NAME = 'SERVER_1';
+   write;
+   if ( $server->{storage}->{megarc} ) {
+      # Apparently, the @* field has a 17 line limit
+      # hence we must print this stuff manually.
+      print "   MegaRAID:\n--------\n";
+      print $server->{storage}->{megarc};
+      print "--------\n";
+   }
+   $FORMAT_NAME = 'SERVER_2';
+   write;
+   foreach my $problem ( @{ $server->{problems} } ) {
+      print "\t- $problem\n";
+   }   
 
    return;
 }
@@ -1600,6 +1608,52 @@ sub get_raid_info
       $server->{storage}->{raid} = $raid ? $raid : 'unknown';
    }
 
+   # Try several possible cmds to get raid status
+   my $megarc = `which megarc && megarc -AllAdpInfo -aALL`;
+   if ( $megarc ) {
+      if ( $megarc =~ /No MegaRAID Found/i ) {
+         if ( -f '/opt/MegaRAID/MegaCli/MegaCli' ) {
+            $megarc  = `/opt/MegaRAID/MegaCli/MegaCli -AdpAllInfo -aALL`;
+            $megarc .= `/opt/MegaRAID/MegaCli/MegaCli -AdpBbuCmd -GetBbuStatus -aALL`;
+         }
+         elsif ( -f '/opt/MegaRAID/MegaCli/MegaCli64' ) {
+            $megarc  = `/opt/MegaRAID/MegaCli/MegaCli64 -AdpAllInfo -aALL`;
+            $megarc .= `/opt/MegaRAID/MegaCli/MegaCli64 -AdpBbuCmd -GetBbuStatus -aALL`;
+         }
+         else {
+            $megarc = '';
+         }
+      }
+      else {
+         $megarc .= `megarc -AdpBbuCmd -GetBbuStatus -aALL`;
+      }
+   }
+
+   # Parse raid status if available
+   if( $megarc ) {
+      $server->{storage}->{megarc}
+         .= ($megarc =~ /^(Product Name.*\n)/m ? $1 : '');
+      $server->{storage}->{megarc}
+         .= ($megarc =~ /^(BBU.*\n)/m ? $1 : '');
+      $server->{storage}->{megarc}
+         .= ($megarc =~ /^(Battery Warning.*\n)/m ? $1 : '');
+      $server->{storage}->{megarc}
+         .= ($megarc =~ /^(Alarm.*\n)/m ? $1 : '');
+      $server->{storage}->{megarc}
+         .= ($megarc =~ /(Device Present.*?\n)\s+Supported/ms ? $1 : '');
+      $server->{storage}->{megarc}
+         .= ($megarc =~ /(Battery state.*?\n)isSOHGood/ms ? $1 : '');
+   }
+   else {
+      if ( $server->{storage}->{raid} ne 'unknown' ) {
+         $server->{storage}->{megarc}
+            .= "\n*** RAID present but unable to check its status";
+      }
+      else {
+         $server->{storage}->{megarc} = '';
+      }
+   }
+
    return;
 }
 
@@ -1608,51 +1662,51 @@ sub check_proc_sys_net_ipv4_values
    my ( $server ) = @_;
 
    my %ipv4_defaults = qw(
-      ip_forward 0
-      ip_default_ttl 64
-      ip_no_pmtu_disc 0
-      min_pmtu 562
-      ipfrag_secret_interval 600
-      ipfrag_max_dist 64
-      somaxconn 128
-      tcp_abc 0
-      tcp_abort_on_overflow 0
-      tcp_adv_win_scale 2
-      tcp_allowed_congestion_control reno
-      tcp_app_win 31
-      tcp_fin_timeout 60
-      tcp_frto_response 0
-      tcp_keepalive_time 7200
-      tcp_keepalive_probes 9
-      tcp_keepalive_intvl 75
-      tcp_low_latency 0
-      tcp_max_syn_backlog 1024
-      tcp_moderate_rcvbuf 1
-      tcp_reordering 3
-      tcp_retries1 3
-      tcp_retries2 15
-      tcp_rfc1337 0
-      tcp_rmem 8192_87380_174760
-      tcp_slow_start_after_idle 1
-      tcp_stdurg 0
-      tcp_synack_retries 5
-      tcp_syncookies 0
-      tcp_syn_retries 5
-      tcp_tso_win_divisor 3
-      tcp_tw_recycle 0
-      tcp_tw_reuse 0
-      tcp_wmem 4096_16384_131072
-      tcp_workaround_signed_windows 0
-      tcp_dma_copybreak 4096
-      ip_nonlocal_bind 0
-      ip_dynaddr 0
-      icmp_echo_ignore_all 0
-      icmp_echo_ignore_broadcasts 1
-      icmp_ratelimit 100
-      icmp_ratemask 6168
+      ip_forward                       0
+      ip_default_ttl                   64
+      ip_no_pmtu_disc                  0
+      min_pmtu                         562
+      ipfrag_secret_interval           600
+      ipfrag_max_dist                  64
+      somaxconn                        128
+      tcp_abc                          0
+      tcp_abort_on_overflow            0
+      tcp_adv_win_scale                2
+      tcp_allowed_congestion_control   reno
+      tcp_app_win                      31
+      tcp_fin_timeout                  60
+      tcp_frto_response                0
+      tcp_keepalive_time               7200
+      tcp_keepalive_probes             9
+      tcp_keepalive_intvl              75
+      tcp_low_latency                  0
+      tcp_max_syn_backlog              1024
+      tcp_moderate_rcvbuf              1
+      tcp_reordering                   3
+      tcp_retries1                     3
+      tcp_retries2                     15
+      tcp_rfc1337                      0
+      tcp_rmem                         8192_87380_174760
+      tcp_slow_start_after_idle        1
+      tcp_stdurg                       0
+      tcp_synack_retries               5
+      tcp_syncookies                   0
+      tcp_syn_retries                  5
+      tcp_tso_win_divisor              3
+      tcp_tw_recycle                   0
+      tcp_tw_reuse                     0
+      tcp_wmem                         4096_16384_131072
+      tcp_workaround_signed_windows    0
+      tcp_dma_copybreak                4096
+      ip_nonlocal_bind                 0
+      ip_dynaddr                       0
+      icmp_echo_ignore_all             0
+      icmp_echo_ignore_broadcasts      1
+      icmp_ratelimit                   100
+      icmp_ratemask                    6168
+      icmp_errors_use_inbound_ifaddr   0
+      igmp_max_memberships             20
       icmp_ignore_bogus_error_responses 0
-      icmp_errors_use_inbound_ifaddr 0
-      igmp_max_memberships 20
    );
 
    $server->{os}->{non_default_ipv4_vals} = '';
@@ -1662,8 +1716,9 @@ sub check_proc_sys_net_ipv4_values
          chomp(my $val = `cat /proc/sys/net/ipv4/$ipv4_file`);
          $val =~ s/\s+/_/g;
          if ( $ipv4_defaults{$ipv4_file} ne $val ) {
-            $server->{os}->{non_default_ipv4_vals}
-               .= "\n\t$ipv4_file = $val ($ipv4_defaults{$ipv4_file})";
+            push @{ $server->{problems} },
+               "Not default value /proc/sys/net/ipv4/$ipv4_file\:\n" .
+               "\t\tset=$val\n\t\tdefault=$ipv4_defaults{$ipv4_file}";
          }
       }
    }
@@ -1689,16 +1744,18 @@ sub mysql_instance_reports
          my ($user, $pcpu, $rss, $vsz, $cmd) = split(/\s+/, $line, 5);
          my ($bin) = $cmd =~ m/(\S+mysqld)\s/;
          next unless $bin; 
-         # mysqld cmd line ops like --port=3306 --skip-external-locking
-         my (%props) = $cmd =~ m/--([^\s=]+)(?:=(\S+))?/g;
-         # Make sure we have at least these cmd line ops
-         $props{datadir}         ||= '';
-         $props{'pid-file'}      ||= '';
-         $props{port}            ||= '';
-         $props{'socket'}        ||= '';
-         $props{'defaults-file'} ||= '';
-         %$mysql_instance = %props;
+         
          $mysql_instance->{syslog} = $ps =~ m/logger/ ? 'Yes' : 'No';
+         
+         # mysqld cmd line ops like --port=3306 --skip-external-locking
+         %{ $mysql_instance->{cmd_line_ops} }
+            = map {
+                 my ( $var, $val ) = /([^\s=]+)(?:=(\S+))?/;
+                 $var =~ s/-/_/go;
+                 $var => $val;
+              } ($cmd =~ m/--(\S+)/g);
+         $mysql_instance->{cmd_line_ops}->{defaults_file} ||= '';
+
          # vals from ps
          $mysql_instance->{user}    = $user;
          $mysql_instance->{pcpu}    = $pcpu;
@@ -1709,10 +1766,11 @@ sub mysql_instance_reports
 
          # Now try to connect to the instance.
          my $dbh;
+         my $port = $mysql_instance->{cmd_line_ops}->{port} || '';
          my $dsn = {
-            P => $mysql_instance->{port},
-            S => $mysql_instance->{'socket'},
-            h => $mysql_instance->{port} ne 3306 ? '127.0.0.1' : 'localhost',
+            P => $port,
+            S => $mysql_instance->{cmd_line_ops}->{'socket'} || '',
+            h => $port ne 3306 ? '127.0.0.1' : 'localhost',
          };
          $dsn->{u} = $opts{u} if $opts{u};
          $dsn->{p} = $opts{p} if $opts{p};
@@ -1731,6 +1789,7 @@ sub mysql_instance_reports
          }
 
          # Get everything we need for the MySQL instance report
+         @{$mysql_instance->{problems}} = ();
          get_MySQL_instance_info(\$dbh, $mysql_instance);
          if ( $mysql_instance->{schema}->{counts}->{TOTAL}->{dbs} == 0 ) {
             # This can happen of the user doesn't have privs to see any dbs,
@@ -1748,6 +1807,9 @@ sub mysql_instance_reports
          # Print the MySQL instance report
          $FORMAT_NAME = 'MYSQL_INSTANCE';
          write;
+         foreach my $problem ( @{ $mysql_instance{problems} } ) {
+            print "\t- $problem\n";
+         }
          $dbh->disconnect();
       } # foreach mysqld instance
    } # if ps cmd succeeded
@@ -1774,8 +1836,6 @@ sub get_MySQL_instance_info
          =  exists $mysql_instance->{conf_system_vars}->{innodb_buffer_pool_size} ?
             $mysql_instance->{conf_system_vars}->{innodb_buffer_pool_size}        :
             0;
-      $mysql_instance->{innodb_buffer_pool_size} = $1 * 1_024 * 1_024
-         if $mysql_instance->{innodb_buffer_pool_size} =~ /(\d+)M/;
    }
 
    if ( $vp->version_ge($$dbh, '5.0.0') ) {
@@ -1798,11 +1858,13 @@ sub get_MySQL_instance_info
             */")
          };
          foreach my $x ( @tre ) {
-            $mysql_instance->{trigs_routines_events} .= "\n\t\t$x->[0] $x->[1] $x->[2]";
+            $mysql_instance->{trigs_routines_events}
+               .= "\n\t\t$x->[0] $x->[1] $x->[2]";
          }
    }
    else {
-      $mysql_instance->{trigs_routines_events} = 'Not supported (MySQL version < 5.0.0)';
+      $mysql_instance->{trigs_routines_events}
+         = 'Not supported (MySQL version < 5.0.0)';
    }
 
    return;
@@ -1815,38 +1877,84 @@ sub get_vals_and_vars
 
    # This is just to simplify/transform the returned array into a hash where
    # Variable_name => Value
-   %{$mysql_instance->{status_vals}} = map { $_->{Variable_name} => $_->{Value} }
-                                       @{ $$dbh->selectall_arrayref(
-                                          'SHOW /*!50002 GLOBAL */ STATUS',
-                                          { Slice => {} } )
-                                       };
+   %{$mysql_instance->{status_vals}}
+      = map { $_->{Variable_name} => $_->{Value} }
+            @{ $$dbh->selectall_arrayref(
+                  'SHOW /*!50002 GLOBAL */ STATUS',
+                  { Slice => {} }
+               )
+            };
 
-   %{$mysql_instance->{live_system_vars}} = map { $_->{Variable_name} => $_->{Value} }
-                                            @{ $$dbh->selectall_arrayref(
-                                               'SHOW VARIABLES',
-                                               { Slice => {} } )
-                                            };
+   %{$mysql_instance->{live_system_vars}}
+      = map { $_->{Variable_name} => $_->{Value} }
+            @{ $$dbh->selectall_arrayref(
+                  'SHOW VARIABLES',
+                  { Slice => {} }
+               )
+            };
 
-   my $defaults_file = $mysql_instance{'defaults-file'}                       ?
-                       "--defaults-file=\"$mysql_instance{'defaults-file'}\"" :
-                       '';
+   my $defaults_file
+      = $mysql_instance->{cmd_line_ops}->{defaults_file}                     ?
+      "--defaults-file=\"$mysql_instance->{cmd_line_ops}->{defaults_file}\"" :
+      '';
    my $cmd = "my_print_defaults $defaults_file mysqld";
+   my %have_seen;
+   my @duplicate_vars;
    if ( my $mysql_config = `$cmd` ) {
       %{$mysql_instance->{conf_system_vars}}
          = map {
+              # Make sys vars from conf look like those from SHOW VARIABLES
+              # (I.e. log_slow_queries instead of log-slow-queries
+              # and 33554432 instead of 32M, etc.)
               my ( $var, $val ) = m/^--([^\s=]+)(?:=(\S+))?/;
               $var =~ s/-/_/go;
+              if ( defined $val && $val =~ /(\d+)M/) {
+                 $val = $1 * 1_048_576;
+              }
+              push @duplicate_vars, $var if $have_seen{$var}++ == 1;
               $var => $val;
            } split "\n", $mysql_config;
+
+      if ( scalar @duplicate_vars ) {
+         local $LIST_SEPARATOR = ', ';
+         push @{ $mysql_instance->{problems} },
+              "Duplicate system variables in config file: @duplicate_vars";
+      }
+
+      foreach my $var ( keys %{ $mysql_instance->{cmd_line_ops} } ) {
+         if ( !exists $mysql_instance->{conf_system_vars}->{$var} ) {
+            $mysql_instance->{conf_system_vars}->{$var}
+               = $mysql_instance->{cmd_line_ops}->{$var};
+         }
+         else {
+            if($mysql_instance->{conf_system_vars}->{$var}
+                  ne $mysql_instance->{cmd_line_ops}->{$var} ) {
+               push @{ $mysql_instance->{problems} },
+                    "System variable overriden: $var "          .
+                    "\n\t\tcommand line="                       .
+                    $mysql_instance->{cmd_line_ops}->{$var}     .
+                    "\n\t\toverrides config file="              .
+                    $mysql_instance->{conf_system_vars}->{$var};
+               $mysql_instance->{conf_system_vars}->{$var}
+                  = $mysql_instance->{cmd_line_ops}->{$var};
+            }
+         }
+      }
+
+      # Two special cases to fix: basedir and datadir:
+      # SHOW VARIABLES appends a /
+      $mysql_instance->{conf_system_vars}->{basedir} .= '/'
+         if substr($mysql_instance->{conf_system_vars}->{basedir}, -1) ne '/';
+      $mysql_instance->{conf_system_vars}->{datadir} .= '/'
+         if substr($mysql_instance->{conf_system_vars}->{datadir}, -1) ne '/';
+
       $mysql_instance->{conf_system_vars}->{log_error}        ||= '';
       $mysql_instance->{conf_system_vars}->{relay_log}        ||= '';
-      $mysql_instance->{conf_system_vars}->{log_slow_queries} ||= '';
+      $mysql_instance->{conf_system_vars}->{log_slow_queries} ||= 'OFF';
       $mysql_instance->{log_locations} = {
-         error_log => "$mysql_instance->{conf_system_vars}->{log_error} " .
-                      "$mysql_instance->{live_system_vars}->{log_error}",
+         error_log => "$mysql_instance->{live_system_vars}->{log_error}",
          relay_log => "$mysql_instance->{conf_system_vars}->{relay_log}",
          slow_log  => "$mysql_instance->{conf_system_vars}->{log_slow_queries} " .
-                      "$mysql_instance->{live_system_vars}->{log_slow_queries} " .
                       "$mysql_instance->{live_system_vars}->{long_query_time}"
       };
    }
@@ -1880,7 +1988,6 @@ sub get_schema
          %{$schema->{dbs}->{$db}->{"$tbl_stat->{name}"}} = %$tbl_stat;
       }
       foreach my $table ( keys %{$schema->{dbs}->{$db}} ) {
-         # TODO Do this w/ SHOW CREATE TABLE
          my $n_indexes;
          if( $opts{'show-indexes'} ) {
             # For each db.table get info about its indexes
@@ -2011,7 +2118,7 @@ sub engines_summary
    foreach my $engine ( keys %{$counts->{engines}} ) {
       $ret .= "\n\t- $engine:"                                                    .
               " tables "   . $counts->{engines}->{$engine}->{tables}              .
-              ", indexes " . $counts->{engines}->{$engine}->{indexes}             .
+              ", indexes " . ($counts->{engines}->{$engine}->{indexes} || 'NA')   .
               ", data "    . shorten($counts->{engines}->{$engine}->{data_size})  .
               ", index "   . shorten($counts->{engines}->{$engine}->{index_size});
 
@@ -2024,7 +2131,6 @@ sub check_MySQL_instance_for_problems
 {
    my ( $dbh, $mysql_instance ) = @_;
 
-   @{$mysql_instance->{problems}} = ();
    my $problems = $mysql_instance->{problems};
    my $schema   = $mysql_instance->{schema};
 
@@ -2059,6 +2165,51 @@ sub check_MySQL_instance_for_problems
          if $mysql_instance->{live_system_vars}->{innodb_flush_method} ne "O_DIRECT";
    }
 
+   check_live_system_vars_against_conf($mysql_instance);
+
+   return;
+}
+
+sub check_live_system_vars_against_conf
+{
+   my ( $mysql_instance ) = @_;
+
+   my $problems = $mysql_instance->{problems};
+   my $live_system_vars = $mysql_instance->{live_system_vars};
+   my $conf_system_vars = $mysql_instance->{conf_system_vars};
+
+   foreach my $var ( keys %{ $conf_system_vars } ) {
+      next if !exists $live_system_vars->{$var};
+      my $vars_match = 0;
+      my $conf_val = $conf_system_vars->{$var};
+      if ( defined $conf_val ) {
+         if ( $conf_val =~ /[^\d\.]/o
+              || $conf_val eq '' ) {
+            $vars_match = 1 if $live_system_vars->{$var} eq $conf_val;
+         }
+         else {
+            $vars_match = 1 if $live_system_vars->{$var} == $conf_val;
+         }
+      }
+      else {
+         # Certain vars in the conf are turned ON, as shown by SHOW VARIABLES,
+         # by being declared but not defined in the config file.
+         # E.g.: log_queries_not_using_indexes
+         if (    $live_system_vars->{$var} eq 'ON' ) {
+#              || $live_system_vars->{$var} eq '' ) {
+            $vars_match = 1;
+         }
+      }
+      if(!$vars_match) {
+         $conf_val = '' if !defined $conf_val;
+         push @$problems,
+            "System variable out of sync: $var\n\t\tonline=" .
+            $live_system_vars->{$var}                        .
+            "\n\t\tconfig="                                  .
+            $conf_val;
+      }
+   }
+
    return;
 }
 
@@ -2066,7 +2217,7 @@ sub check_MySQL_instance_for_problems
 # Formats
 # ############################################################################
 
-format SERVER =
+format SERVER_1 =
 ================================================================== Server Specs
 OS: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  64bit: @<<
 "$server{os}->{name} $server{os}->{version}", $server{os}->{'64bit'}
@@ -2096,6 +2247,9 @@ $server{memory}->{shared}
 Storage:
    Raid: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $server{storage}->{raid}
+.
+
+format SERVER_2 =
    LVM volume groups: @*
 $server{storage}->{vgs}
    df: @*
@@ -2110,31 +2264,27 @@ $server{sw}->{libc}->{threading}
    GNU libpthread version: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $server{sw}->{libc}->{GNU_LIBPTHREAD_VERSION}
 
-Non-default /proc/sys/net/ipv4/values: name = set value (default value): @*
-$server{os}->{non_default_ipv4_vals}
-
-@<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-$server{os}->{swappiness}
+PROBLEMS _________________________________________________________________
 .
 
 format MYSQL_INSTANCE =
 
 ============================================================ MySQL Instance @>>
 $mysql_instance{number}
-   Version:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+   Version:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{live_system_vars}->{version}
-   Uptime:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+   Uptime:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 sec_to_dhms($mysql_instance{status_vals}->{Uptime})
-   Bin:      @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+   Bin:      @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{bin}
-   Data dir: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-$mysql_instance{datadir}
-   PID file: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-$mysql_instance{'pid-file'}
-   Socket:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-$mysql_instance{'socket'}
+   Data dir: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{live_system_vars}->{datadir}
+   PID file: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{live_system_vars}->{pid_file}
+   Socket:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$mysql_instance{live_system_vars}->{'socket'}
    Port:     @<<<<<<
-$mysql_instance{port}
+$mysql_instance{live_system_vars}->{port}
    Log locations:
       Error:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $mysql_instance{log_locations}->{error_log}
@@ -2145,10 +2295,10 @@ $mysql_instance{log_locations}->{slow_log}
    Syslog: @<<
 $mysql_instance{syslog}
    Config file location: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-$mysql_instance{'defaults-file'}
+$mysql_instance{cmd_line_ops}->{defaults_file}
    Schema ________________________________________________________________
       Total: dbs @<<<  tables @<<<  rows @<<<<<<  indexes @<<<<<<
-$mysql_instance{schema}->{counts}->{TOTAL}->{dbs}, $mysql_instance{schema}->{counts}->{TOTAL}->{tables}, shorten($mysql_instance{schema}->{counts}->{TOTAL}->{rows}, 0), $mysql_instance{schema}->{counts}->{TOTAL}->{indexes}
+$mysql_instance{schema}->{counts}->{TOTAL}->{dbs}, $mysql_instance{schema}->{counts}->{TOTAL}->{tables}, shorten($mysql_instance{schema}->{counts}->{TOTAL}->{rows}, 0), $mysql_instance{schema}->{counts}->{TOTAL}->{indexes} || 'NA'
          size data @<<<<<< index @<<<<<<
 shorten($mysql_instance{schema}->{counts}->{TOTAL}->{data_size}), shorten($mysql_instance{schema}->{counts}->{TOTAL}->{index_size})
       @< Largest databases: @*
@@ -2163,9 +2313,7 @@ $mysql_instance{trigs_routines_events}
    InnoDB buffer pool size: @<<<<<<
 shorten($mysql_instance{innodb_buffer_pool_size})
 
-   Problems ______________________________________________________________
-        - @*
-{ local $LIST_SEPARATOR = "\n\t- "; "@{ $mysql_instance{problems} }" }
+   PROBLEMS ______________________________________________________________
 .
 
 # ############################################################################
@@ -2289,18 +2437,10 @@ The following items are unimplemented at this time:
       * Are we inside a Virtual Machine like VMWare or VirtualBox?
       * Some Linux-specific parameters that we commonly check/tweak:
         - (others?)
+      * use ethtool, ip, etc to discover nics, IP addresses and network speed
    Hardware
-      * raid status: try megarc; if that says " megarc -AllAdpInfo says No
-         MegaRAID Found" then try looking in /opt for MegaCli or MegaCli64 and
-         try: /opt/MegaRAID/MegaCli/MegaCli64  -AdpBbuCmd -GetBbuStatus -aALL
-         or: /opt/MegaRAID/MegaCli/MegaCli64 -AdpAllInfo -aALL
-         There can be indications of a) whether there is a BBU and b) lots of
-         stuff about how many volumes and the physical devices and their status.
-         If there is a MegaRAID in dmesg output, but can't find this info, print
-         a warning that there's one but can't check its status.
-         (See sample in raid-info file in this directory; especially interesting
-         is the Device Present and the Relative State of Charge, but there is a
-         lot of good stuff there to warn about if it's out of whack)
+      * raid status: (is this working? over info to caputre?)
+         - parse multiple adapters
    Operating System
       * vmstat samples
       * iostat usage if possible
@@ -2308,6 +2448,7 @@ The following items are unimplemented at this time:
       * for each instance, do:
          * run mysqld --help --verbose and make sure config file is valid
       * Data and schema
+         * get indexes via SHOW CREATE TABLE instead of SHOW INDEXES FROM
          * filefrag on data files?
          * verbose option: 
             produce a detailed per-db, per-tbl schema report showing size, index
