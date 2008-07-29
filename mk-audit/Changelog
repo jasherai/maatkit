@@ -1,5 +1,20 @@
 Changelog for mk-audit:
 
+2008-07-28:
+
+   * Added to MySQL instance report: InnoDB buffer pool size and Problems
+	section
+   * Added: --show-indexes, otherwise indexes are not counted until parsing
+	SHOW CREATE TABLE is implemented later
+   * Fixed: conf_system_vars didn't have valueless opts like
+	--skip-name-resolve (wrong regex) and didn't change - to _
+   * Implemented: gets innodb_buffer_pool_size from status vals if MySQL
+	v5.0.2+ or from config file for earlier versions
+   * Changed: shorten() can treat 1k as 1_024 or 1_000 and removes precision
+	on numbers < 1_000 (copied from mysqlreport)
+   * Implemented: check_MySQL_instance_for_problems()--to be populated later
+	w/ more checks
+
 2008-07-26:
 
    * Implemented: index counts: for all dbs and engines summary
