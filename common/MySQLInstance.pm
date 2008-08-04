@@ -17,6 +17,8 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
+package MySQLInstance;
+
 use strict;
 use warnings FATAL => 'all';
 
@@ -24,12 +26,15 @@ use English qw(-no_match_vars);
 
 use File::Temp ();
 
-package MySQLInstance;
-
 my $option_pattern = '([^\s=]+)(?:=(\S+))?';
 
 my %undef_for = (
-   'skip_external_locking' => 'ON',
+   skip_external_locking => 'ON',
+   tmpdir                => '',
+   innodb_flush_method   => '',
+   relay_log_index       => '',
+   log_slow_queries      => 'OFF',
+   'log'                 => 'OFF',
 );
 
 sub new {
