@@ -1,0 +1,6 @@
+#!/bin/sh
+
+NUM=$1
+/tmp/$NUM/stop
+rm -rf /tmp/$NUM/
+echo "removed /tmp/$NUM/"
