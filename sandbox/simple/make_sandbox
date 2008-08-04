@@ -1,0 +1,10 @@
+#!/bin/sh
+
+NUM=$1
+
+mkdir /tmp/$NUM
+tar xvfz server.tar.gz -C /tmp/$NUM
+for file in `grep -rl NODE /tmp/$NUM`; do
+   sed -i -e "s/NODE/$NUM/g" $file;
+done
+/tmp/$NUM/start

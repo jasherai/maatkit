@@ -1,0 +1,8 @@
+#!/bin/sh
+
+DIR=`realpath $0`
+cd `dirname $DIR`
+cd ../../sandbox/simple/
+./remove_sandbox 5126
+./make_sandbox 5126
+sleep 3;
