@@ -17,6 +17,7 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
+# MySQLInstance - Config and status values for an instance of mysqld
 package MySQLInstance;
 
 use strict;
@@ -25,16 +26,44 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use File::Temp ();
+use Carp;
 
 my $option_pattern = '([^\s=]+)(?:=(\S+))?';
 
+# SHOW GLOBAL VARIABLES dialect => mysqld --help --verbose dialect
+my %alias_for = (
+   ON   => 'TRUE',
+   OFF  => 'FALSE',
+   YES  => '1',
+   NO   => '0',
+);
+
 my %undef_for = (
-   skip_external_locking => 'ON',
-   tmpdir                => '',
-   innodb_flush_method   => '',
-   relay_log_index       => '',
-   log_slow_queries      => 'OFF',
-   'log'                 => 'OFF',
+   date_format                   => '',
+   datetime_format               => '',
+   ft_stopword_file              => '',
+   init_connect                  => '',
+   init_file                     => '',
+   init_slave                    => '',
+   innodb_data_home_dir          => '',
+   innodb_flush_method           => '',
+   innodb_log_arch_dir           => '',
+   innodb_log_group_home_dir     => '',
+   'log'                         => 'OFF',
+   log_error                     => '',
+   log_slow_queries              => 'OFF',
+   log_queries_not_using_indexes => 'ON',
+   ndb_connectstring             => '',
+   relay_log_index               => '',
+   secure_file_priv              => '',
+   skip_external_locking         => 'ON',
+   ssl_ca                        => '',
+   ssl_capath                    => '',
+   ssl_cert                      => '',
+   ssl_cipher                    => '',
+   ssl_key                       => '',
+   time_format                   => '',
+   tmpdir                        => '',
 );
 
 sub new {
@@ -149,7 +178,7 @@ sub get_DSN {
    };
 }
 
-# Returns a simple list of sys var names that appear more that
+# duplicate_sys_vars() returns a simple list of sys var names that
 # appear more than once in the defaults file
 sub duplicate_sys_vars {
    my ( $self ) = @_;
@@ -162,7 +191,7 @@ sub duplicate_sys_vars {
    return @duplicate_vars;
 }
 
-# Returned hash of overriden sys vars:
+# overriden_sys_vars() returns a hash of overriden sys vars:
 #    key   = sys var that is overriden
 #    value = array [ val being used, val overriden ]
 sub overriden_sys_vars {
@@ -178,6 +207,42 @@ sub overriden_sys_vars {
       }
    }
    return %overriden_vars;
+}
+
+# out_of_sync_sys_vars() returns a hash of sys vars that differ in their
+# online vs. config values:
+#    key   = sys var that is out of sync
+#    value = array [ val online, val config ]
+sub out_of_sync_sys_vars {
+   my ( $self ) = @_;
+   my %out_of_sync_vars;
+   foreach my $var ( keys %{ $self->{conf_sys_vars} } ) {
+      next if !exists $self->{online_sys_vars}->{$var};
+      my $conf_val        = $self->{conf_sys_vars}->{$var};
+      my $online_val      = $self->{online_sys_vars}->{$var};
+      my $var_out_of_sync = 0;
+      # Global %undef_for and the subs that populated conf_sys_vars
+      # and online_sys_vars should have taken care of any undefined
+      # values. If not, this sub will warn.
+      if ( defined $conf_val ) {
+         if ( $conf_val ne $online_val ) {
+            $var_out_of_sync = 1;
+            # But handle excepts where SHOW GLOBAL VARIABLES says ON and 
+            # mysqld --help --verbose says TRUE
+            if ( exists $alias_for{$online_val} ) {
+               $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
+            }
+         }
+      }
+      else {
+         carp "Undefined system variable: $var [$online_val][]";
+      }
+      if($var_out_of_sync) {
+         $out_of_sync_vars{$var}
+            = [ $online_val, $conf_val ];
+      }
+   }
+   return %out_of_sync_vars;
 }
 
 1;
