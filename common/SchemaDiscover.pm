@@ -50,6 +50,9 @@ sub new {
       }
       foreach my $table ( keys %{$dbs->{$db}} ) {
          my $n_indexes;
+         # TODO: use TableParser here
+         # TODO: also aggregate indexes by type: BTREE, HASH, FULLTEXT etc so we
+         # can get a count + size along that dimension too
          if( exists $opts->{'show-indexes'} ) {
             # For each db.table get info about its indexes
             my $all_indexes
