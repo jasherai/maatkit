@@ -2441,6 +2441,8 @@ The following items are unimplemented at this time:
    Hardware
       * raid status: (is this working? over info to caputre?)
          - parse multiple adapters
+      * check where MySQL data is stored, and make sure that filesystem is
+        mounted with noatime.
    Operating System
       * vmstat samples
       * iostat usage if possible
