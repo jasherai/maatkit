@@ -40,7 +40,6 @@ $Data::Dumper::Quotekeys = 0;
 # #############################################################################
 my $cmd_01 = '/usr/sbin/mysqld --defaults-file=/tmp/5126/my.sandbox.cnf --basedir=/usr --datadir=/tmp/5126/data --pid-file=/tmp/5126/data/mysql_sandbox5126.pid --skip-external-locking --port=5126 --socket=/tmp/5126/mysql_sandbox5126.sock --long-query-time=3';
 my $myi = new MySQLInstance($cmd_01);
-$myi->load_default_sys_vars();
 my $dsn = $myi->get_DSN();
 $dsn->{u} = 'msandbox';
 $dsn->{p} = 'msandbox';
@@ -54,7 +53,7 @@ if ( $EVAL_ERROR ) {
    print "Cannot connect to " . $dp->as_string($dsn)
          . ": $EVAL_ERROR\n\n";
 }
-$myi->load_online_sys_vars(\$dbh);
+$myi->load_sys_vars(\$dbh);
 
 # #############################################################################
 # Now, begin checking SchemaDiscover
