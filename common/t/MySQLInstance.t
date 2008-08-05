@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -48,8 +48,6 @@ my %cmd_line_ops_01 = (
 my $myi = new MySQLInstance($cmd_01);
 
 isa_ok($myi, 'MySQLInstance');
-
-$myi->load_default_sys_vars();
 
 is(
    $myi->{mysqld_binary},
@@ -86,7 +84,7 @@ if ( $EVAL_ERROR ) {
    print "Cannot connect to " . $dp->as_string($dsn)
          . ": $EVAL_ERROR\n\n";
 }
-$myi->load_online_sys_vars(\$dbh);
+$myi->load_sys_vars(\$dbh);
 # Sample of stable/predictable vars to make sure load_online_sys_vars()
 # actually did something, otherwise $myi->{online_sys_vars} will be empty
 my %expect_online_sys_vars_01 = (
@@ -138,6 +136,12 @@ is_deeply(
    \@expect_oos_long_query_time,
    'out of sync sys vars: long_query_time online=3 conf=1'
 );
+
+$myi->load_status_vals(\$dbh);
+ok(exists $myi->{status_vals}->{Aborted_clients},
+   'status vals: Aborted_clients');
+ok(exists $myi->{status_vals}->{Uptime},
+   'status vals: Uptime');
 
 $dbh->disconnect() if defined $dbh;
 

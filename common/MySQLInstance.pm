@@ -1,5 +1,3 @@
-#!/usr/bin/perl
-
 # This program is copyright 2008 Percona Inc.
 # Feedback and improvements are welcome.
 #
@@ -16,6 +14,9 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
+# ###########################################################################
+# MySQLInstance package $Revision$
+# ###########################################################################
 
 # MySQLInstance - Config and status values for an instance of mysqld
 package MySQLInstance;
@@ -52,11 +53,13 @@ my %undef_for = (
    'log'                         => 'OFF',
    log_error                     => '',
    log_slow_queries              => 'OFF',
+   log_slave_updates             => 'ON',
    log_queries_not_using_indexes => 'ON',
    ndb_connectstring             => '',
    relay_log_index               => '',
    secure_file_priv              => '',
    skip_external_locking         => 'ON',
+   skip_name_resolve             => 'ON',
    ssl_ca                        => '',
    ssl_capath                    => '',
    ssl_cert                      => '',
@@ -69,9 +72,7 @@ my %undef_for = (
 sub new {
    my ( $class, $cmd ) = @_;
    my $self = {};
-   # TODO: Daniel, best to use mysqld)\b instead in case mysqld is run without
-   # any parameters
-   ($self->{mysqld_binary}) = $cmd =~ m/(\S+mysqld)\s/;
+   ($self->{mysqld_binary}) = $cmd =~ m/(\S+mysqld)\b/;
    $self->{'64bit'} = `file $self->{mysqld_binary}` =~ m/64-bit/ ? 'Yes' : 'No';
    %{ $self->{cmd_line_ops} }
       = map {
@@ -86,8 +87,10 @@ sub new {
    return bless $self, $class;
 }
 
-sub load_default_sys_vars {
-   my ( $self ) = @_;
+sub load_sys_vars {
+   my ( $self, $dbh ) = @_;
+   
+   # Sys vars and defaults according to mysqld
    my ( $defaults_file_op, $tmp_file ) = $self->_defaults_file_op();
    my $cmd = "$self->{mysqld_binary} $defaults_file_op --help --verbose";
    if ( my $mysqld_output = `$cmd` ) {
@@ -107,10 +110,26 @@ sub load_default_sys_vars {
               $var => $val;
            } split "\n", $sys_vars;
    }
-   # Load sys vars explicitly set in defaults file. This is used later
-   # by duplicate_values() and overriden_values()
+
+   # Sys vars from SHOW STATUS
+   $self->_load_online_sys_vars($dbh);
+
+   # Sys vars from defaults file
+   # These are used later by duplicate_values() and overriden_values().
+   # These are also necessary for vars like skip-name-resolve which are not
+   # shown in either SHOW VARIABLES or mysqld --help --verbose but are need
+   # for checks in MySQLAdvisor. 
    $self->{defaults_files_sys_vars}
-      = $self->_vars_from_defaults_file($defaults_file_op);
+      = $self->_vars_from_defaults_file($defaults_file_op); 
+   foreach my $var_val ( reverse @{ $self->{defaults_file_sys_vars} } ) {
+      my ( $var, $val ) = ( $var_val->[0], $var_val->[1] );
+      if ( !exists $self->{conf_sys_vars}->{$var} ) {
+         $self->{conf_sys_vars}->{$var} = $val;
+      }
+      if ( !exists $self->{online_sys_vars}->{$var} ) {
+         $self->{online_sys_vars}->{$var} = $val;
+      }
+   }
    return;
 }
 
@@ -147,12 +166,20 @@ sub _vars_from_defaults_file {
          # and 33554432 instead of 32M, etc.)
          my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
          $var =~ s/-/_/go;
-         if ( defined $val && $val =~ /(\d+)M/) {
-            # TODO: Daniel, there are other legal suffixes too: G, k, etc.
-            # It may be easiest to just left-shift the value, e.g.
-            # $1 = $1 << $digits_for{$suffix}
-            # I also think the suffixes are case-insensitive.
-            $val = $1 * 1_048_576;
+         if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
+            if ( $2 ) {
+               my %digits_for = (
+                  'k'   => 1_024,
+                  'K'   => 1_204,
+                  'm'   => 1_048_576,
+                  'M'   => 1_048_576,
+                  'g'   => 1_073_741_824,
+                  'G'   => 1_073_741_824,
+                  't'   => 1_099_511_627_776,
+                  'T'   => 1_099_511_627_776,
+               );
+               $val = $1 * $digits_for{$2};
+            }
          }
          if ( !defined $val && exists $undef_for{$var} ) {
             $val = $undef_for{$var};
@@ -162,20 +189,18 @@ sub _vars_from_defaults_file {
    }
 }
 
-sub load_online_sys_vars {
+sub _load_online_sys_vars {
    my ( $self, $dbh ) = @_;
    %{ $self->{online_sys_vars} }
       = map { $_->{Variable_name} => $_->{Value} }
-      # TODO: Daniel, you should use /*!40101 GLOBAL*/ or similar
-      # is there some common code that already does this?
-            @{ $$dbh->selectall_arrayref('SHOW GLOBAL VARIABLES',
+            @{ $$dbh->selectall_arrayref('SHOW /*!40101 GLOBAL*/ VARIABLES',
                                          { Slice => {} })
             };
    return;
 }
 
-# TODO: Daniel I think this code may be in common/ already, look for 3306 as a grep-able hint
-# Maybe it's easier not to reuse, who knows
+# Get DSN specific to this MySQL instance (Baron, I didn't find other code
+# to do this. Plus, this relies on cmd_line_ops which is "private".)
 sub get_DSN {
    my ( $self ) = @_;
    my $port   = $self->{cmd_line_ops}->{port}     || '';
@@ -201,7 +226,6 @@ sub duplicate_sys_vars {
    return @duplicate_vars;
 }
 
-# TODO: Daniel I don't understand what overriden means?
 # overriden_sys_vars() returns a hash of overriden sys vars:
 #    key   = sys var that is overriden
 #    value = array [ val being used, val overriden ]
@@ -246,7 +270,7 @@ sub out_of_sync_sys_vars {
          }
       }
       else {
-         carp "Undefined system variable: $var [$online_val][]";
+         carp "Undefined system variable: $var";
       }
       if($var_out_of_sync) {
          $out_of_sync_vars{$var}
@@ -256,4 +280,18 @@ sub out_of_sync_sys_vars {
    return %out_of_sync_vars;
 }
 
+sub load_status_vals {
+   my ( $self, $dbh ) = @_;
+   %{ $self->{status_vals} }
+      = map { $_->{Variable_name} => $_->{Value} }
+            @{ $$dbh->selectall_arrayref('SHOW /*!50002 GLOBAL */ STATUS',
+                                         { Slice => {} })
+            };
+   return;
+}
+
 1;
+
+# ###########################################################################
+# End MySQLInstance package
+# ###########################################################################
