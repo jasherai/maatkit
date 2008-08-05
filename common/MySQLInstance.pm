@@ -69,6 +69,8 @@ my %undef_for = (
 sub new {
    my ( $class, $cmd ) = @_;
    my $self = {};
+   # TODO: Daniel, best to use mysqld)\b instead in case mysqld is run without
+   # any parameters
    ($self->{mysqld_binary}) = $cmd =~ m/(\S+mysqld)\s/;
    $self->{'64bit'} = `file $self->{mysqld_binary}` =~ m/64-bit/ ? 'Yes' : 'No';
    %{ $self->{cmd_line_ops} }
@@ -146,6 +148,10 @@ sub _vars_from_defaults_file {
          my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
          $var =~ s/-/_/go;
          if ( defined $val && $val =~ /(\d+)M/) {
+            # TODO: Daniel, there are other legal suffixes too: G, k, etc.
+            # It may be easiest to just left-shift the value, e.g.
+            # $1 = $1 << $digits_for{$suffix}
+            # I also think the suffixes are case-insensitive.
             $val = $1 * 1_048_576;
          }
          if ( !defined $val && exists $undef_for{$var} ) {
@@ -160,12 +166,16 @@ sub load_online_sys_vars {
    my ( $self, $dbh ) = @_;
    %{ $self->{online_sys_vars} }
       = map { $_->{Variable_name} => $_->{Value} }
+      # TODO: Daniel, you should use /*!40101 GLOBAL*/ or similar
+      # is there some common code that already does this?
             @{ $$dbh->selectall_arrayref('SHOW GLOBAL VARIABLES',
                                          { Slice => {} })
             };
    return;
 }
 
+# TODO: Daniel I think this code may be in common/ already, look for 3306 as a grep-able hint
+# Maybe it's easier not to reuse, who knows
 sub get_DSN {
    my ( $self ) = @_;
    my $port   = $self->{cmd_line_ops}->{port}     || '';
@@ -191,6 +201,7 @@ sub duplicate_sys_vars {
    return @duplicate_vars;
 }
 
+# TODO: Daniel I don't understand what overriden means?
 # overriden_sys_vars() returns a hash of overriden sys vars:
 #    key   = sys var that is overriden
 #    value = array [ val being used, val overriden ]

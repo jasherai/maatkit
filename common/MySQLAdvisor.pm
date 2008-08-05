@@ -96,6 +96,9 @@ sub new {
    return bless {}, $class;
 }
 
+# TODO: Daniel can these two subs be combined?  If a param passed, run one
+# check; otherwise run all.
+
 # run_all_checks() returns a hash of checks that failed:
 #    key   = name of check
 #    value = description of failure
