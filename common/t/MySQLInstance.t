@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -129,6 +129,14 @@ is_deeply(
    \%overriden_vars,
    \%expect_overriden_vars_01,
    'Overriden sys vars'
+);
+
+my %oos = $myi->out_of_sync_sys_vars();
+my @expect_oos_long_query_time = (3, 1);
+is_deeply(
+   \@{$oos{long_query_time}},
+   \@expect_oos_long_query_time,
+   'out of sync sys vars: long_query_time online=3 conf=1'
 );
 
 $dbh->disconnect() if defined $dbh;
