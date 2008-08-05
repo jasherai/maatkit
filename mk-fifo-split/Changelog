@@ -1,5 +1,6 @@
 Changelog for mk-fifo-split:
 
+   * Added --offset option.
    * --statistics didn't calculate lines/sec properly.
    * Removed --sleep; EOF doesn't mean anything to a non-terminal.
 

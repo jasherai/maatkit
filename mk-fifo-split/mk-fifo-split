@@ -577,8 +577,7 @@ if ( !$opts{l} || $opts{l} <= 0 ) {
 $opt_parser->usage_or_errors(%opts);
 
 # TODO: binmode
-# TODO: add offset and limit arguments so you can read a splice out of the
-# middle.
+# TODO: add limit arguments so you can read a splice out of the middle.
 # TODO: print out $. on exit (including exit by CTRL-C).
 # TODO make progress messages the default
 # TODO: use tell to figure out percentage, and print %complete and ETA.  See
@@ -602,13 +601,18 @@ if ( $opts{S} ) {
    printf("%5s %9s %5s %8s %8s\n", qw(chunks lines time overall current));
 }
 
+# This is for runtime efficiency.
+my $OFFSET = $opts{O};
+my $LINES  = $opts{l};
+
 my $lines  = 0;
 my $chunks = 0;
 my $start  = time();
 my $cstart = time();
 while ( my $line = <> ) {
    $lines++;
-   if ( $lines % $opts{l} == 0 ) {
+   next if $OFFSET && $lines < $OFFSET;
+   if ( $lines % $LINES == 0 ) {
       close $fh or die "Can't close: $OS_ERROR";
 
       unlink($file) or die "Can't unlink $file: $OS_ERROR";
@@ -695,6 +699,16 @@ The number of lines to read in each chunk.
 short form: -F
 
 Remove the fifo if it exists already, then create it again.
+
+=item --offset
+
+short form: -O; type: int; default: 0
+
+Begin at the Nth line.
+
+If the argument is 0, all lines are printed to the fifo.  If 1, then beginning
+at the first line, lines are printed (exactly the same as 0).  If 2, the first
+line is skipped, and the 2nd and subsequent lines are printed to the fifo.
 
 =item --statistics
 

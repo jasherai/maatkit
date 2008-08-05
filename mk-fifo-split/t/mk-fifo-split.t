@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 3;
 use English qw(-no_match_vars);
 
 unlink('/tmp/mk-fifo-split');
@@ -40,3 +40,20 @@ my $contents2 = do { local $INPUT_RECORD_SEPARATOR; <$fh2>; };
 close $fh2;
 
 ok($contents eq $contents2, 'I read the file');
+
+$cmd = 'perl ../mk-fifo-split file_with_lines --offset 2 > /dev/null 2>&1 < /dev/null';
+system("($cmd)&");
+sleep(1);
+
+open $fh, '<', '/tmp/mk-fifo-split' or die $OS_ERROR;
+$contents = do { local $INPUT_RECORD_SEPARATOR; <$fh>; };
+close $fh;
+
+is($contents, <<EOF
+     2	hi
+     3	there
+     4	b
+     5	c
+     6	d
+EOF
+, 'Offset works');
