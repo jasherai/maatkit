@@ -20,12 +20,12 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 3;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 
 use DBI;
 
-require '../ConfigChecker.pm';
+require '../MySQLAdvisor.pm';
 require '../MySQLInstance.pm';
 require '../DSNParser.pm';
 
@@ -55,20 +55,25 @@ if ( $EVAL_ERROR ) {
 $myi->load_online_sys_vars(\$dbh);
 
 # #############################################################################
-# Now, begin checking ConfigChecker
+# Now, begin checking MySQLAdvisor 
 # #############################################################################
-my $cc = new ConfigChecker();
-isa_ok($cc, 'ConfigChecker');
+my $ma = new MySQLAdvisor();
+isa_ok($ma, 'MySQLAdvisor');
 
-my @problems = $cc->run_all_checks($myi->{online_sys_vars});
-is(
-   $problems[0],
-   'innodb_flush_method != O_DIRECT',
-   'innodb_flush_method != O_DIRECT'
-);
-cmp_ok(@problems, '>=', 4, 'First 4 problems');
+my %problems = $ma->run_all_checks($myi->{online_sys_vars}, $myi->{status_vals});
+ok( exists $problems{innodb_flush_method}, 'check innodb_flush_method fails' );
+ok( exists $problems{max_connections},     'check max_connections fails'     );
+ok( exists $problems{log_slow_queries},    'check log_slow_queries fails'    );
+ok( exists $problems{thread_cache_size},   'check thread_cache_size fails'   );
+ok(!exists $problems{'socket'},            'check socket passes'             );
+ok( exists $problems{query_cache},         'check query_cache fails'         );
 
-# print Dumper(\@problems);
+%problems = $ma->run_check($myi->{online_sys_vars}, $myi->{status_vals}, 'foo');
+ok(exists $problems{ERROR}, 'check foo does not exist');
+
+%problems = $ma->run_check($myi->{online_sys_vars}, $myi->{status_vals}, 'Innodb_buffer_pool_pages_free');
+ok(!exists $problems{ERROR}, 'check Innodb_buffer_pool_pages_free does exist');
+ok(!exists $problems{Innodb_buffer_pool_pages_free}, 'check Innodb_buffer_pool_pages_free fails');
 
 $dbh->disconnect() if defined $dbh;
 
