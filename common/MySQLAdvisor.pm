@@ -1,5 +1,3 @@
-#!/usr/bin/perl
-
 # This program is copyright 2008 Percona Inc.
 # Feedback and improvements are welcome.
 #
@@ -16,6 +14,9 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
+# ###########################################################################
+# MySQLAdvisor package $Revision$
+# ###########################################################################
 
 # MySQLAdvisor - Check MySQL system variables and status values for problems
 package MySQLAdvisor;
@@ -25,29 +26,28 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
+use List::Util qw(max);
+
 # These check subs return 0 if the check passes or a string describing what
-# failed. $sys_vars is a ref to a hash of sys var => vals. Depending on the
-# caller, it should be the live sys var val. $status_vals is a ref to a hash
-# of status val => vals. If a check can't be tested (e.g. no Innodb_ status
-# values), return 0.
+# failed.  If a check can't be tested (e.g. no Innodb_ status values), return 0.
 my %checks = (
    innodb_flush_method =>
       sub {
-         my ( $sys_vars, $status_vals ) = @_;
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          return "innodb_flush_method != O_DIRECT"
             if $sys_vars->{innodb_flush_method} ne 'O_DIRECT';
          return 0;
       },
    log_slow_queries =>
       sub {
-         my ( $sys_vars, $status_vals ) = @_;
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          return "Slow query logging is disabled (log_slow_queries = OFF)"
             if $sys_vars->{log_slow_queries} eq 'OFF';
          return 0;
       },
    max_connections =>
       sub {
-         my ( $sys_vars, $status_vals ) = @_;
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          return "max_connections has been modified from its default (100): "
                 . $sys_vars->{max_connections}
             if $sys_vars->{max_connections} != 100;
@@ -55,14 +55,14 @@ my %checks = (
       },
    thread_cache_size =>
       sub {
-         my ( $sys_vars, $status_vals ) = @_;
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          return "Zero thread cache (thread_cache_size = 0)"
             if $sys_vars->{thread_cache_size} == 0;
          return 0;
       },
    'socket' =>
       sub {
-         my ( $sys_vars, $status_vals ) = @_;
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          if ( ! (-e $sys_vars->{'socket'} && -S $sys_vars->{'socket'}) ) {
             return "Socket is missing ($sys_vars->{socket})";
          }
@@ -70,7 +70,7 @@ my %checks = (
       },
    'query_cache' =>
       sub {
-         my ( $sys_vars, $status_vals ) = @_;
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          if ( exists $sys_vars->{query_cache_type} ) {
             if (    $sys_vars->{query_cache_type} eq 'ON'
                  && $sys_vars->{query_cache_size} == 0) {
@@ -81,7 +81,7 @@ my %checks = (
       },
    'Innodb_buffer_pool_pages_free' =>
       sub {
-         my ( $sys_vars, $status_vals ) = @_;
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          if ( exists $status_vals->{Innodb_buffer_pool_pages_free} ) {
             if ( $status_vals->{Innodb_buffer_pool_pages_free} == 0 ) {
                return "InnoDB: zero free buffer pool pages";
@@ -89,45 +89,72 @@ my %checks = (
          }
          return 0;
       },
+   'skip_name_resolve' =>
+      sub {
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
+         if ( !exists $sys_vars->{skip_name_resolve} ) {
+            return "skip-name-resolve not set";
+         }
+         return 0;
+      },
+   'key_buffer too large' =>
+      sub {
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
+         return "Key buffer may be too large"
+            if $sys_vars->{key_buffer_size}
+               > max($counts->{engines}->{MyISAM}->{data_size}, 33554432); # 32M
+         return 0;
+      }
 );
 
 sub new {
-   my ( $class ) = @_;
-   return bless {}, $class;
+   my ( $class, $MySQLInstance, $SchemaDiscover ) = @_;
+   my $self = {
+      sys_vars    => $MySQLInstance->{online_sys_vars},
+      status_vals => $MySQLInstance->{status_vals},
+      schema      => $SchemaDiscover->{dbs},
+      counts      => $SchemaDiscover->{counts},
+   };
+   return bless $self, $class;
 }
 
-# TODO: Daniel can these two subs be combined?  If a param passed, run one
-# check; otherwise run all.
-
-# run_all_checks() returns a hash of checks that failed:
+# run_checks() returns a hash of checks that fail:
 #    key   = name of check
 #    value = description of failure
-sub run_all_checks {
-   my ( $self, $sys_vars, $status_vals ) = @_;
+# $check_name is optional: if given, only that check is ran, otherwise
+# all checks are ran. If the given check name does not exist, the returned
+# hash will have only one key = ERROR => value = error msg
+sub run_checks {
+   my ( $self, $check_name ) = @_;
    my %problems;
-   foreach my $check_name ( keys %checks ) {
-      if ( my $problem = $checks{$check_name}->($sys_vars, $status_vals) ) {
-         $problems{$check_name} = $problem;
+   if ( defined $check_name ) {
+      if ( exists $checks{$check_name} ) {
+         if ( my $problem = $checks{$check_name}->($self->{sys_vars},
+                                                   $self->{status_vals},
+                                                   $self->{schema},
+                                                   $self->{counts}) ) {
+            $problems{$check_name} = $problem;
+         }
       }
-   }
-   return %problems;
-}
-
-# run_check() returns a hash exactly like run_all_checks() unless the given
-# check name does not exist, in which case a hash with a single key = ERROR,
-# value = error msg is returned.
-sub run_check {
-   my ( $self, $sys_vars, $status_vals, $check_name ) = @_;
-   my %problems;
-   if ( exists $checks{$check_name} ) {
-      if ( my $problem = $checks{$check_name}->($sys_vars, $status_vals) ) {
-         $problems{$check_name} = $problem;
+      else {
+         $problems{ERROR} = "No check named $check_name exists.";
       }
    }
    else {
-      $problems{ERROR} = "No check named $check_name exists.";
+      foreach my $check_name ( keys %checks ) {
+         if ( my $problem = $checks{$check_name}->($self->{sys_vars},
+                                                   $self->{status_vals},
+                                                   $self->{schema},
+                                                   $self->{counts}) ) {
+            $problems{$check_name} = $problem;
+         }
+      }
    }
    return %problems;
 }
 
 1;
+
+# ###########################################################################
+# End MySQLAdvisor package
+# ###########################################################################
