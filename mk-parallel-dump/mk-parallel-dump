@@ -2450,8 +2450,8 @@ foreach my $set ( @sets_to_do ) {
          $ENV{MKDEBUG} && _d($sql);
          $slave_pos = $dbh->selectrow_hashref($sql);
          print {$file} "CHANGE MASTER TO MASTER_HOST='$slave_pos->{master_host}', "
-                     . "MASTER_LOG_FILE='$slave_pos->{master_log_file}', "
-                     . "MASTER_LOG_POS=$slave_pos->{read_master_log_pos}\n"
+                     . "MASTER_LOG_FILE='$slave_pos->{relay_master_log_file}', "
+                     . "MASTER_LOG_POS=$slave_pos->{exec_master_log_pos}\n"
                      or die $OS_ERROR;
       };
       my %hash;
@@ -2461,12 +2461,6 @@ foreach my $set ( @sets_to_do ) {
             print $file "-- $key $thing->{$key}\n"
                or die $OS_ERROR;
          }
-      }
-
-      # Put the details of the chunks into the file.
-      foreach my $chunk ( @work_to_do ) {
-         print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n"
-            or die $OS_ERROR;
       }
 
       close $file or die $OS_ERROR;
@@ -2512,6 +2506,14 @@ foreach my $set ( @sets_to_do ) {
       # Start a new child process.
       while ( @work_to_do && $opts{m} > keys %kids ) {
          my $todo = shift @work_to_do;
+
+         # See if this $todo has already been done.
+         my $filename  = filename(interp($todo, '%S', '%D', '%N.%6C'));
+         if ( -f "$filename.sql" || -f "$filename.sql.gz" ) {
+            info(1, "$filename is already done, skipping");
+            next;
+         }
+
          $todo->{time} = time;
          my $pid = fork();
          die "Can't fork: $OS_ERROR" unless defined $pid;
@@ -2522,7 +2524,7 @@ foreach my $set ( @sets_to_do ) {
             $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
             $ENV{MKDEBUG} && _d("$PID got ", Dumper($todo));
             my $exit_status = 0;
-            $exit_status = do_table($todo) || $exit_status;
+            $exit_status = do_table($todo, $filename) || $exit_status;
             exit($exit_status);
          }
       }
@@ -2566,9 +2568,9 @@ foreach my $set ( @sets_to_do ) {
    info(1, sprintf( (@sets_to_do ? '%12s:          ' : '%s:')
                    . '%5d tables, %5d chunks, %5d successes, %2d failures, '
                    . '%6.2f wall-clock time, %6.2f dump time',
-                   $set, $stats->{tables}, $stats->{chunks}, $stats->{success} || 0,
-                   $stats->{failure} || 0, $stats->{wallclock},
-                   $stats->{time}));
+                   $set, map { $stats->{$_} || 0 }
+                      qw(tables chunks success failure wallclock time) 
+                   ));
 }
 
 # ############################################################################
@@ -2656,6 +2658,31 @@ sub get_columns {
 sub get_chunks {
    my ( $spec, $set, $db, $tbl ) = @_;
    my $table = $tp->parse($du->get_create_table($dbh, $q, $db, $tbl));
+
+   # Decide where to store the file of chunks, which is important for resuming a
+   # dump -- the precalculated chunks must be used, not re-calculated, or
+   # resuming might go awry.
+   my $hashref    = { S => $set, D => $db, N => $tbl };
+   my $chunkfile = filename(interp($hashref, '%S', '%D', '%N.chunks'));
+   makedir($chunkfile);
+
+   if ( -f $chunkfile ) {
+      $ENV{MKDEBUG} && _d("Chunk file $chunkfile exists, using it");
+      open my $fh, "<", $chunkfile or die "Can't open $chunkfile: $OS_ERROR";
+      my @todo;
+      while ( my $where = <$fh> ) {
+         chomp $where;
+         push @todo, {
+            D => $db,
+            N => $tbl,
+            S => $set,
+            W => $where,
+            E => $table->{engine},
+         };
+      };
+      close $fh or die "Can't close $chunkfile: $OS_ERROR";
+      return @todo;
+   }
    my $cant_chunk = {
       D => $db,
       N => $tbl,
@@ -2681,7 +2708,9 @@ sub get_chunks {
       size     => $rows_per_chunk,
       %params,
    );
-   return map {
+   open my $fh, ">", $chunkfile or die "Can't open $chunkfile: $OS_ERROR";
+   my @todo = map {
+      print $fh $_, "\n" or die "Can't print to $chunkfile: $OS_ERROR";
       {
          D => $db,
          N => $tbl,
@@ -2690,6 +2719,8 @@ sub get_chunks {
          E => $table->{engine},
       }
    } @chunks;
+   close $fh or die "Can't close $chunkfile: $OS_ERROR";
+   return @todo;
 }
 
 # Prints a message.
@@ -2715,12 +2746,11 @@ sub interp {
 
 # Actually dumps a table.
 sub do_table {
-   my ( $todo ) = @_;
+   my ( $todo, $filename ) = @_;
 
    my $exit_status = 0;
    my $D         = $q->quote($todo->{D});
    my $N         = $q->quote($todo->{N});
-   my $filename  = filename(interp($todo, '%S', '%D', '%N.%6C'));
 
    # Since we're forked we need to create our own DBH.  Not doing so leads to
    # re-using the parent's (global) DBH, which leads to really hard-to-find bugs
