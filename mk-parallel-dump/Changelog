@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * --age without --sets did the opposite of what it should (isssue 7)
    * --stopslave died after complaining the slave was not running.
 
 2008-06-02: version 1.0.8
