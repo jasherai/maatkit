@@ -25,16 +25,29 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
+use Carp;
 
 sub new {
-   my ( $class, $dbh, $MySQLDump, $Quoter, $opts ) = @_;
+   my ( $class, $params ) = @_;
+   if ( scalar keys %{ $params } < 4 ) {
+      croak   "Error: Not enough parameters for SchemaDiscover::new()\n"
+            . "Required keys in named parameters hash: "
+            . "dbh, MySQLDump, Quoter, TableParser\n"
+            . "Optional: opts\n";
+   }
    my $self = {
+      %{ $params },
       dbs    => {},
       counts => {},
    };
    # brevity:
-   my $dbs    = $self->{dbs};
-   my $counts = $self->{counts};
+   my $dbs         = $self->{dbs};
+   my $counts      = $self->{counts};
+   my $dbh         = $self->{dbh};
+   my $MySQLDump   = $self->{MySQLDump};
+   my $Quoter      = $self->{Quoter};
+   my $TableParser = $self->{TableParser};
+   my $opts        = $self->{opts} || {};
 
    %{$dbs} = map { $_ => {} } $MySQLDump->get_databases($$dbh, $Quoter);
 
@@ -100,36 +113,32 @@ sub new {
 
    return bless $self, $class;
 }
-# TODO
-#  if ( $vp->version_ge($$dbh, '5.0.0') ) {
-#  $mysql_instance->{trigs_routines_events} = '';
-#  my @tre = 
-#     @{ $$dbh->selectall_arrayref(
-#        "SELECT EVENT_OBJECT_SCHEMA AS db,
-#        CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
-#        COUNT(*) AS num
-#        FROM INFORMATION_SCHEMA.TRIGGERS GROUP BY db, what
-#        UNION ALL
-#        SELECT ROUTINE_SCHEMA AS db,
-#        LEFT(LOWER(ROUTINE_TYPE), 4) AS what,
-#        COUNT(*) AS num
-#        FROM INFORMATION_SCHEMA.ROUTINES GROUP BY db, what
-#        /*!50106
-#        UNION ALL
-#        SELECT EVENT_SCHEMA AS db, 'evt' AS what, COUNT(*) AS num
-#        FROM INFORMATION_SCHEMA.EVENTS GROUP BY db, what
-#        */")
-#        };
-#        foreach my $x ( @tre ) {
-#        $mysql_instance->{trigs_routines_events}
-#        .= "\n\t\t$x->[0] $x->[1] $x->[2]";
-#        }
-#        }
-#        else {
-#        $mysql_instance->{trigs_routines_events}
-#        = 'Not supported (MySQL version < 5.0.0)';
-#        }
-#
+
+sub discover_triggers_routines_events {
+   my ( $self ) = @_;
+   my @tre =
+      @{ ${ $self->{dbh} }->selectall_arrayref(
+            "SELECT EVENT_OBJECT_SCHEMA AS db,
+            CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
+            COUNT(*) AS num
+            FROM INFORMATION_SCHEMA.TRIGGERS GROUP BY db, what
+            UNION ALL
+            SELECT ROUTINE_SCHEMA AS db,
+            LEFT(LOWER(ROUTINE_TYPE), 4) AS what,
+            COUNT(*) AS num
+            FROM INFORMATION_SCHEMA.ROUTINES GROUP BY db, what
+            /*!50106
+               UNION ALL
+               SELECT EVENT_SCHEMA AS db, 'evt' AS what, COUNT(*) AS num
+               FROM INFORMATION_SCHEMA.EVENTS GROUP BY db, what
+            */")
+      };
+   $self->{trigs_routines_events} = ();
+   foreach my $x ( @tre ) {
+      push @{ $self->{trigs_routines_events} }, "$x->[0] $x->[1] $x->[2]";
+   }
+   return;
+}
 
 1;
 

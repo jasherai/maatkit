@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -30,6 +30,7 @@ require '../MySQLInstance.pm';
 require '../DSNParser.pm';
 require '../MySQLDump.pm';
 require '../Quoter.pm';
+require '../TableParser.pm';
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -60,12 +61,27 @@ $myi->load_sys_vars(\$dbh);
 # #############################################################################
 my $d = new MySQLDump();
 my $q = new Quoter();
-my $sd = new SchemaDiscover(\$dbh, $d, $q);
+my $t = new TableParser();
+my $params = { dbh         => \$dbh,
+               MySQLDump   => $d,
+               Quoter      => $q,
+               TableParser => $t,
+             };
+
+my $sd = new SchemaDiscover($params);
 isa_ok($sd, 'SchemaDiscover');
 
 ok(exists $sd->{dbs}->{test},     'test db exists'      );
 ok(exists $sd->{dbs}->{mysql},    'mysql db exists'     );
 ok(exists $sd->{counts}->{TOTAL}, 'TOTAL counts exists' );
+
+$sd->discover_triggers_routines_events();
+my @expect_tre_01 = ('sakila func 3', 'sakila proc 3');
+is_deeply(
+   \@{ $sd->{trigs_routines_events} },
+   \@expect_tre_01,
+   'discover_triggers_routines_events'
+);
 
 # print Dumper($sd);
 
