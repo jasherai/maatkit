@@ -1971,7 +1971,7 @@ eval {
 $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
 $opts{m} = max(2, $opts{m} || 0);
 
-# TODO: write out progress, checkpoint, and allow resuming.
+# TODO: permit to disable resuming behavior.
 # TODO: permit dumping a single table in many threads.
 
 my @opt_spec = (
@@ -2025,6 +2025,8 @@ my @opt_spec = (
       d => 'Password to use when connecting' },
    {  s => 'port|P=i',
       d => 'Port number to use for connection' },
+   {  s => 'progress',
+      d => 'Display progress messages' },
    {  s => 'quiet|q',
       d => 'Quiet output; disables --verbose' },
    {  s => 'sets=a',
@@ -2463,6 +2465,12 @@ foreach my $set ( @sets_to_do ) {
          }
       }
 
+      # Put the details of the chunks into the file.
+      foreach my $chunk ( @work_to_do ) {
+         print $file "-- CHUNK $chunk->{D} $chunk->{N} $chunk->{C} $chunk->{W}\n"
+            or die $OS_ERROR;
+      }
+
       close $file or die $OS_ERROR;
    }
 
@@ -2484,6 +2492,8 @@ foreach my $set ( @sets_to_do ) {
    # threads!
    # #########################################################################
 
+   my $chunks = scalar @work_to_do; # For progress, use $start variable
+   my $done   = 0;                  # Also for progress measurements
    my %kids;
    while ( @work_to_do || %kids ) {
 
@@ -2510,7 +2520,8 @@ foreach my $set ( @sets_to_do ) {
          # See if this $todo has already been done.
          my $filename  = filename(interp($todo, '%S', '%D', '%N.%6C'));
          if ( -f "$filename.sql" || -f "$filename.sql.gz" ) {
-            info(1, "$filename is already done, skipping");
+            info(2, "$filename is already done, skipping");
+            $done++;
             next;
          }
 
@@ -2546,6 +2557,16 @@ foreach my $set ( @sets_to_do ) {
          delete $kids{$kid};
          delete $exited_children{$kid};
          $reaped = 1;
+         $done++;
+
+         if ( $opts{progress} ) {
+            my $pct = $done / $chunks;
+            my $now = time();
+            my $remaining = ($now - $start) / $pct;
+            info(1, sprintf("done: %4d /%4d %6.2f%% %s remain (%s)",
+               $done, $chunks, $pct * 100, secs_to_time($remaining),
+               ts($now + $remaining)));
+         }
       }
 
       if ( !$reaped ) {
@@ -2633,6 +2654,46 @@ exit( sum(0, map { $_->{failure} || 0 } values %stats_for_set) ? 1 : 0 );
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+# TODO: modularize
+sub secs_to_time {
+   my ( $secs, $fmt ) = @_;
+   $secs ||= 0;
+   return '00:00' unless $secs;
+
+   # Decide what format to use, if not given
+   $fmt ||= $secs >= 86_400 ? 'd'
+          : $secs >= 3_600  ? 'h'
+          :                   'm';
+
+   return
+      $fmt eq 'd' ? sprintf(
+         "%d+%02d:%02d:%02d",
+         int($secs / 86_400),
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : $fmt eq 'h' ? sprintf(
+         "%02d:%02d:%02d",
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : sprintf(
+         "%02d:%02d",
+         int(($secs % 3_600) / 60),
+         $secs % 60);
+}
+
+# TODO: modularize
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
+}
 
 # TODO: modularize.
 sub mysql_error_msg {
@@ -3355,6 +3416,10 @@ Password to use when connecting.
 =item --port
 
 Port number to use for connection.
+
+=item --progress
+
+Print progress messages.
 
 =item --quiet
 

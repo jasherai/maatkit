@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * Added --progress option.
    * CHANGE MASTER TO in 00_master_data.sql used the I/O thread position.
    * Added features to permit resuming of dumps.
    * --age without --sets did the opposite of what it should (isssue 7)
