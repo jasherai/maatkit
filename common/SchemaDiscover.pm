@@ -100,6 +100,36 @@ sub new {
 
    return bless $self, $class;
 }
+# TODO
+#  if ( $vp->version_ge($$dbh, '5.0.0') ) {
+#  $mysql_instance->{trigs_routines_events} = '';
+#  my @tre = 
+#     @{ $$dbh->selectall_arrayref(
+#        "SELECT EVENT_OBJECT_SCHEMA AS db,
+#        CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
+#        COUNT(*) AS num
+#        FROM INFORMATION_SCHEMA.TRIGGERS GROUP BY db, what
+#        UNION ALL
+#        SELECT ROUTINE_SCHEMA AS db,
+#        LEFT(LOWER(ROUTINE_TYPE), 4) AS what,
+#        COUNT(*) AS num
+#        FROM INFORMATION_SCHEMA.ROUTINES GROUP BY db, what
+#        /*!50106
+#        UNION ALL
+#        SELECT EVENT_SCHEMA AS db, 'evt' AS what, COUNT(*) AS num
+#        FROM INFORMATION_SCHEMA.EVENTS GROUP BY db, what
+#        */")
+#        };
+#        foreach my $x ( @tre ) {
+#        $mysql_instance->{trigs_routines_events}
+#        .= "\n\t\t$x->[0] $x->[1] $x->[2]";
+#        }
+#        }
+#        else {
+#        $mysql_instance->{trigs_routines_events}
+#        = 'Not supported (MySQL version < 5.0.0)';
+#        }
+#
 
 1;
 

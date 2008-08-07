@@ -21,6 +21,11 @@
 # ServerSpecs - Gather info on server hardware and configuration
 package ServerSpecs;
 
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+
 sub server_specs {
    my %server;
 
@@ -110,14 +115,14 @@ sub server_specs {
       $server{storage}->{vgs} = 'No LVM2';
    }
 
-   get_raid_info(\$server);
+   get_raid_info(\%server);
 
    chomp($server{os}->{swappiness} = `cat /proc/sys/vm/swappiness`);
    push @{ $server{problems} },
       "*** Server swappiness != 60; is currently: $server{os}->{swappiness}"
       if $server{os}->{swappiness} != 60;
 
-   check_proc_sys_net_ipv4_values(\$server);
+   check_proc_sys_net_ipv4_values(\%server);
 
    return \%server;
 }
@@ -247,6 +252,26 @@ sub check_proc_sys_net_ipv4_values
    }
 
    return;
+}
+
+sub shorten
+{
+   my ( $number, $kb, $d ) = @_;
+   my $n = 0;
+   my $short;
+
+   $kb ||= 1;
+   $d  ||= 2;
+
+   if ( $kb ) {
+      while ( $number > 1_023 ) { $number /= 1_024; $n++; }
+   }
+   else {
+      while ($number > 999) { $number /= 1000; $n++; }
+   }
+   $short = sprintf "%.${d}f%s", $number, ('','k','M','G','T')[$n];
+   return $1 if $short =~ /^(.+)\.(00)$/o; # 12.00 -> 12 but not 12.00k -> 12k
+   return $short;
 }
 
 1;
