@@ -137,6 +137,8 @@ sub get_raid_info
    }
 
    # Try several possible cmds to get raid status
+   # TODO: MegaCli may exist on a 64-bit machine, we should choose the correct
+   # one based on 64-bitness of the OS.
    my $megarc = `which megarc && megarc -AllAdpInfo -aALL`;
    if ( $megarc ) {
       if ( $megarc =~ /No MegaRAID Found/i ) {
