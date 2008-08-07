@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * Added --progress option.
+
 2008-06-02: version 1.0.7
 
    * .trg files were sometimes rejected from loading.
