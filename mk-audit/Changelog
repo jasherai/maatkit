@@ -1,5 +1,20 @@
 Changelog for mk-audit:
 
+2008-08-07:
+
+   * Complete code decomposition and recomposition
+   * Implemented: gets indexes with TableParser
+   * Removed: --show-indexes
+   * Added: values from ps in MySQL instance report
+   * Fixed: Argument "ON" isnt numeric in numeric eq (==) at mk-audit line 2191
+   * Implemented: handles k,K,m,M,t,T as suffixes for sys var vals in config
+	file
+   * Added: more advisor checks (MySQLAdvisor.pm)
+   * Improved: handling of sys vars (see %alias_for and %undef_for in
+	MySQLInstance.pm)
+   * Changed: gets primary config from mysqld --defaults-file=x --help --verbose
+	instead of only my_print_defaults
+
 2008-07-29:
 
    * Changed/Added: server problems like swappiness and non-default ipv4 values
