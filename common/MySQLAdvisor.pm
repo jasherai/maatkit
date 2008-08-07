@@ -160,7 +160,7 @@ sub run_checks {
          }
       }
    }
-   return %problems;
+   return \%problems;
 }
 
 1;
