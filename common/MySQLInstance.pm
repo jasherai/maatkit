@@ -51,6 +51,7 @@ my %undef_for = (
    innodb_log_arch_dir           => '',
    innodb_log_group_home_dir     => '',
    'log'                         => 'OFF',
+   log_bin                       => 'OFF',
    log_error                     => '',
    log_slow_queries              => 'OFF',
    log_slave_updates             => 'ON',
