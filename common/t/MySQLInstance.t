@@ -84,7 +84,7 @@ if ( $EVAL_ERROR ) {
    print "Cannot connect to " . $dp->as_string($dsn)
          . ": $EVAL_ERROR\n\n";
 }
-$myi->load_sys_vars(\$dbh);
+$myi->load_sys_vars($dbh);
 # Sample of stable/predictable vars to make sure load_online_sys_vars()
 # actually did something, otherwise $myi->{online_sys_vars} will be empty
 my %expect_online_sys_vars_01 = (
@@ -137,7 +137,7 @@ is_deeply(
    'out of sync sys vars: long_query_time online=3 conf=1'
 );
 
-$myi->load_status_vals(\$dbh);
+$myi->load_status_vals($dbh);
 ok(exists $myi->{status_vals}->{Aborted_clients},
    'status vals: Aborted_clients');
 ok(exists $myi->{status_vals}->{Uptime},
