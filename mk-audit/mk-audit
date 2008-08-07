@@ -24,7 +24,7 @@ use warnings FATAL => 'all';
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d*)/g);
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision: 2080 $ =~ m/(\d*)/g);
 
 # ###########################################################################
 # MySQLDump package 2007
@@ -1660,7 +1660,7 @@ sub shorten
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package $Revision$
+# MySQLInstance package 2088
 # ###########################################################################
 
 # MySQLInstance - Config and status values for an instance of mysqld
@@ -2062,7 +2062,7 @@ sub discover_triggers_routines_events {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLAdvisor package $Revision$
+# MySQLAdvisor package 2087
 # ###########################################################################
 
 # MySQLAdvisor - Check MySQL system variables and status values for problems
@@ -2787,7 +2787,7 @@ Daniel Nichter
 
 =head1 VERSION
 
-This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 2080 $.
 
 =head1 TODO
 
