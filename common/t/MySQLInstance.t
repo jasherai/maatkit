@@ -112,9 +112,9 @@ is_deeply(
 );
 
 my @expect_duplicate_vars_01 = qw(max_connections long_query_time);
-my @duplicate_vars = $myi->duplicate_sys_vars();
+my $duplicate_vars = $myi->duplicate_sys_vars();
 is_deeply(
-   \@duplicate_vars,
+   $duplicate_vars,
    \@expect_duplicate_vars_01,
    'Duplicate vars'
 );
@@ -122,17 +122,17 @@ is_deeply(
 my %expect_overriden_vars_01 = (
    long_query_time => [ '3', '1' ],
 );
-my %overriden_vars = $myi->overriden_sys_vars();
+my $overriden_vars = $myi->overriden_sys_vars();
 is_deeply(
-   \%overriden_vars,
+   $overriden_vars,
    \%expect_overriden_vars_01,
    'Overriden sys vars'
 );
 
-my %oos = $myi->out_of_sync_sys_vars();
+my $oos = $myi->out_of_sync_sys_vars();
 my @expect_oos_long_query_time = (3, 1);
 is_deeply(
-   \@{$oos{long_query_time}},
+   \@{$oos->{long_query_time}},
    \@expect_oos_long_query_time,
    'out of sync sys vars: long_query_time online=3 conf=1'
 );

@@ -213,7 +213,7 @@ sub get_DSN {
    };
 }
 
-# duplicate_sys_vars() returns a simple list of sys var names that
+# duplicate_sys_vars() returns an array ref of sys var names that
 # appear more than once in the defaults file
 sub duplicate_sys_vars {
    my ( $self ) = @_;
@@ -223,10 +223,10 @@ sub duplicate_sys_vars {
       my ( $var, $val ) = ( $var_val->[0], $var_val->[1] );
       push @duplicate_vars, $var if $have_seen{$var}++ == 1;
    }
-   return @duplicate_vars;
+   return \@duplicate_vars;
 }
 
-# overriden_sys_vars() returns a hash of overriden sys vars:
+# overriden_sys_vars() returns a hash ref of overriden sys vars:
 #    key   = sys var that is overriden
 #    value = array [ val being used, val overriden ]
 sub overriden_sys_vars {
@@ -241,10 +241,10 @@ sub overriden_sys_vars {
          }
       }
    }
-   return %overriden_vars;
+   return \%overriden_vars;
 }
 
-# out_of_sync_sys_vars() returns a hash of sys vars that differ in their
+# out_of_sync_sys_vars() returns a hash ref of sys vars that differ in their
 # online vs. config values:
 #    key   = sys var that is out of sync
 #    value = array [ val online, val config ]
@@ -277,7 +277,7 @@ sub out_of_sync_sys_vars {
             = [ $online_val, $conf_val ];
       }
    }
-   return %out_of_sync_vars;
+   return \%out_of_sync_vars;
 }
 
 sub load_status_vals {
