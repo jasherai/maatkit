@@ -31,6 +31,7 @@ require '../SchemaDiscover.pm';
 require '../DSNParser.pm';
 require '../MySQLDump.pm';
 require '../Quoter.pm';
+require '../TableParser.pm';
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -54,15 +55,21 @@ if ( $EVAL_ERROR ) {
    print "Cannot connect to " . $dp->as_string($dsn)
          . ": $EVAL_ERROR\n\n";
 }
-$myi->load_sys_vars(\$dbh);
-$myi->load_status_vals(\$dbh);
+$myi->load_sys_vars($dbh);
+$myi->load_status_vals($dbh);
 
 # #############################################################################
 # Next, we need a SchemaDiscover
 # #############################################################################
 my $d = new MySQLDump();
 my $q = new Quoter();
-my $sd = new SchemaDiscover(\$dbh, $d, $q);
+my $t = new TableParser();
+my $params = { dbh         => $dbh,
+               MySQLDump   => $d,
+               Quoter      => $q,
+               TableParser => $t,
+             };
+my $sd = new SchemaDiscover($params);
 
 # #############################################################################
 # Now, begin checking MySQLAdvisor 
@@ -70,22 +77,22 @@ my $sd = new SchemaDiscover(\$dbh, $d, $q);
 my $ma = new MySQLAdvisor($myi, $sd);
 isa_ok($ma, 'MySQLAdvisor');
 
-my %problems = $ma->run_checks();
-ok( exists $problems{innodb_flush_method},  'checks (all) innodb_flush_method fails' );
-ok( exists $problems{max_connections},      'checks (all) max_connections fails'     );
-ok( exists $problems{log_slow_queries},     'checks (all) log_slow_queries fails'    );
-ok( exists $problems{thread_cache_size},    'checks (all) thread_cache_size fails'   );
-ok(!exists $problems{'socket'},             'checks (all) socket passes'             );
-ok( exists $problems{query_cache},          'checks (all) query_cache fails'         );
-ok( exists $problems{skip_name_resolve},    'checks (all) skip_name_resolve fails'   );
-ok( exists $problems{'key_buffer too large'}, 'checks (all) key_buff too large fails');
+my $problems = $ma->run_checks();
+ok( exists $problems->{innodb_flush_method},  'checks (all) innodb_flush_method fails' );
+ok( exists $problems->{max_connections},      'checks (all) max_connections fails'     );
+ok( exists $problems->{log_slow_queries},     'checks (all) log_slow_queries fails'    );
+ok( exists $problems->{thread_cache_size},    'checks (all) thread_cache_size fails'   );
+ok(!exists $problems->{'socket'},             'checks (all) socket passes'             );
+ok( exists $problems->{query_cache},          'checks (all) query_cache fails'         );
+ok( exists $problems->{skip_name_resolve},    'checks (all) skip_name_resolve fails'   );
+ok( exists $problems->{'key_buffer too large'}, 'checks (all) key_buff too large fails');
 
-%problems = $ma->run_checks('foo');
-ok(exists $problems{ERROR}, 'check foo does not exist');
+$problems = $ma->run_checks('foo');
+ok(exists $problems->{ERROR}, 'check foo does not exist');
 
-%problems = $ma->run_checks('Innodb_buffer_pool_pages_free');
-ok(!exists $problems{ERROR}, 'check Innodb_buffer_pool_pages_free does exist');
-ok(!exists $problems{Innodb_buffer_pool_pages_free}, 'check Innodb_buffer_pool_pages_free fails');
+$problems = $ma->run_checks('Innodb_buffer_pool_pages_free');
+ok(!exists $problems->{ERROR}, 'check Innodb_buffer_pool_pages_free does exist');
+ok(!exists $problems->{Innodb_buffer_pool_pages_free}, 'check Innodb_buffer_pool_pages_free fails');
 
 $dbh->disconnect() if defined $dbh;
 
