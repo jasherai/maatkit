@@ -104,7 +104,17 @@ my %checks = (
             if $sys_vars->{key_buffer_size}
                > max($counts->{engines}->{MyISAM}->{data_size}, 33554432); # 32M
          return 0;
-      }
+      },
+   'InnoDB buffer too large' =>
+      sub {
+         my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
+         if (    exists $sys_vars->{innodb_buffer_pool_size} 
+              && exists $counts->{engines}->{InnoDB} ) {
+            return "InnoDB: buffer pool too small"
+               if $counts->{engines}->{InnoDB}->{data_size}
+                  >= $sys_vars->{innodb_buffer_pool_size};
+         }
+      },
 );
 
 sub new {
