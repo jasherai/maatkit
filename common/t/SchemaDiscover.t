@@ -54,7 +54,7 @@ if ( $EVAL_ERROR ) {
    print "Cannot connect to " . $dp->as_string($dsn)
          . ": $EVAL_ERROR\n\n";
 }
-$myi->load_sys_vars(\$dbh);
+$myi->load_sys_vars($dbh);
 
 # #############################################################################
 # Now, begin checking SchemaDiscover
@@ -62,7 +62,7 @@ $myi->load_sys_vars(\$dbh);
 my $d = new MySQLDump();
 my $q = new Quoter();
 my $t = new TableParser();
-my $params = { dbh         => \$dbh,
+my $params = { dbh         => $dbh,
                MySQLDump   => $d,
                Quoter      => $q,
                TableParser => $t,

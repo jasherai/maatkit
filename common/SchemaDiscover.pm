@@ -49,7 +49,7 @@ sub new {
    my $TableParser = $self->{TableParser};
    my $opts        = $self->{opts} || {};
 
-   %{$dbs} = map { $_ => {} } $MySQLDump->get_databases($$dbh, $Quoter);
+   %{$dbs} = map { $_ => {} } $MySQLDump->get_databases($dbh, $Quoter);
 
    delete $dbs->{information_schema}
       if exists $dbs->{information_schema};
@@ -58,30 +58,17 @@ sub new {
 
    foreach my $db ( keys %{$dbs} ) {
       %{$dbs->{$db}} = map { $_->{name} => {} }
-                           $MySQLDump->get_table_list($$dbh, $Quoter, $db);
-      foreach my $tbl_stat ($MySQLDump->get_table_status($$dbh, $Quoter, $db)) {
+                           $MySQLDump->get_table_list($dbh, $Quoter, $db);
+      foreach my $tbl_stat ($MySQLDump->get_table_status($dbh, $Quoter, $db)) {
          %{$dbs->{$db}->{"$tbl_stat->{name}"}} = %$tbl_stat;
       }
       foreach my $table ( keys %{$dbs->{$db}} ) {
-         my $n_indexes;
-         # TODO: use TableParser here
-         # TODO: also aggregate indexes by type: BTREE, HASH, FULLTEXT etc so we
-         # can get a count + size along that dimension too
-         if( exists $opts->{'show-indexes'} ) {
-            # For each db.table get info about its indexes
-            my $all_indexes
-               = $$dbh->selectall_arrayref("SHOW INDEXES FROM $db.$table");
-            my %unique_indexes;
-            # Because "SHOW INDEXES FROM db.tbl GROUP BY Key_name"
-            # is not possible:
-            foreach my $index ( @$all_indexes ) {
-               $unique_indexes{$index->[2]} = 0; # $index->[2] is Key_name
-            }
-            $n_indexes = scalar keys %unique_indexes;
-         }
-         else {
-            $n_indexes = 0;
-         }
+         my $ddl = $MySQLDump->get_create_table($dbh, $Quoter, $db, $table);
+         my $table_info = TableParser->parse($ddl);
+         my $n_indexes = scalar keys %{ $table_info->{keys} };
+         # TODO: pass mysql version to TableParser->parse()
+         # TODO: also aggregate indexes by type: BTREE, HASH, FULLTEXT etc
+         #       so we can get a count + size along that dimension too
 
          my $data_size  = $dbs->{$db}->{$table}->{data_length}  ||= 0;
          my $index_size = $dbs->{$db}->{$table}->{index_length} ||= 0;
@@ -117,7 +104,7 @@ sub new {
 sub discover_triggers_routines_events {
    my ( $self ) = @_;
    my @tre =
-      @{ ${ $self->{dbh} }->selectall_arrayref(
+      @{ $self->{dbh}->selectall_arrayref(
             "SELECT EVENT_OBJECT_SCHEMA AS db,
             CONCAT(LEFT(LOWER(EVENT_MANIPULATION), 3), '_trg') AS what,
             COUNT(*) AS num

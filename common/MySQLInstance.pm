@@ -193,8 +193,8 @@ sub _load_online_sys_vars {
    my ( $self, $dbh ) = @_;
    %{ $self->{online_sys_vars} }
       = map { $_->{Variable_name} => $_->{Value} }
-            @{ $$dbh->selectall_arrayref('SHOW /*!40101 GLOBAL*/ VARIABLES',
-                                         { Slice => {} })
+            @{ $dbh->selectall_arrayref('SHOW /*!40101 GLOBAL*/ VARIABLES',
+                                        { Slice => {} })
             };
    return;
 }
@@ -284,8 +284,8 @@ sub load_status_vals {
    my ( $self, $dbh ) = @_;
    %{ $self->{status_vals} }
       = map { $_->{Variable_name} => $_->{Value} }
-            @{ $$dbh->selectall_arrayref('SHOW /*!50002 GLOBAL */ STATUS',
-                                         { Slice => {} })
+            @{ $dbh->selectall_arrayref('SHOW /*!50002 GLOBAL */ STATUS',
+                                        { Slice => {} })
             };
    return;
 }
