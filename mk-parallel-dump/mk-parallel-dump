@@ -2727,7 +2727,7 @@ sub get_chunks {
    my $chunkfile = filename(interp($hashref, '%S', '%D', '%N.chunks'));
    makedir($chunkfile);
 
-   if ( -f $chunkfile ) {
+   if ( !$opts{test} && -f $chunkfile ) {
       $ENV{MKDEBUG} && _d("Chunk file $chunkfile exists, using it");
       open my $fh, "<", $chunkfile or die "Can't open $chunkfile: $OS_ERROR";
       my @todo;
@@ -2769,9 +2769,14 @@ sub get_chunks {
       size     => $rows_per_chunk,
       %params,
    );
-   open my $fh, ">", $chunkfile or die "Can't open $chunkfile: $OS_ERROR";
+   my $fh;
+   if ( !$opts{test} ) {
+      open $fh, ">", $chunkfile or die "Can't open $chunkfile: $OS_ERROR";
+   }
    my @todo = map {
-      print $fh $_, "\n" or die "Can't print to $chunkfile: $OS_ERROR";
+      if ( !$opts{test} ) {
+         print $fh $_, "\n" or die "Can't print to $chunkfile: $OS_ERROR";
+      }
       {
          D => $db,
          N => $tbl,
@@ -2780,7 +2785,9 @@ sub get_chunks {
          E => $table->{engine},
       }
    } @chunks;
-   close $fh or die "Can't close $chunkfile: $OS_ERROR";
+   if ( !$opts{test} ) {
+      close $fh or die "Can't close $chunkfile: $OS_ERROR";
+   }
    return @todo;
 }
 
