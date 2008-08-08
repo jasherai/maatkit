@@ -991,8 +991,10 @@ $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow
 my @tables_to_do;
 my @view_files;
 my %files_for_table;
+my %size_for_table;
 my %stats;
 my $known_filetypes = 'sql|txt|csv|trg';
+my $bytes = 0; # For progress measurements
 
 # Find directories and files and save them.
 File::Find::find(
@@ -1021,7 +1023,10 @@ File::Find::find(
                   }
                   $stats{files}++;
                   push @{$files_for_table{$db}->{$tbl}}, $filename;
-                  push @tables_to_do, {
+                  my $size = -s $filename; # For progress measurements
+                  $bytes += $size;
+                  $size_for_table{$db}->{$tbl} += $size;
+                  push @tables_to_do, {   # This pushes a dupe, filtered later.
                      D => $db,
                      N => $tbl,
                   };
@@ -1042,7 +1047,9 @@ File::Find::find(
 
 # ############################################################################
 # Canonicalize table list in the order they were discovered, filtering out
-# tables that should not be done.
+# tables that should not be done. TODO: do tables biggest-first so they
+# parallelize best (optionally, but enabled by default if only 1 @ARGV -- if > 1
+# then user probably wanted to load tables in a specific order).
 # ############################################################################
 {
    my %seen;
@@ -1089,8 +1096,8 @@ $SIG{CHLD} = sub {
 # after that.
 # #########################################################################
 my $start = time();
-my $chunks = scalar @tables_to_do; # For progress, use $start.
-my $done   = 0;                    # Also for progress measurements.
+my $done  = 0; # For progress measurements.
+
 my %kids;
 while ( @tables_to_do || %kids ) {
 
@@ -1146,15 +1153,15 @@ while ( @tables_to_do || %kids ) {
       delete $kids{$kid};
       delete $exited_children{$kid};
       $reaped = 1;
-      $done++;
+      $done += $size_for_table{$todo->{D}}->{$todo->{N}};
 
       if ( $opts{progress} ) {
-         my $pct = $done / $chunks;
+         my $pct = $done / $bytes;
          my $now = time();
          my $remaining = ($now - $start) / $pct;
-         info(1, sprintf("done: %4d /%4d %6.2f%% %s remain (%s)",
-            $done, $chunks, $pct * 100, secs_to_time($remaining),
-            ts($now + $remaining)));
+         info(1, sprintf("done: %s/%s %6.2f%% %s remain (%s)",
+            shorten($done), shorten($bytes), $pct * 100,
+            secs_to_time($remaining), ts($now + $remaining)));
       }
    }
 
@@ -1223,6 +1230,21 @@ sub secs_to_time {
          "%02d:%02d",
          int(($secs % 3_600) / 60),
          $secs % 60);
+}
+
+# TODO: modularize
+sub shorten {
+   my ( $num ) = @_;
+   my $n = 0;
+   while ( $num >= 1_024 ) {
+      $num /= 1_024;
+      ++$n;
+   }
+   return sprintf(
+      $num =~ m/\./ || $n
+         ? "%.2f%s"
+         : '%d',
+      $num, ('','k','M','G', 'T')[$n]);
 }
 
 # TODO: modularize
