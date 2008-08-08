@@ -2689,16 +2689,26 @@ sub engines_summary
 
 =head1 NAME
 
-mk-audit - Inspect, analyze, and advise on a MySQL server.
+mk-audit - Analyze, summarize and advise on MySQL config, schema and operation
 
 =head1 SYNOPSIS
 
+   mk-audit
+   mk-audit --user root --askpass
+
 =head1 DESCRIPTION
+
+   mk-audit analyzes, summarizes and advises on MySQL configuration, schema
+   and operation. For each unique instance of MySQL running on a server,
+   mk-audit provides a comprehensive analysis and summary of its configuration
+   and schema and a list of potential problems concerning everything from
+   system variable values to schema oddities. It also includes a summary of
+   server specs: OS, CPUs, RAM, storage, etc.
 
 =head1 DOWNLOADING
 
-You can download Maatkit from the Sourceforge website at
-L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
 easily with a command like the following:
 
    wget http://www.maatkit.org/get/toolname
@@ -2752,8 +2762,8 @@ installed in any reasonably new version of Perl.
 
 =head1 BUGS
 
-Please use the Sourceforge bug tracker, forums, and mailing lists to request
-support or report bugs: L<http://sourceforge.net/projects/maatkit/>.
+Please use Google Code Issues and Groups to report bugs or request support:
+L<http://code.google.com/p/maatkit/>.
 
 Please include the complete command-line used to reproduce the problem you are
 seeing, the version of all MySQL servers involved, the complete output of the
