@@ -1973,6 +1973,7 @@ $opts{m} = max(2, $opts{m} || 0);
 
 # TODO: permit to disable resuming behavior.
 # TODO: permit dumping a single table in many threads.
+# TODO: measure progress by size, not count of tables.
 
 my @opt_spec = (
    {  s => 'age=m',
@@ -2996,6 +2997,9 @@ mk-parallel-dump - Dump sets of MySQL tables in parallel.
   mk-parallel-dump --tab --basedir /path/to/backups/
   mk-parallel-dump --sets order,profile,session --settable meta.backupset
 
+Do not rely on mk-parallel-dump for your backups unless you have tested it.
+You have been warned.
+
 =head1 DESCRIPTION
 
 mk-parallel-dump connects to a MySQL server, finds database and table names,
@@ -3075,6 +3079,11 @@ after a successful dump, with a shell script like the following:
       echo "No errors during dump, purging old sets."
       rm -rf default.old.*
    fi
+
+mk-parallel-dump checks whether files have been created before dumping.  If the
+file has been created, it skips the table or chunk that would have created the
+file.  This makes dumps resumable.  If you don't want this behavior, and instead
+you want a full dump, then move away the old files.
 
 =head1 BACKUP SETS
 
@@ -3427,6 +3436,11 @@ Port number to use for connection.
 =item --progress
 
 Print progress messages.
+
+Progress is displayed each time a table or chunk of a table finishes dumping,
+assuming all chunks are created equal.  The output is the completed and total
+chunks, the percent completed, estimated time remaining, and estimated
+completion time.
 
 =item --quiet
 

@@ -21,7 +21,7 @@
 
 # TODO: wrap float columns in CONVERT so they'll restore correctly.
 # TODO: wrap character columns in CONVERT so can specify a charset explicitly.
-# TODO: write out progress, checkpoint, and allow resuming.
+# TODO: allow resuming.
 
 use strict;
 use warnings FATAL => 'all';
@@ -1116,8 +1116,6 @@ while ( @tables_to_do || %kids ) {
       die "Too many retries, exiting.\n";
    }
 
-   # TODO: check if the chunk has been loaded, for resuming.
-
    # Start a new child process.
    while ( @tables_to_do && $opts{m} > keys %kids ) {
       my $todo = shift @tables_to_do;
@@ -1477,6 +1475,9 @@ mk-parallel-restore - Load files into MySQL in parallel.
   mk-parallel-restore /path/to/files
   mk-parallel-restore --tab /path/to/files
 
+Do not rely on mk-parallel-restore for your backups unless you have tested it.
+You have been warned.
+
 =head1 DESCRIPTION
 
 mk-parallel-restore is a way to load SQL or delimited-file dumps into MySQL
@@ -1748,6 +1749,11 @@ Port number to use for connection.
 =item --progress
 
 Display progress messages.
+
+Progress is displayed each time a table finishes loading.  Progress is
+calculated by measuring the size of each file to be loaded, and assuming all
+bytes are created equal.  The output is the completed and total size, the
+percent completed, estimated time remaining, and estimated completion time.
 
 =item --quiet
 
