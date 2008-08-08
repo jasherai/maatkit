@@ -1,5 +1,9 @@
 Changelog for mk-audit:
 
+2008-08-08:
+
+   * Update POD
+
 2008-08-07:
 
    * Complete code decomposition and recomposition
