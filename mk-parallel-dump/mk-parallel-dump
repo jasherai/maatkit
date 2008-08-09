@@ -3241,8 +3241,8 @@ dumping and restoring.
 
 =head1 DOWNLOADING
 
-You can download Maatkit from the Sourceforge website at
-L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
 easily with a command like the following:
 
    wget http://www.maatkit.org/get/toolname
@@ -3569,8 +3569,8 @@ table names.
 
 =head1 BUGS
 
-Please use the Sourceforge bug tracker, forums, and mailing lists to request
-support or report bugs: L<http://sourceforge.net/projects/maatkit/>.
+Please use Google Code Issues and Groups to report bugs or request support:
+L<http://code.google.com/p/maatkit/>.
 
 Please include the complete command-line used to reproduce the problem you are
 seeing, the version of all MySQL servers involved, the complete output of the
