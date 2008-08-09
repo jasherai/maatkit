@@ -15,6 +15,18 @@
  * cp fnv_udf.so /lib
  * mysql mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so'"
  *
+ * If you get the error "ERROR 1126 (HY000): Can't open shared library
+ * 'fnv_udf.so' (errno: 22 fnv_udf.so: cannot open shared object file: No such
+ * file or directory)" then you may need to copy the .so file to another
+ * location in your system.  Look at your environment's $LD_LIBRARY_PATH
+ * variable for clues.  If none is set, you may need to set this variable to
+ * something like /lib.  If you get the error "ERROR 1126 (HY000): Can't open
+ * shared library 'libfnv_udf.so' (errno: 22 /lib/libfnv_udf.so: undefined
+ * symbol: __gxx_personality_v0)" then you may need to use g++ instead of gcc.
+ *
+ * On Mac OSX, use -dynamiclib instead of -shared and add -lstdc++ to the
+ * compile flags.
+ *
  * Once installed successfully, you should be able to call the function.  Here's
  * a faster alternative to MD5 hashing, with the added ability to hash multiple
  * arguments in a single call:
