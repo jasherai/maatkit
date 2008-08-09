@@ -760,7 +760,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1957
+# DSNParser package 2005
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1002,8 +1002,8 @@ sub disconnect {
 sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
-   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+   printf("# Active %sh: %s %s %s\n", ($thing->{Type} || 'undef'), "\t" x $level,
+      $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
@@ -1355,7 +1355,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1755
+# MySQLDump package 2031
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1389,8 +1389,9 @@ EOF
 EOF
 
 sub new {
-   my ( $class ) = @_;
-   my $self = bless {}, $class;
+   my ( $class, %args ) = @_;
+   $args{cache} = 1 unless defined $args{cache};
+   my $self = bless \%args, $class;
    return $self;
 }
 
@@ -1471,7 +1472,7 @@ sub _use_db {
 
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{tables}->{$db}->{$tbl} ) {
+   if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
@@ -1504,7 +1505,7 @@ sub get_create_table {
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
-   if ( !$self->{columns}->{$db}->{$tbl} ) {
+   if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       $ENV{MKDEBUG} && _d($sql);
@@ -1534,7 +1535,7 @@ sub get_tmp_table {
 
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{triggers}->{$db} ) {
+   if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
@@ -1559,12 +1560,15 @@ sub get_triggers {
       $ENV{MKDEBUG} && _d($sql);
       $dbh->do($sql);
    }
-   return $self->{triggers}->{$db}->{$tbl};
+   if ( $tbl ) {
+      return $self->{triggers}->{$db}->{$tbl};
+   }
+   return values %{$self->{triggers}->{$db}};
 }
 
 sub get_databases {
    my ( $self, $dbh, $quoter, $like ) = @_;
-   if ( !$self->{databases} || $like ) {
+   if ( !$self->{cache} || !$self->{databases} || $like ) {
       my $sql = 'SHOW DATABASES';
       my @params;
       if ( $like ) {
@@ -1583,7 +1587,7 @@ sub get_databases {
 
 sub get_table_status {
    my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{table_status}->{$db} || $like ) {
+   if ( !$self->{cache} || !$self->{table_status}->{$db} || $like ) {
       my $sql = "SHOW TABLE STATUS FROM " . $quoter->quote($db);
       my @params;
       if ( $like ) {
@@ -1609,7 +1613,7 @@ sub get_table_status {
 
 sub get_table_list {
    my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{table_list}->{$db} || $like ) {
+   if ( !$self->{cache} || !$self->{table_list}->{$db} || $like ) {
       my $sql = "SHOW /*!50002 FULL*/ TABLES FROM " . $quoter->quote($db);
       my @params;
       if ( $like ) {
@@ -2709,8 +2713,8 @@ loop and skip optimize/analyze.
 
 =head1 DOWNLOADING
 
-You can download Maatkit from the Sourceforge website at
-L<http://sourceforge.net/projects/maatkit>, or you can get any of the tools
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
 easily with a command like the following:
 
    wget http://www.maatkit.org/get/toolname
@@ -3460,8 +3464,8 @@ most time.
 
 =head1 BUGS
 
-Please use the Sourceforge bug tracker, forums, and mailing lists to request
-support or report bugs: L<http://sourceforge.net/projects/maatkit/>.
+Please use Google Code Issues and Groups to report bugs or request support:
+L<http://code.google.com/p/maatkit/>.
 
 Please include the complete command-line used to reproduce the problem you are
 seeing, the version of all MySQL servers involved, the complete output of the
