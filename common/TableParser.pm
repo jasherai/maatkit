@@ -108,18 +108,27 @@ sub parse {
 
       my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
-      my @cols   = grep { m/[^,]/ } split('`', $cols);
-      $name      =~ s/`//g;
+      my @cols;
+      my @col_prefixes;
+      foreach my $col_def ( split(',', $cols) ) {
+         # Parse columns of index including potential column prefixes
+         # E.g.: `a`,`b`(20)
+         my ($name, $prefix) = $col_def =~ m/`(\w+)`(?:\((\d+)\))?/;
+         push @cols, $name;
+         push @col_prefixes, $prefix;
+      }
+      $name =~ s/`//g;
       $ENV{MKDEBUG} && _d("Index $name columns: " . join(', ', @cols));
 
       $keys{$name} = {
-         colnames    => $cols,
-         cols        => \@cols,
-         unique      => $unique,
-         is_col      => { map { $_ => 1 } @cols },
-         is_nullable => scalar(grep { $is_nullable{$_} } @cols),
-         type        => $type,
-         name        => $name,
+         colnames     => $cols,
+         cols         => \@cols,
+         col_prefixes => \@col_prefixes,
+         unique       => $unique,
+         is_col       => { map { $_ => 1 } @cols },
+         is_nullable  => scalar(grep { $is_nullable{$_} } @cols),
+         type         => $type,
+         name         => $name,
       };
    }
 

@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 12;
+use Test::More tests => 13;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -71,6 +71,56 @@ is_deeply(
       type_for     => { a => 'int' },
    },
    'Basic table is OK',
+);
+
+$t = $p->parse( load_file('samples/TableParser-prefix_idx.sql') );
+is_deeply(
+   $t,
+   {
+      cols           => [ 'a', 'b' ],
+      col_posn       => { a => 0, b => 1 },
+      is_col         => { a => 1, b => 1 },
+      is_autoinc     => { 'a' => 0, 'b' => 0 },
+      null_cols      => [ 'a', 'b' ],
+      is_nullable    => { 'a' => 1, 'b' => 1 },
+      keys           => {
+         prefix_idx => {
+            unique => 0,
+            is_col => {
+               a => 1,
+               b => 1,
+            },
+            name => 'prefix_idx',
+            type => 'BTREE',
+            is_nullable => 2,
+            colnames => '`a`(10),`b`(20)',
+            cols => [ 'a', 'b' ],
+            col_prefixes => [ 10, 20 ],
+         },
+         mix_idx => {
+            unique => 0,
+            is_col => {
+               a => 1,
+               b => 1,
+            },
+            name => 'mix_idx',
+            type => 'BTREE',
+            is_nullable => 2,
+            colnames => '`a`,`b`(20)',
+            cols => [ 'a', 'b' ],
+            col_prefixes => [ undef, 20 ],
+         },
+      },
+      defs           => {
+         a => '  `a` varchar(64) default NULL',
+         b => '  `b` varchar(64) default NULL'
+      },
+      numeric_cols   => [],
+      is_numeric     => {},
+      engine         => 'MyISAM',
+      type_for       => { a => 'varchar', b => 'varchar' },
+   },
+   'Indexes with prefixes parse OK (fixes issue 1)'
 );
 
 $t = $p->parse( load_file('samples/sakila.film.sql') );
@@ -138,40 +188,44 @@ is_deeply(
       },
       keys => {
          PRIMARY => {
-            colnames    => '`film_id`',
-            cols        => [qw(film_id)],
-            is_col      => { film_id => 1 },
-            is_nullable => 0,
-            unique      => 1,
-            type        => 'BTREE',
-            name        => 'PRIMARY',
+            colnames     => '`film_id`',
+            cols         => [qw(film_id)],
+            col_prefixes => [undef],
+            is_col       => { film_id => 1 },
+            is_nullable  => 0,
+            unique       => 1,
+            type         => 'BTREE',
+            name         => 'PRIMARY',
          },
          idx_title => {
-            colnames    => '`title`',
-            cols        => [qw(title)],
-            is_col      => { title => 1, },
-            is_nullable => 0,
-            unique      => 0,
-            type        => 'BTREE',
-            name        => 'idx_title',
+            colnames     => '`title`',
+            cols         => [qw(title)],
+            col_prefixes => [undef],
+            is_col       => { title => 1, },
+            is_nullable  => 0,
+            unique       => 0,
+            type         => 'BTREE',
+            name         => 'idx_title',
          },
          idx_fk_language_id => {
-            colnames    => '`language_id`',
-            cols        => [qw(language_id)],
-            unique      => 0,
-            is_col      => { language_id => 1 },
-            is_nullable => 0,
-            type        => 'BTREE',
-            name        => 'idx_fk_language_id',
+            colnames     => '`language_id`',
+            cols         => [qw(language_id)],
+            col_prefixes => [undef],
+            unique       => 0,
+            is_col       => { language_id => 1 },
+            is_nullable  => 0,
+            type         => 'BTREE',
+            name         => 'idx_fk_language_id',
          },
          idx_fk_original_language_id => {
-            colnames    => '`original_language_id`',
-            cols        => [qw(original_language_id)],
-            unique      => 0,
-            is_col      => { original_language_id => 1 },
-            is_nullable => 1,
-            type        => 'BTREE',
-            name        => 'idx_fk_original_language_id',
+            colnames     => '`original_language_id`',
+            cols         => [qw(original_language_id)],
+            col_prefixes => [undef],
+            unique       => 0,
+            is_col       => { original_language_id => 1 },
+            is_nullable  => 1,
+            type         => 'BTREE',
+            name         => 'idx_fk_original_language_id',
          },
       },
       defs => {
@@ -271,13 +325,14 @@ is_deeply(
       is_nullable  => { a => 1, b => 1, mixedcol => 1 },
       keys         => {
          mykey => {
-            colnames    => '`a`,`b`,`mixedcol`',
-            cols        => [qw(a b mixedcol)],
-            is_col      => { a => 1, b => 1, mixedcol => 1 },
-            is_nullable => 3,
-            unique      => 0,
-            type        => 'BTREE',
-            name        => 'mykey',
+            colnames     => '`a`,`b`,`mixedcol`',
+            cols         => [qw(a b mixedcol)],
+            col_prefixes => [undef, undef, undef],
+            is_col       => { a => 1, b => 1, mixedcol => 1 },
+            is_nullable  => 3,
+            unique       => 0,
+            type         => 'BTREE',
+            name         => 'mykey',
          },
       },
       defs         => {
