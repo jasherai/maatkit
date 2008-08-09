@@ -1596,6 +1596,7 @@ if ( $ENV{MKDEBUG} ) {
 package IndexChecker;
 
 use List::Util qw(min);
+use English qw(-no_match_vars);
 
 sub new {
    bless {}, shift;
@@ -1675,18 +1676,50 @@ sub find_duplicate_keys {
 
    foreach my $i ( 0..$#keys - 1 ) {
       foreach my $j ( $i+1..$#keys ) {
-         my $i_cols = $keys[$i]->{cols};
-         my $j_cols = $keys[$j]->{cols};
-         my $len    = min(length($i_cols), length($j_cols));
-         if ( $opts->{ignore_order} ) {
+         my $i_cols        = $keys[$i]->{cols};
+         my $j_cols        = $keys[$j]->{cols};
+         my $type_i_cols   = $keys[$i]->{struct};
+         my $type_j_cols   = $keys[$j]->{struct};
+         my $len_i_cols    = length($i_cols);
+         my $len_j_cols    = length($j_cols);
+         my $min_len       = min($len_i_cols, $len_j_cols);
+         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
+                               && $type_j_cols eq 'FULLTEXT'
+                             ) ? 1 : 0;
+         if ( $ENV{MKDEBUG} ) {
+            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
+               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
+         }
+
+         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
             $i_cols = join(',', sort(split(/`/, $i_cols)));
             $j_cols = join(',', sort(split(/`/, $j_cols)));
          }
-         if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
-            && substr($i_cols, 0, $len) eq substr($j_cols, 0, $len))
+         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
+                || $opts->{ignore_type}
+              )
+              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
          {
-            push @result, $keys[$i] unless $seen{$i}++;
-            push @result, $keys[$j] unless $seen{$j}++;
+            # Handle FULLTEXT indexes speically: only exact matches are
+            # duplicates. E.g. FULLTEXT `a`,`b` and `a` are *not* dupes
+            if ( $both_FULLTEXT ) {
+               if ( $len_i_cols == $len_j_cols ) {
+                  $ENV{MKDEBUG} && _d("Indexes are DUPLICATES (fulltext)");
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+               }
+               else {
+                  $ENV{MKDEBUG} && _d("Indexes are not duplicates (fulltext)");
+               }
+            }
+            else {
+               $ENV{MKDEBUG} && _d("Indexes are DUPLICATES");
+               push @result, $keys[$i] unless $seen{$i}++;
+               push @result, $keys[$j] unless $seen{$j}++;
+            }
+         }
+         else {
+            $ENV{MKDEBUG} && _d("Indexes are not duplicates");
          }
       }
    }
@@ -1749,6 +1782,11 @@ sub find_duplicate_fks {
       }
    }
    return \@result;
+}
+
+sub _d {
+      my ( $line ) = (caller(0))[2];
+         print "# IndexChecker:$line $PID ", @_, "\n";
 }
 
 # ###########################################################################
