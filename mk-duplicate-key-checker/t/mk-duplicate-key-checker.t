@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 27;
+use Test::More tests => 33;
 
 require "../mk-duplicate-key-checker";
 
@@ -214,6 +214,103 @@ is_deeply(
       },
    ],
    'Dupe keys when ignoring type'
+);
+
+$ddl = load_file('samples/nondupe_fulltext_not_exact.sql');
+is_deeply(
+   $c->find_keys($ddl, $opt),
+   [
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_a_b',
+         cols   => '`a`,`b`',
+      },
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_b',
+         cols   => '`b`',
+      },
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_a',
+         cols   => '`a`',
+      },
+   ],
+   'Fulltext keys on table ft_not_dupe_key (for issue 10)'
+);
+is_deeply(
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt)),
+   [
+   ],
+   'No dupe keys b/c fulltext requires exact match (issue 10)'
+);
+
+$ddl = load_file('samples/dupe_fulltext_exact.sql');
+is_deeply(
+   $c->find_keys($ddl, $opt),
+   [
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_a_b_1',
+         cols   => '`a`,`b`',
+      },
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_a_b_2',
+         cols   => '`a`,`b`',
+      },
+   ],
+   'Fulltext keys on table ft_dupe_key_exact (issue 10)'
+);
+is_deeply(
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt)),
+   [
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_a_b_1',
+         cols   => '`a`,`b`',
+      },
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_a_b_2',
+         cols   => '`a`,`b`',
+      },
+   ],
+   'Dupe exact fulltext keys (issue 10)'
+);
+
+$ddl = load_file('samples/dupe_fulltext_reverse_order.sql');
+is_deeply(
+   $c->find_keys($ddl, $opt),
+   [
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_a_b',
+         cols   => '`a`,`b`',
+      },
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_b_a',
+         cols   => '`b`,`a`',
+      },
+   ],
+   'Fulltext keys on table ft_dupe_key_reverse_order (issue 10)'
+);
+is_deeply(
+   $c->find_duplicate_keys($c->find_keys($ddl, $opt)),
+   [
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_a_b',
+         cols   => '`a`,`b`',
+      },
+      {
+         struct => 'FULLTEXT',
+         name   => 'ft_idx_b_a',
+         cols   => '`b`,`a`',
+      },
+   ],
+   'Dupe reverse order fulltext keys (issue 10)'
 );
 
 $ddl = load_file('samples/dupe_key_unordered.sql');

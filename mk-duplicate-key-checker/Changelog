@@ -1,5 +1,10 @@
 Changelog for mk-duplicate-key-checker:
 
+2008-08-09:
+
+   * Fix issue 10: mk-duplicate-key-checker should treat full-text indexes
+	specially
+
 2008-06-02: version 1.1.6
 
    * Updated common code.
