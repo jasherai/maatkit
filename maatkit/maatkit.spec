@@ -5,8 +5,8 @@ Summary:        Essential command-line utilities for MySQL
 
 Group:          Applications/Databases
 License:        GPL
-URL:            http://sourceforge.net/projects/maatkit/
-Source0:        http://prdownloads.sourceforge.net/maatkit/%{name}-%{version}.tar.gz
+URL:            http://code.google.com/p/maatkit/
+Source0:        http://maatkit.googlecode.com/files/%{name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildArch:      noarch

@@ -1,14 +1,14 @@
 Source: maatkit
 Section: utils
 Priority: optional
-Maintainer: Baron Schwartz <bps7j@users.sourceforge.net>
+Maintainer: Baron Schwartz <baron.schwartz@gmail.com>
 Uploaders: Norbert Tretkowski <nobse@debian.org>
 Build-Depends: debhelper (>= 4.2)
 Build-Depends-Indep: perl (>= 5.6.0-16), libdbi-perl (>= 1.13), libdbd-mysql-perl (>= 1.0), libterm-readkey-perl (>=2.10)
 Standards-Version: 3.7.2
-Homepage: http://maatkit.sourceforge.net/
-Vcs-Browser: http://maatkit.svn.sourceforge.net/viewvc/maatkit/
-Vcs-Svn: https://maatkit.svn.sourceforge.net/svnroot/maatkit/
+Homepage: http://code.google.com/p/maatkit/
+Vcs-Browser: http://code.google.com/p/maatkit/source/browse/
+Vcs-Svn: http://code.google.com/p/maatkit/source/browse/
 
 Package: maatkit
 Architecture: all
