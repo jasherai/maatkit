@@ -1,5 +1,9 @@
 #!/usr/bin/perl
 
+# ##########################################################################
+# This is a magic test file that is designed to be run manually.
+# ##########################################################################
+
 # This program is copyright (c) 2007 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
