@@ -49,11 +49,12 @@ isa_ok($apl, 'AggregateProcessList');
 
 my $r = RecordsetFromText->new();
 my $recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_basic.txt') );
+my $ag_pl = $apl->aggregate_processlist($recset);
 is_deeply(
-   $apl->aggregate_processlist($recset),
+   $ag_pl,
    {
       command => { query     => { time => 0, count => 1 } },
-      db      => { ''        => {            count => 1 } },
+      db      => { ''        => { time => 0, count => 1 } },
       user    => { msandbox  => { time => 0, count => 1 } },
       state   => { ''        => { time => 0, count => 1 } },
       host    => { localhost => { time => 0, count => 1 } },
@@ -62,7 +63,7 @@ is_deeply(
 );
 
 $recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_vertical_51_rows.txt') );
-my $ag_pl = $apl->aggregate_processlist($recset);
+$ag_pl = $apl->aggregate_processlist($recset);
 cmp_ok($ag_pl->{command}->{query}->{count}, '==', 51, '51 procs: 51 Command Query');
 cmp_ok($ag_pl->{user}->{user1}->{count}, '==', 50, '51 procs: 50 User user1');
 cmp_ok($ag_pl->{user}->{root}->{count}, '==', 1, '51 procs: 1 User root');
