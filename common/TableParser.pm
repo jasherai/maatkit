@@ -54,7 +54,7 @@ sub parse {
    # (Bug #1910276).
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
-   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
    $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
@@ -182,7 +182,8 @@ sub find_best_index {
          die "Index '$index' does not exist in table";
       }
       else {
-         # Try to pick the best index.
+         # Try to pick the best index.  TODO: eliminate indexes that have column
+         # prefixes.
          ($best) = $self->sort_indexes($tbl);
       }
    }
