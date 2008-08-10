@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -62,8 +62,39 @@ is_deeply(
          Host     => 'localhost'
       },
    ],
-   'Basic processlist'
+   'Basic tablular processlist'
 );
+
+$recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_vertical_02_rows.txt') );
+is_deeply(
+   $recset,
+   [
+      {
+         Time     => '4',
+         Command  => 'Query',
+         db       => 'foo',
+         Id       => '1',
+         Info     => 'select * from foo1;',
+         User     => 'user1',
+         State    => 'Locked',
+         Host     => '1.2.3.4:3333'
+      },
+      {
+         Time     => '5',
+         Command  => 'Query',
+         db       => 'foo',
+         Id       => '2',
+         Info     => 'select * from foo2;',
+         User     => 'user1',
+         State    => 'Locked',
+         Host     => '1.2.3.4:5455'
+      },
+   ],
+   '2 row vertical processlist'
+);
+
+$recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_vertical_51_rows.txt') );
+cmp_ok(scalar @{ $recset }, '==', 51, '51 row vertical processlist');
 
 # print Dumper($recset);
 

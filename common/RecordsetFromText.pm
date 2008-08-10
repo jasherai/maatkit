@@ -25,6 +25,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Carp;
+use Data::Dumper;
 
 # At present $params can contain a hash of alternate values:
 #    key:   value_for
@@ -65,61 +66,89 @@ sub parse_tab_sep {
 }
 
 sub parse_vertical {
-   my ( $text, @cols ) = @_;
-   my %row = $text =~ m/^ *(\w+): ([^\n]*) *$/msg;
-   return (\%row, undef);
+   my ( $text ) = @_;
+   my %row = $text =~ m/^\s*(\w+): ([^\n]*)/msg;
+   return \%row;
 }
 
+# parse() returns an array of recordset hashes where column/field => value
 sub parse {
    my ( $self, $text ) = @_;
-   my $started = 0;
-   my $lines   = 0;
-   my @cols    = ();
-   my @result  = ();
+   my $recsets_ref;
 
-   # Detect which kind of input it is
-   my ( $line_re, $vals_sub );
+   # Detect text type: tabular, tab-separated, or vertical
    if ( $text =~ m/^\+---/m ) { # standard "tabular" output
-      $ENV{MKDEBUG} && _d("text type: standard tabular");
-      $line_re  = qr/^(\| .*)[\r\n]+/m;
-      $vals_sub = \&parse_tabular;
+      $ENV{MKDEBUG} && _d('text type: standard tabular');
+      my $line_pattern  = qr/^(\| .*)[\r\n]+/m;
+      $recsets_ref
+         = _parse_horizontal_recset($text, $line_pattern, \&parse_tabular);
    }
    elsif ( $text =~ m/^id\tselect_type\t/m ) { # tab-separated
-      $ENV{MKDEBUG} && _d("text type: tab-separated");
-      $line_re  = qr/^(.*?\t.*)[\r\n]+/m;
-      $vals_sub = \&parse_tab_sep;
+      $ENV{MKDEBUG} && _d('text type: tab-separated');
+      my $line_pattern  = qr/^(.*?\t.*)[\r\n]+/m;
+      $recsets_ref
+         = _parse_horizontal_recset($text, $line_pattern, \&parse_tab_sep);
    }
-   elsif ( $text =~ m/\*\*\* 1. row/ ) { # "vertical" output
-      $ENV{MKDEBUG} && _d("text-type: vertical");
-      $line_re  = qr/^( *.*?^ *Extra:[^\n]*$)/ms;
-      $vals_sub = \&parse_vertical;
+   elsif ( $text =~ m/\*\*\* \d+\. row/ ) { # "vertical" output
+      my $n_recs;
+      $n_recs++ while $text =~ m/ \d+\. row /g;
+      $ENV{MKDEBUG} && _d("text-type: vertical ($n_recs)");
+      if ( $n_recs > 1 ) {
+         $ENV{MKDEBUG} && _d('Multiple recsets');
+         my @v_recsets;
+         my $v_recsets_ref = _split_vertical_recsets($text);
+         foreach my $v_recset ( @{ $v_recsets_ref } ) {
+            push @v_recsets, $self->parse($v_recset);
+         }
+         return \@v_recsets;
+      }
+      $recsets_ref = _parse_vertical_recset($text, \&parse_vertical);
    }
    else {
-      croak "Cannot determine text type in RecordsetFromText::parse()";
+      croak "Cannot determine text type in RecordsetFromText::parse():\n"
+            . $text;
    }
 
-   if ( $line_re ) {
-      my $value_for
-         = (exists $self->{value_for} ? $self->{value_for} : 0);
-      # Pull it apart into lines and parse them.
-      LINE:
-      foreach my $line ( $text =~ m/$line_re/g ) {
-         my ( $row, $cols ) = $vals_sub->($line, @cols);
-         if ( $row ) {
-            foreach my $key ( keys %$row ) {
-               if ( $value_for && exists $value_for->{ $row->{$key} } ) {
-                  $row->{$key} = $value_for->{ $row->{$key} };
-               }
-            }
-            push @result, $row;
-         }
-         else {
-            @cols = @$cols;
+   my $value_for
+      = (exists $self->{value_for} ? $self->{value_for} : 0);
+   if ( $value_for ) {
+      foreach my $recset ( @{ $recsets_ref } ) {
+         foreach my $key ( %{ $recset } ) {
+            $recset->{$key} = $value_for->{ $recset->{$key} }
+               if exists $value_for->{ $recset->{$key} };
          }
       }
    }
 
-   return \@result;
+   return $recsets_ref;
+}
+
+sub _parse_horizontal_recset {
+   my ( $text, $line_pattern, $sub ) = @_;
+   my @recsets = ();
+   my @cols    = ();
+   foreach my $line ( $text =~ m/$line_pattern/g ) {
+      my ( $row, $cols ) = $sub->($line, @cols);
+      if ( $row ) {
+         push @recsets, $row;
+      }
+      else {
+         @cols = @$cols;
+      }
+   }
+   return \@recsets;
+}
+
+sub _parse_vertical_recset {
+   my ( $text, $sub ) = @_;
+   return $sub->($text);
+}
+
+sub _split_vertical_recsets {
+   my ( $text ) = @_;
+   my $ROW_HEADER = '\*{3,} \d+\. row \*{3,}';
+   my @recsets = $text =~ m/($ROW_HEADER.*?)(?=$ROW_HEADER|\z)/omgs;
+   return \@recsets;
 }
 
 sub _d {

@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -52,15 +52,25 @@ my $recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_basic.txt') );
 is_deeply(
    $apl->aggregate_processlist($recset),
    {
-      Command => { Query     => { Time => 0, Count => 1 } },
-      db      => { ''        => { Time => 0, Count => 1 } },
-      User    => { msandbox  => { Time => 0, Count => 1 } },
-      State   => { ''        => { Time => 0, Count => 1 } },
-      Host    => { localhost => { Time => 0, Count => 1 } },
+      command => { query     => { time => 0, count => 1 } },
+      db      => { ''        => {            count => 1 } },
+      user    => { msandbox  => { time => 0, count => 1 } },
+      state   => { ''        => { time => 0, count => 1 } },
+      host    => { localhost => { time => 0, count => 1 } },
    },
    'Aggregate basic processlist'
 );
 
-# print Dumper($apl);
+$recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_vertical_51_rows.txt') );
+my $ag_pl = $apl->aggregate_processlist($recset);
+cmp_ok($ag_pl->{command}->{query}->{count}, '==', 51, '51 procs: 51 Command Query');
+cmp_ok($ag_pl->{user}->{user1}->{count}, '==', 50, '51 procs: 50 User user1');
+cmp_ok($ag_pl->{user}->{root}->{count}, '==', 1, '51 procs: 1 User root');
+cmp_ok($ag_pl->{state}->{null}->{count}, '==', 1, '51 procs: 1 State NULL');
+cmp_ok($ag_pl->{state}->{locked}->{count}, '==', 24, '51 procs: 24 State Locked');
+cmp_ok($ag_pl->{state}->{preparing}->{count}, '==', 26, '51 procs: 26 State preparing');
+
+
+# print Dumper($ag_pl);
 
 exit;

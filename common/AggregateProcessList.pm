@@ -25,7 +25,6 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Carp;
-use Data::Dumper;
 
 sub new {
    my ( $class, $dbh, $params ) = @_;
@@ -38,23 +37,28 @@ sub new {
 sub aggregate_processlist {
    my ( $self, $recset ) = @_;
    my $aggregated_proclist = {};
-   my $User    = $aggregated_proclist->{User}    = {};
-   my $Host    = $aggregated_proclist->{Host}    = {};
-   my $db      = $aggregated_proclist->{db}      = {};
-   my $Command = $aggregated_proclist->{Command} = {};
-   my $State   = $aggregated_proclist->{State}   = {};
+   my $user  = $aggregated_proclist->{user}    = {};
+   my $host  = $aggregated_proclist->{host}    = {};
+   my $cmd   = $aggregated_proclist->{command} = {};
+   my $state = $aggregated_proclist->{state}   = {};
+   my $db    = $aggregated_proclist->{db}      = {};
    foreach my $proc ( @{ $recset } ) {
-      $User->{ $proc->{User} }->{Time}       += $proc->{Time};
-      $Host->{ $proc->{Host} }->{Time}       += $proc->{Time};
-      $db->{ $proc->{db} }->{Time}           += $proc->{Time};
-      $Command->{ $proc->{Command} }->{Time} += $proc->{Time};
-      $State->{ $proc->{State} }->{Time}     += $proc->{Time};
+      my $proc_user  =    $proc->{User};
+      my $proc_host  =    $proc->{Host};
+      my $proc_cmd   = lc $proc->{Command};
+      my $proc_state = lc $proc->{State};
+      my $proc_db    =    $proc->{db};
 
-      $User->{ $proc->{User} }->{Count}       += 1;
-      $Host->{ $proc->{Host} }->{Count}       += 1;
-      $db->{ $proc->{db} }->{Count}           += 1;
-      $Command->{ $proc->{Command} }->{Count} += 1;
-      $State->{ $proc->{State} }->{Count}     += 1;
+      $user->{ $proc_user }->{time}   += $proc->{Time};
+      $host->{ $proc_host }->{time}   += $proc->{Time};
+      $cmd->{ $proc_cmd }->{time}     += $proc->{Time};
+      $state->{ $proc_state }->{time} += $proc->{Time};
+
+      $user->{ $proc_user }->{count}   += 1;
+      $host->{ $proc_host }->{count}   += 1;
+      $cmd->{ $proc_cmd }->{count}     += 1;
+      $state->{ $proc_state }->{count} += 1;
+      $db->{ $proc_db }->{count}       += 1;
    }
    return $aggregated_proclist;
 }
