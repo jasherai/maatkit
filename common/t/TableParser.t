@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 13;
+use Test::More tests => 14;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -312,6 +312,36 @@ is_deeply(
       type_for     => { a => 'int' },
    },
    'Temporary table',
+);
+
+$t = $p->parse( load_file('samples/ndb_table.sql') );
+is_deeply(
+   $t,
+   {  cols        => [qw(id)],
+      col_posn    => { id => 0 },
+      is_col      => { id => 1 },
+      is_autoinc  => { id => 1 },
+      null_cols   => [],
+      is_nullable => {},
+      keys        => {
+         PRIMARY => {
+            cols         => [qw(id)],
+            unique       => 1,
+            is_col       => { id => 1 },
+            name         => 'PRIMARY',
+            type         => 'BTREE',
+            col_prefixes => [undef],
+            is_nullable  => 0,
+            colnames     => '`id`',
+         }
+      },
+      defs => { id => '  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT' },
+      numeric_cols => [qw(id)],
+      is_numeric   => { id => 1 },
+      engine       => 'ndbcluster',
+      type_for     => { id => 'bigint' },
+   },
+   'NDB table',
 );
 
 $t = $p->parse( load_file('samples/mixed-case.sql') );
