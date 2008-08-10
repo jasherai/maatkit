@@ -25,42 +25,32 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Carp;
+use Data::Dumper;
 
 sub new {
    my ( $class, $dbh, $params ) = @_;
-   # $params is a placeholder for when we later expand the functionality
-   # of this module. For now, we fully aggregate 1 snapshot by default.
-   my $self = {};
+   my $self = defined $params ? { %{ $params } } : {};
+   $self->{undef_val} ||= '';
    return bless $self, $class;
 }
 
 sub aggregate_processlist {
    my ( $self, $recset ) = @_;
-   my $aggregated_proclist = {};
-   my $user  = $aggregated_proclist->{user}    = {};
-   my $host  = $aggregated_proclist->{host}    = {};
-   my $cmd   = $aggregated_proclist->{command} = {};
-   my $state = $aggregated_proclist->{state}   = {};
-   my $db    = $aggregated_proclist->{db}      = {};
+   my $agg_proclist = {};
    foreach my $proc ( @{ $recset } ) {
-      my $proc_user  =    $proc->{User};
-      my $proc_host  =    $proc->{Host};
-      my $proc_cmd   = lc $proc->{Command};
-      my $proc_state = lc $proc->{State};
-      my $proc_db    =    $proc->{db};
-
-      $user->{ $proc_user }->{time}   += $proc->{Time};
-      $host->{ $proc_host }->{time}   += $proc->{Time};
-      $cmd->{ $proc_cmd }->{time}     += $proc->{Time};
-      $state->{ $proc_state }->{time} += $proc->{Time};
-
-      $user->{ $proc_user }->{count}   += 1;
-      $host->{ $proc_host }->{count}   += 1;
-      $cmd->{ $proc_cmd }->{count}     += 1;
-      $state->{ $proc_state }->{count} += 1;
-      $db->{ $proc_db }->{count}       += 1;
+      foreach my $field ( keys %{ $proc } ) {
+         next if $field eq 'Id';
+         next if $field eq 'Info';
+         next if $field eq 'Time';
+         my $val = $proc->{ $field };
+            $val = $self->{undef_value} if !defined $val;
+            $val = lc $val if ( $field eq 'Command' || $field eq 'State' );
+         $field = lc $field;
+         $agg_proclist->{ $field }->{ $val }->{time}  += $proc->{Time};
+         $agg_proclist->{ $field }->{ $val }->{count} += 1;
+      }
    }
-   return $aggregated_proclist;
+   return $agg_proclist;
 }
 
 sub _d {
