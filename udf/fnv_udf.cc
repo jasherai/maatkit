@@ -12,7 +12,7 @@
  * call the function, it is case-insensitive just like any other SQL function).
  *
  * gcc -fPIC -Wall -I/usr/include/mysql -shared -o fnv_udf.so fnv_udf.cc
- * cp fnv_udf.so /lib
+ * cp fnv_udf.so /lib * OR: * cp fnv_udf.so /usr/lib
  * mysql mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so'"
  *
  * If you get the error "ERROR 1126 (HY000): Can't open shared library
@@ -23,6 +23,8 @@
  * something like /lib.  If you get the error "ERROR 1126 (HY000): Can't open
  * shared library 'libfnv_udf.so' (errno: 22 /lib/libfnv_udf.so: undefined
  * symbol: __gxx_personality_v0)" then you may need to use g++ instead of gcc.
+ *
+ * Try both /lib and /usr/lib before changing LD_LIBRARY_PATH.
  *
  * On Mac OSX, use -dynamiclib instead of -shared and add -lstdc++ to the
  * compile flags.
