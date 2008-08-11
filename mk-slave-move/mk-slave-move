@@ -649,7 +649,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1957
+# DSNParser package 2005
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -891,8 +891,8 @@ sub disconnect {
 sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
-   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+   printf("# Active %sh: %s %s %s\n", ($thing->{Type} || 'undef'), "\t" x $level,
+      $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
@@ -912,7 +912,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 1958
+# MasterSlave package 2018
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -988,16 +988,6 @@ sub find_slave_hosts {
    my @slaves;
 
    if ( (!$method && ($dsn->{P}||3306) == 3306) || $method eq 'processlist' ) {
-
-      my $proc =
-         grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
-         @{$dbh->selectcol_arrayref('SHOW GRANTS')};
-      if ( !$proc ) {
-         die "You do not have the PROCESS privilege";
-      }
-
-      my $sql = 'SHOW PROCESSLIST';
-      $ENV{MKDEBUG} && _d($dbh, $sql);
       @slaves =
          map  {
             my $slave        = $dsn_parser->parse("h=$_", $dsn);
@@ -1011,14 +1001,7 @@ sub find_slave_hosts {
                $host = '127.0.0.1'; # Replication never uses sockets.
             }
             $host;
-         }
-         grep { $_->{command} =~ m/Binlog Dump/i }
-         map  {
-            my %hash;
-            @hash{ map { lc $_ } keys %$_ } = values %$_;
-            \%hash;
-         }
-         @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+         } $self->get_connected_slaves($dbh);
    }
 
    if ( !@slaves ) {
@@ -1045,6 +1028,65 @@ sub find_slave_hosts {
 
    $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
    return @slaves;
+}
+
+sub get_connected_slaves {
+   my ( $self, $dbh ) = @_;
+
+   my $proc =
+      grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
+      @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+   if ( !$proc ) {
+      die "You do not have the PROCESS privilege";
+   }
+
+   my $sql = 'SHOW PROCESSLIST';
+   $ENV{MKDEBUG} && _d($dbh, $sql);
+   grep { $_->{command} =~ m/Binlog Dump/i }
+   map  { # Lowercase the column names
+      my %hash;
+      @hash{ map { lc $_ } keys %$_ } = values %$_;
+      \%hash;
+   }
+   @{$dbh->selectall_arrayref($sql, { Slice => {} })};
+}
+
+sub is_master_of {
+   my ( $self, $master, $slave ) = @_;
+   my $master_status = $self->get_master_status($master)
+      or die "The server specified as a master is not a master";
+   my $slave_status  = $self->get_slave_status($slave)
+      or die "The server specified as a slave is not a slave";
+   my @connected     = $self->get_connected_slaves($master)
+      or die "The server specified as a master has no connected slaves";
+   my (undef, $port) = $master->selectrow_array('SHOW VARIABLES LIKE "port"');
+
+   if ( $port != $slave_status->{master_port} ) {
+      die "The slave is connected to $slave_status->{master_port} "
+         . "but the master's port is $port";
+   }
+
+   if ( !grep { $slave_status->{master_user} eq $_->{user} } @connected ) {
+      die "I don't see any slave I/O thread connected with user "
+         . $slave_status->{master_user};
+   }
+
+   if ( ($slave_status->{slave_io_state} || '')
+      eq 'Waiting for master to send event' )
+   {
+      my ( $master_log_name, $master_log_num )
+         = $master_status->{file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
+      my ( $slave_log_name, $slave_log_num )
+         = $slave_status->{master_log_file} =~ m/^(.*?)\.0*([1-9][0-9]*)$/;
+      if ( $master_log_name ne $slave_log_name
+         || abs($master_log_num - $slave_log_num) > 1 )
+      {
+         die "The slave thinks it is reading from "
+            . "$slave_status->{master_log_file},  but the "
+            . "master is writing to $master_status->{file}";
+      }
+   }
+   return 1;
 }
 
 sub get_master_dsn {
@@ -1152,7 +1194,28 @@ sub catchup_to_master {
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
       $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
       $self->start_slave($slave, $master_pos);
-      $self->wait_for_master($master, $slave, $time, 0, $master_status);
+      eval {
+         $self->wait_for_master($master, $slave, $time, 0, $master_status);
+      };
+      if ( $EVAL_ERROR ) {
+         $ENV{MKDEBUG} && _d($EVAL_ERROR);
+         if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
+            $slave_status = $self->get_slave_status($slave);
+            if ( !$self->slave_is_running($slave_status) ) {
+               $slave_pos = $self->repl_posn($slave_status);
+               if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
+                  die "$EVAL_ERROR but slave has not caught up to master";
+               }
+               $ENV{MKDEBUG} && _d('Slave is caught up to master and stopped');
+            }
+            else {
+               die "$EVAL_ERROR but slave was still running";
+            }
+         }
+         else {
+            die $EVAL_ERROR;
+         }
+      }
    }
 }
 
