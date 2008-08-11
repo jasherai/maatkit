@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# This is mk-audit, a program to inspect, analyze, and advise on a MySQL server.
+# This is mk-audit, a program to inspect, analyze, and report on a MySQL server.
 #
 # This program is copyright 2008 Percona Inc.
 # Feedback and improvements are welcome.
@@ -2258,7 +2258,7 @@ my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 
 $opt_parser->{prompt} = '<options>';
-$opt_parser->{descr}  = 'inspects, analyzes and advises on a MySQL server.';
+$opt_parser->{descr}  = 'inspects, analyzes and reports on a MySQL server.';
 %opts = $opt_parser->parse();
 $dp->prop('setvars', $opts{setvars});
 $opt_parser->usage_or_errors(%opts);
@@ -2774,7 +2774,7 @@ $value, $count, $total_time
 
 =head1 NAME
 
-mk-audit - Analyze, summarize and advise on MySQL config, schema and operation
+mk-audit - Analyze, summarize and report on MySQL config, schema and operation
 
 =head1 SYNOPSIS
 
