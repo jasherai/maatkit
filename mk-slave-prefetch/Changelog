@@ -1,5 +1,8 @@
 Changelog for mk-slave-prefetch:
 
+2008-08-11: version 1.0.3
+
+   * Files downloaded directly from SVN crashed due to version information.
    * Added the --numprefix option for use in sharded data stores.
    * The Rotate binary log event type was not handled.
 

@@ -1,5 +1,9 @@
 Changelog for mk-slave-move:
 
+2008-08-11: version 0.9.2
+
+   * Files downloaded directly from SVN crashed due to version information.
+
 2008-06-02: version 0.9.1
 
    * Command-line parsing was removing an expected DSN (bug #1960142).

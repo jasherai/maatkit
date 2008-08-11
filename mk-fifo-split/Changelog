@@ -1,5 +1,8 @@
 Changelog for mk-fifo-split:
 
+2008-08-11: version 1.0.1
+
+   * Files downloaded directly from SVN crashed due to version information.
    * Added --offset option.
    * --statistics didn't calculate lines/sec properly.
    * Removed --sleep; EOF doesn't mean anything to a non-terminal.

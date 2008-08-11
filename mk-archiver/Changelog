@@ -1,5 +1,8 @@
 Changelog for mk-archiver:
 
+2008-08-11: version 1.0.10
+
+   * Files downloaded directly from SVN crashed due to version information.
    * Added more information to --statistics and changed --whyquit slightly.
 
 2008-06-02: version 1.0.9

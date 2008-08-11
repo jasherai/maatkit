@@ -1,5 +1,9 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2008-08-11: version 1.1.28
+
+   * Files downloaded directly from SVN crashed due to version information.
+
 2008-06-02: version 1.1.27
 
    * Update documentation, generate command-line options from POD.

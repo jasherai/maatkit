@@ -1,5 +1,8 @@
 Changelog for mk-parallel-dump:
 
+2008-08-11: version 1.0.9
+
+   * Files downloaded directly from SVN crashed due to version information.
    * Added --progress option.
    * CHANGE MASTER TO in 00_master_data.sql used the I/O thread position.
    * Added features to permit resuming of dumps.

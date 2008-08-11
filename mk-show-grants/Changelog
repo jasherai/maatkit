@@ -1,6 +1,9 @@
 Changelog for mk-show-grants:
 
-   * Anonymous users were not permitted.
+2008-08-11: version 1.0.11
+
+   * Files downloaded directly from SVN crashed due to version information.
+   * Anonymous users were not permitted (issue 28).
 
 2008-06-02: version 1.0.10
 
