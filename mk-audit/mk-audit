@@ -2517,7 +2517,7 @@ sub report_MySQL_instance {
    my $schema    = $params->{SchemaDiscover};
    my $advisor   = $params->{MySQLAdvisor};
 
-format MYSQL_INSTANCE =
+format MYSQL_INSTANCE_1 =
 
 ============================================================ MySQL Instance @>>
 $inst_num
@@ -2546,33 +2546,28 @@ $instance->{conf_sys_vars}->{relay_log} || ''
 format_u_time($instance->{online_sys_vars}->{long_query_time}), $instance->{conf_sys_vars}->{log_slow_queries} || 'OFF'
    Config file location: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $instance->{cmd_line_ops}->{defaults_file}
-   Schema ________________________________________________________________
-      Total: dbs @<<<  tables @<<<  rows @<<<<<<  indexes @<<<<<<
-$schema->{counts}->{TOTAL}->{dbs}, $schema->{counts}->{TOTAL}->{tables}, shorten($schema->{counts}->{TOTAL}->{rows}, 0), $schema->{counts}->{TOTAL}->{indexes} || 'NA'
-         size data @<<<<<< index @<<<<<<
-shorten($schema->{counts}->{TOTAL}->{data_size}), shorten($schema->{counts}->{TOTAL}->{index_size})
-      @< Largest databases: @*
-$opts{t}, dbs_size_summary($schema)
-      @< Largest tables: @*
-$opts{t}, tables_size_summary($schema);
-      Engines (all dbs): @*
-engines_summary($schema)
-      Triggers, Routines and Events: @*
-( exists $schema->{trigs_routines_events} ? ( defined $schema->{trigs_routines_events} ? { local $LIST_SEPARATOR = ', '; "@{ $schema->{trigs_routines_events} }" } : '' ) : 'Not supported (MySQL version < 5.0.0)' );
 
-   Key buffer size: @<<<<<<
+   SCHEMA ________________________________________________________________
+      #DATABASES   #TABLES   #ROWS     #INDEXES   SIZE DATA   SIZE INDEXES
+      @<<<<<<      @<<<<<<   @<<<<<<   @<<<<<<    @<<<<<<     @<<<<<<
+$schema->{counts}->{TOTAL}->{dbs}, $schema->{counts}->{TOTAL}->{tables}, shorten($schema->{counts}->{TOTAL}->{rows}, 0), $schema->{counts}->{TOTAL}->{indexes} || 'NA', shorten($schema->{counts}->{TOTAL}->{data_size}), shorten($schema->{counts}->{TOTAL}->{index_size})
+
+      Key buffer size        : @<<<<<<
 shorten($instance->{online_sys_vars}->{key_buffer_size})
-   InnoDB buffer pool size: @<<<<<<
+      InnoDB buffer pool size: @<<<<<<
 exists $instance->{online_sys_vars}->{innodb_buffer_pool_size} ? shorten($instance->{online_sys_vars}->{innodb_buffer_pool_size}) : ''
 
-   PROBLEMS ______________________________________________________________
 .
-
-   # Print first part of MySQL instance report (up to PROBLEMS)
-   $FORMAT_NAME = 'MYSQL_INSTANCE';
+   # Print the above format
+   $FORMAT_NAME = 'MYSQL_INSTANCE_1';
    write;
 
-   # Print any MySQL instance problems
+   dbs_size_summary($schema);
+   tables_size_summary($schema);
+   engines_summary($schema);
+   tre_summary($schema);
+
+   print "\n   PROBLEMS ______________________________________________________________\n";
    my $duplicates = $instance->duplicate_sys_vars();
    if ( scalar @{ $duplicates } ) {
       print "\tDuplicate system variables in config file:\n";
@@ -2580,7 +2575,6 @@ exists $instance->{online_sys_vars}->{innodb_buffer_pool_size} ? shorten($instan
          print "\t\t- $var\n";
       }
    }
-
    my $overridens = $instance->overriden_sys_vars();
    if ( scalar keys %{ $overridens } ) {
       print "\tSystem varialbes in config file overriden by cmd line ops:\n";
@@ -2592,7 +2586,6 @@ exists $instance->{online_sys_vars}->{innodb_buffer_pool_size} ? shorten($instan
                . "\n";
       }
    }
-
    my $oos = $instance->out_of_sync_sys_vars();
    if ( scalar keys %{ $oos } ) {
       print "\tSystem variables out of sync (online differs from config):\n";
@@ -2604,7 +2597,6 @@ exists $instance->{online_sys_vars}->{innodb_buffer_pool_size} ? shorten($instan
                . "\n";
       }
    }
-
    my $failed_checks = $advisor->run_checks();
    if ( scalar keys %{ $failed_checks } ) {
       print "\tMySQL Advisor:\n";
@@ -2620,11 +2612,19 @@ sub dbs_size_summary {
    my ( $schema ) = @_;
    my %dbs = %{ $schema->{counts}->{dbs} }; # copy we can chop
    my $top = $opts{t};
-   my $ret;
    my @sorted;
+   my ( $db, $size );
+   print   "      Top $top largest databases:\n"
+         . "         DATABASE             SIZE DATA\n";
+format DB_LINE =
+         @<<<<<<<<<<<<<<<<<   @<<<<<<<<<<<<<<<<<<<<<<<<<<<
+$db, $size
+.
    @sorted = sort { $dbs{$b}->{data_size} <=> $dbs{$a}->{data_size} } keys %dbs;
-   foreach my $db ( @sorted ) {
-      $ret .= "\n\t- $db: data " . shorten($dbs{$db}->{data_size});
+   $FORMAT_NAME = 'DB_LINE';
+   foreach $db ( @sorted ) {
+      $size = shorten($dbs{$db}->{data_size});
+      write;
       delete $dbs{$db};
       last if !--$top;
    }
@@ -2638,9 +2638,11 @@ sub dbs_size_summary {
    if($n_remaining) {
       $r_avg = shorten($r_size / $n_remaining);
       $r_size = shorten($r_size);
-      $ret .= "\n\tRemaining $n_remaining: size $r_size avg $r_avg";
+      $db   = "Remaining $n_remaining";
+      $size = "$r_size ($r_avg average)";
+      write;
    }
-   return $ret;
+   return;
 }
 
 sub tables_size_summary
@@ -2649,8 +2651,14 @@ sub tables_size_summary
    my %dbs_tbls;
    my $dbs = $schema->{dbs};
    my $top = $opts{t};
-   my $ret = '';
    my @sorted;
+   my ( $db_tbl, $size_data, $size_index, $n_rows, $engine );
+   print   "      Top $top largest tables:\n"
+         . "         DB.TBL              SIZE DATA  SIZE INDEX  #ROWS    ENGINE\n";
+format TBL_LINE =
+         @<<<<<<<<<<<<<<<<   @<<<<<<<<  @<<<<<<<<<  @<<<<<<  @<<<<<
+$db_tbl, $size_data, $size_index, $n_rows, $engine
+.
    # Build a schema-wide list of db.table => size
    foreach my $db ( keys %$dbs ) {
       foreach my $tbl ( keys %{$dbs->{$db}} ) {
@@ -2658,13 +2666,14 @@ sub tables_size_summary
       }
    }
    @sorted = sort { $dbs_tbls{$b} <=> $dbs_tbls{$a} } keys %dbs_tbls;
-   foreach my $db_tbl ( @sorted ) {
+   $FORMAT_NAME = 'TBL_LINE';
+   foreach $db_tbl ( @sorted ) {
       my ( $db, $tbl ) = split '\.', $db_tbl;
-      $ret .= "\n\t- $db_tbl:"                                           .
-              " data "    . shorten($dbs_tbls{$db_tbl})                  .
-              ", index "  . shorten($dbs->{$db}->{$tbl}->{index_length}) .
-              ", rows "   . shorten($dbs->{$db}->{$tbl}->{rows}, 0)      .
-              ", engine " . $dbs->{$db}->{$tbl}->{engine};
+      $size_data  = shorten($dbs_tbls{$db_tbl});
+      $size_index = shorten($dbs->{$db}->{$tbl}->{index_length});
+      $n_rows     = shorten($dbs->{$db}->{$tbl}->{rows}, 0);
+      $engine     = $dbs->{$db}->{$tbl}->{engine};
+      write;
       delete $dbs_tbls{$db_tbl};
       last if !--$top;
    }
@@ -2676,39 +2685,80 @@ sub tables_size_summary
       $r_size += $dbs_tbls{$db_tbl};
    }
    if($n_remaining) {
-      $r_avg = shorten($r_size / $n_remaining);
+      $r_avg  = shorten($r_size / $n_remaining);
       $r_size = shorten($r_size);
-      $ret .= "\n\tRemaining $n_remaining: size $r_size avg $r_avg";
+      print "         Remaining $n_remaining        $r_size ($r_avg average)\n";
    }
-   return $ret;
+   return;
 }
 
-sub engines_summary
-{
+sub engines_summary {
    my ( $schema ) = @_;
    my $engines = $schema->{counts}->{engines};
-   my $ret = '';
-   foreach my $engine ( keys %{ $engines } ) {
-      $ret .= "\n\t- $engine:"
-              . " tables "   . $engines->{$engine}->{tables}
-              . ", indexes " . ($engines->{$engine}->{indexes} || 'NA')
-              . ", data "    . shorten($engines->{$engine}->{data_size})
-              . ", index "   . shorten($engines->{$engine}->{index_size});
+   my ($engine, $n_tables, $n_indexes, $size_data, $size_indexes);
+   print   "      Engines:\n"
+         . "         ENGINE      SIZE DATA   SIZE INDEX   #TABLES   #INDEXES\n";
+format ENGINE_LINE =
+         @<<<<<<<<<  @<<<<<<     @<<<<<<      @<<<<<<   @<<<<<<
+$engine, $size_data, $size_indexes, $n_tables, $n_indexes
+.
+   $FORMAT_NAME = 'ENGINE_LINE';
+   foreach $engine ( keys %{ $engines } ) {
+      $size_data    = shorten($engines->{$engine}->{data_size});
+      $size_indexes = shorten($engines->{$engine}->{index_size});
+      $n_tables     = $engines->{$engine}->{tables};
+      $n_indexes    = $engines->{$engine}->{indexes} || 'NA';
+      write;
    }
-   return $ret;
+   return;
+}
+
+sub tre_summary {
+   my ( $schema ) = @_;
+   my ( $db, $type, $count );
+   print   "      Triggers, Routines, Events:\n"
+         . "         DATABASE           TYPE      COUNT\n";
+format TRE_LINE =
+         @<<<<<<<<<<<<<<<<  @<<<<<<   @<<<<<<
+$db, $type, $count
+.
+   if ( exists $schema->{trigs_routines_events} ) {
+      if ( defined $schema->{trigs_routines_events} ) {
+         $FORMAT_NAME = 'TRE_LINE';
+         foreach my $db_type_count ( @{ $schema->{trigs_routines_events} } ) {
+            ( $db, $type, $count ) = split ' ', $db_type_count;
+            write;
+         }
+      }
+      else {
+         print "         No triggers, routines, or events\n";
+      }
+   }
+   else {
+      print "         Not supported (MySQL version < 5.0.0)\n";
+   }
+   return;
 }
 
 sub report_aggregated_processlist {
    my ( $ag_pl ) = @_;  # aggregated_processlist
-   print   "\n   Aggregated PROCESSLIST ________________________________________________\n"
-         . "\tFIELD\tVALUE\t\tCOUNT\tTOTAL TIME (s)\n";
+   my ( $value, $count, $total_time); # used by format
+
+   print "\n   Aggregated PROCESSLIST ________________________________________________
+      FIELD      VALUE                       COUNT   TOTAL TIME (s)\n";
+
+format VALUE_LINE =
+                 @<<<<<<<<<<<<<<<<<<<<<<<<   @<<<<   @<<<<
+$value, $count, $total_time
+.
+
    foreach my $field ( keys %{ $ag_pl } ) {
-      print   "\t$field\n";
-      foreach my $val ( keys %{ $ag_pl->{$field} } ) {
-         print   "\t\t$val"
-               . "\t\t$ag_pl->{$field}->{$val}->{count}"
-               . "\t$ag_pl->{$field}->{$val}->{time}"
-               . "\n";
+      printf "      %.8s\n", $field;
+      $FORMAT_NAME = 'VALUE_LINE';
+      foreach $value ( keys %{ $ag_pl->{$field} } ) {
+         $count       = $ag_pl->{$field}->{$value}->{count};
+         $total_time  = $ag_pl->{$field}->{$value}->{time};
+         write;
       }
    }
    return;

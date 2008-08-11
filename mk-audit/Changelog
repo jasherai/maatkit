@@ -1,5 +1,13 @@
 Changelog for mk-audit:
 
+2008-08-11:
+
+   * Changed: reports: made tabular, slight re-arrangement of sections
+
+2008-08-10:
+
+   * Implemented: Aggregated processlist report
+
 2008-08-08:
 
    * Update POD
