@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -95,6 +95,9 @@ is_deeply(
 
 $recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_vertical_51_rows.txt') );
 cmp_ok(scalar @{ $recset }, '==', 51, '51 row vertical processlist');
+
+$recset = $r->parse ( load_file('samples/RecsetFromTxt-proclist_vertical_113_rows_NULL_Time.txt') );
+cmp_ok(scalar @{ $recset }, '==', 113, '113 row vertical processlist');
 
 # print Dumper($recset);
 
