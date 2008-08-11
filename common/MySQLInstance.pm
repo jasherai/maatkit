@@ -25,9 +25,9 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-
 use File::Temp ();
 use Carp;
+use Data::Dumper;
 
 my $option_pattern = '([^\s=]+)(?:=(\S+))?';
 
@@ -235,6 +235,11 @@ sub overriden_sys_vars {
    my %overriden_vars;
    foreach my $var_val ( @{ $self->{defaults_file_sys_vars} } ) {
       my ( $var, $val ) = ( $var_val->[0], $var_val->[1] );
+      if ( !defined $var || !defined $val ) {
+         my $dump = Dumper($var_val);
+         $ENV{MKDEBUG} && _d("Undefined var or val: $dump");
+         next;
+      }
       if ( exists $self->{cmd_line_ops}->{$var} ) {
          if(    ( !defined $self->{cmd_line_ops}->{$var} && !defined $val)
              || ( $self->{cmd_line_ops}->{$var} ne $val) ) {
@@ -289,6 +294,11 @@ sub load_status_vals {
                                         { Slice => {} })
             };
    return;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# MySQLInstance:$line $PID ", @_, "\n";
 }
 
 1;
