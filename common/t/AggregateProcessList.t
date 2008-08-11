@@ -62,16 +62,34 @@ is_deeply(
    'Aggregate basic processlist'
 );
 
-$recset = $r->parse( load_file('samples/RecsetFromTxt-proclist_vertical_51_rows.txt') );
+$recset = $r->parse(
+   load_file('samples/RecsetFromTxt-proclist_vertical_51_rows.txt') );
 $ag_pl = $apl->aggregate_processlist($recset);
-cmp_ok($ag_pl->{command}->{query}->{count}, '==', 51, '51 procs: 51 Command Query');
-cmp_ok($ag_pl->{user}->{user1}->{count}, '==', 50, '51 procs: 50 User user1');
-cmp_ok($ag_pl->{user}->{root}->{count}, '==', 1, '51 procs: 1 User root');
-cmp_ok($ag_pl->{state}->{null}->{count}, '==', 1, '51 procs: 1 State NULL');
-cmp_ok($ag_pl->{state}->{locked}->{count}, '==', 24, '51 procs: 24 State Locked');
-cmp_ok($ag_pl->{state}->{preparing}->{count}, '==', 26, '51 procs: 26 State preparing');
-cmp_ok($ag_pl->{host}->{'0.1.2.11'}->{count}, '==', 21, '51 procs: 21 Hosts 0.1.2.11');
 
-# print Dumper($ag_pl);
+is_deeply(
+   $ag_pl,
+   {  db => {
+         NULL   => { count => 1,  time => 0 },
+         forest => { count => 50, time => 529 }
+      },
+      user => {
+         user1 => { count => 50, time => 529 },
+         root  => { count => 1,  time => 0 }
+      },
+      host => {
+         '0.1.2.11' => { count => 21, time => 183 },
+         '0.1.2.12' => { count => 25, time => 331 },
+         '0.1.2.21' => { count => 4,  time => 15 },
+         localhost  => { count => 1,  time => 0 }
+      },
+      state => {
+         locked    => { count => 24, time => 84 },
+         preparing => { count => 26, time => 445 },
+         null      => { count => 1,  time => 0 }
+      },
+      command => { query => { count => 51, time => 529 } }
+   },
+   'Sample with 51 processes',
+);
 
 exit;
