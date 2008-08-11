@@ -857,7 +857,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2097
+# TableParser package 2108
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -891,7 +891,7 @@ sub parse {
 
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
-   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
    $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
@@ -1661,10 +1661,9 @@ sub shorten
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2119
+# MySQLInstance package 2122
 # ###########################################################################
 
-# MySQLInstance - Config and status values for an instance of mysqld
 package MySQLInstance;
 
 use strict;
@@ -1677,7 +1676,6 @@ use Data::Dumper;
 
 my $option_pattern = '([^\s=]+)(?:=(\S+))?';
 
-# SHOW GLOBAL VARIABLES dialect => mysqld --help --verbose dialect
 my %alias_for = (
    ON   => 'TRUE',
    OFF  => 'FALSE',
@@ -1737,12 +1735,9 @@ sub new {
 sub load_sys_vars {
    my ( $self, $dbh ) = @_;
    
-   # Sys vars and defaults according to mysqld
    my ( $defaults_file_op, $tmp_file ) = $self->_defaults_file_op();
    my $cmd = "$self->{mysqld_binary} $defaults_file_op --help --verbose";
    if ( my $mysqld_output = `$cmd` ) {
-      # Parse from mysqld output the list of sys vars and their default values
-      # listed at the end after all the help info.
       my ($sys_vars) = $mysqld_output =~ m/---\n(.*?)\n\n/ms;
       %{ $self->{conf_sys_vars} }
          = map {
@@ -1758,14 +1753,8 @@ sub load_sys_vars {
            } split "\n", $sys_vars;
    }
 
-   # Sys vars from SHOW STATUS
    $self->_load_online_sys_vars($dbh);
 
-   # Sys vars from defaults file
-   # These are used later by duplicate_values() and overriden_values().
-   # These are also necessary for vars like skip-name-resolve which are not
-   # shown in either SHOW VARIABLES or mysqld --help --verbose but are need
-   # for checks in MySQLAdvisor. 
    $self->{defaults_files_sys_vars}
       = $self->_vars_from_defaults_file($defaults_file_op); 
    foreach my $var_val ( reverse @{ $self->{defaults_file_sys_vars} } ) {
@@ -1780,37 +1769,25 @@ sub load_sys_vars {
    return;
 }
 
-# Returns a --defaults-file cmd line op suitable for mysqld, my_print_defaults,
-# etc., or a blank string if the defaults file is unknown.
 sub _defaults_file_op {
    my ( $self ) = @_;
    my $defaults_file_op = '';
    my $tmp_file = undef;
    if ( $self->{cmd_line_ops}->{defaults_file} ) {
-      # Copy defaults file to /tmp/ because Debian/Ubuntu mysqld apparently
-      # has a bug which prevents it from being read from non-standard locations.
       $tmp_file = File::Temp->new();
       my $cp_cmd = "cp $self->{cmd_line_ops}->{defaults_file} "
                    . $tmp_file->filename;
       `$cp_cmd`;
       $defaults_file_op = "--defaults-file=" . $tmp_file->filename;
    }
-   # Must return $tmp_file obj so its reference lasts into the caller because
-   # when it's destroyed the actual tmp file is automatically unlinked 
    return ( $defaults_file_op, $tmp_file );
 }
 
-# Loads $self->{default_files_sys_vars} with only the sys vars that
-# are explicitly set in the defaults file. This is used for detecting
-# duplicates and overriden var/vals.
 sub _vars_from_defaults_file {
    my ( $self, $defaults_file_op ) = @_;
    my $cmd = "my_print_defaults $defaults_file_op mysqld";
    if ( my $my_print_defaults_output = `$cmd` ) {
       foreach my $var_val ( split "\n", $my_print_defaults_output ) {
-         # Make sys vars from conf look like those from SHOW VARIABLES
-         # (I.e. log_slow_queries instead of log-slow-queries
-         # and 33554432 instead of 32M, etc.)
          my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
          $var =~ s/-/_/go;
          if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
@@ -1846,8 +1823,6 @@ sub _load_online_sys_vars {
    return;
 }
 
-# Get DSN specific to this MySQL instance (Baron, I didn't find other code
-# to do this. Plus, this relies on cmd_line_ops which is "private".)
 sub get_DSN {
    my ( $self ) = @_;
    my $port   = $self->{cmd_line_ops}->{port}     || '';
@@ -1860,8 +1835,6 @@ sub get_DSN {
    };
 }
 
-# duplicate_sys_vars() returns an array ref of sys var names that
-# appear more than once in the defaults file
 sub duplicate_sys_vars {
    my ( $self ) = @_;
    my @duplicate_vars;
@@ -1873,9 +1846,6 @@ sub duplicate_sys_vars {
    return \@duplicate_vars;
 }
 
-# overriden_sys_vars() returns a hash ref of overriden sys vars:
-#    key   = sys var that is overriden
-#    value = array [ val being used, val overriden ]
 sub overriden_sys_vars {
    my ( $self ) = @_;
    my %overriden_vars;
@@ -1896,10 +1866,6 @@ sub overriden_sys_vars {
    return \%overriden_vars;
 }
 
-# out_of_sync_sys_vars() returns a hash ref of sys vars that differ in their
-# online vs. config values:
-#    key   = sys var that is out of sync
-#    value = array [ val online, val config ]
 sub out_of_sync_sys_vars {
    my ( $self ) = @_;
    my %out_of_sync_vars;
@@ -1908,14 +1874,9 @@ sub out_of_sync_sys_vars {
       my $conf_val        = $self->{conf_sys_vars}->{$var};
       my $online_val      = $self->{online_sys_vars}->{$var};
       my $var_out_of_sync = 0;
-      # Global %undef_for and the subs that populated conf_sys_vars
-      # and online_sys_vars should have taken care of any undefined
-      # values. If not, this sub will warn.
-      if ( defined $conf_val ) {
+      if ( defined $conf_val && defined $online_val ) {
          if ( $conf_val ne $online_val ) {
             $var_out_of_sync = 1;
-            # But handle excepts where SHOW GLOBAL VARIABLES says ON and 
-            # mysqld --help --verbose says TRUE
             if ( exists $alias_for{$online_val} ) {
                $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
             }
@@ -1923,6 +1884,12 @@ sub out_of_sync_sys_vars {
       }
       else {
          carp "Undefined system variable: $var";
+         if ( $ENV{MKDEBUG} ) {
+            my $dump_conf   = Dumper($conf_val);
+            my $dump_online = Dumper($online_val);
+            _d("Undefined val: conf=$dump_conf online=$dump_online");
+         }
+         next;
       }
       if($var_out_of_sync) {
          $out_of_sync_vars{$var}
@@ -2211,10 +2178,9 @@ sub run_checks {
 # ###########################################################################
 
 # ###########################################################################
-# AggregateProcessList package 2113
+# AggregateProcessList package 2116
 # ###########################################################################
 
-# AggregateProcessList - Aggregate snapshots of SHOW PROCESSLIST
 package AggregateProcessList;
 
 use strict;
@@ -2241,6 +2207,7 @@ sub aggregate_processlist {
          my $val = $proc->{ $field };
             $val = $self->{undef_value} if !defined $val;
             $val = lc $val if ( $field eq 'Command' || $field eq 'State' );
+            $val =~ s/:.*// if $field eq 'Host';
          $field = lc $field;
          $agg_proclist->{ $field }->{ $val }->{time}  += $proc->{Time};
          $agg_proclist->{ $field }->{ $val }->{count} += 1;
@@ -2559,7 +2526,7 @@ $instance->{online_sys_vars}->{version}, $mysqld_ps->{'64bit'}
    Uptime:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 sec_to_dhms($instance->{status_vals}->{Uptime})
    ps vals:  user @<<<<<<< cpu% @<<<<< rss @<<<<<< vsz @<<<<<< syslog: @<<
-$mysqld_ps->{user}, $mysqld_ps->{pcpu}, shorten($mysqld_ps->{rss}), shorten($mysqld_ps->{vsz}), $mysqld_ps->{syslog}
+$mysqld_ps->{user}, $mysqld_ps->{pcpu}, shorten($mysqld_ps->{rss} * 1024), shorten($mysqld_ps->{vsz} * 1024), $mysqld_ps->{syslog}
    Bin:      @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $instance->{mysqld_binary}
    Data dir: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
