@@ -1661,21 +1661,23 @@ sub shorten
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2088
+# MySQLInstance package 2119
 # ###########################################################################
 
+# MySQLInstance - Config and status values for an instance of mysqld
 package MySQLInstance;
 
 use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-
 use File::Temp ();
 use Carp;
+use Data::Dumper;
 
 my $option_pattern = '([^\s=]+)(?:=(\S+))?';
 
+# SHOW GLOBAL VARIABLES dialect => mysqld --help --verbose dialect
 my %alias_for = (
    ON   => 'TRUE',
    OFF  => 'FALSE',
@@ -1705,7 +1707,6 @@ my %undef_for = (
    secure_file_priv              => '',
    skip_external_locking         => 'ON',
    skip_name_resolve             => 'ON',
-   skip_grant_tables             => 'OFF',
    ssl_ca                        => '',
    ssl_capath                    => '',
    ssl_cert                      => '',
@@ -1736,9 +1737,12 @@ sub new {
 sub load_sys_vars {
    my ( $self, $dbh ) = @_;
    
+   # Sys vars and defaults according to mysqld
    my ( $defaults_file_op, $tmp_file ) = $self->_defaults_file_op();
    my $cmd = "$self->{mysqld_binary} $defaults_file_op --help --verbose";
    if ( my $mysqld_output = `$cmd` ) {
+      # Parse from mysqld output the list of sys vars and their default values
+      # listed at the end after all the help info.
       my ($sys_vars) = $mysqld_output =~ m/---\n(.*?)\n\n/ms;
       %{ $self->{conf_sys_vars} }
          = map {
@@ -1754,8 +1758,14 @@ sub load_sys_vars {
            } split "\n", $sys_vars;
    }
 
+   # Sys vars from SHOW STATUS
    $self->_load_online_sys_vars($dbh);
 
+   # Sys vars from defaults file
+   # These are used later by duplicate_values() and overriden_values().
+   # These are also necessary for vars like skip-name-resolve which are not
+   # shown in either SHOW VARIABLES or mysqld --help --verbose but are need
+   # for checks in MySQLAdvisor. 
    $self->{defaults_files_sys_vars}
       = $self->_vars_from_defaults_file($defaults_file_op); 
    foreach my $var_val ( reverse @{ $self->{defaults_file_sys_vars} } ) {
@@ -1770,37 +1780,52 @@ sub load_sys_vars {
    return;
 }
 
+# Returns a --defaults-file cmd line op suitable for mysqld, my_print_defaults,
+# etc., or a blank string if the defaults file is unknown.
 sub _defaults_file_op {
    my ( $self ) = @_;
    my $defaults_file_op = '';
    my $tmp_file = undef;
    if ( $self->{cmd_line_ops}->{defaults_file} ) {
+      # Copy defaults file to /tmp/ because Debian/Ubuntu mysqld apparently
+      # has a bug which prevents it from being read from non-standard locations.
       $tmp_file = File::Temp->new();
       my $cp_cmd = "cp $self->{cmd_line_ops}->{defaults_file} "
                    . $tmp_file->filename;
-      `$cp_cmd`; # TODO: this can fail, must check it
+      `$cp_cmd`;
       $defaults_file_op = "--defaults-file=" . $tmp_file->filename;
    }
+   # Must return $tmp_file obj so its reference lasts into the caller because
+   # when it's destroyed the actual tmp file is automatically unlinked 
    return ( $defaults_file_op, $tmp_file );
 }
 
+# Loads $self->{default_files_sys_vars} with only the sys vars that
+# are explicitly set in the defaults file. This is used for detecting
+# duplicates and overriden var/vals.
 sub _vars_from_defaults_file {
    my ( $self, $defaults_file_op ) = @_;
    my $cmd = "my_print_defaults $defaults_file_op mysqld";
    if ( my $my_print_defaults_output = `$cmd` ) {
       foreach my $var_val ( split "\n", $my_print_defaults_output ) {
+         # Make sys vars from conf look like those from SHOW VARIABLES
+         # (I.e. log_slow_queries instead of log-slow-queries
+         # and 33554432 instead of 32M, etc.)
          my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
          $var =~ s/-/_/go;
-         if ( defined $val
-               && (my ($pre, $suf) = $val =~ m/(\d+)([KMGT]?)/i) ) {
-            if ( $suf ) {
+         if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
+            if ( $2 ) {
                my %digits_for = (
-                  'k'   => 1 << 10,
-                  'm'   => 1 << 20,
-                  'g'   => 1 << 30,
-                  't'   => 1 << 40,
+                  'k'   => 1_024,
+                  'K'   => 1_204,
+                  'm'   => 1_048_576,
+                  'M'   => 1_048_576,
+                  'g'   => 1_073_741_824,
+                  'G'   => 1_073_741_824,
+                  't'   => 1_099_511_627_776,
+                  'T'   => 1_099_511_627_776,
                );
-               $val = $pre * $digits_for{lc($suf)};
+               $val = $1 * $digits_for{$2};
             }
          }
          if ( !defined $val && exists $undef_for{$var} ) {
@@ -1821,6 +1846,8 @@ sub _load_online_sys_vars {
    return;
 }
 
+# Get DSN specific to this MySQL instance (Baron, I didn't find other code
+# to do this. Plus, this relies on cmd_line_ops which is "private".)
 sub get_DSN {
    my ( $self ) = @_;
    my $port   = $self->{cmd_line_ops}->{port}     || '';
@@ -1833,6 +1860,8 @@ sub get_DSN {
    };
 }
 
+# duplicate_sys_vars() returns an array ref of sys var names that
+# appear more than once in the defaults file
 sub duplicate_sys_vars {
    my ( $self ) = @_;
    my @duplicate_vars;
@@ -1844,11 +1873,19 @@ sub duplicate_sys_vars {
    return \@duplicate_vars;
 }
 
+# overriden_sys_vars() returns a hash ref of overriden sys vars:
+#    key   = sys var that is overriden
+#    value = array [ val being used, val overriden ]
 sub overriden_sys_vars {
    my ( $self ) = @_;
    my %overriden_vars;
    foreach my $var_val ( @{ $self->{defaults_file_sys_vars} } ) {
       my ( $var, $val ) = ( $var_val->[0], $var_val->[1] );
+      if ( !defined $var || !defined $val ) {
+         my $dump = Dumper($var_val);
+         $ENV{MKDEBUG} && _d("Undefined var or val: $dump");
+         next;
+      }
       if ( exists $self->{cmd_line_ops}->{$var} ) {
          if(    ( !defined $self->{cmd_line_ops}->{$var} && !defined $val)
              || ( $self->{cmd_line_ops}->{$var} ne $val) ) {
@@ -1859,6 +1896,10 @@ sub overriden_sys_vars {
    return \%overriden_vars;
 }
 
+# out_of_sync_sys_vars() returns a hash ref of sys vars that differ in their
+# online vs. config values:
+#    key   = sys var that is out of sync
+#    value = array [ val online, val config ]
 sub out_of_sync_sys_vars {
    my ( $self ) = @_;
    my %out_of_sync_vars;
@@ -1867,12 +1908,14 @@ sub out_of_sync_sys_vars {
       my $conf_val        = $self->{conf_sys_vars}->{$var};
       my $online_val      = $self->{online_sys_vars}->{$var};
       my $var_out_of_sync = 0;
+      # Global %undef_for and the subs that populated conf_sys_vars
+      # and online_sys_vars should have taken care of any undefined
+      # values. If not, this sub will warn.
       if ( defined $conf_val ) {
-         if ( !defined $online_val ) {
-            carp "Variable $var isn't defined in SHOW VARIABLES";
-         }
-         elsif ( $conf_val ne $online_val ) {
+         if ( $conf_val ne $online_val ) {
             $var_out_of_sync = 1;
+            # But handle excepts where SHOW GLOBAL VARIABLES says ON and 
+            # mysqld --help --verbose says TRUE
             if ( exists $alias_for{$online_val} ) {
                $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
             }
@@ -1897,6 +1940,11 @@ sub load_status_vals {
                                         { Slice => {} })
             };
    return;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# MySQLInstance:$line $PID ", @_, "\n";
 }
 
 1;
@@ -2163,7 +2211,7 @@ sub run_checks {
 # ###########################################################################
 
 # ###########################################################################
-# AggregateProcessList package $Revision: 2113 $
+# AggregateProcessList package 2113
 # ###########################################################################
 
 # AggregateProcessList - Aggregate snapshots of SHOW PROCESSLIST
