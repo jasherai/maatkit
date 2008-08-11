@@ -122,7 +122,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1841
+# TableParser package 2108
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -156,7 +156,7 @@ sub parse {
 
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
-   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
    $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
@@ -202,18 +202,25 @@ sub parse {
 
       my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
-      my @cols   = grep { m/[^,]/ } split('`', $cols);
-      $name      =~ s/`//g;
+      my @cols;
+      my @col_prefixes;
+      foreach my $col_def ( split(',', $cols) ) {
+         my ($name, $prefix) = $col_def =~ m/`(\w+)`(?:\((\d+)\))?/;
+         push @cols, $name;
+         push @col_prefixes, $prefix;
+      }
+      $name =~ s/`//g;
       $ENV{MKDEBUG} && _d("Index $name columns: " . join(', ', @cols));
 
       $keys{$name} = {
-         colnames    => $cols,
-         cols        => \@cols,
-         unique      => $unique,
-         is_col      => { map { $_ => 1 } @cols },
-         is_nullable => scalar(grep { $is_nullable{$_} } @cols),
-         type        => $type,
-         name        => $name,
+         colnames     => $cols,
+         cols         => \@cols,
+         col_prefixes => \@col_prefixes,
+         unique       => $unique,
+         is_col       => { map { $_ => 1 } @cols },
+         is_nullable  => scalar(grep { $is_nullable{$_} } @cols),
+         type         => $type,
+         name         => $name,
       };
    }
 
@@ -796,7 +803,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 1957
+# DSNParser package 2005
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1038,8 +1045,8 @@ sub disconnect {
 sub print_active_handles {
    my ( $self, $thing, $level ) = @_;
    $level ||= 0;
-   printf("# Active %sh: %s %s %s\n", $thing->{Type}, "\t" x $level,
-      $thing, ($thing->{Type} eq 'st' ? $thing->{Statement} || '' : ''))
+   printf("# Active %sh: %s %s %s\n", ($thing->{Type} || 'undef'), "\t" x $level,
+      $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
       $self->print_active_handles->( $handle, $level + 1 );
