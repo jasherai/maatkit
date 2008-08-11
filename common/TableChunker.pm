@@ -63,6 +63,8 @@ sub find_chunk_columns {
    my @candidate_cols;
 
    # Only BTREE are good for range queries.  Sort in order of preferred-ness.
+   # TODO: indexes that have been created on prefixes of columns are not
+   # useful.  Eliminate them.
    my @possible_keys = grep { $_->{type} eq 'BTREE' } values %{$table->{keys}};
    @possible_keys = sort {
       ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
