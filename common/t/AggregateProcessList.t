@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 9;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -70,7 +70,7 @@ cmp_ok($ag_pl->{user}->{root}->{count}, '==', 1, '51 procs: 1 User root');
 cmp_ok($ag_pl->{state}->{null}->{count}, '==', 1, '51 procs: 1 State NULL');
 cmp_ok($ag_pl->{state}->{locked}->{count}, '==', 24, '51 procs: 24 State Locked');
 cmp_ok($ag_pl->{state}->{preparing}->{count}, '==', 26, '51 procs: 26 State preparing');
-
+cmp_ok($ag_pl->{host}->{'0.1.2.11'}->{count}, '==', 21, '51 procs: 21 Hosts 0.1.2.11');
 
 # print Dumper($ag_pl);
 

@@ -45,6 +45,7 @@ sub aggregate_processlist {
          my $val = $proc->{ $field };
             $val = $self->{undef_value} if !defined $val;
             $val = lc $val if ( $field eq 'Command' || $field eq 'State' );
+            $val =~ s/:.*// if $field eq 'Host';
          $field = lc $field;
          $agg_proclist->{ $field }->{ $val }->{time}  += $proc->{Time};
          $agg_proclist->{ $field }->{ $val }->{count} += 1;
