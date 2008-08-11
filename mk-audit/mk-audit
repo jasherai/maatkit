@@ -24,10 +24,10 @@ use warnings FATAL => 'all';
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision: 2080 $ =~ m/(\d+)/g);
+our $SVN_REV = sprintf("%d", map { $_ || 0 } q$Revision$ =~ m/(\d+)/g);
 
 # ###########################################################################
-# MySQLDump package 2007
+# MySQLDump package 2031
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -857,7 +857,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 1841
+# TableParser package 2097
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -937,18 +937,25 @@ sub parse {
 
       my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
       my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
-      my @cols   = grep { m/[^,]/ } split('`', $cols);
-      $name      =~ s/`//g;
+      my @cols;
+      my @col_prefixes;
+      foreach my $col_def ( split(',', $cols) ) {
+         my ($name, $prefix) = $col_def =~ m/`(\w+)`(?:\((\d+)\))?/;
+         push @cols, $name;
+         push @col_prefixes, $prefix;
+      }
+      $name =~ s/`//g;
       $ENV{MKDEBUG} && _d("Index $name columns: " . join(', ', @cols));
 
       $keys{$name} = {
-         colnames    => $cols,
-         cols        => \@cols,
-         unique      => $unique,
-         is_col      => { map { $_ => 1 } @cols },
-         is_nullable => scalar(grep { $is_nullable{$_} } @cols),
-         type        => $type,
-         name        => $name,
+         colnames     => $cols,
+         cols         => \@cols,
+         col_prefixes => \@col_prefixes,
+         unique       => $unique,
+         is_col       => { map { $_ => 1 } @cols },
+         is_nullable  => scalar(grep { $is_nullable{$_} } @cols),
+         type         => $type,
+         name         => $name,
       };
    }
 
@@ -1394,10 +1401,9 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# ServerSpecs package 2079
+# ServerSpecs package 2084
 # ###########################################################################
 
-# ServerSpecs - Gather info on server hardware and configuration
 package ServerSpecs;
 
 use strict;
@@ -1450,11 +1456,9 @@ sub server_specs {
       ($server{cpu}->{'64bit'}) = $info =~ m/flags.*\blm\b/ ? 'Yes' : 'No';
    }
    else {
-      # MSWin32, maybe?
       $server{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
    }
 
-   # This requires root access
    @{$server{memory}->{slots}} = ();
    if ( chomp(my $dmi = `dmidecode`) ) {
       my @keys = ( 'Size', 'Form Factor', 'Type', 'Type Detail', 'Speed');
@@ -1484,7 +1488,6 @@ sub server_specs {
       $server{storage}->{df} = $df;
    }
 
-   # LVM
    if ( -f '/sbin/vgs' ) {
       chomp(my $vgs = `vgs`);
       $vgs =~ s/^\s*/\t/g;
@@ -1515,7 +1518,6 @@ sub get_raid_info
       $server->{storage}->{raid} = $raid ? $raid : 'unknown';
    }
 
-   # Try several possible cmds to get raid status
    my $megarc = `which megarc && megarc -AllAdpInfo -aALL`;
    if ( $megarc ) {
       if ( $megarc =~ /No MegaRAID Found/i ) {
@@ -1536,7 +1538,6 @@ sub get_raid_info
       }
    }
 
-   # Parse raid status if available
    if( $megarc ) {
       $server->{storage}->{megarc}
          .= ($megarc =~ /^(Product Name.*\n)/m ? $1 : '');
@@ -1663,7 +1664,6 @@ sub shorten
 # MySQLInstance package 2088
 # ###########################################################################
 
-# MySQLInstance - Config and status values for an instance of mysqld
 package MySQLInstance;
 
 use strict;
@@ -1676,7 +1676,6 @@ use Carp;
 
 my $option_pattern = '([^\s=]+)(?:=(\S+))?';
 
-# SHOW GLOBAL VARIABLES dialect => mysqld --help --verbose dialect
 my %alias_for = (
    ON   => 'TRUE',
    OFF  => 'FALSE',
@@ -1706,6 +1705,7 @@ my %undef_for = (
    secure_file_priv              => '',
    skip_external_locking         => 'ON',
    skip_name_resolve             => 'ON',
+   skip_grant_tables             => 'OFF',
    ssl_ca                        => '',
    ssl_capath                    => '',
    ssl_cert                      => '',
@@ -1736,12 +1736,9 @@ sub new {
 sub load_sys_vars {
    my ( $self, $dbh ) = @_;
    
-   # Sys vars and defaults according to mysqld
    my ( $defaults_file_op, $tmp_file ) = $self->_defaults_file_op();
    my $cmd = "$self->{mysqld_binary} $defaults_file_op --help --verbose";
    if ( my $mysqld_output = `$cmd` ) {
-      # Parse from mysqld output the list of sys vars and their default values
-      # listed at the end after all the help info.
       my ($sys_vars) = $mysqld_output =~ m/---\n(.*?)\n\n/ms;
       %{ $self->{conf_sys_vars} }
          = map {
@@ -1757,14 +1754,8 @@ sub load_sys_vars {
            } split "\n", $sys_vars;
    }
 
-   # Sys vars from SHOW STATUS
    $self->_load_online_sys_vars($dbh);
 
-   # Sys vars from defaults file
-   # These are used later by duplicate_values() and overriden_values().
-   # These are also necessary for vars like skip-name-resolve which are not
-   # shown in either SHOW VARIABLES or mysqld --help --verbose but are need
-   # for checks in MySQLAdvisor. 
    $self->{defaults_files_sys_vars}
       = $self->_vars_from_defaults_file($defaults_file_op); 
    foreach my $var_val ( reverse @{ $self->{defaults_file_sys_vars} } ) {
@@ -1779,52 +1770,37 @@ sub load_sys_vars {
    return;
 }
 
-# Returns a --defaults-file cmd line op suitable for mysqld, my_print_defaults,
-# etc., or a blank string if the defaults file is unknown.
 sub _defaults_file_op {
    my ( $self ) = @_;
    my $defaults_file_op = '';
    my $tmp_file = undef;
    if ( $self->{cmd_line_ops}->{defaults_file} ) {
-      # Copy defaults file to /tmp/ because Debian/Ubuntu mysqld apparently
-      # has a bug which prevents it from being read from non-standard locations.
       $tmp_file = File::Temp->new();
       my $cp_cmd = "cp $self->{cmd_line_ops}->{defaults_file} "
                    . $tmp_file->filename;
-      `$cp_cmd`;
+      `$cp_cmd`; # TODO: this can fail, must check it
       $defaults_file_op = "--defaults-file=" . $tmp_file->filename;
    }
-   # Must return $tmp_file obj so its reference lasts into the caller because
-   # when it's destroyed the actual tmp file is automatically unlinked 
    return ( $defaults_file_op, $tmp_file );
 }
 
-# Loads $self->{default_files_sys_vars} with only the sys vars that
-# are explicitly set in the defaults file. This is used for detecting
-# duplicates and overriden var/vals.
 sub _vars_from_defaults_file {
    my ( $self, $defaults_file_op ) = @_;
    my $cmd = "my_print_defaults $defaults_file_op mysqld";
    if ( my $my_print_defaults_output = `$cmd` ) {
       foreach my $var_val ( split "\n", $my_print_defaults_output ) {
-         # Make sys vars from conf look like those from SHOW VARIABLES
-         # (I.e. log_slow_queries instead of log-slow-queries
-         # and 33554432 instead of 32M, etc.)
          my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
          $var =~ s/-/_/go;
-         if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
-            if ( $2 ) {
+         if ( defined $val
+               && (my ($pre, $suf) = $val =~ m/(\d+)([KMGT]?)/i) ) {
+            if ( $suf ) {
                my %digits_for = (
-                  'k'   => 1_024,
-                  'K'   => 1_204,
-                  'm'   => 1_048_576,
-                  'M'   => 1_048_576,
-                  'g'   => 1_073_741_824,
-                  'G'   => 1_073_741_824,
-                  't'   => 1_099_511_627_776,
-                  'T'   => 1_099_511_627_776,
+                  'k'   => 1 << 10,
+                  'm'   => 1 << 20,
+                  'g'   => 1 << 30,
+                  't'   => 1 << 40,
                );
-               $val = $1 * $digits_for{$2};
+               $val = $pre * $digits_for{lc($suf)};
             }
          }
          if ( !defined $val && exists $undef_for{$var} ) {
@@ -1845,8 +1821,6 @@ sub _load_online_sys_vars {
    return;
 }
 
-# Get DSN specific to this MySQL instance (Baron, I didn't find other code
-# to do this. Plus, this relies on cmd_line_ops which is "private".)
 sub get_DSN {
    my ( $self ) = @_;
    my $port   = $self->{cmd_line_ops}->{port}     || '';
@@ -1859,8 +1833,6 @@ sub get_DSN {
    };
 }
 
-# duplicate_sys_vars() returns an array ref of sys var names that
-# appear more than once in the defaults file
 sub duplicate_sys_vars {
    my ( $self ) = @_;
    my @duplicate_vars;
@@ -1872,9 +1844,6 @@ sub duplicate_sys_vars {
    return \@duplicate_vars;
 }
 
-# overriden_sys_vars() returns a hash ref of overriden sys vars:
-#    key   = sys var that is overriden
-#    value = array [ val being used, val overriden ]
 sub overriden_sys_vars {
    my ( $self ) = @_;
    my %overriden_vars;
@@ -1890,10 +1859,6 @@ sub overriden_sys_vars {
    return \%overriden_vars;
 }
 
-# out_of_sync_sys_vars() returns a hash ref of sys vars that differ in their
-# online vs. config values:
-#    key   = sys var that is out of sync
-#    value = array [ val online, val config ]
 sub out_of_sync_sys_vars {
    my ( $self ) = @_;
    my %out_of_sync_vars;
@@ -1902,14 +1867,12 @@ sub out_of_sync_sys_vars {
       my $conf_val        = $self->{conf_sys_vars}->{$var};
       my $online_val      = $self->{online_sys_vars}->{$var};
       my $var_out_of_sync = 0;
-      # Global %undef_for and the subs that populated conf_sys_vars
-      # and online_sys_vars should have taken care of any undefined
-      # values. If not, this sub will warn.
       if ( defined $conf_val ) {
-         if ( $conf_val ne $online_val ) {
+         if ( !defined $online_val ) {
+            carp "Variable $var isn't defined in SHOW VARIABLES";
+         }
+         elsif ( $conf_val ne $online_val ) {
             $var_out_of_sync = 1;
-            # But handle excepts where SHOW GLOBAL VARIABLES says ON and 
-            # mysqld --help --verbose says TRUE
             if ( exists $alias_for{$online_val} ) {
                $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
             }
@@ -1946,7 +1909,6 @@ sub load_status_vals {
 # SchemaDiscover package 2086
 # ###########################################################################
 
-# SchemaDiscover - Discover every db, table and index in the schema
 package SchemaDiscover;
 
 use strict;
@@ -1968,7 +1930,6 @@ sub new {
       dbs    => {},
       counts => {},
    };
-   # brevity:
    my $dbs         = $self->{dbs};
    my $counts      = $self->{counts};
    my $dbh         = $self->{dbh};
@@ -1994,16 +1955,12 @@ sub new {
          my $ddl = $MySQLDump->get_create_table($dbh, $Quoter, $db, $table);
          my $table_info = TableParser->parse($ddl);
          my $n_indexes = scalar keys %{ $table_info->{keys} };
-         # TODO: pass mysql version to TableParser->parse()
-         # TODO: also aggregate indexes by type: BTREE, HASH, FULLTEXT etc
-         #       so we can get a count + size along that dimension too
 
          my $data_size  = $dbs->{$db}->{$table}->{data_length}  ||= 0;
          my $index_size = $dbs->{$db}->{$table}->{index_length} ||= 0;
          my $rows       = $dbs->{$db}->{$table}->{rows}         ||= 0;
          my $engine     = $dbs->{$db}->{$table}->{engine}; 
 
-         # Per-db counts
          $counts->{dbs}->{$db}->{tables}             += 1;
          $counts->{dbs}->{$db}->{indexes}            += $n_indexes;
          $counts->{dbs}->{$db}->{engines}->{$engine} += 1;
@@ -2011,13 +1968,11 @@ sub new {
          $counts->{dbs}->{$db}->{data_size}          += $data_size;
          $counts->{dbs}->{$db}->{index_size}         += $index_size;
 
-         # Per-engline counts
          $counts->{engines}->{$engine}->{tables}     += 1;
          $counts->{engines}->{$engine}->{indexes}    += $n_indexes;
          $counts->{engines}->{$engine}->{data_size}  += $data_size;
          $counts->{engines}->{$engine}->{index_size} += $index_size; 
 
-         # Grand total schema counts
          $counts->{TOTAL}->{tables}     += 1;
          $counts->{TOTAL}->{indexes}    += $n_indexes;
          $counts->{TOTAL}->{rows}       += $rows;
@@ -2065,7 +2020,6 @@ sub discover_triggers_routines_events {
 # MySQLAdvisor package 2087
 # ###########################################################################
 
-# MySQLAdvisor - Check MySQL system variables and status values for problems
 package MySQLAdvisor;
 
 use strict;
@@ -2075,8 +2029,6 @@ use English qw(-no_match_vars);
 
 use List::Util qw(max);
 
-# These check subs return 0 if the check passes or a string describing what
-# failed.  If a check can't be tested (e.g. no Innodb_ status values), return 0.
 my %checks = (
    innodb_flush_method =>
       sub {
@@ -2175,12 +2127,6 @@ sub new {
    return bless $self, $class;
 }
 
-# run_checks() returns a hash of checks that fail:
-#    key   = name of check
-#    value = description of failure
-# $check_name is optional: if given, only that check is ran, otherwise
-# all checks are ran. If the given check name does not exist, the returned
-# hash will have only one key = ERROR => value = error msg
 sub run_checks {
    my ( $self, $check_name ) = @_;
    my %problems;
@@ -2698,12 +2644,21 @@ mk-audit - Analyze, summarize and advise on MySQL config, schema and operation
 
 =head1 DESCRIPTION
 
-   mk-audit analyzes, summarizes and advises on MySQL configuration, schema
-   and operation. For each unique instance of MySQL running on a server,
-   mk-audit provides a comprehensive analysis and summary of its configuration
-   and schema and a list of potential problems concerning everything from
-   system variable values to schema oddities. It also includes a summary of
-   server specs: OS, CPUs, RAM, storage, etc.
+mk-audit summarizes the information a consultant may find useful when analyzing
+a MySQL server.  It prints out a report that contains the following information:
+
+=head2 OPERATING SYSTEM
+
+The operating system report shows information about the operating system and
+hardware.  The information includes the operating system version and flavor, and
+information on CPU, memory and disks as well as some core system libraries.
+
+This is currently very specific to GNU/Linux.
+
+=head2 MYSQL
+
+For each MySQL instance detected on the system, mk-audit reports some
+information on the server and the data in it.
 
 =head1 DOWNLOADING
 
@@ -2791,124 +2746,10 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz
-
-Daniel Nichter
+Daniel Nichter, Baron Schwartz
 
 =head1 VERSION
 
-This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 2080 $.
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
-=head1 TODO
-
-The following items are unimplemented at this time:
-
-   General:
-      * add a --sudo option.  If commands such as dmidecode don't work, this
-        option makes them retry with sudo.
-   Operating System:
-      * Are we inside a Virtual Machine like VMWare or VirtualBox?
-      * Some Linux-specific parameters that we commonly check/tweak:
-        - (others?)
-      * use ethtool, ip, etc to discover nics, IP addresses and network speed
-   Hardware
-      * raid status: (is this working? over info to caputre?)
-         - parse multiple adapters
-      * check where MySQL data is stored, and make sure that filesystem is
-        mounted with noatime.
-   Operating System
-      * vmstat samples
-      * iostat usage if possible
-   MySQL
-      * for each instance, do:
-         * run mysqld --help --verbose and make sure config file is valid
-      * Data and schema
-         * filefrag on data files?
-         * verbose option: 
-            produce a detailed per-db, per-tbl schema report showing size, index
-            size, engine, number of indexes, number of columns etc for each
-            table.  Maybe also mention unusual data types in the table, or a
-            summary of the data types.  Also show triggers.
-            * for datetime columns, check a naming convention and guess whether
-            they can be timestamp instead.  'ts', 'created_at', 'last_updated'
-            * For each table with an auto-inc PK and a timestamp, try to guess
-               how many rows/day it grows, both overall and more recently, by
-               splitting up and getting the timestamps at various points in th
-               table.
-            * Draw a histogram of these values.
-      * Indexes:
-         * Top N tables with the most/least indexes
-         * Compute indexes that are not very selective
-      * Storage engines
-         * views
-         * merge tables (how many are broken)
-            * check if MERGE tables sum up the size of their contained tables in
-              SHOW TABLE STATUS
-            * look for this error in SHOW TABLE STATUS: Unable to open
-              underlying table
-         * partitioned tables
-            * count of partitioned tables
-            * look for partitioned tables that don't have many future partitions:
-              ) ENGINE=InnoDB DEFAULT CHARSET=latin1 /*!50100 PARTITION BY RANGE
-              (YEAR(day)) (PARTITION p_2006 VALUES LESS THAN (2007) ENGINE = InnoDB,
-              PARTITION p_2007 VALUES LESS THAN (2008) ENGINE = InnoDB, PARTITION p_2008
-              VALUES LESS THAN (2009) ENGINE = InnoDB, PARTITION p_catchall VALUES LESS
-              THAN MAXVALUE ENGINE = InnoDB) */
-      * Status
-         * small innodb log files, large innodb_additional_mem_pool
-         * on a slave, innodb_flush_log_at_trx_commit doesn't need to be 1
-         * Watch prepared statements and compare to max
-         * Watch for "bad query patterns" such as RAND() or storing IP addresses
-         as varchar or using TO_DAYS(column) < TO_DAYS(NOW()) - 5
-      * Connections and users
-         * report anonymous users
-         * report obsolete privileges (privs that refer to dbs or tables that
-           don't exist)
-         * aggregate a few processlist snapshots.  Print aggregates by Command
-           and State, and by host.  Look for interesting things like
-            * insert delayed
-         * aggregate SHOW INNODB STATUS the same way.  A note on issue 1028 is a
-         good example.
-         * report master/slave status, how many slaves are attached and from
-            where
-
-   * Look for authenticating connections, extract the hostname, try to reverse
-     lookup the DNS
-   * Advise to use skip-name-resolve regardless...
-   * look for innoDB free space vs. real space on disk to figure out how much is
-     used.  Compare this to config file setting for buffer pool.
-   * add mysqladmin -ext -i60 and put several samples side by side
-   * add timestamps to all snapshots
-   * check if if key_buffer and innodb_buffer_pool too big (big % of available
-     memory or a lot of unused buffers).
-   * check redundant indexes
-   * alerts on COUNT(*) .. queries. 
-   * Look for tables that have silly schema, like a lot of varchar(255)
-   * Look for non-recommended data types, like float(M,N) and BIT
-   * Look for nullable columns that contain no NULLs, especially indexed columns
-   * Automatically run PROCEDURE ANALYSE on tables that look bad.
-   * Determine the thoroughness of the search by how large the DB/table is.
-   * watch how much data InnoDB writes to the log files per second, recommend
-     log buffer size.
-   * report master/slave info: how many slaves are connected, what the master is
-   * ondisk temp tables are min(temp_table_size, heap_table_size)
-   * Figure out whether key_buffer is as big as it can be already, and alert
-     that multiple buffers will have to be used.
-   * Replication:
-      * Look for temporary tables and warn about this (tmp table variable on a
-        slave, or tmp table queries in the processlist).
-      * Look for unsafe settings: binlog_do_db or binlog_ignore_db
-      * Check for expire_logs_days policy
-      * Check that the binlog.index file matches what's on disk
-   * Parse db.tbl names out of statements in the processlist and make a list of
-   the most popular dbs and tbls, in the format of a table, with the columns
-   being ins/upd/del/sel/rep/other
-   * deconstruct sprocs and explain them -- convert vars int @variables
-   * Look for derived tables that have no aggregation inside them
-   * Look for explain plans that have a bad ref type or not-full key usage or
-   high number of rows or no 'ref'
-   * Look for auto-increment locking in Innodb:
-      *** (2) WAITING FOR THIS LOCK TO BE GRANTED:
-      TABLE LOCK table `foo/bar` trx id 0 1313586251 lock mode AUTO-INC waiting
-      TOO DEEP OR LONG SEARCH IN THE LOCK TABLE WAITS-FOR GRAPH
 =cut
