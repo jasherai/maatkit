@@ -2178,7 +2178,7 @@ sub run_checks {
 # ###########################################################################
 
 # ###########################################################################
-# AggregateProcessList package 2116
+# AggregateProcessList package 2124
 # ###########################################################################
 
 package AggregateProcessList;
@@ -2192,7 +2192,7 @@ use Data::Dumper;
 sub new {
    my ( $class, $dbh, $params ) = @_;
    my $self = defined $params ? { %{ $params } } : {};
-   $self->{undef_value} ||= '';
+   $self->{undef_value} ||= 'NULL';
    return bless $self, $class;
 }
 
