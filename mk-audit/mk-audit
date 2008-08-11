@@ -2163,6 +2163,56 @@ sub run_checks {
 # ###########################################################################
 
 # ###########################################################################
+# AggregateProcessList package $Revision: 2113 $
+# ###########################################################################
+
+# AggregateProcessList - Aggregate snapshots of SHOW PROCESSLIST
+package AggregateProcessList;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Carp;
+use Data::Dumper;
+
+sub new {
+   my ( $class, $dbh, $params ) = @_;
+   my $self = defined $params ? { %{ $params } } : {};
+   $self->{undef_value} ||= '';
+   return bless $self, $class;
+}
+
+sub aggregate_processlist {
+   my ( $self, $recset ) = @_;
+   my $agg_proclist = {};
+   foreach my $proc ( @{ $recset } ) {
+      foreach my $field ( keys %{ $proc } ) {
+         next if $field eq 'Id';
+         next if $field eq 'Info';
+         next if $field eq 'Time';
+         my $val = $proc->{ $field };
+            $val = $self->{undef_value} if !defined $val;
+            $val = lc $val if ( $field eq 'Command' || $field eq 'State' );
+         $field = lc $field;
+         $agg_proclist->{ $field }->{ $val }->{time}  += $proc->{Time};
+         $agg_proclist->{ $field }->{ $val }->{count} += 1;
+      }
+   }
+   return $agg_proclist;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# AggregateProcessList:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End AggregateProcessList package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -2262,6 +2312,12 @@ foreach my $mysqld_ps ( mysqld_processes() ) {
                MySQLAdvisor    => $advisor,
              };
    report_MySQL_instance($params);
+
+   my $apl = AggregateProcessList->new();
+   my $processlist = $dbh->selectall_arrayref('SHOW PROCESSLIST',
+                                              { Slice => {} } );
+   report_aggregated_processlist( $apl->aggregate_processlist($processlist) );
+
    $dbh->disconnect();
 } # foreach mysqld process
 
@@ -2625,6 +2681,22 @@ sub engines_summary
               . ", index "   . shorten($engines->{$engine}->{index_size});
    }
    return $ret;
+}
+
+sub report_aggregated_processlist {
+   my ( $ag_pl ) = @_;  # aggregated_processlist
+   print   "\n   Aggregated PROCESSLIST ________________________________________________\n"
+         . "\tFIELD\tVALUE\t\tCOUNT\tTOTAL TIME (s)\n";
+   foreach my $field ( keys %{ $ag_pl } ) {
+      print   "\t$field\n";
+      foreach my $val ( keys %{ $ag_pl->{$field} } ) {
+         print   "\t\t$val"
+               . "\t\t$ag_pl->{$field}->{$val}->{count}"
+               . "\t$ag_pl->{$field}->{$val}->{time}"
+               . "\n";
+      }
+   }
+   return;
 }
 
 # ############################################################################
