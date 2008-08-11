@@ -2599,7 +2599,7 @@ exists $instance->{online_sys_vars}->{innodb_buffer_pool_size} ? shorten($instan
    }
    my $failed_checks = $advisor->run_checks();
    if ( scalar keys %{ $failed_checks } ) {
-      print "\tMySQL Advisor:\n";
+      print "\tThings to Note:\n";
       foreach my $check_name ( keys %{ $failed_checks } ) {
          print "\t\t- $failed_checks->{$check_name}\n";
       }
