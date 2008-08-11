@@ -265,7 +265,7 @@ sub out_of_sync_sys_vars {
       # Global %undef_for and the subs that populated conf_sys_vars
       # and online_sys_vars should have taken care of any undefined
       # values. If not, this sub will warn.
-      if ( defined $conf_val ) {
+      if ( defined $conf_val && defined $online_val ) {
          if ( $conf_val ne $online_val ) {
             $var_out_of_sync = 1;
             # But handle excepts where SHOW GLOBAL VARIABLES says ON and 
@@ -277,6 +277,12 @@ sub out_of_sync_sys_vars {
       }
       else {
          carp "Undefined system variable: $var";
+         if ( $ENV{MKDEBUG} ) {
+            my $dump_conf   = Dumper($conf_val);
+            my $dump_online = Dumper($online_val);
+            _d("Undefined val: conf=$dump_conf online=$dump_online");
+         }
+         next;
       }
       if($var_out_of_sync) {
          $out_of_sync_vars{$var}
