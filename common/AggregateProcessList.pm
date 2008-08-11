@@ -30,7 +30,7 @@ use Data::Dumper;
 sub new {
    my ( $class, $dbh, $params ) = @_;
    my $self = defined $params ? { %{ $params } } : {};
-   $self->{undef_val} ||= '';
+   $self->{undef_value} ||= '';
    return bless $self, $class;
 }
 
