@@ -167,6 +167,8 @@ sub _vars_from_defaults_file {
          # and 33554432 instead of 32M, etc.)
          my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
          $var =~ s/-/_/go;
+         # TODO: this can be more compact ( $digits_for{lc $2} ) and shouldn't
+         # use $1, $2
          if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
             if ( $2 ) {
                my %digits_for = (
@@ -266,6 +268,11 @@ sub out_of_sync_sys_vars {
       # and online_sys_vars should have taken care of any undefined
       # values. If not, this sub will warn.
       if ( defined $conf_val && defined $online_val ) {
+         # TODO: try this on a server with skip_grant_tables set, it crashes on
+         # me in a not-friendly way.  Probably ought to use eval {} and catch
+         # error.  Also, carp() may not be right here, it gives the wrong
+         # impression I think.  (I guess I just am used to seeing die show the
+         # real line....)
          if ( $conf_val ne $online_val ) {
             $var_out_of_sync = 1;
             # But handle excepts where SHOW GLOBAL VARIABLES says ON and 
