@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 9;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -90,6 +90,18 @@ is_deeply(
       command => { query => { count => 51, time => 529 } }
    },
    'Sample with 51 processes',
+);
+
+$recset = $r->parse(
+   load_file('samples/RecsetFromTxt-proclist_vertical_113_rows_NULL_Time.txt') );
+$ag_pl = $apl->aggregate_processlist($recset);
+cmp_ok(
+   $ag_pl->{db}->{NULL}->{count}, '==', 3,
+   '113 proc sample: 3 NULL db'
+);
+cmp_ok(
+   $ag_pl->{db}->{happy}->{count}, '==', 110,
+   '113 proc sample: 110 happy db'
 );
 
 exit;

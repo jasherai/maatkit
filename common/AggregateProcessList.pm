@@ -42,12 +42,14 @@ sub aggregate_processlist {
          next if $field eq 'Id';
          next if $field eq 'Info';
          next if $field eq 'Time';
-         my $val = $proc->{ $field };
-            $val = $self->{undef_value} if !defined $val;
-            $val = lc $val if ( $field eq 'Command' || $field eq 'State' );
-            $val =~ s/:.*// if $field eq 'Host';
+         my $val  = $proc->{ $field };
+            $val  = $self->{undef_value} if !defined $val;
+            $val  = lc $val if ( $field eq 'Command' || $field eq 'State' );
+            $val  =~ s/:.*// if $field eq 'Host';
+         my $time = $proc->{Time};
+            $time = 0 if $time eq 'NULL';
          $field = lc $field;
-         $agg_proclist->{ $field }->{ $val }->{time}  += $proc->{Time};
+         $agg_proclist->{ $field }->{ $val }->{time}  += $time;
          $agg_proclist->{ $field }->{ $val }->{count} += 1;
       }
    }
