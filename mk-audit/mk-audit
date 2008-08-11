@@ -2454,7 +2454,7 @@ $inst_num
 $instance->{online_sys_vars}->{version}, $mysqld_ps->{'64bit'}
    Uptime:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 sec_to_dhms($instance->{status_vals}->{Uptime})
-   ps vals: user @<<<<<<< pcpu @<<<<<< rss @<<<<<< vsz @<<<<<< syslog: @<<
+   ps vals:  user @<<<<<<< cpu% @<<<<< rss @<<<<<< vsz @<<<<<< syslog: @<<
 $mysqld_ps->{user}, $mysqld_ps->{pcpu}, shorten($mysqld_ps->{rss}), shorten($mysqld_ps->{vsz}), $mysqld_ps->{syslog}
    Bin:      @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $instance->{mysqld_binary}
