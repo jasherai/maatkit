@@ -1,5 +1,8 @@
 Changelog for mk-find:
 
+2008-08-11: version 0.9.12
+
+   * Files downloaded directly from SVN crashed due to version information.
    * Added --exec_dsn so you can execute SQL on a different server.
 
 2008-06-02: version 0.9.11

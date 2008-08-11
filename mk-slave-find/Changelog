@@ -1,5 +1,9 @@
 Changelog for mk-slave-find:
 
+2008-08-11: version 1.0.2
+
+   * Files downloaded directly from SVN crashed due to version information.
+
 2008-06-02: version 1.0.1
 
    * Updated common code.

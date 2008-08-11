@@ -1,5 +1,8 @@
 Changelog for mk-parallel-restore:
 
+2008-08-11: version 1.0.8
+
+   * Files downloaded directly from SVN crashed due to version information.
    * Added --progress option.
 
 2008-06-02: version 1.0.7

@@ -1,5 +1,9 @@
 Changelog for mk-deadlock-logger:
 
+2008-08-11: version 1.0.11
+
+   * Files downloaded directly from SVN crashed due to version information.
+
 2008-06-02: version 1.0.10
 
    * Generate command-line options from POD.

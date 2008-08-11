@@ -1,5 +1,8 @@
 Changelog for mk-table-sync:
 
+2008-08-11: version 1.0.8
+
+   * Files downloaded directly from SVN crashed due to version information.
    * --synctomaster did not abort when unable to discover the master.
    * An error waiting for the master to catch up caused other tables to fail.
    * Added --bufferinmysql to help make GroupBy algorithm more efficient.
