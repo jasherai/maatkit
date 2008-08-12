@@ -3838,7 +3838,7 @@ the same values on different MySQL versions and hardware.
 
 short form: -f; type: string
 
-Hash function for checksums (FNV_64, SHA1, MD5, etc).
+Hash function for checksums (FNV_64, SHA1, MD5, CRC32, etc).
 
 You can use this option to choose the cryptographic hash function used for
 L<"--algorithm">=ACCUM or L<"--algorithm">=BIT_XOR.  The default is to use
@@ -3850,6 +3850,9 @@ The C<FNV_64> UDF mentioned in the benchmarks is much faster than C<MD5>.  The
 C++ source code is distributed with Maatkit.  It is very simple to compile and
 install; look at the header in the source code for instructions.  If it is
 installed, it is the default.
+
+If a higher collision rate is acceptable, you can use C<CRC32()> which is quite
+fast.
 
 =item --ignoredb
 
