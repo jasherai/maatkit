@@ -5,6 +5,11 @@ set -u
 
 VER=`grep Revision packlist | head -n 1 | awk '{print $2}'`
 
-curl -T "release/maatkit-$VER{.tar.gz,.zip}" \
-   ftp://anonymous@upload.sourceforge.net/incoming/ \
-   -T release-debian/maatkit_$VER*.deb ftp://anonymous@upload.sourceforge.net/incoming/
+./googlecode_upload.py -p maatkit -s "tarball release $VER" \
+   -u baron.schwartz -l Featured release/maatkit-$VER.tar.gz;
+
+./googlecode_upload.py -p maatkit -s "zip release $VER" \
+   -u baron.schwartz -l Featured release/maatkit-$VER.zip;
+
+./googlecode_upload.py -p maatkit -s ".deb release $VER" \
+   -u baron.schwartz -l Featured release-debian/maatkit_$VER-1_all.deb;
