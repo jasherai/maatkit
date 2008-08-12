@@ -42,7 +42,19 @@ foreach my $p ( @packages ) {
       foreach my $prop ( qw(svn:executable svn:keywords) ) {
          die "$tool doesn't have $prop set" unless $output =~ m/$prop/;
       }
+      $output = `svn propget svn:keywords $tool`;
+      chomp $output;
+      die "$tool doesn't have svn:keywords set to Revision"
+         unless $output eq 'Revision';
    }
+}
+
+# Don't release if any module is missing the correct SVN keywords
+foreach my $mod ( <$base/common/*.pm> ) {
+   my $output = `svn propget svn:keywords $mod`;
+   chomp $output;
+   die "$mod doesn't have svn:keywords set to Revision"
+      unless $output eq 'Revision';
 }
 
 my %versions;
