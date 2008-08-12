@@ -2442,7 +2442,7 @@ sub report_server_specs {
    my ( $server ) = @_;
 
 format SERVER_1 =
-================================================================== Server Specs
+__________________________________________________________________ Server Specs
 OS: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  64bit: @<<
 "$server->{os}->{name} $server->{os}->{version}", $server->{os}->{'64bit'}
 
@@ -2521,7 +2521,7 @@ sub report_MySQL_instance {
 
 format MYSQL_INSTANCE_1 =
 
-============================================================ MySQL Instance @>>
+____________________________________________________________ MySQL Instance @>>
 $inst_num
    Version:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  64bit: @<<
 $instance->{online_sys_vars}->{version}, $mysqld_ps->{'64bit'}
