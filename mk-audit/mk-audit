@@ -2828,6 +2828,15 @@ short form: -p; type: string
 
 Password to use when connecting.
 
+=item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
+
+Specify any variables you want to be set immediately after connecting to MySQL.
+These will be included in a C<SET> command.
+
 =item --top
 
 short form: -t; type: int; default: 5

@@ -1798,7 +1798,7 @@ my @opt_spec = (
    '--lpins and --delayedins are mutually exclusive.',
    '--sharelock and --forupdate are mutually exclusive.',
    '--analyze and --optimize are mutually exclusive.',
-   # opts{p} -- satisfy the auto-checking, because line below uses --purge
+   # $opts{p} -- satisfy the auto-checking, because line below uses --purge
    'Specify at least one of --dest, --file, or --purge.',
    'DSN values in --dest default to values from --source if COPY is yes.',
    '--noascend and --nodelete are mutually exclusive.',

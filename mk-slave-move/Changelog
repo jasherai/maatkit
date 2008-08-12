@@ -2,6 +2,7 @@ Changelog for mk-slave-move:
 
 2008-08-11: version 0.9.2
 
+   * The -m option was not recognized as an alias for --timeout.
    * Files downloaded directly from SVN crashed due to version information.
 
 2008-06-02: version 0.9.1

@@ -1672,7 +1672,7 @@ An "uncle" is a sibling of the server's master.  The procedure is as follows:
 
 =item --timeout
 
-short option: -m; type: time; default: 10m
+short form: -m; type: time; default: 10m
 
 Timeout when waiting for replication to catch up.
 

@@ -17,14 +17,33 @@ if ( $svnst =~ m/\S/ ) {
    exit(1);
 }
 
-# Find list of packages
+# Find list of packages.
+# NOTE XXX This is where you need to edit if you want to add a new tool to be
+# released.
 my $base     = '..';
-my @packages = qw(
+my @packages = sort qw(
    mk-archiver mk-deadlock-logger mk-duplicate-key-checker mk-find
-   mk-finger mk-heartbeat mk-log-parser mk-parallel-dump mk-slave-prefetch
+   mk-heartbeat mk-log-parser mk-parallel-dump mk-slave-prefetch
    mk-parallel-restore mk-query-profiler mk-show-grants mk-slave-delay
    mk-slave-restart mk-table-checksum mk-table-sync mk-visual-explain
-   mk-slave-find mk-slave-move);
+   mk-slave-find mk-slave-move mk-audit);
+
+# Don't release if any tool is missing a test
+foreach my $p ( @packages ) {
+   die "$p doesn't have a test"
+      unless -d "$base/$p/t";
+   # And complain if the tool doesn't run OK with MKDEBUG=1, or a variety of
+   # other woes
+   foreach my $tool ( <$base/$p/mk-*> ) {
+      my $output = `MKDEBUG=1 $tool --help 2>&1`;
+      die "$tool has unused/undefined command-line options"
+         if $output =~ m/The following command-line options/;
+      $output = `svn proplist $tool`;
+      foreach my $prop ( qw(svn:executable svn:keywords) ) {
+         die "$tool doesn't have $prop set" unless $output =~ m/$prop/;
+      }
+   }
+}
 
 my %versions;
 
