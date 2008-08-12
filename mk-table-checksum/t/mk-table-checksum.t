@@ -12,7 +12,9 @@ my $cmd = "perl ../mk-table-checksum --defaults-file=$cnf -d test -t checksum_te
 
 # Load.
 sleep 1 until `/tmp/12345/use -N -e 'select 1' 2>&1` eq "1\n";
-`/tmp/12345/use < before.sql`;
+
+# If this fails, you need to build the fnv_64 UDF and copy it to /lib
+print `/tmp/12345/use < before.sql`;
 
 # Test basic functionality with defaults
 $output = `$cmd 2>&1`;
