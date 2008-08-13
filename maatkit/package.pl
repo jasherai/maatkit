@@ -107,7 +107,7 @@ print `cat maatkit.tail.pod >> $dist/lib/maatkit.pm`;
 print `cat maatkitdsn.pod >> $dist/lib/maatkitdsn.pm`;
 
 # Copy other files
-foreach my $file ( qw(README Makefile.PL COPYING INSTALL maatkit.spec) ) {
+foreach my $file ( qw(README Makefile.PL COPYING INSTALL ../spec/maatkit.spec) ) {
    print `cp $file $dist`;
 }
 print `cp ../udf/fnv_udf.cc $dist/udf`;
