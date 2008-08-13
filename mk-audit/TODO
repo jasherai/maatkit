@@ -75,6 +75,7 @@ The following items are unimplemented at this time:
    * Look for authenticating connections, extract the hostname, try to reverse
      lookup the DNS
    * Advise to use skip-name-resolve regardless...
+   * tmp_table_size larger than max_heap_table_size is probably a mistake
    * look for innoDB free space vs. real space on disk to figure out how much is
      used.  Compare this to config file setting for buffer pool.
    * add mysqladmin -ext -i60 and put several samples side by side
