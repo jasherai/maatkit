@@ -70,6 +70,8 @@ The following items are unimplemented at this time:
          * report master/slave status, how many slaves are attached and from
             where
 
+   * Look at SHOW MASTER LOGS.  If there are any with 0 size, the user is
+     deleting binlogs manually and that will screw up MySQL, warn about that.
    * Look for authenticating connections, extract the hostname, try to reverse
      lookup the DNS
    * Advise to use skip-name-resolve regardless...
