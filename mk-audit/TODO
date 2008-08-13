@@ -90,7 +90,9 @@ The following items are unimplemented at this time:
      common auto-generated length is varchar(50).  If many varchar have the same
      length, raise an alarm.  In fact, a schema-wide summary of data types and
      lengths, and the number of each, would be very useful.
-   * Look for non-recommended data types, like float(M,N) and BIT
+   * Look for non-recommended data types, like float(M,N) and BIT.  Also any
+     type that has a non-default display width: int([^11]) is a warning sign
+     that they don't understand the display widths
    * If a table has two potential FK columns, like post_id and author_id, and at
      the same time has an autoinc PK, raise a notice that maybe the PK should be
      post_id,author_id.
