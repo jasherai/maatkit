@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 51;
+use Test::More tests => 52;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -731,3 +731,14 @@ is_deeply(
    ],
    'Converted POD into opt_spec',
 );
+
+$p = new OptionParser(
+   { s => 'matter!',       g => 'o', d => 'Enable matter'      },
+   { s => 'anti-matter!',  g => 'o', d => 'Enable anti-matter' },
+    '--matter and --anti-matter are mutually exclusive.',
+);
+@ARGV = qw(--nomatter --noanti-matter);
+%opts = $p->parse();
+ok(!defined $p->{__error__}, 'Negated mutex options ignored in mutex check (fixes issue 12)');
+
+exit;
