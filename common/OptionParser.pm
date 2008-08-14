@@ -209,14 +209,12 @@ sub parse {
    my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
 
    my %opt_seen;
-   my %opt_negatable;
    my %vals = %{$self->{defaults}};
    # Defaults passed as arg override defaults from descriptions.
    @vals{keys %defaults} = values %defaults;
    foreach my $spec ( @specs ) {
       $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
-      $opt_seen{$spec->{k}}      = 1;
-      $opt_negatable{$spec->{k}} = $spec->{n};
+      $opt_seen{$spec->{k}} = 1;
    }
 
    foreach my $key ( keys %defaults ) {
@@ -256,14 +254,8 @@ sub parse {
 
    # Check mutex options
    foreach my $mutex ( @{$self->{mutex}} ) {
-      my @set;
-      foreach my $opt ( @$mutex ) {
-         my $opt_key = $self->{key_for}->{$opt};
-         next if !defined $vals{$opt_key};
-         next if $opt_negatable{$opt_key} && $vals{$opt_key} == 0;
-         push @set, $opt_key;
-      }
-      if ( @set > 1 ) { # 2 or more mutually exclusive ops are set
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
+      if ( @set > 1 ) {
          my $note = join(', ',
             map { "--$self->{long_for}->{$_}" }
                 @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
