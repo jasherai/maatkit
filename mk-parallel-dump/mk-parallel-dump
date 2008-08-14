@@ -1995,11 +1995,6 @@ $dp->prop('setvars', $opts{setvars});
 # ############################################################################
 $opts{basedir} = File::Spec->rel2abs($opts{basedir});
 
-# Set locking options.
-my $lock_all      = $opts{sets} || $opts{locktables} || $opts{setperdb} ? 0 : 1;
-$opts{k}          = $lock_all unless defined $opts{k};
-$opts{locktables} = !$lock_all unless defined $opts{locktables};
-
 # TODO: modularize these.
 if ( !$opts{help} ) {
    if ( $opts{defaultset} && !$opts{sets} ) {
@@ -3419,8 +3414,6 @@ Ignore this comma-separated list of table names.
 Table names may be qualified with the database name.
 
 =item --locktables
-
-negatable: yes
 
 Use C<LOCK TABLES> (disables L<"--flushlock">).
 
