@@ -1980,96 +1980,8 @@ $opts{m} = max(2, $opts{m} || 0);
 
 # TODO: permit to disable resuming behavior.
 # TODO: permit dumping a single table in many threads.
-# TODO: measure progress by size, not count of tables.
 
-my @opt_spec = (
-   {  s => 'age=m',
-      d => 'Dump only tables modified since this long '
-         . 'ago, or not dumped since this long ago' },
-   {  s => 'askpass',
-      d => 'Prompt for password for connections' },
-   {  s => 'basedir=s',
-      d => 'Base directory for creating files' },
-   {  s => 'binlogpos|b!',
-      d => 'Dump the master/slave position (default)' },
-   {  s => 'charset|A=s',
-      d => 'Default character set' },
-   {  s => 'chunksize|C=s',
-      d => 'Number of rows or data size to dump per file' },
-   {  s => 'csv',
-      d => 'Do --tab dump in CSV format (implies --tab)' },
-   {  s => 'databases|d=h',
-      d => 'Dump only this comma-separated list of databases' },
-   {  s => 'dbregex=s',
-      d => 'Dump only databases whose names match this pattern' },
-   {  s => 'defaultset!',
-      d => 'When --sets given, dump tables not in any set' },
-   {  s => 'defaults-file|F=s',
-      d => 'Only read mysql options from the given file' },
-   {  s => 'flushlock|k!',
-      d => 'Use FLUSH TABLES WITH READ LOCK (default)' },
-   {  s => 'flushlog!',
-      d => 'Execute FLUSH LOGS when getting binlog positions' },
-   {  s => 'gzip!',
-      d => "Compress files with gzip (default $opts{gzip})" },
-   {  s => 'host|h=s',
-      d => 'Connect to host' },
-   {  s => 'ignoredb|g=H',
-      d => 'Ignore this comma-separated list of databases' },
-   {  s => 'ignoreengine|E=H',
-      d => 'Dump no data for this comma-separated list of storage engines '
-         . '(default FEDERATED,MRG_MyISAM)' },
-   {  s => 'ignoretbl|n=H',
-      d => 'Ignore this comma-separated list of tables' },
-   {  s => 'locktables!',
-      d => 'Use LOCK TABLES (disables --flushlock)' },
-   {  s => 'losslessfp|L',
-      d => 'Convert double and float to decimal with extra precision so '
-         . 'the reinserted values will be equal to the original values.  '
-         . 'Requires --tab.' },
-   {  s => 'numthread|m=i',
-      d => "Number of threads (default $opts{m})" },
-   {  s => 'password|p=s',
-      d => 'Password to use when connecting' },
-   {  s => 'port|P=i',
-      d => 'Port number to use for connection' },
-   {  s => 'progress',
-      d => 'Display progress messages' },
-   {  s => 'quiet|q',
-      d => 'Quiet output; disables --verbose' },
-   {  s => 'sets=a',
-      d => 'Dump this comma-separated list of sets' },
-   {  s => 'setperdb',
-      d => 'Dump each database as a separate set' },
-   {  s => 'settable=s',
-      d => 'database.table where backup sets are stored' },
-   {  s => 'setvars=s',
-      d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   {  s => 'socket|S=s',
-      d => 'Socket file to use for connection' },
-   {  s => 'stopslave',
-      d => 'Issue STOP SLAVE on server before dumping data' },
-   {  s => 'tab|T',
-      d => 'Dump tab-separated (sets --umask 0)' },
-   {  s => 'tables|t=h',
-      d => 'Dump only this comma-separated list of tables' },
-   {  s => 'test',     ,
-      d => 'Print commands instead of executing them' },
-   {  s => 'tblregex=s',
-      d => 'Dump only tables whose names match this pattern' },
-   {  s => 'umask=s',
-      d => 'Set umask to this value, in octal' },
-   {  s => 'user|u=s',
-      d => 'User for login if not current user' },
-   {  s => 'verbose|v+',
-      d => 'Be verbose; can specify multiple times; default' },
-   {  s => 'wait|w=m',
-      d => 'Wait limit when server is down (default 5m)' },
-   '--locktables and --flushlock are mutually exclusive',
-   '--sets and --setperdb are mutually exclusive',
-   '--losslessfp requires --tab',
-);
-
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = OptionParser->new(@opt_spec);
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '<options> [--] <external args>';
@@ -2493,15 +2405,39 @@ foreach my $set ( @sets_to_do ) {
    info(2, sprintf($format, qw(SET DATABASE TABLE CHUNK TIME STATUS THREADS)));
 
    # #########################################################################
+   # If we need the size for any reason, get it now.
+   # #########################################################################
+   my $bytes = 0;  # For progress, use $start variable
+   my $done  = 0;  # Also for progress measurements
+   if ( ($opts{biggestfirst} && !$opts{settable}) || $opts{progress} ) {
+      TODO:
+      foreach my $todo ( @work_to_do ) {
+         # TODO: inefficient, nested loops, ugly.  Fix by fixing MySQLDump and
+         # MySQLFind, which are not encapsulated right.
+         foreach my $stat ( $du->get_table_status($dbh, $q, $todo->{D}) ) {
+            if ( $stat->{name} eq $todo->{N} ) {
+               $todo->{Z} = $stat->{data_length};
+               $bytes += $stat->{data_length};
+               next TODO;
+            }
+         }
+      }
+   }
+
+   # #########################################################################
+   # Sort the tables biggest-first.
+   # #########################################################################
+   if ( $opts{biggestfirst} && !$opts{settable} ) {
+      @work_to_do = reverse sort { $a->{Z} <=> $b->{Z} } @work_to_do;
+   }
+
+   # #########################################################################
    # Assign the work to child processes.  Initially just start --numthreads
    # number of children.  Each child that exits will trigger a new one to start
    # after that.  This is really a terrible hack -- I wish Perl had decent
    # threading support so I could just queue work for a fixed pool of worker
    # threads!
    # #########################################################################
-
-   my $chunks = scalar @work_to_do; # For progress, use $start variable
-   my $done   = 0;                  # Also for progress measurements
    my %kids;
    while ( @work_to_do || %kids ) {
 
@@ -2529,7 +2465,7 @@ foreach my $set ( @sets_to_do ) {
          my $filename  = filename(interp($todo, '%S', '%D', '%N.%6C'));
          if ( -f "$filename.sql" || -f "$filename.sql.gz" ) {
             info(2, "$filename is already done, skipping");
-            $done++;
+            $done += $todo->{Z} || 0;
             next;
          }
 
@@ -2565,14 +2501,14 @@ foreach my $set ( @sets_to_do ) {
          delete $kids{$kid};
          delete $exited_children{$kid};
          $reaped = 1;
-         $done++;
+         $done += $todo->{Z} || 0;
 
          if ( $opts{progress} ) {
-            my $pct = $done / $chunks;
+            my $pct = $done / $bytes;
             my $now = time();
             my $remaining = ($now - $start) / $pct;
-            info(1, sprintf("done: %4d /%4d %6.2f%% %s remain (%s)",
-               $done, $chunks, $pct * 100, secs_to_time($remaining),
+            info(1, sprintf("done: %s/%s %6.2f%% %s remain (%s)",
+               shorten($done), shorten($bytes), $pct * 100, secs_to_time($remaining),
                ts($now + $remaining)));
          }
       }
@@ -2662,6 +2598,21 @@ exit( sum(0, map { $_->{failure} || 0 } values %stats_for_set) ? 1 : 0 );
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+# TODO: modularize
+sub shorten {
+   my ( $num ) = @_;
+   my $n = 0;
+   while ( $num >= 1_024 ) {
+      $num /= 1_024;
+      ++$n;
+   }
+   return sprintf(
+      $num =~ m/\./ || $n
+         ? "%.2f%s"
+         : '%d',
+      $num, ('','k','M','G', 'T')[$n]);
+}
 
 # TODO: modularize
 sub secs_to_time {
@@ -3263,15 +3214,22 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Some options can be disabled by prefixing them with C<--no>, such as
-C<--no-gzip>.
+L<"--locktables"> and L<"--flushlock"> are mutually exclusive.
+
+L<"--sets"> and L<"--setperdb"> are mutually exclusive.
+
+L<"--losslessfp"> requires L<"--tab">.
 
 =over
 
 =item --age
 
-Specifies how 'old' a table must be before mk-parallel-dump will consider
-it.
+type: time
+
+Dump only tables modified since this long ago, or not dumped since this long
+ago.
+
+Specifies how 'old' a table must be before mk-parallel-dump will consider it.
 
 When L<"--sets"> is not specified, mk-parallel-dump uses C<SHOW TABLE STATUS>
 instead of C<SHOW TABLES> to get a list of tables in each database, and compares
@@ -3286,7 +3244,15 @@ When L<"--sets"> is specified, the L<"--settable"> table determines when a table
 was last dumped, and the meaning of C<--age> reverses; it becomes "dump tables
 not dumped in X amount of time."
 
+=item --askpass
+
+Prompt for a password when connecting to MySQL.
+
 =item --basedir
+
+type: string
+
+Base directory for creating files.
 
 The directory in which files will be stored.  If you use pre-canned options,
 such as L<"--tab">, mk-parallel-dump knows what the eventual filenames will
@@ -3300,7 +3266,24 @@ arguments in the command line are filenames, and thus doesn't know the
 eventual destination of the dump files.  It does not try to create parent
 directories in this case.
 
+=item --biggestfirst
+
+default: yes; negatable: yes
+
+Process tables largest first.
+
+This  strategy gives better parallelization.  Suppose there are 8 threads and
+the last table is huge.  We will finish everything else and then be running
+single-threaded while that one finishes.  If that one runs first, then we will
+have the max number of threads running at a time for as long as possible.
+
+Ignored when L<"--settable"> is given.
+
 =item --binlogpos
+
+short form: -b; default: yes; negatable: yes
+
+Dump the master/slave position.
 
 Dump binary log positions from both C<SHOW MASTER STATUS> and C<SHOW SLAVE
 STATUS>, whichever can be retrieved from the server.  The data is dumped to a
@@ -3309,9 +3292,11 @@ file named F<00_master_data.sql>.  This is done for each backup set.
 The file also contains details of each table dumped, including the WHERE clauses
 used to dump it in chunks.
 
-This option is enabled by default.
-
 =item --charset
+
+short form: -A; type: string
+
+Default character set.
 
 Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
 Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
@@ -3321,6 +3306,10 @@ connecting to MySQL.
 
 =item --chunksize
 
+short form: -C; type: string
+
+Number of rows or data size to dump per file.
+
 Specifies that the table should be dumped in segments of approximately the size
 given.  The syntax is either a plain integer, which is interpreted as a number
 of rows per chunk, or an integer with a suffix of G, M, or k, which is
@@ -3328,6 +3317,8 @@ interpreted as the size of the data to be dumped in each chunk.  See L<"CHUNKS">
 for more details.
 
 =item --csv
+
+Do L<"--tab"> dump in CSV format (implies --tab).
 
 Changes L<"--tab"> options so the dump file is in comma-separated values
 (CSV) format.  The SELECT INTO OUTFILE statement looks like the following, and
@@ -3337,78 +3328,101 @@ can be re-loaded with the same options:
    FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"'
    LINES TERMINATED BY '\n' FROM %D.%N;
 
-This option implies L<"--tab">.
-
 =item --databases
 
-Dump this comma-separated list of databases.
+short form: -d; type: hash
+
+Dump only this comma-separated list of databases.
 
 =item --dbregex
 
-Dump only databases whose names match this Perl regular expression.
+type: string
 
-=item --defaultset
-
-When L<"--sets"> is given, this option makes mk-parallel-dump dump a
-C<default> set consisting of tables not explicitly included in any set.
+Dump only databases whose names match this Perl regex.
 
 =item --defaults-file
 
-Only read default options from the given file.  You must give an absolute
+short form: -F; type: string
+
+Only read mysql options from the given file.  You must give an absolute
 pathname.
+
+=item --defaultset
+
+negatable: yes
+
+When L<"--sets"> given, dump tables not in any set.
+
+The result will be a C<default> set consisting of tables not explicitly included
+in any set.
 
 =item --flushlock
 
-Lock all tables globally with C<FLUSH TABLES WITH READ LOCK>.  This is enabled
-by default, unless you're dumping sets (see L<"--sets">).  This lock is taken
-once, at the beginning of the whole process, and is never released.
+short form: -k; negatable: yes; default: yes
 
-If you want to lock only the tables you're dumping, use L<"--locktables">.  
+Use C<FLUSH TABLES WITH READ LOCK>.
+
+This is enabled by default, unless you're dumping sets (see L<"--sets">).  This
+lock is taken once, at the beginning of the whole process, and is never
+released.  If you want to lock only the tables you're dumping, use
+L<"--locktables">.  
 
 =item --flushlog
 
-Execute C<FLUSH LOGS> after locking and before dumping master/slave binary log
-positions.  This is done for each backup set.
+Execute C<FLUSH LOGS> when getting binlog positions.
 
-This option is NOT enabled by default because it causes the MySQL server to
-rotate its error log, potentially overwriting error messages.
+This is done for each backup set.  This option is NOT enabled by default because
+it causes the MySQL server to rotate its error log, potentially overwriting
+error messages.
 
 =item --gzip
 
-Compresses files with gzip.  This is enabled by default unless your platform is
-Win32.  By default, this causes the standard SQL dumps to be piped to gzip's
-C<STDIN> and the result is redirected to the destination file.  If this option
-isn't enabled, by default C<mysqldump>'s C<--result-file> parameter is used to
-direct the dump to the destination file.  When using L<"--tab">, this option
-causes gzip to be called separately on each resulting file after it is dumped
-(because C<SELECT INTO OUTFILE> cannot be directed to a pipe).
+negatable: yes
 
-=item --help
+Compress files with gzip.
 
-Displays a help message.
+This is enabled by default unless your platform is Win32.  By default, this
+causes the standard SQL dumps to be piped to gzip's C<STDIN> and the result is
+redirected to the destination file.  If this option isn't enabled, by default
+C<mysqldump>'s C<--result-file> parameter is used to direct the dump to the
+destination file.  When using L<"--tab">, this option causes gzip to be called
+separately on each resulting file after it is dumped (because C<SELECT INTO
+OUTFILE> cannot be directed to a pipe).
 
 =item --host
+
+short form: -h; type: string
 
 Connect to host.
 
 =item --ignoredb
 
-Do not dump this comma-separated list of databases.
+short form: -g; type: Hash
+
+Ignore this comma-separated list of databases.
 
 =item --ignoreengine
 
-Do not dump any data for this comma-separated list of storage engines.  The
-schema file will be dumped as usual.
+short form: -E; type: Hash; default: FEDERATED,MRG_MyISAM
 
-The default value is C<FEDERATED,MRG_MyISAM>.  This prevents dumping data for
+Dump no data for this comma-separated list of storage engines.
+
+The schema file will be dumped as usual.  This prevents dumping data for
 Federated tables and Merge tables.
 
 =item --ignoretbl
 
-Do not dump this comma-separated list of table names.  Table names may be
-qualified with the database name.
+short form: -n; type: Hash
+
+Ignore this comma-separated list of table names.
+
+Table names may be qualified with the database name.
 
 =item --locktables
+
+negatable: yes
+
+Use C<LOCK TABLES> (disables L<"--flushlock">).
 
 Disables L<"--flushlock"> (unless it was explicitly set) and locks tables with
 C<LOCK TABLES READ>.  Enabled by default when L<"--sets"> is specified.  The
@@ -3416,15 +3430,22 @@ lock is taken and released with every set of tables dumped.
 
 =item --losslessfp
 
-Wraps double and float types with a call to C<FORMAT()> with 17 digits of
-precision.  According to the comments in Google's patches, this will give
-lossless dumping and reloading in most cases.  (I shamelessly stole this
-technique from them.  I don't know enough about floating-point math to have an
-opinion).
+short form: -L
+
+Dump float types with extra precision for lossless restore (requires L<"--tab">).
+
+Wraps these types with a call to C<FORMAT()> with 17 digits of precision.
+According to the comments in Google's patches, this will give lossless dumping
+and reloading in most cases.  (I shamelessly stole this technique from them.  I
+don't know enough about floating-point math to have an opinion).
 
 This works only with L<"--tab">.
 
 =item --numthread
+
+short form: -m; type: int
+
+Number of threads to dump concurrently.
 
 Specifies the number of parallel processes to run.  The default is 2 (this is
 mk-parallel-dump, after all -- 1 is not parallel).  On GNU/Linux machines,
@@ -3434,55 +3455,77 @@ at least 2, even when there's only a single processor.
 
 =item --password
 
+short form: -p; type: string
+
 Password to use when connecting.
 
 =item --port
+
+short form: -P; type: int
 
 Port number to use for connection.
 
 =item --progress
 
-Print progress messages.
+Display progress messages.
 
-Progress is displayed each time a table or chunk of a table finishes dumping,
-assuming all chunks are created equal.  The output is the completed and total
-chunks, the percent completed, estimated time remaining, and estimated
-completion time.
+Progress is displayed each time a table or chunk of a table finishes dumping.
+Progress is calculated by measuring the data size of each table, and assuming
+all bytes are created equal.  The output is the completed and total bytes, the
+percent completed, estimated time remaining, and estimated completion time.
 
 =item --quiet
 
-Sets L<"--verbose"> to 0.
+short form: -q
 
-=item --sets
-
-Dump this comma-separated list of backup sets, in order.  Requires
-L<"--settable">.  See L<"BACKUP SETS">.  The special C<default> set is
-reserved; don't use it as a set name.
+Quiet output; disables L<"--verbose">.
 
 =item --setperdb
 
-Specifies that each database is a separate backup set.  Each set is named the
-same as the database.  Implies L<"--locktables">.
+Dump each database as a separate set.
+
+Each set is named the same as the database.  Implies L<"--locktables">.
+
+=item --sets
+
+type: array
+
+Dump this comma-separated list of backup sets.
+
+Requires L<"--settable">.  See L<"BACKUP SETS">.  The special C<default> set is
+reserved; don't use it as a set name.
 
 =item --settable
 
-Specifies the table in which backup sets are kept.  It may be given in
-database.table form.
+type: string
+
+The database.table in which backup sets are kept.
+
+As mentioned earlier, you can manually specify the ordering of tables in a
+backup set.  Therefore L<"--biggestfirst"> has no effect when this option is
+given.
 
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --socket
 
+short form: -S; type: string
+
 Socket file to use for connection.
 
 =item --stopslave
 
-Issue C<STOP SLAVE> on server before dumping data.  This ensures that the data
-is not changing during the dump.  Issues C<START SLAVE> after the dump is
-complete.
+Issue C<STOP SLAVE> on server before dumping data.
+
+This ensures that the data is not changing during the dump.  Issues C<START
+SLAVE> after the dump is complete.
 
 If the slave is not running, throws an error and exits.  This is to prevent
 possibly bad things from happening if the slave is not running because of a
@@ -3490,6 +3533,10 @@ problem, or because someone intentionally stopped the slave for maintenance or
 some other purpose.
 
 =item --tab
+
+short form: -T
+
+Dump tab-separated (sets L<"--umask"> 0).
 
 Dump via C<SELECT INTO OUTFILE>, which is similar to what C<mysqldump> does with
 the C<--tab> option, but you're not constrained to a single database at a time.
@@ -3511,12 +3558,17 @@ prevent correct restoration otherwise.
 
 =item --tables
 
-Dump this comma-separated list of table names.  Table names may be qualified
-with the database name.
+short form: -t; type: hash
+
+Dump only this comma-separated list of table names.
+
+Table names may be qualified with the database name.
 
 =item --tblregex
 
-Dump only tables whose names match this Perl regular expression.
+type: string
+
+Dump only tables whose names match this Perl regex.
 
 =item --test
 
@@ -3524,24 +3576,32 @@ Print commands instead of executing them.
 
 =item --umask
 
-Set the program's C<umask> to this octal value.  This is useful when you want
-created files and directories to be readable or writable by other users (for
-example, the MySQL server itself).
+type: string
+
+Set the program's C<umask> to this octal value.
+
+This is useful when you want created files and directories to be readable or
+writable by other users (for example, the MySQL server itself).
 
 =item --user
+
+short form: -u; type: string
 
 User for login if not current user.
 
 =item --verbose
 
-Sets the verbosity; repeatedly specifying it increments the verbosity.
-Default is 1 if not specified.  See L<"OUTPUT">.
+short form: -v; cumulative: yes; default: 1
 
-=item --version
+Be verbose; can specify multiple times.
 
-Output version information and exit.
+See L<"OUTPUT">.
 
 =item --wait
+
+short form: -w; type: time; default: 5m
+
+Wait limit when the server is down.
 
 If the MySQL server crashes during dumping, waits until the server comes back
 and then continues with the rest of the tables.  C<mk-parallel-dump> will

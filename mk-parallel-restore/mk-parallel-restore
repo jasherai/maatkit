@@ -1047,9 +1047,7 @@ File::Find::find(
 
 # ############################################################################
 # Canonicalize table list in the order they were discovered, filtering out
-# tables that should not be done. TODO: do tables biggest-first so they
-# parallelize best (optionally, but enabled by default if only 1 @ARGV -- if > 1
-# then user probably wanted to load tables in a specific order).
+# tables that should not be done.
 # ############################################################################
 {
    my %seen;
@@ -1089,6 +1087,15 @@ $SIG{CHLD} = sub {
       $exited_children{$kid}->{exit_time}   = time();
    }
 };
+
+# #########################################################################
+# Sort tables biggest-first.
+# #########################################################################
+if ( @ARGV == 1 && $opts{biggestfirst} ) {
+   @tables_to_do = reverse sort
+      { $size_for_table{$a->{D}}->{$a->{N}}
+         <=> $size_for_table{$b->{D}}->{$b->{N}} } @tables_to_do;
+}
 
 # #########################################################################
 # Assign the work to child processes.  Initially just start --numthreads
@@ -1576,6 +1583,12 @@ Prompt for a password when connecting to MySQL.
 type: string
 
 Directory where FIFO files will be created.
+
+=item --biggestfirst
+
+negatable: yes; default: yes
+
+Restore the biggest tables first for highest concurrency.
 
 =item --bulkinsbufsize
 
