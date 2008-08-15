@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 24;
 
 print `./make_repl_sandbox`;
 my $cnf='/tmp/12345/my.sandbox.cnf';
@@ -96,3 +96,17 @@ $output = `perl ../mk-table-checksum -f sha1 --float-precision 3 -a BIT_XOR --de
 like($output, qr/ROUND\(`a`, 3/, 'Column a is rounded');
 like($output, qr/ROUND\(`b`, 3/, 'Column b is rounded');
 like($output, qr/ISNULL\(`b`\)/, 'Column b is not rounded inside ISNULL');
+
+# Issue 35: mk-table-checksum dies when one server is missing a table
+diag('Starting replication sandboxes...');
+`../../common/t/make_repl_sandbox`;
+`/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0; CREATE TABLE only_on_master (a int);'`;
+
+$cmd = 'perl ../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12348 -d mysql -t only_on_master 2>&1 > /dev/null';
+my $ret = system($cmd);
+cmp_ok($ret, '==', 0, 'Missing slave tables not reported (fixes issue 35)');
+
+diag('Removing replication sandboxes...');
+`../../sandbox/stop_all`;
+
+exit;

@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # This program checksums MySQL tables efficiently on one or more servers.
 #
@@ -3350,6 +3350,14 @@ sub do_tbl {
            ? $res->{seconds_behind_master}
            : 'NULL';
    }
+   # Check that table exists on slave.
+   if ( !$is_master ) {
+      my $res = $dbh->selectall_arrayref("SHOW TABLE STATUS LIKE '$info->{table}'");
+      if ( scalar @$res == 0 ) {
+         $ENV{MKDEBUG} && _d("$info->{database}.$info->{table} does not exist on slave $host->{h}:$host->{P}");
+         return;
+      }
+   }
 
    # Time the checksum operation and the wait-for-master operation separately.
    my $mid = time();
@@ -3386,6 +3394,8 @@ sub do_tbl {
             or die "Cannot print: $OS_ERROR";
       }
    }
+
+   return;
 }
 
 exit $exit_status;
