@@ -3508,6 +3508,9 @@ checksum MySQL tables efficiently on one or many servers.
 
 =head1 SYNOPSIS
 
+STOP! Are you checksumming a slave(s) against its master?  Then be sure to learn
+what L<"--replicate"> does.  It is probably the option you want to use.
+
    mk-table-checksum --replicate=mydb.checksum master-host
    ... time passses, replication catches up ...
    mk-table-checksum --replicate=mydb.checksum --replcheck 2 master-host
