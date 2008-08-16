@@ -40,6 +40,9 @@ my %alias_for = (
 );
 
 my %undef_for = (
+   bdb_home                      => '',
+   bdb_logdir                    => '',
+   bdb_tmpdir                    => '',
    date_format                   => '',
    datetime_format               => '',
    ft_stopword_file              => '',
@@ -56,6 +59,7 @@ my %undef_for = (
    log_slow_queries              => 'OFF',
    log_slave_updates             => 'ON',
    log_queries_not_using_indexes => 'ON',
+   log_update                    => 'OFF',
    ndb_connectstring             => '',
    relay_log_index               => '',
    secure_file_priv              => '',
