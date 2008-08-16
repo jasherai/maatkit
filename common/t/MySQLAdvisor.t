@@ -37,6 +37,8 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
 
+print `../../sandbox/simple/make_sandbox 5126`;
+
 # #############################################################################
 # First, setup a MySQLInstance... 
 # #############################################################################
