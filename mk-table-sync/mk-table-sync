@@ -34,7 +34,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 1967
+# OptionParser package 2174
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2155,7 +2155,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 2009
+# TableChecksum package 2182
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2185,6 +2185,25 @@ sub get_crc_wid {
       };
    }
    return $crc_wid;
+}
+
+sub get_crc_type {
+   my ( $self, $dbh, $func ) = @_;
+   my $type   = '';
+   my $length = 0;
+   my $sql    = "SELECT $func('a')";
+   my $sth    = $dbh->prepare($sql);
+   eval {
+      $sth->execute();
+      $type   = $sth->{mysql_type_name}->[0];
+      $length = $sth->{mysql_length}->[0];
+      $ENV{MKDEBUG} && _d($sql, $type, $length);
+      if ( $type eq 'bigint' && $length < 20 ) {
+         $type = 'int';
+      }
+   };
+   $sth->finish;
+   return ($type, $length);
 }
 
 sub best_algorithm {
@@ -2229,7 +2248,7 @@ sub is_hash_algorithm {
 
 sub choose_hash_func {
    my ( $self, %args ) = @_;
-   my @funcs = qw(FNV_64 MD5 SHA1);
+   my @funcs = qw(CRC32 FNV_64 MD5 SHA1);
    if ( $args{func} ) {
       unshift @funcs, $args{func};
    }
@@ -2257,7 +2276,8 @@ sub optimize_xor {
    my ( $self, %args ) = @_;
    my ( $dbh, $func ) = @args{qw(dbh func)};
 
-   die "FNV_64 never needs the BIT_XOR optimization" if uc $func eq 'FNV_64';
+   die "$func never needs the BIT_XOR optimization"
+      if $func =~ m/^(?:FNV_64|CRC32)$/i;
 
    my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
@@ -2373,10 +2393,13 @@ sub make_row_checksum {
 
 sub make_checksum_query {
    my ( $self, %args ) = @_;
+   my @arg_names = qw(dbname tblname table quoter algorithm
+        func crc_wid crc_type opt_slice);
+   foreach my $arg( @arg_names ) {
+      die "You must specify argument $arg" unless exists $args{$arg};
+   }
    my ( $dbname, $tblname, $table, $quoter, $algorithm,
-        $func, $crc_wid, $opt_slice )
-      = @args{ qw(dbname tblname table quoter algorithm
-        func crc_wid opt_slice) };
+        $func, $crc_wid, $crc_type, $opt_slice ) = @args{ @arg_names };
    die "Invalid or missing checksum algorithm"
       unless $algorithm && $ALGOS{$algorithm};
 
@@ -2389,7 +2412,7 @@ sub make_checksum_query {
    my $expr = $self->make_row_checksum(%args);
 
    if ( $algorithm eq 'BIT_XOR' ) {
-      if ( uc $func eq 'FNV_64' ) {
+      if ( $crc_type =~ m/int$/ ) {
          $result = "LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)) AS crc ";
       }
       else {
@@ -2398,10 +2421,10 @@ sub make_checksum_query {
       }
    }
    else {
-      if ( uc $func eq 'FNV_64' ) {
+      if ( $crc_type =~ m/int$/ ) {
          $result = "RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
-            . "CONV(CAST(FNV_64(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
+            . "CONV(CAST($func(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
             . "), $crc_wid) AS crc ";
       }
       else {
@@ -2456,7 +2479,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 2009
+# TableSyncChunk package 2188
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2522,8 +2545,9 @@ sub new {
       func => $args{func},
       dbh  => $args{dbh},
    );
-   $args{crc_wid} = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
-   if ( $args{algorithm} eq 'BIT_XOR' && uc $args{func} ne 'FNV_64' ) {
+   $args{crc_wid}    = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
+   ($args{crc_type}) = $args{checksum}->get_crc_type($args{dbh}, $args{func});
+   if ( $args{algorithm} eq 'BIT_XOR' && $args{crc_type} !~ m/int$/ ) {
       $args{opt_slice}
          = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
    }
@@ -2535,6 +2559,7 @@ sub new {
       algorithm => $args{algorithm},
       func      => $args{func},
       crc_wid   => $args{crc_wid},
+      crc_type  => $args{crc_type},
       opt_slice => $args{opt_slice},
       cols      => $args{cols},
       trim      => $args{trim},
@@ -2669,7 +2694,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 2009
+# TableSyncNibble package 2188
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2721,8 +2746,9 @@ sub new {
       dbh  => $args{dbh},
       func => $args{func},
    );
-   $args{crc_wid} = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
-   if ( $args{algorithm} eq 'BIT_XOR' && uc $args{func} ne 'FNV_64' ) {
+   $args{crc_wid}    = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
+   ($args{crc_type}) = $args{checksum}->get_crc_type($args{dbh}, $args{func});
+   if ( $args{algorithm} eq 'BIT_XOR' && $args{crc_type} !~ m/int$/ ) {
       $args{opt_slice}
          = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
    }
@@ -2735,6 +2761,7 @@ sub new {
       algorithm => $args{algorithm},
       func      => $args{func},
       crc_wid   => $args{crc_wid},
+      crc_type  => $args{crc_type},
       opt_slice => $args{opt_slice},
       cols      => $args{cols},
       trim      => $args{trim},
