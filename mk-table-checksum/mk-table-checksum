@@ -3659,7 +3659,9 @@ shorter strings.
 The MySQL server does the bulk of the work, in the form of the checksum queries.
 The following benchmarks show the checksum query times for various checksum
 algorithms.  The first two results are simply running C<COUNT(col8)> and
-C<CHECKSUM TABLE> on the table.
+C<CHECKSUM TABLE> on the table.  C<CHECKSUM TABLE> is just C<CRC32> under the
+hood, but it's implemented inside the storage engine layer instead of at the
+MySQL layer.
 
  ALGORITHM       HASH FUNCTION  EXTRA      TIME
  ==============  =============  ========  =====
@@ -3696,6 +3698,10 @@ indexes.  The server is a Dell PowerEdge 1800 with dual 32-bit Xeon 2.8GHz
 processors and 2GB of RAM.  The tests are fully CPU-bound, and the server is
 otherwise idle.  The results are generally consistent to within a tenth of a
 second on repeated runs.
+
+C<CRC32> is the default checksum function to use, and should be enough for most
+cases.  If you need stronger guarantees that your data is identical, you should
+use one of the other functions.
 
 =head1 DOWNLOADING
 
@@ -3885,17 +3891,14 @@ Hash function for checksums (FNV_64, SHA1, MD5, CRC32, etc).
 
 You can use this option to choose the cryptographic hash function used for
 L<"--algorithm">=ACCUM or L<"--algorithm">=BIT_XOR.  The default is to use
-C<MD5>, but C<SHA1> also works, and you can use your own function, such as a
-compiled UDF, if you wish.  Whatever function you specify is run in SQL, not in
-Perl, so it must be available to MySQL.
+C<CRC32>, but C<MD5> and C<SHA1> also work, and you can use your own function,
+such as a compiled UDF, if you wish.  Whatever function you specify is run in
+SQL, not in Perl, so it must be available to MySQL.
 
 The C<FNV_64> UDF mentioned in the benchmarks is much faster than C<MD5>.  The
 C++ source code is distributed with Maatkit.  It is very simple to compile and
 install; look at the header in the source code for instructions.  If it is
-installed, it is the default.
-
-If a higher collision rate is acceptable, you can use C<CRC32()> which is quite
-fast.
+installed, it is preferred over C<MD5>.
 
 =item --ignoredb
 
