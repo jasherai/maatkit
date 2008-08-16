@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * --noflushlock and --nolocktables caused a global flush and lock (issue 12).
+
 2008-08-11: version 1.0.9
 
    * Files downloaded directly from SVN crashed due to version information.
