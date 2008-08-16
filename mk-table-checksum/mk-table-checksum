@@ -220,7 +220,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 2009
+# TableChecksum package 2182
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -250,6 +250,25 @@ sub get_crc_wid {
       };
    }
    return $crc_wid;
+}
+
+sub get_crc_type {
+   my ( $self, $dbh, $func ) = @_;
+   my $type   = '';
+   my $length = 0;
+   my $sql    = "SELECT $func('a')";
+   my $sth    = $dbh->prepare($sql);
+   eval {
+      $sth->execute();
+      $type   = $sth->{mysql_type_name}->[0];
+      $length = $sth->{mysql_length}->[0];
+      $ENV{MKDEBUG} && _d($sql, $type, $length);
+      if ( $type eq 'bigint' && $length < 20 ) {
+         $type = 'int';
+      }
+   };
+   $sth->finish;
+   return ($type, $length);
 }
 
 sub best_algorithm {
@@ -294,7 +313,7 @@ sub is_hash_algorithm {
 
 sub choose_hash_func {
    my ( $self, %args ) = @_;
-   my @funcs = qw(FNV_64 MD5 SHA1);
+   my @funcs = qw(CRC32 FNV_64 MD5 SHA1);
    if ( $args{func} ) {
       unshift @funcs, $args{func};
    }
@@ -322,7 +341,8 @@ sub optimize_xor {
    my ( $self, %args ) = @_;
    my ( $dbh, $func ) = @args{qw(dbh func)};
 
-   die "FNV_64 never needs the BIT_XOR optimization" if uc $func eq 'FNV_64';
+   die "$func never needs the BIT_XOR optimization"
+      if $func =~ m/^(?:FNV_64|CRC32)$/i;
 
    my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
@@ -438,10 +458,13 @@ sub make_row_checksum {
 
 sub make_checksum_query {
    my ( $self, %args ) = @_;
+   my @arg_names = qw(dbname tblname table quoter algorithm
+        func crc_wid crc_type opt_slice);
+   foreach my $arg( @arg_names ) {
+      die "You must specify argument $arg" unless exists $args{$arg};
+   }
    my ( $dbname, $tblname, $table, $quoter, $algorithm,
-        $func, $crc_wid, $opt_slice )
-      = @args{ qw(dbname tblname table quoter algorithm
-        func crc_wid opt_slice) };
+        $func, $crc_wid, $crc_type, $opt_slice ) = @args{ @arg_names };
    die "Invalid or missing checksum algorithm"
       unless $algorithm && $ALGOS{$algorithm};
 
@@ -454,7 +477,7 @@ sub make_checksum_query {
    my $expr = $self->make_row_checksum(%args);
 
    if ( $algorithm eq 'BIT_XOR' ) {
-      if ( uc $func eq 'FNV_64' ) {
+      if ( $crc_type =~ m/int$/ ) {
          $result = "LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)) AS crc ";
       }
       else {
@@ -463,10 +486,10 @@ sub make_checksum_query {
       }
    }
    else {
-      if ( uc $func eq 'FNV_64' ) {
+      if ( $crc_type =~ m/int$/ ) {
          $result = "RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
-            . "CONV(CAST(FNV_64(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
+            . "CONV(CAST($func(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
             . "), $crc_wid) AS crc ";
       }
       else {
@@ -521,7 +544,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1967
+# OptionParser package 2174
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1362,7 +1385,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 1755
+# MySQLDump package 2031
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1396,8 +1419,9 @@ EOF
 EOF
 
 sub new {
-   my ( $class ) = @_;
-   my $self = bless {}, $class;
+   my ( $class, %args ) = @_;
+   $args{cache} = 1 unless defined $args{cache};
+   my $self = bless \%args, $class;
    return $self;
 }
 
@@ -1478,7 +1502,7 @@ sub _use_db {
 
 sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{tables}->{$db}->{$tbl} ) {
+   if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
@@ -1511,7 +1535,7 @@ sub get_create_table {
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
-   if ( !$self->{columns}->{$db}->{$tbl} ) {
+   if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
       $ENV{MKDEBUG} && _d($sql);
@@ -1541,7 +1565,7 @@ sub get_tmp_table {
 
 sub get_triggers {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   if ( !$self->{triggers}->{$db} ) {
+   if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
@@ -1566,12 +1590,15 @@ sub get_triggers {
       $ENV{MKDEBUG} && _d($sql);
       $dbh->do($sql);
    }
-   return $self->{triggers}->{$db}->{$tbl};
+   if ( $tbl ) {
+      return $self->{triggers}->{$db}->{$tbl};
+   }
+   return values %{$self->{triggers}->{$db}};
 }
 
 sub get_databases {
    my ( $self, $dbh, $quoter, $like ) = @_;
-   if ( !$self->{databases} || $like ) {
+   if ( !$self->{cache} || !$self->{databases} || $like ) {
       my $sql = 'SHOW DATABASES';
       my @params;
       if ( $like ) {
@@ -1590,7 +1617,7 @@ sub get_databases {
 
 sub get_table_status {
    my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{table_status}->{$db} || $like ) {
+   if ( !$self->{cache} || !$self->{table_status}->{$db} || $like ) {
       my $sql = "SHOW TABLE STATUS FROM " . $quoter->quote($db);
       my @params;
       if ( $like ) {
@@ -1616,7 +1643,7 @@ sub get_table_status {
 
 sub get_table_list {
    my ( $self, $dbh, $quoter, $db, $like ) = @_;
-   if ( !$self->{table_list}->{$db} || $like ) {
+   if ( !$self->{cache} || !$self->{table_list}->{$db} || $like ) {
       my $sql = "SHOW /*!50002 FULL*/ TABLES FROM " . $quoter->quote($db);
       my @params;
       if ( $like ) {
@@ -2934,7 +2961,8 @@ if ( $opts{a} && $opts{a} ne $strat ) {
 # ############################################################################
 my $func;
 my $opt_slice;
-my $crc_wid = 16;
+my $crc_wid  = 16;
+my $crc_type = 'varchar';
 if ( $tc->is_hash_algorithm($strat) ) {
    $func = $tc->choose_hash_func(
       func => $opts{f},
@@ -2943,10 +2971,11 @@ if ( $tc->is_hash_algorithm($strat) ) {
    if ( $opts{f} && $opts{f} ne $func ) {
       warn "Checksum function $opts{f} cannot be used; using $func\n";
    }
-   $crc_wid = $tc->get_crc_wid($main_dbh, $func);
+   $crc_wid    = $tc->get_crc_wid($main_dbh, $func);
+   ($crc_type) = $tc->get_crc_type($main_dbh, $func);
 
    if ( $opts{o} && $strat eq 'BIT_XOR' ) {
-      if ( uc $func ne 'FNV_64' ) {
+      if ( $crc_type !~ m/int$/ ) {
          $opt_slice = $tc->optimize_xor(dbh => $main_dbh, func => $func);
          if ( !defined $opt_slice ) {
             warn "Cannot use --optxor, disabling.\n";
@@ -3161,6 +3190,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             algorithm => $strat,
             func      => $func,
             crc_wid   => $crc_wid,
+            crc_type  => $crc_type,
             opt_slice => $opt_slice,
             cols      => $opts{columns},
             sep       => $opts{s},

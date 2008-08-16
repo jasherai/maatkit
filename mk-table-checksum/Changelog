@@ -1,5 +1,8 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * A missing table caused a crash (issue 35).
+   * Functions specified with --function were not optimized (issue 43).
+
 2008-08-11: version 1.1.28
 
    * Files downloaded directly from SVN crashed due to version information.

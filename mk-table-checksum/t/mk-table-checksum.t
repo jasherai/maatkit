@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 24;
+use Test::More tests => 26;
 
 print `./make_repl_sandbox`;
 my $cnf='/tmp/12345/my.sandbox.cnf';
@@ -46,8 +46,14 @@ is($output + 0, -6320923009900088257, 'FNV_64(1)');
 $output = `/tmp/12345/use -N -e 'select fnv_64("hello, world")' 2>&1`;
 is($output + 0, 6062351191941526764, 'FNV_64(hello, world)');
 
+$output = `$cmd -f CRC32 --checksum -a ACCUM 2>&1`;
+like($output, qr/00000001E9F5DC8E/, 'CRC32 ACCUM' );
+
 $output = `$cmd -f FNV_64 --checksum -a ACCUM 2>&1`;
 like($output, qr/DD2CD41DB91F2EAE/, 'FNV_64 ACCUM' );
+
+$output = `$cmd -f CRC32 --checksum -a BIT_XOR 2>&1`;
+like($output, qr/83dcefb7/, 'CRC32 BIT_XOR' );
 
 $output = `$cmd -f FNV_64 --checksum -a BIT_XOR 2>&1`;
 like($output, qr/a84792031e4ff43f/, 'FNV_64 BIT_XOR' );
