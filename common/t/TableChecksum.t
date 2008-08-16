@@ -21,8 +21,8 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 45;
-   $skipped = 2;
+   $tests = 48;
+   $skipped = 7;
 }
 
 use Test::More tests => $tests;
@@ -40,6 +40,9 @@ my $tp = new TableParser();
 my $q  = new Quoter();
 my $t;
 
+my %args = map { $_ => undef }
+   qw(dbname tblname table quoter algorithm func crc_wid crc_type opt_slice);
+
 sub load_file {
    my ($file) = @_;
    open my $fh, "<", $file or die $!;
@@ -55,7 +58,7 @@ sub throws_ok {
 }
 
 throws_ok (
-   sub { $c->best_algorithm( algorithm => 'foo', ) },
+   sub { $c->best_algorithm( %args, algorithm => 'foo', ) },
    qr/Invalid checksum algorithm/,
    'Algorithm=foo',
 );
@@ -369,6 +372,7 @@ like (
 
 is (
    $c->make_checksum_query(
+      %args,
       dbname    => 'sakila',
       tblname   => 'film',
       table     => $t,
@@ -376,25 +380,21 @@ is (
       algorithm => 'CHECKSUM',
       func      => 'SHA1',
       crc_wid   => 40,
+      crc_type  => 'varchar',
    ),
    'CHECKSUM TABLE `sakila`.`film`',
    'Sakila.film CHECKSUM',
 );
 
 throws_ok (
-   sub { $c->make_checksum_query() },
-   qr/missing checksum algorithm/,
-   'Complains about missing algorithm',
-);
-
-throws_ok (
-   sub { $c->make_checksum_query(algorithm => 'CHECKSUM TABLE') },
+   sub { $c->make_checksum_query(%args, algorithm => 'CHECKSUM TABLE') },
    qr/missing checksum algorithm/,
    'Complains about bad algorithm',
 );
 
 is (
    $c->make_checksum_query(
+      %args,
       dbname    => 'sakila',
       tblname   => 'film',
       table     => $t,
@@ -403,6 +403,7 @@ is (
       func      => 'SHA1',
       crc_wid   => 40,
       cols      => [qw(film_id)],
+      crc_type  => 'varchar',
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
    . q{LOWER(CONCAT(LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 1, }
@@ -417,6 +418,7 @@ is (
 
 is (
    $c->make_checksum_query(
+      %args,
       dbname    => 'sakila',
       tblname   => 'film',
       table     => $t,
@@ -425,6 +427,7 @@ is (
       func      => 'FNV_64',
       crc_wid   => 99,
       cols      => [qw(film_id)],
+      crc_type  => 'bigint',
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
    . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
@@ -434,6 +437,7 @@ is (
 
 is (
    $c->make_checksum_query(
+      %args,
       dbname    => 'sakila',
       tblname   => 'film',
       table     => $t,
@@ -443,6 +447,7 @@ is (
       crc_wid   => 99,
       cols      => [qw(film_id)],
       buffer    => 1,
+      crc_type  => 'bigint',
    ),
    q{SELECT SQL_BUFFER_RESULT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
    . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
@@ -452,6 +457,27 @@ is (
 
 is (
    $c->make_checksum_query(
+      %args,
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'BIT_XOR',
+      func      => 'CRC32',
+      crc_wid   => 99,
+      cols      => [qw(film_id)],
+      buffer    => 1,
+      crc_type  => 'int',
+   ),
+   q{SELECT SQL_BUFFER_RESULT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
+   . q{LOWER(CONV(BIT_XOR(CAST(CRC32(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
+   . q{FROM /*DB_TBL*//*WHERE*/},
+   'Sakila.film CRC32 BIT_XOR',
+);
+
+is (
+   $c->make_checksum_query(
+      %args,
       dbname    => 'sakila',
       tblname   => 'film',
       table     => $t,
@@ -461,6 +487,7 @@ is (
       crc_wid   => 40,
       cols      => [qw(film_id)],
       replicate => 'test.checksum',
+      crc_type  => 'varchar',
    ),
    q{REPLACE /*PROGRESS_COMMENT*/ INTO test.checksum }
    . q{(db, tbl, chunk, boundaries, this_cnt, this_crc) }
@@ -477,6 +504,7 @@ is (
 
 is (
    $c->make_checksum_query(
+      %args,
       dbname    => 'sakila',
       tblname   => 'film',
       table     => $t,
@@ -484,6 +512,7 @@ is (
       algorithm => 'ACCUM',
       func      => 'SHA1',
       crc_wid   => 40,
+      crc_type  => 'varchar',
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
    . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
@@ -500,6 +529,7 @@ is (
 
 is (
    $c->make_checksum_query(
+      %args,
       dbname    => 'sakila',
       tblname   => 'film',
       table     => $t,
@@ -507,6 +537,7 @@ is (
       algorithm => 'ACCUM',
       func      => 'FNV_64',
       crc_wid   => 16,
+      crc_type  => 'bigint',
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
    . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
@@ -516,11 +547,33 @@ is (
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0}
    . q{))) AS UNSIGNED), 10, 16))), 16) AS crc }
    . q{FROM /*DB_TBL*//*WHERE*/},
-   'Sakila.film SHA1 ACCUM',
+   'Sakila.film FNV_64 ACCUM',
 );
 
 is (
    $c->make_checksum_query(
+      %args,
+      dbname    => 'sakila',
+      tblname   => 'film',
+      table     => $t,
+      quoter    => $q,
+      algorithm => 'ACCUM',
+      func      => 'CRC32',
+      crc_wid   => 16,
+      crc_type  => 'int',
+      cols      => [qw(film_id)],
+   ),
+   q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
+   . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
+   . q{CONV(CAST(CRC32(CONCAT(@crc, CRC32(`film_id`}
+   . q{))) AS UNSIGNED), 10, 16))), 16) AS crc }
+   . q{FROM /*DB_TBL*//*WHERE*/},
+   'Sakila.film CRC32 ACCUM',
+);
+
+is (
+   $c->make_checksum_query(
+      %args,
       dbname    => 'sakila',
       tblname   => 'film',
       table     => $t,
@@ -529,6 +582,7 @@ is (
       func      => 'SHA1',
       crc_wid   => 40,
       replicate => 'test.checksum',
+      crc_type  => 'varchar',
    ),
    q{REPLACE /*PROGRESS_COMMENT*/ INTO test.checksum }
    . q{(db, tbl, chunk, boundaries, this_cnt, this_crc) }
@@ -545,6 +599,11 @@ is (
    'Sakila.film SHA1 ACCUM with replication',
 );
 
+# TODO: use a sandbox instead, and get a $dbh this way:
+# my $dp = new DSNParser();
+# my $dsn = $dp->parse("h=127.0.0.1,P=12345");
+# $dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
+
 # Open a connection to MySQL, or skip the rest of the tests.
 my $dbh;
 eval {
@@ -559,8 +618,8 @@ SKIP: {
       $c->choose_hash_func(
          dbh => $dbh,
       ),
-      qr/FNV_64|MD5/,
-      'FNV_64 or MD5 is default',
+      qr/CRC32|FNV_64|MD5/,
+      'CRC32, FNV_64 or MD5 is default',
    );
 
    like(
@@ -568,8 +627,8 @@ SKIP: {
          dbh => $dbh,
          func => 'SHA99',
       ),
-      qr/FNV_64|MD5/,
-      'SHA99 does not exist so I get FNV_64 or MD5',
+      qr/CRC32|FNV_64|MD5/,
+      'SHA99 does not exist so I get CRC32 or friends',
    );
 
    is(
@@ -597,6 +656,18 @@ SKIP: {
       ),
       '1',
       'MD5 slice is 1',
+   );
+
+   is_deeply(
+      [$c->get_crc_type($dbh, 'CRC32')],
+      [qw(int 10)],
+      'Type and length of CRC32'
+   );
+
+   is_deeply(
+      [$c->get_crc_type($dbh, 'MD5')],
+      [qw(varchar 32)],
+      'Type and length of MD5'
    );
 
 }
