@@ -3207,7 +3207,13 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          # This is by design.  It lets me unlock the table on the master
          # between chunks.
          # ##################################################################
+         CHUNK:
          foreach my $chunk_num ( 0 .. scalar(@{$table->{chunks}}) - 1 ) {
+
+            if ( rand(100) >= $opts{probability} ) {
+               $ENV{MKDEBUG} && _d('Skipping chunk because of --probability');
+               next CHUNK;
+            }
 
             my $chunk_start_time = gettimeofday();
             $ENV{MKDEBUG} && _d("Starting at $chunk_start_time");
@@ -3977,6 +3983,17 @@ Password to use when connecting.
 short form: -P; type: int
 
 Port number to use for connection.
+
+=item --probability
+
+type: int; default: 100
+
+Checksums will be run with this percent probability.
+
+This is an integer between 1 and 100.  If 100, every chunk of every table will
+certainly be checksummed.  If less than that, there is a chance that some chunks
+of some tables will be skipped.  This is useful for routine jobs designed to
+randomly sample bits of tables without checksumming the whole server.
 
 =item --quiet
 

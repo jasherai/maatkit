@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --probability option (issue 53).
    * A missing table caused a crash (issue 35).
    * Functions specified with --function were not optimized (issue 43).
 
