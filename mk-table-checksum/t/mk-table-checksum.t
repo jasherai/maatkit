@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 26;
+use Test::More tests => 27;
 
 print `./make_repl_sandbox`;
 my $cnf='/tmp/12345/my.sandbox.cnf';
@@ -102,6 +102,11 @@ $output = `perl ../mk-table-checksum -f sha1 --float-precision 3 -a BIT_XOR --de
 like($output, qr/ROUND\(`a`, 3/, 'Column a is rounded');
 like($output, qr/ROUND\(`b`, 3/, 'Column b is rounded');
 like($output, qr/ISNULL\(`b`\)/, 'Column b is not rounded inside ISNULL');
+
+# Ensure --probability works
+$output = `perl ../mk-table-checksum --probability 0 --chunksize 4 127.0.0.1 | grep -v DATABASE`;
+chomp $output;
+is($output, '', 'Nothing with --probability 0!');
 
 # Issue 35: mk-table-checksum dies when one server is missing a table
 diag('Starting replication sandboxes...');
