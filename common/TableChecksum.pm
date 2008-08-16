@@ -50,6 +50,26 @@ sub get_crc_wid {
    return $crc_wid;
 }
 
+# Returns a CRC function's MySQL type as a list of (type, length).
+sub get_crc_type {
+   my ( $self, $dbh, $func ) = @_;
+   my $type   = '';
+   my $length = 0;
+   my $sql    = "SELECT $func('a')";
+   my $sth    = $dbh->prepare($sql);
+   eval {
+      $sth->execute();
+      $type   = $sth->{mysql_type_name}->[0];
+      $length = $sth->{mysql_length}->[0];
+      $ENV{MKDEBUG} && _d($sql, $type, $length);
+      if ( $type eq 'bigint' && $length < 20 ) {
+         $type = 'int';
+      }
+   };
+   $sth->finish;
+   return ($type, $length);
+}
+
 # Options:
 #   algorithm   Optional: one of CHECKSUM, ACCUM, BIT_XOR
 #   vp          VersionParser object
@@ -107,7 +127,7 @@ sub is_hash_algorithm {
 # Picks a hash function, in order of speed.
 sub choose_hash_func {
    my ( $self, %args ) = @_;
-   my @funcs = qw(FNV_64 MD5 SHA1);
+   my @funcs = qw(CRC32 FNV_64 MD5 SHA1);
    if ( $args{func} ) {
       unshift @funcs, $args{func};
    }
@@ -135,14 +155,15 @@ sub choose_hash_func {
 # concat-columns-and-checksum, and which should just get variable references.
 # Returns the slice.  I'm really not sure if this code is needed.  It always
 # seems the last slice is the one that works.  But I'd rather be paranoid.
+   # TODO: this function needs a hint to know when a function returns an
+   # integer.  CRC32 is an example.  In these cases no optimization or slicing
+   # is necessary.
 sub optimize_xor {
    my ( $self, %args ) = @_;
    my ( $dbh, $func ) = @args{qw(dbh func)};
 
-   # TODO: this function needs a hint to know when a function returns an
-   # integer.  CRC32 is an example.  In these cases no optimization or slicing
-   # is necessary.
-   die "FNV_64 never needs the BIT_XOR optimization" if uc $func eq 'FNV_64';
+   die "$func never needs the BIT_XOR optimization"
+      if $func =~ m/^(?:FNV_64|CRC32)$/i;
 
    my $opt_slice = 0;
    my $unsliced  = uc $dbh->selectall_arrayref("SELECT $func('a')")->[0]->[0];
@@ -287,6 +308,7 @@ sub make_row_checksum {
 # *   algorithm Any of @ALGOS
 # *   func      SHA1, MD5, etc
 # *   crc_wid   Width of the string returned by func
+# *   crc_type  Type of func's result
 # *   opt_slice (Optional) Which slice gets opt_xor (see make_xor_slices()).
 # *   cols      (Optional) see make_row_checksum()
 # *   sep       (Optional) see make_row_checksum()
@@ -295,10 +317,13 @@ sub make_row_checksum {
 # *   buffer    (Optional) Adds SQL_BUFFER_RESULT.
 sub make_checksum_query {
    my ( $self, %args ) = @_;
+   my @arg_names = qw(dbname tblname table quoter algorithm
+        func crc_wid crc_type opt_slice);
+   foreach my $arg( @arg_names ) {
+      die "You must specify argument $arg" unless exists $args{$arg};
+   }
    my ( $dbname, $tblname, $table, $quoter, $algorithm,
-        $func, $crc_wid, $opt_slice )
-      = @args{ qw(dbname tblname table quoter algorithm
-        func crc_wid opt_slice) };
+        $func, $crc_wid, $crc_type, $opt_slice ) = @args{ @arg_names };
    die "Invalid or missing checksum algorithm"
       unless $algorithm && $ALGOS{$algorithm};
 
@@ -320,9 +345,9 @@ sub make_checksum_query {
       # (32 characters = 128 bits for MD5, and SHA1 is even larger) unsigned
       # integer over all the rows.
       #
-      # As a special case, the FNV_64 function does not need to be sliced.  It
+      # As a special case, integer functions do not need to be sliced.  They
       # can be fed right into BIT_XOR after a cast to UNSIGNED.
-      if ( uc $func eq 'FNV_64' ) {
+      if ( $crc_type =~ m/int$/ ) {
          $result = "LOWER(CONV(BIT_XOR(CAST($expr AS UNSIGNED)), 10, 16)) AS crc ";
       }
       else {
@@ -340,13 +365,13 @@ sub make_checksum_query {
       # function can be used to return the last checksum calculated.  @cnt is
       # not used for a row count, it is only used to make MAX() work correctly.
       #
-      # As a special case, FNV_64 must be converted to base 16 so it's a
+      # As a special case, int funcs must be converted to base 16 so it's a
       # predictable width (it's also a shorter string, but that's not really
       # important).
-      if ( uc $func eq 'FNV_64' ) {
+      if ( $crc_type =~ m/int$/ ) {
          $result = "RIGHT(MAX("
             . "\@crc := CONCAT(LPAD(\@cnt := \@cnt + 1, 16, '0'), "
-            . "CONV(CAST(FNV_64(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
+            . "CONV(CAST($func(CONCAT(\@crc, $expr)) AS UNSIGNED), 10, 16))"
             . "), $crc_wid) AS crc ";
       }
       else {
