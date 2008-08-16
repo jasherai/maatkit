@@ -69,6 +69,18 @@ The following items are unimplemented at this time:
          good example.
          * report master/slave status, how many slaves are attached and from
             where
+      * After all the above, look at the error log and see if there are any
+        errors caused by (for example) running SHOW STATUS.  Here is one
+        possible error:
+        080816  7:53:17080816  7:53:17 [ERROR] Cannot find table
+        exampledb/exampletable from the internal data dictionary
+        of InnoDB though the .frm file for the table exists. Maybe you
+        have deleted and recreated InnoDB data files but have forgotten
+        to delete the corresponding .frm files of InnoDB tables, or you
+        have moved .frm files to another database?
+        See http://dev.mysql.com/doc/refman/5.0/en/innodb-troubleshooting.html
+        how you can resolve the problem.
+
 
    * Look at SHOW MASTER LOGS.  If there are any with 0 size, the user is
      deleting binlogs manually and that will screw up MySQL, warn about that.
