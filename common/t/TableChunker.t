@@ -20,8 +20,10 @@ use strict;
 use warnings FATAL => 'all';
 
 my $tests;
+my $skippable;
 BEGIN {
-   $tests = 20;
+   $tests     = 20;
+   $skippable = 5;
 }
 
 use Test::More tests => $tests;
@@ -99,8 +101,8 @@ eval {
    "DBI:mysql:;mysql_read_default_group=mysql", undef, undef, { RaiseError => 1 })
 };
 SKIP: {
-   skip 'Cannot connect to MySQL', $tests - 8 if $EVAL_ERROR;
-   skip 'Sakila is not installed', $tests - 8
+   skip 'Cannot connect to MySQL', $tests - $skippable if $EVAL_ERROR;
+   skip 'Sakila is not installed', $tests - $skippable
          unless @{$dbh->selectall_arrayref('show databases like "sakila"')};
 
    my @chunks;

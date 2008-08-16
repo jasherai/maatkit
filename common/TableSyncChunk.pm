@@ -93,7 +93,8 @@ sub new {
       func => $args{func},
       dbh  => $args{dbh},
    );
-   $args{crc_wid} = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
+   $args{crc_wid}    = $args{checksum}->get_crc_wid($args{dbh}, $args{func});
+   ($args{crc_type}) = $args{checksum}->get_crc_type($args{dbh}, $args{func});
    if ( $args{algorithm} eq 'BIT_XOR' && uc $args{func} ne 'FNV_64' ) {
       $args{opt_slice}
          = $args{checksum}->optimize_xor(dbh => $args{dbh}, func => $args{func});
@@ -106,6 +107,7 @@ sub new {
       algorithm => $args{algorithm},
       func      => $args{func},
       crc_wid   => $args{crc_wid},
+      crc_type  => $args{crc_type},
       opt_slice => $args{opt_slice},
       cols      => $args{cols},
       trim      => $args{trim},
