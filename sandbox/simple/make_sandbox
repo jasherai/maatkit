@@ -2,9 +2,18 @@
 
 NUM=$1
 
-mkdir /tmp/$NUM
-tar xvfz server.tar.gz -C /tmp/$NUM
-for file in `grep -rl NODE /tmp/$NUM`; do
+if [ -z "$1" ]; then
+   echo "Must specify a sandbox to make!";
+   exit 1;
+fi
+
+if test -d /tmp/$NUM; then
+   ./remove_sandbox $NUM;
+fi
+
+mkdir -p /tmp/$NUM
+tar xfz server.tar.gz -C /tmp/$NUM
+for file in `grep -rl NODE /tmp/$NUM 2>/dev/null`; do
    sed -i -e "s/NODE/$NUM/g" $file;
 done
 /tmp/$NUM/start

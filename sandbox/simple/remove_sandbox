@@ -2,5 +2,5 @@
 
 NUM=$1
 /tmp/$NUM/stop
-rm -rf /tmp/$NUM/
+rm -rf /tmp/$NUM/ 2>/dev/null
 echo "removed /tmp/$NUM/"
