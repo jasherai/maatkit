@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 48;
+   $tests = 49;
    $skipped = 7;
 }
 
@@ -598,6 +598,8 @@ is (
    . q{FROM /*DB_TBL*//*WHERE*/},
    'Sakila.film SHA1 ACCUM with replication',
 );
+
+is ( $c->crc32('hello world'), 222957957, 'CRC32 of hello world');
 
 # TODO: use a sandbox instead, and get a $dbh this way:
 # my $dp = new DSNParser();

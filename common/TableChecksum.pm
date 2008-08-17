@@ -37,6 +37,23 @@ sub new {
    bless {}, shift;
 }
 
+# Perl implementation of CRC32, ripped off from Digest::Crc32.  The results
+# ought to match what you get from any standard CRC32 implementation, such as
+# that inside MySQL.
+sub crc32 {
+   my ( $self, $string ) = @_;
+   my $poly = 0xEDB88320;
+   my $crc  = 0xFFFFFFFF;
+   foreach my $char ( split(//, $string) ) {
+      my $comp = ($crc ^ ord($char)) & 0xFF;
+      for ( 1 .. 8 ) {
+         $comp = $comp & 1 ? $poly ^ ($comp >> 1) : $comp >> 1;
+      }
+      $crc = (($crc >> 8) & 0x00FFFFFF) ^ $comp;
+   }
+   return $crc ^ 0xFFFFFFFF;
+}
+
 # Returns how wide/long, in characters, a CRC function is.
 sub get_crc_wid {
    my ( $self, $dbh, $func ) = @_;
