@@ -3,9 +3,9 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 27;
+use Test::More tests => 29;
 
-print `./make_repl_sandbox`;
+diag(`./make_repl_sandbox`);
 my $cnf='/tmp/12345/my.sandbox.cnf';
 my ($output, $output2);
 my $cmd = "perl ../mk-table-checksum --defaults-file=$cnf -d test -t checksum_test 127.0.0.1";
@@ -76,6 +76,10 @@ like($output, qr/28c8edde3d61a0411511d3b1866f0636/, 'MD5 ACCUM' );
 $output = `$cmd --checksum -f MD5 -a BIT_XOR 2>&1`;
 like($output, qr/c4ca4238a0b923820dcc509a6f75849b/, 'MD5 BIT_XOR' );
 
+# Check --schema
+$output = `$cmd --checksum --schema 2>&1`;
+like($output, qr/2453095966/, 'Checksum with --schema' );
+
 $output  = `$cmd -f sha1 -R test.checksum`;
 $output2 = `/tmp/12345/use --skip-column-names -e "select this_crc from test.checksum where tbl='checksum_test'"`;
 ( $cnt, $crc ) = $output =~ m/checksum_test *\d+ \S+ \S+ *(\d+|NULL) *(\w+)/;
@@ -109,15 +113,12 @@ chomp $output;
 is($output, '', 'Nothing with --probability 0!');
 
 # Issue 35: mk-table-checksum dies when one server is missing a table
-diag('Starting replication sandboxes...');
-`../../common/t/make_repl_sandbox`;
-`/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0; CREATE TABLE only_on_master (a int);'`;
+diag(`../../common/t/make_repl_sandbox`);
+diag(`/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;CREATE TABLE only_on_master(a int);'`);
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d mysql -t only_on_master 2>&1`;
+like($output, qr/MyISAM\s+NULL\s+0/, 'Table on master checksummed');
+like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed');
 
-$cmd = 'perl ../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12348 -d mysql -t only_on_master 2>&1 > /dev/null';
-my $ret = system($cmd);
-cmp_ok($ret, '==', 0, 'Missing slave tables not reported (fixes issue 35)');
-
-diag('Removing replication sandboxes...');
-`../../sandbox/stop_all`;
+diag(`../../sandbox/stop_all`);
 
 exit;

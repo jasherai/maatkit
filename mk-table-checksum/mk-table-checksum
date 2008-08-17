@@ -220,7 +220,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 2182
+# TableChecksum package 2198
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -238,6 +238,20 @@ our %ALGOS = (
 
 sub new {
    bless {}, shift;
+}
+
+sub crc32 {
+   my ( $self, $string ) = @_;
+   my $poly = 0xEDB88320;
+   my $crc  = 0xFFFFFFFF;
+   foreach my $char ( split(//, $string) ) {
+      my $comp = ($crc ^ ord($char)) & 0xFF;
+      for ( 1 .. 8 ) {
+         $comp = $comp & 1 ? $poly ^ ($comp >> 1) : $comp >> 1;
+      }
+      $crc = (($crc >> 8) & 0x00FFFFFF) ^ $comp;
+   }
+   return $crc ^ 0xFFFFFFFF;
 }
 
 sub get_crc_wid {
@@ -2828,7 +2842,6 @@ package main;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use Time::HiRes qw(gettimeofday sleep);
-use Digest::MD5;
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -2879,7 +2892,7 @@ if ( $opts{explainhosts} ) {
 # Checksumming table data is the normal operation. But if we're only to
 # compare schemas, then we can skip a lot of work, like selecting an algo,
 # replication stuff, etc.
-my $checksum_table_data = $opts{'compare-schemas'} ? 0 : 1;
+my $checksum_table_data = $opts{schema} ? 0 : 1;
 
 if ( !$checksum_table_data ) {
    $opts{C} = 0; # disable --chunksize
@@ -2925,11 +2938,10 @@ if ( defined $opts{replcheck} ) {
 # ############################################################################
 # Otherwise get ready to checksum table data, unless we have only to check
 # schemas in which case we can skip all such work, knowing already that we
-# will use Digest::MD5.
+# will use CRC32.
 # ############################################################################
 my ( $strat, $crc_wid, $crc_type, $func, $opt_slice );
 my ( $fetch_sth, $update_sth );
-my $md5sum_fmt;
 
 if ( $checksum_table_data ) {
    my $strat_ref = determine_checksum_strat($main_dbh, $tc);
@@ -2949,14 +2961,13 @@ if ( $checksum_table_data ) {
    # starting, and prepare the statements that will be used to update it.
    # Also clean out the checksum table.
    check_repl_table($main_dbh) if $opts{R};
-
-   # Used for --checksum
-   $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
 }
 else {
-   # Width of md5 sum returned by Digest::MD5::md5_hex()
-   $crc_wid = 32;
+   $crc_wid = 16; # Wider than the widest CRC32.
 }
+
+# Used for --checksum
+my $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
 
 # ############################################################################
 # Iterate through databases and tables and do the checksums.
@@ -2998,8 +3009,8 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
 
          eval { # Catch errors caused by tables being dropped during work.
 
-            my $struct = $tp->parse(
-               $du->get_create_table($main_dbh, $q, $database, $table));
+            my $create = $du->get_create_table($main_dbh, $q, $database, $table);
+            my $struct = $tp->parse($create);
 
             my @chunks = '1=1'; # Default.
             if ( $opts{C} ) {
@@ -3030,6 +3041,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
 
             push @tables, {
                struct       => $struct,
+               create       => $create,
                database     => $database,
                table        => $table,
                chunks       => \@chunks,
@@ -3103,8 +3115,8 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                trim      => $opts{trim},
             );
          }
-         else { # compare-schemas
-            $query = "SHOW CREATE TABLE `$table->{table}`";
+         else { # --schema
+            $query = undef;
          }
 
          # ##################################################################
@@ -3448,10 +3460,15 @@ sub do_tbl {
            ? $res->{seconds_behind_master}
            : 'NULL';
    }
+
    # Check that table exists on slave.
-   if ( !$is_master ) {
-      my $res = $dbh->selectall_arrayref("SHOW TABLE STATUS LIKE '$info->{table}'");
-      if ( scalar @$res == 0 ) {
+   my $create;
+   if ( !$is_master || !$checksum_table_data ) {
+      eval {
+         $create
+            = $du->get_create_table($dbh, $q, @{$info}{qw(database table)});
+      };
+      if ( $EVAL_ERROR ) {
          $ENV{MKDEBUG} && _d("$info->{database}.$info->{table} does not exist on slave $host->{h}:$host->{P}");
          return;
       }
@@ -3479,7 +3496,7 @@ sub do_tbl {
       }
    }
    else { # compare schemas
-      $crc = do_create_table_checksum($dbh, $info, $query, $explain);
+      $crc = $tc->crc32($create);
    }
 
    my $end = time();
@@ -3555,7 +3572,7 @@ sub do_checksum {
       my $res = $dbh->selectrow_hashref($query);
       if ( $res ) {
          my ($key) = grep { m/checksum/i } keys %$res;
-         return $res->{$key};
+         return defined $res->{$key} ? $res->{$key} : 'NULL';
       }
    }
 }
@@ -3573,22 +3590,6 @@ sub do_count {
    else {
       return $dbh->selectall_arrayref($sql)->[0]->[0];
    }
-}
-
-sub do_create_table_checksum {
-   my ( $dbh, $info, $query, $explain ) = @_;
-   $ENV{MKDEBUG} && _d("do_create_table_checksum for $info->{table}");
-   my $md5 = Digest::MD5->new();
-   $Data::Dumper::Indent = 1;
-   my $res = $dbh->selectall_arrayref($query);
-   # $res = [
-   # 0   [
-   #        0   table name,
-   #        1   SHOW CREATE ...
-   #     ]
-   # ]
-   $md5->add($res->[0]->[1]);
-   return $md5->hexdigest; 
 }
 
 sub unique {
@@ -3892,17 +3893,6 @@ type: array
 
 Checksum only this comma-separated list of columns.
 
-=item --compare-schemas
-
-Only compare schemas across servers.
-
-Instead of checksumming table data, this option causes only the servers'
-schemas to be checksummed.
-
-This option disables several options since it does not require access table
-data: --algorithm, --chunksize, --count, --replicate. Other options specific
-to table data are ignored, too.
-
 =item --count
 
 short form: -r; negatable: yes
@@ -4196,6 +4186,14 @@ exist, they will cause replication to fail.  For more information on replication
 rules, see L<http://dev.mysql.com/doc/en/replication-rules.html>.
 
 The table specified by L<"--replicate"> will never be checksummed itself.
+
+=item --schema
+
+Checksum C<SHOW CREATE TABLE> intead of table data.
+
+This option disables several options since it does not require access to table
+data: --algorithm, --chunksize, --count, --replicate. Other options specific
+to table data are ignored, too.
 
 =item --separator
 
