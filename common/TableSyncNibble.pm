@@ -144,7 +144,7 @@ sub get_sql {
          chunks    => [$where],
          chunk_num => 0,
          query     => $self->{nibble_sql},
-         where     => $args{where},
+         where     => [$args{where}],
          quoter    => $self->{quoter},
       );
    }

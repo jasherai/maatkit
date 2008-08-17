@@ -147,7 +147,7 @@ sub get_sql {
          chunks    => $self->{chunks},
          chunk_num => $self->{chunk_num},
          query     => $self->{chunk_sql},
-         where     => $args{where},
+         where     => [$args{where}],
          quoter    => $self->{quoter},
       );
    }
