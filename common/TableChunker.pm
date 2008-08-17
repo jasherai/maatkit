@@ -323,6 +323,8 @@ sub quote {
    return $val =~ m/\d[:-]/ ? qq{"$val"} : $val;
 }
 
+# Takes a query prototype and fills in placeholders.  The 'where' arg should be
+# an arrayref of WHERE clauses that will be joined with AND.
 sub inject_chunks {
    my ( $self, %args ) = @_;
    foreach my $arg ( qw(database table chunks chunk_num query) ) {
@@ -335,7 +337,9 @@ sub inject_chunks {
    $args{query} =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
    my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
    if ( $args{where} ) {
-      $where .= " AND ($args{where})";
+      $where .= " AND ("
+         . join(" AND ", map { "($_)" } grep { $_ } @{$args{where}} )
+         . ")";
    }
    $args{query} =~ s!/\*WHERE\*/! $where!;
    my $db_tbl = $self->{quoter}->quote(@args{qw(database table)});

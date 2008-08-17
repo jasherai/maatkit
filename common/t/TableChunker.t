@@ -22,8 +22,8 @@ use warnings FATAL => 'all';
 my $tests;
 my $skippable;
 BEGIN {
-   $tests     = 20;
-   $skippable = 5;
+   $tests     = 22;
+   $skippable = 7;
 }
 
 use Test::More tests => $tests;
@@ -88,10 +88,37 @@ is (
       table     => 'film',
       chunks    => [ '1=1', 'a=b' ],
       chunk_num => 1,
-      where     => 'FOO=BAR',
+      where     => ['FOO=BAR'],
    ),
-   'SELECT /*sakila.film:2/2*/ 1 AS chunk_num, FOO FROM 1 WHERE (a=b) AND (FOO=BAR)',
+   'SELECT /*sakila.film:2/2*/ 1 AS chunk_num, FOO FROM 1 WHERE (a=b) AND ((FOO=BAR))',
    'Replaces chunk info into query',
+);
+
+is (
+   $c->inject_chunks(
+      query     => 'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ FOO FROM 1/*WHERE*/',
+      database  => 'sakila',
+      table     => 'film',
+      chunks    => [ '1=1', 'a=b' ],
+      chunk_num => 1,
+      where     => ['FOO=BAR', undef],
+   ),
+   'SELECT /*sakila.film:2/2*/ 1 AS chunk_num, FOO FROM 1 WHERE (a=b) AND ((FOO=BAR))',
+   'Inject WHERE clause with undef item',
+);
+
+is (
+   $c->inject_chunks(
+      query     => 'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ FOO FROM 1/*WHERE*/',
+      database  => 'sakila',
+      table     => 'film',
+      chunks    => [ '1=1', 'a=b' ],
+      chunk_num => 1,
+      where     => ['FOO=BAR', 'BAZ=BAT'],
+   ),
+   'SELECT /*sakila.film:2/2*/ 1 AS chunk_num, FOO FROM 1 WHERE (a=b) '
+      . 'AND ((FOO=BAR) AND (BAZ=BAT))',
+   'Inject WHERE with defined item',
 );
 
 # Open a connection to MySQL, or skip the rest of the tests.
