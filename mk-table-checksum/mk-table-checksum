@@ -2828,6 +2828,7 @@ package main;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use Time::HiRes qw(gettimeofday sleep);
+use Digest::MD5;
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
@@ -2838,7 +2839,6 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-my $vp         = new VersionParser();
 my $dsn_parser = new DSNParser();
 $dsn_parser->prop('autokey', 'h');
 $dsn_parser->prop('required', { h => 1 } );
@@ -2876,6 +2876,17 @@ if ( $opts{explainhosts} ) {
    exit(0);
 }
 
+# Checksumming table data is the normal operation. But if we're only to
+# compare schemas, then we can skip a lot of work, like selecting an algo,
+# replication stuff, etc.
+my $checksum_table_data = $opts{'compare-schemas'} ? 0 : 1;
+
+if ( !$checksum_table_data ) {
+   $opts{C} = 0; # disable --chunksize
+   $opts{r} = 0; # disable --count
+   $opts{R} = 0; # disable --replicate
+}
+
 if ( $opts{checksum} ) {
    $opts{r} = 0;
 }
@@ -2907,158 +2918,49 @@ my $main_dbh    = get_cxn($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 # Check replication slaves if desired.
 # ############################################################################
 if ( defined $opts{replcheck} ) {
-   my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
-   $ms->recurse_to_slaves(
-      {  dbh        => $main_dbh,
-         dsn        => $hosts[0],
-         dsn_parser => $dsn_parser,
-         recurse    => $opts{replcheck},
-         callback   => sub {
-            my ( $dsn, $dbh, $level, $parent ) = @_;
-            my @diffs = $tc->find_replication_differences($dbh, $opts{R});
-            return unless @diffs;
-            $exit_status = 1;
-            if ( !$opts{q} ) {
-               print "Differences on " . $dsn_parser->as_string($dsn) . "\n";
-               my $max_db   = max(5, map { length($_->{db})  } @diffs);
-               my $max_tbl  = max(5, map { length($_->{tbl}) } @diffs);
-               my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
-               printf($fmt, map { uc } @headers)
-                  or die "Cannot print: $OS_ERROR";
-               foreach my $diff ( @diffs ) {
-                  printf($fmt, @{$diff}{@headers})
-                     or die "Cannot print: $OS_ERROR";
-               }
-               print "\n"
-                  or die "Cannot print: $OS_ERROR";
-            }
-         }
-      }
-   );
+   $exit_status = check_repl_slaves($ms);
    exit($exit_status);
 }
 
 # ############################################################################
-# Otherwise do the checksums.
+# Otherwise get ready to checksum table data, unless we have only to check
+# schemas in which case we can skip all such work, knowing already that we
+# will use Digest::MD5.
 # ############################################################################
-my $strat = $tc->best_algorithm(
-   algorithm   => $opts{a},
-   vp          => $vp,
-   dbh         => $main_dbh,
-   where       => $opts{W},
-   chunk       => $opts{C},
-   replicate   => $opts{R},
-   count       => $opts{r},
-);
+my ( $strat, $crc_wid, $crc_type, $func, $opt_slice );
+my ( $fetch_sth, $update_sth );
+my $md5sum_fmt;
 
-if ( $opts{a} && $opts{a} ne $strat ) {
-   warn "--algorithm=$opts{a} can't be used; falling back to $strat\n";
+if ( $checksum_table_data ) {
+   my $strat_ref = determine_checksum_strat($main_dbh, $tc);
+   ( $strat, $crc_wid, $crc_type, $func, $opt_slice )
+      = @$strat_ref{ qw(strat crc_wid crc_type func opt_slice) };
+
+   if ( $ENV{MKDEBUG} ) {
+      my $strat_dump = Dumper($strat_ref);
+      _d("Checksum strat: $strat_dump");
+   }
+
+   # Verify that CONCAT_WS is compatible across all servers. On older versions
+   # of MySQL it skips both empty strings and NULL; on newer just NULL.
+   verify_checksum_compat(\@hosts) if ( $opts{v} && @hosts > 1 );
+
+   # Check for existence and privileges on the replication table before
+   # starting, and prepare the statements that will be used to update it.
+   # Also clean out the checksum table.
+   check_repl_table($main_dbh) if $opts{R};
+
+   # Used for --checksum
+   $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
 }
-
-# ############################################################################
-# If using a cryptographic hash strategy, decide what hash function to use, and
-# if using BIT_XOR, whether and which slice to place the user variable in.
-# ############################################################################
-my $func;
-my $opt_slice;
-my $crc_wid  = 16;
-my $crc_type = 'varchar';
-if ( $tc->is_hash_algorithm($strat) ) {
-   $func = $tc->choose_hash_func(
-      func => $opts{f},
-      dbh  => $main_dbh,
-   );
-   if ( $opts{f} && $opts{f} ne $func ) {
-      warn "Checksum function $opts{f} cannot be used; using $func\n";
-   }
-   $crc_wid    = $tc->get_crc_wid($main_dbh, $func);
-   ($crc_type) = $tc->get_crc_type($main_dbh, $func);
-
-   if ( $opts{o} && $strat eq 'BIT_XOR' ) {
-      if ( $crc_type !~ m/int$/ ) {
-         $opt_slice = $tc->optimize_xor(dbh => $main_dbh, func => $func);
-         if ( !defined $opt_slice ) {
-            warn "Cannot use --optxor, disabling.\n";
-            $opts{o} = 0;
-         }
-      }
-      else {
-         # FNV_64 doesn't need the optimize_xor gizmo.  TODO: user-specified
-         # functions should be able to take advantage of this with some cmdline
-         # args.
-         $opts{o} = 0;
-      }
-   }
-}
-
-# ############################################################################
-# Verify that CONCAT_WS is compatible across all servers.  On older versions
-# of MySQL it skips both empty strings and NULL; on newer just NULL.
-# ############################################################################
-if ( $opts{v} && @hosts > 1 ) {
-   my @verify_sums;
-   foreach my $host ( @hosts ) {
-      my $dbh = get_cxn($host, ($opts{d} ? keys %{$opts{d}} : '' ));
-      my $sql = "SELECT MD5(CONCAT_WS(',', '1', ''))";
-      $ENV{MKDEBUG} && _d($dbh, $sql);
-      my $cks = $dbh->selectall_arrayref($sql)->[0]->[0];
-      push @verify_sums, {
-         host => $host->{h},
-         ver  => $dbh->{mysql_serverinfo},
-         sum  => $cks
-      };
-   }
-   if ( unique(map { $_->{sum} } @verify_sums ) > 1 ) {
-      my $max = max(map { length($_->{h}) } @hosts);
-      die "Not all servers have compatible versions.  Some return different\n"
-         . "checksum values for the same query, and cannot be compared.  This\n"
-         . "behavior changed in MySQL 4.0.14.  Here is info on each host:\n\n"
-         . join("\n",
-            map {
-               sprintf("%-${max}s %-32s %s", @{$_}{qw(host sum ver)})
-            }
-               { host => 'HOST', sum => 'CHECKSUM', ver => 'VERSION'},
-               @verify_sums
-         )
-         . "\n\nYou can disable this check with --noverify.\n";
-   }
-}
-
-# ############################################################################
-# Check for existence and privileges on the replication table before starting,
-# and prepare the statements that will be used to update it.  Also clean out the
-# checksum table.
-# ############################################################################
-my ($fetch_sth, $update_sth);
-if ( $opts{R} ) {
-   my $sql = "REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0";
-   $ENV{MKDEBUG} && _d($main_dbh, $sql);
-   $main_dbh->do($sql);
-
-   # Clean out the replication table globally, but only if there are no
-   # filtering options.  There's also a clean-up step just before checksumming
-   # each table later.
-   if ( $opts{emptyrepltbl}
-      && !grep { $opts{$_} && %{$opts{$_}} } qw(d e g E n t) )
-   {
-      my $del_sql = "DELETE FROM $opts{R}";
-      $ENV{MKDEBUG} && _d($main_dbh, $del_sql);
-      $main_dbh->do($del_sql);
-   }
-
-   # TODO: Is there a chance this can cause problems while forked?
-   $fetch_sth = $main_dbh->prepare(
-      "SELECT this_crc, this_cnt FROM $opts{R} "
-      . "WHERE db = ? AND tbl = ? AND chunk = ?");
-   $update_sth = $main_dbh->prepare(
-      "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? "
-      . "WHERE db = ? AND tbl = ? AND chunk = ?");
+else {
+   # Width of md5 sum returned by Digest::MD5::md5_hex()
+   $crc_wid = 32;
 }
 
 # ############################################################################
 # Iterate through databases and tables and do the checksums.
 # ############################################################################
-my $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
 my $q      = new Quoter();
 my $tp     = new TableParser();
 my $du     = new MySQLDump();
@@ -3127,10 +3029,10 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             }
 
             push @tables, {
-               struct   => $struct,
-               database => $database,
-               table    => $table,
-               chunks   => \@chunks,
+               struct       => $struct,
+               database     => $database,
+               table        => $table,
+               chunks       => \@chunks,
             };
 
          };
@@ -3182,22 +3084,28 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          # The query is independent of the chunk, so I make it once for every
          # one.
          # ##################################################################
-         my $query = $tc->make_checksum_query(
-            dbname    => $database,
-            tblname   => $table->{table},
-            table     => $table->{struct},
-            quoter    => $q,
-            algorithm => $strat,
-            func      => $func,
-            crc_wid   => $crc_wid,
-            crc_type  => $crc_type,
-            opt_slice => $opt_slice,
-            cols      => $opts{columns},
-            sep       => $opts{s},
-            replicate => $opts{R},
-            precision => $opts{'float-precision'},
-            trim      => $opts{trim},
-         );
+         my $query;
+         if ( $checksum_table_data ) {
+            $query = $tc->make_checksum_query(
+               dbname    => $database,
+               tblname   => $table->{table},
+               table     => $table->{struct},
+               quoter    => $q,
+               algorithm => $strat,
+               func      => $func,
+               crc_wid   => $crc_wid,
+               crc_type  => $crc_type,
+               opt_slice => $opt_slice,
+               cols      => $opts{columns},
+               sep       => $opts{s},
+               replicate => $opts{R},
+               precision => $opts{'float-precision'},
+               trim      => $opts{trim},
+            );
+         }
+         else { # compare-schemas
+            $query = "SHOW CREATE TABLE `$table->{table}`";
+         }
 
          # ##################################################################
          # This loop may seem suboptimal, because it causes a new child to be
@@ -3222,9 +3130,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                do_tbl_replicate($hosts[0], $query, $table,
                   $chunk_num, $hdr, $explain);
             }
-
             else {
-
                # Lock table and get position on the master.
                if ( !$opts{explain} ) {
                   if ( $opts{k} ) {
@@ -3308,6 +3214,162 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          print_err($EVAL_ERROR, $database, $table->{table});
       }
    }
+}
+
+exit $exit_status;
+
+# ############################################################################
+# Subroutines
+# ############################################################################
+
+sub check_repl_slaves {
+   my ( $dbh, $dsn_parser, $tc ) = @_;
+   my $exit_status = 0;
+   my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
+   $ms->recurse_to_slaves(
+      {  dbh        => $dbh,
+         dsn        => $hosts[0],
+         dsn_parser => $dsn_parser,
+         recurse    => $opts{replcheck},
+         callback   => sub {
+            my ( $dsn, $dbh, $level, $parent ) = @_;
+            my @diffs = $tc->find_replication_differences($dbh, $opts{R});
+            return unless @diffs;
+            $exit_status = 1;
+            if ( !$opts{q} ) {
+               print "Differences on " . $dsn_parser->as_string($dsn) . "\n";
+               my $max_db   = max(5, map { length($_->{db})  } @diffs);
+               my $max_tbl  = max(5, map { length($_->{tbl}) } @diffs);
+               my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
+               printf($fmt, map { uc } @headers)
+                  or die "Cannot print: $OS_ERROR";
+               foreach my $diff ( @diffs ) {
+                  printf($fmt, @{$diff}{@headers})
+                     or die "Cannot print: $OS_ERROR";
+               }
+               print "\n"
+                  or die "Cannot print: $OS_ERROR";
+            }
+         }
+      }
+   );
+   return $exit_status;
+}
+
+sub determine_checksum_strat {
+   my ( $dbh, $tc ) = @_;
+   my $vp = new VersionParser();
+   my $ret = {  # return vals in easy-to-swallow hash form
+      strat      => undef,
+      crc_type   => 'varchar',
+      crc_wid    => 16,
+      func       => undef,
+      opt_slice  => undef,
+   };
+
+   $ret->{strat} = $tc->best_algorithm(
+      algorithm   => $opts{a},
+      vp          => $vp,
+      dbh         => $dbh,
+      where       => $opts{W},
+      chunk       => $opts{C},
+      replicate   => $opts{R},
+      count       => $opts{r},
+   );
+
+   if ( $opts{a} && $opts{a} ne $ret->{strat} ) {
+      warn "--algorithm=$opts{a} can't be used; falling back to $ret->{strat}\n";
+   }
+
+   # If using a cryptographic hash strategy, decide what hash function to use,
+   # and if using BIT_XOR whether and which slice to place the user variable in.
+   if ( $tc->is_hash_algorithm( $ret->{strat} ) ) {
+      $ret->{func} = $tc->choose_hash_func(
+         func => $opts{f},
+         dbh  => $dbh,
+      );
+      if ( $opts{f} && $opts{f} ne $ret->{func} ) {
+         warn "Checksum function $opts{f} cannot be used; using $ret->{func}\n";
+      }
+      $ret->{crc_wid}    = $tc->get_crc_wid($dbh, $ret->{func});
+      ($ret->{crc_type}) = $tc->get_crc_type($dbh, $ret->{func});
+
+      if ( $opts{o} && $ret->{strat} eq 'BIT_XOR' ) {
+         if ( $ret->{crc_type} !~ m/int$/ ) {
+            $ret->{opt_slice}
+               = $tc->optimize_xor(dbh => $dbh, func => $ret->{func});
+            if ( !defined $ret->{opt_slice} ) {
+               warn "Cannot use --optxor, disabling.\n";
+               $opts{o} = 0;
+            }
+         }
+         else {
+            # FNV_64 doesn't need the optimize_xor gizmo.
+            # TODO: user-specified functions should be able to take advantage
+            # of this with some cmdline args.
+            $opts{o} = 0;
+         }
+      }
+   }
+
+   return $ret;
+}
+
+sub verify_checksum_compat {
+   my ( $hosts_ref ) = @_;
+   my @verify_sums;
+   foreach my $host ( @$hosts_ref ) {
+      my $dbh = get_cxn($host, ($opts{d} ? keys %{$opts{d}} : '' ));
+      my $sql = "SELECT MD5(CONCAT_WS(',', '1', ''))";
+      $ENV{MKDEBUG} && _d($dbh, $sql);
+      my $cks = $dbh->selectall_arrayref($sql)->[0]->[0];
+      push @verify_sums, {
+         host => $host->{h},
+         ver  => $dbh->{mysql_serverinfo},
+         sum  => $cks
+      };
+   }
+   if ( unique(map { $_->{sum} } @verify_sums ) > 1 ) {
+      my $max = max(map { length($_->{h}) } @hosts);
+      die "Not all servers have compatible versions. Some return different\n"
+         . "checksum values for the same query, and cannot be compared. This\n"
+         . "behavior changed in MySQL 4.0.14.  Here is info on each host:\n\n"
+         . join("\n",
+              map { sprintf("%-${max}s %-32s %s", @{$_}{qw(host sum ver)}) }
+                 { host => 'HOST', sum => 'CHECKSUM', ver => 'VERSION'},
+              @verify_sums
+           )
+         . "\n\nYou can disable this check with --noverify.\n";
+   }
+   return;
+}
+
+sub check_repl_table {
+   my ( $dbh ) = @_;
+   my $sql = "REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0";
+   $ENV{MKDEBUG} && _d($dbh, $sql);
+   $dbh->do($sql);
+
+   # Clean out the replication table globally, but only if there are no
+   # filtering options.  There's also a clean-up step just before checksumming
+   # each table later.
+   if ( $opts{emptyrepltbl}
+        && !grep { $opts{$_} && %{$opts{$_}} } qw(d e g E n t) )
+   {
+      my $del_sql = "DELETE FROM $opts{R}";
+      $ENV{MKDEBUG} && _d($dbh, $del_sql);
+      $dbh->do($del_sql);
+   }
+
+   # TODO: Is there a chance this can cause problems while forked?
+   $fetch_sth = $dbh->prepare(
+      "SELECT this_crc, this_cnt FROM $opts{R} "
+      . "WHERE db = ? AND tbl = ? AND chunk = ?");
+   $update_sth = $dbh->prepare(
+      "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? "
+      . "WHERE db = ? AND tbl = ? AND chunk = ?");
+
+   return;
 }
 
 sub do_tbl_replicate {
@@ -3399,20 +3461,25 @@ sub do_tbl {
    my $mid = time();
 
    # Do the checksum operation.
-   if ( $strat eq 'CHECKSUM' ) {
-      if ( $opts{c} ) {
-         $crc = do_checksum($dbh, $info, $query, $explain);
+   if ( $checksum_table_data ) {
+      if ( $strat eq 'CHECKSUM' ) {
+         if ( $opts{c} ) {
+            $crc = do_checksum($dbh, $info, $query, $explain);
+         }
+         if ( $opts{r} ) {
+            $cnt = do_count($dbh, $info, $chunk_num, $explain);
+         }
       }
-      if ( $opts{r} ) {
+      elsif ( $opts{c} ) {
+         ( $cnt, $crc ) = do_var_crc($dbh, $query, $info, $chunk_num, $explain);
+         $crc ||= 'NULL';
+      }
+      else {
          $cnt = do_count($dbh, $info, $chunk_num, $explain);
       }
    }
-   elsif ( $opts{c} ) {
-      ( $cnt, $crc ) = do_var_crc($dbh, $query, $info, $chunk_num, $explain);
-      $crc ||= 'NULL';
-   }
-   else {
-      $cnt = do_count($dbh, $info, $chunk_num, $explain);
+   else { # compare schemas
+      $crc = do_create_table_checksum($dbh, $info, $query, $explain);
    }
 
    my $end = time();
@@ -3433,12 +3500,6 @@ sub do_tbl {
 
    return;
 }
-
-exit $exit_status;
-
-# ############################################################################
-# Subroutines
-# ############################################################################
 
 sub get_cxn {
    my ( $info ) = @_;
@@ -3512,6 +3573,22 @@ sub do_count {
    else {
       return $dbh->selectall_arrayref($sql)->[0]->[0];
    }
+}
+
+sub do_create_table_checksum {
+   my ( $dbh, $info, $query, $explain ) = @_;
+   $ENV{MKDEBUG} && _d("do_create_table_checksum for $info->{table}");
+   my $md5 = Digest::MD5->new();
+   $Data::Dumper::Indent = 1;
+   my $res = $dbh->selectall_arrayref($query);
+   # $res = [
+   # 0   [
+   #        0   table name,
+   #        1   SHOW CREATE ...
+   #     ]
+   # ]
+   $md5->add($res->[0]->[1]);
+   return $md5->hexdigest; 
 }
 
 sub unique {
@@ -3814,6 +3891,17 @@ of rows.
 type: array
 
 Checksum only this comma-separated list of columns.
+
+=item --compare-schemas
+
+Only compare schemas across servers.
+
+Instead of checksumming table data, this option causes only the servers'
+schemas to be checksummed.
+
+This option disables several options since it does not require access table
+data: --algorithm, --chunksize, --count, --replicate. Other options specific
+to table data are ignored, too.
 
 =item --count
 
