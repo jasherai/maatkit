@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 29;
+use Test::More tests => 33;
 
 diag(`./make_repl_sandbox`);
 my $cnf='/tmp/12345/my.sandbox.cnf';
@@ -78,7 +78,20 @@ like($output, qr/c4ca4238a0b923820dcc509a6f75849b/, 'MD5 BIT_XOR' );
 
 # Check --schema
 $output = `$cmd --checksum --schema 2>&1`;
-like($output, qr/2453095966/, 'Checksum with --schema' );
+like($output, qr/377366820/, 'Checksum with --schema' );
+
+# Check --since
+$output = `MKDEBUG=1 $cmd --since '"2008-01-01" - interval 1 day' --explain 2>&1 | grep 2007`;
+like($output, qr/2007-12-31/, '--since is calculated as an expression');
+
+$output = `MKDEBUG=1 $cmd --since 'current_date + interval 1 day' 2>&1`;
+like($output, qr/Skipping.*--since/, '--since skips tables');
+
+$output = `$cmd --since 100 --explain`;
+like($output, qr/`a`>=100/, '--since adds WHERE clauses');
+
+$output = `$cmd --since current_date 2>&1 | grep HASH`;
+unlike($output, qr/HASH\(0x/, '--since does not f*** up table names');
 
 $output  = `$cmd -f sha1 -R test.checksum`;
 $output2 = `/tmp/12345/use --skip-column-names -e "select this_crc from test.checksum where tbl='checksum_test'"`;

@@ -1695,7 +1695,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 2126
+# TableChunker package 2200
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1953,8 +1953,10 @@ sub inject_chunks {
       $args{chunk_num} + 1, scalar @{$args{chunks}});
    $args{query} =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
    my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
-   if ( $args{where} ) {
-      $where .= " AND ($args{where})";
+   if ( $args{where} && grep { $_ } @{$args{where}} ) {
+      $where .= " AND ("
+         . join(" AND ", map { "($_)" } grep { $_ } @{$args{where}} )
+         . ")";
    }
    $args{query} =~ s!/\*WHERE\*/! $where!;
    my $db_tbl = $self->{quoter}->quote(@args{qw(database table)});
@@ -2840,7 +2842,7 @@ sub _d {
 package main;
 
 use English qw(-no_match_vars);
-use List::Util qw(max);
+use List::Util qw(max maxstr);
 use Time::HiRes qw(gettimeofday sleep);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
@@ -2969,6 +2971,22 @@ else {
 # Used for --checksum
 my $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
 
+# If --since is given, it may be an expression like 'NOW() - INTERVAL 7 DAY'
+# and we should evaluate it.
+if ( $opts{since} ) {
+   eval {
+      my ($val) = $main_dbh->selectrow_array("SELECT $opts{since}");
+      if ( $val ) {
+         $opts{since} = $val;
+         $ENV{MKDEBUG} && _d("--since: ", $opts{since});
+      }
+   };
+   if ( $EVAL_ERROR && $ENV{MKDEBUG} ) {
+      chomp $EVAL_ERROR;
+      _d("Error evaluating --since: ", $EVAL_ERROR);
+   }
+}
+
 # ############################################################################
 # Iterate through databases and tables and do the checksums.
 # ############################################################################
@@ -3009,33 +3027,28 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
 
          eval { # Catch errors caused by tables being dropped during work.
 
+            # Parse the table and determine a column that's chunkable.  This is
+            # used not only for chunking, but also for --since.
             my $create = $du->get_create_table($main_dbh, $q, $database, $table);
             my $struct = $tp->parse($create);
+            my $col    = $ch->get_first_chunkable_column($struct);
 
             my @chunks = '1=1'; # Default.
-            if ( $opts{C} ) {
-
+            if ( $opts{C} && $col ) {
                my $rows_per_chunk = $ch->size_to_rows(
                      $main_dbh, $database, $table, $opts{C}, $du);
 
-               # Get the chunk column candidates and calculate chunks for
-               # this table.
-               my $col   = $ch->get_first_chunkable_column($struct);
-               if ( $col ) {
-                  my %params = $ch->get_range_statistics(
-                     $main_dbh, $database, $table, $col);
-
-                  if ( !grep { !defined $params{$_} }
-                        qw(min max rows_in_range) )
-                  {
-                     @chunks = $ch->calculate_chunks(
-                        dbh      => $main_dbh,
-                        table    => $struct,
-                        col      => $col,
-                        size     => $rows_per_chunk,
-                        %params,
-                     );
-                  }
+               # Calculate chunks for this table.
+               my %params = $ch->get_range_statistics(
+                  $main_dbh, $database, $table, $col);
+               if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
+                  @chunks = $ch->calculate_chunks(
+                     dbh      => $main_dbh,
+                     table    => $struct,
+                     col      => $col,
+                     size     => $rows_per_chunk,
+                     %params,
+                  );
                }
             }
 
@@ -3044,6 +3057,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                create       => $create,
                database     => $database,
                table        => $table,
+               column       => $col,
                chunks       => \@chunks,
             };
 
@@ -3079,9 +3093,10 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          or die "Cannot print: $OS_ERROR";
    }
 
-   TABLE:
+   # NOTE: remember, you can't 'next TABLE' inside the eval{}.
    foreach my $table ( @tables ) {
       eval {
+         my $do_table = 1;
          $ENV{MKDEBUG} && _d("Doing $database.$table->{table}");
          $ENV{MKDEBUG} && _d("Table: ", Dumper($table));
 
@@ -3092,12 +3107,41 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             $main_dbh->do($del_sql, {}, $database, $table->{table});
          }
 
+         # If --since is given, figure out which column to use.  Use either the
+         # specified column (--sincecolumn) or the auto-discovered one,
+         # whichever exists in the table, in that order.
+         if ( $opts{since} ) {
+            # If the --since argument is a date/timeish value, skip the whole
+            # table unless it has been modified or created since then.
+            if ( is_temporal($opts{since}) ) {
+               my ($stat) = $du->get_table_status($main_dbh, $q, $database, $table->{table});
+               my $time = maxstr(grep { $_ } @{$stat}{qw(create_time update_time)});
+               if ( $time lt $opts{since} ) {
+                  $ENV{MKDEBUG} && _d("Skipping table because of --since");
+                  $do_table = 0;
+                  $table->{chunks} = [];
+               }
+            }
+         }
+
+         if ( $opts{since} && $do_table ) {
+            my ( $sincecol ) =
+               grep { $_ && $table->{struct}->{is_col}->{$_} }
+               ($table->{column}, $opts{sincecolumn});
+            if ( $sincecol ) {
+               $ENV{MKDEBUG} && _d("Column for --since: ", $sincecol);
+               # This ends up being an additional WHERE clause.
+               $table->{since} = $q->quote($sincecol)
+                  . '>=' .  $q->quote_val($opts{since});
+            }
+         }
+
          # ##################################################################
          # The query is independent of the chunk, so I make it once for every
          # one.
          # ##################################################################
          my $query;
-         if ( $checksum_table_data ) {
+         if ( $checksum_table_data && $do_table ) {
             $query = $tc->make_checksum_query(
                dbname    => $database,
                tblname   => $table->{table},
@@ -3234,6 +3278,11 @@ exit $exit_status;
 # Subroutines
 # ############################################################################
 
+sub is_temporal {
+   my ( $val ) = @_;
+   return $val && $val =~ m/^\d{4}-\d{2}-\d{2}(?:.[0-9:]+)?/;
+}
+
 sub check_repl_slaves {
    my ( $dbh, $dsn_parser, $tc ) = @_;
    my $exit_status = 0;
@@ -3283,7 +3332,7 @@ sub determine_checksum_strat {
       algorithm   => $opts{a},
       vp          => $vp,
       dbh         => $dbh,
-      where       => $opts{W},
+      where       => $opts{W} || $opts{since},
       chunk       => $opts{C},
       replicate   => $opts{R},
       count       => $opts{r},
@@ -3398,7 +3447,7 @@ sub do_tbl_replicate {
       table     => $info->{table},
       chunks    => $info->{chunks},
       chunk_num => $chunk_num,
-      where     => $opts{W},
+      where     => [$opts{W}, $info->{since}],
    );
 
    my $where = $info->{chunks}->[$chunk_num];
@@ -3465,8 +3514,12 @@ sub do_tbl {
    my $create;
    if ( !$is_master || !$checksum_table_data ) {
       eval {
-         $create
-            = $du->get_create_table($dbh, $q, @{$info}{qw(database table)});
+         $create = $du->get_create_table($dbh, $q, $info->{database}, $info->{table});
+         if ( ref $create eq 'ARRAY' ) {
+            # TODO: this is a fugly hack that must die.  MySQLDump.pm is really
+            # fscked up.  MUST FIX.
+            $create = $create->[1];
+         }
       };
       if ( $EVAL_ERROR ) {
          $ENV{MKDEBUG} && _d("$info->{database}.$info->{table} does not exist on slave $host->{h}:$host->{P}");
@@ -3542,7 +3595,7 @@ sub do_var_crc {
       table     => $info->{table},
       chunks    => $info->{chunks},
       chunk_num => $chunk_num,
-      where     => $opts{W},
+      where     => [$opts{W}, $info->{since}],
    );
 
    if ( $opts{explain} ) {
@@ -3581,8 +3634,14 @@ sub do_count {
    my ( $dbh, $info, $chunk_num, $explain ) = @_;
    $ENV{MKDEBUG} && _d("do_count for $info->{table}");
    my $sql = "SELECT COUNT(*) FROM "
-      . $q->quote(@{$info}{qw(database table)})
-      . ($opts{W} ? " WHERE $opts{W}" : '');
+      . $q->quote(@{$info}{qw(database table)});
+   if ( $opts{W} || $opts{since} ) {
+      # TODO: this (and the code in inject_chunks) should be abstracted into
+      # some SqlBuilder module or something
+      $sql .= " WHERE ("
+         . join(" AND ", map { "($_)" } grep { $_ } @opts{qw(W since)} )
+         . ")";
+   }
    if ( $opts{explain} ) {
       printf($explain, @{$info}{qw(database table)}, $sql)
          or die "Cannot print: $OS_ERROR";
@@ -4209,6 +4268,34 @@ Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
+
+=item --since
+
+type: string
+
+Checksum only rows newer than this value.
+
+If the table is chunk-able or nibble-able, this value will apply to the first
+column of the chunked or nibbled index.
+
+This is not too different to L<"--where">, but instead of universally applying a
+WHERE clause to every table, it selectively finds the right column to use and
+applies it only if such a column is found.  See also L<"--sincecolumn">.
+
+A special bit of extra magic: the table is checksummed only if the create time
+(or last modified time, for tables that report the last modified time, such as
+MyISAM tables) is newer than this value, if the value is temporal.
+
+=item --sincecolumn
+
+type: string
+
+The column name to be used for L<"--since">.
+
+The default is for the tool to choose the best one automatically.  If you
+specify a value, that will be used if possible; otherwise the best
+auto-determined one; otherwise none.  If the column doesn't exist in the table,
+it is just ignored.
 
 =item --slavelag
 
