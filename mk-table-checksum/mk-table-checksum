@@ -3174,6 +3174,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          CHUNK:
          foreach my $chunk_num ( 0 .. scalar(@{$table->{chunks}}) - 1 ) {
 
+            # TODO: --modulo as well, for predictability
             if ( rand(100) >= $opts{probability} ) {
                $ENV{MKDEBUG} && _d('Skipping chunk because of --probability');
                next CHUNK;
