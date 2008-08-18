@@ -336,7 +336,7 @@ sub inject_chunks {
       $args{chunk_num} + 1, scalar @{$args{chunks}});
    $args{query} =~ s!/\*PROGRESS_COMMENT\*/!$comment!;
    my $where = "WHERE (" . $args{chunks}->[$args{chunk_num}] . ')';
-   if ( $args{where} ) {
+   if ( $args{where} && grep { $_ } @{$args{where}} ) {
       $where .= " AND ("
          . join(" AND ", map { "($_)" } grep { $_ } @{$args{where}} )
          . ")";
