@@ -113,6 +113,7 @@ The following items are unimplemented at this time:
    * if a table has one autoinc PK and another int UNIQUE, raise a notice that
      maybe it should drop the autoinc and promote the UNIQUE to PK.
    * for InnoDB tables, a key that has the PK appended is redundant.
+   * pack_keys=1 is probably a mistake
    * look for columns named UUID or GUID or session_id which may contain hex
      data stored as strings, which would be better stored unhexed in binary
    * Look for nullable columns that contain no NULLs, especially indexed columns
