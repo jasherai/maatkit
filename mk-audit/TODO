@@ -58,6 +58,7 @@ The following items are unimplemented at this time:
          * Watch prepared statements and compare to max
          * Watch for "bad query patterns" such as RAND() or storing IP addresses
          as varchar or using TO_DAYS(column) < TO_DAYS(NOW()) - 5
+         * Actually, DATE_FORMAT(), or TO_DAYS() are just red flags
       * Connections and users
          * report anonymous users
          * report obsolete privileges (privs that refer to dbs or tables that
