@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 51;
+use Test::More tests => 52;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -731,3 +731,30 @@ is_deeply(
    ],
    'Converted POD into opt_spec',
 );
+
+$p = new OptionParser(
+   { s => 'wine',     g => 'o', d => 'wine'                       },
+   { s => 'grapes',   g => 'o', d => 'grapes'                     },
+   { s => 'barely',   g => 'o', d => 'barely (default yes)'       },
+   { s => 'hops=s',   g => 'o', d => 'hops'                       },
+   { s => 'yeast=s',  g => 'o', d => 'yeast (default Montrachet)' },
+   'allowed with --wine: --grapes, --yeast',
+);
+@ARGV = ('--wine', '--grapes', '--hops=Strisselspalt');
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   {
+      grapes   => 1,
+      wine     => 1,
+      version  => undef,
+      help     => undef,
+      yeast    => 'Montrachet',
+      barely   => undef,
+      hops     => undef,
+   },
+   'Opt only allowed with other opts parses correclty'
+);
+
+
+exit;

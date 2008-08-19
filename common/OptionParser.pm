@@ -26,6 +26,8 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
+my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
 # Holds command-line options.  Each option is a hashref:
 # {
 #   s => GetOpt::Long specification,
@@ -61,6 +63,7 @@ sub new {
    my %long_for;
    my %disables;
    my %copyfrom;
+   my @allowed_with;
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
@@ -124,6 +127,13 @@ sub new {
             $copyfrom{$participants[0]} = $participants[1];
             $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
          }
+         elsif ( $opt  =~ m/allowed with/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $key_for{$_};
+               } $class->get_participants($opt);
+            push @allowed_with, \@participants;
+         }
 
       }
    }
@@ -171,18 +181,19 @@ sub new {
    }
 
    return bless {
-      specs => [ grep { ref $_ } @opts ],
-      notes => [],
-      instr => [ grep { !ref $_ } @opts ],
-      mutex => \@mutex,
-      defaults => \%defaults,
-      long_for => \%long_for,
-      atleast1 => \@atleast1,
-      disables => \%disables,
-      key_for  => \%key_for,
-      copyfrom => \%copyfrom,
-      strict   => 1,
-      groups   => [ { k => 'o', d => 'Options' } ],
+      specs        => [ grep { ref $_ } @opts ],
+      notes        => [],
+      instr        => [ grep { !ref $_ } @opts ],
+      mutex        => \@mutex,
+      defaults     => \%defaults,
+      long_for     => \%long_for,
+      atleast1     => \@atleast1,
+      disables     => \%disables,
+      key_for      => \%key_for,
+      copyfrom     => \%copyfrom,
+      strict       => 1,
+      groups       => [ { k => 'o', d => 'Options' } ],
+      allowed_with => \@allowed_with,
    }, $class;
 }
 
@@ -335,6 +346,27 @@ sub parse {
       }
       elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
          $vals{$spec->{k}} = [ split(',', ($val || '')) ];
+      }
+   }
+
+   foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
+      # First element is opt with which the other ops are allowed
+      my $opt = $allowed_opts->[0];
+      # This process could be more terse but by doing it this way we
+      # can see what opts were defined (by either being given on the
+      # cmd line or having default values) and therefore which of
+      # those get unset due to not being allowed.
+      my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
+      delete @defined_opts{ @$allowed_opts };
+      # TODO: do error() when there's defined_opts still. Problem with
+      # this those: default values. Can't tell if an opt was actually
+      # given on the cmd line or just given its default val. This may
+      # not even be possible unless we somehow look at @ARGV and that
+      # seems like a hack.
+      foreach my $defined_opt ( keys %defined_opts ) {
+         $ENV{MKDEBUG}
+            && _d("Unsetting options: $defined_opt (not allowed with $opt)");
+         $vals{$defined_opt} = undef;
       }
    }
 
@@ -498,6 +530,7 @@ sub pod_to_spec {
    $file ||= __FILE__;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
    my $para;
+   my $option;
 
    # Read a paragraph at a time from the file.  Skip everything until options
    # are reached...
@@ -513,13 +546,13 @@ sub pod_to_spec {
       last if $para =~ m/^=over/;
       chomp $para;
       $para =~ s/\s+/ /g;
-      $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+      $para =~ s/$POD_link_re/$1/go;
       push @special_options, $para;
    }
 
    # ... then start reading options.
    do {
-      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
          $ENV{MKDEBUG} && _d($para);
          my %props;
          $para = <$fh>;
@@ -533,7 +566,7 @@ sub pod_to_spec {
          }
          $para =~ s/\s+\Z//g;
          $para =~ s/\s+/ /g;
-         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         $para =~ s/$POD_link_re/$1/go;
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
@@ -549,6 +582,16 @@ sub pod_to_spec {
       }
       while ( $para = <$fh> ) {
          last unless $para;
+
+         # Look for special instructions in the option's full description
+         if ( $option ) {
+            if ( my ($line)
+                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
+               1 while ( $line =~ s/$POD_link_re/$1/go );
+               push @special_options, $line;
+            }
+         }
+
          if ( $para =~ m/^=head1/ ) {
             $para = undef; # Can't 'last' out of a do {} block.
             last;
