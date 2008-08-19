@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 33;
+use Test::More tests => 53;
 
 diag(`./make_repl_sandbox`);
 my $cnf='/tmp/12345/my.sandbox.cnf';
@@ -131,6 +131,43 @@ diag(`/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;CREATE TABLE only_on_master(
 $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d mysql -t only_on_master 2>&1`;
 like($output, qr/MyISAM\s+NULL\s+0/, 'Table on master checksummed');
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed');
+diag(`/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;DROP TABLE only_on_master;'`);
+
+# Issue 5: Add ability to checksum table schema instead of data
+$cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema | awk '{print \$1,\$2,\$7}' | diff ./sample_schema_opt - 2>&1 > /dev/null";
+my $ret_val = system($cmd);
+cmp_ok($ret_val, '==', 0, 'Only option --schema');
+
+# Remember to add $#opt_combos+1 number of tests to line 6
+my @opt_combos = ( # --schema and
+   '--algorithm=BIT_XOR',
+   '--checksum',
+   '--chunksize=1M',
+   '--count',
+   '--crc',
+   '--emptyrepltbl',
+   '--float-precision=3',
+   '--function=FNV_64',
+   '--lock',
+   '--optxor',
+   '--probability=1',
+   '--replcheck=1000',
+   '--replicate=checksum_tbl',
+   '--since \'"2008-01-01" - interval 1 day\'',
+   '--slavelag',
+   '--sleep=1000',
+   '--noverify',
+   '--wait=1000',
+   '--where="id > 1000"',
+);
+foreach my $opt_combo ( @opt_combos ) {
+   $cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema $opt_combo | awk '{print \$1,\$2,\$7}' | diff ./sample_schema_opt - 2>&1 > /dev/null";
+   $ret_val = system($cmd);
+   cmp_ok($ret_val, '==', 0, "--schema $opt_combo");
+}
+# I awk the output to just 3 key columns because I found the full
+# output is not stable due to the TIME column: occasionally it will
+# show 1 instead of 0 and diff barfs. These 3 columns should be stable.
 
 diag(`../../sandbox/stop_all`);
 

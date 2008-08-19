@@ -558,7 +558,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 2174
+# OptionParser package 2206
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -568,6 +568,8 @@ package OptionParser;
 use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
+
+my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -580,6 +582,7 @@ sub new {
    my %long_for;
    my %disables;
    my %copyfrom;
+   my @allowed_with;
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
@@ -638,6 +641,13 @@ sub new {
             $copyfrom{$participants[0]} = $participants[1];
             $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
          }
+         elsif ( $opt  =~ m/allowed with/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $key_for{$_};
+               } $class->get_participants($opt);
+            push @allowed_with, \@participants;
+         }
 
       }
    }
@@ -681,18 +691,19 @@ sub new {
    }
 
    return bless {
-      specs => [ grep { ref $_ } @opts ],
-      notes => [],
-      instr => [ grep { !ref $_ } @opts ],
-      mutex => \@mutex,
-      defaults => \%defaults,
-      long_for => \%long_for,
-      atleast1 => \@atleast1,
-      disables => \%disables,
-      key_for  => \%key_for,
-      copyfrom => \%copyfrom,
-      strict   => 1,
-      groups   => [ { k => 'o', d => 'Options' } ],
+      specs        => [ grep { ref $_ } @opts ],
+      notes        => [],
+      instr        => [ grep { !ref $_ } @opts ],
+      mutex        => \@mutex,
+      defaults     => \%defaults,
+      long_for     => \%long_for,
+      atleast1     => \@atleast1,
+      disables     => \%disables,
+      key_for      => \%key_for,
+      copyfrom     => \%copyfrom,
+      strict       => 1,
+      groups       => [ { k => 'o', d => 'Options' } ],
+      allowed_with => \@allowed_with,
    }, $class;
 }
 
@@ -840,6 +851,18 @@ sub parse {
       }
    }
 
+   foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
+      my $opt = $allowed_opts->[0];
+      next if !defined $vals{$opt};
+      my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
+      delete @defined_opts{ @$allowed_opts };
+      foreach my $defined_opt ( keys %defined_opts ) {
+         $ENV{MKDEBUG}
+            && _d("Unsetting options: $defined_opt (not allowed with $opt)");
+         $vals{$defined_opt} = undef;
+      }
+   }
+
    return %vals;
 }
 
@@ -981,6 +1004,7 @@ sub pod_to_spec {
    $file ||= __FILE__;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
    my $para;
+   my $option;
 
    local $INPUT_RECORD_SEPARATOR = '';
    while ( $para = <$fh> ) {
@@ -993,12 +1017,12 @@ sub pod_to_spec {
       last if $para =~ m/^=over/;
       chomp $para;
       $para =~ s/\s+/ /g;
-      $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+      $para =~ s/$POD_link_re/$1/go;
       push @special_options, $para;
    }
 
    do {
-      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
+      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
          $ENV{MKDEBUG} && _d($para);
          my %props;
          $para = <$fh>;
@@ -1012,7 +1036,7 @@ sub pod_to_spec {
          }
          $para =~ s/\s+\Z//g;
          $para =~ s/\s+/ /g;
-         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         $para =~ s/$POD_link_re/$1/go;
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
@@ -1028,6 +1052,15 @@ sub pod_to_spec {
       }
       while ( $para = <$fh> ) {
          last unless $para;
+
+         if ( $option ) {
+            if ( my ($line)
+                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
+               1 while ( $line =~ s/$POD_link_re/$1/go );
+               push @special_options, $line;
+            }
+         }
+
          if ( $para =~ m/^=head1/ ) {
             $para = undef; # Can't 'last' out of a do {} block.
             last;
@@ -2896,11 +2929,6 @@ if ( $opts{explainhosts} ) {
 # replication stuff, etc.
 my $checksum_table_data = $opts{schema} ? 0 : 1;
 
-if ( !$checksum_table_data ) {
-   $opts{C} = 0; # disable --chunksize
-   $opts{r} = 0; # disable --count
-   $opts{R} = 0; # disable --replicate
-}
 
 if ( $opts{checksum} ) {
    $opts{r} = 0;
@@ -3175,7 +3203,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          foreach my $chunk_num ( 0 .. scalar(@{$table->{chunks}}) - 1 ) {
 
             # TODO: --modulo as well, for predictability
-            if ( rand(100) >= $opts{probability} ) {
+            if ( $checksum_table_data && rand(100) >= $opts{probability} ) {
                $ENV{MKDEBUG} && _d('Skipping chunk because of --probability');
                next CHUNK;
             }
@@ -4251,9 +4279,8 @@ The table specified by L<"--replicate"> will never be checksummed itself.
 
 Checksum C<SHOW CREATE TABLE> intead of table data.
 
-This option disables several options since it does not require access to table
-data: --algorithm, --chunksize, --count, --replicate. Other options specific
-to table data are ignored, too.
+This option disables most other options since it does not require access to
+table data. Only the following options allowed with --schema: L<"--askpass">, L<"--databases">, L<"--defaults-file">, L<"--engine">, L<"--explain">, L<"--explainhosts">, L<"--ignoredb">, L<"--ignoreengine">, L<"--ignoretbl">, L<"--password">, L<"--port">, L<"--quiet">, L<"--setvars">, L<"--socket">, L<"--tab">, L<"--tables">, L<"--user">.
 
 =item --separator
 
