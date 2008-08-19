@@ -3440,12 +3440,8 @@ sub check_repl_table {
    $ENV{MKDEBUG} && _d($dbh, $sql);
    $dbh->do($sql);
 
-   # Clean out the replication table globally, but only if there are no
-   # filtering options.  There's also a clean-up step just before checksumming
-   # each table later.
-   if ( $opts{emptyrepltbl}
-        && !grep { $opts{$_} && %{$opts{$_}} } qw(d e g E n t) )
-   {
+   # Clean out the replication table globally
+   if ( $opts{emptyrepltbl} ) {
       my $del_sql = "DELETE FROM $opts{R}";
       $ENV{MKDEBUG} && _d($dbh, $del_sql);
       $dbh->do($del_sql);
@@ -4023,9 +4019,6 @@ Issues a DELETE against the table given by L<"--replicate"> before beginning
 work.  Ignored if L<"--replicate"> is not specified.  This can be useful to
 remove entries related to tables that no longer exist, or just to clean out the
 results of a previous run.
-
-If you specify any options that filter databases or tables, C<mk-table-checksum>
-will remove only their entries.  Otherwise, it empties the entire table.
 
 =item --engine
 

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 56;
+use Test::More tests => 58;
 
 diag(`../../sandbox/stop_all`);
 diag(`../../sandbox/make_sandbox 12345`);
@@ -184,16 +184,32 @@ unlike($output, qr/LOCK TABLES /, '--schema does not lock tables even with --loc
 # Issue 21: --emptyrepltbl doesn't empty if previous runs leave info
 diag(`/tmp/12345/use < samples/checksum_tbl.sql`);
 
-# We'll do some other tests while we're at it...
+# Run --replication once to populate test.checksum
 $cmd = 'perl ../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum | diff ./samples/basic_replicate_output -';
 $ret_val = system($cmd);
+# Might as well test this while we're at it
 cmp_ok($ret_val, '==', 0, 'Basic --replicate works');
 
-if ( $ENV{MKFASTTEST} ) {
-   diag('Leaving replication sandboxes running');
-}
-else {
-   diag(`../../sandbox/stop_all`);
-}
+# Insert a bogus row into test.checksum
+my $repl_row = "INSERT INTO test.checksum VALUES ('foo', 'bar', 0, 'a', 'b', 0, 'c', 0,  NOW())";
+diag(`/tmp/12345/use -D test -e "$repl_row"`);
+# Run --replicate again which should completely clear test.checksum,
+# including our bogus row
+`perl ../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum --emptyrepltbl 2>&1 > /dev/null`;
+# Make sure bogus row is actually gone
+$cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
+$output = `$cmd`;
+unlike($output, qr/foo/, '--emptyrepltbl completely empties the table (fixes issue 21)');
 
+# While we're at it, let's test what the doc says about --emptyrepltbl:
+# "Ignored if L<"--replicate"> is not specified."
+$repl_row = "INSERT INTO test.checksum VALUES ('foo', 'bar', 0, 'a', 'b', 0, 'c', 0,  NOW())";
+diag(`/tmp/12345/use -D test -e "$repl_row"`);
+`perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --emptyrepltbl 2>&1 > /dev/null`;
+# Now make sure bogus row is still present
+$cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
+$output = `$cmd`;
+like($output, qr/foo/, '--emptyrepltbl is ignored if --replicate is not specified');
+
+diag(`../../sandbox/stop_all`);
 exit;
