@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 52;
+use Test::More tests => 53;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -733,11 +733,11 @@ is_deeply(
 );
 
 $p = new OptionParser(
-   { s => 'wine',     g => 'o', d => 'wine'                       },
-   { s => 'grapes',   g => 'o', d => 'grapes'                     },
-   { s => 'barely',   g => 'o', d => 'barely (default yes)'       },
-   { s => 'hops=s',   g => 'o', d => 'hops'                       },
-   { s => 'yeast=s',  g => 'o', d => 'yeast (default Montrachet)' },
+   { s => 'wine',    g => 'o', d => 'wine'                       },
+   { s => 'grapes',  g => 'o', d => 'grapes'                     },
+   { s => 'barely',  g => 'o', d => 'barely (default yes)'       },
+   { s => 'hops=s',  g => 'o', d => 'hops'                       },
+   { s => 'yeast=s', g => 'o', d => 'yeast (default Montrachet)' },
    'allowed with --wine: --grapes, --yeast',
 );
 @ARGV = ('--wine', '--grapes', '--hops=Strisselspalt');
@@ -745,16 +745,31 @@ $p = new OptionParser(
 is_deeply(
    \%opts,
    {
-      grapes   => 1,
       wine     => 1,
-      version  => undef,
-      help     => undef,
-      yeast    => 'Montrachet',
+      grapes   => 1,
       barely   => undef,
       hops     => undef,
+      yeast    => 'Montrachet',
+      version  => undef,
+      help     => undef,
    },
    'Opt only allowed with other opts parses correclty'
 );
 
+@ARGV = ('--barely', '--hops=Strisselspalt');
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   {
+      wine     => undef,
+      grapes   => undef,
+      barely   => 1,
+      hops     => 'Strisselspalt',
+      yeast    => 'Montrachet',
+      version  => undef,
+      help     => undef,
+   },
+   'Other ops parse correctly w/o special only allowed opt'
+);
 
 exit;
