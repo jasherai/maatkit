@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # This program synchronizes data efficiently between two MySQL tables, which
 # can be on different servers.

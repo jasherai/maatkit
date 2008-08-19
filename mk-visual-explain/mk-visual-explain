@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # This is mk-visual-explain, a program to transform MySQL's EXPLAIN output
 # into a query execution plan formatted as a tree.

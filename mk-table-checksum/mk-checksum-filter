@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # This program sorts and filters table checksums output by mk-table-checksum,
 # and shows only those that differ.

@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # This is mk-deadlock-logger, a program that extracts and saves a summary of
 # the last deadlock recorded in MySQL.

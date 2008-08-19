@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # mk-show-grants canonicalizes and prints MySQL grants so you can effectively
 # replicate, compare and version-control them.

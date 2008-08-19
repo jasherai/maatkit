@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # This is mk-slave-delay, a program that makes a MySQL slave lag its master.
 #

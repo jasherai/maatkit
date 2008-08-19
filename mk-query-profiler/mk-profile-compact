@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 # This is mk-profile-compact, a program to align results from
 # mk-query-profiler side by side for comparison.
