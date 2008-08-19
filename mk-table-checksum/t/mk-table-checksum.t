@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 53;
+use Test::More tests => 55;
 
 diag(`./make_repl_sandbox`);
 my $cnf='/tmp/12345/my.sandbox.cnf';
@@ -169,6 +169,12 @@ foreach my $opt_combo ( @opt_combos ) {
 # output is not stable due to the TIME column: occasionally it will
 # show 1 instead of 0 and diff barfs. These 3 columns should be stable.
 
-diag(`../../sandbox/stop_all`);
+# Check that --schema does NOT lock by default
+$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema 2>&1`;
+unlike($output, qr/LOCK TABLES /, '--schema does not lock tables by default');
 
+$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema --lock 2>&1`;
+unlike($output, qr/LOCK TABLES /, '--schema does not lock tables even with --lock');
+
+diag(`../../sandbox/stop_all`);
 exit;
