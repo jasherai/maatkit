@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 
 package LogParser;
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 # TODO: support events that are 'commented out' in the slow query log, such as
 # administrative commands like ping and statistics.
 
@@ -85,18 +87,18 @@ sub parse_event {
 
    LINE:
    while ( !$done && defined $line ) {
-      $ENV{MKDEBUG} && _d('type: ', $type, ' ', $line);
+      MKDEBUG && _d('type: ', $type, ' ', $line);
       my $handled_line = 0;
 
       if ( !$mode && $line =~ m/^# [A-Z]/ ) {
-         $ENV{MKDEBUG} && _d('Setting mode to slow log');
+         MKDEBUG && _d('Setting mode to slow log');
          $mode ||= 'slow';
       }
 
       # These can appear in the log file when it's opened -- for example, when
       # someone runs FLUSH LOGS.
       if ( $line =~ m/Version:.+ started with:/ ) {
-         $ENV{MKDEBUG} && _d('Chomping out header lines');
+         MKDEBUG && _d('Chomping out header lines');
          <$fh>; # Tcp port: etc
          <$fh>; # Column headers
          $line = <$fh>;
@@ -108,12 +110,12 @@ sub parse_event {
       elsif ( $mode ne 'slow'
          && (my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s)
       ) {
-         $ENV{MKDEBUG} && _d('Beginning of general log event');
+         MKDEBUG && _d('Beginning of general log event');
          $handled_line = 1;
          $mode ||= 'log';
          $self->{last_line} = undef;
          if ( $type == 0 ) {
-            $ENV{MKDEBUG} && _d('Type 0');
+            MKDEBUG && _d('Type 0');
             my ( $cmd, $arg ) = $rest =~ m/$general_log_any_line/;
             $event = {
                ts  => $ts || '',
@@ -122,7 +124,7 @@ sub parse_event {
                arg => $arg || '',
             };
             if ( $cmd ne 'Query' ) {
-               $ENV{MKDEBUG} && _d('Not a query, done with this event');
+               MKDEBUG && _d('Not a query, done with this event');
                $done = 1;
                chomp $event->{arg} if $event->{arg};
             }
@@ -131,7 +133,7 @@ sub parse_event {
          else {
             # The last line was the end of the query; this is the beginning of
             # the next.  Save it for the next round.
-            $ENV{MKDEBUG} && _d('Saving line for next invocation');
+            MKDEBUG && _d('Saving line for next invocation');
             $self->{last_line} = $line;
             $done = 1;
             chomp $event->{arg} if $event->{arg};
@@ -141,7 +143,7 @@ sub parse_event {
       elsif ( $mode eq 'slow' ) {
          if ( $line =~ m/^# No InnoDB statistics available/ ) {
             $handled_line = 1;
-            $ENV{MKDEBUG} && _d('Ignoring line');
+            MKDEBUG && _d('Ignoring line');
             $line = <$fh>;
             $type = 0;
             next LINE;
@@ -151,10 +153,10 @@ sub parse_event {
          # # Time: 071015 21:43:52
          elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
             $handled_line = 1;
-            $ENV{MKDEBUG} && _d('Beginning of slow log event');
+            MKDEBUG && _d('Beginning of slow log event');
             $self->{last_line} = undef;
             if ( $type == 0 ) {
-               $ENV{MKDEBUG} && _d('Type 0');
+               MKDEBUG && _d('Type 0');
                $event->{ts} = $time;
                # The User@Host might be concatenated onto the end of the Time.
                if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
@@ -164,7 +166,7 @@ sub parse_event {
             else {
                # Last line was the end of a query; this is the beginning of the
                # next.
-               $ENV{MKDEBUG} && _d('Saving line for next invocation');
+               MKDEBUG && _d('Saving line for next invocation');
                $self->{last_line} = $line;
                $done = 1;
             }
@@ -177,13 +179,13 @@ sub parse_event {
          elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
             $handled_line = 1;
             if ( $type == 0 ) {
-               $ENV{MKDEBUG} && _d('Type 0');
+               MKDEBUG && _d('Type 0');
                @{$event}{qw(user host ip)} = ($user, $host, $ip);
             }
             else {
                # Last line was the end of a query; this is the beginning of the
                # next.
-               $ENV{MKDEBUG} && _d('Saving line for next invocation');
+               MKDEBUG && _d('Saving line for next invocation');
                $self->{last_line} = $line;
                $done = 1;
             }
@@ -196,14 +198,14 @@ sub parse_event {
          elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
             if ( $type == 0 ) {
                $handled_line = 1;
-               $ENV{MKDEBUG} && _d('Splitting line into fields');
+               MKDEBUG && _d('Splitting line into fields');
                @{$event}{keys %hash} = values %hash;
             }
             else {
                # Last line was the end of a query; this is the beginning of the
                # next.
                $handled_line = 1;
-               $ENV{MKDEBUG} && _d('Saving line for next invocation');
+               MKDEBUG && _d('Saving line for next invocation');
                $self->{last_line} = $line;
                $done = 1;
             }
@@ -213,25 +215,25 @@ sub parse_event {
 
       if ( !$handled_line ) {
          if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
-            $ENV{MKDEBUG} && _d('Line is the end of a query within event');
+            MKDEBUG && _d('Line is the end of a query within event');
             if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
-               $ENV{MKDEBUG} && _d('Setting event DB to ', $db);
+               MKDEBUG && _d('Setting event DB to ', $db);
                $event->{db} = $db;
                $type = 1;
             }
             elsif ( $type < 2 && (my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) ) {
-               $ENV{MKDEBUG} && _d('Setting a property for event');
+               MKDEBUG && _d('Setting a property for event');
                push @{$event->{settings}}, $setting;
                $type = 1;
             }
             else {
-               $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
+               MKDEBUG && _d('Line is a continuation of prev line');
                $event->{arg} .= $line;
                $type = 2;
             }
          }
          else {
-            $ENV{MKDEBUG} && _d('Line is a continuation of prev line');
+            MKDEBUG && _d('Line is a continuation of prev line');
             $event->{arg} .= $line;
             $type = 2;
          }
@@ -246,12 +248,12 @@ sub parse_event {
    # If it was EOF, discard the last line so statefulness doesn't interfere with
    # the next log file.
    if ( !defined $line ) {
-      $ENV{MKDEBUG} && _d('EOF found');
+      MKDEBUG && _d('EOF found');
       $self->{last_line} = undef;
    }
 
    if ( $mode && $mode eq 'slow' ) {
-      $ENV{MKDEBUG} && _d('Slow log, trimming');
+      MKDEBUG && _d('Slow log, trimming');
       $event->{arg} =~ s/;\s*\Z// if $event->{arg};
    }
 
@@ -279,7 +281,7 @@ sub parse_binlog_event {
          $self->{term} = $del;
          local $RS     = $del;
          $line         = <$fh>; # Throw away DELIMITER line
-         $ENV{MKDEBUG} && _d('New record separator: ', $del);
+         MKDEBUG && _d('New record separator: ', $del);
          redo LINE;
       }
 

@@ -27,6 +27,8 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Carp;
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    my ( $class, $params ) = @_;
    if ( scalar keys %{ $params } < 4 ) {

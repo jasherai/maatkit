@@ -28,6 +28,8 @@ $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 # Defaults are built-in, but you can add/replace items by passing them as
 # hashrefs of {key, desc, copy, dsn}.  The desc and dsn items are optional.  You
 # can set properties with the prop() function.  Don't set the 'opts' property.
@@ -78,7 +80,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
-      $ENV{MKDEBUG} && _d('Adding extra property ' . $opt->{key});
+      MKDEBUG && _d('Adding extra property ' . $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -92,7 +94,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
-      $ENV{MKDEBUG} && _d("Setting $prop property");
+      MKDEBUG && _d("Setting $prop property");
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -101,29 +103,29 @@ sub prop {
 sub parse {
    my ( $self, $dsn, $prev, $defaults ) = @_;
    if ( !$dsn ) {
-      $ENV{MKDEBUG} && _d('No DSN to parse');
+      MKDEBUG && _d('No DSN to parse');
       return;
    }
-   $ENV{MKDEBUG} && _d("Parsing $dsn");
+   MKDEBUG && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
    my %vals;
    my %opts = %{$self->{opts}};
    if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
-      $ENV{MKDEBUG} && _d("Interpreting $dsn as $p=$dsn");
+      MKDEBUG && _d("Interpreting $dsn as $p=$dsn");
       $dsn = "$p=$dsn";
    }
    my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
    foreach my $key ( keys %opts ) {
-      $ENV{MKDEBUG} && _d("Finding value for $key");
+      MKDEBUG && _d("Finding value for $key");
       $vals{$key} = $hash{$key};
       if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
          $vals{$key} = $prev->{$key};
-         $ENV{MKDEBUG} && _d("Copying value for $key from previous DSN");
+         MKDEBUG && _d("Copying value for $key from previous DSN");
       }
       if ( !defined $vals{$key} ) {
          $vals{$key} = $defaults->{$key};
-         $ENV{MKDEBUG} && _d("Copying value for $key from defaults");
+         MKDEBUG && _d("Copying value for $key from defaults");
       }
    }
    foreach my $key ( keys %hash ) {
@@ -186,7 +188,7 @@ sub get_cxn_params {
                      qw(F h P S A))
          . ';mysql_read_default_group=mysql';
    }
-   $ENV{MKDEBUG} && _d($dsn);
+   MKDEBUG && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});
 }
 
@@ -213,15 +215,15 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
-   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+   MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
       join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
    my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
    # Immediately set character set and binmode on STDOUT.
    if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
       my $sql = "/*!40101 SET NAMES $charset*/";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      MKDEBUG && _d("$dbh: $sql");
       $dbh->do($sql);
-      $ENV{MKDEBUG} && _d('Enabling charset for STDOUT');
+      MKDEBUG && _d('Enabling charset for STDOUT');
       if ( $charset eq 'utf8' ) {
          binmode(STDOUT, ':utf8')
             or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
@@ -234,10 +236,10 @@ sub get_dbh {
    my $setvars = $self->prop('setvars');
    if ( $cxn_string =~ m/mysql/i && $setvars ) {
       my $sql = "SET $setvars";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      MKDEBUG && _d("$dbh: $sql");
       $dbh->do($sql);
    }
-   $ENV{MKDEBUG} && _d('DBH info: ',
+   MKDEBUG && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
          'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
@@ -266,7 +268,7 @@ sub get_hostname {
 # children.  These are usually $sth handles that haven't been finish()ed.
 sub disconnect {
    my ( $self, $dbh ) = @_;
-   $ENV{MKDEBUG} && $self->print_active_handles($dbh);
+   MKDEBUG && $self->print_active_handles($dbh);
    $dbh->disconnect;
 }
 

@@ -28,6 +28,8 @@ package TableSyncStream;
 
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 # Arguments:
 # * handler ChangeHandler
 sub new {

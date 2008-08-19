@@ -24,6 +24,8 @@ package RowDiff;
 
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    my ( $class, %args ) = @_;
    die "I need a dbh" unless $args{dbh};
@@ -45,18 +47,18 @@ sub compare_sets {
    do {
 
       if ( !$lr && $left->{Active} ) {
-         $ENV{MKDEBUG} && _d('Fetching row from left');
+         MKDEBUG && _d('Fetching row from left');
          $lr = $left->fetchrow_hashref;
       }
       if ( !$rr && $right->{Active} ) {
-         $ENV{MKDEBUG} && _d('Fetching row from right');
+         MKDEBUG && _d('Fetching row from right');
          $rr = $right->fetchrow_hashref;
       }
 
       my $cmp;
       if ( $lr && $rr ) {
          $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
-         $ENV{MKDEBUG} && _d('Key comparison on left and right: '
+         MKDEBUG && _d('Key comparison on left and right: '
             . (defined $cmp ? $cmp : 'undef'));
       }
       if ( $lr || $rr ) {
@@ -64,25 +66,25 @@ sub compare_sets {
          # rows have the same key, check the contents of the row to see if
          # they're the same.
          if ( $lr && $rr && defined $cmp && $cmp == 0 ) {
-            $ENV{MKDEBUG} && _d('Left and right have the same key');
+            MKDEBUG && _d('Left and right have the same key');
             $syncer->same_row($lr, $rr);
             $lr = $rr = undef; # Fetch another row from each side.
          }
          # The row in the left doesn't exist in the right.
          elsif ( !$rr || ( defined $cmp && $cmp < 0 ) ) {
-            $ENV{MKDEBUG} && _d('Left is not in right');
+            MKDEBUG && _d('Left is not in right');
             $syncer->not_in_right($lr);
             $lr = undef;
          }
          # Symmetric to the above.
          else {
-            $ENV{MKDEBUG} && _d('Right is not in left');
+            MKDEBUG && _d('Right is not in left');
             $syncer->not_in_left($rr);
             $rr = undef;
          }
       }
    } while ( $left->{Active} || $right->{Active} || $lr || $rr );
-   $ENV{MKDEBUG} && _d('No more rows');
+   MKDEBUG && _d('No more rows');
    $syncer->done_with_rows();
 }
 
@@ -103,17 +105,17 @@ sub compare_sets {
 # have to check the type of columns constantly
 sub key_cmp {
    my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
-   $ENV{MKDEBUG} && _d("Comparing keys using columns " . join(',', @$key_cols));
+   MKDEBUG && _d("Comparing keys using columns " . join(',', @$key_cols));
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
       if ( !defined $l || !defined $r ) {
-         $ENV{MKDEBUG} && _d("$col is not defined in both rows");
+         MKDEBUG && _d("$col is not defined in both rows");
          return defined $l || -1;
       }
       else {
          if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
-            $ENV{MKDEBUG} && _d("$col is numeric");
+            MKDEBUG && _d("$col is numeric");
             my $cmp = $l <=> $r;
             return $cmp unless $cmp == 0;
          }
@@ -124,11 +126,11 @@ sub key_cmp {
             my $coll = $tbl->{collation_for}->{$col};
             if ( $coll && ( $coll ne 'latin1_swedish_ci'
                            || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) ) {
-               $ENV{MKDEBUG} && _d("Comparing $col via MySQL");
+               MKDEBUG && _d("Comparing $col via MySQL");
                $cmp = $self->db_cmp($coll, $l, $r);
             }
             else {
-               $ENV{MKDEBUG} && _d("Comparing $col in lowercase");
+               MKDEBUG && _d("Comparing $col in lowercase");
                $cmp = lc $l cmp lc $r;
             }
             return $cmp unless $cmp == 0;
@@ -142,7 +144,7 @@ sub db_cmp {
    my ( $self, $collation, $l, $r ) = @_;
    if ( !$self->{sth}->{$collation} ) {
       if ( !$self->{charset_for} ) {
-         $ENV{MKDEBUG} && _d("Fetching collations from MySQL");
+         MKDEBUG && _d("Fetching collations from MySQL");
          my @collations = @{$self->{dbh}->selectall_arrayref(
             'SHOW COLLATION', {Slice => { collation => 1, charset => 1 }})};
          foreach my $collation ( @collations ) {
@@ -152,7 +154,7 @@ sub db_cmp {
       }
       my $sql = "SELECT STRCMP(_$self->{charset_for}->{$collation}? COLLATE $collation, "
          . "_$self->{charset_for}->{$collation}? COLLATE $collation) AS res";
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       $self->{sth}->{$collation} = $self->{dbh}->prepare($sql);
    }
    my $sth = $self->{sth}->{$collation};

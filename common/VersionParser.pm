@@ -24,6 +24,8 @@ package VersionParser;
 
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
@@ -32,7 +34,7 @@ sub new {
 sub parse {
    my ( $self, $str ) = @_;
    my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
-   $ENV{MKDEBUG} && _d("$str parses to $result");
+   MKDEBUG && _d("$str parses to $result");
    return $result;
 }
 
@@ -45,7 +47,7 @@ sub version_ge {
          $dbh->selectrow_array('SELECT VERSION()'));
    }
    my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
-   $ENV{MKDEBUG} && _d("$self->{$dbh} ge $target: $result");
+   MKDEBUG && _d("$self->{$dbh} ge $target: $result");
    return $result;
 }
 

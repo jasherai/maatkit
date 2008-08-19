@@ -25,8 +25,9 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-
 use List::Util qw(max);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 # These check subs return 0 if the check passes or a string describing what
 # failed.  If a check can't be tested (e.g. no Innodb_ status values), return 0.

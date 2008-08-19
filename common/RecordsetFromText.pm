@@ -27,6 +27,8 @@ use English qw(-no_match_vars);
 use Carp;
 use Data::Dumper;
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 # At present $params can contain a hash of alternate values:
 #    key:   value_for
 #    value: {
@@ -78,13 +80,13 @@ sub parse {
 
    # Detect text type: tabular, tab-separated, or vertical
    if ( $text =~ m/^\+---/m ) { # standard "tabular" output
-      $ENV{MKDEBUG} && _d('text type: standard tabular');
+      MKDEBUG && _d('text type: standard tabular');
       my $line_pattern  = qr/^(\| .*)[\r\n]+/m;
       $recsets_ref
          = _parse_horizontal_recset($text, $line_pattern, \&parse_tabular);
    }
    elsif ( $text =~ m/^id\tselect_type\t/m ) { # tab-separated
-      $ENV{MKDEBUG} && _d('text type: tab-separated');
+      MKDEBUG && _d('text type: tab-separated');
       my $line_pattern  = qr/^(.*?\t.*)[\r\n]+/m;
       $recsets_ref
          = _parse_horizontal_recset($text, $line_pattern, \&parse_tab_sep);
@@ -92,9 +94,9 @@ sub parse {
    elsif ( $text =~ m/\*\*\* \d+\. row/ ) { # "vertical" output
       my $n_recs;
       $n_recs++ while $text =~ m/ \d+\. row /g;
-      $ENV{MKDEBUG} && _d("text-type: vertical ($n_recs)");
+      MKDEBUG && _d("text-type: vertical ($n_recs)");
       if ( $n_recs > 1 ) {
-         $ENV{MKDEBUG} && _d('Multiple recsets');
+         MKDEBUG && _d('Multiple recsets');
          my @v_recsets;
          my $v_recsets_ref = _split_vertical_recsets($text);
          foreach my $v_recset ( @{ $v_recsets_ref } ) {

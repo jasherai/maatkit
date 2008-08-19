@@ -27,6 +27,8 @@ use English qw(-no_match_vars);
 my $DUPE_KEY  = qr/Duplicate entry/;
 our @ACTIONS  = qw(DELETE REPLACE INSERT UPDATE);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 # Arguments:
 # * quoter     Quoter()
 # * database   database name
@@ -59,12 +61,12 @@ sub new {
 sub fetch_back {
    my ( $self, $dbh ) = @_;
    $self->{fetch_back} = $dbh;
-   $ENV{MKDEBUG} && _d('Will fetch rows from source when updating destination');
+   MKDEBUG && _d('Will fetch rows from source when updating destination');
 }
 
 sub take_action {
    my ( $self, @sql ) = @_;
-   $ENV{MKDEBUG} && _d('Calling subroutines on ', @sql);
+   MKDEBUG && _d('Calling subroutines on ', @sql);
    foreach my $action ( @{$self->{actions}} ) {
       $action->(@sql);
    }
@@ -73,7 +75,7 @@ sub take_action {
 # Arguments: string, hashref, arrayref
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
-   $ENV{MKDEBUG} && _d("$action where ", $self->make_where_clause($row, $cols));
+   MKDEBUG && _d("$action where ", $self->make_where_clause($row, $cols));
    $self->{changes}->{
       $self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action
    }++;
@@ -86,7 +88,7 @@ sub change {
          $self->take_action($self->$func($row, $cols));
       };
       if ( $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
-         $ENV{MKDEBUG} && _d('Duplicate key violation; will queue and rewrite');
+         MKDEBUG && _d('Duplicate key violation; will queue and rewrite');
          $self->{queue}++;
          $self->{replace} = 1;
          $self->__queue($action, $row, $cols);
@@ -99,7 +101,7 @@ sub change {
 
 sub __queue {
    my ( $self, $action, $row, $cols ) = @_;
-   $ENV{MKDEBUG} && _d('Queueing change for later');
+   MKDEBUG && _d('Queueing change for later');
    if ( $self->{replace} ) {
       $action = $action eq 'DELETE' ? $action : 'REPLACE';
    }
@@ -113,7 +115,7 @@ sub process_rows {
    my $error_count = 0;
    TRY: {
       if ( $queue_level && $queue_level < $self->{queue} ) { # see redo below!
-         $ENV{MKDEBUG} && _d("Not processing now $queue_level<$self->{queue}");
+         MKDEBUG && _d("Not processing now $queue_level<$self->{queue}");
          return;
       }
 
@@ -122,7 +124,7 @@ sub process_rows {
          foreach my $action ( @ACTIONS ) {
             my $func = "make_$action";
             my $rows = $self->{$action};
-            $ENV{MKDEBUG} && _d(scalar(@$rows) . " to $action");
+            MKDEBUG && _d(scalar(@$rows) . " to $action");
             $cur_act = $action;
             while ( @$rows ) {
                $row = shift @$rows;
@@ -132,7 +134,7 @@ sub process_rows {
          $error_count = 0;
       };
       if ( !$error_count++ && $EVAL_ERROR =~ m/$DUPE_KEY/ ) {
-         $ENV{MKDEBUG}
+         MKDEBUG
             && _d('Duplicate key violation; re-queueing and rewriting');
          $self->{queue}++; # Defer rows to the very end
          $self->{replace} = 1;
@@ -162,7 +164,7 @@ sub make_UPDATE {
    my $where = $self->make_where_clause($row, $cols);
    if ( my $dbh = $self->{fetch_back} ) {
       my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
-      $ENV{MKDEBUG} && _d("Fetching data for UPDATE: $sql");
+      MKDEBUG && _d("Fetching data for UPDATE: $sql");
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       $cols = [sort keys %$res];
@@ -197,7 +199,7 @@ sub make_row {
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
       my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
-      $ENV{MKDEBUG} && _d("Fetching data for UPDATE: $sql");
+      MKDEBUG && _d("Fetching data for UPDATE: $sql");
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = sort keys %$res;

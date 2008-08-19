@@ -28,6 +28,8 @@ use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    bless {}, shift;
 }
@@ -55,7 +57,7 @@ sub recurse_to_slaves {
    eval {
       $dbh = $args->{dbh} || $dp->get_dbh(
          $dp->get_cxn_params($dsn), { AutoCommit => 1 });
-      $ENV{MKDEBUG} && _d('Connected to ', $dp->as_string($dsn));
+      MKDEBUG && _d('Connected to ', $dp->as_string($dsn));
    };
    if ( $EVAL_ERROR ) {
       print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n"
@@ -67,15 +69,15 @@ sub recurse_to_slaves {
    # server has the ID its master thought, and that we have not seen it before
    # in any case.
    my $sql  = 'SELECT @@SERVER_ID';
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    my ($id) = $dbh->selectrow_array($sql);
-   $ENV{MKDEBUG} && _d('Working on server ID ', $id);
+   MKDEBUG && _d('Working on server ID ', $id);
    my $master_thinks_i_am = $dsn->{server_id};
    if ( !defined $id
        || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
        || $args->{server_ids_seen}->{$id}++
    ) {
-      $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
+      MKDEBUG && _d('Server ID seen, or not what master said');
       if ( $args->{skip_callback} ) {
          $args->{skip_callback}->($dsn, $dbh, $level, $args->{parent});
       }
@@ -94,7 +96,7 @@ sub recurse_to_slaves {
          $self->find_slave_hosts($dp, $dbh, $dsn, $args->{method});
 
       foreach my $slave ( @slaves ) {
-         $ENV{MKDEBUG} && _d('Recursing from ',
+         MKDEBUG && _d('Recursing from ',
             $dp->as_string($dsn), ' to ', $dp->as_string($slave));
          $self->recurse_to_slaves(
             { %$args, dsn => $slave, dbh => undef, parent => $dsn }, $level + 1 );
@@ -112,7 +114,7 @@ sub recurse_to_slaves {
 sub find_slave_hosts {
    my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
    $method ||= '';
-   $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
+   MKDEBUG && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
 
    my @slaves;
 
@@ -140,12 +142,12 @@ sub find_slave_hosts {
    # lots of cruft in SHOW SLAVE HOSTS.
    if ( !@slaves ) {
       my $sql = 'SHOW SLAVE HOSTS';
-      $ENV{MKDEBUG} && _d($dbh, $sql);
+      MKDEBUG && _d($dbh, $sql);
       @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
 
       # Convert SHOW SLAVE HOSTS into DSN hashes.
       if ( @slaves ) {
-         $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+         MKDEBUG && _d('Found some SHOW SLAVE HOSTS info');
          @slaves = map {
             my %hash;
             @hash{ map { lc $_ } keys %$_ } = values %$_;
@@ -161,7 +163,7 @@ sub find_slave_hosts {
       }
    }
 
-   $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
+   MKDEBUG && _d('Found ', scalar(@slaves), ' slaves');
    return @slaves;
 }
 
@@ -179,7 +181,7 @@ sub get_connected_slaves {
    }
 
    my $sql = 'SHOW PROCESSLIST';
-   $ENV{MKDEBUG} && _d($dbh, $sql);
+   MKDEBUG && _d($dbh, $sql);
    # It's probably a slave if it's doing a binlog dump.
    grep { $_->{command} =~ m/Binlog Dump/i }
    map  { # Lowercase the column names
@@ -255,7 +257,7 @@ sub get_slave_status {
    if ( !$self->{not_a_slave}->{$dbh} ) {
       my $sth = $self->{sths}->{$dbh}->{SLAVE_STATUS}
             ||= $dbh->prepare('SHOW SLAVE STATUS');
-      $ENV{MKDEBUG} && _d($dbh, 'SHOW SLAVE STATUS');
+      MKDEBUG && _d($dbh, 'SHOW SLAVE STATUS');
       $sth->execute();
       my ($ss) = @{$sth->fetchall_arrayref({})};
 
@@ -264,7 +266,7 @@ sub get_slave_status {
          return $ss;
       }
 
-      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW SLAVE STATUS');
+      MKDEBUG && _d('This server returns nothing for SHOW SLAVE STATUS');
       $self->{not_a_slave}->{$dbh}++;
    }
 }
@@ -275,7 +277,7 @@ sub get_master_status {
    if ( !$self->{not_a_master}->{$dbh} ) {
       my $sth = $self->{sths}->{$dbh}->{MASTER_STATUS}
             ||= $dbh->prepare('SHOW MASTER STATUS');
-      $ENV{MKDEBUG} && _d($dbh, 'SHOW MASTER STATUS');
+      MKDEBUG && _d($dbh, 'SHOW MASTER STATUS');
       $sth->execute();
       my ($ms) = @{$sth->fetchall_arrayref({})};
 
@@ -286,7 +288,7 @@ sub get_master_status {
          }
       }
 
-      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW MASTER STATUS');
+      MKDEBUG && _d('This server returns nothing for SHOW MASTER STATUS');
       $self->{not_a_master}->{$dbh}++;
    }
 }
@@ -297,20 +299,20 @@ sub get_master_status {
 sub wait_for_master {
    my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
    my $result;
-   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+   MKDEBUG && _d('Waiting for slave to catch up to master');
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
-      $ENV{MKDEBUG} && _d($slave, $query);
+      MKDEBUG && _d($slave, $query);
       ($result) = $slave->selectrow_array($query);
       my $stat = defined $result ? $result : 'NULL';
       if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
          die "MASTER_POS_WAIT returned $stat";
       }
-      $ENV{MKDEBUG} && _d("Result of waiting: $stat");
+      MKDEBUG && _d("Result of waiting: $stat");
    }
    else {
-      $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
+      MKDEBUG && _d("Not waiting: this server is not a master");
    }
    return $result;
 }
@@ -320,7 +322,7 @@ sub stop_slave {
    my ( $self, $dbh ) = @_;
    my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
          ||= $dbh->prepare('STOP SLAVE');
-   $ENV{MKDEBUG} && _d($dbh, $sth->{Statement});
+   MKDEBUG && _d($dbh, $sth->{Statement});
    $sth->execute();
 }
 
@@ -331,13 +333,13 @@ sub start_slave {
       # Just like with CHANGE MASTER TO, you can't quote the position.
       my $sql = "START SLAVE UNTIL MASTER_LOG_FILE='$pos->{file}', "
               . "MASTER_LOG_POS=$pos->{position}";
-      $ENV{MKDEBUG} && _d($dbh, $sql);
+      MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
    else {
       my $sth = $self->{sths}->{$dbh}->{START_SLAVE}
             ||= $dbh->prepare('START SLAVE');
-      $ENV{MKDEBUG} && _d($dbh, $sth->{Statement});
+      MKDEBUG && _d($dbh, $sth->{Statement});
       $sth->execute();
    }
 }
@@ -353,10 +355,10 @@ sub catchup_to_master {
    my $slave_pos     = $self->repl_posn($slave_status);
    my $master_status = $self->get_master_status($master);
    my $master_pos    = $self->repl_posn($master_status);
-   $ENV{MKDEBUG} && _d("Master position: ", $self->pos_to_string($master_pos),
+   MKDEBUG && _d("Master position: ", $self->pos_to_string($master_pos),
       " Slave position: ", $self->pos_to_string($slave_pos));
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
-      $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+      MKDEBUG && _d('Waiting for slave to catch up to master');
       $self->start_slave($slave, $master_pos);
       # The slave may catch up instantly and stop, in which case MASTER_POS_WAIT
       # will return NULL.  We must catch this; if it returns NULL, then we check
@@ -365,7 +367,7 @@ sub catchup_to_master {
          $self->wait_for_master($master, $slave, $time, 0, $master_status);
       };
       if ( $EVAL_ERROR ) {
-         $ENV{MKDEBUG} && _d($EVAL_ERROR);
+         MKDEBUG && _d($EVAL_ERROR);
          if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
             $slave_status = $self->get_slave_status($slave);
             if ( !$self->slave_is_running($slave_status) ) {
@@ -373,7 +375,7 @@ sub catchup_to_master {
                if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
                   die "$EVAL_ERROR but slave has not caught up to master";
                }
-               $ENV{MKDEBUG} && _d('Slave is caught up to master and stopped');
+               MKDEBUG && _d('Slave is caught up to master and stopped');
             }
             else {
                die "$EVAL_ERROR but slave was still running";
@@ -426,11 +428,11 @@ sub change_master_to {
    # Don't prepare a $sth because CHANGE MASTER TO doesn't like quotes around
    # port numbers, etc.  It's possible to specify the bind type, but it's easier
    # to just not use a prepared statement.
-   $ENV{MKDEBUG} && _d(Dumper($master_dsn), Dumper($master_pos));
+   MKDEBUG && _d(Dumper($master_dsn), Dumper($master_pos));
    my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
       . "MASTER_PORT= $master_dsn->{P}, MASTER_LOG_FILE='$master_pos->{file}', "
       . "MASTER_LOG_POS=$master_pos->{position}";
-   $ENV{MKDEBUG} && _d($dbh, $sql);
+   MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
 }
 
@@ -632,7 +634,7 @@ sub slave_is_running {
 sub has_slave_updates {
    my ( $self, $dbh ) = @_;
    my $sql = q{SHOW VARIABLES LIKE 'log_slave_updates'};
-   $ENV{MKDEBUG} && _d($dbh, $sql);
+   MKDEBUG && _d($dbh, $sql);
    my ($name, $value) = $dbh->selectrow_array($sql);
    return $value && $value =~ m/^(1|ON)$/;
 }

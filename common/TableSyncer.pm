@@ -24,6 +24,8 @@ package TableSyncer;
 
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 our %ALGOS = map { lc $_ => $_ } qw(Stream Chunk Nibble GroupBy);
 
 sub new {
@@ -42,7 +44,7 @@ sub best_algorithm {
    my ($exact, $cols) = $args{chunker}
       ->find_chunk_columns($args{tbl_struct}, { exact => 1 });
    if ( $exact ) {
-      $ENV{MKDEBUG} && _d("Chunker says $cols->[0] supports chunking exactly");
+      MKDEBUG && _d("Chunker says $cols->[0] supports chunking exactly");
       $result = 'Chunk';
       # If Chunker can handle it OK, but not with exact chunk sizes, it means
       # it's using only the first column of a multi-column index, which could
@@ -54,17 +56,17 @@ sub best_algorithm {
       # is an indication that the nibble algorithm will work.
       my ($idx) = $args{parser}->find_best_index($args{tbl_struct});
       if ( $idx ) {
-         $ENV{MKDEBUG} && _d("Parser found best index $idx, so Nibbler will work");
+         MKDEBUG && _d("Parser found best index $idx, so Nibbler will work");
          $result = 'Nibble';
       }
       else {
          # If not, GroupBy is the only choice.  We don't automatically choose
          # Stream, it must be specified by the user.
-         $ENV{MKDEBUG} && _d("No primary or unique non-null key in table");
+         MKDEBUG && _d("No primary or unique non-null key in table");
          $result = 'GroupBy';
       }
    }
-   $ENV{MKDEBUG} && _d("Algorithm: $result");
+   MKDEBUG && _d("Algorithm: $result");
    return $result;
 }
 
@@ -78,13 +80,13 @@ sub sync_table {
    {
       die "I need a $arg argument" unless defined $args{$arg};
    }
-   $ENV{MKDEBUG} && _d("Syncing table with args "
+   MKDEBUG && _d("Syncing table with args "
       . join(', ',
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') }
          sort keys %args));
 
    my $can_replace = grep { $_->{unique} } values %{$args{tbl_struct}->{keys}};
-   $ENV{MKDEBUG} && _d("This table's replace-ability: $can_replace");
+   MKDEBUG && _d("This table's replace-ability: $can_replace");
    my $use_replace = $args{replace} || $args{replicate};
 
    # TODO: for two-way sync, the change handler needs both DBHs.
@@ -115,7 +117,7 @@ sub sync_table {
             'SHOW VARIABLES LIKE "log_bin"');
          my ($sql_log_bin) = $change_dbh->selectrow_array(
             'SELECT @@SQL_LOG_BIN');
-         $ENV{MKDEBUG} && _d('Variables: log_bin=',
+         MKDEBUG && _d('Variables: log_bin=',
             (defined $log_bin ? $log_bin : 'NULL'),
             ' @@SQL_LOG_BIN=',
             (defined $sql_log_bin ? $sql_log_bin : 'NULL'));
@@ -126,10 +128,10 @@ sub sync_table {
                . "section 'REPLICATION SAFETY' for solutions to this problem.";
          }
       }
-      $ENV{MKDEBUG} && _d('Will make changes via ' . $change_dbh);
+      MKDEBUG && _d('Will make changes via ' . $change_dbh);
       $update_func = sub {
          map {
-            $ENV{MKDEBUG} && _d('About to execute: ', $_);
+            MKDEBUG && _d('About to execute: ', $_);
             $change_dbh->do($_);
          } @_;
       };
@@ -202,7 +204,7 @@ sub sync_table {
 
       # Do as much of the work as possible before opening a transaction or
       # locking the tables.
-      $ENV{MKDEBUG} && _d("Beginning sync cycle $cycle");
+      MKDEBUG && _d("Beginning sync cycle $cycle");
       my $src_sql = $plugin->get_sql(
          quoter   => $args{quoter},
          database => $args{src_db},
@@ -232,8 +234,8 @@ sub sync_table {
       }
       $plugin->prepare($args{src_dbh});
       $plugin->prepare($args{dst_dbh});
-      $ENV{MKDEBUG} && _d("src: " . $src_sql);
-      $ENV{MKDEBUG} && _d("dst: " . $dst_sql);
+      MKDEBUG && _d("src: " . $src_sql);
+      MKDEBUG && _d("dst: " . $dst_sql);
       my $src_sth = $args{src_dbh}
          ->prepare( $src_sql, { mysql_use_result => !$args{buffer} } );
       my $dst_sth = $args{dst_dbh}
@@ -258,7 +260,7 @@ sub sync_table {
          syncer => $plugin,
          tbl    => $args{tbl_struct},
       );
-      $ENV{MKDEBUG} && _d("Finished sync cycle $cycle");
+      MKDEBUG && _d("Finished sync cycle $cycle");
       $ch->process_rows(1);
 
       $cycle++;
@@ -277,16 +279,16 @@ sub check_permissions {
    my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
    my $db_tbl = $quoter->quote($db, $tbl);
    my $sql = "REPLACE INTO $db_tbl SELECT * FROM $db_tbl LIMIT 0";
-   $ENV{MKDEBUG} && _d('Permissions check: ', $sql);
+   MKDEBUG && _d('Permissions check: ', $sql);
    $dbh->do($sql);
 }
 
 sub lock_table {
    my ( $self, $dbh, $where, $db_tbl, $mode ) = @_;
    my $query = "LOCK TABLES $db_tbl $mode";
-   $ENV{MKDEBUG} && _d($query);
+   MKDEBUG && _d($query);
    $dbh->do($query);
-   $ENV{MKDEBUG} && _d("Acquired table lock on $where in $mode mode");
+   MKDEBUG && _d("Acquired table lock on $where in $mode mode");
 }
 
 # Doesn't work quite the same way as lock_and_wait. It will unlock any LOWER
@@ -306,12 +308,12 @@ sub unlock {
    # First, unlock/commit.
    foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
       if ( $args{transaction} ) {
-         $ENV{MKDEBUG} && _d("Committing $dbh");
+         MKDEBUG && _d("Committing $dbh");
          $dbh->commit;
       }
       else {
          my $sql = 'UNLOCK TABLES';
-         $ENV{MKDEBUG} && _d($dbh, $sql);
+         MKDEBUG && _d($dbh, $sql);
          $dbh->do($sql);
       }
    }
@@ -342,12 +344,12 @@ sub lock_and_wait {
    # First, unlock/commit.
    foreach my $dbh( @args{qw(src_dbh dst_dbh)} ) {
       if ( $args{transaction} ) {
-         $ENV{MKDEBUG} && _d("Committing $dbh");
+         MKDEBUG && _d("Committing $dbh");
          $dbh->commit;
       }
       else {
          my $sql = 'UNLOCK TABLES';
-         $ENV{MKDEBUG} && _d($dbh, $sql);
+         MKDEBUG && _d($dbh, $sql);
          $dbh->do($sql);
       }
    }
@@ -356,7 +358,7 @@ sub lock_and_wait {
    # might have to wait for the slave to catch up before locking on the dest.
    if ( $args{lock} == 3 ) {
       my $sql = 'FLUSH TABLES WITH READ LOCK';
-      $ENV{MKDEBUG} && _d("$args{src_dbh}, $sql");
+      MKDEBUG && _d("$args{src_dbh}, $sql");
       $args{src_dbh}->do($sql);
    }
    else {
@@ -364,7 +366,7 @@ sub lock_and_wait {
          if ( $args{src_sth} ) {
             # Execute the $src_sth on the source, so LOCK IN SHARE MODE/FOR
             # UPDATE will lock the rows examined.
-            $ENV{MKDEBUG} && _d('Executing statement on source to lock rows');
+            MKDEBUG && _d('Executing statement on source to lock rows');
             $args{src_sth}->execute();
             $result = 1;
          }
@@ -388,13 +390,13 @@ sub lock_and_wait {
       # Don't lock on destination if it's a replication slave, or the
       # replication thread will not be able to make changes.
       if ( $args{replicate} ) {
-         $ENV{MKDEBUG}
+         MKDEBUG
             && _d('Not locking destination because syncing via replication');
       }
       else {
          if ( $args{lock} == 3 ) {
             my $sql = 'FLUSH TABLES WITH READ LOCK';
-            $ENV{MKDEBUG} && _d("$args{dst_dbh}, $sql");
+            MKDEBUG && _d("$args{dst_dbh}, $sql");
             $args{dst_dbh}->do($sql);
          }
          elsif ( !$args{transaction} ) {
@@ -413,7 +415,7 @@ sub lock_and_wait {
       }
       foreach my $dbh ( @args{qw(src_dbh dst_dbh misc_dbh)} ) {
          next unless $dbh;
-         $ENV{MKDEBUG} && _d('Caught error, unlocking/committing on', $dbh);
+         MKDEBUG && _d('Caught error, unlocking/committing on', $dbh);
          $dbh->do('UNLOCK TABLES');
          $dbh->commit() unless $dbh->{AutoCommit};
       }

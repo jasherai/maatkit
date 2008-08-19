@@ -27,6 +27,8 @@ use English qw(-no_match_vars);
 use Carp;
 use Data::Dumper;
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    my ( $class, $dbh, $params ) = @_;
    my $self = defined $params ? { %{ $params } } : {};

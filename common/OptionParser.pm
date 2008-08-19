@@ -26,6 +26,8 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
 # Holds command-line options.  Each option is a hashref:
@@ -82,24 +84,24 @@ sub new {
          $opt->{g} ||= 'o';
          # Option has a type
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            $ENV{MKDEBUG} && _d("Option $opt->{k} type: $y");
+            MKDEBUG && _d("Option $opt->{k} type: $y");
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
          # Option is required if it contains the word 'required'
          if ( $opt->{d} =~ m/required/ ) {
             $opt->{r} = 1;
-            $ENV{MKDEBUG} && _d("Option $opt->{k} is required");
+            MKDEBUG && _d("Option $opt->{k} is required");
          }
          # Option has a default value if it says 'default' or 'default X'
          if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
-            $ENV{MKDEBUG} && _d("Option $opt->{k} has a default");
+            MKDEBUG && _d("Option $opt->{k} has a default");
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             # Defer checking till later because of possible forward references
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            $ENV{MKDEBUG} && _d("Option $opt->{k} $dis");
+            MKDEBUG && _d("Option $opt->{k} $dis");
          }
       }
       else { # It's an instruction.
@@ -111,11 +113,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
-               $ENV{MKDEBUG} && _d(@participants, ' are mutually exclusive');
+               MKDEBUG && _d(@participants, ' are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
-               $ENV{MKDEBUG} && _d(@participants, ' require at least one');
+               MKDEBUG && _d(@participants, ' require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -125,11 +127,12 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
-            $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
+            MKDEBUG && _d(@participants, ' copy from each other');
          }
          elsif ( $opt  =~ m/allowed with/ ) {
             my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  die "No such option '$_' while processing $opt"
+                     unless $long_for{$_};
                   $key_for{$_};
                } $class->get_participants($opt);
             push @allowed_with, \@participants;
@@ -138,49 +141,19 @@ sub new {
       }
    }
 
-   # Check that all defined options are used, and that all used options are
-   # defined.
-   if ( $ENV{MKDEBUG} ) {
-      my $text = do {
-         local $RS = undef;
-         open my $fh, "<", $PROGRAM_NAME
-            or die "Can't open $PROGRAM_NAME: $OS_ERROR";
-         <$fh>;
-      };
-      my %used = map { $_ => 1 } $text =~ m/\$opts\{'?([\w-]+)'?\}/g;
-      my @unused;
-      my @undefined;
-      my %option_exists;
-      foreach my $opt ( @opts ) {
-         next unless ref $opt;
-         my $key = $opt->{k};
-         $option_exists{$key}++;
-         # These are often used only indirectly.
-         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
-                                    |password|port|socket|user|host)$/x
-              || $disables{$key};
-         push @unused, $key unless $used{$key};
-      }
-      foreach my $key ( keys %used ) {
-         push @undefined, $key unless $option_exists{$key};
-      }
-      if ( @unused || @undefined ) {
-         die "The following command-line options are unused: "
-            . join(',', @unused)
-            . ' The following are undefined: '
-            . join(',', @undefined);
-      }
-   }
-
    # Check forward references (and convert to long options) in 'disables' rules.
    foreach my $dis ( keys %disables ) {
-      $disables{$dis} = [ map {
-            die "No such option '$_' while processing $dis" unless $long_for{$_};
-            $long_for{$_};
-         } @{$disables{$dis}} ];
+      $disables{$dis} = [
+            map {
+               if ( !defined $long_for{$_} ) {
+                  die "No such option '$_' while processing $dis";
+               }
+               $long_for{$_};
+            } @{$disables{$dis}}
+      ];
    }
 
-   return bless {
+   my $self = {
       specs        => [ grep { ref $_ } @opts ],
       notes        => [],
       instr        => [ grep { !ref $_ } @opts ],
@@ -194,7 +167,16 @@ sub new {
       strict       => 1,
       groups       => [ { k => 'o', d => 'Options' } ],
       allowed_with => \@allowed_with,
-   }, $class;
+   };
+
+   if ( MKDEBUG ) {
+      use Data::Dumper;
+      $Data::Dumper::Indent = 1;
+      my $self_dump = Dumper($self);
+      _d('New OptionParser: ' . $self_dump);
+   }
+
+   return bless $self, $class;
 }
 
 sub get_participants {
@@ -210,7 +192,7 @@ sub get_participants {
          }
       }
    }
-   $ENV{MKDEBUG} && _d("Participants for $str: ", @participants);
+   MKDEBUG && _d("Participants for $str: ", @participants);
    return @participants;
 }
 
@@ -252,7 +234,7 @@ sub parse {
    # Disable options as specified.
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      $ENV{MKDEBUG} && _d("Unsetting options: ", @disses);
+      MKDEBUG && _d("Unsetting options: ", @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -297,7 +279,7 @@ sub parse {
          if ( !$suffix ) {
             my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
             $suffix = $s || 's';
-            $ENV{MKDEBUG} && _d("No suffix given; using $suffix for $spec->{k} "
+            MKDEBUG && _d("No suffix given; using $suffix for $spec->{k} "
                . "(value: '$val')");
          }
          if ( $suffix =~ m/[smhd]/ ) {
@@ -306,18 +288,18 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
-            $ENV{MKDEBUG} && _d("Setting option $spec->{k} to $val");
+            MKDEBUG && _d("Setting option $spec->{k} to $val");
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
-         $ENV{MKDEBUG} && _d("Parsing option $spec->{y} as a DSN");
+         MKDEBUG && _d("Parsing option $spec->{y} as a DSN");
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
-            $ENV{MKDEBUG} && _d("Option $spec->{y} DSN copies from option $from_key");
+            MKDEBUG && _d("Option $spec->{y} DSN copies from option $from_key");
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -327,7 +309,7 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
-               $ENV{MKDEBUG} && _d("Setting option $spec->{y} to num * factor");
+               MKDEBUG && _d("Setting option $spec->{y} to num * factor");
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -339,7 +321,7 @@ sub parse {
 
    # Process list arguments
    foreach my $spec ( grep { $_->{y} } @specs ) {
-      $ENV{MKDEBUG} && _d("Treating option $spec->{k} as a list");
+      MKDEBUG && _d("Treating option $spec->{k} as a list");
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -361,12 +343,12 @@ sub parse {
       my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
       delete @defined_opts{ @$allowed_opts };
       # TODO: do error() when there's defined_opts still. Problem with
-      # this those: default values. Can't tell if an opt was actually
+      # this: default values. Can't tell if an opt was actually
       # given on the cmd line or just given its default val. This may
       # not even be possible unless we somehow look at @ARGV and that
       # seems like a hack.
       foreach my $defined_opt ( keys %defined_opts ) {
-         $ENV{MKDEBUG}
+         MKDEBUG
             && _d("Unsetting options: $defined_opt (not allowed with $opt)");
          $vals{$defined_opt} = undef;
       }
@@ -544,7 +526,7 @@ sub pod_to_spec {
 
    # ... then read special options...
    while ( $para = <$fh> ) {
-      $ENV{MKDEBUG} && _d($para);
+      MKDEBUG && _d($para);
       last if $para =~ m/^=over/;
       chomp $para;
       $para =~ s/\s+/ /g;
@@ -555,7 +537,7 @@ sub pod_to_spec {
    # ... then start reading options.
    do {
       if ( ($option) = $para =~ m/^=item --(.*)/ ) {
-         $ENV{MKDEBUG} && _d($para);
+         MKDEBUG && _d($para);
          my %props;
          $para = <$fh>;
          if ( $para =~ m/: / ) {
@@ -643,7 +625,7 @@ sub _d {
 # This is debug code I want to run for all tools, and this is a module I
 # certainly include in all tools, but otherwise there's no real reason to put
 # it here.
-if ( $ENV{MKDEBUG} ) {
+if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
    if ( $uname ) {

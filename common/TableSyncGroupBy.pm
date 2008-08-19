@@ -29,6 +29,8 @@ package TableSyncGroupBy;
 
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 # Arguments:
 # * handler ChangeHandler
 sub new {
@@ -41,7 +43,7 @@ sub new {
       # Prepend more _ until not a column.
       $args{count_col} = "_$args{count_col}";
    }
-   $ENV{MKDEBUG} && _d('COUNT column will be named ' . $args{count_col});
+   MKDEBUG && _d('COUNT column will be named ' . $args{count_col});
    return bless { %args }, $class;
 }
 

@@ -24,6 +24,8 @@ package QueryRewriter;
 
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
@@ -141,12 +143,12 @@ sub __delete_to_select {
 
 sub __insert_to_select {
    my ( $tbl, $cols, $vals ) = @_;
-   $ENV{MKDEBUG} && _d('Args: ', @_);
+   MKDEBUG && _d('Args: ', @_);
    my @cols = split(/,/, $cols);
-   $ENV{MKDEBUG} && _d('Cols: ', @cols);
+   MKDEBUG && _d('Cols: ', @cols);
    $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
    my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
-   $ENV{MKDEBUG} && _d('Vals: ', @vals);
+   MKDEBUG && _d('Vals: ', @vals);
    if ( @cols == @vals ) {
       return "select * from $tbl where "
          . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));

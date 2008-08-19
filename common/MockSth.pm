@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 # A package to mock up a $sth.
 package MockSth;
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    my ( $class, @rows ) = @_;
    my $self = {

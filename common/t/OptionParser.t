@@ -19,12 +19,15 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 53;
+use Test::More tests => 54;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
 require "../DSNParser.pm";
 
+# #############################################################################
+# Tests with defaultset!, defaults-file|F=s, dog|D=s, foo!, love|l+
+# #############################################################################
 my @specs = (
    { s => 'defaultset!',       d => 'alignment test with a very long thing '
                                     . 'that is longer than 80 characters wide '
@@ -52,7 +55,7 @@ is_deeply(
 is_deeply(
    \%opts,
    { %basic, foo => 0, D => undef, l => undef, F => undef, defaultset => undef },
-   'Negated foo'
+   'Can negate negatable opt'
 );
 
 @ARGV = qw(--nodog);
@@ -60,10 +63,13 @@ is_deeply(
 is_deeply(
    \%opts,
    { %basic, foo => 1, D => undef, l => undef, F => undef, defaultset => undef },
-   'Bad dog options'
+   'Cannot negate non-negatable opt'
 );
+is($p->{__error__}, 1, 'Trying to negate non-negatable opt sets an error');
 
-is($p->{__error__}, 1, 'Bad dog sets error');
+@ARGV = qw(--bar);
+%opts = $p->parse();
+ok(!defined $opts{bar}, 'Completely nonexistent opt is ignored');
 
 $defaults{bone} = 1;
 eval {
@@ -110,6 +116,10 @@ EOF
 , 'Options aligned and prompt included'
 );
 
+# #############################################################################
+# Tests with database|D=s, nouniquechecks!
+# #############################################################################
+
 $p = new OptionParser(
       { s => 'database|D=s',      d => 'Specify the database for all tables' },
       { s => 'nouniquechecks!',   d => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
@@ -135,6 +145,10 @@ Options and values after processing arguments:
 EOF
 , 'Options aligned when short options shorter than long, no-usage defaults to <options>'
 );
+
+# #############################################################################
+# Tests with cat|C=s
+# #############################################################################
 
 $p = new OptionParser(
    { s => 'cat|C=s', d => 'How to catch the cat; required' }
@@ -174,6 +188,10 @@ is_deeply(
    { %basic, C => 'net' },
    'Required option OK',
 );
+
+# #############################################################################
+# Tests with ignore|i, replace|r, delete|d
+# #############################################################################
 
 $p = new OptionParser(
       { s => 'ignore|i',    d => 'Use IGNORE for INSERT statements' },
@@ -323,6 +341,10 @@ is_deeply(
    'Multiple options OK for at-least-one',
 );
 
+# #############################################################################
+# Tests with foo, bar
+# #############################################################################
+
 # Defaults encoded in descriptions.
 $p = new OptionParser(
    { s => 'foo=i', d => 'Foo (default 5)' },
@@ -454,6 +476,20 @@ like(
    $EVAL_ERROR,
    qr/No such option 'fox' while processing foo/,
    'Invalid option name in disable instruction',
+);
+
+# Option can't 'allowed with' a non-existent option.
+eval {
+   $p = new OptionParser(
+      { s => 'foo=i', d => 'Foo disables --bar' },
+      { s => 'bar',   d => 'Bar (default 1)' },
+      'allowed with --foo: --fox',
+   );
+};
+like(
+   $EVAL_ERROR,
+   qr/No such option 'fox' while processing allowed with --foo: --fox/,
+   'Invalid option name in \'allowed with\' instruction',
 );
 
 is_deeply(
@@ -589,6 +625,10 @@ is_deeply($opts{f},
    'DSN parsing on type=d inheriting from --bar with short options',
 );
 
+# #############################################################################
+# Tests with columns|C, tables|t, databases|d, books|b
+# #############################################################################
+
 $p = new OptionParser(
    { s => 'columns|C=H',    d => 'Comma-separated list of columns to output' },
    { s => 'tables|t=h',     d => 'Comma-separated list of tables to output' },
@@ -689,24 +729,12 @@ EOF
 , 'Option groupings',
 );
 
-# check that the optionparser can look for unused or undefined options.
-$ENV{MKDEBUG} = 1;
+# R.I.P.: dark magick
 
-eval {
-   $p = new OptionParser(
-      { s => 'columns|C=H',    g => 'o', d => 'Comma-separated list of columns to output' },
-      { s => 'tables|t=h',     g => 'p', d => 'Comma-separated list of tables to output' },
-      { s => 'databases|d=A',  g => 'q', d => 'Comma-separated list of databases to output' },
-      { s => 'books|b=a',      g => 'p', d => 'Comma-separated list of books to output' },
-   );
-   $p->groups(
-      { k => 'p', d => 'Foofoo' },
-      { k => 'q', d => 'Bizbat' },
-   );
-};
-like($EVAL_ERROR, qr/C,t,d,b.*undefined: bar,foo,f/, 'Found bad cmd-line options');
+# #############################################################################
+# Tests using POD samples
+# #############################################################################
 
-$ENV{MKDEBUG} = 0;
 # Check that it can convert a Perldoc into a opt_spec
 my @opt_spec = $p->pod_to_spec("samples/podsample.txt");
 is_deeply(
@@ -731,6 +759,10 @@ is_deeply(
    ],
    'Converted POD into opt_spec',
 );
+
+# #############################################################################
+# Tests using wine, grapes, barely, hops, yeast
+# #############################################################################
 
 $p = new OptionParser(
    { s => 'wine',    g => 'o', d => 'wine'                       },

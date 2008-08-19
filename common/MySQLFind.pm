@@ -27,6 +27,8 @@ $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 # SYNOPSIS:
 #   $f = new MySQLFind(
 #      dbh       => $dbh,
@@ -67,7 +69,7 @@ sub new {
    die "Do not pass me a dbh argument" if $args{dbh};
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
    if ( $args{useddl} ) {
-      $ENV{MKDEBUG} && _d('Will prefer DDL');
+      MKDEBUG && _d('Will prefer DDL');
    }
    return $self;
 }
@@ -76,9 +78,9 @@ sub init_timestamp {
    my ( $self, $dbh ) = @_;
    return if $self->{timestamp}->{$dbh}->{now};
    my $sql = 'SELECT CURRENT_TIMESTAMP';
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    ($self->{timestamp}->{$dbh}->{now}) = $dbh->selectrow_array($sql);
-   $ENV{MKDEBUG} && _d("Current timestamp: $self->{timestamp}->{$dbh}->{now}");
+   MKDEBUG && _d("Current timestamp: $self->{timestamp}->{$dbh}->{now}");
 }
 
 sub find_databases {
@@ -126,18 +128,18 @@ sub find_views {
 sub _use_db {
    my ( $self, $dbh, $new ) = @_;
    if ( !$new ) {
-      $ENV{MKDEBUG} && _d('No new DB to use');
+      MKDEBUG && _d('No new DB to use');
       return;
    }
    my $sql = 'SELECT DATABASE()';
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    my $curr = $dbh->selectrow_array($sql);
    if ( $curr && $new && $curr eq $new ) {
-      $ENV{MKDEBUG} && _d('Current and new DB are the same');
+      MKDEBUG && _d('Current and new DB are the same');
       return $curr;
    }
    $sql = 'USE ' . $self->{quoter}->quote($new);
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    $dbh->do($sql);
    return $curr;
 }
@@ -193,7 +195,7 @@ sub _fetch_tbl_list {
 
 sub _filter {
    my ( $self, $thing, $sub, @vals ) = @_;
-   $ENV{MKDEBUG} && _d("Filtering $thing list on ", Dumper($self->{$thing}));
+   MKDEBUG && _d("Filtering $thing list on ", Dumper($self->{$thing}));
    my $permit = $self->{$thing}->{permit};
    my $reject = $self->{$thing}->{reject};
    my $regexp = $self->{$thing}->{regexp};
@@ -220,7 +222,7 @@ sub _test_date {
    my ( $self, $table, $prop, $test, $dbh ) = @_;
    $prop = lc $prop;
    if ( !defined $table->{$prop} ) {
-      $ENV{MKDEBUG} && _d("$prop is not defined");
+      MKDEBUG && _d("$prop is not defined");
       return $self->{nullpass};
    }
    my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
@@ -228,7 +230,7 @@ sub _test_date {
    $self->init_timestamp($dbh);
    my $sql = "SELECT DATE_SUB('$self->{timestamp}->{$dbh}->{now}', "
            . "INTERVAL $num SECOND)";
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    ($self->{timestamp}->{$dbh}->{$num}) ||= $dbh->selectrow_array($sql);
    my $time = $self->{timestamp}->{$dbh}->{$num};
    return 

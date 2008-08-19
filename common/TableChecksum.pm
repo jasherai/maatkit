@@ -25,6 +25,8 @@ package TableChecksum;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 # BXT_XOR is actually faster than ACCUM as long as the user-variable
 # optimization can be used.  I've never seen a case where it can't be.
 our %ALGOS = (
@@ -78,7 +80,7 @@ sub get_crc_type {
       $sth->execute();
       $type   = $sth->{mysql_type_name}->[0];
       $length = $sth->{mysql_length}->[0];
-      $ENV{MKDEBUG} && _d($sql, $type, $length);
+      MKDEBUG && _d($sql, $type, $length);
       if ( $type eq 'bigint' && $length < 20 ) {
          $type = 'int';
       }
@@ -108,31 +110,31 @@ sub best_algorithm {
       || $args{replicate}                 # CHECKSUM can't do INSERT.. SELECT
       || !$vp->version_ge($dbh, '4.1.1')) # CHECKSUM doesn't exist
    {
-      $ENV{MKDEBUG} && _d('Cannot use CHECKSUM algorithm');
+      MKDEBUG && _d('Cannot use CHECKSUM algorithm');
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
    # BIT_XOR isn't available till 4.1.1 either
    if ( !$vp->version_ge($dbh, '4.1.1') ) {
-      $ENV{MKDEBUG} && _d('Cannot use BIT_XOR algorithm');
+      MKDEBUG && _d('Cannot use BIT_XOR algorithm');
       @choices = grep { $_ ne 'BIT_XOR' } @choices;
    }
 
    # Choose the best (fastest) among the remaining choices.
    if ( $alg && grep { $_ eq $alg } @choices ) {
       # Honor explicit choices.
-      $ENV{MKDEBUG} && _d("User requested $alg algorithm");
+      MKDEBUG && _d("User requested $alg algorithm");
       return $alg;
    }
 
    # If the user wants a count, prefer something other than CHECKSUM, because it
    # requires an extra query for the count.
    if ( $args{count} && grep { $_ ne 'CHECKSUM' } @choices ) {
-      $ENV{MKDEBUG} && _d('Not using CHECKSUM algorithm because COUNT desired');
+      MKDEBUG && _d('Not using CHECKSUM algorithm because COUNT desired');
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
-   $ENV{MKDEBUG} && _d('Algorithms, in order: ', @choices);
+   MKDEBUG && _d('Algorithms, in order: ', @choices);
    return $choices[0];
 }
 
@@ -154,13 +156,13 @@ sub choose_hash_func {
       eval {
          $func = shift(@funcs);
          my $sql = "SELECT $func('test-string')";
-         $ENV{MKDEBUG} && _d($sql);
+         MKDEBUG && _d($sql);
          $args{dbh}->do($sql);
          $result = $func;
       };
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
          $error .= qq{$func cannot be used because "$1"\n};
-         $ENV{MKDEBUG} && _d("$func cannot be used because $1");
+         MKDEBUG && _d("$func cannot be used because $1");
       }
    } while ( @funcs && !$result );
 
@@ -189,7 +191,7 @@ sub optimize_xor {
    my $crc_wid   = length($unsliced) < 16 ? 16 : length($unsliced);
 
    do { # Try different positions till sliced result equals non-sliced.
-      $ENV{MKDEBUG} && _d("Trying slice $opt_slice");
+      MKDEBUG && _d("Trying slice $opt_slice");
       $dbh->do('SET @crc := "", @cnt := 0');
       my $slices = $self->make_xor_slices(
          query     => "\@crc := $func('a')",
@@ -200,18 +202,18 @@ sub optimize_xor {
       my $sql = "SELECT CONCAT($slices) AS TEST FROM (SELECT NULL) AS x";
       $sliced = ($dbh->selectrow_array($sql))[0];
       if ( $sliced ne $unsliced ) {
-         $ENV{MKDEBUG} && _d("Slice $opt_slice does not work");
+         MKDEBUG && _d("Slice $opt_slice does not work");
          $start += 16;
          ++$opt_slice;
       }
    } while ( $start < $crc_wid && $sliced ne $unsliced );
 
    if ( $sliced eq $unsliced ) {
-      $ENV{MKDEBUG} && _d("Slice $opt_slice works");
+      MKDEBUG && _d("Slice $opt_slice works");
       return $opt_slice;
    }
    else {
-      $ENV{MKDEBUG} && _d("No slice works");
+      MKDEBUG && _d("No slice works");
       return undef;
    }
 }
@@ -427,7 +429,7 @@ sub find_replication_differences {
       OR ISNULL(master_crc) <> ISNULL(this_crc)
    EOF
 
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    my $diffs = $dbh->selectall_arrayref($sql, { Slice => {} });
    return @$diffs;
 }

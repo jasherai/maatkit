@@ -24,6 +24,8 @@ package TableParser;
 
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    bless {}, shift;
 }
@@ -55,11 +57,11 @@ sub parse {
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
    my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
-   $ENV{MKDEBUG} && _d('Storage engine: ', $engine);
+   MKDEBUG && _d('Storage engine: ', $engine);
 
    my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
-   $ENV{MKDEBUG} && _d('Columns: ' . join(', ', @cols));
+   MKDEBUG && _d('Columns: ' . join(', ', @cols));
 
    # Save the column definitions *exactly*
    my %def_for;
@@ -118,7 +120,7 @@ sub parse {
          push @col_prefixes, $prefix;
       }
       $name =~ s/`//g;
-      $ENV{MKDEBUG} && _d("Index $name columns: " . join(', ', @cols));
+      MKDEBUG && _d("Index $name columns: " . join(', ', @cols));
 
       $keys{$name} = {
          colnames     => $cols,
@@ -164,7 +166,7 @@ sub sort_indexes {
          $tbl->{keys}->{$_}->{type} eq 'BTREE'
       }
       sort keys %{$tbl->{keys}};
-   $ENV{MKDEBUG} && _d('Indexes sorted best-first: ' . join(', ', @indexes));
+   MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
    return @indexes;
 }
 
@@ -187,7 +189,7 @@ sub find_best_index {
          ($best) = $self->sort_indexes($tbl);
       }
    }
-   $ENV{MKDEBUG} && _d("Best index found is " . ($best || 'undef'));
+   MKDEBUG && _d("Best index found is " . ($best || 'undef'));
    return $best;
 }
 
@@ -201,26 +203,26 @@ sub find_possible_keys {
    return () unless $where;
    my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
       . ' WHERE ' . $where;
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
    # Normalize columns to lowercase
    $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
    if ( $expl->{possible_keys} ) {
-      $ENV{MKDEBUG} && _d("possible_keys=$expl->{possible_keys}");
+      MKDEBUG && _d("possible_keys=$expl->{possible_keys}");
       my @candidates = split(',', $expl->{possible_keys});
       my %possible   = map { $_ => 1 } @candidates;
       if ( $expl->{key} ) {
-         $ENV{MKDEBUG} && _d("MySQL chose $expl->{key}");
+         MKDEBUG && _d("MySQL chose $expl->{key}");
          unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
-         $ENV{MKDEBUG} && _d('Before deduping: ' . join(', ', @candidates));
+         MKDEBUG && _d('Before deduping: ' . join(', ', @candidates));
          my %seen;
          @candidates = grep { !$seen{$_}++ } @candidates;
       }
-      $ENV{MKDEBUG} && _d('Final list: ' . join(', ', @candidates));
+      MKDEBUG && _d('Final list: ' . join(', ', @candidates));
       return @candidates;
    }
    else {
-      $ENV{MKDEBUG} && _d('No keys in possible_keys');
+      MKDEBUG && _d('No keys in possible_keys');
       return ();
    }
 }

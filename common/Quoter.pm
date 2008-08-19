@@ -24,6 +24,8 @@ package Quoter;
 
 use English qw(-no_match_vars);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    my ( $class ) = @_;
    bless {}, $class;

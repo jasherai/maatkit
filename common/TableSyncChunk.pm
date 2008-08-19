@@ -35,6 +35,8 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(dbh database table handler chunker quoter struct
@@ -49,7 +51,7 @@ sub new {
    while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
       $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
    }
-   $ENV{MKDEBUG} && _d('CRC column will be named ' . $args{crc_col});
+   MKDEBUG && _d('CRC column will be named ' . $args{crc_col});
 
    # Chunk the table and store the chunks for later processing.
    my @chunks;
@@ -166,8 +168,8 @@ sub same_row {
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
-      $ENV{MKDEBUG} && _d('Rows: ', Dumper($lr, $rr));
-      $ENV{MKDEBUG} && _d('Will examine this chunk before moving to next');
+      MKDEBUG && _d('Rows: ', Dumper($lr, $rr));
+      MKDEBUG && _d('Will examine this chunk before moving to next');
       $self->{state} = 1; # Must examine this chunk row-by-row
    }
 }
@@ -191,22 +193,22 @@ sub done_with_rows {
    my ( $self ) = @_;
    if ( $self->{state} == 1 ) {
       $self->{state} = 2;
-      $ENV{MKDEBUG} && _d("Setting state=$self->{state}");
+      MKDEBUG && _d("Setting state=$self->{state}");
    }
    else {
       $self->{state} = 0;
       $self->{chunk_num}++;
-      $ENV{MKDEBUG}
+      MKDEBUG
          && _d("Setting state=$self->{state}, chunk_num=$self->{chunk_num}");
    }
 }
 
 sub done {
    my ( $self ) = @_;
-   $ENV{MKDEBUG}
+   MKDEBUG
       && _d("Done with $self->{chunk_num} of "
        . scalar(@{$self->{chunks}}) . ' chunks');
-   $ENV{MKDEBUG} && $self->{state} && _d('Chunk differs; must examine rows');
+   MKDEBUG && $self->{state} && _d('Chunk differs; must examine rows');
    return $self->{state} == 0
       && $self->{chunk_num} >= scalar(@{$self->{chunks}})
 }
@@ -214,11 +216,11 @@ sub done {
 sub pending_changes {
    my ( $self ) = @_;
    if ( $self->{state} ) {
-      $ENV{MKDEBUG} && _d('There are pending changes');
+      MKDEBUG && _d('There are pending changes');
       return 1;
    }
    else {
-      $ENV{MKDEBUG} && _d('No pending changes');
+      MKDEBUG && _d('No pending changes');
       return 0;
    }
 }
@@ -232,7 +234,7 @@ sub key_cols {
    else {
       @cols = $self->{chunk_col};
    }
-   $ENV{MKDEBUG} && _d("State $self->{state}, key cols " . join(', ', @cols));
+   MKDEBUG && _d("State $self->{state}, key cols " . join(', ', @cols));
    return \@cols;
 }
 

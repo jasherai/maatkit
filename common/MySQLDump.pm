@@ -22,6 +22,8 @@ use warnings FATAL => 'all';
 
 package MySQLDump;
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 use English qw(-no_match_vars);
 
 ( our $before = <<'EOF') =~ s/^   //gm;
@@ -117,18 +119,18 @@ sub dump {
 sub _use_db {
    my ( $self, $dbh, $quoter, $new ) = @_;
    if ( !$new ) {
-      $ENV{MKDEBUG} && _d('No new DB to use');
+      MKDEBUG && _d('No new DB to use');
       return;
    }
    my $sql = 'SELECT DATABASE()';
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    my $curr = $dbh->selectrow_array($sql);
    if ( $curr && $new && $curr eq $new ) {
-      $ENV{MKDEBUG} && _d('Current and new DB are the same');
+      MKDEBUG && _d('Current and new DB are the same');
       return $curr;
    }
    $sql = 'USE ' . $quoter->quote($new);
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    $dbh->do($sql);
    return $curr;
 }
@@ -140,24 +142,24 @@ sub get_create_table {
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       $dbh->do($sql);
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       my $href = $dbh->selectrow_hashref($sql);
       $self->_use_db($dbh, $quoter, $curr_db);
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       $dbh->do($sql);
       my ($key) = grep { m/create table/i } keys %$href;
       if ( $key ) {
-         $ENV{MKDEBUG} && _d('This table is a base table');
+         MKDEBUG && _d('This table is a base table');
          $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
       }
       else {
-         $ENV{MKDEBUG} && _d('This table is a view');
+         MKDEBUG && _d('This table is a view');
          ($key) = grep { m/create view/i } keys %$href;
          $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
       }
@@ -167,11 +169,11 @@ sub get_create_table {
 
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   $ENV{MKDEBUG} && _d("Get columns for $db.$tbl");
+   MKDEBUG && _d("Get columns for $db.$tbl");
    if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
       $self->_use_db($dbh, $quoter, $curr_db);
       $self->{columns}->{$db}->{$tbl} = [
@@ -192,7 +194,7 @@ sub get_tmp_table {
       map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
       @{$self->get_columns($dbh, $quoter, $db, $tbl)});
    $result .= "\n)";
-   $ENV{MKDEBUG} && _d($result);
+   MKDEBUG && _d($result);
    return $result;
 }
 
@@ -204,10 +206,10 @@ sub get_triggers {
          . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       $dbh->do($sql);
       $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       my $sth = $dbh->prepare($sql);
       $sth->execute();
       if ( $sth->rows ) {
@@ -223,7 +225,7 @@ sub get_triggers {
       }
       $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
          . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       $dbh->do($sql);
    }
    if ( $tbl ) {
@@ -242,7 +244,7 @@ sub get_databases {
          push @params, $like;
       }
       my $sth = $dbh->prepare($sql);
-      $ENV{MKDEBUG} && _d($sql, @params);
+      MKDEBUG && _d($sql, @params);
       $sth->execute( @params );
       my @dbs = map { $_->[0] } @{$sth->fetchall_arrayref()};
       $self->{databases} = \@dbs unless $like;
@@ -260,7 +262,7 @@ sub get_table_status {
          $sql .= ' LIKE ?';
          push @params, $like;
       }
-      $ENV{MKDEBUG} && _d($sql, @params);
+      MKDEBUG && _d($sql, @params);
       my $sth = $dbh->prepare($sql);
       $sth->execute(@params);
       my @tables = @{$sth->fetchall_arrayref({})};
@@ -286,7 +288,7 @@ sub get_table_list {
          $sql .= ' LIKE ?';
          push @params, $like;
       }
-      $ENV{MKDEBUG} && _d($sql, @params);
+      MKDEBUG && _d($sql, @params);
       my $sth = $dbh->prepare($sql);
       $sth->execute(@params);
       my @tables = @{$sth->fetchall_arrayref()};

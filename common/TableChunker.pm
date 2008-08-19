@@ -26,6 +26,8 @@ use English qw(-no_match_vars);
 use POSIX qw(ceil);
 use List::Util qw(min max);
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 sub new {
    my ( $class, %args ) = @_;
    die "I need a quoter" unless $args{quoter};
@@ -54,7 +56,7 @@ sub find_chunk_columns {
    if ( $opts->{possible_keys} && @{$opts->{possible_keys}} ) {
       my $i = 1;
       %prefer = map { $_ => $i++ } @{$opts->{possible_keys}};
-      $ENV{MKDEBUG} && _d("Preferred indexes for chunking: "
+      MKDEBUG && _d("Preferred indexes for chunking: "
          . join(', ', @{$opts->{possible_keys}}));
    }
 
@@ -69,7 +71,7 @@ sub find_chunk_columns {
    @possible_keys = sort {
       ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
    } @possible_keys;
-   $ENV{MKDEBUG} && _d('Possible keys in order: '
+   MKDEBUG && _d('Possible keys in order: '
       . join(', ', map { $_->{name} } @possible_keys));
 
    my $can_chunk_exact = 0;
@@ -86,7 +88,7 @@ sub find_chunk_columns {
       if ( @candidate_cols ) {
          $can_chunk_exact = 1;
       }
-      $ENV{MKDEBUG} && _d('Exact chunkable: ' . join(', ', @candidate_cols));
+      MKDEBUG && _d('Exact chunkable: ' . join(', ', @candidate_cols));
    }
 
    # If an exactly chunk-able index was not found, fall back to non-exact.
@@ -98,14 +100,14 @@ sub find_chunk_columns {
          }
          map { $_->{cols}->[0] }
          @possible_keys;
-      $ENV{MKDEBUG} && _d('Inexact chunkable: ' . join(', ', @candidate_cols));
+      MKDEBUG && _d('Inexact chunkable: ' . join(', ', @candidate_cols));
    }
 
    # Order the candidates by their original column order.  Put the PK's
    # first column first, if it's a candidate.
    my @result;
    if ( !%prefer ) {
-      $ENV{MKDEBUG} && _d('Ordering columns by order in tbl, PK first');
+      MKDEBUG && _d('Ordering columns by order in tbl, PK first');
       if ( $table->{keys}->{PRIMARY} ) {
          my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
          @result = grep { $_ eq $pk_first_col } @candidate_cols;
@@ -118,8 +120,8 @@ sub find_chunk_columns {
    else {
       @result = @candidate_cols;
    }
-   $ENV{MKDEBUG} && _d('Chunkable columns: ' . join(', ', @result));
-   $ENV{MKDEBUG} && _d("Can chunk exactly: $can_chunk_exact");
+   MKDEBUG && _d('Chunkable columns: ' . join(', ', @result));
+   MKDEBUG && _d("Can chunk exactly: $can_chunk_exact");
 
    return ($can_chunk_exact, \@result);
 }
@@ -142,14 +144,14 @@ sub calculate_chunks {
       die "Required argument $arg not given or undefined"
          unless defined $args{$arg};
    }
-   $ENV{MKDEBUG} && _d("Arguments: "
+   MKDEBUG && _d("Arguments: "
       . join(', ',
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') } keys %args));
 
    my @chunks;
    my ($range_func, $start_point, $end_point);
    my $col_type = $args{table}->{type_for}->{$args{col}};
-   $ENV{MKDEBUG} && _d("Chunking on $args{col} ($col_type)");
+   MKDEBUG && _d("Chunking on $args{col} ($col_type)");
 
    # Determine chunk size in "distance between endpoints" that will give
    # approximately the right number of rows between the endpoints.  Also
@@ -162,19 +164,19 @@ sub calculate_chunks {
    }
    elsif ( $col_type eq 'timestamp' ) {
       my $sql = "SELECT UNIX_TIMESTAMP('$args{min}'), UNIX_TIMESTAMP('$args{max}')";
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
       $range_func  = 'range_timestamp';
    }
    elsif ( $col_type eq 'date' ) {
       my $sql = "SELECT TO_DAYS('$args{min}'), TO_DAYS('$args{max}')";
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
       $range_func  = 'range_date';
    }
    elsif ( $col_type eq 'time' ) {
       my $sql = "SELECT TIME_TO_SEC('$args{min}'), TIME_TO_SEC('$args{max}')";
-      $ENV{MKDEBUG} && _d($sql);
+      MKDEBUG && _d($sql);
       ($start_point, $end_point) = $args{dbh}->selectrow_array($sql);
       $range_func  = 'range_time';
    }
@@ -193,14 +195,14 @@ sub calculate_chunks {
    # are '0000-00-00'.  The only thing to do is make them zeroes and
    # they'll be done in a single chunk then.
    if ( !defined $start_point ) {
-      $ENV{MKDEBUG} && _d('Start point is undefined');
+      MKDEBUG && _d('Start point is undefined');
       $start_point = 0;
    }
    if ( !defined $end_point || $end_point < $start_point ) {
-      $ENV{MKDEBUG} && _d('End point is undefined or before start point');
+      MKDEBUG && _d('End point is undefined or before start point');
       $end_point = 0;
    }
-   $ENV{MKDEBUG} && _d("Start and end of chunk range: $start_point, $end_point");
+   MKDEBUG && _d("Start and end of chunk range: $start_point, $end_point");
 
    # Calculate the chunk size, in terms of "distance between endpoints."  If
    # possible and requested, forbid chunks from being any bigger than
@@ -213,7 +215,7 @@ sub calculate_chunks {
    if ( $args{exact} ) {
       $interval = $args{size};
    }
-   $ENV{MKDEBUG} && _d("Chunk interval: $interval units");
+   MKDEBUG && _d("Chunk interval: $interval units");
 
    # Generate a list of chunk boundaries.  The first and last chunks are
    # inclusive, and will catch any rows before or after the end of the
@@ -303,11 +305,11 @@ sub get_range_statistics {
    my $sql = "SELECT MIN(" . $q->quote($col) . "), MAX(" . $q->quote($col)
       . ") FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    my ( $min, $max ) = $dbh->selectrow_array($sql);
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    my $expl = $dbh->selectrow_hashref($sql);
    return (
       min           => $min,
@@ -330,7 +332,7 @@ sub inject_chunks {
    foreach my $arg ( qw(database table chunks chunk_num query) ) {
       die "$arg is required" unless defined $args{$arg};
    }
-   $ENV{MKDEBUG} && _d("Injecting chunk $args{chunk_num}");
+   MKDEBUG && _d("Injecting chunk $args{chunk_num}");
    my $comment = sprintf("/*%s.%s:%d/%d*/",
       $args{database}, $args{table},
       $args{chunk_num} + 1, scalar @{$args{chunks}});
@@ -369,14 +371,14 @@ sub range_num {
 sub range_time {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
    my $sql = "SELECT SEC_TO_TIME($start), SEC_TO_TIME(LEAST($max, $start + $interval))";
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    return $dbh->selectrow_array($sql);
 }
 
 sub range_date {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
    my $sql = "SELECT FROM_DAYS($start), FROM_DAYS(LEAST($max, $start + $interval))";
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    return $dbh->selectrow_array($sql);
 }
 
@@ -384,14 +386,14 @@ sub range_datetime {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
    my $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $start SECOND), "
        . "DATE_ADD('$EPOCH', INTERVAL LEAST($max, $start + $interval) SECOND)";
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    return $dbh->selectrow_array($sql);
 }
 
 sub range_timestamp {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
    my $sql = "SELECT FROM_UNIXTIME($start), FROM_UNIXTIME(LEAST($max, $start + $interval))";
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    return $dbh->selectrow_array($sql);
 }
 
@@ -407,7 +409,7 @@ sub timestampdiff {
       . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
    my ( $diff ) = $dbh->selectrow_array($sql);
    $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    my ( $check ) = $dbh->selectrow_array($sql);
    die <<"   EOF"
    Incorrect datetime math: given $time, calculated $diff but checked to $check.

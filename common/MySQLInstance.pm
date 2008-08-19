@@ -29,6 +29,8 @@ use File::Temp ();
 use Carp;
 use Data::Dumper;
 
+use constant MKDEBUG => $ENV{MKDEBUG};
+
 my $option_pattern = '([^\s=]+)(?:=(\S+))?';
 
 # SHOW GLOBAL VARIABLES dialect => mysqld --help --verbose dialect
@@ -243,7 +245,7 @@ sub overriden_sys_vars {
       my ( $var, $val ) = ( $var_val->[0], $var_val->[1] );
       if ( !defined $var || !defined $val ) {
          my $dump = Dumper($var_val);
-         $ENV{MKDEBUG} && _d("Undefined var or val: $dump");
+         MKDEBUG && _d("Undefined var or val: $dump");
          next;
       }
       if ( exists $self->{cmd_line_ops}->{$var} ) {
@@ -288,7 +290,7 @@ sub out_of_sync_sys_vars {
       }
       else {
          carp "Undefined system variable: $var";
-         if ( $ENV{MKDEBUG} ) {
+         if ( MKDEBUG ) {
             my $dump_conf   = Dumper($conf_val);
             my $dump_online = Dumper($online_val);
             _d("Undefined val: conf=$dump_conf online=$dump_online");
