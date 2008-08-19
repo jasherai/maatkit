@@ -4217,10 +4217,10 @@ it only on the master.  You specify a table to insert the results into.  The
 query will insert directly into the table, so it will be replicated through the
 binlog to the slaves.
 
-The argument to the option is the table in which the checksums should be stored.
-The table must have at least these columns: db, tbl, chunk, boundaries,
-this_crc, master_crc, this_cnt, master_cnt.  Here is a suggested table
-structure:
+The argument to the option is the table (fully qualified: db.table) in which
+the checksums should be stored. The table must have at least these columns:
+db, tbl, chunk, boundaries, this_crc, master_crc, this_cnt, master_cnt.
+Here is a suggested table structure:
 
   CREATE TABLE checksum (
      db         char(64)     NOT NULL,

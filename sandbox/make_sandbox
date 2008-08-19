@@ -2,6 +2,15 @@
 
 NUM=$1
 
+if [ -z "$1" ]; then
+   echo "Must specify a sandbox to make!";
+   exit 1;
+fi
+
+DIR=`realpath $0`
+cd `dirname $DIR`
+
+
 mkdir /tmp/$NUM
 tar xzf server.tar.gz -C /tmp/$NUM
 for file in `grep -rl NODE /tmp/$NUM`; do

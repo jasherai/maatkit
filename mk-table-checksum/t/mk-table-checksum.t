@@ -3,9 +3,11 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 55;
+use Test::More tests => 56;
 
-diag(`./make_repl_sandbox`);
+diag(`../../sandbox/stop_all`);
+diag(`../../sandbox/make_sandbox 12345`);
+
 my $cnf='/tmp/12345/my.sandbox.cnf';
 my ($output, $output2);
 my $cmd = "perl ../mk-table-checksum --defaults-file=$cnf -d test -t checksum_test 127.0.0.1";
@@ -14,7 +16,7 @@ my $cmd = "perl ../mk-table-checksum --defaults-file=$cnf -d test -t checksum_te
 sleep 1 until `/tmp/12345/use -N -e 'select 1' 2>&1` eq "1\n";
 
 # If this fails, you need to build the fnv_64 UDF and copy it to /lib
-print `/tmp/12345/use < before.sql`;
+print `/tmp/12345/use < samples/before.sql`;
 
 # Test basic functionality with defaults
 $output = `$cmd 2>&1`;
@@ -125,8 +127,11 @@ $output = `perl ../mk-table-checksum --probability 0 --chunksize 4 127.0.0.1 | g
 chomp $output;
 is($output, '', 'Nothing with --probability 0!');
 
+diag(`../../sandbox/stop_all`);
+diag(`../../sandbox/make_sandbox 12345`);
+diag(`../../sandbox/make_slave 12348`);
+
 # Issue 35: mk-table-checksum dies when one server is missing a table
-diag(`../../common/t/make_repl_sandbox`);
 diag(`/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;CREATE TABLE only_on_master(a int);'`);
 $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d mysql -t only_on_master 2>&1`;
 like($output, qr/MyISAM\s+NULL\s+0/, 'Table on master checksummed');
@@ -134,7 +139,7 @@ like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed');
 diag(`/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;DROP TABLE only_on_master;'`);
 
 # Issue 5: Add ability to checksum table schema instead of data
-$cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema | awk '{print \$1,\$2,\$7}' | diff ./sample_schema_opt - 2>&1 > /dev/null";
+$cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema | awk '{print \$1,\$2,\$7}' | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
 my $ret_val = system($cmd);
 cmp_ok($ret_val, '==', 0, 'Only option --schema');
 
@@ -161,7 +166,7 @@ my @opt_combos = ( # --schema and
    '--where="id > 1000"',
 );
 foreach my $opt_combo ( @opt_combos ) {
-   $cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema $opt_combo | awk '{print \$1,\$2,\$7}' | diff ./sample_schema_opt - 2>&1 > /dev/null";
+   $cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema $opt_combo | awk '{print \$1,\$2,\$7}' | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
    $ret_val = system($cmd);
    cmp_ok($ret_val, '==', 0, "--schema $opt_combo");
 }
@@ -176,5 +181,19 @@ unlike($output, qr/LOCK TABLES /, '--schema does not lock tables by default');
 $output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema --lock 2>&1`;
 unlike($output, qr/LOCK TABLES /, '--schema does not lock tables even with --lock');
 
-diag(`../../sandbox/stop_all`);
+# Issue 21: --emptyrepltbl doesn't empty if previous runs leave info
+diag(`/tmp/12345/use < samples/checksum_tbl.sql`);
+
+# We'll do some other tests while we're at it...
+$cmd = 'perl ../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum | diff ./samples/basic_replicate_output -';
+$ret_val = system($cmd);
+cmp_ok($ret_val, '==', 0, 'Basic --replicate works');
+
+if ( $ENV{MKFASTTEST} ) {
+   diag('Leaving replication sandboxes running');
+}
+else {
+   diag(`../../sandbox/stop_all`);
+}
+
 exit;

@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --schema option for issue 5.
    * Added --since and --sincecolumn options for issue 53.
    * Added --probability option for issue 53.
    * A missing table caused a crash (issue 35).
