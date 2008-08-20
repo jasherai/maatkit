@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# Quoter package 1755
+# Quoter package 2215
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -36,6 +36,8 @@ use warnings FATAL => 'all';
 package Quoter;
 
 use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
@@ -72,7 +74,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 1967
+# OptionParser package 2215
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -82,6 +84,10 @@ package OptionParser;
 use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -94,6 +100,7 @@ sub new {
    my %long_for;
    my %disables;
    my %copyfrom;
+   my @allowed_with;
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
@@ -111,21 +118,21 @@ sub new {
          $opt->{n} = $opt->{s} =~ m/!/;
          $opt->{g} ||= 'o';
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            $ENV{MKDEBUG} && _d("Option $opt->{k} type: $y");
+            MKDEBUG && _d("Option $opt->{k} type: $y");
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
          if ( $opt->{d} =~ m/required/ ) {
             $opt->{r} = 1;
-            $ENV{MKDEBUG} && _d("Option $opt->{k} is required");
+            MKDEBUG && _d("Option $opt->{k} is required");
          }
          if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
-            $ENV{MKDEBUG} && _d("Option $opt->{k} has a default");
+            MKDEBUG && _d("Option $opt->{k} has a default");
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            $ENV{MKDEBUG} && _d("Option $opt->{k} $dis");
+            MKDEBUG && _d("Option $opt->{k} $dis");
          }
       }
       else { # It's an instruction.
@@ -137,11 +144,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
-               $ENV{MKDEBUG} && _d(@participants, ' are mutually exclusive');
+               MKDEBUG && _d(@participants, ' are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
-               $ENV{MKDEBUG} && _d(@participants, ' require at least one');
+               MKDEBUG && _d(@participants, ' require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -150,64 +157,55 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
-            $ENV{MKDEBUG} && _d(@participants, ' copy from each other');
+            MKDEBUG && _d(@participants, ' copy from each other');
+         }
+         elsif ( $opt  =~ m/allowed with/ ) {
+            my @participants = map {
+                  die "No such option '$_' while processing $opt"
+                     unless $long_for{$_};
+                  $key_for{$_};
+               } $class->get_participants($opt);
+            push @allowed_with, \@participants;
          }
 
       }
    }
 
-   if ( $ENV{MKDEBUG} ) {
-      my $text = do {
-         local $RS = undef;
-         open my $fh, "<", $PROGRAM_NAME
-            or die "Can't open $PROGRAM_NAME: $OS_ERROR";
-         <$fh>;
-      };
-      my %used = map { $_ => 1 } $text =~ m/\$opts\{'?([\w-]+)'?\}/g;
-      my @unused;
-      my @undefined;
-      my %option_exists;
-      foreach my $opt ( @opts ) {
-         next unless ref $opt;
-         my $key = $opt->{k};
-         $option_exists{$key}++;
-         next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
-                                    |password|port|socket|user|host)$/x
-              || $disables{$key};
-         push @unused, $key unless $used{$key};
-      }
-      foreach my $key ( keys %used ) {
-         push @undefined, $key unless $option_exists{$key};
-      }
-      if ( @unused || @undefined ) {
-         die "The following command-line options are unused: "
-            . join(',', @unused)
-            . ' The following are undefined: '
-            . join(',', @undefined);
-      }
-   }
-
    foreach my $dis ( keys %disables ) {
-      $disables{$dis} = [ map {
-            die "No such option '$_' while processing $dis" unless $long_for{$_};
-            $long_for{$_};
-         } @{$disables{$dis}} ];
+      $disables{$dis} = [
+            map {
+               if ( !defined $long_for{$_} ) {
+                  die "No such option '$_' while processing $dis";
+               }
+               $long_for{$_};
+            } @{$disables{$dis}}
+      ];
    }
 
-   return bless {
-      specs => [ grep { ref $_ } @opts ],
-      notes => [],
-      instr => [ grep { !ref $_ } @opts ],
-      mutex => \@mutex,
-      defaults => \%defaults,
-      long_for => \%long_for,
-      atleast1 => \@atleast1,
-      disables => \%disables,
-      key_for  => \%key_for,
-      copyfrom => \%copyfrom,
-      strict   => 1,
-      groups   => [ { k => 'o', d => 'Options' } ],
-   }, $class;
+   my $self = {
+      specs        => [ grep { ref $_ } @opts ],
+      notes        => [],
+      instr        => [ grep { !ref $_ } @opts ],
+      mutex        => \@mutex,
+      defaults     => \%defaults,
+      long_for     => \%long_for,
+      atleast1     => \@atleast1,
+      disables     => \%disables,
+      key_for      => \%key_for,
+      copyfrom     => \%copyfrom,
+      strict       => 1,
+      groups       => [ { k => 'o', d => 'Options' } ],
+      allowed_with => \@allowed_with,
+   };
+
+   if ( MKDEBUG ) {
+      use Data::Dumper;
+      $Data::Dumper::Indent = 1;
+      my $self_dump = Dumper($self);
+      _d('New OptionParser: ' . $self_dump);
+   }
+
+   return bless $self, $class;
 }
 
 sub get_participants {
@@ -223,7 +221,7 @@ sub get_participants {
          }
       }
    }
-   $ENV{MKDEBUG} && _d("Participants for $str: ", @participants);
+   MKDEBUG && _d("Participants for $str: ", @participants);
    return @participants;
 }
 
@@ -263,7 +261,7 @@ sub parse {
 
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      $ENV{MKDEBUG} && _d("Unsetting options: ", @disses);
+      MKDEBUG && _d("Unsetting options: ", @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -303,7 +301,7 @@ sub parse {
          if ( !$suffix ) {
             my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
             $suffix = $s || 's';
-            $ENV{MKDEBUG} && _d("No suffix given; using $suffix for $spec->{k} "
+            MKDEBUG && _d("No suffix given; using $suffix for $spec->{k} "
                . "(value: '$val')");
          }
          if ( $suffix =~ m/[smhd]/ ) {
@@ -312,18 +310,18 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
-            $ENV{MKDEBUG} && _d("Setting option $spec->{k} to $val");
+            MKDEBUG && _d("Setting option $spec->{k} to $val");
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
-         $ENV{MKDEBUG} && _d("Parsing option $spec->{y} as a DSN");
+         MKDEBUG && _d("Parsing option $spec->{y} as a DSN");
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
-            $ENV{MKDEBUG} && _d("Option $spec->{y} DSN copies from option $from_key");
+            MKDEBUG && _d("Option $spec->{y} DSN copies from option $from_key");
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -333,7 +331,7 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
-               $ENV{MKDEBUG} && _d("Setting option $spec->{y} to num * factor");
+               MKDEBUG && _d("Setting option $spec->{y} to num * factor");
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -344,13 +342,25 @@ sub parse {
    }
 
    foreach my $spec ( grep { $_->{y} } @specs ) {
-      $ENV{MKDEBUG} && _d("Treating option $spec->{k} as a list");
+      MKDEBUG && _d("Treating option $spec->{k} as a list");
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
       }
       elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
          $vals{$spec->{k}} = [ split(',', ($val || '')) ];
+      }
+   }
+
+   foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
+      my $opt = $allowed_opts->[0];
+      next if !defined $vals{$opt};
+      my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
+      delete @defined_opts{ @$allowed_opts };
+      foreach my $defined_opt ( keys %defined_opts ) {
+         MKDEBUG
+            && _d("Unsetting options: $defined_opt (not allowed with $opt)");
+         $vals{$defined_opt} = undef;
       }
    }
 
@@ -495,6 +505,7 @@ sub pod_to_spec {
    $file ||= __FILE__;
    open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
    my $para;
+   my $option;
 
    local $INPUT_RECORD_SEPARATOR = '';
    while ( $para = <$fh> ) {
@@ -503,17 +514,17 @@ sub pod_to_spec {
    }
 
    while ( $para = <$fh> ) {
-      $ENV{MKDEBUG} && _d($para);
+      MKDEBUG && _d($para);
       last if $para =~ m/^=over/;
       chomp $para;
       $para =~ s/\s+/ /g;
-      $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+      $para =~ s/$POD_link_re/$1/go;
       push @special_options, $para;
    }
 
    do {
-      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
-         $ENV{MKDEBUG} && _d($para);
+      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+         MKDEBUG && _d($para);
          my %props;
          $para = <$fh>;
          if ( $para =~ m/: / ) {
@@ -526,7 +537,7 @@ sub pod_to_spec {
          }
          $para =~ s/\s+\Z//g;
          $para =~ s/\s+/ /g;
-         $para =~ s/[LC]<"?([^">]+)"?>/$1/g;
+         $para =~ s/$POD_link_re/$1/go;
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
@@ -542,6 +553,15 @@ sub pod_to_spec {
       }
       while ( $para = <$fh> ) {
          last unless $para;
+
+         if ( $option ) {
+            if ( my ($line)
+                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
+               1 while ( $line =~ s/$POD_link_re/$1/go );
+               push @special_options, $line;
+            }
+         }
+
          if ( $para =~ m/^=head1/ ) {
             $para = undef; # Can't 'last' out of a do {} block.
             last;
@@ -585,7 +605,7 @@ sub _d {
    print "# OptionParser:$line $PID ", @_, "\n";
 }
 
-if ( $ENV{MKDEBUG} ) {
+if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
    if ( $uname ) {
@@ -606,7 +626,7 @@ if ( $ENV{MKDEBUG} ) {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 1755
+# VersionParser package 2215
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -614,6 +634,8 @@ use warnings FATAL => 'all';
 package VersionParser;
 
 use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
@@ -623,7 +645,7 @@ sub new {
 sub parse {
    my ( $self, $str ) = @_;
    my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
-   $ENV{MKDEBUG} && _d("$str parses to $result");
+   MKDEBUG && _d("$str parses to $result");
    return $result;
 }
 
@@ -634,7 +656,7 @@ sub version_ge {
          $dbh->selectrow_array('SELECT VERSION()'));
    }
    my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
-   $ENV{MKDEBUG} && _d("$self->{$dbh} ge $target: $result");
+   MKDEBUG && _d("$self->{$dbh} ge $target: $result");
    return $result;
 }
 
@@ -650,7 +672,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2005
+# DSNParser package 2215
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -662,6 +684,8 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
 use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -710,7 +734,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
-      $ENV{MKDEBUG} && _d('Adding extra property ' . $opt->{key});
+      MKDEBUG && _d('Adding extra property ' . $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -719,7 +743,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
-      $ENV{MKDEBUG} && _d("Setting $prop property");
+      MKDEBUG && _d("Setting $prop property");
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -728,29 +752,29 @@ sub prop {
 sub parse {
    my ( $self, $dsn, $prev, $defaults ) = @_;
    if ( !$dsn ) {
-      $ENV{MKDEBUG} && _d('No DSN to parse');
+      MKDEBUG && _d('No DSN to parse');
       return;
    }
-   $ENV{MKDEBUG} && _d("Parsing $dsn");
+   MKDEBUG && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
    my %vals;
    my %opts = %{$self->{opts}};
    if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
-      $ENV{MKDEBUG} && _d("Interpreting $dsn as $p=$dsn");
+      MKDEBUG && _d("Interpreting $dsn as $p=$dsn");
       $dsn = "$p=$dsn";
    }
    my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
    foreach my $key ( keys %opts ) {
-      $ENV{MKDEBUG} && _d("Finding value for $key");
+      MKDEBUG && _d("Finding value for $key");
       $vals{$key} = $hash{$key};
       if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
          $vals{$key} = $prev->{$key};
-         $ENV{MKDEBUG} && _d("Copying value for $key from previous DSN");
+         MKDEBUG && _d("Copying value for $key from previous DSN");
       }
       if ( !defined $vals{$key} ) {
          $vals{$key} = $defaults->{$key};
-         $ENV{MKDEBUG} && _d("Copying value for $key from defaults");
+         MKDEBUG && _d("Copying value for $key from defaults");
       }
    }
    foreach my $key ( keys %hash ) {
@@ -811,7 +835,7 @@ sub get_cxn_params {
                      qw(F h P S A))
          . ';mysql_read_default_group=mysql';
    }
-   $ENV{MKDEBUG} && _d($dsn);
+   MKDEBUG && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});
 }
 
@@ -837,14 +861,14 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
-   $ENV{MKDEBUG} && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+   MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
       join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
    my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
    if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
       my $sql = "/*!40101 SET NAMES $charset*/";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      MKDEBUG && _d("$dbh: $sql");
       $dbh->do($sql);
-      $ENV{MKDEBUG} && _d('Enabling charset for STDOUT');
+      MKDEBUG && _d('Enabling charset for STDOUT');
       if ( $charset eq 'utf8' ) {
          binmode(STDOUT, ':utf8')
             or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
@@ -856,10 +880,10 @@ sub get_dbh {
    my $setvars = $self->prop('setvars');
    if ( $cxn_string =~ m/mysql/i && $setvars ) {
       my $sql = "SET $setvars";
-      $ENV{MKDEBUG} && _d("$dbh: $sql");
+      MKDEBUG && _d("$dbh: $sql");
       $dbh->do($sql);
    }
-   $ENV{MKDEBUG} && _d('DBH info: ',
+   MKDEBUG && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
          'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
@@ -885,7 +909,7 @@ sub get_hostname {
 
 sub disconnect {
    my ( $self, $dbh ) = @_;
-   $ENV{MKDEBUG} && $self->print_active_handles($dbh);
+   MKDEBUG && $self->print_active_handles($dbh);
    $dbh->disconnect;
 }
 
@@ -913,7 +937,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 2018
+# MasterSlave package 2215
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -925,6 +949,8 @@ use List::Util qw(min max);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    bless {}, shift;
@@ -940,7 +966,7 @@ sub recurse_to_slaves {
    eval {
       $dbh = $args->{dbh} || $dp->get_dbh(
          $dp->get_cxn_params($dsn), { AutoCommit => 1 });
-      $ENV{MKDEBUG} && _d('Connected to ', $dp->as_string($dsn));
+      MKDEBUG && _d('Connected to ', $dp->as_string($dsn));
    };
    if ( $EVAL_ERROR ) {
       print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n"
@@ -949,15 +975,15 @@ sub recurse_to_slaves {
    }
 
    my $sql  = 'SELECT @@SERVER_ID';
-   $ENV{MKDEBUG} && _d($sql);
+   MKDEBUG && _d($sql);
    my ($id) = $dbh->selectrow_array($sql);
-   $ENV{MKDEBUG} && _d('Working on server ID ', $id);
+   MKDEBUG && _d('Working on server ID ', $id);
    my $master_thinks_i_am = $dsn->{server_id};
    if ( !defined $id
        || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
        || $args->{server_ids_seen}->{$id}++
    ) {
-      $ENV{MKDEBUG} && _d('Server ID seen, or not what master said');
+      MKDEBUG && _d('Server ID seen, or not what master said');
       if ( $args->{skip_callback} ) {
          $args->{skip_callback}->($dsn, $dbh, $level, $args->{parent});
       }
@@ -973,7 +999,7 @@ sub recurse_to_slaves {
          $self->find_slave_hosts($dp, $dbh, $dsn, $args->{method});
 
       foreach my $slave ( @slaves ) {
-         $ENV{MKDEBUG} && _d('Recursing from ',
+         MKDEBUG && _d('Recursing from ',
             $dp->as_string($dsn), ' to ', $dp->as_string($slave));
          $self->recurse_to_slaves(
             { %$args, dsn => $slave, dbh => undef, parent => $dsn }, $level + 1 );
@@ -984,7 +1010,7 @@ sub recurse_to_slaves {
 sub find_slave_hosts {
    my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
    $method ||= '';
-   $ENV{MKDEBUG} && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
+   MKDEBUG && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
 
    my @slaves;
 
@@ -1007,11 +1033,11 @@ sub find_slave_hosts {
 
    if ( !@slaves ) {
       my $sql = 'SHOW SLAVE HOSTS';
-      $ENV{MKDEBUG} && _d($dbh, $sql);
+      MKDEBUG && _d($dbh, $sql);
       @slaves = @{$dbh->selectall_arrayref($sql, { Slice => {} })};
 
       if ( @slaves ) {
-         $ENV{MKDEBUG} && _d('Found some SHOW SLAVE HOSTS info');
+         MKDEBUG && _d('Found some SHOW SLAVE HOSTS info');
          @slaves = map {
             my %hash;
             @hash{ map { lc $_ } keys %$_ } = values %$_;
@@ -1027,7 +1053,7 @@ sub find_slave_hosts {
       }
    }
 
-   $ENV{MKDEBUG} && _d('Found ', scalar(@slaves), ' slaves');
+   MKDEBUG && _d('Found ', scalar(@slaves), ' slaves');
    return @slaves;
 }
 
@@ -1042,7 +1068,7 @@ sub get_connected_slaves {
    }
 
    my $sql = 'SHOW PROCESSLIST';
-   $ENV{MKDEBUG} && _d($dbh, $sql);
+   MKDEBUG && _d($dbh, $sql);
    grep { $_->{command} =~ m/Binlog Dump/i }
    map  { # Lowercase the column names
       my %hash;
@@ -1102,7 +1128,7 @@ sub get_slave_status {
    if ( !$self->{not_a_slave}->{$dbh} ) {
       my $sth = $self->{sths}->{$dbh}->{SLAVE_STATUS}
             ||= $dbh->prepare('SHOW SLAVE STATUS');
-      $ENV{MKDEBUG} && _d($dbh, 'SHOW SLAVE STATUS');
+      MKDEBUG && _d($dbh, 'SHOW SLAVE STATUS');
       $sth->execute();
       my ($ss) = @{$sth->fetchall_arrayref({})};
 
@@ -1111,7 +1137,7 @@ sub get_slave_status {
          return $ss;
       }
 
-      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW SLAVE STATUS');
+      MKDEBUG && _d('This server returns nothing for SHOW SLAVE STATUS');
       $self->{not_a_slave}->{$dbh}++;
    }
 }
@@ -1121,7 +1147,7 @@ sub get_master_status {
    if ( !$self->{not_a_master}->{$dbh} ) {
       my $sth = $self->{sths}->{$dbh}->{MASTER_STATUS}
             ||= $dbh->prepare('SHOW MASTER STATUS');
-      $ENV{MKDEBUG} && _d($dbh, 'SHOW MASTER STATUS');
+      MKDEBUG && _d($dbh, 'SHOW MASTER STATUS');
       $sth->execute();
       my ($ms) = @{$sth->fetchall_arrayref({})};
 
@@ -1132,7 +1158,7 @@ sub get_master_status {
          }
       }
 
-      $ENV{MKDEBUG} && _d('This server returns nothing for SHOW MASTER STATUS');
+      MKDEBUG && _d('This server returns nothing for SHOW MASTER STATUS');
       $self->{not_a_master}->{$dbh}++;
    }
 }
@@ -1140,20 +1166,20 @@ sub get_master_status {
 sub wait_for_master {
    my ( $self, $master, $slave, $time, $timeoutok, $ms ) = @_;
    my $result;
-   $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+   MKDEBUG && _d('Waiting for slave to catch up to master');
    $ms ||= $self->get_master_status($master);
    if ( $ms ) {
       my $query = "SELECT MASTER_POS_WAIT('$ms->{file}', $ms->{position}, $time)";
-      $ENV{MKDEBUG} && _d($slave, $query);
+      MKDEBUG && _d($slave, $query);
       ($result) = $slave->selectrow_array($query);
       my $stat = defined $result ? $result : 'NULL';
       if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
          die "MASTER_POS_WAIT returned $stat";
       }
-      $ENV{MKDEBUG} && _d("Result of waiting: $stat");
+      MKDEBUG && _d("Result of waiting: $stat");
    }
    else {
-      $ENV{MKDEBUG} && _d("Not waiting: this server is not a master");
+      MKDEBUG && _d("Not waiting: this server is not a master");
    }
    return $result;
 }
@@ -1162,7 +1188,7 @@ sub stop_slave {
    my ( $self, $dbh ) = @_;
    my $sth = $self->{sths}->{$dbh}->{STOP_SLAVE}
          ||= $dbh->prepare('STOP SLAVE');
-   $ENV{MKDEBUG} && _d($dbh, $sth->{Statement});
+   MKDEBUG && _d($dbh, $sth->{Statement});
    $sth->execute();
 }
 
@@ -1171,13 +1197,13 @@ sub start_slave {
    if ( $pos ) {
       my $sql = "START SLAVE UNTIL MASTER_LOG_FILE='$pos->{file}', "
               . "MASTER_LOG_POS=$pos->{position}";
-      $ENV{MKDEBUG} && _d($dbh, $sql);
+      MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
    else {
       my $sth = $self->{sths}->{$dbh}->{START_SLAVE}
             ||= $dbh->prepare('START SLAVE');
-      $ENV{MKDEBUG} && _d($dbh, $sth->{Statement});
+      MKDEBUG && _d($dbh, $sth->{Statement});
       $sth->execute();
    }
 }
@@ -1190,16 +1216,16 @@ sub catchup_to_master {
    my $slave_pos     = $self->repl_posn($slave_status);
    my $master_status = $self->get_master_status($master);
    my $master_pos    = $self->repl_posn($master_status);
-   $ENV{MKDEBUG} && _d("Master position: ", $self->pos_to_string($master_pos),
+   MKDEBUG && _d("Master position: ", $self->pos_to_string($master_pos),
       " Slave position: ", $self->pos_to_string($slave_pos));
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
-      $ENV{MKDEBUG} && _d('Waiting for slave to catch up to master');
+      MKDEBUG && _d('Waiting for slave to catch up to master');
       $self->start_slave($slave, $master_pos);
       eval {
          $self->wait_for_master($master, $slave, $time, 0, $master_status);
       };
       if ( $EVAL_ERROR ) {
-         $ENV{MKDEBUG} && _d($EVAL_ERROR);
+         MKDEBUG && _d($EVAL_ERROR);
          if ( $EVAL_ERROR =~ m/MASTER_POS_WAIT returned NULL/ ) {
             $slave_status = $self->get_slave_status($slave);
             if ( !$self->slave_is_running($slave_status) ) {
@@ -1207,7 +1233,7 @@ sub catchup_to_master {
                if ( $self->pos_cmp($slave_pos, $master_pos) != 0 ) {
                   die "$EVAL_ERROR but slave has not caught up to master";
                }
-               $ENV{MKDEBUG} && _d('Slave is caught up to master and stopped');
+               MKDEBUG && _d('Slave is caught up to master and stopped');
             }
             else {
                die "$EVAL_ERROR but slave was still running";
@@ -1252,11 +1278,11 @@ sub catchup_to_same_pos {
 sub change_master_to {
    my ( $self, $dbh, $master_dsn, $master_pos ) = @_;
    $self->stop_slave($dbh);
-   $ENV{MKDEBUG} && _d(Dumper($master_dsn), Dumper($master_pos));
+   MKDEBUG && _d(Dumper($master_dsn), Dumper($master_pos));
    my $sql = "CHANGE MASTER TO MASTER_HOST='$master_dsn->{h}', "
       . "MASTER_PORT= $master_dsn->{P}, MASTER_LOG_FILE='$master_pos->{file}', "
       . "MASTER_LOG_POS=$master_pos->{position}";
-   $ENV{MKDEBUG} && _d($dbh, $sql);
+   MKDEBUG && _d($dbh, $sql);
    $dbh->do($sql);
 }
 
@@ -1419,7 +1445,7 @@ sub slave_is_running {
 sub has_slave_updates {
    my ( $self, $dbh ) = @_;
    my $sql = q{SHOW VARIABLES LIKE 'log_slave_updates'};
-   $ENV{MKDEBUG} && _d($dbh, $sql);
+   MKDEBUG && _d($dbh, $sql);
    my ($name, $value) = $dbh->selectrow_array($sql);
    return $value && $value =~ m/^(1|ON)$/;
 }
@@ -1483,6 +1509,8 @@ use IO::File;
 use List::Util qw(min max);
 use Time::HiRes qw(sleep);
 use sigtrap qw(handler finish untrapped normal-signals);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 $OUTPUT_AUTOFLUSH = 1;
 
@@ -1583,7 +1611,7 @@ $opt_parser->usage_or_errors(%opts);
 # First things first: if --stop was given, create the sentinel file.
 # ############################################################################
 if ( $opts{stop} ) {
-   $ENV{MKDEBUG} && _d("Creating sentinel file $opts{sentinel}");
+   MKDEBUG && _d("Creating sentinel file $opts{sentinel}");
    my $file = IO::File->new($opts{sentinel}, ">>")
       or die "Cannot open $opts{sentinel}: $OS_ERROR\n";
    print $file "Remove this file to permit mk-slave-restart to run\n"
@@ -1594,16 +1622,16 @@ if ( $opts{stop} ) {
       unless $opts{q};
    # Exit unlesss --monitor is given.
    if ( !$opts{monitor} ) {
-      $ENV{MKDEBUG} && _d("Nothing more to do, quitting");
+      MKDEBUG && _d("Nothing more to do, quitting");
       exit(0);
    }
    else {
       # Wait for all other running instances to quit, assuming they have the
       # same --interval as this invocation.  Then remove the file and
       # continue.
-      $ENV{MKDEBUG} && _d("Waiting for other instances to quit");
+      MKDEBUG && _d("Waiting for other instances to quit");
       sleep($opts{M});
-      $ENV{MKDEBUG} && _d("Unlinking $opts{sentinel}");
+      MKDEBUG && _d("Unlinking $opts{sentinel}");
       unlink $opts{sentinel}
          or die "Cannot unlink $opts{sentinel}: $OS_ERROR";
    }
@@ -1635,7 +1663,7 @@ $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork/daemonize
 
 # Daemonize only after connecting and doing --askpass.
 if ( $opts{daemonize} ) {
-   my $outfile = $ENV{MKDEBUG}
+   my $outfile = MKDEBUG
                ? '/tmp/' . OptionParser::prog() . '.debug'
                : '/dev/null';
    require POSIX;
@@ -1647,7 +1675,7 @@ if ( $opts{daemonize} ) {
    exit if $pid;
    POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
    open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
-   $opts{v} = $ENV{MKDEBUG} ? 4 : 0;
+   $opts{v} = MKDEBUG ? 4 : 0;
 }
 
 my $exit_status = 0;
@@ -1677,7 +1705,7 @@ $ms->recurse_to_slaves(
          };
          if ( $EVAL_ERROR ) {
             chomp $EVAL_ERROR;
-            $ENV{MKDEBUG} && _d('Not watching ', $dp->as_string($dsn),
+            MKDEBUG && _d('Not watching ', $dp->as_string($dsn),
                ' because ', $EVAL_ERROR);
          }
       },
@@ -1708,10 +1736,10 @@ foreach my $host ( @servers_to_watch ) {
    $children{$dp->as_string($host->{dsn})} = $pid if $must_fork;
 }
 
-$ENV{MKDEBUG} && _d('Child PIDs: ' . join(', ', values %children));
+MKDEBUG && _d('Child PIDs: ' . join(', ', values %children));
 # Wait for the children to exit.
 foreach my $host ( keys %children ) {
-   $ENV{MKDEBUG} && _d('Waiting to reap ', $host);
+   MKDEBUG && _d('Waiting to reap ', $host);
    my $pid = waitpid($children{$host}, 0);
    $exit_status ||= $CHILD_ERROR >> 8;
 }
@@ -1728,7 +1756,7 @@ exit($exit_status);
 sub watch_server {
    my ( $dsn, $dbh, $was_forked ) = @_;
 
-   $ENV{MKDEBUG} && _d('Watching server ', $dp->as_string($dsn),
+   MKDEBUG && _d('Watching server ', $dp->as_string($dsn),
       " forked=$was_forked");
 
    my $start_sql = $vp->version_ge($dbh, '4.0.5')
@@ -1755,7 +1783,7 @@ sub watch_server {
    my %actions = (
       refetch_relay_log => sub {
          my ( $stat, $dbh ) = @_;
-         $ENV{MKDEBUG} && _d('Found relay log corruption');
+         MKDEBUG && _d('Found relay log corruption');
          # Can't do CHANGE MASTER TO with a running slave.
          $stop->execute();
          $chmt->execute(
@@ -1763,17 +1791,17 @@ sub watch_server {
       },
       skip => sub {
          my ( $stat, $dbh ) = @_;
-         $ENV{MKDEBUG} && _d('Found non-relay-log error');
+         MKDEBUG && _d('Found non-relay-log error');
          $set_skip->execute();
       },
       repair_table => sub {
          my ( $stat, $dbh ) = @_;
-         $ENV{MKDEBUG} && _d('Found corrupt table');
+         MKDEBUG && _d('Found corrupt table');
          # [ qr/Incorrect key file for table './foo/bar.MYI'
          my ( $db, $tbl ) = $stat->{last_error} =~ m!([^/]+)/(.*?)\.MYI!;
          if ( $db && $tbl ) {
             my $sql = "REPAIR TABLE " . $q->quote($db, $tbl);
-            $ENV{MKDEBUG} && _d($sql);
+            MKDEBUG && _d($sql);
             $dbh->do($sql);
          }
       },
@@ -1861,7 +1889,7 @@ sub watch_server {
                $last_pos = $stat->{relay_log_pos};
             }
             else {
-               $ENV{MKDEBUG} && _d('The slave is stopped, but without error');
+               MKDEBUG && _d('The slave is stopped, but without error');
                $increase_sleep = 1;
             }
          }
@@ -1886,7 +1914,7 @@ sub watch_server {
       sleep($increase_sleep ? $sleep : min($sleep, $opts{s}));
    }
 
-   $ENV{MKDEBUG} && _d('All done with server ', $dp->as_string($dsn));
+   MKDEBUG && _d('All done with server ', $dp->as_string($dsn));
    if ( $was_forked ) {
       $dp->disconnect($dbh);
       exit(0);

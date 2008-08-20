@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
 use DBI;
-use Test::More tests => 9;
+use Test::More tests => 10;
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $output;
@@ -63,4 +63,9 @@ SKIP: {
    ok(-f '/tmp/mk-heartbeat-sentinel', 'Sentinel file is there');
    unlink('/tmp/mk-heartbeat-sentinel');
    $dbh->do('drop table if exists test.heartbeat'); # This will kill it
+
+   # Cannot daemonize and debug
+   $output = `MKDEBUG=1 ../mk-heartbeat --daemonize -D test 2>&1`;
+   like($output, qr/Cannot debug while daemonized/, 'Cannot debug while daemonized');
+
 }
