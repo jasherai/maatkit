@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 58;
+use Test::More tests => 63;
 
 diag(`../../sandbox/stop_all`);
 diag(`../../sandbox/make_sandbox 12345`);
@@ -132,11 +132,17 @@ diag(`../../sandbox/make_sandbox 12345`);
 diag(`../../sandbox/make_slave 12348`);
 
 # Issue 35: mk-table-checksum dies when one server is missing a table
-diag(`/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;CREATE TABLE only_on_master(a int);'`);
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d mysql -t only_on_master 2>&1`;
+my $create_missing_slave_tbl_cmd
+   = "/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;CREATE TABLE only_on_master(a int);'";
+diag(`$create_missing_slave_tbl_cmd`);
+
+$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d mysql -t only_on_master 2>&1`;
 like($output, qr/MyISAM\s+NULL\s+0/, 'Table on master checksummed');
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed');
-diag(`/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;DROP TABLE only_on_master;'`);
+like($output, qr/mysql.only_on_master does not exist on slave 127.0.0.1:12348/, 'Debug reports missing slave table');
+
+my $rm_missing_slave_tbl_cmd = "/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;DROP TABLE only_on_master;'";
+diag(`$rm_missing_slave_tbl_cmd`);
 
 # Issue 5: Add ability to checksum table schema instead of data
 $cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema | awk '{print \$1,\$2,\$7}' | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
@@ -146,6 +152,7 @@ cmp_ok($ret_val, '==', 0, 'Only option --schema');
 # Remember to add $#opt_combos+1 number of tests to line 6
 my @opt_combos = ( # --schema and
    '--algorithm=BIT_XOR',
+   '--algorithm=ACCUM',
    '--checksum',
    '--chunksize=1M',
    '--count',
@@ -165,6 +172,8 @@ my @opt_combos = ( # --schema and
    '--wait=1000',
    '--where="id > 1000"',
 );
+# TODO: my pipework here sometimes chokes. I don't know why but random
+# runs of this loop will freeze with awk | diff appearing to do nothing.
 foreach my $opt_combo ( @opt_combos ) {
    $cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema $opt_combo | awk '{print \$1,\$2,\$7}' | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
    $ret_val = system($cmd);
@@ -211,5 +220,15 @@ $cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
 $output = `$cmd`;
 like($output, qr/foo/, '--emptyrepltbl is ignored if --replicate is not specified');
 
-diag(`../../sandbox/stop_all`);
+# Test issue 5 + 35: --schema a missing table
+diag(`$create_missing_slave_tbl_cmd`);
+
+$output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d mysql -t only_on_master --schema 2>&1`;
+like($output, qr/MyISAM\s+NULL\s+23678842/, 'Table on master checksummed with --schema');
+like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed with --schema');
+like($output, qr/mysql.only_on_master does not exist on slave 127.0.0.1:12348/, 'Debug reports missing slave table with --schema');
+
+ diag(`$rm_missing_slave_tbl_cmd`); # in case someone adds more tests, and they probably will
+
+ diag(`../../sandbox/stop_all`);
 exit;

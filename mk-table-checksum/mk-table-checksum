@@ -3025,7 +3025,7 @@ if ( $opts{since} ) {
 # ############################################################################
 my $q      = new Quoter();
 my $tp     = new TableParser();
-my $du     = new MySQLDump();
+my $du     = new MySQLDump( cache => 0 );
 my $ch     = new TableChunker( quoter => $q );
 my $finder = new MySQLFind(
    quoter    => $q,
@@ -3544,6 +3544,7 @@ sub do_tbl {
    }
 
    # Check that table exists on slave.
+   my $have_table = 1;
    my $create;
    if ( !$is_master || !$checksum_table_data ) {
       eval {
@@ -3555,37 +3556,41 @@ sub do_tbl {
          }
       };
       if ( $EVAL_ERROR ) {
+         $have_table = 0;
          MKDEBUG && _d("$info->{database}.$info->{table} does not exist on slave $host->{h}:$host->{P}");
-         return;
       }
    }
 
    # Time the checksum operation and the wait-for-master operation separately.
    my $mid = time();
 
-   # Do the checksum operation.
-   if ( $checksum_table_data ) {
-      if ( $strat eq 'CHECKSUM' ) {
-         if ( $opts{c} ) {
-            $crc = do_checksum($dbh, $info, $query, $explain);
+   if ( $have_table ) {
+      # Do the checksum operation.
+      if ( $checksum_table_data ) {
+         if ( $strat eq 'CHECKSUM' ) {
+            if ( $opts{c} ) {
+               $crc = do_checksum($dbh, $info, $query, $explain);
+            }
+            if ( $opts{r} ) {
+               $cnt = do_count($dbh, $info, $chunk_num, $explain);
+            }
          }
-         if ( $opts{r} ) {
+         elsif ( $opts{c} ) {
+            ( $cnt, $crc )
+               = do_var_crc($dbh, $query, $info, $chunk_num, $explain);
+            $crc ||= 'NULL';
+         }
+         else {
             $cnt = do_count($dbh, $info, $chunk_num, $explain);
          }
       }
-      elsif ( $opts{c} ) {
-         ( $cnt, $crc ) = do_var_crc($dbh, $query, $info, $chunk_num, $explain);
-         $crc ||= 'NULL';
+      else { # compare schemas
+         $crc = $tc->crc32($create);
       }
-      else {
-         $cnt = do_count($dbh, $info, $chunk_num, $explain);
-      }
-   }
-   else { # compare schemas
-      $crc = $tc->crc32($create);
    }
 
    my $end = time();
+
    if ( !$opts{q} && !$opts{explain} ) {
       if ( $opts{checksum} ) {
          printf($md5sum_fmt, $crc, $host->{h},
