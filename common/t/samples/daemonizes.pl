@@ -8,7 +8,7 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-require '../../Daemon.pm';
+require '../Daemon.pm';
 
 if ( scalar @ARGV != 2 ) {
    die "Usage: daemonizes.pl sleep exit|die\n";

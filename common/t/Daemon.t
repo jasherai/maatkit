@@ -29,13 +29,9 @@ my $d = new Daemon();
 
 isa_ok($d, 'Daemon');
 
-# TODO: can't call samples/daemonizes.pl because when that script requires
-# ../Daemon.pm is fails to actually daemonize. It only daemonizes when it
-# requires ../../Daemon.pm. Weird.
-chdir './samples/' or die;
-
-my $cmd = './daemonizes.pl 2 exit';
-my $ret_val = system($cmd);
+my $cmd = 'samples/daemonizes.pl 2 exit';
+my $ret_val = 0; 
+`$cmd`;
 SKIP: {
    skip 'Cannot test Daemon.pm because t/daemonizes.pl is not working.',
       4 unless $ret_val == 0;

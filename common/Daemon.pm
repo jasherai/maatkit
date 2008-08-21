@@ -24,7 +24,7 @@ package Daemon;
 use strict;
 use warnings FATAL => 'all';
 
-use POSIX qw(setsid);
+use POSIX;
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -39,13 +39,14 @@ sub new {
 sub daemonize {
    my ( $self ) = @_;
 
+   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
+   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
+   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
+
    defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
    exit if $pid;
-
    POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
-   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
-   open STDIN,  '/dev/null'  or die "Can't read /dev/null: $OS_ERROR";
-   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
+
    open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
 
    # TODO: check for existing PID/running instance of same daemonized script?
@@ -57,11 +58,13 @@ sub daemonize {
 sub create_PID_file {
    my ( $self, $PID_file_dir ) = @_;
    $PID_file_dir ||= '/tmp/';
-   $self->{PID_file} = $PID_file_dir . "$PROGRAM_NAME.pid";
-   open PID_FILE, "+> $self->{PID_file}"
+   my ($prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   $prog ||= $PROGRAM_NAME;
+   $self->{PID_file} = $PID_file_dir . "$prog.pid";
+   open my $PID_FILE, "+> $self->{PID_file}"
       or die "Can't open PID file '$self->{PID_file}': $OS_ERROR";
-   print PID_FILE $PID;
-   close PID_FILE
+   print $PID_FILE $PID;
+   close $PID_FILE
       or die "Can't close PID file '$self->{PID_file}': $OS_ERROR";
    return;
 }
