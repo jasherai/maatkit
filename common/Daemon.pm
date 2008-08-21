@@ -15,7 +15,7 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# Daemon package $Revision: $
+# Daemon package $Revision$
 # ###########################################################################
 
 # Daemon - Daemonize and handle daemon-related tasks
