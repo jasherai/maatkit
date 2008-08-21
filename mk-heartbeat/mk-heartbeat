@@ -1410,6 +1410,79 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Daemon package 2224
+# ###########################################################################
+
+package Daemon;
+
+use strict;
+use warnings FATAL => 'all';
+
+use POSIX;
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   return bless {
+      PID_file => undef
+   }, $class;
+}
+
+sub daemonize {
+   my ( $self ) = @_;
+
+   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
+   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
+   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
+
+   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
+   exit if $pid;
+   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
+
+   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+
+
+   return;
+}
+
+sub create_PID_file {
+   my ( $self, $PID_file_dir ) = @_;
+   $PID_file_dir ||= '/tmp/';
+   my ($prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   $prog ||= $PROGRAM_NAME;
+   $self->{PID_file} = $PID_file_dir . "$prog.pid";
+   open my $PID_FILE, "+> $self->{PID_file}"
+      or die "Can't open PID file '$self->{PID_file}': $OS_ERROR";
+   print $PID_FILE $PID;
+   close $PID_FILE
+      or die "Can't close PID file '$self->{PID_file}': $OS_ERROR";
+   return;
+}
+
+sub remove_PID_file {
+   my ( $self ) = @_;
+   if ( defined $self->{PID_file} ) {
+      unlink $self->{PID_file}
+         or warn "Can't remove PID file '$self->{PID_file}': $OS_ERROR";
+   }
+   return;
+}
+
+sub DESTROY {
+   my ( $self ) = @_;
+   $self->remove_PID_file();
+   return;
+}
+
+1;
+
+# ###########################################################################
+# End Daemon package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 
@@ -1534,15 +1607,14 @@ $sth->execute();
 $sth->finish();
 
 # Daemonize only after (potentially) asking for passwords for --askpass.
+my $daemon;
 if ( $opts{daemonize} ) {
-   require POSIX;
-   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
-   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
-   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
-   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
-   exit if $pid;
-   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
-   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+   $daemon = new Daemon() or die "Cannot daemonize: $OS_ERROR";
+   $daemon->daemonize();
+   if ( defined $opts{pid} ) {
+      $daemon->create_PID_file( $opts{pid} );
+   } 
+   # I'm a daemon now.
 }
 
 # Setup for moving averages.
@@ -1876,6 +1948,19 @@ L<"--frames">.  For example,
 short form: -p; type: string
 
 Password to use when connecting.
+
+=item --pid
+
+type: string 
+
+Create mk-heartbeat.pid file in given directory when daemonized.
+
+For example, '--daemonize --pid /tmp/' would cause mk-heartbeat to create
+the PID file /tmp/mk-heartbeat.pid. The given directory must be
+slash-terminated and writable. /var/run/ is usually not writable by non-root
+users, therefore /tmp/ is a more reliable alternative.
+
+The PID file is removed when the daemonized instance of mk-heartbeat exits.
 
 =item --port
 

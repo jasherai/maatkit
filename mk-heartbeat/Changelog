@@ -1,5 +1,6 @@
 Changelog for mk-heartbeat:
 
+   * Added --pid option.
    * Using debug (MKDEBUG=1) and --daemonize now causes script to die.
 
 2008-08-11: version 1.0.10

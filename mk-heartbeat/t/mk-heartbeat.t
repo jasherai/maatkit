@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
 use DBI;
-use Test::More tests => 10;
+use Test::More tests => 13;
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $output;
@@ -35,9 +35,15 @@ SKIP: {
    like($output, qr/^\d+$/, 'Output is just a number');
 
    # Start one daemonized instance to update it
-   `perl ../mk-heartbeat --daemonize -D test --update -m 5s`;
+   `perl ../mk-heartbeat --daemonize -D test --update -m 5s --pid /tmp/`;
    $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
    like($output, qr/perl ...mk-heartbeat/, 'It is running');
+
+   ok(-f '/tmp/mk-heartbeat.pid', 'PID file created');
+   my ($pid) = $output =~ /\s+(\d+)\s+/;
+   my $output = `cat /tmp/mk-heartbeat.pid`;
+   is($output, $pid, 'PID file has correct PID');
+
    $output = `perl ../mk-heartbeat -D test --monitor -m 1s`;
    chomp ($output);
    is (
@@ -49,6 +55,7 @@ SKIP: {
    $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
    chomp $output;
    unlike($output, qr/perl ...mk-heartbeat/, 'It is not running anymore');
+   ok(! -f '/tmp/mk-heartbeat.pid', 'PID file removed');
 
    # Run again, create the sentinel, and check that the sentinel makes the
    # daemon quit.
