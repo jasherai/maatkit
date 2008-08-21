@@ -3149,6 +3149,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             if ( is_temporal($opts{since}) ) {
                my ($stat) = $du->get_table_status($main_dbh, $q, $database, $table->{table});
                my $time = maxstr(grep { $_ } @{$stat}{qw(create_time update_time)});
+               # TODO $time may be undef!
                if ( $time lt $opts{since} ) {
                   MKDEBUG && _d("Skipping table because of --since");
                   $do_table = 0;
