@@ -3208,6 +3208,8 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          foreach my $chunk_num ( 0 .. scalar(@{$table->{chunks}}) - 1 ) {
 
             # TODO: --modulo as well, for predictability
+            # TODO: by default, if there is only one chunk, never skip it.  Add
+            # a cmdline opt to permit overriding this.
             if ( $checksum_table_data && rand(100) >= $opts{probability} ) {
                MKDEBUG && _d('Skipping chunk because of --probability');
                next CHUNK;
