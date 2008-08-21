@@ -1,3 +1,5 @@
+Build a query sniffer that sniffs off the wire and outputs in slow-log format.
+
 Include the DSN options in POD.
 
 Make a way to get a list of DSNs out of a database table, and iterate over them.

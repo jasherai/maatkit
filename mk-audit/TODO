@@ -114,6 +114,9 @@ The following items are unimplemented at this time:
      maybe it should drop the autoinc and promote the UNIQUE to PK.
    * for InnoDB tables, a key that has the PK appended is redundant.
    * pack_keys=1 is probably a mistake
+   * tables that have only primary, unique, and one other key with many values
+     are probably a mistake: the user probably thinks a key on (a,b,c) is enough
+     for queries on any of those columns.
    * look for columns named UUID or GUID or session_id which may contain hex
      data stored as strings, which would be better stored unhexed in binary
    * Look for nullable columns that contain no NULLs, especially indexed columns

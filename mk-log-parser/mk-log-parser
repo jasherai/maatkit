@@ -1073,6 +1073,9 @@ my @opt_spec = (
 #  49.5   34.17 34.177 203249   0.0002 0.0002  QueryRewriter::fingerprint
 #  46.7   32.26 68.797 203250   0.0002 0.0003  LogParser::parse_event
 #  3.42   2.357 36.534 406498   0.0000 0.0001  main::__ANON__
+# TODO: periodically aggregate and print last N minutes to a file; N minutes can
+# be different from period, so you can see the rolling average over last 15
+# minutes, updated every 1 minute for example
 
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
