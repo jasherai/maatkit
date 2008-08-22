@@ -27,7 +27,7 @@ else {
    $d = new Daemon();
 }
 $d->daemonize();
-$d->create_PID_file();
+$d->create_PID_file('/tmp/daemonizes.pl.pid');
 
 print STDOUT ' STDOUT ';
 print STDERR ' STDERR ';

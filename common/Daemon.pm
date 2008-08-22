@@ -35,7 +35,11 @@ sub new {
    $self->{reopen_STDIN}  ||= '/dev/null';
    $self->{reopen_STDOUT} ||= '/dev/null';
    $self->{reopen_STDERR} ||= '&STDOUT';
+
+   # PID_file cannot be given here; it must be given to create_PID_file().
+   # See that sub for why.
    $self->{PID_file}        = undef;
+
    return bless $self, $class;
 }
 
@@ -55,23 +59,23 @@ sub daemonize {
    open STDERR, ">$self->{reopen_STDERR}"
       or die "Cannot reopen STDERR >$self->{reopen_STDERR}: $OS_ERROR";
 
-   # TODO: check for existing PID/running instance of same daemonized script?
    # TODO: don't allow MKDEBUG=1
 
    return;
 }
 
 sub create_PID_file {
-   my ( $self, $PID_file_dir ) = @_;
-   $PID_file_dir ||= '/tmp/';
-   my ($prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
-   $prog ||= $PROGRAM_NAME;
-   $self->{PID_file} = $PID_file_dir . "$prog.pid";
+   my ( $self, $PID_file ) = @_;
+   return if !$PID_file;
+   # PID_file must be given here and not new() because if it is already
+   # set then the parent will unlink it when its copy of this daemon obj
+   # is destoried.
+   $self->{PID_file} = $PID_file; # save for unlink in DESTORY()
    open my $PID_FILE, "+> $self->{PID_file}"
-      or die "Can't open PID file '$self->{PID_file}': $OS_ERROR";
+      or die "Cannot open PID file '$self->{PID_file}': $OS_ERROR";
    print $PID_FILE $PID;
    close $PID_FILE
-      or die "Can't close PID file '$self->{PID_file}': $OS_ERROR";
+      or die "Cannot close PID file '$self->{PID_file}': $OS_ERROR";
    return;
 }
 
@@ -79,7 +83,7 @@ sub remove_PID_file {
    my ( $self ) = @_;
    if ( defined $self->{PID_file} ) {
       unlink $self->{PID_file}
-         or warn "Can't remove PID file '$self->{PID_file}': $OS_ERROR";
+         or warn "Cannot remove PID file '$self->{PID_file}': $OS_ERROR";
    }
    return;
 }

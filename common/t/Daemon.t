@@ -29,12 +29,11 @@ my $d = new Daemon();
 
 isa_ok($d, 'Daemon');
 
-my $cmd = 'samples/daemonizes.pl 2 exit';
-my $ret_val = 0; 
-`$cmd`;
+my $cmd     = 'samples/daemonizes.pl 2 exit';
+my $ret_val = system($cmd);
 SKIP: {
    skip 'Cannot test Daemon.pm because t/daemonizes.pl is not working.',
-      4 unless $ret_val == 0;
+      7 unless $ret_val == 0;
 
    my $output = `ps ax | grep '$cmd' | grep -v grep`;
    like($output, qr/$cmd/, 'Daemonizes');
@@ -57,6 +56,7 @@ SKIP: {
    $output = `cat /tmp/daemon.foo`;
    like($output, qr/ STDOUT /, 'Print to STDOUT went to file');
    like($output, qr/ STDERR /, 'Print to STDERR went to file');
+   `rm /tmp/daemon.foo`;
 }
 
 exit;
