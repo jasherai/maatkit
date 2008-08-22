@@ -35,7 +35,7 @@ SKIP: {
    like($output, qr/^\d+$/, 'Output is just a number');
 
    # Start one daemonized instance to update it
-   `perl ../mk-heartbeat --daemonize -D test --update -m 5s --pid /tmp/`;
+   `perl ../mk-heartbeat --daemonize -D test --update -m 5s --pid /tmp/mk-heartbeat.pid`;
    $output = `ps -eaf | grep mk-heartbeat | grep daemonize`;
    like($output, qr/perl ...mk-heartbeat/, 'It is running');
 
