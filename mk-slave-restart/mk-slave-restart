@@ -1502,6 +1502,85 @@ sub _d {
 # End MasterSlave package
 # ###########################################################################
 
+# ###########################################################################
+# Daemon package 2226
+# ###########################################################################
+
+package Daemon;
+
+use strict;
+use warnings FATAL => 'all';
+
+use POSIX;
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   $self->{reopen_STDIN}  ||= '/dev/null';
+   $self->{reopen_STDOUT} ||= '/dev/null';
+   $self->{reopen_STDERR} ||= '&STDOUT';
+   $self->{PID_file}        = undef;
+   return bless $self, $class;
+}
+
+sub daemonize {
+   my ( $self ) = @_;
+
+   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
+   exit if $pid;
+   POSIX::setsid() or die "Can't start a new session: $OS_ERROR";
+
+   chdir '/' or die "Can't chdir to /: $OS_ERROR";
+
+   open STDIN,  "$self->{reopen_STDIN}",
+      or die "Cannot reopen STDIN $self->{reopen_STDIN}: $OS_ERROR";
+   open STDOUT, ">$self->{reopen_STDOUT}"
+      or die "Cannot reopen STDOUT >$self->{reopen_STDOUT}: $OS_ERROR";
+   open STDERR, ">$self->{reopen_STDERR}"
+      or die "Cannot reopen STDERR >$self->{reopen_STDERR}: $OS_ERROR";
+
+
+   return;
+}
+
+sub create_PID_file {
+   my ( $self, $PID_file_dir ) = @_;
+   $PID_file_dir ||= '/tmp/';
+   my ($prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   $prog ||= $PROGRAM_NAME;
+   $self->{PID_file} = $PID_file_dir . "$prog.pid";
+   open my $PID_FILE, "+> $self->{PID_file}"
+      or die "Can't open PID file '$self->{PID_file}': $OS_ERROR";
+   print $PID_FILE $PID;
+   close $PID_FILE
+      or die "Can't close PID file '$self->{PID_file}': $OS_ERROR";
+   return;
+}
+
+sub remove_PID_file {
+   my ( $self ) = @_;
+   if ( defined $self->{PID_file} ) {
+      unlink $self->{PID_file}
+         or warn "Can't remove PID file '$self->{PID_file}': $OS_ERROR";
+   }
+   return;
+}
+
+sub DESTROY {
+   my ( $self ) = @_;
+   $self->remove_PID_file();
+   return;
+}
+
+1;
+
+# ###########################################################################
+# End Daemon package
+# ###########################################################################
+
 package main;
 
 use English qw(-no_match_vars);
@@ -1518,68 +1597,10 @@ $OUTPUT_AUTOFLUSH = 1;
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   {  s => 'always',
-      d => 'Start slaves even when no error' },
-   {  s => 'askpass',
-      d => 'Prompt for a password for the connection' },
-   {  s => 'charset|A=s',
-      d => 'Default character set' },
-   {  s => 'daemonize',
-      d => 'Fork to background and detach (POSIX only)' },
-   {  s => 'database|D=s',
-      d => 'Database to use' },
-   {  s => 'defaults-file|F=s',
-      d => 'Only read mysql options from the given file' },
-   {  s => 'error-numbers|e=h',
-      d => 'Only restart this comma-separated list of errors' },
-   {  s => 'error-text|E=s',
-      d => 'Only restart errors that match this pattern' },
-   {  s => 'error-length|L=i',
-      d => 'Max length of error message to print' },
-   {  s => 'host|h=s',
-      d => 'Connect to host' },
-   {  s => 'maxsleep|M=f',
-      d => 'Maximum sleep seconds (default 64)'},
-   {  s => 'minsleep|m=f',
-      d => 'Minimum sleep seconds (default 0.015625)'},
-   {  s => 'monitor',
-      d => 'Whether to monitor the slave' },
-   {  s => 'password|p=s',
-      d => 'Password to use when connecting' },
-   {  s => 'port|P=i',
-      d => 'Port number to use for connection' },
-      # TODO: sets --verbose 0
-   {  s => 'quiet|q',
-      d => 'Quiet output' },
-   {  s => 'recurse|r=i',
-      d => 'Number of levels to recurse (default 0)' },
-   {  s => 'sentinel=s',
-      d => 'Sentinel file; default /tmp/mk-slave-restart-sentinel' },
-   {  s => 'setvars=s',
-      d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   {  s => 'skipcount|k=i',
-      d => 'Number of statements to skip (default 1)' },
-   {  s => 'sleep|s=f',
-      d => 'Initial sleep seconds (default 1)' },
-   {  s => 'socket|S=s',
-      d => 'Socket file to use for connection' },
-   {  s => 'stop',
-      d => 'Stop running instances by creating the sentinel file' },
-   {  s => 'time|t=m',
-      d => 'Time to run before exiting' },
-   {  s => 'untilmaster=s',
-      d => 'Run until this master log file and position' },
-   {  s => 'untilrelay=s',
-      d => 'Run until this relay log file and position' },
-   {  s => 'user|u=s',
-      d => 'User for login if not current user' },
-   {  s => 'verbose|v+',
-      d => 'Verbosity; can specify multiple times; default 1' },
-);
-
 my $dp = new DSNParser();
 my $vp = new VersionParser();
+
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{prompt} = '<options>';
 $opt_parser->{descr}  = 'watches one or more MySQL replication slaves for '
@@ -1602,8 +1623,16 @@ if ( !$opts{help} ) {
    }
 }
 
-# See the POD notes about --monitor and --stop.
-$opts{monitor} = 1 unless $opts{stop};
+# --stop disables --monitor unless --monitor is explicitly given
+if ( defined $opts{stop} ) {
+   # Have to disable monitor because it is enabled by default.
+   # Problem is: $opts{monitor} is always set: 'yes' by default
+   # when not given on cmd line, '1' when given on cmd line.
+   # That's why here we must check that it eq '1', i.e. that it was
+   # explicitly given.
+   $opts{monitor} = 0 unless $opts{monitor} eq '1';
+}
+
 
 $opt_parser->usage_or_errors(%opts);
 
@@ -1662,19 +1691,18 @@ my $dbh = $dp->get_dbh($dp->get_cxn_params(\%opts), { AutoCommit => 1, } );
 $dbh->{InactiveDestroy}  = 1;         # Don't disconnect on fork/daemonize
 
 # Daemonize only after connecting and doing --askpass.
+my $daemon;
 if ( $opts{daemonize} ) {
    my $outfile = MKDEBUG
-               ? '/tmp/' . OptionParser::prog() . '.debug'
-               : '/dev/null';
-   require POSIX;
-   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
-   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
-   print STDOUT              "Sending STDOUT to $outfile\n" unless $opts{q};
-   open STDOUT, ">$outfile"  or die "Can't write to $outfile: $OS_ERROR";
-   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
-   exit if $pid;
-   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
-   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+                 ? '/tmp/' . OptionParser::prog() . '.debug'
+                 : '/dev/null';
+   $daemon = new Daemon( reopen_STDOUT => "$outfile" )
+      or die "Cannot daemonize: $OS_ERROR";
+   $daemon->daemonize();
+   if ( defined $opts{pid} ) {
+      $daemon->create_PID_file( $opts{pid} );
+   } 
+   # I'm a daemon now.
    $opts{v} = MKDEBUG ? 4 : 0;
 }
 
@@ -2011,6 +2039,8 @@ second gets the latest trunk code from Subversion.
 
 =item --always
 
+Start slaves even when no error.
+
 Always (re)start the slave processes, even when there is no error.  With this
 option enabled, C<mk-slave-restart> will not let you stop the slave if you want
 to!
@@ -2019,12 +2049,11 @@ to!
 
 Prompt for a password when connecting to MySQL.
 
-=item --daemonize
-
-Fork to the background and detach from the shell.  This probably doesn't work
-on Microsoft Windows.
-
 =item --charset
+
+short form: -A; type: string
+
+Default character set.
 
 Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
 Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
@@ -2032,15 +2061,39 @@ DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
 value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
 connecting to MySQL.
 
+=item --daemonize
+
+Fork to background and detach (POSIX only).
+
+This probably doesn't work on Microsoft Windows.
+
 =item --database
+
+short form: -D; type: string
 
 Database to use.
 
 =item --defaults-file
 
-Only read default options from the given file.
+short form: -F; type: string
+
+Only read mysql options from the given file.
+
+=item --error-length
+
+short form: -L; type: int
+
+Max length of error message to print.
+
+When L<"--verbose"> is set high enough to print the error, this option will
+truncate the error text to the specified length.  This can be useful to prevent
+wrapping on the terminal.
 
 =item --error-numbers
+
+short form: -e; type: int
+
+Only restart this comma-separated list of errors.
 
 Makes mk-slave-restart only try to restart if the error number is in this
 comma-separated list of errors.  If it sees an error not in the list, it will
@@ -2050,54 +2103,82 @@ The error number is in the C<last_errno> column of C<SHOW SLAVE STATUS>.
 
 =item --error-text
 
+short form: -E; type: string
+
+Only restart errors that match this pattern.
+
 A Perl regular expression against which the error text, if any, is matched.  If
 the error text exists and matches, mk-slave-restart will try to restart the
 slave.  If it exists but doesn't match, mk-slave-restart will exit.
 
 The error text is in the C<last_error> column of C<SHOW SLAVE STATUS>.
 
-=item --error-length
-
-When L<"--verbose"> is set high enough to print the error, this option will
-truncate the error text to the specified length.  This can be useful to prevent
-wrapping on the terminal.
-
-=item --help
-
-Show a brief help message and exit.
-
 =item --host
+
+short form: -h; type: string
 
 Connect to host.
 
 =item --maxsleep
+
+short form: -M; type: float; default: 64
+
+Maximum sleep seconds.
 
 The maximum time mk-slave-restart will sleep before polling the slave again.
 See L<"SLEEP">.
 
 =item --minsleep
 
+short form: -m; type: float; default: 0.015625
+
 The minimum time mk-slave-restart will sleep before polling the slave again.
 See L<"SLEEP">.
 
 =item --monitor
 
-Whether to monitor the slave.  The default is true, but unless you specify it
-explicitly, L<"--stop"> will disable it by default.
+default: yes
+
+Whether to monitor the slave.
+
+Unless you specify --monitor explicitly, L<"--stop"> will disable it.
 
 =item --password
 
+short form: -p; type: string
+
 Password to use when connecting.
 
+=item --pid
+
+type: string 
+
+Create mk-slave-restart.pid file in given directory when daemonized.
+
+For example, '--daemonize --pid /tmp/' would cause mk-slave-restart to create
+the PID file /tmp/mk-slave-restart.pid. The given directory must be
+slash-terminated and writable. /var/run/ is usually not writable by non-root
+users, therefore /tmp/ is a more reliable alternative.
+
+The PID file is removed when the daemonized instance of mk-slave-restart exits.
+
 =item --port
+
+short form: -P; type: int
 
 Port number to use for connection.
 
 =item --quiet
 
-Disables L<"--verbose">.
+short form: -q
+
+Suppresses normal output (disables L<"--verbose">).
 
 =item --recurse
+
+short form: -r; type: int; default: 0
+
+Number of levels to recurse.
 
 This option specifies that instead of just watching the server specified on
 the command-line, C<mk-slave-restart> should try to find its slaves and watch
@@ -2119,28 +2200,42 @@ monitor them.
 
 =item --sentinel
 
-The presence of the file specified by L<"--sentinel"> will cause
-C<mk-slave-restart> to stop and exit.  The default is
-C</tmp/mk-slave-restart-sentinel>.
+type: string; default: /tmp/mk-slave-restart-sentinel
+
+Exit if this file exists.
 
 =item --setvars
+
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
 
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --skipcount
 
-The number of statements to skip when restarting the slave.
+short form: -k; type: int; default: 1
+
+Number of statements to skip when restarting the slave.
 
 =item --sleep
 
-The initial sleep time between checking the slave.  See L<"SLEEP">.
+short form: -s; type: int; default: 1
+
+Initial sleep seconds between checking the slave.
+
+See L<"SLEEP">.
 
 =item --socket
+
+short form: -S; type: string
 
 Socket file to use for connection.
 
 =item --stop
+
+Stop running instances by creating the sentinel file.
 
 Causes C<mk-slave-restart> to create the sentinel file specified by
 L<"--sentinel">.  This should have the effect of stopping all running
@@ -2165,9 +2260,18 @@ See also L<"--sentinel">.
 
 =item --time
 
+short form: -t; type: time
+
+Time to run before exiting.
+
 Causes C<mk-slave-restart> to stop after the specified time has elapsed.
+Optional suffix: s=seconds, m=minutes, h=hours, d=days; if no suffix, s is used.
 
 =item --untilmaster
+
+type: string
+
+Run until this master log file and position.
 
 Start the slave, and retry if it fails, until it reaches the given replication
 coordinates.  The coordinates are the logfile and position on the master, given
@@ -2182,23 +2286,31 @@ will exit.
 
 =item --untilrelay
 
+type: string
+
+Run until this relay log file and position.
+
 Like L<"--untilmaster">, but in the slave's relay logs instead.  The coordinates
 are given by relay_log_file, relay_log_pos.
 
 =item --user
 
+short form: -u; type: string
+
 User for login if not current user.
 
 =item --verbose
 
-Verbosity; specify multiple times for more verbosity.  Verbosity 1 outputs
-connection information, a timestamp, relay_log_file, relay_log_pos, and
-last_errno.  Verbosity 2 adds last_error.  See also L<"--error-length">.
+short form: -v; cumulative: yes; default: 1
+
+Be verbose; can specify multiple times.
+
+Verbosity 1 outputs connection information, a timestamp, relay_log_file,
+relay_log_pos, and last_errno.
+
+Verbosity 2 adds last_error.  See also L<"--error-length">.
+
 Verbosity 3 prints the current sleep time each time mk-slave-restart sleeps.
-
-=item --version
-
-Output version information and exit.
 
 =back
 
