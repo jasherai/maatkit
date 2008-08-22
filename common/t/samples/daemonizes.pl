@@ -10,14 +10,27 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 require '../Daemon.pm';
 
-if ( scalar @ARGV != 2 ) {
+if ( scalar @ARGV < 2 ) {
    die "Usage: daemonizes.pl sleep exit|die\n";
 }
-my ( $s, $e ) = ( $ARGV[0], $ARGV[1] );
+my ( $s, $e, $a ) = ( $ARGV[0], $ARGV[1], $ARGV[2] );
 
-my $d = new Daemon() or die;
+my $d;
+if ( defined $a ) {
+   my %args = map {
+      my ( $k, $v ) = m/(.*) \=\> (.*)/;
+      $k => $v;
+   } split /,/, $a;
+   $d = new Daemon(%args);
+}
+else {
+   $d = new Daemon();
+}
 $d->daemonize();
 $d->create_PID_file();
+
+print STDOUT ' STDOUT ';
+print STDERR ' STDERR ';
 
 sleep $s;
 

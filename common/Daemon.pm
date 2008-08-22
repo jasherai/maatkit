@@ -30,24 +30,30 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   my ( $class ) = @_;
-   return bless {
-      PID_file => undef
-   }, $class;
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   $self->{reopen_STDIN}  ||= '/dev/null';
+   $self->{reopen_STDOUT} ||= '/dev/null';
+   $self->{reopen_STDERR} ||= '&STDOUT';
+   $self->{PID_file}        = undef;
+   return bless $self, $class;
 }
 
 sub daemonize {
    my ( $self ) = @_;
 
-   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
-   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
-   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
-
    defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
    exit if $pid;
-   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
+   POSIX::setsid() or die "Can't start a new session: $OS_ERROR";
 
-   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+   chdir '/' or die "Can't chdir to /: $OS_ERROR";
+
+   open STDIN,  "$self->{reopen_STDIN}",
+      or die "Cannot reopen STDIN $self->{reopen_STDIN}: $OS_ERROR";
+   open STDOUT, ">$self->{reopen_STDOUT}"
+      or die "Cannot reopen STDOUT >$self->{reopen_STDOUT}: $OS_ERROR";
+   open STDERR, ">$self->{reopen_STDERR}"
+      or die "Cannot reopen STDERR >$self->{reopen_STDERR}: $OS_ERROR";
 
    # TODO: check for existing PID/running instance of same daemonized script?
    # TODO: don't allow MKDEBUG=1

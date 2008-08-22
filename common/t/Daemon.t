@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 5;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
 require '../Daemon.pm';
@@ -48,6 +48,15 @@ SKIP: {
    sleep 2;
 
    ok(! -f '/tmp/daemonizes.pl.pid', 'Removes PID file upon exit');
+
+   # Check that STDOUT can be redirected
+   $cmd .= " 'reopen_STDOUT => /tmp/daemon.foo'";
+   `$cmd`;
+   ok(-f '/tmp/daemon.foo', 'File for redirected STDOUT exists');
+   sleep 2;
+   $output = `cat /tmp/daemon.foo`;
+   like($output, qr/ STDOUT /, 'Print to STDOUT went to file');
+   like($output, qr/ STDERR /, 'Print to STDERR went to file');
 }
 
 exit;
