@@ -20,6 +20,7 @@ The following items are unimplemented at this time:
       * for each instance, do:
          * run mysqld --help --verbose and make sure config file is valid
          * --log-warnings being defined is cause for an alert
+         * Alert if the version is really old, or end-of-life.
       * Data and schema
          * filefrag on data files?
          * verbose option: 
