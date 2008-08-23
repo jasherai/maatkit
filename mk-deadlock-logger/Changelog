@@ -1,5 +1,7 @@
 Changelog for mk-deadlock-logger:
 
+   * Added --pid option.
+
 2008-08-11: version 1.0.11
 
    * Files downloaded directly from SVN crashed due to version information.

@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 6;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -90,3 +90,27 @@ SKIP: {
    like($output, qr/GEN_CLUST_INDEX/, 'Deadlock logger prints the output');
    $dbh1->do('drop table test.dl');
 }
+
+# Check daemonization
+my $deadlocks_tbl = `cat deadlocks_tbl.sql`;
+$dbh1->do('USE test');
+$dbh1->do('DROP TABLE IF EXISTS deadlocks');
+$dbh1->do("$deadlocks_tbl");
+
+my $cmd = '../mk-deadlock-logger -d h=localhost,D=test,t=deadlocks -s h=localhost --daemonize -m 4h -i 30s --pid /tmp/mk-deadlock-logger.pid';
+`$cmd`;
+
+my $output = `ps -eaf | grep 'mk-deadlock-logger \-d'`;
+like($output, qr/$cmd/, 'It lives daemonized');
+
+ok(-f '/tmp/mk-deadlock-logger.pid', 'PID file created');
+my ($pid) = $output =~ /\s+(\d+)\s+/;
+$output = `cat /tmp/mk-deadlock-logger.pid`;
+is($output, $pid, 'PID file has correct PID');
+
+# Kill it
+`kill $pid`;
+sleep 1;
+ok(! -f '/tmp/mk-deadlock-logger.pid', 'PID file removed');
+
+exit;
