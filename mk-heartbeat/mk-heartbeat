@@ -1959,12 +1959,13 @@ Password to use when connecting.
 
 type: string 
 
-Create mk-heartbeat.pid file in given directory when daemonized.
+Create the given PID file when daemonized.
 
-For example, '--daemonize --pid /tmp/' would cause mk-heartbeat to create
-the PID file /tmp/mk-heartbeat.pid. The given directory must be
-slash-terminated and writable. /var/run/ is usually not writable by non-root
-users, therefore /tmp/ is a more reliable alternative.
+For example, '--daemonize --pid /tmp/mk-heartbeat.pid' would cause
+mk-heartbeat to create the PID file /tmp/mk-heartbeat.pid.
+
+/var/run/ is usually not writable by non-root users, therefore /tmp/ is a
+more reliable alternative.
 
 The PID file is removed when the daemonized instance of mk-heartbeat exits.
 

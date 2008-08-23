@@ -1337,6 +1337,92 @@ sub _d {
 # End QueryRewriter package
 # ###########################################################################
 
+# ###########################################################################
+# Daemon package 2228
+# ###########################################################################
+
+# Daemon - Daemonize and handle daemon-related tasks
+package Daemon;
+
+use strict;
+use warnings FATAL => 'all';
+
+use POSIX;
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   $self->{reopen_STDIN}  ||= '/dev/null';
+   $self->{reopen_STDOUT} ||= '/dev/null';
+   $self->{reopen_STDERR} ||= '&STDOUT';
+
+   # PID_file cannot be given here; it must be given to create_PID_file().
+   # See that sub for why.
+   $self->{PID_file}        = undef;
+
+   return bless $self, $class;
+}
+
+sub daemonize {
+   my ( $self ) = @_;
+
+   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
+   exit if $pid;
+   POSIX::setsid() or die "Can't start a new session: $OS_ERROR";
+
+   chdir '/' or die "Can't chdir to /: $OS_ERROR";
+
+   open STDIN,  "$self->{reopen_STDIN}",
+      or die "Cannot reopen STDIN $self->{reopen_STDIN}: $OS_ERROR";
+   open STDOUT, ">$self->{reopen_STDOUT}"
+      or die "Cannot reopen STDOUT >$self->{reopen_STDOUT}: $OS_ERROR";
+   open STDERR, ">$self->{reopen_STDERR}"
+      or die "Cannot reopen STDERR >$self->{reopen_STDERR}: $OS_ERROR";
+
+   # TODO: don't allow MKDEBUG=1
+
+   return;
+}
+
+sub create_PID_file {
+   my ( $self, $PID_file ) = @_;
+   return if !$PID_file;
+   # PID_file must be given here and not new() because if it is already
+   # set then the parent will unlink it when its copy of this daemon obj
+   # is destoried.
+   $self->{PID_file} = $PID_file; # save for unlink in DESTORY()
+   open my $PID_FILE, "+> $self->{PID_file}"
+      or die "Cannot open PID file '$self->{PID_file}': $OS_ERROR";
+   print $PID_FILE $PID;
+   close $PID_FILE
+      or die "Cannot close PID file '$self->{PID_file}': $OS_ERROR";
+   return;
+}
+
+sub remove_PID_file {
+   my ( $self ) = @_;
+   if ( defined $self->{PID_file} ) {
+      unlink $self->{PID_file}
+         or warn "Cannot remove PID file '$self->{PID_file}': $OS_ERROR";
+   }
+   return;
+}
+
+sub DESTROY {
+   my ( $self ) = @_;
+   $self->remove_PID_file();
+   return;
+}
+
+1;
+
+# ###########################################################################
+# End Daemon package
+# ###########################################################################
+
 package main;
 
 use Data::Dumper;
@@ -1443,15 +1529,14 @@ $dbh->do('/*!40001 set @@session.query_cache_type=OFF */');
 # ############################################################################
 # Daemonize only after (potentially) asking for passwords for --askpass.
 # ############################################################################
+my $daemon;
 if ( $opts{daemonize} ) {
-   require POSIX;
-   chdir '/'                 or die "Can't chdir to /: $OS_ERROR";
-   open STDIN, '/dev/null'   or die "Can't read /dev/null: $OS_ERROR";
-   open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $OS_ERROR";
-   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
-   exit if $pid;
-   POSIX::setsid()           or die "Can't start a new session: $OS_ERROR";
-   open STDERR, '>&STDOUT'   or die "Can't dup STDOUT: $OS_ERROR";
+   $daemon = new Daemon() or die "Cannot daemonize: $OS_ERROR";
+   $daemon->daemonize();
+   if ( defined $opts{pid} ) {
+      $daemon->create_PID_file( $opts{pid} );
+   } 
+   # I'm a daemon now.
 }
 
 
@@ -2131,6 +2216,20 @@ Permit queries matching this Perl regexp.
 This is a filter for log events.  The regular expression is matched against the
 raw log event, before any transformations are applied.  If specified, this
 option will permit only log events matching the regular expression.
+
+=item --pid
+
+type: string 
+
+Create the given PID file when daemonized.
+
+For example, '--daemonize --pid /tmp/mk-slave-prefetch.pid' would cause
+mk-slave-prefetch to create the PID file /tmp/mk-slave-prefetch.pid.
+
+/var/run/ is usually not writable by non-root users, therefore /tmp/ is a
+more reliable alternative.
+
+The PID file is removed when the daemonized instance of mk-slave-prefetch exits.
 
 =item --port
 

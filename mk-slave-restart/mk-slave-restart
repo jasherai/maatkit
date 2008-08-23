@@ -2153,12 +2153,13 @@ Password to use when connecting.
 
 type: string 
 
-Create mk-slave-restart.pid file in given directory when daemonized.
+Create the given PID file when daemonized.
 
-For example, '--daemonize --pid /tmp/' would cause mk-slave-restart to create
-the PID file /tmp/mk-slave-restart.pid. The given directory must be
-slash-terminated and writable. /var/run/ is usually not writable by non-root
-users, therefore /tmp/ is a more reliable alternative.
+For example, '--daemonize --pid /tmp/mk-slave-restart.pid' would cause
+mk-slave-restart to create the PID file /tmp/mk-slave-restart.pid.
+
+/var/run/ is usually not writable by non-root users, therefore /tmp/ is a
+more reliable alternative.
 
 The PID file is removed when the daemonized instance of mk-slave-restart exits.
 
