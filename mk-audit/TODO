@@ -20,7 +20,10 @@ The following items are unimplemented at this time:
       * for each instance, do:
          * run mysqld --help --verbose and make sure config file is valid
          * --log-warnings being defined is cause for an alert
-         * Alert if the version is really old, or end-of-life.
+         * Alert if the version is really old, or end-of-life.  3.x and 4.x are
+           EOL now, and 4.1 should at least be >= 4.1.20 (the EOL and really-old
+           warnings should be separate).  5.0.37 is the minimum useful 5.0
+           version.
       * Data and schema
          * filefrag on data files?
          * verbose option: 
