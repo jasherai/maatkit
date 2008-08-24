@@ -67,9 +67,11 @@ The following items are unimplemented at this time:
          * report anonymous users
          * report obsolete privileges (privs that refer to dbs or tables that
            don't exist)
-         * aggregate a few processlist snapshots.  Print aggregates by Command
-           and State, and by host.  Look for interesting things like
-            * insert delayed
+         * report root users, root can login remotely, default test database,
+           accounts without passwords, old password authentication, users with
+           old passwords, users with super privileges, users with all privileges
+           globally, and think about some other privileges (reload?) that
+           shouldn't be given to users who are logged in.
          * aggregate SHOW INNODB STATUS the same way.  A note on issue 1028 is a
          good example.
          * report master/slave status, how many slaves are attached and from
