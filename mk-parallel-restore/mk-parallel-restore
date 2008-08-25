@@ -902,6 +902,8 @@ use File::Spec;
 use List::Util qw(max sum);
 use POSIX;
 use Time::HiRes qw(time);
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1116,9 +1118,10 @@ $SIG{CHLD} = sub {
 # Sort tables biggest-first.
 # #########################################################################
 if ( @ARGV == 1 && $opts{biggestfirst} ) {
-   @tables_to_do = reverse sort
-      { $size_for_table{$a->{D}}->{$a->{N}}
-         <=> $size_for_table{$b->{D}}->{$b->{N}} } @tables_to_do;
+   foreach my $tbl ( @tables_to_do ) {
+      $tbl->{Z} = $size_for_table{ $tbl->{D} }->{ $tbl->{N} };
+   }
+   @tables_to_do = reverse sort { $a->{Z} <=> $b->{Z} } @tables_to_do;
 }
 
 # #########################################################################
@@ -1158,6 +1161,7 @@ while ( @tables_to_do || %kids ) {
       }
       else {                     # I'm the child
          $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
+         MKDEBUG && _d("PID $PID got ", Dumper($todo));
          my $exit_status = 0;
          $exit_status = do_table(
             @{$todo}{qw(D N)},
@@ -1489,6 +1493,11 @@ sub system_call {
       $exit_status = $exit_status >> 8;
    }
    return $exit_status;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
 }
 
 # ############################################################################
