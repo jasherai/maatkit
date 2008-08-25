@@ -83,7 +83,7 @@ SKIP: {
 
    # Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
 
-   $output = `MKDEBUG=1 perl ../mk-parallel-dump --basedir /tmp --d sakila | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$3}' | cut -f1 -d',' | sort --numeric-sort --check --reverse`;
+   $output = `MKDEBUG=1 perl ../mk-parallel-dump --basedir /tmp --d sakila | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$3}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
    # Yeah... because my sed | awk is weak, that roundabout cmd line extracts
    # each db.tbl size reported by mk-parallel-dump and uses sort to check that
    # the biggest tables are dumped first.
