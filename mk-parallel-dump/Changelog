@@ -1,5 +1,6 @@
 Changelog for mk-parallel-dump:
 
+   * Added option --biggestfirst which is enabled by default (issue 31).
    * --noflushlock and --nolocktables caused a global flush and lock (issue 12).
 
 2008-08-11: version 1.0.9

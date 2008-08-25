@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 23;
+use Test::More tests => 24;
 
 my $output;
 
@@ -81,4 +81,12 @@ SKIP: {
    unlike($output, qr/CREATE TABLE/i, 'second chunk has no CREATE TABLE');
    `rm -rf /tmp/default`;
 
+   # Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
+
+   $output = `MKDEBUG=1 perl ../mk-parallel-dump --basedir /tmp --d sakila | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$3}' | cut -f1 -d',' | sort --numeric-sort --check --reverse`;
+   # Yeah... because my sed | awk is weak, that roundabout cmd line extracts
+   # each db.tbl size reported by mk-parallel-dump and uses sort to check that
+   # the biggest tables are dumped first.
+   unlike($output, qr/disorder/, 'Tables dumped biggest-first by default');   
+   `rm -rf /tmp/default`;
 }

@@ -2508,7 +2508,7 @@ foreach my $set ( @sets_to_do ) {
          }
          else {                     # I'm the child
             $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
-            MKDEBUG && _d("$PID got ", Dumper($todo));
+            MKDEBUG && _d("PID $PID got ", Dumper($todo));
             my $exit_status = 0;
             $exit_status = do_table($todo, $filename) || $exit_status;
             exit($exit_status);
