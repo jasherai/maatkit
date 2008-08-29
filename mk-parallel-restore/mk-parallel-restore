@@ -1115,12 +1115,19 @@ $SIG{CHLD} = sub {
 };
 
 # #########################################################################
-# Sort tables biggest-first.
+# Sort tables biggest-first if either:
+#    1) only 1 file/dir name was given (biggestfirst is 'yes' by default); or
+#    2) more than 1 file/dir name was given but biggestfirst was explicitly
+#       given, in which case it will be '1'
 # #########################################################################
-if ( @ARGV == 1 && $opts{biggestfirst} ) {
-   foreach my $tbl ( @tables_to_do ) {
-      $tbl->{Z} = $size_for_table{ $tbl->{D} }->{ $tbl->{N} };
-   }
+
+# In either case, save the table sizes to make testing more reliable
+foreach my $tbl ( @tables_to_do ) {
+   $tbl->{Z} = $size_for_table{ $tbl->{D} }->{ $tbl->{N} };
+}
+
+if (    (@ARGV == 1 && $opts{biggestfirst})
+     || $opts{biggestfirst} eq '1' ) {
    @tables_to_do = reverse sort { $a->{Z} <=> $b->{Z} } @tables_to_do;
 }
 

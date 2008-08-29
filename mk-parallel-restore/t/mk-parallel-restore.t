@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 my $output = `perl ../mk-parallel-restore mk_parallel_restore_foo --test`;
 like(
@@ -65,6 +65,13 @@ SKIP: {
    # sort by biggest-first, as explained by Baron in issue 31 comment 1.
    $output = `MKDEBUG=1 perl ../mk-parallel-restore -D test /tmp/default/sakila/payment.000000.sql.gz /tmp/default/sakila/film.000000.sql.gz /tmp/default/sakila/rental.000000.sql.gz /tmp/default/sakila/film_actor.000000.sql.gz 2>&1 | grep -A 6 ' got ' | grep 'N => ' | awk '{print \$3}' | cut -f1 -d',' 2>&1`;
    like($output, qr/'payment'\n'film'\n'rental'\n'film_actor'/, 'Tables restored in given order');
+
+   `mysql -e 'DROP TABLE test.film_actor, test.film, test.payment, test.rental'`;
+
+   # And yet again, but this time test that a given order of tables is
+   # ignored if --biggestfirst is explicitly given
+   $output = `MKDEBUG=1 perl ../mk-parallel-restore -D test --biggestfirst /tmp/default/sakila/payment.000000.sql.gz /tmp/default/sakila/film.000000.sql.gz /tmp/default/sakila/rental.000000.sql.gz /tmp/default/sakila/film_actor.000000.sql.gz 2>&1 | grep -A 6 ' got ' |  grep 'Z => ' | awk '{print \$3}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
+   unlike($output, qr/disorder/, 'Explicit --biggestfirst overrides given table order');
 
    `mysql -e 'DROP TABLE test.film_actor, test.film, test.payment, test.rental'`;
    `rm -rf /tmp/default`;
