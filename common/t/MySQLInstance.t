@@ -20,7 +20,11 @@
 use strict;
 use warnings FATAL => 'all';
 
+<<<<<<< .mine
+use Test::More tests => 19;
+=======
 use Test::More tests => 18;
+>>>>>>> .r2246
 use English qw(-no_match_vars);
 
 use DBI;
@@ -32,10 +36,19 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
 
-print `../../sandbox/simple/make_sandbox 5126`;
-my $cmd_01 = '/usr/sbin/mysqld --defaults-file=/tmp/5126/my.sandbox.cnf --basedir=/usr --datadir=/tmp/5126/data --pid-file=/tmp/5126/data/mysql_sandbox5126.pid --skip-external-locking --port=5126 --socket=/tmp/5126/mysql_sandbox5126.sock --long-query-time=3';
 
-my %cmd_line_ops_01 = (
+sub load_file {
+   my ($file) = @_;
+   open my $fh, "<", $file or die $!;
+   my $contents = do { local $/ = undef; <$fh> };
+   close $fh;
+   return $contents;
+}
+
+print `../../sandbox/simple/make_sandbox 5126`;
+my $cmd = '/usr/sbin/mysqld --defaults-file=/tmp/5126/my.sandbox.cnf --basedir=/usr --datadir=/tmp/5126/data --pid-file=/tmp/5126/data/mysql_sandbox5126.pid --skip-external-locking --port=5126 --socket=/tmp/5126/mysql_sandbox5126.sock --long-query-time=3';
+
+my %ops = (
    pid_file              => '/tmp/5126/data/mysql_sandbox5126.pid',
    defaults_file         => '/tmp/5126/my.sandbox.cnf',
    datadir               => '/tmp/5126/data',
@@ -48,7 +61,7 @@ my %cmd_line_ops_01 = (
 
 is(
    '/usr/sbin/mysqld',
-   MySQLInstance::find_mysqld_binary_unix($cmd_01),
+   MySQLInstance::find_mysqld_binary_unix($cmd),
    'Found mysqld binary',
 );
 
@@ -64,16 +77,13 @@ is(MySQLInstance::get_register_size(
    'Got 32-bit size',
 );
 
-my $myi = new MySQLInstance($cmd_01);
-
+my $myi = new MySQLInstance($cmd);
 isa_ok($myi, 'MySQLInstance');
-
 is(
    $myi->{mysqld_binary},
    '/usr/sbin/mysqld',
    'mysqld_binary parsed'
 );
-
 $myi = new MySQLInstance(q{mysql    16420 20249 99 Aug27 ?        2-21:38:12 /usr/libexec/mysqld --defaults-file=/etc/my.cnf --basedir=/usr --datadir=/db/mysql --user=mysql --pid-file=/var/run/mysqld/mysqld.pid --skip-locking --socket=/db/mysql/mysql.sock});
 is(
    $myi->{mysqld_binary},
@@ -102,11 +112,11 @@ is(
    '/usr/libexec/mysqld', 'Found mysqld binary at end of string'
 );
 
-$myi = new MySQLInstance($cmd_01);
+$myi = new MySQLInstance($cmd);
 
 is_deeply(
    \%{ $myi->{cmd_line_ops} },
-   \%cmd_line_ops_01,
+   \%ops,
    'cmd_line_ops parsed'
 );
 
@@ -205,5 +215,32 @@ ok(exists $myi->{status_vals}->{Uptime},
    'status vals: Uptime');
 
 $dbh->disconnect() if defined $dbh;
+
+# #############################################################################
+# Issue 49: mk-audit doesn't parse server binary right
+# #############################################################################
+my $ps = load_file('samples/ps_01_issue_49.txt');
+my $mysqld_procs_ref = MySQLInstance::mysqld_processes($ps);
+#is_deeply(
+#   $mysqld_procs_ref,
+#   ...
+#   'Parses ps (issue 49)'
+#);
+%ops = (
+   basedir               => '/usr',
+   datadir               => '/mnt/data/mysql',
+   user                  => 'mysql',
+   pid_file              => '/var/run/mysqld/mysqld.pid',
+   skip_external_locking => 'ON',
+   socket                => '/mnt/data/mysql/mysql.sock',
+);
+$myi = new MySQLInstance($mysqld_procs_ref->[0]->{cmd});
+is($myi->{mysqld_binary}, '/usr/libexec/mysqld', 'mysqld binary parsed (issue 49)');
+is_deeply(
+   \%{ $myi->{cmd_line_ops} },
+   \%ops,
+   'cmd line ops parsed (issue 49)'
+);
+
 
 exit;

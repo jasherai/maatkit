@@ -28,6 +28,7 @@ use English qw(-no_match_vars);
 use File::Temp ();
 use Carp;
 use Data::Dumper;
+$Data::Dumper::Indent = 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -76,9 +77,46 @@ my %undef_for = (
    tmpdir                        => '',
 );
 
+# Returns an array ref of hashes. Each hash represents a single mysqld process.
+# The cmd key val is suitable for passing to MySQLInstance::new().
+sub mysqld_processes
+{
+   my ( $ps_output ) = @_;
+   my @mysqld_processes;
+   my $cmd = 'ps -o euser,%cpu,rss,vsz,cmd -e | grep -v grep | grep mysql';
+   my $ps  = defined $ps_output ? $ps_output : `$cmd`;
+   if ( $ps ) {
+      MKDEBUG && _d("ps full output: $ps");
+      foreach my $line ( split("\n", $ps) ) {
+         MKDEBUG && _d("ps line: $line");
+         my ($user, $pcpu, $rss, $vsz, $cmd) = split(/\s+/, $line, 5);
+         my ($bin) = $cmd =~ m/(\S+mysqld)\b/;
+         if ( !$bin ) {
+            MKDEBUG && _d('No mysqld binary in ps line');
+            next;
+         }
+         push @mysqld_processes,
+            { user    => $user,
+              pcpu    => $pcpu,
+              rss     => $rss,
+              vsz     => $vsz,
+              cmd     => $cmd,
+              '64bit' => `file $bin` =~ m/64-bit/ ? 'Yes' : 'No',
+              syslog  => $ps =~ m/logger/ ? 'Yes' : 'No',
+            };
+      }
+   }
+   if ( MKDEBUG ) {
+      my $mysqld_processes_dump = Dumper(\@mysqld_processes);
+      _d("$mysqld_processes_dump");
+   }
+   return \@mysqld_processes;
+}
+
 sub new {
    my ( $class, $cmd ) = @_;
    my $self = {};
+   MKDEBUG && _d("cmd: $cmd");
    $self->{mysqld_binary} = find_mysqld_binary_unix($cmd)
       or die "No mysqld binary found in $cmd";
    my $file_output  = `file $self->{mysqld_binary} 2>&1`;
@@ -93,6 +131,10 @@ sub new {
            $var => $val;
         } ($cmd =~ m/--(\S+)/g);
    $self->{cmd_line_ops}->{defaults_file} ||= '';
+   if ( MKDEBUG ) {
+      my $self_dump = Dumper($self);
+      _d("$self_dump");
+   }
    return bless $self, $class;
 }
 
