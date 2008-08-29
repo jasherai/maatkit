@@ -82,7 +82,7 @@ sub new {
    $self->{mysqld_binary} = find_mysqld_binary_unix($cmd)
       or die "No mysqld binary found in $cmd";
    my $file_output  = `file $self->{mysqld_binary} 2>&1`;
-   $self->{regsize} = get_register_size($self->{mysqld_binary});
+   $self->{regsize} = get_register_size($file_output);
    %{ $self->{cmd_line_ops} }
       = map {
            my ( $var, $val ) = m/$option_pattern/o;

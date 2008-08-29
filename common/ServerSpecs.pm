@@ -34,7 +34,8 @@ sub server_specs {
    @{ $server{problems} } = ();
 
    $server{os}->{name} = $OSNAME;
-   $server{os}->{'64bit'} = `file /bin/ls` =~ m/64-bit/ ? 'Yes' : 'No';
+   # TODO: ought to go into some common library of utility funcs...
+   $server{os}->{regsize} = `file /bin/ls` =~ m/64-bit/ ? '64' : '32';
 
    if ( chomp(my $rel = `cat /etc/*release`) ) {
       if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
@@ -70,7 +71,7 @@ sub server_specs {
          = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
       ($server{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
       ($server{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
-      ($server{cpu}->{'64bit'}) = $info =~ m/flags.*\blm\b/ ? 'Yes' : 'No';
+      $server{cpu}->{regsize} = $info =~ m/flags.*\blm\b/ ? '64' : '32';
    }
    else {
       # MSWin32, maybe?
