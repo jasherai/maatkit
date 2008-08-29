@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 17;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -46,6 +46,24 @@ my %cmd_line_ops_01 = (
    long_query_time       => '3',
 );
 
+is(
+   '/usr/sbin/mysqld',
+   MySQLInstance::find_mysqld_binary_unix($cmd_01),
+   'Found mysqld binary',
+);
+
+is(MySQLInstance::get_register_size(
+   q{/bin/ls: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), for }),
+   64,
+   'Got 64-bit size',
+);
+
+is(MySQLInstance::get_register_size(
+   q{/bin/ls: ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), }),
+   32,
+   'Got 32-bit size',
+);
+
 my $myi = new MySQLInstance($cmd_01);
 
 isa_ok($myi, 'MySQLInstance');
@@ -55,6 +73,36 @@ is(
    '/usr/sbin/mysqld',
    'mysqld_binary parsed'
 );
+
+$myi = new MySQLInstance(q{mysql    16420 20249 99 Aug27 ?        2-21:38:12 /usr/libexec/mysqld --defaults-file=/etc/my.cnf --basedir=/usr --datadir=/db/mysql --user=mysql --pid-file=/var/run/mysqld/mysqld.pid --skip-locking --socket=/db/mysql/mysql.sock});
+is(
+   $myi->{mysqld_binary},
+   '/usr/libexec/mysqld',
+   'mysqld_binary parsed again'
+);
+
+eval {
+   new MySQLInstance(q{root      0.0  1096   4452 /bin/sh /usr/bin/mysqld_safe }
+      . q{--defaults-file=/etc/my.cnf --pid-file=/var/run/mysqld/mysqld.pid }
+      . q{--log-error=/var/log/mysqld.log});
+};
+like($EVAL_ERROR, qr/No mysqld binary found/,
+   'Error when no mysqld binary found');
+
+is(
+   MySQLInstance::find_mysqld_binary_unix(
+      q{root      0.0  1096   4452 /bin/sh /usr/bin/mysqld_safe }
+      . q{--defaults-file=/etc/my.cnf --pid-file=/var/run/mysqld/mysqld.pid }
+      . q{--log-error=/var/log/mysqld.log}),
+   '', 'No mysqld binary found'
+);
+
+is(
+   MySQLInstance::find_mysqld_binary_unix('/usr/libexec/mysqld'),
+   '/usr/libexec/mysqld', 'Found mysqld binary at end of string'
+);
+
+$myi = new MySQLInstance($cmd_01);
 
 is_deeply(
    \%{ $myi->{cmd_line_ops} },
@@ -145,7 +193,5 @@ ok(exists $myi->{status_vals}->{Uptime},
    'status vals: Uptime');
 
 $dbh->disconnect() if defined $dbh;
-
-# print Dumper($myi);
 
 exit;

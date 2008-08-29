@@ -79,8 +79,10 @@ my %undef_for = (
 sub new {
    my ( $class, $cmd ) = @_;
    my $self = {};
-   ($self->{mysqld_binary}) = $cmd =~ m/(\S+mysqld)\b/;
-   $self->{'64bit'} = `file $self->{mysqld_binary}` =~ m/64-bit/ ? 'Yes' : 'No';
+   $self->{mysqld_binary} = find_mysqld_binary_unix($cmd)
+      or die "No mysqld binary found in $cmd";
+   my $file_output  = `file $self->{mysqld_binary} 2>&1`;
+   $self->{regsize} = get_register_size($self->{mysqld_binary});
    %{ $self->{cmd_line_ops} }
       = map {
            my ( $var, $val ) = m/$option_pattern/o;
@@ -92,6 +94,19 @@ sub new {
         } ($cmd =~ m/--(\S+)/g);
    $self->{cmd_line_ops}->{defaults_file} ||= '';
    return bless $self, $class;
+}
+
+# Extracts the register size (64-bit, 32-bit, ???) from the output of 'file'.
+sub get_register_size {
+   my ( $file_output ) = @_;
+   my ( $size ) = $file_output =~ m/\b(\d+)-bit/;
+   return $size || 0;
+}
+
+sub find_mysqld_binary_unix {
+   my ( $cmd ) = @_;
+   my ( $binary ) = $cmd =~ m/(\S+mysqld)\b(?=\s|\Z)/;
+   return $binary || '';
 }
 
 sub load_sys_vars {
