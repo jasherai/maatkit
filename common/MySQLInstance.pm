@@ -223,13 +223,16 @@ sub _load_online_sys_vars {
    return;
 }
 
-# Get DSN specific to this MySQL instance (Baron, I didn't find other code
-# to do this. Plus, this relies on cmd_line_ops which is "private".)
+# Get DSN specific to this MySQL instance.  If $opts{S} is passed in, which
+# corresponds to --socket on the command line, then don't convert 'localhost' to
+# 127.0.0.1.
 sub get_DSN {
-   my ( $self ) = @_;
+   my ( $self, %opts ) = @_;
    my $port   = $self->{cmd_line_ops}->{port}     || '';
-   my $socket = $self->{cmd_line_ops}->{'socket'} || '';
-   my $host   = $port ne 3306 ? '127.0.0.1' : 'localhost';
+   my $socket = $opts{S} || $self->{cmd_line_ops}->{'socket'} || '';
+   my $host   = $opts{S}      ? 'localhost'
+              : $port ne 3306 ? '127.0.0.1'
+              :                 'localhost';
    return {
       P => $port,
       S => $socket,

@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 18;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -115,12 +115,24 @@ my $expect_dsn_01 = {
    S => '/tmp/5126/mysql_sandbox5126.sock',
    h => '127.0.0.1',
 };
+
+is_deeply(
+   $myi->get_DSN(S => 'foo'),
+   {
+      P => 5126,
+      S => 'foo',
+      h => 'localhost',
+   },
+   'It keeps localhost when socket given',
+);
+
 my $dsn = $myi->get_DSN();
 is_deeply(
    $dsn,
    $expect_dsn_01,
    'DSN returned'
 );
+
 $dsn->{u} = 'msandbox';
 $dsn->{p} = 'msandbox';
 my $dbh;
