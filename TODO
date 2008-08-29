@@ -1,3 +1,5 @@
+A script to check upgrade-readiness:  check-upgrade script that looks for suspicious things: DECIMAL data  types,  GROUP BY queries with aggregate functions over non-integer types, BIT  data  types, queries that mix comma-join with ansi-join syntaxes 
+
 Build a query sniffer that sniffs off the wire and outputs in slow-log format.
 
 Include the DSN options in POD.
