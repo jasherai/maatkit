@@ -20,11 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-<<<<<<< .mine
-use Test::More tests => 19;
-=======
-use Test::More tests => 18;
->>>>>>> .r2246
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 
 use DBI;
