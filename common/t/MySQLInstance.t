@@ -217,11 +217,23 @@ $dbh->disconnect() if defined $dbh;
 # #############################################################################
 my $ps = load_file('samples/ps_01_issue_49.txt');
 my $mysqld_procs_ref = MySQLInstance::mysqld_processes($ps);
-#is_deeply(
-#   $mysqld_procs_ref,
-#   ...
-#   'Parses ps (issue 49)'
-#);
+
+is_deeply(
+   $mysqld_procs_ref,
+   [
+      {
+         cmd => '/usr/libexec/mysqld --basedir=/usr --datadir=/mnt/data/mysql --user=mysql --pid-file=/var/run/mysqld/mysqld.pid --skip-external-locking --socket=/mnt/data/mysql/mysql.sock',
+         pcpu => '0.4',
+         syslog => 'No',
+         user => 'mysql',
+         rss => '65032',
+         '64bit' => 'No',
+         vsz => '626604'
+      },
+   ],
+   'Parses ps (issue 49)'
+);
+
 %ops = (
    basedir               => '/usr',
    datadir               => '/mnt/data/mysql',
@@ -229,6 +241,7 @@ my $mysqld_procs_ref = MySQLInstance::mysqld_processes($ps);
    pid_file              => '/var/run/mysqld/mysqld.pid',
    skip_external_locking => 'ON',
    socket                => '/mnt/data/mysql/mysql.sock',
+   defaults_file         => '',
 );
 $myi = new MySQLInstance($mysqld_procs_ref->[0]->{cmd});
 is($myi->{mysqld_binary}, '/usr/libexec/mysqld', 'mysqld binary parsed (issue 49)');

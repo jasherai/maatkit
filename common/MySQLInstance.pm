@@ -90,11 +90,12 @@ sub mysqld_processes
       foreach my $line ( split("\n", $ps) ) {
          MKDEBUG && _d("ps line: $line");
          my ($user, $pcpu, $rss, $vsz, $cmd) = split(/\s+/, $line, 5);
-         my ($bin) = $cmd =~ m/(\S+mysqld)\b/;
+         my $bin = find_mysqld_binary_unix($cmd);
          if ( !$bin ) {
             MKDEBUG && _d('No mysqld binary in ps line');
             next;
          }
+         MKDEBUG && _d("mysqld binary from ps: $bin");
          push @mysqld_processes,
             { user    => $user,
               pcpu    => $pcpu,
