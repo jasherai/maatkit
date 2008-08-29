@@ -1,5 +1,6 @@
 Changelog for mk-audit:
 
+   * Added --socket.
    * The mysqld binary was not detected correctly from 'ps' output.
 
 2008-08-11: version 0.9.1

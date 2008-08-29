@@ -1691,7 +1691,7 @@ sub shorten
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2243
+# MySQLInstance package 2245
 # ###########################################################################
 
 package MySQLInstance;
@@ -1874,10 +1874,12 @@ sub _load_online_sys_vars {
 }
 
 sub get_DSN {
-   my ( $self ) = @_;
+   my ( $self, %opts ) = @_;
    my $port   = $self->{cmd_line_ops}->{port}     || '';
-   my $socket = $self->{cmd_line_ops}->{'socket'} || '';
-   my $host   = $port ne 3306 ? '127.0.0.1' : 'localhost';
+   my $socket = $opts{S} || $self->{cmd_line_ops}->{'socket'} || '';
+   my $host   = $opts{S}      ? 'localhost'
+              : $port ne 3306 ? '127.0.0.1'
+              :                 'localhost';
    return {
       P => $port,
       S => $socket,
@@ -2336,7 +2338,7 @@ my $n = 0; # MySQL instance number
 foreach my $mysqld_ps ( mysqld_processes() ) {
    $n++;
    my $instance = MySQLInstance->new( $mysqld_ps->{cmd} );
-   my $dsn = $instance->get_DSN();
+   my $dsn = $instance->get_DSN(%opts);
    $dsn->{u} = $opts{u} if $opts{u};
    $dsn->{p} = $opts{p} if $opts{p};
    if ( !$opts{p} && $opts{askpass} ) {
@@ -2903,6 +2905,15 @@ Show top N largest databases and tables.
 short form: -u; type: string
 
 User for login if not current user.
+
+=item --socket
+
+short form: -S; type: string
+
+Socket file to use for connection.
+
+If this is given, mk-audit will attempt to connect via a Unix socket, not
+through TCP/IP.
 
 =back
 
