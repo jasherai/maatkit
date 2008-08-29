@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 10;
+use Test::More tests => 11;
 
 my $output = `perl ../mk-parallel-restore mk_parallel_restore_foo --test`;
 like(
@@ -53,12 +53,19 @@ $output = `mysql -e 'show databases'`;
 SKIP: {
    skip 'Sakila is not installed', 2 unless $output =~ m/sakila/;
 
-   $output = `perl ../../mk-parallel-dump/mk-parallel-dump -C 1000 --basedir /tmp -d sakila -t film,film_actor,payment,rental`;
+   $output = `perl ../../mk-parallel-dump/mk-parallel-dump --basedir /tmp -d sakila -t film,film_actor,payment,rental`;
    like($output, qr/0 failures/, 'Dumped sakila tables');
 
    $output = `MKDEBUG=1 perl ../mk-parallel-restore -D test /tmp/default/ 2>&1 | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$3}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
    unlike($output, qr/disorder/, 'Tables restored biggest-first by default');   
 
-   `rm -rf /tmp/default`;
    `mysql -e 'DROP TABLE test.film_actor, test.film, test.payment, test.rental'`;
+
+   # Do it all again with > 1 arg in order to test that it does NOT
+   # sort by biggest-first, as explained by Baron in issue 31 comment 1.
+   $output = `MKDEBUG=1 perl ../mk-parallel-restore -D test /tmp/default/sakila/payment.000000.sql.gz /tmp/default/sakila/film.000000.sql.gz /tmp/default/sakila/rental.000000.sql.gz /tmp/default/sakila/film_actor.000000.sql.gz 2>&1 | grep -A 6 ' got ' | grep 'N => ' | awk '{print \$3}' | cut -f1 -d',' 2>&1`;
+   like($output, qr/'payment'\n'film'\n'rental'\n'film_actor'/, 'Tables restored in given order');
+
+   `mysql -e 'DROP TABLE test.film_actor, test.film, test.payment, test.rental'`;
+   `rm -rf /tmp/default`;
 }
