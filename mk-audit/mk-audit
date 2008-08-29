@@ -1429,7 +1429,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# ServerSpecs package 2215
+# ServerSpecs package 2243
 # ###########################################################################
 
 package ServerSpecs;
@@ -1447,7 +1447,7 @@ sub server_specs {
    @{ $server{problems} } = ();
 
    $server{os}->{name} = $OSNAME;
-   $server{os}->{'64bit'} = `file /bin/ls` =~ m/64-bit/ ? 'Yes' : 'No';
+   $server{os}->{regsize} = `file /bin/ls` =~ m/64-bit/ ? '64' : '32';
 
    if ( chomp(my $rel = `cat /etc/*release`) ) {
       if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
@@ -1483,7 +1483,7 @@ sub server_specs {
          = join(' ', 'MHz:', $info =~ m/cpu MHz.*: (\d+)/g);
       ($server{cpu}->{cache}) = $info =~ m/cache size.*: (.+)/;
       ($server{cpu}->{model}) = $info =~ m/model name.*: (.+)/;
-      ($server{cpu}->{'64bit'}) = $info =~ m/flags.*\blm\b/ ? 'Yes' : 'No';
+      $server{cpu}->{regsize} = $info =~ m/flags.*\blm\b/ ? '64' : '32';
    }
    else {
       $server{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
@@ -1691,7 +1691,7 @@ sub shorten
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2215
+# MySQLInstance package 2243
 # ###########################################################################
 
 package MySQLInstance;
@@ -1753,8 +1753,10 @@ my %undef_for = (
 sub new {
    my ( $class, $cmd ) = @_;
    my $self = {};
-   ($self->{mysqld_binary}) = $cmd =~ m/(\S+mysqld)\b/;
-   $self->{'64bit'} = `file $self->{mysqld_binary}` =~ m/64-bit/ ? 'Yes' : 'No';
+   $self->{mysqld_binary} = find_mysqld_binary_unix($cmd)
+      or die "No mysqld binary found in $cmd";
+   my $file_output  = `file $self->{mysqld_binary} 2>&1`;
+   $self->{regsize} = get_register_size($file_output);
    %{ $self->{cmd_line_ops} }
       = map {
            my ( $var, $val ) = m/$option_pattern/o;
@@ -1766,6 +1768,18 @@ sub new {
         } ($cmd =~ m/--(\S+)/g);
    $self->{cmd_line_ops}->{defaults_file} ||= '';
    return bless $self, $class;
+}
+
+sub get_register_size {
+   my ( $file_output ) = @_;
+   my ( $size ) = $file_output =~ m/\b(\d+)-bit/;
+   return $size || 0;
+}
+
+sub find_mysqld_binary_unix {
+   my ( $cmd ) = @_;
+   my ( $binary ) = $cmd =~ m/(\S+mysqld)\b(?=\s|\Z)/;
+   return $binary || '';
 }
 
 sub load_sys_vars {
@@ -2461,19 +2475,17 @@ sub format_u_time {
 sub mysqld_processes
 {
    my @mysqld_processes;
-   my $cmd = "ps -o euser,%cpu,rss,vsz,cmd -e | grep -v grep | grep mysql";
+   my $cmd = "ps -o euser,%cpu,rss,vsz,cmd -e | grep -v grep | grep mysqld";
    if ( chomp(my $ps = `$cmd`) ) {
       foreach my $line ( split("\n", $ps) ) {
+         next unless MySQLInstance::find_mysqld_binary_unix($line);
          my ($user, $pcpu, $rss, $vsz, $cmd) = split(/\s+/, $line, 5);
-         my ($bin) = $cmd =~ m/(\S+mysqld)\b/;
-         next unless $bin; 
          push @mysqld_processes,
               { user    => $user,
                 pcpu    => $pcpu,
                 rss     => $rss,
                 vsz     => $vsz,
                 cmd     => $cmd,
-                '64bit' => `file $bin` =~ m/64-bit/ ? 'Yes' : 'No',
                 syslog  => $ps =~ m/logger/ ? 'Yes' : 'No',
               };
       }
@@ -2486,11 +2498,11 @@ sub report_server_specs {
 
 format SERVER_1 =
 __________________________________________________________________ Server Specs
-OS: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  64bit: @<<
-"$server->{os}->{name} $server->{os}->{version}", $server->{os}->{'64bit'}
+OS: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Architecture: @<-bit
+"$server->{os}->{name} $server->{os}->{version}", $server->{os}->{regsize}
 
-CPU: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  64bit: @<<
-$server->{cpu}->{model}, $server->{cpu}->{'64bit'}
+CPU: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Architecture: @<-bit
+$server->{cpu}->{model}, $server->{cpu}->{regsize}
    Speed: @<<<<<<<<<<<<<<<<<<<<<
 $server->{cpu}->{speed}
    Cache: @<<<<<<<<<<<<<<<<<<<<<
@@ -2566,8 +2578,8 @@ format MYSQL_INSTANCE_1 =
 
 ____________________________________________________________ MySQL Instance @>>
 $inst_num
-   Version:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  64bit: @<<
-$instance->{online_sys_vars}->{version}, $mysqld_ps->{'64bit'}
+   Version:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Architecture: @<-bit
+$instance->{online_sys_vars}->{version}, $instance->{regsize}
    Uptime:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 sec_to_dhms($instance->{status_vals}->{Uptime})
    ps vals:  user @<<<<<<< cpu% @<<<<< rss @<<<<<< vsz @<<<<<< syslog: @<<

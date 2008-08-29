@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+   * The mysqld binary was not detected correctly from 'ps' output.
+
 2008-08-11: version 0.9.1
 
    * Files downloaded directly from SVN crashed due to version information.
