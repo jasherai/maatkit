@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 1;
+use Test::More tests => 2;
 use English qw(-no_match_vars);
 
 require '../ServerSpecs.pm';
@@ -29,12 +29,29 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
 
-# TODO ... everything.
+# TODO: more testing
+
+sub load_file {
+   my ($file) = @_;
+   open my $fh, "<", $file or die $!;
+   my $contents = do { local $/ = undef; <$fh> };
+   close $fh;
+   return $contents;
+}
 
 my $server = ServerSpecs::server_specs();
 
 ok(exists $server->{os}, 'OS name exists');
 
-# print Dumper($server);
+my %vars = ServerSpecs::parse_sysctl_conf('samples/sysctl.conf_01');
+is_deeply(
+   \%vars,
+   {
+      ip_forward         => '0',
+      tcp_syncookies     => '1',
+      tcp_synack_retries => '2',
+   },
+   'Parses sysctl.conf (issue 56)'
+);
 
 exit;

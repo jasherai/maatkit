@@ -192,55 +192,58 @@ sub get_raid_info
 
 sub check_proc_sys_net_ipv4_values
 {
-   my ( $server ) = @_;
+   my ( $server, $sysctl_conf ) = @_;
 
    my %ipv4_defaults = qw(
-      ip_forward                       0
-      ip_default_ttl                   64
-      ip_no_pmtu_disc                  0
-      min_pmtu                         562
-      ipfrag_secret_interval           600
-      ipfrag_max_dist                  64
-      somaxconn                        128
-      tcp_abc                          0
-      tcp_abort_on_overflow            0
-      tcp_adv_win_scale                2
-      tcp_allowed_congestion_control   reno
-      tcp_app_win                      31
-      tcp_fin_timeout                  60
-      tcp_frto_response                0
-      tcp_keepalive_time               7200
-      tcp_keepalive_probes             9
-      tcp_keepalive_intvl              75
-      tcp_low_latency                  0
-      tcp_max_syn_backlog              1024
-      tcp_moderate_rcvbuf              1
-      tcp_reordering                   3
-      tcp_retries1                     3
-      tcp_retries2                     15
-      tcp_rfc1337                      0
-      tcp_rmem                         8192_87380_174760
-      tcp_slow_start_after_idle        1
-      tcp_stdurg                       0
-      tcp_synack_retries               5
-      tcp_syncookies                   0
-      tcp_syn_retries                  5
-      tcp_tso_win_divisor              3
-      tcp_tw_recycle                   0
-      tcp_tw_reuse                     0
-      tcp_wmem                         4096_16384_131072
-      tcp_workaround_signed_windows    0
-      tcp_dma_copybreak                4096
-      ip_nonlocal_bind                 0
-      ip_dynaddr                       0
-      icmp_echo_ignore_all             0
-      icmp_echo_ignore_broadcasts      1
-      icmp_ratelimit                   100
-      icmp_ratemask                    6168
-      icmp_errors_use_inbound_ifaddr   0
-      igmp_max_memberships             20
+      ip_forward                        0
+      ip_default_ttl                    64
+      ip_no_pmtu_disc                   0
+      min_pmtu                          562
+      ipfrag_secret_interval            600
+      ipfrag_max_dist                   64
+      somaxconn                         128
+      tcp_abc                           0
+      tcp_abort_on_overflow             0
+      tcp_adv_win_scale                 2
+      tcp_allowed_congestion_control    reno
+      tcp_app_win                       31
+      tcp_fin_timeout                   60
+      tcp_frto_response                 0
+      tcp_keepalive_time                7200
+      tcp_keepalive_probes              9 
+      tcp_keepalive_intvl               75
+      tcp_low_latency                   0
+      tcp_max_syn_backlog               1024
+      tcp_moderate_rcvbuf               1
+      tcp_reordering                    3
+      tcp_retries1                      3
+      tcp_retries2                      15
+      tcp_rfc1337                       0
+      tcp_rmem                          8192_87380_174760
+      tcp_slow_start_after_idle         1
+      tcp_stdurg                        0
+      tcp_synack_retries                5
+      tcp_syncookies                    0
+      tcp_syn_retries                   5
+      tcp_tso_win_divisor               3
+      tcp_tw_recycle                    0
+      tcp_tw_reuse                      0
+      tcp_wmem                          4096_16384_131072
+      tcp_workaround_signed_windows     0
+      tcp_dma_copybreak                 4096
+      ip_nonlocal_bind                  0
+      ip_dynaddr                        0
+      icmp_echo_ignore_all              0
+      icmp_echo_ignore_broadcasts       1
+      icmp_ratelimit                    100
+      icmp_ratemask                     6168
+      icmp_errors_use_inbound_ifaddr    0
+      igmp_max_memberships              20
       icmp_ignore_bogus_error_responses 0
    );
+
+   $sysctl_conf ||= '/etc/sysctl.conf';
+   load_ipv4_defaults(\%ipv4_defaults, $sysctl_conf);
 
    $server->{os}->{non_default_ipv4_vals} = '';
    if ( chomp(my $ipv4_files = `ls -1p /proc/sys/net/ipv4/`) ) {
@@ -257,6 +260,53 @@ sub check_proc_sys_net_ipv4_values
    }
 
    return;
+}
+
+# Load default values for /proc/sys/net/ipv4/ settings from sysctl.conf file
+sub load_ipv4_defaults {
+   my ( $ipv4_defaults, $sysctl_conf ) = @_;
+ 
+   my %conf_ipv4_defaults = parse_sysctl_conf($sysctl_conf);
+
+   # Yes we could do this with hash slices, but I want to see which
+   # sysctl vars are overriden from the conf file
+   foreach my $var ( keys %conf_ipv4_defaults ) {
+      if ( MKDEBUG && exists $ipv4_defaults->{$var} ) {
+         _d("sysctl override $var: conf=$conf_ipv4_defaults{$var} overrides default=$ipv4_defaults->{$var}");
+      }
+      $ipv4_defaults->{$var} = $conf_ipv4_defaults{$var};
+   }
+
+   return;
+}
+
+sub parse_sysctl_conf {
+   my ( $sysctl_conf ) = @_;
+   my %sysctl;
+
+   if ( !-f $sysctl_conf ) {
+      MKDEBUG && _d("sysctl file $sysctl_conf does not exist");
+      return;
+   }
+
+   if ( open my $SYSCTL, "< $sysctl_conf" ) {
+      MKDEBUG && _d("Parsing $sysctl_conf");
+      while ( my $line = <$SYSCTL> ) {
+         next if $line  =~ /^#/; # skip comments
+         next unless $line =~ /\s*net.ipv4.(\w+)\s*=\s*(\w+)/;
+         my ( $var, $val ) = ( $1, $2 );
+         MKDEBUG && _d("sysctl: $var=$val");
+         if ( exists $sysctl{$var} && MKDEBUG ) {
+            _d("Duplicate sysctl var: $var (was $sysctl{$var}, is now $val)");
+         }
+         $sysctl{$var} = $val;
+      }
+   }
+   else {
+      warn "Cannot read $sysctl_conf: $OS_ERROR";
+   }
+
+   return %sysctl;
 }
 
 sub shorten
@@ -277,6 +327,11 @@ sub shorten
    $short = sprintf "%.${d}f%s", $number, ('','k','M','G','T')[$n];
    return $1 if $short =~ /^(.+)\.(00)$/o; # 12.00 -> 12 but not 12.00k -> 12k
    return $short;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# MySQLInstance:$line $PID ", @_, "\n";
 }
 
 1;
