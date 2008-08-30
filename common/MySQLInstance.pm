@@ -89,9 +89,13 @@ my %ignore_sys_var = (
 # Certain sys vars vary so much in their online vs. conf value that we
 # must specially check their equality, otherwise out_of_sync_sys_vars()
 # reports a number of false-positives.
+# TODO: These need to be tested more thoroughly. Some will want to check
+#       ON/1 as well as OFF/0, etc.
 my %eq_for = (
    ft_stopword_file => sub { return _veq(@_, '(built-in)', ''); },
    query_cache_type => sub { return _veq(@_, 'ON', '1');        },
+   ssl              => sub { return _veq(@_, '1', 'TRUE');      },
+   sql_mode         => sub { return _veq(@_, '', 'OFF');        },
 );
 
 # Returns an array ref of hashes. Each hash represents a single mysqld process.
