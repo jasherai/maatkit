@@ -1691,7 +1691,7 @@ sub shorten
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2250
+# MySQLInstance package 2253
 # ###########################################################################
 
 package MySQLInstance;
@@ -1842,6 +1842,8 @@ sub load_sys_vars {
               }
               $var => $val;
            } split "\n", $sys_vars;
+
+      $self->_load_default_defaults_files($mysqld_output);
    }
 
    $self->_load_online_sys_vars($dbh);
@@ -1861,47 +1863,92 @@ sub load_sys_vars {
 }
 
 sub _defaults_file_op {
-   my ( $self ) = @_;
+   my ( $self, $ddf )   = @_;  # ddf = default defaults file (optional)
    my $defaults_file_op = '';
-   my $tmp_file = undef;
-   if ( $self->{cmd_line_ops}->{defaults_file} ) {
+   my $tmp_file         = undef;
+   my $defaults_file    = defined $ddf ? $ddf : $self->{cmd_line_ops}->{defaults_file};
+
+   if ( $defaults_file && -f $defaults_file ) {
       $tmp_file = File::Temp->new();
-      my $cp_cmd = "cp $self->{cmd_line_ops}->{defaults_file} "
-                   . $tmp_file->filename;
+      my $cp_cmd = "cp $defaults_file "
+                 . $tmp_file->filename;
       `$cp_cmd`;
       $defaults_file_op = "--defaults-file=" . $tmp_file->filename;
    }
+   else {
+      MKDEBUG && _d("Defaults file does not exist: $defaults_file");
+   }
+
    return ( $defaults_file_op, $tmp_file );
+}
+
+sub _load_default_defaults_files {
+   my ( $self, $mysqld_output ) = @_;
+   my ( $ddf_list ) = $mysqld_output =~ /Default options.+order:\n(.*?)\n/ms;
+   if ( !$ddf_list ) {
+      die "Cannot parse default defaults files: $mysqld_output\n";
+   }
+   my %have_seen;
+   @{ $self->{default_defaults_files} }
+      = grep { !$have_seen{$_}++ } split /\s/, $ddf_list;
+   return;
 }
 
 sub _vars_from_defaults_file {
    my ( $self, $defaults_file_op ) = @_;
-   my $cmd = "my_print_defaults $defaults_file_op mysqld";
-   if ( my $my_print_defaults_output = `$cmd` ) {
-      foreach my $var_val ( split "\n", $my_print_defaults_output ) {
-         my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
-         $var =~ s/-/_/go;
-         if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
-            if ( $2 ) {
-               my %digits_for = (
-                  'k'   => 1_024,
-                  'K'   => 1_204,
-                  'm'   => 1_048_576,
-                  'M'   => 1_048_576,
-                  'g'   => 1_073_741_824,
-                  'G'   => 1_073_741_824,
-                  't'   => 1_099_511_627_776,
-                  'T'   => 1_099_511_627_776,
-               );
-               $val = $1 * $digits_for{$2};
-            }
+   my @defaults_file_ops;
+   my @ddf_ops;
+
+   if( !$defaults_file_op ) {
+
+      foreach my $ddf ( @{ $self->{default_defaults_files} } ) {
+         my @dfo = $self->_defaults_file_op($ddf);
+         if ( defined $dfo[1] ) { # tmp_file handle
+            push @ddf_ops, [ @dfo ];
+            push @defaults_file_ops, $dfo[0]; # defaults file op
          }
-         if ( !defined $val && exists $undef_for{$var} ) {
-            $val = $undef_for{$var};
-         }
-         push @{ $self->{defaults_file_sys_vars} }, [ $var, $val ];
       }
    }
+   else {
+      $defaults_file_ops[0] = $defaults_file_op;
+   }
+
+   if ( scalar @defaults_file_ops == 0 ) {
+      my $self_dump = Dumper($self);
+      MKDEBUG && _d("$self_dump");
+      die 'MySQL instance has no valid defaults files.'
+   }
+
+   foreach my $defaults_file_op ( @defaults_file_ops ) {
+      my $cmd = "my_print_defaults $defaults_file_op mysqld";
+      MKDEBUG && _d("$cmd");
+      if ( my $my_print_defaults_output = `$cmd` ) {
+         foreach my $var_val ( split "\n", $my_print_defaults_output ) {
+            my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
+            $var =~ s/-/_/go;
+            if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
+               if ( $2 ) {
+                  my %digits_for = (
+                     'k'   => 1_024,
+                     'K'   => 1_204,
+                     'm'   => 1_048_576,
+                     'M'   => 1_048_576,
+                     'g'   => 1_073_741_824,
+                     'G'   => 1_073_741_824,
+                     't'   => 1_099_511_627_776,
+                     'T'   => 1_099_511_627_776,
+                  );
+                  $val = $1 * $digits_for{$2};
+               }
+            }
+            if ( !defined $val && exists $undef_for{$var} ) {
+               $val = $undef_for{$var};
+            }
+            push @{ $self->{defaults_file_sys_vars} }, [ $var, $val ];
+         }
+      }
+   }
+   return;
 }
 
 sub _load_online_sys_vars {
