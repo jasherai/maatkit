@@ -274,7 +274,7 @@ sub make_row_checksum {
    # Generate the expression that will turn a row into a checksum.
    # Choose columns.  Normalize query results: make FLOAT and TIMESTAMP
    # stringify uniformly.
-   my %cols = map { $_ => 1 } ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
+   my %cols = map { lc($_) => 1 } ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
    my @cols =
       map {
          my $type = $table->{type_for}->{$_};

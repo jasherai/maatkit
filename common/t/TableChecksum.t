@@ -21,7 +21,7 @@ use warnings FATAL => 'all';
 
 my ($tests, $skipped);
 BEGIN {
-   $tests = 49;
+   $tests = 50;
    $skipped = 7;
 }
 
@@ -297,6 +297,17 @@ is (
    ),
    q{SHA1(`film_id`)},
    'SHA1 query for sakila.film with only one column',
+);
+
+is (
+   $c->make_row_checksum(
+      func      => 'SHA1',
+      table     => $t,
+      quoter    => $q,
+      cols      => [qw(FILM_ID)],
+   ),
+   q{SHA1(`film_id`)},
+   'Column names are case-insensitive',
 );
 
 is (
