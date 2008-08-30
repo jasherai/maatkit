@@ -174,6 +174,14 @@ sub load_sys_vars {
               }
               $var => $val;
            } split "\n", $sys_vars;
+
+      # Parse list of default defaults files. These are the defaults
+      # files that mysqld and my_print_defaults read (in order) if not
+      # explicitly given a --defaults-file option. Regarding issue 58,
+      # this list can have duplicates, which we must remove. Otherwise,
+      # my_print_defaults will print false duplicates because it reads
+      # the same file twice.
+      $self->_load_default_defaults_files($mysqld_output);
    }
 
    # Sys vars from SHOW STATUS
@@ -201,21 +209,43 @@ sub load_sys_vars {
 # Returns a --defaults-file cmd line op suitable for mysqld, my_print_defaults,
 # etc., or a blank string if the defaults file is unknown.
 sub _defaults_file_op {
-   my ( $self ) = @_;
+   my ( $self, $ddf )   = @_;  # ddf = default defaults file (optional)
    my $defaults_file_op = '';
-   my $tmp_file = undef;
-   if ( $self->{cmd_line_ops}->{defaults_file} ) {
+   my $tmp_file         = undef;
+   my $defaults_file    = defined $ddf ? $ddf : $self->{cmd_line_ops}->{defaults_file};
+
+   if ( $defaults_file && -f $defaults_file ) {
       # Copy defaults file to /tmp/ because Debian/Ubuntu mysqld apparently
-      # has a bug which prevents it from being read from non-standard locations.
+      # has a bug which prevents it from being read from non-standard
+      # locations.
       $tmp_file = File::Temp->new();
-      my $cp_cmd = "cp $self->{cmd_line_ops}->{defaults_file} "
-                   . $tmp_file->filename;
+      my $cp_cmd = "cp $defaults_file "
+                 . $tmp_file->filename;
       `$cp_cmd`;
       $defaults_file_op = "--defaults-file=" . $tmp_file->filename;
    }
+   else {
+      MKDEBUG && _d("Defaults file does not exist: $defaults_file");
+   }
+
    # Must return $tmp_file obj so its reference lasts into the caller because
    # when it's destroyed the actual tmp file is automatically unlinked 
    return ( $defaults_file_op, $tmp_file );
+}
+
+# Loads $self->{default_defaults_files} with the list of default defaults files
+# read by mysqld, my_print_defaults, etc. with duplicates removed when no
+# explicit --defaults-file option is given. Order is preserved (and important).
+sub _load_default_defaults_files {
+   my ( $self, $mysqld_output ) = @_;
+   my ( $ddf_list ) = $mysqld_output =~ /Default options.+order:\n(.*?)\n/ms;
+   if ( !$ddf_list ) {
+      die "Cannot parse default defaults files: $mysqld_output\n";
+   }
+   my %have_seen;
+   @{ $self->{default_defaults_files} }
+      = grep { !$have_seen{$_}++ } split /\s/, $ddf_list;
+   return;
 }
 
 # Loads $self->{default_files_sys_vars} with only the sys vars that
@@ -223,37 +253,72 @@ sub _defaults_file_op {
 # duplicates and overriden var/vals.
 sub _vars_from_defaults_file {
    my ( $self, $defaults_file_op ) = @_;
-   my $cmd = "my_print_defaults $defaults_file_op mysqld";
-   if ( my $my_print_defaults_output = `$cmd` ) {
-      foreach my $var_val ( split "\n", $my_print_defaults_output ) {
-         # Make sys vars from conf look like those from SHOW VARIABLES
-         # (I.e. log_slow_queries instead of log-slow-queries
-         # and 33554432 instead of 32M, etc.)
-         my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
-         $var =~ s/-/_/go;
-         # TODO: this can be more compact ( $digits_for{lc $2} ) and shouldn't
-         # use $1, $2
-         if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
-            if ( $2 ) {
-               my %digits_for = (
-                  'k'   => 1_024,
-                  'K'   => 1_204,
-                  'm'   => 1_048_576,
-                  'M'   => 1_048_576,
-                  'g'   => 1_073_741_824,
-                  'G'   => 1_073_741_824,
-                  't'   => 1_099_511_627_776,
-                  'T'   => 1_099_511_627_776,
-               );
-               $val = $1 * $digits_for{$2};
-            }
+   my @defaults_file_ops;
+   my @ddf_ops;
+
+   if( !$defaults_file_op ) {
+      # Having no defaults file op, my_print_defaults is going to rely
+      # on the default defaults files reported by mysqld --help --verbose,
+      # which we should have already saved in $self->{default_defaults_files}.
+      # Due to issue 58, we must use the defaults files from our own list
+      # which is free of duplicates.
+
+      foreach my $ddf ( @{ $self->{default_defaults_files} } ) {
+         my @dfo = $self->_defaults_file_op($ddf);
+         if ( defined $dfo[1] ) { # tmp_file handle
+            push @ddf_ops, [ @dfo ];
+            push @defaults_file_ops, $dfo[0]; # defaults file op
          }
-         if ( !defined $val && exists $undef_for{$var} ) {
-            $val = $undef_for{$var};
-         }
-         push @{ $self->{defaults_file_sys_vars} }, [ $var, $val ];
       }
    }
+   else {
+      $defaults_file_ops[0] = $defaults_file_op;
+   }
+
+   if ( scalar @defaults_file_ops == 0 ) {
+      # This would be a rare case in which the mysqld binary was not
+      # given a --defaults-file opt, and none of the default defaults
+      # files parsed from mysqld --help --verbose exist.
+      my $self_dump = Dumper($self);
+      MKDEBUG && _d("$self_dump");
+      die 'MySQL instance has no valid defaults files.'
+   }
+
+   foreach my $defaults_file_op ( @defaults_file_ops ) {
+      my $cmd = "my_print_defaults $defaults_file_op mysqld";
+      MKDEBUG && _d("$cmd");
+      if ( my $my_print_defaults_output = `$cmd` ) {
+         foreach my $var_val ( split "\n", $my_print_defaults_output ) {
+            # Make sys vars from conf look like those from SHOW VARIABLES
+            # (I.e. log_slow_queries instead of log-slow-queries
+            # and 33554432 instead of 32M, etc.)
+            my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
+            $var =~ s/-/_/go;
+            # TODO: this can be more compact ( $digits_for{lc $2} )
+            # and shouldn't use $1, $2
+            if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
+               if ( $2 ) {
+                  my %digits_for = (
+                     'k'   => 1_024,
+                     'K'   => 1_204,
+                     'm'   => 1_048_576,
+                     'M'   => 1_048_576,
+                     'g'   => 1_073_741_824,
+                     'G'   => 1_073_741_824,
+                     't'   => 1_099_511_627_776,
+                     'T'   => 1_099_511_627_776,
+                  );
+                  $val = $1 * $digits_for{$2};
+               }
+            }
+            if ( !defined $val && exists $undef_for{$var} ) {
+               $val = $undef_for{$var};
+            }
+            push @{ $self->{defaults_file_sys_vars} }, [ $var, $val ];
+         }
+      }
+   }
+   return;
 }
 
 sub _load_online_sys_vars {

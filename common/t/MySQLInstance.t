@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 23;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -251,5 +251,24 @@ is_deeply(
    'cmd line ops parsed (issue 49)'
 );
 
+
+# #############################################################################
+# Issue 58: mk-audit warns about bogus differences between online values
+# and my.cnf values
+# #############################################################################
+my $mysqld_output = load_file('samples/mysqld_01_issue_58.txt');
+$myi->_load_default_defaults_files($mysqld_output),
+is_deeply(
+   $myi->{default_defaults_files},
+   [
+      '/etc/my.cnf',
+      '~/.my.cnf'
+   ],
+   'Parses default defaults files and removes duplicates (issue 58)'
+);
+# Break ourselves:
+@{ $myi->{default_defaults_files} } = ();
+eval { $myi->_vars_from_defaults_file(); };
+like($EVAL_ERROR, qr/MySQL instance has no valid defaults files/, 'Dies if no valid defaults files');
 
 exit;
