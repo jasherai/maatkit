@@ -331,7 +331,7 @@ sub shorten
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# MySQLInstance:$line $PID ", @_, "\n";
+   print "# ServerSpecs:$line $PID ", @_, "\n";
 }
 
 1;
