@@ -1429,7 +1429,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# ServerSpecs package 2261
+# ServerSpecs package 2263
 # ###########################################################################
 
 package ServerSpecs;
@@ -1733,7 +1733,7 @@ sub shorten
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# MySQLInstance:$line $PID ", @_, "\n";
+   print "# ServerSpecs:$line $PID ", @_, "\n";
 }
 
 1;
