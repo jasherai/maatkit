@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+   * Checks /etc/sysctl.conf for default ipv4 system variables (issue 56).
+   * No longer reports false-positive duplicate system variables (issue 58).
    * Added --socket.
    * The mysqld binary was not detected correctly from 'ps' output.
 
