@@ -77,6 +77,23 @@ my %undef_for = (
    tmpdir                        => '',
 );
 
+# About these sys vars the MySQL manual says: "This variable is unused."
+# Or, they're simply vars we don't care about.
+# They're currently only ignored in out_of_sync_sys_vars().
+my %ignore_sys_var = (
+   date_format     => 1,
+   datetime_format => 1,
+   time_format     => 1,
+);
+
+# Certain sys vars vary so much in their online vs. conf value that we
+# must specially check their equality, otherwise out_of_sync_sys_vars()
+# reports a number of false-positives.
+my %eq_for = (
+   ft_stopword_file => sub { return _veq(@_, '(built-in)', ''); },
+   query_cache_type => sub { return _veq(@_, 'ON', '1');        },
+);
+
 # Returns an array ref of hashes. Each hash represents a single mysqld process.
 # The cmd key val is suitable for passing to MySQLInstance::new().
 sub mysqld_processes
@@ -223,6 +240,9 @@ sub _defaults_file_op {
                  . $tmp_file->filename;
       `$cp_cmd`;
       $defaults_file_op = "--defaults-file=" . $tmp_file->filename;
+
+      MKDEBUG && _d(  "Tmp file for defaults file $defaults_file: "
+                    . $tmp_file->filename );
    }
    else {
       MKDEBUG && _d("Defaults file does not exist: $defaults_file");
@@ -391,26 +411,39 @@ sub overriden_sys_vars {
 sub out_of_sync_sys_vars {
    my ( $self ) = @_;
    my %out_of_sync_vars;
+
    foreach my $var ( keys %{ $self->{conf_sys_vars} } ) {
       next if !exists $self->{online_sys_vars}->{$var};
+      next if exists $ignore_sys_var{$var};
+
       my $conf_val        = $self->{conf_sys_vars}->{$var};
       my $online_val      = $self->{online_sys_vars}->{$var};
       my $var_out_of_sync = 0;
+
       # Global %undef_for and the subs that populated conf_sys_vars
       # and online_sys_vars should have taken care of any undefined
       # values. If not, this sub will warn.
       if ( defined $conf_val && defined $online_val ) {
+
          # TODO: try this on a server with skip_grant_tables set, it crashes on
          # me in a not-friendly way.  Probably ought to use eval {} and catch
          # error.  Also, carp() may not be right here, it gives the wrong
          # impression I think.  (I guess I just am used to seeing die show the
          # real line....)
-         if ( $conf_val ne $online_val ) {
-            $var_out_of_sync = 1;
-            # But handle excepts where SHOW GLOBAL VARIABLES says ON and 
-            # mysqld --help --verbose says TRUE
-            if ( exists $alias_for{$online_val} ) {
-               $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
+
+         if ( exists $eq_for{$var} ) {
+            # If they're equal then they're not (!) out of sync
+            $var_out_of_sync = !$eq_for{$var}->($conf_val, $online_val);
+         }
+         else {
+            if ( $conf_val ne $online_val ) {
+               $var_out_of_sync = 1;
+
+               # But handle excepts where SHOW GLOBAL VARIABLES says ON and 
+               # mysqld --help --verbose says TRUE
+               if ( exists $alias_for{$online_val} ) {
+                  $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
+               }
             }
          }
       }
@@ -423,11 +456,12 @@ sub out_of_sync_sys_vars {
          }
          next;
       }
+
       if($var_out_of_sync) {
-         $out_of_sync_vars{$var}
-            = [ $online_val, $conf_val ];
+         $out_of_sync_vars{$var} = [ $online_val, $conf_val ];
       }
    }
+
    return \%out_of_sync_vars;
 }
 
@@ -439,6 +473,23 @@ sub load_status_vals {
                                         { Slice => {} })
             };
    return;
+}
+
+sub get_eq_for {
+   my ( $var ) = @_;
+   if ( exists $eq_for{$var} ) {
+      return $eq_for{$var};
+   }
+   return;
+}
+
+# variable eq: returns 1 if x and y equal each other where x and y can
+# be either val1 or val2.
+# TODO: is there some deep-magick way of doing this?
+sub _veq { 
+   my ( $x, $y, $val1, $val2 ) = @_;
+   return 1 if ( ($x eq $val1 || $x eq $val2) && ($y eq $val1 || $y eq $val2) );
+   return 0;
 }
 
 sub _d {

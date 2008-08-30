@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 25;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -270,5 +270,22 @@ is_deeply(
 @{ $myi->{default_defaults_files} } = ();
 eval { $myi->_vars_from_defaults_file(); };
 like($EVAL_ERROR, qr/MySQL instance has no valid defaults files/, 'Dies if no valid defaults files');
+
+###############################################################################
+
+$cmd = MySQLInstance::get_eq_for('query_cache_type');
+cmp_ok(
+   $cmd->('1', 'ON'),
+   '==',
+   '1',
+   "eq_for query_cache_type returns 1 for '1' and 'ON'"
+);
+$cmd = MySQLInstance::get_eq_for('ft_stopword_file');
+cmp_ok(
+   $cmd->('', '(built-in)'),
+   '==',
+   '1',
+   "eq_for ft_stopword_file returns 1 for '' and '(built-in)'"
+);
 
 exit;
