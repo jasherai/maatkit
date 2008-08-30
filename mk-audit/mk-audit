@@ -1691,7 +1691,7 @@ sub shorten
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2255
+# MySQLInstance package 2257
 # ###########################################################################
 
 package MySQLInstance;
@@ -1760,6 +1760,8 @@ my %ignore_sys_var = (
 my %eq_for = (
    ft_stopword_file => sub { return _veq(@_, '(built-in)', ''); },
    query_cache_type => sub { return _veq(@_, 'ON', '1');        },
+   ssl              => sub { return _veq(@_, '1', 'TRUE');      },
+   sql_mode         => sub { return _veq(@_, '', 'OFF');        },
 );
 
 sub mysqld_processes
