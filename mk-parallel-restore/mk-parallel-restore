@@ -1197,6 +1197,7 @@ while ( @tables_to_do || %kids ) {
       delete $exited_children{$kid};
       $reaped = 1;
       $done += $todo->{Z};
+      # Reap progress report. See sub bytes_done_from_processlist() below.
       print_progress_report($done, $dbh, $bytes, $start) if $opts{progress};
    }
 
@@ -1205,10 +1206,15 @@ while ( @tables_to_do || %kids ) {
       # and signal while we're not sleeping, so if we sleep forever we may
       # not get the signal.
       sleep(1);
+      # Sleep progress report. See sub bytes_done_from_processlist() below.
+      print_progress_report($done, $dbh, $bytes, $start) if $opts{progress};
    }
-
-   print_progress_report($done, $dbh, $bytes, $start) if $opts{progress};
 }
+
+# Print final progress report which will show 100% done.
+# undef for the dbh param prevents checking the proclist
+# because all children are supposed to be done at this point.
+print_progress_report($done, undef, $bytes, $start) if $opts{progress};
 
 # Load views.
 foreach my $file ( @view_files ) {
@@ -1382,14 +1388,14 @@ sub do_table {
          my $LOCAL = $opts{L} ? ' LOCAL' : '';
          my $OPT   = $opts{i} ? 'IGNORE' : $opts{r} ? 'REPLACE' : '';
          if ( $opts{csv} ) {
-            $sql  = qq{LOAD DATA$LOCAL INFILE /*done:$bytes_done*/ ? }
+            $sql  = qq{LOAD DATA$LOCAL INFILE /*done:$bytes_done $db\.$tbl*/ ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
                   . qq{/*!50038 CHARACTER SET $opts{A} */ }
                   . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
                   . qq{LINES TERMINATED BY '\\n'};
          }
          elsif ( $opts{T} ) {
-            $sql  = qq{LOAD DATA$LOCAL INFILE /*done:$bytes_done*/ ? }
+            $sql  = qq{LOAD DATA$LOCAL INFILE /*done:$bytes_done $db\.$tbl*/ ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
                   . qq{/*!50038 CHARACTER SET $opts{A} */};
          }
@@ -1467,7 +1473,21 @@ sub do_table {
    return $exit_status;
 }
 
-
+# The following 2 subs allow us a much finer gradient of progress reporting.
+# However, a little magick has to be wielded to insure smooth operation.
+# Above, in the main loop there is a "reap" and a "sleep" progress report.
+# For both, the recorded bytes done + bytes repoted via the processlist are
+# reported. For the reap report, this is not problematic except that it
+# doesn't happen often enough. On really big tables, we would go a long
+# time without a reap report. Therefore, we must also do sleep reports which
+# are printed about once every second. These give us the gradient of
+# reporting that we want. However, sleep reports cause another problem.
+# Occasionally, they'll report less bytes done than the previous report
+# because the bytes done seen via the proclist increase and decrease.
+# Mostly, they increase, but occasionally a sleep report will catch a
+# bunch of new children who haven't done anything yet so their bytes
+# done compared to all the children that just finished is much less.
+# This is why we return -1 in the sub below and don't print a report.
 sub bytes_done_from_processlist {
    my ( $dbh ) = @_;
    my $bytes_done = 0;
@@ -1475,7 +1495,7 @@ sub bytes_done_from_processlist {
    my $proclist = $dbh->selectall_arrayref('SHOW PROCESSLIST');
    foreach my $proc ( @$proclist ) {
       my $info = $proc->[7] || '';
-      my ( $done ) = $info =~ /LOAD DATA.+\/\*done:(\d+)\*/;
+      my ( $done ) = $info =~ /LOAD DATA.+\/\*done:(\d+)\b/;
       $done ||= 0;
       $bytes_done += $done;
    }
@@ -1489,7 +1509,8 @@ sub bytes_done_from_processlist {
 sub print_progress_report {
    my ( $done, $dbh, $bytes, $start ) = @_;
 
-   my $done_from_proclist = bytes_done_from_processlist($dbh);
+   my $done_from_proclist
+      =  defined $dbh ? bytes_done_from_processlist($dbh) : 0;
    return if $done_from_proclist < 0;
 
    my $done_and_doing = $done + $done_from_proclist;
