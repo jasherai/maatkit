@@ -1018,6 +1018,7 @@ my @tables_to_do;
 my @view_files;
 my %files_for_table;
 my %size_for_table;
+my %size_for_file;
 my %stats;
 my $known_filetypes = 'sql|txt|csv|trg';
 my $bytes = 0; # For progress measurements
@@ -1052,6 +1053,7 @@ File::Find::find(
                   my $size = -s $filename; # For progress measurements
                   $bytes += $size;
                   $size_for_table{$db}->{$tbl} += $size;
+                  $size_for_file{$filename} = $size;
                   push @tables_to_do, {   # This pushes a dupe, filtered later.
                      D => $db,
                      N => $tbl,
@@ -1137,7 +1139,8 @@ if (    (@ARGV == 1 && $opts{biggestfirst})
 # after that.
 # #########################################################################
 my $start = time();
-my $done  = 0; # For progress measurements.
+my $done = 0; # For progress measurements.
+my $last_bytes_done = 0;
 
 my %kids;
 while ( @tables_to_do || %kids ) {
@@ -1193,16 +1196,8 @@ while ( @tables_to_do || %kids ) {
       delete $kids{$kid};
       delete $exited_children{$kid};
       $reaped = 1;
-      $done += $size_for_table{$todo->{D}}->{$todo->{N}};
-
-      if ( $opts{progress} ) {
-         my $pct = $done / $bytes;
-         my $now = time();
-         my $remaining = ($now - $start) / $pct;
-         info(1, sprintf("done: %s/%s %6.2f%% %s remain (%s)",
-            shorten($done), shorten($bytes), $pct * 100,
-            secs_to_time($remaining), ts($now + $remaining)));
-      }
+      $done += $todo->{Z};
+      print_progress_report($done, $dbh, $bytes, $start) if $opts{progress};
    }
 
    if ( !$reaped ) {
@@ -1211,6 +1206,8 @@ while ( @tables_to_do || %kids ) {
       # not get the signal.
       sleep(1);
    }
+
+   print_progress_report($done, $dbh, $bytes, $start) if $opts{progress};
 }
 
 # Load views.
@@ -1348,8 +1345,8 @@ sub do_table {
    } @files;
 
    my $dbh;
-
    my ($fifo, $load_from, $loaded);
+   my $bytes_done = 0;
 
    foreach my $file ( @files ) {
 
@@ -1365,7 +1362,6 @@ sub do_table {
          $exit_status = system_call( @args ) || $exit_status;
       }
       else {
-
          if ( $file =~ m/\.gz$/ ) {
             if ( $opts{fifo} ) {
                $fifo ||= makefifo();
@@ -1386,14 +1382,14 @@ sub do_table {
          my $LOCAL = $opts{L} ? ' LOCAL' : '';
          my $OPT   = $opts{i} ? 'IGNORE' : $opts{r} ? 'REPLACE' : '';
          if ( $opts{csv} ) {
-            $sql  = qq{LOAD DATA$LOCAL INFILE ? }
+            $sql  = qq{LOAD DATA$LOCAL INFILE /*done:$bytes_done*/ ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
+                  . qq{/*!50038 CHARACTER SET $opts{A} */ }
                   . qq{FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\"' }
-                  . qq{LINES TERMINATED BY '\\n' }
-                  . qq{/*!50038 CHARACTER SET $opts{A} */};
+                  . qq{LINES TERMINATED BY '\\n'};
          }
          elsif ( $opts{T} ) {
-            $sql  = qq{LOAD DATA$LOCAL INFILE ? }
+            $sql  = qq{LOAD DATA$LOCAL INFILE /*done:$bytes_done*/ ? }
                   . qq{$OPT INTO TABLE `$db`.`$tbl` }
                   . qq{/*!50038 CHARACTER SET $opts{A} */};
          }
@@ -1444,6 +1440,7 @@ sub do_table {
                if ( $EVAL_ERROR ) {
                   die mysql_error_msg($EVAL_ERROR) . " while restoring $db.$tbl";
                }
+               $bytes_done += $size_for_file{$file};
             }
          }
          else {
@@ -1468,6 +1465,43 @@ sub do_table {
 
    $dbh->disconnect() if $dbh;
    return $exit_status;
+}
+
+
+sub bytes_done_from_processlist {
+   my ( $dbh ) = @_;
+   my $bytes_done = 0;
+
+   my $proclist = $dbh->selectall_arrayref('SHOW PROCESSLIST');
+   foreach my $proc ( @$proclist ) {
+      my $info = $proc->[7] || '';
+      my ( $done ) = $info =~ /LOAD DATA.+\/\*done:(\d+)\*/;
+      $done ||= 0;
+      $bytes_done += $done;
+   }
+
+   return -1 if ($bytes_done <= $last_bytes_done);
+   $last_bytes_done = $bytes_done;
+
+   return $bytes_done;
+}
+
+sub print_progress_report {
+   my ( $done, $dbh, $bytes, $start ) = @_;
+
+   my $done_from_proclist = bytes_done_from_processlist($dbh);
+   return if $done_from_proclist < 0;
+
+   my $done_and_doing = $done + $done_from_proclist;
+   my $pct = $done_and_doing / $bytes;
+   my $now = time();
+   my $remaining = ($now - $start) / $pct;
+
+   info(1, sprintf("done: %s/%s %6.2f%% %s remain (%s)",
+        shorten($done_and_doing), shorten($bytes), $pct * 100,
+        secs_to_time($remaining), ts($now + $remaining)));
+
+   return;
 }
 
 sub filetype {
