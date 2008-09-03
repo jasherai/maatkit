@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 12;
+use Test::More tests => 13;
 
 my $output = `perl ../mk-parallel-restore mk_parallel_restore_foo --test`;
 like(
@@ -74,5 +74,12 @@ SKIP: {
    unlike($output, qr/disorder/, 'Explicit --biggestfirst overrides given table order');
 
    `mysql -e 'DROP TABLE test.film_actor, test.film, test.payment, test.rental'`;
+
+   # And again, because I've yet to better optimize these tests...
+   # This time we're just making sure reporting progress by bytes.
+   # This is kind of a contrived test, but it's better than nothing.
+   $output = `../mk-parallel-restore --progress --test /tmp/default/`;
+   like($output, qr/done: [\d\.]+[Mk]\/[\d\.]+[Mk]/, 'Reporting progress by bytes');
+
    `rm -rf /tmp/default`;
 }
