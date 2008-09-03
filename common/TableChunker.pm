@@ -356,10 +356,18 @@ sub inject_chunks {
 sub range_num {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
    my $end = min($max, $start + $interval);
+
+
+   # "Remove" scientific notation so the regex below does not make
+   # 6.123456e+18 into 6.12345.
+   $start = sprintf('%.17f', $start) if $start =~ /e/;
+   $end   = sprintf('%.17f', $end)   if $end   =~ /e/;
+
    # Trim decimal places, if needed.  This helps avoid issues with float
    # precision differing on different platforms.
    $start =~ s/\.(\d{5}).*$/.$1/;
    $end   =~ s/\.(\d{5}).*$/.$1/;
+
    if ( $end > $start ) {
       return ( $start, $end );
    }

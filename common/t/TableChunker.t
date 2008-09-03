@@ -22,7 +22,7 @@ use warnings FATAL => 'all';
 my $tests;
 my $skippable;
 BEGIN {
-   $tests     = 22;
+   $tests     = 23;
    $skippable = 7;
 }
 
@@ -375,3 +375,28 @@ SKIP: {
    ok($size >= 20 && $size <= 30, 'Convert bytes to rows');
 
 }
+
+$dbh->disconnect();
+
+# Issue 47: TableChunker::range_num broken for very large bigint
+diag(`../../sandbox/make_sandbox 12345`);
+`/tmp/12345/use < 'samples/issue_47.sql'`;
+$dbh = DBI->connect("DBI:mysql:;port=12345,user=msandbox,pass=msandbox", undef, undef, { RaiseError => 1 });
+
+$t = $p->parse( $d->get_create_table($dbh, $q, 'test', 'issue_47') );
+my %params = $c->get_range_statistics($dbh, 'test', 'issue_47', 'userid');
+
+my @chunks;
+eval {
+   @chunks = $c->calculate_chunks(
+      dbh      => $dbh,
+      table    => $t,
+      col      => 'userid',
+      size     => '4',
+      %params,
+   );
+};
+unlike($EVAL_ERROR, qr/Chunk size is too small/, 'Does not die chunking unsigned bitint (issue 47)');
+
+diag(`../../sandbox/stop_all`);
+exit;
