@@ -2,8 +2,8 @@
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 63;
+use English qw(-no_match_vars);
+use Test::More tests => 65;
 
 diag(`../../sandbox/stop_all`);
 diag(`../../sandbox/make_sandbox 12345`);
@@ -228,7 +228,16 @@ like($output, qr/MyISAM\s+NULL\s+23678842/, 'Table on master checksummed with --
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed with --schema');
 like($output, qr/mysql.only_on_master does not exist on slave 127.0.0.1:12348/, 'Debug reports missing slave table with --schema');
 
- diag(`$rm_missing_slave_tbl_cmd`); # in case someone adds more tests, and they probably will
+diag(`$rm_missing_slave_tbl_cmd`); # in case someone adds more tests, and they probably will
 
- diag(`../../sandbox/stop_all`);
+# #############################################################################
+# Issue 47
+# #############################################################################
+diag(`/tmp/12345/use -D test < samples/issue_47.sql`);
+$output = `/tmp/12345/use -e 'SELECT * FROM test.issue_47'`;
+like($output, qr/18446744073709551615/, 'Loaded max unsigned bigint for testing issue 47');
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 --chunksize 4 2>&1`;
+unlike($output, qr/Chunk size is too small/, 'Unsigned bigint chunks (issue 47)');
+
+diag(`../../sandbox/stop_all`);
 exit;
