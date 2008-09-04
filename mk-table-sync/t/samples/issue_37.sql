@@ -1,0 +1,8 @@
+USE test;
+DROP TABLE IF EXISTS `issue_37`;
+CREATE TABLE `issue_37` (
+   a INT DEFAULT 0
+);
+CREATE TRIGGER a_trig BEFORE INSERT ON issue_37 FOR EACH ROW SET @a = @a + NEW.a;
+SET SQL_LOG_BIN=0;
+INSERT INTO test.issue_37 VALUES (1), (2);

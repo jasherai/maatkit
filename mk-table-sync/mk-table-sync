@@ -4849,6 +4849,19 @@ sub sync_a_table {
          $dbh->do($no_auto_val_sql);
       }
 
+      # Check for triggers on destination table
+      if ( !$opts{'ignore-triggers'} ) {
+         my $change_dbh = $args{replicate} ? $args{src}->{dbh} : $args{dst}->{dbh};
+         my $triggers   = $du->get_triggers($change_dbh, $q,
+                                            $args{dst_db}, $args{dst_tbl});
+         if ( $triggers ) {
+            warn "Cannot write to table with triggers: "
+                 . "$args{dst_db}\.$args{dst_tbl}\n"
+                 . "Use --ignore-triggers to force writting.";
+            return;
+         }
+      }
+
       my $tbl_struct = $tp->parse(
          $du->get_create_table($args{src}->{dbh}, $q, @args{qw(src_db src_tbl)}));
       my @possible_keys = $tp->find_possible_keys(
@@ -5303,6 +5316,10 @@ short form: -n; type: Hash
 Ignore this comma-separated list of tables.
 
 Table names may be qualified with the database name.
+
+=item --ignore-triggers
+
+Write to tables which have triggers defined on them.
 
 =item --lock
 
