@@ -4855,10 +4855,9 @@ sub sync_a_table {
          my $triggers   = $du->get_triggers($change_dbh, $q,
                                             $args{dst_db}, $args{dst_tbl});
          if ( $triggers ) {
-            warn "Cannot write to table with triggers: "
-                 . "$args{dst_db}\.$args{dst_tbl}\n"
-                 . "Use --ignore-triggers to force writting.";
-            return;
+            die "Cannot write to table with triggers: "
+                . "$args{dst_db}\.$args{dst_tbl}\n"
+                . "Use --ignore-triggers to force writting.";
          }
       }
 
@@ -5320,6 +5319,9 @@ Table names may be qualified with the database name.
 =item --ignore-triggers
 
 Write to tables which have triggers defined on them.
+
+mk-table-sync will die if it has to write to a table on which triggers are
+defined, unless --ignore-triggers is given. 
 
 =item --lock
 
