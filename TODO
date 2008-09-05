@@ -1,5 +1,13 @@
 A script to check upgrade-readiness:  check-upgrade script that looks for suspicious things: DECIMAL data  types,  GROUP BY queries with aggregate functions over non-integer types, BIT  data  types, queries that mix comma-join with ansi-join syntaxes 
 
+A bad query pattern: derived tables that don't have any aggregation/distinct
+  Example:LEFT JOIN (SELECT user_id,
+  >                                 date_occurred
+  >                         FROM    object_events
+  >                         ) oe2
+
+log-parser can autodetect the slow log.
+
 Build a query sniffer that sniffs off the wire and outputs in slow-log format.
 
 Include the DSN options in POD.
