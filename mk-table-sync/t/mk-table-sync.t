@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 25;
 use DBI;
 
 my $output;
@@ -152,8 +152,20 @@ is_deeply(query('select * from test.test1'),
 
 # Issue 37: mk-table-sync should warn about triggers
 `/tmp/12345/use < samples/issue_37.sql`;
+`/tmp/12345/use -e 'SET SQL_LOG_BIN=0; INSERT INTO test.issue_37 VALUES (1), (2);'`;
+`/tmp/12345/use < samples/checksum_tbl.sql`;
+`../../mk-table-checksum/mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum 2>&1 > /dev/null`;
+
+
 $output = `../mk-table-sync --skipslavecheck --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 2>&1`;
-like($output, qr/Cannot write to table with triggers/, 'Cannot write to tbl with trigger without --ignore-triggers (issue 37)');
+like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with one table (1/4, issue 37)');
+$output = `../mk-table-sync -R test.checksum --synctomaster --execute h=127.1,P=12346 2>&1`;
+like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with --replicate --synctomaster (2/4, issue 37)');
+$output = `../mk-table-sync -R test.checksum --execute h=127.1,P=12345 2>&1`;
+like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with --replicate (3/4, issue 37)');
+$output = `../mk-table-sync --execute -g mysql h=127.0.0.1,P=12345 h=127.1,P=12346 2>&1`;
+like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with no opts (4/4, issue 37)');
+
 
 $output = `/tmp/12346/use -D test -e 'SELECT * FROM issue_37'`;
 ok(!$output, 'Table with trigger was not written');

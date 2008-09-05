@@ -1,7 +1,6 @@
 Changelog for mk-table-sync:
 
-   * Warns and does not write to tables with triggers (issue 37).
-   * Added --ignore-triggers (issue 37).
+   * Dies if any dst. table has triggers unless --ignore-triggers (issue 37).
    * Added better support for CRC32 (issue 43).
 
 2008-08-11: version 1.0.8

@@ -4611,6 +4611,13 @@ if ( $dsns[0]->{t} ) {
       }
    }
 
+   if ( !$opts{'ignore-triggers'} ) {
+      check_tables_for_triggers(
+         [ @dsns[1 .. $#dsns] ],
+         [ { db => $dsns[0]->{D}, tbl => $dsns[0]->{t} } ]
+      );
+   }
+
    foreach my $dsn ( @dsns[1 .. $#dsns] ) {
 
       if ( $opts{v} ) {
@@ -4673,7 +4680,15 @@ elsif ( $opts{R} ) {
          print "# Syncing ", $dsn_parser->as_string($dsns[1]), "\n";
          printf($hdr, @ChangeHandler::ACTIONS, qw(ALGORITHM DATABASE TABLE));
       }
+
       if ( @diffs ) {
+
+         if ( !$opts{'ignore-triggers'} ) {
+            # Turn @diffs into an array of hashes having keys db and tbl
+            my @dbs_tbls = map +{ db => $_->{db}, tbl => $_->{tbl} }, @diffs;
+            check_tables_for_triggers([$args{dst}], \@dbs_tbls);
+         }
+
          lock_server(%args);
          foreach my $diff ( @diffs ) {
             sync_a_table(
@@ -4723,6 +4738,13 @@ elsif ( $opts{R} ) {
                      src     => $dsns[0],
                      dst     => $dsn,
                   );
+                  if ( !$opts{'ignore-triggers'} ) {
+                     # Turn @diffs into an array of hashes
+                     # having keys db and tbl
+                     my @dbs_tbls
+                        = map +{ db => $_->{db}, tbl => $_->{tbl} }, @diffs;
+                     check_tables_for_triggers([$args{dst}], \@dbs_tbls);
+                  }
                   lock_server(%args);
                   foreach my $diff ( @diffs ) {
                      sync_a_table(
@@ -4779,7 +4801,20 @@ else {
       },
    );
 
-   foreach my $dsn ( @dsns[ 1 .. $#dsns ] ) {
+   # Find all dbs.tbls on source DSN
+   my @dbs_tbls;
+   foreach my $db ( $finder->find_databases($dsns[0]->{dbh}) ) {
+      foreach my $tbl ( $finder->find_tables($dsns[0]->{dbh},
+                                             database => $db) ) {
+         push @dbs_tbls, { db => $db, tbl => $tbl };
+      }
+   }
+
+   if ( !$opts{'ignore-triggers'} ) {
+      check_tables_for_triggers([ @dsns[1 .. $#dsns] ], \@dbs_tbls);
+   }
+
+   foreach my $dsn ( @dsns[1 .. $#dsns] ) {
 
       if ( $opts{v} ) {
          print "# Syncing ", $dsn_parser->as_string($dsn), "\n";
@@ -4792,19 +4827,15 @@ else {
       );
 
       lock_server(%args);
-      foreach my $database ( $finder->find_databases($dsns[0]->{dbh}) ) {
-         foreach my $table (
-            $finder->find_tables($dsns[0]->{dbh}, database => $database)
-         ) {
-            sync_a_table(
-               %args,
-               src_db  => $database,
-               src_tbl => $table,
-               dst_db  => $database,
-               dst_tbl => $table,
-               where   => $opts{W},
-            );
-         }
+      foreach my $db_tbl ( @dbs_tbls ) {
+         sync_a_table(
+            %args,
+            src_db  => $db_tbl->{db},
+            src_tbl => $db_tbl->{tbl},
+            dst_db  => $db_tbl->{db},
+            dst_tbl => $db_tbl->{tbl},
+            where   => $opts{W},
+         );
       }
       unlock_server(%args);
    }
@@ -4847,18 +4878,6 @@ sub sync_a_table {
       foreach my $dbh ( $args{src}->{dbh}, $args{dst}->{dbh}, $args{src}->{misc_dbh} ) {
          MKDEBUG && _d("$dbh: $no_auto_val_sql");
          $dbh->do($no_auto_val_sql);
-      }
-
-      # Check for triggers on destination table
-      if ( !$opts{'ignore-triggers'} ) {
-         my $change_dbh = $args{replicate} ? $args{src}->{dbh} : $args{dst}->{dbh};
-         my $triggers   = $du->get_triggers($change_dbh, $q,
-                                            $args{dst_db}, $args{dst_tbl});
-         if ( $triggers ) {
-            die "Cannot write to table with triggers: "
-                . "$args{dst_db}\.$args{dst_tbl}\n"
-                . "Use --ignore-triggers to force writting.";
-         }
       }
 
       my $tbl_struct = $tp->parse(
@@ -4998,6 +5017,48 @@ sub get_cxn {
       $dbh->do($sql);
    }
    return $dbh;
+}
+
+# Dies if any table in $dbs_tbls on any DSN in $dsns has triggers
+# defined on it.
+# $dsns is an array ref to a list of DSNs.
+# $dbs_tbls is an array ref to a list of hashes containing a db and tbl key.
+sub check_tables_for_triggers {
+   my ( $dsns, $dbs_tbls ) = @_;
+
+   foreach my $dsn ( @$dsns ) {
+      my $dbh = get_cxn($dsn);
+      foreach my $db_tbl ( @$dbs_tbls ) {
+         # If table exists on destination, check it for triggers.
+         my $create;
+         eval {
+            $create = $du->get_create_table($dbh, $q,
+                                            $db_tbl->{db}, $db_tbl->{tbl});
+         };
+         if ( ref $create eq 'ARRAY' ) {
+            # TODO: this is a fugly hack that must die.
+            # MySQLDump.pm is really fscked up.  MUST FIX.
+            my $triggers = $du->get_triggers($dbh, $q,
+                                             $db_tbl->{db}, $db_tbl->{tbl});
+            if ( $triggers) {
+               print "foo!\n";
+               $dbh->disconnect();
+               die "Cannot write to table with triggers: "
+                  . "$db_tbl->{db}\.$db_tbl->{tbl}\n"
+                  . "Use --ignore-triggers to force writting.\n";
+            }
+         }
+         else {
+            my $msg = "$db_tbl->{db}.$db_tbl->{tbl} does not exist on "
+                    . $dsn_parser->as_string($dsn);
+            MKDEBUG && _d($msg);
+         }
+         $dbh->disconnect();
+      }
+
+   }
+
+   return 0;
 }
 
 # ############################################################################
@@ -5318,10 +5379,12 @@ Table names may be qualified with the database name.
 
 =item --ignore-triggers
 
-Write to tables which have triggers defined on them.
+Write to tables on which triggers are defined.
 
-mk-table-sync will die if it has to write to a table on which triggers are
-defined, unless --ignore-triggers is given. 
+Before syncing tables C<mk-table-sync> checks all destination tables on all
+destination hosts (those tables which will be synced to the source host's
+tables). If any destination host table has triggers defined on it,
+C<mk-table-sync> will die, unless --ignore-triggers is given.
 
 =item --lock
 
