@@ -5041,7 +5041,6 @@ sub check_tables_for_triggers {
             my $triggers = $du->get_triggers($dbh, $q,
                                              $db_tbl->{db}, $db_tbl->{tbl});
             if ( $triggers) {
-               print "foo!\n";
                $dbh->disconnect();
                die "Cannot write to table with triggers: "
                   . "$db_tbl->{db}\.$db_tbl->{tbl}\n"
