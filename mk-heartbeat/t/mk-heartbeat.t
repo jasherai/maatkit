@@ -5,7 +5,7 @@ use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
 use DBI;
-use Test::More tests => 13;
+use Test::More tests => 15;
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $output;
@@ -16,13 +16,21 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 SKIP: {
-   skip 'Cannot connect to MySQL', 1 unless $dbh;
+   skip 'Cannot connect to MySQL', 15 unless $dbh;
 
    $dbh->do('drop table if exists test.heartbeat');
    $dbh->do(q{CREATE TABLE test.heartbeat (
                 id int NOT NULL PRIMARY KEY,
                 ts datetime NOT NULL
              )});
+
+   # Issue: mk-heartbeat should check that the heartbeat table has a row
+   $output = `../mk-heartbeat -D test --check 2>&1`;
+   like($output, qr/heartbeat table is empty/ms, 'Dies on empty heartbeat table with --check (issue 45)');
+
+   $output = `../mk-heartbeat -D test --monitor -m 1s 2>&1`;
+   like($output, qr/heartbeat table is empty/ms, 'Dies on empty heartbeat table with --monitor (issue 45)');
+
 
    # Run one instance with --replace to create the table.
    `perl ../mk-heartbeat -D test --update --replace -m 1s`;

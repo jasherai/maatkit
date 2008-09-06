@@ -1612,6 +1612,14 @@ my @sths;                     # Holds [$host, $sth] if --recurse
 $sth->execute();
 $sth->finish();
 
+# Check that heartbeat table has at least 1 row
+my $row = $dbh->selectall_arrayref("SELECT id FROM $opts{t} LIMIT 1");
+if ( scalar @$row == 0 ) {
+   die "The heartbeat table is empty.\n"
+      . "At least one row must be inserted into the heartbeat table.\n"
+      . "Please read the DESCRIPTION section of the mk-heartbeat POD.\n";
+}
+
 # Daemonize only after (potentially) asking for passwords for --askpass.
 my $daemon;
 if ( $opts{daemonize} ) {
