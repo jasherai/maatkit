@@ -115,6 +115,12 @@ print `cp ../udf/fnv_udf.cc $dist/udf`;
 # Set the DISTRIB variable
 print `grep DISTRIB -rl $dist | xargs sed -i -e 's/\@DISTRIB\@/$rev/'`;
 
+# Set the CURRENTYEAR variable (for copyright notices)
+my @t = localtime;
+my $current_year = $t[5] + 1900;
+# The 2nd sed removes single year "spans" like "2008-2008"
+print `grep CURRENTYEAR -rl $dist | xargs sed -i -e 's/\@CURRENTYEAR\@/$current_year/' -e 's/$current_year-$current_year/$current_year/'`;
+
 # Write the MANIFEST
 print `find $dist -type f -print | sed -e 's~$dist.~~' > $dist/MANIFEST`;
 print `echo MANIFEST >> $dist/MANIFEST`;

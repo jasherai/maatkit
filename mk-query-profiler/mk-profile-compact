@@ -3,7 +3,7 @@
 # This is mk-profile-compact, a program to align results from
 # mk-query-profiler side by side for comparison.
 # 
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -799,7 +799,7 @@ See also L<mk-query-profiler>.
 
 =head1 LICENSE
 
-This program is copyright (c) 2007 Baron Schwartz.
+This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED

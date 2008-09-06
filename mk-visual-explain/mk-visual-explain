@@ -3,8 +3,8 @@
 # This is mk-visual-explain, a program to transform MySQL's EXPLAIN output
 # into a query execution plan formatted as a tree.
 #
-# This program is copyright (c) 2007 Baron Schwartz.  Feedback and
-# improvements are welcome.
+# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -2177,7 +2177,7 @@ Baron "Xaprb" Schwartz.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright (c) 2007 Baron Schwartz.
+This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED

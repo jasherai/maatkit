@@ -2,7 +2,7 @@
 
 # This is mk-log-server, a tool to make a MySQL binary log server.
 #
-# This program is copyright 2008 Percona Inc.
+# This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -717,7 +717,7 @@ running with the C<MKDEBUG=1> environment variable.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright 2008 Percona Inc.
+This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED

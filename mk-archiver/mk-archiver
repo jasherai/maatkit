@@ -3,8 +3,8 @@
 # This is mk-archiver, a program to archive records from one MySQL table to
 # a file and/or another table.
 #
-# This program is copyright (c) 2007 Baron Schwartz.  Feedback and
-# improvements are welcome.
+# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -3519,8 +3519,8 @@ Andrew O'Brien,
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
-are welcome.
+This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF

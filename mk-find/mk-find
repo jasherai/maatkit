@@ -3,7 +3,7 @@
 # This is mk-find, a program that searches for MySQL tables and takes actions
 # like GNU find.
 #
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -1828,7 +1828,7 @@ You need the following Perl modules: DBI and DBD::mysql.
 
 =head1 LICENSE
 
-This program is copyright (c) 2007 Baron Schwartz.
+This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 Feedback and improvements are welcome (see L<"BUGS">).
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED

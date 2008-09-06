@@ -2,7 +2,7 @@
 
 # This is mk-query-profiler, a program to analyze MySQL workload.
 # 
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -1930,7 +1930,7 @@ See also L<mk-profile-compact>.
 
 =head1 LICENSE
 
-This program is copyright (c) 2007 Baron Schwartz.
+This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED

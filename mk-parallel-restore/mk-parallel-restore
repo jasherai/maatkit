@@ -2,8 +2,8 @@
 
 # This is a program to load files into MySQL in parallel.
 #
-# This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
-# are welcome.
+# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 # WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
@@ -1987,8 +1987,8 @@ running with the C<MKDEBUG=1> environment variable.
 
 =head1 COPYRIGHT, LICENSE AND WARRANTY
 
-This program is copyright (c) 2007 Baron Schwartz.  Feedback and improvements
-are welcome.
+This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+Feedback and improvements are welcome.
 
 THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
 WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
