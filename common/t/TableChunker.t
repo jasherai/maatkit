@@ -19,14 +19,8 @@
 use strict;
 use warnings FATAL => 'all';
 
-my $tests;
-my $skippable;
-BEGIN {
-   $tests     = 23;
-   $skippable = 7;
-}
-
-use Test::More tests => $tests;
+my $skippable = 15;
+use Test::More tests => 24;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -81,7 +75,7 @@ is_deeply(
    'PK column is first',
 );
 
-is (
+is(
    $c->inject_chunks(
       query     => 'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ FOO FROM 1/*WHERE*/',
       database  => 'sakila',
@@ -94,7 +88,7 @@ is (
    'Replaces chunk info into query',
 );
 
-is (
+is(
    $c->inject_chunks(
       query     => 'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ FOO FROM 1/*WHERE*/',
       database  => 'sakila',
@@ -107,7 +101,7 @@ is (
    'Inject WHERE clause with undef item',
 );
 
-is (
+is(
    $c->inject_chunks(
       query     => 'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ FOO FROM 1/*WHERE*/',
       database  => 'sakila',
@@ -125,11 +119,12 @@ is (
 my $dbh;
 eval {
    $dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef, { RaiseError => 1 })
+      "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
+      { RaiseError => 1 })
 };
 SKIP: {
-   skip 'Cannot connect to MySQL', $tests - $skippable if $EVAL_ERROR;
-   skip 'Sakila is not installed', $tests - $skippable
+   skip 'Cannot connect to MySQL', $skippable if $EVAL_ERROR;
+   skip 'Sakila is not installed', $skippable
          unless @{$dbh->selectall_arrayref('show databases like "sakila"')};
 
    my @chunks;
@@ -374,14 +369,13 @@ SKIP: {
    my $size = $c->size_to_rows($dbh, 'sakila', 'film', '5k', $d);
    ok($size >= 20 && $size <= 30, 'Convert bytes to rows');
 
+   $dbh->disconnect();
 }
-
-$dbh->disconnect();
 
 # Issue 47: TableChunker::range_num broken for very large bigint
 diag(`../../sandbox/make_sandbox 12345`);
 `/tmp/12345/use < 'samples/issue_47.sql'`;
-$dbh = DBI->connect("DBI:mysql:;port=12345,user=msandbox,pass=msandbox", undef, undef, { RaiseError => 1 });
+$dbh = DBI->connect("DBI:mysql:host=127.0.0.1;port=12345;database=test;", 'msandbox', 'msandbox', { RaiseError => 1 });
 
 $t = $p->parse( $d->get_create_table($dbh, $q, 'test', 'issue_47') );
 my %params = $c->get_range_statistics($dbh, 'test', 'issue_47', 'userid');
@@ -397,6 +391,21 @@ eval {
    );
 };
 unlike($EVAL_ERROR, qr/Chunk size is too small/, 'Does not die chunking unsigned bitint (issue 47)');
+
+# Issue 8: Add --force-index parameter to mk-table-checksum and mk-table-sync
+is(
+   $c->inject_chunks(
+      query       => 'SELECT /*CHUNK_NUM*/ FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/',
+      database    => 'test',
+      table       => 'issue_8',
+      chunks      => [ '1=1', 'a=b' ],
+      chunk_num   => 1,
+      where       => [],
+      index_hint  => 'FORCE INDEX (`idx_a`)',
+   ),
+   'SELECT  1 AS chunk_num, FROM `test`.`issue_8` FORCE INDEX (`idx_a`) WHERE (a=b)',
+   'Adds FORCE INDEX (issue 8)'
+);
 
 diag(`../../sandbox/stop_all`);
 exit;
