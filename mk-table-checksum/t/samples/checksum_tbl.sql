@@ -1,8 +1,5 @@
-create database test;
-use test;
-
-drop table if exists checksum;
-
+USE test;
+DROP TABLE IF EXISTS checksum;
 CREATE TABLE checksum (
  db         char(64)     NOT NULL,
  tbl        char(64)     NOT NULL,

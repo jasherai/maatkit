@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 65;
+use Test::More tests => 67;
 
 diag(`../../sandbox/stop_all`);
 diag(`../../sandbox/make_sandbox 12345`);
@@ -191,6 +191,7 @@ $output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --sch
 unlike($output, qr/LOCK TABLES /, '--schema does not lock tables even with --lock');
 
 # Issue 21: --emptyrepltbl doesn't empty if previous runs leave info
+diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
 diag(`/tmp/12345/use < samples/checksum_tbl.sql`);
 
 # Run --replication once to populate test.checksum
@@ -231,13 +232,31 @@ like($output, qr/mysql.only_on_master does not exist on slave 127.0.0.1:12348/, 
 diag(`$rm_missing_slave_tbl_cmd`); # in case someone adds more tests, and they probably will
 
 # #############################################################################
-# Issue 47
+# Issue 47: TableChunker::range_num broken for very large bigint
 # #############################################################################
 diag(`/tmp/12345/use -D test < samples/issue_47.sql`);
 $output = `/tmp/12345/use -e 'SELECT * FROM test.issue_47'`;
 like($output, qr/18446744073709551615/, 'Loaded max unsigned bigint for testing issue 47');
 $output = `../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 --chunksize 4 2>&1`;
 unlike($output, qr/Chunk size is too small/, 'Unsigned bigint chunks (issue 47)');
+
+# #############################################################################
+# Issue 8: Add --force-index parameter to mk-table-checksum and mk-table-sync
+# #############################################################################
+
+# This is difficult to test. If it works, it should just work silently.
+# That is: there's really no way for us to see if MySQL is indeed using
+# the index that we told it to. Although we can't see it working, we can
+# easily see it breaking. Therefore, we force a non-existent index and, if
+# the code is working, then MySQL should die saying: 
+# ERROR 1176 (HY000): Key 'foo' doesn't exist in table 'issue_47'
+
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM --force-index foo 2>&1`;
+like($output, qr/Key 'foo' doesn't exist in table 'issue_47'/, '--force-index with nonexisting index fails');
+
+# And I guess we can also test that it still works with a valid --force-index
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM --force-index idx 2>&1`;
+like($output, qr/test\s+issue_47\s+0\s+127.0.0.1\s+MyISAM/, '--force-index with existing index works');
 
 diag(`../../sandbox/stop_all`);
 exit;

@@ -222,7 +222,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 2259
+# TableChecksum package 2283
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -527,7 +527,7 @@ sub make_checksum_query {
          . ($args{buffer} ? 'SQL_BUFFER_RESULT ' : '')
          . "/*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, $result";
    }
-   return $result . "FROM /*DB_TBL*//*WHERE*/";
+   return $result . "FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/";
 }
 
 sub find_replication_differences {
@@ -1723,7 +1723,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 2270
+# TableChunker package 2282
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1988,9 +1988,11 @@ sub inject_chunks {
          . join(" AND ", map { "($_)" } grep { $_ } @{$args{where}} )
          . ")";
    }
+   my $db_tbl     = $self->{quoter}->quote(@args{qw(database table)});
+   my $index_hint = $args{index_hint} || '';
    $args{query} =~ s!/\*WHERE\*/! $where!;
-   my $db_tbl = $self->{quoter}->quote(@args{qw(database table)});
    $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
+   $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;
    $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
    return $args{query};
 }
@@ -3002,6 +3004,14 @@ if ( $checksum_table_data ) {
    # starting, and prepare the statements that will be used to update it.
    # Also clean out the checksum table.
    check_repl_table($main_dbh) if $opts{R};
+
+   # Make index hint if given --force-index
+   if ( defined $opts{'force-index'} ) {
+      my $vp = new VersionParser();
+      my $force_or_use = $vp->version_ge($main_dbh, '4.0.9') ? 'FORCE' : 'USE';
+      $opts{'force-index'} = "$force_or_use INDEX (`$opts{'force-index'}`)";
+      MKDEBUG && _d("Index hint: $opts{'force-index'}");
+   }
 }
 else {
    $crc_wid = 16; # Wider than the widest CRC32.
@@ -3634,12 +3644,13 @@ sub do_var_crc {
    MKDEBUG && _d("do_var_crc for $info->{table}");
 
    my $sql = $ch->inject_chunks(
-      query     => $query,
-      database  => $info->{database},
-      table     => $info->{table},
-      chunks    => $info->{chunks},
-      chunk_num => $chunk_num,
-      where     => [$opts{W}, $info->{since}],
+      query      => $query,
+      database   => $info->{database},
+      table      => $info->{table},
+      chunks     => $info->{chunks},
+      chunk_num  => $chunk_num,
+      where      => [$opts{W}, $info->{since}],
+      index_hint => $opts{'force-index'},
    );
 
    if ( $opts{explain} ) {
@@ -4066,6 +4077,12 @@ If you specify this option, FLOAT and DOUBLE columns will be rounded to the
 specified number of digits after the decimal point for the checksum.  This can
 avoid checksum mismatches due to different floating-point representations of
 the same values on different MySQL versions and hardware.
+
+=item --force-index
+
+type: string
+
+Add FORCE INDEX clause for given index name.
 
 =item --function
 
