@@ -410,7 +410,7 @@ sub make_checksum_query {
          . ($args{buffer} ? 'SQL_BUFFER_RESULT ' : '')
          . "/*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, $result";
    }
-   return $result . "FROM /*DB_TBL*//*WHERE*/";
+   return $result . "FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/";
 }
 
 # Queries the replication table for chunks that differ from the master's data.

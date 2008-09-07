@@ -423,7 +423,7 @@ is (
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 33, 8), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc }
-   . q{FROM /*DB_TBL*//*WHERE*/},
+   . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film SHA1 BIT_XOR',
 );
 
@@ -442,7 +442,7 @@ is (
    ),
    q{SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
    . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
-   . q{FROM /*DB_TBL*//*WHERE*/},
+   . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film FNV_64 BIT_XOR',
 );
 
@@ -462,7 +462,7 @@ is (
    ),
    q{SELECT SQL_BUFFER_RESULT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
    . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
-   . q{FROM /*DB_TBL*//*WHERE*/},
+   . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film FNV_64 BIT_XOR',
 );
 
@@ -482,7 +482,7 @@ is (
    ),
    q{SELECT SQL_BUFFER_RESULT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, }
    . q{LOWER(CONV(BIT_XOR(CAST(CRC32(`film_id`) AS UNSIGNED)), 10, 16)) AS crc }
-   . q{FROM /*DB_TBL*//*WHERE*/},
+   . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film CRC32 BIT_XOR',
 );
 
@@ -509,7 +509,7 @@ is (
    . q{10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(SHA1(`film_id`), 33, 8), 16, }
    . q{10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc }
-   . q{FROM /*DB_TBL*//*WHERE*/},
+   . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film SHA1 BIT_XOR with replication',
 );
 
@@ -534,7 +534,7 @@ is (
    . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
    . q{ISNULL(`original_language_id`), ISNULL(`length`), }
    . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40) AS crc }
-   . q{FROM /*DB_TBL*//*WHERE*/},
+   . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film SHA1 ACCUM',
 );
 
@@ -557,7 +557,7 @@ is (
    . q{`original_language_id`, `rental_duration`, `rental_rate`, `length`, }
    . q{`replacement_cost`, `rating`, `special_features`, `last_update` + 0}
    . q{))) AS UNSIGNED), 10, 16))), 16) AS crc }
-   . q{FROM /*DB_TBL*//*WHERE*/},
+   . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film FNV_64 ACCUM',
 );
 
@@ -578,7 +578,7 @@ is (
    . q{RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, '0'), }
    . q{CONV(CAST(CRC32(CONCAT(@crc, CRC32(`film_id`}
    . q{))) AS UNSIGNED), 10, 16))), 16) AS crc }
-   . q{FROM /*DB_TBL*//*WHERE*/},
+   . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film CRC32 ACCUM',
 );
 
@@ -606,7 +606,7 @@ is (
    . q{CONCAT(ISNULL(`description`), ISNULL(`release_year`), }
    . q{ISNULL(`original_language_id`), ISNULL(`length`), }
    . q{ISNULL(`rating`), ISNULL(`special_features`)))))))), 40) AS crc }
-   . q{FROM /*DB_TBL*//*WHERE*/},
+   . q{FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/},
    'Sakila.film SHA1 ACCUM with replication',
 );
 
