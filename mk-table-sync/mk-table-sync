@@ -5530,7 +5530,11 @@ Table names may be qualified with the database name.
 
 Analyze, decide the sync algorithm to use, print and exit.
 
-Implies L<"--verbose"> so you can see the results.
+Implies L<"--verbose"> so you can see the results.  The results are in the same
+output format that you'll see from actually running the tool, but there will be
+zeros for rows affected.  This is because the tool actually executes, but stops
+before it compares any data and just returns zeros.  The zeros do not mean there
+are no changes to be made.
 
 =item --timeoutok
 
