@@ -344,7 +344,9 @@ sub inject_chunks {
          . ")";
    }
    my $db_tbl     = $self->{quoter}->quote(@args{qw(database table)});
-   my $index_hint = $args{index_hint} || '';
+   my $index_hint = defined $args{index_hint}
+                    ? "USE INDEX (`$args{index_hint}`)"
+                    : '';
    $args{query} =~ s!/\*WHERE\*/! $where!;
    $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
    $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;

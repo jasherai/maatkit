@@ -401,10 +401,10 @@ is(
       chunks      => [ '1=1', 'a=b' ],
       chunk_num   => 1,
       where       => [],
-      index_hint  => 'FORCE INDEX (`idx_a`)',
+      index_hint  => 'idx_a',
    ),
-   'SELECT  1 AS chunk_num, FROM `test`.`issue_8` FORCE INDEX (`idx_a`) WHERE (a=b)',
-   'Adds FORCE INDEX (issue 8)'
+   'SELECT  1 AS chunk_num, FROM `test`.`issue_8` USE INDEX (`idx_a`) WHERE (a=b)',
+   'Adds USE INDEX (issue 8)'
 );
 
 diag(`../../sandbox/stop_all`);
