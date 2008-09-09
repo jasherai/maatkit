@@ -5606,7 +5606,14 @@ How long to wait for slaves to catch up to their master.
 Make the master wait for the slave to catch up in replication before comparing
 the tables.  The value is the number of seconds to wait before timing out (see
 also L<"--timeoutok">).  Sets L<"--lock"> to 1 and L<"--transaction"> to 0 by
-default.
+default.  If you see an error such as the following,
+
+  MASTER_POS_WAIT returned -1
+
+It means the timeout was exceeded and you need to increase it.
+
+The default value of this option is influenced by other options.  To see what
+value is in effect, run with --help.
 
 =item --where
 
