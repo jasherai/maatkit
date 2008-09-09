@@ -75,32 +75,34 @@ sub find_chunk_columns {
       . join(', ', map { $_->{name} } @possible_keys));
 
    my $can_chunk_exact = 0;
-   if ($opts->{exact}) {
-      # Find the first column of every single-column unique index.
-      @candidate_cols =
-         grep {
-            $int_types{$table->{type_for}->{$_}}
-            || $real_types{$table->{type_for}->{$_}}
-         }
-         map  { $_->{cols}->[0] }
-         grep { $_->{unique} && @{$_->{cols}} == 1 }
-              @possible_keys;
-      if ( @candidate_cols ) {
-         $can_chunk_exact = 1;
+   
+   foreach my $key ( @possible_keys ) { 
+      my $col = $key->{cols}->[0];
+
+      # If exact, accept only unique, single-column indexes.
+      if ( $opts->{exact} ) {
+         next unless $key->{unique} && @{$key->{cols}} == 1;
       }
-      MKDEBUG && _d('Exact chunkable: ' . join(', ', @candidate_cols));
+
+      # Accept only integer or real number type columns.
+      next unless ( $int_types{$table->{type_for}->{$col}}
+                    || $real_types{$table->{type_for}->{$col}} );
+
+      # Save the candidate column and its index.
+      push @candidate_cols, { column => $col, index => $key->{name} };
    }
 
-   # If an exactly chunk-able index was not found, fall back to non-exact.
-   if ( !@candidate_cols ) {
-      @candidate_cols =
-         grep {
-            $int_types{$table->{type_for}->{$_}}
-            || $real_types{$table->{type_for}->{$_}}
-         }
-         map { $_->{cols}->[0] }
-         @possible_keys;
-      MKDEBUG && _d('Inexact chunkable: ' . join(', ', @candidate_cols));
+   if ( $opts->{exact} &&  @candidate_cols ) {
+      $can_chunk_exact = 1;
+   }
+
+   if ( MKDEBUG ) {
+      my @cols_idxs;
+      foreach my $candidate ( @candidate_cols ) {
+         push @cols_idxs, "$candidate->{column} on $candidate->{index}";
+      }
+      my $chunk_type = $opts->{exact} ? 'Exact' : 'Inexact';
+      _d("$chunk_type chunkable: " . join(', ', @cols_idxs));
    }
 
    # Order the candidates by their original column order.  Put the PK's
@@ -110,18 +112,26 @@ sub find_chunk_columns {
       MKDEBUG && _d('Ordering columns by order in tbl, PK first');
       if ( $table->{keys}->{PRIMARY} ) {
          my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
-         @result = grep { $_ eq $pk_first_col } @candidate_cols;
-         @candidate_cols = grep { $_ ne $pk_first_col } @candidate_cols;
+         @result = grep { $_->{column} eq $pk_first_col } @candidate_cols;
+         @candidate_cols = grep { $_->{column} ne $pk_first_col } @candidate_cols;
       }
       my $i = 0;
       my %col_pos = map { $_ => $i++ } @{$table->{cols}};
-      push @result, sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
+      push @result, sort { $col_pos{$a->{column}} <=> $col_pos{$b->{column}} }
+                       @candidate_cols;
    }
    else {
       @result = @candidate_cols;
    }
-   MKDEBUG && _d('Chunkable columns: ' . join(', ', @result));
-   MKDEBUG && _d("Can chunk exactly: $can_chunk_exact");
+
+   if ( MKDEBUG ) {
+      my @cols_idxs;
+      foreach my $candidate ( @result ) {
+         push @cols_idxs, "$candidate->{column} on $candidate->{index}";
+      }
+      _d('Chunkable columns: ' . join(', ', @cols_idxs));
+      _d("Can chunk exactly: $can_chunk_exact");
+   }
 
    return ($can_chunk_exact, \@result);
 }
@@ -269,7 +279,7 @@ sub calculate_chunks {
 sub get_first_chunkable_column {
    my ( $self, $table, $opts ) = @_;
    my ($exact, $cols) = $self->find_chunk_columns($table, $opts);
-   return $cols->[0];
+   return ( $cols->[0]->{column}, $cols->[0]->{index} );
 }
 
 # Convert a size in rows or bytes to a number of rows in the table, using SHOW

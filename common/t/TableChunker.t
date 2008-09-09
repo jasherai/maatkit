@@ -374,6 +374,7 @@ SKIP: {
 
 # Issue 47: TableChunker::range_num broken for very large bigint
 diag(`../../sandbox/make_sandbox 12345`);
+`/tmp/12345/use -e 'CREATE DATABASE test'`;
 `/tmp/12345/use < 'samples/issue_47.sql'`;
 $dbh = DBI->connect("DBI:mysql:host=127.0.0.1;port=12345;database=test;", 'msandbox', 'msandbox', { RaiseError => 1 });
 
@@ -405,6 +406,22 @@ is(
    ),
    'SELECT  1 AS chunk_num, FROM `test`.`issue_8` USE INDEX (`idx_a`) WHERE (a=b)',
    'Adds USE INDEX (issue 8)'
+);
+
+diag(`/tmp/12345/use < samples/issue_8.sql`);
+$t = $p->parse( $d->get_create_table($dbh, $q, 'test', 'issue_8') );
+my @candidates = $c->find_chunk_columns($t);
+
+is_deeply(
+   \@candidates,
+   [
+      0,
+      [
+         { column => 'id',    index => 'PRIMARY'  },
+         { column => 'foo',   index => 'uidx_foo' },
+      ],
+   ],
+   'find_chunk_columns() returns col and idx candidates'
 );
 
 diag(`../../sandbox/stop_all`);

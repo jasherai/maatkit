@@ -1,4 +1,3 @@
-CREATE DATABASE test;
 USE test;
 DROP TABLE IF EXISTS `issue_47`;
 CREATE TABLE `issue_47` (
