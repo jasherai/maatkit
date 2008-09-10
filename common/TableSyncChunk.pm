@@ -55,8 +55,9 @@ sub new {
 
    # Chunk the table and store the chunks for later processing.
    my @chunks;
-   my $col = $args{chunker}->get_first_chunkable_column(
+   my ( $col, $idx ) = $args{chunker}->get_first_chunkable_column(
       $args{struct}, { possible_keys => $args{possible_keys} });
+   $args{index} = $idx;
    if ( $col ) {
       my %params = $args{chunker}->get_range_statistics(
          $args{dbh}, $args{database}, $args{table}, $col,
@@ -134,23 +135,28 @@ sub new {
 sub get_sql {
    my ( $self, %args ) = @_;
    if ( $self->{state} ) {
+      my $index_hint = defined $args{index_hint}
+                       ? " USE INDEX (`$args{index_hint}`) "
+                       : '';
       return 'SELECT '
          . ($self->{bufferinmysql} ? 'SQL_BUFFER_RESULT ' : '')
          . join(', ', map { $self->{quoter}->quote($_) } @{$self->key_cols()})
          . ', ' . $self->{row_sql} . " AS $self->{crc_col}"
          . ' FROM ' . $self->{quoter}->quote(@args{qw(database table)})
+         . $index_hint 
          . ' WHERE (' . $self->{chunks}->[$self->{chunk_num}] . ')'
          . ($args{where} ? " AND ($args{where})" : '');
    }
    else {
       return $self->{chunker}->inject_chunks(
-         database  => $args{database},
-         table     => $args{table},
-         chunks    => $self->{chunks},
-         chunk_num => $self->{chunk_num},
-         query     => $self->{chunk_sql},
-         where     => [$args{where}],
-         quoter    => $self->{quoter},
+         database   => $args{database},
+         table      => $args{table},
+         chunks     => $self->{chunks},
+         chunk_num  => $self->{chunk_num},
+         query      => $self->{chunk_sql},
+         where      => [$args{where}],
+         quoter     => $self->{quoter},
+         index_hint => $args{index_hint},
       );
    }
 }

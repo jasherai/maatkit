@@ -31,7 +31,7 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 if ( $dbh ) {
-   plan tests => 23;
+   plan tests => 24;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
@@ -102,17 +102,20 @@ SKIP: {
       trim          => 0,
    );
 
-   is (
+   is($t->{index}, 'PRIMARY', 'Selects PRIMARY index');   
+
+   is(
       $t->get_sql(
-         quoter   => $q,
-         where    => 'foo=1',
-         database => 'test',
-         table    => 'test1',
+         quoter     => $q,
+         where      => 'foo=1',
+         database   => 'test',
+         table      => 'test1',
+         index_hint => $t->{index},
       ),
       q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS cnt, }
       . q{LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`) AS UNSIGNED)), 10, 16)) AS }
-      . q{crc FROM `test`.`test1` WHERE (1=1) AND ((foo=1))},
-      'First nibble SQL with FNV_64',
+      . q{crc FROM `test`.`test1` USE INDEX (`PRIMARY`) WHERE (1=1) AND ((foo=1))},
+      'First nibble SQL with FNV_64 (with USE INDEX)',
    );
 
 }
@@ -229,14 +232,14 @@ unlike ($t->get_sql(
 is_deeply($t->key_cols(), [qw(chunk_num)], 'Key cols in state 0');
 $t->done_with_rows();
 
-like ($t->get_sql(
+like($t->get_sql(
       quoter   => $q,
       where    => 'foo=1',
       database => 'test',
       table    => 'test1',
    ),
-   qr/SELECT .*?CONCAT_WS.*?`a` >= 3/,
-   'Second chunk SQL',
+   qr/SELECT .*?CONCAT_WS.*?FROM `test`\.`test1`  WHERE.*?`a` >= 3/,
+   'Second chunk SQL (without USE INDEX)',
 );
 
 $t->done_with_rows();
@@ -330,3 +333,9 @@ is_deeply(\@rows,
 $t->done_with_rows();
 is($t->{state}, 0, 'Now not working inside chunk');
 is($t->pending_changes(), 0, 'No pending changes');
+
+# Issue 8: Add --force-index parameter to mk-table-checksum and mk-table-sync
+
+
+
+
