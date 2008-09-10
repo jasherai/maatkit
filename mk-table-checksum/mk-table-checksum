@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# TableParser package 2215
+# TableParser package 2291
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -112,7 +112,7 @@ sub parse {
       my @cols;
       my @col_prefixes;
       foreach my $col_def ( split(',', $cols) ) {
-         my ($name, $prefix) = $col_def =~ m/`(\w+)`(?:\((\d+)\))?/;
+         my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
       }
@@ -4097,6 +4097,10 @@ the same values on different MySQL versions and hardware.
 =item --no-use-index
 
 Do not add USE INDEX hint to SQL statements.
+
+By default C<mk-table-checksum> adds an USE INDEX hint to each SQL statement
+to coerce MySQL into using the index for the column by which a table will be
+chunked. This option causes C<mk-table-checksum> to omit the USE INDEX hint.
 
 =item --function
 
