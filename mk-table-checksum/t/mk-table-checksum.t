@@ -246,17 +246,13 @@ unlike($output, qr/Chunk size is too small/, 'Unsigned bigint chunks (issue 47)'
 
 # This is difficult to test. If it works, it should just work silently.
 # That is: there's really no way for us to see if MySQL is indeed using
-# the index that we told it to. Although we can't see it working, we can
-# easily see it breaking. Therefore, we force a non-existent index and, if
-# the code is working, then MySQL should die saying: 
-# ERROR 1176 (HY000): Key 'foo' doesn't exist in table 'issue_47'
+# the index that we told it to.
 
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM --force-index foo 2>&1`;
-like($output, qr/Key 'foo' doesn't exist in table 'issue_47'/, '--force-index with nonexisting index fails');
+$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM 2>&1 | grep 'SQL for chunk 0:'`;
+like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47` USE INDEX \(`idx`\) WHERE/, 'Injects correct USE INDEX by default');
 
-# And I guess we can also test that it still works with a valid --force-index
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM --force-index idx 2>&1`;
-like($output, qr/test\s+issue_47\s+0\s+127.0.0.1\s+MyISAM/, '--force-index with existing index works');
+$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM --no-use-index 2>&1 | grep 'SQL for chunk 0:'`;
+like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --no-use-index');
 
 diag(`../../sandbox/stop_all`);
 exit;
