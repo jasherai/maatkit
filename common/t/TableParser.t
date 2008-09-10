@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 14;
+use Test::More tests => 15;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -312,6 +312,83 @@ is_deeply(
       type_for     => { a => 'int' },
    },
    'Temporary table',
+);
+
+$t = $p->parse( load_file('samples/hyphentest.sql') );
+is_deeply(
+   $t,
+   {  'is_autoinc' => {
+         'sort_order'                => 0,
+         'pfk-source_instrument_id'  => 0,
+         'pfk-related_instrument_id' => 0
+      },
+      'null_cols'    => [],
+      'numeric_cols' => [
+         'pfk-source_instrument_id', 'pfk-related_instrument_id',
+         'sort_order'
+      ],
+      'cols' => [
+         'pfk-source_instrument_id', 'pfk-related_instrument_id',
+         'sort_order'
+      ],
+      'col_posn' => {
+         'sort_order'                => 2,
+         'pfk-source_instrument_id'  => 0,
+         'pfk-related_instrument_id' => 1
+      },
+      'keys' => {
+         'sort_order' => {
+            'unique'       => 0,
+            'is_col'       => { 'sort_order' => 1 },
+            'name'         => 'sort_order',
+            'type'         => 'BTREE',
+            'col_prefixes' => [ undef ],
+            'is_nullable'  => 0,
+            'colnames'     => '`sort_order`',
+            'cols'         => [ 'sort_order' ]
+         },
+         'PRIMARY' => {
+            'unique' => 1,
+            'is_col' => {
+               'pfk-source_instrument_id'  => 1,
+               'pfk-related_instrument_id' => 1
+            },
+            'name'         => 'PRIMARY',
+            'type'         => 'BTREE',
+            'col_prefixes' => [ undef, undef ],
+            'is_nullable'  => 0,
+            'colnames' =>
+               '`pfk-source_instrument_id`,`pfk-related_instrument_id`',
+            'cols' =>
+               [ 'pfk-source_instrument_id', 'pfk-related_instrument_id' ]
+         }
+      },
+      'defs' => {
+         'sort_order' => '  `sort_order` int(11) NOT NULL',
+         'pfk-source_instrument_id' =>
+            '  `pfk-source_instrument_id` int(10) unsigned NOT NULL',
+         'pfk-related_instrument_id' =>
+            '  `pfk-related_instrument_id` int(10) unsigned NOT NULL'
+      },
+      'engine' => 'InnoDB',
+      'is_col' => {
+         'sort_order'                => 1,
+         'pfk-source_instrument_id'  => 1,
+         'pfk-related_instrument_id' => 1
+      },
+      'is_numeric' => {
+         'sort_order'                => 1,
+         'pfk-source_instrument_id'  => 1,
+         'pfk-related_instrument_id' => 1
+      },
+      'type_for' => {
+         'sort_order'                => 'int',
+         'pfk-source_instrument_id'  => 'int',
+         'pfk-related_instrument_id' => 'int'
+      },
+      'is_nullable' => {}
+   },
+   'Hyphens in indexed columns',
 );
 
 $t = $p->parse( load_file('samples/ndb_table.sql') );

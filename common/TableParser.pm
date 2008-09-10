@@ -115,7 +115,7 @@ sub parse {
       foreach my $col_def ( split(',', $cols) ) {
          # Parse columns of index including potential column prefixes
          # E.g.: `a`,`b`(20)
-         my ($name, $prefix) = $col_def =~ m/`(\w+)`(?:\((\d+)\))?/;
+         my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
       }
