@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 26;
 use DBI;
 
 my $output;
@@ -175,6 +175,16 @@ unlike($output, qr/Cannot write to table with triggers/, 'Writes to tbl with tri
 
 $output = `/tmp/12346/use -D test -e 'SELECT * FROM issue_37'`;
 like($output, qr/a.+1.+2/ms, 'Table with trigger was written');
+
+# #############################################################################
+# Issue 8: Add --force-index parameter to mk-table-checksum and mk-table-sync
+# #############################################################################
+`/tmp/12345/use -e 'INSERT INTO test.issue_37 VALUES (5), (6), (7), (8), (9);'`;
+$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers 2>&1 | grep 'src: '`;
+like($output, qr/FROM `test`\.`issue_37` USE INDEX \(`idx_a`\) WHERE/, 'Injects USE INDEX hint by default');
+
+$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers --no-use-index 2>&1 | grep 'src: '`;
+like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --no-use-index');
 
 diag(`../../sandbox/stop_all`);
 exit;
