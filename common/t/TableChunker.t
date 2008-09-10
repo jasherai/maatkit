@@ -20,7 +20,7 @@ use strict;
 use warnings FATAL => 'all';
 
 my $skippable = 15;
-use Test::More tests => 24;
+use Test::More tests => 25;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -52,26 +52,47 @@ sub load_file {
 $t = $p->parse( load_file('samples/sakila.film.sql') );
 is_deeply(
    [ $c->find_chunk_columns($t) ],
-   [ 0, [qw(film_id language_id original_language_id)]],
+   [ 0,
+     [
+        { column => 'film_id', index => 'PRIMARY' },
+        { column => 'language_id', index => 'idx_fk_language_id' },
+        { column => 'original_language_id',
+             index => 'idx_fk_original_language_id' },
+      ],
+   ],
    'Found chunkable columns on sakila.film',
 );
 
 is_deeply(
    [ $c->find_chunk_columns($t, { exact => 1 }) ],
-   [ 1, [qw(film_id)]],
+   [ 1, [ { column => 'film_id', index => 'PRIMARY' } ] ],
    'Found exact chunkable columns on sakila.film',
 );
 
 is_deeply(
    [ $c->find_chunk_columns($t, { possible_keys => [qw(idx_fk_language_id)] }) ],
-   [ 0, [qw(language_id original_language_id film_id)]],
+   [ 0,
+     [
+        { column => 'language_id', index => 'idx_fk_language_id' },
+        { column => 'original_language_id',
+             index => 'idx_fk_original_language_id' },
+        { column => 'film_id', index => 'PRIMARY' },
+     ]
+   ],
    'Found preferred chunkable columns on sakila.film',
 );
 
 $t = $p->parse( load_file('samples/pk_not_first.sql') );
 is_deeply(
    [ $c->find_chunk_columns($t) ],
-   [ 0, [qw(film_id language_id original_language_id)]],
+   [ 0,
+     [
+        { column => 'film_id', index => 'PRIMARY' },
+        { column => 'language_id', index => 'idx_fk_language_id' },
+        { column => 'original_language_id',
+             index => 'idx_fk_original_language_id' },
+     ],
+   ],
    'PK column is first',
 );
 

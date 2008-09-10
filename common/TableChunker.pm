@@ -60,29 +60,38 @@ sub find_chunk_columns {
          . join(', ', @{$opts->{possible_keys}}));
    }
 
-   # See if there's an index that will support chunking.  If exact
-   # is specified, it must be single column unique or primary.
-   my @candidate_cols;
+   # See if there's an index that will support chunking.
+   my @possible_keys;
+   KEY:
+   foreach my $key ( values %{ $table->{keys} } ) {
 
-   # Only BTREE are good for range queries.  Sort in order of preferred-ness.
-   # TODO: indexes that have been created on prefixes of columns are not
-   # useful.  Eliminate them.
-   my @possible_keys = grep { $_->{type} eq 'BTREE' } values %{$table->{keys}};
-   @possible_keys = sort {
-      ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
-   } @possible_keys;
-   MKDEBUG && _d('Possible keys in order: '
-      . join(', ', map { $_->{name} } @possible_keys));
+      # Accept only BTREE indexes.
+      next unless $key->{type} eq 'BTREE';
 
-   my $can_chunk_exact = 0;
-   
-   foreach my $key ( @possible_keys ) { 
-      my $col = $key->{cols}->[0];
+      # Reject indexes with prefixed columns.
+      defined $_ && next KEY for @{ $key->{col_prefixes} };
 
       # If exact, accept only unique, single-column indexes.
       if ( $opts->{exact} ) {
          next unless $key->{unique} && @{$key->{cols}} == 1;
       }
+
+      push @possible_keys, $key;
+   }
+
+   # Sort keys by preferred-ness.
+   @possible_keys = sort {
+      ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
+   } @possible_keys;
+
+   MKDEBUG && _d('Possible keys in order: '
+      . join(', ', map { $_->{name} } @possible_keys));
+
+   # Build list of candidate chunk columns.   
+   my $can_chunk_exact = 0;
+   my @candidate_cols;
+   foreach my $key ( @possible_keys ) { 
+      my $col = $key->{cols}->[0];
 
       # Accept only integer or real number type columns.
       next unless ( $int_types{$table->{type_for}->{$col}}
@@ -92,21 +101,16 @@ sub find_chunk_columns {
       push @candidate_cols, { column => $col, index => $key->{name} };
    }
 
-   if ( $opts->{exact} &&  @candidate_cols ) {
-      $can_chunk_exact = 1;
-   }
+   $can_chunk_exact = 1 if ( $opts->{exact} && scalar @candidate_cols );
 
    if ( MKDEBUG ) {
-      my @cols_idxs;
-      foreach my $candidate ( @candidate_cols ) {
-         push @cols_idxs, "$candidate->{column} on $candidate->{index}";
-      }
       my $chunk_type = $opts->{exact} ? 'Exact' : 'Inexact';
-      _d("$chunk_type chunkable: " . join(', ', @cols_idxs));
+      _d("$chunk_type chunkable: "
+         . join(', ', map { "$_->{column} on $_->{index}" } @candidate_cols));
    }
 
-   # Order the candidates by their original column order.  Put the PK's
-   # first column first, if it's a candidate.
+   # Order the candidates by their original column order.
+   # Put the PK's first column first, if it's a candidate.
    my @result;
    if ( !%prefer ) {
       MKDEBUG && _d('Ordering columns by order in tbl, PK first');
@@ -125,11 +129,8 @@ sub find_chunk_columns {
    }
 
    if ( MKDEBUG ) {
-      my @cols_idxs;
-      foreach my $candidate ( @result ) {
-         push @cols_idxs, "$candidate->{column} on $candidate->{index}";
-      }
-      _d('Chunkable columns: ' . join(', ', @cols_idxs));
+      _d('Chunkable columns: '
+         . join(', ', map { "$_->{column} on $_->{index}" } @result));
       _d("Can chunk exactly: $can_chunk_exact");
    }
 
