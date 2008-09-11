@@ -8,6 +8,9 @@ The following items are unimplemented at this time:
       * Some Linux-specific parameters that we commonly check/tweak:
         - (others?)
       * use ethtool, ip, etc to discover nics, IP addresses and network speed
+      * Show the IO scheduler in use.
+        cat /sys/block/sda/queue/scheduler 
+      * Show /proc/partitions.
    Hardware
       * raid status: (is this working? over info to caputre?)
          - parse multiple adapters
@@ -145,6 +148,8 @@ The following items are unimplemented at this time:
    * Parse db.tbl names out of statements in the processlist and make a list of
    the most popular dbs and tbls, in the format of a table, with the columns
    being ins/upd/del/sel/rep/other
+   * processlist advisor: if commit appears a lot, it might be too-small innodb
+     log file size.
    * deconstruct sprocs and explain them -- convert vars int @variables
    * Look for derived tables that have no aggregation inside them
    * Look for explain plans that have a bad ref type or not-full key usage or
