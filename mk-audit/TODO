@@ -9,8 +9,9 @@ The following items are unimplemented at this time:
         - (others?)
       * use ethtool, ip, etc to discover nics, IP addresses and network speed
       * Show the IO scheduler in use.
-        cat /sys/block/sda/queue/scheduler 
+        cat /sys/block/sda/queue/scheduler
       * Show /proc/partitions.
+      * Show /proc/scsi/scsi in a digested format
    Hardware
       * raid status: (is this working? over info to caputre?)
          - parse multiple adapters
