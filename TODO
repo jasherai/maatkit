@@ -1,3 +1,11 @@
+Compensate for this bug:
+# Time: 080906 17:41:59
+# User@Host: hssn[hssn] @ dingo-stage-1.host.cdc.advance.net [10.5.2.21]
+# Query_time: 4294967295  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
+# administrator command: Ping;
+# Time: 080906 17:42:01
+
+
 A script to check upgrade-readiness:  check-upgrade script that looks for suspicious things: DECIMAL data  types,  GROUP BY queries with aggregate functions over non-integer types, BIT  data  types, queries that mix comma-join with ansi-join syntaxes 
 
 A bad query pattern: derived tables that don't have any aggregation/distinct
