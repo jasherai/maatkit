@@ -169,13 +169,6 @@ sub new {
       allowed_with => \@allowed_with,
    };
 
-   if ( MKDEBUG ) {
-      use Data::Dumper;
-      $Data::Dumper::Indent = 1;
-      my $self_dump = Dumper($self);
-      _d('New OptionParser: ' . $self_dump);
-   }
-
    return bless $self, $class;
 }
 
