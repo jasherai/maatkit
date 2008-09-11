@@ -3,7 +3,8 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 67;
+use Test::More tests => 72;
+use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
 diag(`../../sandbox/make_sandbox 12345`);
@@ -86,6 +87,12 @@ like($output, qr/377366820/, 'Checksum with --schema' );
 $output = `MKDEBUG=1 $cmd --since '"2008-01-01" - interval 1 day' --explain 2>&1 | grep 2007`;
 like($output, qr/2007-12-31/, '--since is calculated as an expression');
 
+# Check --since with --argtest.  The value (current_date) in the --argtest table
+# ought to override the --since passed on the command-line.
+$output = `$cmd --argtable test.argtest --since '"2008-01-01" - interval 1 day' --explain 2>&1`;
+unlike($output, qr/2008-01-01/, 'Argtest overridden');
+like($output, qr/`a`>='\d{4}-/, 'Argtest set to something else');
+
 $output = `MKDEBUG=1 $cmd --since 'current_date + interval 1 day' 2>&1`;
 like($output, qr/Skipping.*--since/, '--since skips tables');
 
@@ -94,6 +101,20 @@ like($output, qr/`a`>=100/, '--since adds WHERE clauses');
 
 $output = `$cmd --since current_date 2>&1 | grep HASH`;
 unlike($output, qr/HASH\(0x/, '--since does not f*** up table names');
+
+# Check --offset with --modulo
+$output = `../mk-table-checksum --databases mysql -C 5 h=127.0.0.1,P=12345 --modulo 7 --offset 'weekday(now())' --tables help_relation 2>&1`;
+like($output, qr/^mysql\s+help_relation\s+\d+/m, '--modulo --offset runs');
+my @chunks = $output =~ m/help_relation\s+(\d+)/g;
+my $chunks = scalar @chunks;
+ok($chunks, 'There are several chunks with --modulo');
+my %differences;
+my $first = shift @chunks;
+while ( my $chunk = shift @chunks ) {
+   $differences{$chunk - $first} ++;
+   $first = $chunk;
+}
+is($differences{7}, $chunks - 1, 'All chunks are 7 apart');
 
 $output  = `$cmd -f sha1 -R test.checksum`;
 $output2 = `/tmp/12345/use --skip-column-names -e "select this_crc from test.checksum where tbl='checksum_test'"`;
@@ -125,7 +146,8 @@ like($output, qr/ISNULL\(`b`\)/, 'Column b is not rounded inside ISNULL');
 # Ensure --probability works
 $output = `perl ../mk-table-checksum --probability 0 --chunksize 4 127.0.0.1 | grep -v DATABASE`;
 chomp $output;
-is($output, '', 'Nothing with --probability 0!');
+@chunks = $output =~ m/(\d+)\s+127\.0\.0\.1/g;
+is(sum(@chunks), 0, 'Nothing with --probability 0!');
 
 diag(`../../sandbox/stop_all`);
 diag(`../../sandbox/make_sandbox 12345`);

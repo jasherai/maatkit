@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --argtable, --offset and --modulo for issue 53.
    * Added --no-use-index option (issue 8).
    * Fixed processing of column options (issue 4, patch by Travis Whitton)
    * Changed --emptyrepltbl to always completely empty the table (issue 21).

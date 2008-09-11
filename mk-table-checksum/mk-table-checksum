@@ -686,13 +686,6 @@ sub new {
       allowed_with => \@allowed_with,
    };
 
-   if ( MKDEBUG ) {
-      use Data::Dumper;
-      $Data::Dumper::Indent = 1;
-      my $self_dump = Dumper($self);
-      _d('New OptionParser: ' . $self_dump);
-   }
-
    return bless $self, $class;
 }
 
@@ -2929,6 +2922,13 @@ $opt_parser->{descr}
 my %opts = $opt_parser->parse();
 $dsn_parser->prop('setvars', $opts{setvars});
 
+# This list contains all the command-line arguments that can be overridden by a
+# table that contains arguments for each table to be checksummed.  The short
+# form of each argument is given. TODO: parse this list from the POD.
+my %overridable_args = map { $_ => 1 }
+   qw(a C columns r c f k no-use-index optxor probability s
+      since sincecolumn sleep sleep-coef trim w W);
+
 # Post-process command-line options and arguments.
 $opts{k} ||= defined $opts{w};
 $opts{l} ||= $opts{k};
@@ -3024,19 +3024,21 @@ else {
 # Used for --checksum
 my $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
 
-# If --since is given, it may be an expression like 'NOW() - INTERVAL 7 DAY'
-# and we should evaluate it.
-if ( $opts{since} ) {
-   eval {
-      my ($val) = $main_dbh->selectrow_array("SELECT $opts{since}");
-      if ( $val ) {
-         $opts{since} = $val;
-         MKDEBUG && _d("--since: ", $opts{since});
-      }
-   };
-   if ( $EVAL_ERROR && MKDEBUG ) {
-      chomp $EVAL_ERROR;
-      _d("Error evaluating --since: ", $EVAL_ERROR);
+# ############################################################################
+# Load --argtable information.
+# ############################################################################
+my %args_for;
+if ( $opts{argtable} ) {
+   my $rows = $main_dbh->selectall_arrayref(
+      "SELECT * FROM $opts{argtable}", { Slice => {} });
+   foreach my $row ( @$rows ) {
+      die "invalid entry in --argtable: db and tbl must be set"
+         unless $row->{db} && $row->{tbl};
+      $args_for{$row->{db}}->{$row->{tbl}} = {
+         map  { $_ => $row->{$_} }
+         grep { $overridable_args{$_} && defined $row->{$_} }
+         keys %$row
+      };
    }
 }
 
@@ -3075,8 +3077,26 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
    ) {
       MKDEBUG && _d("Examining $database.$table");
 
+      my %final_opts = %opts;
+      # #######################################################################
+      # Override the arguments with arguments from --argtable, if necessary.
+      # NOTE: from this point down in this loop %opts should not be used.
+      # #######################################################################
+      if ( my $override = $args_for{$database}->{$table} ) {
+         @final_opts{keys %$override} = values %$override;
+      }
+
+      # --since and --offset are potentially expressions that should be
+      # evaluated by the DB server.  This has to be done after the override from
+      # the --argtable table.
+      foreach my $opt ( qw(since O) ) {
+         if ( !is_temporal($final_opts{$opt}) ) { # 2008-08-01 --> 1999
+            $final_opts{$opt} = eval_expr($opt, $final_opts{$opt}, $main_dbh);
+         }
+      }
+
       # Skip the table in which checksums are stored.
-      if ( !$opts{R} || $opts{R} ne "$database.$table" ) {
+      if ( !$final_opts{R} || $final_opts{R} ne "$database.$table" ) {
 
          eval { # Catch errors caused by tables being dropped during work.
 
@@ -3086,12 +3106,12 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             my $struct        = $tp->parse($create);
             my ( $col, $idx ) = $ch->get_first_chunkable_column($struct);
 
-            $idx = undef if $opts{'no-use-index'};
+            $idx = undef if $final_opts{'no-use-index'};
 
             my @chunks = '1=1'; # Default.
-            if ( $opts{C} && $col ) {
+            if ( $final_opts{C} && $col ) {
                my $rows_per_chunk = $ch->size_to_rows(
-                     $main_dbh, $database, $table, $opts{C}, $du);
+                     $main_dbh, $database, $table, $final_opts{C}, $du);
 
                # Calculate chunks for this table.
                my %params = $ch->get_range_statistics(
@@ -3115,6 +3135,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                column       => $col,
                index        => $idx,
                chunks       => \@chunks,
+               final_opts   => \%final_opts,
             };
 
          };
@@ -3150,15 +3171,18 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
    }
 
    # NOTE: remember, you can't 'next TABLE' inside the eval{}.
+   # NOTE: remember to use the final_opts options embedded within each $table,
+   # not %opts.
    foreach my $table ( @tables ) {
       eval {
+         my %final_opts = %{$table->{final_opts}};
          my $do_table = 1;
          MKDEBUG && _d("Doing $database.$table->{table}");
          MKDEBUG && _d("Table: ", Dumper($table));
 
          # Clean out the replication table entry for this table.
-         if ( $opts{R} && !$opts{explain} ) {
-            my $del_sql = "DELETE FROM $opts{R} WHERE db=? AND tbl=?";
+         if ( $final_opts{R} && !$final_opts{explain} ) {
+            my $del_sql = "DELETE FROM $final_opts{R} WHERE db=? AND tbl=?";
             MKDEBUG && _d($main_dbh, $del_sql, $database, $table->{table});
             $main_dbh->do($del_sql, {}, $database, $table->{table});
          }
@@ -3166,14 +3190,14 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          # If --since is given, figure out which column to use.  Use either the
          # specified column (--sincecolumn) or the auto-discovered one,
          # whichever exists in the table, in that order.
-         if ( $opts{since} ) {
+         if ( $final_opts{since} ) {
             # If the --since argument is a date/timeish value, skip the whole
             # table unless it has been modified or created since then.
-            if ( is_temporal($opts{since}) ) {
+            if ( is_temporal($final_opts{since}) ) {
                my ($stat) = $du->get_table_status($main_dbh, $q, $database, $table->{table});
                my $time = maxstr(grep { $_ } @{$stat}{qw(create_time update_time)});
                # TODO $time may be undef!
-               if ( $time lt $opts{since} ) {
+               if ( $time lt $final_opts{since} ) {
                   MKDEBUG && _d("Skipping table because of --since");
                   $do_table = 0;
                   $table->{chunks} = [];
@@ -3181,15 +3205,15 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             }
          }
 
-         if ( $opts{since} && $do_table ) {
+         if ( $final_opts{since} && $do_table ) {
             my ( $sincecol ) =
                grep { $_ && $table->{struct}->{is_col}->{$_} }
-               ($table->{column}, $opts{sincecolumn});
+               ($table->{column}, $final_opts{sincecolumn});
             if ( $sincecol ) {
                MKDEBUG && _d("Column for --since: ", $sincecol);
                # This ends up being an additional WHERE clause.
                $table->{since} = $q->quote($sincecol)
-                  . '>=' .  $q->quote_val($opts{since});
+                  . '>=' .  $q->quote_val($final_opts{since});
             }
          }
 
@@ -3209,11 +3233,11 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                crc_wid   => $crc_wid,
                crc_type  => $crc_type,
                opt_slice => $opt_slice,
-               cols      => $opts{columns},
-               sep       => $opts{s},
-               replicate => $opts{R},
-               precision => $opts{'float-precision'},
-               trim      => $opts{trim},
+               cols      => $final_opts{columns},
+               sep       => $final_opts{s},
+               replicate => $final_opts{R},
+               precision => $final_opts{'float-precision'},
+               trim      => $final_opts{trim},
             );
          }
          else { # --schema
@@ -3228,34 +3252,46 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          # This is by design.  It lets me unlock the table on the master
          # between chunks.
          # ##################################################################
+         my $num_chunks = scalar(@{$table->{chunks}});
          CHUNK:
-         foreach my $chunk_num ( 0 .. scalar(@{$table->{chunks}}) - 1 ) {
+         foreach my $chunk_num ( 0 .. $num_chunks - 1 ) {
 
-            # TODO: --modulo as well, for predictability
             # TODO: by default, if there is only one chunk, never skip it.  Add
             # a cmdline opt to permit overriding this.
-            if ( $checksum_table_data && rand(100) >= $opts{probability} ) {
+            if (     $num_chunks > 1
+                  && $checksum_table_data
+                  && rand(100) >= $final_opts{probability} )
+            {
                MKDEBUG && _d('Skipping chunk because of --probability');
+               next CHUNK;
+            }
+
+            if (     $num_chunks > 1
+                  && $checksum_table_data
+                  && $final_opts{M}
+                  && ($chunk_num % $final_opts{M} != $final_opts{O}) )
+            {
+               MKDEBUG && _d('Skipping chunk because of --modulo');
                next CHUNK;
             }
 
             my $chunk_start_time = gettimeofday();
             MKDEBUG && _d("Starting at $chunk_start_time");
 
-            if ( $opts{R} ) { # We're in --replicate mode.
+            if ( $final_opts{R} ) { # We're in --replicate mode.
                do_tbl_replicate($hosts[0], $query, $table,
-                  $chunk_num, $hdr, $explain);
+                  $chunk_num, $hdr, $explain, \%final_opts);
             }
             else {
                # Lock table and get position on the master.
-               if ( !$opts{explain} ) {
-                  if ( $opts{k} ) {
+               if ( !$final_opts{explain} ) {
+                  if ( $final_opts{k} ) {
                      my $sql = "LOCK TABLES "
                         . $q->quote($database, $table->{table}) . " READ";
                      MKDEBUG && _d($sql);
                      $main_dbh->do($sql);
                   }
-                  if ( defined $opts{w} ) {
+                  if ( defined $final_opts{w} ) {
                      $table->{master_status} = $ms->get_master_status($main_dbh);
                   }
                }
@@ -3281,7 +3317,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                      # Do the work (I'm a child, or there's only one host)
                      eval {
                         do_tbl($host, $query, $table, $chunk_num,
-                               $is_master, $hdr, $explain);
+                               $is_master, $hdr, $explain, \%final_opts);
                      };
                      if ( $EVAL_ERROR ) {
                         print_err($EVAL_ERROR, $database, $table->{table},
@@ -3303,7 +3339,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                   MKDEBUG && _d("Child $pid exited with $CHILD_ERROR");
                   $exit_status ||= $CHILD_ERROR >> 8;
                }
-               if ( ($opts{k} && !$opts{explain}) ) {
+               if ( ($final_opts{k} && !$final_opts{explain}) ) {
                   my $sql = "UNLOCK TABLES";
                   MKDEBUG && _d($main_dbh, $sql);
                   $main_dbh->do($sql);
@@ -3313,13 +3349,14 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             my $chunk_stop_time = gettimeofday();
             MKDEBUG && _d("Finished chunk at $chunk_stop_time");
 
-            if ( $opts{sleep} && !$opts{explain} ) {
-               MKDEBUG && _d("Sleeping $opts{sleep}");
-               sleep($opts{sleep});
+            if ( $final_opts{sleep} && !$final_opts{explain} ) {
+               MKDEBUG && _d("Sleeping $final_opts{sleep}");
+               sleep($final_opts{sleep});
             }
-            elsif ( $opts{'sleep-coef'} && !$opts{explain} ) {
-               my $sleep_time
-                  = ($chunk_stop_time - $chunk_start_time) * $opts{'sleep-coef'};
+            elsif ( $final_opts{'sleep-coef'} && !$final_opts{explain} ) {
+               my $sleep_time =
+                  ($chunk_stop_time - $chunk_start_time)
+                  * $final_opts{'sleep-coef'};
                MKDEBUG && _d("Sleeping $sleep_time");
                sleep($sleep_time);
             }
@@ -3375,6 +3412,22 @@ sub check_repl_slaves {
       }
    );
    return $exit_status;
+}
+
+# The value may be an expression like 'NOW() - INTERVAL 7 DAY'
+# and we should evaluate it.
+sub eval_expr {
+   my ( $name, $val, $dbh ) = @_;
+   my $result = $val;
+   eval {
+      ($result) = $dbh->selectrow_array("SELECT $val");
+      MKDEBUG && _d("--$name evaluates to: ", $result);
+   };
+   if ( $EVAL_ERROR && MKDEBUG ) {
+      chomp $EVAL_ERROR;
+      _d("Error evaluating --$name: ", $EVAL_ERROR);
+   }
+   return $result;
 }
 
 sub determine_checksum_strat {
@@ -3490,7 +3543,7 @@ sub check_repl_table {
 }
 
 sub do_tbl_replicate {
-   my ( $host, $query, $info, $chunk_num, $hdr, $explain ) = @_;
+   my ( $host, $query, $info, $chunk_num, $hdr, $explain, $final_opts ) = @_;
    MKDEBUG && _d("do_tbl_replicate for $info->{table}");
    my $dbh = $main_dbh;
    $dbh->do("USE " . $q->quote($info->{database}) );
@@ -3503,7 +3556,7 @@ sub do_tbl_replicate {
       table      => $info->{table},
       chunks     => $info->{chunks},
       chunk_num  => $chunk_num,
-      where      => [$opts{W}, $info->{since}],
+      where      => [$final_opts->{W}, $info->{since}],
       index_hint => $info->{index},
    );
 
@@ -3512,7 +3565,7 @@ sub do_tbl_replicate {
    }
 
    my $where = $info->{chunks}->[$chunk_num];
-   if ( $opts{explain} ) {
+   if ( $final_opts->{explain} ) {
       if ( $chunk_num == 0 ) {
          printf($explain, @{$info}{qw(database table)}, $sql)
             or die "Cannot print: $OS_ERROR";
@@ -3531,8 +3584,8 @@ sub do_tbl_replicate {
 
    my $end = time();
    $crc  ||= 'NULL';
-   if (!$opts{q} && !$opts{explain}) {
-      if ( $opts{checksum} ) {
+   if (!$final_opts->{q} && !$final_opts->{explain}) {
+      if ( $final_opts->{checksum} ) {
          printf($md5sum_fmt, $crc, $host->{h},
             @{$info}{qw(database table)}, $chunk_num)
             or die "Cannot print: $OS_ERROR";
@@ -3548,7 +3601,7 @@ sub do_tbl_replicate {
 }
 
 sub do_tbl {
-   my ( $host, $query, $info, $chunk_num, $is_master, $hdr, $explain ) = @_;
+   my ($host, $query, $info, $chunk_num, $is_master, $hdr, $explain, $final_opts) = @_;
    MKDEBUG && _d("do_tbl for $info->{table}");
    my $dbh = $host->{dbh};
    $dbh->do("USE " . $q->quote($info->{database}) );
@@ -3559,12 +3612,12 @@ sub do_tbl {
    my $beg = time();
 
    # I'm a slave.  Wait to catch up to the master.  Calculate slave lag.
-   if ( !$is_master && defined $opts{w} && !$opts{explain} ) {
+   if ( !$is_master && defined $final_opts->{w} && !$final_opts->{explain} ) {
       $sta = $ms->wait_for_master(
-         $main_dbh, $dbh, $opts{w}, 1, $info->{master_status});
+         $main_dbh, $dbh, $final_opts->{w}, 1, $info->{master_status});
       $sta = 'NULL' unless defined $sta;
    }
-   if ( !$is_master && $opts{l} && !$opts{explain} ) {
+   if ( !$is_master && $final_opts->{l} && !$final_opts->{explain} ) {
       my $res = $ms->get_slave_status($dbh);
       $lag = $res && defined $res->{seconds_behind_master}
            ? $res->{seconds_behind_master}
@@ -3596,16 +3649,16 @@ sub do_tbl {
       # Do the checksum operation.
       if ( $checksum_table_data ) {
          if ( $strat eq 'CHECKSUM' ) {
-            if ( $opts{c} ) {
-               $crc = do_checksum($dbh, $info, $query, $explain);
+            if ( $final_opts->{c} ) {
+               $crc = do_checksum($dbh, $info, $query, $explain, $final_opts);
             }
-            if ( $opts{r} ) {
-               $cnt = do_count($dbh, $info, $chunk_num, $explain);
+            if ( $final_opts->{r} ) {
+               $cnt = do_count($dbh, $info, $chunk_num, $explain, $final_opts);
             }
          }
-         elsif ( $opts{c} ) {
-            ( $cnt, $crc )
-               = do_var_crc($dbh, $query, $info, $chunk_num, $explain);
+         elsif ( $final_opts->{c} ) {
+            ( $cnt, $crc ) = do_var_crc(
+               $dbh, $query, $info, $chunk_num, $explain, $final_opts);
             $crc ||= 'NULL';
          }
          else {
@@ -3619,8 +3672,8 @@ sub do_tbl {
 
    my $end = time();
 
-   if ( !$opts{q} && !$opts{explain} ) {
-      if ( $opts{checksum} ) {
+   if ( !$final_opts->{q} && !$final_opts->{explain} ) {
+      if ( $final_opts->{checksum} ) {
          printf($md5sum_fmt, $crc, $host->{h},
             @{$info}{qw(database table)}, $chunk_num)
             or die "Cannot print: $OS_ERROR";
@@ -3652,7 +3705,7 @@ sub get_cxn {
 }
 
 sub do_var_crc {
-   my ( $dbh, $query, $info, $chunk_num, $explain ) = @_;
+   my ( $dbh, $query, $info, $chunk_num, $explain, $final_opts ) = @_;
    MKDEBUG && _d("do_var_crc for $info->{table}");
 
    my $sql = $ch->inject_chunks(
@@ -3661,7 +3714,7 @@ sub do_var_crc {
       table      => $info->{table},
       chunks     => $info->{chunks},
       chunk_num  => $chunk_num,
-      where      => [$opts{W}, $info->{since}],
+      where      => [$final_opts->{W}, $info->{since}],
       index_hint => $info->{index},
    );
 
@@ -3669,7 +3722,7 @@ sub do_var_crc {
       _d("SQL for chunk 0: $sql");
    }
 
-   if ( $opts{explain} ) {
+   if ( $final_opts->{explain} ) {
       if ( $chunk_num == 0 ) {
          printf($explain, @{$info}{qw(database table)}, $sql)
             or die "Cannot print: $OS_ERROR";
@@ -3686,9 +3739,9 @@ sub do_var_crc {
 }
 
 sub do_checksum {
-   my ( $dbh, $info, $query, $explain ) = @_;
+   my ( $dbh, $info, $query, $explain, $final_opts ) = @_;
    MKDEBUG && _d("do_checksum for $info->{table}");
-   if ( $opts{explain} ) {
+   if ( $final_opts->{explain} ) {
       printf($explain, @{$info}{qw(database table)}, $query)
          or die "Cannot print: $OS_ERROR";
    }
@@ -3702,18 +3755,18 @@ sub do_checksum {
 }
 
 sub do_count {
-   my ( $dbh, $info, $chunk_num, $explain ) = @_;
+   my ( $dbh, $info, $chunk_num, $explain, $final_opts ) = @_;
    MKDEBUG && _d("do_count for $info->{table}");
    my $sql = "SELECT COUNT(*) FROM "
       . $q->quote(@{$info}{qw(database table)});
-   if ( $opts{W} || $opts{since} ) {
+   if ( $final_opts->{W} || $final_opts->{since} ) {
       # TODO: this (and the code in inject_chunks) should be abstracted into
       # some SqlBuilder module or something
       $sql .= " WHERE ("
-         . join(" AND ", map { "($_)" } grep { $_ } @opts{qw(W since)} )
+         . join(" AND ", map { "($_)" } grep { $_ } @{$final_opts}{qw(W since)} )
          . ")";
    }
-   if ( $opts{explain} ) {
+   if ( $final_opts->{explain} ) {
       printf($explain, @{$info}{qw(database table)}, $sql)
          or die "Cannot print: $OS_ERROR";
    }
@@ -3979,6 +4032,38 @@ If a given algorithm won't work for some reason, mk-table-checksum falls back to
 another.  The least common denominator is ACCUM, which works on MySQL 3.23.2 and
 newer.
 
+=item --argtable
+
+type: string
+
+The database.table with arguments for each table to checksum.
+
+This table may be named anything you wish.  It must contain at least the
+following columns:
+
+  CREATE TABLE checksum_args (
+     db         char(64)     NOT NULL,
+     tbl        char(64)     NOT NULL,
+     PRIMARY KEY (db, tbl)
+  );
+
+In addition to the columns shown, it may contain any of the other columns listed
+here:
+
+  a C columns r c f k no-use-index optxor probability s
+  since sincecolumn sleep sleep-coef trim w W
+
+Each of these columns corresponds to the short form of a command-line option.
+Each column should be NULL-able.  The data type does not matter, but it's
+suggested you use a sensible data type to prevent garbage data.
+
+When C<mk-table-checksum> checksums a table, it will look for information in
+this table.  Any column that has a defined value will override the corresponding
+command-line argument for the table being currently processed.  In this way it
+is possible to specify custom command-line arguments for any table.
+
+See also L<"--savesince">.
+
 =item --askpass
 
 Prompt for a password when connecting to MySQL.
@@ -4153,6 +4238,31 @@ keep this lock until the checksums complete on the other servers.
 This option isn't very useful by itself, so you probably want to use L<"--wait">
 instead.
 
+=item --modulo
+
+short form: -M; type: int
+
+Do only every Nth chunk on chunked tables.
+
+This option lets you checksum only some chunks of the table.  This is a useful
+alternative to L<"--probability"> when you want to be sure you get full coverage
+in some specified number of runs; for example, you can do only every 7th chunk,
+and then use L<"--offset"> to rotate the modulo every day of the week.
+
+Just like with L<"--probability">, a table that cannot be chunked is done every
+time.
+
+=item --offset
+
+short form: -O; type: string; default: 0
+
+Modulo offset expression for use with L<"--modulo">.
+
+The argument may be an SQL expression, such as C<WEEKDAY(NOW())> (which returns
+a number from 0 through 6).  The argument is evaluated by MySQL.  The result is
+used as follows: if chunk_num % L<"--modulo"> == L<"--offset">, the chunk will
+be checksummed.
+
 =item --optxor
 
 short form: -o; default: yes; negatable: yes
@@ -4206,7 +4316,11 @@ Checksums will be run with this percent probability.
 This is an integer between 1 and 100.  If 100, every chunk of every table will
 certainly be checksummed.  If less than that, there is a chance that some chunks
 of some tables will be skipped.  This is useful for routine jobs designed to
-randomly sample bits of tables without checksumming the whole server.
+randomly sample bits of tables without checksumming the whole server.  By
+default, if a table is not chunkable, it will be checksummed every time even
+when the probability is less than 100.  You can't currently override this.
+
+See also L<"--modulo">.
 
 =item --quiet
 
@@ -4264,10 +4378,10 @@ it only on the master.  You specify a table to insert the results into.  The
 query will insert directly into the table, so it will be replicated through the
 binlog to the slaves.
 
-The argument to the option is the table (fully qualified: db.table) in which
-the checksums should be stored. The table must have at least these columns:
-db, tbl, chunk, boundaries, this_crc, master_crc, this_cnt, master_cnt.
-Here is a suggested table structure:
+The argument to the option is the table (fully qualified: db.table) in which the
+checksums should be stored. The table must have at least these columns: db, tbl,
+chunk, boundaries, this_crc, master_crc, this_cnt, master_cnt.  The table may be
+named anything you wish.  Here is a suggested table structure:
 
   CREATE TABLE checksum (
      db         char(64)     NOT NULL,
@@ -4322,6 +4436,13 @@ rules, see L<http://dev.mysql.com/doc/en/replication-rules.html>.
 
 The table specified by L<"--replicate"> will never be checksummed itself.
 
+=item --savesince
+
+When L<"--argtable"> and L<"--since"> are given, save the current L<"--since">
+value into that table's C<since> column after checksumming.  In this way you can
+incrementally checksum tables by starting where the last one finished.  This
+option is TODO.
+
 =item --schema
 
 Checksum C<SHOW CREATE TABLE> intead of table data.
@@ -4357,9 +4478,14 @@ This is not too different to L<"--where">, but instead of universally applying a
 WHERE clause to every table, it selectively finds the right column to use and
 applies it only if such a column is found.  See also L<"--sincecolumn">.
 
-A special bit of extra magic: the table is checksummed only if the create time
-(or last modified time, for tables that report the last modified time, such as
-MyISAM tables) is newer than this value, if the value is temporal.
+The argument may be an expression, which is evaluated by MySQL.  For example,
+you can specify C<CURRENT_DATE - INTERVAL 7 DAY> to get the date of one week
+ago.
+
+A special bit of extra magic: if the value is temporal (looks like a date or
+datetime), then the table is checksummed only if the create time (or last
+modified time, for tables that report the last modified time, such as MyISAM
+tables) is newer than the value.
 
 =item --sincecolumn
 

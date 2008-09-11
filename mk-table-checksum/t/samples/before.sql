@@ -1,7 +1,8 @@
+drop database if exists test;
 create database test;
 use test;
 
-drop table if exists checksum_test, checksum, fl_test;
+drop table if exists checksum_test, checksum, fl_test, argtest;
 
 create table checksum_test(
    a int not null primary key
@@ -21,6 +22,15 @@ CREATE TABLE checksum (
  ts         timestamp    NOT NULL,
  PRIMARY KEY (db, tbl, chunk)
 );
+
+create table argtest (
+ db         char(64)     NOT NULL,
+ tbl        char(64)     NOT NULL,
+ since      char(64) NOT NULL,
+ primary key(db, tbl)
+);
+
+insert into argtest select 'test', 'checksum_test', current_date;
 
 create table fl_test(a float not null primary key, b double);
 CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so';
