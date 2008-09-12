@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 13;
+use Test::More tests => 14;
 
 my $output = `perl ../mk-parallel-restore mk_parallel_restore_foo --test`;
 like(
@@ -51,7 +51,7 @@ is($output + 0, 0, 'Loaded mk_parallel_restore_bar.bar');
 
 $output = `mysql -e 'show databases'`;
 SKIP: {
-   skip 'Sakila is not installed', 2 unless $output =~ m/sakila/;
+   skip 'Sakila is not installed', 6 unless $output =~ m/sakila/;
 
    $output = `perl ../../mk-parallel-dump/mk-parallel-dump --basedir /tmp -d sakila -t film,film_actor,payment,rental`;
    like($output, qr/0 failures/, 'Dumped sakila tables');
@@ -81,5 +81,10 @@ SKIP: {
    $output = `../mk-parallel-restore --progress --test /tmp/default/`;
    like($output, qr/done: [\d\.]+[Mk]\/[\d\.]+[Mk]/, 'Reporting progress by bytes');
 
+
+   # Issue 30: Add resume functionality to mk-parallel-restore
    `rm -rf /tmp/default`;
+
+   $output = `../../mk-parallel-dump/mk-parallel-dump --basedir /tmp -d test -t issue_30 -C 10`;
+
 }

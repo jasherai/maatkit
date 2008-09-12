@@ -1019,6 +1019,7 @@ my @view_files;
 my %files_for_table;
 my %size_for_table;
 my %size_for_file;
+my %chunks_for_table;
 my %stats;
 my $known_filetypes = 'sql|txt|csv|trg';
 my $bytes = 0; # For progress measurements
@@ -1059,6 +1060,20 @@ File::Find::find(
                      N => $tbl,
                   };
                }
+
+               # Check if a chunks file for this table exits. This file is used
+               # for resuming interrupted restores.
+               my $chunks_file = $dirs . $tbl . '.chunks';
+               if ( !exists $chunks_for_table{$db}->{$tbl}
+                    && -f $chunks_file ) {
+                  open my $CHUNKS_FILE, "< $chunks_file"
+                     or die "Cannot read $file: $OS_ERROR";
+                  my $chunks = do { local $/ = undef; <$CHUNKS_FILE> };
+                  close $CHUNKS_FILE;
+                  push @{ $chunks_for_table{$db}->{$tbl} },
+                     split(/\n/, $chunks);
+               }
+
             }
          }
          elsif ( $filename =~ m/00_views.sql/ ) {
