@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 27;
+use Test::More tests => 30;
 use DBI;
 
 my $output;
@@ -186,5 +186,27 @@ like($output, qr/FROM `test`\.`issue_37` USE INDEX \(`idx_a`\) WHERE/, 'Injects 
 $output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers --no-use-index 2>&1 | grep 'src: '`;
 like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --no-use-index');
 
+# #############################################################################
+# Issue 22: mk-table-sync fails with uninitialized value at line 2330
+# #############################################################################
+diag(`/tmp/12345/use -D test  < samples/issue_22.sql`);
+diag(`/tmp/12345/use -D test -e "SET SQL_LOG_BIN=0; INSERT INTO test.messages VALUES (1,2,'author','2008-09-12 00:00:00','1','0','headers','msg');"`);
+diag(`/tmp/12345/use -e 'CREATE DATABASE test2'`);
+diag(`/tmp/12345/use -D test2 < samples/issue_22.sql`);
+
+$output = 'foo'; # To make explicitly sure that the following command
+                 # returns blank because there are no rows and not just that
+                 # $output was blank from a previous test
+$output = `/tmp/12345/use -D test2 -e 'SELECT * FROM messages'`;
+ok(!$output, 'test2.messages is empty before sync (issue 22)');
+
+$output = `../mk-table-sync --skipslavecheck -x u=msandbox,p=msandbox,P=12345,h=127.1,D=test,t=messages u=msandbox,p=msandbox,P=12345,h=127.1,D=test2,t=messages`;
+ok(!$output, 'Synced test.messages to test2.messages on same host (issue 22)');
+
+$output     = `/tmp/12345/use -D test  -e 'SELECT * FROM messages'`;
+my $output2 = `/tmp/12345/use -D test2 -e 'SELECT * FROM messages'`;
+is($output, $output2, 'test2.messages matches test.messages (issue 22)');
+
 diag(`../../sandbox/stop_all`);
 exit;
+
