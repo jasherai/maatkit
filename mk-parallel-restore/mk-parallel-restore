@@ -21,7 +21,6 @@
 
 # TODO: wrap float columns in CONVERT so they'll restore correctly.
 # TODO: wrap character columns in CONVERT so can specify a charset explicitly.
-# TODO: allow resuming.
 
 use strict;
 use warnings FATAL => 'all';
@@ -1369,7 +1368,12 @@ sub do_table {
    my ($fifo, $load_from, $loaded);
    my $bytes_done = 0;
 
+   $bytes_done = skip_finished_chunks($db, $tbl, \@files) unless $opts{noresume};
+
    foreach my $file ( @files ) {
+
+      # skip_finished_chunks() undefs files which are already restored
+      next if !defined $file;
 
       if ( filetype($file) =~ m/^(?:sql|trg)$/ ) {
          my @args;
@@ -1486,6 +1490,68 @@ sub do_table {
 
    $dbh->disconnect() if $dbh;
    return $exit_status;
+}
+
+# Undef files in $files_ref for which the rows in the corresponding
+# chunk have already been restored.
+# Returns the number of bytes "done" (already restored) in order to
+# keep --progress accurate.
+sub skip_finished_chunks {
+   my ( $db, $tbl, $files_ref ) = @_;
+   my $chunks_ref = $chunks_for_table{$db}->{$tbl};
+   
+   MKDEBUG && _d("Checking if restore of $db.$tbl can be resumed");
+
+   if ( !defined $chunks_ref ) {
+      MKDEBUG && _d('Cannot resume restore: no chunks file');
+      return 0;
+   }
+
+   if ( $chunks_ref->[0] eq '1=1' ) {
+      MKDEBUG && _d('Cannot resume restore: only 1 chunk (1=1)');
+      return 0;
+   }
+
+   $dbh ||= get_cxn();
+   $dbh->do("USE `$db`");
+
+   my $first_missing_chunk = 0;
+   foreach my $chunk ( @$chunks_ref ) {
+      my $select_chunk = "SELECT 1 FROM `$db`.`$tbl` WHERE ( $chunk ) LIMIT 1";
+      my $chunk_restored = $dbh->selectall_arrayref($select_chunk);
+      last if ( scalar @$chunk_restored == 0 );
+      $first_missing_chunk++;
+   }
+
+   # We resume from missing chunk N-1. This is to ensure that we don't miss
+   # anything because the following can happen: Chunks 0 and 1 are restored,
+   # only the first row of chunk 2 is restored, and none of chunk 3 is restored.
+   # Our check ($select_chunk) will fail on chunk 3 but succeed on chunk 2
+   # because of that single row that was restored. Therefore, to be safe, we
+   # start restoring from missing chunk N-1: chunk 2. This should be reliable
+   # because if even 1 row of chunk 2 was restored, then chunks 0 and 1
+   # should have been completely restored (tables are restored in parallel
+   # but chunks are restored serially).
+   $first_missing_chunk -= 1 unless $first_missing_chunk == 0;
+
+   my $bytes_done = 0;
+   if ( $first_missing_chunk ) {
+      # We need to DELETE the first missing chunk otherwise we may try to
+      # INSERT dupliate values.
+      $dbh->do("DELETE FROM `$db`.`$tbl` WHERE "
+               . $chunks_ref->[$first_missing_chunk]);
+
+      foreach my $file ( @$files_ref[0..($first_missing_chunk-1)] ) {
+         $bytes_done += $size_for_file{$file};
+         $file = undef;
+      }
+   }
+
+   MKDEBUG && _d("Resuming restore of $db.$tbl from chunk "
+                 . $first_missing_chunk
+                 . " ($bytes_done bytes already done)");
+
+   return $bytes_done;
 }
 
 # The following 2 subs allow us a much finer gradient of progress reporting.
@@ -1839,6 +1905,17 @@ This prevents large loads from being logged to the server's binary log.
 negatable: yes
 
 Set C<FOREIGN_KEY_CHECKS=0> before C<LOAD DATA INFILE>.
+
+=item --noresume
+
+Do not resume restore.
+
+By default, C<mk-parallel-restore> checks each tables' chunks for existing
+rows and restores only from the point where a previous restore stopped. This
+option disables restore resumption and fully restores every table.
+
+Restore resumption does not work with tab-separated files or dumps that were
+not chunked.
 
 =item --nouniquechecks
 

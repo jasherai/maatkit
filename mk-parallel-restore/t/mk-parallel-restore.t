@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 14;
+use Test::More tests => 17;
 
 my $output = `perl ../mk-parallel-restore mk_parallel_restore_foo --test`;
 like(
@@ -81,10 +81,52 @@ SKIP: {
    $output = `../mk-parallel-restore --progress --test /tmp/default/`;
    like($output, qr/done: [\d\.]+[Mk]\/[\d\.]+[Mk]/, 'Reporting progress by bytes');
 
-
-   # Issue 30: Add resume functionality to mk-parallel-restore
-   `rm -rf /tmp/default`;
-
-   $output = `../../mk-parallel-dump/mk-parallel-dump --basedir /tmp -d test -t issue_30 -C 10`;
-
 }
+
+# #############################################################################
+# Issue 30: Add resume functionality to mk-parallel-restore
+# #############################################################################
+`mysql < samples/issue_30.sql`;
+`rm -rf /tmp/default`;
+`../../mk-parallel-dump/mk-parallel-dump --basedir /tmp -d test -t issue_30 -C 25`;
+# The above makes the following chunks:
+#
+# #   WHERE                         SIZE  FILE
+# --------------------------------------------------------------
+# 0:  `id` < 254                    790   issue_30.000000.sql.gz
+# 1:  `id` >= 254 AND `id` < 502    619   issue_30.000001.sql.gz
+# 2:  `id` >= 502 AND `id` < 750    661   issue_30.000002.sql.gz
+# 3:  `id` >= 750                   601   issue_30.000003.sql.gz
+#
+# Now we fake like a resume operation died on an edge case:
+# after restoring the first row of chunk 2. We should resume
+# from chunk 1 to be sure that all of 2 is restored.
+`mysql -D test -e 'SELECT * FROM issue_30' > /tmp/mkpr_i30`;
+`mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
+$output = `MKDEBUG=1 ../mk-parallel-restore -D test /tmp/default/test/ | grep 'Resuming'`;
+like($output, qr/Resuming restore of test.issue_30 from chunk 2 \(140\d{1,2} bytes/, 'Reports resume from chunk 2 (issue 30)');
+
+$output = 'foo';
+$output = `mysql -e 'SELECT * FROM test.issue_30' | diff /tmp/mkpr_i30 -`;
+ok(!$output, 'Resume restored all 100 rows exactly (issue 30)');
+
+`rm -rf /tmp/mkpr_i30`;
+`rm -rf /tmp/default`;
+
+# Test that resume doesn't do anything on a tab dump because there's
+# no chunks file
+`../../mk-parallel-dump/mk-parallel-dump --basedir /tmp -d test -t issue_30 --tab`;
+$output = `MKDEBUG=1 ../mk-parallel-restore -D test --local --tab /tmp/default/test/`;
+like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab dump (issue 30)');
+
+`rm -rf /tmp/default/`;
+
+# Test that resume doesn't do anything on non-chunked dump because
+# there's only 1 chunk: where 1=1
+`../../mk-parallel-dump/mk-parallel-dump --basedir /tmp -d test -t issue_30 -C 10000`;
+$output = `MKDEBUG=1 ../mk-parallel-restore -D test /tmp/default/test/`;
+like($output, qr/Cannot resume restore: only 1 chunk \(1=1\)/, 'Does not resume single chunk where 1=1 (issue 30)');
+
+`rm -rf /tmp/default`;
+`mysql -e 'DROP TABLE test.issue_30'`;
+exit;
