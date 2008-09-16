@@ -104,7 +104,7 @@ SKIP: {
 `mysql -D test -e 'SELECT * FROM issue_30' > /tmp/mkpr_i30`;
 `mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
 $output = `MKDEBUG=1 ../mk-parallel-restore --noatomicresume -D test /tmp/default/test/ | grep 'Resuming'`;
-like($output, qr/Resuming restore of test.issue_30 from chunk 2 \(140\d{1,2} bytes/, 'Reports non-atomic resume from chunk 2 (issue 30)');
+like($output, qr/Resuming restore of test.issue_30 from chunk 2 \(14\d+ bytes/, 'Reports non-atomic resume from chunk 2 (issue 30)');
 
 $output = 'foo';
 $output = `mysql -e 'SELECT * FROM test.issue_30' | diff /tmp/mkpr_i30 -`;
