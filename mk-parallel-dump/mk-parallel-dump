@@ -491,7 +491,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 2215
+# OptionParser package 2300
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -614,13 +614,6 @@ sub new {
       groups       => [ { k => 'o', d => 'Options' } ],
       allowed_with => \@allowed_with,
    };
-
-   if ( MKDEBUG ) {
-      use Data::Dumper;
-      $Data::Dumper::Indent = 1;
-      my $self_dump = Dumper($self);
-      _d('New OptionParser: ' . $self_dump);
-   }
 
    return bless $self, $class;
 }
@@ -1043,7 +1036,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2215
+# TableParser package 2291
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1128,7 +1121,7 @@ sub parse {
       my @cols;
       my @col_prefixes;
       foreach my $col_def ( split(',', $cols) ) {
-         my ($name, $prefix) = $col_def =~ m/`(\w+)`(?:\((\d+)\))?/;
+         my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
          push @cols, $name;
          push @col_prefixes, $prefix;
       }
@@ -1582,7 +1575,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 2215
+# TableChunker package 2289
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1619,40 +1612,45 @@ sub find_chunk_columns {
          . join(', ', @{$opts->{possible_keys}}));
    }
 
-   my @candidate_cols;
+   my @possible_keys;
+   KEY:
+   foreach my $key ( values %{ $table->{keys} } ) {
 
-   my @possible_keys = grep { $_->{type} eq 'BTREE' } values %{$table->{keys}};
+      next unless $key->{type} eq 'BTREE';
+
+      defined $_ && next KEY for @{ $key->{col_prefixes} };
+
+      if ( $opts->{exact} ) {
+         next unless $key->{unique} && @{$key->{cols}} == 1;
+      }
+
+      push @possible_keys, $key;
+   }
+
    @possible_keys = sort {
       ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
    } @possible_keys;
+
    MKDEBUG && _d('Possible keys in order: '
       . join(', ', map { $_->{name} } @possible_keys));
 
    my $can_chunk_exact = 0;
-   if ($opts->{exact}) {
-      @candidate_cols =
-         grep {
-            $int_types{$table->{type_for}->{$_}}
-            || $real_types{$table->{type_for}->{$_}}
-         }
-         map  { $_->{cols}->[0] }
-         grep { $_->{unique} && @{$_->{cols}} == 1 }
-              @possible_keys;
-      if ( @candidate_cols ) {
-         $can_chunk_exact = 1;
-      }
-      MKDEBUG && _d('Exact chunkable: ' . join(', ', @candidate_cols));
+   my @candidate_cols;
+   foreach my $key ( @possible_keys ) { 
+      my $col = $key->{cols}->[0];
+
+      next unless ( $int_types{$table->{type_for}->{$col}}
+                    || $real_types{$table->{type_for}->{$col}} );
+
+      push @candidate_cols, { column => $col, index => $key->{name} };
    }
 
-   if ( !@candidate_cols ) {
-      @candidate_cols =
-         grep {
-            $int_types{$table->{type_for}->{$_}}
-            || $real_types{$table->{type_for}->{$_}}
-         }
-         map { $_->{cols}->[0] }
-         @possible_keys;
-      MKDEBUG && _d('Inexact chunkable: ' . join(', ', @candidate_cols));
+   $can_chunk_exact = 1 if ( $opts->{exact} && scalar @candidate_cols );
+
+   if ( MKDEBUG ) {
+      my $chunk_type = $opts->{exact} ? 'Exact' : 'Inexact';
+      _d("$chunk_type chunkable: "
+         . join(', ', map { "$_->{column} on $_->{index}" } @candidate_cols));
    }
 
    my @result;
@@ -1660,18 +1658,23 @@ sub find_chunk_columns {
       MKDEBUG && _d('Ordering columns by order in tbl, PK first');
       if ( $table->{keys}->{PRIMARY} ) {
          my $pk_first_col = $table->{keys}->{PRIMARY}->{cols}->[0];
-         @result = grep { $_ eq $pk_first_col } @candidate_cols;
-         @candidate_cols = grep { $_ ne $pk_first_col } @candidate_cols;
+         @result = grep { $_->{column} eq $pk_first_col } @candidate_cols;
+         @candidate_cols = grep { $_->{column} ne $pk_first_col } @candidate_cols;
       }
       my $i = 0;
       my %col_pos = map { $_ => $i++ } @{$table->{cols}};
-      push @result, sort { $col_pos{$a} <=> $col_pos{$b} } @candidate_cols;
+      push @result, sort { $col_pos{$a->{column}} <=> $col_pos{$b->{column}} }
+                       @candidate_cols;
    }
    else {
       @result = @candidate_cols;
    }
-   MKDEBUG && _d('Chunkable columns: ' . join(', ', @result));
-   MKDEBUG && _d("Can chunk exactly: $can_chunk_exact");
+
+   if ( MKDEBUG ) {
+      _d('Chunkable columns: '
+         . join(', ', map { "$_->{column} on $_->{index}" } @result));
+      _d("Can chunk exactly: $can_chunk_exact");
+   }
 
    return ($can_chunk_exact, \@result);
 }
@@ -1782,7 +1785,7 @@ sub calculate_chunks {
 sub get_first_chunkable_column {
    my ( $self, $table, $opts ) = @_;
    my ($exact, $cols) = $self->find_chunk_columns($table, $opts);
-   return $cols->[0];
+   return ( $cols->[0]->{column}, $cols->[0]->{index} );
 }
 
 sub size_to_rows {
@@ -1847,9 +1850,13 @@ sub inject_chunks {
          . join(" AND ", map { "($_)" } grep { $_ } @{$args{where}} )
          . ")";
    }
+   my $db_tbl     = $self->{quoter}->quote(@args{qw(database table)});
+   my $index_hint = defined $args{index_hint}
+                    ? "USE INDEX (`$args{index_hint}`)"
+                    : '';
    $args{query} =~ s!/\*WHERE\*/! $where!;
-   my $db_tbl = $self->{quoter}->quote(@args{qw(database table)});
    $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
+   $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;
    $args{query} =~ s!/\*CHUNK_NUM\*/! $args{chunk_num} AS chunk_num,!;
    return $args{query};
 }
@@ -1857,8 +1864,14 @@ sub inject_chunks {
 sub range_num {
    my ( $self, $dbh, $start, $interval, $max ) = @_;
    my $end = min($max, $start + $interval);
+
+
+   $start = sprintf('%.17f', $start) if $start =~ /e/;
+   $end   = sprintf('%.17f', $end)   if $end   =~ /e/;
+
    $start =~ s/\.(\d{5}).*$/.$1/;
    $end   =~ s/\.(\d{5}).*$/.$1/;
+
    if ( $end > $start ) {
       return ( $start, $end );
    }
@@ -2746,7 +2759,7 @@ sub get_chunks {
    my $rows_per_chunk = $tc->size_to_rows($dbh, $db, $tbl, $spec, $du);
 
    # Get the chunk column candidates
-   my $col   = $tc->get_first_chunkable_column($table);
+   my ($col, undef)   = $tc->get_first_chunkable_column($table);
    return $cant_chunk unless $col;
    my %params = $tc->get_range_statistics($dbh, $db, $tbl, $col);
    return $cant_chunk
