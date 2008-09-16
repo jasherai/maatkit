@@ -1523,16 +1523,9 @@ sub skip_finished_chunks {
       $first_missing_chunk++;
    }
 
-   # We resume from missing chunk N-1. This is to ensure that we don't miss
-   # anything because the following can happen: Chunks 0 and 1 are restored,
-   # only the first row of chunk 2 is restored, and none of chunk 3 is restored.
-   # Our check ($select_chunk) will fail on chunk 3 but succeed on chunk 2
-   # because of that single row that was restored. Therefore, to be safe, we
-   # start restoring from missing chunk N-1: chunk 2. This should be reliable
-   # because if even 1 row of chunk 2 was restored, then chunks 0 and 1
-   # should have been completely restored (tables are restored in parallel
-   # but chunks are restored serially).
-   $first_missing_chunk -= 1 unless $first_missing_chunk == 0;
+   if ( $first_missing_chunk ) {
+      $first_missing_chunk -= 1 unless $opts{'atomicresume'};
+   }
 
    my $bytes_done = 0;
    if ( $first_missing_chunk ) {
@@ -1753,6 +1746,22 @@ second gets the latest trunk code from Subversion.
 =item --askpass
 
 Prompt for a password when connecting to MySQL.
+
+=item --atomicresume
+
+negatable: yes; default: yes
+
+Treat chunks as atomic when resuming restore.
+
+By default C<mk-parallel-restore> resumes restoration from the first chunk that
+is missing all its rows. For dumps of transactionally-safe tables (InnoDB),
+it cannot happen that a chunk is only partially restored. Therefore, restoring 
+from the first missing chunk is safe.
+
+However, for dumps of non-transactionally safe tables, it is possible that a
+chunk can be only partially restored. In such cases, the chunk will wrongly
+appear to be fully restored. Therefore, you must specify C<--noatomicresume>
+so that the partially restored chunk is fully restored.
 
 =item --basedir
 

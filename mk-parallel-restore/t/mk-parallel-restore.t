@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 17;
+use Test::More tests => 18;
 
 my $output = `perl ../mk-parallel-restore mk_parallel_restore_foo --test`;
 like(
@@ -103,20 +103,27 @@ SKIP: {
 # from chunk 1 to be sure that all of 2 is restored.
 `mysql -D test -e 'SELECT * FROM issue_30' > /tmp/mkpr_i30`;
 `mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
-$output = `MKDEBUG=1 ../mk-parallel-restore -D test /tmp/default/test/ | grep 'Resuming'`;
-like($output, qr/Resuming restore of test.issue_30 from chunk 2 \(140\d{1,2} bytes/, 'Reports resume from chunk 2 (issue 30)');
+$output = `MKDEBUG=1 ../mk-parallel-restore --noatomicresume -D test /tmp/default/test/ | grep 'Resuming'`;
+like($output, qr/Resuming restore of test.issue_30 from chunk 2 \(140\d{1,2} bytes/, 'Reports non-atomic resume from chunk 2 (issue 30)');
 
 $output = 'foo';
 $output = `mysql -e 'SELECT * FROM test.issue_30' | diff /tmp/mkpr_i30 -`;
 ok(!$output, 'Resume restored all 100 rows exactly (issue 30)');
 
 `rm -rf /tmp/mkpr_i30`;
+
+# Now we'll re-do that whole operation but let --atomicresume be its default
+# TRUE and so we should resume from the first fully missing chunk: 3.
+`mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
+$output = `MKDEBUG=1 ../mk-parallel-restore -D test /tmp/default/test/ | grep 'Resuming'`;
+like($output, qr/Resuming restore of test.issue_30 from chunk 3 \(20\d\d bytes/, 'Reports atomic resume from chunk 3 (issue 30)');
+
 `rm -rf /tmp/default`;
 
 # Test that resume doesn't do anything on a tab dump because there's
 # no chunks file
 `../../mk-parallel-dump/mk-parallel-dump --basedir /tmp -d test -t issue_30 --tab`;
-$output = `MKDEBUG=1 ../mk-parallel-restore -D test --local --tab /tmp/default/test/`;
+$output = `MKDEBUG=1 ../mk-parallel-restore --noatomicresume -D test --local --tab /tmp/default/test/`;
 like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab dump (issue 30)');
 
 `rm -rf /tmp/default/`;
@@ -124,7 +131,7 @@ like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab 
 # Test that resume doesn't do anything on non-chunked dump because
 # there's only 1 chunk: where 1=1
 `../../mk-parallel-dump/mk-parallel-dump --basedir /tmp -d test -t issue_30 -C 10000`;
-$output = `MKDEBUG=1 ../mk-parallel-restore -D test /tmp/default/test/`;
+$output = `MKDEBUG=1 ../mk-parallel-restore --noatomicresume -D test /tmp/default/test/`;
 like($output, qr/Cannot resume restore: only 1 chunk \(1=1\)/, 'Does not resume single chunk where 1=1 (issue 30)');
 
 `rm -rf /tmp/default`;

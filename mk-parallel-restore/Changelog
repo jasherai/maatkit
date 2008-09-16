@@ -2,6 +2,7 @@ Changelog for mk-parallel-restore:
 
    * Made restores resume by default if possible (issue 30).
    * Added --noresume option (issue 30).
+   * Added --[no]atomicresume option (issue 30).
    * --progress is reported by bytes instead of chunk count (issue 32).
    * LOAD DATA queries show bytes done and db.tbl name in SQL comment.
    * CHARACTER SET was declared in the wrong place for csv LOAD DATA query.
