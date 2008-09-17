@@ -115,7 +115,7 @@ SKIP: {
       ),
       q{SELECT /*test.test1:1/1*/ 0 AS chunk_num, COUNT(*) AS }
       . q{cnt, LOWER(CONV(BIT_XOR(CAST(FNV_64(`a`, `b`, `c`) AS UNSIGNED)), }
-      . q{10, 16)) AS crc FROM `test`.`test1` WHERE (((`a` < 1) OR (`a` = 1 }
+      . q{10, 16)) AS crc FROM `test`.`test1`  WHERE (((`a` < 1) OR (`a` = 1 }
       . q{AND `b` <= 'en'))) AND ((foo=1))},
       'First nibble SQL with FNV_64',
    );
@@ -157,7 +157,7 @@ is (
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
+   . q{`test`.`test1`  WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
    'First nibble SQL',
 );
 
@@ -174,7 +174,7 @@ is (
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
+   . q{`test`.`test1`  WHERE (((`a` < 1) OR (`a` = 1 AND `b` <= 'en'))) AND ((foo=1))},
    'First nibble SQL, again',
 );
 
@@ -194,7 +194,7 @@ is (
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) AND }
+   . q{`test`.`test1`  WHERE ((((`a` > 1) OR (`a` = 1 AND `b` > 'en')) AND }
    . q{((`a` < 2) OR (`a` = 2 AND `b` <= 'ca')))) AND (((foo=1)))},
    'Second nibble SQL',
 );
@@ -235,7 +235,7 @@ is (
    . q{SUBSTRING(@crc, 17, 16), 16, 10) AS UNSIGNED)), 10, 16), 16, '0'), }
    . q{LPAD(CONV(BIT_XOR(CAST(CONV(SUBSTRING(@crc := SHA1(CONCAT_WS('#', `a`, }
    . q{`b`, `c`)), 33, 8), 16, 10) AS UNSIGNED)), 10, 16), 8, '0'))) AS crc FROM }
-   . q{`test`.`test1` WHERE ((((`a` > 4) OR (`a` = 4 AND `b` > 'bz')) AND }
+   . q{`test`.`test1`  WHERE ((((`a` > 4) OR (`a` = 4 AND `b` > 'bz')) AND }
    . q{1=1)) AND ((foo=1))},
    'End-of-table nibble SQL',
 );

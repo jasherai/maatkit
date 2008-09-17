@@ -206,16 +206,18 @@ sub sync_table {
       # locking the tables.
       MKDEBUG && _d("Beginning sync cycle $cycle");
       my $src_sql = $plugin->get_sql(
-         quoter   => $args{quoter},
-         database => $args{src_db},
-         table    => $args{src_tbl},
-         where    => $args{where},
+         quoter     => $args{quoter},
+         database   => $args{src_db},
+         table      => $args{src_tbl},
+         where      => $args{where},
+         index_hint => $args{index_hint} ? $plugin->{index} : undef,
       );
       my $dst_sql = $plugin->get_sql(
-         quoter   => $args{quoter},
-         database => $args{dst_db},
-         table    => $args{dst_tbl},
-         where    => $args{where},
+         quoter     => $args{quoter},
+         database   => $args{dst_db},
+         table      => $args{dst_tbl},
+         where      => $args{where},
+         index_hint => $args{index_hint} ? $plugin->{index} : undef,
       );
       if ( $args{transaction} ) {
          # TODO: update this for 2-way sync.
