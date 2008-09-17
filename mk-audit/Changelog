@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+2008-09-17: version 0.9.2
+
    * Checks /etc/sysctl.conf for default ipv4 system variables (issue 56).
    * No longer reports false-positive duplicate system variables (issue 58).
    * Added --socket.

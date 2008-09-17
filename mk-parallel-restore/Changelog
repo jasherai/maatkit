@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+2008-09-17: version 1.0.9
+
    * Made restores resume by default if possible (issue 30).
    * Added --noresume option (issue 30).
    * Added --[no]atomicresume option (issue 30).

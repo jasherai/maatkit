@@ -1,5 +1,7 @@
 Changelog for mk-slave-prefetch:
 
+2008-09-17: version 1.0.4
+
    * Added --pid option.
    * Using debug (MKDEBUG=1) and --daemonize now causes script to die.
 

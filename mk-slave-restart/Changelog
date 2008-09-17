@@ -1,5 +1,7 @@
 Changelog for mk-slave-restart:
 
+2008-09-17: version 1.0.9
+
    * Added --pid option (issue 18).
 
 2008-08-11: version 1.0.8

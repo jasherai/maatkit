@@ -562,7 +562,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 2215
+# OptionParser package 2300
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2926,7 +2926,7 @@ $dsn_parser->prop('setvars', $opts{setvars});
 # table that contains arguments for each table to be checksummed.  The short
 # form of each argument is given. TODO: parse this list from the POD.
 my %overridable_args = map { $_ => 1 }
-   qw(a C columns r c f k no-use-index optxor probability s
+   qw(a C columns r c f k nouseindex optxor probability s
       since sincecolumn sleep sleep-coef trim w W);
 
 # Post-process command-line options and arguments.
@@ -3106,7 +3106,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             my $struct        = $tp->parse($create);
             my ( $col, $idx ) = $ch->get_first_chunkable_column($struct);
 
-            $idx = undef if $final_opts{'no-use-index'};
+            $idx = undef if $final_opts{nouseindex};
 
             my @chunks = '1=1'; # Default.
             if ( $final_opts{C} && $col ) {
@@ -4050,7 +4050,7 @@ following columns:
 In addition to the columns shown, it may contain any of the other columns listed
 here:
 
-  a C columns r c f k no-use-index optxor probability s
+  a C columns r c f k nouseindex optxor probability s
   since sincecolumn sleep sleep-coef trim w W
 
 Each of these columns corresponds to the short form of a command-line option.
@@ -4179,14 +4179,6 @@ specified number of digits after the decimal point for the checksum.  This can
 avoid checksum mismatches due to different floating-point representations of
 the same values on different MySQL versions and hardware.
 
-=item --no-use-index
-
-Do not add USE INDEX hint to SQL statements.
-
-By default C<mk-table-checksum> adds an USE INDEX hint to each SQL statement
-to coerce MySQL into using the index for the column by which a table will be
-chunked. This option causes C<mk-table-checksum> to omit the USE INDEX hint.
-
 =item --function
 
 short form: -f; type: string
@@ -4251,6 +4243,14 @@ and then use L<"--offset"> to rotate the modulo every day of the week.
 
 Just like with L<"--probability">, a table that cannot be chunked is done every
 time.
+
+=item --nouseindex
+
+Do not add USE INDEX hint to SQL statements.
+
+By default C<mk-table-checksum> adds an USE INDEX hint to each SQL statement
+to coerce MySQL into using the index for the column by which a table will be
+chunked. This option causes C<mk-table-checksum> to omit the USE INDEX hint.
 
 =item --offset
 

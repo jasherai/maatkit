@@ -1,5 +1,7 @@
 Changelog for mk-heartbeat:
 
+2008-09-17: version 1.0.11
+
    * Dies if heartbeat table does not have at least one row (issue 45).
    * Added --pid option.
    * Using debug (MKDEBUG=1) and --daemonize now causes script to die.

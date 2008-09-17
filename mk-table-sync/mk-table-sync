@@ -34,7 +34,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 2215
+# OptionParser package 2300
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -157,13 +157,6 @@ sub new {
       groups       => [ { k => 'o', d => 'Options' } ],
       allowed_with => \@allowed_with,
    };
-
-   if ( MKDEBUG ) {
-      use Data::Dumper;
-      $Data::Dumper::Indent = 1;
-      my $self_dump = Dumper($self);
-      _d('New OptionParser: ' . $self_dump);
-   }
 
    return bless $self, $class;
 }
@@ -3149,7 +3142,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 2215
+# TableSyncer package 2310
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -4660,7 +4653,7 @@ if ( $dsns[0]->{t} ) {
          dst_db     => $dsn->{D},
          dst_tbl    => $dsn->{t},
          where      => $opts{W},
-         index_hint => !$opts{'no-use-index'},
+         index_hint => !$opts{nouseindex},
       );
       unlock_server(%args);
    }
@@ -4721,7 +4714,7 @@ elsif ( $opts{R} ) {
                dst_db     => $diff->{db},
                dst_tbl    => $diff->{tbl},
                where      => $diff->{boundaries},
-               index_hint => !$opts{'no-use-index'},
+               index_hint => !$opts{nouseindex},
             );
          }
          unlock_server(%args);
@@ -4778,7 +4771,7 @@ elsif ( $opts{R} ) {
                         dst_db     => $diff->{db},
                         dst_tbl    => $diff->{tbl},
                         where      => $diff->{boundaries},
-                        index_hint => !$opts{'no-use-index'},
+                        index_hint => !$opts{nouseindex},
                      );
                   }
                   unlock_server(%args);
@@ -4860,7 +4853,7 @@ else {
             dst_db     => $db_tbl->{db},
             dst_tbl    => $db_tbl->{tbl},
             where      => $opts{W},
-            index_hint => !$opts{'no-use-index'},
+            index_hint => !$opts{nouseindex},
          );
       }
       unlock_server(%args);
@@ -5444,7 +5437,7 @@ If L<"--transaction"> is specified, C<LOCK TABLES> is not used.  Instead, lock
 and unlock are implemented by beginning and committing transactions.  The exception
 is if L<"--lock"> is 3.
 
-=item --no-use-index
+=item --nouseindex
 
 Do not add USE INDEX hint to SQL statements for Chunk algorithm.
 

@@ -304,7 +304,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 2215
+# OptionParser package 2300
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -427,13 +427,6 @@ sub new {
       groups       => [ { k => 'o', d => 'Options' } ],
       allowed_with => \@allowed_with,
    };
-
-   if ( MKDEBUG ) {
-      use Data::Dumper;
-      $Data::Dumper::Indent = 1;
-      my $self_dump = Dumper($self);
-      _d('New OptionParser: ' . $self_dump);
-   }
 
    return bless $self, $class;
 }

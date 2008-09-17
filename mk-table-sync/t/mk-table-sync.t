@@ -183,8 +183,8 @@ like($output, qr/a.+1.+2/ms, 'Table with trigger was written');
 $output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers 2>&1 | grep 'src: '`;
 like($output, qr/FROM `test`\.`issue_37` USE INDEX \(`idx_a`\) WHERE/, 'Injects USE INDEX hint by default');
 
-$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers --no-use-index 2>&1 | grep 'src: '`;
-like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --no-use-index');
+$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers --nouseindex 2>&1 | grep 'src: '`;
+like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --nouseindex');
 
 # #############################################################################
 # Issue 22: mk-table-sync fails with uninitialized value at line 2330
@@ -207,6 +207,13 @@ $output     = `/tmp/12345/use -D test  -e 'SELECT * FROM messages'`;
 my $output2 = `/tmp/12345/use -D test2 -e 'SELECT * FROM messages'`;
 is($output, $output2, 'test2.messages matches test.messages (issue 22)');
 
-diag(`../../sandbox/stop_all`);
+# #############################################################################
+# Issue 11: Possible infinite loop in mk-table-sync
+# #############################################################################
+
+# We'll reuse the test.messages table.
+
+
+# diag(`../../sandbox/stop_all`);
 exit;
 

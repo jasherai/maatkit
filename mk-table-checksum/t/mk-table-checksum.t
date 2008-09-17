@@ -273,8 +273,8 @@ unlike($output, qr/Chunk size is too small/, 'Unsigned bigint chunks (issue 47)'
 $output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM 2>&1 | grep 'SQL for chunk 0:'`;
 like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47` USE INDEX \(`idx`\) WHERE/, 'Injects correct USE INDEX by default');
 
-$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM --no-use-index 2>&1 | grep 'SQL for chunk 0:'`;
-like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --no-use-index');
+$output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM --nouseindex 2>&1 | grep 'SQL for chunk 0:'`;
+like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --nouseindex');
 
 diag(`../../sandbox/stop_all`);
 exit;
