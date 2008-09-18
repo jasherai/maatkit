@@ -1,0 +1,6 @@
+SELECT 10_1 FROM foo
+
+SELECT 10_2 FROM foo
+
+SELECT 10_3 FROM foo
+

@@ -1,0 +1,4 @@
+SELECT 20_1 FROM foo
+
+SELECT 20_2 FROM foo
+

@@ -1,0 +1,2 @@
+SELECT 30_1 FROM foo
+
