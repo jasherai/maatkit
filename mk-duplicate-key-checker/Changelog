@@ -1,6 +1,6 @@
 Changelog for mk-duplicate-key-checker:
 
-2008-09-19: version 1.0.11
+2008-09-19: version 1.1.8
 
    * Updates to shared code.
    * Made debugging code more efficient in non-debug mode.
