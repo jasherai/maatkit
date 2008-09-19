@@ -1,5 +1,9 @@
 #!/bin/sh
 
+if [ -n "$NO_TESTS" ]; then
+   exit 0
+fi
+
 set -u
 set -e
 set -x
