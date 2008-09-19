@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 9;
 use English qw(-no_match_vars);
 
 require "../LogParser.pm";
@@ -573,3 +573,37 @@ close $file;
 
 is_deeply( \@e, $events, "microslow log with tabs", );
 
+@e = ();
+open $file, "<", 'samples/slow007.txt' or die $OS_ERROR;
+1 while ( $p->parse_event( $file, \&simple_callback ) );
+close $file;
+$events = [
+   {  cmd            => 'Query',
+      Schema         => 'food', 
+      arg            => 'SELECT fruit FROM trees',
+      ts             => '071218 11:48:27',
+      Disk_filesort  => 'No',
+      Merge_passes   => '0',
+      Full_scan      => 'No',
+      Full_join      => 'No',
+      Thread_id      => '3',
+      Tmp_table      => 'No',
+      QC_Hit         => 'No',
+      Rows_examined  => '0',
+      Filesort       => 'No',
+      Query_time     => '0.000012',
+      Disk_tmp_table => 'No',
+      Rows_sent      => '0',
+      Lock_time      => '0.000000',
+      NR             => 7,
+   },
+];
+is_deeply(\@e, $events, 'Parses Schema');
+
+@e = ();
+open $file, "<", 'samples/slow006.txt' or die $OS_ERROR;
+1 while ( $p->parse_event( $file, \&simple_callback ) );
+close $file;
+is($e[2]->{db}, 'bar', 'Parsing USE is case-insensitive');
+
+exit;

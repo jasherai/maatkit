@@ -216,7 +216,7 @@ sub parse_event {
       if ( !$handled_line ) {
          if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
             MKDEBUG && _d('Line is the end of a query within event');
-            if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
+            if ( my ( $db ) = $line =~ m/^use (.*);/i ) {
                MKDEBUG && _d('Setting event DB to ', $db);
                $event->{db} = $db;
                $type = 1;

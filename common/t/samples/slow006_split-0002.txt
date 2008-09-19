@@ -1,4 +1,6 @@
-SELECT 20_1 FROM foo
+USE `bar`
 
-SELECT 20_2 FROM foo
+SELECT col FROM bar_tbl
+
+SELECT col FROM bar_tbl
 

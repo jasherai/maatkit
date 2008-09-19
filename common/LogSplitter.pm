@@ -57,20 +57,26 @@ sub split_logs {
          die "Attribute $attrib does not exist in log events.";
       }
 
-      my $log_split_fh;
-      my $session = $event->{ $attrib };
-      if ( exists $self->{sessions}->{ $session } ) { # Existing session
-         $log_split_fh = $self->{sessions}->{ $session };
-      }
-      else { # New session
+      my $session_id = $event->{ $attrib };
+      my $session    = $self->{sessions}->{ $session_id } ||= {}; 
+
+      if ( !defined $session->{fh} ) { # New session
          my $session_n = sprintf '%04d', ++$self->{n_sessions};
          my $log_split_file = $self->{saveto_dir}
                             . "mysql_log_split-$session_n";
 
-         open $log_split_fh, ">", $log_split_file
+         open $session->{fh}, ">", $log_split_file
             or die "Cannot open log split file $log_split_file: $OS_ERROR";
-         $self->{sessions}->{ $session } = $log_split_fh;
-         MKDEBUG && _d("Created $log_split_file for session $attrib=$session");
+         MKDEBUG && _d("Created $log_split_file for session $attrib=$session_id");
+      }
+
+      my $log_split_fh = $session->{fh};
+
+      # Print USE db if 1) we haven't done so yet or 2) the db has changed.
+      my $db = $event->{db} || $event->{Schema};
+      if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
+         print $log_split_fh "USE `$db`\n\n";
+         $session->{db} = $db;
       }
 
       print $log_split_fh "$event->{arg}\n\n";

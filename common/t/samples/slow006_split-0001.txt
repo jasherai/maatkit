@@ -1,6 +1,10 @@
-SELECT 10_1 FROM foo
+USE `foo`
 
-SELECT 10_2 FROM foo
+SELECT col FROM foo_tbl
 
-SELECT 10_3 FROM foo
+SELECT col FROM foo_tbl
+
+USE `bar`
+
+SELECT col FROM bar_tbl
 
