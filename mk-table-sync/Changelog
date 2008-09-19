@@ -1,10 +1,11 @@
 Changelog for mk-table-sync:
 
-2008-09-17: version 1.0.9
+2008-09-19: version 1.0.9
 
    * Added --nouseindex option (issue 8).
-   * Dies if any dst. table has triggers unless --ignore-triggers (issue 37).
+   * Dies if any dest table has triggers unless --ignore-triggers (issue 37).
    * Added better support for CRC32 (issue 43).
+   * Made debugging code more efficient in non-debug mode.
 
 2008-08-11: version 1.0.8
 

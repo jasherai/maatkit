@@ -1,9 +1,12 @@
 Changelog for mk-parallel-dump:
 
-2008-09-17: version 1.0.10
+2008-09-19: version 1.0.10
 
    * Added option --biggestfirst which is enabled by default (issue 31).
    * --noflushlock and --nolocktables caused a global flush and lock (issue 12).
+   * Made debugging code more efficient in non-debug mode.
+   * Fixed various bugs in shared code.
+   * Moved all command-line documentation to POD.
 
 2008-08-11: version 1.0.9
 

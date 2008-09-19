@@ -1,5 +1,10 @@
 Changelog for mk-find:
 
+2008-09-19: version 0.9.13
+
+   * Updates to shared code.
+   * Made debugging code more efficient in non-debug mode.
+
 2008-08-11: version 0.9.12
 
    * Files downloaded directly from SVN crashed due to version information.

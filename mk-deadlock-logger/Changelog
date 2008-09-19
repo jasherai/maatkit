@@ -1,8 +1,9 @@
 Changelog for mk-deadlock-logger:
 
-2008-09-17: version 1.0.12
+2008-09-19: version 1.0.12
 
    * Added --pid option.
+   * Made debugging code more efficient in non-debug mode.
 
 2008-08-11: version 1.0.11
 
