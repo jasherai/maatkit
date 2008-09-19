@@ -2986,7 +2986,7 @@ my $main_dbh    = get_cxn($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 # Check replication slaves if desired.
 # ############################################################################
 if ( defined $opts{replcheck} ) {
-   $exit_status = check_repl_slaves($ms);
+   $exit_status = check_repl_slaves($main_dbh, $dsn_parser, $tc, $ms);
    exit($exit_status);
 }
 
@@ -3381,7 +3381,7 @@ sub is_temporal {
 }
 
 sub check_repl_slaves {
-   my ( $dbh, $dsn_parser, $tc ) = @_;
+   my ( $dbh, $dsn_parser, $tc, $ms ) = @_;
    my $exit_status = 0;
    my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
    $ms->recurse_to_slaves(
