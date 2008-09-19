@@ -5,9 +5,10 @@ Release: 1%{?dist}
 Source: %{name}-%{version}.tar.gz
 License: GPL
 Group: Development/Tools
-URL: http://maatkit.sourceforge.net/
+URL: http://code.google.com/p/maatkit/
 BuildRoot: %{_tmppath}/%{name}-root
 Requires: perl(DBD::mysql)
+BuildArch: noarch
 
 %description
 Maatkit is a collection of essential command-line utilities for MySQL. Each is completely stand-alone, without dependencies other than core Perl and the DBI drivers needed to connect to MySQL, and doesn't need to be "installed" - you can just execute the scripts. This makes the tools easy to use on systems where you can't install anything extra, such as customer sites or ISPs.
@@ -36,5 +37,8 @@ rm -rf $RPM_BUILD_ROOT
 %{perl_sitelib}/*
 
 %changelog
+* Thu Sep 18 2008 Robin Bowes <robin@robinbowes.com> - 2
+- Added BuildArch: noarch
+
 * Wed Aug 13 2008 Baron Schwartz <baron.schwartz@gmail.com> - 1
 - Contributed by Spil Games
