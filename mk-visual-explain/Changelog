@@ -1,6 +1,6 @@
 Changelog for mk-visual-explain:
 
-2008-09-19: version 1.0.11
+2008-09-19: version 1.0.10
 
    * Updates to shared code.
    * Made debugging code more efficient in non-debug mode.
