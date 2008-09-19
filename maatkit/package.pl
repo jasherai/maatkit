@@ -18,15 +18,8 @@ if ( $svnst =~ m/\S/ ) {
 }
 
 # Find list of packages.
-# NOTE XXX This is where you need to edit if you want to add a new tool to be
-# released.
 my $base     = '..';
-my @packages = sort qw(
-   mk-archiver mk-deadlock-logger mk-duplicate-key-checker mk-find
-   mk-heartbeat mk-log-parser mk-parallel-dump mk-slave-prefetch
-   mk-parallel-restore mk-query-profiler mk-show-grants mk-slave-delay
-   mk-slave-restart mk-table-checksum mk-table-sync mk-visual-explain
-   mk-slave-find mk-slave-move mk-audit);
+my @packages = sort split(/\n/, `cat packages`);
 
 # Don't release if any tool is missing a test
 foreach my $p ( @packages ) {

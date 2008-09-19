@@ -13,9 +13,7 @@ $d = `mysql -e 'select current_date - interval $d day' -B --skip-column-names`;
 
 my @packages = @ARGV;
 if ( !@packages ) {
-  @packages =
-     map { m/(mk-.*)/g }
-     grep { -f "$_/Changelog" }  <../mk-*>;
+  @packages = sort split(/\n/, `cat packages`);
 }
 
 foreach my $package ( @packages ) {
