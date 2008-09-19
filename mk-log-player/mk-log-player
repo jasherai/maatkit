@@ -570,7 +570,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2215
+# LogParser package 2315
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -735,7 +735,7 @@ sub parse_event {
       if ( !$handled_line ) {
          if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
             MKDEBUG && _d('Line is the end of a query within event');
-            if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
+            if ( my ( $db ) = $line =~ m/^use (.*);/i ) {
                MKDEBUG && _d('Setting event DB to ', $db);
                $event->{db} = $db;
                $type = 1;
@@ -1015,8 +1015,9 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 2313
+# LogSplitter package 2315
 # ###########################################################################
+
 
 package LogSplitter;
 
@@ -1056,20 +1057,25 @@ sub split_logs {
          die "Attribute $attrib does not exist in log events.";
       }
 
-      my $log_split_fh;
-      my $session = $event->{ $attrib };
-      if ( exists $self->{sessions}->{ $session } ) { # Existing session
-         $log_split_fh = $self->{sessions}->{ $session };
-      }
-      else { # New session
+      my $session_id = $event->{ $attrib };
+      my $session    = $self->{sessions}->{ $session_id } ||= {}; 
+
+      if ( !defined $session->{fh} ) { # New session
          my $session_n = sprintf '%04d', ++$self->{n_sessions};
          my $log_split_file = $self->{saveto_dir}
                             . "mysql_log_split-$session_n";
 
-         open $log_split_fh, ">", $log_split_file
+         open $session->{fh}, ">", $log_split_file
             or die "Cannot open log split file $log_split_file: $OS_ERROR";
-         $self->{sessions}->{ $session } = $log_split_fh;
-         MKDEBUG && _d("Created $log_split_file for session $attrib=$session");
+         MKDEBUG && _d("Created $log_split_file for session $attrib=$session_id");
+      }
+
+      my $log_split_fh = $session->{fh};
+
+      my $db = $event->{db} || $event->{Schema};
+      if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
+         print $log_split_fh "USE `$db`\n\n";
+         $session->{db} = $db;
       }
 
       print $log_split_fh "$event->{arg}\n\n";
@@ -1095,9 +1101,279 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# DSNParser package 2215
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package DSNParser;
+
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my $self = {
+      opts => {
+         A => {
+            desc => 'Default character set',
+            dsn  => 'charset',
+            copy => 1,
+         },
+         D => {
+            desc => 'Database to use',
+            dsn  => 'database',
+            copy => 1,
+         },
+         F => {
+            desc => 'Only read default options from the given file',
+            dsn  => 'mysql_read_default_file',
+            copy => 1,
+         },
+         h => {
+            desc => 'Connect to host',
+            dsn  => 'host',
+            copy => 1,
+         },
+         p => {
+            desc => 'Password to use when connecting',
+            dsn  => 'password',
+            copy => 1,
+         },
+         P => {
+            desc => 'Port number to use for connection',
+            dsn  => 'port',
+            copy => 1,
+         },
+         S => {
+            desc => 'Socket file to use for connection',
+            dsn  => 'mysql_socket',
+            copy => 1,
+         },
+         u => {
+            desc => 'User for login if not current user',
+            dsn  => 'user',
+            copy => 1,
+         },
+      },
+   };
+   foreach my $opt ( @opts ) {
+      MKDEBUG && _d('Adding extra property ' . $opt->{key});
+      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   }
+   return bless $self, $class;
+}
+
+sub prop {
+   my ( $self, $prop, $value ) = @_;
+   if ( @_ > 2 ) {
+      MKDEBUG && _d("Setting $prop property");
+      $self->{$prop} = $value;
+   }
+   return $self->{$prop};
+}
+
+sub parse {
+   my ( $self, $dsn, $prev, $defaults ) = @_;
+   if ( !$dsn ) {
+      MKDEBUG && _d('No DSN to parse');
+      return;
+   }
+   MKDEBUG && _d("Parsing $dsn");
+   $prev     ||= {};
+   $defaults ||= {};
+   my %vals;
+   my %opts = %{$self->{opts}};
+   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
+      MKDEBUG && _d("Interpreting $dsn as $p=$dsn");
+      $dsn = "$p=$dsn";
+   }
+   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+   foreach my $key ( keys %opts ) {
+      MKDEBUG && _d("Finding value for $key");
+      $vals{$key} = $hash{$key};
+      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
+         $vals{$key} = $prev->{$key};
+         MKDEBUG && _d("Copying value for $key from previous DSN");
+      }
+      if ( !defined $vals{$key} ) {
+         $vals{$key} = $defaults->{$key};
+         MKDEBUG && _d("Copying value for $key from defaults");
+      }
+   }
+   foreach my $key ( keys %hash ) {
+      die "Unrecognized DSN part '$key' in '$dsn'\n"
+         unless exists $opts{$key};
+   }
+   if ( (my $required = $self->prop('required')) ) {
+      foreach my $key ( keys %$required ) {
+         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+      }
+   }
+   return \%vals;
+}
+
+sub as_string {
+   my ( $self, $dsn ) = @_;
+   return $dsn unless ref $dsn;
+   return join(',',
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      sort keys %$dsn );
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my $usage
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      . "  KEY  COPY  MEANING\n"
+      . "  ===  ====  =============================================\n";
+   my %opts = %{$self->{opts}};
+   foreach my $key ( sort keys %opts ) {
+      $usage .= "  $key    "
+             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($opts{$key}->{desc} || '[No description]')
+             . "\n";
+   }
+   if ( (my $key = $self->prop('autokey')) ) {
+      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
+   }
+   return $usage;
+}
+
+sub get_cxn_params {
+   my ( $self, $info ) = @_;
+   my $dsn;
+   my %opts = %{$self->{opts}};
+   my $driver = $self->prop('dbidriver') || '';
+   if ( $driver eq 'Pg' ) {
+      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(h P));
+   }
+   else {
+      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(F h P S A))
+         . ';mysql_read_default_group=mysql';
+   }
+   MKDEBUG && _d($dsn);
+   return ($dsn, $info->{u}, $info->{p});
+}
+
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
+}
+
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit        => 0,
+      RaiseError        => 1,
+      PrintError        => 0,
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+      my $sql = "/*!40101 SET NAMES $charset*/";
+      MKDEBUG && _d("$dbh: $sql");
+      $dbh->do($sql);
+      MKDEBUG && _d('Enabling charset for STDOUT');
+      if ( $charset eq 'utf8' ) {
+         binmode(STDOUT, ':utf8')
+            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+      }
+      else {
+         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+      }
+   }
+   my $setvars = $self->prop('setvars');
+   if ( $cxn_string =~ m/mysql/i && $setvars ) {
+      my $sql = "SET $setvars";
+      MKDEBUG && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
+   MKDEBUG && _d('DBH info: ',
+      $dbh,
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
+      ' Character set info: ',
+      Dumper($dbh->selectall_arrayref(
+         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
+      ' $DBI::VERSION: ', $DBI::VERSION,
+   );
+   return $dbh;
+}
+
+sub get_hostname {
+   my ( $self, $dbh ) = @_;
+   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
+      return $host;
+   }
+   my ( $hostname, $one ) = $dbh->selectrow_array(
+      'SELECT /*!50038 @@hostname, */ 1');
+   return $hostname;
+}
+
+sub disconnect {
+   my ( $self, $dbh ) = @_;
+   MKDEBUG && $self->print_active_handles($dbh);
+   $dbh->disconnect;
+}
+
+sub print_active_handles {
+   my ( $self, $thing, $level ) = @_;
+   $level ||= 0;
+   printf("# Active %sh: %s %s %s\n", ($thing->{Type} || 'undef'), "\t" x $level,
+      $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
+      or die "Cannot print: $OS_ERROR";
+   foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
+      $self->print_active_handles->( $handle, $level + 1 );
+   }
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
+   print "# DSNParser:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End DSNParser package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
+
+use POSIX;
+use Time::HiRes qw(time);
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
 
 use strict;
 use English qw(-no_match_vars);
@@ -1112,71 +1388,202 @@ $OUTPUT_AUTOFLUSH = 1;
 
 my @opt_spec = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{strict} = 1;
+$opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '[OPTION...] [FILE]';
 $opt_parser->{descr}  = q{split and play log files. };
 my %opts = $opt_parser->parse();
+
+if ( !@ARGV ) {
+   $opt_parser->error('You did not specify any files to play or split');
+}
+
 $opt_parser->usage_or_errors(%opts);
-
-# #############################################################################
-# # Set up the data store and the callback.
-# #############################################################################
-my %queries;
-my %stats;
-my $callback;
-
-my $lp = new LogParser;
 
 # #############################################################################
 # Split the log.
 # #############################################################################
-my $ls = new LogSplitter();
-$ls->split_logs(
-   log_files  => \@ARGV,
-   attribute  => $opts{a},
-   saveto_dir => $opts{saveto},
-   LogParser  => $lp,
-) if $opts{s};
+if ( $opts{s} ) {
+   my $lp = new LogParser;
+   my $ls = new LogSplitter();
+   $ls->split_logs(
+      log_files  => \@ARGV,
+      attribute  => $opts{s},
+      saveto_dir => $opts{saveto},
+      LogParser  => $lp,
+   );
 
-# If given --split and --play, we are to play the logs that we just split.
-if ( $opts{p} ) {
+   # If given --split and --play, we are to play the logs that we just split.
+   if ( $opts{x} ) {
+   }
 }
 
 # #############################################################################
 # Play the logs.
 # #############################################################################
-my $qr = new QueryRewriter();
 
-my @fhs;
+exit unless $opts{x};
+
+my %stats;
+
+# #############################################################################
+# Connect.
+# #############################################################################
+my $dp  = new DSNParser;
+my $dbh = get_cxn();
+$dbh->{InactiveDestroy} = 1; # Don't die on fork().
+
+# #############################################################################
+# Make list of session log files to play.
+# #############################################################################
+my @sessions;
 if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
    my $fh = *STDIN;
-   push @fhs, $fh;
+   push @sessions, $fh;
 }
 else {
-   foreach my $arg ( @ARGV ) {
-      open my $fh, "<", $arg or die "Cannot open $arg: $OS_ERROR\n";
-      push @fhs, $fh;
+   foreach my $log_split ( @ARGV ) {
+      
+      my @log_split_files;
+      if ( -d $log_split ) {
+         MKDEBUG && _d("Reading all session log files in $log_split");
+         opendir my $dir, $log_split
+            or die "Cannot open directory $log_split: $OS_ERROR";
+         @log_split_files = map { "$log_split/$_" }      # Save full dir/file
+                            grep { -f "$log_split/$_" }  # If it's a file
+                            readdir $dir;                # For each file in dir
+         closedir $dir;
+      }
+      else {
+         push @log_split_files, $log_split;
+      }
+
+      MKDEBUG && _d('Session log file(s): ',
+                    join(', ', map { $_ } @log_split_files));
+
+      @sessions = map +{ log_file => $_ }, @log_split_files;
    }
 }
 
-my $oktorun = 1;
-while ( $oktorun && (my $fh = shift(@fhs) ) ) {
-   1 while ( $oktorun && $lp->parse_event($fh, $callback) );
-   close $fh or warn "Can't close filehandle: $OS_ERROR\n";
+# #########################################################################
+# Assign the sessions to child processes.
+# #########################################################################
+
+# This signal handler will do nothing but wake up the sleeping parent process
+# and record the exit status and time of the child that exited (as a side
+# effect of not discarding the signal).
+my %exited_children;
+$SIG{CHLD} = sub {
+   my $kid;
+   while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+      # Must right-shift to get the actual exit status of the child.
+      $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
+      $exited_children{$kid}->{exit_time}   = time;
+   }
+};
+
+my $play_start = time;
+my %kids;
+while ( @sessions || %kids ) {
+
+   # Wait for the MySQL server to become responsive.
+   my $tries = 0;
+   while ( !$dbh->ping && $tries++ < $opts{w} ) {
+      sleep(1);
+      eval {
+         $dbh = get_cxn();
+      };
+      if ( $EVAL_ERROR ) {
+         info(0, 'Waiting: ' . scalar(localtime) . ' '
+            . mysql_error_msg($EVAL_ERROR));
+      }
+   }
+   if ( $tries >= $opts{w} ) {
+      die "Too many retries, exiting.\n";
+   }
+
+   # Start a new child process.
+   while ( @sessions && $opts{c} > keys %kids ) {
+      my $session = shift @sessions;
+      $session->{time} = time;
+      my $pid = fork();
+      die "Can't fork: $OS_ERROR" unless defined $pid;
+      if ( $pid ) {              # I'm the parent.
+         $kids{$pid} = $session;
+      }
+      else {                     # I'm the child.
+         $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
+         MKDEBUG && _d("PID $PID got ", Dumper($session));
+         my $exit_status = 0;
+         $exit_status = play_session($session) || $exit_status;
+         exit($exit_status);
+      }
+   }
+
+   # Possibly wait for child.
+   my $reaped = 0;
+   foreach my $kid ( keys %exited_children ) {
+      do_session_stats($kids{$kid}, $exited_children{$kid}); # session, status
+      delete $kids{$kid};
+      delete $exited_children{$kid};
+      $reaped = 1;
+   }
+
+   if ( !$reaped ) {
+      # Don't busy-wait.  But don't wait forever either, as a child may exit
+      # and signal while we're not sleeping, so if we sleep forever we may
+      # not get the signal.
+      sleep(1);
+   }
 }
 
+$stats{wallclock} = time() - $play_start;
+
 # ############################################################################
-# Print results.
+# Print stats.
 # ############################################################################
+
+print "Wall-clock time: $stats{wallclock}\n";
+
+exit;
 
 # ############################################################################
 # Subroutines.
 # ############################################################################
 
-# Returns an array ref with the name of the log splits.
-sub split_log {
-   my ( $log_file_ref, $saveto_dir ) = @_;
+sub play_session {
+   my ( $session ) = @_;
 
+   my $dbh = get_cxn();
+
+   open my $log_split_fh, '<', $session->{log_file}
+      or die "Cannot open log split file $session->{log_file}: $OS_ERROR";
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( my $sql = <$log_split_fh> ) {
+      $dbh->do($sql); 
+   }
+
+   $dbh->disconnect();
+   close $log_split_fh;
+
+   return;
+}
+
+sub do_session_stats {
+   my ( $session, $status ) = @_;
+   my $time = $status->{exit_time} - $session->{time};
+   print "Finished $session->{log_file} in t=$time\n";
+   return;
+}
+
+sub get_cxn {
+   my %params = %opts;
+   delete $params{D}; # Because it has a special meaning; see documentation.
+   my $dbh = $dp->get_dbh($dp->get_cxn_params(\%params));
+   if ( $opts{A} ) {
+      $dbh->do("/*!40101 SET character_set_database=$opts{A} */");
+   }
+   return $dbh;
 }
 
 sub _d {
@@ -1198,7 +1605,7 @@ mk-log-play
 
    mk-log-play --split Thread_id mysql-slow.log
 
-   mk-log-play --play /tmp/mysql-slow.log-split-*
+   mk-log-play --play /tmp/mysql_log_split-*
 
 =head1 DESCRIPTION
 
@@ -1223,6 +1630,10 @@ Specify at least one of L<"--play"> or L<"--split">.
 
 =over
 
+=item --askpass
+
+Prompt for a password when connecting to MySQL.
+
 =item --concurrency
 
 short form: -c; type: int; default: 1
@@ -1241,11 +1652,29 @@ type: time; default: 0
 
 Amount of time to delay between playing queries in each session.
 
+=item --host
+
+short form: -h; type: string
+
+Connect to host.
+
+=item --password
+
+short form: -p; type: string
+
+Password to use when connecting.
+
 =item --play
 
-short form: -p
+short form: -x
 
-Play given log files.
+Play (execute) given log files.
+
+=item --port
+
+short form: -P; type: int
+
+Port number to use for connection.
 
 =item --saveto
 
@@ -1253,11 +1682,29 @@ type: string; default: /tmp/
 
 Directory in which to save log splits.
 
+=item --socket
+
+short form: -S; type: string
+
+Socket file to use for connection.
+
 =item --split
 
 short form: -s; type: string
 
 Split and group log by given attribute.
+
+=item --user
+
+short form: -u; type: string
+
+User for login if not current user.
+
+=item --wait
+
+short form: -w; type: time; default: 5m
+
+Wait limit when server is down.
 
 =back
 
