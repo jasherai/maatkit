@@ -205,6 +205,9 @@ foreach my $opt_combo ( @opt_combos ) {
 # output is not stable due to the TIME column: occasionally it will
 # show 1 instead of 0 and diff barfs. These 3 columns should be stable.
 
+#TODO: it would be great to test --replcheck but I think it's not going to work
+#from SHOW PROCESSLIST in the sandboxen, it needs SHOW SLAVE HOSTS.
+
 # Check that --schema does NOT lock by default
 $output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema 2>&1`;
 unlike($output, qr/LOCK TABLES /, '--schema does not lock tables by default');
