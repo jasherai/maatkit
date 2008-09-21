@@ -1366,6 +1366,112 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Tr package 2332
+# ###########################################################################
+
+# Tr - Common Transformation and beautification subroutines
+package Tr;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+require Exporter;
+our @ISA         = qw(Exporter);
+our %EXPORT_TAGS = ();
+our @EXPORT      = ();
+our @EXPORT_OK   = qw(micro_t secs_to_time shorten ts);
+
+sub micro_t {
+   my ( $t ) = @_;
+   my $f;
+   my $WIN = ($^O eq 'MSWin32' ? 1 : 0);
+   my $u   = chr(($WIN ? 230 : 181));
+
+   $t = 0 if $t < 0;
+
+   if ($t > 0 && $t <= 0.000999) {
+      $f = ($t * 1000000) . " $u";
+   }
+   elsif ($t >= 0.001000 && $t <= 0.999999) {
+      $f = ($t * 1000) . ' ms';
+   }
+   elsif ($t >= 1) {
+      $f = ($t * 1) . ' s';  # * 1 to remove insignificant zeros
+   }
+   else {
+      $f = 0;  # $t should = 0 at this point
+   }
+
+   return $f;
+}
+
+sub secs_to_time {
+   my ( $secs, $fmt ) = @_;
+   $secs ||= 0;
+   return '00:00' unless $secs;
+
+   # Decide what format to use, if not given
+   $fmt ||= $secs >= 86_400 ? 'd'
+          : $secs >= 3_600  ? 'h'
+          :                   'm';
+
+   return
+      $fmt eq 'd' ? sprintf(
+         "%d+%02d:%02d:%02d",
+         int($secs / 86_400),
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : $fmt eq 'h' ? sprintf(
+         "%02d:%02d:%02d",
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : sprintf(
+         "%02d:%02d",
+         int(($secs % 3_600) / 60),
+         $secs % 60);
+}
+
+sub shorten {
+   my ( $num ) = @_;
+   my $n = 0;
+   while ( $num >= 1_024 ) {
+      $num /= 1_024;
+      ++$n;
+   }
+   return sprintf(
+      $num =~ m/\./ || $n
+         ? "%.2f%s"
+         : '%d',
+      $num, ('','k','M','G', 'T')[$n]);
+}
+
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# Tr:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Tr package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -1373,19 +1479,19 @@ package main;
 use POSIX;
 use Time::HiRes qw(time);
 use Data::Dumper;
-$Data::Dumper::Indent = 1;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use strict;
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-$OUTPUT_AUTOFLUSH = 1;
+Tr->import( qw(micro_t shorten) );
 
-# ############################################################################
+# #############################################################################
 # Get configuration information.
-# ############################################################################
-
+# #############################################################################
 my @opt_spec = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
@@ -1400,7 +1506,7 @@ if ( !@ARGV ) {
 $opt_parser->usage_or_errors(%opts);
 
 # #############################################################################
-# Split the log.
+# Split the log into sessions ("log splits").
 # #############################################################################
 if ( $opts{s} ) {
    my $lp = new LogParser;
@@ -1414,27 +1520,19 @@ if ( $opts{s} ) {
 
    # If given --split and --play, we are to play the logs that we just split.
    if ( $opts{x} ) {
+      # TODO
    }
 }
+
+exit unless $opts{x};
 
 # #############################################################################
 # Play the logs.
 # #############################################################################
 
-exit unless $opts{x};
-
-my %stats;
-
-# #############################################################################
-# Connect.
-# #############################################################################
-my $dp  = new DSNParser;
-my $dbh = get_cxn();
-$dbh->{InactiveDestroy} = 1; # Don't die on fork().
-
-# #############################################################################
+# ########################################################################
 # Make list of session log files to play.
-# #############################################################################
+# ########################################################################
 my @sessions;
 if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
    my $fh = *STDIN;
@@ -1448,9 +1546,9 @@ else {
          MKDEBUG && _d("Reading all session log files in $log_split");
          opendir my $dir, $log_split
             or die "Cannot open directory $log_split: $OS_ERROR";
-         @log_split_files = map { "$log_split/$_" }      # Save full dir/file
-                            grep { -f "$log_split/$_" }  # If it's a file
-                            readdir $dir;                # For each file in dir
+         @log_split_files = map { "$log_split/$_" }    # 3. Save full dir/file
+                            grep { -f "$log_split/$_" }# 2. If it's a file
+                            readdir $dir;              # 1. For each file in dir
          closedir $dir;
       }
       else {
@@ -1464,14 +1562,22 @@ else {
    }
 }
 
-# #########################################################################
+# ########################################################################
+# Connect parent to MySQL.
+# ########################################################################
+my $dp  = new DSNParser;
+my $parent_dbh = get_cxn();
+$parent_dbh->{InactiveDestroy} = 1; # Don't die on fork().
+
+# ########################################################################
 # Assign the sessions to child processes.
-# #########################################################################
+# ########################################################################
+my %kids;
+my %exited_children;
 
 # This signal handler will do nothing but wake up the sleeping parent process
 # and record the exit status and time of the child that exited (as a side
 # effect of not discarding the signal).
-my %exited_children;
 $SIG{CHLD} = sub {
    my $kid;
    while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
@@ -1481,16 +1587,15 @@ $SIG{CHLD} = sub {
    }
 };
 
-my $play_start = time;
-my %kids;
+my $session_n = 1;
 while ( @sessions || %kids ) {
 
    # Wait for the MySQL server to become responsive.
    my $tries = 0;
-   while ( !$dbh->ping && $tries++ < $opts{w} ) {
+   while ( !$parent_dbh->ping && $tries++ < $opts{w} ) {
       sleep(1);
       eval {
-         $dbh = get_cxn();
+         $parent_dbh = get_cxn();
       };
       if ( $EVAL_ERROR ) {
          info(0, 'Waiting: ' . scalar(localtime) . ' '
@@ -1504,7 +1609,7 @@ while ( @sessions || %kids ) {
    # Start a new child process.
    while ( @sessions && $opts{c} > keys %kids ) {
       my $session = shift @sessions;
-      $session->{time} = time;
+      $session->{number} = $session_n++;
       my $pid = fork();
       die "Can't fork: $OS_ERROR" unless defined $pid;
       if ( $pid ) {              # I'm the parent.
@@ -1521,8 +1626,7 @@ while ( @sessions || %kids ) {
 
    # Possibly wait for child.
    my $reaped = 0;
-   foreach my $kid ( keys %exited_children ) {
-      do_session_stats($kids{$kid}, $exited_children{$kid}); # session, status
+   foreach my $kid ( keys %exited_children ) { 
       delete $kids{$kid};
       delete $exited_children{$kid};
       $reaped = 1;
@@ -1536,44 +1640,177 @@ while ( @sessions || %kids ) {
    }
 }
 
-$stats{wallclock} = time() - $play_start;
-
-# ############################################################################
-# Print stats.
-# ############################################################################
-
-print "Wall-clock time: $stats{wallclock}\n";
+# The children print their given session stats when they finish.
 
 exit;
 
-# ############################################################################
+# #############################################################################
 # Subroutines.
-# ############################################################################
+# #############################################################################
 
 sub play_session {
    my ( $session ) = @_;
 
-   my $dbh = get_cxn();
-
+   # Read all SQL statements of session into an array of hashes.
    open my $log_split_fh, '<', $session->{log_file}
       or die "Cannot open log split file $session->{log_file}: $OS_ERROR";
-
+   my @SQL_statements;
    local $INPUT_RECORD_SEPARATOR = '';
    while ( my $sql = <$log_split_fh> ) {
-      $dbh->do($sql); 
+      $sql =~ s/\n+$//;
+      push @SQL_statements, { stmt => $sql };
    }
-
-   $dbh->disconnect();
    close $log_split_fh;
+
+   # Execute and time each SQL statement.
+   $session->{total_time} = time;
+   my $dbh = get_cxn();
+   foreach my $sql ( @SQL_statements ) {
+
+      # USE statements are not timed.
+      if ( $sql->{stmt} =~ /^USE /i ) {
+         $dbh->do($sql->{stmt});
+         next;
+      }
+
+      my $start_time = time;
+      my $results    = $dbh->selectall_arrayref($sql->{stmt});
+
+      $sql->{time}   = time - $start_time;
+      $sql->{n_rows} = scalar @$results;
+
+      $session->{n_queries}++;
+      $session->{n_rows} += $sql->{n_rows};
+   }
+   $dbh->disconnect();
+   $session->{total_time} = time - $session->{total_time};
+
+   # Calculate session performance metrics.
+   my $SQL_stats = calc_SQL_stats(\@SQL_statements);
+
+   # Print a pretty report of session peformance metrics.
+   print_session_stats($session, $SQL_stats);
 
    return;
 }
 
-sub do_session_stats {
-   my ( $session, $status ) = @_;
-   my $time = $status->{exit_time} - $session->{time};
-   print "Finished $session->{log_file} in t=$time\n";
+sub calc_SQL_stats {
+   my ( $SQL_statements ) = @_;
+   my $SQL_stats = {};
+   my @all_t     = ();
+   my $qr        = new QueryRewriter;
+   my $total_t;
+
+   # Calc stats for unique queries and make list of all queries' time.
+   foreach my $sql ( @$SQL_statements ) {
+      my $qfp = $qr->fingerprint($sql->{stmt});
+      if ( !exists $SQL_stats->{unique_queries}->{$qfp} ) {
+         $SQL_stats->{unique_queries}->{$qfp} = { sample => $sql->{stmt} };
+      }
+
+      my $q = $SQL_stats->{unique_queries}->{$qfp};
+      $q->{c} += 1;
+      if ( defined $sql->{time} ) {
+         $q->{total_t} += $sql->{time};
+         push @{ $q->{all_t} }, $sql->{time};
+
+         push @all_t, $sql->{time};
+         $total_t += $sql->{time};
+      }
+   }
+
+   # Sort per-query and all queries' lists of time.
+   foreach my $qfp ( keys %{ $SQL_stats->{unique_queries} } ) {
+      my $q = $SQL_stats->{unique_queries}->{$qfp};
+      next if !defined $q->{all_t};
+      @{ $q->{all_t} } = sort { $a <=> $b } @{ $q->{all_t} };
+   }
+   @all_t = sort { $a <=> $b } @all_t;
+
+   # Min, max, avg and 95% time for each uniqe query.
+   foreach my $qfp ( keys %{ $SQL_stats->{unique_queries} } ) {
+      my $q = $SQL_stats->{unique_queries}->{$qfp};
+      next if !defined $q->{all_t};
+      $q->{min_t} = micro_t($q->{all_t}[0]);
+      $q->{max_t} = micro_t($q->{all_t}[-1]);
+      $q->{avg_t} = micro_t($q->{total_t} / scalar @{ $q->{all_t} });
+      # nth_percent($q->{all_t}, sorted => 1);
+      $q->{t_95} = 1;
+   }
+
+   # Min, max, avg and 95% time for all queries.
+   $SQL_stats->{min_t} = micro_t($all_t[0]);
+   $SQL_stats->{max_t} = micro_t($all_t[-1]);
+   $SQL_stats->{avg_t} = micro_t($total_t / scalar @all_t);
+   # nth_percent(\@all_t, sorted => 1);
+   $SQL_stats->{t_95} = 1;
+
+   return $SQL_stats;
+}
+
+sub print_session_stats {
+   my ( $session, $SQL_stats ) = @_;
+
+   $session->{total_time} = micro_t($session->{total_time});
+   $session->{n_queries}  = shorten($session->{n_queries});
+   $session->{n_rows}     = shorten($session->{n_rows});
+
+   print <<"SESSION_STATS";
+
+Finished session $session->{number}:
+   Total time: $session->{total_time}
+   Queries:    $session->{n_queries}
+   Rows:       $session->{n_rows}
+
+   Query execution time:
+      min: $SQL_stats->{min_t}
+      max: $SQL_stats->{max_t}
+      avg: $SQL_stats->{avg_t}
+      95%: $SQL_stats->{t_95} 
+
+   Unique queries execution time:
+
+SESSION_STATS
+
+   foreach my $qfp ( keys %{ $SQL_stats->{unique_queries} } ) {
+      my $q = $SQL_stats->{unique_queries}->{$qfp};
+      print "Fingerprint: $qfp\n"
+         . "Sample: $q->{sample}\n"
+         . "\tCount: $q->{c}\n";
+      if ( defined $q->{all_t} ) {
+         print "\tmin: $q->{min_t}\n"
+            . "\tmax: $q->{max_t}\n"
+            . "\tavg: $q->{avg_t}\n"
+            . "\t95%: $q->{t_95}\n"
+            . "\n";
+      }
+      else {
+         print "\tNo time stats.\n\n";
+      }
+   }
+
    return;
+}
+
+sub nth_percent {
+   my ( $vals, %args ) = @_;
+   my %default_args = (
+      sorted  => 0,     # vals are not yet sorted
+      atleast => 10,    # require at least 10 vals
+      nth     => 95,    # 95th percentile of vals
+      from    => 'top', # from the top
+   );
+   my %op = ( %default_args, %args );
+   return if scalar @$vals < $op{atleast};
+   
+   my @s = @$vals;
+   my $n;
+
+   @s = sort { $a <=> $b } @s unless $op{sorted};
+   $n = ((scalar @s) * $op{nth}) / 100;  # cut-off percent
+   @s = splice(@s, 0, $n); # remove vals after cut-off percent
+
+   return \@s;
 }
 
 sub get_cxn {
