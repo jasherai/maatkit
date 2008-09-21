@@ -1,3 +1,6 @@
+Draw a histogram of various types of things in the slow log.  For example, 
+show the long tail of count of query fingerprints, lock time, exec time, etc.
+
 Compensate for this bug:
 # Time: 080906 17:41:59
 # User@Host: hssn[hssn] @ dingo-stage-1.host.cdc.advance.net [10.5.2.21]
