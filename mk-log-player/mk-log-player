@@ -1015,9 +1015,8 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 2315
+# LogSplitter package 2335
 # ###########################################################################
-
 
 package LogSplitter;
 
@@ -1044,6 +1043,8 @@ sub split_logs {
       push @fhs, $fh;
    }
 
+   $args{saveto_dir} .= '/' if substr($args{saveto_dir}, -1, 1) ne '/';
+
    $self->{attribute}  = $args{attribute};
    $self->{saveto_dir} = $args{saveto_dir};
    $self->{sessions}   = ();
@@ -1060,13 +1061,14 @@ sub split_logs {
       my $session_id = $event->{ $attrib };
       my $session    = $self->{sessions}->{ $session_id } ||= {}; 
 
-      if ( !defined $session->{fh} ) { # New session
+      if ( !defined $session->{fh} ) {
          my $session_n = sprintf '%04d', ++$self->{n_sessions};
          my $log_split_file = $self->{saveto_dir}
                             . "mysql_log_split-$session_n";
 
          open $session->{fh}, ">", $log_split_file
             or die "Cannot open log split file $log_split_file: $OS_ERROR";
+         $session->{log_split_file} = $log_split_file;
          MKDEBUG && _d("Created $log_split_file for session $attrib=$session_id");
       }
 
@@ -1084,6 +1086,16 @@ sub split_logs {
    my $lp = $args{LogParser};
    foreach my $fh ( @fhs ) {
       1 while $lp->parse_event($fh, $callback)
+   }
+
+   if ( !$args{silent} ) {
+      print "Parsed $self->{n_sessions} sessions:\n";
+      my $fmt = "   %-16s %-60s\n";
+      printf($fmt, $self->{attribute}, 'Saved to log split file');
+      foreach my $session_id ( sort keys %{ $self->{sessions} } ) {
+         my $session = $self->{sessions}->{ $session_id };
+         printf($fmt, $session_id, $session->{log_split_file}); 
+      }
    }
 
    return;
@@ -1366,10 +1378,9 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Tr package 2332
+# Tr package 2334
 # ###########################################################################
 
-# Tr - Common Transformation and beautification subroutines
 package Tr;
 
 use strict;
@@ -1392,14 +1403,20 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
+   $t = sprintf('%.17f', $t) if $t =~ /e/;
+
+   $t =~ s/\.(\d{1,6})\d*/\.$1/;
+
    if ($t > 0 && $t <= 0.000999) {
       $f = ($t * 1000000) . " $u";
    }
    elsif ($t >= 0.001000 && $t <= 0.999999) {
-      $f = ($t * 1000) . ' ms';
+      $f = sprintf('%.3f', $t * 1000);
+      $f = ($f * 1) . ' ms'; # * 1 to remove insignificant zeros
    }
    elsif ($t >= 1) {
-      $f = ($t * 1) . ' s';  # * 1 to remove insignificant zeros
+      $f = sprintf('%.6f', $t);
+      $f = ($f * 1) . ' s'; # * 1 to remove insignificant zeros
    }
    else {
       $f = 0;  # $t should = 0 at this point
@@ -1413,7 +1430,6 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
-   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
@@ -1509,6 +1525,10 @@ $opt_parser->usage_or_errors(%opts);
 # Split the log into sessions ("log splits").
 # #############################################################################
 if ( $opts{s} ) {
+   if ( $opts{saveto} && !-d $opts{saveto} ) {
+      die "$opts{saveto} is not a directory"
+   }
+
    my $lp = new LogParser;
    my $ls = new LogSplitter();
    $ls->split_logs(
@@ -1520,7 +1540,7 @@ if ( $opts{s} ) {
 
    # If given --split and --play, we are to play the logs that we just split.
    if ( $opts{x} ) {
-      # TODO
+      @ARGV = map { $_->{log_split_file} } values %{ $ls->{sessions} };
    }
 }
 
@@ -1539,14 +1559,14 @@ if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
    push @sessions, $fh;
 }
 else {
+   my @log_split_files;
    foreach my $log_split ( @ARGV ) {
-      
-      my @log_split_files;
+
       if ( -d $log_split ) {
          MKDEBUG && _d("Reading all session log files in $log_split");
          opendir my $dir, $log_split
             or die "Cannot open directory $log_split: $OS_ERROR";
-         @log_split_files = map { "$log_split/$_" }    # 3. Save full dir/file
+         @log_split_files = map  { "$log_split/$_" }   # 3. Save full dir/file
                             grep { -f "$log_split/$_" }# 2. If it's a file
                             readdir $dir;              # 1. For each file in dir
          closedir $dir;
@@ -1554,12 +1574,9 @@ else {
       else {
          push @log_split_files, $log_split;
       }
-
-      MKDEBUG && _d('Session log file(s): ',
-                    join(', ', map { $_ } @log_split_files));
-
-      @sessions = map +{ log_file => $_ }, @log_split_files;
    }
+   @sessions = map +{ log_file => $_ }, @log_split_files;
+   MKDEBUG && _d('Sessions: ' . Dumper(\@sessions));
 }
 
 # ########################################################################
