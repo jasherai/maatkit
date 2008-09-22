@@ -41,14 +41,24 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
+   # "Remove" scientific notation so the regex below does not make
+   # 6.123456e+18 into 6.123456.
+   $t = sprintf('%.17f', $t) if $t =~ /e/;
+
+   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
+   # because sprintf() rounds.
+   $t =~ s/\.(\d{1,6})\d*/\.$1/;
+
    if ($t > 0 && $t <= 0.000999) {
       $f = ($t * 1000000) . " $u";
    }
    elsif ($t >= 0.001000 && $t <= 0.999999) {
-      $f = ($t * 1000) . ' ms';
+      $f = sprintf('%.3f', $t * 1000);
+      $f = ($f * 1) . ' ms'; # * 1 to remove insignificant zeros
    }
    elsif ($t >= 1) {
-      $f = ($t * 1) . ' s';  # * 1 to remove insignificant zeros
+      $f = sprintf('%.6f', $t);
+      $f = ($f * 1) . ' s'; # * 1 to remove insignificant zeros
    }
    else {
       $f = 0;  # $t should = 0 at this point
