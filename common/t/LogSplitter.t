@@ -31,8 +31,9 @@ like($EVAL_ERROR, qr/Attribute foo does not exist in log events/, 'Dies if attri
 $ls->split_logs(
    log_files  => [ 'samples/slow006.txt' ],
    attribute  => 'Thread_id',
-   saveto_dir => "$tmpdir/",
+   saveto_dir => "$tmpdir",
    LogParser  => $lp,
+   silent     => 1,
 );
 
 ok(-f "$tmpdir/mysql_log_split-0001", 'Basic log split 0001 exists');

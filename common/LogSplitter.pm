@@ -18,7 +18,6 @@
 # ###########################################################################
 # LogSplitter package $Revision$
 # ###########################################################################
-
 package LogSplitter;
 
 use strict;
@@ -44,6 +43,9 @@ sub split_logs {
       push @fhs, $fh;
    }
 
+   # TODO: this is probably problematic on Windows
+   $args{saveto_dir} .= '/' if substr($args{saveto_dir}, -1, 1) ne '/';
+
    $self->{attribute}  = $args{attribute};
    $self->{saveto_dir} = $args{saveto_dir};
    $self->{sessions}   = ();
@@ -60,13 +62,15 @@ sub split_logs {
       my $session_id = $event->{ $attrib };
       my $session    = $self->{sessions}->{ $session_id } ||= {}; 
 
-      if ( !defined $session->{fh} ) { # New session
+      # Init new session.
+      if ( !defined $session->{fh} ) {
          my $session_n = sprintf '%04d', ++$self->{n_sessions};
          my $log_split_file = $self->{saveto_dir}
                             . "mysql_log_split-$session_n";
 
          open $session->{fh}, ">", $log_split_file
             or die "Cannot open log split file $log_split_file: $OS_ERROR";
+         $session->{log_split_file} = $log_split_file;
          MKDEBUG && _d("Created $log_split_file for session $attrib=$session_id");
       }
 
@@ -85,6 +89,16 @@ sub split_logs {
    my $lp = $args{LogParser};
    foreach my $fh ( @fhs ) {
       1 while $lp->parse_event($fh, $callback)
+   }
+
+   if ( !$args{silent} ) {
+      print "Parsed $self->{n_sessions} sessions:\n";
+      my $fmt = "   %-16s %-60s\n";
+      printf($fmt, $self->{attribute}, 'Saved to log split file');
+      foreach my $session_id ( sort keys %{ $self->{sessions} } ) {
+         my $session = $self->{sessions}->{ $session_id };
+         printf($fmt, $session_id, $session->{log_split_file}); 
+      }
    }
 
    return;
