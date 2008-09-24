@@ -56,7 +56,16 @@ sub split_logs {
 
       my $attrib = $self->{attribute};
       if ( !exists $event->{ $attrib } ) {
-         die "Attribute $attrib does not exist in log events.";
+         die "Attribute $attrib does not exist in log events";
+      }
+
+      if ( !defined $event->{arg} ( {
+         # This probably indicates a problem in LogParser not parsing
+         # a log event correctly thereby leaving $event->{arg} undefined.
+         use Data::Dumper;
+         $Data::Dumper::Indent = 1;
+         print Dumper($event);
+         die 'Event arg is not defined'; 
       }
 
       my $session_id = $event->{ $attrib };
