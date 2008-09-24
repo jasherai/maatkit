@@ -59,14 +59,12 @@ sub split_logs {
          die "Attribute $attrib does not exist in log events";
       }
 
-      if ( !defined $event->{arg} ( {
-         # This probably indicates a problem in LogParser not parsing
-         # a log event correctly thereby leaving $event->{arg} undefined.
-         use Data::Dumper;
-         $Data::Dumper::Indent = 1;
-         print Dumper($event);
-         die 'Event arg is not defined'; 
-      }
+      # This could indicate a problem in LogParser not parsing
+      # a log event correctly thereby leaving $event->{arg} undefined.
+      # Or, it could simply be an event like:
+      # USE db;
+      # SET NAMES utf8;
+      return if !defined $event->{arg};
 
       my $session_id = $event->{ $attrib };
       my $session    = $self->{sessions}->{ $session_id } ||= {}; 
