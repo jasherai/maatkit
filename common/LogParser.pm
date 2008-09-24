@@ -17,17 +17,13 @@
 # ###########################################################################
 # LogParser package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package LogParser;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-# TODO: support events that are 'commented out' in the slow query log, such as
-# administrative commands like ping and statistics.
-
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
@@ -196,10 +192,19 @@ sub parse_event {
          # as that... they typically look like this:
          # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
          elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
+            
             if ( $type == 0 ) {
-               $handled_line = 1;
-               MKDEBUG && _d('Splitting line into fields');
-               @{$event}{keys %hash} = values %hash;
+               # Skip here commented events like: # administrator command: Quit;
+               # Such lines will be handled below.
+               if ( $line !~ m/^#.+;/ ) {
+                  $handled_line = 1;
+                  MKDEBUG && _d('Splitting line into fields');
+                  @{$event}{keys %hash} = values %hash;
+               }
+               else {
+                  $handled_line = 0;
+                  MKDEBUG && _d('Commented event line ends header');
+               }
             }
             else {
                # Last line was the end of a query; this is the beginning of the
@@ -214,6 +219,7 @@ sub parse_event {
       }
 
       if ( !$handled_line ) {
+         $event->{cmd} = 'Query';
          if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
             MKDEBUG && _d('Line is the end of a query within event');
             if ( my ( $db ) = $line =~ m/^use (.*);/i ) {
@@ -228,6 +234,11 @@ sub parse_event {
             }
             else {
                MKDEBUG && _d('Line is a continuation of prev line');
+               if ( $line =~ m/^# / ) {
+                  MKDEBUG && _d('Line is a commented even line');
+                  $line =~ s/.+: (.+);\n/$1/;
+                  $event->{cmd} = 'Admin';
+               }
                $event->{arg} .= $line;
                $type = 2;
             }
@@ -236,8 +247,7 @@ sub parse_event {
             MKDEBUG && _d('Line is a continuation of prev line');
             $event->{arg} .= $line;
             $type = 2;
-         }
-         $event->{cmd} = 'Query';
+         } 
       }
 
       $event->{NR} = $NR;

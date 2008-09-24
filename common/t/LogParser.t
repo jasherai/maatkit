@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 9;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 
 require "../LogParser.pm";
@@ -605,5 +605,57 @@ open $file, "<", 'samples/slow006.txt' or die $OS_ERROR;
 1 while ( $p->parse_event( $file, \&simple_callback ) );
 close $file;
 is($e[2]->{db}, 'bar', 'Parsing USE is case-insensitive');
+
+@e = ();
+open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
+1 while ( $p->parse_event( $file, \&simple_callback ) );
+$events = [
+   {
+      'Schema' => 'db1',
+      'cmd' => 'Admin',
+      'ip' => '1.2.3.8',
+      'arg' => 'Quit',
+      'Thread_id' => '5',
+      'host' => '',
+      'Rows_examined' => '0',
+      'NR' => '6',
+      'user' => 'meow',
+      'Query_time' => '0.000002',
+      'Lock_time' => '0.000000',
+      'Rows_sent' => '0',
+   },
+   {
+      'Schema' => 'db2',
+      'cmd' => 'Query',
+      'db' => 'db',
+      'ip' => '1.2.3.8',
+      'settings' => [
+         'SET NAMES utf8'
+      ],
+      'Thread_id' => '6',
+      'host' => '',
+      'Rows_examined' => '0',
+      'NR' => '12',
+      'user' => 'meow',
+      'Query_time' => '0.000899',
+      'Lock_time' => '0.000000',
+      'Rows_sent' => '0',
+   },
+   {
+      'Schema' => 'db2',
+      'cmd' => 'Query',
+      'arg' => 'SELECT MIN(id),MAX(id) FROM tbl',
+      'ip' => '1.2.3.8',
+      'Thread_id' => '6',
+      'host' => '',
+      'Rows_examined' => '0',
+      'NR' => '16',
+      'user' => 'meow',
+      'Query_time' => '0.018799',
+      'Lock_time' => '0.009453',
+      'Rows_sent' => '0'
+   },
+];
+is_deeply(\@e, $events, 'Parses commented event (admin cmd)');
 
 exit;
