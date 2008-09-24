@@ -1025,7 +1025,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 2335
+# LogSplitter package 2339
 # ###########################################################################
 
 package LogSplitter;
@@ -1065,7 +1065,14 @@ sub split_logs {
 
       my $attrib = $self->{attribute};
       if ( !exists $event->{ $attrib } ) {
-         die "Attribute $attrib does not exist in log events.";
+         die "Attribute $attrib does not exist in log events";
+      }
+
+      if ( !defined $event->{arg} ( {
+         use Data::Dumper;
+         $Data::Dumper::Indent = 1;
+         print Dumper($event);
+         die 'Event arg is not defined'; 
       }
 
       my $session_id = $event->{ $attrib };
