@@ -1068,7 +1068,7 @@ sub split_logs {
          die "Attribute $attrib does not exist in log events";
       }
 
-      if ( !defined $event->{arg} ( {
+      if ( !defined $event->{arg} ) {
          use Data::Dumper;
          $Data::Dumper::Indent = 1;
          print Dumper($event);
