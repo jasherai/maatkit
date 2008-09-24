@@ -17,16 +17,14 @@ isa_ok($ls, 'LogSplitter');
 my $tmpdir = '/tmp/logettes';
 diag(`mkdir $tmpdir`);
 
-eval {
-   $ls->split_logs(
-      log_files  => [ 'samples/slow006.txt' ],
-      attribute  => 'foo',
-      saveto_dir => "$tmpdir/",
-      LogParser  => $lp,
-   );
-};
-like($EVAL_ERROR, qr/Attribute foo does not exist in log events/, 'Dies if attribute does not exist');
-
+$ls->split_logs(
+   log_files  => [ 'samples/slow006.txt' ],
+   attribute  => 'foo',
+   saveto_dir => "$tmpdir/",
+   LogParser  => $lp,
+   silent     => 1,
+);
+ok($ls->{n_sessions} == 0, 'Parsed zero sessions for bad attribute');
 
 $ls->split_logs(
    log_files  => [ 'samples/slow006.txt' ],

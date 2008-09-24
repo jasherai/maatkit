@@ -56,7 +56,11 @@ sub split_logs {
 
       my $attrib = $self->{attribute};
       if ( !exists $event->{ $attrib } ) {
-         die "Attribute $attrib does not exist in log events";
+         if ( MKDEBUG ) {
+            use Data::Dumper;
+            _d("No attribute $attrib in event: " . Dumper($event));
+         }
+         return;
       }
 
       # This could indicate a problem in LogParser not parsing
