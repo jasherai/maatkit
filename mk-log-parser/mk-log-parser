@@ -25,17 +25,15 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# LogParser package 2215
+# LogParser package 2337
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package LogParser;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
@@ -172,10 +170,17 @@ sub parse_event {
          }
 
          elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
+            
             if ( $type == 0 ) {
-               $handled_line = 1;
-               MKDEBUG && _d('Splitting line into fields');
-               @{$event}{keys %hash} = values %hash;
+               if ( $line !~ m/^#.+;/ ) {
+                  $handled_line = 1;
+                  MKDEBUG && _d('Splitting line into fields');
+                  @{$event}{keys %hash} = values %hash;
+               }
+               else {
+                  $handled_line = 0;
+                  MKDEBUG && _d('Commented event line ends header');
+               }
             }
             else {
                $handled_line = 1;
@@ -188,9 +193,10 @@ sub parse_event {
       }
 
       if ( !$handled_line ) {
+         $event->{cmd} = 'Query';
          if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
             MKDEBUG && _d('Line is the end of a query within event');
-            if ( my ( $db ) = $line =~ m/^use (.*);/ ) {
+            if ( my ( $db ) = $line =~ m/^use (.*);/i ) {
                MKDEBUG && _d('Setting event DB to ', $db);
                $event->{db} = $db;
                $type = 1;
@@ -202,6 +208,11 @@ sub parse_event {
             }
             else {
                MKDEBUG && _d('Line is a continuation of prev line');
+               if ( $line =~ m/^# / ) {
+                  MKDEBUG && _d('Line is a commented even line');
+                  $line =~ s/.+: (.+);\n/$1/;
+                  $event->{cmd} = 'Admin';
+               }
                $event->{arg} .= $line;
                $type = 2;
             }
@@ -210,8 +221,7 @@ sub parse_event {
             MKDEBUG && _d('Line is a continuation of prev line');
             $event->{arg} .= $line;
             $type = 2;
-         }
-         $event->{cmd} = 'Query';
+         } 
       }
 
       $event->{NR} = $NR;
