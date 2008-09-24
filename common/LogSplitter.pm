@@ -70,6 +70,9 @@ sub split_logs {
       # SET NAMES utf8;
       return if !defined $event->{arg};
 
+      # Don't print admin commands like quit or ping.
+      return if $event->{cmd} eq 'Admin';
+
       my $session_id = $event->{ $attrib };
       my $session    = $self->{sessions}->{ $session_id } ||= {}; 
 
