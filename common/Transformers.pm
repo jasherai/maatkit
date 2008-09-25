@@ -15,11 +15,11 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 # ###########################################################################
-# Tr package $Revision$
+# Transformers package $Revision$
 # ###########################################################################
 
-# Tr - Common Transformation and beautification subroutines
-package Tr;
+# Transformers - Common transformation and beautification subroutines
+package Transformers;
 
 use strict;
 use warnings FATAL => 'all';
@@ -127,5 +127,5 @@ sub _d {
 1;
 
 # ###########################################################################
-# End Tr package
+# End Transformers package
 # ###########################################################################

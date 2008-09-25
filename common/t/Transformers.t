@@ -24,8 +24,8 @@ use Test::More tests => 10;
 use English qw(-no_match_vars);
 
 BEGIN {
-   require '../Tr.pm';
-   Tr->import( qw(micro_t shorten) );
+   require '../Transformers.pm';
+   Transformers->import( qw(micro_t shorten) );
 };
 
 my $WIN = ($^O eq 'MSWin32' ? 1 : 0);
