@@ -1025,7 +1025,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 2345
+# LogSplitter package 2348
 # ###########################################################################
 
 package LogSplitter;
@@ -1034,7 +1034,9 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG           => $ENV{MKDEBUG};
+use constant MAX_OPEN_FILES    => 1000;
+use constant CLOSE_N_LRU_FILES => 100;
 
 sub new {
    my ( $class ) = @_;
@@ -1060,6 +1062,9 @@ sub split_logs {
    $self->{sessions}   = ();
    $self->{n_sessions} = 0;
 
+   my $session_fhs = ();
+   my $n_open_fhs  = 0;
+
    my $callback = sub {
       my ( $event ) = @_;
 
@@ -1080,14 +1085,39 @@ sub split_logs {
       my $session    = $self->{sessions}->{ $session_id } ||= {}; 
 
       if ( !defined $session->{fh} ) {
-         my $session_n = sprintf '%04d', ++$self->{n_sessions};
-         my $log_split_file = $self->{saveto_dir}
-                            . "mysql_log_split-$session_n";
+            my $session_n = sprintf '%04d', ++$self->{n_sessions};
+            my $log_split_file = $self->{saveto_dir}
+                               . "mysql_log_split-$session_n";
 
-         open $session->{fh}, ">", $log_split_file
-            or die "Cannot open log split file $log_split_file: $OS_ERROR";
-         $session->{log_split_file} = $log_split_file;
-         MKDEBUG && _d("Created $log_split_file for session $attrib=$session_id");
+            $n_open_fhs = $self->_close_lru_session($session_fhs, $n_open_fhs)
+               if $n_open_fhs >= MAX_OPEN_FILES;
+
+            open $session->{fh}, '>', $log_split_file
+               or die "Cannot open log split file $log_split_file: $OS_ERROR";
+            $n_open_fhs++;
+
+            $session->{active}         = 1;
+            $session->{log_split_file} = $log_split_file;
+            push @$session_fhs,
+               { fh => $session->{fh}, session_id => $session_id };
+
+            MKDEBUG && _d("Created $log_split_file "
+                          . "for session $attrib=$session_id");
+      }
+      elsif ( !$session->{active} ) {
+
+         $n_open_fhs = $self->_close_lru_session($session_fhs, $n_open_fhs)
+            if $n_open_fhs >= MAX_OPEN_FILES;
+
+          open $session->{fh}, '>>', $session->{log_split_file}
+             or die "Cannot reopen log split file "
+               . "$session->{log_split_file}: $OS_ERROR";
+          $n_open_fhs++;
+
+          $session->{active} = 1;
+
+          MKDEBUG && _d("Reopend $session->{log_split_file} "
+                        . "for session $attrib=$session_id");
       }
 
       my $log_split_fh = $session->{fh};
@@ -1117,6 +1147,23 @@ sub split_logs {
    }
 
    return;
+}
+
+sub _close_lru_session {
+   my ( $self, $session_fhs, $n_open_files ) = @_;
+   my $lru_n      = $self->{n_sessions} - MAX_OPEN_FILES - 1;
+   my $close_to_n = $lru_n + CLOSE_N_LRU_FILES - 1;
+
+   MKDEBUG && _d("Closing session fhs $lru_n..$close_to_n "
+                 . "($self->{n_sessions} sessions, $n_open_files open files)");
+
+   foreach my $session ( @$session_fhs[ $lru_n..$close_to_n ] ) {
+      close $session->{fh};
+      $n_open_files--;
+      $self->{sessions}->{ $session->{session_id} }->{active} = 0;
+   }
+
+   return $n_open_files;
 }
 
 sub _d {
@@ -1396,10 +1443,11 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Tr package 2334
+# Transformers package 2349
 # ###########################################################################
 
-package Tr;
+# Transformers - Common transformation and beautification subroutines
+package Transformers;
 
 use strict;
 use warnings FATAL => 'all';
@@ -1421,8 +1469,12 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
+   # "Remove" scientific notation so the regex below does not make
+   # 6.123456e+18 into 6.123456.
    $t = sprintf('%.17f', $t) if $t =~ /e/;
 
+   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
+   # because sprintf() rounds.
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
@@ -1448,6 +1500,7 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
+   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
@@ -1502,7 +1555,7 @@ sub _d {
 1;
 
 # ###########################################################################
-# End Tr package
+# End Transformers package
 # ###########################################################################
 
 # ###########################################################################
@@ -1521,7 +1574,7 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-Tr->import( qw(micro_t shorten) );
+Transformers->import( qw(micro_t shorten) );
 
 # #############################################################################
 # Get configuration information.
@@ -1734,7 +1787,6 @@ sub calc_SQL_stats {
    my $SQL_stats = {};
    my @all_t     = ();
    my $qr        = new QueryRewriter;
-   my $total_t;
 
    # Calc stats for unique queries and make list of all queries' time.
    foreach my $sql ( @$SQL_statements ) {
@@ -1745,18 +1797,21 @@ sub calc_SQL_stats {
 
       my $q = $SQL_stats->{unique_queries}->{$qfp};
       $q->{c} += 1;
+      $q->{total_rows} += $sql->{n_rows} || 0;
       if ( defined $sql->{time} ) {
          $q->{total_t} += $sql->{time};
          push @{ $q->{all_t} }, $sql->{time};
-
          push @all_t, $sql->{time};
-         $total_t += $sql->{time};
+      }
+      else {
+         $q->{total_t} = 0;
       }
    }
 
    # Sort per-query and all queries' lists of time.
    foreach my $qfp ( keys %{ $SQL_stats->{unique_queries} } ) {
       my $q = $SQL_stats->{unique_queries}->{$qfp};
+      $q->{total_t} = micro_t($q->{total_t});
       next if !defined $q->{all_t};
       @{ $q->{all_t} } = sort { $a <=> $b } @{ $q->{all_t} };
    }
@@ -1766,19 +1821,17 @@ sub calc_SQL_stats {
    foreach my $qfp ( keys %{ $SQL_stats->{unique_queries} } ) {
       my $q = $SQL_stats->{unique_queries}->{$qfp};
       next if !defined $q->{all_t};
-      $q->{min_t} = micro_t($q->{all_t}[0]);
-      $q->{max_t} = micro_t($q->{all_t}[-1]);
-      $q->{avg_t} = micro_t($q->{total_t} / scalar @{ $q->{all_t} });
-      # nth_percent($q->{all_t}, sorted => 1);
-      $q->{t_95} = 1;
+      ( $q->{min_t}, $q->{max_t}, $q->{avg_t} )
+         = min_max_avg(\@{ $q->{all_t} }, \&micro_t);
+      ( $q->{min_95_t}, $q->{max_95_t}, $q->{avg_95_t} )
+         = min_max_avg(nth_percent($q->{all_t}, sorted => 1), \&micro_t);
    }
 
    # Min, max, avg and 95% time for all queries.
-   $SQL_stats->{min_t} = micro_t($all_t[0]);
-   $SQL_stats->{max_t} = micro_t($all_t[-1]);
-   $SQL_stats->{avg_t} = micro_t($total_t / scalar @all_t);
-   # nth_percent(\@all_t, sorted => 1);
-   $SQL_stats->{t_95} = 1;
+   ( $SQL_stats->{min_t}, $SQL_stats->{max_t}, $SQL_stats->{avg_t} )
+      = min_max_avg(\@all_t, \&micro_t);
+   ( $SQL_stats->{min_95_t}, $SQL_stats->{max_95_t}, $SQL_stats->{avg_95_t} )
+      = min_max_avg(nth_percent(\@all_t, sorted => 1), \&micro_t);
 
    return $SQL_stats;
 }
@@ -1790,41 +1843,53 @@ sub print_session_stats {
    $session->{n_queries}  = shorten($session->{n_queries});
    $session->{n_rows}     = shorten($session->{n_rows});
 
-   print <<"SESSION_STATS";
+   my $times_fmt = "%-20s%-15s%-15s%-15s\n";
 
-Finished session $session->{number}:
-   Total time: $session->{total_time}
-   Queries:    $session->{n_queries}
-   Rows:       $session->{n_rows}
-
-   Query execution time:
-      min: $SQL_stats->{min_t}
-      max: $SQL_stats->{max_t}
-      avg: $SQL_stats->{avg_t}
-      95%: $SQL_stats->{t_95} 
-
-   Unique queries execution time:
-
-SESSION_STATS
-
+   print '_' x 79 . "\n\n";
+   print "SESSION $session->{number}\n"
+       . "  Queries:    $session->{n_queries}\n"
+       . "  Rows:       $session->{n_rows}\n"
+       . "  Total time: $session->{total_time}\n";
+   printf("  $times_fmt", 'Query times', qw(min MAX Avg));
+   printf("  $times_fmt", 'All', $SQL_stats->{min_t}, $SQL_stats->{max_t},
+                                 $SQL_stats->{avg_t});
+   printf("  $times_fmt", '95%', $SQL_stats->{min_95_t}, $SQL_stats->{max_95_t},
+                                 $SQL_stats->{avg_95_t});
+   print "\n";
+   print "  Unqiue queries\n";
    foreach my $qfp ( keys %{ $SQL_stats->{unique_queries} } ) {
       my $q = $SQL_stats->{unique_queries}->{$qfp};
-      print "Fingerprint: $qfp\n"
-         . "Sample: $q->{sample}\n"
-         . "\tCount: $q->{c}\n";
+      print "    Fingerprint: $qfp\n"
+          . "    Sample: $q->{sample}\n"
+          . "    Count: $q->{c}\n"
+          . "    Rows: $q->{total_rows}\n" 
+          . "    Total time: $q->{total_t}\n";
       if ( defined $q->{all_t} ) {
-         print "\tmin: $q->{min_t}\n"
-            . "\tmax: $q->{max_t}\n"
-            . "\tavg: $q->{avg_t}\n"
-            . "\t95%: $q->{t_95}\n"
-            . "\n";
+         printf("    $times_fmt", 'Query time', qw(min MAX Avg));
+         printf("    $times_fmt", 'All', $q->{min_t}, $q->{max_t}, $q->{avg_t});
+         printf("    $times_fmt", '95%', $q->{min_95_t}, $q->{max_95_t},
+                                         $q->{avg_95_t});
+         print "\n";
       }
       else {
-         print "\tNo time stats.\n\n";
+         print "    No time stats.\n\n";
       }
    }
+   print '_' x 79;
 
    return;
+}
+
+sub min_max_avg {
+   my ( $vals, $tr_sub ) = @_;
+   return ( 0, 0, 0 ) if ( ref $vals ne 'ARRAY' || scalar @$vals == 0 );
+   my $total_vals_val;
+   foreach ( @$vals ) { $total_vals_val += $_; }
+   return (
+      $tr_sub->($vals->[0]),
+      $tr_sub->($vals->[-1]),
+      $tr_sub->($total_vals_val / scalar @$vals)
+   );
 }
 
 sub nth_percent {
@@ -1837,7 +1902,7 @@ sub nth_percent {
    );
    my %op = ( %default_args, %args );
    return if scalar @$vals < $op{atleast};
-   
+
    my @s = @$vals;
    my $n;
 
