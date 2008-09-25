@@ -24,7 +24,9 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG           => $ENV{MKDEBUG};
+use constant MAX_OPEN_FILES    => 1000;
+use constant CLOSE_N_LRU_FILES => 100;
 
 sub new {
    my ( $class ) = @_;
@@ -50,6 +52,9 @@ sub split_logs {
    $self->{saveto_dir} = $args{saveto_dir};
    $self->{sessions}   = ();
    $self->{n_sessions} = 0;
+
+   my $session_fhs = ();
+   my $n_open_fhs  = 0;
 
    my $callback = sub {
       my ( $event ) = @_;
@@ -78,14 +83,50 @@ sub split_logs {
 
       # Init new session.
       if ( !defined $session->{fh} ) {
-         my $session_n = sprintf '%04d', ++$self->{n_sessions};
-         my $log_split_file = $self->{saveto_dir}
-                            . "mysql_log_split-$session_n";
+            # Set name of next log split file.
+            my $session_n = sprintf '%04d', ++$self->{n_sessions};
+            my $log_split_file = $self->{saveto_dir}
+                               . "mysql_log_split-$session_n";
 
-         open $session->{fh}, ">", $log_split_file
-            or die "Cannot open log split file $log_split_file: $OS_ERROR";
-         $session->{log_split_file} = $log_split_file;
-         MKDEBUG && _d("Created $log_split_file for session $attrib=$session_id");
+            # Close Last Recently Used session fhs if opening if this new
+            # session fh will cause us to have too many open files.
+            $n_open_fhs = $self->_close_lru_session($session_fhs, $n_open_fhs)
+               if $n_open_fhs >= MAX_OPEN_FILES;
+
+            # Open a fh for the log split file.
+            open $session->{fh}, '>', $log_split_file
+               or die "Cannot open log split file $log_split_file: $OS_ERROR";
+            $n_open_fhs++;
+
+            # Save fh and log split file info for this session.
+            $session->{active}         = 1;
+            $session->{log_split_file} = $log_split_file;
+            push @$session_fhs,
+               { fh => $session->{fh}, session_id => $session_id };
+
+            MKDEBUG && _d("Created $log_split_file "
+                          . "for session $attrib=$session_id");
+      }
+      elsif ( !$session->{active} ) {
+         # Reopen the existing but inactive session. This happens when
+         # a new session (above) had to close LRU session fhs.
+
+         # Again, close Last Recently Used session fhs if reopening if this
+         # session's fh will cause us to have too many open files.
+         $n_open_fhs = $self->_close_lru_session($session_fhs, $n_open_fhs)
+            if $n_open_fhs >= MAX_OPEN_FILES;
+
+          # Reopen this session's fh.
+          open $session->{fh}, '>>', $session->{log_split_file}
+             or die "Cannot reopen log split file "
+               . "$session->{log_split_file}: $OS_ERROR";
+          $n_open_fhs++;
+
+          # Mark this session as active again;
+          $session->{active} = 1;
+
+          MKDEBUG && _d("Reopend $session->{log_split_file} "
+                        . "for session $attrib=$session_id");
       }
 
       my $log_split_fh = $session->{fh};
@@ -116,6 +157,23 @@ sub split_logs {
    }
 
    return;
+}
+
+sub _close_lru_session {
+   my ( $self, $session_fhs, $n_open_files ) = @_;
+   my $lru_n      = $self->{n_sessions} - MAX_OPEN_FILES - 1;
+   my $close_to_n = $lru_n + CLOSE_N_LRU_FILES - 1;
+
+   MKDEBUG && _d("Closing session fhs $lru_n..$close_to_n "
+                 . "($self->{n_sessions} sessions, $n_open_files open files)");
+
+   foreach my $session ( @$session_fhs[ $lru_n..$close_to_n ] ) {
+      close $session->{fh};
+      $n_open_files--;
+      $self->{sessions}->{ $session->{session_id} }->{active} = 0;
+   }
+
+   return $n_open_files;
 }
 
 sub _d {
