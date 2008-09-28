@@ -124,6 +124,7 @@ sub new {
       buffer_n_events    => $args{buffer_n_events},
       metrics            => { all => {}, unique => {} },
       n_events           => 0,
+      n_queries          => 0,
    }, $class;
 }
 
@@ -161,6 +162,7 @@ sub calc_metrics {
       # Skip events which do not have key_metric.
       my $key_metric_val = $event->{ $self->{key_metric} };
       next EVENT if !defined $key_metric_val;
+      $self->{n_queries}++;
 
       # Get fingerprint for this event.
       # The undef is because the fingerprint sub is usually a class
@@ -233,7 +235,7 @@ sub calc_metrics {
                $m_ds->{avg} = $avg;
 
                if ( $handler->{all_events} ) {
-                  $avg = $a_ds->{total} / $self->{n_events};
+                  $avg = $a_ds->{total} / $self->{n_queries};
                   $avg = $handler->{transformer}->($avg)
                      if defined $handler->{transformer};
                   $a_ds->{avg} = $avg;
@@ -284,6 +286,7 @@ sub reset_metrics {
    my ( $self ) = @_;
    @buffered_events           = ();
    $self->{n_events}          = 0;
+   $self->{n_queries}         = 0;
    $self->{metrics}->{all}    = {};
    $self->{metrics}->{unique} = {};
    return;
