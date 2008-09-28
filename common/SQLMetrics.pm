@@ -211,20 +211,20 @@ sub calc_metrics {
             }
 
             if ( $handler->{min} ) {
-               $m_ds->{min} = $m_ds->{min} if !defined $m_ds->{min};
+               $m_ds->{min} = $metric_val if !defined $m_ds->{min};
                $m_ds->{min} = $metric_val if $metric_val < $m_ds->{min};
 
                if ( $handler->{all_events} ) {
-                  $a_ds->{min} = $a_ds->{min} if !defined $a_ds->{min};
+                  $a_ds->{min} = $metric_val if !defined $a_ds->{min};
                   $a_ds->{min} = $metric_val if $metric_val < $a_ds->{min};
                }
             }
             if ( $handler->{max} ) {
-               $m_ds->{max} = $m_ds->{max} if !defined $m_ds->{max};
+               $m_ds->{max} = $metric_val if !defined $m_ds->{max};
                $m_ds->{max} = $metric_val if $metric_val > $m_ds->{max};
 
                if ( $handler->{all_events} ) {
-                  $a_ds->{max} = $a_ds->{max} if !defined $a_ds->{max};
+                  $a_ds->{max} = $metric_val if !defined $a_ds->{max};
                   $a_ds->{max} = $metric_val if $metric_val > $a_ds->{max};
                }
             }
