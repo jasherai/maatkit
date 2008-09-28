@@ -194,16 +194,14 @@ sub parse_event {
          elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
             
             if ( $type == 0 ) {
-               # Skip here commented events like: # administrator command: Quit;
-               # Such lines will be handled below.
-               if ( $line !~ m/^#.+;/ ) {
+               # Handle commented events like # administrator command: Quit;
+               if ( $line =~ m/^#.+;/ ) {
+                  MKDEBUG && _d('Commented event line ends header');
+               }
+               else {
                   $handled_line = 1;
                   MKDEBUG && _d('Splitting line into fields');
                   @{$event}{keys %hash} = values %hash;
-               }
-               else {
-                  $handled_line = 0;
-                  MKDEBUG && _d('Commented event line ends header');
                }
             }
             else {
@@ -235,7 +233,8 @@ sub parse_event {
             else {
                MKDEBUG && _d('Line is a continuation of prev line');
                if ( $line =~ m/^# / ) {
-                  MKDEBUG && _d('Line is a commented even line');
+                  # Example: # administrator command: Quit
+                  MKDEBUG && _d('Line is a commented event line');
                   $line =~ s/.+: (.+);\n/$1/;
                   $event->{cmd} = 'Admin';
                }
