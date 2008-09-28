@@ -1443,10 +1443,9 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2349
+# Transformers package 2353
 # ###########################################################################
 
-# Transformers - Common transformation and beautification subroutines
 package Transformers;
 
 use strict;
@@ -1459,7 +1458,12 @@ require Exporter;
 our @ISA         = qw(Exporter);
 our %EXPORT_TAGS = ();
 our @EXPORT      = ();
-our @EXPORT_OK   = qw(micro_t secs_to_time shorten ts);
+our @EXPORT_OK   = qw(float_6 micro_t secs_to_time shorten ts);
+
+sub float_6 {
+   my ( $val ) = @_;
+   return sprintf('%.6f', $val);
+}
 
 sub micro_t {
    my ( $t ) = @_;
@@ -1469,12 +1473,8 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
-   # "Remove" scientific notation so the regex below does not make
-   # 6.123456e+18 into 6.123456.
    $t = sprintf('%.17f', $t) if $t =~ /e/;
 
-   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
-   # because sprintf() rounds.
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
@@ -1500,7 +1500,6 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
-   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
@@ -1559,6 +1558,235 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# SQLMetrics package 2356
+# ###########################################################################
+
+package SQLMetrics;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+use constant METRIC_TYPE_NUMERIC => 1;
+use constant METRIC_TYPE_STRING  => 2;
+my %metric_type_for = (
+   'number' => METRIC_TYPE_NUMERIC,
+   'string' => METRIC_TYPE_STRING,
+);
+
+
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
+
+sub make_handler_for {
+   my ( $metric, $type, %args ) = @_;
+   die "I need a metric"      if !$metric;
+   die "I need a metric type" if !$type;
+
+   $type = $metric_type_for{$type} || die 'Invalid metric type';
+
+   my %default_handler = (
+      type         => $type,
+      transformer  => undef,
+      all_vals     => 1,
+      all_events   => 0,
+      all_all_vals => 0,
+   );
+   @default_handler{ qw(total min max avg) } = qw(1 1 1 1)
+      if $type == METRIC_TYPE_NUMERIC;
+
+   my %handler = ( %default_handler, %args );
+
+   if ( $type == METRIC_TYPE_NUMERIC ) {
+      $handler{total} = 1 if $handler{avg} == 1;
+   }
+
+   MKDEBUG && _d("Handler for $metric: " . Dumper(\%handler));
+
+   return ( $metric => \%handler );
+}
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = (
+      'key_metric',      # event attribute by which events are grouped
+      'fingerprint',     # callback sub to fingerprint key_metric
+      'handlers',        # hash ref to metric handlers (see make_handler_for)
+      'buffer_n_events', # save N events before calcing their metrics
+   );
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   bless {
+      key_metric         => $args{key_metric},
+      fingerprint        => $args{fingerprint},
+      handlers           => $args{handlers},
+      buffer_n_events    => $args{buffer_n_events},
+      metrics            => { all => {}, unique => {} },
+      n_events           => 0,
+      n_queries          => 0,
+   }, $class;
+}
+
+my @buffered_events;
+sub record_event {
+   my ( $self, $event ) = @_;
+   return if !$event;
+
+   $self->{n_events}++;
+   push @buffered_events, $event;
+   MKDEBUG && _d("$self->{n_events} events total, "
+                 . scalar @buffered_events . " events in buffer");
+
+   return if $self->{buffer_n_events} < 0;
+
+   return if scalar @buffered_events < $self->{buffer_n_events};
+
+   $self->calc_metrics();
+
+   $self->reset_buffer() if scalar @buffered_events >= $self->{buffer_n_events};
+
+   return;
+}
+
+sub calc_metrics {
+   my ( $self ) = @_;
+
+   EVENT:
+   foreach my $event ( @buffered_events ) {
+
+      my $key_metric_val = $event->{ $self->{key_metric} };
+      next EVENT if !defined $key_metric_val;
+      $self->{n_queries}++;
+
+      my $fp = $self->{fingerprint}->(undef, $key_metric_val);
+
+      my $fp_ds   = $self->{metrics}->{unique}->{ $fp }
+                ||= { sample => $key_metric_val, count => 0 };
+
+      $fp_ds->{count}++;
+
+      METRIC:
+      foreach my $metric ( keys %{ $self->{handlers} } ) {
+
+         my $metric_val = $event->{ $metric };
+         next METRIC if !defined $metric_val;
+         
+         my $handler = $self->{handlers}->{ $metric };
+
+         my $m_ds = $fp_ds->{ $metric } ||= { };
+         my $a_ds = $self->{metrics}->{all}->{ $metric } ||= { };
+
+         $metric_val = $handler->{transformer}->($metric_val)
+            if defined $handler->{transformer};
+
+         if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
+            push @{ $m_ds->{all_vals} }, $metric_val
+               if $handler->{all_vals};
+            push @{ $a_ds->{all_vals} }, $metric_val
+               if $handler->{all_all_vals};
+
+            if ( $handler->{total} ) {
+               $m_ds->{total} += $metric_val;
+               $a_ds->{total} += $metric_val if $handler->{all_events};
+            }
+
+            if ( $handler->{min} ) {
+               $m_ds->{min} = $metric_val if !defined $m_ds->{min};
+               $m_ds->{min} = $metric_val if $metric_val < $m_ds->{min};
+
+               if ( $handler->{all_events} ) {
+                  $a_ds->{min} = $metric_val if !defined $a_ds->{min};
+                  $a_ds->{min} = $metric_val if $metric_val < $a_ds->{min};
+               }
+            }
+            if ( $handler->{max} ) {
+               $m_ds->{max} = $metric_val if !defined $m_ds->{max};
+               $m_ds->{max} = $metric_val if $metric_val > $m_ds->{max};
+
+               if ( $handler->{all_events} ) {
+                  $a_ds->{max} = $metric_val if !defined $a_ds->{max};
+                  $a_ds->{max} = $metric_val if $metric_val > $a_ds->{max};
+               }
+            }
+            if ( $handler->{avg} ) {
+               my $avg = $m_ds->{total} / $fp_ds->{count};
+               $avg = $handler->{transformer}->($avg)
+                  if defined $handler->{transformer};
+               $m_ds->{avg} = $avg;
+
+               if ( $handler->{all_events} ) {
+                  $avg = $a_ds->{total} / $self->{n_queries};
+                  $avg = $handler->{transformer}->($avg)
+                     if defined $handler->{transformer};
+                  $a_ds->{avg} = $avg;
+               }
+            }
+         }
+         elsif ( $handler->{type} == METRIC_TYPE_STRING ) {
+            $m_ds->{ $metric_val }++;
+
+            $a_ds->{ $metric_val }++ if $handler->{all_events};
+         }
+      }
+   }
+
+   return;
+}
+
+sub nth_percent {
+   my ( $vals, %args ) = @_;
+   my %default_args = (
+      sorted  => 0,     # vals are not yet sorted
+      atleast => 10,    # require at least 10 vals
+      nth     => 95,    # 95th percentile of vals
+      from    => 'top', # from the top
+   );
+   my %op = ( %default_args, %args );
+   return if scalar @$vals < $op{atleast};
+
+   my @s = @$vals;
+   my $n;
+
+   @s = sort { $a <=> $b } @s unless $op{sorted};
+   $n = ((scalar @s) * $op{nth}) / 100;  # cut-off percent
+   @s = splice(@s, 0, $n); # remove vals after cut-off percent
+
+   return \@s;
+}
+
+sub reset_buffer {
+   my ( $self ) = @_;
+   @buffered_events = ();
+   MKDEBUG && _d('Reset event buffer');
+   return;
+}
+
+sub reset_metrics {
+   my ( $self ) = @_;
+   @buffered_events           = ();
+   $self->{n_events}          = 0;
+   $self->{n_queries}         = 0;
+   $self->{metrics}->{all}    = {};
+   $self->{metrics}->{unique} = {};
+   return;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# SQLMetrics:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SQLMetrics package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -1574,7 +1802,7 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-Transformers->import( qw(micro_t shorten) );
+Transformers->import( qw(float_6 micro_t shorten) );
 
 # #############################################################################
 # Get configuration information.
@@ -1590,6 +1818,9 @@ if ( !@ARGV ) {
    $opt_parser->error('You did not specify any files to play or split');
 }
 
+my $delay_sessions = get_delay($opts{'delay-sessions'}); 
+my $delay_queries  = get_delay($opts{'delay-queries'});
+exit;
 $opt_parser->usage_or_errors(%opts);
 
 # #############################################################################
@@ -1675,6 +1906,21 @@ $SIG{CHLD} = sub {
    }
 };
 
+
+# Print output header. The children print their given session stats
+# when they finish.
+my $s = $opts{csv} ? ',' : "\t";
+print "session number"
+   .  "$s"."total query time"
+   .  "$s"."min query time"
+   .  "$s"."max query time"
+   .  "$s"."avg query time"
+   .  "$s"."number of queries"
+   .  "$s"."number queries per second"
+   .  "$s"."number of rows"
+   .  "$s"."number of rows per second"
+   .  "\n";
+
 my $session_n = 1;
 while ( @sessions || %kids ) {
 
@@ -1728,8 +1974,6 @@ while ( @sessions || %kids ) {
    }
 }
 
-# The children print their given session stats when they finish.
-
 exit;
 
 # #############################################################################
@@ -1764,7 +2008,7 @@ sub play_session {
       my $start_time = time;
       my $results    = $dbh->selectall_arrayref($sql->{stmt});
 
-      $sql->{time}   = time - $start_time;
+      $sql->{query_time}   = time - $start_time;
       $sql->{n_rows} = scalar @$results;
 
       $session->{n_queries}++;
@@ -1774,108 +2018,62 @@ sub play_session {
    $session->{total_time} = time - $session->{total_time};
 
    # Calculate session performance metrics.
-   my $SQL_stats = calc_SQL_stats(\@SQL_statements);
+   my $handlers = {
+      SQLMetrics::make_handler_for(
+         'query_time',
+         'number',
+         (
+            all_events => 1,
+         ),
+         transformer => \&float_6,
+      ),
+      SQLMetrics::make_handler_for(
+         'n_rows',
+         'number',
+         (
+            all_events => 1,
+            all_vals   => 0,
+         ),
+         transformer => \&float_6,
+      ),
+   };
+   my $metrics = new SQLMetrics(
+      key_metric      => 'stmt',
+      fingerprint     => \&QueryRewriter::fingerprint,
+      handlers        => $handlers,
+      buffer_n_events => 1,
+   );
+   foreach my $event ( @SQL_statements ) {
+      next if $event->{stmt} =~ /^USE /i;
+      $metrics->record_event($event);
+   }
 
-   # Print a pretty report of session peformance metrics.
-   print_session_stats($session, $SQL_stats);
+   # Print tab-separated session peformance metrics.
+   print_session_stats($session, $metrics);
 
    return;
 }
 
-sub calc_SQL_stats {
-   my ( $SQL_statements ) = @_;
-   my $SQL_stats = {};
-   my @all_t     = ();
-   my $qr        = new QueryRewriter;
-
-   # Calc stats for unique queries and make list of all queries' time.
-   foreach my $sql ( @$SQL_statements ) {
-      my $qfp = $qr->fingerprint($sql->{stmt});
-      if ( !exists $SQL_stats->{unique_queries}->{$qfp} ) {
-         $SQL_stats->{unique_queries}->{$qfp} = { sample => $sql->{stmt} };
-      }
-
-      my $q = $SQL_stats->{unique_queries}->{$qfp};
-      $q->{c} += 1;
-      $q->{total_rows} += $sql->{n_rows} || 0;
-      if ( defined $sql->{time} ) {
-         $q->{total_t} += $sql->{time};
-         push @{ $q->{all_t} }, $sql->{time};
-         push @all_t, $sql->{time};
-      }
-      else {
-         $q->{total_t} = 0;
-      }
-   }
-
-   # Sort per-query and all queries' lists of time.
-   foreach my $qfp ( keys %{ $SQL_stats->{unique_queries} } ) {
-      my $q = $SQL_stats->{unique_queries}->{$qfp};
-      $q->{total_t} = micro_t($q->{total_t});
-      next if !defined $q->{all_t};
-      @{ $q->{all_t} } = sort { $a <=> $b } @{ $q->{all_t} };
-   }
-   @all_t = sort { $a <=> $b } @all_t;
-
-   # Min, max, avg and 95% time for each uniqe query.
-   foreach my $qfp ( keys %{ $SQL_stats->{unique_queries} } ) {
-      my $q = $SQL_stats->{unique_queries}->{$qfp};
-      next if !defined $q->{all_t};
-      ( $q->{min_t}, $q->{max_t}, $q->{avg_t} )
-         = min_max_avg(\@{ $q->{all_t} }, \&micro_t);
-      ( $q->{min_95_t}, $q->{max_95_t}, $q->{avg_95_t} )
-         = min_max_avg(nth_percent($q->{all_t}, sorted => 1), \&micro_t);
-   }
-
-   # Min, max, avg and 95% time for all queries.
-   ( $SQL_stats->{min_t}, $SQL_stats->{max_t}, $SQL_stats->{avg_t} )
-      = min_max_avg(\@all_t, \&micro_t);
-   ( $SQL_stats->{min_95_t}, $SQL_stats->{max_95_t}, $SQL_stats->{avg_95_t} )
-      = min_max_avg(nth_percent(\@all_t, sorted => 1), \&micro_t);
-
-   return $SQL_stats;
-}
-
 sub print_session_stats {
-   my ( $session, $SQL_stats ) = @_;
+   my ( $session, $metrics ) = @_;
+   my $all    = $metrics->{metrics}->{all};
+   my $unique = $metrics->{metrics}->{unique};
 
-   $session->{total_time} = micro_t($session->{total_time});
-   $session->{n_queries}  = shorten($session->{n_queries});
-   $session->{n_rows}     = shorten($session->{n_rows});
+   $session->{n_queries_s}
+      = float_6($session->{n_queries} / $all->{query_time}->{total});
+   $session->{n_rows_s}
+      = float_6($session->{n_rows} / $all->{query_time}->{total});
 
-   my $times_fmt = "%-20s%-15s%-15s%-15s\n";
-
-   print '_' x 79 . "\n\n";
-   print "SESSION $session->{number}\n"
-       . "  Queries:    $session->{n_queries}\n"
-       . "  Rows:       $session->{n_rows}\n"
-       . "  Total time: $session->{total_time}\n";
-   printf("  $times_fmt", 'Query times', qw(min MAX Avg));
-   printf("  $times_fmt", 'All', $SQL_stats->{min_t}, $SQL_stats->{max_t},
-                                 $SQL_stats->{avg_t});
-   printf("  $times_fmt", '95%', $SQL_stats->{min_95_t}, $SQL_stats->{max_95_t},
-                                 $SQL_stats->{avg_95_t});
-   print "\n";
-   print "  Unqiue queries\n";
-   foreach my $qfp ( keys %{ $SQL_stats->{unique_queries} } ) {
-      my $q = $SQL_stats->{unique_queries}->{$qfp};
-      print "    Fingerprint: $qfp\n"
-          . "    Sample: $q->{sample}\n"
-          . "    Count: $q->{c}\n"
-          . "    Rows: $q->{total_rows}\n" 
-          . "    Total time: $q->{total_t}\n";
-      if ( defined $q->{all_t} ) {
-         printf("    $times_fmt", 'Query time', qw(min MAX Avg));
-         printf("    $times_fmt", 'All', $q->{min_t}, $q->{max_t}, $q->{avg_t});
-         printf("    $times_fmt", '95%', $q->{min_95_t}, $q->{max_95_t},
-                                         $q->{avg_95_t});
-         print "\n";
-      }
-      else {
-         print "    No time stats.\n\n";
-      }
-   }
-   print '_' x 79;
+   print "$session->{number}"
+      .  "$s$all->{query_time}->{total}"
+      .  "$s$all->{query_time}->{min}"
+      .  "$s$all->{query_time}->{max}"
+      .  "$s$all->{query_time}->{avg}"
+      .  "$s$session->{n_queries}"
+      .  "$s$session->{n_queries_s}"
+      .  "$s$session->{n_rows}"
+      .  "$s$session->{n_rows_s}"
+      .  "\n";
 
    return;
 }
@@ -1892,25 +2090,18 @@ sub min_max_avg {
    );
 }
 
-sub nth_percent {
-   my ( $vals, %args ) = @_;
-   my %default_args = (
-      sorted  => 0,     # vals are not yet sorted
-      atleast => 10,    # require at least 10 vals
-      nth     => 95,    # 95th percentile of vals
-      from    => 'top', # from the top
-   );
-   my %op = ( %default_args, %args );
-   return if scalar @$vals < $op{atleast};
-
-   my @s = @$vals;
-   my $n;
-
-   @s = sort { $a <=> $b } @s unless $op{sorted};
-   $n = ((scalar @s) * $op{nth}) / 100;  # cut-off percent
-   @s = splice(@s, 0, $n); # remove vals after cut-off percent
-
-   return \@s;
+sub get_delay {
+   my ( $delay ) = @_;
+   return 0 if !defined $delay;
+   
+   my ( $from, $to ) = $delay =~ m/([\d\.]+)(\.\.|\-)?([\d\.]*)/;
+   if ( defined $to ) {
+      MKDEBUG && _d("Delay range from $from to $to");
+   }
+   else {
+      MKDEBUG && _d("Exact delay of $from");
+   }
+   return;
 }
 
 sub get_cxn {
@@ -1977,17 +2168,33 @@ short form: -c; type: int; default: 1
 
 Number of concurrent sessions to play.
 
+=item --csv
+
+Comma-separate output of performance metrics.
+
 =item --delay-sessions
 
-type: time; default: 0
+default: 0
 
-Amount of time to delay between playing sessions.
+Amount of delay time between playing sessions.
+
+Delay time is given in seconds (with microsecond precision) and can either be
+a single value or a range. Single values cause an exact delay of the value time
+(example: 0.010 = delay 10 milliseconds). Ranges cause a random delay between
+the given value times (example: 0.001-1 = random delay from 1 millisecond to
+1 second).
 
 =item --delay-queries
 
-type: time; default: 0
+default: 0
 
-Amount of time to delay between playing queries in each session.
+Amount of delay time between executing queries in each session.
+
+Delay time is given in seconds (with microsecond precision) and can either be
+a single value or a range. Single values cause an exact delay of the value time
+(example: 0.010 = delay 10 milliseconds). Ranges cause a random delay between
+the given value times (example: 0.001-1 = random delay from 1 millisecond to
+1 second).
 
 =item --host
 
