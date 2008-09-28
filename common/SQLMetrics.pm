@@ -58,7 +58,7 @@ $Data::Dumper::Indent = 1;
 #   buffer_n_events => 1_000,
 # );
 # Optional args:
-#    transform    : sub ref called and passed the metric value before any
+#    transformer  : sub ref called and passed the metric value before any
 #                   calculations
 #                   (default none)
 #    total        : boolean, if total value should be saved (e.g. total
@@ -85,7 +85,7 @@ sub make_handler_for {
 
    my %default_handler = (
       type         => $type,
-      transform    => undef,
+      transformer  => undef,
       all_vals     => 1,
       all_events   => 0,
       all_all_vals => 0,
@@ -194,8 +194,8 @@ sub calc_metrics {
          # ################# #
          # Calc this metric. #
          # ################# #
-         $metric_val = $handler->{transform}->($metric_val)
-            if defined $handler->{transform};
+         $metric_val = $handler->{transformer}->($metric_val)
+            if defined $handler->{transformer};
 
          if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
             push @{ $m_ds->{all_vals} }, $metric_val
@@ -228,14 +228,14 @@ sub calc_metrics {
             }
             if ( $handler->{avg} ) {
                my $avg = $m_ds->{total} / $fp_ds->{count};
-               $avg = $handler->{transform}->($avg)
-                  if defined $handler->{transform};
+               $avg = $handler->{transformer}->($avg)
+                  if defined $handler->{transformer};
                $m_ds->{avg} = $avg;
 
                if ( $handler->{all_events} ) {
                   $avg = $a_ds->{total} / $self->{n_events};
-                  $avg = $handler->{transform}->($avg)
-                     if defined $handler->{transform};
+                  $avg = $handler->{transformer}->($avg)
+                     if defined $handler->{transformer};
                   $a_ds->{avg} = $avg;
                }
             }

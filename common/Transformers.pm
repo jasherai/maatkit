@@ -31,7 +31,12 @@ require Exporter;
 our @ISA         = qw(Exporter);
 our %EXPORT_TAGS = ();
 our @EXPORT      = ();
-our @EXPORT_OK   = qw(micro_t secs_to_time shorten ts);
+our @EXPORT_OK   = qw(float_6 micro_t secs_to_time shorten ts);
+
+sub float_6 {
+   my ( $val ) = @_;
+   return sprintf('%.6f', $val);
+}
 
 sub micro_t {
    my ( $t ) = @_;
