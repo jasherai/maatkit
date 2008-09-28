@@ -1818,9 +1818,10 @@ if ( !@ARGV ) {
    $opt_parser->error('You did not specify any files to play or split');
 }
 
-my $delay_sessions = get_delay($opts{'delay-sessions'}); 
-my $delay_queries  = get_delay($opts{'delay-queries'});
-exit;
+# Work in progress...
+# my $delay_sessions = get_delay($opts{'delay-sessions'}); 
+# my $delay_queries  = get_delay($opts{'delay-queries'});
+
 $opt_parser->usage_or_errors(%opts);
 
 # #############################################################################
