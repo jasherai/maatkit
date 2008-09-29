@@ -1792,7 +1792,7 @@ sub _d {
 package main;
 
 use POSIX;
-use Time::HiRes qw(time);
+use Time::HiRes qw(time usleep);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
@@ -1817,10 +1817,6 @@ my %opts = $opt_parser->parse();
 if ( !@ARGV ) {
    $opt_parser->error('You did not specify any files to play or split');
 }
-
-# Work in progress...
-# my $delay_sessions = get_delay($opts{'delay-sessions'}); 
-# my $delay_queries  = get_delay($opts{'delay-queries'});
 
 $opt_parser->usage_or_errors(%opts);
 
@@ -1907,21 +1903,6 @@ $SIG{CHLD} = sub {
    }
 };
 
-
-# Print output header. The children print their given session stats
-# when they finish.
-my $s = $opts{csv} ? ',' : "\t";
-print "session number"
-   .  "$s"."total query time"
-   .  "$s"."min query time"
-   .  "$s"."max query time"
-   .  "$s"."avg query time"
-   .  "$s"."number of queries"
-   .  "$s"."number queries per second"
-   .  "$s"."number of rows"
-   .  "$s"."number of rows per second"
-   .  "\n";
-
 my $session_n = 1;
 while ( @sessions || %kids ) {
 
@@ -1943,6 +1924,7 @@ while ( @sessions || %kids ) {
 
    # Start a new child process.
    while ( @sessions && $opts{c} > keys %kids ) {
+      usleep( get_delay($opts{'delay-sessions'}) );
       my $session = shift @sessions;
       $session->{number} = $session_n++;
       my $pid = fork();
@@ -2006,6 +1988,8 @@ sub play_session {
          next;
       }
 
+      usleep( get_delay($opts{'delay-queries'}) );
+
       my $start_time = time;
       my $results    = $dbh->selectall_arrayref($sql->{stmt});
 
@@ -2032,6 +2016,7 @@ sub play_session {
          'n_rows',
          'number',
          (
+            avg        => 0,
             all_events => 1,
             all_vals   => 0,
          ),
@@ -2042,12 +2027,13 @@ sub play_session {
       key_metric      => 'stmt',
       fingerprint     => \&QueryRewriter::fingerprint,
       handlers        => $handlers,
-      buffer_n_events => 1,
+      buffer_n_events => -1,
    );
    foreach my $event ( @SQL_statements ) {
       next if $event->{stmt} =~ /^USE /i;
       $metrics->record_event($event);
    }
+   $metrics->calc_metrics();
 
    # Print tab-separated session peformance metrics.
    print_session_stats($session, $metrics);
@@ -2060,10 +2046,25 @@ sub print_session_stats {
    my $all    = $metrics->{metrics}->{all};
    my $unique = $metrics->{metrics}->{unique};
 
+   # ############################################## #
+   # Print general session stats (for all queries). #
+   # ############################################## #
    $session->{n_queries_s}
       = float_6($session->{n_queries} / $all->{query_time}->{total});
    $session->{n_rows_s}
       = float_6($session->{n_rows} / $all->{query_time}->{total});
+
+   my $s = $opts{csv} ? ',' : "\t";
+   print "session number"
+      .  "$s"."total query time"
+      .  "$s"."min query time"
+      .  "$s"."max query time"
+      .  "$s"."avg query time"
+      .  "$s"."number of queries"
+      .  "$s"."number queries per second"
+      .  "$s"."number of rows"
+      .  "$s"."number of rows per second"
+      .  "\n";
 
    print "$session->{number}"
       .  "$s$all->{query_time}->{total}"
@@ -2075,6 +2076,34 @@ sub print_session_stats {
       .  "$s$session->{n_rows}"
       .  "$s$session->{n_rows_s}"
       .  "\n";
+
+   # ###################### #
+   # Print per-query stats. #
+   # ###################### #
+   print "query count"
+      .  "$s"."total time"
+      .  "$s"."min time"
+      .  "$s"."max time"
+      .  "$s"."avg time"
+      .  "$s"."total rows"
+      .  "$s"."min rows"
+      .  "$s"."max rows"
+      .  "$s"."sample"
+      .  "\n";
+
+   foreach my $query ( values %$unique ) {
+      print "$query->{count}"
+         .  "$s$query->{query_time}->{total}"
+         .  "$s$query->{query_time}->{min}"
+         .  "$s$query->{query_time}->{max}"
+         .  "$s$query->{query_time}->{avg}"
+         .  "$s$query->{n_rows}->{total}"
+         .  "$s$query->{n_rows}->{min}"
+         .  "$s$query->{n_rows}->{max}"
+         .  "$s$query->{sample}"
+         .  "\n";
+   }
+   print "\n";
 
    return;
 }
@@ -2093,16 +2122,20 @@ sub min_max_avg {
 
 sub get_delay {
    my ( $delay ) = @_;
-   return 0 if !defined $delay;
-   
-   my ( $from, $to ) = $delay =~ m/([\d\.]+)(\.\.|\-)?([\d\.]*)/;
+   return 0 if !defined $delay || scalar @$delay == 0;
+   my $t = 0;
+
+   my ( $from, $to ) = @$delay[0..1];
    if ( defined $to ) {
-      MKDEBUG && _d("Delay range from $from to $to");
+      $t = rand($to) + $from;
    }
    else {
-      MKDEBUG && _d("Exact delay of $from");
+      $t = $from;
    }
-   return;
+
+   # Return time is expressed in microseconds because this value
+   # is used with usleep() which takes a microsecond time value.
+   return $t *= 1_000_000;
 }
 
 sub get_cxn {
@@ -2128,13 +2161,13 @@ sub _d {
 
 =head1 NAME
 
-mk-log-play
+mk-log-player 
 
 =head1 SYNOPSIS
 
-   mk-log-play --split Thread_id mysql-slow.log
+   mk-log-player --split Thread_id mysql-slow.log
 
-   mk-log-play --play /tmp/mysql_log_split-*
+   mk-log-player --play /tmp/mysql_log_split-*
 
 =head1 DESCRIPTION
 
@@ -2175,26 +2208,26 @@ Comma-separate output of performance metrics.
 
 =item --delay-sessions
 
-default: 0
+type: array; default: 0
 
 Amount of delay time between playing sessions.
 
 Delay time is given in seconds (with microsecond precision) and can either be
 a single value or a range. Single values cause an exact delay of the value time
 (example: 0.010 = delay 10 milliseconds). Ranges cause a random delay between
-the given value times (example: 0.001-1 = random delay from 1 millisecond to
+the given value times (example: 0.001,1 = random delay from 1 millisecond to
 1 second).
 
 =item --delay-queries
 
-default: 0
+type: array; default: 0
 
 Amount of delay time between executing queries in each session.
 
 Delay time is given in seconds (with microsecond precision) and can either be
 a single value or a range. Single values cause an exact delay of the value time
 (example: 0.010 = delay 10 milliseconds). Ranges cause a random delay between
-the given value times (example: 0.001-1 = random delay from 1 millisecond to
+the given value times (example: 0.001,1 = random delay from 1 millisecond to
 1 second).
 
 =item --host
@@ -2213,7 +2246,7 @@ Password to use when connecting.
 
 short form: -x
 
-Play (execute) given log files.
+Play (execute) given session files.
 
 =item --port
 
@@ -2237,7 +2270,7 @@ Socket file to use for connection.
 
 short form: -s; type: string
 
-Split and group log by given attribute.
+Split log by given attribute to create session files.
 
 =item --user
 
