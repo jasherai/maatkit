@@ -126,7 +126,7 @@ sub ts {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# Tr:$line $PID ", @_, "\n";
+   print "# Transformers:$line $PID ", @_, "\n";
 }
 
 1;
