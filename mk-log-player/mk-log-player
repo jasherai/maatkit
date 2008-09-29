@@ -22,7 +22,7 @@ use warnings FATAL => 'all';
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", (q$Revision: 2311 $ =~ m/(\d+)/g, 0));
+our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
 # OptionParser package 2300
@@ -1797,7 +1797,6 @@ use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use strict;
 use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -1811,7 +1810,7 @@ my @opt_spec = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '[OPTION...] [FILE]';
-$opt_parser->{descr}  = q{split and play log files. };
+$opt_parser->{descr}  = q{splits and/or plays log files.};
 my %opts = $opt_parser->parse();
 
 if ( !@ARGV ) {
@@ -2166,7 +2165,6 @@ mk-log-player
 =head1 SYNOPSIS
 
    mk-log-player --split Thread_id mysql-slow.log
-
    mk-log-player --play /tmp/mysql_log_split-*
 
 =head1 DESCRIPTION
@@ -2333,6 +2331,6 @@ Daniel Nichter
 
 =head1 VERSION
 
-This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 2311 $.
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 =cut
