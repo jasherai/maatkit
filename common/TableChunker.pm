@@ -26,7 +26,7 @@ use English qw(-no_match_vars);
 use POSIX qw(ceil);
 use List::Util qw(min max);
 use Data::Dumper;
-$Data::Dumper::QuoteKeys = 0;
+$Data::Dumper::Quotekeys = 0;
 $Data::Dumper::Indent    = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -313,6 +313,7 @@ sub size_to_rows {
 }
 
 # Determine the range of values for the chunk_col column on this table.
+# The $where could come from many places; it is not trustworthy.
 sub get_range_statistics {
    my ( $self, $dbh, $db, $tbl, $col, $where ) = @_;
    my $q = $self->{quoter};
@@ -320,7 +321,19 @@ sub get_range_statistics {
       . ") FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);
-   my ( $min, $max ) = $dbh->selectrow_array($sql);
+   my ( $min, $max );
+   eval {
+      ( $min, $max ) = $dbh->selectrow_array($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      chomp $EVAL_ERROR;
+      if ( $EVAL_ERROR =~ m/in your SQL syntax/ ) {
+         die "$EVAL_ERROR (WHERE clause: $where)";
+      }
+      else {
+         die $EVAL_ERROR;
+      }
+   }
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);
