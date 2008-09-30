@@ -19,8 +19,8 @@
 use strict;
 use warnings FATAL => 'all';
 
-my $skippable = 15;
-use Test::More tests => 25;
+my $skippable = 16;
+use Test::More tests => 26;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -137,6 +137,7 @@ is(
 );
 
 # Open a connection to MySQL, or skip the rest of the tests.
+# TODO: set up a sandbox server for this!
 my $dbh;
 eval {
    $dbh = DBI->connect(
@@ -382,16 +383,24 @@ SKIP: {
    );
 
    throws_ok(
+      sub { $c->get_range_statistics($dbh, 'sakila', 'film', 'film_id', 'film_id>') },
+      qr/WHERE clause: /,
+      'shows full SQL on error',
+   );
+
+   throws_ok(
       sub { $c->size_to_rows($dbh, 'sakila', 'film', 'foo', $d) },
       qr/Invalid size spec/,
       'Rejects bad size spec',
    );
+
    is( $c->size_to_rows($dbh, 'sakila', 'film', '5', $d), 5, 'Numeric size' );
    my $size = $c->size_to_rows($dbh, 'sakila', 'film', '5k', $d);
    ok($size >= 20 && $size <= 30, 'Convert bytes to rows');
 
    $dbh->disconnect();
-}
+
+}  # End of block with live $dbh inside
 
 # Issue 47: TableChunker::range_num broken for very large bigint
 diag(`../../sandbox/make_sandbox 12345`);
