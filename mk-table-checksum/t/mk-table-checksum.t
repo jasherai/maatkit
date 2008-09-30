@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 72;
+use Test::More tests => 73;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -223,7 +223,7 @@ diag(`/tmp/12345/use < samples/checksum_tbl.sql`);
 $cmd = 'perl ../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum | diff ./samples/basic_replicate_output -';
 $ret_val = system($cmd);
 # Might as well test this while we're at it
-cmp_ok($ret_val, '==', 0, 'Basic --replicate works');
+cmp_ok($ret_val >> 8, '==', 0, 'Basic --replicate works');
 
 # Insert a bogus row into test.checksum
 my $repl_row = "INSERT INTO test.checksum VALUES ('foo', 'bar', 0, 'a', 'b', 0, 'c', 0,  NOW())";
@@ -245,6 +245,11 @@ diag(`/tmp/12345/use -D test -e "$repl_row"`);
 $cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
 $output = `$cmd`;
 like($output, qr/foo/, '--emptyrepltbl is ignored if --replicate is not specified');
+
+# Issue 81: put some data that's too big into the boundaries table
+diag(`/tmp/12345/use < samples/checksum_tbl_truncated.sql`);
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --emptyrepltbl --replicate test.checksum 2>&1`;
+like($output, qr/boundaries/, 'Truncation causes an error');
 
 # Test issue 5 + 35: --schema a missing table
 diag(`$create_missing_slave_tbl_cmd`);

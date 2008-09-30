@@ -3575,9 +3575,26 @@ sub do_tbl_replicate {
       return;
    }
 
+   # Actually run the checksum query
    $dbh->do('SET @crc := "", @cnt := 0 /*!50108 , '
           . '@@binlog_format := "STATEMENT"*/');
    $dbh->do($sql, {}, @{$info}{qw(database table)}, $where);
+
+   # Catch any warnings thrown....
+   $sql = 'SHOW WARNINGS';
+   MKDEBUG && _d($sql);
+   my $warnings = $dbh->selectall_arrayref($sql, { Slice => {} } );
+   foreach my $warning ( @$warnings ) {
+      if ( $warning->{Message} =~ m/Data truncated for column 'boundaries'/ ) {
+         _d("Warning: WHERE clause too large for boundaries column; ",
+            "mk-table-sync may fail (value: $where)");
+      }
+      else {
+         die Dumper($warning);
+      }
+   }
+
+   # Update the master_crc etc columns
    $fetch_sth->execute(@{$info}{qw(database table)}, $chunk_num);
    ( $crc, $cnt ) = $fetch_sth->fetchrow_array();
    $update_sth->execute($crc, $cnt, @{$info}{qw(database table)}, $chunk_num);
@@ -4387,7 +4404,7 @@ named anything you wish.  Here is a suggested table structure:
      db         char(64)     NOT NULL,
      tbl        char(64)     NOT NULL,
      chunk      int          NOT NULL,
-     boundaries char(64)     NOT NULL,
+     boundaries char(100)    NOT NULL,
      this_crc   char(40)     NOT NULL,
      this_cnt   int          NOT NULL,
      master_crc char(40)         NULL,

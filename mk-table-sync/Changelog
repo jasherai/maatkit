@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * --replicate failed cryptically on truncated boundaries column (issue 81).
+
 2008-09-19: version 1.0.9
 
    * Added --nouseindex option (issue 8).
