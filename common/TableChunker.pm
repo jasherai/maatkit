@@ -25,6 +25,9 @@ package TableChunker;
 use English qw(-no_match_vars);
 use POSIX qw(ceil);
 use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::QuoteKeys = 0;
+$Data::Dumper::Indent    = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -358,6 +361,8 @@ sub inject_chunks {
    my $index_hint = defined $args{index_hint}
                     ? "USE INDEX (`$args{index_hint}`)"
                     : '';
+   MKDEBUG && _d("Parameters: ",
+      Dumper({WHERE => $where, DB_TBL => $db_tbl, INDEX_HINT => $index_hint}));
    $args{query} =~ s!/\*WHERE\*/! $where!;
    $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
    $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;
