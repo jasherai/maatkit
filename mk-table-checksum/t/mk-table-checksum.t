@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 76;
+use Test::More tests => 78;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -256,6 +256,12 @@ diag(`/tmp/12345/use -D test -e "$repl_row"`);
 $cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
 $output = `$cmd`;
 like($output, qr/foo/, '--emptyrepltbl is ignored if --replicate is not specified');
+
+# Screw up the data on the slave and make sure --replcheck works
+`/tmp/12348/use -e "update test.checksum set this_crc='' limit 1"`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum --replcheck 1 2>&1`;
+like($output, qr/columns_priv/, '--replcheck works');
+cmp_ok($CHILD_ERROR>>8, '==', 1, 'Exit status is right with --replcheck failure');
 
 # Issue 81: put some data that's too big into the boundaries table
 diag(`/tmp/12345/use < samples/checksum_tbl_truncated.sql`);
