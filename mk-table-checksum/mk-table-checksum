@@ -1716,7 +1716,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 2289
+# TableChunker package 2364
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1726,6 +1726,9 @@ package TableChunker;
 use English qw(-no_match_vars);
 use POSIX qw(ceil);
 use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Indent    = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1958,7 +1961,19 @@ sub get_range_statistics {
       . ") FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);
-   my ( $min, $max ) = $dbh->selectrow_array($sql);
+   my ( $min, $max );
+   eval {
+      ( $min, $max ) = $dbh->selectrow_array($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      chomp $EVAL_ERROR;
+      if ( $EVAL_ERROR =~ m/in your SQL syntax/ ) {
+         die "$EVAL_ERROR (WHERE clause: $where)";
+      }
+      else {
+         die $EVAL_ERROR;
+      }
+   }
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);
@@ -1995,6 +2010,8 @@ sub inject_chunks {
    my $index_hint = defined $args{index_hint}
                     ? "USE INDEX (`$args{index_hint}`)"
                     : '';
+   MKDEBUG && _d("Parameters: ",
+      Dumper({WHERE => $where, DB_TBL => $db_tbl, INDEX_HINT => $index_hint}));
    $args{query} =~ s!/\*WHERE\*/! $where!;
    $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
    $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;
@@ -2924,10 +2941,23 @@ $dsn_parser->prop('setvars', $opts{setvars});
 
 # This list contains all the command-line arguments that can be overridden by a
 # table that contains arguments for each table to be checksummed.  The short
-# form of each argument is given. TODO: parse this list from the POD.
-my %overridable_args = map { $_ => 1 }
-   qw(a C columns r c f k nouseindex optxor probability s
-      since sincecolumn sleep sleep-coef trim w W);
+# form of each argument is given.  The values are read from the POD by finding
+# the magical token.
+my %overridable_args;
+{
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $file = __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/magical\soverridable/;
+      last;
+   }
+   $para = <$fh>;
+   %overridable_args = map { $_ => 1 } $para =~ m/([\w-]+)/g;
+   close $fh;
+};
 
 # Post-process command-line options and arguments.
 $opts{k} ||= defined $opts{w};
@@ -2967,6 +2997,9 @@ if ( !$opts{help} ) {
    if ( $opts{replcheck} && !$opts{R} ) {
       $opt_parser->error("--replcheck requires --replicate.");
    }
+   if ( $opts{savesince} && !$opts{argtable} ) {
+      $opt_parser->error("--savesince requires --argtable.");
+   }
    elsif ( $opts{R} && @hosts > 1 ) {
       $opt_parser->error("You can only specify one host with --replicate.");
    }
@@ -2996,7 +3029,7 @@ if ( defined $opts{replcheck} ) {
 # will use CRC32.
 # ############################################################################
 my ( $strat, $crc_wid, $crc_type, $func, $opt_slice );
-my ( $fetch_sth, $update_sth );
+my ( $fetch_sth, $update_sth, $savesince_sth );
 
 if ( $checksum_table_data ) {
    my $strat_ref = determine_checksum_strat($main_dbh, $tc);
@@ -3029,6 +3062,7 @@ my $md5sum_fmt = "%-${crc_wid}s  %s.%s.%s.%d\n";
 # ############################################################################
 my %args_for;
 if ( $opts{argtable} ) {
+   my %col_in_argtable;
    my $rows = $main_dbh->selectall_arrayref(
       "SELECT * FROM $opts{argtable}", { Slice => {} });
    foreach my $row ( @$rows ) {
@@ -3039,6 +3073,11 @@ if ( $opts{argtable} ) {
          grep { $overridable_args{$_} && defined $row->{$_} }
          keys %$row
       };
+      %col_in_argtable = map { $_ => 1 } keys %$row unless %col_in_argtable;
+   }
+   if ( $col_in_argtable{since} ) {
+      $savesince_sth = $main_dbh->prepare(
+      "UPDATE $opts{argtable} SET since=COALESCE(?, NOW()) WHERE db=? AND tbl=?");
    }
 }
 
@@ -3090,7 +3129,8 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
       # evaluated by the DB server.  This has to be done after the override from
       # the --argtable table.
       foreach my $opt ( qw(since O) ) {
-         if ( !is_temporal($final_opts{$opt}) ) { # 2008-08-01 --> 1999
+         # Don't get MySQL to evaluate if it's temporal, as 2008-08-01 --> 1999
+         if ( defined $final_opts{$opt} && !is_temporal($final_opts{$opt}) ) {
             $final_opts{$opt} = eval_expr($opt, $final_opts{$opt}, $main_dbh);
          }
       }
@@ -3109,6 +3149,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             $idx = undef if $final_opts{nouseindex};
 
             my @chunks = '1=1'; # Default.
+            my $maxval = undef;
             if ( $final_opts{C} && $col ) {
                my $rows_per_chunk = $ch->size_to_rows(
                      $main_dbh, $database, $table, $final_opts{C}, $du);
@@ -3124,6 +3165,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                      size     => $rows_per_chunk,
                      %params,
                   );
+                  $maxval = $params{max};
                }
             }
 
@@ -3133,6 +3175,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                database     => $database,
                table        => $table,
                column       => $col,
+               maxval       => $maxval,
                index        => $idx,
                chunks       => \@chunks,
                final_opts   => \%final_opts,
@@ -3196,15 +3239,18 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             if ( is_temporal($final_opts{since}) ) {
                my ($stat) = $du->get_table_status($main_dbh, $q, $database, $table->{table});
                my $time = maxstr(grep { $_ } @{$stat}{qw(create_time update_time)});
-               # TODO $time may be undef!
-               if ( $time lt $final_opts{since} ) {
-                  MKDEBUG && _d("Skipping table because of --since");
+               if ( $time && $time lt $final_opts{since} ) {
+                  MKDEBUG && _d("Skipping table because --since value ",
+                     "$final_opts{since} is newer than $time");
                   $do_table = 0;
                   $table->{chunks} = [];
                }
             }
          }
 
+         # Choose the column to apply --since to.  It may not be the column the
+         # user said to use!  If the user didn't specify a column that's good to
+         # chunk on, we'll use something else instead.
          if ( $final_opts{since} && $do_table ) {
             my ( $sincecol ) =
                grep { $_ && $table->{struct}->{is_col}->{$_} }
@@ -3256,10 +3302,9 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          CHUNK:
          foreach my $chunk_num ( 0 .. $num_chunks - 1 ) {
 
-            # TODO: by default, if there is only one chunk, never skip it.  Add
-            # a cmdline opt to permit overriding this.
-            if (     $num_chunks > 1
+            if (     ($num_chunks > 1 || $final_opts{singlechunk})
                   && $checksum_table_data
+                  && defined $final_opts{probability}
                   && rand(100) >= $final_opts{probability} )
             {
                MKDEBUG && _d('Skipping chunk because of --probability');
@@ -3361,6 +3406,14 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                sleep($sleep_time);
             }
 
+         } # End foreach CHUNK
+
+         # Save the --since value if there is a place to save it.
+         if ( $final_opts{savesince} && $savesince_sth ) {
+            MKDEBUG && _d("Saving --since value: ", $table->{maxval},
+               ' for ', $database, ' ', $table->{table});
+            $savesince_sth->execute($table->{maxval},
+               $database, $table->{table});
          }
       };
       if ( $EVAL_ERROR ) {
@@ -3817,6 +3870,7 @@ sub print_err {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
    print "# main:$line $PID ", @_, "\n";
 }
 
@@ -4065,10 +4119,10 @@ following columns:
   );
 
 In addition to the columns shown, it may contain any of the other columns listed
-here:
+here (Note: this list is used for a magical overridable_args hash in the code):
 
-  a C columns r c f k nouseindex optxor probability s
-  since sincecolumn sleep sleep-coef trim w W
+  a C columns r c f k nouseindex optxor probability s savesince
+  singlechunk since sincecolumn sleep sleep-coef trim w W
 
 Each of these columns corresponds to the short form of a command-line option.
 Each column should be NULL-able.  The data type does not matter, but it's
@@ -4335,7 +4389,8 @@ certainly be checksummed.  If less than that, there is a chance that some chunks
 of some tables will be skipped.  This is useful for routine jobs designed to
 randomly sample bits of tables without checksumming the whole server.  By
 default, if a table is not chunkable, it will be checksummed every time even
-when the probability is less than 100.  You can't currently override this.
+when the probability is less than 100.  You can override this with
+L<"--singlechunk">.
 
 See also L<"--modulo">.
 
@@ -4457,8 +4512,12 @@ The table specified by L<"--replicate"> will never be checksummed itself.
 
 When L<"--argtable"> and L<"--since"> are given, save the current L<"--since">
 value into that table's C<since> column after checksumming.  In this way you can
-incrementally checksum tables by starting where the last one finished.  This
-option is TODO.
+incrementally checksum tables by starting where the last one finished.
+
+The value to be saved could be the current timestamp, or it could be the maximum
+existing value of the column given by L<"--sincecol">.  It depends on what
+options are in effect.  See the description of L<"--since"> to see how
+timestamps are different from ordinary values.
 
 =item --schema
 
@@ -4486,7 +4545,7 @@ These will be included in a C<SET> command.
 
 type: string
 
-Checksum only rows newer than this value.
+Checksum only data newer than this value.
 
 If the table is chunk-able or nibble-able, this value will apply to the first
 column of the chunked or nibbled index.
@@ -4502,7 +4561,8 @@ ago.
 A special bit of extra magic: if the value is temporal (looks like a date or
 datetime), then the table is checksummed only if the create time (or last
 modified time, for tables that report the last modified time, such as MyISAM
-tables) is newer than the value.
+tables) is newer than the value.  In this sense it's not applied as a WHERE
+clause at all.
 
 =item --sincecolumn
 
@@ -4514,6 +4574,14 @@ The default is for the tool to choose the best one automatically.  If you
 specify a value, that will be used if possible; otherwise the best
 auto-determined one; otherwise none.  If the column doesn't exist in the table,
 it is just ignored.
+
+=item --singlechunk
+
+Permit skipping with L<"--probability"> if there is only one chunk.
+
+Normally, if a table isn't split into many chunks, it will always be
+checksummed regardlesss of L<"--probability">.  This setting lets the
+probabilistic behavior apply to tables that aren't divided into chunks.
 
 =item --slavelag
 

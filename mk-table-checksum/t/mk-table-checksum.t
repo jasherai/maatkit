@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 73;
+use Test::More tests => 75;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -101,6 +101,14 @@ like($output, qr/`a`>=100/, '--since adds WHERE clauses');
 
 $output = `$cmd --since current_date 2>&1 | grep HASH`;
 unlike($output, qr/HASH\(0x/, '--since does not f*** up table names');
+
+# Check --since with --savesince
+$output = `$cmd --argtable test.argtest --savesince -C 50 -t test.chunk 2>&1`;
+$output2 = `/tmp/12345/use --skip-column-names -e "select since from test.argtest where tbl='chunk'"`;
+is($output2 + 0, 1000, '--savesince saved the maxrow');
+$output = `$cmd --argtable test.argtest --savesince -C 50 -t test.argtest 2>&1`;
+$output2 = `/tmp/12345/use --skip-column-names -e "select since from test.argtest where tbl='argtest'"`;
+like($output2, qr/^\d{4}-\d\d-\d\d/, '--savesince saved the current timestamp');
 
 # Check --offset with --modulo
 $output = `../mk-table-checksum --databases mysql -C 5 h=127.0.0.1,P=12345 --modulo 7 --offset 'weekday(now())' --tables help_relation 2>&1`;

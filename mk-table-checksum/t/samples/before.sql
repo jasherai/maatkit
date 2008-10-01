@@ -31,6 +31,8 @@ create table argtest (
 );
 
 insert into argtest select 'test', 'checksum_test', current_date;
+insert into argtest select 'test', 'argtest', 'current_date-interval 30 day';
+insert into argtest select 'test', 'chunk', '1';
 
 create table fl_test(a float not null primary key, b double);
 CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so';
