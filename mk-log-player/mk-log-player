@@ -570,7 +570,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2337
+# LogParser package 2357
 # ###########################################################################
 package LogParser;
 
@@ -717,14 +717,13 @@ sub parse_event {
          elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
             
             if ( $type == 0 ) {
-               if ( $line !~ m/^#.+;/ ) {
+               if ( $line =~ m/^#.+;/ ) {
+                  MKDEBUG && _d('Commented event line ends header');
+               }
+               else {
                   $handled_line = 1;
                   MKDEBUG && _d('Splitting line into fields');
                   @{$event}{keys %hash} = values %hash;
-               }
-               else {
-                  $handled_line = 0;
-                  MKDEBUG && _d('Commented event line ends header');
                }
             }
             else {
@@ -754,7 +753,7 @@ sub parse_event {
             else {
                MKDEBUG && _d('Line is a continuation of prev line');
                if ( $line =~ m/^# / ) {
-                  MKDEBUG && _d('Line is a commented even line');
+                  MKDEBUG && _d('Line is a commented event line');
                   $line =~ s/.+: (.+);\n/$1/;
                   $event->{cmd} = 'Admin';
                }
@@ -1025,10 +1024,11 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 2348
+# LogSplitter package 2369
 # ###########################################################################
 
 package LogSplitter;
+
 
 use strict;
 use warnings FATAL => 'all';
@@ -1048,10 +1048,17 @@ sub split_logs {
    foreach my $arg ( qw(log_files attribute saveto_dir LogParser) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my $n_splits_left = $args{max_splits} || -1;
 
    my @fhs;
    foreach my $log ( @{ $args{log_files} } ) {
-      open my $fh, "<", $log or die "Cannot open $log: $OS_ERROR\n";
+      my $fh;
+      if ( $log eq '-' ) {
+         $fh = *STDIN;
+      }
+      else {
+         open $fh, "<", $log or die "Cannot open $log: $OS_ERROR\n";
+      }
       push @fhs, $fh;
    }
 
@@ -1066,7 +1073,7 @@ sub split_logs {
    my $n_open_fhs  = 0;
 
    my $callback = sub {
-      my ( $event ) = @_;
+      my ( $event ) = @_; 
 
       my $attrib = $self->{attribute};
       if ( !exists $event->{ $attrib } ) {
@@ -1085,24 +1092,27 @@ sub split_logs {
       my $session    = $self->{sessions}->{ $session_id } ||= {}; 
 
       if ( !defined $session->{fh} ) {
-            my $session_n = sprintf '%04d', ++$self->{n_sessions};
-            my $log_split_file = $self->{saveto_dir}
+         return if !$n_splits_left;
+         $n_splits_left--;
+
+         my $session_n = sprintf '%04d', ++$self->{n_sessions};
+         my $log_split_file = $self->{saveto_dir}
                                . "mysql_log_split-$session_n";
 
-            $n_open_fhs = $self->_close_lru_session($session_fhs, $n_open_fhs)
-               if $n_open_fhs >= MAX_OPEN_FILES;
+         $n_open_fhs = $self->_close_lru_session($session_fhs, $n_open_fhs)
+         if $n_open_fhs >= MAX_OPEN_FILES;
 
-            open $session->{fh}, '>', $log_split_file
-               or die "Cannot open log split file $log_split_file: $OS_ERROR";
-            $n_open_fhs++;
+         open $session->{fh}, '>', $log_split_file
+            or die "Cannot open log split file $log_split_file: $OS_ERROR";
+         $n_open_fhs++;
 
-            $session->{active}         = 1;
-            $session->{log_split_file} = $log_split_file;
-            push @$session_fhs,
-               { fh => $session->{fh}, session_id => $session_id };
+         $session->{active}         = 1;
+         $session->{log_split_file} = $log_split_file;
+         push @$session_fhs,
+            { fh => $session->{fh}, session_id => $session_id };
 
-            MKDEBUG && _d("Created $log_split_file "
-                          . "for session $attrib=$session_id");
+         MKDEBUG && _d("Created $log_split_file "
+                       . "for session $attrib=$session_id");
       }
       elsif ( !$session->{active} ) {
 
@@ -1133,7 +1143,7 @@ sub split_logs {
 
    my $lp = $args{LogParser};
    foreach my $fh ( @fhs ) {
-      1 while $lp->parse_event($fh, $callback)
+      1 while $n_splits_left && $lp->parse_event($fh, $callback);
    }
 
    if ( !$args{silent} ) {
@@ -1443,7 +1453,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2353
+# Transformers package 2368
 # ###########################################################################
 
 package Transformers;
@@ -1468,8 +1478,6 @@ sub float_6 {
 sub micro_t {
    my ( $t ) = @_;
    my $f;
-   my $WIN = ($^O eq 'MSWin32' ? 1 : 0);
-   my $u   = chr(($WIN ? 230 : 181));
 
    $t = 0 if $t < 0;
 
@@ -1478,7 +1486,7 @@ sub micro_t {
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
-      $f = ($t * 1000000) . " $u";
+      $f = ($t * 1000000) . ' us';
    }
    elsif ($t >= 0.001000 && $t <= 0.999999) {
       $f = sprintf('%.3f', $t * 1000);
@@ -1548,7 +1556,7 @@ sub ts {
 
 sub _d {
    my ( $line ) = (caller(0))[2];
-   print "# Tr:$line $PID ", @_, "\n";
+   print "# Transformers:$line $PID ", @_, "\n";
 }
 
 1;
@@ -1813,10 +1821,6 @@ $opt_parser->{prompt} = '[OPTION...] [FILE]';
 $opt_parser->{descr}  = q{splits and/or plays log files.};
 my %opts = $opt_parser->parse();
 
-if ( !@ARGV ) {
-   $opt_parser->error('You did not specify any files to play or split');
-}
-
 $opt_parser->usage_or_errors(%opts);
 
 # #############################################################################
@@ -1827,6 +1831,8 @@ if ( $opts{s} ) {
       die "$opts{saveto} is not a directory"
    }
 
+   $ARGV[0] = '-' if scalar @ARGV == 0; # causes LogSplitter to read STDIN
+
    my $lp = new LogParser;
    my $ls = new LogSplitter();
    $ls->split_logs(
@@ -1834,6 +1840,7 @@ if ( $opts{s} ) {
       attribute  => $opts{s},
       saveto_dir => $opts{saveto},
       LogParser  => $lp,
+      max_splits => $opts{'max-sessions'} || -1,
    );
 
    # If given --split and --play, we are to play the logs that we just split.
@@ -1852,14 +1859,12 @@ exit unless $opts{x};
 # Make list of session log files to play.
 # ########################################################################
 my @sessions;
-if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
-   my $fh = *STDIN;
-   push @sessions, $fh;
+if ( @ARGV == 0 ) {
+   push @sessions, { log_file => '-' }; # STDIN
 }
 else {
    my @log_split_files;
    foreach my $log_split ( @ARGV ) {
-
       if ( -d $log_split ) {
          MKDEBUG && _d("Reading all session log files in $log_split");
          opendir my $dir, $log_split
@@ -1873,8 +1878,13 @@ else {
          push @log_split_files, $log_split;
       }
    }
-   @sessions = map +{ log_file => $_ }, @log_split_files;
-   MKDEBUG && _d('Sessions: ' . Dumper(\@sessions));
+   @sessions = map { { log_file => $_ } } @log_split_files; 
+}
+
+MKDEBUG && _d('Sessions: ' . Dumper(\@sessions));
+
+if ( @sessions == 0 ) {
+   die 'No valid session files to play';
 }
 
 # ########################################################################
@@ -1966,8 +1976,14 @@ sub play_session {
    my ( $session ) = @_;
 
    # Read all SQL statements of session into an array of hashes.
-   open my $log_split_fh, '<', $session->{log_file}
-      or die "Cannot open log split file $session->{log_file}: $OS_ERROR";
+   my $log_split_fh;
+   if ( $session->{log_file} eq '-' ) {
+      $log_split_fh = *STDIN;
+   }
+   else {
+      open $log_split_fh, '<', $session->{log_file}
+         or die "Cannot open log split file $session->{log_file}: $OS_ERROR";
+   }
    my @SQL_statements;
    local $INPUT_RECORD_SEPARATOR = '';
    while ( my $sql = <$log_split_fh> ) {
@@ -2233,6 +2249,15 @@ the given value times (example: 0.001,1 = random delay from 1 millisecond to
 short form: -h; type: string
 
 Connect to host.
+
+=item --max-sessions
+
+type: int
+
+Max number of sessions to save with --split.
+
+By default, C<mk-log-player> saves every session from split log files. This
+option causes only the first N number of sessions to be saved.
 
 =item --password
 
