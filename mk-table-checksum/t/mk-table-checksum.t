@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 75;
+use Test::More tests => 76;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -92,6 +92,9 @@ like($output, qr/2007-12-31/, '--since is calculated as an expression');
 $output = `$cmd --argtable test.argtest --since '"2008-01-01" - interval 1 day' --explain 2>&1`;
 unlike($output, qr/2008-01-01/, 'Argtest overridden');
 like($output, qr/`a`>='\d{4}-/, 'Argtest set to something else');
+
+$output = `MKDEBUG=1 $cmd --since 'current_date + interval 1 day' -t test.blackhole 2>&1`;
+like($output, qr/Finished chunk/, '--since does not crash on blackhole tables');
 
 $output = `MKDEBUG=1 $cmd --since 'current_date + interval 1 day' 2>&1`;
 like($output, qr/Skipping.*--since/, '--since skips tables');

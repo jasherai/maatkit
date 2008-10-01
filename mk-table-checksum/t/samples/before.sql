@@ -30,6 +30,8 @@ create table argtest (
  primary key(db, tbl)
 );
 
+create table blackhole(a int)engine=blackhole;
+
 insert into argtest select 'test', 'checksum_test', current_date;
 insert into argtest select 'test', 'argtest', 'current_date-interval 30 day';
 insert into argtest select 'test', 'chunk', '1';

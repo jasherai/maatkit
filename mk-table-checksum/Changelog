@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * --since crashed on blackhole tables (issue 64).
    * Added --singlechunk and --savesince (issue 53).
    * --replicate with large WHERE did not fit in boundaries column (issue 81).
 
