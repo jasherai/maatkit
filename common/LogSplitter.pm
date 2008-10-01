@@ -20,6 +20,8 @@
 # ###########################################################################
 package LogSplitter;
 
+# TODO: handle STDIN -
+
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
@@ -38,6 +40,7 @@ sub split_logs {
    foreach my $arg ( qw(log_files attribute saveto_dir LogParser) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   my $n_splits_left = $args{max_splits} || -1;
 
    my @fhs;
    foreach my $log ( @{ $args{log_files} } ) {
@@ -57,7 +60,7 @@ sub split_logs {
    my $n_open_fhs  = 0;
 
    my $callback = sub {
-      my ( $event ) = @_;
+      my ( $event ) = @_; 
 
       my $attrib = $self->{attribute};
       if ( !exists $event->{ $attrib } ) {
@@ -83,29 +86,32 @@ sub split_logs {
 
       # Init new session.
       if ( !defined $session->{fh} ) {
-            # Set name of next log split file.
-            my $session_n = sprintf '%04d', ++$self->{n_sessions};
-            my $log_split_file = $self->{saveto_dir}
+         return if !$n_splits_left;
+         $n_splits_left--;
+
+         # Set name of next log split file.
+         my $session_n = sprintf '%04d', ++$self->{n_sessions};
+         my $log_split_file = $self->{saveto_dir}
                                . "mysql_log_split-$session_n";
 
-            # Close Last Recently Used session fhs if opening if this new
-            # session fh will cause us to have too many open files.
-            $n_open_fhs = $self->_close_lru_session($session_fhs, $n_open_fhs)
-               if $n_open_fhs >= MAX_OPEN_FILES;
+         # Close Last Recently Used session fhs if opening if this new
+         # session fh will cause us to have too many open files.
+         $n_open_fhs = $self->_close_lru_session($session_fhs, $n_open_fhs)
+         if $n_open_fhs >= MAX_OPEN_FILES;
 
-            # Open a fh for the log split file.
-            open $session->{fh}, '>', $log_split_file
-               or die "Cannot open log split file $log_split_file: $OS_ERROR";
-            $n_open_fhs++;
+         # Open a fh for the log split file.
+         open $session->{fh}, '>', $log_split_file
+            or die "Cannot open log split file $log_split_file: $OS_ERROR";
+         $n_open_fhs++;
 
-            # Save fh and log split file info for this session.
-            $session->{active}         = 1;
-            $session->{log_split_file} = $log_split_file;
-            push @$session_fhs,
-               { fh => $session->{fh}, session_id => $session_id };
+         # Save fh and log split file info for this session.
+         $session->{active}         = 1;
+         $session->{log_split_file} = $log_split_file;
+         push @$session_fhs,
+            { fh => $session->{fh}, session_id => $session_id };
 
-            MKDEBUG && _d("Created $log_split_file "
-                          . "for session $attrib=$session_id");
+         MKDEBUG && _d("Created $log_split_file "
+                       . "for session $attrib=$session_id");
       }
       elsif ( !$session->{active} ) {
          # Reopen the existing but inactive session. This happens when
@@ -143,7 +149,7 @@ sub split_logs {
 
    my $lp = $args{LogParser};
    foreach my $fh ( @fhs ) {
-      1 while $lp->parse_event($fh, $callback)
+      1 while $n_splits_left && $lp->parse_event($fh, $callback);
    }
 
    if ( !$args{silent} ) {

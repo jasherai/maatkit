@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 11;
+use Test::More tests => 12;
 use English qw(-no_match_vars);
 
 require '../LogSplitter.pm';
@@ -65,6 +65,20 @@ like($output, qr/SELECT 2001 FROM foo/, '2,000th session has correct SQL');
 
 $output = `cat $tmpdir/mysql_log_split-0012`;
 like($output, qr/SELECT 12 FROM foo\n\nSELECT 1234 FROM foo/, 'Reopened and appended to previously closed session');
+
+diag(`rm -rf $tmpdir/*`);
+
+$ls->split_logs(
+   log_files  => [ 'samples/slow009.txt' ],
+   attribute  => 'Thread_id',
+   saveto_dir => "$tmpdir",
+   LogParser  => $lp,
+   silent     => 1,
+   max_splits => 10,
+);
+
+chomp($output = `ls -1 $tmpdir/ | tail -n 1`);
+is($output, 'mysql_log_split-0010', 'Can limit number of log splits');
 
 diag(`rm -rf $tmpdir`);
 exit;
