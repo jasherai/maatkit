@@ -2955,7 +2955,11 @@ my %overridable_args;
       last;
    }
    $para = <$fh>;
-   %overridable_args = map { $_ => 1 } $para =~ m/([\w-]+)/g;
+   foreach my $arg ( $para =~ m/([\w-]+)/g ) {
+      die "Magical argument $arg mentioned in POD isn't a command-line argument"
+         unless exists $opts{$arg};
+      $overridable_args{$arg} = 1;
+   }
    close $fh;
 };
 
@@ -3073,7 +3077,14 @@ if ( $opts{argtable} ) {
          grep { $overridable_args{$_} && defined $row->{$_} }
          keys %$row
       };
-      %col_in_argtable = map { $_ => 1 } keys %$row unless %col_in_argtable;
+      if ( !%col_in_argtable ) { # do only once
+         foreach my $key ( keys %$row ) {
+            next if $key =~ m/^(db|tbl|ts)$/;
+            die "Column $key (from $opts{argtable} given by --argtable) is not an overridable argument"
+               unless $overridable_args{$key};
+            $col_in_argtable{$key} = 1;
+         }
+      }
    }
    if ( $col_in_argtable{since} ) {
       $savesince_sth = $main_dbh->prepare(
@@ -4115,25 +4126,32 @@ following columns:
   CREATE TABLE checksum_args (
      db         char(64)     NOT NULL,
      tbl        char(64)     NOT NULL,
+     -- other columns as desired
      PRIMARY KEY (db, tbl)
   );
 
 In addition to the columns shown, it may contain any of the other columns listed
 here (Note: this list is used for a magical overridable_args hash in the code):
 
-  a C columns r c f k nouseindex optxor probability s savesince
+  a C columns r c f k nouseindex o probability s savesince
   singlechunk since sincecolumn sleep sleep-coef trim w W
 
 Each of these columns corresponds to the short form of a command-line option.
 Each column should be NULL-able.  The data type does not matter, but it's
 suggested you use a sensible data type to prevent garbage data.
 
-When C<mk-table-checksum> checksums a table, it will look for information in
+When C<mk-table-checksum> checksums a table, it will look for a matching entry in
 this table.  Any column that has a defined value will override the corresponding
 command-line argument for the table being currently processed.  In this way it
 is possible to specify custom command-line arguments for any table.
 
-See also L<"--savesince">.
+If you add columns to the table that aren't in the above list of allowable
+columns, it's an error.  The exceptions are C<db>, C<tbl>, and C<ts>.  The C<ts>
+column can be used as a timestamp for easy visibility into the last time the
+C<since> column was updated with L<"--savesince">.
+
+This table is assumed to be located on the first server given on the
+command-line.
 
 =item --askpass
 
