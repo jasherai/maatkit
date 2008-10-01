@@ -20,18 +20,15 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 14;
 use English qw(-no_match_vars);
 
 BEGIN {
    require '../Transformers.pm';
-   Transformers->import( qw(micro_t shorten) );
+   Transformers->import( qw(micro_t shorten secs_to_time) );
 };
 
-my $WIN = ($^O eq 'MSWin32' ? 1 : 0);
-my $u   = chr(($WIN ? 230 : 181));
-
-is(micro_t('0.000001'),       "1 $u",        'Formats 1 microsecond');
+is(micro_t('0.000001'),       "1 us",        'Formats 1 microsecond');
 is(micro_t('0.001000'),       '1 ms',        'Formats 1 milliseconds');
 is(micro_t('1.000000'),       '1 s',         'Formats 1 second');
 is(micro_t('0.123456789999'), '123.456 ms',  'Truncates long value, does not round');
@@ -42,5 +39,10 @@ is(micro_t('0.9999998'), '999.999 ms', 'ms high edge is not rounded (999.999 ms)
  
 is(shorten('1024.00'), '1.00k', 'Shortens 1024.00 to 1.00k');
 is(shorten('100'),     '100',   '100 does not shorten (stays 100)');
+
+is(secs_to_time(0), '00:00', 'secs_to_time 0 s = 00:00');
+is(secs_to_time(60), '01:00', 'secs_to_time 60 s = 1 minute');
+is(secs_to_time(3600), '01:00:00', 'secs_to_time 3600 s = 1 hour');
+is(secs_to_time(86400), '1+00:00:00', 'secd_to_time 86400 = 1 day');
 
 exit;

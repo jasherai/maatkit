@@ -41,8 +41,6 @@ sub float_6 {
 sub micro_t {
    my ( $t ) = @_;
    my $f;
-   my $WIN = ($^O eq 'MSWin32' ? 1 : 0);
-   my $u   = chr(($WIN ? 230 : 181));
 
    $t = 0 if $t < 0;
 
@@ -55,7 +53,7 @@ sub micro_t {
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
-      $f = ($t * 1000000) . " $u";
+      $f = ($t * 1000000) . ' us';
    }
    elsif ($t >= 0.001000 && $t <= 0.999999) {
       $f = sprintf('%.3f', $t * 1000);
