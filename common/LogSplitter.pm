@@ -44,7 +44,13 @@ sub split_logs {
 
    my @fhs;
    foreach my $log ( @{ $args{log_files} } ) {
-      open my $fh, "<", $log or die "Cannot open $log: $OS_ERROR\n";
+      my $fh;
+      if ( $log eq '-' ) {
+         $fh = *STDIN;
+      }
+      else {
+         open $fh, "<", $log or die "Cannot open $log: $OS_ERROR\n";
+      }
       push @fhs, $fh;
    }
 

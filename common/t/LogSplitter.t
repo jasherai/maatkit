@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 12;
+use Test::More tests => 13;
 use English qw(-no_match_vars);
 
 require '../LogSplitter.pm';
@@ -79,6 +79,11 @@ $ls->split_logs(
 
 chomp($output = `ls -1 $tmpdir/ | tail -n 1`);
 is($output, 'mysql_log_split-0010', 'Can limit number of log splits');
+
+diag(`rm -rf $tmpdir/*`);
+
+$output = `cat samples/slow006.txt | samples/log_splitter.pl`;
+like($output, qr/Parsed 3 sessions/, 'Can read STDIN');
 
 diag(`rm -rf $tmpdir`);
 exit;
