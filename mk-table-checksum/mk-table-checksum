@@ -3007,6 +3007,13 @@ if ( !$opts{help} ) {
    elsif ( $opts{R} && @hosts > 1 ) {
       $opt_parser->error("You can only specify one host with --replicate.");
    }
+
+   if ( $opts{'resume-replicate'} && !$opts{R} ) {
+      $opt_parser->error("--resume-replicate requires --replicate.");
+   }
+   if ( $opts{resume} && $opts{R} ) {
+      $opt_parser->error("Use --resume-replicate with --replicate");
+   }
 }
 
 $opt_parser->usage_or_errors(%opts);
@@ -3098,7 +3105,13 @@ if ( $opts{argtable} ) {
 # checksuming.
 # ############################################################################
 my %already_checksummed;
-parse_resume_file($opts{resume}, \%already_checksummed) if $opts{resume};
+if ( $opts{R} ) {
+   read_repl_table($main_dbh, \%already_checksummed)
+      if $opts{'resume-replicate'};
+}
+else {
+   parse_resume_file($opts{resume}, \%already_checksummed) if $opts{resume};
+}
 
 # ############################################################################
 # Iterate through databases and tables and do the checksums.
@@ -3345,6 +3358,14 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
             MKDEBUG && _d("Starting at $chunk_start_time");
 
             if ( $final_opts{R} ) { # We're in --replicate mode.
+               # If resuming, check if this db.tbl.chunk.host can be skipped.
+               if ( $opts{resume} ) {
+                  next CHUNK if already_checksummed($table->{database},
+                                                    $table->{table},
+                                                    $chunk_num,
+                                                    $hosts[0]->{h});
+               }
+
                do_tbl_replicate($hosts[0], $query, $table,
                   $chunk_num, $hdr, $explain, \%final_opts);
             }
@@ -3378,17 +3399,12 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                      $host->{dbh} ||= get_cxn($host);
                   }
 
-                  # If we are resuming, check if this db.tbl.chunk.host
-                  # can be skipped.
+                  # If resuming, check if this db.tbl.chunk.host can be skipped.
                   if ( $opts{resume} ) {
-                     # brevity
-                     my ( $d, $t ) = @{ $table }{ qw(database table) };
-                     my $h         = $host->{h};
-                     if ( exists $already_checksummed{$d}->{$t}->{$chunk_num}->{$h} ) {
-                        MKDEBUG && _d('Skipping chunk because of --resume: '
-                                      . "$d $t $chunk_num $h");
-                        next HOST;
-                     }
+                     next HOST if already_checksummed($table->{database},
+                                                      $table->{table},
+                                                      $chunk_num,
+                                                      $host->{h});
                   }
 
                   # Fork, but only if there's more than one host.
@@ -3630,6 +3646,11 @@ sub check_repl_table {
    return;
 }
 
+sub read_repl_table {
+   my ( $dbh, $already_checksummed ) = @_;
+   return;
+}
+
 sub parse_resume_file {
    my ( $resume_file, $already_checksummed ) = @_;
 
@@ -3653,6 +3674,15 @@ sub parse_resume_file {
    close $fh;
    MKDEBUG && _d("Already checksummed: " . Dumper($already_checksummed));
    return;
+}
+
+sub already_checksummed {
+   my ( $d, $t, $c, $h ) = @_; # db, tbl, chunk num, host
+   if ( exists $already_checksummed{$d}->{$t}->{$c}->{$h} ) {
+      MKDEBUG && _d("Skipping chunk because of --resume: $d $t $c $h");
+      return 1;
+   }
+   return 0;
 }
 
 sub do_tbl_replicate {
@@ -4580,6 +4610,26 @@ The table specified by L<"--replicate"> will never be checksummed itself.
 type: string
 
 Resume checksum using given output file from a previously interrupted run.
+
+The given output file should be the literal output from a previous run of
+C<mk-table-checksum>. For example: C<mk-table-checksum \> FILE>. Then to
+resume the checksum: C<mk-table-checksum --resume FILE>.
+
+The command line options given to the first run and the resummed run must
+be identical (except, of course, for --resume). If they are not, the result
+will be unpredictible and probably wrong.
+
+L<--resume> does not work with L<--replicate>; for that, use
+L<--resume-replicate>.
+
+=item --resume-replicate
+
+Resume L<--replicate>.
+
+This option is resumes a previous checksum operation using L<--replicate>.
+It is like L<--resume> but does not require an output file. Instead,
+it uses the checksum table given to L<--replicate> to determine where to
+resume the checksum operation.
 
 =item --savesince
 

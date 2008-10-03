@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 80;
+use Test::More tests => 81;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -230,7 +230,9 @@ unlike($output, qr/LOCK TABLES /, '--schema does not lock tables by default');
 $output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema --lock 2>&1`;
 unlike($output, qr/LOCK TABLES /, '--schema does not lock tables even with --lock');
 
+# #############################################################################
 # Issue 21: --emptyrepltbl doesn't empty if previous runs leave info
+# #############################################################################
 diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
 diag(`/tmp/12345/use < samples/checksum_tbl.sql`);
 
@@ -265,9 +267,32 @@ like($output, qr/foo/, '--emptyrepltbl is ignored if --replicate is not specifie
 `/tmp/12348/use -e "update test.checksum set this_crc='' limit 1"`;
 $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum --replcheck 1 2>&1`;
 like($output, qr/columns_priv/, '--replcheck works');
-cmp_ok($CHILD_ERROR>>8, '==', 1, 'Exit status is right with --replcheck failure');
+cmp_ok($CHILD_ERROR>>8, '==', 1, 'Exit status is correct with --replcheck failure');
 
+# #############################################################################
+# Issue 36: Add --resume option to mk-table-checksum (1/2)
+# #############################################################################
+
+# First re-checksum and replicate using chunks so we can more easily break,
+# resume and test it.
+`../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum -C 100`;
+
+# Make sure the results propagate
+sleep 1;
+
+# Now break the results as if that run didn't finish
+`/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl = 'help_relation' AND chunk > 4"`;
+`/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl = 'help_topic' OR tbl = 'host'"`;
+`/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl LIKE 'proc%' OR tbl LIKE 't%' OR tbl = 'user'"`;
+
+# And now test --resume with --replicate
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 --resume-replicate --replicate test.checksum -C 100 | diff samples/resume02_whole.txt -`;
+
+ok(!$output, 'Resumes with --replicate');
+
+# #############################################################################
 # Issue 81: put some data that's too big into the boundaries table
+# #############################################################################
 diag(`/tmp/12345/use < samples/checksum_tbl_truncated.sql`);
 $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --emptyrepltbl --replicate test.checksum 2>&1`;
 like($output, qr/boundaries/, 'Truncation causes an error');
@@ -306,11 +331,11 @@ $output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t
 like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --nouseindex');
 
 # #############################################################################
-# Issue 36: Add --resume option to mk-table-checksum
+# Issue 36: Add --resume option to mk-table-checksum (2/2)
 # #############################################################################
 
 $output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12348 -d test -C 3 --resume samples/resume01_partial.txt | diff samples/resume01_whole.txt -`;
-ok(!$output, "Resumes checksum of chunked data");
+ok(!$output, 'Resumes checksum of chunked data');
 
 diag(`../../sandbox/stop_all`);
 exit;

@@ -1,0 +1,33 @@
+DATABASE TABLE                     CHUNK HOST      ENGINE      COUNT         CHECKSUM TIME WAIT STAT  LAG
+# already checksummed: mysql columns_priv 0 127.0.0.1
+# already checksummed: mysql db 0
+# already checksummed: mysql func 0
+# already checksummed: mysql help_category 0
+# already checksummed: mysql help_keyword 0
+# already checksummed: mysql help_keyword 1
+# already checksummed: mysql help_keyword 2
+# already checksummed: mysql help_keyword 3
+# already checksummed: mysql help_relation 0
+# already checksummed: mysql help_relation 1
+# already checksummed: mysql help_relation 2
+# already checksummed: mysql help_relation 3
+# already checksummed: mysql help_relation 4
+mysql    help_relation                 5 127.0.0.1 MyISAM        105         a032ff83    0 NULL NULL NULL
+mysql    help_relation                 6 127.0.0.1 MyISAM         70         8787f636    0 NULL NULL NULL
+mysql    help_relation                 7 127.0.0.1 MyISAM        109         fc8075cc    0 NULL NULL NULL
+mysql    help_relation                 8 127.0.0.1 MyISAM          4         ae14de62    0 NULL NULL NULL
+mysql    help_topic                    0 127.0.0.1 MyISAM        100         a043ba62    0 NULL NULL NULL
+mysql    help_topic                    1 127.0.0.1 MyISAM        100         38454214    0 NULL NULL NULL
+mysql    help_topic                    2 127.0.0.1 MyISAM        100         e74c5228    0 NULL NULL NULL
+mysql    help_topic                    3 127.0.0.1 MyISAM        100         66f59439    0 NULL NULL NULL
+mysql    help_topic                    4 127.0.0.1 MyISAM         66         8950236d    0 NULL NULL NULL
+mysql    host                          0 127.0.0.1 MyISAM          0             NULL    0 NULL NULL NULL
+mysql    proc                          0 127.0.0.1 MyISAM          0             NULL    0 NULL NULL NULL
+mysql    procs_priv                    0 127.0.0.1 MyISAM          0             NULL    0 NULL NULL NULL
+mysql    tables_priv                   0 127.0.0.1 MyISAM          0             NULL    0 NULL NULL NULL
+mysql    time_zone                     0 127.0.0.1 MyISAM          0             NULL    0 NULL NULL NULL
+mysql    time_zone_leap_second         0 127.0.0.1 MyISAM          0             NULL    0 NULL NULL NULL
+mysql    time_zone_name                0 127.0.0.1 MyISAM          0             NULL    0 NULL NULL NULL
+mysql    time_zone_transition          0 127.0.0.1 MyISAM          0             NULL    0 NULL NULL NULL
+mysql    time_zone_transition_type     0 127.0.0.1 MyISAM          0             NULL    1 NULL NULL NULL
+mysql    user                          0 127.0.0.1 MyISAM          3         a4380032    0 NULL NULL NULL
