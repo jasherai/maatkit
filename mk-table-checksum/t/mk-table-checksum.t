@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 79;
+use Test::More tests => 80;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -304,6 +304,13 @@ like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47` USE INDEX \(`idx`\) W
 
 $output = `MKDEBUG=1 ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d test -t issue_47 -a ACCUM --nouseindex 2>&1 | grep 'SQL for chunk 0:'`;
 like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not inject USE INDEX with --nouseindex');
+
+# #############################################################################
+# Issue 36: Add --resume option to mk-table-checksum
+# #############################################################################
+
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12348 -d test -C 3 --resume samples/resume01_partial.txt | diff samples/resume01_whole.txt -`;
+ok(!$output, "Resumes checksum of chunked data");
 
 diag(`../../sandbox/stop_all`);
 exit;

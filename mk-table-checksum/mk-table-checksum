@@ -3093,6 +3093,14 @@ if ( $opts{argtable} ) {
 }
 
 # ############################################################################
+# If we are resuming a previous run, parse the previous run's output to
+# figure out which tables we can skip/the table at which we can resume
+# checksuming.
+# ############################################################################
+my %already_checksummed;
+parse_resume_file($opts{resume}, \%already_checksummed) if $opts{resume};
+
+# ############################################################################
 # Iterate through databases and tables and do the checksums.
 # ############################################################################
 my $q      = new Quoter();
@@ -3202,7 +3210,9 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
 
    next DATABASE unless @tables;
 
-   # Design and print header
+   # Design and print header unless we are resuming in which case
+   # we should have already re-printed the partial output of the
+   # resume file in parse_resume_file().
    my ($hdr, $explain);
    if ( $opts{b} ) {
       $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
@@ -3219,7 +3229,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
 
    my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
                      COUNT CHECKSUM TIME WAIT STAT LAG);
-   unless ( ($opts{q} || $opts{explain} || $opts{checksum}) ) {
+   unless ( $opts{q} || $opts{explain} || $opts{checksum} || $opts{resume} ) {
       printf($hdr, @hdr_args)
          or die "Cannot print: $OS_ERROR";
    }
@@ -3353,6 +3363,7 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                }
 
                my %children;
+               HOST:
                foreach my $i ( 0 .. $#hosts ) {
                   my $is_master = $i == 0; # First host is assumed to be master.
                   my $host      = $hosts[$i];
@@ -3365,6 +3376,19 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                   }
                   else {
                      $host->{dbh} ||= get_cxn($host);
+                  }
+
+                  # If we are resuming, check if this db.tbl.chunk.host
+                  # can be skipped.
+                  if ( $opts{resume} ) {
+                     # brevity
+                     my ( $d, $t ) = @{ $table }{ qw(database table) };
+                     my $h         = $host->{h};
+                     if ( exists $already_checksummed{$d}->{$t}->{$chunk_num}->{$h} ) {
+                        MKDEBUG && _d('Skipping chunk because of --resume: '
+                                      . "$d $t $chunk_num $h");
+                        next HOST;
+                     }
                   }
 
                   # Fork, but only if there's more than one host.
@@ -3603,6 +3627,31 @@ sub check_repl_table {
       "UPDATE $opts{R} SET master_crc = ?, master_cnt = ? "
       . "WHERE db = ? AND tbl = ? AND chunk = ?");
 
+   return;
+}
+
+sub parse_resume_file {
+   my ( $resume_file, $already_checksummed ) = @_;
+
+   open my $fh, "< $resume_file"
+      or die "Cannot open resume file $resume_file: $OS_ERROR";
+
+   # The resume file, being the output from a previous run, should
+   # have the columns DB TB CHUNK HOST, with the first line being
+   # the header. We re-print the resume file as we go so the end
+   # result will be the whole, finished output: what the previous
+   # run got done and what we are about to resume and finish.
+   my $line = <$fh>;
+   print $line;
+   while ( $line = <$fh> ) {
+      print $line;
+      my @fields = split(/\s+/, $line);
+      my ( $db, $tbl, $chunk, $host ) = @fields[0..3];
+      $already_checksummed->{$db}->{$tbl}->{$chunk}->{$host} = 1;
+   }
+
+   close $fh;
+   MKDEBUG && _d("Already checksummed: " . Dumper($already_checksummed));
    return;
 }
 
@@ -4525,6 +4574,12 @@ exist, they will cause replication to fail.  For more information on replication
 rules, see L<http://dev.mysql.com/doc/en/replication-rules.html>.
 
 The table specified by L<"--replicate"> will never be checksummed itself.
+
+=item --resume
+
+type: string
+
+Resume checksum using given output file from a previously interrupted run.
 
 =item --savesince
 
