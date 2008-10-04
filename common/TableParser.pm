@@ -227,6 +227,15 @@ sub find_possible_keys {
    }
 }
 
+sub table_exists {
+   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
+   my $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
+   my $href;
+   eval { $href = $dbh->selectrow_hashref($sql) };
+   return 0 if $EVAL_ERROR || !defined $href;
+   return 1;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# TableParser:$line $PID ", @_, "\n";

@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 15;
+use Test::More tests => 17;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -463,9 +463,9 @@ eval {
    { PrintError => 0, RaiseError => 1 })
 };
 SKIP: {
-   skip 'Cannot connect to MySQL', 2
+   skip 'Cannot connect to MySQL', 4
       unless $dbh;
-   skip 'Sakila is not installed', 2
+   skip 'Sakila is not installed', 4
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
    is_deeply(
@@ -482,4 +482,7 @@ SKIP: {
       'Best index for WHERE clause with sort_union'
    );
 
+   is($p->table_exists($dbh, 'sakila', 'film_actor', $q), '1', 'table_exists returns true when the table exists');
+
+   is($p->table_exists($dbh, 'sakila', 'foo', $q), '0', 'table_exists returns false when the table does not exist');
 }
