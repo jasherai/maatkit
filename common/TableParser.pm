@@ -229,10 +229,10 @@ sub find_possible_keys {
 
 sub table_exists {
    my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
-   my $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
+   my $sql = 'SELECT * FROM ' . $quoter->quote($db, $tbl) . ' LIMIT 0';
    my $href;
    eval { $href = $dbh->selectrow_hashref($sql) };
-   return 0 if $EVAL_ERROR || !defined $href;
+   return 0 if $EVAL_ERROR;
    return 1;
 }
 
