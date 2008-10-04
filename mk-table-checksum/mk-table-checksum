@@ -3672,7 +3672,7 @@ sub read_repl_table {
 sub parse_resume_file {
    my ( $resume_file, $already_checksummed ) = @_;
 
-   open my $fh, "< $resume_file"
+   open my $fh, '<', $resume_file
       or die "Cannot open resume file $resume_file: $OS_ERROR";
 
    # The resume file, being the output from a previous run, should
