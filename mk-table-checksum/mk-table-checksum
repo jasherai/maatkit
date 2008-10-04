@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# TableParser package 2291
+# TableParser package 2382
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -208,6 +208,15 @@ sub find_possible_keys {
       MKDEBUG && _d('No keys in possible_keys');
       return ();
    }
+}
+
+sub table_exists {
+   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
+   my $sql = 'SELECT * FROM ' . $quoter->quote($db, $tbl) . ' LIMIT 0';
+   my $href;
+   eval { $href = $dbh->selectrow_hashref($sql) };
+   return 0 if $EVAL_ERROR;
+   return 1;
 }
 
 sub _d {
@@ -3021,6 +3030,8 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 # Ready to work now.
 # ############################################################################
+my $q           = new Quoter();
+my $tp          = new TableParser();
 my $tc          = new TableChecksum();
 my $ms          = new MasterSlave();
 my $exit_status = 0;
@@ -3114,8 +3125,6 @@ else {
 # ############################################################################
 # Iterate through databases and tables and do the checksums.
 # ############################################################################
-my $q      = new Quoter();
-my $tp     = new TableParser();
 my $du     = new MySQLDump( cache => 0 );
 my $ch     = new TableChunker( quoter => $q );
 my $finder = new MySQLFind(
@@ -3631,11 +3640,15 @@ sub verify_checksum_compat {
 
 sub check_repl_table {
    my ( $dbh ) = @_;
-   my $sql = "REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0";
-   MKDEBUG && _d($dbh, $sql);
-   $dbh->do($sql);
 
-   # Clean out the replication table globally
+   # Check first that the replication table exists.
+   my ( $db, $tbl ) = split(/\./, $opts{R});
+   if ( !$tp->table_exists($dbh, $db, $tbl, $q) ) {
+      die  "Replication table does not exist\n"
+         . "See the perldoc or run with --createreplicate";
+   }
+
+   # Clean out the replication table globally.
    if ( $opts{emptyrepltbl} ) {
       my $del_sql = "DELETE FROM $opts{R}";
       MKDEBUG && _d($dbh, $del_sql);
@@ -3804,18 +3817,12 @@ sub do_tbl {
 
    # Check that table exists on slave.
    my $have_table = 1;
-   my $create;
    if ( !$is_master || !$checksum_table_data ) {
-      eval {
-         $create = $du->get_create_table($dbh, $q, $info->{database}, $info->{table});
-         if ( ref $create eq 'ARRAY' ) {
-            # TODO: this is a fugly hack that must die.  MySQLDump.pm is really
-            # fscked up.  MUST FIX.
-            $create = $create->[1];
-         }
-      };
-      if ( $EVAL_ERROR ) {
-         $have_table = 0;
+      $have_table = $tp->table_exists($dbh,
+                                      $info->{database},
+                                      $info->{table},
+                                      $q);
+      if ( !$have_table && MKDEBUG ) {
          MKDEBUG && _d("$info->{database}.$info->{table} does not exist on slave $host->{h}:$host->{P}");
       }
    }
@@ -3844,6 +3851,8 @@ sub do_tbl {
          }
       }
       else { # compare schemas
+         my $create = $du->get_create_table($dbh, $q, $info->{database}, $info->{table});
+         $create = $create->[1];
          $crc = $tc->crc32($create);
       }
    }

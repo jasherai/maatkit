@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 82;
+use Test::More tests => 83;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -168,7 +168,9 @@ diag(`../../sandbox/stop_all`);
 diag(`../../sandbox/make_sandbox 12345`);
 diag(`../../sandbox/make_slave 12348`);
 
+# #############################################################################
 # Issue 35: mk-table-checksum dies when one server is missing a table
+# #############################################################################
 my $create_missing_slave_tbl_cmd
    = "/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;CREATE TABLE only_on_master(a int);'";
 diag(`$create_missing_slave_tbl_cmd`);
@@ -181,7 +183,9 @@ like($output, qr/mysql.only_on_master does not exist on slave 127.0.0.1:12348/, 
 my $rm_missing_slave_tbl_cmd = "/tmp/12345/use -D mysql -e 'SET SQL_LOG_BIN=0;DROP TABLE only_on_master;'";
 diag(`$rm_missing_slave_tbl_cmd`);
 
+# #############################################################################
 # Issue 5: Add ability to checksum table schema instead of data
+# #############################################################################
 $cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema | awk '{print \$1,\$2,\$7}' | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
 my $ret_val = system($cmd);
 cmp_ok($ret_val, '==', 0, 'Only option --schema');
@@ -347,5 +351,16 @@ like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not in
 $output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12348 -d test -C 3 --resume samples/resume01_partial.txt | diff samples/resume01_whole.txt -`;
 ok(!$output, 'Resumes checksum of chunked data');
 
-diag(`../../sandbox/stop_all`);
+# #############################################################################
+# Issue 77: mk-table-checksum should be able to create the --replicate table
+# #############################################################################
+
+# First check that, like a Klingon, it dies with honor.
+`/tmp/12345/use -e 'DROP TABLE test.checksum'`;
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum 2>&1`;
+like($output, qr/Replication table does not exist/, 'Dies with honor when replication table does not exist');
+
+# TODO: finish test case for this issue
+
+# diag(`../../sandbox/stop_all`);
 exit;
