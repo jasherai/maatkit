@@ -3367,7 +3367,8 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
                         . " $table->{table}"
                         . " $chunk_num "
                         . $hosts[0]->{h} 
-                        . "\n";
+                        . "\n"
+                        unless $opts{q};
                      next CHUNK;
                   }
                }
