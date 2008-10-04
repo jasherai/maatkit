@@ -1,0 +1,14 @@
+DATABASE TABLE                     CHUNK HOST      ENGINE      COUNT         CHECKSUM TIME WAIT STAT  LAG
+# already checksummed: mysql columns_priv 0 127.0.0.1
+# already checksummed: mysql db 0 127.0.0.1
+# already checksummed: mysql func 0 127.0.0.1
+# already checksummed: mysql help_category 0 127.0.0.1
+# already checksummed: mysql help_keyword 0 127.0.0.1
+# already checksummed: mysql help_keyword 1 127.0.0.1
+# already checksummed: mysql help_keyword 2 127.0.0.1
+# already checksummed: mysql help_keyword 3 127.0.0.1
+# already checksummed: mysql help_relation 0 127.0.0.1
+# already checksummed: mysql help_relation 1 127.0.0.1
+# already checksummed: mysql help_relation 2 127.0.0.1
+# already checksummed: mysql help_relation 3 127.0.0.1
+# already checksummed: mysql help_relation 4 127.0.0.1

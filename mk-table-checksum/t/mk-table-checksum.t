@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 81;
+use Test::More tests => 82;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -286,9 +286,19 @@ sleep 1;
 `/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl LIKE 'proc%' OR tbl LIKE 't%' OR tbl = 'user'"`;
 
 # And now test --resume with --replicate
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 --resume-replicate --replicate test.checksum -C 100 | diff samples/resume02_whole.txt -`;
+`../mk-table-checksum h=127.0.0.1,P=12345 --resume-replicate --replicate test.checksum -C 100 > /tmp/mktc_issue36.txt`;
 
-ok(!$output, 'Resumes with --replicate');
+# We have to chop the output because a simple diff on the whole thing won't
+# work well because the TIME column can sometimes change from 0 to 1.
+# So, instead, we check that the top part lists the chunks already done,
+# and then we simplify the latter lines which should be the
+# resumed/not-yet-done chunks.
+$output = `head -n 14 /tmp/mktc_issue36.txt | diff samples/resume02_already_done.txt -`;
+ok(!$output, 'Resumes with --replicate (1/2)');
+$output = `tail -n 19 /tmp/mktc_issue36.txt | awk '{print \$1,\$2,\$3,\$4}' | diff samples/resume02_resumed.txt -`;
+ok(!$output, 'Resumes with --replicate (2/2)');
+
+`rm /tmp/mktc_issue36.txt`;
 
 # #############################################################################
 # Issue 81: put some data that's too big into the boundaries table

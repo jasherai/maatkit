@@ -3100,13 +3100,11 @@ if ( $opts{argtable} ) {
 }
 
 # ############################################################################
-# If we are resuming a previous run, parse the previous run's output to
-# figure out which tables we can skip/the table at which we can resume
-# checksuming.
+# If resuming a previous run, figure out what the previous run finished.
 # ############################################################################
 my %already_checksummed;
 if ( $opts{R} ) {
-   read_repl_table($main_dbh, \%already_checksummed)
+   read_repl_table($main_dbh, $hosts[0]->{h}, \%already_checksummed)
       if $opts{'resume-replicate'};
 }
 else {
@@ -3359,11 +3357,19 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
 
             if ( $final_opts{R} ) { # We're in --replicate mode.
                # If resuming, check if this db.tbl.chunk.host can be skipped.
-               if ( $opts{resume} ) {
-                  next CHUNK if already_checksummed($table->{database},
-                                                    $table->{table},
-                                                    $chunk_num,
-                                                    $hosts[0]->{h});
+               if ( $opts{'resume-replicate'} ) {
+                  if ( already_checksummed($table->{database},
+                                           $table->{table},
+                                           $chunk_num,
+                                           $hosts[0]->{h}) ) {
+                     print "# already checksummed:"
+                        . " $table->{database}"
+                        . " $table->{table}"
+                        . " $chunk_num "
+                        . $hosts[0]->{h} 
+                        . "\n";
+                     next CHUNK;
+                  }
                }
 
                do_tbl_replicate($hosts[0], $query, $table,
@@ -3647,7 +3653,18 @@ sub check_repl_table {
 }
 
 sub read_repl_table {
-   my ( $dbh, $already_checksummed ) = @_;
+   my ( $dbh, $host, $already_checksummed ) = @_;
+
+   # Read checksum table.
+   my $checksums
+      = $dbh->selectall_arrayref("SELECT db, tbl, chunk FROM $opts{R}");
+
+   # Save each finished checksum.
+   foreach my $checksum ( @$checksums ) {
+      my ( $db, $tbl, $chunk ) = @$checksum[0..2];
+      $already_checksummed->{$db}->{$tbl}->{$chunk}->{$host} = 1;
+   }
+
    return;
 }
 
@@ -4612,8 +4629,8 @@ type: string
 Resume checksum using given output file from a previously interrupted run.
 
 The given output file should be the literal output from a previous run of
-C<mk-table-checksum>. For example: C<mk-table-checksum \> FILE>. Then to
-resume the checksum: C<mk-table-checksum --resume FILE>.
+C<mk-table-checksum>. For example: mk-table-checksum > FILE. Then to
+resume the checksum: mk-table-checksum --resume FILE.
 
 The command line options given to the first run and the resummed run must
 be identical (except, of course, for --resume). If they are not, the result
@@ -4626,7 +4643,7 @@ L<--resume-replicate>.
 
 Resume L<--replicate>.
 
-This option is resumes a previous checksum operation using L<--replicate>.
+This option resumes a previous checksum operation using L<--replicate>.
 It is like L<--resume> but does not require an output file. Instead,
 it uses the checksum table given to L<--replicate> to determine where to
 resume the checksum operation.
