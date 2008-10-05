@@ -39,6 +39,9 @@ our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 # ###########################################################################
 package ExplainParser;
 
+use strict;
+use warnings FATAL => 'all';
+
 sub new {
    bless {}, shift;
 }
@@ -579,6 +582,7 @@ sub recursive_table_name {
 
 # $num is the number of nodes to the left of this node in a depth-first
 # traversal.  It lets me figure out which value goes in key_len.
+my $bal; # Workaround for issue 90 (Variable "$bal" will not stay shared).
 sub recurse_index_merge {
    my ( $self, $row, $spec, $num ) = @_;
    my ($type, $args) = $spec =~ m/(intersect|union|sort_union)\((.*)\)$/;
@@ -586,7 +590,6 @@ sub recurse_index_merge {
    my @children;
 
    # See 'man perlre' and search for 'matches a parenthesized group'.
-   my $bal;
    $bal = qr/
       \(
       (?:
