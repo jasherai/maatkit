@@ -13,8 +13,9 @@ The following items are unimplemented at this time:
       * Show /proc/partitions.
       * Show /proc/scsi/scsi in a digested format
    Hardware
-      * raid status: (is this working? over info to caputre?)
+      * raid status: (is this working? other info to capture?)
          - parse multiple adapters
+         - /usr/StorMan/arcconf GETCONFIG 1 LD 1 is apparently something to test
       * check where MySQL data is stored, and make sure that filesystem is
         mounted with noatime.
    Operating System
