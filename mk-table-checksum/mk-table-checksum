@@ -3640,12 +3640,18 @@ sub verify_checksum_compat {
 
 sub check_repl_table {
    my ( $dbh ) = @_;
-
-   # Check first that the replication table exists.
-   my ( $db, $tbl ) = split(/\./, $opts{R});
-   if ( !$tp->table_exists($dbh, $db, $tbl, $q) ) {
-      die  "Replication table does not exist\n"
-         . "See the perldoc or run with --createreplicate";
+   # Tests that a) the table exists b) we have permissions needed
+   my $sql = "REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0";
+   MKDEBUG && _d($dbh, $sql);
+   eval {
+      $dbh->do($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      if ( $EVAL_ERROR =~ m/' doesn't exist/ ) {
+         die  "--replicate table $opts{R} does not exist; "
+            . "read the documentation or use --createreplicate to create it.";
+      }
+      die $EVAL_ERROR;
    }
 
    # Clean out the replication table globally.
