@@ -16,6 +16,8 @@ The following items are unimplemented at this time:
       * raid status: (is this working? other info to capture?)
          - parse multiple adapters
          - /usr/StorMan/arcconf GETCONFIG 1 LD 1 is apparently something to test
+         - check issue 1445, the first attached file has some dmesg stuff that
+           is parseable.
       * check where MySQL data is stored, and make sure that filesystem is
         mounted with noatime.
    Operating System
@@ -110,6 +112,12 @@ The following items are unimplemented at this time:
    * add timestamps to all snapshots
    * check if if key_buffer and innodb_buffer_pool too big (big % of available
      memory or a lot of unused buffers).
+   * check if the InnoDB plugin is being used.  Report some stats about number
+     of tables using compression, etc.
+   * If our build with table stats, index stats, user stats is available --
+     figure out what to do with that.
+   * If our build with InnoDB buffer pool contents is available, show what's in
+     the buffer pool.
    * check redundant indexes
    * alerts on COUNT(*) .. queries. 
    * guess from column names how they are related to other tables.  account_id
