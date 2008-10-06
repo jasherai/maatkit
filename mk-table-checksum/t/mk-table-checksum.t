@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 85;
+use Test::More tests => 86;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -312,7 +312,12 @@ diag(`/tmp/12345/use < samples/checksum_tbl_truncated.sql`);
 $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --emptyrepltbl --replicate test.checksum 2>&1`;
 like($output, qr/boundaries/, 'Truncation causes an error');
 
+# Restore the proper checksum table.
+diag(`/tmp/12345/use < samples/checksum_tbl.sql`);
+
+# #############################################################################
 # Test issue 5 + 35: --schema a missing table
+# #############################################################################
 diag(`$create_missing_slave_tbl_cmd`);
 
 $output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 -d mysql -t only_on_master --schema 2>&1`;
@@ -366,7 +371,8 @@ ok(!$output, 'Resumes checksum of non-chunked data (2 dbs)');
 $output = `../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum 2>&1`;
 like($output, qr/replicate table .+ does not exist/, 'Dies with honor when replication table does not exist');
 
-# TODO: finish test case for this issue
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum --createreplicate`;
+like($output, qr/DATABASE\s+TABLE\s+CHUNK/, '--createreplicate creates the replicate table');
 
 diag(`../../sandbox/stop_all`);
 exit;

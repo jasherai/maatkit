@@ -3646,11 +3646,22 @@ sub check_repl_table {
       $dbh->do($sql);
    };
    if ( $EVAL_ERROR ) {
+      # Replicate table does not exist.
       if ( $EVAL_ERROR =~ m/' doesn't exist/ ) {
-         die  "--replicate table $opts{R} does not exist; "
-            . "read the documentation or use --createreplicate to create it.";
+         if ( $opts{createreplicate} ) {
+            if ( !create_repl_table($dbh) ) {
+               die "--replicate table $opts{R} does not exist "
+                  . "and creating it failed";
+            }
+         }
+         else {
+            die  "--replicate table $opts{R} does not exist; "
+               . "read the documentation or use --createreplicate to create it.";
+         }
       }
-      die $EVAL_ERROR;
+      else {
+         die $EVAL_ERROR;
+      }
    }
 
    # Clean out the replication table globally.
@@ -3669,6 +3680,32 @@ sub check_repl_table {
       . "WHERE db = ? AND tbl = ? AND chunk = ?");
 
    return;
+}
+
+sub create_repl_table {
+   my ( $dbh ) = @_;
+   my $sql = "CREATE TABLE $opts{R} (
+                 db         char(64)     NOT NULL,
+                 tbl        char(64)     NOT NULL,
+                 chunk      int          NOT NULL,
+                 boundaries char(100)    NOT NULL,
+                 this_crc   char(40)     NOT NULL,
+                 this_cnt   int          NOT NULL,
+                 master_crc char(40)         NULL,
+                 master_cnt int              NULL,
+                 ts         timestamp    NOT NULL,
+                 PRIMARY KEY (db, tbl, chunk)
+              )";
+   MKDEBUG && _d($dbh, $sql);
+   eval {
+      $dbh->do($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d("--createreplicate failed: $EVAL_ERROR");
+      return 0;
+   }
+
+   return 1;
 }
 
 sub read_repl_table {
@@ -4335,6 +4372,20 @@ Do a CRC (checksum) of tables.
 
 Take the checksum of the rows as well as their count.  This is enabled by
 default.  If you disable it, you'll just get COUNT(*) queries.
+
+
+=item --createreplicate
+
+Create the replicate table given by L<"--replicate"> if it does not exist.
+
+Normally, if the replicate table given by L<"--replicate"> does not exist,
+C<mk-table-checksum> will die. With this option, however, C<mk-table-checksum>
+will create the replicate table for you, using the database.table name given to
+L<"--replicate">.
+
+The structure of the replicate table is the same as the suggested table
+mentioned in L<"--replicate">. Note, therefore, that since ENGINE is
+specified, the replicate table will use the server's default storage engine.
 
 =item --databases
 
