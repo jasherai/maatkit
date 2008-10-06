@@ -19,8 +19,8 @@
 use strict;
 use warnings FATAL => 'all';
 
-my $skippable = 16;
-use Test::More tests => 26;
+my $skippable = 19;
+use Test::More tests => 29;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -247,6 +247,45 @@ SKIP: {
       'Date column chunks OK',
    );
 
+   $t = $p->parse( load_file('samples/date.sql') );
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '2000-01-01',
+      max           => '2005-11-26',
+      rows_in_range => 3,
+      size          => 1,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < "2001-12-20"',
+         '`a` >= "2001-12-20" AND `a` < "2003-12-09"',
+         '`a` >= "2003-12-09"',
+      ],
+      'Date column chunks OK',
+   );
+
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '0000-00-00',
+      max           => '2005-11-26',
+      rows_in_range => 3,
+      size          => 1,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < "0668-08-20"',
+         '`a` >= "0668-08-20" AND `a` < "1337-04-09"',
+         '`a` >= "1337-04-09"',
+      ],
+      'Date column where min date is 0000-00-00',
+   );
+
    $t = $p->parse( load_file('samples/datetime.sql') );
    @chunks = $c->calculate_chunks(
       table         => $t,
@@ -265,6 +304,25 @@ SKIP: {
          '`a` >= "1977-12-12 10:25:41"',
       ],
       'Datetime column chunks OK',
+   );
+
+   @chunks = $c->calculate_chunks(
+      table         => $t,
+      col           => 'a',
+      min           => '0000-00-00 00:00:00',
+      max           => '2005-11-26 00:59:19',
+      rows_in_range => 3,
+      size          => 1,
+      dbh           => $dbh,
+   );
+   is_deeply(
+      \@chunks,
+      [
+         '`a` < "0668-08-19 16:19:47"',
+         '`a` >= "0668-08-19 16:19:47" AND `a` < "1337-04-08 08:39:34"',
+         '`a` >= "1337-04-08 08:39:34"',
+      ],
+      'Datetime where min is 0000-00-00 00:00:00',
    );
 
    $t = $p->parse( load_file('samples/timecol.sql') );

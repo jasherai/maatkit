@@ -443,11 +443,13 @@ sub range_timestamp {
 # after looking at the source of sql/time.cc but I am paranoid and add in an
 # extra check just to make sure.  Earlier versions overflow on large interval
 # values, such as on 3.23.58, '1970-01-01' - interval 58000000000 second is
-# 2037-06-25 11:29:04.  I know of no workaround.
+# 2037-06-25 11:29:04.  I know of no workaround.  TO_DAYS('0000-....') is NULL,
+# so we treat it as 0.
 sub timestampdiff {
    my ( $self, $dbh, $time ) = @_;
-   my $sql = "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+   my $sql = "SELECT (COALESCE(TO_DAYS('$time'), 0) * 86400 + TIME_TO_SEC('$time')) "
       . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
+   MKDEBUG && _d($sql);
    my ( $diff ) = $dbh->selectrow_array($sql);
    $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
    MKDEBUG && _d($sql);
