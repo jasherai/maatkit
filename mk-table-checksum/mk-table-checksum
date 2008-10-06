@@ -3021,7 +3021,7 @@ if ( !$opts{help} ) {
       $opt_parser->error("--resume-replicate requires --replicate.");
    }
    if ( $opts{resume} && $opts{R} ) {
-      $opt_parser->error("Use --resume-replicate with --replicate");
+      $opt_parser->error('--resume does not work with --replicate. Use --resume-replicate instead.');
    }
 }
 
@@ -3113,13 +3113,12 @@ if ( $opts{argtable} ) {
 # ############################################################################
 # If resuming a previous run, figure out what the previous run finished.
 # ############################################################################
-my %already_checksummed;
-if ( $opts{R} ) {
-   read_repl_table($main_dbh, $hosts[0]->{h}, \%already_checksummed)
-      if $opts{'resume-replicate'};
-}
-else {
-   parse_resume_file($opts{resume}, \%already_checksummed) if $opts{resume};
+my $already_checksummed = undef;
+if ( $opts{R} && $opts{'resume-replicate'} ) {
+   $already_checksummed = read_repl_table($main_dbh, $hosts[0]->{h})
+} 
+elsif ( $opts{resume} ) {
+   $already_checksummed = parse_resume_file($opts{resume});
 }
 
 # ############################################################################
@@ -3673,7 +3672,8 @@ sub check_repl_table {
 }
 
 sub read_repl_table {
-   my ( $dbh, $host, $already_checksummed ) = @_;
+   my ( $dbh, $host ) = @_;
+   my $already_checksummed;
 
    # Read checksum table.
    my $checksums
@@ -3685,37 +3685,43 @@ sub read_repl_table {
       $already_checksummed->{$db}->{$tbl}->{$chunk}->{$host} = 1;
    }
 
-   return;
+   return $already_checksummed;
 }
 
 sub parse_resume_file {
-   my ( $resume_file, $already_checksummed ) = @_;
+   my ( $resume_file ) = @_;
+   my $already_checksummed;
 
    open my $fh, '<', $resume_file
       or die "Cannot open resume file $resume_file: $OS_ERROR";
 
    # The resume file, being the output from a previous run, should
-   # have the columns DB TB CHUNK HOST, with the first line being
-   # the header. We re-print the resume file as we go so the end
-   # result will be the whole, finished output: what the previous
-   # run got done and what we are about to resume and finish.
-   my $line = <$fh>;
-   print $line;
-   while ( $line = <$fh> ) {
+   # have the columns DATABASE TABLE CHUNK HOST ... (in that order).
+   # We only need those first 4 columns. We re-print every line of
+   # the resume file so the end result will be the whole, finished
+   # output: what the previous run got done plus what we are about
+   # to resume and finish.
+   while ( my $line = <$fh> ) {
+      # Re-print every line.
       print $line;
-      my @fields = split(/\s+/, $line);
-      my ( $db, $tbl, $chunk, $host ) = @fields[0..3];
-      $already_checksummed->{$db}->{$tbl}->{$chunk}->{$host} = 1;
+
+      # If the line is not a header line, then it is a checksum line
+      # so we parse from it the db, tbl, checksum and host.
+      if ( $line !~ m/^DATABASE\s+TABLE\s+CHUNK/ ) {
+         my ( $db, $tbl, $chunk, $host ) = $line =~ m/(\S+)/g;
+         $already_checksummed->{$db}->{$tbl}->{$chunk}->{$host} = 1;
+      }
    }
 
    close $fh;
    MKDEBUG && _d("Already checksummed: " . Dumper($already_checksummed));
-   return;
+
+   return $already_checksummed;
 }
 
 sub already_checksummed {
    my ( $d, $t, $c, $h ) = @_; # db, tbl, chunk num, host
-   if ( exists $already_checksummed{$d}->{$t}->{$c}->{$h} ) {
+   if ( exists $already_checksummed->{$d}->{$t}->{$c}->{$h} ) {
       MKDEBUG && _d("Skipping chunk because of --resume: $d $t $c $h");
       return 1;
    }
@@ -4645,10 +4651,12 @@ type: string
 Resume checksum using given output file from a previously interrupted run.
 
 The given output file should be the literal output from a previous run of
-C<mk-table-checksum>. For example: mk-table-checksum > FILE. Then to
-resume the checksum: mk-table-checksum --resume FILE.
+C<mk-table-checksum>. For example:
 
-The command line options given to the first run and the resummed run must
+   mk-table-checksum host1 host2 -C 100 > checksum_results.txt
+   mk-table-checksum host1 host2 -C 100 --resume checksum_results.txt
+
+The command line options given to the first run and the resumed run must
 be identical (except, of course, for --resume). If they are not, the result
 will be unpredictible and probably wrong.
 
@@ -4736,7 +4744,7 @@ it is just ignored.
 Permit skipping with L<"--probability"> if there is only one chunk.
 
 Normally, if a table isn't split into many chunks, it will always be
-checksummed regardlesss of L<"--probability">.  This setting lets the
+checksummed regardless of L<"--probability">.  This setting lets the
 probabilistic behavior apply to tables that aren't divided into chunks.
 
 =item --slavelag

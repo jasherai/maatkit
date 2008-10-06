@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 83;
+use Test::More tests => 85;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -206,6 +206,7 @@ my @opt_combos = ( # --schema and
    '--probability=1',
    '--replcheck=1000',
    '--replicate=checksum_tbl',
+   '--resume samples/resume01_partial.txt',
    '--since \'"2008-01-01" - interval 1 day\'',
    '--slavelag',
    '--sleep=1000',
@@ -348,8 +349,13 @@ like($output, qr/SQL for chunk 0:.*FROM `test`\.`issue_47`  WHERE/, 'Does not in
 # Issue 36: Add --resume option to mk-table-checksum (2/2)
 # #############################################################################
 
+# This tests just one database...
 $output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12348 -d test -C 3 --resume samples/resume01_partial.txt | diff samples/resume01_whole.txt -`;
-ok(!$output, 'Resumes checksum of chunked data');
+ok(!$output, 'Resumes checksum of chunked data (1 db)');
+
+# but this tests two.
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12348 --resume samples/resume03_partial.txt | diff samples/resume03_whole.txt -`;
+ok(!$output, 'Resumes checksum of non-chunked data (2 dbs)');
 
 # #############################################################################
 # Issue 77: mk-table-checksum should be able to create the --replicate table
@@ -358,9 +364,9 @@ ok(!$output, 'Resumes checksum of chunked data');
 # First check that, like a Klingon, it dies with honor.
 `/tmp/12345/use -e 'DROP TABLE test.checksum'`;
 $output = `../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum 2>&1`;
-like($output, qr/Replication table does not exist/, 'Dies with honor when replication table does not exist');
+like($output, qr/replicate table .+ does not exist/, 'Dies with honor when replication table does not exist');
 
 # TODO: finish test case for this issue
 
-# diag(`../../sandbox/stop_all`);
+diag(`../../sandbox/stop_all`);
 exit;
