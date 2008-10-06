@@ -1725,7 +1725,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 2364
+# TableChunker package 2401
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2078,8 +2078,9 @@ sub range_timestamp {
 
 sub timestampdiff {
    my ( $self, $dbh, $time ) = @_;
-   my $sql = "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+   my $sql = "SELECT (COALESCE(TO_DAYS('$time'), 0) * 86400 + TIME_TO_SEC('$time')) "
       . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
+   MKDEBUG && _d($sql);
    my ( $diff ) = $dbh->selectrow_array($sql);
    $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
    MKDEBUG && _d($sql);
