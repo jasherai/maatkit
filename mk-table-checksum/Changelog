@@ -1,5 +1,6 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --createreplicate (issue 77).
    * Added --resume and --resume-replicate (issue 36).
    * --since crashed on blackhole tables (issue 64).
    * Added --singlechunk and --savesince (issue 53).
