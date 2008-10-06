@@ -2935,6 +2935,9 @@ my $dsn_parser = new DSNParser();
 $dsn_parser->prop('autokey', 'h');
 $dsn_parser->prop('required', { h => 1 } );
 
+# Because of --argtable, %final_opts is the only place a lot of options are
+# used.  Thus, the following magic phrase used by trunk/maatkit/lint_check:
+# opt_container_alias:final_opts
 my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{dsn}    = $dsn_parser;
@@ -3682,6 +3685,7 @@ sub check_repl_table {
 
 sub create_repl_table {
    my ( $dbh ) = @_;
+   # TODO: extract this from the POD -- see issue 92
    my $sql = "CREATE TABLE $opts{R} (
                  db         char(64)     NOT NULL,
                  tbl        char(64)     NOT NULL,
@@ -4382,8 +4386,9 @@ will create the replicate table for you, using the database.table name given to
 L<"--replicate">.
 
 The structure of the replicate table is the same as the suggested table
-mentioned in L<"--replicate">. Note, therefore, that since ENGINE is
-specified, the replicate table will use the server's default storage engine.
+mentioned in L<"--replicate">. Note that since ENGINE is not specified, the
+replicate table will use the server's default storage engine.  If you want to
+use a different engine, you need to create the table yourself.
 
 =item --databases
 
