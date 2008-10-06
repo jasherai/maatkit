@@ -3649,10 +3649,8 @@ sub check_repl_table {
       # Replicate table does not exist.
       if ( $EVAL_ERROR =~ m/' doesn't exist/ ) {
          if ( $opts{createreplicate} ) {
-            if ( !create_repl_table($dbh) ) {
-               die "--replicate table $opts{R} does not exist "
-                  . "and creating it failed";
-            }
+            create_repl_table($dbh)
+               or die "--createreplicate failed to create $opts{R}";
          }
          else {
             die  "--replicate table $opts{R} does not exist; "
