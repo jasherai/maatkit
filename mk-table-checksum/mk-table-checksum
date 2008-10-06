@@ -3705,9 +3705,9 @@ sub parse_resume_file {
       # Re-print every line.
       print $line;
 
-      # If the line is not a header line, then it is a checksum line
-      # so we parse from it the db, tbl, checksum and host.
-      if ( $line !~ m/^DATABASE\s+TABLE\s+CHUNK/ ) {
+      # If the line is a checksum line, parse from it the db, tbl,
+      # checksum and host.
+      if ( $line =~ m/^\S+\s+\S+\s+\d+\s+/ ) {
          my ( $db, $tbl, $chunk, $host ) = $line =~ m/(\S+)/g;
          $already_checksummed->{$db}->{$tbl}->{$chunk}->{$host} = 1;
       }
