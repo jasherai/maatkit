@@ -2878,6 +2878,12 @@ sub repl_posn {
    }
 }
 
+sub get_slave_lag {
+   my ( $self, $dbh ) = @_;
+   my $stat = $self->get_slave_status($dbh);
+   return $stat->{seconds_behind_master};
+}
+
 sub pos_cmp {
    my ( $self, $a, $b ) = @_;
    return $self->pos_to_string($a) cmp $self->pos_to_string($b);
@@ -3039,6 +3045,12 @@ my $tc          = new TableChecksum();
 my $ms          = new MasterSlave();
 my $exit_status = 0;
 my $main_dbh    = get_cxn($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
+
+my $lag_dbh;
+if ( $opts{'check-slave-lag'} ) {
+   my $dsn = $dsn_parser->parse($opts{'check-slave-lag'}, $hosts[0], \%opts);
+   $lag_dbh = get_cxn($dsn);
+}
 
 # ############################################################################
 # Check replication slaves if desired.
@@ -3344,6 +3356,15 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          my $num_chunks = scalar(@{$table->{chunks}});
          CHUNK:
          foreach my $chunk_num ( 0 .. $num_chunks - 1 ) {
+
+            if ( $lag_dbh ) {
+               my $lag = $ms->get_slave_lag($lag_dbh);
+               while ( !defined $lag || $lag > $final_opts{maxlag} ) {
+                  MKDEBUG && _d("Sleeping: slave lag is ", $lag);
+                  sleep($opts{'check-interval'});
+                  $lag = $ms->get_slave_lag($lag_dbh);
+               }
+            }
 
             if (     ($num_chunks > 1 || $final_opts{singlechunk})
                   && $checksum_table_data
@@ -4322,6 +4343,22 @@ Makes the output behave more like the output of C<md5sum>.  The checksum is
 first on the line, followed by the host, database, table, and chunk number,
 concatenated with dots.
 
+=item --check-interval
+
+type: time; default: 1s
+
+How often to check for slave lag.
+
+See L<"--check-slave-lag">.
+
+=item --check-slave-lag
+
+type: string
+
+Check this DSN for slave lag between each chunk.
+
+Don't checksum unless the lag is less than L<"--maxlag">.
+
 =item --chunksize
 
 short form: -C; type: string
@@ -4490,6 +4527,14 @@ keep this lock until the checksums complete on the other servers.
 
 This option isn't very useful by itself, so you probably want to use L<"--wait">
 instead.
+
+=item --maxlag
+
+type: time; default: 1s
+
+Suspend checksumming if the slave given by L<"--check-slave"> lags.
+
+TODO.
 
 =item --modulo
 
