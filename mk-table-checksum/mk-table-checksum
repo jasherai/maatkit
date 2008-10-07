@@ -2354,7 +2354,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 2215
+# MasterSlave package 2405
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2881,6 +2881,12 @@ sub repl_posn {
          position => $status->{exec_master_log_pos},
       };
    }
+}
+
+sub get_slave_lag {
+   my ( $self, $dbh ) = @_;
+   my $stat = $self->get_slave_status($dbh);
+   return $stat->{seconds_behind_master};
 }
 
 sub pos_cmp {
