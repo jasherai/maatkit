@@ -658,6 +658,13 @@ sub repl_posn {
    }
 }
 
+# Gets the slave's lag.  TODO: permit using a heartbeat table.
+sub get_slave_lag {
+   my ( $self, $dbh ) = @_;
+   my $stat = $self->get_slave_status($dbh);
+   return $stat->{seconds_behind_master};
+}
+
 # Compares two replication positions and returns -1, 0, or 1 just as the cmp
 # operator does.
 sub pos_cmp {
