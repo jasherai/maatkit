@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 86;
+use Test::More tests => 88;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -373,6 +373,16 @@ like($output, qr/replicate table .+ does not exist/, 'Dies with honor when repli
 
 $output = `../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum --createreplicate`;
 like($output, qr/DATABASE\s+TABLE\s+CHUNK/, '--createreplicate creates the replicate table');
+
+# #############################################################################
+# Issue 94: Enhance mk-table-checksum, add a --ignorecols option
+# #############################################################################
+diag(`/tmp/12345/use < samples/issue_94.sql`);
+$output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345 P=12348 -a ACCUM | awk '{print \$7}'`;
+like($output, qr/CHECKSUM\n00000006B6BDB8E6\n00000006B6BDB8E6/, 'Checksum ok with all 3 columns (issue 94 1/2)');
+
+$output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345 P=12348 -a ACCUM --ignorecols c | awk '{print \$7}'`;
+like($output, qr/CHECKSUM\n000000066094F8AA\n000000066094F8AA/, 'Checksum ok with ignored column (issue 94 2/2)');
 
 diag(`../../sandbox/stop_all`);
 exit;

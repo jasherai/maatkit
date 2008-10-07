@@ -231,7 +231,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 2283
+# TableChecksum package 2403
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -441,7 +441,11 @@ sub make_row_checksum {
    $sep =~ s/'//g;
    $sep ||= '#';
 
-   my %cols = map { lc($_) => 1 } ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
+   my %ignorecols = map { $_ => 1 } @{$args{ignorecols}};
+
+   my %cols = map { lc($_) => 1 }
+              grep { !exists $ignorecols{$_} }
+              ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
    my @cols =
       map {
          my $type = $table->{type_for}->{$_};
@@ -2879,12 +2883,6 @@ sub repl_posn {
    }
 }
 
-sub get_slave_lag {
-   my ( $self, $dbh ) = @_;
-   my $stat = $self->get_slave_status($dbh);
-   return $stat->{seconds_behind_master};
-}
-
 sub pos_cmp {
    my ( $self, $a, $b ) = @_;
    return $self->pos_to_string($a) cmp $self->pos_to_string($b);
@@ -3326,20 +3324,21 @@ foreach my $database ( $finder->find_databases($main_dbh) ) {
          my $query;
          if ( $checksum_table_data && $do_table ) {
             $query = $tc->make_checksum_query(
-               dbname    => $database,
-               tblname   => $table->{table},
-               table     => $table->{struct},
-               quoter    => $q,
-               algorithm => $strat,
-               func      => $func,
-               crc_wid   => $crc_wid,
-               crc_type  => $crc_type,
-               opt_slice => $opt_slice,
-               cols      => $final_opts{columns},
-               sep       => $final_opts{s},
-               replicate => $final_opts{R},
-               precision => $final_opts{'float-precision'},
-               trim      => $final_opts{trim},
+               dbname     => $database,
+               tblname    => $table->{table},
+               table      => $table->{struct},
+               quoter     => $q,
+               algorithm  => $strat,
+               func       => $func,
+               crc_wid    => $crc_wid,
+               crc_type   => $crc_type,
+               opt_slice  => $opt_slice,
+               cols       => $final_opts{columns},
+               sep        => $final_opts{s},
+               replicate  => $final_opts{R},
+               precision  => $final_opts{'float-precision'},
+               trim       => $final_opts{trim},
+               ignorecols => $final_opts{ignorecols},
             );
          }
          else { # --schema
@@ -4494,6 +4493,15 @@ The C<FNV_64> UDF mentioned in the benchmarks is much faster than C<MD5>.  The
 C++ source code is distributed with Maatkit.  It is very simple to compile and
 install; look at the header in the source code for instructions.  If it is
 installed, it is preferred over C<MD5>.
+
+=item --ignorecols
+
+type: array
+
+Ignore this comma-separated list of columns when calculating the checksum.
+
+This option only affects the checksum when using the ACCUM or BIT_XOR
+L<"--algorithm">.
 
 =item --ignoredb
 
