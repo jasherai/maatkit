@@ -256,12 +256,13 @@ sub make_xor_slices {
 }
 
 # Generates a checksum query for a given table.  Arguments:
-# *   table     Struct as returned by TableParser::parse()
-# *   quoter    Quoter()
-# *   func      SHA1, MD5, etc
-# *   sep       (Optional) Separator for CONCAT_WS(); default #
-# *   cols      (Optional) arrayref of columns to checksum
-# *   trim      (Optional) wrap VARCHAR in TRIM() for 4.x / 5.x compatibility
+# *   table      Struct as returned by TableParser::parse()
+# *   quoter     Quoter()
+# *   func       SHA1, MD5, etc
+# *   sep        (Optional) Separator for CONCAT_WS(); default #
+# *   cols       (Optional) arrayref of columns to checksum
+# *   trim       (Optional) wrap VARCHAR in TRIM() for 4.x / 5.x compatibility
+# *   ignorecols (Optional) arrayref of columns to exclude from checksum
 sub make_row_checksum {
    my ( $self, %args ) = @_;
    my ( $table, $quoter, $func )
@@ -271,10 +272,15 @@ sub make_row_checksum {
    $sep =~ s/'//g;
    $sep ||= '#';
 
+   # This allows a simpler grep when building %cols below.
+   my %ignorecols = map { $_ => 1 } @{$args{ignorecols}};
+
    # Generate the expression that will turn a row into a checksum.
    # Choose columns.  Normalize query results: make FLOAT and TIMESTAMP
    # stringify uniformly.
-   my %cols = map { lc($_) => 1 } ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
+   my %cols = map { lc($_) => 1 }
+              grep { !exists $ignorecols{$_} }
+              ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
    my @cols =
       map {
          my $type = $table->{type_for}->{$_};

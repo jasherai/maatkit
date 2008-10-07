@@ -19,13 +19,8 @@
 use strict;
 use warnings FATAL => 'all';
 
-my ($tests, $skipped);
-BEGIN {
-   $tests = 50;
-   $skipped = 7;
-}
 
-use Test::More tests => $tests;
+use Test::More tests => 51;
 use DBI;
 use English qw(-no_match_vars);
 
@@ -33,11 +28,15 @@ require "../TableChecksum.pm";
 require "../VersionParser.pm";
 require "../TableParser.pm";
 require "../Quoter.pm";
+require "../MySQLDump.pm";
+require "../DSNParser.pm";
 
-my $c = new TableChecksum();
+my $c  = new TableChecksum();
 my $vp = new VersionParser();
 my $tp = new TableParser();
 my $q  = new Quoter();
+my $du = new MySQLDump();
+
 my $t;
 
 my %args = map { $_ => undef }
@@ -612,20 +611,13 @@ is (
 
 is ( $c->crc32('hello world'), 222957957, 'CRC32 of hello world');
 
-# TODO: use a sandbox instead, and get a $dbh this way:
-# my $dp = new DSNParser();
-# my $dsn = $dp->parse("h=127.0.0.1,P=12345");
-# $dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
+diag(`../../sandbox/stop_all`);
+diag(`../../sandbox/make_sandbox 12345`);
+diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
 
-# Open a connection to MySQL, or skip the rest of the tests.
-my $dbh;
-eval {
-   $dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
-   { PrintError => 0, RaiseError => 1 })
-};
-SKIP: {
-   skip 'Cannot open a DB connection', $tests-$skipped if $EVAL_ERROR;
+my $dp = new DSNParser();
+my $dsn = $dp->parse("h=127.0.0.1,P=12345");
+my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 
    like(
       $c->choose_hash_func(
@@ -683,4 +675,31 @@ SKIP: {
       'Type and length of MD5'
    );
 
-}
+# #############################################################################
+# Issue 94: Enhance mk-table-checksum, add a --ignorecols option
+# #############################################################################
+diag(`/tmp/12345/use < samples/issue_94.sql`);
+$t= $tp->parse( $du->get_create_table($dbh, $q, 'test', 'issue_94') );
+my $query = $c->make_checksum_query(
+   dbname      => 'test',
+   tblname     => 'issue_47',
+   table       => $t,
+   quoter      => $q,
+   algorithm   => 'ACCUM',
+   func        => 'CRC32',
+   crc_wid     => 16,
+   crc_type    => 'int',
+   opt_slice   => undef,
+   cols        => undef,
+   sep         => '#',
+   replicate   => undef,
+   precision   => undef,
+   trim        => undef,
+   ignorecols  => ['c'],
+);
+is($query,
+   'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, \'0\'), CONV(CAST(CRC32(CONCAT(@crc, CRC32(CONCAT_WS(\'#\', `a`, `b`)))) AS UNSIGNED), 10, 16))), 16) AS crc FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/',
+   'Ignores specified columns');
+
+diag(`../../sandbox/stop_all`);
+exit;

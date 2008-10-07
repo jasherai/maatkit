@@ -460,15 +460,17 @@ SKIP: {
 
 }  # End of block with live $dbh inside
 
-# Issue 47: TableChunker::range_num broken for very large bigint
+diag(`../../sandbox/stop_all`);
 diag(`../../sandbox/make_sandbox 12345`);
-`/tmp/12345/use -e 'CREATE DATABASE test'`;
-`/tmp/12345/use < 'samples/issue_47.sql'`;
+diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
 $dbh = DBI->connect("DBI:mysql:host=127.0.0.1;port=12345;database=test;", 'msandbox', 'msandbox', { RaiseError => 1 });
 
+# #############################################################################
+# Issue 47: TableChunker::range_num broken for very large bigint
+# #############################################################################
+`/tmp/12345/use < 'samples/issue_47.sql'`;
 $t = $p->parse( $d->get_create_table($dbh, $q, 'test', 'issue_47') );
 my %params = $c->get_range_statistics($dbh, 'test', 'issue_47', 'userid');
-
 my @chunks;
 eval {
    @chunks = $c->calculate_chunks(
@@ -481,7 +483,9 @@ eval {
 };
 unlike($EVAL_ERROR, qr/Chunk size is too small/, 'Does not die chunking unsigned bitint (issue 47)');
 
+# #############################################################################
 # Issue 8: Add --force-index parameter to mk-table-checksum and mk-table-sync
+# #############################################################################
 is(
    $c->inject_chunks(
       query       => 'SELECT /*CHUNK_NUM*/ FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/',
@@ -511,6 +515,6 @@ is_deeply(
    ],
    'find_chunk_columns() returns col and idx candidates'
 );
-
+ 
 diag(`../../sandbox/stop_all`);
 exit;
