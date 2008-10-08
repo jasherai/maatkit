@@ -3531,36 +3531,55 @@ sub is_temporal {
 
 sub check_repl_slaves {
    my ( $dbh, $dsn_parser, $tc, $ms ) = @_;
-   my $exit_status = 0;
-   my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
+   my $exit_status = 0; 
+   my @inconsistent_tables;
+
    $ms->recurse_to_slaves(
       {  dbh        => $dbh,
          dsn        => $hosts[0],
          dsn_parser => $dsn_parser,
          recurse    => $opts{replcheck},
-         callback   => sub {
+         callback   => sub { 
             my ( $dsn, $dbh, $level, $parent ) = @_;
             my @diffs = $tc->find_replication_differences($dbh, $opts{R});
             return unless @diffs;
+            push @inconsistent_tables, { dsn => $dsn, tbls => [ @diffs ] };
             $exit_status = 1;
-            if ( !$opts{q} ) {
-               print "Differences on " . $dsn_parser->as_string($dsn) . "\n";
-               my $max_db   = max(5, map { length($_->{db})  } @diffs);
-               my $max_tbl  = max(5, map { length($_->{tbl}) } @diffs);
-               my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
-               printf($fmt, map { uc } @headers)
-                  or die "Cannot print: $OS_ERROR";
-               foreach my $diff ( @diffs ) {
-                  printf($fmt, @{$diff}{@headers})
-                     or die "Cannot print: $OS_ERROR";
-               }
-               print "\n"
-                  or die "Cannot print: $OS_ERROR";
-            }
-         }
+         },
       }
    );
+
+   foreach my $table_info ( @inconsistent_tables ) {
+      my ( $dsn, $tbls ) = ( $table_info->{dsn}, $table_info->{tbls} );
+      $opts{recheck} ? rechecksum_inconsistent_table($dsn, $tbls)
+                     : report_inconsistent_table($dsn, $tbls);
+   }
+
    return $exit_status;
+}
+
+sub report_inconsistent_table {
+   my ( $dsn, $tbls ) = @_;
+   return if $opts{q};
+   my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
+
+   print "Differences on " . $dsn_parser->as_string($dsn) . "\n";
+   my $max_db   = max(5, map { length($_->{db})  } @$tbls);
+   my $max_tbl  = max(5, map { length($_->{tbl}) } @$tbls);
+   my $fmt      = "%-${max_db}s %-${max_tbl}s %5s %8s %8s %s\n";
+   printf($fmt, map { uc } @headers) or die "Cannot print: $OS_ERROR";
+   foreach my $tbl ( @$tbls ) {
+      printf($fmt, @{$tbl}{@headers}) or die "Cannot print: $OS_ERROR";
+   }
+   print "\n" or die "Cannot print: $OS_ERROR";
+
+   return;
+}
+
+sub rechecksum_inconsistent_table {
+   my ( $dsn, $tbls ) = @_;
+   print Dumper($tbls) . "\n";
+   return;
 }
 
 # The value may be an expression like 'NOW() - INTERVAL 7 DAY'
@@ -4649,6 +4668,10 @@ See also L<"--modulo">.
 short form: -q
 
 Do not print checksum results.
+
+=item --recheck
+
+Re-checksum inconsistent columns found during L<"--replcheck">.
 
 =item --replcheck
 
