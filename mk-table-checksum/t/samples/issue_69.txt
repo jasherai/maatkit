@@ -1,0 +1,2 @@
+DATABASE TABLE        CHUNK HOST  ENGINE      COUNT         CHECKSUM TIME WAIT STAT  LAG
+mysql    columns_priv     0 127.1 MyISAM          0             NULL    0 NULL NULL NULL

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 88;
+use Test::More tests => 90;
 use List::Util qw(sum);
 
 diag(`../../sandbox/stop_all`);
@@ -225,9 +225,6 @@ foreach my $opt_combo ( @opt_combos ) {
 # output is not stable due to the TIME column: occasionally it will
 # show 1 instead of 0 and diff barfs. These 3 columns should be stable.
 
-#TODO: it would be great to test --replcheck but I think it's not going to work
-#from SHOW PROCESSLIST in the sandboxen, it needs SHOW SLAVE HOSTS.
-
 # Check that --schema does NOT lock by default
 $output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema 2>&1`;
 unlike($output, qr/LOCK TABLES /, '--schema does not lock tables by default');
@@ -267,12 +264,29 @@ diag(`/tmp/12345/use -D test -e "$repl_row"`);
 $cmd = "/tmp/12345/use -e \"SELECT db FROM test.checksum WHERE db = 'foo';\"";
 $output = `$cmd`;
 like($output, qr/foo/, '--emptyrepltbl is ignored if --replicate is not specified');
+diag(`/tmp/12345/use -D test -e "DELETE FROM checksum WHERE db = 'foo'"`);
 
 # Screw up the data on the slave and make sure --replcheck works
-`/tmp/12348/use -e "update test.checksum set this_crc='' limit 1"`;
+`/tmp/12348/use -e "update test.checksum set this_crc='' where test.checksum.tbl = 'columns_priv'"`;
 $output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum --replcheck 1 2>&1`;
 like($output, qr/columns_priv/, '--replcheck works');
 cmp_ok($CHILD_ERROR>>8, '==', 1, 'Exit status is correct with --replcheck failure');
+
+# #############################################################################
+# Issue 69: mk-table-checksum should be able to re-checksum things that differ
+# #############################################################################
+
+# This test relies on the previous test which checked that --replcheck works
+# and left an inconsistent checksum on columns_priv.
+$output = `../mk-table-checksum h=127.1,P=12345 --replicate test.checksum --replcheck 1 --recheck | diff samples/issue_69.txt -`;
+ok(!$output, '--recheck reports inconsistent table like --replicate');
+
+
+# Now check that --recheck actually caused the inconsistent table to be
+# re-checksummed on the master.
+$output = 'foo';
+$output = `../mk-table-checksum h=127.1,P=12345 --replicate test.checksum --replcheck 1`;
+ok(!$output, '--recheck re-checksummed inconsistent table; it is now consistent');
 
 # #############################################################################
 # Issue 36: Add --resume option to mk-table-checksum (1/2)
