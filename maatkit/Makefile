@@ -10,9 +10,6 @@ debian: dist
 clean:
 	rm -rf release release-debian
 
-doc-upload:
-	scp html/*.html bps7j@shell.sourceforge.net:maatkit/htdocs/doc
-
 .PHONY: upload
 upload:
 	./upload

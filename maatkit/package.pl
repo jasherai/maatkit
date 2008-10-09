@@ -6,7 +6,6 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
 use File::Basename;
-use Pod::Html;
 
 print `svn up ../../`;
 
@@ -121,53 +120,6 @@ print `echo MANIFEST >> $dist/MANIFEST`;
 # Do it!!!!
 print `cd release && tar zcf $distbase.tar.gz $distbase`;
 print `cd release && zip -qr $distbase.zip    $distbase`;
-
-# Make the documentation.  Requires two passes.
-my @module_files = map { basename $_ } <$dist/bin/mk-*>;
-my @doc_files    = qw(maatkit maatkitdsn);
-for ( 0 .. 1 ) {
-   foreach my $module ( @module_files ) {
-      pod2html(
-         "--backlink=Top",
-         "--cachedir=cache",
-         "--htmldir=html",
-         "--infile=$dist/bin/$module",
-         "--outfile=html/$module.html",
-         "--libpods=perlfunc:perlguts:perlvar:perlrun:perlop",
-         "--podpath=bin:lib",
-         "--podroot=$dist",
-         "--css=http://search.cpan.org/s/style.css",
-      );
-   }
-   foreach my $doc ( @doc_files ) {
-      pod2html(
-         "--backlink=Top",
-         "--cachedir=cache",
-         "--htmldir=html",
-         "--infile=$dist/lib/$doc.pm",
-         "--outfile=html/$doc.html",
-         "--libpods=perlfunc:perlguts:perlvar:perlrun:perlop",
-         "--podpath=bin:lib",
-         "--podroot=$dist",
-         "--css=http://search.cpan.org/s/style.css",
-      );
-   }
-}
-# Wow, Pod::HTML is a pain in the butt.  Fix links now.
-# Hmmm, $img might be good to put back in one day when I have the doc situation
-# figured out.
-# my $img = '<a href="http://www.maatkit.org/"><img '
-   # . 'alt="Maatkit Logo" height="62" width="210" '
-   # . 'src="http://sflogo.sourceforge.net/sflogo.php?group_id=189154\&amp;type=5" '
-   # . 'style="float:right"/>';
-print `for a in html/*; do sed -i -e 's~bin/~~g' \$a; done`;
-print `for a in html/*; do sed -i -e 's~lib/~~g' \$a; done`;
-# TODO: put $img back in after the <body> tag
-# print `for a in html/*; do sed -i -e 's~body>~body>$img~' \$a; done`;
-print `for a in html/*; do sed -i -e 's~\`\`~"~g' \$a; done`;
-print `for a in html/*; do sed -i -e "s~\\\`~\\\'~g" \$a; done`;
-# And fix stupid links to "the X manpage" to just "X".
-print `for a in html/*; do sed -i -e 's~the \\([^ ]*\\) manpage~\\1~g' \$a; done`;
 
 # Cleanup temporary directories
 print `rm -rf cache $dist`;
