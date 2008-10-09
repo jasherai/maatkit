@@ -1,3 +1,58 @@
 #!/usr/bin/env perl
 
+# Check that all defined options are used, and that all used options are
+# defined.
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+require "../common/OptionParser.pm";
+
+my $file = shift @ARGV or die "Give me a file to check!";
+
+my @opts = OptionParser->pod_to_spec($file);
+my $p = new OptionParser(@opts);
+
+my $text = do {
+   local $RS = undef;
+   open my $fh, "<", $file
+      or die "Can't open $file: $OS_ERROR";
+   <$fh>;
+};
+
+# All options that are used in the tool.  Anything that is like $opts{foo} is an
+# option.  # Some tools use different names than %opts, and this is put into a
+# magical comment opt_container_alias:foo
+# Also, sometimes a ref to the opts container is passed, so $opts->{foo} is
+# detected too.
+my %used;
+my @aliases = $text =~ m/opt_container_alias:(final_opts)/g;
+foreach my $a ( qw(opts), @aliases ) {
+   map { $used{$_}++ } $text =~ m/\$$a(?:->)?\{'?([\w-]+)'?\}/g;
+}
+
+my @unused;
+my @undefined;
+my %option_exists;
+foreach my $opt ( @{$p->{opts}} ) {
+   next unless ref $opt;
+   my $key = $opt->{k};
+   $option_exists{$key}++;
+   # These are often used only indirectly.
+   next if $opt->{l} =~ m/^(?:help|version|defaults-file|database|charset
+                              |password|port|socket|user|host)$/x
+        || $p->{disables}->{$key};
+   push @unused, $key unless $used{$key};
+}
+foreach my $key ( keys %used ) {
+   push @undefined, $key unless $option_exists{$key};
+}
+if ( @unused || @undefined ) {
+   die "The following command-line options are unused: "
+      . join(',', @unused)
+      . ' The following are undefined: '
+      . join(',', @undefined);
+}
+
 exit 0;
