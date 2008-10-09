@@ -110,6 +110,7 @@ The following items are unimplemented at this time:
      used.  Compare this to config file setting for buffer pool.
    * add mysqladmin -ext -i60 and put several samples side by side
    * add timestamps to all snapshots
+   * Look for variables that look wrong: http://bugs.mysql.com/?id=39868
    * check if if key_buffer and innodb_buffer_pool too big (big % of available
      memory or a lot of unused buffers).
    * check if the InnoDB plugin is being used.  Report some stats about number
@@ -162,7 +163,7 @@ The following items are unimplemented at this time:
    being ins/upd/del/sel/rep/other
    * processlist advisor: if commit appears a lot, it might be too-small innodb
      log file size.
-   * deconstruct sprocs and explain them -- convert vars int @variables
+   * deconstruct sprocs and explain them -- convert vars into @variables
    * Look for derived tables that have no aggregation inside them
    * Look for explain plans that have a bad ref type or not-full key usage or
    high number of rows or no 'ref'
