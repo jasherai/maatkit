@@ -1,6 +1,12 @@
 Draw a histogram of various types of things in the slow log.  For example, 
 show the long tail of count of query fingerprints, lock time, exec time, etc.
 
+Estimate query completion times (mk-how-long).  Check processlist, grab handler
+stats, assume only a single query running, look at show table status, look at
+explain and SHOW INDEX FROM to estimate rows.  Rows per second will probably
+decay logarithmically.  Take that into account.  Also look at innodb rollbacks.
+Estimate how long they will take.
+
 Compensate for this bug:
 # Time: 080906 17:41:59
 # User@Host: hssn[hssn] @ dingo-stage-1.host.cdc.advance.net [10.5.2.21]
