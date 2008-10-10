@@ -870,7 +870,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2291
+# TableParser package 2382
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1051,6 +1051,15 @@ sub find_possible_keys {
       MKDEBUG && _d('No keys in possible_keys');
       return ();
    }
+}
+
+sub table_exists {
+   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
+   my $sql = 'SELECT * FROM ' . $quoter->quote($db, $tbl) . ' LIMIT 0';
+   my $href;
+   eval { $href = $dbh->selectrow_hashref($sql) };
+   return 0 if $EVAL_ERROR;
+   return 1;
 }
 
 sub _d {
@@ -1736,7 +1745,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2257
+# MySQLInstance package 2415
 # ###########################################################################
 
 package MySQLInstance;
@@ -1785,6 +1794,7 @@ my %undef_for = (
    ndb_connectstring             => '',
    relay_log_index               => '',
    secure_file_priv              => '',
+   skip_bdb                      => 0,
    skip_external_locking         => 'ON',
    skip_name_resolve             => 'ON',
    ssl_ca                        => '',
@@ -2262,7 +2272,7 @@ sub discover_triggers_routines_events {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLAdvisor package 2215
+# MySQLAdvisor package 2416
 # ###########################################################################
 
 package MySQLAdvisor;
@@ -2279,7 +2289,7 @@ my %checks = (
    innodb_flush_method =>
       sub {
          my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
-         return "innodb_flush_method != O_DIRECT"
+         return "innodb_flush_method is not set to O_DIRECT"
             if $sys_vars->{innodb_flush_method} ne 'O_DIRECT';
          return 0;
       },
@@ -2783,35 +2793,47 @@ exists $instance->{online_sys_vars}->{innodb_buffer_pool_size} ? shorten($instan
    tre_summary($schema);
 
    print "\n   PROBLEMS ______________________________________________________________\n";
+
    my $duplicates = $instance->duplicate_sys_vars();
    if ( scalar @{ $duplicates } ) {
       print "\tDuplicate system variables in config file:\n";
+      print "\tVARIABLE\n";
       foreach my $var ( @{ $duplicates } ) {
-         print "\t\t- $var\n";
+         print "\t$var\n";
       }
+      print "\n";
    }
+
+   my $three_cols = "\t%-20.20s  %-24.24s  %-24.24s\n";
+
    my $overridens = $instance->overriden_sys_vars();
    if ( scalar keys %{ $overridens } ) {
-      print "\tSystem varialbes in config file overriden by cmd line ops:\n";
+      print "\tOverridden system variables "
+         . "(cmd line value overrides config value):\n";
+      printf($three_cols, 'VARIABLE', 'CMD LINE VALUE', 'CONFIG VALUE');
       foreach my $var ( keys %{ $overridens } ) {
-         print "\t\t- $var: cmd line="
-               . $overridens->{$var}->[0]
-               . " config (overriden)="
-               . $overridens->{$var}->[1]
-               . "\n";
+         printf($three_cols,
+                $var,
+                $overridens->{$var}->[0],
+                $overridens->{$var}->[1]);
       }
+      print "\n";
    }
+
    my $oos = $instance->out_of_sync_sys_vars();
    if ( scalar keys %{ $oos } ) {
-      print "\tSystem variables out of sync (online differs from config):\n";
+      print "\tOut of sync system variables "
+         . "(online value differs from config value):\n";
+      printf($three_cols, 'VARIABLE', 'ONLINE VALUE', 'CONFIG VALUE');
       foreach my $var ( keys %{ $oos } ) {
-         print "\t\t- $var: online="
-               . $oos->{$var}->[0]
-               . " config="
-               . $oos->{$var}->[1]
-               . "\n";
+         printf($three_cols,
+                $var,
+                $oos->{$var}->[0],
+                $oos->{$var}->[1]);
       }
+      print "\n";
    }
+
    my $failed_checks = $advisor->run_checks();
    if ( scalar keys %{ $failed_checks } ) {
       print "\tThings to Note:\n";
