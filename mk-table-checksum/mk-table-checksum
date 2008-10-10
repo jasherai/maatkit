@@ -3044,10 +3044,13 @@ $opt_parser->usage_or_errors(%opts);
 # ############################################################################
 # Ready to work now.
 # ############################################################################
+
 my $q           = new Quoter();
 my $tp          = new TableParser();
 my $tc          = new TableChecksum();
 my $ms          = new MasterSlave();
+my $du          = new MySQLDump( cache => 0 );
+my $ch          = new TableChunker( quoter => $q );
 my $exit_status = 0;
 my $main_dbh    = get_cxn($hosts[0], ($opts{d} ? keys %{$opts{d}} : '' ));
 
@@ -3057,12 +3060,40 @@ if ( $opts{'check-slave-lag'} ) {
    $lag_dbh = get_cxn($dsn);
 }
 
+
+# %tables_to_checksum has the following structure:
+#    database => [
+#       { table },
+#       ...
+#    ],
+#    ...
+my %tables_to_checksum;
+
 # ############################################################################
-# Check replication slaves if desired.
+# Check replication slaves if desired. If only --replcheck is given, then
+# we will exit here. If --recheck is also given, then we'll continue through
+# the entire script but checksum only the inconsistent tables found here.
 # ############################################################################
 if ( defined $opts{replcheck} ) {
-   $exit_status = check_repl_slaves($main_dbh, $dsn_parser, $tc, $ms);
-   exit($exit_status);
+   my $callback = $opts{recheck} ? \&save_inconsistent_tbls
+      : \&print_inconsistent_tbls;
+   $ms->recurse_to_slaves(
+      {  dbh        => $main_dbh,
+         dsn        => $hosts[0],
+         dsn_parser => $dsn_parser,
+         recurse    => $opts{replcheck},
+         callback   => sub {
+            my ( $dsn, $dbh, $level, $parent ) = @_;
+            my @tbls = $tc->find_replication_differences($dbh, $opts{R});
+            return unless @tbls;
+            $exit_status = 1;
+            # Call the callback that does something useful with
+            # the inconsistent tables.
+            $callback->(@_, \@tbls);
+         }
+      }
+   );
+   exit($exit_status) unless $opts{recheck};
 }
 
 # ############################################################################
@@ -3144,160 +3175,442 @@ elsif ( $opts{resume} ) {
 # ############################################################################
 # Iterate through databases and tables and do the checksums.
 # ############################################################################
-my $du     = new MySQLDump( cache => 0 );
-my $ch     = new TableChunker( quoter => $q );
-my $finder = new MySQLFind(
-   quoter    => $q,
-   useddl    => 1,
-   parser    => $tp,
-   dumper    => $du,
-   databases => {
-      permit => $opts{d},
-      reject => $opts{g},
-   },
-   tables => {
-      permit => $opts{t},
-      reject => $opts{n},
-   },
-   engines => {
-      views  => 0,
-      permit => $opts{e},
-      reject => $opts{E},
-   },
-);
 
-DATABASE:
-foreach my $database ( $finder->find_databases($main_dbh) ) {
-   my @tables;
-   foreach my $table (
-      $finder->find_tables($main_dbh, database => $database)
-   ) {
-      MKDEBUG && _d("Examining $database.$table");
+# Get table info for all hosts, all slaves, unless we're in the special
+# "repl-re-check" mode in which case %tables_to_checksum has already the
+# inconsistent tables that we need to re-checksum.
+get_all_tbls_info($main_dbh) unless ( $opts{replcheck} && $opts{recheck} );
 
-      my %final_opts = %opts;
-      # #######################################################################
-      # Override the arguments with arguments from --argtable, if necessary.
-      # NOTE: from this point down in this loop %opts should not be used.
-      # #######################################################################
-      if ( my $override = $args_for{$database}->{$table} ) {
-         @final_opts{keys %$override} = values %$override;
-      }
-
-      # --since and --offset are potentially expressions that should be
-      # evaluated by the DB server.  This has to be done after the override from
-      # the --argtable table.
-      foreach my $opt ( qw(since O) ) {
-         # Don't get MySQL to evaluate if it's temporal, as 2008-08-01 --> 1999
-         if ( defined $final_opts{$opt} && !is_temporal($final_opts{$opt}) ) {
-            $final_opts{$opt} = eval_expr($opt, $final_opts{$opt}, $main_dbh);
-         }
-      }
-
-      # Skip the table in which checksums are stored.
-      if ( !$final_opts{R} || $final_opts{R} ne "$database.$table" ) {
-
-         eval { # Catch errors caused by tables being dropped during work.
-
-            # Parse the table and determine a column that's chunkable.  This is
-            # used not only for chunking, but also for --since.
-            my $create = $du->get_create_table($main_dbh, $q, $database, $table);
-            my $struct        = $tp->parse($create);
-            my ( $col, $idx ) = $ch->get_first_chunkable_column($struct);
-
-            $idx = undef if $final_opts{nouseindex};
-
-            my @chunks = '1=1'; # Default.
-            my $maxval = undef;
-            if ( $final_opts{C} && $col ) {
-               my $rows_per_chunk = $ch->size_to_rows(
-                     $main_dbh, $database, $table, $final_opts{C}, $du);
-
-               # Calculate chunks for this table.
-               my %params = $ch->get_range_statistics(
-                  $main_dbh, $database, $table, $col);
-               if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
-                  @chunks = $ch->calculate_chunks(
-                     dbh      => $main_dbh,
-                     table    => $struct,
-                     col      => $col,
-                     size     => $rows_per_chunk,
-                     %params,
-                  );
-                  $maxval = $params{max};
-               }
-            }
-
-            push @tables, {
-               struct       => $struct,
-               create       => $create,
-               database     => $database,
-               table        => $table,
-               column       => $col,
-               maxval       => $maxval,
-               index        => $idx,
-               chunks       => \@chunks,
-               final_opts   => \%final_opts,
-            };
-
-         };
-         if ( $EVAL_ERROR ) {
-            print_err($EVAL_ERROR, $database, $table);
-         }
-
-      }
-   }
-
-   next DATABASE unless @tables;
-
-   checksum_tables($database, \@tables, \@hosts);
+# Finally, do the magick: checksum the tables.
+foreach my $database ( keys %tables_to_checksum ) {
+   my $tables = $tables_to_checksum{$database};
+   checksum_tables($main_dbh, $database, $tables, \@hosts);
 }
 
 exit $exit_status;
 
+
 # ############################################################################
 # Subroutines
 # ############################################################################
+
+sub get_all_tbls_info {
+   my ( $dbh ) = @_;
+
+   my $finder = new MySQLFind(
+      quoter    => $q,
+      useddl    => 1,
+      parser    => $tp,
+      dumper    => $du,
+      databases => {
+         permit => $opts{d},
+         reject => $opts{g},
+      },
+      tables => {
+         permit => $opts{t},
+         reject => $opts{n},
+      },
+      engines => {
+         views  => 0,
+         permit => $opts{e},
+         reject => $opts{E},
+      },
+   );
+
+   foreach my $db ( $finder->find_databases($dbh) ) {
+      foreach my $tbl ( $finder->find_tables($dbh, database => $db) ) {
+         MKDEBUG && _d("Examining $db.$tbl");
+         my $final_opts = get_final_opts($dbh, $db, $tbl);
+         save_tbl_to_checksum($dbh, $db, $tbl, $final_opts);
+      }
+   }
+
+   return;
+}
+
+sub save_tbl_to_checksum {
+   my ( $dbh, $db, $tbl, $final_opts, $given_chunks ) = @_;
+
+   # Skip the table in which checksums are stored.
+   return if ( $final_opts->{R} && $final_opts->{R} eq "$db.$tbl" );
+
+   eval { # Catch errors caused by tables being dropped during work.
+
+      # Parse the table and determine a column that's chunkable.  This is
+      # used not only for chunking, but also for --since.
+      my $create        = $du->get_create_table($dbh, $q, $db, $tbl);
+      my $struct        = $tp->parse($create);
+      my ( $col, $idx ) = $ch->get_first_chunkable_column($struct);
+
+      $idx = undef if $final_opts->{nouseindex};
+
+      my @chunks = '1=1'; # Default.
+      my $maxval = undef;
+      if ( defined $given_chunks ) {
+         @chunks = @$given_chunks;
+      }
+      else {      
+         if ( $final_opts->{C} && $col ) {
+            my $rows_per_chunk = $ch->size_to_rows(
+               $dbh, $db, $tbl, $final_opts->{C}, $du);
+
+            # Calculate chunks for this table.
+            my %params = $ch->get_range_statistics($dbh, $db, $tbl, $col);
+            if ( !grep { !defined $params{$_} } qw(min max rows_in_range) ) {
+               @chunks = $ch->calculate_chunks(
+                  dbh      => $main_dbh,
+                  table    => $struct,
+                  col      => $col,
+                  size     => $rows_per_chunk,
+                  %params,
+               );
+               $maxval = $params{max};
+            }
+         }
+      }
+
+      push @{ $tables_to_checksum{$db} }, {
+         struct       => $struct,
+         create       => $create,
+         database     => $db,
+         table        => $tbl,
+         column       => $col,
+         maxval       => $maxval,
+         index        => $idx,
+         chunks       => \@chunks,
+         final_opts   => $final_opts,
+      };
+   };
+   if ( $EVAL_ERROR ) {
+      print_err($EVAL_ERROR, $db, $tbl);
+   }
+
+   return;
+}
+
+# Checksum the tables in the given database.
+# A separate report for each database and its tables is printed.
+sub checksum_tables {
+   my ( $dbh, $database, $tables, $hosts ) = @_;
+
+   # Design and print header unless we are resuming in which case
+   # we should have already re-printed the partial output of the
+   # resume file in parse_resume_file().
+   my ($hdr, $explain);
+   if ( $opts{b} ) {
+      $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
+      $explain = "%s\t%s\t%s\n";
+   }
+   else {
+      my $max_tbl  = max(5, map { length($_->{table}) } @$tables);
+      my $max_db   = max(8, length($database));
+      my $max_host = max(4, map { length($_->{h}) } @$hosts);
+      $hdr         = "%-${max_db}s %-${max_tbl}s %5s "
+                   . "%-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
+      $explain     = "%-${max_db}s %-${max_tbl}s %s\n";
+   }
+   my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
+                     COUNT CHECKSUM TIME WAIT STAT LAG);
+   unless ( $opts{q} || $opts{explain} || $opts{checksum} || $opts{resume} ) {
+      printf($hdr, @hdr_args)
+         or die "Cannot print: $OS_ERROR";
+   }
+
+   # NOTE: remember, you can't 'next TABLE' inside the eval{}.
+   # NOTE: remember to use the final_opts options embedded within each $table,
+   #       not %opts.
+   foreach my $table ( @$tables ) {
+      eval {
+         my $final_opts = $table->{final_opts};
+         my $do_table = 1;
+         MKDEBUG && _d("Doing $database.$table->{table}");
+         MKDEBUG && _d("Table: ", Dumper($table));
+
+         # Clean out the replication table entry for this table.
+         if ( $final_opts->{R} && !$final_opts->{explain} ) {
+            my $del_sql = "DELETE FROM $final_opts->{R} WHERE db=? AND tbl=?";
+            MKDEBUG && _d($main_dbh, $del_sql, $database, $table->{table});
+            $main_dbh->do($del_sql, {}, $database, $table->{table});
+         }
+
+         # If --since is given, figure out which column to use.  Use either the
+         # specified column (--sincecolumn) or the auto-discovered one,
+         # whichever exists in the table, in that order.
+         if ( $final_opts->{since} ) {
+            # If the --since argument is a date/timeish value, skip the whole
+            # table unless it has been modified or created since then.
+            if ( is_temporal($final_opts->{since}) ) {
+               my ( $stat )
+                  = $du->get_table_status($dbh, $q, $database, $table->{table});
+               my $time
+                  = maxstr(grep { $_ } @{$stat}{qw(create_time update_time)});
+               if ( $time && $time lt $final_opts->{since} ) {
+                  MKDEBUG && _d("Skipping table because --since value ",
+                     "$final_opts->{since} is newer than $time");
+                  $do_table = 0;
+                  $table->{chunks} = [];
+               }
+            }
+         }
+
+         # Choose the column to apply --since to.  It may not be the column the
+         # user said to use!  If the user didn't specify a column that's good to
+         # chunk on, we'll use something else instead.
+         if ( $final_opts->{since} && $do_table ) {
+            my ( $sincecol ) =
+               grep { $_ && $table->{struct}->{is_col}->{$_} }
+               ($table->{column}, $final_opts->{sincecolumn});
+            if ( $sincecol ) {
+               MKDEBUG && _d("Column for --since: ", $sincecol);
+               # This ends up being an additional WHERE clause.
+               $table->{since} = $q->quote($sincecol)
+                  . '>=' .  $q->quote_val($final_opts->{since});
+            }
+         }
+
+         # ##################################################################
+         # The query is independent of the chunk, so I make it once for every
+         # one.
+         # ##################################################################
+         my $query;
+         if ( $checksum_table_data && $do_table ) {
+            $query = $tc->make_checksum_query(
+               dbname     => $database,
+               tblname    => $table->{table},
+               table      => $table->{struct},
+               quoter     => $q,
+               algorithm  => $strat,
+               func       => $func,
+               crc_wid    => $crc_wid,
+               crc_type   => $crc_type,
+               opt_slice  => $opt_slice,
+               cols       => $final_opts->{columns},
+               sep        => $final_opts->{s},
+               replicate  => $final_opts->{R},
+               precision  => $final_opts->{'float-precision'},
+               trim       => $final_opts->{trim},
+               ignorecols => $final_opts->{ignorecols},
+            );
+         }
+         else { # --schema
+            $query = undef;
+         }
+
+         checksum_chunks(
+            $database, $table, $hosts, $query, $hdr, $explain, $final_opts);
+
+         # Save the --since value if there is a place to save it.
+         if ( $final_opts->{savesince} && $savesince_sth ) {
+            MKDEBUG && _d("Saving --since value: ", $table->{maxval},
+               ' for ', $database, ' ', $table->{table});
+            $savesince_sth->execute($table->{maxval},
+               $database, $table->{table});
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         print_err($EVAL_ERROR, $database, $table->{table});
+      }
+   }
+
+   return;
+}
+
+sub checksum_chunks {
+   my ( $database, $table, $hosts, $query, $hdr, $explain, $final_opts ) = @_;
+
+   # ##################################################################
+   # This loop may seem suboptimal, because it causes a new child to be
+   # forked for each table, for each host, for each chunk.  It also
+   # causes the program to parallelize only within the chunk; that is,
+   # no two child processes are running on different chunks at a time.
+   # This is by design. It lets me unlock the table on the master
+   # between chunks.
+   # ##################################################################
+   my $num_chunks = scalar(@{$table->{chunks}});
+   CHUNK:
+   foreach my $chunk_num ( 0 .. $num_chunks - 1 ) {
+
+      if ( $lag_dbh ) {
+         my $lag = $ms->get_slave_lag($lag_dbh);
+         while ( !defined $lag || $lag > $final_opts->{maxlag} ) {
+            MKDEBUG && _d("Sleeping: slave lag is ", $lag);
+            sleep($opts{'check-interval'});
+            $lag = $ms->get_slave_lag($lag_dbh);
+         }
+      }
+
+      if (    ($num_chunks > 1 || $final_opts->{singlechunk})
+           && $checksum_table_data
+           && defined $final_opts->{probability}
+           && rand(100) >= $final_opts->{probability} ) {
+         MKDEBUG && _d('Skipping chunk because of --probability');
+         next CHUNK;
+      }
+
+      if (    $num_chunks > 1
+           && $checksum_table_data
+           && $final_opts->{M}
+           && ($chunk_num % $final_opts->{M} != $final_opts->{O}) ) {
+         MKDEBUG && _d('Skipping chunk because of --modulo');
+         next CHUNK;
+      }
+
+      my $chunk_start_time = gettimeofday();
+      MKDEBUG && _d("Starting at $chunk_start_time");
+
+      if ( $final_opts->{R} ) {
+         # We're in --replicate mode.
+         
+         # If resuming, check if this db.tbl.chunk.host can be skipped.
+         if ( $opts{'resume-replicate'} ) {
+            if ( already_checksummed($table->{database},
+                                     $table->{table},
+                                     $chunk_num,
+                                     $hosts->[0]->{h}) ) {
+               print "# already checksummed:"
+                  . " $table->{database}"
+                  . " $table->{table}"
+                  . " $chunk_num "
+                  . $hosts->[0]->{h} 
+                  . "\n"
+               unless $opts{q};
+               next CHUNK;
+            }
+         }
+
+         do_tbl_replicate($hosts->[0], $query, $table,
+                          $chunk_num, $hdr, $explain, $final_opts);
+      }
+      else {
+         # We're in "normal" mode. Lock table and get position on the master.
+
+         if ( !$final_opts->{explain} ) {
+            if ( $final_opts->{k} ) {
+               my $sql = "LOCK TABLES "
+                  . $q->quote($database, $table->{table}) . " READ";
+               MKDEBUG && _d($sql);
+               $main_dbh->do($sql);
+            }
+            if ( defined $final_opts->{w} ) {
+               $table->{master_status} = $ms->get_master_status($main_dbh);
+            }
+         }
+         
+         my %children;
+         HOST:
+         foreach my $i ( 0 .. $#hosts ) {
+            my $is_master = $i == 0; # First host is assumed to be master.
+            my $host      = $hosts[$i];
+
+            # Open a single connection for each host.  Re-use the
+            # connection for the master/single host.
+            if ( $is_master ) {
+               # TODO: Is there a chance this can cause problems while forked?
+               $host->{dbh} ||= $main_dbh;
+            }
+            else {
+               $host->{dbh} ||= get_cxn($host);
+            }
+
+            # If resuming, check if this db.tbl.chunk.host can be skipped.
+            if ( $final_opts->{resume} ) {
+               next HOST if already_checksummed($table->{database},
+                                                $table->{table},
+                                                $chunk_num,
+                                                $host->{h});
+            }
+
+            # Fork, but only if there's more than one host.
+            my $pid = @hosts > 1 ? fork() : undef;
+            
+            if ( @hosts == 1 || (defined($pid) && $pid == 0) ) {
+               # Do the work (I'm a child, or there's only one host)
+               
+               eval {
+                  do_tbl($host, $query, $table, $chunk_num,
+                         $is_master, $hdr, $explain, $final_opts);
+               };
+               if ( $EVAL_ERROR ) {
+                  print_err($EVAL_ERROR, $database, $table->{table},
+                            $dsn_parser->as_string($host));
+                  exit(1) if @hosts > 1; # exit only if I'm a child
+               }
+               
+               exit(0) if @hosts > 1; # exit only if I'm a child
+            }
+            elsif ( @hosts > 1 && !defined($pid) ) {
+               die("Unable to fork!");
+            }
+            
+            # I already exited if I'm a child, so I'm the parent.
+            $children{$host->{h}} = $pid if @hosts > 1;
+         }
+
+         # Wait for the children to exit.
+         foreach my $host ( keys %children ) {
+            my $pid = waitpid($children{$host}, 0);
+            MKDEBUG && _d("Child $pid exited with $CHILD_ERROR");
+            $exit_status ||= $CHILD_ERROR >> 8;
+         }
+         if ( ($final_opts->{k} && !$final_opts->{explain}) ) {
+            my $sql = "UNLOCK TABLES";
+            MKDEBUG && _d($main_dbh, $sql);
+            $main_dbh->do($sql);
+         }
+      }
+
+      my $chunk_stop_time = gettimeofday();
+      MKDEBUG && _d("Finished chunk at $chunk_stop_time");
+
+      if ( $final_opts->{sleep} && !$final_opts->{explain} ) {
+         MKDEBUG && _d("Sleeping $final_opts->{sleep}");
+         sleep($final_opts->{sleep});
+      }
+      elsif ( $final_opts->{'sleep-coef'} && !$final_opts->{explain} ) {
+         my $sleep_time =
+            ($chunk_stop_time - $chunk_start_time)
+            * $final_opts->{'sleep-coef'};
+         MKDEBUG && _d("Sleeping $sleep_time");
+         sleep($sleep_time);
+      }
+   } # End foreach CHUNK
+
+   return;
+}
+
+# Override the arguments with arguments from --argtable, if necessary.
+sub get_final_opts {
+   my ( $dbh, $db, $tbl ) = @_;
+
+   my %final_opts = %opts;
+   if ( my $override = $args_for{$db}->{$tbl} ) {
+      @final_opts{keys %$override} = values %$override;
+   }
+
+   # --since and --offset are potentially expressions that should be
+   # evaluated by the DB server. This has to be done after the override
+   # from the --argtable table.
+   foreach my $opt ( qw(since O) ) {
+      # Don't get MySQL to evaluate if it's temporal, as 2008-08-01 --> 1999
+      if ( defined $final_opts{$opt} && !is_temporal($final_opts{$opt}) ) {
+         $final_opts{$opt} = eval_expr($opt, $final_opts{$opt}, $dbh);
+      }
+   }
+
+   return \%final_opts;
+}
 
 sub is_temporal {
    my ( $val ) = @_;
    return $val && $val =~ m/^\d{4}-\d{2}-\d{2}(?:.[0-9:]+)?/;
 }
 
-sub check_repl_slaves {
-   my ( $dbh, $dsn_parser, $tc, $ms ) = @_;
-   my $exit_status = 0; 
-   my @inconsistent_tables;
+sub print_inconsistent_tbls {
+   my ( $dsn, $dbh, $level, $parent, $tbls ) = @_;
 
-   $ms->recurse_to_slaves(
-      {  dbh        => $dbh,
-         dsn        => $hosts[0],
-         dsn_parser => $dsn_parser,
-         recurse    => $opts{replcheck},
-         callback   => sub { 
-            my ( $dsn, $dbh, $level, $parent ) = @_;
-            my @tbls = $tc->find_replication_differences($dbh, $opts{R});
-            return unless @tbls;
-            $exit_status = 1;
-            if ( $opts{recheck} ) {
-               # These inconsistent tables will be re-checksummed later.
-               push @inconsistent_tables, { dsn => $dsn, tbls => [ @tbls ] };
-            }
-            else {
-               # Report instantly the inconsistent tables.
-               report_inconsistent_table($dsn, \@tbls);
-            }
-         }
-      }
-   );
-
-   return $exit_status;
-}
-
-sub report_inconsistent_table {
-   my ( $dsn, $tbls ) = @_;
    return if $opts{q};
-   my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
 
+   my @headers = qw(db tbl chunk cnt_diff crc_diff boundaries);
    print "Differences on " . $dsn_parser->as_string($dsn) . "\n";
    my $max_db   = max(5, map { length($_->{db})  } @$tbls);
    my $max_tbl  = max(5, map { length($_->{tbl}) } @$tbls);
@@ -3308,6 +3621,19 @@ sub report_inconsistent_table {
    }
    print "\n" or die "Cannot print: $OS_ERROR";
 
+   return;
+}
+
+sub save_inconsistent_tbls {
+   my ( $dsn, $dbh, $level, $parent, $tbls ) = @_;
+   foreach my $table ( @$tbls ) {
+      MKDEBUG && _d("Will recheck $table->{db}.$table->{tbl} "
+                    . "(chunk: $table->{boundaries})");
+      my $final_opts = get_final_opts($dbh, $table->{db}, $table->{tbl});
+      my $chunks     = [ $table->{boundaries} ];
+      save_tbl_to_checksum(
+         $dbh, $table->{db}, $table->{tbl}, $final_opts, $chunks);
+   }
    return;
 }
 
@@ -3540,290 +3866,6 @@ sub already_checksummed {
       return 1;
    }
    return 0;
-}
-
-sub checksum_tables {
-   my ( $database, $tables, $hosts ) = @_;
-
-   # Design and print header unless we are resuming in which case
-   # we should have already re-printed the partial output of the
-   # resume file in parse_resume_file().
-   my ($hdr, $explain);
-   if ( $opts{b} ) {
-      $hdr = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n";
-      $explain = "%s\t%s\t%s\n";
-   }
-   else {
-      my $max_tbl  = max(5, map { length($_->{table}) } @$tables);
-      my $max_db   = max(8, length($database));
-      my $max_host = max(4, map { length($_->{h}) } @$hosts);
-      $hdr         = "%-${max_db}s %-${max_tbl}s %5s "
-                   . "%-${max_host}s %-6s %10s %${crc_wid}s %4s %4s %4s %4s\n";
-      $explain     = "%-${max_db}s %-${max_tbl}s %s\n";
-   }
-   my @hdr_args = qw(DATABASE TABLE CHUNK HOST ENGINE
-                     COUNT CHECKSUM TIME WAIT STAT LAG);
-   unless ( $opts{q} || $opts{explain} || $opts{checksum} || $opts{resume} ) {
-      printf($hdr, @hdr_args)
-         or die "Cannot print: $OS_ERROR";
-   }
-
-   # NOTE: remember, you can't 'next TABLE' inside the eval{}.
-   # NOTE: remember to use the final_opts options embedded within each $table,
-   #       not %opts.
-   foreach my $table ( @$tables ) {
-      eval {
-         my %final_opts = %{$table->{final_opts}};
-         my $do_table = 1;
-         MKDEBUG && _d("Doing $database.$table->{table}");
-         MKDEBUG && _d("Table: ", Dumper($table));
-
-         # Clean out the replication table entry for this table.
-         if ( $final_opts{R} && !$final_opts{explain} ) {
-            my $del_sql = "DELETE FROM $final_opts{R} WHERE db=? AND tbl=?";
-            MKDEBUG && _d($main_dbh, $del_sql, $database, $table->{table});
-            $main_dbh->do($del_sql, {}, $database, $table->{table});
-         }
-
-         # If --since is given, figure out which column to use.  Use either the
-         # specified column (--sincecolumn) or the auto-discovered one,
-         # whichever exists in the table, in that order.
-         if ( $final_opts{since} ) {
-            # If the --since argument is a date/timeish value, skip the whole
-            # table unless it has been modified or created since then.
-            if ( is_temporal($final_opts{since}) ) {
-               my ($stat) = $du->get_table_status($main_dbh, $q, $database, $table->{table});
-               my $time = maxstr(grep { $_ } @{$stat}{qw(create_time update_time)});
-               if ( $time && $time lt $final_opts{since} ) {
-                  MKDEBUG && _d("Skipping table because --since value ",
-                     "$final_opts{since} is newer than $time");
-                  $do_table = 0;
-                  $table->{chunks} = [];
-               }
-            }
-         }
-
-         # Choose the column to apply --since to.  It may not be the column the
-         # user said to use!  If the user didn't specify a column that's good to
-         # chunk on, we'll use something else instead.
-         if ( $final_opts{since} && $do_table ) {
-            my ( $sincecol ) =
-               grep { $_ && $table->{struct}->{is_col}->{$_} }
-               ($table->{column}, $final_opts{sincecolumn});
-            if ( $sincecol ) {
-               MKDEBUG && _d("Column for --since: ", $sincecol);
-               # This ends up being an additional WHERE clause.
-               $table->{since} = $q->quote($sincecol)
-                  . '>=' .  $q->quote_val($final_opts{since});
-            }
-         }
-
-         # ##################################################################
-         # The query is independent of the chunk, so I make it once for every
-         # one.
-         # ##################################################################
-         my $query;
-         if ( $checksum_table_data && $do_table ) {
-            $query = $tc->make_checksum_query(
-               dbname     => $database,
-               tblname    => $table->{table},
-               table      => $table->{struct},
-               quoter     => $q,
-               algorithm  => $strat,
-               func       => $func,
-               crc_wid    => $crc_wid,
-               crc_type   => $crc_type,
-               opt_slice  => $opt_slice,
-               cols       => $final_opts{columns},
-               sep        => $final_opts{s},
-               replicate  => $final_opts{R},
-               precision  => $final_opts{'float-precision'},
-               trim       => $final_opts{trim},
-               ignorecols => $final_opts{ignorecols},
-            );
-         }
-         else { # --schema
-            $query = undef;
-         }
-
-         checksum_chunks($database, $table, $hosts, $query,
-                         $hdr, $explain, \%final_opts);
-
-         # Save the --since value if there is a place to save it.
-         if ( $final_opts{savesince} && $savesince_sth ) {
-            MKDEBUG && _d("Saving --since value: ", $table->{maxval},
-               ' for ', $database, ' ', $table->{table});
-            $savesince_sth->execute($table->{maxval},
-               $database, $table->{table});
-         }
-      };
-      if ( $EVAL_ERROR ) {
-         print_err($EVAL_ERROR, $database, $table->{table});
-      }
-   }
-}
-
-sub checksum_chunks {
-   my ( $database, $table, $hosts, $query, $hdr, $explain, $final_opts ) = @_;
-
-   # ##################################################################
-   # This loop may seem suboptimal, because it causes a new child to be
-   # forked for each table, for each host, for each chunk.  It also
-   # causes the program to parallelize only within the chunk; that is,
-   # no two child processes are running on different chunks at a time.
-   # This is by design. It lets me unlock the table on the master
-   # between chunks.
-   # ##################################################################
-   my $num_chunks = scalar(@{$table->{chunks}});
-   CHUNK:
-   foreach my $chunk_num ( 0 .. $num_chunks - 1 ) {
-
-      if ( $lag_dbh ) {
-         my $lag = $ms->get_slave_lag($lag_dbh);
-         while ( !defined $lag || $lag > $final_opts->{maxlag} ) {
-            MKDEBUG && _d("Sleeping: slave lag is ", $lag);
-            sleep($opts{'check-interval'});
-            $lag = $ms->get_slave_lag($lag_dbh);
-         }
-      }
-
-      if (    ($num_chunks > 1 || $final_opts->{singlechunk})
-           && $checksum_table_data
-           && defined $final_opts->{probability}
-           && rand(100) >= $final_opts->{probability} ) {
-         MKDEBUG && _d('Skipping chunk because of --probability');
-         next CHUNK;
-      }
-
-      if (    $num_chunks > 1
-           && $checksum_table_data
-           && $final_opts->{M}
-           && ($chunk_num % $final_opts->{M} != $final_opts->{O}) ) {
-         MKDEBUG && _d('Skipping chunk because of --modulo');
-         next CHUNK;
-      }
-
-      my $chunk_start_time = gettimeofday();
-      MKDEBUG && _d("Starting at $chunk_start_time");
-
-      if ( $final_opts->{R} ) {
-         # We're in --replicate mode.
-         
-         # If resuming, check if this db.tbl.chunk.host can be skipped.
-         if ( $opts{'resume-replicate'} ) {
-            if ( already_checksummed($table->{database},
-                                     $table->{table},
-                                     $chunk_num,
-                                     $hosts->[0]->{h}) ) {
-               print "# already checksummed:"
-                  . " $table->{database}"
-                  . " $table->{table}"
-                  . " $chunk_num "
-                  . $hosts->[0]->{h} 
-                  . "\n"
-               unless $opts{q};
-               next CHUNK;
-            }
-         }
-
-         do_tbl_replicate($hosts->[0], $query, $table,
-                          $chunk_num, $hdr, $explain, $final_opts);
-      }
-      else {
-         # We're in "normal" mode. Lock table and get position on the master.
-
-         if ( !$final_opts->{explain} ) {
-            if ( $final_opts->{k} ) {
-               my $sql = "LOCK TABLES "
-                  . $q->quote($database, $table->{table}) . " READ";
-               MKDEBUG && _d($sql);
-               $main_dbh->do($sql);
-            }
-            if ( defined $final_opts->{w} ) {
-               $table->{master_status} = $ms->get_master_status($main_dbh);
-            }
-         }
-         
-         my %children;
-         HOST:
-         foreach my $i ( 0 .. $#hosts ) {
-            my $is_master = $i == 0; # First host is assumed to be master.
-            my $host      = $hosts[$i];
-
-            # Open a single connection for each host.  Re-use the
-            # connection for the master/single host.
-            if ( $is_master ) {
-               # TODO: Is there a chance this can cause problems while forked?
-               $host->{dbh} ||= $main_dbh;
-            }
-            else {
-               $host->{dbh} ||= get_cxn($host);
-            }
-
-            # If resuming, check if this db.tbl.chunk.host can be skipped.
-            if ( $final_opts->{resume} ) {
-               next HOST if already_checksummed($table->{database},
-                                                $table->{table},
-                                                $chunk_num,
-                                                $host->{h});
-            }
-
-            # Fork, but only if there's more than one host.
-            my $pid = @hosts > 1 ? fork() : undef;
-            
-            if ( @hosts == 1 || (defined($pid) && $pid == 0) ) {
-               # Do the work (I'm a child, or there's only one host)
-               
-               eval {
-                  do_tbl($host, $query, $table, $chunk_num,
-                         $is_master, $hdr, $explain, $final_opts);
-               };
-               if ( $EVAL_ERROR ) {
-                  print_err($EVAL_ERROR, $database, $table->{table},
-                            $dsn_parser->as_string($host));
-                  exit(1) if @hosts > 1; # exit only if I'm a child
-               }
-               
-               exit(0) if @hosts > 1; # exit only if I'm a child
-            }
-            elsif ( @hosts > 1 && !defined($pid) ) {
-               die("Unable to fork!");
-            }
-            
-            # I already exited if I'm a child, so I'm the parent.
-            $children{$host->{h}} = $pid if @hosts > 1;
-         }
-
-         # Wait for the children to exit.
-         foreach my $host ( keys %children ) {
-            my $pid = waitpid($children{$host}, 0);
-            MKDEBUG && _d("Child $pid exited with $CHILD_ERROR");
-            $exit_status ||= $CHILD_ERROR >> 8;
-         }
-         if ( ($final_opts->{k} && !$final_opts->{explain}) ) {
-            my $sql = "UNLOCK TABLES";
-            MKDEBUG && _d($main_dbh, $sql);
-            $main_dbh->do($sql);
-         }
-      }
-
-      my $chunk_stop_time = gettimeofday();
-      MKDEBUG && _d("Finished chunk at $chunk_stop_time");
-
-      if ( $final_opts->{sleep} && !$final_opts->{explain} ) {
-         MKDEBUG && _d("Sleeping $final_opts->{sleep}");
-         sleep($final_opts->{sleep});
-      }
-      elsif ( $final_opts->{'sleep-coef'} && !$final_opts->{explain} ) {
-         my $sleep_time =
-            ($chunk_stop_time - $chunk_start_time)
-            * $final_opts->{'sleep-coef'};
-         MKDEBUG && _d("Sleeping $sleep_time");
-         sleep($sleep_time);
-      }
-   } # End foreach CHUNK
-
-   return;
 }
 
 sub do_tbl_replicate {
