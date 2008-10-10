@@ -35,7 +35,7 @@ my %checks = (
    innodb_flush_method =>
       sub {
          my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
-         return "innodb_flush_method != O_DIRECT"
+         return "innodb_flush_method is not set to O_DIRECT"
             if $sys_vars->{innodb_flush_method} ne 'O_DIRECT';
          return 0;
       },
