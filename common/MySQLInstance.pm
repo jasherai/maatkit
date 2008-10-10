@@ -66,6 +66,7 @@ my %undef_for = (
    ndb_connectstring             => '',
    relay_log_index               => '',
    secure_file_priv              => '',
+   skip_bdb                      => 0,
    skip_external_locking         => 'ON',
    skip_name_resolve             => 'ON',
    ssl_ca                        => '',
