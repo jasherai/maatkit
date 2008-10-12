@@ -87,6 +87,8 @@ The following items are unimplemented at this time:
          * Actually, DATE_FORMAT(), or TO_DAYS() are just red flags
       * Connections and users
          * report anonymous users
+           * Complain loudly if connected as anonymous user -- print out what
+             current_user() shows?  Useful for debugging etc
          * report obsolete privileges (privs that refer to dbs or tables that
            don't exist)
          * report root users, root can login remotely, default test database,
