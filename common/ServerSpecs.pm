@@ -78,16 +78,9 @@ sub server_specs {
       $server{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
    }
 
-   # This requires root access
-   @{$server{memory}->{slots}} = ();
-   if ( chomp(my $dmi = `dmidecode`) ) {
-      my @keys = ( 'Size', 'Form Factor', 'Type', 'Type Detail', 'Speed');
-      my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
-      foreach my $mem ( @mem_info ) {
-         my %stuff = map { split /: / } $mem =~ m/^\s+(\S.*:.*)$/gm;
-         push(@{$server{memory}->{slots}}, join(' ', grep { $_ } @stuff{@keys}));
-      }
-   }
+   # This requires root access. If it can't run (non-root), there simply
+   # won't be any memory slot info reported.
+   @{$server{memory}->{slots}} = _memory_slots();
 
    if ( chomp(my $mem = `free -b`) ) {
       my @words = $mem =~ m/(\w+)/g;
@@ -309,6 +302,36 @@ sub parse_sysctl_conf {
    return %sysctl;
 }
 
+sub _can_run {
+   my ( $cmd ) = @_;
+   # Throw away all output; we're only interested in the return value.
+   my $retval = system("$cmd 2>/dev/null > /dev/null");
+   $retval = $retval >> 8;
+   MKDEBUG && _d("Running '$cmd' returned $retval");
+   return !$retval ? 1 : 0;
+}
+
+sub _memory_slots {
+   my @memory_slots = ();
+
+   if ( _can_run('dmidecode') ) {
+      my $dmi = `dmidecode`;
+      chomp $dmi;
+      my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
+      my @attribs  = ( 'Size', 'Form Factor', 'Type', 'Type Detail', 'Speed' );
+      foreach my $mem ( @mem_info ) {
+         my %fields = map { split /: / } $mem =~ m/^\s+(\S.*:.*)$/gm;
+         push(@memory_slots, join(' ', grep { $_ } @fields{@attribs}));
+      }
+   }
+   elsif ( MKDEBUG ) {
+      _d('No memory slots info because dmidecode cannot be ran');
+   }
+
+   return @memory_slots;
+}
+
+# TODO: remove this sub and use Transformers instead, somehow, maybe.
 sub shorten
 {
    my ( $number, $kb, $d ) = @_;

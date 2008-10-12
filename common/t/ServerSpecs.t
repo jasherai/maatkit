@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 2;
+use Test::More tests => 3;
 use English qw(-no_match_vars);
 
 require '../ServerSpecs.pm';
@@ -53,5 +53,8 @@ is_deeply(
    },
    'Parses sysctl.conf (issue 56)'
 );
+
+my @mem = ServerSpecs::_memory_slots();
+ok(!scalar @mem, 'Cannot exec dmidecode so no memory slot info');
 
 exit;
