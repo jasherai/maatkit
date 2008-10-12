@@ -29,12 +29,23 @@ The following items are unimplemented at this time:
          * --log-warnings being defined is cause for an alert
          * alert if non-standard my.cnf location
          * show size of slow log
+         * show read/write percentage (number of queries, and number of rows
+           from Handler)
          * Alert if the version is really old, or end-of-life.  3.x and 4.x are
            EOL now, and 4.1 should at least be >= 4.1.20 (the EOL and really-old
            warnings should be separate).  5.0.37 is the minimum useful 5.0
            version.
       * Data and schema
          * filefrag on data files?
+         * note if a storage engine is enabled but not in use -- but check for
+           permissions to see everything before warning about this, otherwise
+           can have false pos.
+         * fragmentation from SHOW TABLE STATUS (as reported by innodb free
+           space, depending on file-per-table; or for single-file, amount of
+           space used/free in ibdata1) or for myisam, Data_free field; show
+           worst 5 fragmented in tabular format as usual
+             * true fragmentation -- if our patched innodb buffer pool contents
+               is installed
          * verbose option: 
             produce a detailed per-db, per-tbl schema report showing size, index
             size, engine, number of indexes, number of columns etc for each
@@ -158,6 +169,8 @@ The following items are unimplemented at this time:
       * Look for unsafe settings: binlog_do_db or binlog_ignore_db
       * Check for expire_logs_days policy
       * Check that the binlog.index file matches what's on disk
+      * if our patch is installed, warn if slave may be close to capacity (see
+        http://www.mysqlperformanceblog.com/2008/10/08/three-ways-to-know-when-a-mysql-slave-is-about-to-start-lagging/
    * Parse db.tbl names out of statements in the processlist and make a list of
    the most popular dbs and tbls, in the format of a table, with the columns
    being ins/upd/del/sel/rep/other
