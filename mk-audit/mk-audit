@@ -2473,6 +2473,48 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# Grants package 2420
+# ###########################################################################
+package Grants;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my %check_for_priv = (
+   'PROCESS' => sub {
+      my ( $dbh ) = @_;
+      my $priv =
+         grep { m/ALL PRIVILEGES.*?\*\.\*|PROCESS/ }
+         @{$dbh->selectcol_arrayref('SHOW GRANTS')};
+         return 0 if !$priv;
+         return 1;
+   },
+);
+      
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub have_priv {
+   my ( $self, $dbh, $priv ) = @_;
+   $priv = uc $priv;
+   if ( !exists $check_for_priv{$priv} ) {
+      die "There is no check for privilege $priv";
+   }
+   return $check_for_priv{$priv}->($dbh);
+}
+
+1;
+
+# ###########################################################################
+# End Grants package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -2576,10 +2618,17 @@ foreach my $mysqld_ps ( @$mysqld_processes_ref ) {
              };
    report_MySQL_instance($params);
 
-   my $apl = AggregateProcessList->new();
-   my $processlist = $dbh->selectall_arrayref('SHOW PROCESSLIST',
-                                              { Slice => {} } );
-   report_aggregated_processlist( $apl->aggregate_processlist($processlist) );
+   my $gr = new Grants;
+   if ( $gr->have_priv($dbh, 'PROCESS') ) {
+      my $apl = AggregateProcessList->new();
+      my $processlist = $dbh->selectall_arrayref('SHOW PROCESSLIST',
+                                                 { Slice => {} } );
+      report_aggregated_processlist($apl->aggregate_processlist($processlist));
+   }
+   else {
+      print "\nCannot report aggregated processlist because "
+         . "database user does not have PROCESS privilege.\n";
+   }
 
    $dbh->disconnect();
 } # foreach mysqld process
