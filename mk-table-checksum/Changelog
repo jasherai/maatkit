@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+   * Added --recheck (issue 69).
+   * Added --ignorecols (issue 94).
    * Added --createreplicate (issue 77).
    * Added --resume and --resume-replicate (issue 36).
    * --since crashed on blackhole tables (issue 64).
