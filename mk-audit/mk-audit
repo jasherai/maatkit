@@ -1431,7 +1431,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# ServerSpecs package 2263
+# ServerSpecs package 2426
 # ###########################################################################
 
 package ServerSpecs;
@@ -1451,14 +1451,7 @@ sub server_specs {
    $server{os}->{name} = $OSNAME;
    $server{os}->{regsize} = `file /bin/ls` =~ m/64-bit/ ? '64' : '32';
 
-   if ( chomp(my $rel = `cat /etc/*release`) ) {
-      if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
-         $server{os}->{version} = $desc;
-      }
-      else {
-         $server{os}->{version} = $rel;
-      }
-   }
+   $server{os}->{version} = _os_version();
 
    if ( -f '/lib/libc.so.6' ) {
       my $stuff = `/lib/libc.so.6`;
@@ -1491,15 +1484,7 @@ sub server_specs {
       $server{cpu}->{count} = $ENV{NUMBER_OF_PROCESSORS};
    }
 
-   @{$server{memory}->{slots}} = ();
-   if ( chomp(my $dmi = `dmidecode`) ) {
-      my @keys = ( 'Size', 'Form Factor', 'Type', 'Type Detail', 'Speed');
-      my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
-      foreach my $mem ( @mem_info ) {
-         my %stuff = map { split /: / } $mem =~ m/^\s+(\S.*:.*)$/gm;
-         push(@{$server{memory}->{slots}}, join(' ', grep { $_ } @stuff{@keys}));
-      }
-   }
+   @{$server{memory}->{slots}} = _memory_slots();
 
    if ( chomp(my $mem = `free -b`) ) {
       my @words = $mem =~ m/(\w+)/g;
@@ -1711,6 +1696,53 @@ sub parse_sysctl_conf {
    }
 
    return %sysctl;
+}
+
+sub _can_run {
+   my ( $cmd ) = @_;
+   my $retval = system("$cmd 2>/dev/null > /dev/null");
+   $retval = $retval >> 8;
+   MKDEBUG && _d("Running '$cmd' returned $retval");
+   return !$retval ? 1 : 0;
+}
+
+sub _os_version {
+   my $version = 'unknown version';
+
+   if ( _can_run('cat /etc/*release') ) {
+      chomp(my $rel = `cat /etc/*release`);
+      if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
+         $version = $desc;
+      }
+      else {
+         $version = $rel;
+      }
+   }
+   elsif ( MKDEBUG ) {
+      _d('No OS version info because no /etc/*release exists');
+   }
+
+   return $version;
+}
+
+sub _memory_slots {
+   my @memory_slots = ();
+
+   if ( _can_run('dmidecode') ) {
+      my $dmi = `dmidecode`;
+      chomp $dmi;
+      my @mem_info = $dmi =~ m/^(Memory Device\n.*?)\n\n/gsm;
+      my @attribs  = ( 'Size', 'Form Factor', 'Type', 'Type Detail', 'Speed' );
+      foreach my $mem ( @mem_info ) {
+         my %fields = map { split /: / } $mem =~ m/^\s+(\S.*:.*)$/gm;
+         push(@memory_slots, join(' ', grep { $_ } @fields{@attribs}));
+      }
+   }
+   elsif ( MKDEBUG ) {
+      _d('No memory slots info because dmidecode cannot be ran');
+   }
+
+   return @memory_slots;
 }
 
 sub shorten
@@ -2475,6 +2507,7 @@ sub _d {
 # ###########################################################################
 # Grants package 2420
 # ###########################################################################
+
 package Grants;
 
 use strict;
