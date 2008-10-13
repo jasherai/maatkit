@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 7;
 use English qw(-no_match_vars);
 
 require '../ServerSpecs.pm';
@@ -28,8 +28,6 @@ require '../ServerSpecs.pm';
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
-
-# TODO: more testing
 
 sub load_file {
    my ($file) = @_;
@@ -41,7 +39,10 @@ sub load_file {
 
 my $server = ServerSpecs::server_specs();
 
-ok(exists $server->{os}, 'OS name exists');
+ok($server->{os}->{name} ne '', 'Has OS name');
+ok($server->{os}->{version} ne '', 'Has OS version');
+ok($server->{os}->{regsize} ne '', 'Has OS regsize');
+ok($server->{os}->{swappiness} ne '', 'Has OS swappiness');
 
 my %vars = ServerSpecs::parse_sysctl_conf('samples/sysctl.conf_01');
 is_deeply(

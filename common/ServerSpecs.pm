@@ -37,14 +37,7 @@ sub server_specs {
    # TODO: ought to go into some common library of utility funcs...
    $server{os}->{regsize} = `file /bin/ls` =~ m/64-bit/ ? '64' : '32';
 
-   if ( chomp(my $rel = `cat /etc/*release`) ) {
-      if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
-         $server{os}->{version} = $desc;
-      }
-      else {
-         $server{os}->{version} = $rel;
-      }
-   }
+   $server{os}->{version} = _os_version();
 
    if ( -f '/lib/libc.so.6' ) {
       my $stuff = `/lib/libc.so.6`;
@@ -309,6 +302,25 @@ sub _can_run {
    $retval = $retval >> 8;
    MKDEBUG && _d("Running '$cmd' returned $retval");
    return !$retval ? 1 : 0;
+}
+
+sub _os_version {
+   my $version = 'unknown version';
+
+   if ( _can_run('cat /etc/*release') ) {
+      chomp(my $rel = `cat /etc/*release`);
+      if ( my ($desc) = $rel =~ m/DISTRIB_DESCRIPTION="(.*)"/ ) {
+         $version = $desc;
+      }
+      else {
+         $version = $rel;
+      }
+   }
+   elsif ( MKDEBUG ) {
+      _d('No OS version info because no /etc/*release exists');
+   }
+
+   return $version;
 }
 
 sub _memory_slots {
