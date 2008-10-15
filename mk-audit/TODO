@@ -81,7 +81,14 @@ The following items are unimplemented at this time:
       * Status
          * small innodb log files, large innodb_additional_mem_pool
          * on a slave, innodb_flush_log_at_trx_commit doesn't need to be 1
+         * innodb has a lot more allocated memory than buffer pool + add'l pool
+           example: Total memory allocated 16835145778; in additional pool
+           allocated 536870912 Buffer pool size   262144
          * Watch prepared statements and compare to max
+         * Set some limits how big things can be, so we don't do like SELECT
+           FROM INFORMATION_SCHEMA.TABLES on a server with a billion tables and
+           100GB buffer pool -- limits should include the buffer pool size and
+           key buffer size and mysql vsize
          * Watch for "bad query patterns" such as RAND() or storing IP addresses
          as varchar or using TO_DAYS(column) < TO_DAYS(NOW()) - 5
          * Actually, DATE_FORMAT(), or TO_DAYS() are just red flags
