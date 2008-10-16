@@ -277,7 +277,19 @@ sub _load_default_defaults_files {
 # are explicitly set in the defaults file. This is used for detecting
 # duplicates and overriden var/vals.
 sub _vars_from_defaults_file {
-   my ( $self, $defaults_file_op ) = @_;
+   my ( $self, $defaults_file_op, $my_print_defaults ) = @_;
+
+   # Check first that my_print_defaults can be executed.
+   # If not, we must die because we will not be able to do anything else.
+   my $my_print_defaults_cmd = $my_print_defaults || 'my_print_defaults';
+   my $retval = system("$my_print_defaults_cmd --help 1>/dev/null 2>/dev/null");
+   $retval = $retval >> 8;
+   if ( $retval != 0 ) {
+      my $self_dump = Dumper($self);
+      MKDEBUG && _d("$self_dump");
+      die "Cannot execute my_print_defaults command '$my_print_defaults_cmd'";
+   }
+
    my @defaults_file_ops;
    my @ddf_ops;
 
@@ -310,8 +322,8 @@ sub _vars_from_defaults_file {
    }
 
    foreach my $defaults_file_op ( @defaults_file_ops ) {
-      my $cmd = "my_print_defaults $defaults_file_op mysqld";
-      MKDEBUG && _d("$cmd");
+      my $cmd = "$my_print_defaults_cmd $defaults_file_op mysqld";
+      MKDEBUG && _d("my_print_defaults cmd: $cmd");
       if ( my $my_print_defaults_output = `$cmd` ) {
          foreach my $var_val ( split "\n", $my_print_defaults_output ) {
             # Make sys vars from conf look like those from SHOW VARIABLES
@@ -321,6 +333,10 @@ sub _vars_from_defaults_file {
             $var =~ s/-/_/go;
             # TODO: this can be more compact ( $digits_for{lc $2} )
             # and shouldn't use $1, $2
+            # And I think %digits_for should go in Transformers and that
+            # Transformers should be both an obj/class and simple exported
+            # subs, like File::Temp, for maximal flexibility and because
+            # I think it would be cool. :-)
             if ( defined $val && $val =~ /(\d+)([kKmMgGtT]?)/) {
                if ( $2 ) {
                   my %digits_for = (

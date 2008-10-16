@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 25;
+use Test::More tests => 26;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -287,5 +287,11 @@ cmp_ok(
    '1',
    "eq_for ft_stopword_file returns 1 for '' and '(built-in)'"
 );
+
+# Check that missing my_print_defaults causes the obj to die
+eval {
+   $myi->_vars_from_defaults_file('', 'my_print_defaults_foozed');
+};
+like($EVAL_ERROR, qr/Cannot execute my_print_defaults command/, 'Dies if my_print_defaults cannot be executed');
 
 exit;
