@@ -137,6 +137,9 @@ Progress calculations:
 
 Make visual-explain tell which columns are used in the index.
 
+Show the difference between query plans.  Some type of explain diff.  EXPLAIN
+EXTENDED can help catch things like differing charsets, too.
+
 Query formatter/pretty printer
 
 timestamp column names: (updat|insert|delet|creat)ed
