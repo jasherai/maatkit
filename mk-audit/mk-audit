@@ -1777,7 +1777,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2415
+# MySQLInstance package 2429
 # ###########################################################################
 
 package MySQLInstance;
@@ -1998,7 +1998,17 @@ sub _load_default_defaults_files {
 }
 
 sub _vars_from_defaults_file {
-   my ( $self, $defaults_file_op ) = @_;
+   my ( $self, $defaults_file_op, $my_print_defaults ) = @_;
+
+   my $my_print_defaults_cmd = $my_print_defaults || 'my_print_defaults';
+   my $retval = system("$my_print_defaults_cmd --help 1>/dev/null 2>/dev/null");
+   $retval = $retval >> 8;
+   if ( $retval != 0 ) {
+      my $self_dump = Dumper($self);
+      MKDEBUG && _d("$self_dump");
+      die "Cannot execute my_print_defaults command '$my_print_defaults_cmd'";
+   }
+
    my @defaults_file_ops;
    my @ddf_ops;
 
@@ -2023,8 +2033,8 @@ sub _vars_from_defaults_file {
    }
 
    foreach my $defaults_file_op ( @defaults_file_ops ) {
-      my $cmd = "my_print_defaults $defaults_file_op mysqld";
-      MKDEBUG && _d("$cmd");
+      my $cmd = "$my_print_defaults_cmd $defaults_file_op mysqld";
+      MKDEBUG && _d("my_print_defaults cmd: $cmd");
       if ( my $my_print_defaults_output = `$cmd` ) {
          foreach my $var_val ( split "\n", $my_print_defaults_output ) {
             my ( $var, $val ) = $var_val =~ m/^--$option_pattern/o;
@@ -2548,6 +2558,125 @@ sub have_priv {
 # ###########################################################################
 
 # ###########################################################################
+# Transformers package 2368
+# ###########################################################################
+
+# Transformers - Common transformation and beautification subroutines
+package Transformers;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+require Exporter;
+our @ISA         = qw(Exporter);
+our %EXPORT_TAGS = ();
+our @EXPORT      = ();
+our @EXPORT_OK   = qw(float_6 micro_t secs_to_time shorten ts);
+
+sub float_6 {
+   my ( $val ) = @_;
+   return sprintf('%.6f', $val);
+}
+
+sub micro_t {
+   my ( $t ) = @_;
+   my $f;
+
+   $t = 0 if $t < 0;
+
+   # "Remove" scientific notation so the regex below does not make
+   # 6.123456e+18 into 6.123456.
+   $t = sprintf('%.17f', $t) if $t =~ /e/;
+
+   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
+   # because sprintf() rounds.
+   $t =~ s/\.(\d{1,6})\d*/\.$1/;
+
+   if ($t > 0 && $t <= 0.000999) {
+      $f = ($t * 1000000) . ' us';
+   }
+   elsif ($t >= 0.001000 && $t <= 0.999999) {
+      $f = sprintf('%.3f', $t * 1000);
+      $f = ($f * 1) . ' ms'; # * 1 to remove insignificant zeros
+   }
+   elsif ($t >= 1) {
+      $f = sprintf('%.6f', $t);
+      $f = ($f * 1) . ' s'; # * 1 to remove insignificant zeros
+   }
+   else {
+      $f = 0;  # $t should = 0 at this point
+   }
+
+   return $f;
+}
+
+sub secs_to_time {
+   my ( $secs, $fmt ) = @_;
+   $secs ||= 0;
+   return '00:00' unless $secs;
+
+   # Decide what format to use, if not given
+   $fmt ||= $secs >= 86_400 ? 'd'
+          : $secs >= 3_600  ? 'h'
+          :                   'm';
+
+   return
+      $fmt eq 'd' ? sprintf(
+         "%d+%02d:%02d:%02d",
+         int($secs / 86_400),
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : $fmt eq 'h' ? sprintf(
+         "%02d:%02d:%02d",
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : sprintf(
+         "%02d:%02d",
+         int(($secs % 3_600) / 60),
+         $secs % 60);
+}
+
+sub shorten {
+   my ( $num ) = @_;
+   my $n = 0;
+   while ( $num >= 1_024 ) {
+      $num /= 1_024;
+      ++$n;
+   }
+   return sprintf(
+      $num =~ m/\./ || $n
+         ? "%.2f%s"
+         : '%d',
+      $num, ('','k','M','G', 'T')[$n]);
+}
+
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# Transformers:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Transformers package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
@@ -2562,13 +2691,13 @@ $Data::Dumper::Sortkeys  = 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-my %opts;
-
 my $dp = new DSNParser();
 my $vp = new VersionParser;
 my $md = new MySQLDump;
 my $qt = new Quoter;
 my $tp = new TableParser;
+
+Transformers->import( qw(micro_t shorten secs_to_time) );
 
 # ############################################################################
 # Get configuration information.
@@ -2576,10 +2705,9 @@ my $tp = new TableParser;
 
 my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
-
 $opt_parser->{prompt} = '<options>';
 $opt_parser->{descr}  = 'inspects, analyzes and reports on a MySQL server.';
-%opts = $opt_parser->parse();
+my %opts = $opt_parser->parse();
 $dp->prop('setvars', $opts{setvars});
 $opt_parser->usage_or_errors(%opts);
 
@@ -2672,76 +2800,9 @@ if ( $n == 0 ) {
 
 exit;
 
-# ############################################################################
+# #############################################################################
 # Subroutines.
-# ############################################################################
-sub shorten
-{
-   my ( $number, $kb, $d ) = @_;
-   
-   my $n = 0;
-   my $short;
-
-   $kb ||= 1;
-   $d  ||= 2;
-
-   if ( $kb ) {
-      while ( $number > 1_023 ) { $number /= 1_024; $n++; }
-   }
-   else {
-      while ($number > 999) { $number /= 1000; $n++; }
-   }
-   $short = sprintf "%.${d}f%s", $number, ('','k','M','G','T')[$n];
-   return $1 if $short =~ /^(.+)\.(00)$/o; # 12.00 -> 12 but not 12.00k -> 12k
-
-   return $short;
-}
-
-sub sec_to_dhms # Seconds to days hours:minutes:seconds
-{
-   my $s = shift;
-   my ($d, $h, $m) = (0, 0, 0);
-
-   return '0 0:0:0' if $s <= 0;
-
-   if($s >= 86400) {
-      $d = int $s / 86400;
-      $s -= $d * 86400;
-   }
-   if($s >= 3600) {
-      $h = int $s / 3600;
-      $s -= $h * 3600;
-   }
-   $m = int $s / 60;
-   $s -= $m * 60;
-
-   return "$d $h:$m:$s";
-}
-
-# Beautify long_query_time:
-# 0.000000 - 0.000999 = 0 - 999 us
-# 0.001000 - 0.999999 = 1 ms - 999.999 ms
-# 1.000000 - n.nnnnnn = 1 s - n.nnnnn s
-sub format_u_time {
-   my ( $t ) = @_;
-   my $f;  # formatted u time
-   my $WIN = ($^O eq 'MSWin32' ? 1 : 0);
-   my $u = chr(($WIN ? 230 : 181));
-   $t = 0 if $t < 0;
-   if ($t > 0 && $t <= 0.000999) {
-      $f = ($t * 1000000) . " $u";
-   }
-   elsif ($t >= 0.001000 && $t <= 0.999999) {
-      $f = ($t * 1000) . ' ms';
-   }
-   elsif ($t >= 1) {
-      $f = ($t * 1) . ' s';  # * 1 to remove insignificant zeros
-   }
-   else {
-      $f = 0;  # $t should = 0 at this point
-   }
-   return $f;
-}
+# #############################################################################
 
 sub report_server_specs {
    my ( $server ) = @_;
@@ -2831,7 +2892,7 @@ $inst_num
    Version:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Architecture: @<-bit
 $instance->{online_sys_vars}->{version}, $instance->{regsize}
    Uptime:   @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-sec_to_dhms($instance->{status_vals}->{Uptime})
+secs_to_time($instance->{status_vals}->{Uptime})
    ps vals:  user @<<<<<<< cpu% @<<<<< rss @<<<<<< vsz @<<<<<< syslog: @<<
 $mysqld_ps->{user}, $mysqld_ps->{pcpu}, shorten($mysqld_ps->{rss} * 1024), shorten($mysqld_ps->{vsz} * 1024), $mysqld_ps->{syslog}
    Bin:      @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -2850,7 +2911,7 @@ $instance->{conf_sys_vars}->{log_error} || ''
       Relay:  @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $instance->{conf_sys_vars}->{relay_log} || ''
       Slow:   @<<<<<< @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-format_u_time($instance->{online_sys_vars}->{long_query_time}), $instance->{conf_sys_vars}->{log_slow_queries} || 'OFF'
+micro_t($instance->{online_sys_vars}->{long_query_time}), $instance->{conf_sys_vars}->{log_slow_queries} || 'OFF'
    Config file location: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $instance->{cmd_line_ops}->{defaults_file}
 
