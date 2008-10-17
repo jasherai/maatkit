@@ -3067,6 +3067,9 @@ if ( $opts{'check-slave-lag'} ) {
 #       ...
 #    ],
 #    ...
+# TODO: this is not desirable if there is any issue (error in mysql, problem in
+# our code).  We should get each table and checksum it.  SEE TODO 0xdeadbeef
+# below.
 my %tables_to_checksum;
 
 # ############################################################################
@@ -3075,8 +3078,9 @@ my %tables_to_checksum;
 # the entire script but checksum only the inconsistent tables found here.
 # ############################################################################
 if ( defined $opts{replcheck} ) {
-   my $callback = $opts{recheck} ? \&save_inconsistent_tbls
-      : \&print_inconsistent_tbls;
+   my $callback = $opts{recheck}
+                ? \&save_inconsistent_tbls
+                : \&print_inconsistent_tbls;
    $ms->recurse_to_slaves(
       {  dbh        => $main_dbh,
          dsn        => $hosts[0],
@@ -3109,19 +3113,15 @@ if ( $checksum_table_data ) {
    ( $strat, $crc_wid, $crc_type, $func, $opt_slice )
       = @$strat_ref{ qw(strat crc_wid crc_type func opt_slice) };
 
-   if ( MKDEBUG ) {
-      my $strat_dump = Dumper($strat_ref);
-      _d("Checksum strat: $strat_dump");
-   }
+   MKDEBUG && _d("Checksum strat: ", Dumper($strat_ref));
 
    # Verify that CONCAT_WS is compatible across all servers. On older versions
    # of MySQL it skips both empty strings and NULL; on newer just NULL.
-   verify_checksum_compat(\@hosts) if ( $opts{v} && @hosts > 1 );
+   if ( $opts{v} && @hosts > 1 ) {
+      verify_checksum_compat(\@hosts);
+   }
 
-   # Check for existence and privileges on the replication table before
-   # starting, and prepare the statements that will be used to update it.
-   # Also clean out the checksum table.
-   check_repl_table($main_dbh) if $opts{R};
+   check_repl_table($main_dbh, %opts);
 }
 else {
    $crc_wid = 16; # Wider than the widest CRC32.
@@ -3179,6 +3179,9 @@ elsif ( $opts{resume} ) {
 # Get table info for all hosts, all slaves, unless we're in the special
 # "repl-re-check" mode in which case %tables_to_checksum has already the
 # inconsistent tables that we need to re-checksum.
+# TODO: this is not desirable if there is any issue (error in mysql, problem in
+# our code).  We should get each table and checksum it.  SEE TODO 0xdeadbeef
+# above.
 get_all_tbls_info($main_dbh) unless ( $opts{replcheck} && $opts{recheck} );
 
 # Finally, do the magick: checksum the tables.
@@ -3188,7 +3191,6 @@ foreach my $database ( keys %tables_to_checksum ) {
 }
 
 exit $exit_status;
-
 
 # ############################################################################
 # Subroutines
@@ -3316,6 +3318,7 @@ sub checksum_tables {
          or die "Cannot print: $OS_ERROR";
    }
 
+   # TODO: are we still inside an eval{} here, or is an error a fatal now?
    # NOTE: remember, you can't 'next TABLE' inside the eval{}.
    # NOTE: remember to use the final_opts options embedded within each $table,
    #       not %opts.
@@ -3741,8 +3744,15 @@ sub verify_checksum_compat {
    return;
 }
 
+# Check for existence and privileges on the replication table before
+# starting, and prepare the statements that will be used to update it.
+# Also clean out the checksum table.  And create it if needed.
 sub check_repl_table {
-   my ( $dbh ) = @_;
+   my ( $dbh, %opts ) = @_;
+
+   # $opts{R} is the --replicate table.
+   return unless $opts{R};
+
    # Tests that a) the table exists b) we have permissions needed
    my $sql = "REPLACE INTO $opts{R} SELECT * FROM $opts{R} LIMIT 0";
    MKDEBUG && _d($dbh, $sql);
