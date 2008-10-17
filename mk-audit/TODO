@@ -30,6 +30,7 @@ The following items are unimplemented at this time:
          * old-style replication options -- show an alert
          * alert if non-standard my.cnf location
          * show size of slow log
+         * look for incorrectly rotated slow / error logs with lsof
          * show read/write percentage (number of queries, and number of rows
            from Handler)
          * Alert if the version is really old, or end-of-life.  3.x and 4.x are
@@ -126,6 +127,8 @@ The following items are unimplemented at this time:
      deleting binlogs manually and that will screw up MySQL, warn about that.
    * Look for authenticating connections, extract the hostname, try to reverse
      lookup the DNS
+   * what is the "thread recycle rate"?  e.g. if there are 100 connections, and
+     one connection per second, then avg connection lives 100 secs.
    * Advise to use skip-name-resolve regardless...
    * tmp_table_size larger than max_heap_table_size is probably a mistake
    * look for innoDB free space vs. real space on disk to figure out how much is
