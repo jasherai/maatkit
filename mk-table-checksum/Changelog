@@ -1,5 +1,7 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2008-10-17: version 1.2.0
+
    * Added --recheck (issue 69).
    * Added --ignorecols (issue 94).
    * Added --createreplicate (issue 77).

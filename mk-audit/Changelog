@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+2008-10-17: version 0.9.3
+
    * mk-audit died if no /etc/*release file existed (issue 62).
    * mk-audit complained if it could not execute dmidecode (issue 62).
    * mk-audit died if user didn't have privs to SHOW PROCESSLIST (issue 60).
