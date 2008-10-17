@@ -5451,8 +5451,11 @@ If L<"--wait"> is given, the master (source) is locked and then the tool waits
 for the slave to catch up to the master before continuing.
 
 If L<"--transaction"> is specified, C<LOCK TABLES> is not used.  Instead, lock
-and unlock are implemented by beginning and committing transactions.  The exception
-is if L<"--lock"> is 3.
+and unlock are implemented by beginning and committing transactions.
+The exception is if L<"--lock"> is 3.
+
+If --notransaction is specified, then C<LOCK TABLES> is used for any
+value of L<"--lock">. See also L<"--transaction">.
 
 =item --nouseindex
 
@@ -5612,6 +5615,10 @@ UPDATE>, you must specify --transaction explicitly.
 If you don't specify --transaction explicitly, C<mk-table-sync> will decide on
 a per-table basis whether to use transactions or table locks.  It currently
 uses transactions on InnoDB tables, and table locks on all others.
+
+If --notransaction is specified, then C<mk-table-sync> will not use
+transactions at all (not even for InnoDB tables) and locking is controlled
+by L<"--lock">.
 
 =item --trim
 
