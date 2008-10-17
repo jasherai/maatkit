@@ -27,6 +27,7 @@ The following items are unimplemented at this time:
       * for each instance, do:
          * run mysqld --help --verbose and make sure config file is valid
          * --log-warnings being defined is cause for an alert
+         * old-style replication options -- show an alert
          * alert if non-standard my.cnf location
          * show size of slow log
          * show read/write percentage (number of queries, and number of rows
@@ -84,6 +85,7 @@ The following items are unimplemented at this time:
          * innodb has a lot more allocated memory than buffer pool + add'l pool
            example: Total memory allocated 16835145778; in additional pool
            allocated 536870912 Buffer pool size   262144
+         * Issue 1908 has an excellent example of lots of mutex crap
          * Watch prepared statements and compare to max
          * Set some limits how big things can be, so we don't do like SELECT
            FROM INFORMATION_SCHEMA.TABLES on a server with a billion tables and
