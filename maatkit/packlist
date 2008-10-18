@@ -1,6 +1,6 @@
    $Revision$
 mk-archiver 1.0.11
-mk-audit 0.9.2
+mk-audit 0.9.3
 mk-deadlock-logger 1.0.12
 mk-duplicate-key-checker 1.1.8
 mk-find 0.9.13
@@ -14,6 +14,6 @@ mk-slave-find 1.0.3
 mk-slave-move 0.9.3
 mk-slave-prefetch 1.0.4
 mk-slave-restart 1.0.9
-mk-table-checksum 1.1.29
-mk-table-sync 1.0.9
-mk-visual-explain 1.0.10
+mk-table-checksum 1.2.0
+mk-table-sync 1.0.10
+mk-visual-explain 1.0.11
