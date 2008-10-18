@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 30;
+use Test::More tests => 34;
 use DBI;
 
 my $output;
@@ -208,12 +208,38 @@ my $output2 = `/tmp/12345/use -D test2 -e 'SELECT * FROM messages'`;
 is($output, $output2, 'test2.messages matches test.messages (issue 22)');
 
 # #############################################################################
+# Issue 79: mk-table-sync with --replicate doesn't honor --tables
+# #############################################################################
+
+# The previous test should have left test.messages on the slave (12346)
+# out of sync. Now we also unsync test2 on the slave and then re-sync only
+# it. If --tables is honored, only test2 on the slave will be synced.
+diag(`/tmp/12345/use -D test -e "SET SQL_LOG_BIN=0; INSERT INTO test2 VALUES (1,'a'),(2,'b')"`);
+diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.1,P=12345 -d test > /dev/null`);
+
+# Test that what the doc says about --tables is true:
+# "Table names may be qualified with the database name."
+# In the code, a qualified db.tbl name is used.
+# So we'll test first an unqualified tbl name.
+$output = `../mk-table-sync h=127.1,P=12345 -R test.checksum -x -d test -t test2 -v`;
+unlike($output, qr/messages/, '--replicate honors --tables (1/4)');
+like($output,   qr/test2/,    '--replicate honors --tables (2/4)');
+
+# Now we'll test with a qualified db.tbl name.
+diag(`/tmp/12346/use -D test -e "TRUNCATE TABLE test2; TRUNCATE TABLE messages"`);
+diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.1,P=12345 -d test > /dev/null`);
+
+$output = `../mk-table-sync h=127.1,P=12345 -R test.checksum -x -d test -t test.test2 -v`;
+unlike($output, qr/messages/, '--replicate honors --tables (3/4)');
+like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
+
+# #############################################################################
 # Issue 11: Possible infinite loop in mk-table-sync
 # #############################################################################
 
 # We'll reuse the test.messages table.
+# This issue is a work in progress.
 
-
-# diag(`../../sandbox/stop_all`);
+diag(`../../sandbox/stop_all`);
 exit;
 

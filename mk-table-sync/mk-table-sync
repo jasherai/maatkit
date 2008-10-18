@@ -4724,6 +4724,7 @@ elsif ( $opts{R} ) {
 
          lock_server(%args);
          foreach my $diff ( @diffs ) {
+            next if !tbl_permitted($diff->{db}, $diff->{tbl});
             sync_a_table(
                %args,
                src_db     => $diff->{db},
@@ -4781,6 +4782,7 @@ elsif ( $opts{R} ) {
                   }
                   lock_server(%args);
                   foreach my $diff ( @diffs ) {
+                     next if !tbl_permitted($diff->{db}, $diff->{tbl});
                      sync_a_table(
                         %args,
                         src_db     => $diff->{db},
@@ -5094,6 +5096,23 @@ sub check_tables_for_triggers {
 
    }
 
+   return 0;
+}
+
+sub tbl_permitted {
+   my ( $db, $tbl ) = @_;
+   
+   # Any tbl is permitted if --tables wasn't given.
+   return 1 if !$opts{t}; 
+   
+   # Exact match: --tables has qualified db.tbl names.
+   return 1 if $opts{t}->{"$db.$tbl"};
+
+   # Try to match tbl for any db.
+   return 1 if $opts{t}->{$tbl};
+
+   # Else, table is not permitted.
+   MKDEBUG && _d("Table not permitted by --tables: $db.$tbl");
    return 0;
 }
 
