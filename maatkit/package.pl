@@ -10,7 +10,7 @@ use File::Basename;
 print `svn up ../../`;
 
 # Don't release if there are any uncommitted changes in the source.
-chomp ( my $svnst = `svn st ../../` );
+chomp ( my $svnst = `svn st ../` );
 if ( $svnst =~ m/\S/ ) {
    print "Not releasing; you have uncommitted changes:\n$svnst\n";
    exit(1);
