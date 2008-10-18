@@ -1,4 +1,4 @@
-dist: test
+dist:
 	./package.pl
 
 all: dist debian
