@@ -1,3 +1,6 @@
+If binlog-do-db is set, checksumming won't work in some databases.  Same for
+binlog-ignore-db.  is it possible to make it stay in one DB?
+
 Draw a histogram of various types of things in the slow log.  For example, 
 show the long tail of count of query fingerprints, lock time, exec time, etc.
 
