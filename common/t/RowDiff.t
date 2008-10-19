@@ -54,15 +54,20 @@ package main;
 
 my $tests;
 BEGIN {
-   $tests = 18;
+   $tests = 19;
 }
 
 use Test::More tests => $tests;
 use English qw(-no_match_vars);
 use DBI;
 
-require "../RowDiff.pm";
-require "../MockSth.pm";
+require '../RowDiff.pm';
+require '../MockSth.pm';
+require '../Sandbox.pm';
+require '../DSNParser.pm';
+require '../TableParser.pm';
+require '../MySQLDump.pm';
+require '../Quoter.pm';
 
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
@@ -293,3 +298,44 @@ SKIP: {
       'Identical with utf8 columns',
    );
 };
+
+# #############################################################################
+
+diag(`../../sandbox/stop_all`);
+diag(`../../sandbox/make_sandbox 12345`);
+diag(`../../sandbox/make_slave   12346`);
+
+my $q  = new Quoter();
+my $du = new MySQLDump();
+my $tp = new TableParser();
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp');
+
+my $master_dbh = $sb->get_dbh_for('master', $dp);
+my $slave_dbh  = $sb->get_dbh_for('slave1', $dp);
+
+`/tmp/12345/use -e 'CREATE DATABASE test'`;
+
+$sb->exec_file_on('samples/issue_11.sql', 'master');
+
+my $tbl = $tp->parse(
+   $du->get_create_table($master_dbh, $q, 'test', 'issue_11'));
+
+my $left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
+my $right_sth = $master_dbh->prepare('SELECT * FROM test.issue_11');
+
+$s = new MockSync();
+$d->compare_sets(
+   left  => $left_sth,
+   right => $right_sth,
+   syncer => $s,
+   tbl => $tbl,
+);
+is_deeply(
+   $s,
+   ['done',],
+   'no rows (real DBI sth)',
+);
+
+diag(`../../sandbox/stop_all`);
+exit;
