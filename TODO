@@ -1,3 +1,7 @@
+mk-log-parser, print out CRC32 of signature, plus some info about the
+query.  This can be used to (for example) make it easy to track performance over
+time, or shove things via email into ticketing systems.
+
 If binlog-do-db is set, checksumming won't work in some databases.  Same for
 binlog-ignore-db.  is it possible to make it stay in one DB?
 
