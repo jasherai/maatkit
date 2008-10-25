@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+   * Finds OS version for Debian or Debian-based distributions (issue 106).
+
 2008-10-17: version 0.9.3
 
    * mk-audit died if no /etc/*release file existed (issue 62).
