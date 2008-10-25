@@ -316,6 +316,10 @@ sub _os_version {
          $version = $rel;
       }
    }
+   elsif ( -r '/etc/debian_version' ) {
+      chomp(my $rel = `cat /etc/debian_version`);
+      $version = "Debian (or Debian-based) $rel";
+   }
    elsif ( MKDEBUG ) {
       _d('No OS version info because no /etc/*release exists');
    }
