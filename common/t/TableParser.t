@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 19;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -486,3 +486,36 @@ SKIP: {
 
    is($p->table_exists($dbh, 'sakila', 'foo', $q), '0', 'table_exists returns false when the table does not exist');
 }
+
+# #############################################################################
+# Issue 109: Test schema changes in 5.1
+# #############################################################################
+sub cmp_ddls {
+   my ( $desc, $v1, $v2 ) = @_;
+
+   $t = $p->parse( load_file($v1) );
+   my $t2 = $p->parse( load_file($v2) );
+
+   # The defs for each will differ due to string case: 'default' vs. 'DEFAULT'.
+   # Everything else should be identical, though. So we'll chop out the defs,
+   # compare them later, and check the rest first.
+   my %defs  = %{$t->{defs}};
+   my %defs2 = %{$t2->{defs}};
+   $t->{defs}  = ();
+   $t2->{defs} = ();
+   is_deeply($t, $t2, "$desc SHOW CREATE parse identically");
+
+   my $defstr  = '';
+   my $defstr2 = '';
+   foreach my $col ( keys %defs ) {
+      $defstr  .= lc $defs{$col};
+      $defstr2 .= lc $defs2{$col};
+   }
+   is($defstr, $defstr2, "$desc defs are identical (except for case)");
+
+   return;
+}
+
+cmp_ddls('v5.0 vs. v5.1', 'samples/issue_109-01-v50.sql', 'samples/issue_109-01-v51.sql');
+
+exit;
