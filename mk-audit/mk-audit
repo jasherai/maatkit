@@ -1431,7 +1431,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# ServerSpecs package 2426
+# ServerSpecs package 2447
 # ###########################################################################
 
 package ServerSpecs;
@@ -1717,6 +1717,10 @@ sub _os_version {
       else {
          $version = $rel;
       }
+   }
+   elsif ( -r '/etc/debian_version' ) {
+      chomp(my $rel = `cat /etc/debian_version`);
+      $version = "Debian (or Debian-based) $rel";
    }
    elsif ( MKDEBUG ) {
       _d('No OS version info because no /etc/*release exists');
@@ -2561,7 +2565,6 @@ sub have_priv {
 # Transformers package 2368
 # ###########################################################################
 
-# Transformers - Common transformation and beautification subroutines
 package Transformers;
 
 use strict;
@@ -2587,12 +2590,8 @@ sub micro_t {
 
    $t = 0 if $t < 0;
 
-   # "Remove" scientific notation so the regex below does not make
-   # 6.123456e+18 into 6.123456.
    $t = sprintf('%.17f', $t) if $t =~ /e/;
 
-   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
-   # because sprintf() rounds.
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
@@ -2618,7 +2617,6 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
-   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
