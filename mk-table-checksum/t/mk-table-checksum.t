@@ -213,13 +213,16 @@ my @opt_combos = ( # --schema and
    '--wait=1000',
    '--where="id > 1000"',
 );
-# TODO: my pipework here sometimes chokes. I don't know why but random
-# runs of this loop will freeze with awk | diff appearing to do nothing.
+
+`touch /tmp/mktc.out`;
 foreach my $opt_combo ( @opt_combos ) {
-   $cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema $opt_combo | awk '{print \$1,\$2,\$7}' | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
+   `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12348 --schema $opt_combo | awk '{print \$1,\$2,\$7}' > /tmp/mktc.out`;
+   $cmd = "diff ./samples/sample_schema_opt /tmp/mktc.out 2>&1 > /dev/null";
    $ret_val = system($cmd);
    cmp_ok($ret_val, '==', 0, "--schema $opt_combo");
 }
+`rm -rf /tmp/mktc.out`;
+
 # I awk the output to just 3 key columns because I found the full
 # output is not stable due to the TIME column: occasionally it will
 # show 1 instead of 0 and diff barfs. These 3 columns should be stable.
