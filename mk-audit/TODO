@@ -73,7 +73,8 @@ The following items are unimplemented at this time:
             * look for this error in SHOW TABLE STATUS: Unable to open
               underlying table
          * partitioned tables
-            * count of partitioned tables
+            * count of partitioned tables; this can be seen in Create_options in
+              show table status, or from i_s tables, or create table
             * look for partitioned tables that don't have many future partitions:
               ) ENGINE=InnoDB DEFAULT CHARSET=latin1 /*!50100 PARTITION BY RANGE
               (YEAR(day)) (PARTITION p_2006 VALUES LESS THAN (2007) ENGINE = InnoDB,
