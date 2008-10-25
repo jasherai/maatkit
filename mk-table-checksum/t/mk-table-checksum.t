@@ -194,7 +194,6 @@ cmp_ok($ret_val, '==', 0, 'Only option --schema');
 my @opt_combos = ( # --schema and
    '--algorithm=BIT_XOR',
    '--algorithm=ACCUM',
-   '--checksum',
    '--chunksize=1M',
    '--count',
    '--crc',
@@ -397,6 +396,13 @@ like($output, qr/CHECKSUM\n00000006B6BDB8E6\n00000006B6BDB8E6/, 'Checksum ok wit
 
 $output = `../mk-table-checksum -d test -t issue_94 h=127.1,P=12345 P=12348 -a ACCUM --ignorecols c | awk '{print \$7}'`;
 like($output, qr/CHECKSUM\n000000066094F8AA\n000000066094F8AA/, 'Checksum ok with ignored column (issue 94 2/2)');
+
+# #############################################################################
+#
+# #############################################################################
+
+$output = `../mk-table-checksum --checksum h=127.1,P=12345 --schema`;
+unlike($output, qr/DATABASE\s+TABLE/, '--checksum in --schema mode prints terse output');
 
 diag(`../../sandbox/stop_all`);
 exit;

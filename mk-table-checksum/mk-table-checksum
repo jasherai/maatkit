@@ -4890,7 +4890,7 @@ timestamps are different from ordinary values.
 Checksum C<SHOW CREATE TABLE> intead of table data.
 
 This option disables most other options since it does not require access to
-table data. Only the following options allowed with --schema: L<"--askpass">, L<"--databases">, L<"--defaults-file">, L<"--engine">, L<"--explain">, L<"--explainhosts">, L<"--ignoredb">, L<"--ignoreengine">, L<"--ignoretbl">, L<"--password">, L<"--port">, L<"--quiet">, L<"--setvars">, L<"--socket">, L<"--tab">, L<"--tables">, L<"--user">.
+table data. Only the following options allowed with --schema: L<"--askpass">, L<"--checksum">, L<"--databases">, L<"--defaults-file">, L<"--engine">, L<"--explain">, L<"--explainhosts">, L<"--ignoredb">, L<"--ignoreengine">, L<"--ignoretbl">, L<"--password">, L<"--port">, L<"--quiet">, L<"--setvars">, L<"--socket">, L<"--tab">, L<"--tables">, L<"--user">.
 
 =item --separator
 
