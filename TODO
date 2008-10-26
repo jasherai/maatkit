@@ -1,3 +1,5 @@
+mk-table-sync should say it's not syncing if you don't say --execute
+
 mk-log-parser, print out CRC32 of signature, plus some info about the
 query.  This can be used to (for example) make it easy to track performance over
 time, or shove things via email into ticketing systems.
