@@ -625,7 +625,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2215
+# DSNParser package 2460
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -711,35 +711,50 @@ sub parse {
    MKDEBUG && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
-   my %vals;
+   my %given_props;
+   my %final_props;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
-      MKDEBUG && _d("Interpreting $dsn as $p=$dsn");
-      $dsn = "$p=$dsn";
+   my $prop_autokey = $self->prop('autokey');
+
+   foreach my $dsn_part ( split(/,/, $dsn) ) {
+      if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
+         $given_props{$prop_key} = $prop_val;
+      }
+      elsif ( $prop_autokey ) {
+         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         $given_props{$prop_autokey} = $dsn_part;
+      }
+      else {
+         MKDEBUG && _d("Bad DSN part: $dsn_part");
+      }
    }
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+
    foreach my $key ( keys %opts ) {
       MKDEBUG && _d("Finding value for $key");
-      $vals{$key} = $hash{$key};
-      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-         $vals{$key} = $prev->{$key};
+      $final_props{$key} = $given_props{$key};
+      if (   !defined $final_props{$key}
+           && defined $prev->{$key} && $opts{$key}->{copy} )
+      {
+         $final_props{$key} = $prev->{$key};
          MKDEBUG && _d("Copying value for $key from previous DSN");
       }
-      if ( !defined $vals{$key} ) {
-         $vals{$key} = $defaults->{$key};
+      if ( !defined $final_props{$key} ) {
+         $final_props{$key} = $defaults->{$key};
          MKDEBUG && _d("Copying value for $key from defaults");
       }
    }
-   foreach my $key ( keys %hash ) {
+
+   foreach my $key ( keys %given_props ) {
       die "Unrecognized DSN part '$key' in '$dsn'\n"
          unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
       }
    }
-   return \%vals;
+
+   return \%final_props;
 }
 
 sub as_string {
@@ -1014,7 +1029,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2291
+# TableParser package 2382
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1195,6 +1210,15 @@ sub find_possible_keys {
       MKDEBUG && _d('No keys in possible_keys');
       return ();
    }
+}
+
+sub table_exists {
+   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
+   my $sql = 'SELECT * FROM ' . $quoter->quote($db, $tbl) . ' LIMIT 0';
+   my $href;
+   eval { $href = $dbh->selectrow_hashref($sql) };
+   return 0 if $EVAL_ERROR;
+   return 1;
 }
 
 sub _d {
@@ -1843,7 +1867,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 2364
+# TableChunker package 2401
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2196,8 +2220,9 @@ sub range_timestamp {
 
 sub timestampdiff {
    my ( $self, $dbh, $time ) = @_;
-   my $sql = "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+   my $sql = "SELECT (COALESCE(TO_DAYS('$time'), 0) * 86400 + TIME_TO_SEC('$time')) "
       . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
+   MKDEBUG && _d($sql);
    my ( $diff ) = $dbh->selectrow_array($sql);
    $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
    MKDEBUG && _d($sql);
@@ -2223,7 +2248,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 2283
+# TableChecksum package 2403
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2433,7 +2458,11 @@ sub make_row_checksum {
    $sep =~ s/'//g;
    $sep ||= '#';
 
-   my %cols = map { lc($_) => 1 } ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
+   my %ignorecols = map { $_ => 1 } @{$args{ignorecols}};
+
+   my %cols = map { lc($_) => 1 }
+              grep { !exists $ignorecols{$_} }
+              ($args{cols} ? @{$args{cols}} : @{$table->{cols}});
    my @cols =
       map {
          my $type = $table->{type_for}->{$_};
@@ -3971,7 +4000,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 2215
+# MasterSlave package 2405
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -4498,6 +4527,12 @@ sub repl_posn {
          position => $status->{exec_master_log_pos},
       };
    }
+}
+
+sub get_slave_lag {
+   my ( $self, $dbh ) = @_;
+   my $stat = $self->get_slave_status($dbh);
+   return $stat->{seconds_behind_master};
 }
 
 sub pos_cmp {

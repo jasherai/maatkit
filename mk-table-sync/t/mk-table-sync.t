@@ -234,11 +234,19 @@ unlike($output, qr/messages/, '--replicate honors --tables (3/4)');
 like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
 
 # #############################################################################
+# Issue 96: mk-table-sync: Nibbler infinite loop
+# #############################################################################
+# This is a work in progress.
+# diag(`/tmp/12345/use -D test < samples/issue_96.sql`);
+# sleep 1;
+# diag(`/tmp/12345/use -D test -e "DELETE FROM issue_96 WHERE 1 LIMIT 5"`);
+# $output = `../mk-table-sync h=127.1,P=12345 P=12346 -a Nibble --chunksize 2 -x`;
+
+# #############################################################################
 # Issue 11: Possible infinite loop in mk-table-sync
 # #############################################################################
-
+# This issue is a work in progress, too.
 # We'll reuse the test.messages table.
-# This issue is a work in progress.
 
 diag(`../../sandbox/stop_all`);
 exit;
