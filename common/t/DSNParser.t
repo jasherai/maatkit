@@ -149,6 +149,22 @@ is_deeply(
    'DSN with autokey'
 );
 
+$p->prop('autokey', 'h');
+is_deeply(
+   $p->parse('localhost,A=utf8'),
+   {  u => undef,
+      p => undef,
+      S => undef,
+      h => 'localhost',
+      P => undef,
+      F => undef,
+      D => undef,
+      t => undef,
+      A => 'utf8',
+   },
+   'DSN with an explicit key and an autokey',
+);
+
 is_deeply(
    $p->parse('automatic',
       { D => 'foo', h => 'me', p => 'b' },
@@ -218,16 +234,20 @@ is_deeply (
 
 # Make sure we can connect to MySQL with a charset
 my $d = $p->parse('h=127.0.0.1,A=utf8');
-my $dbh = $p->get_dbh($p->get_cxn_params($d), {});
-ok($dbh, 'Got a connection');
+my $dbh;
+eval {
+   $dbh = $p->get_dbh($p->get_cxn_params($d), {});
+};
+SKIP: {
+   skip 'Cannot connect to MySQL', 4 if $EVAL_ERROR;
 
-$p->fill_in_dsn($dbh, $d);
-is($d->{P}, 3306, 'Filled in port');
-is($d->{u}, 'baron', 'Filled in username');
-is($d->{S}, '/var/run/mysqld/mysqld.sock', 'filled in socket');
-is($d->{h}, '127.0.0.1', 'left hostname alone');
-
-$p->disconnect($dbh);
+   $p->fill_in_dsn($dbh, $d);
+   is($d->{P}, 3306, 'Filled in port');
+   is($d->{u}, 'baron', 'Filled in username');
+   is($d->{S}, '/var/run/mysqld/mysqld.sock', 'filled in socket');
+   is($d->{h}, '127.0.0.1', 'left hostname alone');
+   $p->disconnect($dbh);
+}
 
 $p->prop('dbidriver', 'Pg');
 is_deeply (
