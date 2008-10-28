@@ -176,10 +176,11 @@ sub find_mysqld_binary_unix {
 
 sub load_sys_vars {
    my ( $self, $dbh ) = @_;
-   
+
    # Sys vars and defaults according to mysqld
    my ( $defaults_file_op, $tmp_file ) = $self->_defaults_file_op();
    my $cmd = "$self->{mysqld_binary} $defaults_file_op --help --verbose";
+   MKDEBUG && _d("Getting sys vars from mysqld: $cmd");
    if ( my $mysqld_output = `$cmd` ) {
       # Parse from mysqld output the list of sys vars and their default values
       # listed at the end after all the help info.
@@ -204,6 +205,13 @@ sub load_sys_vars {
       # my_print_defaults will print false duplicates because it reads
       # the same file twice.
       $self->_load_default_defaults_files($mysqld_output);
+   }
+   else {
+      # This really should not happen. We know by this point that mysqld
+      # is running (it's in ps), yet now it apparently won't run?
+      # Maybe $cmd is broken, possibly a bad return val from
+      # _defaults_file_op().
+      die "Failed to get system variable values from mysqld by running $cmd";
    }
 
    # Sys vars from SHOW STATUS
