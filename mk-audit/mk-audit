@@ -1781,7 +1781,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2456
+# MySQLInstance package 2458
 # ###########################################################################
 
 package MySQLInstance;
@@ -1929,9 +1929,10 @@ sub find_mysqld_binary_unix {
 
 sub load_sys_vars {
    my ( $self, $dbh ) = @_;
-   
+
    my ( $defaults_file_op, $tmp_file ) = $self->_defaults_file_op();
    my $cmd = "$self->{mysqld_binary} $defaults_file_op --help --verbose";
+   MKDEBUG && _d("Getting sys vars from mysqld: $cmd");
    if ( my $mysqld_output = `$cmd` ) {
       my ($sys_vars) = $mysqld_output =~ m/---\n(.*?)\n\n/ms;
       %{ $self->{conf_sys_vars} }
@@ -1948,6 +1949,9 @@ sub load_sys_vars {
            } split "\n", $sys_vars;
 
       $self->_load_default_defaults_files($mysqld_output);
+   }
+   else {
+      die "Failed to get system variable values from mysqld by running $cmd";
    }
 
    $self->_load_online_sys_vars($dbh);
