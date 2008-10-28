@@ -267,7 +267,7 @@ sub _load_default_defaults_files {
    if ( !$ddf_list ) {
       die "Cannot parse default defaults files: $mysqld_output\n";
    }
-   MKDEBUG && _d("Parsed default defaults files: $mysqld_output\n");
+   MKDEBUG && _d("Parsed default defaults files: $ddf_list\n");
    my %have_seen;
    @{ $self->{default_defaults_files} }
       = grep { !$have_seen{$_}++ } split /\s/, $ddf_list;
