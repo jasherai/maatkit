@@ -57,6 +57,10 @@ The following items are unimplemented at this time:
               they can be timestamp instead.  'ts', 'created_at', 'last_updated'
             * Try to find ip adress columns that are stored as varchar (again,
               naming convention).  Names I've seen: ip
+            * Alert if there are columns in different tables with the same name
+              and different data types.  See email 25020 on Percona issue id
+              1881 for an example, but don't do an information_schema query to
+              find this out.
             * For each table with an auto-inc PK and a timestamp, try to guess
                how many rows/day it grows, both overall and more recently, by
                splitting up and getting the timestamps at various points in th
