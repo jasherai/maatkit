@@ -1,4 +1,4 @@
-# This program is copyright 2008 Percona Inc.
+# This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -30,7 +30,7 @@ use List::Util qw(max);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # These check subs return 0 if the check passes or a string describing what
-# failed.  If a check can't be tested (e.g. no Innodb_ status values), return 0.
+# failed. If a check can't be tested (e.g. no Innodb_ status values), return 0.
 my %checks = (
    innodb_flush_method =>
       sub {
@@ -75,7 +75,7 @@ my %checks = (
          if ( exists $sys_vars->{query_cache_type} ) {
             if (    $sys_vars->{query_cache_type} eq 'ON'
                  && $sys_vars->{query_cache_size} == 0) {
-               return "Query cache enabled but size zero";
+               return "Query caching is enabled but query_cache_size is zero";
             }
          }
          return 0;
@@ -94,7 +94,7 @@ my %checks = (
       sub {
          my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          if ( !exists $sys_vars->{skip_name_resolve} ) {
-            return "skip-name-resolve not set";
+            return "skip-name-resolve is not set";
          }
          return 0;
       },
@@ -106,7 +106,7 @@ my %checks = (
                > max($counts->{engines}->{MyISAM}->{data_size}, 33554432); # 32M
          return 0;
       },
-   'InnoDB buffer too large' =>
+   'InnoDB buffer pool too small' =>
       sub {
          my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          if (    exists $sys_vars->{innodb_buffer_pool_size} 
