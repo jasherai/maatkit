@@ -3358,9 +3358,8 @@ sub checksum_tables {
          # Choose the column to apply --since to.  It may not be the column the
          # user said to use!  If the user didn't specify a column that's good to
          # chunk on, we'll use something else instead.
-         my $sincecol;
          if ( $final_opts->{since} && $do_table ) {
-            ( $sincecol ) =
+            my ( $sincecol ) =
                grep { $_ && $table->{struct}->{is_col}->{$_} }
                ($table->{column}, $final_opts->{sincecolumn});
             if ( $sincecol ) {
@@ -3404,7 +3403,7 @@ sub checksum_tables {
 
          # Save the --since value if there is a place to save it.
          if ( $final_opts->{savesince} && $savesince_sth
-            && ( !$sincecol || defined $table->{maxval} )) # See issue 122
+            && ( !$do_table || defined $table->{maxval} )) # See issue 122
          {
             MKDEBUG && _d("Saving --since value: ", $table->{maxval},
                ' for ', $database, ' ', $table->{table});
