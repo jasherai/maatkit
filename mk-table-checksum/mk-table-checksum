@@ -4446,8 +4446,6 @@ type: string
 Pause checksumming each chunk until the specified DSN's slave lag is less than
 L<"--maxlag">.
 
-TODO: isn't there a DSN type for the magical option?
-
 =item --chunksize
 
 short form: -C; type: string
