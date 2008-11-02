@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -14,18 +14,18 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
-# ###########################################################################
+# #############################################################################
 # MySQLFind package $Revision$
-# ###########################################################################
+# #############################################################################
+package MySQLFind;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLFind;
-
+use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -60,13 +60,13 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #      },
 #   );
 
-use English qw(-no_match_vars);
-
 sub new {
    my ( $class, %args ) = @_;
-   my $self = bless \%args, $class;
-   map { die "I need a $_ argument" unless defined $args{$_} } qw(dumper quoter);
+   foreach my $arg ( qw(dumper quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    die "Do not pass me a dbh argument" if $args{dbh};
+   my $self = bless \%args, $class;
    $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
    if ( $args{useddl} ) {
       MKDEBUG && _d('Will prefer DDL');

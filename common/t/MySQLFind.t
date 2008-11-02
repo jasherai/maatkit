@@ -33,35 +33,24 @@ require "../MySQLFind.pm";
 require "../Quoter.pm";
 require "../TableParser.pm";
 require "../MySQLDump.pm";
+require "../DSNParser.pm";
+require "../Sandbox.pm";
 
 my $f;
-my $q = new Quoter();
-my $p = new TableParser();
-my $d = new MySQLDump();
+my $q  = new Quoter();
+my $p  = new TableParser();
+my $d  = new MySQLDump();
+my $dp = new DSNParser();
 my %found;
-my @setup_dbs = qw(lost+found information_schema
-   test_mysql_finder_1 test_mysql_finder_2);
-my %existing_dbs;
+my @setup_dbs = qw(
+   lost+found
+   test_mysql_finder_1
+   test_mysql_finder_2
+);
 
-# Open a connection to MySQL, or skip the rest of the tests.
-my $dbh;
-eval {
-   $dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
-   { PrintError => 0, RaiseError => 1 })
-};
-SKIP: {
-   skip 'Cannot connect to MySQL', $tests if $EVAL_ERROR;
-
-   # Setup
-   %existing_dbs = map { $_ => 1 }
-      @{$dbh->selectcol_arrayref('SHOW DATABASES')};
-   foreach my $db ( @setup_dbs ) {
-      eval {
-         $dbh->do("CREATE DATABASE IF NOT EXISTS `$db`");
-      };
-      die $EVAL_ERROR if $EVAL_ERROR && $EVAL_ERROR !~ m/Access denied/;
-   }
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
+$sb->create_dbs($dbh, \@setup_dbs, drop_if_exists => 1, no_repl => 1 );
 
    $f = new MySQLFind(
       quoter    => $q,
@@ -474,14 +463,10 @@ SKIP: {
       'age newer than 1 sec with nullpass',
    );
 
-   foreach my $db ( @setup_dbs ) {
-      if (!exists $existing_dbs{$db} ) {
-         $dbh->do("drop database " . $q->quote($db));
-      }
-   }
-
-}
+$sb->restore_sandbox();
 
 # skip views
 # apply list-o-engines
 # apply ignore-these-engines
+
+exit;

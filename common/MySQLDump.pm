@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -14,17 +14,17 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
-# ###########################################################################
+# #############################################################################
 # MySQLDump package $Revision$
-# ###########################################################################
+# #############################################################################
+package MySQLDump;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLDump;
+use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
-
-use English qw(-no_match_vars);
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -314,6 +314,6 @@ sub _d {
 
 1;
 
-# ###########################################################################
+# #############################################################################
 # End MySQLDump package
-# ###########################################################################
+# #############################################################################
