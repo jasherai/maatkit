@@ -4437,17 +4437,16 @@ concatenated with dots.
 
 type: time; default: 1s
 
-How often to check for slave lag.
-
-See L<"--check-slave-lag">.
+How often to check for slave lag if L<"--check-slave-lag"> is given.
 
 =item --check-slave-lag
 
 type: string
 
-Check this DSN for slave lag between each chunk.
+Pause checksumming each chunk until the specified DSN's slave lag is less than
+L<"--maxlag">.
 
-Don't checksum unless the lag is less than L<"--maxlag">.
+TODO: isn't there a DSN type for the magical option?
 
 =item --chunksize
 
@@ -4627,13 +4626,26 @@ keep this lock until the checksums complete on the other servers.
 This option isn't very useful by itself, so you probably want to use L<"--wait">
 instead.
 
+Note: if you're checksumming a slave against its master, you should use
+L<--replicate>.  In that case, there's no need for locking, waiting, or any of
+that.
+
 =item --maxlag
 
 type: time; default: 1s
 
-Suspend checksumming if the slave given by L<"--check-slave"> lags.
+Suspend checksumming if the slave given by L<"--check-slave-lag"> lags.
 
-TODO.
+This option causes mk-table-checksum to look at the slave every time it's about
+to checksum a chunk.  If the slave's lag is greater than the option's value, or
+if the slave isn't running (so its lag is NULL), mk-table-checksum sleeps for
+L<"--check-interval"> seconds and then looks at the lag again.  It repeats until
+the slave is caught up, then proceeds to checksum the chunk.
+
+This option is useful to let you checksum data as fast as the slaves can handle
+it, assuming the slave you directed mk-table-checksum to monitor is
+representative of all the slaves that may be replicating from this server.  It
+should eliminate the need for L<"--sleep"> or L<"--sleep-coef">.
 
 =item --modulo
 
@@ -4736,7 +4748,7 @@ Do not print checksum results.
 
 =item --recheck
 
-Re-checksum inconsistent columns found during L<"--replcheck">.
+Re-checksum chunks that L<"--replcheck"> found to be different.
 
 =item --replcheck
 
@@ -4890,13 +4902,16 @@ timestamps are different from ordinary values.
 Checksum C<SHOW CREATE TABLE> intead of table data.
 
 This option disables most other options since it does not require access to
-table data. Only the following options allowed with --schema: L<"--askpass">, L<"--checksum">, L<"--databases">, L<"--defaults-file">, L<"--engine">, L<"--explain">, L<"--explainhosts">, L<"--ignoredb">, L<"--ignoreengine">, L<"--ignoretbl">, L<"--password">, L<"--port">, L<"--quiet">, L<"--setvars">, L<"--socket">, L<"--tab">, L<"--tables">, L<"--user">.
+table data. Only the following options are allowed with --schema: L<"--askpass">, L<"--checksum">, L<"--databases">, L<"--defaults-file">, L<"--engine">, L<"--explain">, L<"--explainhosts">, L<"--ignoredb">, L<"--ignoreengine">, L<"--ignoretbl">, L<"--password">, L<"--port">, L<"--quiet">, L<"--setvars">, L<"--socket">, L<"--tab">, L<"--tables">, L<"--user">.
 
 =item --separator
 
 short form: -s; type: string; default: #
 
 The separator character used for CONCAT_WS().
+
+This character is used to join the values of columns when checksumming with
+L<"--algorithm"> of BIT_XOR or ACCUM.
 
 =item --setvars
 
@@ -4961,6 +4976,9 @@ non-blocking checksum, and you know your slaves might lag the master.  You can
 inspect the results and make an educated guess whether any discrepancies on the
 slave are due to slave lag instead of corrupt data.
 
+If you're using L<"--replicate">, slave lag is a non-issue and you don't need to
+worry about this.
+
 =item --sleep
 
 type: int
@@ -4971,6 +4989,9 @@ If this option is specified, mk-table-checksum will sleep the specified
 number of seconds between checksums.  That is, it will sleep between every
 table, and if you specify L<"--chunksize">, it will also sleep between chunks.
 
+This is a very crude way to throttle checksumming; see L<"--sleep-coef"> and
+L<"--check-slave-lag">.
+
 =item --sleep-coef
 
 type: float
@@ -4980,6 +5001,11 @@ Calculate L<"--sleep"> as a multiple of the last checksum time.
 If this option is specified, mk-table-checksum will sleep the amount of
 time elapsed during the previous checksum, multiplied by the specified
 coefficient.  This option is ignored if L<"--sleep"> is specified.
+
+This is a slightly more sophisticated way to throttle checksum speed: sleep a
+varying amount of time between chunks, depending on how long the chunks are
+taking.  Even better is to use L<"--check-slave-lag"> if you're checksumming
+master/slave replication.
 
 =item --socket
 
@@ -5041,6 +5067,11 @@ short form: -w; type: time
 
 Wait this long for slaves to catch up to their master (implies L<"--lock">
 L<"--slavelag">).
+
+Note: the best way to verify that a slave is in sync with its master is to use
+L<"--replicate"> instead.  The L<"--wait"> option is really only useful if
+you're trying to compare masters and slaves without using L<"--replicate">,
+which is possible but complex and less efficient in some ways.
 
 This option helps you get a consistent checksum across a master server and its
 slaves.  It combines locking and waiting to accomplish this.  First it locks the
