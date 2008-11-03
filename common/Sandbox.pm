@@ -49,27 +49,26 @@ sub create_dbs {
    my ( $self, $dbh, $dbs, %args ) = @_;
    die 'I need a dbh' if !$dbh;
    return if ( !ref $dbs || scalar @$dbs == 0 );
+   my %default_args = (
+      repl => 1,
+      drop => 1,
+   );
+   %args = ( %default_args, %args );
+
+   $dbh->do('SET SQL_LOG_BIN=0') unless $args{repl};
 
    foreach my $db ( @$dbs ) {
-      if ( exists $args{no_repl} && $args{no_repl} ) {
-         $dbh->do('SET SQL_LOG_BIN=0');
-      }
-      if ( exists $args{drop_if_exists} && $args{drop_if_exists} ) {
-         $dbh->do("DROP DATABASE IF EXISTS `$db`");
-      }
+      $dbh->do("DROP DATABASE IF EXISTS `$db`") if $args{drop};
 
       my $sql = "CREATE DATABASE `$db`";
       eval {
          $dbh->do($sql);
       };
       die $EVAL_ERROR if $EVAL_ERROR;
-
-      if ( exists $args{no_repl} && $args{no_repl} ) {
-         $dbh->do('SET SQL_LOG_BIN=1');
-      }
-
-      $self->_record_action(undef, $dbh, $sql, "DROP DATABASE `$db`");
    }
+
+   $dbh->do('SET SQL_LOG_BIN=1') unless $args{repl};
+
    return;
 }
    
@@ -82,8 +81,8 @@ sub get_dbh_for {
    return $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 }
 
-sub exec_file_on {
-   my ( $self, $file, $server ) = @_;
+sub load_file {
+   my ( $self, $server, $file ) = @_;
    _check_server($server);
    if ( !-f $file ) {
       die "$file is not a file";
@@ -114,33 +113,13 @@ sub _check_server {
    return;
 }
 
-sub _record_action {
-   my ( $self, $server, $dbh, $action, $undo ) = @_;
-   push @{ $self->{actions} },
-      {
-         server => $server,
-         dbh    => $dbh,
-         action => $action,
-         undo   => $undo,
-      };
-   return;
-}
-
-sub restore_sandbox {
-   my ( $self ) = @_;
-   foreach my $action ( @{ $self->{actions} } ) {
-      next if !defined $action->{undo};
-      if ( defined $action->{dbh} ) {
-         MKDEBUG && _d("Undoing $action->{action} by doing $action->{undo}");
-         eval {
-            $action->{dbh}->do($action->{undo});
-         };
-         if ( $EVAL_ERROR && MKDEBUG ) {
-            _d("Undo failed: $EVAL_ERROR");
-         }
-      }
+sub wipe_clean {
+   my ( $self, $dbh ) = @_;
+   foreach my $db ( @{$dbh->selectcol_arrayref('SHOW DATABASES')} ) {
+      next if $db eq 'mysql';
+      next if $db eq 'information_schema';
+      $dbh->do("DROP DATABASE `$db`");
    }
-   @{ $self->{actions} } = ();
    return;
 }
 

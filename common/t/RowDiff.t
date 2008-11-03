@@ -77,6 +77,18 @@ sub throws_ok {
 
 my ( $d, $s );
 
+
+my $q  = new Quoter();
+my $du = new MySQLDump();
+my $tp = new TableParser();
+my $dp = new DSNParser();
+
+# Connect to sandbox now to make sure it's running.
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $master_dbh = $sb->get_dbh_for('master');
+my $slave_dbh  = $sb->get_dbh_for('slave1');
+
+
 throws_ok( sub { new RowDiff() }, qr/I need a dbh/, 'DBH required' );
 $d = new RowDiff(dbh => 1);
 
@@ -264,59 +276,36 @@ is_deeply(
    'Identical with numeric columns',
 );
 
-# Open a connection to MySQL, or skip the rest of the tests.
-my $dbh;
-eval {
-   $dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
-   { PrintError => 0, RaiseError => 1 })
-};
-SKIP: {
-   skip 'Cannot connect to MySQL', 1 if $EVAL_ERROR;
-
-   $d = new RowDiff(dbh => $dbh);
-   $s = new MockSync();
-   $d->compare_sets(
-      left => new MockSth(
-         { a => 'A', b => 2, c => 3 },
-      ),
-      right => new MockSth(
-         # The difference is the lowercase 'a', which in a _ci collation will
-         # sort the same.  So the rows are really identical, from MySQL's point
-         # of view.
-         { a => 'a', b => 2, c => 3 },
-      ),
-      syncer => $s,
-      tbl => { collation_for => { a => 'utf8_general_ci' } },
-   );
-   is_deeply(
-      $s,
-      [
-         'same',
-         'done',
-      ],
-      'Identical with utf8 columns',
-   );
-};
+$d = new RowDiff(dbh => $master_dbh);
+$s = new MockSync();
+$d->compare_sets(
+   left => new MockSth(
+      { a => 'A', b => 2, c => 3 },
+   ),
+   right => new MockSth(
+      # The difference is the lowercase 'a', which in a _ci collation will
+      # sort the same.  So the rows are really identical, from MySQL's point
+      # of view.
+      { a => 'a', b => 2, c => 3 },
+   ),
+   syncer => $s,
+   tbl => { collation_for => { a => 'utf8_general_ci' } },
+);
+is_deeply(
+   $s,
+   [
+      'same',
+      'done',
+   ],
+   'Identical with utf8 columns',
+);
 
 # #############################################################################
+# The following tests use "real" (sandbox) servers and real statement handles.
+# #############################################################################
 
-diag(`../../sandbox/stop_all`);
-diag(`../../sandbox/make_sandbox 12345`);
-diag(`../../sandbox/make_slave   12346`);
-
-my $q  = new Quoter();
-my $du = new MySQLDump();
-my $tp = new TableParser();
-my $dp = new DSNParser();
-my $sb = new Sandbox(basedir => '/tmp');
-
-my $master_dbh = $sb->get_dbh_for('master', $dp);
-my $slave_dbh  = $sb->get_dbh_for('slave1', $dp);
-
-`/tmp/12345/use -e 'CREATE DATABASE test'`;
-
-$sb->exec_file_on('samples/issue_11.sql', 'master');
+$sb->create_dbs($master_dbh, [qw(test)]);
+$sb->load_file('master', 'samples/issue_11.sql');
 
 my $tbl = $tp->parse(
    $du->get_create_table($master_dbh, $q, 'test', 'issue_11'));
@@ -337,5 +326,6 @@ is_deeply(
    'no rows (real DBI sth)',
 );
 
-diag(`../../sandbox/stop_all`);
+$sb->wipe_clean($master_dbh);
+$sb->wipe_clean($slave_dbh);
 exit;

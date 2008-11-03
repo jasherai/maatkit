@@ -19,12 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-my $tests;
-BEGIN {
-   $tests = 39;
-}
-
-use Test::More tests => $tests;
+use Test::More tests => 39;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use DBI;
@@ -37,433 +32,440 @@ require "../DSNParser.pm";
 require "../Sandbox.pm";
 
 my $f;
+my %found;
 my $q  = new Quoter();
 my $p  = new TableParser();
 my $d  = new MySQLDump();
 my $dp = new DSNParser();
-my %found;
-my @setup_dbs = qw(
-   lost+found
-   test_mysql_finder_1
-   test_mysql_finder_2
-);
 
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
-$sb->create_dbs($dbh, \@setup_dbs, drop_if_exists => 1, no_repl => 1 );
 
-   $f = new MySQLFind(
-      quoter    => $q,
-      dumper    => $d,
-   );
+$sb->create_dbs($dbh, [qw(lost+found test_mysql_finder_1 test_mysql_finder_2)],
+   drop => 1, repl => 0);
 
-   %found = map { lc($_) => 1 } $f->find_databases($dbh);
-   ok($found{mysql}, 'mysql database default');
-   ok($found{test_mysql_finder_1}, 'test_mysql_finder_1 database default');
-   ok($found{test_mysql_finder_2}, 'test_mysql_finder_2 database default');
-   ok(!$found{information_schema}, 'I_S filtered out default');
-   ok(!$found{'lost+found'}, 'lost+found filtered out default');
+$f = new MySQLFind(
+   quoter    => $q,
+   dumper    => $d,
+);
 
-   $f = new MySQLFind(
-      quoter    => $q,
-      dumper    => $d,
-      databases => {
-         permit => { test_mysql_finder_1 => 1 },
-      },
-   );
+%found = map { lc($_) => 1 } $f->find_databases($dbh);
+ok($found{mysql}, 'mysql database default');
+ok($found{test_mysql_finder_1}, 'test_mysql_finder_1 database default');
+ok($found{test_mysql_finder_2}, 'test_mysql_finder_2 database default');
+ok(!$found{information_schema}, 'I_S filtered out default');
+ok(!$found{'lost+found'}, 'lost+found filtered out default');
 
-   %found = map { lc($_) => 1 } $f->find_databases($dbh);
-   ok(!$found{mysql}, 'mysql database permit');
-   ok($found{test_mysql_finder_1}, 'test_mysql_finder_1 database permit');
-   ok(!$found{test_mysql_finder_2}, 'test_mysql_finder_2 database permit');
+$f = new MySQLFind(
+   quoter    => $q,
+   dumper    => $d,
+   databases => {
+      permit => { test_mysql_finder_1 => 1 },
+   },
+);
 
-   $f = new MySQLFind(
-      quoter    => $q,
-      dumper    => $d,
-      databases => {
-         reject => { test_mysql_finder_1 => 1 },
-      },
-   );
+%found = map { lc($_) => 1 } $f->find_databases($dbh);
+ok(!$found{mysql}, 'mysql database permit');
+ok($found{test_mysql_finder_1}, 'test_mysql_finder_1 database permit');
+ok(!$found{test_mysql_finder_2}, 'test_mysql_finder_2 database permit');
 
-   %found = map { lc($_) => 1 } $f->find_databases($dbh);
-   ok($found{mysql}, 'mysql database reject');
-   ok(!$found{test_mysql_finder_1}, 'test_mysql_finder_1 database reject');
-   ok($found{test_mysql_finder_2}, 'test_mysql_finder_2 database reject');
+$f = new MySQLFind(
+   quoter    => $q,
+   dumper    => $d,
+   databases => {
+      reject => { test_mysql_finder_1 => 1 },
+   },
+);
 
-   $f = new MySQLFind(
-      quoter    => $q,
-      dumper    => $d,
-      databases => {
-         regexp => 'finder',
-      },
-   );
+%found = map { lc($_) => 1 } $f->find_databases($dbh);
+ok($found{mysql}, 'mysql database reject');
+ok(!$found{test_mysql_finder_1}, 'test_mysql_finder_1 database reject');
+ok($found{test_mysql_finder_2}, 'test_mysql_finder_2 database reject');
 
-   %found = map { lc($_) => 1 } $f->find_databases($dbh);
-   ok(!$found{mysql}, 'mysql database regex');
-   ok($found{test_mysql_finder_1}, 'test_mysql_finder_1 database regex');
-   ok($found{test_mysql_finder_2}, 'test_mysql_finder_2 database regex');
+$f = new MySQLFind(
+   quoter    => $q,
+   dumper    => $d,
+   databases => {
+      regexp => 'finder',
+   },
+);
 
-   $f = new MySQLFind(
-      quoter    => $q,
-      dumper    => $d,
-      databases => {
-         like   => 'test\\_%',
-      },
-   );
+%found = map { lc($_) => 1 } $f->find_databases($dbh);
+ok(!$found{mysql}, 'mysql database regex');
+ok($found{test_mysql_finder_1}, 'test_mysql_finder_1 database regex');
+ok($found{test_mysql_finder_2}, 'test_mysql_finder_2 database regex');
 
-   %found = map { lc($_) => 1 } $f->find_databases($dbh);
-   ok(!$found{mysql}, 'mysql database like');
-   ok($found{test_mysql_finder_1}, 'test_mysql_finder_1 database like');
-   ok($found{test_mysql_finder_2}, 'test_mysql_finder_2 database like');
+$f = new MySQLFind(
+   quoter    => $q,
+   dumper    => $d,
+   databases => {
+      like   => 'test\\_%',
+   },
+);
 
-   # #####################################################################
-   # TABLES.
-   # #####################################################################
+%found = map { lc($_) => 1 } $f->find_databases($dbh);
+ok(!$found{mysql}, 'mysql database like');
+ok($found{test_mysql_finder_1}, 'test_mysql_finder_1 database like');
+ok($found{test_mysql_finder_2}, 'test_mysql_finder_2 database like');
 
-   foreach my $tbl ( 
-      { n => 'a', e => 'MyISAM' },
-      { n => 'b', e => 'MyISAM' },
-      { n => 'c', e => 'MyISAM' },
-      { n => 'aa', e => 'InnoDB' }, ) {
-      $dbh->do("create table if not exists 
-         test_mysql_finder_1.$tbl->{n}(a int) engine=$tbl->{e}");
-      $dbh->do("create table if not exists 
-         test_mysql_finder_2.$tbl->{n}(a int) engine=$tbl->{e}");
+# #####################################################################
+# TABLES.
+# #####################################################################
+
+foreach my $tbl ( { n => 'a', e => 'MyISAM' },
+                  { n => 'b', e => 'MyISAM' },
+                  { n => 'c', e => 'MyISAM' },
+                  { n => 'aa', e => 'InnoDB' }, ) {
+   $dbh->do("create table if not exists 
+      test_mysql_finder_1.$tbl->{n}(a int) engine=$tbl->{e}");
+   $dbh->do("create table if not exists 
+      test_mysql_finder_2.$tbl->{n}(a int) engine=$tbl->{e}");
+}
+$dbh->do("create or replace view test_mysql_finder_1.vw_1 as select 1");
+$dbh->do("create or replace view test_mysql_finder_2.vw_1 as select 1");
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => { },
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      a => 1,
+      b => 1,
+      c => 1,
+      aa => 1,
+      vw_1 => 1,
+   },
+   'table default',
+);
+
+%found = map { $_ => 1 }
+   $f->find_views($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      vw_1 => 1,
+   },
+   'views default',
+);
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => {
+      permit => { a => 1 },
+   },
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      a => 1,
+   },
+   'table permit',
+);
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => {
+      permit => { 'test_mysql_finder_1.a' => 1 },
+   },
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      a => 1,
+   },
+   'table permit fully qualified',
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_2');
+is_deeply(
+   \%found,
+   {
+   },
+   'table not fully qualified in wrong DB',
+);
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => {
+      reject => { a => 1 },
+   },
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      b => 1,
+      c => 1,
+      aa => 1,
+      vw_1 => 1,
+   },
+   'table reject',
+);
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => {
+      reject => { 'test_mysql_finder_1.a' => 1 },
+   },
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      b => 1,
+      c => 1,
+      aa => 1,
+   vw_1 => 1,
+   },
+   'table reject fully qualified',
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_2');
+is_deeply(
+   \%found,
+   {
+      a => 1,
+      b => 1,
+      c => 1,
+      aa => 1,
+      vw_1 => 1,
+   },
+   'table reject fully qualified permits in other DB',
+);
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => {
+      regexp => 'a|b',
+   },
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      a => 1,
+      b => 1,
+      aa => 1,
+   },
+   'table regexp',
+);
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => {
+      like => 'a%',
+   },
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      a => 1,
+      aa => 1,
+   },
+   'table like',
+);
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => {
+   },
+   engines => {
+      views => 0,
    }
-   $dbh->do("create or replace view test_mysql_finder_1.vw_1 as select 1");
-   $dbh->do("create or replace view test_mysql_finder_2.vw_1 as select 1");
+);
 
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-      },
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      a => 1,
+      b => 1,
+      c => 1,
+      aa => 1,
+   },
+   'engine no views',
+);
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => {
+   },
+   engines => {
+      permit => { MyISAM => 1 },
+   }
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      a => 1,
+      b => 1,
+      c => 1,
+   },
+   'engine permit',
+);
+
+$f = new MySQLFind(
+   quoter => $q,
+   dumper => $d,
+   tables => {
+   },
+   engines => {
+      reject => { MyISAM => 1 },
+   }
+);
+
+%found = map { $_ => 1 }
+   $f->find_tables($dbh, database => 'test_mysql_finder_1');
+is_deeply(
+   \%found,
+   {
+      aa => 1,
+      vw_1 => 1,
+   },
+   'engine reject',
+);
+
+# Test that the cache gets populated
+$f = new MySQLFind(
+   useddl => 1,
+   parser => $p,
+   dumper => $d,
+   quoter => $q,
+   tables => {
+   },
+   engines => {
+      reject => { MyISAM => 1 },
+      views  => 0,
+   }
+);
+
+is_deeply(
+   [$f->find_tables($dbh, database => 'test_mysql_finder_1')],
+   [qw(aa)],
+   'engine reject with useddl',
+);
+
+map { ok($d->{tables}->{test_mysql_finder_1}->{$_}, "$_ in cache") }
+   qw(aa a b c);
+
+# Sleep until the MyISAM tables age at least one second
+my $diff;
+do {
+   sleep(1);
+   my $rows = $dbh->selectall_arrayref(
+      'SHOW TABLE STATUS FROM test_mysql_finder_1 like "c"',
+      { Slice => {} },
    );
+   my ( $age ) = map { $_->{Update_time} } grep { $_->{Update_time} } @$rows;
+   ($diff) = $dbh->selectrow_array(
+      "SELECT TIMESTAMPDIFF(second, '$age', now())");
+} until ( $diff > 1 );
 
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         a => 1,
-         b => 1,
-         c => 1,
-         aa => 1,
-         vw_1 => 1,
-      },
-      'table default',
-   );
+# The old info is cached and needs to be flushed.
+$d = new MySQLDump();
 
-   %found = map { $_ => 1 } $f->find_views($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         vw_1 => 1,
-      },
-      'views default',
-   );
+# Test aging with the Update_time.
+$f = new MySQLFind(
+   useddl => 1,
+   parser => $p,
+   dumper => $d,
+   quoter => $q,
+   tables => {
+      status => [
+         { Update_time => '+1' },
+      ],
+   },
+   engines => {
+   }
+);
 
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-         permit => { a => 1 },
-      },
-   );
+is_deeply(
+   [$f->find_tables($dbh, database => 'test_mysql_finder_1')],
+   [qw(a b c)],
+   'age older than 1 sec',
+);
 
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         a => 1,
-      },
-      'table permit',
-   );
+# Test aging with the Update_time, but the other direction.
+$f = new MySQLFind(
+   useddl => 1,
+   parser => $p,
+   dumper => $d,
+   quoter => $q,
+   tables => {
+      status => [
+         { Update_time => '-1' },
+      ],
+   },
+   engines => {
+   }
+);
 
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-         permit => { 'test_mysql_finder_1.a' => 1 },
-      },
-   );
+is_deeply(
+   [$f->find_tables($dbh, database => 'test_mysql_finder_1')],
+   [qw()],
+   'age newer than 1 sec',
+);
 
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         a => 1,
-      },
-      'table permit fully qualified',
-   );
+ok($f->{timestamp}->{$dbh}->{now}, 'Finder timestamp');
 
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_2');
-   is_deeply(
-      \%found,
-      {
-      },
-      'table not fully qualified in wrong DB',
-   );
+# Test aging with the Update_time with nullpass
+$f = new MySQLFind(
+   useddl => 1,
+   parser => $p,
+   dumper => $d,
+   quoter => $q,
+   nullpass => 1,
+   tables => {
+      status => [
+         { Update_time => '-1' },
+      ],
+   },
+   engines => {
+   }
+);
 
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-         reject => { a => 1 },
-      },
-   );
+is_deeply(
+   [$f->find_tables($dbh, database => 'test_mysql_finder_1')],
+   [qw(aa vw_1)],
+   'age newer than 1 sec with nullpass',
+);
 
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         b => 1,
-         c => 1,
-         aa => 1,
-         vw_1 => 1,
-      },
-      'table reject',
-   );
-
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-         reject => { 'test_mysql_finder_1.a' => 1 },
-      },
-   );
-
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         b => 1,
-         c => 1,
-         aa => 1,
-         vw_1 => 1,
-      },
-      'table reject fully qualified',
-   );
-
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_2');
-   is_deeply(
-      \%found,
-      {
-         a => 1,
-         b => 1,
-         c => 1,
-         aa => 1,
-         vw_1 => 1,
-      },
-      'table reject fully qualified permits in other DB',
-   );
-
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-         regexp => 'a|b',
-      },
-   );
-
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         a => 1,
-         b => 1,
-         aa => 1,
-      },
-      'table regexp',
-   );
-
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-         like => 'a%',
-      },
-   );
-
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         a => 1,
-         aa => 1,
-      },
-      'table like',
-   );
-
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-      },
-      engines => {
-         views => 0,
-      }
-   );
-
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         a => 1,
-         b => 1,
-         c => 1,
-         aa => 1,
-      },
-      'engine no views',
-   );
-
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-      },
-      engines => {
-         permit => { MyISAM => 1 },
-      }
-   );
-
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         a => 1,
-         b => 1,
-         c => 1,
-      },
-      'engine permit',
-   );
-
-   $f = new MySQLFind(
-      quoter => $q,
-      dumper => $d,
-      tables => {
-      },
-      engines => {
-         reject => { MyISAM => 1 },
-      }
-   );
-
-   %found = map { $_ => 1 } $f->find_tables($dbh, database => 'test_mysql_finder_1');
-   is_deeply(
-      \%found,
-      {
-         aa => 1,
-         vw_1 => 1,
-      },
-      'engine reject',
-   );
-
-   # Test that the cache gets populated
-   $f = new MySQLFind(
-      useddl => 1,
-      parser => $p,
-      dumper => $d,
-      quoter => $q,
-      tables => {
-      },
-      engines => {
-         reject => { MyISAM => 1 },
-         views  => 0,
-      }
-   );
-
-   is_deeply(
-      [$f->find_tables($dbh, database => 'test_mysql_finder_1')],
-      [qw(aa)],
-      'engine reject with useddl',
-   );
-
-   map {
-      ok($d->{tables}->{test_mysql_finder_1}->{$_}, "$_ in cache")
-   } qw(aa a b c);
-
-   # Sleep until the MyISAM tables age at least one second
-   my $diff;
-   do {
-      sleep(1);
-      my $rows = $dbh->selectall_arrayref(
-         'SHOW TABLE STATUS FROM test_mysql_finder_1 like "c"',
-         { Slice => {} },
-      );
-      my ( $age ) = map { $_->{Update_time} } grep { $_->{Update_time} } @$rows;
-      ($diff) = $dbh->selectrow_array(
-         "SELECT TIMESTAMPDIFF(second, '$age', now())");
-   } until ( $diff > 1 );
-
-   # The old info is cached and needs to be flushed.
-   $d = new MySQLDump();
-
-   # Test aging with the Update_time.
-   $f = new MySQLFind(
-      useddl => 1,
-      parser => $p,
-      dumper => $d,
-      quoter => $q,
-      tables => {
-         status => [
-            { Update_time => '+1' },
-         ],
-      },
-      engines => {
-      }
-   );
-
-   is_deeply(
-      [$f->find_tables($dbh, database => 'test_mysql_finder_1')],
-      [qw(a b c)],
-      'age older than 1 sec',
-   );
-
-   # Test aging with the Update_time, but the other direction.
-   $f = new MySQLFind(
-      useddl => 1,
-      parser => $p,
-      dumper => $d,
-      quoter => $q,
-      tables => {
-         status => [
-            { Update_time => '-1' },
-         ],
-      },
-      engines => {
-      }
-   );
-
-   is_deeply(
-      [$f->find_tables($dbh, database => 'test_mysql_finder_1')],
-      [qw()],
-      'age newer than 1 sec',
-   );
-
-   ok($f->{timestamp}->{$dbh}->{now}, 'Finder timestamp');
-
-   # Test aging with the Update_time with nullpass
-   $f = new MySQLFind(
-      useddl => 1,
-      parser => $p,
-      dumper => $d,
-      quoter => $q,
-      nullpass => 1,
-      tables => {
-         status => [
-            { Update_time => '-1' },
-         ],
-      },
-      engines => {
-      }
-   );
-
-   is_deeply(
-      [$f->find_tables($dbh, database => 'test_mysql_finder_1')],
-      [qw(aa vw_1)],
-      'age newer than 1 sec with nullpass',
-   );
-
-$sb->restore_sandbox();
+$sb->wipe_clean($dbh);
 
 # skip views
 # apply list-o-engines
