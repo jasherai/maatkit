@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 39;
+use Test::More tests => 40;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use DBI;
@@ -41,7 +41,8 @@ my $dp = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 
-$sb->create_dbs($dbh, [qw(lost+found test_mysql_finder_1 test_mysql_finder_2)],
+$sb->create_dbs($dbh,
+   [qw(lost+found test_mysql_finder_1 test_mysql_finder_2)],
    drop => 1, repl => 0);
 
 $f = new MySQLFind(
@@ -465,10 +466,18 @@ is_deeply(
    'age newer than 1 sec with nullpass',
 );
 
-$sb->wipe_clean($dbh);
+# #############################################################################
+# Issue 99: mk-table-checksum should push down table filters as early as
+#           possible
+# Issue 23: Table filtering isn't efficient
+# #############################################################################
+my $output = `MKDEBUG=1 samples/MySQLFind.pl | grep 'SHOW CREATE' | wc -l`;
+chomp $output;
+is($output, '1', 'Does SHOW CREATE only for filtered tables');
 
 # skip views
 # apply list-o-engines
 # apply ignore-these-engines
 
+$sb->wipe_clean($dbh);
 exit;

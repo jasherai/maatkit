@@ -155,7 +155,8 @@ sub _fetch_tbl_list {
    my $need_engine = $self->{engines}->{permit}
         || $self->{engines}->{reject}
         || $self->{engines}->{regexp};
-   my $need_status = $self->{tables}->{status};
+   my $need_status = defined $self->{tables}->{status}
+                     && scalar @{$self->{tables}->{status}};
    if ( $need_status || ($need_engine && !$self->{useddl}) ) {
       my @tables = $self->{dumper}->get_table_status(
          $dbh,
