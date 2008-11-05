@@ -1029,20 +1029,23 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2382
+# TableParser package 2462
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package TableParser;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
+use List::Util qw(min);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   bless {}, shift;
+   my ( $class ) = @_;
+   return bless {}, $class;
 }
+
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -1151,6 +1154,7 @@ sub parse {
 
 sub sort_indexes {
    my ( $self, $tbl ) = @_;
+
    my @indexes
       = sort {
          (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
@@ -1162,6 +1166,7 @@ sub sort_indexes {
          $tbl->{keys}->{$_}->{type} eq 'BTREE'
       }
       sort keys %{$tbl->{keys}};
+   
    MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
    return @indexes;
 }
@@ -1219,6 +1224,178 @@ sub table_exists {
    eval { $href = $dbh->selectrow_hashref($sql) };
    return 0 if $EVAL_ERROR;
    return 1;
+}
+
+sub get_engine {
+   my ( $self, $ddl, $opts ) = @_;
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   return $engine || undef;
+}
+
+sub get_keys {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @indexes = 
+      grep { $_ !~ m/FOREIGN/ }
+      $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
+
+   my $engine = $self->get_engine($ddl);
+   if ( $engine !~ m/MEMORY|HEAP/ ) {
+      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
+   }
+
+   my @keys = map {
+      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
+      $struct = $struct || $special || 'BTREE';
+      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
+
+      if ( $opts->{version} lt '004001000' && $engine =~ m/HEAP|MEMORY/i ) {
+         $struct = 'HASH';
+      }
+
+      {
+         struct   => $struct,
+         cols     => $cols,
+         name     => $name || 'PRIMARY',
+      }
+   } @indexes;
+
+   return \@keys;
+}
+
+sub get_fks {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
+
+   my @result = map {
+      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
+      my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
+      my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
+      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
+      if ( $parent !~ m/\./ ) {
+         $parent = "`$opts->{database}`.$parent";
+      }
+      {  name   => $name,
+         parent => $parent,
+         cols   => $cols,
+         fkcols => $fkcols,
+      };
+   } @fks;
+   return \@result;
+}
+
+sub get_duplicate_keys {
+   my ( $self, $keys, $opts ) = @_;
+   my @keys = @$keys;
+   my %seen; # Avoid outputting a key more than once.
+   my @result;
+
+   foreach my $i ( 0..$#keys - 1 ) {
+      foreach my $j ( $i+1..$#keys ) {
+         my $i_cols        = $keys[$i]->{cols};
+         my $j_cols        = $keys[$j]->{cols};
+         my $type_i_cols   = $keys[$i]->{struct};
+         my $type_j_cols   = $keys[$j]->{struct};
+         my $len_i_cols    = length($i_cols);
+         my $len_j_cols    = length($j_cols);
+         my $min_len       = min($len_i_cols, $len_j_cols);
+         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
+                               && $type_j_cols eq 'FULLTEXT'
+                             ) ? 1 : 0;
+         if ( MKDEBUG ) {
+            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
+               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
+         }
+
+         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
+            $i_cols = join(',', sort(split(/`/, $i_cols)));
+            $j_cols = join(',', sort(split(/`/, $j_cols)));
+         }
+         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
+                || $opts->{ignore_type}
+              )
+              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
+         {
+            if ( $both_FULLTEXT ) {
+               if ( $len_i_cols == $len_j_cols ) {
+                  MKDEBUG && _d("Indexes are DUPLICATES (fulltext)");
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+               }
+               else {
+                  MKDEBUG && _d("Indexes are not duplicates (fulltext)");
+               }
+            }
+            else {
+               MKDEBUG && _d("Indexes are DUPLICATES");
+               push @result, $keys[$i] unless $seen{$i}++;
+               push @result, $keys[$j] unless $seen{$j}++;
+            }
+         }
+         else {
+            MKDEBUG && _d("Indexes are not duplicates");
+         }
+      }
+   }
+
+   if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
+      my $i = 0;
+      my $found = 0;
+      while ( $i < @keys ) {
+         if ( $keys[$i]->{name} eq 'PRIMARY' ) {
+            $found = 1;
+            last;
+         }
+         $i++;
+      }
+      if ( $found ) {
+         my $pkcols = $keys[$i]->{cols};
+         KEY:
+         foreach my $j ( 0..$#keys ) {
+            next KEY if $i == $j;
+            my $suffix = $keys[$j]->{cols};
+            SUFFIX:
+            while ( $suffix =~ s/`[^`]+`,// ) {
+               my $len = min(length($pkcols), length($suffix));
+               if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
+                  && substr($suffix, 0, $len) eq substr($pkcols, 0, $len))
+               {
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+                  last SUFFIX;
+               }
+            }
+         }
+      }
+   }
+
+   return \@result;
+}
+
+sub get_duplicate_fks {
+   my ( $self, $fks, $opts ) = @_;
+   my @fks = @$fks;
+   my %seen; # Avoid outputting a fk more than once.
+   my @result;
+   foreach my $i ( 0..$#fks - 1 ) {
+      foreach my $j ( $i+1..$#fks ) {
+         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
+         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
+         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
+         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
+               && $i_cols eq $j_cols
+               && $i_fkcols eq $j_fkcols
+         ) {
+            push @result, $fks[$i] unless $seen{$i}++;
+            push @result, $fks[$j] unless $seen{$j}++;
+         }
+      }
+   }
+
+   return \@result;
 }
 
 sub _d {
@@ -1366,16 +1543,16 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 2215
+# MySQLDump package 2468
 # ###########################################################################
+package MySQLDump;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLDump;
+use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
-
-use English qw(-no_match_vars);
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -3556,29 +3733,37 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 2215
+# MySQLFind package 2475
 # ###########################################################################
+package MySQLFind;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLFind;
-
+use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 
-use English qw(-no_match_vars);
-
 sub new {
    my ( $class, %args ) = @_;
-   my $self = bless \%args, $class;
-   map { die "I need a $_ argument" unless defined $args{$_} } qw(dumper quoter);
+   foreach my $arg ( qw(dumper quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    die "Do not pass me a dbh argument" if $args{dbh};
-   $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   my $self = bless \%args, $class;
+   $self->{need_engine}
+      = (   $self->{engines}->{permit}
+         || $self->{engines}->{reject}
+         || $self->{engines}->{regexp} ? 1 : 0);
+   die "I need a parser argument"
+      if $self->{need_engine} && !defined $args{parser};
+   MKDEBUG && _d('Need engine: ' , $self->{need_engine} ? 'yes' : 'no');
+   $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
+   $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
    if ( $args{useddl} ) {
       MKDEBUG && _d('Will prefer DDL');
    }
@@ -3606,16 +3791,26 @@ sub find_databases {
 }
 
 sub find_tables {
-   my ( $self, $dbh, %args ) = @_;
-   my $views = $self->{engines}->{views};
-   my @tables 
-      = $self->_filter('engines', sub { $_[0]->{engine} },
-         $self->_filter('tables', sub { $_[0]->{name} },
-            $self->_fetch_tbl_list($dbh, %args)));
-   @tables = grep {
-         ( $views || ($_->{engine} ne 'VIEW') )
-      } @tables;
-   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
+   my ( $self, $dbh, %args ) = @_; 
+
+   my @tables
+      = $self->_filter('tables', sub { $_[0]->{name} },
+         $self->_fetch_tbl_list($dbh, %args));
+
+   if ( $self->{need_engine} ) {
+      foreach my $tbl ( @tables ) {
+         next if $tbl->{engine};
+         my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
+         my $struct = $self->{parser}->parse(
+            $self->{dumper}->get_create_table(
+               $dbh, $self->{quoter}, $args{database}, $tbl_name));
+         $tbl->{engine} = $struct->{engine};
+      }
+      @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
+   }
+
+   map { $_->{name} =~ s/^[^.]*\.// } @tables;
+
    foreach my $crit ( @{$self->{tables}->{status}} ) {
       my ($key, $test) = %$crit;
       @tables
@@ -3623,6 +3818,7 @@ sub find_tables {
             $self->_test_date($_, $key, $test, $dbh)
          } @tables;
    }
+
    return map { $_->{name} } @tables;
 }
 
@@ -3656,46 +3852,37 @@ sub _use_db {
 sub _fetch_tbl_list {
    my ( $self, $dbh, %args ) = @_;
    die "database is required" unless $args{database};
+
    my $curr_db = $self->_use_db($dbh, $args{database});
-   my $need_engine = $self->{engines}->{permit}
-        || $self->{engines}->{reject}
-        || $self->{engines}->{regexp};
-   my $need_status = $self->{tables}->{status};
-   if ( $need_status || ($need_engine && !$self->{useddl}) ) {
-      my @tables = $self->{dumper}->get_table_status(
+
+   my @tables;
+   if ( scalar @{$self->{tables}->{status}} ) {
+      @tables = $self->{dumper}->get_table_status(
          $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
-      @tables = map {
-         my %hash = %$_;
-         $hash{name} = join('.', $args{database}, $hash{name});
-         \%hash;
-      } @tables;
-      return @tables;
    }
    else {
-      my @result;
-      my @tables = $self->{dumper}->get_table_list(
+      @tables = $self->{dumper}->get_table_list(
          $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
-      foreach my $tbl ( @tables ) {
-         if ( $need_engine && !$tbl->{engine} ) {
-            my $struct = $self->{parser}->parse(
-               $self->{dumper}->get_create_table(
-                  $dbh, $self->{quoter}, $args{database}, $tbl->{name}));
-            $tbl->{engine} = $struct->{engine};
-         }
-         push @result,
-         {  name   => join('.', $args{database}, $tbl->{name}),
-            engine => $tbl->{engine},
-         }
-      }
-      return @result;
    }
+
+   @tables = map {
+      my %hash = %$_;
+      $hash{name} = join('.', $args{database}, $hash{name});
+      \%hash;
+   }
+   grep {
+      ( $self->{engines}->{views} || ($_->{engine} ne 'VIEW') )
+   } @tables;
+
    $self->_use_db($dbh, $curr_db);
+
+   return @tables;
 }
 
 sub _filter {
