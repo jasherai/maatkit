@@ -67,7 +67,15 @@ sub new {
    }
    die "Do not pass me a dbh argument" if $args{dbh};
    my $self = bless \%args, $class;
-   $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   $self->{need_engine}
+      = (   $self->{engines}->{permit}
+         || $self->{engines}->{reject}
+         || $self->{engines}->{regexp} ? 1 : 0);
+   die "I need a parser argument"
+      if $self->{need_engine} && !defined $args{parser};
+   MKDEBUG && _d('Need engine: ' , $self->{need_engine} ? 'yes' : 'no');
+   $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
+   $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
    if ( $args{useddl} ) {
       MKDEBUG && _d('Will prefer DDL');
    }
@@ -95,16 +103,32 @@ sub find_databases {
 }
 
 sub find_tables {
-   my ( $self, $dbh, %args ) = @_;
-   my $views = $self->{engines}->{views};
-   my @tables 
-      = $self->_filter('engines', sub { $_[0]->{engine} },
-         $self->_filter('tables', sub { $_[0]->{name} },
-            $self->_fetch_tbl_list($dbh, %args)));
-   @tables = grep {
-         ( $views || ($_->{engine} ne 'VIEW') )
-      } @tables;
-   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
+   my ( $self, $dbh, %args ) = @_; 
+
+   # Get and filter tables by name.
+   my @tables
+      = $self->_filter('tables', sub { $_[0]->{name} },
+         $self->_fetch_tbl_list($dbh, %args));
+
+   # Filter tables by engines if needed.
+   if ( $self->{need_engine} ) {
+      foreach my $tbl ( @tables ) {
+         next if $tbl->{engine};
+         # Strip db from tbl name. The tbl name was qualified with its
+         # db during _fetch_tbl_list() above.
+         my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
+         my $struct = $self->{parser}->parse(
+            $self->{dumper}->get_create_table(
+               $dbh, $self->{quoter}, $args{database}, $tbl_name));
+         $tbl->{engine} = $struct->{engine};
+      }
+      @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
+   }
+
+   # <database>.<table> => <table> 
+   map { $_->{name} =~ s/^[^.]*\.// } @tables;
+
+   # Filter tables by status (if any criteria are defined).
    foreach my $crit ( @{$self->{tables}->{status}} ) {
       my ($key, $test) = %$crit;
       @tables
@@ -113,6 +137,8 @@ sub find_tables {
             $self->_test_date($_, $key, $test, $dbh)
          } @tables;
    }
+
+   # Return list of table names.
    return map { $_->{name} } @tables;
 }
 
@@ -146,52 +172,46 @@ sub _use_db {
 
 # Returns hashrefs in the format SHOW TABLE STATUS would, but doesn't
 # necessarily call SHOW TABLE STATUS unless it needs to.  Hash keys are all
-# lowercase.  Table names are returned as <database>.<table> so fully-qualified
+# lowercase. Table names are returned as <database>.<table> so fully-qualified
 # matching can be done later on the database name.
 sub _fetch_tbl_list {
    my ( $self, $dbh, %args ) = @_;
    die "database is required" unless $args{database};
+
    my $curr_db = $self->_use_db($dbh, $args{database});
-   my $need_engine = $self->{engines}->{permit}
-        || $self->{engines}->{reject}
-        || $self->{engines}->{regexp};
-   my $need_status = defined $self->{tables}->{status}
-                     && scalar @{$self->{tables}->{status}};
-   if ( $need_status || ($need_engine && !$self->{useddl}) ) {
-      my @tables = $self->{dumper}->get_table_status(
+
+   # Get list of table names either with SHOW TABLE STATUS if any status
+   # criteria are defined, else by SHOW TABLES.
+   my @tables;
+   if ( scalar @{$self->{tables}->{status}} ) {
+      @tables = $self->{dumper}->get_table_status(
          $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
-      @tables = map {
-         my %hash = %$_;
-         $hash{name} = join('.', $args{database}, $hash{name});
-         \%hash;
-      } @tables;
-      return @tables;
    }
    else {
-      my @result;
-      my @tables = $self->{dumper}->get_table_list(
+      @tables = $self->{dumper}->get_table_list(
          $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
-      foreach my $tbl ( @tables ) {
-         if ( $need_engine && !$tbl->{engine} ) {
-            my $struct = $self->{parser}->parse(
-               $self->{dumper}->get_create_table(
-                  $dbh, $self->{quoter}, $args{database}, $tbl->{name}));
-            $tbl->{engine} = $struct->{engine};
-         }
-         push @result,
-         {  name   => join('.', $args{database}, $tbl->{name}),
-            engine => $tbl->{engine},
-         }
-      }
-      return @result;
    }
+
+   # 2) map:  Qualify tables with their database.
+   # 1) grep: Remove views if needed.
+   @tables = map {
+      my %hash = %$_;
+      $hash{name} = join('.', $args{database}, $hash{name});
+      \%hash;
+   }
+   grep {
+      ( $self->{engines}->{views} || ($_->{engine} ne 'VIEW') )
+   } @tables;
+
    $self->_use_db($dbh, $curr_db);
+
+   return @tables;
 }
 
 sub _filter {

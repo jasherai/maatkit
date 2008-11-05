@@ -321,6 +321,7 @@ is_deeply(
 $f = new MySQLFind(
    quoter => $q,
    dumper => $d,
+   parser => $p,
    tables => {
    },
    engines => {
@@ -343,6 +344,7 @@ is_deeply(
 $f = new MySQLFind(
    quoter => $q,
    dumper => $d,
+   parser => $p,
    tables => {
    },
    engines => {
