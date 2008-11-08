@@ -41,14 +41,14 @@ create table argtest2 (
 
 create table blackhole(a int)engine=blackhole;
 
-insert into argtest select 'test', 'checksum_test', current_date;
+insert into argtest select 'test', 'checksum_test', '1';
 insert into argtest select 'test', 'argtest', 'current_date-interval 30 day';
 insert into argtest select 'test', 'chunk', '1';
 
 insert into argtest2 select 'test', 'chunk', '1', 2;
 
 create table fl_test(a float not null primary key, b double);
--- CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so';
+CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so';
 DROP TABLE IF EXISTS `chunk`;
 CREATE TABLE `chunk` (
   `film_id` smallint(5) unsigned NOT NULL auto_increment,

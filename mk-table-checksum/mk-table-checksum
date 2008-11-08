@@ -3336,13 +3336,18 @@ sub checksum_tables {
             $main_dbh->do($del_sql, {}, $database, $table->{table});
          }
 
-         # If --since is given, figure out which column to use.  Use either the
-         # specified column (--sincecolumn) or the auto-discovered one,
-         # whichever exists in the table, in that order.
+         # If --since is given, figure out either
+         # 1) for temporal sinces, if the table has an update time and that
+         #    time is newer than --since, then checksum the whole table,
+         #    otherwise skip it; or
+         # 2) for "numerical" sinces, which column to use: either the
+         #    specified column (--sincecolumn) or the auto-discovered one,
+         #    whichever exists in the table, in that order.
+         # Then, if --savesince is given, save either 1) the current timestamp
+         # or 2) the resulting WHERE clause.
          if ( $final_opts->{since} ) {
-            # If the --since argument is a date/timeish value, skip the whole
-            # table unless it has been modified or created since then.
             if ( is_temporal($final_opts->{since}) ) {
+               MKDEBUG && _d('--since is temporal');
                my ( $stat )
                   = $du->get_table_status($dbh, $q, $database, $table->{table});
                my $time = $stat->{update_time};
@@ -3353,20 +3358,31 @@ sub checksum_tables {
                   $table->{chunks} = [];
                }
             }
-         }
+            else {
+               MKDEBUG && _d('--since is numerical');
+               # For numerical sinces, choose the column to apply --since to.
+               # It may not be the column the user said to use! If the user
+               # didn't specify a column that's good to chunk on, we'll use
+               # something else instead.
 
-         # Choose the column to apply --since to.  It may not be the column the
-         # user said to use!  If the user didn't specify a column that's good to
-         # chunk on, we'll use something else instead.
-         if ( $final_opts->{since} && $do_table ) {
-            my ( $sincecol ) =
-               grep { $_ && $table->{struct}->{is_col}->{$_} }
-               ($table->{column}, $final_opts->{sincecolumn});
-            if ( $sincecol ) {
-               MKDEBUG && _d("Column for --since: $database.$table->{table}.$sincecol");
-               # This ends up being an additional WHERE clause.
-               $table->{since} = $q->quote($sincecol)
-                  . '>=' .  $q->quote_val($final_opts->{since});
+               # $table->{column} is the first chunkable column returned from
+               # the call to get_first_chunkable_column() in
+               # save_tbl_to_checksum().
+               my ( $sincecol ) =
+                  grep { $_ && $table->{struct}->{is_col}->{$_} }
+                     ( $table->{column}, $final_opts->{sincecolumn} );
+
+               if ( $sincecol ) {
+                  MKDEBUG && _d('Column for numerical --since: '
+                     . "$database.$table->{table}.$sincecol");
+                  # This ends up being an additional WHERE clause.
+                  $table->{since} = $q->quote($sincecol)
+                     . '>=' .  $q->quote_val($final_opts->{since});
+               }
+               else {
+                  MKDEBUG && _d('No column for numerical --since for '
+                     . "$database.$table->{table}");
+               }
             }
          }
 
@@ -3401,14 +3417,25 @@ sub checksum_tables {
          checksum_chunks(
             $database, $table, $hosts, $query, $hdr, $explain, $final_opts);
 
-         # Save the --since value if there is a place to save it.
-         if ( $final_opts->{savesince} && $savesince_sth
-            && ( !$do_table || defined $table->{maxval} )) # See issue 122
-         {
-            MKDEBUG && _d("Saving --since value: ", $table->{maxval},
-               ' for ', $database, ' ', $table->{table});
-            $savesince_sth->execute($table->{maxval},
-               $database, $table->{table});
+         # Save the --since value if
+         #    1) it's temporal and the tbl had changed since --since; or
+         #    2) it's "numerical" and it had a chunkable or nibble-able
+         #       column and it wasn't empty
+         # See issues 121 and 122.
+         if ( $final_opts->{savesince} && $savesince_sth ) {
+            if ( ( is_temporal($final_opts->{since}) && $do_table )
+                 || defined $table->{maxval} ) {
+               MKDEBUG && _d("Saving --since value: ",
+                  $table->{maxval}, " for $database.$table->{table}");
+
+               # TODO: document the magick that happens here.
+               $savesince_sth->execute($table->{maxval},
+                  $database, $table->{table});
+            }
+            else {
+               MKDEBUG && _d("Cannot save --since value: ",
+                  $table->{maxval}, " for $database.$table->{table}");
+            }
          }
       };
       if ( $EVAL_ERROR ) {

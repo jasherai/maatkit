@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 90;
+use Test::More tests => 93;
 use List::Util qw(sum);
 
 require '../../common/DSNParser.pm';
@@ -13,6 +13,8 @@ my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
 my $master_dbh = $sb->get_dbh_for('master');
 my $slave_dbh  = $sb->get_dbh_for('slave1');
+
+eval { $master_dbh->do('DROP FUNCTION test.fnv_64'); };
 
 # If this fails, you need to build the fnv_64 UDF and copy it to /lib
 $sb->load_file('master', 'samples/before.sql');
@@ -88,11 +90,11 @@ like($output, qr/377366820/, 'Checksum with --schema' );
 $output = `MKDEBUG=1 $cmd --since '"2008-01-01" - interval 1 day' --explain 2>&1 | grep 2007`;
 like($output, qr/2007-12-31/, '--since is calculated as an expression');
 
-# Check --since with --argtest.  The value (current_date) in the --argtest table
+# Check --since with --argtest. The value in the --argtest table
 # ought to override the --since passed on the command-line.
-$output = `$cmd --argtable test.argtest --since '"2008-01-01" - interval 1 day' --explain 2>&1`;
-unlike($output, qr/2008-01-01/, 'Argtest overridden');
-like($output, qr/`a`>='\d{4}-/, 'Argtest set to something else');
+$output = `$cmd --argtable test.argtest --since 20 --explain 2>&1`;
+unlike($output, qr/`a`>=20/, 'Argtest overridden');
+like($output, qr/`a`>=1/, 'Argtest set to something else');
 
 # Make sure that --argtest table has only legally allowed columns in it
 $output = `$cmd --argtable test.argtest2 2>&1`;
@@ -421,6 +423,32 @@ like($output, qr/CHECKSUM\n000000066094F8AA\n000000066094F8AA/, 'Checksum ok wit
 # #############################################################################
 $output = `../mk-table-checksum --checksum h=127.1,P=12345 --schema`;
 unlike($output, qr/DATABASE\s+TABLE/, '--checksum in --schema mode prints terse output');
+
+# #############################################################################
+# Issue 121: mk-table-checksum and --since isn't working right on InnoDB tables
+# #############################################################################
+
+# Reusing issue_21.sql
+$sb->load_file('master', 'samples/issue_21.sql'); 
+$output = `../mk-table-checksum --since 'current_date - interval 7 day' h=127.1,P=12345 -t test.issue_21`;
+like($output, qr/test\s+issue_21\s+0\s+127\.1\s+InnoDB/, 'InnoDB table is checksummed with temporal --since');
+
+# #############################################################################
+# Issue 122: mk-table-checksum doesn't --savesince correctly on empty tables
+# #############################################################################
+
+$sb->load_file('master', 'samples/issue_122.sql');
+$output = `../mk-table-checksum --argtable=test.argtable --savesince h=127.1,P=12345 -t test.issue_122 -C 2`;
+my $res = $master_dbh->selectall_arrayref("SELECT since FROM test.argtable WHERE db='test' AND tbl='issue_122'");
+is_deeply($res, [[undef]], 'Numeric since is not saved when table is empty');
+
+$master_dbh->do("INSERT INTO test.issue_122 VALUES (null,'a'),(null,'b')");
+$output = `../mk-table-checksum --argtable=test.argtable --savesince h=127.1,P=12345 -t test.issue_122 -C 2`;
+$res = $master_dbh->selectall_arrayref("SELECT since FROM test.argtable WHERE db='test' AND tbl='issue_122'");
+is_deeply($res, [[2]], 'Numeric since is saved when table is not empty');
+
+# TODO: test non-empty table that is chunkable with a temporal --since and
+# --savesince to make sure that the current ts gets saved and not the maxval.
 
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
