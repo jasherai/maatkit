@@ -23,6 +23,12 @@ The following items are unimplemented at this time:
    Operating System
       * vmstat samples
       * iostat usage if possible
+      * Snapshot of interesting things from ps -- the top few memory and CPU
+        time users.  Omit common kernel stuff, etc.
+   Memcached
+      * Notify if there is a memcached instance on the box.  Try to grab stats
+        and show the more interesting ones.  See
+        http://dev.mysql.com/doc/refman/5.0/en/ha-memcached-stats-general.html
    MySQL
       * for each instance, do:
          * run mysqld --help --verbose and make sure config file is valid
@@ -151,6 +157,8 @@ The following items are unimplemented at this time:
      the buffer pool.
    * check redundant indexes
    * alerts on COUNT(*) .. queries. 
+   * flag GROUP_CONCAT() queries for checking whether they are vulnerable to
+     group_concat_max_len
    * guess from column names how they are related to other tables.  account_id
      can mean this column is a FK to an account table.  If so, check for
      NULL-ability vs. presence of NULL in the table
