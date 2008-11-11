@@ -29,6 +29,9 @@ The following items are unimplemented at this time:
       * Notify if there is a memcached instance on the box.  Try to grab stats
         and show the more interesting ones.  See
         http://dev.mysql.com/doc/refman/5.0/en/ha-memcached-stats-general.html
+        Sample ps line fro ps -eaf | grep memc:
+        memcached -d -p 11211 -u nobody -m 384 -c 1024 -P
+        /var/run/memcached/memcached.pid -l 10.0.0.7
    MySQL
       * for each instance, do:
          * run mysqld --help --verbose and make sure config file is valid
