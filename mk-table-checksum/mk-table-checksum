@@ -3625,12 +3625,15 @@ sub checksum_tables {
          #       column and it wasn't empty
          # See issues 121 and 122.
          if ( $final_opts->{savesince} && $savesince_sth ) {
-            if ( ( is_temporal($final_opts->{since}) && $do_table )
-                 || defined $table->{maxval} ) {
-               MKDEBUG && _d("Saving --since value: ",
+            if ( is_temporal($final_opts->{since}) ) {
+               MKDEBUG && _d("Saving temporal --since value: ",
+                  "current timestamp for $database.$table->{table}");
+               $savesince_sth->execute(undef,
+                  $database, $table->{table});
+            }
+            elsif ( defined $table->{maxval} ) {
+               MKDEBUG && _d("Saving numerical --since value: ",
                   $table->{maxval}, " for $database.$table->{table}");
-
-               # TODO: document the magick that happens here.
                $savesince_sth->execute($table->{maxval},
                   $database, $table->{table});
             }

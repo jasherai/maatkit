@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 93;
+use Test::More tests => 94;
 use List::Util qw(sum);
 
 require '../../common/DSNParser.pm';
@@ -447,8 +447,12 @@ $output = `../mk-table-checksum --argtable=test.argtable --savesince h=127.1,P=1
 $res = $master_dbh->selectall_arrayref("SELECT since FROM test.argtable WHERE db='test' AND tbl='issue_122'");
 is_deeply($res, [[2]], 'Numeric since is saved when table is not empty');
 
-# TODO: test non-empty table that is chunkable with a temporal --since and
+# Test non-empty table that is chunkable with a temporal --since and
 # --savesince to make sure that the current ts gets saved and not the maxval.
+$master_dbh->do('UPDATE test.argtable SET since = "current_date - interval 3 day" WHERE db = "test" AND tbl = "issue_122"');
+$output = `../mk-table-checksum --argtable=test.argtable --savesince h=127.1,P=12345 -t test.issue_122 -C 2`;
+$res = $master_dbh->selectall_arrayref("SELECT since FROM test.argtable WHERE db='test' AND tbl='issue_122'");
+like($res->[0]->[0], qr/^\d{4}-\d{2}-\d{2}(?:.[0-9:]+)?/, 'Temporal since is saved when temporal since is given');
 
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
