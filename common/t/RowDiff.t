@@ -54,7 +54,7 @@ package main;
 
 my $tests;
 BEGIN {
-   $tests = 19;
+   $tests = 22;
 }
 
 use Test::More tests => $tests;
@@ -311,8 +311,9 @@ my $tbl = $tp->parse(
    $du->get_create_table($master_dbh, $q, 'test', 'issue_11'));
 
 my $left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
-my $right_sth = $master_dbh->prepare('SELECT * FROM test.issue_11');
-
+my $right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
+$left_sth->execute();
+$right_sth->execute();
 $s = new MockSync();
 $d->compare_sets(
    left  => $left_sth,
@@ -324,6 +325,71 @@ is_deeply(
    $s,
    ['done',],
    'no rows (real DBI sth)',
+);
+
+$slave_dbh->do('INSERT INTO test.issue_11 VALUES (1,2,3)');
+$left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
+$right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
+$left_sth->execute();
+$right_sth->execute();
+$s = new MockSync();
+$d->compare_sets(
+   left   => $left_sth,
+   right  => $right_sth,
+   syncer => $s,
+   tbl    => $tbl,
+);
+is_deeply(
+   $s,
+   [
+      ['not in left', { a => 1, b => 2, c => 3 },],
+      'done',
+   ],
+   'right only (real DBI sth)',
+);
+
+$slave_dbh->do('TRUNCATE TABLE test.issue_11');
+$master_dbh->do('SET SQL_LOG_BIN=0;');
+$master_dbh->do('INSERT INTO test.issue_11 VALUES (1,2,3)');
+$left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
+$right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
+$left_sth->execute();
+$right_sth->execute();
+$s = new MockSync();
+$d->compare_sets(
+   left   => $left_sth,
+   right  => $right_sth,
+   syncer => $s,
+   tbl    => $tbl,
+);
+is_deeply(
+   $s,
+   [
+      [ 'not in right', { a => 1, b => 2, c => 3 },],
+      'done',
+   ],
+   'left only (real DBI sth)',
+);
+
+$slave_dbh->do('INSERT INTO test.issue_11 VALUES (1,2,3)');
+$left_sth  = $master_dbh->prepare('SELECT * FROM test.issue_11');
+$right_sth = $slave_dbh->prepare('SELECT * FROM test.issue_11');
+$left_sth->execute();
+$right_sth->execute();
+$s = new MockSync();
+$d->compare_sets(
+   left   => $left_sth,
+   right  => $right_sth,
+   syncer => $s,
+   tbl    => $tbl,
+);
+is_deeply(
+   $s,
+   [
+      'same',
+      'done',
+   ],
+   'one identical row (real DBI sth)',
 );
 
 $sb->wipe_clean($master_dbh);
