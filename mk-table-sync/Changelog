@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * --askpass and bareword host (instead of h=host) caused error (issue 108).
+
 2008-10-17: version 1.0.10
 
    * --tables was not honored when using --replicate (issue 79).
