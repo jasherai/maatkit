@@ -294,4 +294,10 @@ eval {
 };
 like($EVAL_ERROR, qr/Cannot execute my_print_defaults command/, 'Dies if my_print_defaults cannot be executed');
 
+# #############################################################################
+# Issue 42: mk-audit doesn't separate instances correctly
+# #############################################################################
+# $ps = load_file('samples/ps_02.txt');
+# $mysqld_procs_ref = MySQLInstance::mysqld_processes($ps);
+
 exit;

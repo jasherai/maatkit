@@ -72,7 +72,7 @@ $Data::Dumper::Indent = 1;
 #    all_events   : boolean, for any of the query-specific metrics above which
 #                   are enabled, save also the metric for all queries
 #                   (e.g. grand total Query_time for all queries)
-#                   (default 0)
+#                   (default 1)
 #    all_all_vals : boolean, like all_vals but saves all vals for all enabled
 #                   query metrics, which can result in very large arrays of vals
 #                   (default 0)
@@ -87,7 +87,7 @@ sub make_handler_for {
       type         => $type,
       transformer  => undef,
       all_vals     => 1,
-      all_events   => 0,
+      all_events   => 1,
       all_all_vals => 0,
    );
    @default_handler{ qw(total min max avg) } = qw(1 1 1 1)
