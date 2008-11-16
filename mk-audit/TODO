@@ -214,3 +214,4 @@ The following items are unimplemented at this time:
       *** (2) WAITING FOR THIS LOCK TO BE GRANTED:
       TABLE LOCK table `foo/bar` trx id 0 1313586251 lock mode AUTO-INC waiting
       TOO DEEP OR LONG SEARCH IN THE LOCK TABLE WAITS-FOR GRAPH
+   * List of crashed tables
