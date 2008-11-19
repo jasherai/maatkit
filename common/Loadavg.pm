@@ -67,7 +67,7 @@ sub loadavg {
    my $str = `uptime`;
    chomp $str;
    return 0 unless $str;
-   my ( $one ) = $str =~ m/load average:\s+(\S[^,]*,)/;
+   my ( $one ) = $str =~ m/load average:\s+(\S[^,]*),/;
    return $one || 0;
 }
 
