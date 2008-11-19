@@ -5445,7 +5445,7 @@ However, this works only if it's possible to REPLACE into the table on the
 master.  REPLACE works only if there's a unique index on the table (otherwise it
 just acts like an ordinary INSERT).
 
-If your table have unique keys, you should use the L<"--synctomaster"> and/or
+If your table has unique keys, you should use the L<"--synctomaster"> and/or
 L<"--replicate"> options to sync a slave to its master.  This will generally do
 the right thing.  When there is no unique key on the table, there is no choice
 but to change the data on the slave, and mk-table-sync will detect that you're
