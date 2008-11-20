@@ -71,6 +71,35 @@ sub loadavg {
    return $one || 0;
 }
 
+# Calculates slave lag.  If the slave is not running, returns 0.
+sub slavelag {
+   my ( $dbh ) = @_;
+   my $sl = $dbh->selectall_arrayref('SHOW SLAVE STATUS', { Slice => {} });
+   if ( $sl ) {
+      $sl = $sl->[0];
+      my ($key) = grep { m/behind_master/ } keys %$sl;
+      return $sl->{$key} || 0;
+   }
+   return 0;
+}
+
+# Calculates any metric from SHOW STATUS, either absolute or over a 1-second
+# interval.
+sub status {
+   my ( $dbh, %args ) = @_;
+   my (undef, $status1)
+      = $dbh->selectrow_array('SHOW /*!50002 GLOBAL*/ STATUS LIKE "$args{metric}"');
+   if ( $args{incstatus} ) {
+      sleep(1);
+      my (undef, $status2)
+         = $dbh->selectrow_array('SHOW /*!50002 GLOBAL*/ STATUS LIKE "$args{metric}"');
+      return $status2 - $status1;
+   }
+   else {
+      return $status1;
+   }
+}
+
 1;
 
 # ###########################################################################
