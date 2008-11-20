@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# Loadavg package 2495
+# Loadavg package 2497
 # ###########################################################################
 package Loadavg;
 
@@ -79,6 +79,32 @@ sub loadavg {
    return 0 unless $str;
    my ( $one ) = $str =~ m/load average:\s+(\S[^,]*),/;
    return $one || 0;
+}
+
+sub slavelag {
+   my ( $dbh ) = @_;
+   my $sl = $dbh->selectall_arrayref('SHOW SLAVE STATUS', { Slice => {} });
+   if ( $sl ) {
+      $sl = $sl->[0];
+      my ($key) = grep { m/behind_master/ } keys %$sl;
+      return $sl->{$key} || 0;
+   }
+   return 0;
+}
+
+sub status {
+   my ( $dbh, %args ) = @_;
+   my (undef, $status1)
+      = $dbh->selectrow_array('SHOW /*!50002 GLOBAL*/ STATUS LIKE "$args{metric}"');
+   if ( $args{incstatus} ) {
+      sleep(1);
+      my (undef, $status2)
+         = $dbh->selectrow_array('SHOW /*!50002 GLOBAL*/ STATUS LIKE "$args{metric}"');
+      return $status2 - $status1;
+   }
+   else {
+      return $status1;
+   }
 }
 
 1;
@@ -1021,12 +1047,46 @@ if ( $opts{askpass} && !defined $opts{p} ) {
    $opts{p} = OptionParser::prompt_noecho("Enter password for $opts{h}: ");
 }
 my $dsn = $dp->get_cxn_params(\%opts);
-my $dbh = 1; # TODO $dp->get_dbh($dsn, { AutoCommit => 1 } );
+my $dbh = $dp->get_dbh($dsn, { AutoCommit => 1 } );
 
 watch_server($dsn, $dbh);
 
 $dp->disconnect($dbh);
 exit(0);
+
+# ############################################################################
+# Types of info that can be gathered.
+# ############################################################################
+my %info_subroutines = (
+   status => sub {
+      my ( $dbh ) = @_;
+      my $sth = $dbh->prepare('SHOW /*!50002 GLOBAL*/ STATUS');
+      $sth->execute();
+      pretty_print($sth);
+      $sth->finish();
+      $sth->execute();
+      pretty_print($sth);
+      $sth->finish();
+   },
+
+   processlist => sub {
+      my ( $dbh ) = @_;
+      my $sth = $dbh->prepare('SHOW FULL PROCESSLIST');
+      $sth->execute();
+      pretty_print($sth);
+   },
+
+   innodbstatus => sub {
+      my ( $dbh ) = @_;
+      my $st = $dbh->selectall_arrayref('SHOW INNODB STATUS', { Slice => {} } );
+      print $st->[0]->{Status}, "\n";
+   },
+
+   uptime => sub {
+      my ( $dbh ) = @_;
+      print `uptime`;
+   },
+);
 
 # ############################################################################
 # Subroutines.
@@ -1037,9 +1097,15 @@ sub watch_server {
    MKDEBUG && _d('Watching server ', $dp->as_string($dsn));
 
    my $la = new Loadavg();
-   my %metrics = map { split(/:/, $_) } @{$opts{metrics}};
+   my %metrics;
+   foreach my $item ( @{$opts{metrics}} ) {
+      my ($key, $val) = split(/:/, $item);
+      $metrics{$key} = $val; # $val can be undef.
+   }
    my %args = (
-      samples => $opts{samples},
+      samples   => $opts{samples},
+      metric    => $opts{status}, # Can be undef
+      incstatus => $opts{incstatus}, # Can be undef
    );
 
    my $exit_time = time() + ($opts{t} || 0);
@@ -1047,19 +1113,35 @@ sub watch_server {
       METRIC:
       foreach my $metric ( keys %metrics ) {
          my $val = $la->$metric($dbh, %args);
-         if ( $val >= $metrics{$metric} ) {
-            # TODO: take_actions($dbh, $metric, $val);
-            print "Out of bounds!\n";
-            last METRIC;
-         }
          if ( $opts{'print'} ) {
             printf("%15s %.5f\n", $metric, $val);
+         }
+         if ( defined $metrics{$metric} && $val >= $metrics{$metric} ) {
+            foreach my $info ( @{$opts{info}} ) {
+               if ( $info_subroutines{$info} ) {
+                  $info_subroutines{$info}->($dbh);
+               }
+            }
+            last METRIC;
          }
       }
       sleep($opts{s});
    }
 
    MKDEBUG && _d('All done with server ', $dp->as_string($dsn));
+}
+
+sub pretty_print {
+   my ( $sth ) = @_;
+   my @headers = @{$sth->{NAME}};
+   my $max_len = 0;
+   map { $max_len = length($_) if length($_) > $max_len } @headers;
+   while ( my @row = $sth->fetchrow_array() ) {
+      foreach my $col ( 0 .. $#headers ) {
+         printf("%${max_len}s: ", $headers[$col]);
+         print($row[$col], "\n");
+      }
+   }
 }
 
 sub _d {
@@ -1087,7 +1169,6 @@ mk-loadavg - Watch MySQL load and take action when it gets too high.
 =head1 SYNOPSIS
 
   mk-loadavg --metrics num_locked:5 --info status,processlist \
-    --mailto sysops@mydomain.com
 
 =head1 DESCRIPTION
 
