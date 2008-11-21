@@ -20,10 +20,12 @@
 # ###########################################################################
 package LogMetricsSlow;
 
-# All slow query log metric (attribute) handlers:
+# All slow query log metric handlers:
 #    metric name (identical to its name in the slow log)
 #       metric type (string or number)
 #       special handler options (e.g. [ all_events => 0, ] )
+# For most numeric metrics, the default options are sufficient. Some
+# string metrics, however, do not need to have all_events saved, etc.
 my $slow_handlers = {
    'User' => {
       type => 'string',
@@ -167,7 +169,7 @@ sub new {
 
 sub get_all_metrics {
    my ( $self ) = @_;
-   return keys %slow_handlers;
+   return keys %$slow_handlers;
 }
 
 sub get_handlers_for {
