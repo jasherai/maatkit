@@ -44,87 +44,87 @@ my %metric_type_for = (
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
-# make_handler_for() returns a key-value pair which should be used to construct
-# a hash for the handlers arg to new(). Example:
-# my $handlers = {
+# A note on terminology:
+# - Metric and attribute are the same; they refer to things like Query_time.
+# - Event and query are the same; they refer to individual log entries (which
+#   are not always queries proper).
+
+# make_handler_for() returns a hashref which should be used to construct
+# an arrayref for the handlers arg to new(). Example:
+# my $handlers = [
 #    make_handler_for('Query_time', 'number', ...),
 #    make_handler_for('user',       'string', ...),
-# }
+# ]
 # Then:
 # $sm = new SQLMetrics(
 #   key_metric      => 'arg',
 #   fingerprint     => \&QueryRerwriter::fingerprint,
 #   handlers        => $handlers,
 #   buffer_n_events => 1_000,
+#   ...
 # );
-# Optional args:
-#    transformer  : sub ref called and passed the metric value before any
-#                   calculations
-#                   (default none)
-#    total        : boolean, if total value should be saved (e.g. total
-#                   Query_time for each unique query)
-#                   (default 1)
-#    min, max, avg: boolean, if min max and/or avg values should be saved
-#                   (default 1 1 1)
-#    all_vals     : boolean, save all metric vals for each enabled
-#                   query-specific metric
-#                   (default 1) 
-#    all_events   : boolean, for any of the query-specific metrics above which
-#                   are enabled, save also the metric for all queries
-#                   (e.g. grand total Query_time for all queries)
-#                   (default 1)
-#    all_all_vals : boolean, like all_vals but saves all vals for all enabled
-#                   query metrics, which can result in very large arrays of vals
-#                   (default 0)
+#
+# NOTE: The first handler is special: it is the metric by which queries
+# will be considered "worse" (i.e. worse than one another). Subsequent
+# handlers can be in any order.
+#
+# Optional args to make_handler_for():
+#    transformer : sub ref called and passed the metric value before any
+#                  calculations (e.g. to transform 'Yes' to 1)
+#                  (default none)
+#    all_vals    : boolean, save all metric vals for each unique query
+#                  (default 1 for numeric types, 0 for strings) 
+#    grand_total : boolean, save grand (all-events) total of metric
+#                  (e.g. grand total Query_time, most minimal Lock_time, etc.)
+#                  For strings, this is the number of times each unique string
+#                  appears.
+#                  (default 1)
 sub make_handler_for {
    my ( $metric, $type, %args ) = @_;
    die "I need a metric"      if !$metric;
    die "I need a metric type" if !$type;
-
    $type = $metric_type_for{$type} || die 'Invalid metric type';
-
    my %default_handler = (
+      metric       => $metric,
       type         => $type,
       transformer  => undef,
-      all_vals     => 1,
-      all_events   => 1,
-      all_all_vals => 0,
+      all_vals     => $type == METRIC_TYPE_NUMERIC ? 1 : 0,
+      grand_total  => 1,
    );
-   @default_handler{ qw(total min max avg) } = qw(1 1 1 1)
-      if $type == METRIC_TYPE_NUMERIC;
-
    my %handler = ( %default_handler, %args );
-
-   if ( $type == METRIC_TYPE_NUMERIC ) {
-      # total is required to calc avg
-      $handler{total} = 1 if $handler{avg} == 1;
-   }
-
    MKDEBUG && _d("Handler for $metric: " . Dumper(\%handler));
-
-   return ( $metric => \%handler );
+   return \%handler;
 }
 
 sub new {
    my ( $class, %args ) = @_;
    my @required_args = (
-      'key_metric',      # event attribute by which events are grouped
-      'fingerprint',     # callback sub to fingerprint key_metric
-      'handlers',        # hash ref to metric handlers (see make_handler_for)
-      'buffer_n_events', # save N events before calcing their metrics
+      'key_metric',       # event attribute by which events are grouped
+      'fingerprint',      # callback sub to fingerprint key_metric
+      'handlers',         # arrayref to metric handlers (see make_handler_for)
    );
    foreach my $arg ( @required_args ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
+   my $worst_metric_handler;
+   if ( defined $args{worst_metric} ) {
+      $worst_metric_handler = shift @{ $args{handlers} };
+   }
+
    bless {
-      key_metric         => $args{key_metric},
-      fingerprint        => $args{fingerprint},
-      handlers           => $args{handlers},
-      buffer_n_events    => $args{buffer_n_events},
-      metrics            => { all => {}, unique => {} },
-      n_events           => 0,
-      n_queries          => 0,
+      key_metric            => $args{key_metric},
+      fingerprint           => $args{fingerprint},
+      handlers              => $args{handlers},
+      worst_metric          => $args{worst_metric},
+      buffer_n_events       => $args{buffer_n_events} || 1,
+      top                   => $args{top} || 10,
+      worst_metric_handler  => $worst_metric_handler,
+      metrics               => { all => {}, unique => {} },
+      n_events              => 0,
+      n_queries             => 0,
+      n_unique_queries      => 0,
+      worst                 => [-1],
    }, $class;
 }
 
@@ -133,10 +133,8 @@ sub record_event {
    my ( $self, $event ) = @_;
    return if !$event;
 
-   $self->{n_events}++;
    push @buffered_events, $event;
-   MKDEBUG && _d("$self->{n_events} events total, "
-                 . scalar @buffered_events . " events in buffer");
+   MKDEBUG && _d(scalar @buffered_events . " events in buffer");
 
    # Return if we are to buffer every event.
    return if $self->{buffer_n_events} < 0;
@@ -144,7 +142,7 @@ sub record_event {
    # Return if we are to buffer N events and buffer space remains.
    return if scalar @buffered_events < $self->{buffer_n_events};
 
-   $self->calc_metrics();
+   $self->calc_metrics(\@buffered_events);
 
    # Reset buffer if it is full.
    $self->reset_buffer() if scalar @buffered_events >= $self->{buffer_n_events};
@@ -152,103 +150,131 @@ sub record_event {
    return;
 }
 
-# Calc metrics for every buffered event.
+# Calc metrics for the given events or the buffered events if no
+# explicit events are given. events is an arrayref containing
+# events returned from LogParser::parse_event().
 sub calc_metrics {
-   my ( $self ) = @_;
+   my ( $self, $events ) = @_;
+   $events ||= \@buffered_events;
+   foreach my $event ( @$events ) {
+      $self->calc_event_metrics($event);
+   }
+   return;
+}
 
-   EVENT:
-   foreach my $event ( @buffered_events ) {
+sub calc_event_metrics {
+   my ( $self, $event ) = @_;
 
-      # Skip events which do not have key_metric.
-      my $key_metric_val = $event->{ $self->{key_metric} };
-      next EVENT if !defined $key_metric_val;
-      $self->{n_queries}++;
+   $self->{n_events}++;
 
-      # Get fingerprint for this event.
-      # The undef is because the fingerprint sub is usually a class
-      # method, therefore it's expecting its first arg to be $self,
-      # but our sub ref is not from any instantiation of the class.
-      my $fp = $self->{fingerprint}->(undef, $key_metric_val);
+   # Skip events which do not have the key_metric attribute.
+   my $key_metric_val = $event->{ $self->{key_metric} };
+   return if !defined $key_metric_val;
+   $self->{n_queries}++;
 
-      # Get shortcuts to data store for this fingerprint.
-      my $fp_ds   = $self->{metrics}->{unique}->{ $fp }
-                ||= { sample => $key_metric_val, count => 0 };
+   # TODO: make this work
+   if ( defined $self->{worst_metric} ) {
+      my $worst_handler    = $self->{worst_metric_handler};
+      my $worst_metric     = $worst_handler->{metric};
+      my $worst_metric_val = $event->{ $worst_metric };
 
-      # Count occurrences of this fingerprint.
-      $fp_ds->{count}++;
+      return if !defined $worst_metric_val;
+      return if $worst_metric_val < $self->{worst}->[0];
 
-      # Handle each event attribute (metric) for which there is a handler.
-      METRIC:
-      foreach my $metric ( keys %{ $self->{handlers} } ) {
+      push @{ $self->{worst} }, $worst_metric_val;
+      @{ $self->{worst} } = sort { $a <=> $b } @{ $self->{worst} };
+      @{ $self->{worst} } = splice @{ $self->{worst} }, ($self->{top} * -1)
+         if $self->{n_unique_queries} + 1 > $self->{top};
+   }
 
-         # Skip metrics which do not exist in this event.
-         my $metric_val = $event->{ $metric };
-         next METRIC if !defined $metric_val;
-         
-         # Get shortcut to this metric's handlers.
-         my $handler = $self->{handlers}->{ $metric };
+   # Get the fingerprint (fp) for this event.
+   my $fp = $self->{fingerprint}->($key_metric_val);
 
-         # Get shortcut to data store for this metric, for this event
-         # and for all events
-         my $m_ds = $fp_ds->{ $metric } ||= { };
-         my $a_ds = $self->{metrics}->{all}->{ $metric } ||= { };
+   # Get a shortcut to the data store (ds) for this fingerprint.
+   my $fp_ds;
+   if ( exists $self->{metrics}->{unique}->{ $fp } ) {
+      $fp_ds = $self->{metrics}->{unique}->{ $fp };
+   }
+   else {
+      $fp_ds = $self->{metrics}->{unique}->{ $fp } = {
+         sample => $key_metric_val,
+         count => 0,
+      };
+      $self->{n_unique_queries}++;
+   }
 
-         # ################# #
-         # Calc this metric. #
-         # ################# #
-         $metric_val = $handler->{transformer}->($metric_val)
+   # Count the occurrences of this fingerprint.
+   $fp_ds->{count}++;
+
+   # ##################################################################
+   # This event is bad enough to be in the top N worst. Calc the rest
+   # of its metric handlers.
+   # ##################################################################
+   METRIC:
+   foreach my $handler ( @{ $self->{handlers} } ) {
+      # Skip metrics which do not exist in this event.
+      my $metric_val = $event->{ $handler->{metric} };
+      next METRIC if !defined $metric_val;
+
+      $self->_calc_metric($metric_val, $handler, $fp_ds);
+   }
+
+return;
+}
+
+sub _calc_metric {
+   my ( $self, $metric_val, $handler, $fp_ds ) = @_;
+   my $metric = $handler->{metric};
+
+   $metric_val = $handler->{transformer}->($metric_val)
+      if defined $handler->{transformer};
+
+   # Get data store shortcuts: one for this event (e_ds)
+   # and another for grand totals (g_ds).
+   my $e_ds = $fp_ds->{ $metric } ||= {};
+   my $g_ds = $self->{metrics}->{all}->{ $metric } ||= {};
+
+   if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
+      $e_ds->{total} += $metric_val;
+
+      $e_ds->{min} = $metric_val if !defined $e_ds->{min};
+      $e_ds->{min} = $metric_val if $metric_val < $e_ds->{min};
+
+      $e_ds->{max} = $metric_val if !defined $e_ds->{max};
+      $e_ds->{max} = $metric_val if $metric_val > $e_ds->{max};
+
+      my $avg = $e_ds->{total} / $fp_ds->{count};
+      $avg = $handler->{transformer}->($avg)
+         if defined $handler->{transformer};
+      $e_ds->{avg} = $avg;
+
+      push @{ $e_ds->{all_vals} }, $metric_val
+         if $handler->{all_vals};
+
+      if ( $handler->{grand_total} ) {
+         $g_ds->{total} += $metric_val;
+
+         $g_ds->{min} = $metric_val if !defined $g_ds->{min};
+         $g_ds->{min} = $metric_val if $metric_val < $g_ds->{min};
+
+         $g_ds->{max} = $metric_val if !defined $g_ds->{max};
+         $g_ds->{max} = $metric_val if $metric_val > $g_ds->{max};
+
+         my $avg = $g_ds->{total} / $self->{n_queries};
+         $avg = $handler->{transformer}->($avg)
             if defined $handler->{transformer};
-
-         if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
-            push @{ $m_ds->{all_vals} }, $metric_val
-               if $handler->{all_vals};
-            push @{ $a_ds->{all_vals} }, $metric_val
-               if $handler->{all_all_vals};
-
-            if ( $handler->{total} ) {
-               $m_ds->{total} += $metric_val;
-               $a_ds->{total} += $metric_val if $handler->{all_events};
-            }
-
-            if ( $handler->{min} ) {
-               $m_ds->{min} = $metric_val if !defined $m_ds->{min};
-               $m_ds->{min} = $metric_val if $metric_val < $m_ds->{min};
-
-               if ( $handler->{all_events} ) {
-                  $a_ds->{min} = $metric_val if !defined $a_ds->{min};
-                  $a_ds->{min} = $metric_val if $metric_val < $a_ds->{min};
-               }
-            }
-            if ( $handler->{max} ) {
-               $m_ds->{max} = $metric_val if !defined $m_ds->{max};
-               $m_ds->{max} = $metric_val if $metric_val > $m_ds->{max};
-
-               if ( $handler->{all_events} ) {
-                  $a_ds->{max} = $metric_val if !defined $a_ds->{max};
-                  $a_ds->{max} = $metric_val if $metric_val > $a_ds->{max};
-               }
-            }
-            if ( $handler->{avg} ) {
-               my $avg = $m_ds->{total} / $fp_ds->{count};
-               $avg = $handler->{transformer}->($avg)
-                  if defined $handler->{transformer};
-               $m_ds->{avg} = $avg;
-
-               if ( $handler->{all_events} ) {
-                  $avg = $a_ds->{total} / $self->{n_queries};
-                  $avg = $handler->{transformer}->($avg)
-                     if defined $handler->{transformer};
-                  $a_ds->{avg} = $avg;
-               }
-            }
-         }
-         elsif ( $handler->{type} == METRIC_TYPE_STRING ) {
-            # Save and count unique occurrences of strings.
-            $m_ds->{ $metric_val }++;
-
-            $a_ds->{ $metric_val }++ if $handler->{all_events};
-         }
+         $g_ds->{avg} = $avg;
       }
+   }
+   elsif ( $handler->{type} == METRIC_TYPE_STRING ) {
+      $e_ds->{ $metric_val }++;
+      push @{ $e_ds->{all_vals} }, $metric_val
+         if $handler->{all_vals};
+      $g_ds->{ $metric_val }++ if $handler->{grand_total};
+   }
+   else {
+      # This should not happen.
+      die "Unknown metric type: $handler->{type}";
    }
 
    return;
@@ -287,8 +313,10 @@ sub reset_metrics {
    @buffered_events           = ();
    $self->{n_events}          = 0;
    $self->{n_queries}         = 0;
+   $self->{n_unique_queries}  = 0;
    $self->{metrics}->{all}    = {};
    $self->{metrics}->{unique} = {};
+   $self->{worst}             = [-1];
    return;
 }
 

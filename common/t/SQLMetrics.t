@@ -3,23 +3,25 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 3;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
 require '../SQLMetrics.pm';
 
+my $qr = new QueryRewriter();
+
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
-my $handlers = {
-   SQLMetrics::make_handler_for('Query_time', 'number', (all_events=>1)),
-   SQLMetrics::make_handler_for('user', 'string', (all_events=>1)),
-};
+my $handlers = [
+   SQLMetrics::make_handler_for('Query_time', 'number'),
+   SQLMetrics::make_handler_for('user', 'string'),
+];
 
 my $m  = new SQLMetrics(
    key_metric      => 'arg',
-   fingerprint     => \&QueryRewriter::fingerprint,
+   fingerprint     => sub { return $qr->fingerprint(@_); },
    handlers        => $handlers,
    buffer_n_events => -1,
 );
@@ -128,5 +130,65 @@ foreach my $event ( @$events ) {
    $m->record_event($event);
 }
 is_deeply($m->{metrics}, $metrics, 'Calcs metrics one-by-one');
+
+# #############################################################################
+# Test worst filtering
+# #############################################################################
+$handlers = [
+   SQLMetrics::make_handler_for('Query_time', 'number'),
+   SQLMetrics::make_handler_for('user', 'string'),
+];
+
+$m  = new SQLMetrics(
+   key_metric      => 'arg',
+   fingerprint     => sub { return $qr->fingerprint(@_); },
+   handlers        => $handlers,
+   worst_metric    => 'Query_time',
+   top             => '2',
+);
+
+$events = [
+   {
+      cmd         => 'Query',
+      arg         => "SELECT id FROM users WHERE name='foo'",
+      Query_time  => '0.000652',
+      user        => 'bob',
+   },
+   {
+      cmd         => 'Query',
+      arg         => "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
+      Query_time  => '0.001943',
+      user        => 'bob',
+   },
+   {
+      cmd         => 'Query',
+      arg         => "SELECT id FROM users WHERE name='bar'",
+      Query_time  => '0.000682',
+      user        => 'john',
+   },
+   {
+      cmd         => 'Query',
+      arg         => "SELECT id FROM users WHERE name='foo'",
+      Query_time  => '0.090652',
+      user        => 'bob',
+   },
+   {
+      cmd         => 'Query',
+      arg         => "INSERT IGNORE INTO foo (bar) VALUES(123)",
+      Query_time  => '0.001943',
+      user        => 'jane',
+   },
+   {
+      cmd         => 'Query',
+      arg         => "SELECT foo FROM users WHERE name='bob'",
+      Query_time  => '1.000682',
+      user        => 'bob',
+   },
+];
+
+foreach my $event ( @$events ) {
+   $m->calc_event_metrics($event);
+}
+# TODO...
 
 exit;
