@@ -99,15 +99,18 @@ sub secs_to_time {
 }
 
 sub shorten {
-   my ( $num ) = @_;
+   my ( $num, %args ) = @_;
+   my $p = defined $args{p} ? $args{p} : 2;     # float precision
+   my $d = defined $args{d} ? $args{d} : 1_024; # divisor
    my $n = 0;
-   while ( $num >= 1_024 ) {
-      $num /= 1_024;
+
+   while ( $num >= $d ) {
+      $num /= $d;
       ++$n;
    }
    return sprintf(
       $num =~ m/\./ || $n
-         ? "%.2f%s"
+         ? "%.${p}f%s"
          : '%d',
       $num, ('','k','M','G', 'T')[$n]);
 }
