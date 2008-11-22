@@ -107,24 +107,16 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   my $worst_metric_handler;
-   if ( defined $args{worst_metric} ) {
-      $worst_metric_handler = shift @{ $args{handlers} };
-   }
-
    bless {
       key_metric            => $args{key_metric},
       fingerprint           => $args{fingerprint},
       handlers              => $args{handlers},
-      worst_metric          => $args{worst_metric},
       buffer_n_events       => $args{buffer_n_events} || 1,
-      top                   => $args{top} || 10,
-      worst_metric_handler  => $worst_metric_handler,
+      worst_metric          => $args{worst_metric},
       metrics               => { all => {}, unique => {} },
       n_events              => 0,
       n_queries             => 0,
       n_unique_queries      => 0,
-      worst                 => [-1],
    }, $class;
 }
 
@@ -151,8 +143,8 @@ sub record_event {
 }
 
 # Calc metrics for the given events or the buffered events if no
-# explicit events are given. events is an arrayref containing
-# events returned from LogParser::parse_event().
+# events are given. events is an arrayref containing events returned
+# from LogParser::parse_event().
 sub calc_metrics {
    my ( $self, $events ) = @_;
    $events ||= \@buffered_events;
@@ -172,21 +164,6 @@ sub calc_event_metrics {
    return if !defined $key_metric_val;
    $self->{n_queries}++;
 
-   # TODO: make this work
-   if ( defined $self->{worst_metric} ) {
-      my $worst_handler    = $self->{worst_metric_handler};
-      my $worst_metric     = $worst_handler->{metric};
-      my $worst_metric_val = $event->{ $worst_metric };
-
-      return if !defined $worst_metric_val;
-      return if $worst_metric_val < $self->{worst}->[0];
-
-      push @{ $self->{worst} }, $worst_metric_val;
-      @{ $self->{worst} } = sort { $a <=> $b } @{ $self->{worst} };
-      @{ $self->{worst} } = splice @{ $self->{worst} }, ($self->{top} * -1)
-         if $self->{n_unique_queries} + 1 > $self->{top};
-   }
-
    # Get the fingerprint (fp) for this event.
    my $fp = $self->{fingerprint}->($key_metric_val);
 
@@ -194,6 +171,16 @@ sub calc_event_metrics {
    my $fp_ds;
    if ( exists $self->{metrics}->{unique}->{ $fp } ) {
       $fp_ds = $self->{metrics}->{unique}->{ $fp };
+
+      # Update the sample if this query has a worst metric val
+      # than previous occurrences.
+      if (    defined $self->{worst_metric}
+           && defined $event->{ $self->{worst_metric} }
+           && defined $fp_ds->{ $self->{worst_metric} }->{last}
+           && $event->{ $self->{worst_metric} }
+              > $fp_ds->{ $self->{worst_metric} }->{last} ) {
+         $fp_ds->{sample} = $key_metric_val;
+      }
    }
    else {
       $fp_ds = $self->{metrics}->{unique}->{ $fp } = {
@@ -206,10 +193,7 @@ sub calc_event_metrics {
    # Count the occurrences of this fingerprint.
    $fp_ds->{count}++;
 
-   # ##################################################################
-   # This event is bad enough to be in the top N worst. Calc the rest
-   # of its metric handlers.
-   # ##################################################################
+   # Calc the metrics.
    METRIC:
    foreach my $handler ( @{ $self->{handlers} } ) {
       # Skip metrics which do not exist in this event.
@@ -219,7 +203,7 @@ sub calc_event_metrics {
       $self->_calc_metric($metric_val, $handler, $fp_ds);
    }
 
-return;
+   return;
 }
 
 sub _calc_metric {
@@ -233,6 +217,11 @@ sub _calc_metric {
    # and another for grand totals (g_ds).
    my $e_ds = $fp_ds->{ $metric } ||= {};
    my $g_ds = $self->{metrics}->{all}->{ $metric } ||= {};
+
+   # Save the current val for this metric.
+   # This is used later to determine if the query sample
+   # should be updated.
+   $e_ds->{last} = $metric_val;
 
    if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
       $e_ds->{total} += $metric_val;
@@ -316,7 +305,6 @@ sub reset_metrics {
    $self->{n_unique_queries}  = 0;
    $self->{metrics}->{all}    = {};
    $self->{metrics}->{unique} = {};
-   $self->{worst}             = [-1];
    return;
 }
 

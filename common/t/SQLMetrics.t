@@ -78,10 +78,12 @@ my $metrics = {
             'all_vals' => [
             '0.001943'
             ],
-            'total' => '0.001943'
+            'total' => '0.001943',
+            last => '0.001943',
          },
          'user' => {
-            'root' => 1
+            'root' => 1,
+            last => 'root',
          },
          'sample' => 'INSERT IGNORE INTO articles (id, body,)VALUES(3558268,\'sample text\')'
       },
@@ -95,11 +97,13 @@ my $metrics = {
                '0.000652',
                '0.000682'
             ],
-            'total' => '0.001334'
+            total    => '0.001334',
+            last     => '0.000682',
          },
          'user' => {
-            'bob' => 1,
-            'root' => 1
+            bob   => 1,
+            root  => 1,
+            last  => 'bob',
          },
          'sample' => 'SELECT id FROM users WHERE name=\'foo\''
       }
@@ -132,63 +136,76 @@ foreach my $event ( @$events ) {
 is_deeply($m->{metrics}, $metrics, 'Calcs metrics one-by-one');
 
 # #############################################################################
-# Test worst filtering
+# Test that the sample of the worst occurrence is saved.
 # #############################################################################
-$handlers = [
-   SQLMetrics::make_handler_for('Query_time', 'number'),
-   SQLMetrics::make_handler_for('user', 'string'),
-];
 
 $m  = new SQLMetrics(
    key_metric      => 'arg',
    fingerprint     => sub { return $qr->fingerprint(@_); },
    handlers        => $handlers,
    worst_metric    => 'Query_time',
-   top             => '2',
 );
 
 $events = [
    {
       cmd         => 'Query',
-      arg         => "SELECT id FROM users WHERE name='foo'",
-      Query_time  => '0.000652',
       user        => 'bob',
+      arg         => "foo 1",
+      Query_time  => '1',
    },
    {
       cmd         => 'Query',
-      arg         => "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
-      Query_time  => '0.001943',
       user        => 'bob',
+      arg         => "foo 2",
+      Query_time  => '2',
    },
    {
-      cmd         => 'Query',
-      arg         => "SELECT id FROM users WHERE name='bar'",
-      Query_time  => '0.000682',
-      user        => 'john',
-   },
-   {
-      cmd         => 'Query',
-      arg         => "SELECT id FROM users WHERE name='foo'",
-      Query_time  => '0.090652',
-      user        => 'bob',
-   },
-   {
-      cmd         => 'Query',
-      arg         => "INSERT IGNORE INTO foo (bar) VALUES(123)",
-      Query_time  => '0.001943',
-      user        => 'jane',
-   },
-   {
-      cmd         => 'Query',
-      arg         => "SELECT foo FROM users WHERE name='bob'",
-      Query_time  => '1.000682',
-      user        => 'bob',
-   },
+      cmd           => 'Query',
+      user          => 'root',
+      arg           => "foo 3",
+      Query_time    => '1',
+   }
 ];
+
+$metrics = {
+   'unique' => {
+      'foo N' => {
+         'count' => 3,
+         'Query_time' => {
+            'avg' => '1.33333333333333',
+            'min' => '1',
+            'max' => '2',
+            'all_vals' => [
+               '1', '2', '1',
+            ],
+            'total' => '4',
+            last => 1,
+         },
+         'user' => {
+            'bob' => 2,
+            'root' => 1,
+            last => 'root',
+         },
+         'sample' => 'foo 2'
+      },
+   },
+   all => {
+      'Query_time' => {
+         'avg' => '1.33333333333333',
+         'min' => '1',
+         'max' => '2',
+         'total' => '4',
+      },
+      'user' => {
+         'bob'  => 2,
+         'root' => 1,
+      },
+   },
+};
 
 foreach my $event ( @$events ) {
    $m->calc_event_metrics($event);
 }
-# TODO...
+is_deeply($m->{metrics}, $metrics, 'Keeps worst sample');
 
 exit;
