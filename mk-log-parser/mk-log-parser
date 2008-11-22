@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 
-# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# This program is copyright 2007-@CURRENTYEAR@ Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# LogParser package 2337
+# LogParser package 2357
 # ###########################################################################
 package LogParser;
 
@@ -172,14 +172,13 @@ sub parse_event {
          elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
             
             if ( $type == 0 ) {
-               if ( $line !~ m/^#.+;/ ) {
+               if ( $line =~ m/^#.+;/ ) {
+                  MKDEBUG && _d('Commented event line ends header');
+               }
+               else {
                   $handled_line = 1;
                   MKDEBUG && _d('Splitting line into fields');
                   @{$event}{keys %hash} = values %hash;
-               }
-               else {
-                  $handled_line = 0;
-                  MKDEBUG && _d('Commented event line ends header');
                }
             }
             else {
@@ -209,7 +208,7 @@ sub parse_event {
             else {
                MKDEBUG && _d('Line is a continuation of prev line');
                if ( $line =~ m/^# / ) {
-                  MKDEBUG && _d('Line is a commented even line');
+                  MKDEBUG && _d('Line is a commented event line');
                   $line =~ s/.+: (.+);\n/$1/;
                   $event->{cmd} = 'Admin';
                }
@@ -1025,192 +1024,434 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# SQLMetrics package 2514
+# ###########################################################################
+
+package SQLMetrics;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+use constant METRIC_TYPE_NUMERIC => 1;
+use constant METRIC_TYPE_STRING  => 2;
+my %metric_type_for = (
+   'number' => METRIC_TYPE_NUMERIC,
+   'string' => METRIC_TYPE_STRING,
+);
+
+
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
+
+
+sub make_handler_for {
+   my ( $metric, $type, %args ) = @_;
+   die "I need a metric"      if !$metric;
+   die "I need a metric type" if !$type;
+   $type = $metric_type_for{$type} || die 'Invalid metric type';
+   my %default_handler = (
+      metric       => $metric,
+      type         => $type,
+      transformer  => undef,
+      all_vals     => $type == METRIC_TYPE_NUMERIC ? 1 : 0,
+      grand_total  => 1,
+   );
+   my %handler = ( %default_handler, %args );
+   MKDEBUG && _d("Handler for $metric: " . Dumper(\%handler));
+   return \%handler;
+}
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = (
+      'key_metric',       # event attribute by which events are grouped
+      'fingerprint',      # callback sub to fingerprint key_metric
+      'handlers',         # arrayref to metric handlers (see make_handler_for)
+   );
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   bless {
+      key_metric            => $args{key_metric},
+      fingerprint           => $args{fingerprint},
+      handlers              => $args{handlers},
+      buffer_n_events       => $args{buffer_n_events} || 1,
+      worst_metric          => $args{worst_metric},
+      metrics               => { all => {}, unique => {} },
+      n_events              => 0,
+      n_queries             => 0,
+      n_unique_queries      => 0,
+   }, $class;
+}
+
+my @buffered_events;
+sub record_event {
+   my ( $self, $event ) = @_;
+   return if !$event;
+
+   push @buffered_events, $event;
+   MKDEBUG && _d(scalar @buffered_events . " events in buffer");
+
+   return if $self->{buffer_n_events} < 0;
+
+   return if scalar @buffered_events < $self->{buffer_n_events};
+
+   $self->calc_metrics(\@buffered_events);
+
+   $self->reset_buffer() if scalar @buffered_events >= $self->{buffer_n_events};
+
+   return;
+}
+
+sub calc_metrics {
+   my ( $self, $events ) = @_;
+   $events ||= \@buffered_events;
+   foreach my $event ( @$events ) {
+      $self->calc_event_metrics($event);
+   }
+   return;
+}
+
+sub calc_event_metrics {
+   my ( $self, $event ) = @_;
+
+   $self->{n_events}++;
+
+   my $key_metric_val = $event->{ $self->{key_metric} };
+   return if !defined $key_metric_val;
+   $self->{n_queries}++;
+
+   my $fp = $self->{fingerprint}->($key_metric_val);
+
+   my $fp_ds;
+   if ( exists $self->{metrics}->{unique}->{ $fp } ) {
+      $fp_ds = $self->{metrics}->{unique}->{ $fp };
+
+      if (    defined $self->{worst_metric}
+           && defined $event->{ $self->{worst_metric} }
+           && defined $fp_ds->{ $self->{worst_metric} }->{last}
+           && $event->{ $self->{worst_metric} }
+              > $fp_ds->{ $self->{worst_metric} }->{last} ) {
+         $fp_ds->{sample} = $key_metric_val;
+      }
+   }
+   else {
+      $fp_ds = $self->{metrics}->{unique}->{ $fp } = {
+         sample => $key_metric_val,
+         count => 0,
+      };
+      $self->{n_unique_queries}++;
+   }
+
+   $fp_ds->{count}++;
+
+   METRIC:
+   foreach my $handler ( @{ $self->{handlers} } ) {
+      my $metric_val = $event->{ $handler->{metric} };
+      next METRIC if !defined $metric_val;
+
+      $self->_calc_metric($metric_val, $handler, $fp_ds);
+   }
+
+   return;
+}
+
+sub _calc_metric {
+   my ( $self, $metric_val, $handler, $fp_ds ) = @_;
+   my $metric = $handler->{metric};
+
+   $metric_val = $handler->{transformer}->($metric_val)
+      if defined $handler->{transformer};
+
+   my $e_ds = $fp_ds->{ $metric } ||= {};
+   my $g_ds = $self->{metrics}->{all}->{ $metric } ||= {};
+
+   if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
+
+      $e_ds->{last} = $metric_val;
+
+      $e_ds->{total} += $metric_val;
+
+      $e_ds->{min} = $metric_val if !defined $e_ds->{min};
+      $e_ds->{min} = $metric_val if $metric_val < $e_ds->{min};
+
+      $e_ds->{max} = $metric_val if !defined $e_ds->{max};
+      $e_ds->{max} = $metric_val if $metric_val > $e_ds->{max};
+
+      my $avg = $e_ds->{total} / $fp_ds->{count};
+      $avg = $handler->{transformer}->($avg)
+         if defined $handler->{transformer};
+      $e_ds->{avg} = $avg;
+
+      push @{ $e_ds->{all_vals} }, $metric_val
+         if $handler->{all_vals};
+
+      if ( $handler->{grand_total} ) {
+         $g_ds->{total} += $metric_val;
+
+         $g_ds->{min} = $metric_val if !defined $g_ds->{min};
+         $g_ds->{min} = $metric_val if $metric_val < $g_ds->{min};
+
+         $g_ds->{max} = $metric_val if !defined $g_ds->{max};
+         $g_ds->{max} = $metric_val if $metric_val > $g_ds->{max};
+
+         my $avg = $g_ds->{total} / $self->{n_queries};
+         $avg = $handler->{transformer}->($avg)
+            if defined $handler->{transformer};
+         $g_ds->{avg} = $avg;
+      }
+   }
+   elsif ( $handler->{type} == METRIC_TYPE_STRING ) {
+      $e_ds->{ $metric_val }++;
+      push @{ $e_ds->{all_vals} }, $metric_val
+         if $handler->{all_vals};
+      $g_ds->{ $metric_val }++ if $handler->{grand_total};
+   }
+   else {
+      die "Unknown metric type: $handler->{type}";
+   }
+
+   return;
+}
+
+sub nth_percent {
+   my ( $vals, %args ) = @_;
+   my %default_args = (
+      sorted  => 0,     # vals are not yet sorted
+      atleast => 10,    # require at least 10 vals
+      nth     => 95,    # 95th percentile of vals
+      from    => 'top', # from the top
+   );
+   my %op = ( %default_args, %args );
+   return if scalar @$vals < $op{atleast};
+
+   my @s = @$vals;
+   my $n;
+
+   @s = sort { $a <=> $b } @s unless $op{sorted};
+   $n = ((scalar @s) * $op{nth}) / 100;  # cut-off percent
+   @s = splice(@s, 0, $n); # remove vals after cut-off percent
+
+   return \@s;
+}
+
+sub reset_buffer {
+   my ( $self ) = @_;
+   @buffered_events = ();
+   MKDEBUG && _d('Reset event buffer');
+   return;
+}
+
+sub reset_metrics {
+   my ( $self ) = @_;
+   @buffered_events           = ();
+   $self->{n_events}          = 0;
+   $self->{n_queries}         = 0;
+   $self->{n_unique_queries}  = 0;
+   $self->{metrics}->{all}    = {};
+   $self->{metrics}->{unique} = {};
+   return;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# SQLMetrics:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SQLMetrics package
+# ###########################################################################
+
+# ###########################################################################
+# Transformers package 2515
+# ###########################################################################
+
+package Transformers;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+require Exporter;
+our @ISA         = qw(Exporter);
+our %EXPORT_TAGS = ();
+our @EXPORT      = ();
+our @EXPORT_OK   = qw(float_6 micro_t secs_to_time shorten ts);
+
+sub float_6 {
+   my ( $val ) = @_;
+   return sprintf('%.6f', $val);
+}
+
+sub micro_t {
+   my ( $t, %args ) = @_;
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
+   my $f;
+
+   $t = 0 if $t < 0;
+
+   $t = sprintf('%.17f', $t) if $t =~ /e/;
+
+   $t =~ s/\.(\d{1,6})\d*/\.$1/;
+
+   if ($t > 0 && $t <= 0.000999) {
+      $f = ($t * 1000000) . 'us';
+   }
+   elsif ($t >= 0.001000 && $t <= 0.999999) {
+      $f = sprintf("%.${p_ms}f", $t * 1000);
+      $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
+   }
+   elsif ($t >= 1) {
+      $f = sprintf("%.${p_s}f", $t);
+      $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
+   }
+   else {
+      $f = 0;  # $t should = 0 at this point
+   }
+
+   return $f;
+}
+
+sub secs_to_time {
+   my ( $secs, $fmt ) = @_;
+   $secs ||= 0;
+   return '00:00' unless $secs;
+
+   $fmt ||= $secs >= 86_400 ? 'd'
+          : $secs >= 3_600  ? 'h'
+          :                   'm';
+
+   return
+      $fmt eq 'd' ? sprintf(
+         "%d+%02d:%02d:%02d",
+         int($secs / 86_400),
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : $fmt eq 'h' ? sprintf(
+         "%02d:%02d:%02d",
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : sprintf(
+         "%02d:%02d",
+         int(($secs % 3_600) / 60),
+         $secs % 60);
+}
+
+sub shorten {
+   my ( $num, %args ) = @_;
+   my $p = defined $args{p} ? $args{p} : 2;     # float precision
+   my $d = defined $args{d} ? $args{d} : 1_024; # divisor
+   my $n = 0;
+
+   while ( $num >= $d ) {
+      $num /= $d;
+      ++$n;
+   }
+   return sprintf(
+      $num =~ m/\./ || $n
+         ? "%.${p}f%s"
+         : '%d',
+      $num, ('','k','M','G', 'T')[$n]);
+}
+
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# Transformers:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Transformers package
+# ###########################################################################
+
+# ###########################################################################
 # And now for the "program".
 # ###########################################################################
 package main;
 
+use Data::Dumper;
 use English qw(-no_match_vars);
-use List::Util qw(max min);
-use sigtrap qw(handler finish untrapped normal-signals);
+Transformers->import( qw(shorten micro_t) );
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-$OUTPUT_AUTOFLUSH = 1;
+$SIG{INT} = \&sig_int;
+
+# TODO:
+#     percent distinct vals
+#     min, max values
+#     show stats overall: number of events, total time, min ts, max ts, pct of
+#     time running queries
+#     show time-of-day clustering (e.g. query always happens around 4AM)
+#     catch ctrl-c and print results so far.
+#     optimize.  Profiling results:
+# %Time ExclSec CumulS #Calls sec/call Csec/c  Name
+#  49.5   34.17 34.177 203249   0.0002 0.0002  QueryRewriter::fingerprint
+#  46.7   32.26 68.797 203250   0.0002 0.0003  LogParser::parse_event
+#  3.42   2.357 36.534 406498   0.0000 0.0001  main::__ANON__
+#     periodically aggregate and print last N minutes to a file; N minutes can
+#     be different from period, so you can see the rolling average over last 15
+#     minutes, updated every 1 minute for example
 
 # ############################################################################
 # Get configuration information.
 # ############################################################################
 
-my @opt_spec = (
-   { s => 'aggregate|a',   d => 'Report aggregate statistics. '
-                              . 'Implies --sort count (default)' },
-   { s => 'asc',           d => 'Sort in ASC order instead of DESC' },
-   { s => 'avg=a',         d => 'Report averages for this list of attributes. '
-                              . 'Implies --aggregate' },
-   { s => 'count|c',       d => 'Print count of queries' },
-   # TODO { s => 'explain|e',     d => 'Rewrite queries as EXPLAIN .. SELECT' },
-   { s => 'fingerprint|f', d => 'Convert queries into abstracted form' },
-   { s => 'precision|p=i', d => 'Digits of precision for printing attributes '
-                              . '(default 5)' },
-   { s => 'progress|P=i',  d => 'Print progress every N events (default 0)' },
-   { s => 'rank|r',        d => 'Print rank in sorted order'},
-   { s => 'sample',        d => 'Print a sample query, not a fingerprint'},
-   { s => 'microslow',     d => 'Common options for slow-log processing' },
-   { s => 'numprefix',     d => 'Abstract away numeric table name prefixes' },
-   { s => 'sort=s',        d => 'Sort by this attribute' },
-   { s => 'statistics|s',  d => 'Show overall statistics' },
-   { s => 'sum=a',         d => 'Report sums for this list of attributes. '
-                              . 'Implies --aggregate' },
-   { s => 'top=i',         d => 'Print only the top N results' },
-
-   # TODO: percent distinct vals
-   # min, max values
-   # show stats overall: number of events, total time, min ts, max ts, pct of
-   # time running queries
-   # show time-of-day clustering (e.g. query always happens around 4AM)
-);
-
-# TODO: catch ctrl-c and print results so far.
-# TODO: optimize.  Profiling results:
-# %Time ExclSec CumulS #Calls sec/call Csec/c  Name
-#  49.5   34.17 34.177 203249   0.0002 0.0002  QueryRewriter::fingerprint
-#  46.7   32.26 68.797 203250   0.0002 0.0003  LogParser::parse_event
-#  3.42   2.357 36.534 406498   0.0000 0.0001  main::__ANON__
-# TODO: periodically aggregate and print last N minutes to a file; N minutes can
-# be different from period, so you can see the rolling average over last 15
-# minutes, updated every 1 minute for example
-
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
 $opt_parser->{prompt} = '[OPTION...] [FILE]';
-$opt_parser->{descr}  = q{parses and analyzes log files.  With no FILE, }
-                      . q{or when FILE is -, read standard input.};
+$opt_parser->{descr}  = q{parses and analyzes MySQL slow log files.  With no }
+                      . q{FILE, or when FILE is -, read standard input.};
 my %opts = $opt_parser->parse();
-
-if ( $opts{microslow} ) {
-   map { $opts{$_} = 1 } qw(a c f r s);
-   $opts{sum} = [ qw(Query_time Rows_examined) ];
-   $opts{avg} = [ qw(Query_time Rows_examined) ];
-   $opts{sort} = 'Query_time';
-}
-
-if ( $opts{avg} || $opts{sum} ) {
-   $opts{a} = 1;
-}
-
-# If there is just one sum/avg param and no explicit --sort, sort by that.
-if ( $opts{a} && !defined $opts{sort} ) {
-   my @parms = map { $opts{$_} ? @{$opts{$_}} : () } qw(sum avg);
-   if ( 1 == @parms ) {
-      $opts{sort} = $parms[0];
-   }
-   else {
-      $opts{sort} = 'count';
-   }
-}
-
 $opt_parser->usage_or_errors(%opts);
 
+# ############################################################################
+# Set up basic slow log metric handlers.
+# ############################################################################
 my $lp = new LogParser();
 my $qr = new QueryRewriter();
 
-# ############################################################################
-# Set up the subroutines to do the processing.
-# ############################################################################
-# List of subroutines to call for every log event.
-my @subs;
+my $slow_handlers = [
+   SQLMetrics::make_handler_for('Query_time',   'number'),
+   SQLMetrics::make_handler_for('Lock_time',    'number'),
+   SQLMetrics::make_handler_for('Rows_read',    'number'),
+   SQLMetrics::make_handler_for('Rows_sent',    'number'),
+   SQLMetrics::make_handler_for('Schema',       'string'),
+   SQLMetrics::make_handler_for('user',         'string'),
+];
 
-# Averages require sums, so build a unique list of things to sum and/or
-# average, and keep sums for them.
-if ( $opts{a} && ($opts{sum} || $opts{avg} || $opts{sort} ne 'count') ) {
-
-   # Generate a list of things to keep sums for.
-   my @sums;
-   if ( $opts{sum} ) {
-      push @sums, @{$opts{sum}};
-   }
-   if ( $opts{avg} ) {
-      push @sums, @{$opts{avg}};
-   }
-   if ( $opts{sort} && $opts{sort} ne 'count' ) {
-      push @sums, $opts{sort};
-   }
-
-   # Unique-ify the list.
-   my %seen;
-   @sums = grep { !$seen{$_}++ } @sums;
-
-   push @subs, sub {
-      my ( $event, $stats ) = @_;
-      foreach my $thing ( @sums ) {
-         # Convert yes/no into 1/0, and false values into 0.
-         my $num = $event->{$thing} || 0;
-         $num = $num =~ m/[^0-9.]/ ? (($num eq 'Yes') || 0) : $num;
-         $stats->{$thing} += $num;
-      }
-   };
-}
+my $sm = new SQLMetrics(
+   key_metric      => 'arg',
+   worst_metric    => $opts{w},
+   fingerprint     => sub { return $qr->fingerprint(@_); },
+   handlers        => $slow_handlers,
+);
 
 # ############################################################################
-# Set up the data store and the callback.
-# ############################################################################
-my %queries;
-my %stats;
-my $callback;
-my $i = 0;
-
-# Track overall stats.
-if ( $opts{s} ) {
-   push @subs, sub {
-      my ( $event, $stats ) = @_;
-      $stats{count}++;
-      $stats{'time'} += $event->{Query_time} || 0;
-      # Assume that timestamps are strictly increasing, to avoid too much
-      # computation.
-      my $ts = $event->{ts} || '';
-      $stats{start} ||= $ts;
-      $stats{end}     = $ts if $ts;
-   };
-}
-
-if ( $opts{a} ) {
-   $callback = sub {
-      my ( $event ) = @_;
-      return unless $event && $event->{arg};
-
-      # Keep the original query as well as the "key", which is either the
-      # query, fingerprint, transformed query, etc.
-      my $key = $opts{f}
-         ? $qr->fingerprint($event->{arg}, {prefixes => $opts{numprefix}})
-         : $event->{arg};
-      $queries{$key} ||= { key => $key, query => $event->{arg} };
-      my $stats = $queries{$key};
-
-      # Automatically generate a count attribute.  If someone runs
-      # mk-log-parser output back through this, and uses --aggregate, the
-      # count in that file will not get tromped on because it is uppercased.
-      $stats->{count}++;
-
-      # Execute each of the subroutines created earlier.
-      foreach my $sub ( @subs ) {
-         $sub->($event, $stats);
-      }
-
-      # Print progress: event #, line NR
-      if ( $opts{P} && ++$i % $opts{P} == 0 ) {
-         print
-            '# Progress: event ', $i,
-            ($event->{NR} ? ' at line ' . $event->{NR} : ''),
-            "\n";
-      }
-   }
-}
-else {
-   die "Transforming and printing/explaining events is TODO.  Use --aggregate.";
-}
-
-# ############################################################################
-# Actually parse the data.
+# Parse the slow log files.
 # ############################################################################
 my $oktorun = 1;
 my @fhs;
@@ -1220,72 +1461,140 @@ if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
 }
 else {
    foreach my $arg ( @ARGV ) {
-      open my $fh, "<", $arg or die "Can't open $arg: $OS_ERROR\n";
+      open my $fh, "<", $arg or die "Cannot open $arg: $OS_ERROR\n";
       push @fhs, $fh;
    }
 }
 while ( $oktorun && (my $fh = shift(@fhs) ) ) {
-   1 while ( $oktorun && $lp->parse_event($fh, $callback) );
-   close $fh or warn "Can't close filehandle: $OS_ERROR\n";
+   1 while ( $oktorun
+             && $lp->parse_event($fh, sub { $sm->calc_event_metrics(@_) }) );
+   close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
 }
 
 # ############################################################################
-# Print results.
+# Print the results.
 # ############################################################################
+sort_and_prune($sm, $opts{s}, $opts{t}, $opts{w});
+report_queries($sm);
 
-my @queries = values %queries;
-if ( my $sort = $opts{sort} ) {
-   if ( $opts{asc} ) {
-      @queries = sort { $a->{$sort} <=> $b->{$sort} } @queries;
-   }
-   else {
-      @queries = reverse sort { $a->{$sort} <=> $b->{$sort} } @queries;
-   }
-}
-
-if ( $opts{top} ) {
-   @queries = @queries[0 .. min($#queries, $opts{top} - 1)];
-}
-
-if ( $opts{s} ) {
-   print "# ", join(' ', map { "Total_$_: $stats{$_}" } sort keys %stats), "\n";
-}
-
-my $fmt = "%.$opts{p}f";
-foreach my $i ( 0 .. $#queries ) {
-   my $query = $queries[$i];
-   print "#";
-   if ( $opts{r} ) {
-      print " Rank: $i";
-   }
-   if ( $opts{c} ) {
-      print " Count: ", $query->{count};
-   }
-   if ( $opts{sum} ) {
-      print " ", join(" ",
-         map { "Sum_$_: " . fmt_stat($query->{$_}) } @{$opts{sum}});
-   }
-   if ( $opts{avg} ) {
-      print " ", join(" ",
-         map { "Avg_$_: " . fmt_stat($query->{$_}/$query->{count}) }
-            @{$opts{avg}});
-   }
-   print "\n";
-   if ( $opts{sample} ) {
-      print $query->{query}, ";\n";
-   }
-   else {
-      print $query->{key}, ";\n";
-   }
-}
+exit;
 
 # ############################################################################
 # Subroutines.
 # ############################################################################
 
-sub fmt_stat {
-   my ( $stat ) = @_;
-   return $stat =~ m/\D/ ? sprintf($fmt, $stat) : $stat;
+sub sort_and_prune {
+   my ( $sm, $sort, $top, $worst ) = @_;
+   my $q = $sm->{metrics}->{unique};
+   my $n = $top;
+
+   foreach my $fp (
+      sort { $q->{$b}->{$worst}->{$sort} <=> $q->{$a}->{$worst}->{$sort} }
+         keys %$q ) {
+      $q->{$fp}->{sort_rank} = ($top - $n + 1);
+      last if !--$n;
+   }
+
+   foreach my $fp ( keys %$q ) {
+      delete $q->{$fp} if !exists $q->{$fp}->{sort_rank};
+   }
+
+   return;
+}
+
+sub report_queries {
+   my ( $sm ) = @_;
+   my $u = $sm->{metrics}->{unique};
+   my $g = $sm->{metrics}->{all};
+
+   my $query_hdr_fmt   = "-- Query %03d " . ('_' x 62) . "\n";
+   my $metrics_hdr_fmt = "--             total    %%      min     max     95%%     avg   stdev     med\n";
+   my $count_line_fmt  = "-- %-9s %7s  %3d\n";
+   my $metric_line_fmt = "-- %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
+   my $list_line_fmt   = "-- %-9s   %-60s\n";
+
+   my @reported_metrics = (
+      {
+         metric => 'Query_time',
+         name   => 'Time',
+         fmt    => sub { return micro_t(@_, p_ms => 1, p_s => 1); },
+      },
+      {
+         metric => 'Lock_time',
+         name   => 'Lock',
+         fmt    => sub { return micro_t(@_, p_ms => 1, p_s => 1); },
+      },
+      {
+         metric => 'Rows_read',
+         name   => 'Rows read',
+         fmt    => sub { return shorten(@_, p => 1, d => 1000); },
+      },
+      {
+         metric => 'Rows_sent',
+         name   => 'Rows sent',
+         fmt    => sub { return shorten(@_, p => 1, d => 1000); },
+      },
+   );
+
+   foreach my $fp (
+      sort { $u->{$a}->{sort_rank} <=> $u->{$b}->{sort_rank} }
+         keys %$u ) {
+
+      my $q = $u->{$fp};
+
+      printf $query_hdr_fmt, $q->{sort_rank};
+      printf $metrics_hdr_fmt;
+      printf $count_line_fmt,
+         'Count',
+         $q->{count},
+         _p($q->{count}, $sm->{n_queries});
+
+      foreach my $r ( @reported_metrics ) {
+         my $metric = $r->{metric};
+         my $val    = $q->{ $metric };
+
+         printf $metric_line_fmt,
+            $r->{name},                   # friendly metric name
+            $r->{fmt}->($val->{total}),   # total
+            _p($val->{total},             # % total/grand total
+               $g->{ $metric }->{total}),
+            $r->{fmt}->($val->{min}),     # min
+            $r->{fmt}->($val->{max}),     # max
+            '000.00',                     # 95%
+            $r->{fmt}->($val->{avg}),     # avg
+            '000.00',                     # stdev
+            '000.00';                     # med
+      }
+
+      printf $list_line_fmt, 'DBs',   join(', ', keys %{$q->{Schema}});
+      printf $list_line_fmt, 'Users', join(', ', keys %{$q->{user}});
+
+      print "-- Execution times\n";
+      # TODO
+
+      print "-- Time clustering:\n";
+      # TODO
+
+      print "-- Tables\n";
+      # TODO needs my table ref parser thingy
+
+      chomp $q->{sample};
+      if ( $q->{sample} =~ m/^[\s\(]*SELECT /i ) {
+         print "-- EXPLAIN\n" . $q->{sample} . "\\G\n";
+      }
+      else {
+         print $q->{sample} . "\\G\n";
+         print "-- Converted for EXPLAIN\n--EXPLAIN\n";
+         print $qr->convert_to_select($q->{sample}) . "\\G\n";
+      }
+
+      print "\n";
+   }
+}
+
+sub _p {
+   my ( $is, $of ) = @_;
+   return sprintf "%d", ($is * 100) / ($of ||= 1);
 }
 
 sub _d {
@@ -1294,9 +1603,10 @@ sub _d {
 }
 
 # Catches signals so we can exit gracefully.
+# TODO: test this
 # TODO: break wait for <$fh> with SIGINT.
-sub finish {
-   my ($signal) = @_;
+sub sig_int {
+   my ( $signal ) = @_;
    if ( $oktorun ) {
       print STDERR "Caught SIG$signal.\n";
       $oktorun = 0;
@@ -1315,15 +1625,15 @@ sub finish {
 
 =head1 NAME
 
-mk-log-parser - Parse, transform, and analyze MySQL logs.
+mk-log-parser - Parse, transform and analyze MySQL slow logs.
 
 =head1 SYNOPSIS
 
- mk-log-parser -acf --sum Query_time,Rows_examined mysql-slow.log
+   mk-log-parser mysql-slow.log
 
 =head1 DESCRIPTION
 
-C<mk-log-parser> reads MySQL log files, such as slow logs, output from
+C<mk-log-parser> reads MySQL slow log files, such as slow logs, output from
 mysqlbinlog, or the general query log.  It recognizes log events in the logs.
 
 It takes some action upon each log event.  It can rewrite and transform
@@ -1369,85 +1679,48 @@ prefix.
 
 =over
 
-=item --aggregate
-
-Reports aggregate statistics, such as the sum of log attributes like
-C<Query_time>.  You must specify the attributes, and how to aggregate,
-separately.  After processing the log events, it will print out the aggregated
-events and statistics about them.
-
-=item --asc
-
-Reverses the sort given by L<"--sort"> so the sort is in ascending order,
-instead of the default descending order.
-
-=item --avg
-
-A comma-separated list of attributes to average.
-
-=item --count
-
-Prints the count of times each distinct event was seen.
-
-=item --fingerprint
-
-Transforms queries into an abstracted "query fingerprint".  Very useful for
-log analysis, since it groups similar queries together.  The result is B<not>
-valid SQL.
-
-=item --help
-
-Displays a help message.
-
-=item --microslow
-
-Enables the options I use most for analyzing micro-slow query logs.
-
-=item --precision
-
-Sets the display precision (number of decimal places) of aggregate statistics.
-
 =item --progress
 
-Prints progress every N events.  If N is zero, never prints progress.
+short form: -p; type: int
 
-=item --rank
-
-Prints the query's rank.
-
-=item --sample
-
-Prints a real sample query instead of the abstracted L<"--fingerprint">.
+Print a report after every N queries.
 
 =item --sort
 
-Sort by this attribute or the sum of this attribute.  If you don't specify
-anything, it'll default to C<count>.  If you don't specify anything, but you
-specify only one attribute for L<"--sum"> and L<"--avg">, it defaults to that
-attribute instead.
+short form: -s; type: string; default: total
 
-=item --statistics
+Sort the reported queries by this aggregate value of --worst.
 
-Prints out a single line with overall statistics before printing other results.
+Valid aggregate values are: total, min, max, avg, ninetyfive, stddev and med.
 
-=item --sum
-
-A comma-separated list of attributes to sum.
+See also L<"--worst">.
 
 =item --top
 
-Limits the output to the specified number of events.
+short form: -t; type: int; default: 10
 
-=item --version
+Report only the top N worst queries.
 
-Output version information and exit.
+See also L<"--worst">.
+
+=item --worst
+
+short form: -w; type: string; default: Query_time
+
+Find which queries are the worst according to this attribute.
+
+Only basic attributes are valid: Query_time, Lock_time, Rows_read, etc.
+
+This option affects the report. Only the L<"--top"> N worst queries
+according to this attribute are reported. The top N worst queries are
+determined by L<"--sort">.
 
 =back
 
 =head1 SYSTEM REQUIREMENTS
 
-You need Perl and some core packages that ought to be
-installed in any reasonably new version of Perl.
+You need Perl and some core packages that ought to be installed in any
+reasonably new version of Perl.
 
 =head1 ENVIRONMENT
 
@@ -1487,7 +1760,7 @@ Place, Suite 330, Boston, MA  02111-1307  USA.
 
 =head1 AUTHOR
 
-Baron Schwartz.
+Baron Schwartz, Daniel Nichter
 
 =head1 VERSION
 
