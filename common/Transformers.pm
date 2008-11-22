@@ -39,7 +39,9 @@ sub float_6 {
 }
 
 sub micro_t {
-   my ( $t ) = @_;
+   my ( $t, %args ) = @_;
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
    my $f;
 
    $t = 0 if $t < 0;
@@ -56,11 +58,11 @@ sub micro_t {
       $f = ($t * 1000000) . ' us';
    }
    elsif ($t >= 0.001000 && $t <= 0.999999) {
-      $f = sprintf('%.3f', $t * 1000);
+      $f = sprintf("%.${p_ms}f", $t * 1000);
       $f = ($f * 1) . ' ms'; # * 1 to remove insignificant zeros
    }
    elsif ($t >= 1) {
-      $f = sprintf('%.6f', $t);
+      $f = sprintf("%.${p_s}f", $t);
       $f = ($f * 1) . ' s'; # * 1 to remove insignificant zeros
    }
    else {

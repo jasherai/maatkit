@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 15;
+use Test::More tests => 17;
 use English qw(-no_match_vars);
 
 BEGIN {
@@ -36,16 +36,17 @@ is(micro_t('1.123000000000'), '1.123 s',     'Truncates, removes insignificant z
 is(micro_t('0.000000'), '0', 'Zero is zero');
 is(micro_t('-1.123'), '0', 'Negative number becomes zero');
 is(micro_t('0.9999998'), '999.999 ms', 'ms high edge is not rounded (999.999 ms)');
+is(micro_t('.060123', p_ms=>1), '60.1 ms', 'Can change float precision for ms in micro_t');
+is(micro_t('123.060123', p_s=>1), '123.1 s', 'Can change float precision for seconds in micro_t');
  
 is(shorten('1024.00'), '1.00k', 'Shortens 1024.00 to 1.00k');
 is(shorten('100'),     '100',   '100 does not shorten (stays 100)');
-is(shorten('99999', p => 1, d => 1_000), '100.0k', 'Can change float precision and divisor for shorten');
+is(shorten('99999', p => 1, d => 1_000), '100.0k', 'Can change float precision and divisor in shorten');
+
 
 is(secs_to_time(0), '00:00', 'secs_to_time 0 s = 00:00');
 is(secs_to_time(60), '01:00', 'secs_to_time 60 s = 1 minute');
 is(secs_to_time(3600), '01:00:00', 'secs_to_time 3600 s = 1 hour');
 is(secs_to_time(86400), '1+00:00:00', 'secd_to_time 86400 = 1 day');
-
-
 
 exit;
