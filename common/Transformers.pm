@@ -55,15 +55,15 @@ sub micro_t {
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
-      $f = ($t * 1000000) . ' us';
+      $f = ($t * 1000000) . 'us';
    }
    elsif ($t >= 0.001000 && $t <= 0.999999) {
       $f = sprintf("%.${p_ms}f", $t * 1000);
-      $f = ($f * 1) . ' ms'; # * 1 to remove insignificant zeros
+      $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
    }
    elsif ($t >= 1) {
       $f = sprintf("%.${p_s}f", $t);
-      $f = ($f * 1) . ' s'; # * 1 to remove insignificant zeros
+      $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
    }
    else {
       $f = 0;  # $t should = 0 at this point

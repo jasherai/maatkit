@@ -28,16 +28,16 @@ BEGIN {
    Transformers->import( qw(micro_t shorten secs_to_time) );
 };
 
-is(micro_t('0.000001'),       "1 us",        'Formats 1 microsecond');
-is(micro_t('0.001000'),       '1 ms',        'Formats 1 milliseconds');
-is(micro_t('1.000000'),       '1 s',         'Formats 1 second');
-is(micro_t('0.123456789999'), '123.456 ms',  'Truncates long value, does not round');
-is(micro_t('1.123000000000'), '1.123 s',     'Truncates, removes insignificant zeros');
+is(micro_t('0.000001'),       "1us",        'Formats 1 microsecond');
+is(micro_t('0.001000'),       '1ms',        'Formats 1 milliseconds');
+is(micro_t('1.000000'),       '1s',         'Formats 1 second');
+is(micro_t('0.123456789999'), '123.456ms',  'Truncates long value, does not round');
+is(micro_t('1.123000000000'), '1.123s',     'Truncates, removes insignificant zeros');
 is(micro_t('0.000000'), '0', 'Zero is zero');
 is(micro_t('-1.123'), '0', 'Negative number becomes zero');
-is(micro_t('0.9999998'), '999.999 ms', 'ms high edge is not rounded (999.999 ms)');
-is(micro_t('.060123', p_ms=>1), '60.1 ms', 'Can change float precision for ms in micro_t');
-is(micro_t('123.060123', p_s=>1), '123.1 s', 'Can change float precision for seconds in micro_t');
+is(micro_t('0.9999998'), '999.999ms', 'ms high edge is not rounded (999.999 ms)');
+is(micro_t('.060123', p_ms=>1), '60.1ms', 'Can change float precision for ms in micro_t');
+is(micro_t('123.060123', p_s=>1), '123.1s', 'Can change float precision for seconds in micro_t');
  
 is(shorten('1024.00'), '1.00k', 'Shortens 1024.00 to 1.00k');
 is(shorten('100'),     '100',   '100 does not shorten (stays 100)');
