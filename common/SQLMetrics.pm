@@ -218,12 +218,13 @@ sub _calc_metric {
    my $e_ds = $fp_ds->{ $metric } ||= {};
    my $g_ds = $self->{metrics}->{all}->{ $metric } ||= {};
 
-   # Save the current val for this metric.
-   # This is used later to determine if the query sample
-   # should be updated.
-   $e_ds->{last} = $metric_val;
-
    if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
+
+      # Save the current val for this metric.
+      # This is used later to determine if the query sample
+      # should be updated.
+      $e_ds->{last} = $metric_val;
+
       $e_ds->{total} += $metric_val;
 
       $e_ds->{min} = $metric_val if !defined $e_ds->{min};

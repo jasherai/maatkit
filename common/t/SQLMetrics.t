@@ -83,7 +83,6 @@ my $metrics = {
          },
          'user' => {
             'root' => 1,
-            last => 'root',
          },
          'sample' => 'INSERT IGNORE INTO articles (id, body,)VALUES(3558268,\'sample text\')'
       },
@@ -103,7 +102,6 @@ my $metrics = {
          'user' => {
             bob   => 1,
             root  => 1,
-            last  => 'bob',
          },
          'sample' => 'SELECT id FROM users WHERE name=\'foo\''
       }
@@ -184,7 +182,6 @@ $metrics = {
          'user' => {
             'bob' => 2,
             'root' => 1,
-            last => 'root',
          },
          'sample' => 'foo 2'
       },
