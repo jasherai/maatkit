@@ -313,7 +313,7 @@ sub nth_percent {
 sub stddev {
    my ( $self, $vals ) = @_;
    my $n_vals = scalar @$vals;
-   return 0 if !$n_vals;
+   return 0 if !defined $n_vals || !$n_vals;
    my $sum   = 0;
    my $sumsq = 0;
 
@@ -335,7 +335,7 @@ sub median {
    my @vals_copy = @$vals;
    my $n_vals    = scalar @vals_copy;
 
-   return 0 if !$n_vals;
+   return 0 if !defined $n_vals || !$n_vals;
    return $vals_copy[0] if $n_vals == 1;
 
    @vals_copy = sort { $a <=> $b } @vals_copy unless $op{sorted};
@@ -354,7 +354,7 @@ sub median {
 sub avg {
    my ( $self, $vals ) = @_;
    my $n_vals = scalar @$vals;
-   return 0 if !$n_vals;
+   return 0 if !defined $n_vals || !$n_vals;
    my $sum = 0;
    foreach my $val ( @$vals ) {
       $sum += $val;
