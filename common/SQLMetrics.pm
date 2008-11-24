@@ -270,27 +270,6 @@ sub _calc_metric {
    return;
 }
 
-sub nth_percent {
-   my ( $vals, %args ) = @_;
-   my %default_args = (
-      sorted  => 0,     # vals are not yet sorted
-      atleast => 10,    # require at least 10 vals
-      nth     => 95,    # 95th percentile of vals
-      from    => 'top', # from the top
-   );
-   my %op = ( %default_args, %args );
-   return if scalar @$vals < $op{atleast};
-
-   my @s = @$vals;
-   my $n;
-
-   @s = sort { $a <=> $b } @s unless $op{sorted};
-   $n = ((scalar @s) * $op{nth}) / 100;  # cut-off percent
-   @s = splice(@s, 0, $n); # remove vals after cut-off percent
-
-   return \@s;
-}
-
 sub reset_buffer {
    my ( $self ) = @_;
    @buffered_events = ();
@@ -307,6 +286,69 @@ sub reset_metrics {
    $self->{metrics}->{all}    = {};
    $self->{metrics}->{unique} = {};
    return;
+}
+
+sub nth_percent {
+   my ( $self, $vals, %args ) = @_;
+   my %default_args = (
+      sorted  => 0,     # vals are not yet sorted
+      atleast => 10,    # require at least 10 vals
+      nth     => 95,    # 95th percentile of vals
+      from    => 'top', # from the top
+   );
+   my %op = ( %default_args, %args );
+   return if scalar @$vals < $op{atleast};
+   my @vals_copy = @$vals;
+   my $cutoff;
+
+   @vals_copy = sort { $a <=> $b } @vals_copy unless $op{sorted};
+   $cutoff    = ((scalar @vals_copy) * $op{nth}) / 100;  # cut-off percent
+   @vals_copy = splice(@vals_copy, 0, $cutoff); # remove vals after cut-off
+
+   return \@vals_copy;
+}
+
+# The following stddev algo was taken from
+# http://www.linuxjournal.com/article/6540
+sub stddev {
+   my ( $self, $vals ) = @_;
+   my $n_vals = scalar @$vals;
+   return 0 if !$n_vals;
+   my $sum   = 0;
+   my $sumsq = 0;
+
+   foreach my $val ( @$vals ) {
+      $sum   += $val;
+      $sumsq += ($val **2);
+   }
+
+   return sprintf "%.1f", sqrt $sumsq / $n_vals - (($sum/$n_vals) ** 2);
+}
+
+sub median {
+   my ( $self, $vals, %args ) = @_;
+   my %default_args = (
+      sorted  => 0,     # vals are not yet sorted
+   );
+   my %op = ( %default_args, %args );
+   my $median;
+   my @vals_copy = @$vals;
+   my $n_vals    = scalar @vals_copy;
+
+   return 0 if !$n_vals;
+   return $vals_copy[0] if $n_vals == 1;
+
+   @vals_copy = sort { $a <=> $b } @vals_copy unless $op{sorted};
+   if ( $n_vals % 2 ) {
+      my $middle = int ($n_vals / 2);
+      $median = $vals_copy[$middle];
+   }
+   else {
+      my $middle = $n_vals / 2;
+      $median = ($vals_copy[$middle - 1] + $vals_copy[$middle]) / 2;
+   }
+
+   return $median;
 }
 
 sub _d {

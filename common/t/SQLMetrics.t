@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 9;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -204,5 +204,12 @@ foreach my $event ( @$events ) {
    $m->calc_event_metrics($event);
 }
 is_deeply($m->{metrics}, $metrics, 'Keeps worst sample');
+
+cmp_ok($m->median([3,6,7,4,5]), '==', 5, 'Median value for odd list');
+cmp_ok($m->median([3,6,4,5]), '==', 4.5, 'Median value for even list');
+cmp_ok($m->median([9]), '==', 9, 'Median value for 1 value list');
+cmp_ok($m->median([]), '==', 0, 'Median value for empty list');
+
+cmp_ok($m->stddev([2,3,6,4,8,9,1,1,1]), '==', '2.9', 'stddev');
 
 exit;
