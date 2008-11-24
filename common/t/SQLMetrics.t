@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 9;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -211,5 +211,7 @@ cmp_ok($m->median([9]), '==', 9, 'Median value for 1 value list');
 cmp_ok($m->median([]), '==', 0, 'Median value for empty list');
 
 cmp_ok($m->stddev([2,3,6,4,8,9,1,1,1]), '==', '2.9', 'stddev');
+
+cmp_ok($m->avg([3,4,6,2,4,1,1]), '==', '3', 'avg');
 
 exit;

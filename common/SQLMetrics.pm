@@ -351,6 +351,17 @@ sub median {
    return $median;
 }
 
+sub avg {
+   my ( $self, $vals ) = @_;
+   my $n_vals = scalar @$vals;
+   return 0 if !$n_vals;
+   my $sum = 0;
+   foreach my $val ( @$vals ) {
+      $sum += $val;
+   }
+   return $sum / $n_vals;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# SQLMetrics:$line $PID ", @_, "\n";
