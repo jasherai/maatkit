@@ -1386,9 +1386,6 @@ sub _d {
 # End Transformers package
 # ###########################################################################
 
-# ###########################################################################
-# And now for the "program".
-# ###########################################################################
 package main;
 
 use Data::Dumper;
@@ -1398,22 +1395,6 @@ Transformers->import( qw(shorten micro_t) );
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 $SIG{INT} = \&sig_int;
-
-# TODO:
-#     percent distinct vals
-#     min, max values
-#     show stats overall: number of events, total time, min ts, max ts, pct of
-#     time running queries
-#     show time-of-day clustering (e.g. query always happens around 4AM)
-#     catch ctrl-c and print results so far.
-#     optimize.  Profiling results:
-# %Time ExclSec CumulS #Calls sec/call Csec/c  Name
-#  49.5   34.17 34.177 203249   0.0002 0.0002  QueryRewriter::fingerprint
-#  46.7   32.26 68.797 203250   0.0002 0.0003  LogParser::parse_event
-#  3.42   2.357 36.534 406498   0.0000 0.0001  main::__ANON__
-#     periodically aggregate and print last N minutes to a file; N minutes can
-#     be different from period, so you can see the rolling average over last 15
-#     minutes, updated every 1 minute for example
 
 # ############################################################################
 # Get configuration information.
@@ -1633,11 +1614,8 @@ mk-log-parser - Parse, transform and analyze MySQL slow logs.
 
 =head1 DESCRIPTION
 
-C<mk-log-parser> reads MySQL slow log files, such as slow logs, output from
-mysqlbinlog, or the general query log.  It recognizes log events in the logs.
-
-It takes some action upon each log event.  It can rewrite and transform
-queries, for example.
+C<mk-log-parser> reads MySQL slow log files and generates a report that's useful
+for optimizing a server.
 
 Each log event has various B<attributes>.  For example, the slow query log
 produces output like this:
@@ -1653,9 +1631,8 @@ attributes gathered from particular log formats, there is always a C<count>
 attribute: the number of times an event has been seen.
 
 C<mk-log-parser> reads the files you specify on the command line, or standard
-input.  When it is in L<"--aggregate"> mode, it prints results after it
-finishes processing the whole log file.  You can cancel it with C<CTRL-C> and
-it will abort processing the log file, then print the statistics.
+input.  You can cancel it with C<CTRL-C> and it will abort processing the log
+file, then print the statistics.
 
 =head1 DOWNLOADING
 
@@ -1689,7 +1666,7 @@ Print a report after every N queries.
 
 short form: -s; type: string; default: total
 
-Sort the reported queries by this aggregate value of --worst.
+Sort the reported queries by this aggregate value of L<--worst>.
 
 Valid aggregate values are: total, min, max, avg, ninetyfive, stddev and med.
 
