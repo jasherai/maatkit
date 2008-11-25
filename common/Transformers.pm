@@ -31,7 +31,14 @@ require Exporter;
 our @ISA         = qw(Exporter);
 our %EXPORT_TAGS = ();
 our @EXPORT      = ();
-our @EXPORT_OK   = qw(float_6 micro_t secs_to_time shorten ts);
+our @EXPORT_OK   = qw(
+   float_6
+   micro_t
+   percentage_of
+   secs_to_time
+   shorten 
+   ts
+);
 
 sub float_6 {
    my ( $val ) = @_;
@@ -70,6 +77,14 @@ sub micro_t {
    }
 
    return $f;
+}
+
+# Returns what percentage $is of $of.
+sub percentage_of {
+   my ( $is, $of, %args ) = @_;
+   my $p   = defined $args{p} ? $args{p} : 2; # float precision
+   my $fmt = $p ? "%.${p}f" : "%d";
+   return sprintf $fmt, ($is * 100) / ($of ||= 1);
 }
 
 sub secs_to_time {
