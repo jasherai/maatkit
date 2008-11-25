@@ -3,8 +3,9 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 11;
 use English qw(-no_match_vars);
+use Data::Dumper;
 
 require "../LogParser.pm";
 
@@ -657,5 +658,75 @@ $events = [
    },
 ];
 is_deeply(\@e, $events, 'Parses commented event (admin cmd)');
+
+@e = ();
+open $file, "<", 'samples/slow011.txt' or die $OS_ERROR;
+1 while ( $p->parse_event( $file, \&simple_callback ) );
+$events = [
+   {
+     'Schema' => 'db1',
+     'cmd' => 'Admin',
+     'arg' => 'Quit',
+     'ip' => '1.2.3.8',
+     'Thread_id' => '5',
+     'host' => '',
+     'Rows_examined' => '0',
+     'NR' => '22',
+     'user' => 'meow',
+     'Query_time' => '0.000002',
+     'Lock_time' => '0.000000',
+     'Rows_sent' => '0'
+   },
+   {
+     'Schema' => 'db2',
+     'db' => 'db',
+     'cmd' => 'Query',
+     'ip' => '1.2.3.8',
+     'settings' => [
+                     'SET NAMES utf8'
+                   ],
+     'Thread_id' => '6',
+     'host' => '',
+     'Rows_examined' => '0',
+     'NR' => '28',
+     'user' => 'meow',
+     'Query_time' => '0.000899',
+     'Lock_time' => '0.000000',
+     'Rows_sent' => '0'
+   },
+   {
+     'Schema' => 'db2',
+     'db' => 'db2',
+     'cmd' => 'Admin',
+     'arg' => 'Quit',
+     'ip' => '1.2.3.8',
+     'Thread_id' => '7',
+     'host' => '',
+     'Rows_examined' => '0',
+     'NR' => '34',
+     'user' => 'meow',
+     'Query_time' => '0.018799',
+     'Lock_time' => '0.009453',
+     'Rows_sent' => '0'
+   },
+   {
+     'Schema' => 'db2',
+     'db' => 'db',
+     'cmd' => 'Query',
+     'ip' => '1.2.3.8',
+     'settings' => [
+                     'SET NAMES utf8'
+                   ],
+     'Thread_id' => '9',
+     'host' => '',
+     'Rows_examined' => '0',
+     'NR' => '39',
+     'user' => 'meow',
+     'Query_time' => '0.000899',
+     'Lock_time' => '0.000000',
+     'Rows_sent' => '0'
+   }
+];
+is_deeply(\@e, $events, 'Parses commented event lines after type 1 lines');
 
 exit;

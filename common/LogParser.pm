@@ -204,6 +204,13 @@ sub parse_event {
                   @{$event}{keys %hash} = values %hash;
                }
             }
+            elsif ( $type == 1 && $line =~ m/^#.+;/ ) {
+               # Handle commented event lines preceded by other lines; e.g.:
+               # USE db;
+               # # administrator command: Quit;
+               MKDEBUG && _d('Commented event line after type 1 line');
+               $handled_line = 0;
+            }
             else {
                # Last line was the end of a query; this is the beginning of the
                # next.
@@ -249,6 +256,8 @@ sub parse_event {
          } 
       }
 
+      # TODO: I think $NR may be misleading because Perl may not distinguish
+      # one file from the next.
       $event->{NR} = $NR;
 
       $line = <$fh> unless $done;
