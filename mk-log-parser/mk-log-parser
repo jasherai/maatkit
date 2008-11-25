@@ -1024,7 +1024,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2514
+# SQLMetrics package 2527
 # ###########################################################################
 
 package SQLMetrics;
@@ -1218,27 +1218,6 @@ sub _calc_metric {
    return;
 }
 
-sub nth_percent {
-   my ( $vals, %args ) = @_;
-   my %default_args = (
-      sorted  => 0,     # vals are not yet sorted
-      atleast => 10,    # require at least 10 vals
-      nth     => 95,    # 95th percentile of vals
-      from    => 'top', # from the top
-   );
-   my %op = ( %default_args, %args );
-   return if scalar @$vals < $op{atleast};
-
-   my @s = @$vals;
-   my $n;
-
-   @s = sort { $a <=> $b } @s unless $op{sorted};
-   $n = ((scalar @s) * $op{nth}) / 100;  # cut-off percent
-   @s = splice(@s, 0, $n); # remove vals after cut-off percent
-
-   return \@s;
-}
-
 sub reset_buffer {
    my ( $self ) = @_;
    @buffered_events = ();
@@ -1255,6 +1234,45 @@ sub reset_metrics {
    $self->{metrics}->{all}    = {};
    $self->{metrics}->{unique} = {};
    return;
+}
+
+sub calculate_statistical_metrics {
+   my ( $self, $vals, %args ) = @_;
+   return (0, 0, 0) if !defined $vals;
+   my $n_vals = scalar @$vals;
+   return (0, 0, 0) if !$n_vals;
+   return ($vals->[0], 0, $vals->[0]) if $n_vals == 1;
+   my @vals_copy = @$vals;
+
+   @vals_copy = sort { $a <=> $b } @vals_copy;
+
+   if ( $n_vals >= 10 ) {
+      my $cutoff;
+      $cutoff    = ((scalar @vals_copy) * 95) / 100;  # cut-off percent
+      @vals_copy = splice(@vals_copy, 0, $cutoff); # remove vals after cut-off
+      $n_vals    = scalar @vals_copy;
+   }
+
+   my $sum   = 0;
+   my $sumsq = 0;
+   foreach my $val ( @vals_copy ) {
+      $sum   += $val;
+      $sumsq += ($val **2);
+   }
+
+   my $stddev = sprintf "%.1f", sqrt $sumsq / $n_vals - (($sum/$n_vals) ** 2);
+
+   my $median;
+   if ( $n_vals % 2 ) {
+      my $middle = int ($n_vals / 2);
+      $median = $vals_copy[$middle];
+   }
+   else {
+      my $middle = $n_vals / 2;
+      $median = ($vals_copy[$middle - 1] + $vals_copy[$middle]) / 2;
+   }
+
+   return ($sum / $n_vals, $stddev, $median);
 }
 
 sub _d {
@@ -1489,7 +1507,7 @@ sub report_queries {
    my $g = $sm->{metrics}->{all};
 
    my $query_hdr_fmt   = "-- Query %03d " . ('_' x 62) . "\n";
-   my $metrics_hdr_fmt = "--             total    %%      min     max     95%%     avg   stdev     med\n";
+   my $metrics_hdr_fmt = "--             total    %%      min     max     avg     95%%  stddev  median\n";
    my $count_line_fmt  = "-- %-9s %7s  %3d\n";
    my $metric_line_fmt = "-- %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
    my $list_line_fmt   = "-- %-9s   %-60s\n";
@@ -1531,8 +1549,11 @@ sub report_queries {
          _p($q->{count}, $sm->{n_queries});
 
       foreach my $r ( @reported_metrics ) {
-         my $metric = $r->{metric};
-         my $val    = $q->{ $metric };
+         my $metric      = $r->{metric};
+         my $val         = $q->{ $metric };
+         next if !defined $val;
+         my ( $avg, $stddev, $median )
+            = $sm->calculate_statistical_metrics($val->{all_vals});
 
          printf $metric_line_fmt,
             $r->{name},                   # friendly metric name
@@ -1541,10 +1562,10 @@ sub report_queries {
                $g->{ $metric }->{total}),
             $r->{fmt}->($val->{min}),     # min
             $r->{fmt}->($val->{max}),     # max
-            '000.00',                     # 95%
             $r->{fmt}->($val->{avg}),     # avg
-            '000.00',                     # stdev
-            '000.00';                     # med
+            $r->{fmt}->($avg),            # 95% avg
+            $stddev,                      # 95% stdev
+            $r->{fmt}->($median);         # 95% med
       }
 
       printf $list_line_fmt, 'DBs',   join(', ', keys %{$q->{Schema}});
