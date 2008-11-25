@@ -288,56 +288,38 @@ sub reset_metrics {
    return;
 }
 
-sub nth_percent {
+# Returns avg, stddev and median of lower 95% of values.
+sub calculate_statistical_metrics {
    my ( $self, $vals, %args ) = @_;
-   my %default_args = (
-      sorted  => 0,     # vals are not yet sorted
-      atleast => 10,    # require at least 10 vals
-      nth     => 95,    # 95th percentile of vals
-      from    => 'top', # from the top
-   );
-   my %op = ( %default_args, %args );
-   return if scalar @$vals < $op{atleast};
-   my @vals_copy = @$vals;
-   my $cutoff;
-
-   @vals_copy = sort { $a <=> $b } @vals_copy unless $op{sorted};
-   $cutoff    = ((scalar @vals_copy) * $op{nth}) / 100;  # cut-off percent
-   @vals_copy = splice(@vals_copy, 0, $cutoff); # remove vals after cut-off
-
-   return \@vals_copy;
-}
-
-# The following stddev algo was taken from
-# http://www.linuxjournal.com/article/6540
-sub stddev {
-   my ( $self, $vals ) = @_;
+   return (0, 0, 0) if !defined $vals;
    my $n_vals = scalar @$vals;
-   return 0 if !defined $vals || !$n_vals;
+   return (0, 0, 0) if !$n_vals;
+   return ($vals->[0], 0, $vals->[0]) if $n_vals == 1;
+   my @vals_copy = @$vals;
+
+   @vals_copy = sort { $a <=> $b } @vals_copy;
+
+   # Reduce vals to lower 95% percent.
+   if ( $n_vals >= 10 ) {
+      my $cutoff;
+      $cutoff    = ((scalar @vals_copy) * 95) / 100;  # cut-off percent
+      @vals_copy = splice(@vals_copy, 0, $cutoff); # remove vals after cut-off
+      $n_vals    = scalar @vals_copy;
+   }
+
+   # The following stddev algo was taken from
+   # http://www.linuxjournal.com/article/6540
    my $sum   = 0;
    my $sumsq = 0;
-
-   foreach my $val ( @$vals ) {
+   foreach my $val ( @vals_copy ) {
       $sum   += $val;
       $sumsq += ($val **2);
    }
 
-   return sprintf "%.1f", sqrt $sumsq / $n_vals - (($sum/$n_vals) ** 2);
-}
+   my $stddev = sprintf "%.1f", sqrt $sumsq / $n_vals - (($sum/$n_vals) ** 2);
 
-sub median {
-   my ( $self, $vals, %args ) = @_;
-   my $n_vals = scalar @$vals;
-   return 0 if !defined $vals || !$n_vals;
-   return $vals->[0] if $n_vals == 1;
-   my %default_args = (
-      sorted  => 0,     # vals are not yet sorted
-   );
-   my %op = ( %default_args, %args );
+   # Median
    my $median;
-   my @vals_copy = @$vals;
-
-   @vals_copy = sort { $a <=> $b } @vals_copy unless $op{sorted};
    if ( $n_vals % 2 ) {
       my $middle = int ($n_vals / 2);
       $median = $vals_copy[$middle];
@@ -347,18 +329,7 @@ sub median {
       $median = ($vals_copy[$middle - 1] + $vals_copy[$middle]) / 2;
    }
 
-   return $median;
-}
-
-sub avg {
-   my ( $self, $vals ) = @_;
-   my $n_vals = scalar @$vals;
-   return 0 if !defined $vals || !$n_vals;
-   my $sum = 0;
-   foreach my $val ( @$vals ) {
-      $sum += $val;
-   }
-   return $sum / $n_vals;
+   return ($sum / $n_vals, $stddev, $median);
 }
 
 sub _d {

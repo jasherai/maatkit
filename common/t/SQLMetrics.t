@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 12;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -205,15 +205,34 @@ foreach my $event ( @$events ) {
 }
 is_deeply($m->{metrics}, $metrics, 'Keeps worst sample');
 
-cmp_ok($m->median([3,6,7,4,5]), '==', 5, 'Median value for odd list');
-cmp_ok($m->median([3,6,4,5]), '==', 4.5, 'Median value for even list');
-cmp_ok($m->median([9]), '==', 9, 'Median value for 1 value list');
-cmp_ok($m->median([]), '==', 0, 'Median value for empty list');
+# #############################################################################
+# Test statistical metrics: 95% avg, stddev and median
+# #############################################################################
+my @stats = $m->calculate_statistical_metrics([2,3,6,4,8,9,1,1,1,5,4,3,1]);
+is_deeply(
+   \@stats,
+   [3.25, 2.2, 3],
+   'Calculates statistical metrics'
+);
 
-cmp_ok($m->stddev([2,3,6,4,8,9,1,1,1]), '==', '2.9', 'stddev');
-cmp_ok($m->stddev([]), '==', 0, 'stddev for empty list');
+@stats = $m->calculate_statistical_metrics(undef);
+is_deeply(
+   \@stats,
+   [0,0,0],
+   'Calculates statistical metrics for undef array'
+);
 
-cmp_ok($m->avg([3,4,6,2,4,1,1]), '==', 3, 'avg');
-cmp_ok($m->avg([]), '==', 0, 'avg for empty list');
+@stats = $m->calculate_statistical_metrics([]);
+is_deeply(
+   \@stats,
+   [0,0,0],
+   'Calculates statistical metrics for empty array'
+);
 
+@stats = $m->calculate_statistical_metrics([9]);
+is_deeply(
+   \@stats,
+   [9,0,9],
+   'Calculates statistical metrics for 1 value'
+);
 exit;
