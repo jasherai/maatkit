@@ -208,31 +208,53 @@ is_deeply($m->{metrics}, $metrics, 'Keeps worst sample');
 # #############################################################################
 # Test statistical metrics: 95% avg, stddev and median
 # #############################################################################
-my @stats = $m->calculate_statistical_metrics([2,3,6,4,8,9,1,1,1,5,4,3,1]);
+my $expected_stats = {
+   avg       => 3.25,
+   stddev    => 2.2,
+   median    => 3,
+   distro    => [],
+   cutoff    => 12,
+};
+my $stats = $m->calculate_statistical_metrics([2,3,6,4,8,9,1,1,1,5,4,3,1]);
 is_deeply(
-   \@stats,
-   [3.25, 2.2, 3],
+   $stats,
+   $expected_stats,
    'Calculates statistical metrics'
 );
 
-@stats = $m->calculate_statistical_metrics(undef);
+$expected_stats = {
+   avg       => 0,
+   stddev    => 0,
+   median    => 0,
+   distro    => [],
+   cutoff    => undef,
+};
+$stats = $m->calculate_statistical_metrics(undef);
 is_deeply(
-   \@stats,
-   [0,0,0],
+   $stats,
+   $expected_stats,
    'Calculates statistical metrics for undef array'
 );
 
-@stats = $m->calculate_statistical_metrics([]);
+$stats = $m->calculate_statistical_metrics([]);
 is_deeply(
-   \@stats,
-   [0,0,0],
+   $stats,
+   $expected_stats,
    'Calculates statistical metrics for empty array'
 );
-
-@stats = $m->calculate_statistical_metrics([9]);
+ 
+$expected_stats = {
+   avg       => 9,
+   stddev    => 0,
+   median    => 9,
+   distro    => [],
+   cutoff    => undef,
+};
+$stats = $m->calculate_statistical_metrics([9]);
 is_deeply(
-   \@stats,
-   [9,0,9],
+   $stats,
+   $expected_stats,
    'Calculates statistical metrics for 1 value'
 );
+
 exit;

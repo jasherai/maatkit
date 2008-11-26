@@ -288,48 +288,95 @@ sub reset_metrics {
    return;
 }
 
-# Returns avg, stddev and median of lower 95% of values.
+# Returns a hashref with the following statistical metrcis:
+# {
+#    avg       => (of 95% vals), 
+#    stddev    => (of 95% vals),
+#    median    => (of 95% vals),
+#    distro    => (if $arg{distro})
+#       [
+#          vals 0-1us,
+#          vals 1us-10us,
+#          ...
+#       ],
+#    cutoff    => cutoff point for 95% vals
+# }
 sub calculate_statistical_metrics {
    my ( $self, $vals, %args ) = @_;
-   return (0, 0, 0) if !defined $vals;
+   my $statistical_metrics = {
+      avg       => 0,
+      stddev    => 0,
+      median    => 0,
+      distro    => [],
+      cutoff    => undef,
+   };
+   return $statistical_metrics if !defined $vals;
+
    my $n_vals = scalar @$vals;
-   return (0, 0, 0) if !$n_vals;
-   return ($vals->[0], 0, $vals->[0]) if $n_vals == 1;
-   my @vals_copy = @$vals;
+   return $statistical_metrics if !$n_vals;
 
-   @vals_copy = sort { $a <=> $b } @vals_copy;
+   if ( $n_vals == 1 ) {
+      $statistical_metrics->{avg}    = $vals->[0];
+      $statistical_metrics->{median} = $vals->[0];
+      return $statistical_metrics;
+   }
 
-   # Reduce vals to lower 95% percent.
+   # Reduce vals to lower 95% percent if there is at least 10 vals.
    if ( $n_vals >= 10 ) {
-      my $cutoff;
-      $cutoff    = ((scalar @vals_copy) * 95) / 100;  # cut-off percent
-      @vals_copy = splice(@vals_copy, 0, $cutoff); # remove vals after cut-off
-      $n_vals    = scalar @vals_copy;
-   }
-
-   # The following stddev algo was taken from
-   # http://www.linuxjournal.com/article/6540
-   my $sum   = 0;
-   my $sumsq = 0;
-   foreach my $val ( @vals_copy ) {
-      $sum   += $val;
-      $sumsq += ($val **2);
-   }
-
-   my $stddev = sprintf "%.1f", sqrt $sumsq / $n_vals - (($sum/$n_vals) ** 2);
-
-   # Median
-   my $median;
-   if ( $n_vals % 2 ) {
-      my $middle = int ($n_vals / 2);
-      $median = $vals_copy[$middle];
+      $statistical_metrics->{cutoff} = int ( scalar @$vals * 0.95 );
    }
    else {
-      my $middle = $n_vals / 2;
-      $median = ($vals_copy[$middle - 1] + $vals_copy[$middle]) / 2;
+      $statistical_metrics->{cutoff} = $n_vals;
    }
 
-   return ($sum / $n_vals, $stddev, $median);
+   # Note: cutoff serves also for the number of vals left in the 95%.
+   # E.g. with 50 vals the cutoff is 47 which means there are 47 vals: 0..46.
+
+   # Used for getting the median val.
+   my $middle_val_n = int $statistical_metrics->{cutoff} / 2;
+   my $previous_val;
+
+   my $sum    = 0; # stddev and 95% avg
+   my $sumsq  = 0; # stddev
+   my $val_n  = 0; # val number for knowing when we've reach the 95%
+   foreach my $val ( sort { $a <=> $b } @$vals ) {
+      # Distribution of vals for all vals, if requested.
+      if ( $args{distro} ) {
+      }
+
+      # stddev and median only for 95% vals.
+      if ( $val_n < $statistical_metrics->{cutoff} ) {
+
+         # Median
+         if ( $val_n == $middle_val_n ) {
+            if ( $statistical_metrics->{cutoff} % 2 ) {
+               $statistical_metrics->{median} = $val;
+            }
+            else {
+               $statistical_metrics->{median} = ($previous_val + $val) / 2;
+            }
+         }
+
+         # The following stddev algo was adapted from
+         # http://www.linuxjournal.com/article/6540
+         $sum   += $val;
+         $sumsq += ($val **2);
+
+         $val_n++;
+
+         # Needed for calcing median when list has even number of elements.
+         $previous_val = $val;
+      }
+   }
+
+   $statistical_metrics->{stddev}
+      = sprintf "%.1f",
+         sqrt $sumsq / $statistical_metrics->{cutoff}
+            - (($sum / $statistical_metrics->{cutoff}) ** 2);
+
+   $statistical_metrics->{avg} = $sum / $statistical_metrics->{cutoff};
+
+   return $statistical_metrics;
 }
 
 sub _d {
