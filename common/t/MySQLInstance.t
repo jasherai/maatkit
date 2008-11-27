@@ -20,18 +20,20 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 26;
+use Test::More tests => 27;
 use English qw(-no_match_vars);
-
 use DBI;
 
 require '../MySQLInstance.pm';
 require '../DSNParser.pm';
+require '../Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
-
 
 sub load_file {
    my ($file) = @_;
@@ -41,22 +43,30 @@ sub load_file {
    return $contents;
 }
 
-print `../../sandbox/simple/make_sandbox 5126`;
-my $cmd = '/usr/sbin/mysqld --defaults-file=/tmp/5126/my.sandbox.cnf --basedir=/usr --datadir=/tmp/5126/data --pid-file=/tmp/5126/data/mysql_sandbox5126.pid --skip-external-locking --port=5126 --socket=/tmp/5126/mysql_sandbox5126.sock --long-query-time=3';
+# We must get the basedir to the mysqld bin because this path will
+# differ from my machine to yours. For example, on my machine it is:
+# /home/daniel/mysql/5.0.51
+# I doubt, though, that that path is valid on your machine.
+my $msandbox_basedir = $ENV{MSANDBOX_BASEDIR};
+if ( !defined $msandbox_basedir || !-d $msandbox_basedir ) {
+   BAIL_OUT("The MSANDBOX_BASEDIR environment variable is not set or valid.");
+}
 
+# This should be the exact cmd line op with which the sandbox started mysqld.
+# If not, tests below will fail.
+my $cmd = "$msandbox_basedir/bin/mysqld --defaults-file=/tmp/12345/my.sandbox.cnf --basedir=/usr --datadir=/tmp/12345/data --pid-file=/tmp/12345/data/mysql_sandbox12345.pid --skip-external-locking --port=12345 --socket=/tmp/12345/mysql_sandbox12345.sock --long-query-time=3";
 my %ops = (
-   pid_file              => '/tmp/5126/data/mysql_sandbox5126.pid',
-   defaults_file         => '/tmp/5126/my.sandbox.cnf',
-   datadir               => '/tmp/5126/data',
-   port                  => '5126',
-   'socket'              => '/tmp/5126/mysql_sandbox5126.sock',
+   pid_file              => '/tmp/12345/data/mysql_sandbox12345.pid',
+   defaults_file         => '/tmp/12345/my.sandbox.cnf',
+   datadir               => '/tmp/12345/data',
+   port                  => '12345',
+   'socket'              => '/tmp/12345/mysql_sandbox12345.sock',
    basedir               => '/usr',
    skip_external_locking => 'ON',
    long_query_time       => '3',
 );
-
 is(
-   '/usr/sbin/mysqld',
+   "$msandbox_basedir/bin/mysqld",
    MySQLInstance::find_mysqld_binary_unix($cmd),
    'Found mysqld binary',
 );
@@ -66,7 +76,6 @@ is(MySQLInstance::get_register_size(
    64,
    'Got 64-bit size',
 );
-
 is(MySQLInstance::get_register_size(
    q{/bin/ls: ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), }),
    32,
@@ -77,7 +86,7 @@ my $myi = new MySQLInstance($cmd);
 isa_ok($myi, 'MySQLInstance');
 is(
    $myi->{mysqld_binary},
-   '/usr/sbin/mysqld',
+   "$msandbox_basedir/bin/mysqld",
    'mysqld_binary parsed'
 );
 $myi = new MySQLInstance(q{mysql    16420 20249 99 Aug27 ?        2-21:38:12 /usr/libexec/mysqld --defaults-file=/etc/my.cnf --basedir=/usr --datadir=/db/mysql --user=mysql --pid-file=/var/run/mysqld/mysqld.pid --skip-locking --socket=/db/mysql/mysql.sock});
@@ -117,49 +126,30 @@ is_deeply(
 );
 
 my $expect_dsn_01 = {
-   P => 5126,
-   S => '/tmp/5126/mysql_sandbox5126.sock',
+   P => 12345,
+   S => '/tmp/12345/mysql_sandbox12345.sock',
    h => '127.0.0.1',
 };
 
 is_deeply(
    $myi->get_DSN(S => 'foo'),
    {
-      P => 5126,
+      P => 12345,
       S => 'foo',
       h => 'localhost',
    },
    'It keeps localhost when socket given',
 );
 
-my $dsn = $myi->get_DSN();
-is_deeply(
-   $dsn,
-   $expect_dsn_01,
-   'DSN returned'
-);
-
-$dsn->{u} = 'msandbox';
-$dsn->{p} = 'msandbox';
-my $dbh;
-my $dp = new DSNParser();
-eval {
-   $dbh = $dp->get_dbh($dp->get_cxn_params($dsn));
-};
-if ( $EVAL_ERROR ) {
-   chomp $EVAL_ERROR;
-   print "Cannot connect to " . $dp->as_string($dsn)
-         . ": $EVAL_ERROR\n\n";
-}
 $myi->load_sys_vars($dbh);
 # Sample of stable/predictable vars to make sure load_online_sys_vars()
 # actually did something, otherwise $myi->{online_sys_vars} will be empty
 my %expect_online_sys_vars_01 = (
    basedir     => '/usr/',
-   datadir     => '/tmp/5126/data/',
+   datadir     => '/tmp/12345/data/',
    'log'       => 'OFF',
    'log_bin'   => 'ON',
-   'port'      => 5126,
+   'port'      => 12345,
 );
 # The call to keys here and a few lines below is guaranteed to return in the
 # same order the var names from %expect_online_sys_vars_01
@@ -209,8 +199,6 @@ ok(exists $myi->{status_vals}->{Aborted_clients},
    'status vals: Aborted_clients');
 ok(exists $myi->{status_vals}->{Uptime},
    'status vals: Uptime');
-
-$dbh->disconnect() if defined $dbh;
 
 # #############################################################################
 # Issue 49: mk-audit doesn't parse server binary right
@@ -273,16 +261,16 @@ like($EVAL_ERROR, qr/MySQL instance has no valid defaults files/, 'Dies if no va
 
 ###############################################################################
 
-$cmd = MySQLInstance::get_eq_for('query_cache_type');
+my $eq = MySQLInstance::get_eq_for('query_cache_type');
 cmp_ok(
-   $cmd->('1', 'ON'),
+   $eq->('1', 'ON'),
    '==',
    '1',
    "eq_for query_cache_type returns 1 for '1' and 'ON'"
 );
-$cmd = MySQLInstance::get_eq_for('ft_stopword_file');
+$eq = MySQLInstance::get_eq_for('ft_stopword_file');
 cmp_ok(
-   $cmd->('', '(built-in)'),
+   $eq->('', '(built-in)'),
    '==',
    '1',
    "eq_for ft_stopword_file returns 1 for '' and '(built-in)'"
@@ -299,5 +287,23 @@ like($EVAL_ERROR, qr/Cannot execute my_print_defaults command/, 'Dies if my_prin
 # #############################################################################
 # $ps = load_file('samples/ps_02.txt');
 # $mysqld_procs_ref = MySQLInstance::mysqld_processes($ps);
+
+# #############################################################################
+# Issue 135: mk-audit dies if running mysqld --help --verbose dies      
+# #############################################################################
+$myi = new MySQLInstance($cmd);
+$myi->{mysqld_binary} = 'samples/segfault';
+{
+   local $SIG{__WARN__} = sub { $EVAL_ERROR = $_[0]; }; # suppress warn output
+   $myi->load_sys_vars($dbh);
+};
+like($EVAL_ERROR, qr/Cannot execute $myi->{mysqld_binary}/, "Warns if mysqld fails to execute");
+
+$myi->{mysqld_binary} = 'true';
+{
+   local $SIG{__WARN__} = sub { $EVAL_ERROR = $_[0]; }; # suppress warn output
+   $myi->load_sys_vars($dbh);
+};
+like($EVAL_ERROR, qr/MySQL returned no information/, "Warns if mysqld returns nothing");
 
 exit;

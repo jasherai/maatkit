@@ -154,9 +154,11 @@ sub new {
            $var => $val;
         } ($cmd =~ m/--(\S+)/g);
    $self->{cmd_line_ops}->{defaults_file} ||= '';
+   $self->{conf_sys_vars}   = {};
+   $self->{online_sys_vars} = {};
    if ( MKDEBUG ) {
       my $self_dump = Dumper($self);
-      _d("$self_dump");
+      _d("self dump: $self_dump");
    }
    return bless $self, $class;
 }
@@ -177,41 +179,55 @@ sub find_mysqld_binary_unix {
 sub load_sys_vars {
    my ( $self, $dbh ) = @_;
 
-   # Sys vars and defaults according to mysqld
+   # This happens frequently enough in the real world to merit
+   # its own perma-message that we may reuse in various places.
+   my $mysqld_broken_msg
+      = "The mysqld binary may be broken. "
+      . "Try manually running the command above.\n"
+      . "Information about system variables from the defaults file "
+      . "will not be available.\n";
+
+   # Sys vars and defaults according to mysqld (if possible; see issue 135).
    my ( $defaults_file_op, $tmp_file ) = $self->_defaults_file_op();
    my $cmd = "$self->{mysqld_binary} $defaults_file_op --help --verbose";
    MKDEBUG && _d("Getting sys vars from mysqld: $cmd");
-   if ( my $mysqld_output = `$cmd` ) {
-      # Parse from mysqld output the list of sys vars and their default values
-      # listed at the end after all the help info.
-      my ($sys_vars) = $mysqld_output =~ m/---\n(.*?)\n\n/ms;
-      %{ $self->{conf_sys_vars} }
-         = map {
-              my ( $var, $val ) = m/^(\S+)\s+(?:(\S+))?/;
-              $var =~ s/-/_/go;
-              if ( $val && $val =~ m/\(No/ ) { # (No default value)
-                 $val = undef;
-              }
-              if ( !defined $val && exists $undef_for{$var} ) {
-                 $val = $undef_for{$var};
-              }
-              $var => $val;
-           } split "\n", $sys_vars;
-
-      # Parse list of default defaults files. These are the defaults
-      # files that mysqld and my_print_defaults read (in order) if not
-      # explicitly given a --defaults-file option. Regarding issue 58,
-      # this list can have duplicates, which we must remove. Otherwise,
-      # my_print_defaults will print false duplicates because it reads
-      # the same file twice.
-      $self->_load_default_defaults_files($mysqld_output);
+   my $retval = system("$cmd 1>/dev/null 2>/dev/null");
+   $retval = $retval >> 8;
+   if ( $retval != 0 ) {
+      my $self_dump = Dumper($self);
+      MKDEBUG && _d("self dump: $self_dump");
+      warn "Cannot execute $cmd\n" . $mysqld_broken_msg;
    }
    else {
-      # This really should not happen. We know by this point that mysqld
-      # is running (it's in ps), yet now it apparently won't run?
-      # Maybe $cmd is broken, possibly a bad return val from
-      # _defaults_file_op().
-      die "Failed to get system variable values from mysqld by running $cmd";
+      if ( my $mysqld_output = `$cmd` ) {
+         # Parse from mysqld output the list of sys vars and their
+         # default values listed at the end after all the help info.
+         my ($sys_vars) = $mysqld_output =~ m/---\n(.*?)\n\n/ms;
+         %{ $self->{conf_sys_vars} }
+            = map {
+                 my ( $var, $val ) = m/^(\S+)\s+(?:(\S+))?/;
+                 $var =~ s/-/_/go;
+                 if ( $val && $val =~ m/\(No/ ) { # (No default value)
+                    $val = undef;
+                 }
+                 if ( !defined $val && exists $undef_for{$var} ) {
+                    $val = $undef_for{$var};
+                 }
+                 $var => $val;
+              } split "\n", $sys_vars;
+
+         # Parse list of default defaults files. These are the defaults
+         # files that mysqld and my_print_defaults read (in order) if not
+         # explicitly given a --defaults-file option. Regarding issue 58,
+         # this list can have duplicates, which we must remove. Otherwise,
+         # my_print_defaults will print false duplicates because it reads
+         # the same file twice.
+         $self->_load_default_defaults_files($mysqld_output);
+      }
+      else {
+         warn "MySQL returned no information by running $cmd\n"
+            . $mysqld_broken_msg;
+      }
    }
 
    # Sys vars from SHOW STATUS
@@ -233,6 +249,7 @@ sub load_sys_vars {
          $self->{online_sys_vars}->{$var} = $val;
       }
    }
+
    return;
 }
 
@@ -273,6 +290,7 @@ sub _load_default_defaults_files {
    my ( $self, $mysqld_output ) = @_;
    my ( $ddf_list ) = $mysqld_output =~ /Default options.+order:\n(.*?)\n/ms;
    if ( !$ddf_list ) {
+      # TODO: change to warn and try to continue
       die "Cannot parse default defaults files: $mysqld_output\n";
    }
    MKDEBUG && _d("Parsed default defaults files: $ddf_list\n");
@@ -290,12 +308,13 @@ sub _vars_from_defaults_file {
 
    # Check first that my_print_defaults can be executed.
    # If not, we must die because we will not be able to do anything else.
+   # TODO: change to warn and try to continue
    my $my_print_defaults_cmd = $my_print_defaults || 'my_print_defaults';
    my $retval = system("$my_print_defaults_cmd --help 1>/dev/null 2>/dev/null");
    $retval = $retval >> 8;
    if ( $retval != 0 ) {
       my $self_dump = Dumper($self);
-      MKDEBUG && _d("$self_dump");
+      MKDEBUG && _d("self dump: $self_dump");
       die "Cannot execute my_print_defaults command '$my_print_defaults_cmd'";
    }
 
@@ -326,7 +345,8 @@ sub _vars_from_defaults_file {
       # given a --defaults-file opt, and none of the default defaults
       # files parsed from mysqld --help --verbose exist.
       my $self_dump = Dumper($self);
-      MKDEBUG && _d("$self_dump");
+      MKDEBUG && _d("self dump: $self_dump");
+      # TODO: change to warn and try to continue
       die 'MySQL instance has no valid defaults files.'
    }
 
