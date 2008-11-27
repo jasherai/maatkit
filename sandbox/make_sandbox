@@ -10,10 +10,14 @@ fi
 DIR=`realpath $0`
 cd `dirname $DIR`
 
-
-mkdir /tmp/$NUM
-tar xzf server.tar.gz -C /tmp/$NUM
-for file in `grep -rl NODE /tmp/$NUM`; do
-   sed -i -e "s/NODE/$NUM/g" $file;
-done
-/tmp/$NUM/start
+PIDFILE="/tmp/$NUM/data/mysql_sandbox$NUM.pid"
+if [ -f $PIDFILE ]; then
+   echo "sandbox $NUM already started (found pid file $PIDFILE)"
+else
+   mkdir /tmp/$NUM
+   tar xzf server.tar.gz -C /tmp/$NUM
+   for file in `grep -rl NODE /tmp/$NUM`; do
+      sed -i -e "s/NODE/$NUM/g" $file;
+   done
+   /tmp/$NUM/start
+fi
