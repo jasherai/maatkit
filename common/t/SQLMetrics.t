@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 17;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -212,10 +212,11 @@ my $expected_stats = {
    avg       => 3.25,
    stddev    => 2.2,
    median    => 3,
-   distro    => [],
+   distro    => [qw(0 0 0 0 0 0 13 0)],
    cutoff    => 12,
 };
-my $stats = $m->calculate_statistical_metrics([2,3,6,4,8,9,1,1,1,5,4,3,1]);
+my $stats = $m->calculate_statistical_metrics([2,3,6,4,8,9,1,1,1,5,4,3,1],
+                                              distro => 1);
 is_deeply(
    $stats,
    $expected_stats,
@@ -226,17 +227,17 @@ $expected_stats = {
    avg       => 0,
    stddev    => 0,
    median    => 0,
-   distro    => [],
+   distro    => [qw(0 0 0 0 0 0 0 0)],
    cutoff    => undef,
 };
-$stats = $m->calculate_statistical_metrics(undef);
+$stats = $m->calculate_statistical_metrics(undef, distro=>1);
 is_deeply(
    $stats,
    $expected_stats,
    'Calculates statistical metrics for undef array'
 );
 
-$stats = $m->calculate_statistical_metrics([]);
+$stats = $m->calculate_statistical_metrics([], distro=>1);
 is_deeply(
    $stats,
    $expected_stats,
@@ -244,17 +245,34 @@ is_deeply(
 );
  
 $expected_stats = {
-   avg       => 9,
-   stddev    => 0,
-   median    => 9,
-   distro    => [],
-   cutoff    => undef,
+   avg       => 0.9,
+   stddev    => '0.0',
+   median    => 0.9,
+   distro    => [qw(0 0 0 0 0 1 0 0)],
+   cutoff    => 1,
 };
-$stats = $m->calculate_statistical_metrics([9]);
+$stats = $m->calculate_statistical_metrics([0.9], distro=>1);
 is_deeply(
    $stats,
    $expected_stats,
    'Calculates statistical metrics for 1 value'
 );
+
+my @buckets = qw(
+   0.000001
+   0.00001
+   0.0001
+   0.001
+   0.01
+   0.1
+   1
+  10
+);
+my $n = 0;
+foreach my $val ( @buckets ) {
+   cmp_ok($m->distro_bucket_for($val), '==', $n, "Distro bucket for $val = $n");
+   $n++;
+}
+cmp_ok($m->distro_bucket_for(100), '==', 7, 'Distro bucket for 100 = 7');
 
 exit;

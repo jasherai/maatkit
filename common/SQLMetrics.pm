@@ -295,8 +295,8 @@ sub reset_metrics {
 #    median    => (of 95% vals),
 #    distro    => (if $arg{distro})
 #       [
-#          vals 0-1us,
-#          vals 1us-10us,
+#          number of vals 0-1us,
+#          number of vals 1us-10us,
 #          ...
 #       ],
 #    cutoff    => cutoff point for 95% vals
@@ -307,7 +307,7 @@ sub calculate_statistical_metrics {
       avg       => 0,
       stddev    => 0,
       median    => 0,
-      distro    => [],
+      distro    => [qw(0 0 0 0 0 0 0 0)],
       cutoff    => undef,
    };
    return $statistical_metrics if !defined $vals;
@@ -315,22 +315,15 @@ sub calculate_statistical_metrics {
    my $n_vals = scalar @$vals;
    return $statistical_metrics if !$n_vals;
 
-   if ( $n_vals == 1 ) {
-      $statistical_metrics->{avg}    = $vals->[0];
-      $statistical_metrics->{median} = $vals->[0];
-      return $statistical_metrics;
-   }
-
-   # Reduce vals to lower 95% percent if there is at least 10 vals.
+   # Determine cutoff point for 95% if there are at least 10 vals.
+   # Cutoff serves also for the number of vals left in the 95%.
+   # E.g. with 50 vals the cutoff is 47 which means there are 47 vals: 0..46.
    if ( $n_vals >= 10 ) {
       $statistical_metrics->{cutoff} = int ( scalar @$vals * 0.95 );
    }
    else {
       $statistical_metrics->{cutoff} = $n_vals;
    }
-
-   # Note: cutoff serves also for the number of vals left in the 95%.
-   # E.g. with 50 vals the cutoff is 47 which means there are 47 vals: 0..46.
 
    # Used for getting the median val.
    my $middle_val_n = int $statistical_metrics->{cutoff} / 2;
@@ -342,6 +335,7 @@ sub calculate_statistical_metrics {
    foreach my $val ( sort { $a <=> $b } @$vals ) {
       # Distribution of vals for all vals, if requested.
       if ( $args{distro} ) {
+         $statistical_metrics->{distro}->[ $self->distro_bucket_for($val) ]++;
       }
 
       # stddev and median only for 95% vals.
@@ -377,6 +371,33 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{avg} = $sum / $statistical_metrics->{cutoff};
 
    return $statistical_metrics;
+}
+
+# The distribution buckets are (as an array):
+#   0: 1us     (0    <= val < 10us)
+#   1: 10us    (10us <= val < 100us)
+#   2: 100us   ...
+#   3: 1ms
+#   4: 10ms
+#   5: 100ms
+#   6: 1s
+#   7: 10s
+sub distro_bucket_for {
+   my ( $self, $val ) = @_;
+   return if !defined $val;
+   my $bucket = 7;
+
+   EXPONENT:
+   foreach my $exponent ( 0..8 ) {
+      my $power = 10**$exponent;
+      my $x     = $val / (0.000001 * $power);
+      if ( $x < 1 ) {
+         $bucket = $exponent - 1;
+         last EXPONENT;
+      }
+   }
+
+   return $bucket;
 }
 
 sub _d {
