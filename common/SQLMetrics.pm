@@ -360,11 +360,12 @@ sub calculate_statistical_metrics {
       }
    }
 
-   $statistical_metrics->{stddev}
-      = sprintf "%.1f",
-         sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $stddev = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
 
-   $statistical_metrics->{avg} = $sum / $cutoff;
+   MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
+
+   $statistical_metrics->{stddev} = sprintf "%.1f", $stddev;
+   $statistical_metrics->{avg}    = $sum / $cutoff;
 
    return $statistical_metrics;
 }
