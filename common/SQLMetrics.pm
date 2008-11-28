@@ -351,8 +351,6 @@ sub calculate_statistical_metrics {
                = $cutoff % 2 ? $val : ($previous_val + $val) / 2;
          }
 
-         # The following stddev algo was adapted from
-         # http://www.linuxjournal.com/article/6540
          $sum   += $val;
          $sumsq += ($val **2);
          $i++;
@@ -363,7 +361,8 @@ sub calculate_statistical_metrics {
    }
 
    $statistical_metrics->{stddev}
-      = sprintf "%.1f", sqrt $sumsq / $cutoff - (($sum / $cutoff) ** 2);
+      = sprintf "%.1f",
+         sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
 
    $statistical_metrics->{avg} = $sum / $cutoff;
 
