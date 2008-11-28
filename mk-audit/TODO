@@ -20,6 +20,9 @@ The following items are unimplemented at this time:
            is parseable.
       * check where MySQL data is stored, and make sure that filesystem is
         mounted with noatime.
+      * Check that filesystems are as big as the partitions they live on.
+      * Check fragmentation (with filefrag) of ibdata1 and/or the biggest table
+        files.
    Operating System
       * vmstat samples
       * iostat usage if possible
