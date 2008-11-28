@@ -289,16 +289,17 @@ sub reset_metrics {
    return;
 }
 
-# Returns a hashref with the following statistical metrcis:
+# Returns a hashref with the following statistical metrics:
 # {
 #    avg       => (of 95% vals), 
 #    stddev    => (of 95% vals),
 #    median    => (of 95% vals),
 #    distro    => (if $arg{distro})
 #       [
-#          number of vals 0-1us,
-#          number of vals 1us-10us,
-#          ...
+#          0: number of vals in the 1us range  (0    <= val < 10us)
+#          1: number of vals in the 10us range (10us <= val < 100us)
+#             ...
+#          7: number of vals >= 10s
 #       ],
 #    cutoff    => cutoff point for 95% vals
 # }
