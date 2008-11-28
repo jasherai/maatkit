@@ -1872,7 +1872,7 @@ while ( $oktorun && (my $fh = shift(@fhs) ) ) {
    1 while $oktorun && $callback->($fh);
    close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
 }
-$dp->disconnect($dbh);
+$dp->disconnect($dbh) if $opts{R};
 
 # ############################################################################
 # Finish up (print results, etc).
@@ -1893,9 +1893,11 @@ sub sort_and_prune {
    my $queries    = $sm->{metrics}->{unique};
    my $query_rank = 1;
 
+   MKDEBUG && _d("sort $sort top $top worst $worst");
+
    # Add sort rank position and trim the results.
    map {
-      if ( $query_rank < $top ) {
+      if ( $query_rank <= $top ) {
          $queries->{$_}->{sort_rank} = $query_rank++;
       }
       else {
@@ -1995,12 +1997,8 @@ sub report_queries {
       printf $list_line_fmt, 'DBs',   join(', ', keys %{$q->{Schema}});
       printf $list_line_fmt, 'Users', join(', ', keys %{$q->{user}});
 
-      # TODO: histogram--probably factor this into a sub
       print "-- Execution times\n";
-      my $n = 0;
-      foreach my $n_bucket_vals ( @$Query_time_distro ) {
-         print $distro_buckets[$n++] . ": $n_bucket_vals\n";
-      }
+      print chart_distro($Query_time_distro);
 
       print "-- Time clustering:\n";
       # TODO
@@ -2020,6 +2018,32 @@ sub report_queries {
 
       print "\n";
    }
+}
+
+sub chart_distro {
+   my ( $distro ) = @_;
+   return "\n" if !defined $distro || scalar @$distro== 0;
+   my $max_val = 0;
+   my $vals_per_unit; # number of vals represented by 1 #-mark
+   my $max_disp_width = 61;
+   my $bar_fmt = "-- %8s  %-${max_disp_width}s\n";
+   my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
+
+   # Find the distro with the most values. This will set
+   # vals_per_unit and become the bar at max_disp_width.
+   foreach my $n_vals ( @$distro ) {
+      $max_val = $n_vals if $n_vals > $max_val;
+   }
+   $vals_per_unit = $max_val / $max_disp_width;
+
+   my $i = 0;
+   foreach my $n_vals ( @$distro ) {
+      my $n_marks = $n_vals / $vals_per_unit;
+      my $bar     = '#' x $n_marks;
+      printf $bar_fmt, $distro_labels[$i++], $bar;
+   }
+
+   return;
 }
 
 sub _d {
