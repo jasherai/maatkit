@@ -1486,7 +1486,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2543
+# SQLMetrics package 2551
 # ###########################################################################
 
 package SQLMetrics;
@@ -1744,10 +1744,12 @@ sub calculate_statistical_metrics {
       }
    }
 
-   $statistical_metrics->{stddev}
-      = sprintf "%.1f", sqrt $sumsq / $cutoff - (($sum / $cutoff) ** 2);
+   my $stddev = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
 
-   $statistical_metrics->{avg} = $sum / $cutoff;
+   MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
+
+   $statistical_metrics->{stddev} = sprintf "%.1f", $stddev;
+   $statistical_metrics->{avg}    = $sum / $cutoff;
 
    return $statistical_metrics;
 }
@@ -1917,16 +1919,6 @@ sub report_queries {
    my $u = $sm->{metrics}->{unique};
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
-   my @distro_buckets = qw(
-      1us
-      10us
-      100us
-      1ms
-      10ms
-      100ms
-      1s
-      10s
-   );
 
    my $query_hdr_fmt   = "-- Query %03d " . ('_' x 62) . "\n";
    my $metrics_hdr_fmt = "--             total    %%      min     max     avg     95%%  stddev  median\n";
@@ -1971,15 +1963,18 @@ sub report_queries {
          percentage_of($q->{count}, $sm->{n_queries});
 
       foreach my $r ( @reported_metrics ) {
-         my $metric      = $r->{metric};
-         my $val         = $q->{ $metric };
+         my $metric = $r->{metric};
+         my $val    = $q->{ $metric };
+
          next if !defined $val;
-         my $distro = $metric eq 'Query_time' ? 1 : 0;
+         MKDEBUG && _d("Reporting metrics for $metric");
+
+         my $save_distro = $metric eq 'Query_time' ? 1 : 0;
          my $stats
             = $sm->calculate_statistical_metrics($val->{all_vals},
-               distro => $distro);
+               distro => $save_distro);
 
-         $Query_time_distro = $stats->{distro} if $distro;
+         $Query_time_distro = $stats->{distro} if $save_distro;
 
          printf $metric_line_fmt,
             $r->{name},                    # friendly metric name
@@ -2024,21 +2019,31 @@ sub chart_distro {
    my ( $distro ) = @_;
    return "\n" if !defined $distro || scalar @$distro== 0;
    my $max_val = 0;
-   my $vals_per_unit; # number of vals represented by 1 #-mark
+   my $vals_per_mark; # number of vals represented by 1 #-mark
    my $max_disp_width = 61;
    my $bar_fmt = "-- %8s  %-${max_disp_width}s\n";
    my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
    # Find the distro with the most values. This will set
-   # vals_per_unit and become the bar at max_disp_width.
+   # vals_per_mark and become the bar at max_disp_width.
    foreach my $n_vals ( @$distro ) {
       $max_val = $n_vals if $n_vals > $max_val;
    }
-   $vals_per_unit = $max_val / $max_disp_width;
+   $vals_per_mark = $max_val / $max_disp_width;
+
+   MKDEBUG && _d("vals per mark $vals_per_mark, max val $max_val");
 
    my $i = 0;
    foreach my $n_vals ( @$distro ) {
-      my $n_marks = $n_vals / $vals_per_unit;
+      MKDEBUG && _d("$n_vals vals in $distro_labels[$i] bucket");
+
+      my $n_marks = $n_vals / $vals_per_mark;
+
+      # Always print at least 1 mark for any bucket that has at least
+      # 1 value. This skews the graph a tiny bit, but it allows us to
+      # see all buckets that have values.
+      $n_marks = 1 if $n_marks < 1 && $n_vals > 0;
+
       my $bar     = '#' x $n_marks;
       printf $bar_fmt, $distro_labels[$i++], $bar;
    }
