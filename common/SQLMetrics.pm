@@ -305,11 +305,12 @@ sub reset_metrics {
 # }
 sub calculate_statistical_metrics {
    my ( $self, $vals, %args ) = @_;
+   my @distro              = qw(0 0 0 0 0 0 0 0);
    my $statistical_metrics = {
       avg       => 0,
       stddev    => 0,
       median    => 0,
-      distro    => [qw(0 0 0 0 0 0 0 0)],
+      distro    => \@distro,
       cutoff    => undef,
    };
    return $statistical_metrics if !defined $vals;
@@ -320,12 +321,8 @@ sub calculate_statistical_metrics {
    # Determine cutoff point for 95% if there are at least 10 vals.
    # Cutoff serves also for the number of vals left in the 95%.
    # E.g. with 50 vals the cutoff is 47 which means there are 47 vals: 0..46.
-   if ( $n_vals >= 10 ) {
-      $statistical_metrics->{cutoff} = int ( scalar @$vals * 0.95 );
-   }
-   else {
-      $statistical_metrics->{cutoff} = $n_vals;
-   }
+   my $cutoff = $n_vals >= 10 ? int ( scalar @$vals * 0.95 ) : $n_vals;
+   $statistical_metrics->{cutoff} = $cutoff;
 
    # Used for getting the median val.
    my $middle_val_n = int $statistical_metrics->{cutoff} / 2;
@@ -333,7 +330,7 @@ sub calculate_statistical_metrics {
 
    my $sum    = 0; # stddev and 95% avg
    my $sumsq  = 0; # stddev
-   my $val_n  = 0; # val number for knowing when we've reach the 95%
+   my $i      = 0; # for knowing when we've reached the 95%
    foreach my $val ( sort { $a <=> $b } @$vals ) {
       # Distribution of vals for all vals, if requested.
       if ( defined $val && $args{distro} ) {
@@ -343,28 +340,22 @@ sub calculate_statistical_metrics {
          # up so it's non-negative, to get 0 - 7.
          my $bucket = floor(log($val) / log(10)) + 6;
          $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
-         $statistical_metrics->{distro}->[ $bucket ]++;
+         $distro[ $bucket ]++;
       }
 
       # stddev and median only for 95% vals.
-      if ( $val_n < $statistical_metrics->{cutoff} ) {
-
+      if ( $i < $cutoff ) {
          # Median
-         if ( $val_n == $middle_val_n ) {
-            if ( $statistical_metrics->{cutoff} % 2 ) {
-               $statistical_metrics->{median} = $val;
-            }
-            else {
-               $statistical_metrics->{median} = ($previous_val + $val) / 2;
-            }
+         if ( $i == $middle_val_n ) {
+            $statistical_metrics->{median}
+               = $cutoff % 2 ? $val : ($previous_val + $val) / 2;
          }
 
          # The following stddev algo was adapted from
          # http://www.linuxjournal.com/article/6540
          $sum   += $val;
          $sumsq += ($val **2);
-
-         $val_n++;
+         $i++;
 
          # Needed for calcing median when list has even number of elements.
          $previous_val = $val;
@@ -372,11 +363,9 @@ sub calculate_statistical_metrics {
    }
 
    $statistical_metrics->{stddev}
-      = sprintf "%.1f",
-         sqrt $sumsq / $statistical_metrics->{cutoff}
-            - (($sum / $statistical_metrics->{cutoff}) ** 2);
+      = sprintf "%.1f", sqrt $sumsq / $cutoff - (($sum / $cutoff) ** 2);
 
-   $statistical_metrics->{avg} = $sum / $statistical_metrics->{cutoff};
+   $statistical_metrics->{avg} = $sum / $cutoff;
 
    return $statistical_metrics;
 }
