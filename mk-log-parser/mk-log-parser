@@ -1160,7 +1160,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2533
+# SQLMetrics package 2539
 # ###########################################################################
 
 package SQLMetrics;
@@ -1168,6 +1168,7 @@ package SQLMetrics;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use POSIX qw(floor);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1400,8 +1401,10 @@ sub calculate_statistical_metrics {
    my $sumsq  = 0; # stddev
    my $val_n  = 0; # val number for knowing when we've reach the 95%
    foreach my $val ( sort { $a <=> $b } @$vals ) {
-      if ( $args{distro} ) {
-         $statistical_metrics->{distro}->[ $self->distro_bucket_for($val) ]++;
+      if ( defined $val && $args{distro} ) {
+         my $bucket = floor(log($val) / log(10)) + 6;
+         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+         $statistical_metrics->{distro}->[ $bucket ]++;
       }
 
       if ( $val_n < $statistical_metrics->{cutoff} ) {
@@ -1432,24 +1435,6 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{avg} = $sum / $statistical_metrics->{cutoff};
 
    return $statistical_metrics;
-}
-
-sub distro_bucket_for {
-   my ( $self, $val ) = @_;
-   return if !defined $val;
-   my $bucket = 7;
-
-   EXPONENT:
-   foreach my $exponent ( 0..8 ) {
-      my $power = 10**$exponent;
-      my $x     = $val / (0.000001 * $power);
-      if ( $x < 1 ) {
-         $bucket = $exponent - 1;
-         last EXPONENT;
-      }
-   }
-
-   return $bucket;
 }
 
 sub _d {
