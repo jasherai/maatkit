@@ -364,7 +364,7 @@ sub calculate_statistical_metrics {
 
    MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
 
-   $statistical_metrics->{stddev} = sprintf "%.1f", $stddev;
+   $statistical_metrics->{stddev} = $stddev;
    $statistical_metrics->{avg}    = $sum / $cutoff;
 
    return $statistical_metrics;

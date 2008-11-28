@@ -210,7 +210,7 @@ is_deeply($m->{metrics}, $metrics, 'Keeps worst sample');
 # #############################################################################
 my $expected_stats = {
    avg       => 3.25,
-   stddev    => 2.3,
+   stddev    => 2.26133508433323,
    median    => 3,
    distro    => [qw(0 0 0 0 0 0 13 0)],
    cutoff    => 12,
@@ -246,7 +246,7 @@ is_deeply(
  
 $expected_stats = {
    avg       => 0.9,
-   stddev    => '0.0',
+   stddev    => 0,
    median    => 0.9,
    distro    => [qw(0 0 0 0 0 1 0 0)],
    cutoff    => 1,
