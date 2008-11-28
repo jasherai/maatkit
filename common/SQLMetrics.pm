@@ -23,6 +23,7 @@ package SQLMetrics;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use POSIX qw(floor);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -334,8 +335,14 @@ sub calculate_statistical_metrics {
    my $val_n  = 0; # val number for knowing when we've reach the 95%
    foreach my $val ( sort { $a <=> $b } @$vals ) {
       # Distribution of vals for all vals, if requested.
-      if ( $args{distro} ) {
-         $statistical_metrics->{distro}->[ $self->distro_bucket_for($val) ]++;
+      if ( defined $val && $args{distro} ) {
+         # The buckets are powers of ten.  Bucket 0 represents (0 <= val < 10us) 
+         # and 7 represents 10s and greater.  The powers are thus constrained to
+         # between -6 and 1.  Because these are used as array indexes, we shift
+         # up so it's non-negative, to get 0 - 7.
+         my $bucket = floor(log($val) / log(10)) + 6;
+         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+         $statistical_metrics->{distro}->[ $bucket ]++;
       }
 
       # stddev and median only for 95% vals.
@@ -371,33 +378,6 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{avg} = $sum / $statistical_metrics->{cutoff};
 
    return $statistical_metrics;
-}
-
-# The distribution buckets are (as an array):
-#   0: 1us     (0    <= val < 10us)
-#   1: 10us    (10us <= val < 100us)
-#   2: 100us   ...
-#   3: 1ms
-#   4: 10ms
-#   5: 100ms
-#   6: 1s
-#   7: 10s
-sub distro_bucket_for {
-   my ( $self, $val ) = @_;
-   return if !defined $val;
-   my $bucket = 7;
-
-   EXPONENT:
-   foreach my $exponent ( 0..8 ) {
-      my $power = 10**$exponent;
-      my $x     = $val / (0.000001 * $power);
-      if ( $x < 1 ) {
-         $bucket = $exponent - 1;
-         last EXPONENT;
-      }
-   }
-
-   return $bucket;
 }
 
 sub _d {

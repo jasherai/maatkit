@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -257,22 +257,5 @@ is_deeply(
    $expected_stats,
    'Calculates statistical metrics for 1 value'
 );
-
-my @buckets = qw(
-   0.000001
-   0.00001
-   0.0001
-   0.001
-   0.01
-   0.1
-   1
-  10
-);
-my $n = 0;
-foreach my $val ( @buckets ) {
-   cmp_ok($m->distro_bucket_for($val), '==', $n, "Distro bucket for $val = $n");
-   $n++;
-}
-cmp_ok($m->distro_bucket_for(100), '==', 7, 'Distro bucket for 100 = 7');
 
 exit;
