@@ -46,9 +46,9 @@ sub trevorprice {
       $num_running += $running - 1;
    }
    my $time = time() - $start;
+   return 0 unless $time;
    my (undef, $status2)
       = $dbh->selectrow_array('SHOW /*!50002 GLOBAL*/ STATUS LIKE "Questions"');
-   return 0 unless $time;
    my $qps = ($status2 - $status1) / $time;
    return 0 unless $qps;
    return ($num_running / $num_samples) / $qps;
