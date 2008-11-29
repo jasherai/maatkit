@@ -1765,6 +1765,108 @@ sub _d {
 # End SQLMetrics package
 # ###########################################################################
 
+# ###########################################################################
+# QueryParser package 2559
+# ###########################################################################
+package QueryParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub get_table_ref {
+   my ( $self, $query ) = @_;
+   return if !defined $query || !$query;
+   my $table_ref;
+
+   if ( $query =~ m/FROM\s+(.+?)(?:WHERE|ORDER|LIMIT|HAVING)+.+/is ) {
+      $table_ref = $1;
+   }
+   elsif( $query =~ m/FROM\s+(.+?);?$/is ) {
+      # This handles queries like "SELECT COUNT(id) FROM table;"
+      chomp($table_ref = $1);
+   }
+
+   MKDEBUG && _d($table_ref ? "table ref: $table_ref"
+                            : "Failed to parse table ref");
+
+   return $table_ref;
+}
+
+sub parse_table_aliases {
+   my ( $self, $table_ref ) = @_;
+   my $table_aliases = {};
+   return $table_aliases if !defined $table_ref || !$table_ref;
+   my @tables;
+
+   $table_ref =~ s/\n/ /g;
+   $table_ref =~ s/`//g; # Graves break database discovery
+
+   if( $table_ref =~ m/ (:?straight_)?join /i ) {
+      $table_ref =~ s/ join /,/ig;
+      1 while ($table_ref =~ s/ (?:inner|outer|cross|left|right|natural),/,/ig);
+      $table_ref =~ s/ using \(.+?\)//ig;
+      $table_ref =~ s/ on \([\w\s=.,]+\),?/,/ig;
+      $table_ref =~ s/ on [\w\s=.]+,?/,/ig;
+      $table_ref =~ s/ straight_join /,/ig;
+   }
+
+   @tables = split /,/, $table_ref;
+
+   my @alias_patterns = (
+      qr/\s*(\S+)\s+AS\s+(\S+)\s*/i,
+      qr/^\s*(\S+)\s+(\S+)\s*$/,
+      qr/^\s*(\S+)+\s*$/, # Not an alias but we save it anyway to be complete
+   );
+      
+   foreach my $table ( @tables ) {
+      my ( $db_tbl, $alias );
+
+      ALIAS_PATTERN:
+      foreach my $alias_pattern ( @alias_patterns ) {
+         if ( ( $db_tbl, $alias ) = $table =~ m/$alias_pattern/ ) {
+            MKDEBUG && _d("$table matches $alias_pattern");
+            last ALIAS_PATTERN;
+         }
+      }
+
+      if ( defined $db_tbl && $db_tbl ) {
+         my ( $db, $tbl ) = $db_tbl =~ m/^(?:(\S+)\.)?(\S+)/;
+
+         $table_aliases->{$alias || $tbl} = $tbl;
+         $table_aliases->{DATABASE}->{$tbl} = $db if defined $db && $db;
+      }
+      elsif ( MKDEBUG ) {
+         _d("Failed to parse table alias for $table");
+      }
+   }
+
+   MKDEBUG && _d('table aliases: ' . Dumper($table_aliases));
+
+   return $table_aliases;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
+   print "# QueryParser:$line $PID ", @_, "\n";
+}
+
+1;
+# ###########################################################################
+# End QueryParser package
+# ###########################################################################
+
 # #############################################################################
 # mk-log-parser
 # #############################################################################
@@ -1998,21 +2100,40 @@ sub report_queries {
       print "-- Time clustering:\n";
       # TODO
 
-      print "-- Tables\n";
-      # TODO needs my table ref parser thingy
+      # If the query uses qualified table names (db.tbl), print_tables()
+      # will print SHOW TABLE STATUS FROM `db` LIKE 'tbl'. Otherwise,
+      # if a default_db is given, print_tables() will use it for queries
+      # without qualified table names. We pass a default db only if the
+      # query logged one db because there is no reliable way to choose
+      # between multiple logged dbs. As a last report, print_tables()
+      # will simply omit the FROM `db` clause and it's left to the user
+      # to determine the correct db.
+      my ( $default_db ) = keys %{$q->{Schema}}
+         if scalar keys %{$q->{Schema}} == 1;
 
       chomp $q->{sample};
-      if ( $q->{sample} =~ m/^[\s\(]*SELECT /i ) {
-         print "-- EXPLAIN\n" . $q->{sample} . "\\G\n";
+      my $select_pattern = qr/^[\s\(]*SELECT /i;
+      if ( $q->{sample} =~ m/$select_pattern/ ) {
+         print_tables($q->{sample}, $default_db);
+         print "-- EXPLAIN\n$q->{sample}\\G\n\n";
       }
       else {
-         print $q->{sample} . "\\G\n";
-         print "-- Converted for EXPLAIN\n--EXPLAIN\n";
-         print $qr->convert_to_select($q->{sample}) . "\\G\n";
+         my $converted_sample = $qr->convert_to_select($q->{sample});
+         if ( $converted_sample =~ m/$select_pattern/ ) {
+            print_tables($converted_sample, $default_db);
+            print "$q->{sample}\\G\n";
+            print "-- Converted for EXPLAIN\n-- EXPLAIN\n";
+         }
+         else {
+            print "-- Query cannot be converted to SELECT\n";
+         }
+         # converted_sample will be the original sample if it
+         # failed to convert. Otherwise, it will be a SELECT.
+         print "$converted_sample\\G\n\n"; 
       }
-
-      print "\n";
    }
+
+   return;
 }
 
 sub chart_distro {
@@ -2051,6 +2172,23 @@ sub chart_distro {
    return;
 }
 
+sub print_tables {
+   my ( $query, $default_db ) = @_;
+   my $qp = new QueryParser();
+   my $table_aliases = $qp->parse_table_aliases( $qp->get_table_ref($query) );
+   print "-- Tables:\n";
+   foreach my $table_alias ( keys %$table_aliases ) {
+      next if $table_alias eq 'DATABASE';
+      my $tbl = $table_aliases->{$table_alias};
+      my $db  = $table_aliases->{DATABASE}->{$tbl} || $default_db;
+      print '--    SHOW TABLE STATUS'
+         , defined $db && $db ? " FROM `$db`" : ''
+         , " LIKE '$tbl'\\G\n";
+      print "--    SHOW CREATE TABLE `$tbl`\\G\n";
+   }
+   return;
+}
+      
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# main:$line ", @_, "\n";
