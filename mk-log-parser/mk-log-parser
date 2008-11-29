@@ -1874,6 +1874,7 @@ package main;
 
 use Data::Dumper;
 use English qw(-no_match_vars);
+use Digest::MD5 qw(md5_hex);
 Transformers->import( qw(shorten micro_t percentage_of) );
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -1932,7 +1933,7 @@ if ( $opts{R} ) { # Query review.
    $sth = $dbh->prepare(
       'INSERT IGNORE INTO ' . $q->quote($opts{R}->{D}, $opts{R}->{t})
       . '(checksum, fingerprint, sample, first_seen) VALUES( '
-      . 'CONV(LEFT(MD5(?), 16), 16, 10), ?, ?, COALESCE(?, NOW()))');
+      . 'CONV(?, 16, 10), ?, ?, COALESCE(?, NOW()))');
 
    my %seen;
    $callback = sub {
@@ -1941,9 +1942,8 @@ if ( $opts{R} ) { # Query review.
          my ( $event ) = @_;
          my $fingerprint = $qr->fingerprint($event->{arg});
          if ( !$seen{$fingerprint}++ ) {
-            # TODO: $event->{ts} can be like 071015 21:43:52, parse it into a
-            # timestamp and pass it instead of undef
-            $sth->execute($fingerprint, $fingerprint, $event->{arg}, undef);
+            $sth->execute(checksum_64($fingerprint), $fingerprint,
+               $event->{arg}, parse_timestamp($event->{ts}));
          }
       });
    };
@@ -1992,6 +1992,19 @@ exit;
 # Subroutines.
 # ############################################################################
 
+# Takes the rightmost 64 bits of an MD5 checksum of the argument.
+sub checksum_64 {
+   my ( $val ) = @_;
+   return substr(md5_hex($val), -16);
+}
+
+# Turns 071015 21:43:52 into a proper datetime format.
+sub parse_timestamp {
+   my ( $val ) = @_;
+   $val =~ s/^(\d\d)(\d\d)(\d\d) /20$1-$2-$3 /;
+   return $val;
+}
+
 sub sort_and_prune {
    my ( $sm, $sort, $top, $worst ) = @_;
    my $queries    = $sm->{metrics}->{unique};
@@ -2022,7 +2035,7 @@ sub report_queries {
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
 
-   my $query_hdr_fmt   = "-- Query %03d " . ('_' x 62) . "\n";
+   my $query_hdr_fmt   = "-- Query %03d (%5s QPS) ID: %s " . ('_' x 28) . "\n";
    my $metrics_hdr_fmt = "--             total    %%      min     max     avg     95%%  stddev  median\n";
    my $count_line_fmt  = "-- %-9s %7s  %3d\n";
    my $metric_line_fmt = "-- %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
@@ -2057,7 +2070,9 @@ sub report_queries {
 
       my $q = $u->{$fp};
 
-      printf $query_hdr_fmt, $q->{sort_rank};
+      # TODO: queries per second.  To calculate this, we have to keep track of
+      # the max and min timstamp of the query.
+      printf $query_hdr_fmt, $q->{sort_rank}, 0, checksum_64($fp);
       printf $metrics_hdr_fmt;
       printf $count_line_fmt,
          'Count',
