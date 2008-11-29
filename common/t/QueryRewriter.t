@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 41;
+use Test::More tests => 42;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -296,6 +296,14 @@ REPLACE DELAYED INTO
 VALUES ('617653','2007-09-11')}),
    qq{select * from \n`db1`.`tbl2` where `col1`='617653' and col2='2007-09-11'},
    'replace delayed',
+);
+
+is(
+   $q->convert_to_select(
+      'select * from tbl where id = 1'
+   ),
+   'select * from tbl where id = 1',
+   'Does not convert select to select',
 );
 
 is($q->wrap_in_derived(), undef, 'Cannot wrap undef');
