@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# Make sure these port numbers match
+# M and S in make_master-slave
+for a in 12345 12346; do
+   /tmp/$a/stop
+   rm -rf /tmp/$a
+done

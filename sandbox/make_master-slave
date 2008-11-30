@@ -1,0 +1,10 @@
+#!/bin/sh
+
+DIR=`realpath $0`
+cd `dirname $DIR`
+
+M=12345
+S=12346
+
+./make_sandbox $M
+./make_slave $S

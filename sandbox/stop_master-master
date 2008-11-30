@@ -1,0 +1,8 @@
+#!/bin/sh
+
+# Make sure these port numbers match
+# M1 and M2 in make_master-master
+for a in 12348 12349; do
+   /tmp/$a/stop
+   rm -rf /tmp/$a
+done
