@@ -2696,8 +2696,8 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $dp = new DSNParser();
 my $vp = new VersionParser;
-my $md = new MySQLDump(cache => 0);
-my $qt = new Quoter;
+my $du = new MySQLDump(cache => 0);
+my $q  = new Quoter;
 my $tp = new TableParser;
 
 Transformers->import( qw(micro_t shorten secs_to_time) );
@@ -2752,8 +2752,8 @@ foreach my $mysqld_ps ( @$mysqld_processes_ref ) {
    $instance->load_status_vals($dbh);
 
    my $params = { dbh         => $dbh,
-                  MySQLDump   => $md,
-                  Quoter      => $qt,
+                  MySQLDump   => $du,
+                  Quoter      => $q,
                   TableParser => $tp,
                   opts        => \%opts,
                 };
