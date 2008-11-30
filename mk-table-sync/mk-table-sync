@@ -5545,6 +5545,8 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
+Specify at least one of --print, --execute, or --test.
+
 =over
 
 =item --algorithm

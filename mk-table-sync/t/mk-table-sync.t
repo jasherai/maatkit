@@ -3,98 +3,90 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 34;
-use DBI;
+use Test::More tests => 35;
 
-my $output;
-my $dbh;
+require '../../common/DSNParser.pm';
+require '../../common/Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $master_dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+my $slave_dbh   = $sb->get_dbh_for('slave1')
+   or BAIL_OUT('Cannot connect to sandbox slave1');
+
+$sb->create_dbs($master_dbh, [qw(test)]);
+
 (my $cnf=`realpath $0`) =~ s/mk-table-sync\.t.*$/cnf/s;
 
 sub query {
-   $dbh->selectall_arrayref(@_, {Slice => {}});
+   return $master_dbh->selectall_arrayref(@_, {Slice => {}});
 }
 
 sub run {
    my ($src, $dst, $other) = @_;
-   my $cmd = "perl ../mk-table-sync -px F=$cnf,D=test,t=$src t=$dst $other 2>&1";
-   chomp(my $output=`$cmd`);
+   my $output;
+   my $cmd = "../mk-table-sync -px F=$cnf,D=test,t=$src t=$dst $other 2>&1";
+   chomp($output=`$cmd`);
    return $output;
 }
 
-# Set up the sandbox (master-master pair)
-print `./make_repl_sandbox`;
-
-# Open a connection to MySQL, or skip the rest of the tests.
-$dbh = DBI->connect(
-   "DBI:mysql:;host=127.0.0.1;port=12345", 'msandbox', 'msandbox',
-   { PrintError => 0, RaiseError => 1 });
-
-`/tmp/12345/use < samples/before.sql`;
-
-$output = run('test1', 'test2', '');
+# #############################################################################
+# Test basic master-slave syncing
+# #############################################################################
+$sb->load_file('master', 'samples/before.sql');
+my $output = run('test1', 'test2', '');
 like($output, qr/Can't make changes/, 'It dislikes changing a slave');
 
 $output = run('test1', 'test2', '--skipbinlog');
-
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'No alg sync');
-
 is_deeply(
    query('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with no alg'
 );
 
-`/tmp/12345/use < samples/before.sql`;
-
+$sb->load_file('master', 'samples/before.sql');
 $output = run('test1', 'test2', '-a Stream --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Stream sync');
-
 is_deeply(
    query('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with Stream'
 );
 
-`/tmp/12345/use < samples/before.sql`;
-
+$sb->load_file('master', 'samples/before.sql');
 $output = run('test1', 'test2', '-a GroupBy --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic GroupBy sync');
-
 is_deeply(
    query('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with GroupBy'
 );
 
-`/tmp/12345/use < samples/before.sql`;
-
+$sb->load_file('master', 'samples/before.sql');
 $output = run('test1', 'test2', '-a Chunk --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
-
 is_deeply(
    query('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with Chunk'
 );
 
-`/tmp/12345/use < samples/before.sql`;
-
+$sb->load_file('master', 'samples/before.sql');
 $output = run('test1', 'test2', '-a Nibble --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
-
 is_deeply(
    query('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with Nibble'
 );
 
-`/tmp/12345/use < samples/before.sql`;
-
+$sb->load_file('master', 'samples/before.sql');
 $ENV{MKDEBUG} = 1;
 $output = run('test1', 'test2', '-a Nibble --skipbinlog --chunksize 1 --transaction -k 1');
 delete $ENV{MKDEBUG};
@@ -103,7 +95,6 @@ like(
    qr/Executing statement on source/,
    'Nibble with transactions and locking'
 );
-
 is_deeply(
    query('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
@@ -135,37 +126,40 @@ $output = run('test3', 'test4', '--algorithm Nibble --chunksize 1k --print --ver
 # If it lived, it's OK.
 ok($output, 'Synced with Nibble and data-size chunksize');
 
+# #############################################################################
 # Ensure that syncing master-master works OK
-`/tmp/12345/use < samples/before.sql`;
-# Make slave different from master
-`/tmp/12346/use -e 'set sql_log_bin=0;update test.test1 set b=2 where a = 1'`;
-# This will make 12345's data match the changed data on 12346 (that is not a
-# typo).
-print `perl ../mk-table-sync --synctomaster -px F=$cnf,D=test,t=test1`;
-is_deeply(query('select * from test.test1'),
-   [
-      { a => 1, b => 2 },
-      { a => 2, b => 'ca' },
-   ],
-   'Master-master sync worked'
-);
+# #############################################################################
+diag(`../../sandbox/make_master-master`);
+diag(`/tmp/12348/use -e 'CREATE DATABASE test'`);
+diag(`/tmp/12348/use < samples/before.sql`);
+# Make master2 different from master1
+diag(`/tmp/12349/use -e 'set sql_log_bin=0;update test.test1 set b="mm" where a=1'`);
+# This will make master1's data match the changed data on master2 (that is not
+# a typo).
+`perl ../mk-table-sync --synctomaster -px h=127.0.0.1,P=12348,D=test,t=test1`;
+$output = `/tmp/12348/use -e 'select b from test.test1 where a=1' -N`;
+like($output, qr/mm/, 'Master-master sync worked');
+diag(`../../sandbox/stop_master-master`);
 
+# #############################################################################
 # Issue 37: mk-table-sync should warn about triggers
-`/tmp/12345/use < samples/issue_37.sql`;
-`/tmp/12345/use -e 'SET SQL_LOG_BIN=0; INSERT INTO test.issue_37 VALUES (1), (2);'`;
-`/tmp/12345/use < samples/checksum_tbl.sql`;
+# #############################################################################
+$sb->load_file('master', 'samples/issue_37.sql');
+$sb->use('master', '-e "SET SQL_LOG_BIN=0; INSERT INTO test.issue_37 VALUES (1), (2);"');
+$sb->load_file('master', 'samples/checksum_tbl.sql');
 `../../mk-table-checksum/mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum 2>&1 > /dev/null`;
-
 
 $output = `../mk-table-sync --skipslavecheck --execute u=msandbox,p=msandbox,h=127.0.0.1,P=12345,D=test,t=issue_37 h=127.1,P=12346 2>&1`;
 like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with one table (1/4, issue 37)');
+
 $output = `../mk-table-sync -R test.checksum --synctomaster --execute h=127.1,P=12346 2>&1`;
 like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with --replicate --synctomaster (2/4, issue 37)');
+
 $output = `../mk-table-sync -R test.checksum --execute h=127.1,P=12345 2>&1`;
 like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with --replicate (3/4, issue 37)');
+
 $output = `../mk-table-sync --execute -g mysql h=127.0.0.1,P=12345 h=127.1,P=12346 2>&1`;
 like($output, qr/Cannot write to table with triggers/, 'Die on trigger tbl write with no opts (4/4, issue 37)');
-
 
 $output = `/tmp/12346/use -D test -e 'SELECT * FROM issue_37'`;
 ok(!$output, 'Table with trigger was not written');
@@ -179,20 +173,21 @@ like($output, qr/a.+1.+2/ms, 'Table with trigger was written');
 # #############################################################################
 # Issue 8: Add --force-index parameter to mk-table-checksum and mk-table-sync
 # #############################################################################
-`/tmp/12345/use -e 'INSERT INTO test.issue_37 VALUES (5), (6), (7), (8), (9);'`;
-$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers 2>&1 | grep 'src: '`;
+$sb->use('master', '-e \'INSERT INTO test.issue_37 VALUES (5), (6), (7), (8), (9);\'');
+
+$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers --print 2>&1 | grep 'src: '`;
 like($output, qr/FROM `test`\.`issue_37` USE INDEX \(`idx_a`\) WHERE/, 'Injects USE INDEX hint by default');
 
-$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers --nouseindex 2>&1 | grep 'src: '`;
+$output = `MKDEBUG=1 ../mk-table-sync h=127.0.0.1,P=12345 P=12346 -d test -t issue_37 -a Chunk --chunksize 3 --ignore-triggers --nouseindex --print 2>&1 | grep 'src: '`;
 like($output, qr/FROM `test`\.`issue_37`  WHERE/, 'No USE INDEX hint with --nouseindex');
 
 # #############################################################################
 # Issue 22: mk-table-sync fails with uninitialized value at line 2330
 # #############################################################################
-diag(`/tmp/12345/use -D test  < samples/issue_22.sql`);
-diag(`/tmp/12345/use -D test -e "SET SQL_LOG_BIN=0; INSERT INTO test.messages VALUES (1,2,'author','2008-09-12 00:00:00','1','0','headers','msg');"`);
-diag(`/tmp/12345/use -e 'CREATE DATABASE test2'`);
-diag(`/tmp/12345/use -D test2 < samples/issue_22.sql`);
+$sb->use('master', '-D test < samples/issue_22.sql');
+$sb->use('master', "-D test -e \"SET SQL_LOG_BIN=0; INSERT INTO test.messages VALUES (1,2,'author','2008-09-12 00:00:00','1','0','headers','msg');\"");
+$sb->create_dbs($master_dbh, [qw(test2)]);
+$sb->use('master', '-D test2 < samples/issue_22.sql');
 
 $output = 'foo'; # To make explicitly sure that the following command
                  # returns blank because there are no rows and not just that
@@ -214,7 +209,7 @@ is($output, $output2, 'test2.messages matches test.messages (issue 22)');
 # The previous test should have left test.messages on the slave (12346)
 # out of sync. Now we also unsync test2 on the slave and then re-sync only
 # it. If --tables is honored, only test2 on the slave will be synced.
-diag(`/tmp/12345/use -D test -e "SET SQL_LOG_BIN=0; INSERT INTO test2 VALUES (1,'a'),(2,'b')"`);
+$sb->use('master', "-D test -e \"SET SQL_LOG_BIN=0; INSERT INTO test2 VALUES (1,'a'),(2,'b')\"");
 diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.1,P=12345 -d test > /dev/null`);
 
 # Test that what the doc says about --tables is true:
@@ -226,7 +221,7 @@ unlike($output, qr/messages/, '--replicate honors --tables (1/4)');
 like($output,   qr/test2/,    '--replicate honors --tables (2/4)');
 
 # Now we'll test with a qualified db.tbl name.
-diag(`/tmp/12346/use -D test -e "TRUNCATE TABLE test2; TRUNCATE TABLE messages"`);
+$sb->use('slave1', '-D test -e "TRUNCATE TABLE test2; TRUNCATE TABLE messages"');
 diag(`../../mk-table-checksum/mk-table-checksum --replicate=test.checksum h=127.1,P=12345 -d test > /dev/null`);
 
 $output = `../mk-table-sync h=127.1,P=12345 -R test.checksum -x -d test -t test.test2 -v`;
@@ -248,6 +243,16 @@ like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
 # This issue is a work in progress, too.
 # We'll reuse the test.messages table.
 
-diag(`../../sandbox/stop_all`);
+# #############################################################################
+# Issue 111: Make mk-table-sync require --print or --execute or --test
+# #############################################################################
+
+# This test reuses the test.message table created above for issue 22.
+$output = `../mk-table-sync h=127.1,P=12345,D=test,t=messages P=12346`;
+like($output, qr/Specify at least one of --print, --execute or --test/,
+   'Requires --print, --execute or --test');
+
+$sb->wipe_clean($master_dbh);
+$sb->wipe_clean($slave_dbh);
 exit;
 
