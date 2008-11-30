@@ -27,9 +27,11 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my %port_for = (
-   master => 12345,
-   slave1 => 12346,
-   slave2 => 12347,
+   master  => 12345,
+   slave1  => 12346,
+   slave2  => 12347,
+   master1 => 12348, # master-master
+   master2 => 12349, # master-master
 );
 
 sub new {
@@ -43,6 +45,21 @@ sub new {
    }
 
    return bless { %args }, $class;
+}
+
+sub use {
+   my ( $self, $server, $cmd ) = @_;
+   _check_server($server);
+   return if !defined $cmd || !$cmd;
+   my $use = $self->_use_for($server) . " $cmd";
+   MKDEBUG && _d("Executing $use on $server");
+   eval {
+      `$use`;
+   };
+   if ( $EVAL_ERROR ) {
+      die "Failed to execute $cmd on $server: $EVAL_ERROR";
+   }
+   return;
 }
 
 sub create_dbs {
@@ -78,7 +95,13 @@ sub get_dbh_for {
    MKDEBUG && _d("Dbh for $server on port $port_for{$server}");
    my $dp = $self->{DSNParser};
    my $dsn = $dp->parse('h=127.0.0.1,P=' . $port_for{$server});
-   return $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
+   my $dbh;
+   eval { $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 }) };
+   if ( $EVAL_ERROR ) {
+      MKDEBUG && _d("Failed to get dbh for $server: $EVAL_ERROR");
+      return 0;
+   }
+   return $dbh;
 }
 
 sub load_file {
@@ -88,7 +111,7 @@ sub load_file {
       die "$file is not a file";
    }
 
-   MKDEBUG && _d("Executing $file on $server");
+   MKDEBUG && _d("Loading $file on $server");
    my $use = $self->_use_for($server);
    eval {
       `$use < $file`;
