@@ -402,11 +402,11 @@ sub _load_online_sys_vars {
 }
 
 # Get DSN specific to this MySQL instance.  If $opts{S} is passed in, which
-# corresponds to --socket on the command line, then don't convert 'localhost' to
-# 127.0.0.1.
+# corresponds to --socket on the command line, then don't convert 'localhost'
+# to 127.0.0.1.
 sub get_DSN {
    my ( $self, %opts ) = @_;
-   my $port   = $self->{cmd_line_ops}->{port}     || '';
+   my $port   = $self->{cmd_line_ops}->{port} || '';
    my $socket = $opts{S} || $self->{cmd_line_ops}->{'socket'} || '';
    my $host   = $opts{S}      ? 'localhost'
               : $port ne 3306 ? '127.0.0.1'

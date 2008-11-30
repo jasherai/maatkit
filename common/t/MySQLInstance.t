@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 27;
+use Test::More tests => 33;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -29,7 +29,8 @@ require '../DSNParser.pm';
 require '../Sandbox.pm';
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master');
+my $dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -283,12 +284,6 @@ eval {
 like($EVAL_ERROR, qr/Cannot execute my_print_defaults command/, 'Dies if my_print_defaults cannot be executed');
 
 # #############################################################################
-# Issue 42: mk-audit doesn't separate instances correctly
-# #############################################################################
-# $ps = load_file('samples/ps_02.txt');
-# $mysqld_procs_ref = MySQLInstance::mysqld_processes($ps);
-
-# #############################################################################
 # Issue 135: mk-audit dies if running mysqld --help --verbose dies      
 # #############################################################################
 $myi = new MySQLInstance($cmd);
@@ -305,5 +300,99 @@ $myi->{mysqld_binary} = 'true';
    $myi->load_sys_vars($dbh);
 };
 like($EVAL_ERROR, qr/MySQL returned no information/, "Warns if mysqld returns nothing");
+
+# #############################################################################
+# Issue 42: mk-audit doesn't separate instances correctly
+# #############################################################################
+$ps = load_file('samples/ps_02.txt');
+$mysqld_procs_ref = MySQLInstance::mysqld_processes($ps);
+is_deeply(
+   $mysqld_procs_ref,
+   [
+   {
+      cmd => '/usr/sbin/mysqld --basedir=/usr --datadir=/var/lib/mysql --user=mysql --pid-file=/var/run/mysqld/mysqld.pid --skip-external-locking --port=3306 --socket=/var/run/mysqld/mysqld.sock',
+      pcpu => '0.0',
+      syslog => 'Yes',
+      user => 'mysql',
+      rss => '16292',
+      '64bit' => 'Yes',
+      vsz => '127196'
+   },
+   {
+      cmd => '/usr/sbin/mysqld --defaults-file=/tmp/12345/my.sandbox.cnf --basedir=/usr --datadir=/tmp/12345/data --pid-file=/tmp/12345/data/mysql_sandbox12345.pid --skip-external-locking --port=12345 --socket=/tmp/12345/mysql_sandbox12345.sock --long-query-time=3',
+      pcpu => '0.1',
+      syslog => 'Yes',
+      user => 'baron',
+      rss => '18816',
+      '64bit' => 'Yes',
+      vsz => '125400'
+   },
+   {
+      cmd => '/usr/sbin/mysqld --defaults-file=/tmp/12346/my.sandbox.cnf --basedir=/usr --datadir=/tmp/12346/data --pid-file=/tmp/12346/data/mysql_sandbox12346.pid --skip-external-locking --port=12346 --socket=/tmp/12346/mysql_sandbox12346.sock --long-query-time=3',
+      pcpu => '0.1',
+      syslog => 'Yes',
+      user => 'baron',
+      rss => '19024',
+      '64bit' => 'Yes',
+      vsz => '125528'
+   },
+   {
+      cmd => '/usr/sbin/mysqld --defaults-file=/tmp/12347/my.sandbox.cnf --basedir=/usr --datadir=/tmp/12347/data --pid-file=/tmp/12347/data/mysql_sandbox12347.pid --skip-external-locking --port=12347 --socket=/tmp/12347/mysql_sandbox12347.sock --long-query-time=3',
+      pcpu => '0.1',
+      syslog => 'Yes',
+      user => 'baron',
+      rss => '18796',
+      '64bit' => 'Yes',
+      vsz => '126396'
+   },
+   {
+      cmd => '/usr/sbin/mysqld --defaults-file=/tmp/12348/my.sandbox.cnf --basedir=/usr --datadir=/tmp/12348/data --pid-file=/tmp/12348/data/mysql_sandbox12348.pid --skip-external-locking --port=12348 --socket=/tmp/12348/mysql_sandbox12348.sock --long-query-time=3',
+      pcpu => '0.1',
+      syslog => 'Yes',
+      user => 'baron',
+      rss => '18792',
+      '64bit' => 'Yes',
+      vsz => '126396'
+   },
+   ],
+   'Parses Baron\'s ps (issue 42)'
+);
+my @dsns = (
+   {
+      P => 3306,
+      S => '/var/run/mysqld/mysqld.sock',
+      h => 'localhost',
+   },
+   {
+      P => 12345,
+      S => '/tmp/12345/mysql_sandbox12345.sock',
+      h => '127.0.0.1',
+   },
+   {
+      P => 12346,
+      S => '/tmp/12346/mysql_sandbox12346.sock',
+      h => '127.0.0.1',
+   },
+   {
+      P => 12347,
+      S => '/tmp/12347/mysql_sandbox12347.sock',
+      h => '127.0.0.1',
+   },
+   {
+      P => 12348,
+      S => '/tmp/12348/mysql_sandbox12348.sock',
+      h => '127.0.0.1',
+   },
+);
+my $i = 0;
+foreach my $m ( @$mysqld_procs_ref ) {
+   $myi = new MySQLInstance($m->{cmd});
+   my $dsn = $myi->get_DSN();
+   is_deeply(
+      $dsn,
+      $dsns[$i++],
+      "DSN for Baron\'s mysqld instance $i"
+   );
+}
 
 exit;
