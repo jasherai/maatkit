@@ -2696,7 +2696,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $dp = new DSNParser();
 my $vp = new VersionParser;
-my $md = new MySQLDump;
+my $md = new MySQLDump(cache => 0);
 my $qt = new Quoter;
 my $tp = new TableParser;
 
@@ -2817,22 +2817,22 @@ OS: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Architecture: @<-bit
 
 CPU: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Architecture: @<-bit
 $server->{cpu}->{model}, $server->{cpu}->{regsize}
-   Speed: @<<<<<<<<<<<<<<<<<<<<<
+   Speed: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $server->{cpu}->{speed}
-   Cache: @<<<<<<<<<<<<<<<<<<<<<
+   Cache: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 $server->{cpu}->{cache}
-   Count: @<<<
+   Count: @<<<<<<<<<<<<
 $server->{cpu}->{count}
-   Cores: @<<<
+   Cores: @<<<<<<<<<<<<
 $server->{cpu}->{cores}
 
 Memory: used @<<<<<< of @<<<<<< total  (@<<<<<< free)
 $server->{memory}->{used}, $server->{memory}->{total}, $server->{memory}->{free}
-   Buffers: @<<<<<<
+   Buffers: @<<<<<<<<<<
 $server->{memory}->{buffers}
-   Cached:  @<<<<<<
+   Cached:  @<<<<<<<<<<
 $server->{memory}->{cached}
-   Shared:  @<<<<<<
+   Shared:  @<<<<<<<<<<
 $server->{memory}->{shared}
    Slots: @*
 { local $LIST_SEPARATOR = "\n"; "@{$server->{memory}->{slots}}" }

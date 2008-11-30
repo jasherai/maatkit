@@ -1,5 +1,6 @@
 Changelog for mk-audit:
 
+   * mk-audit did not always separate instances correctly (issue 42).
    * The OS version for Debian-based distributions wasn't reported (issue 106).
 
 2008-10-17: version 0.9.3
