@@ -1,5 +1,49 @@
-perl ../mk-log-parser ../../common/t/samples/slow001.txt -acfr --sum Query_time
-# Rank: 0 Count: 1 Sum_Query_time: 2
-select sleep(N) from n;
-# Rank: 1 Count: 1 Sum_Query_time: 2
-select sleep(N) from test.n;
+perl ../mk-log-parser ../../common/t/samples/slow001.txt
+-- Query 001 (    0 QPS) ID: 6975ae3876dc0edf ____________________________
+--             total    %      min     max     avg     95%  stddev  median
+-- Count           1   50
+-- Time           2s   50       2s      2s      2s      2s       0      2s
+-- Lock            0    0        0       0       0       0       0       0
+-- Rows sent       1   50        1       1       1       1       0       1
+-- DBs                                                                     
+-- Users       root                                                        
+-- Execution times
+--      1us                                                               
+--     10us                                                               
+--    100us                                                               
+--      1ms                                                               
+--     10ms                                                               
+--    100ms                                                               
+--       1s  #############################################################
+--     10s+                                                               
+-- Time clustering:
+-- Tables:
+--    SHOW TABLE STATUS FROM `test` LIKE 'n'\G
+--    SHOW CREATE TABLE `n`\G
+-- EXPLAIN
+select sleep(2) from test.n\G
+
+-- Query 002 (    0 QPS) ID: c362a1c7c697c2d5 ____________________________
+--             total    %      min     max     avg     95%  stddev  median
+-- Count           1   50
+-- Time           2s   50       2s      2s      2s      2s       0      2s
+-- Lock            0    0        0       0       0       0       0       0
+-- Rows sent       1   50        1       1       1       1       0       1
+-- DBs                                                                     
+-- Users       root                                                        
+-- Execution times
+--      1us                                                               
+--     10us                                                               
+--    100us                                                               
+--      1ms                                                               
+--     10ms                                                               
+--    100ms                                                               
+--       1s  #############################################################
+--     10s+                                                               
+-- Time clustering:
+-- Tables:
+--    SHOW TABLE STATUS LIKE 'n'\G
+--    SHOW CREATE TABLE `n`\G
+-- EXPLAIN
+select sleep(2) from n\G
+

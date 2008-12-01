@@ -1,5 +1,188 @@
-perl ../mk-log-parser ../../common/t/samples/slow002.txt -acf --sum Query_time --top 2 --sort count
-# Count: 2 Sum_Query_time: 0.00106
-update foo.bar set biz = S;
-# Count: 1 Sum_Query_time: 0.00053
-insert into db1.conch (word3, vid83) values(S+);
+perl ../mk-log-parser ../../common/t/samples/slow002.txt
+-- Query 001 (    0 QPS) ID: 6e171bcab5206d28 ____________________________
+--             total    %      min     max     avg     95%  stddev  median
+-- Count           1   12
+-- Time      726.1ms   95  726.1ms 726.1ms 726.1ms 726.1ms       0 726.1ms
+-- Lock         91us   29     91us    91us    91us    91us       0    91us
+-- Rows sent       0    0        0       0       0       0       0       0
+-- DBs                                                                     
+-- Users                                                                   
+-- Execution times
+--      1us                                                               
+--     10us                                                               
+--    100us                                                               
+--      1ms                                                               
+--     10ms                                                               
+--    100ms  #############################################################
+--       1s                                                               
+--     10s+                                                               
+-- Time clustering:
+-- Tables:
+--    SHOW TABLE STATUS FROM `db2` LIKE 'tuningdetail_21_265507'\G
+--    SHOW CREATE TABLE `tuningdetail_21_265507`\G
+update db2.tuningdetail_21_265507 n
+      inner join db1.gonzo a using(gonzo) 
+      set n.column1 = a.column1, n.word3 = a.word3\G
+-- Converted for EXPLAIN
+-- EXPLAIN
+select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507 n
+      inner join db1.gonzo a using(gonzo) \G
+
+-- Query 002 (    0 QPS) ID: cbb6bfab9549fa63 ____________________________
+--             total    %      min     max     avg     95%  stddev  median
+-- Count           1   12
+-- Time       33.4ms    4   33.4ms  33.4ms  33.4ms  33.4ms       0  33.4ms
+-- Lock         28us    9     28us    28us    28us    28us       0    28us
+-- Rows sent       0    0        0       0       0       0       0       0
+-- DBs                                                                     
+-- Users                                                                   
+-- Execution times
+--      1us                                                               
+--     10us                                                               
+--    100us                                                               
+--      1ms                                                               
+--     10ms  #############################################################
+--    100ms                                                               
+--       1s                                                               
+--     10s+                                                               
+-- Time clustering:
+-- Tables:
+--    SHOW TABLE STATUS FROM `db4` LIKE 'vab3concept1upload'\G
+--    SHOW CREATE TABLE `vab3concept1upload`\G
+UPDATE db4.vab3concept1upload
+SET    vab3concept1id = '91848182522'
+WHERE  vab3concept1upload='6994465'\G
+-- Converted for EXPLAIN
+-- EXPLAIN
+select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   vab3concept1upload='6994465'\G
+
+-- Query 003 (    0 QPS) ID: 40b3fa9be13c4afa ____________________________
+--             total    %      min     max     avg     95%  stddev  median
+-- Count           2   25
+-- Time        1.1ms    0    530us   530us   530us   530us       0   530us
+-- Lock         54us   17     27us    27us    27us    27us       0    27us
+-- Rows sent       0    0        0       0       0       0       0       0
+-- DBs                                                                     
+-- Users                                                                   
+-- Execution times
+--      1us                                                               
+--     10us                                                               
+--    100us  #############################################################
+--      1ms                                                               
+--     10ms                                                               
+--    100ms                                                               
+--       1s                                                               
+--     10s+                                                               
+-- Time clustering:
+-- Tables:
+--    SHOW TABLE STATUS FROM `foo` LIKE 'bar'\G
+--    SHOW CREATE TABLE `bar`\G
+UPDATE foo.bar
+SET    biz = '91848182522'\G
+-- Converted for EXPLAIN
+-- EXPLAIN
+select     biz = '91848182522' from foo.bar \G
+
+-- Query 004 (    0 QPS) ID: 5938d0d486a431c8 ____________________________
+--             total    %      min     max     avg     95%  stddev  median
+-- Count           1   12
+-- Time        530us    0    530us   530us   530us   530us       0   530us
+-- Lock         27us    8     27us    27us    27us    27us       0    27us
+-- Rows sent       0    0        0       0       0       0       0       0
+-- DBs                                                                     
+-- Users                                                                   
+-- Execution times
+--      1us                                                               
+--     10us                                                               
+--    100us  #############################################################
+--      1ms                                                               
+--     10ms                                                               
+--    100ms                                                               
+--       1s                                                               
+--     10s+                                                               
+-- Time clustering:
+-- Tables:
+--    SHOW TABLE STATUS FROM `bizzle` LIKE 'bat'\G
+--    SHOW CREATE TABLE `bat`\G
+UPDATE bizzle.bat
+SET    boop='bop: 899'
+WHERE  fillze='899'\G
+-- Converted for EXPLAIN
+-- EXPLAIN
+select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
+
+-- Query 005 (    0 QPS) ID: e5a7da2d8c4e8e70 ____________________________
+--             total    %      min     max     avg     95%  stddev  median
+-- Count           1   12
+-- Time        530us    0    530us   530us   530us   530us       0   530us
+-- Lock         27us    8     27us    27us    27us    27us       0    27us
+-- Rows sent       0    0        0       0       0       0       0       0
+-- DBs                                                                     
+-- Users                                                                   
+-- Execution times
+--      1us                                                               
+--     10us                                                               
+--    100us  #############################################################
+--      1ms                                                               
+--     10ms                                                               
+--    100ms                                                               
+--       1s                                                               
+--     10s+                                                               
+-- Time clustering:
+-- Tables:
+--    SHOW TABLE STATUS FROM `db1` LIKE 'conch'\G
+--    SHOW CREATE TABLE `conch`\G
+INSERT INTO db1.conch (word3, vid83)
+VALUES ('211', '18')\G
+-- Converted for EXPLAIN
+-- EXPLAIN
+select * from  db1.conch  where word3='211' and  vid83= '18'\G
+
+-- Query 006 (    0 QPS) ID: 199c3395c76c522a ____________________________
+--             total    %      min     max     avg     95%  stddev  median
+-- Count           1   12
+-- Time        512us    0    512us   512us   512us   512us       0   512us
+-- Lock         77us   25     77us    77us    77us    77us       0    77us
+-- Rows sent       0    0        0       0       0       0       0       0
+-- DBs                                                                     
+-- Users                                                                   
+-- Execution times
+--      1us                                                               
+--     10us                                                               
+--    100us  #############################################################
+--      1ms                                                               
+--     10ms                                                               
+--    100ms                                                               
+--       1s                                                               
+--     10s+                                                               
+-- Time clustering:
+-- Tables:
+--    SHOW TABLE STATUS FROM `db3` LIKE 'vendor11gonzo'\G
+--    SHOW CREATE TABLE `vendor11gonzo`\G
+INSERT INTO db3.vendor11gonzo (makef, bizzle)
+VALUES ('', 'Exact')\G
+-- Converted for EXPLAIN
+-- EXPLAIN
+select * from  db3.vendor11gonzo  where makef='' and  bizzle= 'Exact'\G
+
+-- Query 007 (    0 QPS) ID: 85fff5aa78e5ff6a ____________________________
+--             total    %      min     max     avg     95%  stddev  median
+-- Count           1   12
+-- Time         12us    0     12us    12us    12us    12us       0    12us
+-- Lock            0    0        0       0       0       0       0       0
+-- Rows sent       0    0        0       0       0       0       0       0
+-- DBs                                                                     
+-- Users                                                                   
+-- Execution times
+--      1us                                                               
+--     10us  #############################################################
+--    100us                                                               
+--      1ms                                                               
+--     10ms                                                               
+--    100ms                                                               
+--       1s                                                               
+--     10s+                                                               
+-- Time clustering:
+-- Query cannot be converted to SELECT
+BEGIN\G
+
