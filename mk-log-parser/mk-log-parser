@@ -2246,19 +2246,6 @@ C<mk-log-parser> reads MySQL log files and generates a report that's useful
 for optimizing a server.  It can also perform other actions, such as helping you
 do a query review by showing all distinct queries running on your server.
 
-Each log event has various B<attributes>.  For example, the slow query log
-produces output like this:
-
-   # User@Host: [SQL_SLAVE] @  []
-   # Thread_id: 8552
-   # Query_time: 5  Lock_time: 0  Rows_sent: 0 ...
-
-Each of the values, such as the C<Query_time>, ends up as an attribute of the
-event.  The event itself will contain the query, the current database, and so
-on.  You can use these attributes in various ways.  In addition to the
-attributes gathered from particular log formats, there is always a C<count>
-attribute: the number of times an event has been seen.
-
 C<mk-log-parser> reads the files you specify on the command line, or standard
 input.  You can cancel it with C<CTRL-C> and it will abort processing the log
 file, then print the statistics.

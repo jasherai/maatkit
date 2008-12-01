@@ -4,6 +4,7 @@ mk-deadlock-logger
 mk-duplicate-key-checker
 mk-find
 mk-heartbeat
+mk-log-parser
 mk-parallel-dump
 mk-parallel-restore
 mk-query-profiler
