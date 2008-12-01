@@ -1942,8 +1942,10 @@ if ( $opts{R} ) { # Query review.
          my ( $event ) = @_;
          my $fingerprint = $qr->fingerprint($event->{arg});
          if ( !$seen{$fingerprint}++ ) {
+            my $ts = $event->{ts};
+            $ts = parse_timestamp($ts) if defined $ts;
             $sth->execute(checksum_64($fingerprint), $fingerprint,
-               $event->{arg}, parse_timestamp($event->{ts}));
+               $event->{arg}, $ts);
          }
       });
    };
