@@ -1,5 +1,9 @@
 Changelog for mk-audit:
 
+2008-12-01: version 0.9.4
+
+   * Updates to shared code.
+   * Made error handling more robust (issue 135).
    * mk-audit did not always separate instances correctly (issue 42).
    * The OS version for Debian-based distributions wasn't reported (issue 106).
 

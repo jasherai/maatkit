@@ -1,7 +1,11 @@
 Changelog for mk-table-sync:
 
-   * Requires at least --print, --execute or --test (issue 111).
+2008-12-01: version 1.0.11
+
+   * Updates to shared code.
+   * The tool now requires at least --print, --execute or --test (issue 111).
    * --askpass and a bareword host in the DSN caused a crash (issue 108).
+   * Filters on objects weren't applied as early as possible (issue 99).
 
 2008-10-17: version 1.0.10
 

@@ -1,5 +1,9 @@
 Changelog for mk-slave-prefetch:
 
+2008-12-01: version 1.0.5
+
+   * Updates to shared code.
+
 2008-09-19: version 1.0.4
 
    * Added --pid option.

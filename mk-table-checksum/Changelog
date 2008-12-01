@@ -1,5 +1,13 @@
 Changelog for mk-table-checksum and mk-checksum-filter:
 
+2008-12-01: version 1.0.12
+
+   * Updates to shared code.
+   * --since did not work correctly in some cases (issue 121).
+   * --savesince did not work correctly in some cases (issue 122).
+   * --schema --checksum didn't produce terse output (issue 103).
+   * Filters on objects weren't applied as early as possible (issue 99).
+
 2008-10-17: version 1.2.0
 
    * Added --recheck (issue 69).
