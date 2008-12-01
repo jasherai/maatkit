@@ -5613,6 +5613,12 @@ short form: -d; type: hash
 
 Sync only this comma-separated list of databases.
 
+A common request is to sync tables from one database with tables from another
+database on the same or different server.  This is not yet possible.
+--databases will not do it, and you can't do it with the D part of the DSN
+either, because in the absence of a table name it assumes the whole server
+should be synced and the D part controls only the connection's default database.
+
 =item --engine
 
 short form: -e; type: hash
