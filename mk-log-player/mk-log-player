@@ -2005,14 +2005,20 @@ sub play_session {
 
       usleep( get_delay($opts{'delay-queries'}) );
 
+      my $n_rows     = 0;
       my $start_time = time;
-      my $results    = $dbh->selectall_arrayref($sql->{stmt});
-
-      $sql->{query_time}   = time - $start_time;
-      $sql->{n_rows} = scalar @$results;
+      if ( $sql->{stmt} =~ m/^SELECT /i ) {
+         my $results = $dbh->selectall_arrayref($sql->{stmt});
+         $n_rows = scalar @$results;
+      }
+      else {
+         $dbh->do($sql->{stmt});
+      }
+      $sql->{query_time} = time - $start_time;
+      $sql->{n_rows}     = $n_rows;
 
       $session->{n_queries}++;
-      $session->{n_rows} += $sql->{n_rows};
+      $session->{n_rows} += $n_rows;
    }
    $dbh->disconnect();
    $session->{total_time} = time - $session->{total_time};
