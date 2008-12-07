@@ -1194,7 +1194,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2530
+# LogParser package 2585
 # ###########################################################################
 package LogParser;
 
@@ -1412,6 +1412,88 @@ sub parse_event {
    }
 
    $code->($event) if $event && $code;
+   return $event;
+}
+
+sub parse_slowlog_event {
+   my ( $self, $fh, $code ) = @_;
+
+   local $INPUT_RECORD_SEPARATOR = ";\n#";
+   my $trimlen    = length($INPUT_RECORD_SEPARATOR);
+   my @properties = ('cmd', 'Query', 'pos_in_log', tell($fh));
+   my $stmt       = <$fh>;
+   return unless defined $stmt;
+
+   $stmt =~ s{
+      ^(?:
+      Tcp\sport:\s+\d+
+      |
+      /.*Version.*started
+      |
+      Time\s+Id\s+Command
+      ).*\n
+   }{}gmxo;
+
+   $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+   $stmt =~ s/;\n#?\Z//;
+
+
+   my $pos = 0;
+   my $found_arg = 0;
+   while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
+      $pos     = pos($stmt);  # Be careful not to mess this up!
+      my $line = $1;          # Necessary for /g and pos() to work.
+      if ( $line !~ m/^#|^use \S|^set \S/i ) {
+         push @properties, 'arg', substr($stmt, $pos - length($line));
+         last;
+      }
+
+      if ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
+         push @properties, 'ts', $time;
+         if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+            push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+         }
+      }
+
+      elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+         push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+      }
+
+      elsif ( $line =~ m/^# (?:administrator command:.*)$/ ) {
+         push @properties, 'cmd', 'Admin', 'arg', $line;
+         $found_arg++;
+      }
+
+      elsif ( my @temp = $line =~ m/(\w+):\s+(\S+)/g ) {
+         push @properties, @temp;
+      }
+
+      elsif ( my ( $db ) = $line =~ m/^use ([^;]+)/i ) {
+         push @properties, 'db', $db;
+      }
+
+      elsif ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ ) {
+         if ( $line =~ m/SET NAMES/i ) { # Looks like meta-data but isn't.
+            push @properties, 'arg', $line;
+            $found_arg++;
+         }
+         else {
+            push @properties, split(/,|\s*=\s*/, $setting);
+         }
+      }
+
+      if ( !$found_arg && $pos == length($stmt) ) {
+         local $INPUT_RECORD_SEPARATOR = ";\n";
+         if ( chomp(my $l = <$fh>) ) {
+            push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+            $found_arg++;
+         }
+      }
+
+   }
+
+   my $event = { @properties };
+   $code->($event) if $code;
    return $event;
 }
 
@@ -1793,7 +1875,6 @@ sub get_table_ref {
       $table_ref = $1;
    }
    elsif( $query =~ m/FROM\s+(.+?);?$/is ) {
-      # This handles queries like "SELECT COUNT(id) FROM table;"
       chomp($table_ref = $1);
    }
 
@@ -1938,7 +2019,7 @@ if ( $opts{R} ) { # Query review.
    my %seen;
    $callback = sub {
       my ( $fh ) = @_;
-      $lp->parse_event($fh, sub {
+      $lp->parse_slowlog_event($fh, sub {
          my ( $event ) = @_;
          my $fingerprint = $qr->fingerprint($event->{arg});
          if ( !$seen{$fingerprint}++ ) {
@@ -1953,7 +2034,7 @@ if ( $opts{R} ) { # Query review.
 else { # Default behavior -- slow-log analysis.
    $callback = sub {
       my ( $fh ) = @_;
-      $lp->parse_event($fh, sub { $sm->calc_event_metrics(@_) });
+      $lp->parse_slowlog_event($fh, sub { $sm->calc_event_metrics(@_) });
    };
 }
 
@@ -2312,6 +2393,22 @@ short form: -t; type: int; default: 10
 Report only the top N worst queries.
 
 See also L<"--worst">.
+
+=item --type
+
+type: string; default: slow
+
+Specify the log format: slow, general, binary.
+
+mk-log-parser has special parsers for various log types.  The slow log parser
+can handle ordinary slow logs and slow logs with various combinations of
+Percona's patches, some of which are included in MySQL 5.1 and newer.  (If
+you're trying to analyze the performance of your server, a Percona build is
+extremely helpful.)
+
+The general and binary log types are not yet integrated into mk-log-parser,
+although the code exists because it's in a module shared with other Maatkit
+tools.
 
 =item --worst
 
