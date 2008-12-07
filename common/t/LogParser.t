@@ -158,7 +158,8 @@ $events = [
       user => 'root',
       host => 'localhost',
       ip   => '',
-      arg  => "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
+      arg =>
+         "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
       Query_time    => '0.001943',
       Lock_time     => '0.000145',
       Rows_sent     => 0,
@@ -382,7 +383,7 @@ eval {
    1 while ( $p->parse_event( $file, \&simple_callback ) );
    close $file;
 };
-is($EVAL_ERROR, '', 'Blank entry did not crash');
+is( $EVAL_ERROR, '', 'Blank entry did not crash' );
 
 # Check a slow log that has tabs in it.
 $events = [
@@ -419,7 +420,7 @@ open $file, "<", 'samples/slow007.txt' or die $OS_ERROR;
 close $file;
 $events = [
    {  cmd            => 'Query',
-      Schema         => 'food', 
+      Schema         => 'food',
       arg            => 'SELECT fruit FROM trees',
       ts             => '071218 11:48:27',
       Disk_filesort  => 'No',
@@ -438,135 +439,123 @@ $events = [
       NR             => 7,
    },
 ];
-is_deeply(\@e, $events, 'Parses Schema');
+is_deeply( \@e, $events, 'Parses Schema' );
 
 @e = ();
 open $file, "<", 'samples/slow006.txt' or die $OS_ERROR;
 1 while ( $p->parse_event( $file, \&simple_callback ) );
 close $file;
-is($e[2]->{db}, 'bar', 'Parsing USE is case-insensitive');
+is( $e[2]->{db}, 'bar', 'Parsing USE is case-insensitive' );
 
 @e = ();
 open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
 1 while ( $p->parse_event( $file, \&simple_callback ) );
 $events = [
-   {
-      'Schema' => 'db1',
-      'cmd' => 'Admin',
-      'ip' => '1.2.3.8',
-      'arg' => 'Quit',
-      'Thread_id' => '5',
-      'host' => '',
+   {  'Schema'        => 'db1',
+      'cmd'           => 'Admin',
+      'ip'            => '1.2.3.8',
+      'arg'           => 'Quit',
+      'Thread_id'     => '5',
+      'host'          => '',
       'Rows_examined' => '0',
-      'NR' => '6',
-      'user' => 'meow',
-      'Query_time' => '0.000002',
-      'Lock_time' => '0.000000',
-      'Rows_sent' => '0',
+      'NR'            => '6',
+      'user'          => 'meow',
+      'Query_time'    => '0.000002',
+      'Lock_time'     => '0.000000',
+      'Rows_sent'     => '0',
    },
-   {
-      'Schema' => 'db2',
-      'cmd' => 'Query',
-      'db' => 'db',
-      'ip' => '1.2.3.8',
-      'settings' => [
-         'SET NAMES utf8'
-      ],
-      'Thread_id' => '6',
-      'host' => '',
+   {  'Schema'        => 'db2',
+      'cmd'           => 'Query',
+      'db'            => 'db',
+      'ip'            => '1.2.3.8',
+      'settings'      => [ 'SET NAMES utf8' ],
+      'Thread_id'     => '6',
+      'host'          => '',
       'Rows_examined' => '0',
-      'NR' => '12',
-      'user' => 'meow',
-      'Query_time' => '0.000899',
-      'Lock_time' => '0.000000',
-      'Rows_sent' => '0',
+      'NR'            => '12',
+      'user'          => 'meow',
+      'Query_time'    => '0.000899',
+      'Lock_time'     => '0.000000',
+      'Rows_sent'     => '0',
    },
-   {
-      'Schema' => 'db2',
-      'cmd' => 'Query',
-      'arg' => 'SELECT MIN(id),MAX(id) FROM tbl',
-      'ip' => '1.2.3.8',
-      'Thread_id' => '6',
-      'host' => '',
+   {  'Schema'        => 'db2',
+      'cmd'           => 'Query',
+      'arg'           => 'SELECT MIN(id),MAX(id) FROM tbl',
+      'ip'            => '1.2.3.8',
+      'Thread_id'     => '6',
+      'host'          => '',
       'Rows_examined' => '0',
-      'NR' => '16',
-      'user' => 'meow',
-      'Query_time' => '0.018799',
-      'Lock_time' => '0.009453',
-      'Rows_sent' => '0'
+      'NR'            => '16',
+      'user'          => 'meow',
+      'Query_time'    => '0.018799',
+      'Lock_time'     => '0.009453',
+      'Rows_sent'     => '0'
    },
 ];
-is_deeply(\@e, $events, 'Parses commented event (admin cmd)');
+is_deeply( \@e, $events, 'Parses commented event (admin cmd)' );
 
 @e = ();
 open $file, "<", 'samples/slow011.txt' or die $OS_ERROR;
 1 while ( $p->parse_event( $file, \&simple_callback ) );
 $events = [
-   {
-     'Schema' => 'db1',
-     'cmd' => 'Admin',
-     'arg' => 'Quit',
-     'ip' => '1.2.3.8',
-     'Thread_id' => '5',
-     'host' => '',
-     'Rows_examined' => '0',
-     'NR' => '22',
-     'user' => 'meow',
-     'Query_time' => '0.000002',
-     'Lock_time' => '0.000000',
-     'Rows_sent' => '0'
+   {  'Schema'        => 'db1',
+      'cmd'           => 'Admin',
+      'arg'           => 'Quit',
+      'ip'            => '1.2.3.8',
+      'Thread_id'     => '5',
+      'host'          => '',
+      'Rows_examined' => '0',
+      'NR'            => '22',
+      'user'          => 'meow',
+      'Query_time'    => '0.000002',
+      'Lock_time'     => '0.000000',
+      'Rows_sent'     => '0'
    },
-   {
-     'Schema' => 'db2',
-     'db' => 'db',
-     'cmd' => 'Query',
-     'ip' => '1.2.3.8',
-     'settings' => [
-                     'SET NAMES utf8'
-                   ],
-     'Thread_id' => '6',
-     'host' => '',
-     'Rows_examined' => '0',
-     'NR' => '28',
-     'user' => 'meow',
-     'Query_time' => '0.000899',
-     'Lock_time' => '0.000000',
-     'Rows_sent' => '0'
+   {  'Schema'        => 'db2',
+      'db'            => 'db',
+      'cmd'           => 'Query',
+      'ip'            => '1.2.3.8',
+      'settings'      => [ 'SET NAMES utf8' ],
+      'Thread_id'     => '6',
+      'host'          => '',
+      'Rows_examined' => '0',
+      'NR'            => '28',
+      'user'          => 'meow',
+      'Query_time'    => '0.000899',
+      'Lock_time'     => '0.000000',
+      'Rows_sent'     => '0'
    },
-   {
-     'Schema' => 'db2',
-     'db' => 'db2',
-     'cmd' => 'Admin',
-     'arg' => 'Quit',
-     'ip' => '1.2.3.8',
-     'Thread_id' => '7',
-     'host' => '',
-     'Rows_examined' => '0',
-     'NR' => '34',
-     'user' => 'meow',
-     'Query_time' => '0.018799',
-     'Lock_time' => '0.009453',
-     'Rows_sent' => '0'
+   {  'Schema'        => 'db2',
+      'db'            => 'db2',
+      'cmd'           => 'Admin',
+      'arg'           => 'Quit',
+      'ip'            => '1.2.3.8',
+      'Thread_id'     => '7',
+      'host'          => '',
+      'Rows_examined' => '0',
+      'NR'            => '34',
+      'user'          => 'meow',
+      'Query_time'    => '0.018799',
+      'Lock_time'     => '0.009453',
+      'Rows_sent'     => '0'
    },
-   {
-     'Schema' => 'db2',
-     'db' => 'db',
-     'cmd' => 'Query',
-     'ip' => '1.2.3.8',
-     'settings' => [
-                     'SET NAMES utf8'
-                   ],
-     'Thread_id' => '9',
-     'host' => '',
-     'Rows_examined' => '0',
-     'NR' => '39',
-     'user' => 'meow',
-     'Query_time' => '0.000899',
-     'Lock_time' => '0.000000',
-     'Rows_sent' => '0'
+   {  'Schema'        => 'db2',
+      'db'            => 'db',
+      'cmd'           => 'Query',
+      'ip'            => '1.2.3.8',
+      'settings'      => [ 'SET NAMES utf8' ],
+      'Thread_id'     => '9',
+      'host'          => '',
+      'Rows_examined' => '0',
+      'NR'            => '39',
+      'user'          => 'meow',
+      'Query_time'    => '0.000899',
+      'Lock_time'     => '0.000000',
+      'Rows_sent'     => '0'
    }
 ];
-is_deeply(\@e, $events, 'Parses commented event lines after type 1 lines');
+is_deeply( \@e, $events, 'Parses commented event lines after type 1 lines' );
+
 # ###########################################################################
 # Slow log
 # ###########################################################################
@@ -583,8 +572,8 @@ $events = [
       Lock_time     => 0,
       Rows_sent     => 1,
       Rows_examined => 0,
-      pos_in_log         => 0,
-      cmd          => 'Query',
+      pos_in_log    => 0,
+      cmd           => 'Query',
    },
    {  ts            => '071015 21:45:10',
       db            => 'sakila',
@@ -596,8 +585,8 @@ $events = [
       Lock_time     => 0,
       Rows_sent     => 1,
       Rows_examined => 0,
-      pos_in_log         => 359,
-      cmd          => 'Query',
+      pos_in_log    => 359,
+      cmd           => 'Query',
    },
 ];
 
@@ -618,20 +607,21 @@ $events = [
       Lock_time     => '0.000109',
       Rows_sent     => 1,
       Rows_examined => 1,
-      pos_in_log         => 0,
-      cmd          => 'Query',
+      pos_in_log    => 0,
+      cmd           => 'Query',
    },
    {  ts   => '071015 21:43:52',
       user => 'root',
       host => 'localhost',
       ip   => '',
-      arg  => "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
+      arg =>
+         "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
       Query_time    => '0.001943',
       Lock_time     => '0.000145',
       Rows_sent     => 0,
       Rows_examined => 0,
-      pos_in_log         => 183,
-      cmd          => 'Query',
+      pos_in_log    => 183,
+      cmd           => 'Query',
    },
 ];
 
@@ -657,12 +647,12 @@ $events = [
       Disk_tmp_table => 'No',
       Rows_sent      => '0',
       Lock_time      => '0.000000',
-      pos_in_log          => 0,
-      cmd          => 'Query',
+      pos_in_log     => 0,
+      cmd            => 'Query',
    },
-   {  db       => 'db1',
-      timestamp=>1197996507,
-      arg      => 'update db2.tuningdetail_21_265507 n
+   {  db        => 'db1',
+      timestamp => 1197996507,
+      arg       => 'update db2.tuningdetail_21_265507 n
       inner join db1.gonzo a using(gonzo) 
       set n.column1 = a.column1, n.word3 = a.word3',
       Disk_filesort  => 'No',
@@ -679,11 +669,11 @@ $events = [
       Host           => '[SQL_SLAVE]',
       Rows_sent      => '0',
       Lock_time      => '0.000091',
-      pos_in_log          => 332,
-      cmd          => 'Query',
+      pos_in_log     => 332,
+      cmd            => 'Query',
    },
-   {  timestamp=>1197996507,
-      arg      => 'INSERT INTO db3.vendor11gonzo (makef, bizzle)
+   {  timestamp => 1197996507,
+      arg       => 'INSERT INTO db3.vendor11gonzo (makef, bizzle)
 VALUES (\'\', \'Exact\')',
       InnoDB_IO_r_bytes     => '0',
       Merge_passes          => '0',
@@ -705,8 +695,8 @@ VALUES (\'\', \'Exact\')',
       Query_time            => '0.000512',
       InnoDB_IO_r_wait      => '0.000000',
       Host                  => '[SQL_SLAVE]',
-      pos_in_log                 => 803,
-      cmd          => 'Query',
+      pos_in_log            => 803,
+      cmd                   => 'Query',
    },
    {  arg => 'UPDATE db4.vab3concept1upload
 SET    vab3concept1id = \'91848182522\'
@@ -731,11 +721,12 @@ WHERE  vab3concept1upload=\'6994465\'',
       Query_time            => '0.033384',
       InnoDB_IO_r_wait      => '0.000000',
       Host                  => '[SQL_SLAVE]',
-      pos_in_log                 => 1316,
-      cmd          => 'Query',
+      pos_in_log            => 1316,
+      cmd                   => 'Query',
    },
-   {  insert_id=>34484549,timestamp=>1197996507,
-      arg      => 'INSERT INTO db1.conch (word3, vid83)
+   {  insert_id => 34484549,
+      timestamp => 1197996507,
+      arg       => 'INSERT INTO db1.conch (word3, vid83)
 VALUES (\'211\', \'18\')',
       InnoDB_IO_r_bytes     => '0',
       Merge_passes          => '0',
@@ -757,8 +748,8 @@ VALUES (\'211\', \'18\')',
       Query_time            => '0.000530',
       InnoDB_IO_r_wait      => '0.000000',
       Host                  => '[SQL_SLAVE]',
-      pos_in_log                 => 1840,
-      cmd          => 'Query',
+      pos_in_log            => 1840,
+      cmd                   => 'Query',
    },
    {  arg => 'UPDATE foo.bar
 SET    biz = \'91848182522\'',
@@ -782,13 +773,13 @@ SET    biz = \'91848182522\'',
       Query_time            => '0.000530',
       InnoDB_IO_r_wait      => '0.000000',
       Host                  => '[SQL_SLAVE]',
-      pos_in_log                 => 2363,
-      cmd          => 'Query',
+      pos_in_log            => 2363,
+      cmd                   => 'Query',
    },
    {  arg => 'UPDATE bizzle.bat
 SET    boop=\'bop: 899\'
 WHERE  fillze=\'899\'',
-      timestamp=>1197996508,
+      timestamp             => 1197996508,
       InnoDB_IO_r_bytes     => '0',
       Merge_passes          => '0',
       Full_join             => 'No',
@@ -809,8 +800,8 @@ WHERE  fillze=\'899\'',
       Query_time            => '0.000530',
       InnoDB_IO_r_wait      => '0.000000',
       Host                  => '[SQL_SLAVE]',
-      pos_in_log                 => 2825,
-      cmd          => 'Query',
+      pos_in_log            => 2825,
+      cmd                   => 'Query',
    },
    {  arg => 'UPDATE foo.bar
 SET    biz = \'91848182522\'',
@@ -834,8 +825,8 @@ SET    biz = \'91848182522\'',
       Query_time            => '0.000530',
       InnoDB_IO_r_wait      => '0.000000',
       Host                  => '[SQL_SLAVE]',
-      pos_in_log => 3332,
-      cmd          => 'Query',
+      pos_in_log            => 3332,
+      cmd                   => 'Query',
    },
 ];
 
@@ -850,12 +841,11 @@ eval {
    1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
    close $file;
 };
-is($EVAL_ERROR, '', 'Blank entry did not crash');
+is( $EVAL_ERROR, '', 'Blank entry did not crash' );
 
 # Check a slow log that has tabs in it.
 $events = [
-   {
-      arg            => "foo\nbar\n\t\t\t0 AS counter\nbaz",
+   {  arg            => "foo\nbar\n\t\t\t0 AS counter\nbaz",
       ts             => '071218 11:48:27',
       Disk_filesort  => 'No',
       Merge_passes   => '0',
@@ -870,8 +860,8 @@ $events = [
       Disk_tmp_table => 'No',
       Rows_sent      => '0',
       Lock_time      => '0.000000',
-      pos_in_log  => 0,
-      cmd          => 'Query',
+      pos_in_log     => 0,
+      cmd            => 'Query',
    },
 ];
 
@@ -887,8 +877,7 @@ open $file, "<", 'samples/slow007.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
 close $file;
 $events = [
-   {  
-      Schema         => 'food', 
+   {  Schema         => 'food',
       arg            => 'SELECT fruit FROM trees',
       ts             => '071218 11:48:27',
       Disk_filesort  => 'No',
@@ -904,17 +893,17 @@ $events = [
       Disk_tmp_table => 'No',
       Rows_sent      => '0',
       Lock_time      => '0.000000',
-      pos_in_log => 0,
-      cmd          => 'Query',
+      pos_in_log     => 0,
+      cmd            => 'Query',
    },
 ];
-is_deeply(\@e, $events, 'Parses Schema');
+is_deeply( \@e, $events, 'Parses Schema' );
 
 @e = ();
 open $file, "<", 'samples/slow006.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
 close $file;
-is($e[2]->{db}, 'bar', 'Parsing USE is case-insensitive');
+is( $e[2]->{db}, 'bar', 'Parsing USE is case-insensitive' );
 
 $events = [
    {  'Schema'        => 'db1',
@@ -928,7 +917,7 @@ $events = [
       'Lock_time'     => '0.000000',
       'Rows_sent'     => '0',
       pos_in_log      => 0,
-      cmd          => 'Admin',
+      cmd             => 'Admin',
    },
    {  'Schema'        => 'db2',
       'db'            => 'db',
@@ -942,7 +931,7 @@ $events = [
       'Lock_time'     => '0.000000',
       'Rows_sent'     => '0',
       pos_in_log      => 221,
-      cmd          => 'Query',
+      cmd             => 'Query',
    },
    {  'Schema'        => 'db2',
       'arg'           => 'SELECT MIN(id),MAX(id) FROM tbl',
@@ -955,13 +944,13 @@ $events = [
       'Lock_time'     => '0.009453',
       'Rows_sent'     => '0',
       pos_in_log      => 435,
-      cmd          => 'Query',
+      cmd             => 'Query',
    },
 ];
 @e = ();
 open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
-is_deeply(\@e, $events, 'Parses commented event (admin cmd)');
+is_deeply( \@e, $events, 'Parses commented event (admin cmd)' );
 
 $events = [
    {  'Schema'        => 'db1',
@@ -975,7 +964,7 @@ $events = [
       'Lock_time'     => '0.000000',
       'Rows_sent'     => '0',
       pos_in_log      => 0,
-      cmd          => 'Admin',
+      cmd             => 'Admin',
    },
    {  'Schema'        => 'db2',
       'db'            => 'db',
@@ -989,7 +978,7 @@ $events = [
       'Lock_time'     => '0.000000',
       'Rows_sent'     => '0',
       pos_in_log      => 221,
-      cmd          => 'Query',
+      cmd             => 'Query',
    },
    {  'Schema'        => 'db2',
       'db'            => 'db2',
@@ -1003,7 +992,7 @@ $events = [
       'Lock_time'     => '0.009453',
       'Rows_sent'     => '0',
       pos_in_log      => 435,
-      cmd          => 'Admin',
+      cmd             => 'Admin',
    },
    {  'Schema'        => 'db2',
       'db'            => 'db',
@@ -1017,14 +1006,14 @@ $events = [
       'Lock_time'     => '0.000000',
       'Rows_sent'     => '0',
       pos_in_log      => 663,
-      cmd          => 'Query',
+      cmd             => 'Query',
    }
 ];
 @e = ();
 open $file, "<", 'samples/slow011.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
-is_deeply(\@e, $events, 'Parses commented event lines after uncommented meta-lines');
-
+is_deeply( \@e, $events,
+   'Parses commented event lines after uncommented meta-lines' );
 
 # ###########################################################################
 # Binary log
@@ -1033,7 +1022,9 @@ is_deeply(\@e, $events, 'Parses commented event lines after uncommented meta-lin
 # Parse binlog output.
 $events = [
    { arg => '/*!40019 SET @@session.max_insert_delayed_threads=0*/' },
-   { arg => '/*!50003 SET @OLD_COMPLETION_TYPE=@@COMPLETION_TYPE,COMPLETION_TYPE=0*/' },
+   {  arg =>
+         '/*!50003 SET @OLD_COMPLETION_TYPE=@@COMPLETION_TYPE,COMPLETION_TYPE=0*/'
+   },
    {  time      => undef,
       arg       => 'SET TIMESTAMP=1197046970/*!*/;',
       ts        => '071207 12:02:50',
@@ -1193,6 +1184,5 @@ open $file, "<", 'samples/binlog.txt' or die $OS_ERROR;
 close $file;
 
 is_deeply( \@e, $events, "Got events from the binary log", );
-
 
 exit;
