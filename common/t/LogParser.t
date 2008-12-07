@@ -899,12 +899,6 @@ $events = [
 ];
 is_deeply( \@e, $events, 'Parses Schema' );
 
-@e = ();
-open $file, "<", 'samples/slow006.txt' or die $OS_ERROR;
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
-close $file;
-is( $e[2]->{db}, 'bar', 'Parsing USE is case-insensitive' );
-
 $events = [
    {  'Schema'        => 'db1',
       'ip'            => '1.2.3.8',
