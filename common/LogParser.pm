@@ -279,6 +279,141 @@ sub parse_event {
    return $event;
 }
 
+# This method accepts an open slow log filehandle and a callback function.
+# It reads events from the filehandle and calls the callback with each event.
+#
+# Each event looks like this:
+#  my $event = {
+#     ts  => '',    # Timestamp
+#     id  => '',    # Connection ID
+#     arg => '',    # Argument to the command
+#     other properties...
+#  };
+#
+# Returns true if it finds an event.
+sub parse_slowlog_event {
+   my ( $self, $fh, $code ) = @_;
+
+   # Read a whole stmt at a time.  But, to make things even more fun, sometimes
+   # part of the log entry might continue past the separator.  In these cases we
+   # peek ahead (see code below.)  We do it this way because in the general
+   # case, reading line-by-line is too slow, and the special-case code is
+   # acceptable.
+   local $INPUT_RECORD_SEPARATOR = ";\n#";
+   my $trimlen    = length($INPUT_RECORD_SEPARATOR);
+   my @properties = ('cmd', 'Query', 'pos_in_log', tell($fh));
+   my $stmt       = <$fh>;
+   return unless defined $stmt;
+
+   # These can appear in the log file when it's opened -- for example, when
+   # someone runs FLUSH LOGS or the server starts.
+   # /usr/sbin/mysqld, Version: 5.0.67-0ubuntu6-log ((Ubuntu)). started with:
+   # Tcp port: 3306  Unix socket: /var/run/mysqld/mysqld.sock
+   # Time                 Id Command    Argument
+   $stmt =~ s{
+      ^(?:
+      Tcp\sport:\s+\d+
+      |
+      /.*Version.*started
+      |
+      Time\s+Id\s+Command
+      ).*\n
+   }{}gmxo;
+
+   # There will not be a leading '#' because $INPUT_RECORD_SEPARATOR will
+   # have gobbled that up.  And the end may have all/part of the separator.
+   $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+   $stmt =~ s/;\n#?\Z//;
+
+   # The beginning of a slow-query-log event should be something like
+   # # Time: 071015 21:43:52
+   # Or, it might look like this, sometimes at the end of the Time: line:
+   # # User@Host: root[root] @ localhost []
+
+   my $pos = 0;
+   my $found_arg = 0;
+   while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
+      $pos     = pos($stmt);  # Be careful not to mess this up!
+      my $line = $1;          # Necessary for /g and pos() to work.
+      if ( $line !~ m/^#|^use \S|^set \S/i ) {
+         # This isn't a meta-data line.  It's the first line of the whole query.
+         # Grab from here to the end of the string and put that into the 'arg'
+         # for the event.  Then we are done.  Note that if this line really IS
+         # the query but we skip in the 'if' above because it looks like
+         # meta-data, later we'll remedy that.
+         push @properties, 'arg', substr($stmt, $pos - length($line));
+         last;
+      }
+
+      # Maybe it's the beginning of a slow query log event.
+      if ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
+         push @properties, 'ts', $time;
+         # The User@Host might be concatenated onto the end of the Time.
+         if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+            push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+         }
+      }
+
+      # Maybe it's the user/host line of a slow query log
+      # # User@Host: root[root] @ localhost []
+      elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+         push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+      }
+
+      # A line that looks like meta-data but is not:
+      # # administrator command: Quit;
+      elsif ( $line =~ m/^# (?:administrator command:.*)$/ ) {
+         push @properties, 'cmd', 'Admin', 'arg', $line;
+         $found_arg++;
+      }
+
+      # Maybe it's the timing line of a slow query log, or another line such
+      # as that... they typically look like this:
+      # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
+      elsif ( my @temp = $line =~ m/(\w+):\s+(\S+)/g ) {
+         push @properties, @temp;
+      }
+
+      # Include the current default database given by 'use <db>;'
+      elsif ( my ( $db ) = $line =~ m/^use ([^;]+)/i ) {
+         push @properties, 'db', $db;
+      }
+
+      # Some things you might see in the log output:
+      # set timestamp=foo;
+      # set timestamp=foo,insert_id=bar;
+      # set names utf8;
+      elsif ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ ) {
+         if ( $line =~ m/SET NAMES/i ) { # Looks like meta-data but isn't.
+            push @properties, 'arg', $line;
+            $found_arg++;
+         }
+         else {
+            # Note: this assumes settings won't be complex things like
+            # SQL_MODE, which as of 5.0.51 appears to be true (see sql/log.cc,
+            # function MYSQL_LOG::write(THD, char*, uint, time_t)).
+            push @properties, split(/,|\s*=\s*/, $setting);
+         }
+      }
+
+      # Handle pathological special cases.  The "# administrator command" is one
+      # example: it can come AFTER lines that are not commented, so it looks
+      # like it belongs to the next event, and it won't be in $stmt.
+      if ( !$found_arg && $pos == length($stmt) ) {
+         local $INPUT_RECORD_SEPARATOR = ";\n";
+         if ( chomp(my $l = <$fh>) ) {
+            push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+            $found_arg++;
+         }
+      }
+
+   }
+
+   my $event = { @properties };
+   $code->($event) if $code;
+   return $event;
+}
+
 # This method accepts an open filehandle and a callback function.  It reads
 # events from the filehandle and calls the callback with each event.
 sub parse_binlog_event {
