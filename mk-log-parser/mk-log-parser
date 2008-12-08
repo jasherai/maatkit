@@ -1028,7 +1028,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2215
+# QueryRewriter package 2590
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1566,7 +1566,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2555
+# SQLMetrics package 2593
 # ###########################################################################
 
 package SQLMetrics;
@@ -1575,66 +1575,130 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
+use Time::Local qw(timelocal);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-use constant METRIC_TYPE_NUMERIC => 1;
-use constant METRIC_TYPE_STRING  => 2;
-my %metric_type_for = (
-   'number' => METRIC_TYPE_NUMERIC,
-   'string' => METRIC_TYPE_STRING,
-);
-
-
-use Data::Dumper;
-$Data::Dumper::Indent = 1;
-
-
-sub make_handler_for {
-   my ( $metric, $type, %args ) = @_;
-   die "I need a metric"      if !$metric;
-   die "I need a metric type" if !$type;
-   $type = $metric_type_for{$type} || die 'Invalid metric type';
-   my %default_handler = (
-      metric       => $metric,
-      type         => $type,
-      transformer  => undef,
-      all_vals     => $type == METRIC_TYPE_NUMERIC ? 1 : 0,
-      grand_total  => 1,
-   );
-   my %handler = ( %default_handler, %args );
-   MKDEBUG && _d("Handler for $metric: " . Dumper(\%handler));
-   return \%handler;
-}
-
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = (
-      'key_metric',       # event attribute by which events are grouped
-      'fingerprint',      # callback sub to fingerprint key_metric
-      'handlers',         # arrayref to metric handlers (see make_handler_for)
-   );
-   foreach my $arg ( @required_args ) {
+   foreach my $arg ( qw(key_metric attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   $args{handlers} ||= {};
 
-   bless {
+   my %attribute_spec = map {
+      (my $key = $_) =~ s/\|.*//;
+      $key => $_;
+   } @{$args{attributes}};
+   foreach my $metric ( keys %{$args{handlers}} ) {
+      $attribute_spec{$metric}++;
+   }
+
+   my $self = {
       key_metric            => $args{key_metric},
-      fingerprint           => $args{fingerprint},
+      fingerprint           => $args{fingerprint}
+                               || sub { $_[0]->{$args{key_metric}} },
+      attributes            => \%attribute_spec,
       handlers              => $args{handlers},
       buffer_n_events       => $args{buffer_n_events} || 1,
       worst_metric          => $args{worst_metric},
       metrics               => { all => {}, unique => {} },
       n_events              => 0,
       n_queries             => 0,
-      n_unique_queries      => 0,
-   }, $class;
+   };
+
+   return bless $self, $class;
+}
+
+sub make_handler {
+   my ( $metric, $value, %args ) = @_;
+   die "I need a metric and value" unless $metric && $value;
+   return unless defined $value; # Can't decide type if it's undef.
+   my $type = $metric =~ m/^(?:ts|timestamp)$/ ? 'time'
+            : $value  =~ m/^\d+/               ? 'num'
+            : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
+            :                                    'string';
+   %args = ( # Set up defaults
+      min => 1,
+      max => 1,
+      sum => $type eq 'num' ? 1 : 0,
+      cnt => 1,
+      unq => $type =~ m/bool|string/ ? 1 : 0,
+      all => $type eq 'num' ? 1 : 0,
+      glo => 1,
+      trx => ($type eq 'time') ? 'parse_timestamp($val)'
+           : ($type eq 'bool') ? q{$val eq 'Yes'}
+           :                     undef,
+      wor => 0,
+      %args,
+   );
+
+   my @lines = ( # Lines of code for the subroutine
+      'sub {',
+      'my ( $event, $val, $class, $global ) = @_;',
+      'return unless defined $val;',
+   );
+   if ( $args{trx} ) {
+      push @lines, q{$val = } . $args{trx} . ';';
+   }
+   foreach my $place ( $args{glo} ? qw($class $global) : qw($class) ) {
+      if ( $args{min} ) {
+         my $op = $type =~ m/num|time/ ? '<' : 'lt';
+         my $code = 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+            . $op . ' PLACE->{min};';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $args{max} ) {
+         my $op = $type eq 'num' ? '>' : 'gt';
+         my $code = 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+            . $op . ' PLACE->{max};';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $args{sum} ) {
+         my $code = 'PLACE->{sum} += $val;';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $args{cnt} ) {
+         my $code = '++PLACE->{cnt};';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $place eq '$class' ) {
+         if ( $args{unq} ) {
+            my $code = '++PLACE->{unq}->{$val};';
+            $code =~ s/PLACE/$place/g;
+            push @lines, $code;
+         }
+         if ( $args{all} ) {
+            my $code = 'push @{PLACE->{all}}, $val;';
+            $code =~ s/PLACE/$place/g;
+            push @lines, $code;
+         }
+         if ( $args{wor} ) {
+            my $op = $type eq 'num' ? '>=' : 'ge';
+            push @lines, (
+               'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
+               '$class->{sample}     = $event->{arg};',
+               '$class->{pos_in_log} = $event->{pos_in_log};',
+               '}',
+            );
+         }
+      }
+   }
+   push @lines, '}';
+   MKDEBUG && _d("Metric handler for $metric: ", @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
 }
 
 my @buffered_events;
 sub record_event {
    my ( $self, $event ) = @_;
-   return if !$event;
+   return unless $event;
 
    push @buffered_events, $event;
    MKDEBUG && _d(scalar @buffered_events . " events in buffer");
@@ -1665,97 +1729,27 @@ sub calc_event_metrics {
    $self->{n_events}++;
 
    my $key_metric_val = $event->{ $self->{key_metric} };
-   return if !defined $key_metric_val;
+   return unless defined $key_metric_val;
+
    $self->{n_queries}++;
 
    my $fp = $self->{fingerprint}->($key_metric_val);
 
-   my $fp_ds;
-   if ( exists $self->{metrics}->{unique}->{ $fp } ) {
-      $fp_ds = $self->{metrics}->{unique}->{ $fp };
-
-      if (    defined $self->{worst_metric}
-           && defined $event->{ $self->{worst_metric} }
-           && defined $fp_ds->{ $self->{worst_metric} }->{last}
-           && $event->{ $self->{worst_metric} }
-              > $fp_ds->{ $self->{worst_metric} }->{last} ) {
-         $fp_ds->{sample} = $key_metric_val;
-      }
-   }
-   else {
-      $fp_ds = $self->{metrics}->{unique}->{ $fp } = {
-         sample => $key_metric_val,
-         count => 0,
-      };
-      $self->{n_unique_queries}++;
-   }
-
-   $fp_ds->{count}++;
+   my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
 
    METRIC:
-   foreach my $handler ( @{ $self->{handlers} } ) {
-      my $metric_val = $event->{ $handler->{metric} };
-      next METRIC if !defined $metric_val;
-
-      $self->_calc_metric($metric_val, $handler, $fp_ds);
-   }
-
-   return;
-}
-
-sub _calc_metric {
-   my ( $self, $metric_val, $handler, $fp_ds ) = @_;
-   my $metric = $handler->{metric};
-
-   $metric_val = $handler->{transformer}->($metric_val)
-      if defined $handler->{transformer};
-
-   my $e_ds = $fp_ds->{ $metric } ||= {};
-   my $g_ds = $self->{metrics}->{all}->{ $metric } ||= {};
-
-   if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
-
-      $e_ds->{last} = $metric_val;
-
-      $e_ds->{total} += $metric_val;
-
-      $e_ds->{min} = $metric_val if !defined $e_ds->{min};
-      $e_ds->{min} = $metric_val if $metric_val < $e_ds->{min};
-
-      $e_ds->{max} = $metric_val if !defined $e_ds->{max};
-      $e_ds->{max} = $metric_val if $metric_val > $e_ds->{max};
-
-      my $avg = $e_ds->{total} / $fp_ds->{count};
-      $avg = $handler->{transformer}->($avg)
-         if defined $handler->{transformer};
-      $e_ds->{avg} = $avg;
-
-      push @{ $e_ds->{all_vals} }, $metric_val
-         if $handler->{all_vals};
-
-      if ( $handler->{grand_total} ) {
-         $g_ds->{total} += $metric_val;
-
-         $g_ds->{min} = $metric_val if !defined $g_ds->{min};
-         $g_ds->{min} = $metric_val if $metric_val < $g_ds->{min};
-
-         $g_ds->{max} = $metric_val if !defined $g_ds->{max};
-         $g_ds->{max} = $metric_val if $metric_val > $g_ds->{max};
-
-         my $avg = $g_ds->{total} / $self->{n_queries};
-         $avg = $handler->{transformer}->($avg)
-            if defined $handler->{transformer};
-         $g_ds->{avg} = $avg;
+   foreach my $metric ( keys %{ $self->{attributes} } ) {
+      my $metric_val = $event->{ $metric };
+      next METRIC unless defined $metric_val;
+      my $stats_for_metric = $self->{metrics}->{all}->{ $metric } ||= {};
+      my $stats_for_class  = $fp_ds->{ $metric } ||= {};
+      my $sub = $self->{handlers}->{$metric} ||= make_handler(
+         $self->{attributes}->{$metric}, $metric_val,
+         wor => (($self->{worst_metric} || '') eq $metric)
+      );
+      if ( ref $sub ) {
+         $sub->($event, $metric_val, $stats_for_class, $stats_for_metric);
       }
-   }
-   elsif ( $handler->{type} == METRIC_TYPE_STRING ) {
-      $e_ds->{ $metric_val }++;
-      push @{ $e_ds->{all_vals} }, $metric_val
-         if $handler->{all_vals};
-      $g_ds->{ $metric_val }++ if $handler->{grand_total};
-   }
-   else {
-      die "Unknown metric type: $handler->{type}";
    }
 
    return;
@@ -1773,7 +1767,6 @@ sub reset_metrics {
    @buffered_events           = ();
    $self->{n_events}          = 0;
    $self->{n_queries}         = 0;
-   $self->{n_unique_queries}  = 0;
    $self->{metrics}->{all}    = {};
    $self->{metrics}->{unique} = {};
    return;
@@ -1789,10 +1782,10 @@ sub calculate_statistical_metrics {
       distro    => \@distro,
       cutoff    => undef,
    };
-   return $statistical_metrics if !defined $vals;
+   return $statistical_metrics unless defined $vals;
 
    my $n_vals = scalar @$vals;
-   return $statistical_metrics if !$n_vals;
+   return $statistical_metrics unless $n_vals;
 
    my $cutoff = $n_vals >= 10 ? int ( scalar @$vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
@@ -1832,6 +1825,16 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{avg}    = $sum / $cutoff;
 
    return $statistical_metrics;
+}
+
+sub parse_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   {
+      $val = timelocal($s, $i, $h, $d, $m - 1, $y + 2000);
+   }
+   return $val;
 }
 
 sub _d {
@@ -1984,20 +1987,20 @@ my $lp = new LogParser();
 my $qr = new QueryRewriter();
 my $q  = new Quoter();
 
-my $slow_handlers = [
-   SQLMetrics::make_handler_for('Query_time',   'number'),
-   SQLMetrics::make_handler_for('Lock_time',    'number'),
-   SQLMetrics::make_handler_for('Rows_read',    'number'),
-   SQLMetrics::make_handler_for('Rows_sent',    'number'),
-   SQLMetrics::make_handler_for('Schema',       'string'),
-   SQLMetrics::make_handler_for('user',         'string'),
-];
-
 my $sm = new SQLMetrics(
    key_metric      => 'arg',
    worst_metric    => $opts{w},
    fingerprint     => sub { return $qr->fingerprint(@_); },
-   handlers        => $slow_handlers,
+   attributes      => [qw(
+                        Query_time
+                        Lock_time
+                        Rows_read
+                        Rows_sent
+                        user
+                     )],
+                        # TODO:
+                        #ts|timestamp
+                        #db|Schema
 );
 
 # ############################################################################
@@ -2063,8 +2066,8 @@ $dp->disconnect($dbh) if $opts{R};
 # Finish up (print results, etc).
 # ############################################################################
 if ( !$opts{R} ) {
-   sort_and_prune($sm, $opts{s}, $opts{t}, $opts{w});
-   report_queries($sm);
+   my @worst = find_top_queries($sm, $opts{s}, $opts{t}, $opts{w});
+   report_queries($sm, @worst);
 }
 
 exit;
@@ -2086,38 +2089,29 @@ sub parse_timestamp {
    return $val;
 }
 
-sub sort_and_prune {
+sub find_top_queries {
    my ( $sm, $sort, $top, $worst ) = @_;
-   my $queries    = $sm->{metrics}->{unique};
-   my $query_rank = 1;
+   my $classes = $sm->{metrics}->{unique};
+   my @worst;
 
    MKDEBUG && _d("sort $sort top $top worst $worst");
-
-   # Add sort rank position and trim the results.
-   map {
-      if ( $query_rank <= $top ) {
-         $queries->{$_}->{sort_rank} = $query_rank++;
-      }
-      else {
-         delete $queries->{$_};
-      }
-   }
-   sort {
-      $queries->{$b}->{$worst}->{$sort} <=> $queries->{$a}->{$worst}->{$sort}
-   }
-   keys %$queries;
-
-   return;
+   my @sorted =
+      reverse sort { $classes->{$a}->{$worst} <=> $classes->{$b}->{$worst} }
+      keys %$classes;
+   my $count = @sorted > $top ? $top : scalar @sorted;
+   return map { $classes->{$_}->{fingerprint} = $_; $classes->{$_}; }
+      @sorted[0 .. $count - 1];
 }
 
 sub report_queries {
-   my ( $sm ) = @_;
+   my ( $sm, @worst ) = @_;
    my $u = $sm->{metrics}->{unique};
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
 
    my $query_hdr_fmt   = "-- Query %03d (%5s QPS) ID: %s " . ('_' x 28) . "\n";
-   my $metrics_hdr_fmt = "--             total    %%      min     max     avg     95%%  stddev  median\n";
+   my $metrics_hdr_fmt = "--             total    %%      min     max     "
+                       . "avg     95%%  stddev  median\n";
    my $count_line_fmt  = "-- %-9s %7s  %3d\n";
    my $metric_line_fmt = "-- %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
    my $list_line_fmt   = "-- %-9s   %-60s\n";
@@ -2145,56 +2139,53 @@ sub report_queries {
       },
    );
 
-   foreach my $fp (
-      sort { $u->{$a}->{sort_rank} <=> $u->{$b}->{sort_rank} }
-         keys %$u ) {
-
-      my $q = $u->{$fp};
-
+   foreach my $i ( 0..$#worst ) {
+      my $class = $worst[$i];
       # TODO: queries per second.  To calculate this, we have to keep track of
       # the max and min timstamp of the query.
-      printf $query_hdr_fmt, $q->{sort_rank}, 0, checksum_64($fp);
+      printf $query_hdr_fmt, $i + 1, 0, checksum_64($class->{fingerprint});
       printf $metrics_hdr_fmt;
       printf $count_line_fmt,
          'Count',
-         $q->{count},
-         percentage_of($q->{count}, $sm->{n_queries});
+         $class->{Query_time}->{cnt},
+         percentage_of($class->{Query_time}->{cnt}, $sm->{n_queries});
 
       foreach my $r ( @reported_metrics ) {
          my $metric = $r->{metric};
-         my $val    = $q->{ $metric };
+         my $val    = $class->{ $metric };
 
          next if !defined $val;
          MKDEBUG && _d("Reporting metrics for $metric");
 
          my $save_distro = $metric eq 'Query_time' ? 1 : 0;
          my $stats
-            = $sm->calculate_statistical_metrics($val->{all_vals},
+            = $sm->calculate_statistical_metrics($val->{all},
                distro => $save_distro);
 
          $Query_time_distro = $stats->{distro} if $save_distro;
 
          printf $metric_line_fmt,
-            $r->{name},                    # friendly metric name
-            $r->{fmt}->($val->{total}),    # total
-            percentage_of($val->{total},   # % total/grand total
-               $g->{ $metric }->{total}),
-            $r->{fmt}->($val->{min}),      # min
-            $r->{fmt}->($val->{max}),      # max
-            $r->{fmt}->($val->{avg}),      # avg
-            $r->{fmt}->($stats->{avg}),    # 95% avg
-            $r->{fmt}->($stats->{stddev}), # 95% stdev
-            $r->{fmt}->($stats->{median}); # 95% med
+            $r->{name},                                  # friendly metric name
+            $r->{fmt}->($val->{sum}),                    # total
+            percentage_of($val->{sum}, $g->{$metric}->{sum}), # % total/grand total
+            $r->{fmt}->($val->{min}),                    # min
+            $r->{fmt}->($val->{max}),                    # max
+            $r->{fmt}->($val->{sum}/$val->{cnt}),        # avg
+            # TODO: 95% avg???? should just be 95% but I'm braindead right now
+            $r->{fmt}->($stats->{avg}),                  # 95% avg
+            $r->{fmt}->($stats->{stddev}),               # 95% stdev
+            $r->{fmt}->($stats->{median});               # 95% med
       }
 
       printf $list_line_fmt, 'DBs',   join(', ', keys %{$q->{Schema}});
       printf $list_line_fmt, 'Users', join(', ', keys %{$q->{user}});
 
+      # TODO: permit to switch off with cmdline option --verbosity or --quiet
       print "-- Execution times\n";
       print chart_distro($Query_time_distro);
 
-      print "-- Time clustering:\n";
       # TODO
+      # print "-- Time clustering:\n";
 
       # If the query uses qualified table names (db.tbl), print_tables()
       # will print SHOW TABLE STATUS FROM `db` LIKE 'tbl'. Otherwise,
@@ -2204,24 +2195,23 @@ sub report_queries {
       # between multiple logged dbs. As a last report, print_tables()
       # will simply omit the FROM `db` clause and it's left to the user
       # to determine the correct db.
-      my ( $default_db ) = keys %{$q->{Schema}}
-         if scalar keys %{$q->{Schema}} == 1;
+      my ( $default_db ) = keys %{$class->{Schema}->{all}}
+         if scalar keys %{$class->{Schema}->{all}} == 1;
 
-      chomp $q->{sample};
+      my $sample = $class->{Query_time}->{sample}; # TODO: $worst
       my $select_pattern = qr/^[\s\(]*SELECT /i;
-      if ( $q->{sample} =~ m/$select_pattern/ ) {
-         print_tables($q->{sample}, $default_db);
-         print "-- EXPLAIN\n$q->{sample}\\G\n\n";
+      if ( $sample =~ m/$select_pattern/ ) {
+         # TODO: permit to switch off with cmdline option --verbosity or --quiet
+         print_tables($sample, $default_db);
+         print "-- EXPLAIN\n$sample\\G\n\n";
       }
       else {
-         my $converted_sample = $qr->convert_to_select($q->{sample});
+         my $converted_sample = $qr->convert_to_select($sample);
          if ( $converted_sample =~ m/$select_pattern/ ) {
+            # TODO: permit to switch off with cmdline option --verbosity or --quiet
             print_tables($converted_sample, $default_db);
-            print "$q->{sample}\\G\n";
+            print "$sample\\G\n";
             print "-- Converted for EXPLAIN\n-- EXPLAIN\n";
-         }
-         else {
-            print "-- Query cannot be converted to SELECT\n";
          }
          # converted_sample will be the original sample if it
          # failed to convert. Otherwise, it will be a SELECT.
