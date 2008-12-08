@@ -340,7 +340,7 @@ sub parse_slowlog_event {
       my $line = $1;          # Necessary for /g and pos() to work.
 
       # Handle meta-data lines.
-      if ( $line =~ m/^(?:#|use \S|SET \S)/o ) {
+      if ( $line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o ) {
 
          # Maybe it's the beginning of a slow query log event.
          if ( my ( $time ) = $line =~ m/$slow_log_ts_line/o ) {
@@ -381,16 +381,10 @@ sub parse_slowlog_event {
          # set timestamp=foo,insert_id=bar;
          # set names utf8;
          elsif ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ ) {
-            if ( $line =~ m/SET NAMES/ ) { # Looks like meta-data but isn't.
-               push @properties, 'arg', $line;
-               $found_arg++;
-            }
-            else {
-               # Note: this assumes settings won't be complex things like
-               # SQL_MODE, which as of 5.0.51 appears to be true (see sql/log.cc,
-               # function MYSQL_LOG::write(THD, char*, uint, time_t)).
-               push @properties, split(/,|\s*=\s*/, $setting);
-            }
+            # Note: this assumes settings won't be complex things like
+            # SQL_MODE, which as of 5.0.51 appears to be true (see sql/log.cc,
+            # function MYSQL_LOG::write(THD, char*, uint, time_t)).
+            push @properties, split(/,|\s*=\s*/, $setting);
          }
 
          # Handle pathological special cases.  The "# administrator command" is one

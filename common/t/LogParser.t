@@ -1009,6 +1009,39 @@ open $file, "<", 'samples/slow011.txt' or die $OS_ERROR;
 is_deeply( \@e, $events,
    'Parses commented event lines after uncommented meta-lines' );
 
+$events = [
+   {  'Schema'        => 'sab',
+      'arg'           => 'SET autocommit=1',
+      'ip'            => '10.1.250.19',
+      'Thread_id'     => '39387',
+      'host'          => '',
+      'Rows_examined' => '0',
+      'user'          => 'sabapp',
+      'Query_time'    => '0.000018',
+      'Lock_time'     => '0.000000',
+      'Rows_sent'     => '0',
+      pos_in_log      => 0,
+      cmd             => 'Query',
+   },
+   {  'Schema'        => 'sab',
+      'arg'           => 'SET autocommit=1',
+      'ip'            => '10.1.250.19',
+      'Thread_id'     => '39387',
+      'host'          => '',
+      'Rows_examined' => '0',
+      'user'          => 'sabapp',
+      'Query_time'    => '0.000018',
+      'Lock_time'     => '0.000000',
+      'Rows_sent'     => '0',
+      pos_in_log      => 172,
+      cmd             => 'Query',
+   },
+];
+@e = ();
+open $file, "<", 'samples/slow012.txt' or die $OS_ERROR;
+1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+is_deeply( \@e, $events, 'Parses events that might look like meta');
+
 # ###########################################################################
 # Binary log
 # ###########################################################################
