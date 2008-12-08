@@ -1067,8 +1067,12 @@ sub strip_comments {
 sub fingerprint {
    my ( $self, $query, $opts ) = @_;
    $opts ||= {};
-   $query = lc $query;
-   $query =~ s{
+   $query =~ s/\\["']//g;                # quoted strings
+   $query =~ s/".*?"/?/g;                # quoted strings
+   $query =~ s/'.*?'/?/g;                # quoted strings
+   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
+   $query =~ s#/\*[^!]*?\*/##gsm;        # /*..*/ comments
+   $query =~ s{                          # Float/real into ?
               (?<![\w.+-])
               [+-]?
               (?:
@@ -1076,25 +1080,23 @@ sub fingerprint {
                 (?:[.]\d*)?
                 |[.]\d+
               )
-              (?:e[+-]?\d+)?
-              \b
+              (?:[Ee][+-]?\d+)?
+              (?!\w)
              }
-             {N}gx;                             # Float/real into N
-   $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
-   $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
-   $query =~ s/\\["']//g;                       # Turn quoted strings into S
-   $query =~ s/(["']).*?\1/S/g;                 # Turn quoted strings into S
+             {?}gx;
+   $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/?/g;  # Hex/bin into ?
+   $query =~ s/[xb]\?/?/g;                      # Hex/bin into ?
    $query =~ s/\A\s+//;                         # Chop off leading whitespace
-   $query =~ s/\s{2,}/ /g;                      # Collapse all whitespace
-   $query =~ s/[\n\r\f]+/ /g;                   # Collapse newlines etc
-   $query =~ s/\Ause \S+\Z/use I/;              # Abstract the DB in USE
+   $query =~ tr[ \n\t\r\f][ ]s;                 # Collapse whitespace
+   $query = lc $query;
+   $query =~ s/\Ause \S+\Z/use ?/;              # Abstract the DB in USE
    $query =~ s{
-               \b(in|values?)\s*\(\s*([NS])\s*,[^\)]*\)
+               \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
-              {$1($2+)}gx;      # Collapse IN() and VALUES() lists
-   $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
-   if ( $opts->{prefixes} ) { # or begin with them...
-      $query =~ s/\b\d+(_\d+)?(?=[a-zA-Z_])/$1 ? "N_N" : "N"/eg;
+              {$1(?+)}gx;      # Collapse IN() and VALUES() lists
+   $query =~ s/(?<=[a-z_])\d[_0-9]*\b/N/g; # Tables ending with groups of digits
+   if ( $opts->{prefixes} ) {
+      $query =~ s/\b[\d+_]*\d(?=\w)/N/g;   # Tables starting with groups of digits
    }
    return $query;
 }
@@ -1194,7 +1196,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2585
+# LogParser package 2589
 # ###########################################################################
 package LogParser;
 
@@ -1443,58 +1445,54 @@ sub parse_slowlog_event {
    while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
       $pos     = pos($stmt);  # Be careful not to mess this up!
       my $line = $1;          # Necessary for /g and pos() to work.
-      if ( $line !~ m/^#|^use \S|^set \S/i ) {
+
+      if ( $line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o ) {
+
+         if ( my ( $time ) = $line =~ m/$slow_log_ts_line/o ) {
+            push @properties, 'ts', $time;
+            if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o ) {
+               push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+            }
+         }
+
+         elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o ) {
+            push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+         }
+
+         elsif ( $line =~ m/^# (?:administrator command:.*)$/ ) {
+            push @properties, 'cmd', 'Admin', 'arg', $line;
+            $found_arg++;
+         }
+
+         elsif ( my @temp = $line =~ m/(\w+):\s+(\S+)/g ) {
+            push @properties, @temp;
+         }
+
+         elsif ( my ( $db ) = $line =~ m/^use ([^;]+)/ ) {
+            push @properties, 'db', $db;
+         }
+
+         elsif ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ ) {
+            push @properties, split(/,|\s*=\s*/, $setting);
+         }
+
+         if ( !$found_arg && $pos == length($stmt) ) {
+            local $INPUT_RECORD_SEPARATOR = ";\n";
+            if ( chomp(my $l = <$fh>) ) {
+               push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+               $found_arg++;
+            }
+         }
+      }
+      else {
          push @properties, 'arg', substr($stmt, $pos - length($line));
          last;
       }
-
-      if ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
-         push @properties, 'ts', $time;
-         if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-            push @properties, 'user', $user, 'host', $host, 'ip', $ip;
-         }
-      }
-
-      elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-         push @properties, 'user', $user, 'host', $host, 'ip', $ip;
-      }
-
-      elsif ( $line =~ m/^# (?:administrator command:.*)$/ ) {
-         push @properties, 'cmd', 'Admin', 'arg', $line;
-         $found_arg++;
-      }
-
-      elsif ( my @temp = $line =~ m/(\w+):\s+(\S+)/g ) {
-         push @properties, @temp;
-      }
-
-      elsif ( my ( $db ) = $line =~ m/^use ([^;]+)/i ) {
-         push @properties, 'db', $db;
-      }
-
-      elsif ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ ) {
-         if ( $line =~ m/SET NAMES/i ) { # Looks like meta-data but isn't.
-            push @properties, 'arg', $line;
-            $found_arg++;
-         }
-         else {
-            push @properties, split(/,|\s*=\s*/, $setting);
-         }
-      }
-
-      if ( !$found_arg && $pos == length($stmt) ) {
-         local $INPUT_RECORD_SEPARATOR = ";\n";
-         if ( chomp(my $l = <$fh>) ) {
-            push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
-            $found_arg++;
-         }
-      }
-
    }
 
    my $event = { @properties };
    $code->($event) if $code;
-   return $event;
+   return 1;
 }
 
 sub parse_binlog_event {

@@ -55,11 +55,17 @@ sub strip_comments {
 # Normalizes variable queries to a "query fingerprint" by abstracting away
 # parameters, canonicalizing whitespace, etc.  See
 # http://dev.mysql.com/doc/refman/5.0/en/literals.html for literal syntax.
+# Note: Any changes to this function must be profiled for speed!  Speed of this
+# function is critical for mk-log-parser.
 sub fingerprint {
    my ( $self, $query, $opts ) = @_;
    $opts ||= {};
-   $query = lc $query;
-   $query =~ s{
+   $query =~ s/\\["']//g;                # quoted strings
+   $query =~ s/".*?"/?/g;                # quoted strings
+   $query =~ s/'.*?'/?/g;                # quoted strings
+   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
+   $query =~ s#/\*[^!]*?\*/##gsm;        # /*..*/ comments
+   $query =~ s{                          # Float/real into ?
               (?<![\w.+-])
               [+-]?
               (?:
@@ -67,26 +73,23 @@ sub fingerprint {
                 (?:[.]\d*)?
                 |[.]\d+
               )
-              (?:e[+-]?\d+)?
-              \b
+              (?:[Ee][+-]?\d+)?
+              (?!\w)
              }
-             {N}gx;                             # Float/real into N
-   $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/N/g;  # Hex/bin into N
-   $query =~ s/[xb]'N'/N/g;                     # Hex/bin into N
-   $query =~ s/\\["']//g;                       # Turn quoted strings into S
-   $query =~ s/(["']).*?\1/S/g;                 # Turn quoted strings into S
+             {?}gx;
+   $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/?/g;  # Hex/bin into ?
+   $query =~ s/[xb]\?/?/g;                      # Hex/bin into ?
    $query =~ s/\A\s+//;                         # Chop off leading whitespace
-   $query =~ s/\s{2,}/ /g;                      # Collapse all whitespace
-   $query =~ s/[\n\r\f]+/ /g;                   # Collapse newlines etc
-   $query =~ s/\Ause \S+\Z/use I/;              # Abstract the DB in USE
+   $query =~ tr[ \n\t\r\f][ ]s;                 # Collapse whitespace
+   $query = lc $query;
+   $query =~ s/\Ause \S+\Z/use ?/;              # Abstract the DB in USE
    $query =~ s{
-               \b(in|values?)\s*\(\s*([NS])\s*,[^\)]*\)
+               \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
-              {$1($2+)}gx;      # Collapse IN() and VALUES() lists
-   # Table names that end with one or two groups of digits
-   $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
-   if ( $opts->{prefixes} ) { # or begin with them...
-      $query =~ s/\b\d+(_\d+)?(?=[a-zA-Z_])/$1 ? "N_N" : "N"/eg;
+              {$1(?+)}gx;      # Collapse IN() and VALUES() lists
+   $query =~ s/(?<=[a-z_])\d[_0-9]*\b/N/g; # Tables ending with groups of digits
+   if ( $opts->{prefixes} ) {
+      $query =~ s/\b[\d+_]*\d(?=\w)/N/g;   # Tables starting with groups of digits
    }
    return $query;
 }

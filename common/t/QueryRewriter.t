@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 42;
+use Test::More tests => 46;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -34,8 +34,26 @@ is(
 
 is(
    $q->fingerprint("use `foo`"),
-   "use I",
+   "use ?",
    'Removes identifier from USE',
+);
+
+is(
+   $q->fingerprint("select \n--bar\n foo"),
+   "select foo",
+   'Removes one-line comments in fingerprints',
+);
+
+is(
+   $q->fingerprint("select 5.001, 5001. from foo"),
+   "select ?, ? from foo",
+   "Handles bug from perlmonks thread 728718",
+);
+
+is(
+   $q->fingerprint("select 'hello', \"hello\", '\\'' from foo"),
+   "select ?, ?, ? from foo",
+   "Handles quoted strings",
 );
 
 is(
@@ -58,37 +76,37 @@ is(
 
 is(
    $q->fingerprint('SELECT * from foo where a = 5'),
-   'select * from foo where a = N',
+   'select * from foo where a = ?',
    'Lowercases, replaces integer',
 );
 
 is(
    $q->fingerprint('select 0e0, +6e-30, -6.00 from foo where a = 5.5 or b=0.5 or c=.5'),
-   'select N, N, N from foo where a = N or b=N or c=N',
+   'select ?, ?, ? from foo where a = ? or b=? or c=?',
    'Floats',
 );
 
 is(
    $q->fingerprint("select 0x0, x'123', 0b1010, b'10101' from foo"),
-   'select N, N, N, N from foo',
+   'select ?, ?, ?, ? from foo',
    'Hex/bit',
 );
 
 is(
    $q->fingerprint(" select  * from\nfoo where a = 5"),
-   'select * from foo where a = N',
+   'select * from foo where a = ?',
    'Collapses whitespace',
 );
 
 is(
    $q->fingerprint("select * from foo where a in (5) and b in (5, 8,9 ,9 , 10)"),
-   'select * from foo where a in (N) and b in(N+)',
+   'select * from foo where a in(?+) and b in(?+)',
    'IN lists',
 );
 
 is(
    $q->fingerprint("select foo_1 from foo_2_3"),
-   'select foo_N from foo_N_N',
+   'select foo_N from foo_N',
    'Numeric table names',
 );
 
@@ -112,14 +130,20 @@ is(
 
 is(
    $q->fingerprint('insert into foo(a, b, c) values(2, 4, 5)'),
-   'insert into foo(a, b, c) values(N+)',
-   'VALUES lists with VALUE()',
+   'insert into foo(a, b, c) values(?+)',
+   'VALUES lists',
+);
+
+is(
+   $q->fingerprint('insert into foo(a, b, c) values(2, 4, 5) , (2,4,5)'),
+   'insert into foo(a, b, c) values(?+)',
+   'VALUES lists with multiple ()',
 );
 
 is(
    $q->fingerprint('insert into foo(a, b, c) value(2, 4, 5)'),
-   'insert into foo(a, b, c) value(N+)',
-   'VALUES lists',
+   'insert into foo(a, b, c) value(?+)',
+   'VALUES lists with VALUE()',
 );
 
 is($q->convert_to_select(), undef, 'No query');
