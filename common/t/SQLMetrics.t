@@ -11,18 +11,10 @@ require '../SQLMetrics.pm';
 
 my $qr = new QueryRewriter();
 
-use Data::Dumper;
-$Data::Dumper::Indent = 1;
-
-my $handlers = [
-   SQLMetrics::make_handler_for('Query_time', 'number'),
-   SQLMetrics::make_handler_for('user', 'string'),
-];
-
 my $m  = new SQLMetrics(
    key_metric      => 'arg',
    fingerprint     => sub { return $qr->fingerprint(@_); },
-   handlers        => $handlers,
+   attributes      => [qw(Query_time user)],
    buffer_n_events => -1,
 );
 
@@ -39,7 +31,7 @@ my $events = [
       Lock_time     => '0.000109',
       Rows_sent     => 1,
       Rows_examined => 1,
-      NR            => 5,
+      pos_in_log    => 0,
    },
    {  ts   => '071015 21:43:52',
       cmd  => 'Query',
@@ -51,7 +43,7 @@ my $events = [
       Lock_time     => '0.000145',
       Rows_sent     => 0,
       Rows_examined => 0,
-      NR            => 8,
+      pos_in_log    => 1,
    },
    {
       cmd           => 'Query',
@@ -63,62 +55,61 @@ my $events = [
       Lock_time     => '0.000201',
       Rows_sent     => 1,
       Rows_examined => 2,
-      NR            => 11,
+      pos_in_log    => 5,
    }
 ];
 
 my $metrics = {
-   'unique' => {
-      'insert ignore into articles (id, body,)values(N+)' => {
-         'count' => 1,
-         'Query_time' => {
-            'avg' => '0.001943',
-            'min' => '0.001943',
-            'max' => '0.001943',
-            'all_vals' => [
-            '0.001943'
-            ],
-            'total' => '0.001943',
-            last => '0.001943',
+   unique => {
+      'select id from users where name=?' => {
+         Query_time => {
+            min => '0.000652',
+            max => '0.000682',
+            all => [ '0.000652', '0.000682' ],
+            sum => '0.001334',
+            cnt => 2
          },
-         'user' => {
-            'root' => 1,
+         user => {
+            min => 'bob',
+            max => 'root',
+            unq => {
+               bob  => 1,
+               root => 1
+            },
+            cnt => 2
          },
-         'sample' => 'INSERT IGNORE INTO articles (id, body,)VALUES(3558268,\'sample text\')'
       },
-      'select id from users where name=S' => {
-         'count' => 2,
-         'Query_time' => {
-            'avg' => '0.000667',
-            'min' => '0.000652',
-            'max' => '0.000682',
-            'all_vals' => [
-               '0.000652',
-               '0.000682'
-            ],
-            total    => '0.001334',
-            last     => '0.000682',
+      'insert ignore into articles (id, body,)values(?+)' => {
+         Query_time => {
+            min => '0.001943',
+            max => '0.001943',
+            all => [ '0.001943' ],
+            sum => '0.001943',
+            cnt => 1
          },
-         'user' => {
-            bob   => 1,
-            root  => 1,
+         user => {
+            min => 'root',
+            max => 'root',
+            unq => { root => 1 },
+            cnt => 1
          },
-         'sample' => 'SELECT id FROM users WHERE name=\'foo\''
       }
    },
    all => {
-      'Query_time' => {
-         'avg' => '0.00109233333333333',
-         'min' => '0.000652',
-         'max' => '0.001943',
-         'total' => '0.003277',
+      Query_time => {
+         min => '0.000652',
+         max => '0.001943',
+         sum => '0.003277',
+         cnt => 3
       },
-      'user' => {
-         'bob'  => 1,
-         'root' => 2,
-      },
-   },
+      user => {
+         min => 'bob',
+         max => 'root',
+         cnt => 3
+      }
+   }
 };
+
 
 foreach my $event ( @$events ) {
    $m->record_event($event);
@@ -140,7 +131,7 @@ is_deeply($m->{metrics}, $metrics, 'Calcs metrics one-by-one');
 $m  = new SQLMetrics(
    key_metric      => 'arg',
    fingerprint     => sub { return $qr->fingerprint(@_); },
-   handlers        => $handlers,
+   attributes      => [qw(Query_time user)],
    worst_metric    => 'Query_time',
 );
 
@@ -165,45 +156,11 @@ $events = [
    }
 ];
 
-$metrics = {
-   'unique' => {
-      'foo N' => {
-         'count' => 3,
-         'Query_time' => {
-            'avg' => '1.33333333333333',
-            'min' => '1',
-            'max' => '2',
-            'all_vals' => [
-               '1', '2', '1',
-            ],
-            'total' => '4',
-            last => 1,
-         },
-         'user' => {
-            'bob' => 2,
-            'root' => 1,
-         },
-         'sample' => 'foo 2'
-      },
-   },
-   all => {
-      'Query_time' => {
-         'avg' => '1.33333333333333',
-         'min' => '1',
-         'max' => '2',
-         'total' => '4',
-      },
-      'user' => {
-         'bob'  => 2,
-         'root' => 1,
-      },
-   },
-};
-
 foreach my $event ( @$events ) {
    $m->calc_event_metrics($event);
 }
-is_deeply($m->{metrics}, $metrics, 'Keeps worst sample');
+is($m->{metrics}->{unique}->{'foo ?'}->{Query_time}->{sample},
+   'foo 2', 'Keeps worst sample for Query_time');
 
 # #############################################################################
 # Test statistical metrics: 95% avg, stddev and median

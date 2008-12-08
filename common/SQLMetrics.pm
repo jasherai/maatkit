@@ -24,107 +24,178 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
+use Time::Local qw(timelocal);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-use constant METRIC_TYPE_NUMERIC => 1;
-use constant METRIC_TYPE_STRING  => 2;
-my %metric_type_for = (
-   'number' => METRIC_TYPE_NUMERIC,
-   'string' => METRIC_TYPE_STRING,
-);
-
-# TODO: 'time' metric type?
-# TODO: metric operations can be abstracted like:
-# %metric_operation_for = (
-#    min => sub { ... }
-#    max => sub { ... }
-#    ...
-# )
-
-use Data::Dumper;
-$Data::Dumper::Indent = 1;
-
-# A note on terminology:
-# - Metric and attribute are the same; they refer to things like Query_time.
-# - Event and query are the same; they refer to individual log entries (which
-#   are not always queries proper).
-
-# make_handler_for() returns a hashref which should be used to construct
-# an arrayref for the handlers arg to new(). Example:
-# my $handlers = [
-#    make_handler_for('Query_time', 'number', ...),
-#    make_handler_for('user',       'string', ...),
-# ]
-# Then:
-# $sm = new SQLMetrics(
-#   key_metric      => 'arg',
-#   fingerprint     => \&QueryRerwriter::fingerprint,
-#   handlers        => $handlers,
-#   buffer_n_events => 1_000,
-#   ...
-# );
-#
-# NOTE: The first handler is special: it is the metric by which queries
-# will be considered "worse" (i.e. worse than one another). Subsequent
-# handlers can be in any order.
-#
-# Optional args to make_handler_for():
-#    transformer : sub ref called and passed the metric value before any
-#                  calculations (e.g. to transform 'Yes' to 1)
-#                  (default none)
-#    all_vals    : boolean, save all metric vals for each unique query
-#                  (default 1 for numeric types, 0 for strings) 
-#    grand_total : boolean, save grand (all-events) total of metric
-#                  (e.g. grand total Query_time, most minimal Lock_time, etc.)
-#                  For strings, this is the number of times each unique string
-#                  appears.
-#                  (default 1)
-sub make_handler_for {
-   my ( $metric, $type, %args ) = @_;
-   die "I need a metric"      if !$metric;
-   die "I need a metric type" if !$type;
-   $type = $metric_type_for{$type} || die 'Invalid metric type';
-   my %default_handler = (
-      metric       => $metric,
-      type         => $type,
-      transformer  => undef,
-      all_vals     => $type == METRIC_TYPE_NUMERIC ? 1 : 0,
-      grand_total  => 1,
-   );
-   my %handler = ( %default_handler, %args );
-   MKDEBUG && _d("Handler for $metric: " . Dumper(\%handler));
-   return \%handler;
-}
-
+# %args is a hash containing:
+# key_metric   the attribute by which events are aggregated.  Usually this will
+#              be 'arg' because $event->{arg} is the query in a parsed slowlog
+#              event.  Events with the same key_metric (after fingerprinting)
+#              are treated as a class.
+# fingerprint  A subroutine to transform the key_metric if desired.  Usually
+#              this will be QueryRewriter::fingerprint() for slowlog parsing.
+# handlers     An optional hashref that explicitly says how to handle an
+#              attribute for which you want to calculate metrics.
+# attributes   An arrayref of attributes you want to calculate metrics for.  If
+#              you don't specify handlers for them, they'll be auto-created.  In
+#              most cases this will work fine.  If you specify an attribute with
+#              an | symbol, it means that the subsequent attributes are
+#              fallbacks.  For example, ts|timestamp means if ts is available,
+#              it'll be used; else timestamp will be used.  Similarly with db|Schema.
+# worst_metric An attribute name.  When an event is seen, its worst_metric is
+#              compared to the greatest worst_metric ever seen for this class of
+#              event.  If it's greater, the event's key_metric is stored as the
+#              representative sample of this class of event, and the event's
+#              position in the log is stored too.  TODO: we could
+#              make this a subroutine.  For example, 'worst' might be
+#              rows_examined/rows_returned, or just rows_returned, and we might
+#              want to see queries that returned 0 rows.
 sub new {
    my ( $class, %args ) = @_;
-   my @required_args = (
-      'key_metric',       # event attribute by which events are grouped
-      'fingerprint',      # callback sub to fingerprint key_metric
-      'handlers',         # arrayref to metric handlers (see make_handler_for)
-   );
-   foreach my $arg ( @required_args ) {
+   foreach my $arg ( qw(key_metric attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
+   $args{handlers} ||= {};
 
-   bless {
+   my %attribute_spec = map {
+      (my $key = $_) =~ s/\|.*//;
+      $key => $_;
+   } @{$args{attributes}};
+   foreach my $metric ( keys %{$args{handlers}} ) {
+      $attribute_spec{$metric}++;
+   }
+
+   my $self = {
       key_metric            => $args{key_metric},
-      fingerprint           => $args{fingerprint},
+      fingerprint           => $args{fingerprint}
+                               || sub { $_[0]->{$args{key_metric}} },
+      attributes            => \%attribute_spec,
       handlers              => $args{handlers},
       buffer_n_events       => $args{buffer_n_events} || 1,
       worst_metric          => $args{worst_metric},
       metrics               => { all => {}, unique => {} },
       n_events              => 0,
       n_queries             => 0,
-      n_unique_queries      => 0,
-   }, $class;
+   };
+
+   return bless $self, $class;
 }
 
+# Make subroutines that do things with events.
+#
+# $metric: the name of the metric (Query_time, Rows_read, etc)
+# $value:  a sample of the metric's value
+# %args:
+#     min => keep min for this metric (default)
+#     max => keep max (default)
+#     sum => keep sum (default for numerics)
+#     cnt => keep count (default)
+#     unq => keep all unique values per-class (default for strings and bools)
+#     all => keep a list of all values seen per class (default for numerics)
+#     glo => keep stats globally as well as per-class (default)
+#     trx => An expression to transform the value before working with it
+#     wor => Whether to keep worst-samples for this metric (default no)
+#
+# Return value:
+# a subroutine with this signature:
+#    my ( $event, $val, $class, $global ) = @_;
+# where
+#  $event   is the event
+#  $val     is the metric value for an event
+#  $class   is the stats for the event's class
+#  $global  is the global data store.
+sub make_handler {
+   my ( $metric, $value, %args ) = @_;
+   die "I need a metric and value" unless $metric && $value;
+   return unless defined $value; # Can't decide type if it's undef.
+   my $type = $metric =~ m/^(?:ts|timestamp)$/ ? 'time'
+            : $value  =~ m/^\d+/               ? 'num'
+            : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
+            :                                    'string';
+   %args = ( # Set up defaults
+      min => 1,
+      max => 1,
+      sum => $type eq 'num' ? 1 : 0,
+      cnt => 1,
+      unq => $type =~ m/bool|string/ ? 1 : 0,
+      all => $type eq 'num' ? 1 : 0,
+      glo => 1,
+      trx => ($type eq 'time') ? 'parse_timestamp($val)'
+           : ($type eq 'bool') ? q{$val eq 'Yes'}
+           :                     undef,
+      wor => 0,
+      %args,
+   );
+
+   my @lines = ( # Lines of code for the subroutine
+      'sub {',
+      'my ( $event, $val, $class, $global ) = @_;',
+      'return unless defined $val;',
+   );
+   if ( $args{trx} ) {
+      push @lines, q{$val = } . $args{trx} . ';';
+   }
+   foreach my $place ( $args{glo} ? qw($class $global) : qw($class) ) {
+      if ( $args{min} ) {
+         my $op = $type =~ m/num|time/ ? '<' : 'lt';
+         my $code = 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+            . $op . ' PLACE->{min};';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $args{max} ) {
+         my $op = $type eq 'num' ? '>' : 'gt';
+         my $code = 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+            . $op . ' PLACE->{max};';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $args{sum} ) {
+         my $code = 'PLACE->{sum} += $val;';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $args{cnt} ) {
+         my $code = '++PLACE->{cnt};';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $place eq '$class' ) {
+         if ( $args{unq} ) {
+            my $code = '++PLACE->{unq}->{$val};';
+            $code =~ s/PLACE/$place/g;
+            push @lines, $code;
+         }
+         if ( $args{all} ) {
+            my $code = 'push @{PLACE->{all}}, $val;';
+            $code =~ s/PLACE/$place/g;
+            push @lines, $code;
+         }
+         if ( $args{wor} ) {
+            my $op = $type eq 'num' ? '>=' : 'ge';
+            # Update the sample and pos_in_log if this event is worst in class.
+            push @lines, (
+               'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
+               '$class->{sample}     = $event->{arg};',
+               '$class->{pos_in_log} = $event->{pos_in_log};',
+               '}',
+            );
+         }
+      }
+   }
+   push @lines, '}';
+   MKDEBUG && _d("Metric handler for $metric: ", @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
+}
+
+# TODO: is record_event and event buffering used?  If not, let's remove it.
 my @buffered_events;
 sub record_event {
    my ( $self, $event ) = @_;
-   return if !$event;
+   return unless $event;
 
    push @buffered_events, $event;
    MKDEBUG && _d(scalar @buffered_events . " events in buffer");
@@ -143,8 +214,8 @@ sub record_event {
    return;
 }
 
-# Calc metrics for the given events or the buffered events if no
-# events are given. events is an arrayref containing events returned
+# Calculate metrics for the given events or the buffered events if no
+# events are given. $events is an arrayref containing events returned
 # from LogParser::parse_event().
 sub calc_metrics {
    my ( $self, $events ) = @_;
@@ -155,6 +226,8 @@ sub calc_metrics {
    return;
 }
 
+# Calculate metrics about a single event.  Usually an event will be something
+# like a query from a slow log, and the $event->{arg} will be the query text.
 sub calc_event_metrics {
    my ( $self, $event ) = @_;
 
@@ -162,110 +235,31 @@ sub calc_event_metrics {
 
    # Skip events which do not have the key_metric attribute.
    my $key_metric_val = $event->{ $self->{key_metric} };
-   return if !defined $key_metric_val;
+   return unless defined $key_metric_val;
+
    $self->{n_queries}++;
 
    # Get the fingerprint (fp) for this event.
    my $fp = $self->{fingerprint}->($key_metric_val);
 
-   # Get a shortcut to the data store (ds) for this fingerprint.
-   my $fp_ds;
-   if ( exists $self->{metrics}->{unique}->{ $fp } ) {
-      $fp_ds = $self->{metrics}->{unique}->{ $fp };
+   # Get a shortcut to the data store (ds) for this class of events.
+   my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
 
-      # Update the sample if this query has a worst metric val
-      # than previous occurrences.
-      if (    defined $self->{worst_metric}
-           && defined $event->{ $self->{worst_metric} }
-           && defined $fp_ds->{ $self->{worst_metric} }->{last}
-           && $event->{ $self->{worst_metric} }
-              > $fp_ds->{ $self->{worst_metric} }->{last} ) {
-         $fp_ds->{sample} = $key_metric_val;
-      }
-   }
-   else {
-      $fp_ds = $self->{metrics}->{unique}->{ $fp } = {
-         sample => $key_metric_val,
-         count => 0,
-      };
-      $self->{n_unique_queries}++;
-   }
-
-   # Count the occurrences of this fingerprint.
-   $fp_ds->{count}++;
-
-   # Calc the metrics.
+   # Calculate the metrics.  Auto-vivify handler subs as they are needed.
    METRIC:
-   foreach my $handler ( @{ $self->{handlers} } ) {
-      # Skip metrics which do not exist in this event.
-      my $metric_val = $event->{ $handler->{metric} };
-      next METRIC if !defined $metric_val;
-
-      $self->_calc_metric($metric_val, $handler, $fp_ds);
-   }
-
-   return;
-}
-
-sub _calc_metric {
-   my ( $self, $metric_val, $handler, $fp_ds ) = @_;
-   my $metric = $handler->{metric};
-
-   $metric_val = $handler->{transformer}->($metric_val)
-      if defined $handler->{transformer};
-
-   # Get data store shortcuts: one for this event (e_ds)
-   # and another for grand totals (g_ds).
-   my $e_ds = $fp_ds->{ $metric } ||= {};
-   my $g_ds = $self->{metrics}->{all}->{ $metric } ||= {};
-
-   if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
-
-      # Save the current val for this metric.
-      # This is used later to determine if the query sample
-      # should be updated.
-      $e_ds->{last} = $metric_val;
-
-      $e_ds->{total} += $metric_val;
-
-      $e_ds->{min} = $metric_val if !defined $e_ds->{min};
-      $e_ds->{min} = $metric_val if $metric_val < $e_ds->{min};
-
-      $e_ds->{max} = $metric_val if !defined $e_ds->{max};
-      $e_ds->{max} = $metric_val if $metric_val > $e_ds->{max};
-
-      my $avg = $e_ds->{total} / $fp_ds->{count};
-      $avg = $handler->{transformer}->($avg)
-         if defined $handler->{transformer};
-      $e_ds->{avg} = $avg;
-
-      push @{ $e_ds->{all_vals} }, $metric_val
-         if $handler->{all_vals};
-
-      if ( $handler->{grand_total} ) {
-         $g_ds->{total} += $metric_val;
-
-         $g_ds->{min} = $metric_val if !defined $g_ds->{min};
-         $g_ds->{min} = $metric_val if $metric_val < $g_ds->{min};
-
-         $g_ds->{max} = $metric_val if !defined $g_ds->{max};
-         $g_ds->{max} = $metric_val if $metric_val > $g_ds->{max};
-
-         my $avg = $g_ds->{total} / $self->{n_queries};
-         $avg = $handler->{transformer}->($avg)
-            if defined $handler->{transformer};
-         $g_ds->{avg} = $avg;
+   foreach my $metric ( keys %{ $self->{attributes} } ) {
+      my $metric_val = $event->{ $metric };
+      next METRIC unless defined $metric_val;
+      # Get data store shortcuts.
+      my $stats_for_metric = $self->{metrics}->{all}->{ $metric } ||= {};
+      my $stats_for_class  = $fp_ds->{ $metric } ||= {};
+      my $sub = $self->{handlers}->{$metric} ||= make_handler(
+         $self->{attributes}->{$metric}, $metric_val,
+         wor => (($self->{worst_metric} || '') eq $metric)
+      );
+      if ( ref $sub ) {
+         $sub->($event, $metric_val, $stats_for_class, $stats_for_metric);
       }
-   }
-   elsif ( $handler->{type} == METRIC_TYPE_STRING ) {
-      $e_ds->{ $metric_val }++;
-      push @{ $e_ds->{all_vals} }, $metric_val
-         if $handler->{all_vals};
-      $g_ds->{ $metric_val }++ if $handler->{grand_total};
-   }
-   else {
-      # This should not happen.
-      die "Unknown metric type: $handler->{type}";
    }
 
    return;
@@ -283,7 +277,6 @@ sub reset_metrics {
    @buffered_events           = ();
    $self->{n_events}          = 0;
    $self->{n_queries}         = 0;
-   $self->{n_unique_queries}  = 0;
    $self->{metrics}->{all}    = {};
    $self->{metrics}->{unique} = {};
    return;
@@ -313,10 +306,10 @@ sub calculate_statistical_metrics {
       distro    => \@distro,
       cutoff    => undef,
    };
-   return $statistical_metrics if !defined $vals;
+   return $statistical_metrics unless defined $vals;
 
    my $n_vals = scalar @$vals;
-   return $statistical_metrics if !$n_vals;
+   return $statistical_metrics unless $n_vals;
 
    # Determine cutoff point for 95% if there are at least 10 vals.
    # Cutoff serves also for the number of vals left in the 95%.
@@ -368,6 +361,17 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{avg}    = $sum / $cutoff;
 
    return $statistical_metrics;
+}
+
+# Turns 071015 21:43:52 into a Unix timestamp.
+sub parse_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   {
+      $val = timelocal($s, $i, $h, $d, $m - 1, $y + 2000);
+   }
+   return $val;
 }
 
 sub _d {
