@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -1039,6 +1039,83 @@ $events = [
 ];
 @e = ();
 open $file, "<", 'samples/slow012.txt' or die $OS_ERROR;
+1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+is_deeply( \@e, $events, 'Parses events that might look like meta');
+
+# A pathological test case to be sure a crash doesn't happen
+$events = [
+   {  'Schema'        => 'abc',
+      'cmd'           => 'Query',
+      'arg'           => 'SET autocommit=1',
+      'ip'            => '10.1.250.19',
+      'Thread_id'     => '39796',
+      'host'          => '',
+      'pos_in_log'    => '0',
+      'Rows_examined' => '0',
+      'user'          => 'foo_app',
+      'Query_time'    => '0.000015',
+      'Rows_sent'     => '0',
+      'Lock_time'     => '0.000000'
+   },
+   {  'Schema'        => 'test',
+      'db'            => 'test',
+      'cmd'           => 'Query',
+      'arg'           => 'SHOW STATUS',
+      'ip'            => '10.1.12.201',
+      'ts'            => '081127  8:51:20',
+      'Thread_id'     => '39947',
+      'host'          => '',
+      'pos_in_log'    => '174',
+      'Rows_examined' => '226',
+      'Query_time'    => '0.149435',
+      'user'          => 'mytopuser',
+      'Rows_sent'     => '226',
+      'Lock_time'     => '0.000070'
+   },
+   {  'Schema'        => 'test',
+      'cmd'           => 'Admin',
+      'arg'           => '# administrator command: Quit',
+      'ip'            => '10.1.12.201',
+      'ts'            => '081127  8:51:21',
+      'Thread_id'     => '39947',
+      'host'          => '',
+      'pos_in_log'    => '385',
+      'Rows_examined' => '0',
+      'Query_time'    => '0.000005',
+      'user'          => 'mytopuser',
+      'Rows_sent'     => '0',
+      'Lock_time'     => '0.000000'
+   },
+   {  'Schema'        => 'abc',
+      'db'            => 'abc',
+      'cmd'           => 'Query',
+      'arg'           => 'SET autocommit=0',
+      'ip'            => '10.1.250.19',
+      'Thread_id'     => '39796',
+      'host'          => '',
+      'pos_in_log'    => '600',
+      'Rows_examined' => '0',
+      'user'          => 'foo_app',
+      'Query_time'    => '0.000067',
+      'Rows_sent'     => '0',
+      'Lock_time'     => '0.000000'
+   },
+   {  'Schema'        => 'abc',
+      'cmd'           => 'Query',
+      'arg'           => 'commit',
+      'ip'            => '10.1.250.19',
+      'Thread_id'     => '39796',
+      'host'          => '',
+      'pos_in_log'    => '782',
+      'Rows_examined' => '0',
+      'user'          => 'foo_app',
+      'Query_time'    => '0.000015',
+      'Rows_sent'     => '0',
+      'Lock_time'     => '0.000000'
+   }
+];
+@e = ();
+open $file, "<", 'samples/slow013.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
 is_deeply( \@e, $events, 'Parses events that might look like meta');
 
