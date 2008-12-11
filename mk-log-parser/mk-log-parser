@@ -2165,7 +2165,6 @@ sub report_queries {
    my $list_line_fmt   = "# %-9s   %-60s\n";
    my $timestamp_fmt   = "# Time range %s to %s\n";
 
-   # TODO: make sure these are always in the expr list above.
    my @reported_metrics = (
       {
          metric => 'Query_time',
@@ -2272,22 +2271,21 @@ sub report_queries {
       my $sample = $class->{$opts{w}}->{sample};
       my $select_pattern = qr/^[\s\(]*SELECT /i;
       if ( $sample =~ m/$select_pattern/ ) {
-         # TODO: permit to switch off with cmdline option --verbosity or --quiet
-         print_tables($sample, $default_db);
-         print "# EXPLAIN\n$sample\\G\n\n";
+         print_tables($sample, $default_db) if $opts{forexplain};
+         print "# EXPLAIN\n$sample\\G\n";
       }
       else {
          my $converted_sample = $qr->convert_to_select($sample);
          if ( $converted_sample =~ m/$select_pattern/ ) {
-            # TODO: permit to switch off with cmdline option --verbosity or --quiet
-            print_tables($converted_sample, $default_db);
+            print_tables($converted_sample, $default_db) if $opts{forexplain};
             print "$sample\\G\n";
-            print "# Converted for EXPLAIN\n# EXPLAIN\n";
+            print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts{forexplain};
          }
          # converted_sample will be the original sample if it
          # failed to convert. Otherwise, it will be a SELECT.
-         print "$converted_sample\\G\n\n"; 
+         print "$converted_sample\\G\n" if $opts{forexplain};
       }
+      print "\n";
    }
 
    return;
@@ -2417,6 +2415,16 @@ Some options are negatable by specifying them in their long form with a --no
 prefix.
 
 =over
+
+=item --forexplain
+
+negatable: yes; default: yes
+
+Add code snippets to make it easy to run SHOW CREATE TABLE and SHOW TABLE
+STATUS.
+
+Shows some extra information about the query and the tables in it, to help you
+copy-and-paste while working to optimize the query.
 
 =item --review
 
