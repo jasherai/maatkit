@@ -294,6 +294,8 @@ sub parse_event {
 # subroutine, you need to profile the result.  Sometimes a line of code has been
 # changed from an alternate form for performance reasons -- sometimes as much as
 # 20x better performance.
+# TODO: pass in hooks to let something filter out events as early as possible
+# without parsing more of them than needed.
 sub parse_slowlog_event {
    my ( $self, $fh, $code ) = @_;
 
@@ -333,33 +335,50 @@ sub parse_slowlog_event {
    # Or, it might look like this, sometimes at the end of the Time: line:
    # # User@Host: root[root] @ localhost []
 
+   # The following line contains variables intended to be sure we do particular
+   # things once and only once, for those regexes that will match only one line
+   # per event, so we don't keep trying to re-match regexes.
+   my ($got_ts, $got_uh, $got_ac, $got_db, $got_set);
    my $pos = 0;
+   my $len = length($stmt);
    my $found_arg = 0;
    while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
       $pos     = pos($stmt);  # Be careful not to mess this up!
       my $line = $1;          # Necessary for /g and pos() to work.
 
       # Handle meta-data lines.
-      if ( $line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o ) {
+      if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
 
-         # Maybe it's the beginning of a slow query log event.
-         if ( my ( $time ) = $line =~ m/$slow_log_ts_line/o ) {
+         # Maybe it's the beginning of the slow query log event.
+         if ( !$got_ts
+            && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
+            && ++$got_ts
+         ) {
             push @properties, 'ts', $time;
             # The User@Host might be concatenated onto the end of the Time.
-            if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o ) {
+            if ( !$got_uh
+               && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+               && ++$got_uh
+            ) {
                push @properties, 'user', $user, 'host', $host, 'ip', $ip;
             }
          }
 
          # Maybe it's the user/host line of a slow query log
          # # User@Host: root[root] @ localhost []
-         elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o ) {
+         elsif ( !$got_uh
+               && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+               && ++$got_uh
+         ) {
             push @properties, 'user', $user, 'host', $host, 'ip', $ip;
          }
 
          # A line that looks like meta-data but is not:
          # # administrator command: Quit;
-         elsif ( $line =~ m/^# (?:administrator command:.*)$/ ) {
+         elsif ( !$got_ac
+               && $line =~ m/^# (?:administrator command:.*)$/
+               && ++$got_ac
+         ) {
             push @properties, 'cmd', 'Admin', 'arg', $line;
             $found_arg++;
          }
@@ -372,7 +391,10 @@ sub parse_slowlog_event {
          }
 
          # Include the current default database given by 'use <db>;'
-         elsif ( my ( $db ) = $line =~ m/^use ([^;]+)/ ) {
+         elsif ( !$got_db
+               && (my ( $db ) = $line =~ m/^use ([^;]+)/ )
+               && ++$got_db
+         ) {
             push @properties, 'db', $db;
          }
 
@@ -380,17 +402,22 @@ sub parse_slowlog_event {
          # set timestamp=foo;
          # set timestamp=foo,insert_id=bar;
          # set names utf8;
-         elsif ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ ) {
+         elsif ( !$got_set
+               && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ )
+               && ++$got_set
+         ) {
             # Note: this assumes settings won't be complex things like
             # SQL_MODE, which as of 5.0.51 appears to be true (see sql/log.cc,
             # function MYSQL_LOG::write(THD, char*, uint, time_t)).
             push @properties, split(/,|\s*=\s*/, $setting);
          }
 
-         # Handle pathological special cases.  The "# administrator command" is one
-         # example: it can come AFTER lines that are not commented, so it looks
-         # like it belongs to the next event, and it won't be in $stmt.
-         if ( !$found_arg && $pos == length($stmt) ) {
+         # Handle pathological special cases.  The "# administrator command" is
+         # one example: it can come AFTER lines that are not commented, so it
+         # looks like it belongs to the next event, and it won't be in $stmt.
+         # Profiling shows this is an expensive if() so we do this only if we've
+         # seen the user/host line.
+         if ( !$found_arg && $pos == $len ) {
             local $INPUT_RECORD_SEPARATOR = ";\n";
             if ( chomp(my $l = <$fh>) ) {
                push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
