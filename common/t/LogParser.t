@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -999,7 +999,7 @@ $events = [
       'Query_time'    => '0.000899',
       'Lock_time'     => '0.000000',
       'Rows_sent'     => '0',
-      pos_in_log      => 663,
+      pos_in_log      => 633,
       cmd             => 'Query',
    }
 ];
@@ -1118,6 +1118,42 @@ $events = [
 open $file, "<", 'samples/slow013.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
 is_deeply( \@e, $events, 'Parses events that might look like meta');
+
+# Check that lots of header lines don't cause problems.
+$events = [
+   {  ts            => '071015 21:43:52',
+      cmd           => 'Query',
+      user          => 'root',
+      host          => 'localhost',
+      ip            => '',
+      db            => 'test',
+      arg           => 'select sleep(2) from n',
+      Query_time    => 2,
+      Lock_time     => 0,
+      Rows_sent     => 1,
+      Rows_examined => 0,
+      pos_in_log    => 0,
+   },
+   {  ts            => '071015 21:43:52',
+      cmd           => 'Query',
+      user          => 'root',
+      host          => 'localhost',
+      ip            => '',
+      db            => 'test',
+      arg           => 'select sleep(2) from n',
+      Query_time    => 2,
+      Lock_time     => 0,
+      Rows_sent     => 1,
+      Rows_examined => 0,
+      pos_in_log    => 1313,
+   },
+];
+
+open $file, "<", 'samples/slow014.txt' or die $OS_ERROR;
+@e = ();
+1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+close $file;
+is_deeply( \@e, $events, "Parsed events with a lot of headers", );
 
 # ###########################################################################
 # Binary log
