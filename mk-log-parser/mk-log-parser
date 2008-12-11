@@ -1440,26 +1440,40 @@ sub parse_slowlog_event {
    $stmt =~ s/;\n#?\Z//;
 
 
+   my ($got_ts, $got_uh, $got_ac, $got_db, $got_set);
    my $pos = 0;
+   my $len = length($stmt);
    my $found_arg = 0;
    while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
       $pos     = pos($stmt);  # Be careful not to mess this up!
       my $line = $1;          # Necessary for /g and pos() to work.
 
-      if ( $line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o ) {
+      if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
 
-         if ( my ( $time ) = $line =~ m/$slow_log_ts_line/o ) {
+         if ( !$got_ts
+            && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
+            && ++$got_ts
+         ) {
             push @properties, 'ts', $time;
-            if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o ) {
+            if ( !$got_uh
+               && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+               && ++$got_uh
+            ) {
                push @properties, 'user', $user, 'host', $host, 'ip', $ip;
             }
          }
 
-         elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o ) {
+         elsif ( !$got_uh
+               && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+               && ++$got_uh
+         ) {
             push @properties, 'user', $user, 'host', $host, 'ip', $ip;
          }
 
-         elsif ( $line =~ m/^# (?:administrator command:.*)$/ ) {
+         elsif ( !$got_ac
+               && $line =~ m/^# (?:administrator command:.*)$/
+               && ++$got_ac
+         ) {
             push @properties, 'cmd', 'Admin', 'arg', $line;
             $found_arg++;
          }
@@ -1468,15 +1482,21 @@ sub parse_slowlog_event {
             push @properties, @temp;
          }
 
-         elsif ( my ( $db ) = $line =~ m/^use ([^;]+)/ ) {
+         elsif ( !$got_db
+               && (my ( $db ) = $line =~ m/^use ([^;]+)/ )
+               && ++$got_db
+         ) {
             push @properties, 'db', $db;
          }
 
-         elsif ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ ) {
+         elsif ( !$got_set
+               && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ )
+               && ++$got_set
+         ) {
             push @properties, split(/,|\s*=\s*/, $setting);
          }
 
-         if ( !$found_arg && $pos == length($stmt) ) {
+         if ( !$found_arg && $pos == $len ) {
             local $INPUT_RECORD_SEPARATOR = ";\n";
             if ( chomp(my $l = <$fh>) ) {
                push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
@@ -2109,12 +2129,12 @@ sub report_queries {
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
 
-   my $query_hdr_fmt   = "-- Query %03d (%5s QPS) ID: %s " . ('_' x 28) . "\n";
-   my $metrics_hdr_fmt = "--             total    %%      min     max     "
+   my $query_hdr_fmt   = "# Query %03d (%5s QPS) ID: %s " . ('_' x 28) . "\n";
+   my $metrics_hdr_fmt = "#             total    %%      min     max     "
                        . "avg     95%%  stddev  median\n";
-   my $count_line_fmt  = "-- %-9s %7s  %3d\n";
-   my $metric_line_fmt = "-- %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
-   my $list_line_fmt   = "-- %-9s   %-60s\n";
+   my $count_line_fmt  = "# %-9s %7s  %3d\n";
+   my $metric_line_fmt = "# %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
+   my $list_line_fmt   = "# %-9s   %-60s\n";
 
    my @reported_metrics = (
       {
@@ -2181,11 +2201,11 @@ sub report_queries {
       printf $list_line_fmt, 'Users', join(', ', keys %{$q->{user}});
 
       # TODO: permit to switch off with cmdline option --verbosity or --quiet
-      print "-- Execution times\n";
+      print "# Execution times\n";
       print chart_distro($Query_time_distro);
 
       # TODO
-      # print "-- Time clustering:\n";
+      # print "# Time clustering:\n";
 
       # If the query uses qualified table names (db.tbl), print_tables()
       # will print SHOW TABLE STATUS FROM `db` LIKE 'tbl'. Otherwise,
@@ -2203,7 +2223,7 @@ sub report_queries {
       if ( $sample =~ m/$select_pattern/ ) {
          # TODO: permit to switch off with cmdline option --verbosity or --quiet
          print_tables($sample, $default_db);
-         print "-- EXPLAIN\n$sample\\G\n\n";
+         print "# EXPLAIN\n$sample\\G\n\n";
       }
       else {
          my $converted_sample = $qr->convert_to_select($sample);
@@ -2211,7 +2231,7 @@ sub report_queries {
             # TODO: permit to switch off with cmdline option --verbosity or --quiet
             print_tables($converted_sample, $default_db);
             print "$sample\\G\n";
-            print "-- Converted for EXPLAIN\n-- EXPLAIN\n";
+            print "# Converted for EXPLAIN\n# EXPLAIN\n";
          }
          # converted_sample will be the original sample if it
          # failed to convert. Otherwise, it will be a SELECT.
@@ -2228,7 +2248,7 @@ sub chart_distro {
    my $max_val = 0;
    my $vals_per_mark; # number of vals represented by 1 #-mark
    my $max_disp_width = 61;
-   my $bar_fmt = "-- %8s  %-${max_disp_width}s\n";
+   my $bar_fmt = "# %8s  %-${max_disp_width}s\n";
    my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
    # Find the distro with the most values. This will set
@@ -2262,15 +2282,15 @@ sub print_tables {
    my ( $query, $default_db ) = @_;
    my $qp = new QueryParser();
    my $table_aliases = $qp->parse_table_aliases( $qp->get_table_ref($query) );
-   print "-- Tables:\n";
+   print "# Tables:\n";
    foreach my $table_alias ( keys %$table_aliases ) {
       next if $table_alias eq 'DATABASE';
       my $tbl = $table_aliases->{$table_alias};
       my $db  = $table_aliases->{DATABASE}->{$tbl} || $default_db;
-      print '--    SHOW TABLE STATUS'
+      print '#    SHOW TABLE STATUS'
          , defined $db && $db ? " FROM `$db`" : ''
          , " LIKE '$tbl'\\G\n";
-      print "--    SHOW CREATE TABLE `$tbl`\\G\n";
+      print "#    SHOW CREATE TABLE `$tbl`\\G\n";
    }
    return;
 }
