@@ -2037,6 +2037,7 @@ my $sm = new SQLMetrics(
                         Lock_time
                         Rows_read
                         Rows_sent
+                        Rows_examined
                         user
                         Schema
                         ts
@@ -2156,7 +2157,7 @@ sub report_queries {
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
 
-   my $query_hdr_fmt   = "# Query %03d (%5s QPS) ID: %s " . ('_' x 28) . "\n";
+   my $query_hdr_fmt   = "# Query %03d (%s QPS) ID: %s at byte %d ";
    my $metrics_hdr_fmt = "#             total    %%      min     max     "
                        . "avg     95%%  stddev  median\n";
    my $count_line_fmt  = "# %-9s %7s  %3d\n";
@@ -2186,6 +2187,11 @@ sub report_queries {
          name   => 'Rows sent',
          fmt    => sub { return shorten(@_, p => 1, d => 1000); },
       },
+      {
+         metric => 'Rows_examined',
+         name   => 'Rows exam',
+         fmt    => sub { return shorten(@_, p => 1, d => 1000); },
+      },
    );
 
    foreach my $i ( 0..$#worst ) {
@@ -2202,7 +2208,9 @@ sub report_queries {
       }
 
       # TODO: should I be using 'shorten' like this for $qps?
-      printf $query_hdr_fmt, $i + 1, shorten($qps), checksum_64($class->{fingerprint});
+      my $header = sprintf $query_hdr_fmt, $i + 1, shorten($qps),
+             checksum_64($class->{fingerprint}), $class->{$opts{w}}->{pos_in_log};
+      print  $header, ('_' x (73 - length($header))), "\n";
       printf $metrics_hdr_fmt;
       printf $count_line_fmt,
          'Count',
@@ -2381,6 +2389,12 @@ do a query review by showing all distinct queries running on your server.
 C<mk-log-parser> reads the files you specify on the command line, or standard
 input.  You can cancel it with C<CTRL-C> and it will abort processing the log
 file, then print the statistics.
+
+=head1 OUTPUT
+
+TODO
+
+   tail -c +160665 /home/baron/smalltest.log | less
 
 =head1 DOWNLOADING
 

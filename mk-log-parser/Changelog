@@ -2,7 +2,7 @@ Changelog for mk-log-parser:
 
    * Trying to take log of 0 caused a crash (issue 141).
    * Greatly improved performance of log parsing and fingerprinting (issue 137).
-	* Slow log parsing was buggy (issue 136).
+   * Slow log parsing was buggy (issue 136).
    * Converted a lot of hardcoded things into dynamically built functions.
    * Added some more information to the default output.
 
