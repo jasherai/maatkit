@@ -171,6 +171,7 @@ my $expected_stats = {
    median    => 3,
    distro    => [qw(0 0 0 0 0 0 13 0)],
    cutoff    => 12,
+   max       => 8,
 };
 my $stats = $m->calculate_statistical_metrics([2,3,6,4,8,9,1,1,1,5,4,3,1],
                                               distro => 1);
@@ -186,6 +187,7 @@ $expected_stats = {
    median    => 0,
    distro    => [qw(0 0 0 0 0 0 0 0)],
    cutoff    => undef,
+   max       => 0,
 };
 $stats = $m->calculate_statistical_metrics(undef, distro=>1);
 is_deeply(
@@ -207,6 +209,7 @@ $expected_stats = {
    median    => 0.9,
    distro    => [qw(0 0 0 0 0 1 0 0)],
    cutoff    => 1,
+   max       => 0.9,
 };
 $stats = $m->calculate_statistical_metrics([0.9], distro=>1);
 is_deeply(

@@ -116,13 +116,13 @@ sub make_handler {
    %args = ( # Set up defaults
       min => 1,
       max => 1,
-      sum => $type eq 'num' ? 1 : 0,
+      sum => $type =~ m/num|bool/ ? 1 : 0,
       cnt => 1,
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num' ? 1 : 0,
       glo => 1,
       trx => ($type eq 'time') ? 'parse_timestamp($val)'
-           : ($type eq 'bool') ? q{$val eq 'Yes'}
+           : ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0}
            :                     undef,
       wor => 0,
       %args,
@@ -145,7 +145,7 @@ sub make_handler {
          push @lines, $code;
       }
       if ( $args{max} ) {
-         my $op = $type eq 'num' ? '>' : 'gt';
+         my $op = ($type =~ m/num|time/) ? '>' : 'gt';
          my $code = 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
             . $op . ' PLACE->{max};';
          $code =~ s/PLACE/$place/g;
@@ -284,7 +284,8 @@ sub reset_metrics {
 
 # Returns a hashref with the following statistical metrics:
 # {
-#    avg       => (of 95% vals), 
+#    avg       => (of 95% vals),
+#    max       => (of 95% vals -- thus the 95th percentile),
 #    stddev    => (of 95% vals),
 #    median    => (of 95% vals),
 #    distro    => (if $arg{distro})
@@ -301,6 +302,7 @@ sub calculate_statistical_metrics {
    my @distro              = qw(0 0 0 0 0 0 0 0);
    my $statistical_metrics = {
       avg       => 0,
+      max       => 0,
       stddev    => 0,
       median    => 0,
       distro    => \@distro,
@@ -323,10 +325,11 @@ sub calculate_statistical_metrics {
 
    my $sum    = 0; # stddev and 95% avg
    my $sumsq  = 0; # stddev
+   my $max    = 0; # 95th percentile
    my $i      = 0; # for knowing when we've reached the 95%
    foreach my $val ( sort { $a <=> $b } @$vals ) {
       # Distribution of vals for all vals, if requested.
-      if ( defined $val && $args{distro} ) {
+      if ( defined $val && $val > 0 && $args{distro} ) {
          # The buckets are powers of ten.  Bucket 0 represents (0 <= val < 10us) 
          # and 7 represents 10s and greater.  The powers are thus constrained to
          # between -6 and 1.  Because these are used as array indexes, we shift
@@ -346,6 +349,7 @@ sub calculate_statistical_metrics {
 
          $sum   += $val;
          $sumsq += ($val **2);
+         $max   = $val;
          $i++;
 
          # Needed for calcing median when list has even number of elements.
@@ -359,6 +363,7 @@ sub calculate_statistical_metrics {
 
    $statistical_metrics->{stddev} = $stddev;
    $statistical_metrics->{avg}    = $sum / $cutoff;
+   $statistical_metrics->{max}    = $max;
 
    return $statistical_metrics;
 }
