@@ -1,7 +1,0 @@
-Add an option to print query fingerprints to ease testing of the tool
-
-Request from Peter: For our "microslow" log I think it could be very helpful to
-have an option to load it to some table (ie Archive) so it is easy to research
-what is happening.
-
-Add a --since option to discard all queries before a given time.
