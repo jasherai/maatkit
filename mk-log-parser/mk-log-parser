@@ -2116,8 +2116,9 @@ sub find_top_queries {
 
    MKDEBUG && _d("sort $sort top $top worst $worst");
    my @sorted =
-      reverse sort { $classes->{$a}->{$worst} <=> $classes->{$b}->{$worst} }
-      keys %$classes;
+      reverse sort {
+         $classes->{$a}->{$worst}->{$sort} <=> $classes->{$b}->{$worst}->{$sort}
+      } keys %$classes;
    my $count = @sorted > $top ? $top : scalar @sorted;
    return map { $classes->{$_}->{fingerprint} = $_; $classes->{$_}; }
       @sorted[0 .. $count - 1];
@@ -2386,11 +2387,13 @@ analysis.
 
 =item --sort
 
-short form: -s; type: string; default: total
+short form: -s; type: string; default: sum
 
 Sort the reported queries by this aggregate value of L<--worst>.
 
-Valid aggregate values are: total, min, max, avg, ninetyfive, stddev and med.
+Valid aggregate values are: sum, min, max, avg, cnt.
+
+TODO: support ninetyfive, stddev and med.
 
 See also L<"--worst">.
 
