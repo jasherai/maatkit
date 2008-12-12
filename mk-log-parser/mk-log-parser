@@ -2157,7 +2157,7 @@ sub report_queries {
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
 
-   my $query_hdr_fmt   = "# Query %03d (%s QPS) ID: %s at byte %d ";
+   my $query_hdr_fmt   = "# Query %03d (%s QPS) ID: 0x%s at byte %d ";
    my $metrics_hdr_fmt = "#             total    %%      min     max     "
                        . "avg     95%%  stddev  median\n";
    my $count_line_fmt  = "# %-9s %7s  %3d\n";
