@@ -3,87 +3,76 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 13;
+use Test::More tests => 15;
 use English qw(-no_match_vars);
 
 require '../LogSplitter.pm';
 require '../LogParser.pm';
 
-my $lp = new LogParser;
-my $ls = new LogSplitter;
-
-isa_ok($ls, 'LogSplitter');
-
 my $tmpdir = '/tmp/logettes';
-diag(`mkdir $tmpdir`);
+diag(`rm -rf $tmpdir ; mkdir $tmpdir`);
 
-$ls->split_logs(
-   log_files  => [ 'samples/slow006.txt' ],
+my $lp = new LogParser();
+my $ls = new LogSplitter(
    attribute  => 'foo',
    saveto_dir => "$tmpdir/",
    LogParser  => $lp,
-   silent     => 1,
+   verbosity  => 0,
 );
+
+isa_ok($ls, 'LogSplitter');
+
+$ls->split_logs(['samples/slow006.txt']);
 ok($ls->{n_sessions} == 0, 'Parsed zero sessions for bad attribute');
 
-$ls->split_logs(
-   log_files  => [ 'samples/slow006.txt' ],
+$ls = new LogSplitter(
    attribute  => 'Thread_id',
-   saveto_dir => "$tmpdir",
+   saveto_dir => "$tmpdir/",
    LogParser  => $lp,
-   silent     => 1,
+   verbosity  => 0,
 );
-
-ok(-f "$tmpdir/mysql_log_split-0001", 'Basic log split 0001 exists');
-ok(-f "$tmpdir/mysql_log_split-0002", 'Basic log split 0002 exists');
-ok(-f "$tmpdir/mysql_log_split-0003", 'Basic log split 0003 exists');
+$ls->split_logs(['samples/slow006.txt' ]);
+ok(-f "$tmpdir/1/mysql_log_session_0001", 'Basic log split 0001 exists');
+ok(-f "$tmpdir/1/mysql_log_session_0002", 'Basic log split 0002 exists');
+ok(-f "$tmpdir/1/mysql_log_session_0003", 'Basic log split 0003 exists');
 
 my $output;
 
-$output = `diff $tmpdir/mysql_log_split-0001 samples/slow006_split-0001.txt`;
+$output = `diff $tmpdir/1/mysql_log_session_0001 samples/slow006_split-0001.txt`;
 ok(!$output, 'Basic log split 0001 has correct SQL statements');
-$output = `diff $tmpdir/mysql_log_split-0002 samples/slow006_split-0002.txt`;
+$output = `diff $tmpdir/1/mysql_log_session_0002 samples/slow006_split-0002.txt`;
 ok(!$output, 'Basic log split 0002 has correct SQL statements');
-$output = `diff $tmpdir/mysql_log_split-0003 samples/slow006_split-0003.txt`;
+$output = `diff $tmpdir/1/mysql_log_session_0003 samples/slow006_split-0003.txt`;
 ok(!$output, 'Basic log split 0003 has correct SQL statements');
 
 diag(`rm -rf $tmpdir/*`);
 
-$ls->split_logs(
-   log_files  => [ 'samples/slow009.txt' ],
-   attribute  => 'Thread_id',
-   saveto_dir => "$tmpdir",
-   LogParser  => $lp,
-   silent     => 1,
-);
-
-chomp($output = `ls -1 $tmpdir/ | tail -n 1`);
-is($output, 'mysql_log_split-2000', 'Handles 2,000 sessions/filehandles');
-
-$output = `cat $tmpdir/mysql_log_split-2000`;
+$ls->split_logs(['samples/slow009.txt']);
+chomp($output = `ls -1 $tmpdir/20/ | tail -n 1`);
+is($output, 'mysql_log_session_2000', 'Makes 20 dirs for 2,000 sessions');
+$output = `cat $tmpdir/20/mysql_log_session_2000`;
 like($output, qr/SELECT 2001 FROM foo/, '2,000th session has correct SQL');
-
-$output = `cat $tmpdir/mysql_log_split-0012`;
+$output = `cat $tmpdir/1/mysql_log_session_0012`;
 like($output, qr/SELECT 12 FROM foo\n\nSELECT 1234 FROM foo/, 'Reopened and appended to previously closed session');
 
 diag(`rm -rf $tmpdir/*`);
 
-$ls->split_logs(
-   log_files  => [ 'samples/slow009.txt' ],
-   attribute  => 'Thread_id',
-   saveto_dir => "$tmpdir",
-   LogParser  => $lp,
-   silent     => 1,
-   max_splits => 10,
-);
-
-chomp($output = `ls -1 $tmpdir/ | tail -n 1`);
-is($output, 'mysql_log_split-0010', 'Can limit number of log splits');
+$ls->{maxsessions} = 10;
+$ls->split_logs(['samples/slow009.txt']);
+chomp($output = `ls -1 $tmpdir/1/ | tail -n 1`);
+is($output, 'mysql_log_session_0010', 'maxsessions works');
 
 diag(`rm -rf $tmpdir/*`);
-
 $output = `cat samples/slow006.txt | samples/log_splitter.pl`;
-like($output, qr/Parsed 3 sessions/, 'Can read STDIN');
+like($output, qr/Parsed 3 sessions/, 'Reads STDIN implicitly');
+
+diag(`rm -rf $tmpdir/*`);
+$output = `cat samples/slow006.txt | samples/log_splitter.pl -`;
+like($output, qr/Parsed 3 sessions/, 'Reads STDIN explicitly');
+
+diag(`rm -rf $tmpdir/*`);
+$output = `cat samples/slow006.txt | samples/log_splitter.pl blahblah`;
+like($output, qr/Parsed 0 sessions/, 'Does nothing if no valid logs are given');
 
 diag(`rm -rf $tmpdir`);
 exit;
