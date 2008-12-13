@@ -15,10 +15,47 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# ###########################################################################
+# #############################################################################
 # SQLMetrics package $Revision$
-# ###########################################################################
+# #############################################################################
 package SQLMetrics;
+# Since this module is pretty advanced and abstract, it is difficult to
+# understand what it does by looking at the code without some background
+# information. Here is the relevant background information.
+#
+# Fundamentally, this module is a calculator. Its is given numbers
+# (and sometimes strings, but we care mostly about the numbers) and it
+# returns "metrics" derived and calculated from those numbers.
+#
+# The numbers (and strings) are the values of "attributes," and the attributes
+# belong to "events." Events usually come from LogParser. Therefore, an event
+# is usually a single log entry, but it does not have to be. mk-log-player,
+# for example, makes different kinds of events. In any case, an event is a
+# hashref of attributes => values. The attributes and their values (should)
+# describe something about the event. For a slowlog event, Query_time is
+# a familiar attribute.
+#
+# SQLMetrics is thus a streaming metrics calculator for event attributes.
+# In other scripts, a SQLMetrics object is fed events and from those events
+# it calculates various metrics from the events' attributes.
+#
+# The real magick of this script lies in its agnostic approach to attributes.
+# Looking through the module, you may wonder, "Where is all the basic math
+# other than calc_statistical_metrics()?" A quick glance reveals no code
+# blocks doing sums, greater than, less than, etc. Instead, these code blocks
+# are dynamically created in dynamically created anonymous subroutines.
+# These "dynanonymous subs" are created in make_handler() because they are
+# "handlers": subs which handle the metric calculations for a given attribute.
+# Each attribute has its own unique handler.
+#
+# Handlers are created and assigned to attributes either dynamically or
+# manually. When a SQLMetrics object is instantiated, one required arg to
+# the new() method is an arrayref of attributes for which to calculate metrics.
+# If no explicit handlers for this attributes are given, then SQLMetrics will
+# auto-create handlers when needed by determining the attribute's value type
+# (number, string, bool, or timestamp) and using default options. Or, handlers
+# for each attribute can be created manually by make_handler() and then passed
+# as an arg to new().
 
 use strict;
 use warnings FATAL => 'all';
@@ -29,31 +66,41 @@ use Time::Local qw(timelocal);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # %args is a hash containing:
-# key_metric   the attribute by which events are aggregated.  Usually this will
+# REQUIRED:
+# key_attrib   The attribute by which events are aggregated.  Usually this will
 #              be 'arg' because $event->{arg} is the query in a parsed slowlog
-#              event.  Events with the same key_metric (after fingerprinting)
+#              event.  Events with the same key_attrib (after fingerprinting)
 #              are treated as a class.
-# fingerprint  A subroutine to transform the key_metric if desired.  Usually
-#              this will be QueryRewriter::fingerprint() for slowlog parsing.
-# handlers     An optional hashref that explicitly says how to handle an
-#              attribute for which you want to calculate metrics.
-# attributes   An arrayref of attributes you want to calculate metrics for.  If
-#              you don't specify handlers for them, they'll be auto-created.  In
-#              most cases this will work fine.  If you specify an attribute with
-#              an | symbol, it means that the subsequent attributes are
-#              fallbacks.  For example, ts|timestamp means if ts is available,
-#              it'll be used; else timestamp will be used.  Similarly with db|Schema.
-# worst_metric An attribute name.  When an event is seen, its worst_metric is
-#              compared to the greatest worst_metric ever seen for this class of
-#              event.  If it's greater, the event's key_metric is stored as the
-#              representative sample of this class of event, and the event's
-#              position in the log is stored too.  TODO: we could
-#              make this a subroutine.  For example, 'worst' might be
-#              rows_examined/rows_returned, or just rows_returned, and we might
-#              want to see queries that returned 0 rows.
+# attributes   An arrayref of attributes for which to calculate metrics. If
+#              you don't specify handlers for them (see handlers below),
+#              they'll be auto-created.  In most cases this will work fine.
+#              If you specify an attribute with an | symbol, it means that
+#              the subsequent attributes are fallbacks.  For example,
+#              ts|timestamp means if ts is available, it'll be used;
+#              else timestamp will be used.  Similarly with db|Schema.
+#
+# Optional:
+# fingerprint  A subref to transform the key_attrib if desired. When key_attrib
+#              is 'arg' (which is the usual case for parsing logs), fingerprint
+#              is usually: sub { return $qr->fingerprint(@_); } 
+#              $qr is a QueryRewriter object. (Something like
+#              \&qr->fingerprint(@_); does not work, hence the anon sub.)
+# handlers     A hashref with explicit attribute => subref handlers. Handler
+#              subrefs are returned by make_handler(). If a handler is given
+#              for an attribute that is not in the attributes list (see above),
+#              the handler is not used and the attribute is not auto-created.
+# worst_attrib An attribute name.  When an event is seen, its worst_attrib
+#              value is compared to the greatest worst_attrib value ever seen
+#              for this class of event.  If it's greater, the event's
+#              key_attrib value is stored as the representative sample of this
+#              class of event, and the event's position in the log is stored
+#              too.  TODO: we could make this a subroutine.  For example,
+#              'worst' might be rows_examined/rows_returned, or just
+#              rows_returned, and we might want to see queries that returned
+#              0 rows.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(key_metric attributes) ) {
+   foreach my $arg ( qw(key_attrib attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    $args{handlers} ||= {};
@@ -62,18 +109,17 @@ sub new {
       (my $key = $_) =~ s/\|.*//;
       $key => $_;
    } @{$args{attributes}};
-   foreach my $metric ( keys %{$args{handlers}} ) {
-      $attribute_spec{$metric}++;
+   foreach my $attrib ( keys %{$args{handlers}} ) {
+      $attribute_spec{$attrib}++;
    }
 
    my $self = {
-      key_metric            => $args{key_metric},
+      key_attrib            => $args{key_attrib},
       fingerprint           => $args{fingerprint}
-                               || sub { $_[0]->{$args{key_metric}} },
+                               || sub { $_[0]->{$args{key_attrib}} },
       attributes            => \%attribute_spec,
       handlers              => $args{handlers},
-      buffer_n_events       => $args{buffer_n_events} || 1,
-      worst_metric          => $args{worst_metric},
+      worst_attrib          => $args{worst_attrib},
       metrics               => { all => {}, unique => {} },
       n_events              => 0,
       n_queries             => 0,
@@ -84,10 +130,10 @@ sub new {
 
 # Make subroutines that do things with events.
 #
-# $metric: the name of the metric (Query_time, Rows_read, etc)
-# $value:  a sample of the metric's value
+# $attrib: the name of the attrib (Query_time, Rows_read, etc)
+# $value:  a sample of the attrib's value
 # %args:
-#     min => keep min for this metric (default)
+#     min => keep min for this attrib (default)
 #     max => keep max (default)
 #     sum => keep sum (default for numerics)
 #     cnt => keep count (default)
@@ -95,21 +141,21 @@ sub new {
 #     all => keep a list of all values seen per class (default for numerics)
 #     glo => keep stats globally as well as per-class (default)
 #     trx => An expression to transform the value before working with it
-#     wor => Whether to keep worst-samples for this metric (default no)
+#     wor => Whether to keep worst-samples for this attrib (default no)
 #
 # Return value:
 # a subroutine with this signature:
 #    my ( $event, $val, $class, $global ) = @_;
 # where
 #  $event   is the event
-#  $val     is the metric value for an event
+#  $val     is the attrib value for the event
 #  $class   is the stats for the event's class
-#  $global  is the global data store.
+#  $global  is the global data store
 sub make_handler {
-   my ( $metric, $value, %args ) = @_;
-   die "I need a metric and value" unless $metric && $value;
+   my ( $attrib, $value, %args ) = @_;
+   die "I need a attrib and value" unless $attrib && $value;
    return unless defined $value; # Can't decide type if it's undef.
-   my $type = $metric =~ m/^(?:ts|timestamp)$/ ? 'time'
+   my $type = $attrib =~ m/^(?:ts|timestamp)$/ ? 'time'
             : $value  =~ m/^\d+/               ? 'num'
             : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
             :                                    'string';
@@ -177,53 +223,18 @@ sub make_handler {
             # Update the sample and pos_in_log if this event is worst in class.
             push @lines, (
                'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-               '$class->{sample}     = $event->{arg};',
-               '$class->{pos_in_log} = $event->{pos_in_log};',
+                  '$class->{sample}     = $event->{arg};',
+                  '$class->{pos_in_log} = $event->{pos_in_log};',
                '}',
             );
          }
       }
    }
    push @lines, '}';
-   MKDEBUG && _d("Metric handler for $metric: ", @lines);
+   MKDEBUG && _d("Metric handler for $attrib: ", @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;
-}
-
-# TODO: is record_event and event buffering used?  If not, let's remove it.
-my @buffered_events;
-sub record_event {
-   my ( $self, $event ) = @_;
-   return unless $event;
-
-   push @buffered_events, $event;
-   MKDEBUG && _d(scalar @buffered_events . " events in buffer");
-
-   # Return if we are to buffer every event.
-   return if $self->{buffer_n_events} < 0;
-
-   # Return if we are to buffer N events and buffer space remains.
-   return if scalar @buffered_events < $self->{buffer_n_events};
-
-   $self->calc_metrics(\@buffered_events);
-
-   # Reset buffer if it is full.
-   $self->reset_buffer() if scalar @buffered_events >= $self->{buffer_n_events};
-
-   return;
-}
-
-# Calculate metrics for the given events or the buffered events if no
-# events are given. $events is an arrayref containing events returned
-# from LogParser::parse_event().
-sub calc_metrics {
-   my ( $self, $events ) = @_;
-   $events ||= \@buffered_events;
-   foreach my $event ( @$events ) {
-      $self->calc_event_metrics($event);
-   }
-   return;
 }
 
 # Calculate metrics about a single event.  Usually an event will be something
@@ -233,48 +244,48 @@ sub calc_event_metrics {
 
    $self->{n_events}++;
 
-   # Skip events which do not have the key_metric attribute.
-   my $key_metric_val = $event->{ $self->{key_metric} };
-   return unless defined $key_metric_val;
+   # Skip events which do not have the key_attrib attribute.
+   my $key_attrib_val = $event->{ $self->{key_attrib} };
+   return unless defined $key_attrib_val;
 
    $self->{n_queries}++;
 
    # Get the fingerprint (fp) for this event.
-   my $fp = $self->{fingerprint}->($key_metric_val);
+   my $fp = $self->{fingerprint}->($key_attrib_val);
 
    # Get a shortcut to the data store (ds) for this class of events.
    my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
 
-   # Calculate the metrics.  Auto-vivify handler subs as they are needed.
-   METRIC:
-   foreach my $metric ( keys %{ $self->{attributes} } ) {
-      my $metric_val = $event->{ $metric };
-      next METRIC unless defined $metric_val;
+   # Calculate the metrics for all our attributes.
+   # Metric handlers are auto-vivified as needed.
+   ATTRIB:
+   foreach my $attrib ( keys %{ $self->{attributes} } ) {
+      my $attrib_val = $event->{ $attrib };
+      next ATTRIB unless defined $attrib_val;
+
       # Get data store shortcuts.
-      my $stats_for_metric = $self->{metrics}->{all}->{ $metric } ||= {};
-      my $stats_for_class  = $fp_ds->{ $metric } ||= {};
-      my $sub = $self->{handlers}->{$metric} ||= make_handler(
-         $self->{attributes}->{$metric}, $metric_val,
-         wor => (($self->{worst_metric} || '') eq $metric)
+      my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
+      my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
+
+      my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
+         $self->{attributes}->{$attrib},
+         $attrib_val,
+         wor => (($self->{worst_attrib} || '') eq $attrib)
       );
-      if ( ref $sub ) {
-         $sub->($event, $metric_val, $stats_for_class, $stats_for_metric);
+      if ( ref $handler eq 'CODE' ) {
+         $handler->($event, $attrib_val, $stats_for_class, $stats_for_attrib);
+      }
+      else {
+         MKDEBUG && _d("Handler for $attrib is not a sub ref. "
+                       . "Perl says it's a " . ref $handler);
       }
    }
 
    return;
 }
 
-sub reset_buffer {
-   my ( $self ) = @_;
-   @buffered_events = ();
-   MKDEBUG && _d('Reset event buffer');
-   return;
-}
-
 sub reset_metrics {
    my ( $self ) = @_;
-   @buffered_events           = ();
    $self->{n_events}          = 0;
    $self->{n_queries}         = 0;
    $self->{metrics}->{all}    = {};
@@ -282,7 +293,8 @@ sub reset_metrics {
    return;
 }
 
-# Returns a hashref with the following statistical metrics:
+# Given an arrayref of vals, returns a hashref with the following
+# statistical metrics:
 # {
 #    avg       => (of 95% vals),
 #    max       => (of 95% vals -- thus the 95th percentile),
@@ -330,7 +342,7 @@ sub calculate_statistical_metrics {
    foreach my $val ( sort { $a <=> $b } @$vals ) {
       # Distribution of vals for all vals, if requested.
       if ( defined $val && $val > 0 && $args{distro} ) {
-         # The buckets are powers of ten.  Bucket 0 represents (0 <= val < 10us) 
+         # The buckets are powers of ten. Bucket 0 represents (0 <= val < 10us) 
          # and 7 represents 10s and greater.  The powers are thus constrained to
          # between -6 and 1.  Because these are used as array indexes, we shift
          # up so it's non-negative, to get 0 - 7.
@@ -386,6 +398,6 @@ sub _d {
 
 1;
 
-# ###########################################################################
+# #############################################################################
 # End SQLMetrics package
-# ###########################################################################
+# #############################################################################

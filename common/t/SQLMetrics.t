@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 7;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -11,14 +11,13 @@ require '../SQLMetrics.pm';
 
 my $qr = new QueryRewriter();
 
-my $m  = new SQLMetrics(
-   key_metric      => 'arg',
+my $sm  = new SQLMetrics(
+   key_attrib      => 'arg',
    fingerprint     => sub { return $qr->fingerprint(@_); },
    attributes      => [qw(Query_time user)],
-   buffer_n_events => -1,
 );
 
-isa_ok($m, 'SQLMetrics');
+isa_ok($sm, 'SQLMetrics');
 
 my $events = [
    {  ts            => '071015 21:43:52',
@@ -110,29 +109,20 @@ my $metrics = {
    }
 };
 
-
 foreach my $event ( @$events ) {
-   $m->record_event($event);
+   $sm->calc_event_metrics($event);
 }
-$m->calc_metrics();
-is_deeply($m->{metrics}, $metrics, 'Calcs buffered metrics');
-
-$m->reset_metrics();
-$m->{buffer_n_events} = 1;
-foreach my $event ( @$events ) {
-   $m->record_event($event);
-}
-is_deeply($m->{metrics}, $metrics, 'Calcs metrics one-by-one');
+is_deeply($sm->{metrics}, $metrics, 'Calcs metrics');
 
 # #############################################################################
 # Test that the sample of the worst occurrence is saved.
 # #############################################################################
 
-$m  = new SQLMetrics(
-   key_metric      => 'arg',
+$sm  = new SQLMetrics(
+   key_attrib      => 'arg',
    fingerprint     => sub { return $qr->fingerprint(@_); },
    attributes      => [qw(Query_time user)],
-   worst_metric    => 'Query_time',
+   worst_attrib    => 'Query_time',
 );
 
 $events = [
@@ -157,9 +147,9 @@ $events = [
 ];
 
 foreach my $event ( @$events ) {
-   $m->calc_event_metrics($event);
+   $sm->calc_event_metrics($event);
 }
-is($m->{metrics}->{unique}->{'foo ?'}->{Query_time}->{sample},
+is($sm->{metrics}->{unique}->{'foo ?'}->{Query_time}->{sample},
    'foo 2', 'Keeps worst sample for Query_time');
 
 # #############################################################################
@@ -173,7 +163,7 @@ my $expected_stats = {
    cutoff    => 12,
    max       => 8,
 };
-my $stats = $m->calculate_statistical_metrics([2,3,6,4,8,9,1,1,1,5,4,3,1],
+my $stats = $sm->calculate_statistical_metrics([2,3,6,4,8,9,1,1,1,5,4,3,1],
                                               distro => 1);
 is_deeply(
    $stats,
@@ -189,14 +179,14 @@ $expected_stats = {
    cutoff    => undef,
    max       => 0,
 };
-$stats = $m->calculate_statistical_metrics(undef, distro=>1);
+$stats = $sm->calculate_statistical_metrics(undef, distro=>1);
 is_deeply(
    $stats,
    $expected_stats,
    'Calculates statistical metrics for undef array'
 );
 
-$stats = $m->calculate_statistical_metrics([], distro=>1);
+$stats = $sm->calculate_statistical_metrics([], distro=>1);
 is_deeply(
    $stats,
    $expected_stats,
@@ -211,7 +201,7 @@ $expected_stats = {
    cutoff    => 1,
    max       => 0.9,
 };
-$stats = $m->calculate_statistical_metrics([0.9], distro=>1);
+$stats = $sm->calculate_statistical_metrics([0.9], distro=>1);
 is_deeply(
    $stats,
    $expected_stats,
