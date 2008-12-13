@@ -429,7 +429,8 @@ sub find_replication_differences {
          COALESCE(
             this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
             0
-         ) AS crc_diff
+         ) AS crc_diff,
+         this_cnt, master_cnt, this_crc, master_crc
       FROM $table
       WHERE master_cnt <> this_cnt OR master_crc <> this_crc
       OR ISNULL(master_crc) <> ISNULL(this_crc)
