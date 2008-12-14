@@ -42,7 +42,7 @@ sub new {
       maxdirs           => 100,
       maxsessions       => 100000,
       verbosity         => 1,
-      base_session_name => 'mysql_log_session_',
+      session_file_name => 'mysql_log_session_',
       %args, # override default above
       n_dirs       => 0,  # number of dirs created
       n_files      => -1, # number of session files created in current dir
@@ -252,7 +252,7 @@ sub _next_session_file {
    my $session_n    = sprintf '%04d', $self->{n_sessions};
    my $session_file = $self->{saveto_dir}
                     . $dir_n
-                    . $self->{base_session_name} . $session_n;
+                    . $self->{session_file_name} . $session_n;
    MKDEBUG && _d("Next session file $session_file");
    return $session_file;
 }
