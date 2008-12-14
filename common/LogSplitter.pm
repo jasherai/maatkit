@@ -258,10 +258,16 @@ sub _next_session_file {
    if ( $self->{n_files} >= $self->{maxfiles} || $self->{n_files} < 0) {
       $self->{n_dirs}++;
       $self->{n_files} = 0;
-      my $retval = system("mkdir $self->{saveto_dir}$self->{n_dirs}");
-      if ( ($retval >> 8) != 0 ) {
-         die "Cannot create new directory $self->{saveto_dir}$self->{n_dirs}: "
-            . $OS_ERROR;
+      my $new_dir = "$self->{saveto_dir}$self->{n_dirs}";
+      if ( !-d $new_dir ) {
+         my $retval = system("mkdir $new_dir");
+         if ( ($retval >> 8) != 0 ) {
+            die "Cannot create new directory $new_dir: $OS_ERROR";
+         }
+         MKDEBUG && _d("Created new saveto_dir $new_dir");
+      }
+      elsif ( MKDEBUG ) {
+         _d("saveto_dir $new_dir already exists");
       }
    }
 

@@ -22,6 +22,11 @@ my $ls = new LogSplitter(
 
 isa_ok($ls, 'LogSplitter');
 
+# This creates an implicit test to make sure that
+# split_logs() will not die if the saveto_dir already
+# exists. It should just use the existing dir.
+diag(`mkdir $tmpdir/1`); 
+
 $ls->split_logs(['samples/slow006.txt']);
 ok($ls->{n_sessions} == 0, 'Parsed zero sessions for bad attribute');
 
