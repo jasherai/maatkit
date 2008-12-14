@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 15;
+use Test::More tests => 23;
 use English qw(-no_match_vars);
 
 require '../LogSplitter.pm';
@@ -60,7 +60,15 @@ diag(`rm -rf $tmpdir/*`);
 $ls->{maxsessions} = 10;
 $ls->split_logs(['samples/slow009.txt']);
 chomp($output = `ls -1 $tmpdir/1/ | tail -n 1`);
-is($output, 'mysql_log_session_0010', 'maxsessions works');
+is($output, 'mysql_log_session_0010', 'maxsessions works (1/3)');
+is($ls->{n_sessions}, '10', 'maxsessions works (2/3)');
+is($ls->{n_files}, '10', 'maxsessions works (3/3)');
+
+is_deeply(
+   $ls->{session_fhs},
+   [],
+   'Closes open fhs'
+);
 
 diag(`rm -rf $tmpdir/*`);
 $output = `cat samples/slow006.txt | samples/log_splitter.pl`;
@@ -75,4 +83,22 @@ $output = `cat samples/slow006.txt | samples/log_splitter.pl blahblah`;
 like($output, qr/Parsed 0 sessions/, 'Does nothing if no valid logs are given');
 
 diag(`rm -rf $tmpdir`);
+
+
+$ls = new LogSplitter(
+   attribute   => 'Thread_id',
+   saveto_dir  => "$tmpdir/",
+   LogParser   => $lp,
+   verbosity         => undef,
+   maxsessions       => undef,
+   maxfiles          => undef,
+   maxdirs           => undef,
+   session_file_name => undef,
+);
+cmp_ok($ls->{verbosity}, '==', '0', 'Undef verbosity gets default');
+cmp_ok($ls->{maxsessions}, '==', '100000', 'Undef maxsessions gets default');
+cmp_ok($ls->{maxfiles}, '==', '100', 'Undef maxfiles gets default');
+cmp_ok($ls->{maxdirs}, '==', '100', 'Undef maxdirs gets default');
+is($ls->{session_file_name}, 'mysql_log_session_', 'Undef session_file_name gets default');
+
 exit;

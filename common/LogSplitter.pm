@@ -37,21 +37,24 @@ sub new {
    # TODO: this is probably problematic on Windows
    $args{saveto_dir} .= '/' if substr($args{saveto_dir}, -1, 1) ne '/';
 
-   my %self = (
-      maxfiles          => 100,
-      maxdirs           => 100,
-      maxsessions       => 100000,
-      verbosity         => 1,
-      session_file_name => 'mysql_log_session_',
-      %args, # override default above
+   my $self = {
+      %args,
       n_dirs       => 0,  # number of dirs created
       n_files      => -1, # number of session files created in current dir
       n_sessions   => 0,  # total number of session files created in all dirs
       session_fhs  => [], # filehandles for each session
       n_open_fhs   => 0,  # number of open session filehandles
       sessions     => {}, # sessions data store
-   );
-   return bless \%self, $class;
+   };
+   # These are "required options."
+   # They cannot be undef, so we must check that here.
+   $self->{maxfiles}          ||= 100;
+   $self->{maxdirs}           ||= 100;
+   $self->{maxsessions}       ||= 100000;
+   $self->{verbosity}         ||= 0;
+   $self->{session_file_name} ||= 'mysql_log_session_';
+
+   return bless $self, $class;
 }
 
 sub split_logs {
@@ -111,17 +114,30 @@ sub split_logs {
       return if $event->{cmd} eq 'Admin';
 
       my $session_id = $event->{ $attrib };
-      my $session    = $self->{sessions}->{ $session_id } ||= {}; 
+
+      # The following is necessary to prevent Perl from auto-vivifying
+      # a lot of empty hashes for new sessions that are ignored due to
+      # already having maxsessions.
+      my $session;
+      if ( $self->{n_sessions} < $self->{maxsessions} ) {
+         # Will auto-vivify if necessary.
+         $session = $self->{sessions}->{ $session_id } ||= {};
+      }
+      elsif ( exists $self->{sessions}->{ $session_id } ) {
+         # Use only existing sessions.
+         $session = $self->{sessions}->{ $session_id };
+      }
+      else {
+         MKDEBUG && _d("Skipping new session $session_id because "
+                       . "maxsessions is reached");
+         return;
+      }
 
       # Init new session.
       if ( !defined $session->{fh} ) {
-         if ( $self->{n_sessions} >= $self->{maxsessions} ) {
-            $oktorun = 0;
-            MKDEBUG && _d('No longer oktorun because '
-                          . "$self->{n_sessions} >= $self->{maxessions}");
-            return;
-         }
          $self->{n_sessions}++;
+         MKDEBUG && _d("New session: $session_id "
+                       . "($self->{n_sessions} of $self->{maxsessions})");
 
          my $session_file = $self->_next_session_file();
          if ( !$session_file ) {
@@ -168,6 +184,9 @@ sub split_logs {
           MKDEBUG && _d("Reopend $session->{session_file} "
                         . "for session $attrib=$session_id");
       }
+      else {
+         MKDEBUG && _d("Event belongs to active session $session_id");
+      }
 
       my $session_fh = $session->{fh};
 
@@ -189,10 +208,9 @@ sub split_logs {
    }
 
    # Close session filehandles.
-   foreach my $session_fh ( @{ $self->{session_fhs} } ) {
-      close $session_fh->{fh};
+   while ( my $fh = pop @{ $self->{session_fhs} } ) {
+      close $fh->{fh};
    }
-   $self->{session_fhs} = [];
    $self->{n_open_fhs}  = 0;
 
    # Report what session files were created.
@@ -217,11 +235,11 @@ sub _close_lru_session {
 
    MKDEBUG && _d("Closing session fhs $lru_n..$close_to_n "
                  . "($self->{n_sessions} sessions, "
-                 . "$self->{n_open_files} open files)");
+                 . "$self->{n_open_fhs} open fhs)");
 
    foreach my $session ( @$session_fhs[ $lru_n..$close_to_n ] ) {
       close $session->{fh};
-      $self->{n_open_files}--;
+      $self->{n_open_fhs}--;
       $self->{sessions}->{ $session->{session_id} }->{active} = 0;
    }
 

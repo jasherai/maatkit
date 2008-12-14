@@ -9,6 +9,7 @@ my $ls = new LogSplitter(
    attribute  => 'Thread_id',
    saveto_dir => "/tmp/logettes/",
    LogParser  => $lp,
+   verbosity  => 1,
 );
 
 my @logs;
