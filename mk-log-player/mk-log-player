@@ -2349,7 +2349,14 @@ sub report_session_stats {
    my ( $session_n, $total_time, $sm ) = @_;
    my $unique = $sm->{metrics}->{unique};
    my $all    = $sm->{metrics}->{all};
-   
+
+   if ( $sm->{n_queries} == 0 ) {
+      # This can happen if a session was all non-SELECTs and
+      # --onlyselect was given.
+      MKDEBUG && _d("Session $session_n has no valid queries");
+      return;
+   }
+
    # Queries and Rows per second, and avg query time.
    my $qps = sprintf('%.6f', $sm->{n_queries} / $all->{query_time}->{sum});
    my $rps = sprintf('%.6f', $all->{n_rows}->{sum} / $all->{query_time}->{sum});

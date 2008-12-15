@@ -2,6 +2,12 @@
 -- with the mk-log-player sample logs. The sample
 -- logs can (should be able to be) played against
 -- these dbs and tbls.
+--
+-- !!! Please Remember !!!
+-- If you change even the smallest thing in this file,
+-- you must verfiy that the tests still pass. The tests
+-- rely closely on these values.
+-- Thank you. :-)
 
 DROP DATABASE IF EXISTS mk_log_player_1;
 CREATE DATABASE mk_log_player_1;
