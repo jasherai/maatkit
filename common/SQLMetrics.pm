@@ -153,12 +153,13 @@ sub new {
 #  $global  is the global data store
 sub make_handler {
    my ( $attrib, $value, %args ) = @_;
-   die "I need a attrib and value" unless $attrib && $value;
+   die "I need a attrib and value" unless (defined $attrib && defined $value);
    return unless defined $value; # Can't decide type if it's undef.
    my $type = $attrib =~ m/^(?:ts|timestamp)$/ ? 'time'
             : $value  =~ m/^\d+/               ? 'num'
             : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
             :                                    'string';
+   MKDEBUG && _d("Type for $attrib is $type (sample: $value)");
    %args = ( # Set up defaults
       min => 1,
       max => 1,

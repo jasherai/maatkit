@@ -3,8 +3,9 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
+use Data::Dumper;
 
 require '../QueryRewriter.pm';
 require '../SQLMetrics.pm';
@@ -207,5 +208,8 @@ is_deeply(
    $expected_stats,
    'Calculates statistical metrics for 1 value'
 );
+
+my $handler = SQLMetrics::make_handler('foo', 0);
+is(ref $handler, 'CODE', 'make_handler with 0 as sample value');
 
 exit;
