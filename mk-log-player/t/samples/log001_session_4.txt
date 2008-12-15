@@ -1,0 +1,4 @@
+USE `mk_log_player_1`
+
+INSERT INTO mk_log_player_1.tbl1 VALUES (555)
+

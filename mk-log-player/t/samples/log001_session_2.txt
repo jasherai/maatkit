@@ -1,0 +1,6 @@
+USE `mk_log_player_2`
+
+SELECT a FROM tbl2
+
+DELETE FROM mk_log_player_2.tbl2 WHERE a IS NULL
+

@@ -1,0 +1,4 @@
+USE `mk_log_player_1`
+
+SELECT a FROM tbl1 WHERE a = 3
+

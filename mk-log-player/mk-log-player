@@ -1795,7 +1795,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2609
+# SQLMetrics package 2616
 # ###########################################################################
 
 package SQLMetrics;
@@ -1840,12 +1840,13 @@ sub new {
 
 sub make_handler {
    my ( $attrib, $value, %args ) = @_;
-   die "I need a attrib and value" unless $attrib && $value;
+   die "I need a attrib and value" unless (defined $attrib && defined $value);
    return unless defined $value; # Can't decide type if it's undef.
    my $type = $attrib =~ m/^(?:ts|timestamp)$/ ? 'time'
             : $value  =~ m/^\d+/               ? 'num'
             : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
             :                                    'string';
+   MKDEBUG && _d("Type for $attrib is $type (sample: $value)");
    %args = ( # Set up defaults
       min => 1,
       max => 1,
@@ -2086,9 +2087,8 @@ $dp->prop('setvars', $opts{setvars});
 my $dsn;
 if ( !$opts{s} && !$opts{print} ) {
    my $dsn_args = shift @ARGV;
-   if ( ($opts{l} || $opts{x}) && !$dsn_args ) {
-      $opt_parser->error('At least one DSN is required with '
-               . '--playlog or --playsessions');
+   if ( $opts{p} && !$dsn_args ) {
+      $opt_parser->error('At least one DSN is required with --play');
    }
    $dsn = $dp->parse($dsn_args);
 }
@@ -2133,7 +2133,7 @@ if ( $opts{s} ) {
 # treated as one big session file.
 # #############################################################################
 my @session_files;
-foreach my $session_file ( split ',', ($opts{x} || $opts{l}) ) {
+foreach my $session_file ( split ',', $opts{p} ) {
    # The session "file" might actually be a dir, in which case we
    # read ALL files in that dir.
    if ( -d $session_file ) {
@@ -2205,7 +2205,7 @@ while ( @session_files || %kids ) {
       else {                     # I'm the child.
          $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
          MKDEBUG && _d("PID $PID got $session_file ($session_n)");
-         my $get_next_query = make_itr_for($session_file);
+         my $get_next_query = make_session_itr($session_file);
          play_session($session_n, $get_next_query);
          exit;
       }
@@ -2251,7 +2251,11 @@ sub wait_for_server {
    }
 }
 
-sub make_itr_for {
+# Returns a subref used as an iterator in play_session() to get
+# queries one-by-one. The parent makes these iterators--one for
+# each session file--and then passes them to the children which
+# do their work in play_session().
+sub make_session_itr {
    my ( $session_file ) = @_;
    my $session_fh;
    if ( $session_file eq '-' ) {
@@ -2262,22 +2266,17 @@ sub make_itr_for {
          or die "Cannot open session file $session_file: $OS_ERROR";
    }
 
-   if ( $opts{x} ) { # --playsessions
-      return sub {
-         local $INPUT_RECORD_SEPARATOR = '';
-         my $query = <$session_fh>;
-         if ( $query ) {
-            $query =~ s/\n+$//;
-         }
-         else {
-            close $session_fh;
-         }
-         return $query;
-      };
-   }
-   else { # --playlog
-      die '--playlog is not implemented yet';
-   }
+   return sub {
+      local $INPUT_RECORD_SEPARATOR = '';
+      my $query = <$session_fh>;
+      if ( $query ) {
+         $query =~ s/\n+$//;
+      }
+      else {
+         close $session_fh;
+      }
+      return $query;
+   };
 }
 
 sub play_session {
@@ -2293,7 +2292,13 @@ sub play_session {
    );
 
    QUERY:
-   while ( my $query = $get_next_query->() ) {
+   while ( defined (my $query = $get_next_query->()) ) {
+
+      if ( $opts{onlyselect} && $query !~ m/^(?:SELECT|USE) /i ) {
+         MKDEBUG && _d("Skipping query for --onlyselect: $query");
+         next QUERY;
+      }
+
       $query_n++;
 
       if ( $opts{print} ) {
@@ -2317,14 +2322,10 @@ sub play_session {
          my $results = $dbh->selectall_arrayref($query);
          $n_rows = scalar @$results;
       }
-      elsif ( !$opts{onlyselect} ) {
+      else {
          # Non-SELECTs do not return anything, therefore we can
          # just do() them.
          $dbh->do($query);
-      }
-      else {
-         MKDEBUG && _d("Not playing $query");
-         next QUERY;
       }
 
       my $event = {
@@ -2452,11 +2453,7 @@ mk-log-player - Split and play MySQL slow logs.
    # Split mysql-slow.log into sessions grouped by Thread_id 
    # (one session per file). Then play all those sessions against host1.
    mk-log-player --split Thread_id mysql-slow.log
-   mk-log-player --playsessions /tmp/mysql_log_session_* h=host1
-
-   # Play the entire mysql-slow.log file against host2
-   # (does not split the file into sessions).
-   mk-log-player --playlog mysql-slow.log h=host2
+   mk-log-player --play  /tmp/mysql_log_session_* h=host1
 
 =head1 DESCRIPTION
 
@@ -2477,9 +2474,9 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Specify at least one of --playsessions, --playlog, or --split.
+Specify at least one of --play or --split.
 
---playsessions, --playlog, and --split are mutually exclusive.
+--play and --split are mutually exclusive.
 
 =over
 
@@ -2520,32 +2517,6 @@ a single value or a range. Single values cause an exact delay of the value time
 (example: 0.010 = delay 10 milliseconds). Ranges cause a random delay between
 the given value times (example: 0.001,1 = random delay from 1 millisecond to
 1 second).
-
-=item --events
-
-short form: -e; type: string
-
-Play only the given number or range of events with --playlog.
-
-L<"--playlog"> will play the entire log, from the first event to the very last.
-This option limits the number of events played either by specifiying a max
-number of events or by specifiying a range of events.
-
-A single integer value specifies the max number of event counting
-from the first event in the log.
-
-An inclusive range of events can be given with two integer value like C<N-M>.
-C<N> is the event number at which to begin playing the log. C<M> is the last
-event number at which to stop playing the log. C<M> can be omitted in which
-case all events from C<N> onward are played to the end of the log. The - must
-still be included (like C<N->), otherwise C<mk-log-player> will interpret C<N>
-as the max number of events counting from the first (see above).
-
-Examples:
-   --events 10      Play events 1 through 10
-   --events 1-10    Play events 1 through 10
-   --events 9-500   Play events 9 through 500
-   --events 1000-   Play events 1000 to the end of the log
 
 =item --maxdirs
 
@@ -2590,22 +2561,19 @@ sessions. This option causes only the first N number of sessions to be saved.
 
 See also L<"--maxdirs"> and L<"--maxfiles">.
 
-=item --playlog
+=item --onlyselect
 
-short form: -l; type: string
+Play only SELECT queries.
 
-Play (execute) the log without splitting it.
+=item --play
 
-Instead of splitting a log into sessions and playing those sessions,
-C<mk-log-player> can play the log as one big "session."
-
-See also L<"--events">.
-
-=item --playsessions
-
-short form: -x; type: string
+short form: -p; type: string
 
 Play (execute) session files created by --split.
+
+The argument to play must be a commaxn-separated list of session files
+created by L<"--split"> or a directory. If the argument is a directory,
+ALL files in that directory will be played.
 
 =item --print
 
@@ -2636,6 +2604,9 @@ mysql_log_session_0002, etc.
 short form: -s; type: string
 
 Split log by given attribute to create session files.
+
+Valid attributes are any which appear in the log: Thread_id, Schema,
+etc.
 
 =item --verbosity
 

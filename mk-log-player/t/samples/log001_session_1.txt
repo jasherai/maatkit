@@ -1,0 +1,12 @@
+USE `mk_log_player_1`
+
+SELECT a FROM tbl1
+
+USE `mk_log_player_2`
+
+SELECT a FROM mk_log_player_2.tbl2
+
+USE `mk_log_player_1`
+
+UPDATE mk_log_player_1.tbl1 SET a = 100 WHERE a = 1
+
