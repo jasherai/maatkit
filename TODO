@@ -159,3 +159,22 @@ New tool to help alter tables in chunks:
    when lock both tables and populate it with selects from the large
    table in small chunks - this would allow to alter large tables
    without stalling replication flow.
+
+About EXPLAIN fingerprinting:
+
+  * it can be pretty easy to just mush most things into key=value pairs and
+    string it together into a single string of text.  rows= needs to be
+    converted to something like a logarithmic value so only a significant change
+    shows up.  (Values 0, 1 are special, and changes among small numbers of rows
+    like from 2 to 4 does not need to be noticed either.)
+  * mk-log-parser can then add the following to its query review functionality:
+    * each time we do a review, store (in a separate table) the fingerprint of
+      the EXPLAIN for a query
+    * EXPLAIN several different queries with the same fingerprint.  By default
+      EXPLAIN the first 5 or so, but after that explain only some fraction of
+      them.  Notice whether there are some queries that have a different plan
+      and record that, too.
+    * Run some queries automatically to show queries whose plan has changed or
+      was unstable (e.g. has different plans depending on the parameters)
+    * Basically create classes of per-query, per-explain-plan and for each
+      class, store a sample query.

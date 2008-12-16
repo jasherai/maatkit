@@ -222,6 +222,7 @@ sub make_handler {
          if ( $args{wor} ) {
             my $op = $type eq 'num' ? '>=' : 'ge';
             # Update the sample and pos_in_log if this event is worst in class.
+            # TODO: store the whole event!  Silly rabbit!
             push @lines, (
                'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
                   '$class->{sample}     = $event->{arg};',
