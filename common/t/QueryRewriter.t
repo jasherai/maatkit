@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 46;
+use Test::More tests => 47;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -356,4 +356,16 @@ is(
    $q->convert_select_list('select a, b, c from tbl'),
    'select isnull(coalesce( a, b, c )) from tbl',
    'column list to isnull/coalesce'
+);
+
+is($q->convert_to_select(
+   q{UPDATE GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU SET }
+   . q{GC.MATCHING_POT = 5, GC.LAST_GARDENPOT = 5, GC.LAST_NAME=}
+   . q{'Rotary', GC.LAST_BUCKET='Pail', GC.LAST_UPDATE='2008-11-27 04:00:59'WHERE}
+   . q{ PL.APLTRACT_GARDENPLANT_ID = GC.APLTRACT_GARDENPLANT_ID AND PL.}
+   . q{APLTRACT_GARDENPLANT_ID = ABU.ID AND GC.MATCHING_POT = 0 AND GC.PERFORM_DIG=1}
+   . q{ AND ABU.DIG = 6 AND ( ((SOIL-COST) > -80.0}
+   . q{ AND BUGS < 60.0 AND (SOIL-COST) < 200.0) AND POTS < 10.0 )}),
+   '',
+   'A real-life case that did not work',
 );
