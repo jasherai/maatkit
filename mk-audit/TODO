@@ -142,6 +142,8 @@ The following items are unimplemented at this time:
 
    * Look at SHOW MASTER LOGS.  If there are any with 0 size, the user is
      deleting binlogs manually and that will screw up MySQL, warn about that.
+      * For servers that have binlogging turned on, look for expire_logs_days or
+        similar -- if there is no limit, disk space can fill up.  Note this.
    * Look for authenticating connections, extract the hostname, try to reverse
      lookup the DNS
    * what is the "thread recycle rate"?  e.g. if there are 100 connections, and
