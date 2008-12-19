@@ -50,6 +50,8 @@ The following items are unimplemented at this time:
            warnings should be separate).  5.0.37 is the minimum useful 5.0
            version.
       * Data and schema
+         * Support percona extensions to show most active users/tables and if
+           they are not available, just say something about it.
          * filefrag on data files?
          * note if a storage engine is enabled but not in use -- but check for
            permissions to see everything before warning about this, otherwise
