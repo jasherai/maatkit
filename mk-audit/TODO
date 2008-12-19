@@ -149,6 +149,9 @@ The following items are unimplemented at this time:
    * what is the "thread recycle rate"?  e.g. if there are 100 connections, and
      one connection per second, then avg connection lives 100 secs.
    * Advise to use skip-name-resolve regardless...
+   * If there are host-based grants, then advise about them, since they will
+     break if skip-name-resolve is set.  (Must check my.cnf since it is not
+     visible as an online variable).
    * tmp_table_size larger than max_heap_table_size is probably a mistake
    * look for innoDB free space vs. real space on disk to figure out how much is
      used.  Compare this to config file setting for buffer pool.
