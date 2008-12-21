@@ -241,10 +241,13 @@ sub find_possible_keys {
 }
 
 sub table_exists {
-   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
-   my $sql = 'SELECT * FROM ' . $quoter->quote($db, $tbl) . ' LIMIT 0';
-   my $href;
-   eval { $href = $dbh->selectrow_hashref($sql) };
+   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
+   my $db_tbl = $q->quote($db, $tbl);
+   my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
+   $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d("table_exists check for $db_tbl: $sql");
+   eval { $dbh->do($sql); };
+   MKDEBUG && _d("eval error (if any): $EVAL_ERROR");
    return 0 if $EVAL_ERROR;
    return 1;
 }

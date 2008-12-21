@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 51;
+use Test::More tests => 52;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -914,9 +914,27 @@ SKIP: {
    );
 
    is($p->table_exists($dbh, 'sakila', 'film_actor', $q), '1', 'table_exists returns true when the table exists');
-
    is($p->table_exists($dbh, 'sakila', 'foo', $q), '0', 'table_exists returns false when the table does not exist');
 }
+
+# TODO: use Sandbox
+my $sb_dbh = DBI->connect(
+   "DBI:mysql:host=127.0.0.1;port=12345", 'root', 'msandbox',
+   { PrintError => 0, RaiseError => 1 });
+$sb_dbh->do("DROP DATABASE IF EXISTS foo");
+$sb_dbh->do("CREATE DATABASE foo");
+$sb_dbh->do("GRANT SELECT ON test.* TO 'user'\@'\%'");
+$sb_dbh->do('FLUSH PRIVILEGES');
+
+my $sb_dbh2 = DBI->connect(
+   "DBI:mysql:host=127.0.0.1;port=12345", 'user', undef,
+   { PrintError => 0, RaiseError => 1 });
+is($p->table_exists($sb_dbh2, 'mysql', 'db', $q, 1), '0', 'table_exists but no insert privs');
+$sb_dbh2->disconnect();
+
+$sb_dbh->do('DROP DATABASE foo');
+$sb_dbh->do("DROP USER 'user'");
+$sb_dbh->disconnect();
 
 # #############################################################################
 # Issue 109: Test schema changes in 5.1
