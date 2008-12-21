@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 24;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -1326,19 +1326,30 @@ close $file;
 is_deeply( \@e, $events, "Got events from the binary log", );
 
 # Test a callback chain.
-$i = 0;
 my $callback1 = sub {
    my ( $event ) = @_;
+   return 0 if $i >= 5;
    $event->{foo} = ++$i;
+   return 1;
 };
 my $callback2 = sub {
    my ( $event ) = @_;
    push @e, $event;
+   return 1;
 };
+
 open $file, "<", 'samples/slow001.txt' or die $OS_ERROR;
 @e = ();
+$i = 0;
 1 while ( $p->parse_slowlog_event( $file, [$callback1, $callback2] ) );
 close $file;
 is($e[1]->{foo}, '2', "Callback chain works", );
+
+open $file, "<", 'samples/slow002.txt' or die $OS_ERROR;
+@e = ();
+$i = 0;
+1 while ( $p->parse_slowlog_event( $file, [$callback1, $callback2] ) );
+close $file;
+is(scalar @e, '5', "Callback chain early termination works", );
 
 exit;

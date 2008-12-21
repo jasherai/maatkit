@@ -461,8 +461,9 @@ sub parse_slowlog_event {
       }
 
       my $event = { @properties };
+      CALLBACK:
       foreach my $callback ( @$callbacks ) {
-         $callback->($event);
+         last CALLBACK unless $callback->($event);
       }
       ++$num_events;
    }
