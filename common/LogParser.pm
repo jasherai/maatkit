@@ -283,22 +283,24 @@ sub parse_event {
 # It reads events from the filehandle and calls the callback with each event.
 # It may find more than one event per call.
 #
-# Each event looks like this:
+# Each event is a hashref of attribute => value pairs like:
 #  my $event = {
 #     ts  => '',    # Timestamp
 #     id  => '',    # Connection ID
 #     arg => '',    # Argument to the command
-#     other properties...
+#     other attributes...
 #  };
 #
-# Returns the number of events it finds.  NOTE: If you change anything inside this
-# subroutine, you need to profile the result.  Sometimes a line of code has been
-# changed from an alternate form for performance reasons -- sometimes as much as
-# 20x better performance.
+# Returns the number of events it finds.
+#
+# NOTE: If you change anything inside this subroutine, you need to profile
+# the result.  Sometimes a line of code has been changed from an alternate
+# form for performance reasons -- sometimes as much as 20x better performance.
+# 
 # TODO: pass in hooks to let something filter out events as early as possible
 # without parsing more of them than needed.
 sub parse_slowlog_event {
-   my ( $self, $fh, $code ) = @_;
+   my ( $self, $fh, $callbacks ) = @_;
    my $num_events = 0;
 
    # Read a whole stmt at a time.  But, to make things even more fun, sometimes
@@ -354,9 +356,10 @@ sub parse_slowlog_event {
       # Or, it might look like this, sometimes at the end of the Time: line:
       # # User@Host: root[root] @ localhost []
 
-      # The following line contains variables intended to be sure we do particular
-      # things once and only once, for those regexes that will match only one line
-      # per event, so we don't keep trying to re-match regexes.
+      # The following line contains variables intended to be sure we do
+      # particular things once and only once, for those regexes that will
+      # match only one line per event, so we don't keep trying to re-match
+      # regexes.
       my ($got_ts, $got_uh, $got_ac, $got_db, $got_set);
       my $pos = 0;
       my $len = length($stmt);
@@ -432,11 +435,11 @@ sub parse_slowlog_event {
                push @properties, split(/,|\s*=\s*/, $setting);
             }
 
-            # Handle pathological special cases.  The "# administrator command" is
-            # one example: it can come AFTER lines that are not commented, so it
-            # looks like it belongs to the next event, and it won't be in $stmt.
-            # Profiling shows this is an expensive if() so we do this only if we've
-            # seen the user/host line.
+            # Handle pathological special cases. The "# administrator command"
+            # is one example: it can come AFTER lines that are not commented,
+            # so it looks like it belongs to the next event, and it won't be
+            # in $stmt. Profiling shows this is an expensive if() so we do
+            # this only if we've seen the user/host line.
             if ( !$found_arg && $pos == $len ) {
                local $INPUT_RECORD_SEPARATOR = ";\n";
                if ( chomp(my $l = <$fh>) ) {
@@ -446,18 +449,21 @@ sub parse_slowlog_event {
             }
          }
          else {
-            # This isn't a meta-data line.  It's the first line of the whole query.
-            # Grab from here to the end of the string and put that into the 'arg'
-            # for the event.  Then we are done.  Note that if this line really IS
-            # the query but we skip in the 'if' above because it looks like
-            # meta-data, later we'll remedy that.
+            # This isn't a meta-data line.  It's the first line of the
+            # whole query. Grab from here to the end of the string and
+            # put that into the 'arg' for the event.  Then we are done.
+            # Note that if this line really IS the query but we skip in
+            # the 'if' above because it looks like meta-data, later
+            # we'll remedy that.
             push @properties, 'arg', substr($stmt, $pos - length($line));
             last LINE;
          }
       }
 
       my $event = { @properties };
-      $code->($event) if $code;
+      foreach my $callback ( @$callbacks ) {
+         $callback->($event);
+      }
       ++$num_events;
    }
    return $num_events;

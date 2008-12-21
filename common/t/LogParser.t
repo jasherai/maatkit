@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 23;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -592,7 +592,7 @@ $events = [
 
 open $file, "<", 'samples/slow001.txt' or die $OS_ERROR;
 @e = ();
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 close $file;
 is_deeply( \@e, $events, "Got events from the slow log", );
 
@@ -627,7 +627,7 @@ $events = [
 
 open $file, "<", 'samples/microslow001.txt' or die $OS_ERROR;
 @e = ();
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 close $file;
 is_deeply( \@e, $events, "Got events from the micro slow log", );
 
@@ -832,13 +832,13 @@ SET    biz = \'91848182522\'',
 
 open $file, "<", 'samples/slow002.txt' or die $OS_ERROR;
 @e = ();
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 close $file;
 is_deeply( \@e, $events, "Got events from the microslow log", );
 
 eval {
    open $file, "<", 'samples/slow003.txt' or die $OS_ERROR;
-   1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+   1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
    close $file;
 };
 is( $EVAL_ERROR, '', 'Blank entry did not crash' );
@@ -867,14 +867,14 @@ $events = [
 
 open $file, "<", 'samples/slow005.txt' or die $OS_ERROR;
 @e = ();
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 close $file;
 
 is_deeply( \@e, $events, "microslow log with tabs", );
 
 @e = ();
 open $file, "<", 'samples/slow007.txt' or die $OS_ERROR;
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 close $file;
 $events = [
    {  Schema         => 'food',
@@ -943,7 +943,7 @@ $events = [
 ];
 @e = ();
 open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 is_deeply( \@e, $events, 'Parses commented event (admin cmd)' );
 
 $events = [
@@ -1005,7 +1005,7 @@ $events = [
 ];
 @e = ();
 open $file, "<", 'samples/slow011.txt' or die $OS_ERROR;
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 is_deeply( \@e, $events,
    'Parses commented event lines after uncommented meta-lines' );
 
@@ -1039,7 +1039,7 @@ $events = [
 ];
 @e = ();
 open $file, "<", 'samples/slow012.txt' or die $OS_ERROR;
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 is_deeply( \@e, $events, 'Parses events that might look like meta');
 
 # A pathological test case to be sure a crash doesn't happen
@@ -1116,7 +1116,7 @@ $events = [
 ];
 @e = ();
 open $file, "<", 'samples/slow013.txt' or die $OS_ERROR;
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 is_deeply( \@e, $events, 'Parses events that might look like meta');
 
 # Check that lots of header lines don't cause problems.
@@ -1151,7 +1151,7 @@ $events = [
 
 open $file, "<", 'samples/slow014.txt' or die $OS_ERROR;
 @e = ();
-1 while ( $p->parse_slowlog_event( $file, \&simple_callback ) );
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 close $file;
 is_deeply( \@e, $events, "Parsed events with a lot of headers", );
 
@@ -1324,5 +1324,21 @@ open $file, "<", 'samples/binlog.txt' or die $OS_ERROR;
 close $file;
 
 is_deeply( \@e, $events, "Got events from the binary log", );
+
+# Test a callback chain.
+$i = 0;
+my $callback1 = sub {
+   my ( $event ) = @_;
+   $event->{foo} = ++$i;
+};
+my $callback2 = sub {
+   my ( $event ) = @_;
+   push @e, $event;
+};
+open $file, "<", 'samples/slow001.txt' or die $OS_ERROR;
+@e = ();
+1 while ( $p->parse_slowlog_event( $file, [$callback1, $callback2] ) );
+close $file;
+is($e[1]->{foo}, '2', "Callback chain works", );
 
 exit;
