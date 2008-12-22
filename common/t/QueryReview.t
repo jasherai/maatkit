@@ -92,8 +92,7 @@ my $checksum = QueryReview::checksum_fingerprint($fp);
 $qv->store_event($event);
 is($event->{checksum}, $checksum, 'Adds checksum to event');
 $res = $dbh->selectall_arrayref("SELECT CONV(checksum,10,16), fingerprint,
-sample, first_seen, last_seen, reviewed_by, reviewed_on, comments,
-cnt, Query_time_sum, Query_time_sttdev
+sample, first_seen, last_seen, reviewed_by, reviewed_on, comments, cnt
 FROM query_review
 WHERE checksum=CONV('$checksum',16,10)");
 is_deeply(
@@ -105,8 +104,7 @@ is_deeply(
          "UPDATE foo SET bar='nada' WHERE 1",
          '2008-12-22 13:13:13',
          '2008-12-22 13:13:13',
-         undef,undef,undef,
-         1, undef,undef,
+         undef,undef,undef, 1,
       ]
    ],
    'Stores a new event with default values'
