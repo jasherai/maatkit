@@ -896,7 +896,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2529
+# Transformers package 2627
 # ###########################################################################
 
 package Transformers;
@@ -912,18 +912,12 @@ our @ISA         = qw(Exporter);
 our %EXPORT_TAGS = ();
 our @EXPORT      = ();
 our @EXPORT_OK   = qw(
-   float_6
    micro_t
    percentage_of
    secs_to_time
    shorten 
    ts
 );
-
-sub float_6 {
-   my ( $val ) = @_;
-   return sprintf('%.6f', $val);
-}
 
 sub micro_t {
    my ( $t, %args ) = @_;
@@ -1196,7 +1190,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2601
+# LogParser package 2634
 # ###########################################################################
 package LogParser;
 
@@ -1418,7 +1412,7 @@ sub parse_event {
 }
 
 sub parse_slowlog_event {
-   my ( $self, $fh, $code ) = @_;
+   my ( $self, $fh, $callbacks ) = @_;
    my $num_events = 0;
 
    my @pending;
@@ -1525,7 +1519,10 @@ sub parse_slowlog_event {
       }
 
       my $event = { @properties };
-      $code->($event) if $code;
+      CALLBACK:
+      foreach my $callback ( @$callbacks ) {
+         last CALLBACK unless $callback->($event);
+      }
       ++$num_events;
    }
    return $num_events;
@@ -1602,7 +1599,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2599
+# SQLMetrics package 2622
 # ###########################################################################
 
 package SQLMetrics;
@@ -1617,7 +1614,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(key_metric attributes) ) {
+   foreach my $arg ( qw(key_attrib attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    $args{handlers} ||= {};
@@ -1626,18 +1623,17 @@ sub new {
       (my $key = $_) =~ s/\|.*//;
       $key => $_;
    } @{$args{attributes}};
-   foreach my $metric ( keys %{$args{handlers}} ) {
-      $attribute_spec{$metric}++;
+   foreach my $attrib ( keys %{$args{handlers}} ) {
+      $attribute_spec{$attrib}++;
    }
 
    my $self = {
-      key_metric            => $args{key_metric},
+      key_attrib            => $args{key_attrib},
       fingerprint           => $args{fingerprint}
-                               || sub { $_[0]->{$args{key_metric}} },
+                               || sub { $_[0]->{$args{key_attrib}} },
       attributes            => \%attribute_spec,
       handlers              => $args{handlers},
-      buffer_n_events       => $args{buffer_n_events} || 1,
-      worst_metric          => $args{worst_metric},
+      worst_attrib          => $args{worst_attrib},
       metrics               => { all => {}, unique => {} },
       n_events              => 0,
       n_queries             => 0,
@@ -1647,13 +1643,14 @@ sub new {
 }
 
 sub make_handler {
-   my ( $metric, $value, %args ) = @_;
-   die "I need a metric and value" unless $metric && defined $value;
+   my ( $attrib, $value, %args ) = @_;
+   die "I need a attrib and value" unless (defined $attrib && defined $value);
    return unless defined $value; # Can't decide type if it's undef.
-   my $type = $metric =~ m/^(?:ts|timestamp)$/ ? 'time'
+   my $type = $attrib =~ m/^(?:ts|timestamp)$/ ? 'time'
             : $value  =~ m/^\d+/               ? 'num'
             : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
             :                                    'string';
+   MKDEBUG && _d("Type for $attrib is $type (sample: $value)");
    %args = ( # Set up defaults
       min => 1,
       max => 1,
@@ -1717,46 +1714,18 @@ sub make_handler {
             my $op = $type eq 'num' ? '>=' : 'ge';
             push @lines, (
                'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-               '$class->{sample}     = $event->{arg};',
-               '$class->{pos_in_log} = $event->{pos_in_log};',
+                  '$class->{sample}     = $event->{arg};',
+                  '$class->{pos_in_log} = $event->{pos_in_log};',
                '}',
             );
          }
       }
    }
    push @lines, '}';
-   MKDEBUG && _d("Metric handler for $metric: ", @lines);
+   MKDEBUG && _d("Metric handler for $attrib: ", @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;
-}
-
-my @buffered_events;
-sub record_event {
-   my ( $self, $event ) = @_;
-   return unless $event;
-
-   push @buffered_events, $event;
-   MKDEBUG && _d(scalar @buffered_events . " events in buffer");
-
-   return if $self->{buffer_n_events} < 0;
-
-   return if scalar @buffered_events < $self->{buffer_n_events};
-
-   $self->calc_metrics(\@buffered_events);
-
-   $self->reset_buffer() if scalar @buffered_events >= $self->{buffer_n_events};
-
-   return;
-}
-
-sub calc_metrics {
-   my ( $self, $events ) = @_;
-   $events ||= \@buffered_events;
-   foreach my $event ( @$events ) {
-      $self->calc_event_metrics($event);
-   }
-   return;
 }
 
 sub calc_event_metrics {
@@ -1764,43 +1733,42 @@ sub calc_event_metrics {
 
    $self->{n_events}++;
 
-   my $key_metric_val = $event->{ $self->{key_metric} };
-   return unless defined $key_metric_val;
+   my $key_attrib_val = $event->{ $self->{key_attrib} };
+   return unless defined $key_attrib_val;
 
    $self->{n_queries}++;
 
-   my $fp = $self->{fingerprint}->($key_metric_val);
+   my $fp = $self->{fingerprint}->($key_attrib_val);
 
    my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
 
-   METRIC:
-   foreach my $metric ( keys %{ $self->{attributes} } ) {
-      my $metric_val = $event->{ $metric };
-      next METRIC unless defined $metric_val;
-      my $stats_for_metric = $self->{metrics}->{all}->{ $metric } ||= {};
-      my $stats_for_class  = $fp_ds->{ $metric } ||= {};
-      my $sub = $self->{handlers}->{$metric} ||= make_handler(
-         $self->{attributes}->{$metric}, $metric_val,
-         wor => (($self->{worst_metric} || '') eq $metric)
+   ATTRIB:
+   foreach my $attrib ( keys %{ $self->{attributes} } ) {
+      my $attrib_val = $event->{ $attrib };
+      next ATTRIB unless defined $attrib_val;
+
+      my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
+      my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
+
+      my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
+         $self->{attributes}->{$attrib},
+         $attrib_val,
+         wor => (($self->{worst_attrib} || '') eq $attrib)
       );
-      if ( ref $sub ) {
-         $sub->($event, $metric_val, $stats_for_class, $stats_for_metric);
+      if ( ref $handler eq 'CODE' ) {
+         $handler->($event, $attrib_val, $stats_for_class, $stats_for_attrib);
+      }
+      else {
+         MKDEBUG && _d("Handler for $attrib is not a sub ref. "
+                       . "Perl says it's a " . ref $handler);
       }
    }
 
    return;
 }
 
-sub reset_buffer {
-   my ( $self ) = @_;
-   @buffered_events = ();
-   MKDEBUG && _d('Reset event buffer');
-   return;
-}
-
 sub reset_metrics {
    my ( $self ) = @_;
-   @buffered_events           = ();
    $self->{n_events}          = 0;
    $self->{n_queries}         = 0;
    $self->{metrics}->{all}    = {};
@@ -1990,26 +1958,849 @@ sub _d {
 # ###########################################################################
 
 # #############################################################################
+# MySQLDump package 2468
+# #############################################################################
+package MySQLDump;
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+( our $before = <<'EOF') =~ s/^   //gm;
+   /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+   /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+   /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+   /*!40101 SET NAMES utf8 */;
+   /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+   /*!40103 SET TIME_ZONE='+00:00' */;
+   /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+   /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+   /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+   /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+EOF
+
+( our $after = <<'EOF') =~ s/^   //gm;
+   /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+   /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+   /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+   /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+   /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+   /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+   /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+   /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+EOF
+
+# Arguments:
+# * cache: defaults to 1
+sub new {
+   my ( $class, %args ) = @_;
+   $args{cache} = 1 unless defined $args{cache};
+   my $self = bless \%args, $class;
+   return $self;
+}
+
+sub dump {
+   my ( $self, $dbh, $quoter, $db, $tbl, $what ) = @_;
+
+   if ( $what eq 'table' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      if ( $ddl->[0] eq 'table' ) {
+         return $before
+            . 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . $ddl->[1] . ";\n";
+      }
+      else {
+         return 'DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . ";\n"
+            . '/*!50001 DROP VIEW IF EXISTS '
+            . $quoter->quote($tbl) . "*/;\n/*!50001 "
+            . $self->get_tmp_table($dbh, $quoter, $db, $tbl) . "*/;\n";
+      }
+   }
+   elsif ( $what eq 'triggers' ) {
+      my $trgs = $self->get_triggers($dbh, $quoter, $db, $tbl);
+      if ( $trgs && @$trgs ) {
+         my $result = $before . "\nDELIMITER ;;\n";
+         foreach my $trg ( @$trgs ) {
+            if ( $trg->{sql_mode} ) {
+               $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
+            }
+            $result .= "/*!50003 CREATE */ ";
+            if ( $trg->{definer} ) {
+               my ( $user, $host )
+                  = map { s/'/''/g; "'$_'"; }
+                    split('@', $trg->{definer}, 2);
+               $result .= "/*!50017 DEFINER=$user\@$host */ ";
+            }
+            $result .= sprintf("/*!50003 TRIGGER %s %s %s ON %s\nFOR EACH ROW %s */;;\n\n",
+               $quoter->quote($trg->{trigger}),
+               @{$trg}{qw(timing event)},
+               $quoter->quote($trg->{table}),
+               $trg->{statement});
+         }
+         $result .= "DELIMITER ;\n\n/*!50003 SET SESSION SQL_MODE=\@OLD_SQL_MODE */;\n\n";
+         return $result;
+      }
+      else {
+         return undef;
+      }
+   }
+   elsif ( $what eq 'view' ) {
+      my $ddl = $self->get_create_table($dbh, $quoter, $db, $tbl);
+      return '/*!50001 DROP TABLE IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 DROP VIEW IF EXISTS ' . $quoter->quote($tbl) . "*/;\n"
+         . '/*!50001 ' . $ddl->[1] . "*/;\n";
+   }
+   else {
+      die "You didn't say what to dump.";
+   }
+}
+
+# USEs the given database, and returns the previous default database.
+sub _use_db {
+   my ( $self, $dbh, $quoter, $new ) = @_;
+   if ( !$new ) {
+      MKDEBUG && _d('No new DB to use');
+      return;
+   }
+   my $sql = 'SELECT DATABASE()';
+   MKDEBUG && _d($sql);
+   my $curr = $dbh->selectrow_array($sql);
+   if ( $curr && $new && $curr eq $new ) {
+      MKDEBUG && _d('Current and new DB are the same');
+      return $curr;
+   }
+   $sql = 'USE ' . $quoter->quote($new);
+   MKDEBUG && _d($sql);
+   $dbh->do($sql);
+   return $curr;
+}
+
+sub get_create_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      MKDEBUG && _d($sql);
+      $dbh->do($sql);
+      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
+      MKDEBUG && _d($sql);
+      my $href = $dbh->selectrow_hashref($sql);
+      $self->_use_db($dbh, $quoter, $curr_db);
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      MKDEBUG && _d($sql);
+      $dbh->do($sql);
+      my ($key) = grep { m/create table/i } keys %$href;
+      if ( $key ) {
+         MKDEBUG && _d('This table is a base table');
+         $self->{tables}->{$db}->{$tbl} = [ 'table', $href->{$key} ];
+      }
+      else {
+         MKDEBUG && _d('This table is a view');
+         ($key) = grep { m/create view/i } keys %$href;
+         $self->{tables}->{$db}->{$tbl} = [ 'view', $href->{$key} ];
+      }
+   }
+   return $self->{tables}->{$db}->{$tbl};
+}
+
+sub get_columns {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   MKDEBUG && _d("Get columns for $db.$tbl");
+   if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
+      my $curr_db = $self->_use_db($dbh, $quoter, $db);
+      my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
+      MKDEBUG && _d($sql);
+      my $cols = $dbh->selectall_arrayref($sql, { Slice => {} });
+      $self->_use_db($dbh, $quoter, $curr_db);
+      $self->{columns}->{$db}->{$tbl} = [
+         map {
+            my %row;
+            @row{ map { lc $_ } keys %$_ } = values %$_;
+            \%row;
+         } @$cols
+      ];
+   }
+   return $self->{columns}->{$db}->{$tbl};
+}
+
+sub get_tmp_table {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   my $result = 'CREATE TABLE ' . $quoter->quote($tbl) . " (\n";
+   $result .= join(",\n",
+      map { '  ' . $quoter->quote($_->{field}) . ' ' . $_->{type} }
+      @{$self->get_columns($dbh, $quoter, $db, $tbl)});
+   $result .= "\n)";
+   MKDEBUG && _d($result);
+   return $result;
+}
+
+sub get_triggers {
+   my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
+   if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
+      $self->{triggers}->{$db} = {};
+      my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
+         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
+      MKDEBUG && _d($sql);
+      $dbh->do($sql);
+      $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
+      MKDEBUG && _d($sql);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute();
+      if ( $sth->rows ) {
+         my $trgs = $sth->fetchall_arrayref({});
+         foreach my $trg (@$trgs) {
+            # Lowercase the hash keys because the NAME_lc property might be set
+            # on the $dbh, so the lettercase is unpredictable.  This makes them
+            # predictable.
+            my %trg;
+            @trg{ map { lc $_ } keys %$trg } = values %$trg;
+            push @{ $self->{triggers}->{$db}->{ $trg{table} } }, \%trg;
+         }
+      }
+      $sql = '/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, '
+         . '@@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */';
+      MKDEBUG && _d($sql);
+      $dbh->do($sql);
+   }
+   if ( $tbl ) {
+      return $self->{triggers}->{$db}->{$tbl};
+   }
+   return values %{$self->{triggers}->{$db}};
+}
+
+sub get_databases {
+   my ( $self, $dbh, $quoter, $like ) = @_;
+   if ( !$self->{cache} || !$self->{databases} || $like ) {
+      my $sql = 'SHOW DATABASES';
+      my @params;
+      if ( $like ) {
+         $sql .= ' LIKE ?';
+         push @params, $like;
+      }
+      my $sth = $dbh->prepare($sql);
+      MKDEBUG && _d($sql, @params);
+      $sth->execute( @params );
+      my @dbs = map { $_->[0] } @{$sth->fetchall_arrayref()};
+      $self->{databases} = \@dbs unless $like;
+      return @dbs;
+   }
+   return @{$self->{databases}};
+}
+
+sub get_table_status {
+   my ( $self, $dbh, $quoter, $db, $like ) = @_;
+   if ( !$self->{cache} || !$self->{table_status}->{$db} || $like ) {
+      my $sql = "SHOW TABLE STATUS FROM " . $quoter->quote($db);
+      my @params;
+      if ( $like ) {
+         $sql .= ' LIKE ?';
+         push @params, $like;
+      }
+      MKDEBUG && _d($sql, @params);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref({})};
+      @tables = map {
+         my %tbl; # Make a copy with lowercased keys
+         @tbl{ map { lc $_ } keys %$_ } = values %$_;
+         $tbl{engine} ||= $tbl{type} || $tbl{comment};
+         delete $tbl{type};
+         \%tbl;
+      } @tables;
+      $self->{table_status}->{$db} = \@tables unless $like;
+      return @tables;
+   }
+   return @{$self->{table_status}->{$db}};
+}
+
+sub get_table_list {
+   my ( $self, $dbh, $quoter, $db, $like ) = @_;
+   if ( !$self->{cache} || !$self->{table_list}->{$db} || $like ) {
+      my $sql = "SHOW /*!50002 FULL*/ TABLES FROM " . $quoter->quote($db);
+      my @params;
+      if ( $like ) {
+         $sql .= ' LIKE ?';
+         push @params, $like;
+      }
+      MKDEBUG && _d($sql, @params);
+      my $sth = $dbh->prepare($sql);
+      $sth->execute(@params);
+      my @tables = @{$sth->fetchall_arrayref()};
+      @tables = map {
+         my %tbl = (
+            name   => $_->[0],
+            engine => ($_->[1] || '') eq 'VIEW' ? 'VIEW' : '',
+         );
+         \%tbl;
+      } @tables;
+      $self->{table_list}->{$db} = \@tables unless $like;
+      return @tables;
+   }
+   return @{$self->{table_list}->{$db}};
+}
+
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
+   print "# MySQLDump:$line $PID ", @_, "\n";
+}
+
+1;
+
+# #############################################################################
+# End MySQLDump package
+# #############################################################################
+
+# ###########################################################################
+# TableParser package 2631
+# ###########################################################################
+package TableParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use List::Util qw(min);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   return bless {}, $class;
+}
+
+
+sub parse {
+   my ( $self, $ddl, $opts ) = @_;
+
+   if ( ref $ddl eq 'ARRAY' ) {
+      if ( lc $ddl->[0] eq 'table' ) {
+         $ddl = $ddl->[1];
+      }
+      else {
+         return {
+            engine => 'VIEW',
+         };
+      }
+   }
+
+   if ( $ddl !~ m/CREATE (?:TEMPORARY )?TABLE `/ ) {
+      die "Cannot parse table definition; is ANSI quoting "
+         . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
+   }
+
+   $ddl =~ s/(`[^`]+`)/\L$1/g;
+
+   my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
+   MKDEBUG && _d('Storage engine: ', $engine);
+
+   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   MKDEBUG && _d('Columns: ' . join(', ', @cols));
+
+   my %def_for;
+   @def_for{@cols} = @defs;
+
+   my (@nums, @null);
+   my (%type_for, %is_nullable, %is_numeric, %is_autoinc);
+   foreach my $col ( @cols ) {
+      my $def = $def_for{$col};
+      my ( $type ) = $def =~ m/`[^`]+`\s([a-z]+)/;
+      die "Can't determine column type for $def" unless $type;
+      $type_for{$col} = $type;
+      if ( $type =~ m/(?:(?:tiny|big|medium|small)?int|float|double|decimal|year)/ ) {
+         push @nums, $col;
+         $is_numeric{$col} = 1;
+      }
+      if ( $def !~ m/NOT NULL/ ) {
+         push @null, $col;
+         $is_nullable{$col} = 1;
+      }
+      $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
+   }
+
+   my %keys;
+   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
+
+      if ( $engine !~ m/MEMORY|HEAP/ ) {
+         $key =~ s/USING HASH/USING BTREE/;
+      }
+
+      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
+      $type = $type || $special || 'BTREE';
+      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
+         && $engine =~ m/HEAP|MEMORY/i )
+      {
+         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
+      }
+
+      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
+      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
+      my @cols;
+      my @col_prefixes;
+      foreach my $col_def ( split(',', $cols) ) {
+         my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
+         push @cols, $name;
+         push @col_prefixes, $prefix;
+      }
+      $name =~ s/`//g;
+      MKDEBUG && _d("Index $name columns: " . join(', ', @cols));
+
+      $keys{$name} = {
+         colnames     => $cols,
+         cols         => \@cols,
+         col_prefixes => \@col_prefixes,
+         unique       => $unique,
+         is_col       => { map { $_ => 1 } @cols },
+         is_nullable  => scalar(grep { $is_nullable{$_} } @cols),
+         type         => $type,
+         name         => $name,
+      };
+   }
+
+   return {
+      cols           => \@cols,
+      col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
+      is_col         => { map { $_ => 1 } @cols },
+      null_cols      => \@null,
+      is_nullable    => \%is_nullable,
+      is_autoinc     => \%is_autoinc,
+      keys           => \%keys,
+      defs           => \%def_for,
+      numeric_cols   => \@nums,
+      is_numeric     => \%is_numeric,
+      engine         => $engine,
+      type_for       => \%type_for,
+   };
+}
+
+sub sort_indexes {
+   my ( $self, $tbl ) = @_;
+
+   my @indexes
+      = sort {
+         (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
+         || ( !$tbl->{keys}->{$a}->{unique} <=> !$tbl->{keys}->{$b}->{unique} )
+         || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
+         || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
+      }
+      grep {
+         $tbl->{keys}->{$_}->{type} eq 'BTREE'
+      }
+      sort keys %{$tbl->{keys}};
+   
+   MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
+   return @indexes;
+}
+
+sub find_best_index {
+   my ( $self, $tbl, $index ) = @_;
+   my $best;
+   if ( $index ) {
+      ($best) = grep { uc $_ eq uc $index } keys %{$tbl->{keys}};
+   }
+   if ( !$best ) {
+      if ( $index ) {
+         die "Index '$index' does not exist in table";
+      }
+      else {
+         ($best) = $self->sort_indexes($tbl);
+      }
+   }
+   MKDEBUG && _d("Best index found is " . ($best || 'undef'));
+   return $best;
+}
+
+sub find_possible_keys {
+   my ( $self, $dbh, $database, $table, $quoter, $where ) = @_;
+   return () unless $where;
+   my $sql = 'EXPLAIN SELECT * FROM ' . $quoter->quote($database, $table)
+      . ' WHERE ' . $where;
+   MKDEBUG && _d($sql);
+   my $expl = $dbh->selectrow_hashref($sql);
+   $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
+   if ( $expl->{possible_keys} ) {
+      MKDEBUG && _d("possible_keys=$expl->{possible_keys}");
+      my @candidates = split(',', $expl->{possible_keys});
+      my %possible   = map { $_ => 1 } @candidates;
+      if ( $expl->{key} ) {
+         MKDEBUG && _d("MySQL chose $expl->{key}");
+         unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
+         MKDEBUG && _d('Before deduping: ' . join(', ', @candidates));
+         my %seen;
+         @candidates = grep { !$seen{$_}++ } @candidates;
+      }
+      MKDEBUG && _d('Final list: ' . join(', ', @candidates));
+      return @candidates;
+   }
+   else {
+      MKDEBUG && _d('No keys in possible_keys');
+      return ();
+   }
+}
+
+sub table_exists {
+   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
+   my $db_tbl = $q->quote($db, $tbl);
+   my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
+   $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d("table_exists check for $db_tbl: $sql");
+   eval { $dbh->do($sql); };
+   MKDEBUG && _d("eval error (if any): $EVAL_ERROR");
+   return 0 if $EVAL_ERROR;
+   return 1;
+}
+
+sub get_engine {
+   my ( $self, $ddl, $opts ) = @_;
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   return $engine || undef;
+}
+
+sub get_keys {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @indexes = 
+      grep { $_ !~ m/FOREIGN/ }
+      $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
+
+   my $engine = $self->get_engine($ddl);
+   if ( $engine !~ m/MEMORY|HEAP/ ) {
+      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
+   }
+
+   my @keys = map {
+      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
+      $struct = $struct || $special || 'BTREE';
+      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
+
+      if ( $opts->{version} lt '004001000' && $engine =~ m/HEAP|MEMORY/i ) {
+         $struct = 'HASH';
+      }
+
+      {
+         struct   => $struct,
+         cols     => $cols,
+         name     => $name || 'PRIMARY',
+      }
+   } @indexes;
+
+   return \@keys;
+}
+
+sub get_fks {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
+
+   my @result = map {
+      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
+      my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
+      my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
+      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
+      if ( $parent !~ m/\./ ) {
+         $parent = "`$opts->{database}`.$parent";
+      }
+      {  name   => $name,
+         parent => $parent,
+         cols   => $cols,
+         fkcols => $fkcols,
+      };
+   } @fks;
+   return \@result;
+}
+
+sub get_duplicate_keys {
+   my ( $self, $keys, $opts ) = @_;
+   my @keys = @$keys;
+   my %seen; # Avoid outputting a key more than once.
+   my @result;
+
+   foreach my $i ( 0..$#keys - 1 ) {
+      foreach my $j ( $i+1..$#keys ) {
+         my $i_cols        = $keys[$i]->{cols};
+         my $j_cols        = $keys[$j]->{cols};
+         my $type_i_cols   = $keys[$i]->{struct};
+         my $type_j_cols   = $keys[$j]->{struct};
+         my $len_i_cols    = length($i_cols);
+         my $len_j_cols    = length($j_cols);
+         my $min_len       = min($len_i_cols, $len_j_cols);
+         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
+                               && $type_j_cols eq 'FULLTEXT'
+                             ) ? 1 : 0;
+         if ( MKDEBUG ) {
+            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
+               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
+         }
+
+         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
+            $i_cols = join(',', sort(split(/`/, $i_cols)));
+            $j_cols = join(',', sort(split(/`/, $j_cols)));
+         }
+         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
+                || $opts->{ignore_type}
+              )
+              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
+         {
+            if ( $both_FULLTEXT ) {
+               if ( $len_i_cols == $len_j_cols ) {
+                  MKDEBUG && _d("Indexes are DUPLICATES (fulltext)");
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+               }
+               else {
+                  MKDEBUG && _d("Indexes are not duplicates (fulltext)");
+               }
+            }
+            else {
+               MKDEBUG && _d("Indexes are DUPLICATES");
+               push @result, $keys[$i] unless $seen{$i}++;
+               push @result, $keys[$j] unless $seen{$j}++;
+            }
+         }
+         else {
+            MKDEBUG && _d("Indexes are not duplicates");
+         }
+      }
+   }
+
+   if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
+      my $i = 0;
+      my $found = 0;
+      while ( $i < @keys ) {
+         if ( $keys[$i]->{name} eq 'PRIMARY' ) {
+            $found = 1;
+            last;
+         }
+         $i++;
+      }
+      if ( $found ) {
+         my $pkcols = $keys[$i]->{cols};
+         KEY:
+         foreach my $j ( 0..$#keys ) {
+            next KEY if $i == $j;
+            my $suffix = $keys[$j]->{cols};
+            SUFFIX:
+            while ( $suffix =~ s/`[^`]+`,// ) {
+               my $len = min(length($pkcols), length($suffix));
+               if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
+                  && substr($suffix, 0, $len) eq substr($pkcols, 0, $len))
+               {
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+                  last SUFFIX;
+               }
+            }
+         }
+      }
+   }
+
+   return \@result;
+}
+
+sub get_duplicate_fks {
+   my ( $self, $fks, $opts ) = @_;
+   my @fks = @$fks;
+   my %seen; # Avoid outputting a fk more than once.
+   my @result;
+   foreach my $i ( 0..$#fks - 1 ) {
+      foreach my $j ( $i+1..$#fks ) {
+         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
+         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
+         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
+         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
+               && $i_cols eq $j_cols
+               && $i_fkcols eq $j_fkcols
+         ) {
+            push @result, $fks[$i] unless $seen{$i}++;
+            push @result, $fks[$j] unless $seen{$j}++;
+         }
+      }
+   }
+
+   return \@result;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# TableParser:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End TableParser package
+# ###########################################################################
+
+# ###########################################################################
+# QueryReview package 2632
+# ###########################################################################
+package QueryReview;
+
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Digest::MD5 qw(md5_hex);
+use Data::Dumper;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(dbh qv_tbl tbl_struct key_attrib fingerprint) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my $sql = "SELECT fingerprint, checksum, sample, last_seen "
+           . "FROM $args{qv_tbl} "
+           . ($args{preload} ? $args{preload} : '');
+   my %fingerprints
+      = map {
+           $_->[0] => {
+              checksum  => $_->[1],
+              sample    => $_->[2],
+              last_seen => $_->[3],
+           }
+        }
+        @{ $args{dbh}->selectall_arrayref($sql) };
+
+   my $store_new_sth = $args{dbh}->prepare(
+         'INSERT IGNORE INTO ' . $args{qv_tbl}
+         . '(checksum, fingerprint, sample, first_seen, last_seen) VALUES( '
+         . '?, ?, ?, COALESCE(?, NOW()), COALESCE(?, NOW()))');
+
+   my $self = {
+      dbh           => $args{dbh},
+      qv_tbl        => $args{qv_tbl},
+      fingerprints  => \%fingerprints,
+      store_new_sth => $store_new_sth,
+      key_attrib    => $args{key_attrib},
+      fingerprint   => $args{fingerprint}
+                       || sub { $_[0]->{$args{key_attrib}} },
+
+   };
+   return bless $self, $class;
+}
+
+sub store_event {
+   my ( $self, $event ) = @_;
+
+   my $key_attrib_val = $event->{ $self->{key_attrib} };
+   return unless defined $key_attrib_val;
+
+   my $fingerprint = $self->{fingerprint}->($key_attrib_val);
+
+   if ( exists $self->{fingerprints}->{$fingerprint} ) {
+      my $fp = $self->{fingerprints}->{$fingerprint};
+      my @sets;
+
+      push @sets, 'cnt=cnt+1';
+
+      my $ts = _parse_timestamp($event->{ts});
+      if ( $ts && $ts ge $fp->{last_seen} ) {
+         push @sets, "last_seen='$ts'";
+         $fp->{last_seen} = $ts;
+      }
+
+
+      my $set_clause = join(',', @sets);
+      my $sql        = "UPDATE $self->{qv_tbl} "
+                     . "SET $set_clause "
+                     . "WHERE checksum=$fp->{checksum}";
+      $self->{dbh}->do($sql);
+   }
+   else {
+      my $ts       = _parse_timestamp($event->{ts});
+      my $checksum = fingerprint_checksum($fingerprint);
+
+      my $conv = $self->{dbh}->selectall_arrayref(
+         "SELECT CONV('$checksum', 16, 10)");
+      $checksum = $conv->[0]->[0];
+
+      $self->{store_new_sth}->execute(
+         $checksum,
+         $fingerprint,
+         $event->{arg},
+         $ts,
+         $ts);
+      MKDEBUG && _d("Added event to query review table: "
+                    . "$checksum $fingerprint $ts");
+
+      $self->{fingerprints}->{$fingerprint} = {
+         checksum  => $checksum,
+         sample    => $event->{sample} || '',
+         last_seen => $ts || '', # TODO: is this correct or do we need now()?
+      };
+   }
+   return;
+}
+
+sub fingerprint_checksum {
+   my ( $fingerprint ) = @_;
+   return substr(md5_hex($fingerprint), -16);
+}
+
+sub _parse_timestamp {
+   my ( $val ) = @_;
+   return $val unless defined $val;
+   $val =~ s/^(\d\d)(\d\d)(\d\d) /20$1-$2-$3 /;
+   return $val;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
+   print "# QueryReview:$line $PID ", @_, "\n";
+}
+
+1;
+# ###########################################################################
+# End QueryReview package
+# ###########################################################################
+
+# #############################################################################
 # mk-log-parser
 # #############################################################################
 package main;
 
-use Data::Dumper;
+# TODO: sort by ninetyfive, stddev and med.
+# TODO: reverse sorting.
+# TODO: sort by expressions like Rows_sent/Rows_examined
+# TODO: tail -c +160665 /home/baron/smalltest.log | less
+
 use English qw(-no_match_vars);
-use Digest::MD5 qw(md5_hex);
+use Data::Dumper;
+$Data::Dumper::Indent=1;
+
 Transformers->import( qw(shorten micro_t percentage_of ts) );
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # TODO: use sigtrap
 $SIG{INT} = \&sig_int;
-# ############################################################################
+
+# #############################################################################
 # Get configuration information.
-# ############################################################################
+# #############################################################################
 
 my $dp = new DSNParser (
-   { key => 'D', desc => 'Database that contains the table' },
-   { key => 't', desc => 'Table to use' } );
+   { key => 'D', desc => 'Database that contains the query review table' },
+   { key => 't', desc => 'Table to use as the query review table' } );
 
 my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
@@ -2019,79 +2810,53 @@ $opt_parser->{prompt} = '[OPTION...] [FILE]';
 $opt_parser->{descr}  = q{parses and analyzes MySQL log files.  With no }
                       . q{FILE, or when FILE is -, read standard input.};
 my %opts = $opt_parser->parse();
+
+if ( $opts{A} && !$opts{R} ) {
+   $opt_parser->error('--review is required with --analyze');
+};
+
 $opt_parser->usage_or_errors(%opts);
 
-# ############################################################################
-# Set up basic slow log metric handlers.
-# ############################################################################
-my $lp = new LogParser();
-my $qr = new QueryRewriter();
+my $do_analysis = ($opts{R} && $opts{A}) || (!$opts{R} && !$opts{A}) ? 1 : 0;
+
+# #############################################################################
+# Set up callbacks for the various event handling behaviors.
+# #############################################################################
 my $q  = new Quoter();
+my $qr = new QueryRewriter();
+my $sm;  # used if do_analysis
+my $dbh; # used if --review
+my @callbacks;
 
-my $sm = new SQLMetrics(
-   key_metric      => 'arg',
-   worst_metric    => $opts{w}, # TODO this can be an expr, add to attributes
-   fingerprint     => sub { return $qr->fingerprint(@_); },
-   attributes      => [qw(
-                        Query_time
-                        Lock_time
-                        Rows_read
-                        Rows_sent
-                        Rows_examined
-                        user
-                        Schema
-                        ts
-                     )],
-                        # TODO: add values from command-line options
-                        # TODO: name=expression syntax
-                        #ts=ts||timestamp
-                        #db=db||Schema
-                        #withoutlocks=Query_time-Lock_time
-);
+# This chain of callbacks begins with the sub below which only
+# fingerprints the event and adds that fingerprint to the event.
+# Subsequent callbacks--for review, analyze filter, or analyze--
+# expect the event to have its own fingerprint. This way we
+# fingerprint only once. Only the event is passed to each callback.
+# Each callback is called in order in LogParser::parse_slowlog_event().
+# The chain can be terminated early if one of the callbacks returns 0.
+# This might happen, for example, in the analyze filter callback if
+# the event has already been reviewed. Then the analyze callback is
+# never called and the chain restarts with the next event and the
+# review callback.
+push @callbacks, sub {
+   my ( $event ) = @_;
+   # Skip events which do not have the key_attrib attribute.
+   my $key_attrib_val = $event->{arg}; # TODO: this may change for non-slowlogs
+   return 0 unless defined $key_attrib_val;
+   my $fingerprint = $qr->fingerprint($key_attrib_val);
+   $event->{fingerprint} = $fingerprint;
+   return 1;
+};
 
-# ############################################################################
-# Set up callbacks for the various behaviors.
-# ############################################################################
-my $callback;
-my ($dbh, $sth);
-if ( $opts{R} ) { # Query review.
-   $dbh = $dp->get_dbh($dp->get_cxn_params($opts{R}), {AutoCommit => 1});
-   # The primary key value (checksum column) is generated by checksumming the
-   # query and then converting part of the checksum into a bigint.
-   # TODO: also save last_seen
-   $sth = $dbh->prepare(
-      'INSERT IGNORE INTO ' . $q->quote($opts{R}->{D}, $opts{R}->{t})
-      . '(checksum, fingerprint, sample, first_seen) VALUES( '
-      . 'CONV(?, 16, 10), ?, ?, COALESCE(?, NOW()))');
-
-   my %seen;
-   $callback = sub {
-      my ( $fh ) = @_;
-      $lp->parse_slowlog_event($fh, sub {
-         my ( $event ) = @_;
-         my $fingerprint = $qr->fingerprint($event->{arg});
-         if ( !$seen{$fingerprint}++ ) {
-            my $ts = $event->{ts};
-            $ts = parse_timestamp($ts) if defined $ts;
-            $sth->execute(checksum_64($fingerprint), $fingerprint,
-               $event->{arg}, $ts);
-         }
-      });
-   };
-}
-else { # Default behavior -- slow-log analysis.
-   $callback = sub {
-      my ( $fh ) = @_;
-      $lp->parse_slowlog_event($fh, sub { $sm->calc_event_metrics(@_) });
-   };
-}
+push @callbacks, get_query_review_callback()   if $opts{R};
+push @callbacks, get_filter_analyze_callback() if $opts{A};
+push @callbacks, get_analyze_callback()        if $do_analysis;
 
 # ############################################################################
 # Parse the input.
 # ############################################################################
-my $oktorun = 1;
 my @fhs;
-
 if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
    my $fh = *STDIN;
    push @fhs, $fh;
@@ -2103,16 +2868,19 @@ else {
    }
 }
 
-while ( $oktorun && (my $fh = shift(@fhs) ) ) {
-   1 while $oktorun && $callback->($fh);
+my $oktorun = 1;
+my $lp = new LogParser();
+while ( $oktorun && (my $fh = shift(@fhs)) ) {
+   1 while ( $oktorun && $lp->parse_slowlog_event($fh, \@callbacks) );
    close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
 }
-$dp->disconnect($dbh) if $opts{R};
 
 # ############################################################################
 # Finish up (print results, etc).
 # ############################################################################
-if ( !$opts{R} ) {
+$dp->disconnect($dbh) if $opts{R};
+
+if ( $do_analysis ) {
    my @worst = find_top_queries($sm, $opts{s}, $opts{t}, $opts{w});
    report_queries($sm, @worst);
 }
@@ -2123,17 +2891,64 @@ exit;
 # Subroutines.
 # ############################################################################
 
-# Takes the rightmost 64 bits of an MD5 checksum of the argument.
-sub checksum_64 {
-   my ( $val ) = @_;
-   return substr(md5_hex($val), -16);
+sub get_query_review_callback {
+   my $dbh = $dp->get_dbh($dp->get_cxn_params($opts{R}), {AutoCommit => 1});
+   my $tp  = new TableParser();
+   if ( !$tp->table_exists($dbh, $opts{R}->{D}, $opts{R}->{t}, $q, 1) ) {
+      die "The query review table $opts{R}->{D}.$opts{R}->{t} "
+         . "does not exist or you do not have INSERT privileges";
+   }
+   my $du     = new MySQLDump();
+   my $qv_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
+   my $struct = $tp->parse(
+      $du->dump($dbh, $q, $opts{R}->{D}, $opts{R}->{t}, 'table'));
+   my $qv     = new QueryReview(
+      key_attrib  => 'arg',
+      fingerprint => sub { return $_->[0]->{fingerprint}; },
+      dbh         => $dbh,
+      qv_tbl      => $qv_tbl,
+      tbl_struct  => $struct,
+   );
+
+   return sub {
+      my ( $event ) = @_;
+      $qv->store_event($event);
+      return 1; # required to keep callback chain going
+   };
 }
 
-# Turns 071015 21:43:52 into a proper datetime format.
-sub parse_timestamp {
-   my ( $val ) = @_;
-   $val =~ s/^(\d\d)(\d\d)(\d\d) /20$1-$2-$3 /;
-   return $val;
+sub get_filter_analyze_callback {
+   # TODO: finish this
+   return sub { return 1; };
+}
+
+sub get_analyze_callback {
+   $sm = new SQLMetrics(
+      key_attrib    => 'arg',
+      worst_attrib  => $opts{w}, # TODO this can be an expr, add to attributes
+      fingerprint   => sub { return $_->[0]->{fingerprint}; },
+      attributes    => [qw(
+                          Query_time
+                          Lock_time
+                          Rows_read
+                          Rows_sent
+                          Rows_examined
+                          user
+                          Schema
+                          ts
+                       )],
+                       # TODO: add values from command-line options
+                       # TODO: name=expression syntax
+                       #ts=ts||timestamp
+                       #db=db||Schema
+                       #withoutlocks=Query_time-Lock_time
+   );
+
+   return sub {
+      my ( $event ) = @_;
+      $sm->calc_event_metrics($event);
+      return 1; # required to keep callback chain going
+   };
 }
 
 sub find_top_queries {
@@ -2365,9 +3180,9 @@ sub sig_int {
    }
 }
 
-# ############################################################################
+# #############################################################################
 # Documentation.
-# ############################################################################
+# #############################################################################
 
 =pod
 
@@ -2377,23 +3192,92 @@ mk-log-parser - Parse, transform and analyze MySQL logs.
 
 =head1 SYNOPSIS
 
-   mk-log-parser mysql-slow.log
+   # Analyze and report on a slow log.
+   mk-log-parser slow.log
+
+   # Review a slow log, saving query info to host1, db.query_review.
+   mk-log-parser --review h=host1,D=db,t=query_review
+
+   # Analyze a slow log and report on only non-reviewed (new) queries.
+   mk-log-parser --analyze --review h=host1,D=db,t=query_review slow.log
 
 =head1 DESCRIPTION
 
-C<mk-log-parser> reads MySQL log files and generates a report that's useful
-for optimizing a server.  It can also perform other actions, such as helping you
-do a query review by showing all distinct queries running on your server.
+C<mk-log-parser> has two distinct but related functions. Fistly, it can do a
+query analysis by parsing queries from one or more source (see
+L<"QUERY SOURCES"> below) and generating a report that is useful for optimizing
+a server. This report details performance and statistical metrics for the top N
+worst queries in the log files.
 
-C<mk-log-parser> reads the files you specify on the command line, or standard
-input.  You can cancel it with C<CTRL-C> and it will abort processing the log
-file, then print the statistics.
+Secondly, C<mk-log-parser> can do a "query review." Query reviews are done
+on a regular basis (daily, weekly, etc.) in order to track all distinct queries
+on your server, and to alert you when new queries appear. Information about
+the distinct queries is saved in a table; this information includes when the
+query was first seen, last seen, its performance and statistical metrics,
+etc.
 
-=head1 OUTPUT
+These two functions, analysis and review, are related because an analysis
+can be done for only non-reviewed (new) queries by using the L<"--analyzenew">
+option. This allows you to parse log files and automatically ignore queries
+which are "old" and considered "approved." Approved queries are those which
+have been reviewed by a human.
 
-TODO
+=head2 QUERY SOURCES
 
-   tail -c +160665 /home/baron/smalltest.log | less
+By default C<mk-log-parser> reads/parses files given on the command line
+as MySQL slow log files. Or, if no files are given, it reads standard input.
+Therefore, with no explicit options and only log files given, C<mk-log-parser>
+will do an analysis on those log files, print the report and exit.
+
+The L<"--proclist"> option allows you to specify a DSN from which
+C<mk-log-parser> will read queries from the process list.
+
+Other query sources, like output from a proxy or a sniffer, are planned.
+
+=head1 ATTRIBUTE AND METRIC NAMES
+
+When C<mk-log-parser> report on queries' performance and statistical metrics,
+the report is human readable, but the underlying attribute and metric names can
+be important to know. For example, to have them saved/updated in a
+L<"--review"> requires adding columns named for the desired attribute or
+metric.
+
+Metric names are derived from attribute names. Attribute names are
+usually those seen in slow logs, like Query_time, Lock_time, Rows_sent, etc.
+(If you are using a Percona-patched slow log, then you have a lot more
+attributes like Thread_id, Schema, QC_Hit, etc.).
+
+Other query sources have other attribute names, but we generally rename these
+attributes to match the slow log attibutes. For example, a process list has
+a Time attribute, but this is the same as the Query_time attribute from a slow
+log so we use Query_time instead. This change is made inside the script, so
+as long as you use Query_time, it will work for slow logs or process lists, or
+other query sources.
+
+The metric names are derived from these attribute names by appending the
+following suffixes:
+
+   _sum     -- total
+   _min
+   _max
+   _avg
+   _cnt     -- count
+   _wor     -- worst
+   _95_max  -- max of lower 95%
+   _stddev  -- standard deviation
+   _median
+
+Of course not all attributes have derived metrics. Most string attributes
+do not have an average (_avg) or standard deviation (_stddev), and the db
+and Schema attributes (if available), do not have any derived metrics (because
+their values are not technically metrics).
+
+Therefore, the end result is metric names like Query_time_sum (a.k.a. total
+query time) and Lock_time_wor (worst lock time value).
+
+As noted above, these metric names can be used as column names for the
+review table with L<"--review">. They are also related to L<"--worst"> and
+L<"--sort">.
 
 =head1 DOWNLOADING
 
@@ -2417,6 +3301,32 @@ prefix.
 
 =over
 
+=item --analyze
+
+short form: -A; type: string; default; reviewed_by IS NOT NULL
+
+Analyze and report on queries using --review to filter queries.
+
+When used with L<"--review">, this option (by default) enables a query analysis
+of only queries which have not been reviewed. Not-reviewed queries will be
+analyzed, reported and added to the query review table specified by
+L<"--review">. Reviewed queries will only be updated in the query review table.
+
+The analysis L<"--sort"> and L<"--top"> happen first. Then, from these top
+sorted worst queries, those which have already been reviewed are removed.
+The remaining queries are not re-ranked, so you may see a seemingly random
+spread of queries reported (e.g., queries 3, 4, 8, 10). Use the
+L<"--reportall"> option to have the report include reviewed queries
+(which will be marked so you can distinguish them from the not-reviewed
+queries).
+
+The argument to --analyze can be any valid SQL WHERE clause for the
+query review table. For example: 'first_seen >= CURRENT_DATE - INTERVAL 7 DAY'
+to filter for new queries first seen in the last 7 days.
+
+See L<"--review"> for the minimal table structure required for the query
+review table.
+
 =item --forexplain
 
 negatable: yes; default: yes
@@ -2437,22 +3347,33 @@ The option specifies a table to store all unique query fingerprints in.  The
 table must have at least the following columns:
 
   CREATE TABLE query_review (
-     checksum BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- md5 of fingerprint
-     fingerprint TEXT,
-     sample TEXT,
-     first_seen TIMESTAMP,
-     last_seen TIMESTAMP,
-     reviewed_by VARCHAR(20),
-     reviewed_on TIMESTAMP,
-     comments VARCHAR(100)
+     checksum     BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- md5 of fingerprint
+     fingerprint  TEXT NOT NULL,
+     sample       TEXT NOT NULL,
+     first_seen   DATETIME,
+     last_seen    DATETIME,
+     reviewed_by  VARCHAR(20),
+     reviewed_on  DATETIME,
+     comments     VARCHAR(100)
   );
 
 As the log is parsed, each time a "new" query is seen it is stored into this
 table.  The first_seen column is populated with either the query's timestamp
 from the log, or the current timestamp if that is unknown.
 
-This option enables completely different behavior from the default slow log
-analysis.
+Any column names that match L<"ATTRIBUTE AND METRIC NAMES"> will be
+populated/update with the corresponding value. For example, if there is
+a C<Query_time_sum> column, then it will be incremented to keep track of
+the query's total time.
+
+Since this option enables completely different behavior from the default slow
+log analysis, certain analysis-related options, like L<"--top">, are ignored
+when using --review. If you want to combine a review and an analysis, see
+L<"--analyzenew">.
+
+=item --reportall
+
+Report both reviewed and not-reviewed queries with --analyze and --review.
 
 =item --sort
 
@@ -2462,13 +3383,7 @@ Sort the reported queries by this aggregate value of L<--worst>.
 
 Valid aggregate values are: sum, min, max, avg, cnt.
 
-TODO: support ninetyfive, stddev and med.
-
-TODO: support reverse sorting.
-
-TODO: support expressions like Rows_sent/Rows_examined
-
-See also L<"--worst">.
+See also L<"--worst"> and L<"ATTRIBUTE AND METRIC NAMES">.
 
 =item --top
 
@@ -2505,6 +3420,8 @@ Only basic attributes are valid: Query_time, Lock_time, Rows_read, etc.
 This option affects the report. Only the L<"--top"> N worst queries
 according to this attribute are reported. The top N worst queries are
 determined by L<"--sort">.
+
+See also L<"ATTRIBUTE AND METRIC NAMES">.
 
 =back
 
