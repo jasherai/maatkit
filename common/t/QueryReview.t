@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 8;
 use English qw(-no_match_vars);
 
 require '../DSNParser.pm';
@@ -90,6 +90,7 @@ my $fp = $qr->fingerprint($event->{arg});
 $event->{fingerprint} = $fp;
 my $checksum = QueryReview::checksum_fingerprint($fp);
 $qv->store_event($event);
+is($event->{checksum}, $checksum, 'Adds checksum to event');
 $res = $dbh->selectall_arrayref("SELECT CONV(checksum,10,16), fingerprint,
 sample, first_seen, last_seen, reviewed_by, reviewed_on, comments,
 cnt, Query_time_sum, Query_time_sttdev

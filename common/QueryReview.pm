@@ -93,7 +93,8 @@ sub store_event {
    # query review table.
    if ( exists $self->{checksums}->{$fingerprint} ) {
       # Cached event.
-      $self->_update_event($self->{checksums}->{$fingerprint}, $event);
+      $checksum = $self->{checksums}->{$fingerprint};
+      $self->_update_event($checksum, $event);
    }
    else {
       $checksum = checksum_fingerprint($fingerprint);
@@ -121,6 +122,9 @@ sub store_event {
          $self->{checksums}->{$fingerprint} = $checksum;
       }
    }
+
+   $event->{checksum} = $checksum;
+
    return;
 }
 
