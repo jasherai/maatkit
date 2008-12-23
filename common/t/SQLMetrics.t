@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 8;
+use Test::More tests => 10;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -203,4 +203,56 @@ is_deeply(
 my $handler = SQLMetrics::make_handler('foo', 0);
 is(ref $handler, 'CODE', 'make_handler with 0 as sample value');
 
+# #############################################################################
+# Issue 184:
+# #############################################################################
+$sm  = new SQLMetrics(
+   key_attrib      => 'arg',
+   fingerprint     => sub { return $qr->fingerprint($_[0]); },
+   attributes      => [qw(db|Schema)],
+   worst_attrib    => 'Query_time',
+);
+
+$events = [
+   {
+      arg         => "foo 1",
+      Query_time  => '1',
+      Schema      => 'db1',
+   },
+   {
+      arg         => "foo 2",
+      Query_time  => '2',
+      Schema      => 'db1',
+   },
+];
+foreach my $event ( @$events ) {
+   $sm->calc_event_metrics($event);
+}
+ok(exists $sm->{metrics}->{unique}->{'foo ?'}->{db}->{unq}->{db1},
+   'Gets Schema for db|Schema (issue 184)');
+
+$sm  = new SQLMetrics(
+   key_attrib      => 'arg',
+   fingerprint     => sub { return $qr->fingerprint($_[0]); },
+   attributes      => [qw(Schema|db)],
+   worst_attrib    => 'Query_time',
+);
+
+$events = [
+   {
+      arg         => "foo 1",
+      Query_time  => '1',
+      db          => 'db1',
+   },
+   {
+      arg         => "foo 2",
+      Query_time  => '2',
+      db          => 'db1',
+   },
+];
+foreach my $event ( @$events ) {
+   $sm->calc_event_metrics($event);
+}
+ok(exists $sm->{metrics}->{unique}->{'foo ?'}->{Schema}->{unq}->{db1},
+   'Gets db for Schema|db (issue 184)');
 exit;

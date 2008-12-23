@@ -75,9 +75,10 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #              you don't specify handlers for them (see handlers below),
 #              they'll be auto-created.  In most cases this will work fine.
 #              If you specify an attribute with an | symbol, it means that
-#              the subsequent attributes are fallbacks.  For example,
-#              ts|timestamp means if ts is available, it'll be used;
-#              else timestamp will be used.  Similarly with db|Schema.
+#              the subsequent attributes are aliases.  For example,
+#              ts|timestamp means if ts is available, it'll be used, and if
+#              timestamp is available it will be used and saved as ts.
+#              Similarly with Schema|db.
 #
 # Optional:
 # fingerprint  A subref to transform the key_attrib if desired. When key_attrib
@@ -105,19 +106,19 @@ sub new {
    }
    $args{handlers} ||= {};
 
-   my %attribute_spec = map {
-      (my $key = $_) =~ s/\|.*//;
-      $key => $_;
+   # Parse attribute aliases like db|Schema where db is the real attribute
+   # name and Schema is an alias.
+   my %attributes = map {
+      my @attribs = split qr/\|/, $_;
+      my %aliases = map { $_ => 0 } @attribs[1..$#attribs];
+      $attribs[0] => \%aliases;
    } @{$args{attributes}};
-   foreach my $attrib ( keys %{$args{handlers}} ) {
-      $attribute_spec{$attrib}++;
-   }
 
    my $self = {
       key_attrib            => $args{key_attrib},
       fingerprint           => $args{fingerprint}
                                || sub { return $_[0]; },# return key attrib val
-      attributes            => \%attribute_spec,
+      attributes            => \%attributes,
       handlers              => $args{handlers},
       worst_attrib          => $args{worst_attrib},
       metrics               => { all => {}, unique => {} },
@@ -265,7 +266,19 @@ sub calc_event_metrics {
    ATTRIB:
    foreach my $attrib ( keys %{ $self->{attributes} } ) {
       my $attrib_val = $event->{ $attrib };
-      next ATTRIB unless defined $attrib_val;
+      if ( !defined $attrib_val ) {
+         # The event does not have the real attribute, but perhaps
+         # it has an alias of the attribute, like Schema can be an
+         # alias for db.
+         ATTRIB_ALIAS:
+         foreach my $attrib_alias ( keys %{$self->{attributes}->{$attrib}} ) {
+            if ( defined $event->{ $attrib_alias } ) {
+               $attrib_val = $event->{ $attrib_alias };
+               last ATTRIB_ALIAS;
+            }
+         }
+         next ATTRIB unless defined $attrib_val;
+      }
 
       # Get data store shortcuts.
       my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
