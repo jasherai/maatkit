@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 1;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent=1;
@@ -25,5 +25,16 @@ ok(
    no_diff($run_with.'slow001.txt', 'samples/slow001_report.txt'),
    'Analysis for slow001'
 );
-
+ok(
+   no_diff($run_with.'slow002.txt', 'samples/slow002_report.txt'),
+   'Analysis for slow002'
+);
+ok(
+   no_diff($run_with.'slow003.txt', 'samples/slow003_report.txt'),
+   'Analysis for slow003'
+);
+ok(
+   no_diff($run_with.'slow004.txt', 'samples/slow004_report.txt'),
+   'Analysis for slow004'
+);
 exit;

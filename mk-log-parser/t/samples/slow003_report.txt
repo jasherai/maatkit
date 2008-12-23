@@ -1,0 +1,21 @@
+# Query 001 (0 QPS) ID: 0x85FFF5AA78E5FF6A at byte 0 ____________________
+#             total    %      min     max     avg     95%  stddev  median
+# Count           1  100
+# Time         12us  100     12us    12us    12us    12us       0    12us
+# Lock            0    0        0       0       0       0       0       0
+# Rows sent       0    0        0       0       0       0       0       0
+# Rows exam       0    0        0       0       0       0       0       0
+# DBs                                                                     
+# Users                                                                   
+# Time range 2007-12-18T11:48:27 to 2007-12-18T11:48:27
+# Execution times
+#      1us                                                               
+#     10us  #############################################################
+#    100us                                                               
+#      1ms                                                               
+#     10ms                                                               
+#    100ms                                                               
+#       1s                                                               
+#     10s+                                                               
+BEGIN\G
+

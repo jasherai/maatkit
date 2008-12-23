@@ -1865,7 +1865,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 2646
+# QueryParser package 2648
 # ###########################################################################
 package QueryParser;
 
@@ -1926,9 +1926,15 @@ sub parse_table_aliases {
       qr/^\s*(\S+)\s+(\S+)\s*$/,
       qr/^\s*(\S+)+\s*$/, # Not an alias but we save it anyway to be complete
    );
-      
+
+   TABLE:
    foreach my $table ( @tables ) {
       my ( $db_tbl, $alias );
+
+      if ( $table =~ m/\(\s*SELECT\s+/i ) {
+         MKDEBUG && _d("Ignoring subquery table: $table");
+         next TABLE;
+      }
 
       ALIAS_PATTERN:
       foreach my $alias_pattern ( @alias_patterns ) {
@@ -2957,14 +2963,10 @@ sub get_review_info_callback {
       $get_review_info_sth->execute($event->{checksum});
       my $res = $get_review_info_sth->fetchall_hashref('checksum');
       my $review_vals = $res->{ $event->{checksum} };
-      if ( $opts{rankall} ) {
-         @{ $review_info->{$event->{fingerprint}} }{@review_columns}
-            = @{$review_vals}{@review_columns};
-         return 1; # required to keep callback chain going
-      }
-      else {
-         return defined $review_vals->{reviewed_by} ? 1 : 0;
-      }
+      return 1 if ( !$opts{rankall} && defined $review_vals->{reviewed_by} );
+      @{ $review_info->{$event->{fingerprint}} }{@review_columns}
+         = @{$review_vals}{@review_columns};
+      return 1; # required to keep callback chain going
    };
 }
 
@@ -3227,6 +3229,9 @@ sub print_tables {
          , " LIKE '$tbl'\\G\n";
       print "#    SHOW CREATE TABLE `$tbl`\\G\n";
    }
+   # If no tables are printed, this may be due to a query like
+   #    SELECT col FROM (SELECT col FROM tbl2) AS tbl1
+   # because QueryParser ignores subquery tables.
    return;
 }
       
