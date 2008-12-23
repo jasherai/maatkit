@@ -14,7 +14,7 @@ my $qr = new QueryRewriter();
 
 my $sm  = new SQLMetrics(
    key_attrib      => 'arg',
-   fingerprint     => sub { return $qr->fingerprint(@_); },
+   fingerprint     => sub { return $qr->fingerprint($_[0]); },
    attributes      => [qw(Query_time user)],
 );
 
@@ -121,7 +121,7 @@ is_deeply($sm->{metrics}, $metrics, 'Calcs metrics');
 
 $sm  = new SQLMetrics(
    key_attrib      => 'arg',
-   fingerprint     => sub { return $qr->fingerprint(@_); },
+   fingerprint     => sub { return $qr->fingerprint($_[0]); },
    attributes      => [qw(Query_time user)],
    worst_attrib    => 'Query_time',
 );

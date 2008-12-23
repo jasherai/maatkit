@@ -69,9 +69,7 @@ sub new {
       checksums     => \%checksums,
       store_new_sth => $store_new_sth,
       key_attrib    => $args{key_attrib},
-      fingerprint   => $args{fingerprint}
-                       || sub { $_[0]->{$args{key_attrib}} },
-
+      fingerprint   => $args{fingerprint},
    };
    return bless $self, $class;
 }
@@ -82,11 +80,12 @@ sub store_event {
    my $checksum;
 
    # Skip events which do not have the key_attrib attribute.
-   my $key_attrib_val = $event->{ $self->{key_attrib} };
+   my $key_attrib_val =  $event->{ $self->{key_attrib} };
    return unless defined $key_attrib_val;
 
    # Get the fingerprint for this event.
-   my $fingerprint = $self->{fingerprint}->($key_attrib_val);
+   my $fingerprint
+      = $self->{fingerprint}->($key_attrib_val, $event, $self->{key_attrib});
 
    # Update the event if it's an old event (either in cache or
    # in the query review table). Else, add the new event to the

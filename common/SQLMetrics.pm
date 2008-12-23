@@ -82,7 +82,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # Optional:
 # fingerprint  A subref to transform the key_attrib if desired. When key_attrib
 #              is 'arg' (which is the usual case for parsing logs), fingerprint
-#              is usually: sub { return $qr->fingerprint(@_); } 
+#              is usually: sub { return $qr->fingerprint($_[0]); } 
 #              $qr is a QueryRewriter object. (Something like
 #              \&qr->fingerprint(@_); does not work, hence the anon sub.)
 # handlers     A hashref with explicit attribute => subref handlers. Handler
@@ -116,7 +116,7 @@ sub new {
    my $self = {
       key_attrib            => $args{key_attrib},
       fingerprint           => $args{fingerprint}
-                               || sub { $_[0]->{$args{key_attrib}} },
+                               || sub { return $_[0]; },
       attributes            => \%attribute_spec,
       handlers              => $args{handlers},
       worst_attrib          => $args{worst_attrib},
@@ -253,7 +253,8 @@ sub calc_event_metrics {
    $self->{n_queries}++;
 
    # Get the fingerprint (fp) for this event.
-   my $fp = $self->{fingerprint}->($key_attrib_val);
+   my $fp
+      = $self->{fingerprint}->($key_attrib_val, $event, $self->{key_attrib});
 
    # Get a shortcut to the data store (ds) for this class of events.
    my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
