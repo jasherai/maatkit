@@ -77,9 +77,16 @@ sub parse_table_aliases {
       qr/^\s*(\S+)\s+(\S+)\s*$/,
       qr/^\s*(\S+)+\s*$/, # Not an alias but we save it anyway to be complete
    );
-      
+
+   TABLE:
    foreach my $table ( @tables ) {
       my ( $db_tbl, $alias );
+
+      # Ignore "tables" that are really subqueries.
+      if ( $table =~ m/\(\s*SELECT\s+/i ) {
+         MKDEBUG && _d("Ignoring subquery table: $table");
+         next TABLE;
+      }
 
       ALIAS_PATTERN:
       foreach my $alias_pattern ( @alias_patterns ) {

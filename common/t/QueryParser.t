@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 19;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -114,6 +114,15 @@ test_query(
       },
    },
    'SELECT with JOIN ON and no WHERE (issue 185)'
+);
+
+# #############################################################################
+test_query(
+   'select 12_13_foo from (select 12foo from 123_bar) as 123baz',
+   '(select 12foo from 123_bar) as 123baz',
+   {
+   },
+   'Subquery as aliased table is ignored'
 );
 
 exit;
