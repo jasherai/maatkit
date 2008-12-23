@@ -64,7 +64,7 @@ sub parse_table_aliases {
    if( $table_ref =~ m/ (:?straight_)?join /i ) {
       $table_ref =~ s/ join /,/ig;
       1 while ($table_ref =~ s/ (?:inner|outer|cross|left|right|natural),/,/ig);
-      $table_ref =~ s/ using \(.+?\)//ig;
+      $table_ref =~ s/ using\s*\(.+?\)//ig;
       $table_ref =~ s/ on \([\w\s=.,]+\),?/,/ig;
       $table_ref =~ s/ on [\w\s=.]+,?/,/ig;
       $table_ref =~ s/ straight_join /,/ig;

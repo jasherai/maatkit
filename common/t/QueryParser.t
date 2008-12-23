@@ -3,11 +3,13 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 15;
+use Test::More tests => 17;
 use English qw(-no_match_vars);
 
+require '../QueryRewriter.pm';
 require '../QueryParser.pm';
 
+my $qr = new QueryRewriter;
 my $qp = new QueryParser;
 
 isa_ok($qp, 'QueryParser');
@@ -95,6 +97,23 @@ test_query(
       },
    },
    'single fully-qualified and aliased table'
+);
+
+# #############################################################################
+# Issue 185: QueryParser fails to parse table ref for a JOIN ... ON
+# #############################################################################
+test_query(
+    'select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507 n inner join db1.gonzo a using(gonzo)', 
+    'db2.tuningdetail_21_265507 n inner join db1.gonzo a using(gonzo)',
+   {
+      'n' => 'tuningdetail_21_265507',
+      'a' => 'gonzo',
+      'DATABASE' => {
+         'tuningdetail_21_265507' => 'db2',
+         'gonzo' => 'db1',
+      },
+   },
+   'SELECT with JOIN ON and no WHERE (issue 185)'
 );
 
 exit;
