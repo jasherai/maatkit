@@ -70,13 +70,10 @@ my $metrics = {
             cnt => 2
          },
          user => {
-            min => 'bob',
-            max => 'root',
             unq => {
                bob  => 1,
                root => 1
             },
-            cnt => 2
          },
       },
       'insert ignore into articles (id, body,)values(?+)' => {
@@ -88,10 +85,7 @@ my $metrics = {
             cnt => 1
          },
          user => {
-            min => 'root',
-            max => 'root',
             unq => { root => 1 },
-            cnt => 1
          },
       }
    },
@@ -103,9 +97,6 @@ my $metrics = {
          cnt => 3
       },
       user => {
-         min => 'bob',
-         max => 'root',
-         cnt => 3
       }
    }
 };

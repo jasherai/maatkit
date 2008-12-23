@@ -116,7 +116,7 @@ sub new {
    my $self = {
       key_attrib            => $args{key_attrib},
       fingerprint           => $args{fingerprint}
-                               || sub { return $_[0]; },
+                               || sub { return $_[0]; },# return key attrib val
       attributes            => \%attribute_spec,
       handlers              => $args{handlers},
       worst_attrib          => $args{worst_attrib},
@@ -133,10 +133,10 @@ sub new {
 # $attrib: the name of the attrib (Query_time, Rows_read, etc)
 # $value:  a sample of the attrib's value
 # %args:
-#     min => keep min for this attrib (default)
-#     max => keep max (default)
+#     min => keep min for this attrib (default except strings)
+#     max => keep max (default except strings)
 #     sum => keep sum (default for numerics)
-#     cnt => keep count (default)
+#     cnt => keep count (default except strings)
 #     unq => keep all unique values per-class (default for strings and bools)
 #     all => keep a list of all values seen per class (default for numerics)
 #     glo => keep stats globally as well as per-class (default)
@@ -161,10 +161,10 @@ sub make_handler {
             :                                    'string';
    MKDEBUG && _d("Type for $attrib is $type (sample: $value)");
    %args = ( # Set up defaults
-      min => 1,
-      max => 1,
+      min => $type eq 'string' ? 0 : 1,
+      max => $type eq 'string' ? 0 : 1,
       sum => $type =~ m/num|bool/ ? 1 : 0,
-      cnt => 1,
+      cnt => $type eq 'string' ? 0 : 1,
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num' ? 1 : 0,
       glo => 1,
@@ -231,6 +231,7 @@ sub make_handler {
             );
          }
       }
+      # TODO: glo for strings to save all unique strings
    }
    push @lines, '}';
    MKDEBUG && _d("Metric handler for $attrib: ", @lines);
