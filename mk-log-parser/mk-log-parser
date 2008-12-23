@@ -3272,7 +3272,7 @@ query was first seen, last seen, its performance and statistical metrics,
 etc.
 
 These two functions, analysis and review, are related because an analysis
-can be done for only non-reviewed (new) queries by using the L<"--analyzenew">
+can be done for only not-reviewed queries by using the L<"--analyze">
 option. This allows you to parse log files and automatically ignore queries
 which are "old" and considered "approved." Approved queries are those which
 have been reviewed by a human.
@@ -3381,6 +3381,12 @@ STATUS.
 
 Shows some extra information about the query and the tables in it, to help you
 copy-and-paste while working to optimize the query.
+
+=item --proclist
+
+Not yet implemented.
+
+TODO
 
 =item --review
 
