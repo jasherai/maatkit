@@ -3128,6 +3128,8 @@ sub report_queries {
          }
       }
 
+      print "# Fingerprint\n#    $fingerprint\n" if $opts{f};
+
       # If the query uses qualified table names (db.tbl), print_tables()
       # will print SHOW TABLE STATUS FROM `db` LIKE 'tbl'. Otherwise,
       # if a default_db is given, print_tables() will use it for queries
@@ -3371,6 +3373,12 @@ Use the L<"--reportall"> option to have all queries reported.
 
 See L<"--review"> for the minimal table structure required for the query
 review table.
+
+=item --fingerprints
+
+short form: -f
+
+Report fingerprints in analyze.
 
 =item --forexplain
 
