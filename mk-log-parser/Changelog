@@ -1,5 +1,7 @@
 Changelog for mk-log-parser:
 
+   * Added --analyze option to combine analysis and --review (issue 162).
+   * Added --fingerprints (-f) option (issue 160).
    * Trying to take log of 0 caused a crash (issue 141).
    * Greatly improved performance of log parsing and fingerprinting (issue 137).
    * Slow log parsing was buggy (issue 136).

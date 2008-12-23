@@ -1599,7 +1599,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2639
+# SQLMetrics package 2645
 # ###########################################################################
 
 package SQLMetrics;
@@ -1619,19 +1619,17 @@ sub new {
    }
    $args{handlers} ||= {};
 
-   my %attribute_spec = map {
-      (my $key = $_) =~ s/\|.*//;
-      $key => $_;
+   my %attributes = map {
+      my @attribs = split qr/\|/, $_;
+      my %aliases = map { $_ => 0 } @attribs[1..$#attribs];
+      $attribs[0] => \%aliases;
    } @{$args{attributes}};
-   foreach my $attrib ( keys %{$args{handlers}} ) {
-      $attribute_spec{$attrib}++;
-   }
 
    my $self = {
       key_attrib            => $args{key_attrib},
       fingerprint           => $args{fingerprint}
-                               || sub { return $_[0]; },
-      attributes            => \%attribute_spec,
+                               || sub { return $_[0]; },# return key attrib val
+      attributes            => \%attributes,
       handlers              => $args{handlers},
       worst_attrib          => $args{worst_attrib},
       metrics               => { all => {}, unique => {} },
@@ -1652,10 +1650,10 @@ sub make_handler {
             :                                    'string';
    MKDEBUG && _d("Type for $attrib is $type (sample: $value)");
    %args = ( # Set up defaults
-      min => 1,
-      max => 1,
+      min => $type eq 'string' ? 0 : 1,
+      max => $type eq 'string' ? 0 : 1,
       sum => $type =~ m/num|bool/ ? 1 : 0,
-      cnt => 1,
+      cnt => $type eq 'string' ? 0 : 1,
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num' ? 1 : 0,
       glo => 1,
@@ -1746,13 +1744,22 @@ sub calc_event_metrics {
    ATTRIB:
    foreach my $attrib ( keys %{ $self->{attributes} } ) {
       my $attrib_val = $event->{ $attrib };
-      next ATTRIB unless defined $attrib_val;
+      if ( !defined $attrib_val ) {
+         ATTRIB_ALIAS:
+         foreach my $attrib_alias ( keys %{$self->{attributes}->{$attrib}} ) {
+            if ( defined $event->{ $attrib_alias } ) {
+               $attrib_val = $event->{ $attrib_alias };
+               last ATTRIB_ALIAS;
+            }
+         }
+         next ATTRIB unless defined $attrib_val;
+      }
 
       my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
       my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
 
       my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
-         $self->{attributes}->{$attrib},
+         $attrib,
          $attrib_val,
          wor => (($self->{worst_attrib} || '') eq $attrib)
       );
@@ -1858,7 +1865,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 2559
+# QueryParser package 2646
 # ###########################################################################
 package QueryParser;
 
@@ -1906,7 +1913,7 @@ sub parse_table_aliases {
    if( $table_ref =~ m/ (:?straight_)?join /i ) {
       $table_ref =~ s/ join /,/ig;
       1 while ($table_ref =~ s/ (?:inner|outer|cross|left|right|natural),/,/ig);
-      $table_ref =~ s/ using \(.+?\)//ig;
+      $table_ref =~ s/ using\s*\(.+?\)//ig;
       $table_ref =~ s/ on \([\w\s=.,]+\),?/,/ig;
       $table_ref =~ s/ on [\w\s=.]+,?/,/ig;
       $table_ref =~ s/ straight_join /,/ig;
@@ -2950,9 +2957,14 @@ sub get_review_info_callback {
       $get_review_info_sth->execute($event->{checksum});
       my $res = $get_review_info_sth->fetchall_hashref('checksum');
       my $review_vals = $res->{ $event->{checksum} };
-      @{ $review_info->{$event->{fingerprint}} }{@review_columns}
-         = @{$review_vals}{@review_columns};
-      return 1; # required to keep callback chain going
+      if ( $opts{rankall} ) {
+         @{ $review_info->{$event->{fingerprint}} }{@review_columns}
+            = @{$review_vals}{@review_columns};
+         return 1; # required to keep callback chain going
+      }
+      else {
+         return defined $review_vals->{reviewed_by} ? 1 : 0;
+      }
    };
 }
 
@@ -2968,7 +2980,7 @@ sub get_analyze_callback {
                           Rows_sent
                           Rows_examined
                           user
-                          Schema
+                          Schema|db
                           ts
                        )],
                        # TODO: add values from command-line options
@@ -2996,7 +3008,8 @@ sub find_top_queries {
          $classes->{$a}->{$worst}->{$sort} <=> $classes->{$b}->{$worst}->{$sort}
       } keys %$classes;
    my $count = @sorted > $top ? $top : scalar @sorted;
-   # Add the hash key as a property of the hash, so it's not lost for later use.
+   # Add event's fingerprint to itself as a pseudo-attribute for use in
+   # report_queries() to correlate with query review table info.
    return map { $classes->{$_}->{fingerprint} = $_; $classes->{$_}; }
       @sorted[0 .. $count - 1];
 }
@@ -3014,6 +3027,7 @@ sub report_queries {
    my $metric_line_fmt = "# %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
    my $list_line_fmt   = "# %-9s   %-60s\n";
    my $timestamp_fmt   = "# Time range %s to %s\n";
+   my $review_info_fmt = "#    %-13s %-50s\n";
 
    my @reported_metrics = (
       {
@@ -3045,7 +3059,7 @@ sub report_queries {
 
    QUERY:
    foreach my $i ( 0..$#worst ) {
-      my $class = $worst[$i];
+      my $class       = $worst[$i];
       my $fingerprint = $class->{fingerprint};
 
       if ( defined $review_info && !$opts{reportall} ) {
@@ -3103,8 +3117,8 @@ sub report_queries {
             $r->{fmt}->($stats->{median});          # 95% med
       }
 
-      printf $list_line_fmt, 'DBs',   join(', ', keys %{$q->{Schema}});
-      printf $list_line_fmt, 'Users', join(', ', keys %{$q->{user}});
+      printf $list_line_fmt, 'DBs', join(', ', keys %{$class->{Schema}->{unq}});
+      printf $list_line_fmt, 'Users', join(', ', keys %{$class->{user}->{unq}});
 
       # TODO: permit to switch off with cmdline option --verbosity or --quiet
       if ( $class->{ts}->{min} ) {
@@ -3118,11 +3132,10 @@ sub report_queries {
       # TODO
       # print "# Time clustering\n";
 
-      if ( defined $review_info ) {
-         my $info_fmt = "#    %-13s %-50s\n";
+      if ( defined $review_info ) { 
          print "# Review information\n";
          foreach my $info ( keys %{$review_info->{$fingerprint}} ) {
-            printf $info_fmt, $info,
+            printf $review_info_fmt, $info,
                (defined $review_info->{$fingerprint}->{$info}
                    ? $review_info->{$fingerprint}->{$info} : '');
          }
@@ -3255,7 +3268,7 @@ mk-log-parser - Parse, transform and analyze MySQL logs.
    # Review a slow log, saving query info to host1, db.query_review.
    mk-log-parser --review h=host1,D=db,t=query_review
 
-   # Analyze a slow log and report on only non-reviewed (new) queries.
+   # Analyze a slow log and report on only not-reviewed queries.
    mk-log-parser --analyze --review h=host1,D=db,t=query_review slow.log
 
 =head1 DESCRIPTION
@@ -3365,11 +3378,19 @@ short form: -A
 Do a special analysis using --review.
 
 When used with L<"--review">, this option causes a special type of analysis
-to be done. First, all queries are stored/updated for L<"--review"> and
-analyzed to determine the L<"--top"> worst. Of these top worst, only those
-which have not yet been reviewed are reported. Therefore you may see a
-seemingly random spread of queries reported (e.g., queries 3, 4, 8, 10).
-Use the L<"--reportall"> option to have all queries reported.
+to be done. First, all queries are stored/updated for L<"--review"> and then
+analyzed and ranked to determine the L<"--top"> worst according to
+L<"--worst"> and L<"--sort"> (just like a regular analysis). Finally, queries
+in the top worst which have not been reviewed are removed from the report,
+but their original query rank is kept the same. Therefore you will probably
+see a random spread of query ranks reported (e.g., queries 3, 4, 8, 10).
+Use the L<"--reportall"> option if you want all the top worst queries to
+be reported.
+
+If you do not need to see the queries' original rank in the top worst, then
+a much faster analysis can be performed by using the --norankall option
+(see L<"--rankall">). The analysis will report the same, not-reviewed queries,
+but the queries' rank will be different and L<"--reportall"> has no affect.
 
 See L<"--review"> for the minimal table structure required for the query
 review table.
@@ -3395,6 +3416,22 @@ copy-and-paste while working to optimize the query.
 Not yet implemented.
 
 TODO
+
+=item --rankall
+
+negatable: yes; default: yes
+
+Rank both reviewed and not-reviewed queries with --analyze and --review.
+
+By defeault, the special analysis resulting from the combined use of
+L<"--analyze"> and L<"--review"> ranks all queries, both reviewed and
+not-reviewed. Then, the reviewed queries are removed from the report,
+leaving only the not-reviewed queries and their respective sort rankings.
+The result is a seemingly random spread of query ranks.
+
+If you do not need this feature, the analysis can be performed faster by
+early-filtering the reviewed queries, leaving only the not-reviewed queries
+to be ranked. To do this, use --norankall.
 
 =item --review
 
