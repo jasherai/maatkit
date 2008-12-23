@@ -285,7 +285,7 @@ sub calc_event_metrics {
       my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
 
       my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
-         $self->{attributes}->{$attrib},
+         $attrib,
          $attrib_val,
          wor => (($self->{worst_attrib} || '') eq $attrib)
       );
