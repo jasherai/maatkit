@@ -1599,7 +1599,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2622
+# SQLMetrics package 2639
 # ###########################################################################
 
 package SQLMetrics;
@@ -1630,7 +1630,7 @@ sub new {
    my $self = {
       key_attrib            => $args{key_attrib},
       fingerprint           => $args{fingerprint}
-                               || sub { $_[0]->{$args{key_attrib}} },
+                               || sub { return $_[0]; },
       attributes            => \%attribute_spec,
       handlers              => $args{handlers},
       worst_attrib          => $args{worst_attrib},
@@ -1738,7 +1738,8 @@ sub calc_event_metrics {
 
    $self->{n_queries}++;
 
-   my $fp = $self->{fingerprint}->($key_attrib_val);
+   my $fp
+      = $self->{fingerprint}->($key_attrib_val, $event, $self->{key_attrib});
 
    my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
 
@@ -2646,7 +2647,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 2632
+# QueryReview package 2639
 # ###########################################################################
 package QueryReview;
 
@@ -2666,93 +2667,103 @@ sub new {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   my $sql = "SELECT fingerprint, checksum, sample, last_seen "
+   my $sql = "SELECT fingerprint, CONV(checksum, 10, 16) "
            . "FROM $args{qv_tbl} "
            . ($args{preload} ? $args{preload} : '');
-   my %fingerprints
-      = map {
-           $_->[0] => {
-              checksum  => $_->[1],
-              sample    => $_->[2],
-              last_seen => $_->[3],
-           }
-        }
+   my %checksums
+      = map { $_->[0] => $_->[1] }
         @{ $args{dbh}->selectall_arrayref($sql) };
 
    my $store_new_sth = $args{dbh}->prepare(
          'INSERT IGNORE INTO ' . $args{qv_tbl}
          . '(checksum, fingerprint, sample, first_seen, last_seen) VALUES( '
-         . '?, ?, ?, COALESCE(?, NOW()), COALESCE(?, NOW()))');
+         . 'CONV(?, 16, 10), ?, ?, COALESCE(?, NOW()), COALESCE(?, NOW()))');
 
    my $self = {
       dbh           => $args{dbh},
       qv_tbl        => $args{qv_tbl},
-      fingerprints  => \%fingerprints,
+      checksums     => \%checksums,
       store_new_sth => $store_new_sth,
       key_attrib    => $args{key_attrib},
-      fingerprint   => $args{fingerprint}
-                       || sub { $_[0]->{$args{key_attrib}} },
-
+      fingerprint   => $args{fingerprint},
    };
    return bless $self, $class;
 }
 
 sub store_event {
    my ( $self, $event ) = @_;
+   my $checksum;
 
-   my $key_attrib_val = $event->{ $self->{key_attrib} };
+   my $key_attrib_val =  $event->{ $self->{key_attrib} };
    return unless defined $key_attrib_val;
 
-   my $fingerprint = $self->{fingerprint}->($key_attrib_val);
+   my $fingerprint
+      = $self->{fingerprint}->($key_attrib_val, $event, $self->{key_attrib});
 
-   if ( exists $self->{fingerprints}->{$fingerprint} ) {
-      my $fp = $self->{fingerprints}->{$fingerprint};
-      my @sets;
-
-      push @sets, 'cnt=cnt+1';
-
-      my $ts = _parse_timestamp($event->{ts});
-      if ( $ts && $ts ge $fp->{last_seen} ) {
-         push @sets, "last_seen='$ts'";
-         $fp->{last_seen} = $ts;
-      }
-
-
-      my $set_clause = join(',', @sets);
-      my $sql        = "UPDATE $self->{qv_tbl} "
-                     . "SET $set_clause "
-                     . "WHERE checksum=$fp->{checksum}";
-      $self->{dbh}->do($sql);
+   if ( exists $self->{checksums}->{$fingerprint} ) {
+      $checksum = $self->{checksums}->{$fingerprint};
+      $self->_update_event($checksum, $event);
    }
    else {
-      my $ts       = _parse_timestamp($event->{ts});
-      my $checksum = fingerprint_checksum($fingerprint);
+      $checksum = checksum_fingerprint($fingerprint);
 
-      my $conv = $self->{dbh}->selectall_arrayref(
-         "SELECT CONV('$checksum', 16, 10)");
-      $checksum = $conv->[0]->[0];
+      if ( $self->event_is_stored($checksum) ) {
+         $self->_update_event($checksum, $event);
+         $self->{checksums}->{$fingerprint} = $checksum;
+      }
+      else {
+         my $ts = _parse_timestamp($event->{ts});
 
-      $self->{store_new_sth}->execute(
-         $checksum,
-         $fingerprint,
-         $event->{arg},
-         $ts,
-         $ts);
-      MKDEBUG && _d("Added event to query review table: "
-                    . "$checksum $fingerprint $ts");
+         $self->{store_new_sth}->execute(
+            $checksum,
+            $fingerprint,
+            $event->{arg},
+            $ts,
+            $ts);
+         MKDEBUG && _d("Stored new event: $checksum $fingerprint $ts");
 
-      $self->{fingerprints}->{$fingerprint} = {
-         checksum  => $checksum,
-         sample    => $event->{sample} || '',
-         last_seen => $ts || '', # TODO: is this correct or do we need now()?
-      };
+         $self->{checksums}->{$fingerprint} = $checksum;
+      }
    }
+
+   $event->{checksum} = $checksum;
+
    return;
 }
 
-sub fingerprint_checksum {
+sub event_is_stored {
+   my ( $self, $checksum ) = @_;
+   my $event = $self->{dbh}->selectall_arrayref(
+      "SELECT checksum FROM $self->{qv_tbl} "
+      . "WHERE checksum=CONV('$checksum',16,10)");
+   return scalar @$event ? 1 : 0;
+}
+
+sub _update_event {
+   my ( $self, $checksum, $event ) = @_;
+   return unless (defined $checksum && defined $event);
+   my @sets;
+
+   push @sets, 'cnt=cnt+1';
+
+   my $ts = _parse_timestamp($event->{ts});
+   push @sets, "last_seen='$ts'" if $ts;
+
+
+   my $set_clause = join(',', @sets);
+   my $sql        = "UPDATE $self->{qv_tbl} "
+                  . "SET    $set_clause "
+                  . "WHERE  checksum=CONV('$checksum',16,10)";
+   $self->{dbh}->do($sql);
+
+   return;
+}
+
+sub checksum_fingerprint {
    my ( $fingerprint ) = @_;
-   return substr(md5_hex($fingerprint), -16);
+   my $checksum = uc substr(md5_hex($fingerprint), -16);
+   MKDEBUG && _d("$checksum checksum for $fingerprint");
+   return $checksum;
 }
 
 sub _parse_timestamp {
@@ -2812,7 +2823,7 @@ $opt_parser->{descr}  = q{parses and analyzes MySQL log files.  With no }
 my %opts = $opt_parser->parse();
 
 if ( $opts{A} && !$opts{R} ) {
-   $opt_parser->error('--review is required with --analyze');
+   $opt_parser->error('--analyze requires --review');
 };
 
 $opt_parser->usage_or_errors(%opts);
@@ -2824,8 +2835,9 @@ my $do_analysis = ($opts{R} && $opts{A}) || (!$opts{R} && !$opts{A}) ? 1 : 0;
 # #############################################################################
 my $q  = new Quoter();
 my $qr = new QueryRewriter();
-my $sm;  # used if do_analysis
-my $dbh; # used if --review
+my $dbh;          # used if --review
+my $review_info;  # used if --review
+my $sm;           # used if do_analysis
 my @callbacks;
 
 # This chain of callbacks begins with the sub below which only
@@ -2849,9 +2861,9 @@ push @callbacks, sub {
    return 1;
 };
 
-push @callbacks, get_query_review_callback()   if $opts{R};
-push @callbacks, get_filter_analyze_callback() if $opts{A};
-push @callbacks, get_analyze_callback()        if $do_analysis;
+push @callbacks, get_query_review_callback() if $opts{R};
+push @callbacks, get_review_info_callback()  if $opts{A};
+push @callbacks, get_analyze_callback()      if $do_analysis;
 
 # ############################################################################
 # Parse the input.
@@ -2882,7 +2894,7 @@ $dp->disconnect($dbh) if $opts{R};
 
 if ( $do_analysis ) {
    my @worst = find_top_queries($sm, $opts{s}, $opts{t}, $opts{w});
-   report_queries($sm, @worst);
+   report_queries($sm, $review_info, @worst);
 }
 
 exit;
@@ -2892,7 +2904,7 @@ exit;
 # ############################################################################
 
 sub get_query_review_callback {
-   my $dbh = $dp->get_dbh($dp->get_cxn_params($opts{R}), {AutoCommit => 1});
+   $dbh = $dp->get_dbh($dp->get_cxn_params($opts{R}), {AutoCommit => 1});
    my $tp  = new TableParser();
    if ( !$tp->table_exists($dbh, $opts{R}->{D}, $opts{R}->{t}, $q, 1) ) {
       die "The query review table $opts{R}->{D}.$opts{R}->{t} "
@@ -2904,7 +2916,7 @@ sub get_query_review_callback {
       $du->dump($dbh, $q, $opts{R}->{D}, $opts{R}->{t}, 'table'));
    my $qv     = new QueryReview(
       key_attrib  => 'arg',
-      fingerprint => sub { return $_->[0]->{fingerprint}; },
+      fingerprint => sub { return $_[1]->{fingerprint}; },
       dbh         => $dbh,
       qv_tbl      => $qv_tbl,
       tbl_struct  => $struct,
@@ -2912,21 +2924,43 @@ sub get_query_review_callback {
 
    return sub {
       my ( $event ) = @_;
+      return 0 unless defined $event;
       $qv->store_event($event);
       return 1; # required to keep callback chain going
    };
 }
 
-sub get_filter_analyze_callback {
-   # TODO: finish this
-   return sub { return 1; };
+sub get_review_info_callback {
+   my ( $event ) = @_;
+   $review_info = {};
+   my $qv_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
+   # TODO: get this list dynamically
+   my @review_columns = qw(first_seen last_seen reviewed_by reviewed_on
+                           comments cnt);
+   my $sql = 'SELECT CONV(checksum,10,16) AS checksum, '
+           . join(',', @review_columns)
+           . " FROM $qv_tbl "
+           . 'WHERE checksum=CONV(?,16,10)';
+   MKDEBUG && _d("SELECT for review info: $sql");
+   my $get_review_info_sth = $dbh->prepare($sql);
+
+   return sub {
+      my ( $event ) = @_;
+      return 0 unless defined $event->{checksum};
+      $get_review_info_sth->execute($event->{checksum});
+      my $res = $get_review_info_sth->fetchall_hashref('checksum');
+      my $review_vals = $res->{ $event->{checksum} };
+      @{ $review_info->{$event->{fingerprint}} }{@review_columns}
+         = @{$review_vals}{@review_columns};
+      return 1; # required to keep callback chain going
+   };
 }
 
 sub get_analyze_callback {
    $sm = new SQLMetrics(
       key_attrib    => 'arg',
       worst_attrib  => $opts{w}, # TODO this can be an expr, add to attributes
-      fingerprint   => sub { return $_->[0]->{fingerprint}; },
+      fingerprint   => sub { return $_[1]->{fingerprint}; },
       attributes    => [qw(
                           Query_time
                           Lock_time
@@ -2968,7 +3002,7 @@ sub find_top_queries {
 }
 
 sub report_queries {
-   my ( $sm, @worst ) = @_;
+   my ( $sm, $review_info, @worst ) = @_;
    my $u = $sm->{metrics}->{unique};
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
@@ -3009,8 +3043,17 @@ sub report_queries {
       },
    );
 
+   QUERY:
    foreach my $i ( 0..$#worst ) {
       my $class = $worst[$i];
+      my $fingerprint = $class->{fingerprint};
+
+      if ( defined $review_info && !$opts{reportall} ) {
+         if ( defined $review_info->{$fingerprint}->{reviewed_by} ) {
+            MKDEBUG && _d("Not reporting, already reviewed: $fingerprint"); 
+            next QUERY;
+         }
+      }
 
       # Calculate QPS (queries per second) by looking at the min/max timestamp.
       my $qps = 0;
@@ -3022,9 +3065,10 @@ sub report_queries {
             / ( $class->{ts}->{max} - $class->{ts}->{min} );
       }
 
-      # TODO: should I be using 'shorten' like this for $qps?
-      my $header = sprintf $query_hdr_fmt, $i + 1, shorten($qps),
-             checksum_64($class->{fingerprint}), $class->{$opts{w}}->{pos_in_log};
+      my $header = sprintf $query_hdr_fmt, $i + 1, shorten($qps,p=>1,d=>1000),
+            QueryReview::checksum_fingerprint($fingerprint),
+            $class->{$opts{w}}->{pos_in_log};
+
       print  $header, ('_' x (73 - length($header))), "\n";
       printf $metrics_hdr_fmt;
       printf $count_line_fmt,
@@ -3047,15 +3091,16 @@ sub report_queries {
          $Query_time_distro = $stats->{distro} if $save_distro;
 
          printf $metric_line_fmt,
-            $r->{name},                                  # friendly metric name
-            $r->{fmt}->($val->{sum}),                    # total
-            percentage_of($val->{sum}, $g->{$metric}->{sum}), # % total/grand total
-            $r->{fmt}->($val->{min}),                    # min
-            $r->{fmt}->($val->{max}),                    # max
-            $r->{fmt}->($val->{sum}/$val->{cnt}),        # avg
-            $r->{fmt}->($stats->{max}),                  # 95% are within this
-            $r->{fmt}->($stats->{stddev}),               # 95% stdev
-            $r->{fmt}->($stats->{median});               # 95% med
+            $r->{name},                             # friendly metric name
+            $r->{fmt}->($val->{sum}),               # total
+            percentage_of($val->{sum},
+                          $g->{$metric}->{sum}),    # % total/grand total
+            $r->{fmt}->($val->{min}),               # min
+            $r->{fmt}->($val->{max}),               # max
+            $r->{fmt}->($val->{sum}/$val->{cnt}),   # avg
+            $r->{fmt}->($stats->{max}),             # 95% are within this
+            $r->{fmt}->($stats->{stddev}),          # 95% stdev
+            $r->{fmt}->($stats->{median});          # 95% med
       }
 
       printf $list_line_fmt, 'DBs',   join(', ', keys %{$q->{Schema}});
@@ -3071,7 +3116,17 @@ sub report_queries {
       print chart_distro($Query_time_distro);
 
       # TODO
-      # print "# Time clustering:\n";
+      # print "# Time clustering\n";
+
+      if ( defined $review_info ) {
+         my $info_fmt = "#    %-13s %-50s\n";
+         print "# Review information\n";
+         foreach my $info ( keys %{$review_info->{$fingerprint}} ) {
+            printf $info_fmt, $info,
+               (defined $review_info->{$fingerprint}->{$info}
+                   ? $review_info->{$fingerprint}->{$info} : '');
+         }
+      }
 
       # If the query uses qualified table names (db.tbl), print_tables()
       # will print SHOW TABLE STATUS FROM `db` LIKE 'tbl'. Otherwise,
@@ -3147,7 +3202,7 @@ sub print_tables {
    my ( $query, $default_db ) = @_;
    my $qp = new QueryParser();
    my $table_aliases = $qp->parse_table_aliases( $qp->get_table_ref($query) );
-   print "# Tables:\n";
+   print "# Tables\n";
    foreach my $table_alias ( keys %$table_aliases ) {
       next if $table_alias eq 'DATABASE';
       my $tbl = $table_aliases->{$table_alias};
@@ -3303,26 +3358,16 @@ prefix.
 
 =item --analyze
 
-short form: -A; type: string; default; reviewed_by IS NOT NULL
+short form: -A
 
-Analyze and report on queries using --review to filter queries.
+Do a special analysis using --review.
 
-When used with L<"--review">, this option (by default) enables a query analysis
-of only queries which have not been reviewed. Not-reviewed queries will be
-analyzed, reported and added to the query review table specified by
-L<"--review">. Reviewed queries will only be updated in the query review table.
-
-The analysis L<"--sort"> and L<"--top"> happen first. Then, from these top
-sorted worst queries, those which have already been reviewed are removed.
-The remaining queries are not re-ranked, so you may see a seemingly random
-spread of queries reported (e.g., queries 3, 4, 8, 10). Use the
-L<"--reportall"> option to have the report include reviewed queries
-(which will be marked so you can distinguish them from the not-reviewed
-queries).
-
-The argument to --analyze can be any valid SQL WHERE clause for the
-query review table. For example: 'first_seen >= CURRENT_DATE - INTERVAL 7 DAY'
-to filter for new queries first seen in the last 7 days.
+When used with L<"--review">, this option causes a special type of analysis
+to be done. First, all queries are stored/updated for L<"--review"> and
+analyzed to determine the L<"--top"> worst. Of these top worst, only those
+which have not yet been reviewed are reported. Therefore you may see a
+seemingly random spread of queries reported (e.g., queries 3, 4, 8, 10).
+Use the L<"--reportall"> option to have all queries reported.
 
 See L<"--review"> for the minimal table structure required for the query
 review table.
@@ -3368,12 +3413,13 @@ the query's total time.
 
 Since this option enables completely different behavior from the default slow
 log analysis, certain analysis-related options, like L<"--top">, are ignored
-when using --review. If you want to combine a review and an analysis, see
-L<"--analyzenew">.
+when using --review.
+
+If you want to combine a review and an analysis, see L<"--analyze">.
 
 =item --reportall
 
-Report both reviewed and not-reviewed queries with --analyze and --review.
+Report all queries with --analyze and --review.
 
 =item --sort
 
