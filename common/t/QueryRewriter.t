@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 47;
+use Test::More tests => 48;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -366,6 +366,13 @@ is($q->convert_to_select(
    . q{APLTRACT_GARDENPLANT_ID = ABU.ID AND GC.MATCHING_POT = 0 AND GC.PERFORM_DIG=1}
    . q{ AND ABU.DIG = 6 AND ( ((SOIL-COST) > -80.0}
    . q{ AND BUGS < 60.0 AND (SOIL-COST) < 200.0) AND POTS < 10.0 )}),
-   '',
-   'A real-life case that did not work',
+   "select  GC.MATCHING_POT = 5, GC.LAST_GARDENPOT = 5, GC.LAST_NAME='Rotary', GC.LAST_BUCKET='Pail', GC.LAST_UPDATE='2008-11-27 04:00:59' from GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU where  PL.APLTRACT_GARDENPLANT_ID = GC.APLTRACT_GARDENPLANT_ID AND PL.APLTRACT_GARDENPLANT_ID = ABU.ID AND GC.MATCHING_POT = 0 AND GC.PERFORM_DIG=1 AND ABU.DIG = 6 AND ( ((SOIL-COST) > -80.0 AND BUGS < 60.0 AND (SOIL-COST) < 200.0) AND POTS < 10.0 )",
+   'update with no space between quoted string and where (issue 168)'
 );
+
+is(
+   $q->convert_to_select("UPDATE tbl SET col='wherex'WHERE crazy=1"),
+   "select  col='wherex' from tbl where  crazy=1",
+   "update with SET col='wherex'WHERE"
+);
+

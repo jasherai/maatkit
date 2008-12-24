@@ -101,7 +101,7 @@ sub convert_to_select {
                  \A.*?
                  update\s+(.*?)
                  \s+set\b(.*?)
-                 (?:\s+where\b(.*?))?
+                 (?:\s*where\b(.*?))?
                  (limit\s*\d+(?:\s*,\s*\d+)?)?
                  \Z
               }
