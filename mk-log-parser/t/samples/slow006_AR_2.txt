@@ -18,12 +18,12 @@
 #       1s                                                               
 #     10s+                                                               
 # Review information
-#    reviewed_by                                                     
-#    reviewed_on                                                     
-#    last_seen     2007-12-18 11:49:07                               
-#    first_seen    2007-12-18 11:48:57                               
-#    comments                                                        
-#    cnt           9                                                 
+#    cnt           9
+#    comments      
+#    first_seen    2007-12-18 11:48:57
+#    last_seen     2007-12-18 11:49:07
+#    reviewed_by   
+#    reviewed_on   
 # Tables
 #    SHOW TABLE STATUS LIKE 'bar_tbl'\G
 #    SHOW CREATE TABLE `bar_tbl`\G

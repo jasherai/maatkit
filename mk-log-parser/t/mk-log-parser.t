@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 
 # #############################################################################
@@ -157,6 +157,15 @@ SKIP: {
    ok(
       no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review   --reportall', 'samples/slow006_AR_4.txt'),
       'Analyze-review pass 4 with --reportall reports reviewed query'
+   );
+
+   # Test that reported review info gets all meta-columns dynamically.
+   $dbh->do('ALTER TABLE test.query_review ADD COLUMN foo INT');
+   $dbh->do('UPDATE test.query_review
+      SET foo=42 WHERE checksum=15334040482108055940');
+   ok(
+      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_5.txt'),
+      'Analyze-review pass 5 reports new review info column'
    );
 
    $sb->wipe_clean($dbh);

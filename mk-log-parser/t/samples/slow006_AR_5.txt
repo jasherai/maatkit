@@ -1,7 +1,7 @@
-# Query 001 (0.3 QPS) ID: 0xD4CD74934382A184 at byte 1445 _______________
+# Query 002 (0.3 QPS) ID: 0xD4CD74934382A184 at byte 1445 _______________
 #             total    %      min     max     avg     95%  stddev  median
-# Count           3  100
-# Time         36us  100     12us    12us    12us    12us       0    12us
+# Count           3   50
+# Time         36us   50     12us    12us    12us    12us       0    12us
 # Lock            0    0        0       0       0       0       0       0
 # Rows sent       0    0        0       0       0       0       0       0
 # Rows exam       0    0        0       0       0       0       0       0
@@ -18,9 +18,10 @@
 #       1s                                                               
 #     10s+                                                               
 # Review information
-#    cnt           12
+#    cnt           18
 #    comments      
 #    first_seen    2007-12-18 11:48:57
+#    foo           42
 #    last_seen     2007-12-18 11:49:07
 #    reviewed_by   
 #    reviewed_on   

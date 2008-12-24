@@ -2948,13 +2948,13 @@ sub get_query_review_callback {
 
 sub get_review_info_callback {
    my ( $event ) = @_;
-   $review_info = {};
+   $review_info = {
+      cols => [],
+      vals => {},
+   };
    my $qv_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
-   # TODO: get this list dynamically
-   my @review_columns = qw(first_seen last_seen reviewed_by reviewed_on
-                           comments cnt);
-   my $sql = 'SELECT CONV(checksum,10,16) AS checksum, '
-           . join(',', @review_columns)
+   my @excluded_columns = qw(checksum fingerprint sample checksum_conv); 
+   my $sql = 'SELECT *, CONV(checksum,10,16) AS checksum_conv'
            . " FROM $qv_tbl "
            . 'WHERE checksum=CONV(?,16,10)';
    MKDEBUG && _d("SELECT for review info: $sql");
@@ -2964,11 +2964,23 @@ sub get_review_info_callback {
       my ( $event ) = @_;
       return 0 unless defined $event->{checksum};
       $get_review_info_sth->execute($event->{checksum});
-      my $res = $get_review_info_sth->fetchall_hashref('checksum');
+      my $res = $get_review_info_sth->fetchall_hashref('checksum_conv');
       my $review_vals = $res->{ $event->{checksum} };
+      if ( scalar @{$review_info->{cols}} == 0 ) {
+         # We only have to do this once. The columns shouldn't change
+         # while we're running.
+         foreach my $exclude_column ( @excluded_columns ) {
+            delete $review_vals->{$exclude_column};
+         }
+         @{$review_info->{cols}} = sort keys %$review_vals;
+         MKDEBUG && _d("Review info columns: "
+                       . join(',', @{$review_info->{cols}}));
+      }
       return 0 if ( !$opts{rankall} && defined $review_vals->{reviewed_by} );
-      @{ $review_info->{$event->{fingerprint}} }{@review_columns}
-         = @{$review_vals}{@review_columns};
+      foreach my $review_column ( @{$review_info->{cols}} ) {
+         $review_info->{vals}->{$event->{fingerprint}}->{$review_column}
+            = $review_vals->{$review_column};
+      }
       return 1; # required to keep callback chain going
    };
 }
@@ -3032,7 +3044,7 @@ sub report_queries {
    my $metric_line_fmt = "# %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
    my $list_line_fmt   = "# %-9s   %-60s\n";
    my $timestamp_fmt   = "# Time range %s to %s\n";
-   my $review_info_fmt = "#    %-13s %-50s\n";
+   my $review_info_fmt = "#    %-13s %-s\n";
 
    my @reported_metrics = (
       {
@@ -3068,7 +3080,7 @@ sub report_queries {
       my $fingerprint = $class->{fingerprint};
 
       if ( defined $review_info && !$opts{reportall} ) {
-         if ( defined $review_info->{$fingerprint}->{reviewed_by} ) {
+         if ( defined $review_info->{vals}->{$fingerprint}->{reviewed_by} ) {
             MKDEBUG && _d("Not reporting, already reviewed: $fingerprint"); 
             next QUERY;
          }
@@ -3139,10 +3151,10 @@ sub report_queries {
 
       if ( defined $review_info ) { 
          print "# Review information\n";
-         foreach my $info ( keys %{$review_info->{$fingerprint}} ) {
-            printf $review_info_fmt, $info,
-               (defined $review_info->{$fingerprint}->{$info}
-                   ? $review_info->{$fingerprint}->{$info} : '');
+         foreach my $j ( 0..$#{$review_info->{cols}} ) {
+            my $col = $review_info->{cols}->[$j];
+            my $val = $review_info->{vals}->{$fingerprint}->{$col};
+            printf $review_info_fmt, $col, (defined $val ? $val : '');
          }
       }
 
