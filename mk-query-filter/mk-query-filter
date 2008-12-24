@@ -849,6 +849,60 @@ if ( MKDEBUG ) {
 # End OptionParser package
 # ###########################################################################
 
+package Processlist;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Time::HiRes qw(time sleep);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+use constant {
+   ID      => 0,
+   USER    => 1,
+   HOST    => 2,
+   DB      => 3,
+   COMMAND => 4,
+   TIME    => 5,
+   STATE   => 6,
+   INFO    => 7,
+};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub parse {
+   my ( $self, $dbh, $code ) = @_;
+   my $sth = $dbh->prepare('SHOW FULL PROCESSLIST');
+   my ($cxn) = $dbh->selectrow_array('select connection_id()');
+   my %last;
+   
+   while (1) {
+      $sth->execute();
+      my $ps = $sth->fetchall_arrayref();
+      foreach my $ps ( grep { $_->[INFO] } @$ps ) { # TODO:: remove <<-----
+         my $id = $ps->[ID];
+         next if $id == $cxn;
+         next unless $ps->[COMMAND] && $ps->[COMMAND] eq 'Query';
+         $code->({db => $ps->[DB], arg => $ps->[INFO]});
+         #if ( $ps->[COMMAND] eq 'Query' ) {
+         #   if ( !$last{$id} ) { # TODO || $last{$id}->[INFO] ne $ps->[INFO] )
+         #      # && $last{id}->[TIME] >= $ps->[TIME] ) # TODO: subsecond polling
+         #   {
+         #      $last{$id} = $ps;
+         #      push @$ps, time - $ps->[TIME];
+         #   }
+
+      }
+      sleep .1;
+   }
+}
+
+
+1;
+
 # ###########################################################################
 # LogParser package 2601
 # ###########################################################################
@@ -1324,8 +1378,11 @@ else {
    };
 }
 
+my $p = new Processlist;
+$dbh = $dp->get_dbh($dp->get_cxn_params($opts{p}), {AutoCommit => 1}); # TODO
 while ( my $fh = shift(@fhs) ) {
-   1 while $lp->parse_slowlog_event($fh, sub { $callback->(@_) });
+#   1 while $lp->parse_slowlog_event($fh, sub { $callback->(@_) });
+   1 while $p->parse($dbh, sub { $callback->(@_) });
    close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
 }
 $dp->disconnect($dbh) if $opts{R};
@@ -1387,6 +1444,12 @@ prefix.
 short form: -x; type: DSN
 
 Execute queries via this DSN.
+
+=item --processlist
+
+short form: -p; type: DSN
+
+Use this DSN to poll SHOW PROCESSLIST for queries.
 
 =item --regex
 
