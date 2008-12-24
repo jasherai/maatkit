@@ -1,0 +1,2555 @@
+#!/usr/bin/env perl
+
+# This program is copyright 2007-@CURRENTYEAR@ Percona Inc.
+# Feedback and improvements are welcome.
+#
+# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+# systems, you can issue `man perlgpl' or `man perlartistic' to read these
+# licenses.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA.
+
+use strict;
+use warnings FATAL => 'all';
+
+our $VERSION = '@VERSION@';
+our $DISTRIB = '@DISTRIB@';
+our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
+
+# ###########################################################################
+# DSNParser package 2460
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package DSNParser;
+
+use DBI;
+use Data::Dumper;
+$Data::Dumper::Indent    = 0;
+$Data::Dumper::Quotekeys = 0;
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my $self = {
+      opts => {
+         A => {
+            desc => 'Default character set',
+            dsn  => 'charset',
+            copy => 1,
+         },
+         D => {
+            desc => 'Database to use',
+            dsn  => 'database',
+            copy => 1,
+         },
+         F => {
+            desc => 'Only read default options from the given file',
+            dsn  => 'mysql_read_default_file',
+            copy => 1,
+         },
+         h => {
+            desc => 'Connect to host',
+            dsn  => 'host',
+            copy => 1,
+         },
+         p => {
+            desc => 'Password to use when connecting',
+            dsn  => 'password',
+            copy => 1,
+         },
+         P => {
+            desc => 'Port number to use for connection',
+            dsn  => 'port',
+            copy => 1,
+         },
+         S => {
+            desc => 'Socket file to use for connection',
+            dsn  => 'mysql_socket',
+            copy => 1,
+         },
+         u => {
+            desc => 'User for login if not current user',
+            dsn  => 'user',
+            copy => 1,
+         },
+      },
+   };
+   foreach my $opt ( @opts ) {
+      MKDEBUG && _d('Adding extra property ' . $opt->{key});
+      $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
+   }
+   return bless $self, $class;
+}
+
+sub prop {
+   my ( $self, $prop, $value ) = @_;
+   if ( @_ > 2 ) {
+      MKDEBUG && _d("Setting $prop property");
+      $self->{$prop} = $value;
+   }
+   return $self->{$prop};
+}
+
+sub parse {
+   my ( $self, $dsn, $prev, $defaults ) = @_;
+   if ( !$dsn ) {
+      MKDEBUG && _d('No DSN to parse');
+      return;
+   }
+   MKDEBUG && _d("Parsing $dsn");
+   $prev     ||= {};
+   $defaults ||= {};
+   my %given_props;
+   my %final_props;
+   my %opts = %{$self->{opts}};
+   my $prop_autokey = $self->prop('autokey');
+
+   foreach my $dsn_part ( split(/,/, $dsn) ) {
+      if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
+         $given_props{$prop_key} = $prop_val;
+      }
+      elsif ( $prop_autokey ) {
+         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         $given_props{$prop_autokey} = $dsn_part;
+      }
+      else {
+         MKDEBUG && _d("Bad DSN part: $dsn_part");
+      }
+   }
+
+   foreach my $key ( keys %opts ) {
+      MKDEBUG && _d("Finding value for $key");
+      $final_props{$key} = $given_props{$key};
+      if (   !defined $final_props{$key}
+           && defined $prev->{$key} && $opts{$key}->{copy} )
+      {
+         $final_props{$key} = $prev->{$key};
+         MKDEBUG && _d("Copying value for $key from previous DSN");
+      }
+      if ( !defined $final_props{$key} ) {
+         $final_props{$key} = $defaults->{$key};
+         MKDEBUG && _d("Copying value for $key from defaults");
+      }
+   }
+
+   foreach my $key ( keys %given_props ) {
+      die "Unrecognized DSN part '$key' in '$dsn'\n"
+         unless exists $opts{$key};
+   }
+   if ( (my $required = $self->prop('required')) ) {
+      foreach my $key ( keys %$required ) {
+         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
+      }
+   }
+
+   return \%final_props;
+}
+
+sub as_string {
+   my ( $self, $dsn ) = @_;
+   return $dsn unless ref $dsn;
+   return join(',',
+      map  { "$_=" . ($_ eq 'p' ? '...' : $dsn->{$_}) }
+      grep { defined $dsn->{$_} && $self->{opts}->{$_} }
+      sort keys %$dsn );
+}
+
+sub usage {
+   my ( $self ) = @_;
+   my $usage
+      = "DSN syntax is key=value[,key=value...]  Allowable DSN keys:\n"
+      . "  KEY  COPY  MEANING\n"
+      . "  ===  ====  =============================================\n";
+   my %opts = %{$self->{opts}};
+   foreach my $key ( sort keys %opts ) {
+      $usage .= "  $key    "
+             .  ($opts{$key}->{copy} ? 'yes   ' : 'no    ')
+             .  ($opts{$key}->{desc} || '[No description]')
+             . "\n";
+   }
+   if ( (my $key = $self->prop('autokey')) ) {
+      $usage .= "  If the DSN is a bareword, the word is treated as the '$key' key.\n";
+   }
+   return $usage;
+}
+
+sub get_cxn_params {
+   my ( $self, $info ) = @_;
+   my $dsn;
+   my %opts = %{$self->{opts}};
+   my $driver = $self->prop('dbidriver') || '';
+   if ( $driver eq 'Pg' ) {
+      $dsn = 'DBI:Pg:dbname=' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(h P));
+   }
+   else {
+      $dsn = 'DBI:mysql:' . ( $info->{D} || '' ) . ';'
+         . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
+                     grep { defined $info->{$_} }
+                     qw(F h P S A))
+         . ';mysql_read_default_group=mysql';
+   }
+   MKDEBUG && _d($dsn);
+   return ($dsn, $info->{u}, $info->{p});
+}
+
+sub fill_in_dsn {
+   my ( $self, $dbh, $dsn ) = @_;
+   my $vars = $dbh->selectall_hashref('SHOW VARIABLES', 'Variable_name');
+   my ($user, $db) = $dbh->selectrow_array('SELECT USER(), DATABASE()');
+   $user =~ s/@.*//;
+   $dsn->{h} ||= $vars->{hostname}->{Value};
+   $dsn->{S} ||= $vars->{'socket'}->{Value};
+   $dsn->{P} ||= $vars->{port}->{Value};
+   $dsn->{u} ||= $user;
+   $dsn->{D} ||= $db;
+}
+
+sub get_dbh {
+   my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
+   $opts ||= {};
+   my $defaults = {
+      AutoCommit        => 0,
+      RaiseError        => 1,
+      PrintError        => 0,
+      mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
+   };
+   @{$defaults}{ keys %$opts } = values %$opts;
+   MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+      my $sql = "/*!40101 SET NAMES $charset*/";
+      MKDEBUG && _d("$dbh: $sql");
+      $dbh->do($sql);
+      MKDEBUG && _d('Enabling charset for STDOUT');
+      if ( $charset eq 'utf8' ) {
+         binmode(STDOUT, ':utf8')
+            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+      }
+      else {
+         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+      }
+   }
+   my $setvars = $self->prop('setvars');
+   if ( $cxn_string =~ m/mysql/i && $setvars ) {
+      my $sql = "SET $setvars";
+      MKDEBUG && _d("$dbh: $sql");
+      $dbh->do($sql);
+   }
+   MKDEBUG && _d('DBH info: ',
+      $dbh,
+      Dumper($dbh->selectrow_hashref(
+         'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
+      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
+      ' Character set info: ',
+      Dumper($dbh->selectall_arrayref(
+         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
+      ' $DBI::VERSION: ', $DBI::VERSION,
+   );
+   return $dbh;
+}
+
+sub get_hostname {
+   my ( $self, $dbh ) = @_;
+   if ( my ($host) = ($dbh->{mysql_hostinfo} || '') =~ m/^(\w+) via/ ) {
+      return $host;
+   }
+   my ( $hostname, $one ) = $dbh->selectrow_array(
+      'SELECT /*!50038 @@hostname, */ 1');
+   return $hostname;
+}
+
+sub disconnect {
+   my ( $self, $dbh ) = @_;
+   MKDEBUG && $self->print_active_handles($dbh);
+   $dbh->disconnect;
+}
+
+sub print_active_handles {
+   my ( $self, $thing, $level ) = @_;
+   $level ||= 0;
+   printf("# Active %sh: %s %s %s\n", ($thing->{Type} || 'undef'), "\t" x $level,
+      $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
+      or die "Cannot print: $OS_ERROR";
+   foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
+      $self->print_active_handles->( $handle, $level + 1 );
+   }
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { defined $_ ? $_ : 'undef' } @_;
+   print "# DSNParser:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End DSNParser package
+# ###########################################################################
+
+# ###########################################################################
+# Quoter package 2215
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package Quoter;
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub quote {
+   my ( $self, @vals ) = @_;
+   foreach my $val ( @vals ) {
+      $val =~ s/`/``/g;
+   }
+   return join('.', map { '`' . $_ . '`' } @vals);
+}
+
+sub quote_val {
+   my ( $self, @vals ) = @_;
+   return join(', ',
+      map {
+         if ( defined $_ ) {
+            $_ =~ s/(['\\])/\\$1/g;
+            $_ eq '' || $_ =~ m/^0|\D/ ? "'$_'" : $_;
+         }
+         else {
+            'NULL';
+         }
+      } @vals
+   );
+}
+
+1;
+
+# ###########################################################################
+# End Quoter package
+# ###########################################################################
+
+# ###########################################################################
+# OptionParser package 2300
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package OptionParser;
+
+use Getopt::Long;
+use List::Util qw(max);
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+sub new {
+   my ( $class, @opts ) = @_;
+   my %key_seen;
+   my %long_seen;
+   my %key_for;
+   my %defaults;
+   my @mutex;
+   my @atleast1;
+   my %long_for;
+   my %disables;
+   my %copyfrom;
+   my @allowed_with;
+   unshift @opts,
+      { s => 'help',    d => 'Show this help message' },
+      { s => 'version', d => 'Output version information and exit' };
+   foreach my $opt ( @opts ) {
+      if ( ref $opt ) {
+         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         $opt->{k} = $short || $long;
+         $key_for{$long} = $opt->{k};
+         $long_for{$opt->{k}} = $long;
+         $long_for{$long} = $long;
+         $opt->{l} = $long;
+         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
+         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
+         $opt->{t} = $short;
+         $opt->{n} = $opt->{s} =~ m/!/;
+         $opt->{g} ||= 'o';
+         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
+            MKDEBUG && _d("Option $opt->{k} type: $y");
+            $opt->{y} = $y;
+            $opt->{s} =~ s/=./=s/;
+         }
+         if ( $opt->{d} =~ m/required/ ) {
+            $opt->{r} = 1;
+            MKDEBUG && _d("Option $opt->{k} is required");
+         }
+         if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
+            $defaults{$opt->{k}} = defined $def ? $def : 1;
+            MKDEBUG && _d("Option $opt->{k} has a default");
+         }
+         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
+            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
+            MKDEBUG && _d("Option $opt->{k} $dis");
+         }
+      }
+      else { # It's an instruction.
+
+         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $long_for{$_};
+               } $class->get_participants($opt);
+            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+               push @mutex, \@participants;
+               MKDEBUG && _d(@participants, ' are mutually exclusive');
+            }
+            if ( $opt =~ m/at least one|one and only one/ ) {
+               push @atleast1, \@participants;
+               MKDEBUG && _d(@participants, ' require at least one');
+            }
+         }
+         elsif ( $opt =~ m/default to/ ) {
+            my @participants = map {
+                  die "No such option '$_' in $opt" unless $long_for{$_};
+                  $key_for{$_};
+               } $class->get_participants($opt);
+            $copyfrom{$participants[0]} = $participants[1];
+            MKDEBUG && _d(@participants, ' copy from each other');
+         }
+         elsif ( $opt  =~ m/allowed with/ ) {
+            my @participants = map {
+                  die "No such option '$_' while processing $opt"
+                     unless $long_for{$_};
+                  $key_for{$_};
+               } $class->get_participants($opt);
+            push @allowed_with, \@participants;
+         }
+
+      }
+   }
+
+   foreach my $dis ( keys %disables ) {
+      $disables{$dis} = [
+            map {
+               if ( !defined $long_for{$_} ) {
+                  die "No such option '$_' while processing $dis";
+               }
+               $long_for{$_};
+            } @{$disables{$dis}}
+      ];
+   }
+
+   my $self = {
+      specs        => [ grep { ref $_ } @opts ],
+      notes        => [],
+      instr        => [ grep { !ref $_ } @opts ],
+      mutex        => \@mutex,
+      defaults     => \%defaults,
+      long_for     => \%long_for,
+      atleast1     => \@atleast1,
+      disables     => \%disables,
+      key_for      => \%key_for,
+      copyfrom     => \%copyfrom,
+      strict       => 1,
+      groups       => [ { k => 'o', d => 'Options' } ],
+      allowed_with => \@allowed_with,
+   };
+
+   return bless $self, $class;
+}
+
+sub get_participants {
+   my ( $self, $str ) = @_;
+   my @participants;
+   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
+      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
+         push @participants, $long;
+      }
+      else {
+         foreach my $short ( $thing =~ m/([^-])/g ) {
+            push @participants, $short;
+         }
+      }
+   }
+   MKDEBUG && _d("Participants for $str: ", @participants);
+   return @participants;
+}
+
+sub parse {
+   my ( $self, %defaults ) = @_;
+   my @specs = @{$self->{specs}};
+   my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
+
+   my %opt_seen;
+   my %vals = %{$self->{defaults}};
+   @vals{keys %defaults} = values %defaults;
+   foreach my $spec ( @specs ) {
+      $vals{$spec->{k}} = undef unless defined $vals{$spec->{k}};
+      $opt_seen{$spec->{k}} = 1;
+   }
+
+   foreach my $key ( keys %defaults ) {
+      die "Cannot set default for non-existent option '$key'\n"
+         unless $opt_seen{$key};
+   }
+
+   Getopt::Long::Configure('no_ignore_case', 'bundling');
+   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
+      or $self->error('Error parsing options');
+
+   if ( $vals{version} ) {
+      my $prog = $self->prog;
+      printf("%s  Ver %s Distrib %s Changeset %s\n",
+         $prog, $main::VERSION, $main::DISTRIB, $main::SVN_REV)
+         or die "Cannot print: $OS_ERROR";
+      exit(0);
+   }
+
+   if ( @ARGV && $self->{strict} ) {
+      $self->error("Unrecognized command-line options @ARGV");
+   }
+
+   foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
+      my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
+      MKDEBUG && _d("Unsetting options: ", @disses);
+      @vals{@disses} = map { undef } @disses;
+   }
+
+   foreach my $spec ( grep { $_->{r} } @specs ) {
+      if ( !defined $vals{$spec->{k}} ) {
+         $self->error("Required option --$spec->{l} must be specified");
+      }
+   }
+
+   foreach my $mutex ( @{$self->{mutex}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$mutex;
+      if ( @set > 1 ) {
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$mutex}[ 0 .. scalar(@$mutex) - 2] );
+         $note .= " and --$self->{long_for}->{$mutex->[-1]}"
+               . " are mutually exclusive.";
+         $self->error($note);
+      }
+   }
+
+   foreach my $required ( @{$self->{atleast1}} ) {
+      my @set = grep { defined $vals{$self->{key_for}->{$_}} } @$required;
+      if ( !@set ) {
+         my $note = join(', ',
+            map { "--$self->{long_for}->{$_}" }
+                @{$required}[ 0 .. scalar(@$required) - 2] );
+         $note .= " or --$self->{long_for}->{$required->[-1]}";
+         $self->error("Specify at least one of $note");
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} && defined $vals{$_->{k}} } @specs ) {
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'm' ) {
+         my ( $num, $suffix ) = $val =~ m/(\d+)([a-z])?$/;
+         if ( !$suffix ) {
+            my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
+            $suffix = $s || 's';
+            MKDEBUG && _d("No suffix given; using $suffix for $spec->{k} "
+               . "(value: '$val')");
+         }
+         if ( $suffix =~ m/[smhd]/ ) {
+            $val = $suffix eq 's' ? $num            # Seconds
+                 : $suffix eq 'm' ? $num * 60       # Minutes
+                 : $suffix eq 'h' ? $num * 3600     # Hours
+                 :                  $num * 86400;   # Days
+            $vals{$spec->{k}} = $val;
+            MKDEBUG && _d("Setting option $spec->{k} to $val");
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
+      elsif ( $spec->{y} eq 'd' ) {
+         MKDEBUG && _d("Parsing option $spec->{y} as a DSN");
+         my $from_key = $self->{copyfrom}->{$spec->{k}};
+         my $default = {};
+         if ( $from_key ) {
+            MKDEBUG && _d("Option $spec->{y} DSN copies from option $from_key");
+            $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
+         }
+         $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
+      }
+      elsif ( $spec->{y} eq 'z' ) {
+         my ($pre, $num, $factor) = $val =~ m/^([+-])?(\d+)([kMG])?$/;
+         if ( defined $num ) {
+            if ( $factor ) {
+               $num *= $factor_for{$factor};
+               MKDEBUG && _d("Setting option $spec->{y} to num * factor");
+            }
+            $vals{$spec->{k}} = ($pre || '') . $num;
+         }
+         else {
+            $self->error("Invalid --$spec->{l} argument");
+         }
+      }
+   }
+
+   foreach my $spec ( grep { $_->{y} } @specs ) {
+      MKDEBUG && _d("Treating option $spec->{k} as a list");
+      my $val = $vals{$spec->{k}};
+      if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
+         $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
+      }
+      elsif ( $spec->{y} eq 'A' || (defined $val && $spec->{y} eq 'a') ) {
+         $vals{$spec->{k}} = [ split(',', ($val || '')) ];
+      }
+   }
+
+   foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
+      my $opt = $allowed_opts->[0];
+      next if !defined $vals{$opt};
+      my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
+      delete @defined_opts{ @$allowed_opts };
+      foreach my $defined_opt ( keys %defined_opts ) {
+         MKDEBUG
+            && _d("Unsetting options: $defined_opt (not allowed with $opt)");
+         $vals{$defined_opt} = undef;
+      }
+   }
+
+   return %vals;
+}
+
+sub error {
+   my ( $self, $note ) = @_;
+   $self->{__error__} = 1;
+   push @{$self->{notes}}, $note;
+}
+
+sub prog {
+   (my $prog) = $PROGRAM_NAME =~ m/([.A-Za-z-]+)$/;
+   return $prog || $PROGRAM_NAME;
+}
+
+sub prompt {
+   my ( $self ) = @_;
+   my $prog   = $self->prog;
+   my $prompt = $self->{prompt} || '<options>';
+   return "Usage: $prog $prompt\n";
+}
+
+sub descr {
+   my ( $self ) = @_;
+   my $prog = $self->prog;
+   my $descr  = $prog . ' ' . ($self->{descr} || '')
+          . "  For more details, please use the --help option, "
+          . "or try 'perldoc $prog' for complete documentation.";
+   $descr = join("\n", $descr =~ m/(.{0,80})(?:\s+|$)/g);
+   $descr =~ s/ +$//mg;
+   return $descr;
+}
+
+sub usage_or_errors {
+   my ( $self, %opts ) = @_;
+   if ( $opts{help} ) {
+      print $self->usage(%opts)
+         or die "Cannot print: $OS_ERROR";
+      exit(0);
+   }
+   elsif ( $self->{__error__} ) {
+      print $self->errors()
+         or die "Cannot print: $OS_ERROR";
+      exit(0);
+   }
+}
+
+sub errors {
+   my ( $self ) = @_;
+   my $usage = $self->prompt() . "\n";
+   if ( (my @notes = @{$self->{notes}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   }
+   return $usage . "\n" . $self->descr();
+}
+
+sub usage {
+   my ( $self, %vals ) = @_;
+   my @specs = @{$self->{specs}};
+
+   my $maxl = max(map { length($_->{l}) + ($_->{n} ? 4 : 0)} @specs);
+
+   my $maxs = max(0,
+      map { length($_->{l}) + ($_->{n} ? 4 : 0)}
+      grep { $_->{t} } @specs);
+
+   my $lcol = max($maxl, ($maxs + 3));
+   my $rcol = 80 - $lcol - 6;
+   my $rpad = ' ' x ( 80 - $rcol );
+
+   $maxs = max($lcol - 3, $maxs);
+
+   my $usage = $self->descr() . "\n" . $self->prompt();
+   foreach my $g ( @{$self->{groups}} ) {
+      $usage .= "\n$g->{d}:\n";
+      foreach my $spec (
+         sort { $a->{l} cmp $b->{l} } grep { $_->{g} eq $g->{k} } @specs )
+      {
+         my $long  = $spec->{n} ? "[no]$spec->{l}" : $spec->{l};
+         my $short = $spec->{t};
+         my $desc  = $spec->{d};
+         if ( $spec->{y} && $spec->{y} eq 'm' ) {
+            my ($s) = $desc =~ m/\(suffix (.)\)/;
+            $s    ||= 's';
+            $desc =~ s/\s+\(suffix .\)//;
+            $desc .= ".  Optional suffix s=seconds, m=minutes, h=hours, "
+                   . "d=days; if no suffix, $s is used.";
+         }
+         $desc = join("\n$rpad", grep { $_ } $desc =~ m/(.{0,$rcol})(?:\s+|$)/g);
+         $desc =~ s/ +$//mg;
+         if ( $short ) {
+            $usage .= sprintf("  --%-${maxs}s -%s  %s\n", $long, $short, $desc);
+         }
+         else {
+            $usage .= sprintf("  --%-${lcol}s  %s\n", $long, $desc);
+         }
+      }
+   }
+
+   if ( (my @instr = @{$self->{instr}}) ) {
+      $usage .= join("\n", map { "  $_" } @instr) . "\n";
+   }
+   if ( $self->{dsn} ) {
+      $usage .= "\n" . $self->{dsn}->usage();
+   }
+   $usage .= "\nOptions and values after processing arguments:\n";
+   foreach my $spec ( sort { $a->{l} cmp $b->{l} } @specs ) {
+      my $val   = $vals{$spec->{k}};
+      my $type  = $spec->{y} || '';
+      my $bool  = $spec->{s} =~ m/^[\w-]+(?:\|[\w-])?!?$/;
+      $val      = $bool                     ? ( $val ? 'TRUE' : 'FALSE' )
+                : !defined $val             ? '(No value)'
+                : $type eq 'd'              ? $self->{dsn}->as_string($val)
+                : $type =~ m/H|h/           ? join(',', sort keys %$val)
+                : $type =~ m/A|a/           ? join(',', @$val)
+                :                             $val;
+      $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
+   }
+   return $usage;
+}
+
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+
+   my %types = (
+      'time' => 'm',
+      'int'  => 'i',
+      string => 's',
+      hash   => 'h',
+      Hash   => 'H',
+      array  => 'a',
+      Array  => 'A',
+      size   => 'z',
+      DSN    => 'd',
+      float  => 'f',
+   );
+
+   my @spec = ();
+   my @special_options = ();
+   $file ||= __FILE__;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   my $para;
+   my $option;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      MKDEBUG && _d($para);
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $para =~ s/$POD_link_re/$1/go;
+      push @special_options, $para;
+   }
+
+   do {
+      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+         MKDEBUG && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/$POD_link_re/$1/go;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+         push @spec, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . (defined $props{default} ? " (default $props{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+
+         if ( $option ) {
+            if ( my ($line)
+                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
+               1 while ( $line =~ s/$POD_link_re/$1/go );
+               push @special_options, $line;
+            }
+         }
+
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @spec, @special_options;
+}
+
+sub prompt_noecho {
+   shift @_ if ref $_[0] eq __PACKAGE__;
+   my ( $prompt ) = @_;
+   local $OUTPUT_AUTOFLUSH = 1;
+   print $prompt
+      or die "Cannot print: $OS_ERROR";
+   my $response;
+   eval {
+      require Term::ReadKey;
+      Term::ReadKey::ReadMode('noecho');
+      chomp($response = <STDIN>);
+      Term::ReadKey::ReadMode('normal');
+      print "\n"
+         or die "Cannot print: $OS_ERROR";
+   };
+   if ( $EVAL_ERROR ) {
+      die "Cannot read response; is Term::ReadKey installed? $EVAL_ERROR";
+   }
+   return $response;
+}
+
+sub groups {
+   my ( $self, @groups ) = @_;
+   push @{$self->{groups}}, @groups;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# OptionParser:$line $PID ", @_, "\n";
+}
+
+if ( MKDEBUG ) {
+   print '# ', $^X, ' ', $], "\n";
+   my $uname = `uname -a`;
+   if ( $uname ) {
+      $uname =~ s/\s+/ /g;
+      print "# $uname\n";
+   }
+   printf("# %s  Ver %s Distrib %s Changeset %s line %d\n",
+      $PROGRAM_NAME, ($main::VERSION || ''), ($main::DISTRIB || ''),
+      ($main::SVN_REV || ''), __LINE__);
+   print('# Arguments: ',
+      join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+1;
+
+# ###########################################################################
+# End OptionParser package
+# ###########################################################################
+
+# ###########################################################################
+# Transformers package 2529
+# ###########################################################################
+
+package Transformers;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+require Exporter;
+our @ISA         = qw(Exporter);
+our %EXPORT_TAGS = ();
+our @EXPORT      = ();
+our @EXPORT_OK   = qw(
+   float_6
+   micro_t
+   percentage_of
+   secs_to_time
+   shorten 
+   ts
+);
+
+sub float_6 {
+   my ( $val ) = @_;
+   return sprintf('%.6f', $val);
+}
+
+sub micro_t {
+   my ( $t, %args ) = @_;
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
+   my $f;
+
+   $t = 0 if $t < 0;
+
+   $t = sprintf('%.17f', $t) if $t =~ /e/;
+
+   $t =~ s/\.(\d{1,6})\d*/\.$1/;
+
+   if ($t > 0 && $t <= 0.000999) {
+      $f = ($t * 1000000) . 'us';
+   }
+   elsif ($t >= 0.001000 && $t <= 0.999999) {
+      $f = sprintf("%.${p_ms}f", $t * 1000);
+      $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
+   }
+   elsif ($t >= 1) {
+      $f = sprintf("%.${p_s}f", $t);
+      $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
+   }
+   else {
+      $f = 0;  # $t should = 0 at this point
+   }
+
+   return $f;
+}
+
+sub percentage_of {
+   my ( $is, $of, %args ) = @_;
+   my $p   = defined $args{p} ? $args{p} : 2; # float precision
+   my $fmt = $p ? "%.${p}f" : "%d";
+   return sprintf $fmt, ($is * 100) / ($of ||= 1);
+}
+
+sub secs_to_time {
+   my ( $secs, $fmt ) = @_;
+   $secs ||= 0;
+   return '00:00' unless $secs;
+
+   $fmt ||= $secs >= 86_400 ? 'd'
+          : $secs >= 3_600  ? 'h'
+          :                   'm';
+
+   return
+      $fmt eq 'd' ? sprintf(
+         "%d+%02d:%02d:%02d",
+         int($secs / 86_400),
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : $fmt eq 'h' ? sprintf(
+         "%02d:%02d:%02d",
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : sprintf(
+         "%02d:%02d",
+         int(($secs % 3_600) / 60),
+         $secs % 60);
+}
+
+sub shorten {
+   my ( $num, %args ) = @_;
+   my $p = defined $args{p} ? $args{p} : 2;     # float precision
+   my $d = defined $args{d} ? $args{d} : 1_024; # divisor
+   my $n = 0;
+
+   while ( $num >= $d ) {
+      $num /= $d;
+      ++$n;
+   }
+   return sprintf(
+      $num =~ m/\./ || $n
+         ? "%.${p}f%s"
+         : '%d',
+      $num, ('','k','M','G', 'T')[$n]);
+}
+
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# Transformers:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Transformers package
+# ###########################################################################
+
+# ###########################################################################
+# QueryRewriter package 2590
+# ###########################################################################
+use strict;
+use warnings FATAL => 'all';
+
+package QueryRewriter;
+
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
+my $bal;
+$bal         = qr/
+                  \(
+                  (?:
+                     (?> [^()]+ )    # Non-parens without backtracking
+                     |
+                     (??{ $bal })    # Group with matching parens
+                  )*
+                  \)
+                 /x;
+
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub strip_comments {
+   my ( $self, $query ) = @_;
+   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
+   $query =~ s#/\*[^!]*?\*/##gsm;   # /*..*/ comments, but not /*!version */
+   return $query;
+}
+
+sub fingerprint {
+   my ( $self, $query, $opts ) = @_;
+   $opts ||= {};
+   $query =~ s/\\["']//g;                # quoted strings
+   $query =~ s/".*?"/?/g;                # quoted strings
+   $query =~ s/'.*?'/?/g;                # quoted strings
+   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
+   $query =~ s#/\*[^!]*?\*/##gsm;        # /*..*/ comments
+   $query =~ s{                          # Float/real into ?
+              (?<![\w.+-])
+              [+-]?
+              (?:
+                \d+
+                (?:[.]\d*)?
+                |[.]\d+
+              )
+              (?:[Ee][+-]?\d+)?
+              (?!\w)
+             }
+             {?}gx;
+   $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/?/g;  # Hex/bin into ?
+   $query =~ s/[xb]\?/?/g;                      # Hex/bin into ?
+   $query =~ s/\A\s+//;                         # Chop off leading whitespace
+   $query =~ tr[ \n\t\r\f][ ]s;                 # Collapse whitespace
+   $query = lc $query;
+   $query =~ s/\Ause \S+\Z/use ?/;              # Abstract the DB in USE
+   $query =~ s{
+               \b(in|values?)(?:[\s,]*\([\s?,]*\))+
+              }
+              {$1(?+)}gx;      # Collapse IN() and VALUES() lists
+   $query =~ s/(?<=[a-z_])\d[_0-9]*\b/N/g; # Tables ending with groups of digits
+   if ( $opts->{prefixes} ) {
+      $query =~ s/\b[\d+_]*\d(?=\w)/N/g;   # Tables starting with groups of digits
+   }
+   return $query;
+}
+
+sub convert_to_select {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   $query =~ s{
+                 \A.*?
+                 update\s+(.*?)
+                 \s+set\b(.*?)
+                 (?:\s+where\b(.*?))?
+                 (limit\s*\d+(?:\s*,\s*\d+)?)?
+                 \Z
+              }
+              {__update_to_select($1, $2, $3, $4)}exsi
+      || $query =~ s{
+                    \A.*?
+                    (?:insert|replace)\s+
+                    .*?\binto\b(.*?)\(([^\)]+)\)\s*
+                    values?\s*(\(.*?\))\s*
+                    (?:\blimit\b|on\s*duplicate\s*key.*)?\s*
+                    \Z
+                 }
+                 {__insert_to_select($1, $2, $3)}exsi
+      || $query =~ s{
+                    \A.*?
+                    delete\s+(.*?)
+                    \bfrom\b(.*)
+                    \Z
+                 }
+                 {__delete_to_select($1, $2)}exsi;
+   $query =~ s/\s*on\s+duplicate\s+key\s+update.*\Z//si;
+   $query =~ s/\A.*?(?=\bSELECT\s*\b)//ism;
+   return $query;
+}
+
+sub convert_select_list {
+   my ( $self, $query ) = @_;
+   $query =~ s{
+               \A\s*select(.*?)\bfrom\b
+              }
+              {$1 =~ m/\*/ ? "select 1 from" : "select isnull(coalesce($1)) from"}exi;
+   return $query;
+}
+
+sub __delete_to_select {
+   my ( $delete, $join ) = @_;
+   if ( $join =~ m/\bjoin\b/ ) {
+      return "select 1 from $join";
+   }
+   return "select * from $join";
+}
+
+sub __insert_to_select {
+   my ( $tbl, $cols, $vals ) = @_;
+   MKDEBUG && _d('Args: ', @_);
+   my @cols = split(/,/, $cols);
+   MKDEBUG && _d('Cols: ', @cols);
+   $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
+   my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
+   MKDEBUG && _d('Vals: ', @vals);
+   if ( @cols == @vals ) {
+      return "select * from $tbl where "
+         . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
+   }
+   else {
+      return "select * from $tbl limit 1";
+   }
+}
+
+sub __update_to_select {
+   my ( $from, $set, $where, $limit ) = @_;
+   return "select $set from $from "
+      . ( $where ? "where $where" : '' )
+      . ( $limit ? " $limit "      : '' );
+}
+
+sub wrap_in_derived {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   return $query =~ m/\A\s*select/i
+      ? "select 1 from ($query) as x limit 1"
+      : $query;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
+   print "# QueryRewriter:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryRewriter package
+# ###########################################################################
+
+# ###########################################################################
+# LogParser package 2601
+# ###########################################################################
+package LogParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+my $general_log_first_line = qr{
+   \A
+   (?:(\d{6}\s+\d{1,2}:\d\d:\d\d)|\t)? # Timestamp
+   \t
+   (?:\s*(\d+))                        # Thread ID
+   \s
+   (.*)                                # Everything else
+   \Z
+}xs;
+
+my $general_log_any_line = qr{
+   \A(
+      Connect
+      |Field\sList
+      |Init\sDB
+      |Query
+      |Quit
+   )
+   (?:\s+(.*\Z))?
+}xs;
+
+my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
+my $slow_log_uh_line = qr/# User\@Host: ([^\[]+).*?@ (\S*) \[(.*)\]/;
+
+my $binlog_line_1 = qr{^# at (\d+)};
+my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
+my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)};
+
+sub parse_event {
+   my ( $self, $fh, $code, $mode ) = @_;
+   my $event; # Don't initialize, that'll cause a loop.
+
+   my $done = 0;
+   my $type = 0; # 0 = comments, 1 = USE and SET etc, 2 = the actual query
+   my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
+   $mode  ||= '';
+
+   LINE:
+   while ( !$done && defined $line ) {
+      MKDEBUG && _d('type: ', $type, ' ', $line);
+      my $handled_line = 0;
+
+      if ( !$mode && $line =~ m/^# [A-Z]/ ) {
+         MKDEBUG && _d('Setting mode to slow log');
+         $mode ||= 'slow';
+      }
+
+      if ( $line =~ m/Version:.+ started with:/ ) {
+         MKDEBUG && _d('Chomping out header lines');
+         <$fh>; # Tcp port: etc
+         <$fh>; # Column headers
+         $line = <$fh>;
+         $type = 0;
+         redo LINE;
+      }
+
+      elsif ( $mode ne 'slow'
+         && (my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s)
+      ) {
+         MKDEBUG && _d('Beginning of general log event');
+         $handled_line = 1;
+         $mode ||= 'log';
+         $self->{last_line} = undef;
+         if ( $type == 0 ) {
+            MKDEBUG && _d('Type 0');
+            my ( $cmd, $arg ) = $rest =~ m/$general_log_any_line/;
+            $event = {
+               ts  => $ts || '',
+               id  => $id,
+               cmd => $cmd,
+               arg => $arg || '',
+            };
+            if ( $cmd ne 'Query' ) {
+               MKDEBUG && _d('Not a query, done with this event');
+               $done = 1;
+               chomp $event->{arg} if $event->{arg};
+            }
+            $type = 2;
+         }
+         else {
+            MKDEBUG && _d('Saving line for next invocation');
+            $self->{last_line} = $line;
+            $done = 1;
+            chomp $event->{arg} if $event->{arg};
+         }
+      }
+
+      elsif ( $mode eq 'slow' ) {
+         if ( $line =~ m/^# No InnoDB statistics available/ ) {
+            $handled_line = 1;
+            MKDEBUG && _d('Ignoring line');
+            $line = <$fh>;
+            $type = 0;
+            next LINE;
+         }
+
+         elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
+            $handled_line = 1;
+            MKDEBUG && _d('Beginning of slow log event');
+            $self->{last_line} = undef;
+            if ( $type == 0 ) {
+               MKDEBUG && _d('Type 0');
+               $event->{ts} = $time;
+               if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+                  @{$event}{qw(user host ip)} = ($user, $host, $ip);
+               }
+            }
+            else {
+               MKDEBUG && _d('Saving line for next invocation');
+               $self->{last_line} = $line;
+               $done = 1;
+            }
+            $type = 0;
+         }
+
+         elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
+            $handled_line = 1;
+            if ( $type == 0 ) {
+               MKDEBUG && _d('Type 0');
+               @{$event}{qw(user host ip)} = ($user, $host, $ip);
+            }
+            else {
+               MKDEBUG && _d('Saving line for next invocation');
+               $self->{last_line} = $line;
+               $done = 1;
+            }
+            $type = 0;
+         }
+
+         elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
+            
+            if ( $type == 0 ) {
+               if ( $line =~ m/^#.+;/ ) {
+                  MKDEBUG && _d('Commented event line ends header');
+               }
+               else {
+                  $handled_line = 1;
+                  MKDEBUG && _d('Splitting line into fields');
+                  @{$event}{keys %hash} = values %hash;
+               }
+            }
+            elsif ( $type == 1 && $line =~ m/^#.+;/ ) {
+               MKDEBUG && _d('Commented event line after type 1 line');
+               $handled_line = 0;
+            }
+            else {
+               $handled_line = 1;
+               MKDEBUG && _d('Saving line for next invocation');
+               $self->{last_line} = $line;
+               $done = 1;
+            }
+            $type = 0;
+         }
+      }
+
+      if ( !$handled_line ) {
+         $event->{cmd} = 'Query';
+         if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
+            MKDEBUG && _d('Line is the end of a query within event');
+            if ( my ( $db ) = $line =~ m/^use (.*);/i ) {
+               MKDEBUG && _d('Setting event DB to ', $db);
+               $event->{db} = $db;
+               $type = 1;
+            }
+            elsif ( $type < 2 && (my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) ) {
+               MKDEBUG && _d('Setting a property for event');
+               push @{$event->{settings}}, $setting;
+               $type = 1;
+            }
+            else {
+               MKDEBUG && _d('Line is a continuation of prev line');
+               if ( $line =~ m/^# / ) {
+                  MKDEBUG && _d('Line is a commented event line');
+                  $line =~ s/.+: (.+);\n/$1/;
+                  $event->{cmd} = 'Admin';
+               }
+               $event->{arg} .= $line;
+               $type = 2;
+            }
+         }
+         else {
+            MKDEBUG && _d('Line is a continuation of prev line');
+            $event->{arg} .= $line;
+            $type = 2;
+         } 
+      }
+
+      $event->{NR} = $NR;
+
+      $line = <$fh> unless $done;
+   }
+
+   if ( !defined $line ) {
+      MKDEBUG && _d('EOF found');
+      $self->{last_line} = undef;
+   }
+
+   if ( $mode && $mode eq 'slow' ) {
+      MKDEBUG && _d('Slow log, trimming');
+      $event->{arg} =~ s/;\s*\Z// if $event->{arg};
+   }
+
+   $code->($event) if $event && $code;
+   return $event;
+}
+
+sub parse_slowlog_event {
+   my ( $self, $fh, $code ) = @_;
+   my $num_events = 0;
+
+   my @pending;
+   local $INPUT_RECORD_SEPARATOR = ";\n#";
+   my $trimlen    = length($INPUT_RECORD_SEPARATOR);
+   my $pos_in_log = tell($fh);
+   my $stmt;
+
+   EVENT:
+   while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
+      my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
+      $pos_in_log = tell($fh);
+
+      if ( $stmt =~ s{
+            ^(?:
+            Tcp\sport:\s+\d+
+            |
+            /.*Version.*started
+            |
+            Time\s+Id\s+Command
+            ).*\n
+         }{}gmxo
+      ){
+         my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
+         if ( @chunks > 1 ) {
+            $stmt = shift @chunks;
+            unshift @pending, @chunks;
+         }
+      }
+
+      $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+      $stmt =~ s/;\n#?\Z//;
+
+
+      my ($got_ts, $got_uh, $got_ac, $got_db, $got_set);
+      my $pos = 0;
+      my $len = length($stmt);
+      my $found_arg = 0;
+      LINE:
+      while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
+         $pos     = pos($stmt);  # Be careful not to mess this up!
+         my $line = $1;          # Necessary for /g and pos() to work.
+
+         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+
+            if ( !$got_ts
+               && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
+               && ++$got_ts
+            ) {
+               push @properties, 'ts', $time;
+               if ( !$got_uh
+                  && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+                  && ++$got_uh
+               ) {
+                  push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+               }
+            }
+
+            elsif ( !$got_uh
+                  && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
+                  && ++$got_uh
+            ) {
+               push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+            }
+
+            elsif ( !$got_ac
+                  && $line =~ m/^# (?:administrator command:.*)$/
+                  && ++$got_ac
+            ) {
+               push @properties, 'cmd', 'Admin', 'arg', $line;
+               $found_arg++;
+            }
+
+            elsif ( my @temp = $line =~ m/(\w+):\s+(\S+)/g ) {
+               push @properties, @temp;
+            }
+
+            elsif ( !$got_db
+                  && (my ( $db ) = $line =~ m/^use ([^;]+)/ )
+                  && ++$got_db
+            ) {
+               push @properties, 'db', $db;
+            }
+
+            elsif ( !$got_set
+                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ )
+                  && ++$got_set
+            ) {
+               push @properties, split(/,|\s*=\s*/, $setting);
+            }
+
+            if ( !$found_arg && $pos == $len ) {
+               local $INPUT_RECORD_SEPARATOR = ";\n";
+               if ( chomp(my $l = <$fh>) ) {
+                  push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+                  $found_arg++;
+               }
+            }
+         }
+         else {
+            push @properties, 'arg', substr($stmt, $pos - length($line));
+            last LINE;
+         }
+      }
+
+      my $event = { @properties };
+      $code->($event) if $code;
+      ++$num_events;
+   }
+   return $num_events;
+}
+
+sub parse_binlog_event {
+   my ( $self, $fh, $code ) = @_;
+   my $event;
+
+   my $term  = $self->{term} || ";\n"; # Corresponds to DELIMITER
+   my $tpat  = quotemeta $term;
+   local $RS = $term;
+   my $line  = <$fh>;
+
+   LINE: {
+      return unless $line;
+
+      if ( $line =~ m/^DELIMITER/m ) {
+         my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
+         $self->{term} = $del;
+         local $RS     = $del;
+         $line         = <$fh>; # Throw away DELIMITER line
+         MKDEBUG && _d('New record separator: ', $del);
+         redo LINE;
+      }
+
+      $line =~ s/$tpat\Z//;
+
+      if ( my ( $offset ) = $line =~ m/$binlog_line_1/m ) {
+         $self->{last_line} = undef;
+         $event = {
+            offset => $offset,
+         };
+         my ( $ts, $sid, $end, $type, $rest ) = $line =~ m/$binlog_line_2/m;
+         @{$event}{qw(ts server_id end type)} = ($ts, $sid, $end, $type);
+         (my $arg = $line) =~ s/\n*^#.*\n//gm; # Remove comment lines
+         $event->{arg} = $arg;
+         if ( $type eq 'Xid' ) {
+            my ($xid) = $rest =~ m/(\d+)/;
+            $event->{xid} = $xid;
+         }
+         elsif ( $type eq 'Query' ) {
+            @{$event}{qw(id time code)} = $rest =~ m/$binlog_line_2_rest/;
+         }
+         else {
+            die "Unknown event type $type"
+               unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
+         }
+      }
+      else {
+         $event = {
+            arg => $line,
+         };
+      }
+   }
+
+   if ( !defined $line ) {
+      delete $self->{term};
+   }
+
+   $code->($event) if $event && $code;
+   return $event;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# LogParser:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End LogParser package
+# ###########################################################################
+
+# ###########################################################################
+# SQLMetrics package 2599
+# ###########################################################################
+
+package SQLMetrics;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use POSIX qw(floor);
+use Time::Local qw(timelocal);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(key_metric attributes) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   $args{handlers} ||= {};
+
+   my %attribute_spec = map {
+      (my $key = $_) =~ s/\|.*//;
+      $key => $_;
+   } @{$args{attributes}};
+   foreach my $metric ( keys %{$args{handlers}} ) {
+      $attribute_spec{$metric}++;
+   }
+
+   my $self = {
+      key_metric            => $args{key_metric},
+      fingerprint           => $args{fingerprint}
+                               || sub { $_[0]->{$args{key_metric}} },
+      attributes            => \%attribute_spec,
+      handlers              => $args{handlers},
+      buffer_n_events       => $args{buffer_n_events} || 1,
+      worst_metric          => $args{worst_metric},
+      metrics               => { all => {}, unique => {} },
+      n_events              => 0,
+      n_queries             => 0,
+   };
+
+   return bless $self, $class;
+}
+
+sub make_handler {
+   my ( $metric, $value, %args ) = @_;
+   die "I need a metric and value" unless $metric && $value;
+   return unless defined $value; # Can't decide type if it's undef.
+   my $type = $metric =~ m/^(?:ts|timestamp)$/ ? 'time'
+            : $value  =~ m/^\d+/               ? 'num'
+            : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
+            :                                    'string';
+   %args = ( # Set up defaults
+      min => 1,
+      max => 1,
+      sum => $type =~ m/num|bool/ ? 1 : 0,
+      cnt => 1,
+      unq => $type =~ m/bool|string/ ? 1 : 0,
+      all => $type eq 'num' ? 1 : 0,
+      glo => 1,
+      trx => ($type eq 'time') ? 'parse_timestamp($val)'
+           : ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0}
+           :                     undef,
+      wor => 0,
+      %args,
+   );
+
+   my @lines = ( # Lines of code for the subroutine
+      'sub {',
+      'my ( $event, $val, $class, $global ) = @_;',
+      'return unless defined $val;',
+   );
+   if ( $args{trx} ) {
+      push @lines, q{$val = } . $args{trx} . ';';
+   }
+   foreach my $place ( $args{glo} ? qw($class $global) : qw($class) ) {
+      if ( $args{min} ) {
+         my $op = $type =~ m/num|time/ ? '<' : 'lt';
+         my $code = 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+            . $op . ' PLACE->{min};';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $args{max} ) {
+         my $op = ($type =~ m/num|time/) ? '>' : 'gt';
+         my $code = 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+            . $op . ' PLACE->{max};';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $args{sum} ) {
+         my $code = 'PLACE->{sum} += $val;';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $args{cnt} ) {
+         my $code = '++PLACE->{cnt};';
+         $code =~ s/PLACE/$place/g;
+         push @lines, $code;
+      }
+      if ( $place eq '$class' ) {
+         if ( $args{unq} ) {
+            my $code = '++PLACE->{unq}->{$val};';
+            $code =~ s/PLACE/$place/g;
+            push @lines, $code;
+         }
+         if ( $args{all} ) {
+            my $code = 'push @{PLACE->{all}}, $val;';
+            $code =~ s/PLACE/$place/g;
+            push @lines, $code;
+         }
+         if ( $args{wor} ) {
+            my $op = $type eq 'num' ? '>=' : 'ge';
+            push @lines, (
+               'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
+               '$class->{sample}     = $event->{arg};',
+               '$class->{pos_in_log} = $event->{pos_in_log};',
+               '}',
+            );
+         }
+      }
+   }
+   push @lines, '}';
+   MKDEBUG && _d("Metric handler for $metric: ", @lines);
+   my $sub = eval join("\n", @lines);
+   die if $EVAL_ERROR;
+   return $sub;
+}
+
+my @buffered_events;
+sub record_event {
+   my ( $self, $event ) = @_;
+   return unless $event;
+
+   push @buffered_events, $event;
+   MKDEBUG && _d(scalar @buffered_events . " events in buffer");
+
+   return if $self->{buffer_n_events} < 0;
+
+   return if scalar @buffered_events < $self->{buffer_n_events};
+
+   $self->calc_metrics(\@buffered_events);
+
+   $self->reset_buffer() if scalar @buffered_events >= $self->{buffer_n_events};
+
+   return;
+}
+
+sub calc_metrics {
+   my ( $self, $events ) = @_;
+   $events ||= \@buffered_events;
+   foreach my $event ( @$events ) {
+      $self->calc_event_metrics($event);
+   }
+   return;
+}
+
+sub calc_event_metrics {
+   my ( $self, $event ) = @_;
+
+   $self->{n_events}++;
+
+   my $key_metric_val = $event->{ $self->{key_metric} };
+   return unless defined $key_metric_val;
+
+   $self->{n_queries}++;
+
+   my $fp = $self->{fingerprint}->($key_metric_val);
+
+   my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
+
+   METRIC:
+   foreach my $metric ( keys %{ $self->{attributes} } ) {
+      my $metric_val = $event->{ $metric };
+      next METRIC unless defined $metric_val;
+      my $stats_for_metric = $self->{metrics}->{all}->{ $metric } ||= {};
+      my $stats_for_class  = $fp_ds->{ $metric } ||= {};
+      my $sub = $self->{handlers}->{$metric} ||= make_handler(
+         $self->{attributes}->{$metric}, $metric_val,
+         wor => (($self->{worst_metric} || '') eq $metric)
+      );
+      if ( ref $sub ) {
+         $sub->($event, $metric_val, $stats_for_class, $stats_for_metric);
+      }
+   }
+
+   return;
+}
+
+sub reset_buffer {
+   my ( $self ) = @_;
+   @buffered_events = ();
+   MKDEBUG && _d('Reset event buffer');
+   return;
+}
+
+sub reset_metrics {
+   my ( $self ) = @_;
+   @buffered_events           = ();
+   $self->{n_events}          = 0;
+   $self->{n_queries}         = 0;
+   $self->{metrics}->{all}    = {};
+   $self->{metrics}->{unique} = {};
+   return;
+}
+
+sub calculate_statistical_metrics {
+   my ( $self, $vals, %args ) = @_;
+   my @distro              = qw(0 0 0 0 0 0 0 0);
+   my $statistical_metrics = {
+      avg       => 0,
+      max       => 0,
+      stddev    => 0,
+      median    => 0,
+      distro    => \@distro,
+      cutoff    => undef,
+   };
+   return $statistical_metrics unless defined $vals;
+
+   my $n_vals = scalar @$vals;
+   return $statistical_metrics unless $n_vals;
+
+   my $cutoff = $n_vals >= 10 ? int ( scalar @$vals * 0.95 ) : $n_vals;
+   $statistical_metrics->{cutoff} = $cutoff;
+
+   my $middle_val_n = int $statistical_metrics->{cutoff} / 2;
+   my $previous_val;
+
+   my $sum    = 0; # stddev and 95% avg
+   my $sumsq  = 0; # stddev
+   my $max    = 0; # 95th percentile
+   my $i      = 0; # for knowing when we've reached the 95%
+   foreach my $val ( sort { $a <=> $b } @$vals ) {
+      if ( defined $val && $val > 0 && $args{distro} ) {
+         my $bucket = floor(log($val) / log(10)) + 6;
+         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+         $distro[ $bucket ]++;
+      }
+
+      if ( $i < $cutoff ) {
+         if ( $i == $middle_val_n ) {
+            $statistical_metrics->{median}
+               = $cutoff % 2 ? $val : ($previous_val + $val) / 2;
+         }
+
+         $sum   += $val;
+         $sumsq += ($val **2);
+         $max   = $val;
+         $i++;
+
+         $previous_val = $val;
+      }
+   }
+
+   my $stddev = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+
+   MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
+
+   $statistical_metrics->{stddev} = $stddev;
+   $statistical_metrics->{avg}    = $sum / $cutoff;
+   $statistical_metrics->{max}    = $max;
+
+   return $statistical_metrics;
+}
+
+sub parse_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   {
+      $val = timelocal($s, $i, $h, $d, $m - 1, $y + 2000);
+   }
+   return $val;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# SQLMetrics:$line $PID ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End SQLMetrics package
+# ###########################################################################
+
+# ###########################################################################
+# QueryParser package 2559
+# ###########################################################################
+package QueryParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class ) = @_;
+   bless {}, $class;
+}
+
+sub get_table_ref {
+   my ( $self, $query ) = @_;
+   return if !defined $query || !$query;
+   my $table_ref;
+
+   if ( $query =~ m/FROM\s+(.+?)(?:WHERE|ORDER|LIMIT|HAVING)+.+/is ) {
+      $table_ref = $1;
+   }
+   elsif( $query =~ m/FROM\s+(.+?);?$/is ) {
+      chomp($table_ref = $1);
+   }
+
+   MKDEBUG && _d($table_ref ? "table ref: $table_ref"
+                            : "Failed to parse table ref");
+
+   return $table_ref;
+}
+
+sub parse_table_aliases {
+   my ( $self, $table_ref ) = @_;
+   my $table_aliases = {};
+   return $table_aliases if !defined $table_ref || !$table_ref;
+   my @tables;
+
+   $table_ref =~ s/\n/ /g;
+   $table_ref =~ s/`//g; # Graves break database discovery
+
+   if( $table_ref =~ m/ (:?straight_)?join /i ) {
+      $table_ref =~ s/ join /,/ig;
+      1 while ($table_ref =~ s/ (?:inner|outer|cross|left|right|natural),/,/ig);
+      $table_ref =~ s/ using \(.+?\)//ig;
+      $table_ref =~ s/ on \([\w\s=.,]+\),?/,/ig;
+      $table_ref =~ s/ on [\w\s=.]+,?/,/ig;
+      $table_ref =~ s/ straight_join /,/ig;
+   }
+
+   @tables = split /,/, $table_ref;
+
+   my @alias_patterns = (
+      qr/\s*(\S+)\s+AS\s+(\S+)\s*/i,
+      qr/^\s*(\S+)\s+(\S+)\s*$/,
+      qr/^\s*(\S+)+\s*$/, # Not an alias but we save it anyway to be complete
+   );
+      
+   foreach my $table ( @tables ) {
+      my ( $db_tbl, $alias );
+
+      ALIAS_PATTERN:
+      foreach my $alias_pattern ( @alias_patterns ) {
+         if ( ( $db_tbl, $alias ) = $table =~ m/$alias_pattern/ ) {
+            MKDEBUG && _d("$table matches $alias_pattern");
+            last ALIAS_PATTERN;
+         }
+      }
+
+      if ( defined $db_tbl && $db_tbl ) {
+         my ( $db, $tbl ) = $db_tbl =~ m/^(?:(\S+)\.)?(\S+)/;
+
+         $table_aliases->{$alias || $tbl} = $tbl;
+         $table_aliases->{DATABASE}->{$tbl} = $db if defined $db && $db;
+      }
+      elsif ( MKDEBUG ) {
+         _d("Failed to parse table alias for $table");
+      }
+   }
+
+   MKDEBUG && _d('table aliases: ' . Dumper($table_aliases));
+
+   return $table_aliases;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
+   print "# QueryParser:$line $PID ", @_, "\n";
+}
+
+1;
+# ###########################################################################
+# End QueryParser package
+# ###########################################################################
+
+# #############################################################################
+# mk-log-parser
+# #############################################################################
+package main;
+
+use Data::Dumper;
+use English qw(-no_match_vars);
+use Digest::MD5 qw(md5_hex);
+Transformers->import( qw(shorten micro_t percentage_of ts) );
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+# TODO: use sigtrap
+$SIG{INT} = \&sig_int;
+# ############################################################################
+# Get configuration information.
+# ############################################################################
+
+my $dp = new DSNParser (
+   { key => 'D', desc => 'Database that contains the table' },
+   { key => 't', desc => 'Table to use' } );
+
+my @opt_spec   = OptionParser::pod_to_spec();
+my $opt_parser = new OptionParser(@opt_spec);
+$opt_parser->{strict} = 0;
+$opt_parser->{dsn}    = $dp;
+$opt_parser->{prompt} = '[OPTION...] [FILE]';
+$opt_parser->{descr}  = q{parses and analyzes MySQL log files.  With no }
+                      . q{FILE, or when FILE is -, read standard input.};
+my %opts = $opt_parser->parse();
+$opt_parser->usage_or_errors(%opts);
+
+# ############################################################################
+# Set up basic slow log metric handlers.
+# ############################################################################
+my $lp = new LogParser();
+my $qr = new QueryRewriter();
+my $q  = new Quoter();
+
+my $sm = new SQLMetrics(
+   key_metric      => 'arg',
+   worst_metric    => $opts{w}, # TODO this can be an expr, add to attributes
+   fingerprint     => sub { return $qr->fingerprint(@_); },
+   attributes      => [qw(
+                        Query_time
+                        Lock_time
+                        Rows_read
+                        Rows_sent
+                        Rows_examined
+                        user
+                        Schema
+                        ts
+                     )],
+                        # TODO: add values from command-line options
+                        # TODO: name=expression syntax
+                        #ts=ts||timestamp
+                        #db=db||Schema
+                        #withoutlocks=Query_time-Lock_time
+);
+
+# ############################################################################
+# Set up callbacks for the various behaviors.
+# ############################################################################
+my $callback;
+my ($dbh, $sth);
+if ( $opts{R} ) { # Query review.
+   $dbh = $dp->get_dbh($dp->get_cxn_params($opts{R}), {AutoCommit => 1});
+   # The primary key value (checksum column) is generated by checksumming the
+   # query and then converting part of the checksum into a bigint.
+   $sth = $dbh->prepare(
+      'INSERT IGNORE INTO ' . $q->quote($opts{R}->{D}, $opts{R}->{t})
+      . '(checksum, fingerprint, sample, first_seen) VALUES( '
+      . 'CONV(?, 16, 10), ?, ?, COALESCE(?, NOW()))');
+
+   my %seen;
+   $callback = sub {
+      my ( $fh ) = @_;
+      $lp->parse_slowlog_event($fh, sub {
+         my ( $event ) = @_;
+         my $fingerprint = $qr->fingerprint($event->{arg});
+         if ( !$seen{$fingerprint}++ ) {
+            my $ts = $event->{ts};
+            $ts = parse_timestamp($ts) if defined $ts;
+            $sth->execute(checksum_64($fingerprint), $fingerprint,
+               $event->{arg}, $ts);
+         }
+      });
+   };
+}
+else { # Default behavior -- slow-log analysis.
+   $callback = sub {
+      my ( $fh ) = @_;
+      $lp->parse_slowlog_event($fh, sub { $sm->calc_event_metrics(@_) });
+   };
+}
+
+# ############################################################################
+# Parse the input.
+# ############################################################################
+my $oktorun = 1;
+my @fhs;
+
+if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
+   my $fh = *STDIN;
+   push @fhs, $fh;
+}
+else {
+   foreach my $arg ( @ARGV ) {
+      open my $fh, "<", $arg or die "Cannot open $arg: $OS_ERROR\n";
+      push @fhs, $fh;
+   }
+}
+
+while ( $oktorun && (my $fh = shift(@fhs) ) ) {
+   1 while $oktorun && $callback->($fh);
+   close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
+}
+$dp->disconnect($dbh) if $opts{R};
+
+# ############################################################################
+# Finish up (print results, etc).
+# ############################################################################
+if ( !$opts{R} ) {
+   my @worst = find_top_queries($sm, $opts{s}, $opts{t}, $opts{w});
+   report_queries($sm, @worst);
+}
+
+exit;
+
+# ############################################################################
+# Subroutines.
+# ############################################################################
+
+# Takes the rightmost 64 bits of an MD5 checksum of the argument.
+sub checksum_64 {
+   my ( $val ) = @_;
+   return substr(md5_hex($val), -16);
+}
+
+# Turns 071015 21:43:52 into a proper datetime format.
+sub parse_timestamp {
+   my ( $val ) = @_;
+   $val =~ s/^(\d\d)(\d\d)(\d\d) /20$1-$2-$3 /;
+   return $val;
+}
+
+sub find_top_queries {
+   my ( $sm, $sort, $top, $worst ) = @_;
+   my $classes = $sm->{metrics}->{unique};
+   my @worst;
+
+   MKDEBUG && _d("sort $sort top $top worst $worst");
+   my @sorted =
+      reverse sort {
+         $classes->{$a}->{$worst}->{$sort} <=> $classes->{$b}->{$worst}->{$sort}
+      } keys %$classes;
+   my $count = @sorted > $top ? $top : scalar @sorted;
+   # Add the hash key as a property of the hash, so it's not lost for later use.
+   return map { $classes->{$_}->{fingerprint} = $_; $classes->{$_}; }
+      @sorted[0 .. $count - 1];
+}
+
+sub report_queries {
+   my ( $sm, @worst ) = @_;
+   my $u = $sm->{metrics}->{unique};
+   my $g = $sm->{metrics}->{all};
+   my $Query_time_distro;
+
+   my $query_hdr_fmt   = "# Query %03d (%s QPS) ID: 0x%s at byte %d ";
+   my $metrics_hdr_fmt = "#             total    %%      min     max     "
+                       . "avg     95%%  stddev  median\n";
+   my $count_line_fmt  = "# %-9s %7s  %3d\n";
+   my $metric_line_fmt = "# %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
+   my $list_line_fmt   = "# %-9s   %-60s\n";
+   my $timestamp_fmt   = "# Time range %s to %s\n";
+
+   my @reported_metrics = (
+      {
+         metric => 'Query_time',
+         name   => 'Time',
+         fmt    => sub { return micro_t(@_, p_ms => 1, p_s => 1); },
+      },
+      {
+         metric => 'Lock_time',
+         name   => 'Lock',
+         fmt    => sub { return micro_t(@_, p_ms => 1, p_s => 1); },
+      },
+      {
+         metric => 'Rows_read',
+         name   => 'Rows read',
+         fmt    => sub { return shorten(@_, p => 1, d => 1000); },
+      },
+      {
+         metric => 'Rows_sent',
+         name   => 'Rows sent',
+         fmt    => sub { return shorten(@_, p => 1, d => 1000); },
+      },
+      {
+         metric => 'Rows_examined',
+         name   => 'Rows exam',
+         fmt    => sub { return shorten(@_, p => 1, d => 1000); },
+      },
+   );
+
+   foreach my $i ( 0..$#worst ) {
+      my $class = $worst[$i];
+
+      # Calculate QPS (queries per second) by looking at the min/max timestamp.
+      my $qps = 0;
+      if ( $class->{Query_time}->{cnt} > 1
+            && $class->{ts}->{min}
+            && $class->{ts}->{max} > $class->{ts}->{min}
+      ) {
+         $qps = $class->{Query_time}->{cnt}
+            / ( $class->{ts}->{max} - $class->{ts}->{min} );
+      }
+
+      # TODO: should I be using 'shorten' like this for $qps?
+      my $header = sprintf $query_hdr_fmt, $i + 1, shorten($qps),
+             checksum_64($class->{fingerprint}), $class->{$opts{w}}->{pos_in_log};
+      print  $header, ('_' x (73 - length($header))), "\n";
+      printf $metrics_hdr_fmt;
+      printf $count_line_fmt,
+         'Count',
+         $class->{Query_time}->{cnt},
+         percentage_of($class->{Query_time}->{cnt}, $sm->{n_queries});
+
+      foreach my $r ( @reported_metrics ) {
+         my $metric = $r->{metric};
+         my $val    = $class->{ $metric };
+
+         next if !defined $val;
+         MKDEBUG && _d("Reporting metrics for $metric");
+
+         my $save_distro = $metric eq 'Query_time' ? 1 : 0;
+         my $stats
+            = $sm->calculate_statistical_metrics($val->{all},
+               distro => $save_distro);
+
+         $Query_time_distro = $stats->{distro} if $save_distro;
+
+         printf $metric_line_fmt,
+            $r->{name},                                  # friendly metric name
+            $r->{fmt}->($val->{sum}),                    # total
+            percentage_of($val->{sum}, $g->{$metric}->{sum}), # % total/grand total
+            $r->{fmt}->($val->{min}),                    # min
+            $r->{fmt}->($val->{max}),                    # max
+            $r->{fmt}->($val->{sum}/$val->{cnt}),        # avg
+            $r->{fmt}->($stats->{max}),                  # 95% are within this
+            $r->{fmt}->($stats->{stddev}),               # 95% stdev
+            $r->{fmt}->($stats->{median});               # 95% med
+      }
+
+      printf $list_line_fmt, 'DBs',   join(', ', keys %{$q->{Schema}});
+      printf $list_line_fmt, 'Users', join(', ', keys %{$q->{user}});
+
+      # TODO: permit to switch off with cmdline option --verbosity or --quiet
+      if ( $class->{ts}->{min} ) {
+         printf $timestamp_fmt,
+            ts($class->{ts}->{min}),
+            ts($class->{ts}->{max});
+      }
+      print "# Execution times\n";
+      print chart_distro($Query_time_distro);
+
+      # TODO
+      # print "# Time clustering:\n";
+
+      # If the query uses qualified table names (db.tbl), print_tables()
+      # will print SHOW TABLE STATUS FROM `db` LIKE 'tbl'. Otherwise,
+      # if a default_db is given, print_tables() will use it for queries
+      # without qualified table names. We pass a default db only if the
+      # query logged one db because there is no reliable way to choose
+      # between multiple logged dbs. As a last report, print_tables()
+      # will simply omit the FROM `db` clause and it's left to the user
+      # to determine the correct db.
+      my ( $default_db ) = keys %{$class->{Schema}->{all}}
+         if scalar keys %{$class->{Schema}->{all}} == 1;
+
+      my $sample = $class->{$opts{w}}->{sample};
+      my $select_pattern = qr/^[\s\(]*SELECT /i;
+      if ( $sample =~ m/$select_pattern/ ) {
+         print_tables($sample, $default_db) if $opts{forexplain};
+         print "# EXPLAIN\n$sample\\G\n";
+      }
+      else {
+         my $converted_sample = $qr->convert_to_select($sample);
+         if ( $converted_sample =~ m/$select_pattern/ ) {
+            print_tables($converted_sample, $default_db) if $opts{forexplain};
+            print "$sample\\G\n";
+            print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts{forexplain};
+         }
+         # converted_sample will be the original sample if it
+         # failed to convert. Otherwise, it will be a SELECT.
+         print "$converted_sample\\G\n" if $opts{forexplain};
+      }
+      print "\n";
+   }
+
+   return;
+}
+
+sub chart_distro {
+   my ( $distro ) = @_;
+   return "\n" if !defined $distro || scalar @$distro== 0;
+   my $max_val = 0;
+   my $vals_per_mark; # number of vals represented by 1 #-mark
+   my $max_disp_width = 61;
+   my $bar_fmt = "# %8s  %-${max_disp_width}s\n";
+   my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
+
+   # Find the distro with the most values. This will set
+   # vals_per_mark and become the bar at max_disp_width.
+   foreach my $n_vals ( @$distro ) {
+      $max_val = $n_vals if $n_vals > $max_val;
+   }
+   $vals_per_mark = $max_val / $max_disp_width;
+
+   MKDEBUG && _d("vals per mark $vals_per_mark, max val $max_val");
+
+   my $i = 0;
+   foreach my $n_vals ( @$distro ) {
+      MKDEBUG && _d("$n_vals vals in $distro_labels[$i] bucket");
+
+      my $n_marks = $n_vals / $vals_per_mark;
+
+      # Always print at least 1 mark for any bucket that has at least
+      # 1 value. This skews the graph a tiny bit, but it allows us to
+      # see all buckets that have values.
+      $n_marks = 1 if $n_marks < 1 && $n_vals > 0;
+
+      my $bar     = '#' x $n_marks;
+      printf $bar_fmt, $distro_labels[$i++], $bar;
+   }
+
+   return;
+}
+
+sub print_tables {
+   my ( $query, $default_db ) = @_;
+   my $qp = new QueryParser();
+   my $table_aliases = $qp->parse_table_aliases( $qp->get_table_ref($query) );
+   print "# Tables:\n";
+   foreach my $table_alias ( keys %$table_aliases ) {
+      next if $table_alias eq 'DATABASE';
+      my $tbl = $table_aliases->{$table_alias};
+      my $db  = $table_aliases->{DATABASE}->{$tbl} || $default_db;
+      print '#    SHOW TABLE STATUS'
+         , defined $db && $db ? " FROM `$db`" : ''
+         , " LIKE '$tbl'\\G\n";
+      print "#    SHOW CREATE TABLE `$tbl`\\G\n";
+   }
+   return;
+}
+      
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
+}
+
+# Catches signals so we can exit gracefully.
+# TODO: test this
+# TODO: break wait for <$fh> with SIGINT.
+sub sig_int {
+   my ( $signal ) = @_;
+   if ( $oktorun ) {
+      print STDERR "# Caught SIG$signal.\n";
+      $oktorun = 0;
+   }
+   else {
+      print STDERR "# Exiting on SIG$signal.\n";
+      exit(1);
+   }
+}
+
+# ############################################################################
+# Documentation.
+# ############################################################################
+
+=pod
+
+=head1 NAME
+
+mk-log-parser - Parse, transform and analyze MySQL logs.
+
+=head1 SYNOPSIS
+
+   mk-log-parser mysql-slow.log
+
+=head1 DESCRIPTION
+
+C<mk-log-parser> reads MySQL log files and generates a report that's useful
+for optimizing a server.  It can also perform other actions, such as helping you
+do a query review by showing all distinct queries running on your server.
+
+C<mk-log-parser> reads the files you specify on the command line, or standard
+input.  You can cancel it with C<CTRL-C> and it will abort processing the log
+file, then print the statistics.
+
+=head1 OUTPUT
+
+TODO
+
+   tail -c +160665 /home/baron/smalltest.log | less
+
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
+
+=head1 OPTIONS
+
+Some options are negatable by specifying them in their long form with a --no
+prefix.
+
+=over
+
+=item --forexplain
+
+negatable: yes; default: yes
+
+Add code snippets to make it easy to run SHOW CREATE TABLE and SHOW TABLE
+STATUS.
+
+Shows some extra information about the query and the tables in it, to help you
+copy-and-paste while working to optimize the query.
+
+=item --review
+
+short form: -R; type: DSN
+
+Save the results of a query review in this DSN.
+
+The option specifies a table to store all unique query fingerprints in.  The
+table must have at least the following columns:
+
+  CREATE TABLE <name> (
+     checksum BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- md5 of fingerprint
+     fingerprint TEXT,
+     sample TEXT,
+     first_seen TIMESTAMP
+  );
+
+As the log is parsed, each time a "new" query is seen it is stored into this
+table.  The first_seen column is populated with either the query's timestamp
+from the log, or the current timestamp if that is unknown.
+
+This option enables completely different behavior from the default slow log
+analysis.
+
+=item --sort
+
+short form: -s; type: string; default: sum
+
+Sort the reported queries by this aggregate value of L<--worst>.
+
+Valid aggregate values are: sum, min, max, avg, cnt.
+
+TODO: support ninetyfive, stddev and med.
+
+TODO: support reverse sorting.
+
+TODO: support expressions like Rows_sent/Rows_examined
+
+See also L<"--worst">.
+
+=item --top
+
+short form: -t; type: int; default: 10
+
+Report only the top N worst queries.
+
+See also L<"--worst">.
+
+=item --type
+
+type: string; default: slow
+
+Specify the log format: slow, general, binary.
+
+mk-log-parser has special parsers for various log types.  The slow log parser
+can handle ordinary slow logs and slow logs with various combinations of
+Percona's patches, some of which are included in MySQL 5.1 and newer.  (If
+you're trying to analyze the performance of your server, a Percona build is
+extremely helpful.)
+
+The general and binary log types are not yet integrated into mk-log-parser,
+although the code exists because it's in a module shared with other Maatkit
+tools.
+
+=item --worst
+
+short form: -w; type: string; default: Query_time
+
+Find which queries are the worst according to this attribute.
+
+Only basic attributes are valid: Query_time, Lock_time, Rows_read, etc.
+
+This option affects the report. Only the L<"--top"> N worst queries
+according to this attribute are reported. The top N worst queries are
+determined by L<"--sort">.
+
+=back
+
+=head1 SYSTEM REQUIREMENTS
+
+You need Perl and some core packages that ought to be installed in any
+reasonably new version of Perl.
+
+=head1 ENVIRONMENT
+
+The environment variable C<MKDEBUG> enables verbose debugging output in all of
+the Maatkit tools:
+
+   MKDEBUG=1 mk-....
+
+=head1 BUGS
+
+Please use Google Code Issues and Groups to report bugs or request support:
+L<http://code.google.com/p/maatkit/>.
+
+Please include the complete command-line used to reproduce the problem you are
+seeing, the version of all MySQL servers involved, the complete output of the
+tool when run with L<"--version">, and if possible, debugging output produced by
+running with the C<MKDEBUG=1> environment variable.
+
+=head1 COPYRIGHT, LICENSE AND WARRANTY
+
+This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+Feedback and improvements are welcome.
+
+THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 2; OR the Perl Artistic License.  On UNIX and similar
+systems, you can issue `man perlgpl' or `man perlartistic' to read these
+licenses.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+Place, Suite 330, Boston, MA  02111-1307  USA.
+
+=head1 AUTHOR
+
+Baron Schwartz, Daniel Nichter
+
+=head1 VERSION
+
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
+
+=cut
