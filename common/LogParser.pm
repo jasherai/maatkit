@@ -370,7 +370,7 @@ sub parse_slowlog_event {
          my $line = $1;          # Necessary for /g and pos() to work.
 
          # Handle meta-data lines.
-         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
 
             # Maybe it's the beginning of the slow query log event.
             if ( !$got_ts
@@ -415,7 +415,7 @@ sub parse_slowlog_event {
 
             # Include the current default database given by 'use <db>;'
             elsif ( !$got_db
-                  && (my ( $db ) = $line =~ m/^use ([^;]+)/ )
+                  && (my ( $db ) = $line =~ m/^use ([^;]+)/i )
                   && ++$got_db
             ) {
                push @properties, 'db', $db;
@@ -426,7 +426,7 @@ sub parse_slowlog_event {
             # set timestamp=foo,insert_id=bar;
             # set names utf8;
             elsif ( !$got_set
-                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ )
+                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/i )
                   && ++$got_set
             ) {
                # Note: this assumes settings won't be complex things like
