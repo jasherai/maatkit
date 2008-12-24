@@ -415,7 +415,7 @@ sub parse_slowlog_event {
 
             # Include the current default database given by 'use <db>;'
             elsif ( !$got_db
-                  && (my ( $db ) = $line =~ m/^use ([^;]+)/i )
+                  && (my ( $db ) = $line =~ m/^USE ([^;]+)/i )
                   && ++$got_db
             ) {
                push @properties, 'db', $db;

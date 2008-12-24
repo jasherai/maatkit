@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 24;
+use Test::More tests => 26;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -443,13 +443,15 @@ is_deeply( \@e, $events, 'Parses Schema' );
 
 @e = ();
 open $file, "<", 'samples/slow006.txt' or die $OS_ERROR;
+1 while ( $p->parse_event( $file, \&simple_callback ) );
+close $file;
+is( $e[2]->{db}, 'bar', 'Parsing USE is case-insensitive (parse_event)' );
+@e = ();
+open $file, "<", 'samples/slow006.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 close $file;
-is( $e[2]->{db}, 'bar', 'Parsing USE is case-insensitive' );
+is( $e[2]->{db}, 'bar', 'Parsing USE is case-insensitive (parse_slowlog_event)' );
 
-@e = ();
-open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
-1 while ( $p->parse_event( $file, \&simple_callback ) );
 $events = [
    {  'Schema'        => 'db1',
       'cmd'           => 'Admin',
@@ -492,7 +494,25 @@ $events = [
       'Rows_sent'     => '0'
    },
 ];
-is_deeply( \@e, $events, 'Parses commented event (admin cmd)' );
+@e = ();
+open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
+1 while ( $p->parse_event( $file, \&simple_callback ) );
+close $file;
+is_deeply( \@e, $events, 'Parses commented event (admin cmd) (parse_event)' );
+@e = ();
+$events->[0]->{arg} = '# administrator command: Quit';
+$events->[1]->{arg} = 'SET NAMES utf8';
+delete $events->[1]->{settings};
+delete $events->[0]->{NR};
+delete $events->[1]->{NR};
+delete $events->[2]->{NR};
+$events->[0]->{pos_in_log} = 0;
+$events->[1]->{pos_in_log} = 221;
+$events->[2]->{pos_in_log} = 435;
+open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
+1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
+close $file;
+is_deeply( \@e, $events, 'Parses commented event (admin cmd) (parse_slowlog_event)' );
 
 @e = ();
 open $file, "<", 'samples/slow011.txt' or die $OS_ERROR;
@@ -505,7 +525,7 @@ $events = [
       'Thread_id'     => '5',
       'host'          => '',
       'Rows_examined' => '0',
-      'NR'            => '22',
+      'NR'            => '6',
       'user'          => 'meow',
       'Query_time'    => '0.000002',
       'Lock_time'     => '0.000000',
@@ -519,7 +539,7 @@ $events = [
       'Thread_id'     => '6',
       'host'          => '',
       'Rows_examined' => '0',
-      'NR'            => '28',
+      'NR'            => '12',
       'user'          => 'meow',
       'Query_time'    => '0.000899',
       'Lock_time'     => '0.000000',
@@ -533,7 +553,7 @@ $events = [
       'Thread_id'     => '7',
       'host'          => '',
       'Rows_examined' => '0',
-      'NR'            => '34',
+      'NR'            => '18',
       'user'          => 'meow',
       'Query_time'    => '0.018799',
       'Lock_time'     => '0.009453',
@@ -547,7 +567,7 @@ $events = [
       'Thread_id'     => '9',
       'host'          => '',
       'Rows_examined' => '0',
-      'NR'            => '39',
+      'NR'            => '23',
       'user'          => 'meow',
       'Query_time'    => '0.000899',
       'Lock_time'     => '0.000000',
@@ -865,8 +885,8 @@ $events = [
    },
 ];
 
-open $file, "<", 'samples/slow005.txt' or die $OS_ERROR;
 @e = ();
+open $file, "<", 'samples/slow005.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 close $file;
 
@@ -944,6 +964,7 @@ $events = [
 @e = ();
 open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
+close $file;
 is_deeply( \@e, $events, 'Parses commented event (admin cmd)' );
 
 $events = [
@@ -1006,6 +1027,7 @@ $events = [
 @e = ();
 open $file, "<", 'samples/slow011.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
+close $file;
 is_deeply( \@e, $events,
    'Parses commented event lines after uncommented meta-lines' );
 
@@ -1040,6 +1062,7 @@ $events = [
 @e = ();
 open $file, "<", 'samples/slow012.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
+close $file;
 is_deeply( \@e, $events, 'Parses events that might look like meta');
 
 # A pathological test case to be sure a crash doesn't happen
@@ -1117,6 +1140,7 @@ $events = [
 @e = ();
 open $file, "<", 'samples/slow013.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
+close $file;
 is_deeply( \@e, $events, 'Parses events that might look like meta');
 
 # Check that lots of header lines don't cause problems.
@@ -1318,8 +1342,8 @@ update test2.tbl8
    }
 ];
 
-open $file, "<", 'samples/binlog.txt' or die $OS_ERROR;
 @e = ();
+open $file, "<", 'samples/binlog.txt' or die $OS_ERROR;
 1 while ( $p->parse_binlog_event( $file, \&simple_callback ) );
 close $file;
 
@@ -1338,8 +1362,8 @@ my $callback2 = sub {
    return 1;
 };
 
-open $file, "<", 'samples/slow001.txt' or die $OS_ERROR;
 @e = ();
+open $file, "<", 'samples/slow001.txt' or die $OS_ERROR;
 $i = 0;
 1 while ( $p->parse_slowlog_event( $file, [$callback1, $callback2] ) );
 close $file;
