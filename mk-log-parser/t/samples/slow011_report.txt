@@ -1,0 +1,40 @@
+# Query 001 (0 QPS) ID: 0x77484BF9CA82969F at byte 435 __________________
+#             total    %      min     max     avg     95%  stddev  median
+# Count           2   50
+# Time       18.8ms   91      2us  18.8ms   9.4ms  18.8ms  13.3ms   9.4ms
+# Lock        9.5ms  100        0   9.5ms   4.7ms   9.5ms   6.7ms   4.7ms
+# Rows sent       0    0        0       0       0       0       0       0
+# Rows exam       0    0        0       0       0       0       0       0
+# DBs         db2, db1                                                    
+# Users       meow                                                        
+# Execution times
+#      1us  #############################################################
+#     10us                                                               
+#    100us                                                               
+#      1ms                                                               
+#     10ms  #############################################################
+#    100ms                                                               
+#       1s                                                               
+#     10s+                                                               
+# administrator command: Quit\G
+
+# Query 002 (0 QPS) ID: 0x5F1B459CCFB99DD8 at byte 633 __________________
+#             total    %      min     max     avg     95%  stddev  median
+# Count           2   50
+# Time        1.8ms    8    899us   899us   899us   899us       0   899us
+# Lock            0    0        0       0       0       0       0       0
+# Rows sent       0    0        0       0       0       0       0       0
+# Rows exam       0    0        0       0       0       0       0       0
+# DBs         db2                                                         
+# Users       meow                                                        
+# Execution times
+#      1us                                                               
+#     10us                                                               
+#    100us  #############################################################
+#      1ms                                                               
+#     10ms                                                               
+#    100ms                                                               
+#       1s                                                               
+#     10s+                                                               
+SET NAMES utf8\G
+

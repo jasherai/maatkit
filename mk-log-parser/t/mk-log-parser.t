@@ -3,17 +3,22 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 19;
 use English qw(-no_match_vars);
-use Data::Dumper;
-$Data::Dumper::Indent=1;
+
+# #############################################################################
+# First, some basic input-output diffs to make sure that
+# the analysis reports are correct.
+# #############################################################################
 
 # Returns true (1) if there's no difference between the
 # cmd's output and the expected output.
 sub no_diff {
    my ( $cmd, $expected_output ) = @_;
    `$cmd > /tmp/mk-log-parser_test`;
-   my $retval = system("diff /tmp/mk-log-parser_test $expected_output 1>/dev/null 2>/dev/null");
+#   my $output = `cat /tmp/mk-log-parser_test`;
+#   print $output;
+   my $retval = system("diff /tmp/mk-log-parser_test $expected_output");
    `rm -rf /tmp/mk-log-parser_test`;
    $retval = $retval >> 8;
    return !$retval;
@@ -37,4 +42,124 @@ ok(
    no_diff($run_with.'slow004.txt', 'samples/slow004_report.txt'),
    'Analysis for slow004'
 );
+ok(
+   no_diff($run_with.'slow006.txt', 'samples/slow006_report.txt'),
+   'Analysis for slow006'
+);
+ok(
+   no_diff($run_with.'slow008.txt', 'samples/slow008_report.txt'),
+   'Analysis for slow008'
+);
+ok(
+   no_diff($run_with.'slow011.txt', 'samples/slow011_report.txt'),
+   'Analysis for slow011'
+);
+ok(
+   no_diff($run_with.'slow013.txt', 'samples/slow013_report.txt'),
+   'Analysis for slow013'
+);
+ok(
+   no_diff($run_with.'slow014.txt', 'samples/slow014_report.txt'),
+   'Analysis for slow014'
+);
+
+# #############################################################################
+# Test cmd line op sanity.
+# #############################################################################
+my $output = `../mk-log-parser --review h=127.1,P=12345`;
+like($output, qr/--review DSN requires a D/, 'Dies if no D part in --review DSN');
+$output = `../mk-log-parser --review h=127.1,P=12345,D=test`;
+like($output, qr/--review DSN requires a D/, 'Dies if no t part in --review DSN');
+
+$output = `../mk-log-parser --analyze`;
+like($output, qr/--analyze requires --review/, '--analyze requires --review');
+
+# #############################################################################
+# Tests for query reviewing.
+# #############################################################################
+require '../../common/DSNParser.pm';
+require '../../common/Sandbox.pm';
+use Data::Dumper;
+$Data::Dumper::Indent=1;
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master');
+SKIP: {
+   skip 'Cannot connect to sandbox master', 4 if !$dbh;
+
+   $sb->create_dbs($dbh, ['test']);
+   $sb->load_file('master', 'samples/query_review.sql');
+
+   $output = 'foo'; # clear previous test results
+   $output = `${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review`;
+   my $res = $dbh->selectall_arrayref('SELECT * FROM test.query_review');
+   is_deeply(
+      $res,
+      [
+         [
+         '11676753765851784517',
+         'select col from foo_tbl',
+         'SELECT col FROM foo_tbl',
+         '2007-12-18 11:48:27',
+         '2007-12-18 11:49:30',
+         undef,
+         undef,
+         undef,
+         '3'
+         ],
+         [
+         '15334040482108055940',
+         'select col from bar_tbl',
+         'SELECT col FROM bar_tbl',
+         '2007-12-18 11:48:57',
+         '2007-12-18 11:49:07',
+         undef,
+         undef,
+         undef,
+         '3'
+         ],
+      ],
+      'Adds/updates queries to query review table'
+   );
+   is($output, '', '--review alone produces no output');
+
+   # This time we'll run with --analze and since none of the queries
+   # have been reviewed, the report should include both of them with
+   # their respective query review info added to the report.
+   ok(
+      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
+      'Analyze-review pass 1 reports not-reviewed queries'
+   );
+   $res = $dbh->selectall_arrayref('SELECT * FROM test.query_review');
+   ok( ($res->[0]->[8] == 6 && $res->[1]->[8] == 6), 'Analyze-review pass 1 updated cnt');
+
+   # Mark a query as reviewed and run --analyze again and that query should
+   # not be reported.
+   $dbh->do('UPDATE test.query_review
+      SET reviewed_by="daniel", reviewed_on="2008-12-24 12:00:00", comments="foo_tbl is ok, so are cranberries"
+      WHERE checksum=11676753765851784517');
+   ok(
+      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_2.txt'),
+      'Analyze-review pass 2 does not report the reviewed query'
+   );
+
+   # The previous test reported 1 query ("bar_tbl") ranked 2 because the
+   # first query ("foo_tbl") was simple removed from the report.
+   # With --norankall, we should again get only bar_tbl but ranked 1.
+   ok(
+      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review   --norankall', 'samples/slow006_AR_3.txt'),
+      'Analyze-review pass 3 with --norankall re-ranks the not-reviewed query'
+   );
+
+   # And a 4th pass with --reportall which should cause the reviewed query
+   # to re-appear in the report with the reviewed_by, reviewed_on and comments
+   # info included.
+   ok(
+      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review   --reportall', 'samples/slow006_AR_4.txt'),
+      'Analyze-review pass 4 with --reportall reports reviewed query'
+   );
+
+   $sb->wipe_clean($dbh);
+};
+
 exit;

@@ -1190,7 +1190,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2634
+# LogParser package 2654
 # ###########################################################################
 package LogParser;
 
@@ -1456,7 +1456,7 @@ sub parse_slowlog_event {
          $pos     = pos($stmt);  # Be careful not to mess this up!
          my $line = $1;          # Necessary for /g and pos() to work.
 
-         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
 
             if ( !$got_ts
                && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
@@ -1491,14 +1491,14 @@ sub parse_slowlog_event {
             }
 
             elsif ( !$got_db
-                  && (my ( $db ) = $line =~ m/^use ([^;]+)/ )
+                  && (my ( $db ) = $line =~ m/^USE ([^;]+)/i )
                   && ++$got_db
             ) {
                push @properties, 'db', $db;
             }
 
             elsif ( !$got_set
-                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ )
+                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/i )
                   && ++$got_set
             ) {
                push @properties, split(/,|\s*=\s*/, $setting);
@@ -2838,6 +2838,9 @@ my %opts = $opt_parser->parse();
 if ( $opts{A} && !$opts{R} ) {
    $opt_parser->error('--analyze requires --review');
 };
+if ( $opts{R} && (!defined $opts{R}->{D} || !defined $opts{R}->{t}) ) {
+   $opt_parser->error('The --review DSN requires a D (database) and t (table) part specifying the query review table');
+}
 
 $opt_parser->usage_or_errors(%opts);
 
@@ -2963,7 +2966,7 @@ sub get_review_info_callback {
       $get_review_info_sth->execute($event->{checksum});
       my $res = $get_review_info_sth->fetchall_hashref('checksum');
       my $review_vals = $res->{ $event->{checksum} };
-      return 1 if ( !$opts{rankall} && defined $review_vals->{reviewed_by} );
+      return 0 if ( !$opts{rankall} && defined $review_vals->{reviewed_by} );
       @{ $review_info->{$event->{fingerprint}} }{@review_columns}
          = @{$review_vals}{@review_columns};
       return 1; # required to keep callback chain going

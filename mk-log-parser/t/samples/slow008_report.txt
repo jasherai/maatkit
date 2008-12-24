@@ -1,0 +1,64 @@
+# Query 001 (0 QPS) ID: 0xC72BF45D68E35A6E at byte 435 __________________
+#             total    %      min     max     avg     95%  stddev  median
+# Count           1   33
+# Time       18.8ms   95   18.8ms  18.8ms  18.8ms  18.8ms       0  18.8ms
+# Lock        9.5ms  100    9.5ms   9.5ms   9.5ms   9.5ms       0   9.5ms
+# Rows sent       0    0        0       0       0       0       0       0
+# Rows exam       0    0        0       0       0       0       0       0
+# DBs         db2                                                         
+# Users       meow                                                        
+# Execution times
+#      1us                                                               
+#     10us                                                               
+#    100us                                                               
+#      1ms                                                               
+#     10ms  #############################################################
+#    100ms                                                               
+#       1s                                                               
+#     10s+                                                               
+# Tables
+#    SHOW TABLE STATUS LIKE 'tbl'\G
+#    SHOW CREATE TABLE `tbl`\G
+# EXPLAIN
+SELECT MIN(id),MAX(id) FROM tbl\G
+
+# Query 002 (0 QPS) ID: 0x5F1B459CCFB99DD8 at byte 221 __________________
+#             total    %      min     max     avg     95%  stddev  median
+# Count           1   33
+# Time        899us    4    899us   899us   899us   899us       0   899us
+# Lock            0    0        0       0       0       0       0       0
+# Rows sent       0    0        0       0       0       0       0       0
+# Rows exam       0    0        0       0       0       0       0       0
+# DBs         db2                                                         
+# Users       meow                                                        
+# Execution times
+#      1us                                                               
+#     10us                                                               
+#    100us  #############################################################
+#      1ms                                                               
+#     10ms                                                               
+#    100ms                                                               
+#       1s                                                               
+#     10s+                                                               
+SET NAMES utf8\G
+
+# Query 003 (0 QPS) ID: 0x77484BF9CA82969F at byte 0 ____________________
+#             total    %      min     max     avg     95%  stddev  median
+# Count           1   33
+# Time          2us    0      2us     2us     2us     2us       0     2us
+# Lock            0    0        0       0       0       0       0       0
+# Rows sent       0    0        0       0       0       0       0       0
+# Rows exam       0    0        0       0       0       0       0       0
+# DBs         db1                                                         
+# Users       meow                                                        
+# Execution times
+#      1us  #############################################################
+#     10us                                                               
+#    100us                                                               
+#      1ms                                                               
+#     10ms                                                               
+#    100ms                                                               
+#       1s                                                               
+#     10s+                                                               
+# administrator command: Quit\G
+

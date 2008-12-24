@@ -1,0 +1,25 @@
+# Query 001 (0 QPS) ID: 0x7F7D57ACDD8A346E at byte 1313 _________________
+#             total    %      min     max     avg     95%  stddev  median
+# Count           2  100
+# Time           4s  100       2s      2s      2s      2s       0      2s
+# Lock            0    0        0       0       0       0       0       0
+# Rows sent       2  100        1       1       1       1       0       1
+# Rows exam       0    0        0       0       0       0       0       0
+# DBs         test                                                        
+# Users       root                                                        
+# Time range 2007-10-15T21:43:52 to 2007-10-15T21:43:52
+# Execution times
+#      1us                                                               
+#     10us                                                               
+#    100us                                                               
+#      1ms                                                               
+#     10ms                                                               
+#    100ms                                                               
+#       1s  #############################################################
+#     10s+                                                               
+# Tables
+#    SHOW TABLE STATUS LIKE 'n'\G
+#    SHOW CREATE TABLE `n`\G
+# EXPLAIN
+select sleep(2) from n\G
+
