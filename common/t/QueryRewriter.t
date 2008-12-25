@@ -51,8 +51,8 @@ is(
 );
 
 is(
-   $q->fingerprint("select 'hello', \"hello\", '\\'' from foo"),
-   "select ?, ?, ? from foo",
+   $q->fingerprint("select 'hello', \"hello\", '\\'', '\\\\' from foo"),
+   "select ?, ?, ?, ? from foo",
    "Handles quoted strings",
 );
 
