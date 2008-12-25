@@ -5,5 +5,9 @@ REV=`grep 'SVN_REV.*Revision' ../mk-log-parser  | awk '{print $6}'`;
 echo "" >> profiling-results.txt
 echo "Revision $REV" >> profiling-results.txt
 cat times >> profiling-results.txt
-fprofpp -t 30 | nl >> profiling-results.txt
-svn ci -m "Profiling results as of revision $REV" profiling-results.txt
+fprofpp -t 30 | grep -v '^#' | nl >> profiling-results.txt
+if svn st ../mk-log-parser | grep -q '^M'; then
+   echo "Not committing"
+else
+   svn ci -m "Profiling results as of revision $REV" profiling-results.txt
+fi
