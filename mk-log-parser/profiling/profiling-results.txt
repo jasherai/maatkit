@@ -4,69 +4,69 @@ Revision 2606
 195504inputs+84712outputs (0major+7121minor)pagefaults 0swaps
 # fprofpp output format is:
 # filename:line time count: source
-../mk-log-parser:1075 26.08367 93741: $query =~ s{                          # Float/real into ?
-../mk-log-parser:1097 5.15872 93741: $query =~ s/(?<=[a-z_])\d[_0-9]*\b/N/g; # Tables ending with groups of digits
-../mk-log-parser:1467 3.94939 330270: if ( !$got_ts
-../mk-log-parser:1529 2.02412 93741: ++$num_events;
-../mk-log-parser:1778 1.70133 749928: my $metric_val = $event->{ $metric };
-../mk-log-parser:1779 1.49908 749928: next METRIC unless defined $metric_val;
-../mk-log-parser:1780 1.49363 563487: my $stats_for_metric = $self->{metrics}->{all}->{ $metric } ||= {};
-../mk-log-parser:1513 1.46907 330270: if ( !$found_arg && $pos == $len ) {
-../mk-log-parser:1786 1.39598 563487: if ( ref $sub ) {
-../mk-log-parser:1782 1.36451 563487: my $sub = $self->{handlers}->{$metric} ||= make_handler(
-../mk-log-parser:1781 1.32302 563487: my $stats_for_class  = $fp_ds->{ $metric } ||= {};
-../mk-log-parser:1435 1.21733 93741: if ( $stmt =~ s{
-../mk-log-parser:1465 1.17074 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
-../mk-log-parser:1463 1.08503 377133: my $line = $1;          # Necessary for /g and pos() to work.
-../mk-log-parser:1073 0.91452 93741: $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
-../mk-log-parser:1527 0.87839 93741: my $event = { @properties };
-../mk-log-parser:1462 0.77804 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
-../mk-log-parser:1090 0.73002 93741: $query =~ tr[ \n\t\r\f][ ]s;                 # Collapse whitespace
-../mk-log-parser:1774 0.63920 93741: my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
-../mk-log-parser:1091 0.60413 93741: $query = lc $query;
-../mk-log-parser:1093 0.58207 93741: $query =~ s{
-../mk-log-parser:1453 0.46387 93741: $stmt =~ s/;\n#?\Z//;
-../mk-log-parser:1452 0.45261 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
-../mk-log-parser:1087 0.43441 93741: $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/?/g;  # Hex/bin into ?
-../mk-log-parser:1068 0.40418 93741: my ( $self, $query, $opts ) = @_;
-../mk-log-parser:1777 0.39391 93741: foreach my $metric ( keys %{ $self->{attributes} } ) {
-../mk-log-parser:1729 0.38680 93741: [at line 12 inside eval] ++$global->{cnt};
-../mk-log-parser:1101 0.37104 93741: return $query;
-../mk-log-parser:1070 0.36240 93741: $query =~ s/\\["']//g;                # quoted strings
-../mk-log-parser:1072 0.34618 93741: $query =~ s/'.*?'/?/g;                # quoted strings
+     1	../mk-log-parser:1075 26.08367 93741: $query =~ s{                          # Float/real into ?
+     2	../mk-log-parser:1097 5.15872 93741: $query =~ s/(?<=[a-z_])\d[_0-9]*\b/N/g; # Tables ending with groups of digits
+     3	../mk-log-parser:1467 3.94939 330270: if ( !$got_ts
+     4	../mk-log-parser:1529 2.02412 93741: ++$num_events;
+     5	../mk-log-parser:1778 1.70133 749928: my $metric_val = $event->{ $metric };
+     6	../mk-log-parser:1779 1.49908 749928: next METRIC unless defined $metric_val;
+     7	../mk-log-parser:1780 1.49363 563487: my $stats_for_metric = $self->{metrics}->{all}->{ $metric } ||= {};
+     8	../mk-log-parser:1513 1.46907 330270: if ( !$found_arg && $pos == $len ) {
+     9	../mk-log-parser:1786 1.39598 563487: if ( ref $sub ) {
+    10	../mk-log-parser:1782 1.36451 563487: my $sub = $self->{handlers}->{$metric} ||= make_handler(
+    11	../mk-log-parser:1781 1.32302 563487: my $stats_for_class  = $fp_ds->{ $metric } ||= {};
+    12	../mk-log-parser:1435 1.21733 93741: if ( $stmt =~ s{
+    13	../mk-log-parser:1465 1.17074 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+    14	../mk-log-parser:1463 1.08503 377133: my $line = $1;          # Necessary for /g and pos() to work.
+    15	../mk-log-parser:1073 0.91452 93741: $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
+    16	../mk-log-parser:1527 0.87839 93741: my $event = { @properties };
+    17	../mk-log-parser:1462 0.77804 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    18	../mk-log-parser:1090 0.73002 93741: $query =~ tr[ \n\t\r\f][ ]s;                 # Collapse whitespace
+    19	../mk-log-parser:1774 0.63920 93741: my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
+    20	../mk-log-parser:1091 0.60413 93741: $query = lc $query;
+    21	../mk-log-parser:1093 0.58207 93741: $query =~ s{
+    22	../mk-log-parser:1453 0.46387 93741: $stmt =~ s/;\n#?\Z//;
+    23	../mk-log-parser:1452 0.45261 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    24	../mk-log-parser:1087 0.43441 93741: $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/?/g;  # Hex/bin into ?
+    25	../mk-log-parser:1068 0.40418 93741: my ( $self, $query, $opts ) = @_;
+    26	../mk-log-parser:1777 0.39391 93741: foreach my $metric ( keys %{ $self->{attributes} } ) {
+    27	../mk-log-parser:1729 0.38680 93741: [at line 12 inside eval] ++$global->{cnt};
+    28	../mk-log-parser:1101 0.37104 93741: return $query;
+    29	../mk-log-parser:1070 0.36240 93741: $query =~ s/\\["']//g;                # quoted strings
+    30	../mk-log-parser:1072 0.34618 93741: $query =~ s/'.*?'/?/g;                # quoted strings
 
 Revision 2658
 58.63user 51.74system 1:51.11elapsed 99%CPU (0avgtext+0avgdata 0maxresident)k
 0inputs+88016outputs (0major+7198minor)pagefaults 0swaps
 # fprofpp output format is:
 # filename:line time count: source
-../mk-log-parser:1069 25.54903 93741: $query =~ s{                          # Float/real into ?
-../mk-log-parser:1091 5.14184 93741: $query =~ s/(?<=[a-z_])\d[_0-9]*\b/N/g; # Tables ending with groups of digits
-../mk-log-parser:1461 3.90495 330270: if ( !$got_ts
-../mk-log-parser:1746 1.68215 749928: my $attrib_val = $event->{ $attrib };
-../mk-log-parser:1526 1.67369 93741: ++$num_events;
-../mk-log-parser:1747 1.50155 749928: if ( !defined $attrib_val ) {
-../mk-log-parser:1758 1.48520 563487: my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
-../mk-log-parser:1766 1.44133 563487: if ( ref $handler eq 'CODE' ) {
-../mk-log-parser:1507 1.43623 330270: if ( !$found_arg && $pos == $len ) {
-../mk-log-parser:1761 1.35034 563487: my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
-../mk-log-parser:1759 1.30314 563487: my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
-../mk-log-parser:1429 1.20300 93741: if ( $stmt =~ s{
-../mk-log-parser:1459 1.16776 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
-../mk-log-parser:1457 1.07352 377133: my $line = $1;          # Necessary for /g and pos() to work.
-../mk-log-parser:1067 0.94662 93741: $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
-../mk-log-parser:1521 0.86380 93741: my $event = { @properties };
-../mk-log-parser:1456 0.76429 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
-../mk-log-parser:1084 0.71926 93741: $query =~ tr[ \n\t\r\f][ ]s;                 # Collapse whitespace
-../mk-log-parser:1749 0.65134 186441: foreach my $attrib_alias ( keys %{$self->{attributes}->{$attrib}} ) {
-../mk-log-parser:1742 0.62876 93741: my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
-../mk-log-parser:1085 0.58908 93741: $query = lc $query;
-../mk-log-parser:1087 0.57079 93741: $query =~ s{
-../mk-log-parser:1447 0.48314 93741: $stmt =~ s/;\n#?\Z//;
-../mk-log-parser:1446 0.44652 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
-../mk-log-parser:1081 0.43512 93741: $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/?/g;  # Hex/bin into ?
-../mk-log-parser:1755 0.42849 186441: next ATTRIB unless defined $attrib_val;
-../mk-log-parser:1524 0.41614 187482: last CALLBACK unless $callback->($event);
-../mk-log-parser:1062 0.38484 93741: my ( $self, $query, $opts ) = @_;
-../mk-log-parser:1745 0.38243 93741: foreach my $attrib ( keys %{ $self->{attributes} } ) {
-../mk-log-parser:1724 0.37520 93741: [at line 12 inside eval] ++$global->{cnt};
+     1	../mk-log-parser:1069 25.54903 93741: $query =~ s{                          # Float/real into ?
+     2	../mk-log-parser:1091 5.14184 93741: $query =~ s/(?<=[a-z_])\d[_0-9]*\b/N/g; # Tables ending with groups of digits
+     3	../mk-log-parser:1461 3.90495 330270: if ( !$got_ts
+     4	../mk-log-parser:1746 1.68215 749928: my $attrib_val = $event->{ $attrib };
+     5	../mk-log-parser:1526 1.67369 93741: ++$num_events;
+     6	../mk-log-parser:1747 1.50155 749928: if ( !defined $attrib_val ) {
+     7	../mk-log-parser:1758 1.48520 563487: my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
+     8	../mk-log-parser:1766 1.44133 563487: if ( ref $handler eq 'CODE' ) {
+     9	../mk-log-parser:1507 1.43623 330270: if ( !$found_arg && $pos == $len ) {
+    10	../mk-log-parser:1761 1.35034 563487: my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
+    11	../mk-log-parser:1759 1.30314 563487: my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
+    12	../mk-log-parser:1429 1.20300 93741: if ( $stmt =~ s{
+    13	../mk-log-parser:1459 1.16776 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
+    14	../mk-log-parser:1457 1.07352 377133: my $line = $1;          # Necessary for /g and pos() to work.
+    15	../mk-log-parser:1067 0.94662 93741: $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
+    16	../mk-log-parser:1521 0.86380 93741: my $event = { @properties };
+    17	../mk-log-parser:1456 0.76429 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    18	../mk-log-parser:1084 0.71926 93741: $query =~ tr[ \n\t\r\f][ ]s;                 # Collapse whitespace
+    19	../mk-log-parser:1749 0.65134 186441: foreach my $attrib_alias ( keys %{$self->{attributes}->{$attrib}} ) {
+    20	../mk-log-parser:1742 0.62876 93741: my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
+    21	../mk-log-parser:1085 0.58908 93741: $query = lc $query;
+    22	../mk-log-parser:1087 0.57079 93741: $query =~ s{
+    23	../mk-log-parser:1447 0.48314 93741: $stmt =~ s/;\n#?\Z//;
+    24	../mk-log-parser:1446 0.44652 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    25	../mk-log-parser:1081 0.43512 93741: $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/?/g;  # Hex/bin into ?
+    26	../mk-log-parser:1755 0.42849 186441: next ATTRIB unless defined $attrib_val;
+    27	../mk-log-parser:1524 0.41614 187482: last CALLBACK unless $callback->($event);
+    28	../mk-log-parser:1062 0.38484 93741: my ( $self, $query, $opts ) = @_;
+    29	../mk-log-parser:1745 0.38243 93741: foreach my $attrib ( keys %{ $self->{attributes} } ) {
+    30	../mk-log-parser:1724 0.37520 93741: [at line 12 inside eval] ++$global->{cnt};
