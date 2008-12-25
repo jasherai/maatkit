@@ -1360,9 +1360,11 @@ if ( $opts{x} ) {
       my $db    = $_[0]->{db};
       if ( $db && (!$curdb || $db ne $curdb) ) {
          $dbh->do("USE $db");
+         print "USE $db;\n";
          $curdb = $db;
       }
       $dbh->do($query);
+      print $query, ";\n";
    };
 }
 else {
@@ -1379,10 +1381,10 @@ else {
 }
 
 my $p = new Processlist;
-$dbh = $dp->get_dbh($dp->get_cxn_params($opts{p}), {AutoCommit => 1}); # TODO
+my $dbh2 = $dp->get_dbh($dp->get_cxn_params($opts{p}), {AutoCommit => 1}); # TODO
 while ( my $fh = shift(@fhs) ) {
 #   1 while $lp->parse_slowlog_event($fh, sub { $callback->(@_) });
-   1 while $p->parse($dbh, sub { $callback->(@_) });
+   1 while $p->parse($dbh2, sub { $callback->(@_) });
    close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
 }
 $dp->disconnect($dbh) if $opts{R};
