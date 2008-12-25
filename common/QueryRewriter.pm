@@ -48,7 +48,7 @@ sub new {
 sub strip_comments {
    my ( $self, $query ) = @_;
    $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
-   $query =~ s#/\*[^!]*?\*/##gsm;   # /*..*/ comments, but not /*!version */
+   $query =~ s#/\*[^!].*?\*/##gsm;   # /*..*/ comments, but not /*!version */
    return $query;
 }
 
@@ -56,41 +56,35 @@ sub strip_comments {
 # parameters, canonicalizing whitespace, etc.  See
 # http://dev.mysql.com/doc/refman/5.0/en/literals.html for literal syntax.
 # Note: Any changes to this function must be profiled for speed!  Speed of this
-# function is critical for mk-log-parser.
+# function is critical for mk-log-parser.  There are known bugs in this, but the
+# balance between maybe-you-get-a-bug and speed favors speed.  See past
+# revisions of this subroutine for more correct, but slower, regexes.
 sub fingerprint {
-   my ( $self, $query, $opts ) = @_;
-   $opts ||= {};
+   my ( $self, $query ) = @_;
+   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
+   $query =~ s#/\*[^!].*?\*/##gsm;       # /*..*/ comments
+   $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
+      && return $query;
+
    $query =~ s/\\["']//g;                # quoted strings
    $query =~ s/".*?"/?/g;                # quoted strings
    $query =~ s/'.*?'/?/g;                # quoted strings
-   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
-   $query =~ s#/\*[^!]*?\*/##gsm;        # /*..*/ comments
-   $query =~ s{                          # Float/real into ?
-              (?<![\w.+-])
-              [+-]?
-              (?:
-                \d+
-                (?:[.]\d*)?
-                |[.]\d+
-              )
-              (?:[Ee][+-]?\d+)?
-              (?!\w)
-             }
-             {?}gx;
-   $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/?/g;  # Hex/bin into ?
-   $query =~ s/[xb]\?/?/g;                      # Hex/bin into ?
-   $query =~ s/\A\s+//;                         # Chop off leading whitespace
-   $query =~ tr[ \n\t\r\f][ ]s;                 # Collapse whitespace
+
+   # This regex is extremely broad in its definition of what looks like a
+   # number.  That is for speed.
+   $query =~ s{                          # Anything vaguely resembling numbers
+      (?<=[^0-9+-])
+      [0-9+-].*?
+      (?=[^0-9a-f.xb+-]|\Z)
+      }{?}gx;
+   $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+   $query =~ s/\A\s+//;                  # Chop off leading whitespace
+   $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
-   $query =~ s/\Ause \S+\Z/use ?/;              # Abstract the DB in USE
    $query =~ s{
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
               {$1(?+)}gx;      # Collapse IN() and VALUES() lists
-   $query =~ s/(?<=[a-z_])\d[_0-9]*\b/N/g; # Tables ending with groups of digits
-   if ( $opts->{prefixes} ) {
-      $query =~ s/\b[\d+_]*\d(?=\w)/N/g;   # Tables starting with groups of digits
-   }
    return $query;
 }
 
