@@ -129,9 +129,10 @@ sub store_event {
 
 sub event_is_stored {
    my ( $self, $checksum ) = @_;
-   my $event = $self->{dbh}->selectall_arrayref(
-      "SELECT checksum FROM $self->{qv_tbl} "
-      . "WHERE checksum=CONV('$checksum',16,10)");
+   my $sql = "SELECT checksum FROM $self->{qv_tbl} "
+      . "WHERE checksum=CONV('$checksum',16,10)";
+   MKDEBUG && _d($sql);
+   my $event = $self->{dbh}->selectall_arrayref($sql);
    return scalar @$event ? 1 : 0;
 }
 
@@ -154,6 +155,7 @@ sub _update_event {
    my $sql        = "UPDATE $self->{qv_tbl} "
                   . "SET    $set_clause "
                   . "WHERE  checksum=CONV('$checksum',16,10)";
+   MKDEBUG && _d($sql);
    $self->{dbh}->do($sql);
 
    return;
