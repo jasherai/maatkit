@@ -67,9 +67,9 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 # %args is a hash containing:
 # REQUIRED:
-# key_attrib   The attribute by which events are aggregated.  Usually this will
+# group_by     The attribute by which events are aggregated.  Usually this will
 #              be 'arg' because $event->{arg} is the query in a parsed slowlog
-#              event.  Events with the same key_attrib (after fingerprinting)
+#              event.  Events with the same group_by (after fingerprinting)
 #              are treated as a class.
 # attributes   An arrayref of attributes for which to calculate metrics. If
 #              you don't specify handlers for them (see handlers below),
@@ -81,7 +81,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #              Similarly with Schema|db.
 #
 # Optional:
-# fingerprint  A subref to transform the key_attrib if desired. When key_attrib
+# fingerprint  A subref to transform the group_by if desired. When group_by
 #              is 'arg' (which is the usual case for parsing logs), fingerprint
 #              is usually: sub { return $qr->fingerprint($_[0]); } 
 #              $qr is a QueryRewriter object. (Something like
@@ -93,15 +93,16 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # worst_attrib An attribute name.  When an event is seen, its worst_attrib
 #              value is compared to the greatest worst_attrib value ever seen
 #              for this class of event.  If it's greater, the event's
-#              key_attrib value is stored as the representative sample of this
+#              group_by value is stored as the representative sample of this
 #              class of event, and the event's position in the log is stored
 #              too.  TODO: we could make this a subroutine.  For example,
 #              'worst' might be rows_examined/rows_returned, or just
 #              rows_returned, and we might want to see queries that returned
-#              0 rows.
+#              0 rows. TODO: we should store the whole 'worst' event instead of
+#              adding properties.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(key_attrib attributes) ) {
+   foreach my $arg ( qw(group_by attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
    $args{handlers} ||= {};
@@ -115,9 +116,9 @@ sub new {
    } @{$args{attributes}};
 
    my $self = {
-      key_attrib            => $args{key_attrib},
+      group_by              => $args{group_by},
       fingerprint           => $args{fingerprint}
-                               || sub { return $_[0]; },# return key attrib val
+                               || sub { return $_[0]; },# return group_by val
       attributes            => \%attributes,
       handlers              => $args{handlers},
       worst_attrib          => $args{worst_attrib},
@@ -248,15 +249,14 @@ sub calc_event_metrics {
 
    $self->{n_events}++;
 
-   # Skip events which do not have the key_attrib attribute.
-   my $key_attrib_val = $event->{ $self->{key_attrib} };
-   return unless defined $key_attrib_val;
+   # Skip events which do not have the group_by attribute.
+   my $group_by_val = $event->{ $self->{group_by} };
+   return unless defined $group_by_val;
 
    $self->{n_queries}++;
 
    # Get the fingerprint (fp) for this event.
-   my $fp
-      = $self->{fingerprint}->($key_attrib_val, $event, $self->{key_attrib});
+   my $fp = $self->{fingerprint}->($group_by_val, $event, $self->{group_by});
 
    # Get a shortcut to the data store (ds) for this class of events.
    my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};

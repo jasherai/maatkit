@@ -13,7 +13,7 @@ require '../SQLMetrics.pm';
 my $qr = new QueryRewriter();
 
 my $sm  = new SQLMetrics(
-   key_attrib      => 'arg',
+   group_by        => 'arg',
    fingerprint     => sub { return $qr->fingerprint($_[0]); },
    attributes      => [qw(Query_time user)],
 );
@@ -111,7 +111,7 @@ is_deeply($sm->{metrics}, $metrics, 'Calcs metrics');
 # #############################################################################
 
 $sm  = new SQLMetrics(
-   key_attrib      => 'arg',
+   group_by        => 'arg',
    fingerprint     => sub { return $qr->fingerprint($_[0]); },
    attributes      => [qw(Query_time user)],
    worst_attrib    => 'Query_time',
@@ -207,7 +207,7 @@ is(ref $handler, 'CODE', 'make_handler with 0 as sample value');
 # Issue 184:
 # #############################################################################
 $sm  = new SQLMetrics(
-   key_attrib      => 'arg',
+   group_by        => 'arg',
    fingerprint     => sub { return $qr->fingerprint($_[0]); },
    attributes      => [qw(db|Schema)],
    worst_attrib    => 'Query_time',
@@ -232,7 +232,7 @@ ok(exists $sm->{metrics}->{unique}->{'foo ?'}->{db}->{unq}->{db1},
    'Gets Schema for db|Schema (issue 184)');
 
 $sm  = new SQLMetrics(
-   key_attrib      => 'arg',
+   group_by        => 'arg',
    fingerprint     => sub { return $qr->fingerprint($_[0]); },
    attributes      => [qw(Schema|db)],
    worst_attrib    => 'Query_time',
