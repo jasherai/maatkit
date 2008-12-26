@@ -9,5 +9,5 @@ CREATE TABLE query_review (
   reviewed_by  VARCHAR(20),
   reviewed_on  DATETIME,
   comments     VARCHAR(100),
-  cnt          INT UNSIGNED DEFAULT 1
+  cnt          INT UNSIGNED NOT NULL DEFAULT 1
 );
