@@ -37,7 +37,8 @@ $bal         = qr/
                   )*
                   \)
                  /x;
-
+my $olc_re = qr/\s*(?:--|#).*[\r\n]*/; # One-line comments
+my $mlc_re = qr#/\*[^!].*?\*/#sm;      # Multi-line comments, but not /*!version */
 
 sub new {
    my ( $class ) = @_;
@@ -47,8 +48,8 @@ sub new {
 # Strips comments out of queries.
 sub strip_comments {
    my ( $self, $query ) = @_;
-   $query =~ s/\s*(?:--|#).*[\r\n]*//gm; # One-line comments
-   $query =~ s#/\*[^!].*?\*/##gsm;   # /*..*/ comments, but not /*!version */
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
    return $query;
 }
 
@@ -61,8 +62,8 @@ sub strip_comments {
 # revisions of this subroutine for more correct, but slower, regexes.
 sub fingerprint {
    my ( $self, $query ) = @_;
-   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
-   $query =~ s#/\*[^!].*?\*/##gsm;       # /*..*/ comments
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
       && return $query;
 
