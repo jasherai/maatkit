@@ -29,8 +29,7 @@ my $tp = new TableParser();
 my $du = new MySQLDump();
 my $tbl_struct = $tp->parse($du->dump($dbh, $q, 'test', 'query_review', 'table'));
 my $qv = new QueryReview(
-   group_by    => 'arg',
-   fingerprint => sub { return $qr->fingerprint($_[0]); },
+   group_by    => 'fingerprint',
    dbh        => $dbh,
    db_tbl     => 'test.query_review',
    tbl_struct => $tbl_struct,
@@ -79,6 +78,7 @@ $Data::Dumper::Indent=1;
 
 my $callback = sub {
    my ( $event ) = @_;
+   $event->{fingerprint} = $qr->fingerprint($event->{arg});
    $qv->cache_event($event);
 };
 
@@ -114,7 +114,7 @@ my $event = {
 };
 my $fp = $qr->fingerprint($event->{arg});
 $event->{fingerprint} = $fp;
-my $checksum = QueryReview::checksum_fingerprint($fp);
+my $checksum = QueryReview::make_checksum($fp);
 $qv->cache_event($event);
 is($event->{checksum}, $checksum, 'Adds checksum to event');
 

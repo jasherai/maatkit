@@ -69,8 +69,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # REQUIRED:
 # group_by     The attribute by which events are aggregated.  Usually this will
 #              be 'arg' because $event->{arg} is the query in a parsed slowlog
-#              event.  Events with the same group_by (after fingerprinting)
-#              are treated as a class.
+#              event.  Events with the same group_by are treated as a class.
 # attributes   An arrayref of attributes for which to calculate metrics. If
 #              you don't specify handlers for them (see handlers below),
 #              they'll be auto-created.  In most cases this will work fine.
@@ -81,11 +80,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #              Similarly with Schema|db.
 #
 # Optional:
-# fingerprint  A subref to transform the group_by if desired. When group_by
-#              is 'arg' (which is the usual case for parsing logs), fingerprint
-#              is usually: sub { return $qr->fingerprint($_[0]); } 
-#              $qr is a QueryRewriter object. (Something like
-#              \&qr->fingerprint(@_); does not work, hence the anon sub.)
 # handlers     A hashref with explicit attribute => subref handlers. Handler
 #              subrefs are returned by make_handler(). If a handler is given
 #              for an attribute that is not in the attributes list (see above),
@@ -117,8 +111,6 @@ sub new {
 
    my $self = {
       group_by              => $args{group_by},
-      fingerprint           => $args{fingerprint}
-                               || sub { return $_[0]; },# return group_by val
       attributes            => \%attributes,
       handlers              => $args{handlers},
       worst_attrib          => $args{worst_attrib},
@@ -249,17 +241,13 @@ sub calc_event_metrics {
 
    $self->{n_events}++;
 
-   # Skip events which do not have the group_by attribute.
-   my $group_by_val = $event->{ $self->{group_by} };
-   return unless defined $group_by_val;
+   # Get a shortcut to the data store (ds) for this class of events.  Skip
+   # events which do not have the group_by attribute.
+   my $group_by = $event->{ $self->{group_by} };
+   return unless defined $group_by;
+   my $fp_ds = $self->{metrics}->{unique}->{ $group_by } ||= {};
 
    $self->{n_queries}++;
-
-   # Get the fingerprint (fp) for this event.
-   my $fp = $self->{fingerprint}->($group_by_val, $event, $self->{group_by});
-
-   # Get a shortcut to the data store (ds) for this class of events.
-   my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
 
    # Calculate the metrics for all our attributes.
    # Metric handlers are auto-vivified as needed.

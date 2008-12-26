@@ -31,6 +31,7 @@ package QueryReview;
 #    reviewed_by
 #    reviewed_on
 #    comments
+#    cnt
 # The QueryReview module keeps these (and potentially other) columns
 # updated for each unique query (also called "events"). The module is
 # given events by calling cache_event() which adds the event to the
@@ -41,7 +42,8 @@ package QueryReview;
 # cache which have changed since the last save.
 #
 # Events in the query review table are identified by a checksum. The
-# checksum is part of an MD5 hash of the query's fingerprint.
+# checksum is part of an MD5 hash of the query's group-by value (usually the
+# fingerprint of the $event->{arg}).
 
 use strict;
 use warnings FATAL => 'all';
@@ -53,8 +55,10 @@ use Data::Dumper;
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Required args:
-# group_by      See SQLMetrics::new().
-# fingerprint   See SQLMetrics::new().
+# group_by      The name of the attribute in the event by which events will be
+#               grouped into a class.  See SQLMetrics.pm for more on this.  The
+#               value is used to generate a GUID-ish value that we can use as
+#               the primary key in a database table.
 # dbh           A dbh to the server with the query review table.
 # db_tbl        Full db.tbl name of the query review table.
 #               Make sure the table exists! It's not checked here;
@@ -64,44 +68,42 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #
 # Optional args:
 # where         SQL clause to limit pre-loaded fingerprints that
-#               comes after 'FROM db_tbl' so it can be a WHERE clause
-#               or just LIMIT.
+#               comes after 'FROM db_tbl'.  It can be a WHERE clause
+#               and/or LIMIT.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dbh db_tbl tbl_struct group_by fingerprint) ) {
+   foreach my $arg ( qw(dbh db_tbl tbl_struct group_by) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   my %basic_cols = qw(checksum 1 fingerprint 1 sample 1 first_seen 1
-                       last_seen 1 reviewed_by 1 reviewed_on 1 comments 1
-                       cnt 1);
-   foreach my $basic_col ( keys %basic_cols ) {
-      die "Query review table $args{db_tbl} does not have a $basic_col column"
-         unless $args{tbl_struct}->{is_col}->{$basic_col};
+   my @basic_cols
+      = qw(checksum fingerprint sample first_seen last_seen
+           reviewed_by reviewed_on comments cnt);
+   foreach my $col ( @basic_cols ) {
+      die "Query review table $args{db_tbl} does not have a $col column"
+         unless $args{tbl_struct}->{is_col}->{$col};
    }
-   my @extra_cols;
-   foreach my $col ( @{$args{tbl_struct}->{cols}} ) {
-      push @extra_cols, $col unless exists $basic_cols{$col};
-   }
+   my %basic_cols = map { $_ => 1 } @basic_cols;
+   my @extra_cols = grep { !$basic_cols{$_} } @{$args{tbl_struct}->{cols}};
 
    # Pre-load cache of fingerprint-checksums from the query review table.
    # TODO: pre-load extra cols
-   my $sql = "SELECT fingerprint, CONV(checksum, 10, 16), "
-           . "   cnt, first_seen, last_seen "
+   my $sql = "SELECT fingerprint, CONV(checksum, 10, 16) as checksum_hex, "
+           . "cnt, first_seen, last_seen "
            . "FROM $args{db_tbl} "
            . ($args{where} ? $args{where} : '');
    my %cache = map {
-      $_->[0] => {
-         checksum => $_->[1],
+      $_->{fingerprint} => {
+         checksum => $_->{checksum_hex},
          dirty    => 0,
          cols     => {
-            cnt        => $_->[2],
-            first_seen => $_->[3],
-            last_seen  => $_->[4],
+            cnt        => $_->{cnt},
+            first_seen => $_->{first_seen},
+            last_seen  => $_->{last_seen},
          }
       }
    }
-   @{ $args{dbh}->selectall_arrayref($sql) };
+   @{ $args{dbh}->selectall_arrayref($sql, { Slice => {} }) };
 
    my $insert_new_sth = $args{dbh}->prepare(
          'INSERT IGNORE INTO ' . $args{db_tbl}
@@ -114,8 +116,7 @@ sub new {
       cache          => \%cache,
       insert_new_sth => $insert_new_sth,
       group_by       => $args{group_by},
-      fingerprint    => $args{fingerprint},
-      basic_cols     => [keys %basic_cols],
+      basic_cols     => \@basic_cols,
       extra_cols     => \@extra_cols,
    };
    MKDEBUG && _d("new QueryReview obj: " . Dumper($self));
@@ -127,32 +128,28 @@ sub cache_event {
    my $checksum;
 
    # Skip events which do not have the group_by attribute.
-   my $group_by_val =  $event->{ $self->{group_by} };
-   return unless defined $group_by_val;
-
-   # Get the fingerprint for this event.
-   my $fingerprint
-      = $self->{fingerprint}->($group_by_val, $event, $self->{group_by});
+   my $group_by =  $event->{ $self->{group_by} };
+   return unless defined $group_by;
 
    # Update the event in cache if it's an old event (either in cache or
    # in the query review table). Else, add the new event to the query
    # review table and the cache.
-   if ( exists $self->{cache}->{$fingerprint} ) {
-      $checksum = $self->{cache}->{$fingerprint}->{checksum};
-      $self->_update_cache($fingerprint, $event);
+   if ( exists $self->{cache}->{$group_by} ) {
+      $checksum = $self->{cache}->{$group_by}->{checksum};
+      $self->_update_cache($group_by, $event);
    }
    else {
-      $checksum = checksum_fingerprint($fingerprint);
+      $checksum = make_checksum($group_by);
 
       if ( $self->event_is_stored($checksum) ) {
          # Event not cached but stored in the db_tbl.
          my $review_info = $self->{dbh}->selectall_hashref(
             'SELECT CONV(checksum,10,16) AS checksum_conv, '
-            . join(',', @{$self->{basic_cols}})
+            . join(', ', @{$self->{basic_cols}})
             . ' FROM ' . $self->{db_tbl}
             . " WHERE checksum=CONV('$checksum',16,10)",
             'checksum_conv',);
-         $self->{cache}->{$fingerprint} = {
+         $self->{cache}->{$group_by} = {
             checksum => $checksum,
             dirty    => 1,
             cols     => {
@@ -162,7 +159,7 @@ sub cache_event {
                # TODO: init extra cols
             },
          }; 
-         $self->_update_cache($fingerprint, $event);
+         $self->_update_cache($group_by, $event);
       }
       else {
          # New event.
@@ -172,13 +169,13 @@ sub cache_event {
 
          $self->{insert_new_sth}->execute(
             $checksum,
-            $fingerprint,
+            $group_by,
             $event->{arg},
             $ts,
             $ts);
-         MKDEBUG && _d("Stored new event: $checksum $fingerprint $ts");
+         MKDEBUG && _d("Stored new event: $checksum $group_by $ts");
 
-         $self->{cache}->{$fingerprint} = {
+         $self->{cache}->{$group_by} = {
             checksum => $checksum,
             dirty    => 0,
             cols     => {
@@ -206,15 +203,15 @@ sub event_is_stored {
 }
 
 sub _update_cache {
-   my ( $self, $fingerprint, $event ) = @_;
-   return unless exists $self->{cache}->{$fingerprint};
+   my ( $self, $group_by, $event ) = @_;
+   return unless exists $self->{cache}->{$group_by};
 
-   # Shortcut to fingerprint's data store in cache.
-   my $fp_ds = $self->{cache}->{$fingerprint};
+   # Shortcut to group_by's data store in cache.
+   my $fp_ds = $self->{cache}->{$group_by};
 
-   $fp_ds->{dirty} = 1;  # fingerprint in cache differs from query review tbl
+   $fp_ds->{dirty} = 1;  # group_by in cache differs from query review tbl
 
-   $fp_ds->{cols}->{cnt}++;  # count of fingerprint's occurrences
+   $fp_ds->{cols}->{cnt}++;  # count of group_by's occurrences
 
    # Update first_seen and last_seen. Timestamps may not always increase.
    # They can decrease, for example, if the user parses and old log.
@@ -232,10 +229,10 @@ sub _update_cache {
 sub flush_event_cache {
    my ( $self ) = @_;
 
-   FINGERPRINT:
-   foreach my $fingerprint ( keys %{$self->{cache}} ) {
-      my $fp_ds = $self->{cache}->{$fingerprint};
-      next FINGERPRINT if !$fp_ds->{dirty};
+   CLASS:
+   foreach my $class ( keys %{$self->{cache}} ) {
+      my $fp_ds = $self->{cache}->{$class};
+      next CLASS if !$fp_ds->{dirty};
       my @sets;
       foreach my $col ( keys %{$fp_ds->{cols}} ) {
          push @sets, "$col='$fp_ds->{cols}->{$col}'";
@@ -251,11 +248,11 @@ sub flush_event_cache {
    return;
 }
 
-# Returns the rightmost 64 bits of an MD5 checksum of the fingerprint.
-sub checksum_fingerprint {
-   my ( $fingerprint ) = @_;
-   my $checksum = uc substr(md5_hex($fingerprint), -16);
-   MKDEBUG && _d("$checksum checksum for $fingerprint");
+# Returns the rightmost 64 bits of an MD5 checksum of the value.
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d("$checksum checksum for $val");
    return $checksum;
 }
 

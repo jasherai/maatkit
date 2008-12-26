@@ -13,8 +13,7 @@ require '../SQLMetrics.pm';
 my $qr = new QueryRewriter();
 
 my $sm  = new SQLMetrics(
-   group_by        => 'arg',
-   fingerprint     => sub { return $qr->fingerprint($_[0]); },
+   group_by        => 'fingerprint',
    attributes      => [qw(Query_time user)],
 );
 
@@ -102,6 +101,7 @@ my $metrics = {
 };
 
 foreach my $event ( @$events ) {
+   $event->{fingerprint} = $qr->fingerprint($event->{arg});
    $sm->calc_event_metrics($event);
 }
 is_deeply($sm->{metrics}, $metrics, 'Calcs metrics');
@@ -111,8 +111,7 @@ is_deeply($sm->{metrics}, $metrics, 'Calcs metrics');
 # #############################################################################
 
 $sm  = new SQLMetrics(
-   group_by        => 'arg',
-   fingerprint     => sub { return $qr->fingerprint($_[0]); },
+   group_by        => 'fingerprint',
    attributes      => [qw(Query_time user)],
    worst_attrib    => 'Query_time',
 );
@@ -139,6 +138,7 @@ $events = [
 ];
 
 foreach my $event ( @$events ) {
+   $event->{fingerprint} = $qr->fingerprint($event->{arg});
    $sm->calc_event_metrics($event);
 }
 is($sm->{metrics}->{unique}->{'foo ?'}->{Query_time}->{sample},
@@ -207,8 +207,7 @@ is(ref $handler, 'CODE', 'make_handler with 0 as sample value');
 # Issue 184:
 # #############################################################################
 $sm  = new SQLMetrics(
-   group_by        => 'arg',
-   fingerprint     => sub { return $qr->fingerprint($_[0]); },
+   group_by        => 'fingerprint',
    attributes      => [qw(db|Schema)],
    worst_attrib    => 'Query_time',
 );
@@ -226,14 +225,14 @@ $events = [
    },
 ];
 foreach my $event ( @$events ) {
+   $event->{fingerprint} = $qr->fingerprint($event->{arg});
    $sm->calc_event_metrics($event);
 }
 ok(exists $sm->{metrics}->{unique}->{'foo ?'}->{db}->{unq}->{db1},
    'Gets Schema for db|Schema (issue 184)');
 
 $sm  = new SQLMetrics(
-   group_by        => 'arg',
-   fingerprint     => sub { return $qr->fingerprint($_[0]); },
+   group_by        => 'fingerprint',
    attributes      => [qw(Schema|db)],
    worst_attrib    => 'Query_time',
 );
@@ -251,6 +250,7 @@ $events = [
    },
 ];
 foreach my $event ( @$events ) {
+   $event->{fingerprint} = $qr->fingerprint($event->{arg});
    $sm->calc_event_metrics($event);
 }
 ok(exists $sm->{metrics}->{unique}->{'foo ?'}->{Schema}->{unq}->{db1},
