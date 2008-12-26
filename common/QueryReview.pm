@@ -53,7 +53,7 @@ use Data::Dumper;
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Required args:
-# key_attrib    See SQLMetrics::new().
+# group_by      See SQLMetrics::new().
 # fingerprint   See SQLMetrics::new().
 # dbh           A dbh to the server with the query review table.
 # db_tbl        Full db.tbl name of the query review table.
@@ -68,7 +68,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #               or just LIMIT.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dbh db_tbl tbl_struct key_attrib fingerprint) ) {
+   foreach my $arg ( qw(dbh db_tbl tbl_struct group_by fingerprint) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
@@ -113,7 +113,7 @@ sub new {
       db_tbl         => $args{db_tbl},
       cache          => \%cache,
       insert_new_sth => $insert_new_sth,
-      key_attrib     => $args{key_attrib},
+      group_by       => $args{group_by},
       fingerprint    => $args{fingerprint},
       basic_cols     => [keys %basic_cols],
       extra_cols     => \@extra_cols,
@@ -126,13 +126,13 @@ sub cache_event {
    my ( $self, $event ) = @_;
    my $checksum;
 
-   # Skip events which do not have the key_attrib attribute.
-   my $key_attrib_val =  $event->{ $self->{key_attrib} };
-   return unless defined $key_attrib_val;
+   # Skip events which do not have the group_by attribute.
+   my $group_by_val =  $event->{ $self->{group_by} };
+   return unless defined $group_by_val;
 
    # Get the fingerprint for this event.
    my $fingerprint
-      = $self->{fingerprint}->($key_attrib_val, $event, $self->{key_attrib});
+      = $self->{fingerprint}->($group_by_val, $event, $self->{group_by});
 
    # Update the event in cache if it's an old event (either in cache or
    # in the query review table). Else, add the new event to the query
