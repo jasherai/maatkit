@@ -2,12 +2,12 @@
 
 REV=`grep 'SVN_REV.*Revision' ../mk-log-parser  | awk '{print $6}'`;
 /usr/bin/time perl -d:FastProf ../mk-log-parser barontest.log > /dev/null 2>times
-echo "" >> profiling-results.txt
-echo "Revision $REV" >> profiling-results.txt
-cat times >> profiling-results.txt
-fprofpp -t 30 | grep -v '^#' | nl >> profiling-results.txt
+echo "" >> results.txt
+echo "Revision $REV" >> results.txt
+cat times >> results.txt
+fprofpp -t 30 | grep -v '^#' | nl >> results.txt
 if svn st ../mk-log-parser | grep -q '^M'; then
    echo "Not committing"
 else
-   svn ci -m "Profiling results as of revision $REV" profiling-results.txt
+   svn ci -m "Profiling results as of revision $REV" results.txt
 fi
