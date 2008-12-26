@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 19;
 use English qw(-no_match_vars);
 
 # #############################################################################
@@ -85,7 +85,7 @@ my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 SKIP: {
-   skip 'Cannot connect to sandbox master', 4 if !$dbh;
+   skip 'Cannot connect to sandbox master', 8 if !$dbh;
 
    $sb->create_dbs($dbh, ['test']);
    $sb->load_file('master', 'samples/query_review.sql');
@@ -130,6 +130,7 @@ SKIP: {
       no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
       'Analyze-review pass 1 reports not-reviewed queries'
    );
+
    $res = $dbh->selectall_arrayref('SELECT * FROM test.query_review');
    ok( ($res->[0]->[8] == 6 && $res->[1]->[8] == 6), 'Analyze-review pass 1 updated cnt');
 
@@ -141,14 +142,6 @@ SKIP: {
    ok(
       no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_2.txt'),
       'Analyze-review pass 2 does not report the reviewed query'
-   );
-
-   # The previous test reported 1 query ("bar_tbl") ranked 2 because the
-   # first query ("foo_tbl") was simple removed from the report.
-   # With --norankall, we should again get only bar_tbl but ranked 1.
-   ok(
-      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review   --norankall', 'samples/slow006_AR_3.txt'),
-      'Analyze-review pass 3 with --norankall re-ranks the not-reviewed query'
    );
 
    # And a 4th pass with --reportall which should cause the reviewed query

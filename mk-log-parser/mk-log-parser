@@ -2908,22 +2908,19 @@ my $do_analysis = ($opts{R} && $opts{A}) || (!$opts{R} && !$opts{A}) ? 1 : 0;
 # #############################################################################
 my $q  = new Quoter();
 my $qr = new QueryRewriter();
+my $qv;           # used if --review
 my $dbh;          # used if --review
-my $review_info;  # used if --review
 my $sm;           # used if do_analysis
 my @callbacks;
 
 # This chain of callbacks begins with the sub below which only
 # fingerprints the event and adds that fingerprint to the event.
-# Subsequent callbacks--for review, analyze filter, or analyze--
-# expect the event to have its own fingerprint. This way we
-# fingerprint only once. Only the event is passed to each callback.
-# Each callback is called in order in LogParser::parse_slowlog_event().
-# The chain can be terminated early if one of the callbacks returns 0.
-# This might happen, for example, in the analyze filter callback if
-# the event has already been reviewed. Then the analyze callback is
-# never called and the chain restarts with the next event and the
-# review callback.
+# Subsequent callbacks--for review and/or analyze--expect the event
+# to have its own fingerprint. This way we fingerprint only once.
+# Only the event is passed to each callback. Each callback is called
+# in order in LogParser::parse_slowlog_event().
+# The chain can terminate early if one of the callbacks returns 0.
+# If this happens, the chain restarts immediately with the next event.
 push @callbacks, sub {
    my ( $event ) = @_;
    # Skip events which do not have the group_by attribute.
@@ -2935,7 +2932,6 @@ push @callbacks, sub {
 };
 
 push @callbacks, get_query_review_callback() if $opts{R};
-push @callbacks, get_review_info_callback()  if $opts{A};
 push @callbacks, get_analyze_callback()      if $do_analysis;
 
 # ############################################################################
@@ -2963,12 +2959,17 @@ while ( $oktorun && (my $fh = shift(@fhs)) ) {
 # ############################################################################
 # Finish up (print results, etc).
 # ############################################################################
-$dp->disconnect($dbh) if $opts{R};
+
+# Flush before reporting so that the report gets the latest review vals.
+$qv->flush_event_cache() if $opts{R};
 
 if ( $do_analysis ) {
    my @worst = find_top_queries($sm, $opts{s}, $opts{t}, $opts{w});
-   report_queries($sm, $review_info, @worst);
+   report_queries(@worst);
 }
+
+# Disconnect after reporting because the report uses dbh to get review vals.
+$dp->disconnect($dbh) if $opts{R};
 
 exit;
 
@@ -2987,57 +2988,18 @@ sub get_query_review_callback {
    my $qv_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
    my $struct = $tp->parse(
       $du->dump($dbh, $q, $opts{R}->{D}, $opts{R}->{t}, 'table'));
-   my $qv     = new QueryReview(
+   $qv        = new QueryReview(
       group_by    => 'arg',
       fingerprint => sub { return $_[1]->{fingerprint}; },
       dbh         => $dbh,
-      qv_tbl      => $qv_tbl,
+      db_tbl      => $qv_tbl,
       tbl_struct  => $struct,
    );
 
    return sub {
       my ( $event ) = @_;
       return 0 unless defined $event;
-      $qv->store_event($event);
-      return 1; # required to keep callback chain going
-   };
-}
-
-sub get_review_info_callback {
-   my ( $event ) = @_;
-   $review_info = {
-      cols => [],
-      vals => {},
-   };
-   my $qv_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
-   my @excluded_columns = qw(checksum fingerprint sample checksum_conv); 
-   my $sql = 'SELECT *, CONV(checksum,10,16) AS checksum_conv'
-           . " FROM $qv_tbl "
-           . 'WHERE checksum=CONV(?,16,10)';
-   MKDEBUG && _d("SELECT for review info: $sql");
-   my $get_review_info_sth = $dbh->prepare($sql);
-
-   return sub {
-      my ( $event ) = @_;
-      return 0 unless defined $event->{checksum};
-      $get_review_info_sth->execute($event->{checksum});
-      my $res = $get_review_info_sth->fetchall_hashref('checksum_conv');
-      my $review_vals = $res->{ $event->{checksum} };
-      if ( scalar @{$review_info->{cols}} == 0 ) {
-         # We only have to do this once. The columns shouldn't change
-         # while we're running.
-         foreach my $exclude_column ( @excluded_columns ) {
-            delete $review_vals->{$exclude_column};
-         }
-         @{$review_info->{cols}} = sort keys %$review_vals;
-         MKDEBUG && _d("Review info columns: "
-                       . join(',', @{$review_info->{cols}}));
-      }
-      return 0 if ( !$opts{rankall} && defined $review_vals->{reviewed_by} );
-      foreach my $review_column ( @{$review_info->{cols}} ) {
-         $review_info->{vals}->{$event->{fingerprint}}->{$review_column}
-            = $review_vals->{$review_column};
-      }
+      $qv->cache_event($event);
       return 1; # required to keep callback chain going
    };
 }
@@ -3089,7 +3051,7 @@ sub find_top_queries {
 }
 
 sub report_queries {
-   my ( $sm, $review_info, @worst ) = @_;
+   my ( @worst ) = @_;
    my $u = $sm->{metrics}->{unique};
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
@@ -3131,16 +3093,25 @@ sub report_queries {
       },
    );
 
+   my @review_cols;
+   my %exclude_cols = qw(fingerprint 1 sample 1 checksum 1);
+   if ( $opts{A} ) {
+      @review_cols = sort
+                     grep { !$exclude_cols{$_} }
+                     (@{$qv->{basic_cols}}, @{$qv->{extra_cols}});
+   }
+
    QUERY:
    foreach my $i ( 0..$#worst ) {
       my $class       = $worst[$i];
       my $fingerprint = $class->{fingerprint};
+      my $checksum    =  QueryReview::checksum_fingerprint($fingerprint);
 
-      if ( defined $review_info && !$opts{reportall} ) {
-         if ( defined $review_info->{vals}->{$fingerprint}->{reviewed_by} ) {
-            MKDEBUG && _d("Not reporting, already reviewed: $fingerprint"); 
-            next QUERY;
-         }
+      my $review_vals;
+      if ( $opts{A} ) {
+         $review_vals = get_review_vals($checksum, \@review_cols);
+         return next QUERY if ( defined $review_vals->{reviewed_by}
+                                && !$opts{reportall} );
       }
 
       # Calculate QPS (queries per second) by looking at the min/max timestamp.
@@ -3154,8 +3125,7 @@ sub report_queries {
       }
 
       my $header = sprintf $query_hdr_fmt, $i + 1, shorten($qps,p=>1,d=>1000),
-            QueryReview::checksum_fingerprint($fingerprint),
-            $class->{$opts{w}}->{pos_in_log};
+            $checksum, $class->{$opts{w}}->{pos_in_log};
 
       print  $header, ('_' x (73 - length($header))), "\n";
       printf $metrics_hdr_fmt;
@@ -3206,11 +3176,11 @@ sub report_queries {
       # TODO
       # print "# Time clustering\n";
 
-      if ( defined $review_info ) { 
+      if ( $opts{A} ) {
          print "# Review information\n";
-         foreach my $j ( 0..$#{$review_info->{cols}} ) {
-            my $col = $review_info->{cols}->[$j];
-            my $val = $review_info->{vals}->{$fingerprint}->{$col};
+         foreach my $j ( 0..$#review_cols ) {
+            my $col = $review_cols[$j];
+            my $val = $review_vals->{$col};
             printf $review_info_fmt, $col, (defined $val ? $val : '');
          }
       }
@@ -3249,6 +3219,22 @@ sub report_queries {
    }
 
    return;
+}
+
+sub get_review_vals {
+   my ( $checksum, $cols ) = @_;
+   return unless defined $checksum;
+   my $qv_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
+   my $select_cols  = join(',', @$cols);
+   my $sql  = "SELECT $select_cols, CONV(checksum,10,16) AS checksum_conv "
+            . "FROM $qv_tbl "
+            . "WHERE checksum=CONV('$checksum',16,10)";
+   MKDEBUG && _d("select for review vals: $sql");
+   # There should only be 1 result.
+   my $res = $dbh->selectall_hashref($sql, 'checksum_conv');
+   my $review_vals = $res->{$checksum};
+   delete $review_vals->{checksum_conv};
+   return $review_vals;
 }
 
 sub chart_distro {
@@ -3464,11 +3450,6 @@ see a random spread of query ranks reported (e.g., queries 3, 4, 8, 10).
 Use the L<"--reportall"> option if you want all the top worst queries to
 be reported.
 
-If you do not need to see the queries' original rank in the top worst, then
-a much faster analysis can be performed by using the --norankall option
-(see L<"--rankall">). The analysis will report the same, not-reviewed queries,
-but the queries' rank will be different and L<"--reportall"> has no affect.
-
 See L<"--review"> for the minimal table structure required for the query
 review table.
 
@@ -3494,22 +3475,6 @@ Not yet implemented.
 
 TODO
 
-=item --rankall
-
-negatable: yes; default: yes
-
-Rank both reviewed and not-reviewed queries with --analyze and --review.
-
-By defeault, the special analysis resulting from the combined use of
-L<"--analyze"> and L<"--review"> ranks all queries, both reviewed and
-not-reviewed. Then, the reviewed queries are removed from the report,
-leaving only the not-reviewed queries and their respective sort rankings.
-The result is a seemingly random spread of query ranks.
-
-If you do not need this feature, the analysis can be performed faster by
-early-filtering the reviewed queries, leaving only the not-reviewed queries
-to be ranked. To do this, use --norankall.
-
 =item --review
 
 short form: -R; type: DSN
@@ -3527,7 +3492,8 @@ table must have at least the following columns:
      last_seen    DATETIME,
      reviewed_by  VARCHAR(20),
      reviewed_on  DATETIME,
-     comments     VARCHAR(100)
+     comments     VARCHAR(100),
+     cnt          INT UNSIGNED NOT NULL DEFAULT 1
   );
 
 As the log is parsed, each time a "new" query is seen it is stored into this

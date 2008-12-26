@@ -18,7 +18,7 @@
 #       1s                                                               
 #     10s+                                                               
 # Review information
-#    cnt           15
+#    cnt           12
 #    comments      foo_tbl is ok, so are cranberries
 #    first_seen    2007-12-18 11:48:27
 #    last_seen     2007-12-18 11:49:30
@@ -50,7 +50,7 @@ SELECT col FROM foo_tbl\G
 #       1s                                                               
 #     10s+                                                               
 # Review information
-#    cnt           15
+#    cnt           12
 #    comments      
 #    first_seen    2007-12-18 11:48:57
 #    last_seen     2007-12-18 11:49:07

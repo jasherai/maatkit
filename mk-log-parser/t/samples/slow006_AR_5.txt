@@ -18,7 +18,7 @@
 #       1s                                                               
 #     10s+                                                               
 # Review information
-#    cnt           18
+#    cnt           15
 #    comments      
 #    first_seen    2007-12-18 11:48:57
 #    foo           42
