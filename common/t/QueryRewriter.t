@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 50;
+use Test::More tests => 51;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -46,6 +46,12 @@ is(
 
 is(
    $q->fingerprint("select \n--bar\n foo"),
+   "select foo",
+   'Removes one-line comments in fingerprints',
+);
+
+is(
+   $q->fingerprint("select foo -- bar\n"),
    "select foo",
    'Removes one-line comments in fingerprints',
 );
