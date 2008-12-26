@@ -1590,7 +1590,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2679
+# SQLMetrics package 2683
 # ###########################################################################
 
 package SQLMetrics;
@@ -1618,8 +1618,6 @@ sub new {
 
    my $self = {
       group_by              => $args{group_by},
-      fingerprint           => $args{fingerprint}
-                               || sub { return $_[0]; },# return group_by val
       attributes            => \%attributes,
       handlers              => $args{handlers},
       worst_attrib          => $args{worst_attrib},
@@ -1722,14 +1720,11 @@ sub calc_event_metrics {
 
    $self->{n_events}++;
 
-   my $group_by_val = $event->{ $self->{group_by} };
-   return unless defined $group_by_val;
+   my $group_by = $event->{ $self->{group_by} };
+   return unless defined $group_by;
+   my $fp_ds = $self->{metrics}->{unique}->{ $group_by } ||= {};
 
    $self->{n_queries}++;
-
-   my $fp = $self->{fingerprint}->($group_by_val, $event, $self->{group_by});
-
-   my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
 
    ATTRIB:
    foreach my $attrib ( keys %{ $self->{attributes} } ) {
@@ -2650,7 +2645,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 2680
+# QueryReview package 2683
 # ###########################################################################
 package QueryReview;
 
@@ -2665,38 +2660,36 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(dbh db_tbl tbl_struct group_by fingerprint) ) {
+   foreach my $arg ( qw(dbh db_tbl tbl_struct group_by) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   my %basic_cols = qw(checksum 1 fingerprint 1 sample 1 first_seen 1
-                       last_seen 1 reviewed_by 1 reviewed_on 1 comments 1
-                       cnt 1);
-   foreach my $basic_col ( keys %basic_cols ) {
-      die "Query review table $args{db_tbl} does not have a $basic_col column"
-         unless $args{tbl_struct}->{is_col}->{$basic_col};
+   my @basic_cols
+      = qw(checksum fingerprint sample first_seen last_seen
+           reviewed_by reviewed_on comments cnt);
+   foreach my $col ( @basic_cols ) {
+      die "Query review table $args{db_tbl} does not have a $col column"
+         unless $args{tbl_struct}->{is_col}->{$col};
    }
-   my @extra_cols;
-   foreach my $col ( @{$args{tbl_struct}->{cols}} ) {
-      push @extra_cols, $col unless exists $basic_cols{$col};
-   }
+   my %basic_cols = map { $_ => 1 } @basic_cols;
+   my @extra_cols = grep { !$basic_cols{$_} } @{$args{tbl_struct}->{cols}};
 
-   my $sql = "SELECT fingerprint, CONV(checksum, 10, 16), "
-           . "   cnt, first_seen, last_seen "
+   my $sql = "SELECT fingerprint, CONV(checksum, 10, 16) as checksum_hex, "
+           . "cnt, first_seen, last_seen "
            . "FROM $args{db_tbl} "
            . ($args{where} ? $args{where} : '');
    my %cache = map {
-      $_->[0] => {
-         checksum => $_->[1],
+      $_->{fingerprint} => {
+         checksum => $_->{checksum_hex},
          dirty    => 0,
          cols     => {
-            cnt        => $_->[2],
-            first_seen => $_->[3],
-            last_seen  => $_->[4],
+            cnt        => $_->{cnt},
+            first_seen => $_->{first_seen},
+            last_seen  => $_->{last_seen},
          }
       }
    }
-   @{ $args{dbh}->selectall_arrayref($sql) };
+   @{ $args{dbh}->selectall_arrayref($sql, { Slice => {} }) };
 
    my $insert_new_sth = $args{dbh}->prepare(
          'INSERT IGNORE INTO ' . $args{db_tbl}
@@ -2709,8 +2702,7 @@ sub new {
       cache          => \%cache,
       insert_new_sth => $insert_new_sth,
       group_by       => $args{group_by},
-      fingerprint    => $args{fingerprint},
-      basic_cols     => [keys %basic_cols],
+      basic_cols     => \@basic_cols,
       extra_cols     => \@extra_cols,
    };
    MKDEBUG && _d("new QueryReview obj: " . Dumper($self));
@@ -2721,27 +2713,24 @@ sub cache_event {
    my ( $self, $event ) = @_;
    my $checksum;
 
-   my $group_by_val =  $event->{ $self->{group_by} };
-   return unless defined $group_by_val;
+   my $group_by =  $event->{ $self->{group_by} };
+   return unless defined $group_by;
 
-   my $fingerprint
-      = $self->{fingerprint}->($group_by_val, $event, $self->{group_by});
-
-   if ( exists $self->{cache}->{$fingerprint} ) {
-      $checksum = $self->{cache}->{$fingerprint}->{checksum};
-      $self->_update_cache($fingerprint, $event);
+   if ( exists $self->{cache}->{$group_by} ) {
+      $checksum = $self->{cache}->{$group_by}->{checksum};
+      $self->_update_cache($group_by, $event);
    }
    else {
-      $checksum = checksum_fingerprint($fingerprint);
+      $checksum = make_checksum($group_by);
 
       if ( $self->event_is_stored($checksum) ) {
          my $review_info = $self->{dbh}->selectall_hashref(
             'SELECT CONV(checksum,10,16) AS checksum_conv, '
-            . join(',', @{$self->{basic_cols}})
+            . join(', ', @{$self->{basic_cols}})
             . ' FROM ' . $self->{db_tbl}
             . " WHERE checksum=CONV('$checksum',16,10)",
             'checksum_conv',);
-         $self->{cache}->{$fingerprint} = {
+         $self->{cache}->{$group_by} = {
             checksum => $checksum,
             dirty    => 1,
             cols     => {
@@ -2750,20 +2739,20 @@ sub cache_event {
                last_seen  => $review_info->{$checksum}->{last_seen}  || '',
             },
          }; 
-         $self->_update_cache($fingerprint, $event);
+         $self->_update_cache($group_by, $event);
       }
       else {
          my $ts = _parse_timestamp($event->{ts});
 
          $self->{insert_new_sth}->execute(
             $checksum,
-            $fingerprint,
+            $group_by,
             $event->{arg},
             $ts,
             $ts);
-         MKDEBUG && _d("Stored new event: $checksum $fingerprint $ts");
+         MKDEBUG && _d("Stored new event: $checksum $group_by $ts");
 
-         $self->{cache}->{$fingerprint} = {
+         $self->{cache}->{$group_by} = {
             checksum => $checksum,
             dirty    => 0,
             cols     => {
@@ -2790,14 +2779,14 @@ sub event_is_stored {
 }
 
 sub _update_cache {
-   my ( $self, $fingerprint, $event ) = @_;
-   return unless exists $self->{cache}->{$fingerprint};
+   my ( $self, $group_by, $event ) = @_;
+   return unless exists $self->{cache}->{$group_by};
 
-   my $fp_ds = $self->{cache}->{$fingerprint};
+   my $fp_ds = $self->{cache}->{$group_by};
 
-   $fp_ds->{dirty} = 1;  # fingerprint in cache differs from query review tbl
+   $fp_ds->{dirty} = 1;  # group_by in cache differs from query review tbl
 
-   $fp_ds->{cols}->{cnt}++;  # count of fingerprint's occurrences
+   $fp_ds->{cols}->{cnt}++;  # count of group_by's occurrences
 
    my $ts = _parse_timestamp($event->{ts});
    $fp_ds->{cols}->{first_seen} = $ts if $ts le $fp_ds->{cols}->{first_seen};
@@ -2810,10 +2799,10 @@ sub _update_cache {
 sub flush_event_cache {
    my ( $self ) = @_;
 
-   FINGERPRINT:
-   foreach my $fingerprint ( keys %{$self->{cache}} ) {
-      my $fp_ds = $self->{cache}->{$fingerprint};
-      next FINGERPRINT if !$fp_ds->{dirty};
+   CLASS:
+   foreach my $class ( keys %{$self->{cache}} ) {
+      my $fp_ds = $self->{cache}->{$class};
+      next CLASS if !$fp_ds->{dirty};
       my @sets;
       foreach my $col ( keys %{$fp_ds->{cols}} ) {
          push @sets, "$col='$fp_ds->{cols}->{$col}'";
@@ -2829,10 +2818,10 @@ sub flush_event_cache {
    return;
 }
 
-sub checksum_fingerprint {
-   my ( $fingerprint ) = @_;
-   my $checksum = uc substr(md5_hex($fingerprint), -16);
-   MKDEBUG && _d("$checksum checksum for $fingerprint");
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d("$checksum checksum for $val");
    return $checksum;
 }
 
@@ -2989,7 +2978,7 @@ sub get_query_review_callback {
    my $struct = $tp->parse(
       $du->dump($dbh, $q, $opts{R}->{D}, $opts{R}->{t}, 'table'));
    $qv        = new QueryReview(
-      group_by    => 'arg',
+      group_by    => 'fingerprint',
       fingerprint => sub { return $_[1]->{fingerprint}; },
       dbh         => $dbh,
       db_tbl      => $qv_tbl,
@@ -3006,9 +2995,8 @@ sub get_query_review_callback {
 
 sub get_analyze_callback {
    $sm = new SQLMetrics(
-      group_by      => 'arg',
+      group_by      => 'fingerprint',
       worst_attrib  => $opts{w}, # TODO this can be an expr, add to attributes
-      fingerprint   => sub { return $_[1]->{fingerprint}; },
       attributes    => [qw(
                           Query_time
                           Lock_time
@@ -3094,7 +3082,7 @@ sub report_queries {
    );
 
    my @review_cols;
-   my %exclude_cols = qw(fingerprint 1 sample 1 checksum 1);
+   my %exclude_cols = (fingerprint => 1, sample => 1, checksum => 1);
    if ( $opts{A} ) {
       @review_cols = sort
                      grep { !$exclude_cols{$_} }
@@ -3105,7 +3093,7 @@ sub report_queries {
    foreach my $i ( 0..$#worst ) {
       my $class       = $worst[$i];
       my $fingerprint = $class->{fingerprint};
-      my $checksum    =  QueryReview::checksum_fingerprint($fingerprint);
+      my $checksum    =  QueryReview::make_checksum($fingerprint);
 
       my $review_vals;
       if ( $opts{A} ) {
