@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 49;
+use Test::More tests => 50;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -28,8 +28,14 @@ my $q = new QueryRewriter();
 
 is(
    $q->strip_comments("select \n--bar\n foo"),
-   "select \n foo",
+   "select foo",
    'Removes one-line comments',
+);
+
+is(
+   $q->strip_comments("select foo -- bar"),
+   "select foo",
+   'Removes one-line comments at end of line',
 );
 
 is(

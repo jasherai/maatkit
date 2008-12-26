@@ -47,7 +47,7 @@ sub new {
 # Strips comments out of queries.
 sub strip_comments {
    my ( $self, $query ) = @_;
-   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
+   $query =~ s/\s*(?:--|#).*[\r\n]*//gm; # One-line comments
    $query =~ s#/\*[^!].*?\*/##gsm;   # /*..*/ comments, but not /*!version */
    return $query;
 }
