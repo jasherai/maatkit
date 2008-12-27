@@ -105,7 +105,7 @@ Revision 2658
     29	../mk-log-parser:1714 0.38238 93741: [at line 12 inside eval] ++$global->{cnt};
     30	../mk-log-parser:1062 0.37704 93741: my ( $self, $query ) = @_;
 
-Revision 2674
+Revision 2691
 59.51user 50.36system 1:50.71elapsed 99%CPU (0avgtext+0avgdata 0maxresident)k
 0inputs+85872outputs (0major+7150minor)pagefaults 0swaps
      1	../mk-log-parser:1064 23.83485 93741: $query =~ s/$olc_re//go;
@@ -138,3 +138,37 @@ Revision 2674
     28	../mk-log-parser:1736 0.37962 93741: foreach my $attrib ( keys %{ $self->{attributes} } ) {
     29	../mk-log-parser:2985 0.37823 93741: fingerprint   => sub { return $_[1]->{fingerprint}; },
     30	../mk-log-parser:1715 0.37181 93741: [at line 12 inside eval] ++$global->{cnt};
+
+Revision 2686
+37.14user 52.83system 1:33.37elapsed 96%CPU (0avgtext+0avgdata 0maxresident)k
+195328inputs+85840outputs (0major+7144minor)pagefaults 0swaps
+     1	../mk-log-parser:1073 8.04057 93741: $query =~ s{                          # Anything vaguely resembling numbers
+     2	../mk-log-parser:1457 4.02352 330270: if ( !$got_ts
+     3	../mk-log-parser:1526 2.05079 93741: ++$num_events;
+     4	../mk-log-parser:1740 1.77517 749928: my $attrib_val = $event->{ $attrib };
+     5	../mk-log-parser:1752 1.57588 563487: my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
+     6	../mk-log-parser:1741 1.55822 749928: if ( !defined $attrib_val ) {
+     7	../mk-log-parser:1760 1.55698 563487: if ( ref $handler eq 'CODE' ) {
+     8	../mk-log-parser:1503 1.47737 330270: if ( !$found_arg && $pos == $len ) {
+     9	../mk-log-parser:1755 1.44929 563487: my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
+    10	../mk-log-parser:1753 1.34189 563487: my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
+    11	../mk-log-parser:1425 1.27646 93741: if ( $stmt =~ s{
+    12	../mk-log-parser:1078 1.27437 93741: $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+    13	../mk-log-parser:1064 1.18194 93741: $query =~ s/$olc_re//go;
+    14	../mk-log-parser:1453 1.16149 377133: my $line = $1;          # Necessary for /g and pos() to work.
+    15	../mk-log-parser:1455 1.11993 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
+    16	../mk-log-parser:1521 0.92330 93741: my $event = { @properties };
+    17	../mk-log-parser:1452 0.82589 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    18	../mk-log-parser:1080 0.75085 93741: $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+    19	../mk-log-parser:1734 0.70602 93741: my $fp_ds = $self->{metrics}->{unique}->{ $group_by } ||= {};
+    20	../mk-log-parser:1743 0.68576 186441: foreach my $attrib_alias ( keys %{$self->{attributes}->{$attrib}} ) {
+    21	../mk-log-parser:1082 0.65040 93741: $query =~ s{
+    22	../mk-log-parser:1081 0.59159 93741: $query = lc $query;
+    23	../mk-log-parser:1443 0.48937 93741: $stmt =~ s/;\n#?\Z//;
+    24	../mk-log-parser:1442 0.48389 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    25	../mk-log-parser:1749 0.45404 186441: next ATTRIB unless defined $attrib_val;
+    26	../mk-log-parser:1524 0.44386 187482: last CALLBACK unless $callback->($event);
+    27	../mk-log-parser:1063 0.42149 93741: my ( $self, $query ) = @_;
+    28	../mk-log-parser:1722 0.41383 93741: [at line 12 inside eval] ++$global->{cnt};
+    29	../mk-log-parser:1739 0.40112 93741: foreach my $attrib ( keys %{ $self->{attributes} } ) {
+    30	../mk-log-parser:1071 0.36355 93741: $query =~ s/'.*?'/?/g;                # quoted strings
