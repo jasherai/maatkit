@@ -1022,7 +1022,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2673
+# QueryRewriter package 2690
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1044,7 +1044,7 @@ $bal         = qr/
                   )*
                   \)
                  /x;
-my $olc_re = qr/\s*(?:--|#).*[\r\n]*/; # One-line comments
+my $olc_re = qr/(?:--|#).*/;           # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;      # Multi-line comments, but not /*!version */
 
 sub new {
@@ -1083,6 +1083,11 @@ sub fingerprint {
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
               {$1(?+)}gx;      # Collapse IN() and VALUES() lists
+   $query =~ s{
+               \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
+              }
+              {$1 /*repeat$2*/}xg; # UNION
+   $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
    return $query;
 }
 
@@ -1181,7 +1186,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2654
+# LogParser package 2688
 # ###########################################################################
 package LogParser;
 
@@ -1497,9 +1502,13 @@ sub parse_slowlog_event {
 
             if ( !$found_arg && $pos == $len ) {
                local $INPUT_RECORD_SEPARATOR = ";\n";
-               if ( chomp(my $l = <$fh>) ) {
+               if ( defined(my $l = <$fh>) ) {
+                  chomp $l;
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
                   $found_arg++;
+               }
+               else {
+                  next EVENT;
                }
             }
          }
