@@ -110,13 +110,13 @@ sub new {
    } @{$args{attributes}};
 
    my $self = {
-      group_by              => $args{group_by},
-      attributes            => \%attributes,
-      handlers              => $args{handlers},
-      worst_attrib          => $args{worst_attrib},
-      metrics               => { all => {}, unique => {} },
-      n_events              => 0,
-      n_queries             => 0,
+      group_by     => $args{group_by},
+      attributes   => \%attributes,
+      handlers     => $args{handlers},
+      worst_attrib => $args{worst_attrib},
+      metrics      => { all => {}, unique => {} },
+      n_events     => 0,
+      n_queries    => 0,
    };
 
    return bless $self, $class;
@@ -162,6 +162,8 @@ sub make_handler {
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num' ? 1 : 0,
       glo => 1,
+      # TODO: don't do parse_timestamp here -- just treat as a string and let
+      # min/max be handled when all analysis is done.
       trx => ($type eq 'time') ? 'parse_timestamp($val)'
            : ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0}
            :                     undef,
@@ -257,7 +259,10 @@ sub calc_event_metrics {
       if ( !defined $attrib_val ) {
          # The event does not have the real attribute, but perhaps
          # it has an alias of the attribute, like Schema can be an
-         # alias for db.
+         # alias for db. TODO: this is buggy.  ts and timestamp don't have the
+         # same "type" of value.  Passing a timestamp value to make_handler for
+         # ts is not what we should be doing here.  Plus this loop should be
+         # unrolled anyway.
          ATTRIB_ALIAS:
          foreach my $attrib_alias ( keys %{$self->{attributes}->{$attrib}} ) {
             if ( defined $event->{ $attrib_alias } ) {
@@ -277,13 +282,31 @@ sub calc_event_metrics {
          $attrib_val,
          wor => (($self->{worst_attrib} || '') eq $attrib)
       );
-      if ( ref $handler eq 'CODE' ) {
-         $handler->($event, $attrib_val, $stats_for_class, $stats_for_attrib);
-      }
-      else {
-         MKDEBUG && _d("Handler for $attrib is not a sub ref. "
-                       . "Perl says it's a " . ref $handler);
-      }
+      $handler->($event, $attrib_val, $stats_for_class, $stats_for_attrib);
+   }
+
+   # Figure out whether we are ready to overwrite this sub with a faster version.
+   if (!grep {!ref $self->{handlers}->{$_} eq 'CODE'} keys %{$self->{attributes}}) {
+      # All attributes have handlers, so let's combine them into one faster sub.
+      # Start by getting direct handles to the location of each data store and
+      # thing that would otherwise be looked up via hash keys.
+      my @attrs = sort keys %{$self->{attributes}};
+      my @handl = @{$self->{handlers}}{@attrs};
+      my @st_fa = @{$self->{metrics}->{all}}{@attrs};
+      my @st_fc = @{$fp_ds}{@attrs};
+      my $sub = sub {
+         my ( $__self, $__event ) = @_;
+         foreach my $i ( 0 .. $#attrs ) {
+            my $attrib_val = $__event->{$attrs[$i]};
+            next unless defined $attrib_val;
+            $handl[$i]->($__event, $attrib_val, $st_fc[$i], $st_fa[$i]);
+         }
+      };
+      # Turn off "Subroutine SQLMetrics::calc_event_metrics redefined..."
+      no strict;
+      no warnings;
+      local $WARNING = 0;
+      *{calc_event_metrics} = $sub;
    }
 
    return;
