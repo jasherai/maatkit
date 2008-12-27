@@ -442,9 +442,17 @@ sub parse_slowlog_event {
             # this only if we've seen the user/host line.
             if ( !$found_arg && $pos == $len ) {
                local $INPUT_RECORD_SEPARATOR = ";\n";
-               if ( chomp(my $l = <$fh>) ) {
+               if ( defined(my $l = <$fh>) ) {
+                  chomp $l;
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
                   $found_arg++;
+               }
+               else {
+                  # Unrecoverable -- who knows what happened.  This is possible,
+                  # for example, if someone does something like "head -c 10000
+                  # /path/to/slow.log | mk-log-parser".  Or if there was a
+                  # server crash and the file has no newline.
+                  next EVENT;
                }
             }
          }

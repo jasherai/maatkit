@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 26;
+use Test::More tests => 27;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -1178,6 +1178,14 @@ open $file, "<", 'samples/slow014.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
 close $file;
 is_deeply( \@e, $events, "Parsed events with a lot of headers", );
+
+open $file, "<", 'samples/slow015.txt' or die $OS_ERROR;
+@e = ();
+eval {
+   1 while ( $p->parse_slowlog_event( $file, [\&simple_callback] ) );
+};
+is($EVAL_ERROR, '', "No error parsing truncated event with no newline");
+close $file;
 
 # ###########################################################################
 # Binary log
