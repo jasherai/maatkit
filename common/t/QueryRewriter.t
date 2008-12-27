@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 51;
+use Test::More tests => 56;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -28,13 +28,19 @@ my $q = new QueryRewriter();
 
 is(
    $q->strip_comments("select \n--bar\n foo"),
-   "select foo",
+   "select \n\n foo",
    'Removes one-line comments',
 );
 
 is(
+   $q->strip_comments("select foo--bar\nfoo"),
+   "select foo\nfoo",
+   'Removes one-line comments without running them together',
+);
+
+is(
    $q->strip_comments("select foo -- bar"),
-   "select foo",
+   "select foo ",
    'Removes one-line comments at end of line',
 );
 
@@ -51,9 +57,15 @@ is(
 );
 
 is(
+   $q->fingerprint("select foo--bar\nfoo"),
+   "select foo foo",
+   'Removes one-line comments in fingerprint without mushing things together',
+);
+
+is(
    $q->fingerprint("select foo -- bar\n"),
-   "select foo",
-   'Removes one-line comments in fingerprints',
+   "select foo ",
+   'Removes one-line EOL comments in fingerprints',
 );
 
 is(
@@ -164,6 +176,24 @@ is(
    $q->fingerprint('insert into foo(a, b, c) value(2, 4, 5)'),
    'insert into foo(a, b, c) value(?+)',
    'VALUES lists with VALUE()',
+);
+
+is(
+   $q->fingerprint('select * from foo limit 5'),
+   'select * from foo limit ?',
+   'limit alone',
+);
+
+is(
+   $q->fingerprint('select * from foo limit 5, 10'),
+   'select * from foo limit ?',
+   'limit with comma-offset',
+);
+
+is(
+   $q->fingerprint('select * from foo limit 5 offset 10'),
+   'select * from foo limit ?',
+   'limit with offset',
 );
 
 is($q->convert_to_select(), undef, 'No query');

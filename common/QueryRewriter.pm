@@ -37,7 +37,7 @@ $bal         = qr/
                   )*
                   \)
                  /x;
-my $olc_re = qr/\s*(?:--|#).*[\r\n]*/; # One-line comments
+my $olc_re = qr/(?:--|#).*/;           # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;      # Multi-line comments, but not /*!version */
 
 sub new {
@@ -86,6 +86,7 @@ sub fingerprint {
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
               {$1(?+)}gx;      # Collapse IN() and VALUES() lists
+   $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/;
    return $query;
 }
 
