@@ -849,12 +849,16 @@ if ( MKDEBUG ) {
 # End OptionParser package
 # ###########################################################################
 
+# ###########################################################################
+# Processlist package 2694
+# ###########################################################################
 package Processlist;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::HiRes qw(time sleep);
+use Time::HiRes qw(time);
+use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 use constant {
@@ -866,6 +870,7 @@ use constant {
    TIME    => 5,
    STATE   => 6,
    INFO    => 7,
+   START   => 8,
 };
 
 sub new {
@@ -873,38 +878,86 @@ sub new {
    bless {}, $class;
 }
 
-sub parse {
-   my ( $self, $dbh, $code ) = @_;
-   my $sth = $dbh->prepare('SHOW FULL PROCESSLIST');
-   my ($cxn) = $dbh->selectrow_array('select connection_id()');
-   my %last;
-   
-   while (1) {
-      $sth->execute();
-      my $ps = $sth->fetchall_arrayref();
-      foreach my $ps ( grep { $_->[INFO] } @$ps ) { # TODO:: remove <<-----
-         my $id = $ps->[ID];
-         next if $id == $cxn;
-         next unless $ps->[COMMAND] && $ps->[COMMAND] eq 'Query';
-         $code->({db => $ps->[DB], arg => $ps->[INFO]});
-         #if ( $ps->[COMMAND] eq 'Query' ) {
-         #   if ( !$last{$id} ) { # TODO || $last{$id}->[INFO] ne $ps->[INFO] )
-         #      # && $last{id}->[TIME] >= $ps->[TIME] ) # TODO: subsecond polling
-         #   {
-         #      $last{$id} = $ps;
-         #      push @$ps, time - $ps->[TIME];
-         #   }
+sub parse_event {
+   my ( $self, $code, $misc, @callbacks ) = @_;
+   my $num_events = 0;
 
+   my @curr = sort { $a->[ID] <=> $b->[ID] } @{$code->()};
+   my @prev = @{$misc->{prev} ||= []};
+   my @new; # Will become next invocation's @prev
+   my ($curr, $prev); # Rows from each source
+
+   do { 
+      if ( !$curr && @curr ) {
+         MKDEBUG && _d('Fetching row from curr');
+         $curr = shift @curr;
       }
-      sleep .1;
-   }
+      if ( !$prev && @prev ) {
+         MKDEBUG && _d('Fetching row from prev');
+         $prev = shift @prev;
+      }
+      if ( $curr || $prev ) {
+         if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
+            MKDEBUG && _d('$curr and $prev are the same cxn');
+            if ( $prev->[INFO]
+               && ((!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO])
+                  || ($curr->[INFO]
+                     && $misc->{time} - $curr->[TIME] > $prev->[START]))
+            ) {
+               fire_event( $prev, @callbacks );
+               if ( $curr->[INFO] ) {
+                  push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
+               }
+            }
+            $curr = $prev = undef; # Fetch another from each.
+         }
+         elsif ( !$curr
+               || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
+            MKDEBUG && _d('$curr is not in $prev');
+            fire_event( $prev, @callbacks );
+            $prev = undef;
+         }
+         else {
+            MKDEBUG && _d('$prev is not in $curr');
+            push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
+            $curr = undef;
+         }
+      }
+   } while ( @curr || @prev || $curr || $prev );
+
+   @{$misc->{prev}} = @new;
+
+   return $num_events;
 }
 
+sub fire_event {
+   my ( $row, @callbacks ) = @_;
+   my $event = {
+      id         => $row->[ID],
+      db         => $row->[DB],
+      user       => $row->[USER],
+      host       => $row->[HOST],
+      arg        => $row->[INFO],
+      ts         => $row->[START] + $row->[TIME], # Query END time
+      Query_time => $row->[TIME],
+      Lock_time  => 0,               # TODO
+   };
+   map { return unless $_->($event) } @callbacks;
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# Processlist:$line $PID ", @_, "\n";
+}
 
 1;
 
 # ###########################################################################
-# LogParser package 2601
+# End Processlist package
+# ###########################################################################
+
+# ###########################################################################
+# LogParser package 2688
 # ###########################################################################
 package LogParser;
 
@@ -1126,7 +1179,7 @@ sub parse_event {
 }
 
 sub parse_slowlog_event {
-   my ( $self, $fh, $code ) = @_;
+   my ( $self, $fh, $callbacks ) = @_;
    my $num_events = 0;
 
    my @pending;
@@ -1170,7 +1223,7 @@ sub parse_slowlog_event {
          $pos     = pos($stmt);  # Be careful not to mess this up!
          my $line = $1;          # Necessary for /g and pos() to work.
 
-         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
 
             if ( !$got_ts
                && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
@@ -1205,14 +1258,14 @@ sub parse_slowlog_event {
             }
 
             elsif ( !$got_db
-                  && (my ( $db ) = $line =~ m/^use ([^;]+)/ )
+                  && (my ( $db ) = $line =~ m/^USE ([^;]+)/i )
                   && ++$got_db
             ) {
                push @properties, 'db', $db;
             }
 
             elsif ( !$got_set
-                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ )
+                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/i )
                   && ++$got_set
             ) {
                push @properties, split(/,|\s*=\s*/, $setting);
@@ -1220,9 +1273,13 @@ sub parse_slowlog_event {
 
             if ( !$found_arg && $pos == $len ) {
                local $INPUT_RECORD_SEPARATOR = ";\n";
-               if ( chomp(my $l = <$fh>) ) {
+               if ( defined(my $l = <$fh>) ) {
+                  chomp $l;
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
                   $found_arg++;
+               }
+               else {
+                  next EVENT;
                }
             }
          }
@@ -1233,7 +1290,10 @@ sub parse_slowlog_event {
       }
 
       my $event = { @properties };
-      $code->($event) if $code;
+      CALLBACK:
+      foreach my $callback ( @$callbacks ) {
+         last CALLBACK unless $callback->($event);
+      }
       ++$num_events;
    }
    return $num_events;
@@ -1384,7 +1444,20 @@ my $p = new Processlist;
 my $dbh2 = $dp->get_dbh($dp->get_cxn_params($opts{p}), {AutoCommit => 1}); # TODO
 while ( my $fh = shift(@fhs) ) {
 #   1 while $lp->parse_slowlog_event($fh, sub { $callback->(@_) });
-   1 while $p->parse($dbh2, sub { $callback->(@_) });
+   my $sth = $dbh2->prepare('show full processlist');
+   my $cxn = $dbh2->{mysql_thread_id};
+   my $misc = { prev => [], time => 0 };
+   while ( 1 ) {
+      $misc->{time} = time();
+      $p->parse_event(
+         sub {
+            $sth->execute;
+            [ grep { $_->[0] != $cxn } @{$sth->fetchall_arrayref();} ]
+         },
+         $misc,
+         sub { $callback->(@_) }
+      );
+   }
    close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
 }
 $dp->disconnect($dbh) if $opts{R};
