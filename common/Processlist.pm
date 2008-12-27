@@ -79,6 +79,10 @@ sub new {
 # 3) Same as 2) but the Info is different.  Then sometime between the prev
 #    and curr snapshots, that statement finished.  Assume it finished
 #    immediately after we saw it last time.  Fire the event handlers.
+#    TODO: if the statement is now running something else or Sleep for a certain
+#    time, then that shows the max end time of the last statement.  If it's 10s
+#    later and it's now been Sleep for 8s, then it might have ended up to 8s
+#    ago.
 # 4) Connection went away, or Info went NULL.  Same as 3).
 #
 # The $code shouldn't return itself, e.g. if it's a PROCESSLIST you should
@@ -161,7 +165,7 @@ sub fire_event {
       user       => $row->[USER],
       host       => $row->[HOST],
       arg        => $row->[INFO],
-      ts         => $row->[START],
+      ts         => $row->[START] + $row->[TIME], # Query END time
       Query_time => $row->[TIME],
       Lock_time  => 0,               # TODO
    };
