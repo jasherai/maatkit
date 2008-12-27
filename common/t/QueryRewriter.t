@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 56;
+use Test::More tests => 59;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -194,6 +194,27 @@ is(
    $q->fingerprint('select * from foo limit 5 offset 10'),
    'select * from foo limit ?',
    'limit with offset',
+);
+
+is(
+   $q->fingerprint('select 1 union select 2 union select 4'),
+   'select ? /*repeat union*/',
+   'union fingerprints together',
+);
+
+is(
+   $q->fingerprint('select 1 union all select 2 union all select 4'),
+   'select ? /*repeat union all*/',
+   'union all fingerprints together',
+);
+
+is(
+   $q->fingerprint(
+      q{select * from (select 1 union all select 2 union all select 4) as x }
+      . q{join (select 2 union select 2 union select 3) as y}),
+   q{select * from (select ? /*repeat union all*/) as x }
+      . q{join (select ? /*repeat union*/) as y},
+   'union all fingerprints together',
 );
 
 is($q->convert_to_select(), undef, 'No query');

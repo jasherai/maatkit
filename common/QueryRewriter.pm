@@ -86,7 +86,11 @@ sub fingerprint {
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
               {$1(?+)}gx;      # Collapse IN() and VALUES() lists
-   $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/;
+   $query =~ s{
+               \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
+              }
+              {$1 /*repeat$2*/}xg; # UNION
+   $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
    return $query;
 }
 
