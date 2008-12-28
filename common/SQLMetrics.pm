@@ -93,6 +93,9 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #              rows_returned, and we might want to see queries that returned
 #              0 rows. TODO: we should store the whole 'worst' event instead of
 #              adding properties.
+# unroll_limit If this many events have been processed and some handlers haven't
+#              been generated yet (due to lack of sample data) unroll the loop
+#              anyway.  Defaults to 50.
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(group_by attributes) ) {
@@ -114,6 +117,7 @@ sub new {
       metrics      => { all => {}, unique => {} },
       n_events     => 0,
       n_queries    => 0,
+      unroll_limit => 50,
    };
 
    return bless $self, $class;
@@ -281,10 +285,13 @@ sub calc_event_metrics {
    }
 
    # Figure out whether we are ready to generate a faster version.
-   if (!grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs) {
+   if ( $self->{n_queries} > $self->{unroll_limit}
+      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs)
+   {
       # All attributes have handlers, so let's combine them into one faster sub.
       # Start by getting direct handles to the location of each data store and
       # thing that would otherwise be looked up via hash keys.
+      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
       my @handl = @{$self->{handlers}}{@attrs};
       my @st_fa = @{$self->{metrics}->{all}}{@attrs};
 
