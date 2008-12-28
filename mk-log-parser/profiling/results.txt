@@ -206,3 +206,37 @@ Revision 2702
     28	../mk-log-parser:1070 0.31714 93741: $query =~ s/".*?"/?/g;                # quoted strings
     29	../mk-log-parser:1091 0.31663 93741: return $query;
     30	../mk-log-parser:1065 0.31241 93741: $query =~ s/$mlc_re//go;
+
+Revision 2705
+34.71user 45.84system 1:21.14elapsed 99%CPU (0avgtext+0avgdata 0maxresident)k
+384inputs+67144outputs (2major+7754minor)pagefaults 0swaps
+     1	../mk-log-parser:1073 8.42367 93741: $query =~ s{                          # Anything vaguely resembling numbers
+     2	../mk-log-parser:1457 3.82233 330270: if ( !$got_ts
+     3	../mk-log-parser:1526 1.57221 93741: ++$num_events;
+     4	../mk-log-parser:1503 1.41640 330270: if ( !$found_arg && $pos == $len ) {
+     5	../mk-log-parser:1425 1.22849 93741: if ( $stmt =~ s{
+     6	../mk-log-parser:1078 1.21863 93741: $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+     7	../mk-log-parser:1064 1.13228 93741: $query =~ s/$olc_re//go;
+     8	../mk-log-parser:1455 1.11592 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
+     9	../mk-log-parser:1453 1.09221 377133: my $line = $1;          # Necessary for /g and pos() to work.
+    10	../mk-log-parser:1521 0.84538 93741: my $event = { @properties };
+    11	../mk-log-parser:1452 0.79315 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    12	../mk-log-parser:1080 0.69618 93741: $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+    13	../mk-log-parser:1803 0.68269 93690: [at line 5 inside eval] ||= { map { $_ => {} } @attrs };
+    14	../mk-log-parser:1082 0.61688 93741: $query =~ s{
+    15	../mk-log-parser:1081 0.57447 93741: $query = lc $query;
+    16	../mk-log-parser:1803 0.53607 93690: [at line 6 inside eval] my @st_fc = @{$fp_ds}{@attrs};
+    17	../mk-log-parser:1443 0.46613 93741: $stmt =~ s/;\n#?\Z//;
+    18	../mk-log-parser:1442 0.44547 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    19	../mk-log-parser:1524 0.42357 187482: last CALLBACK unless $callback->($event);
+    20	../mk-log-parser:1803 0.40816 93690: [at line 2 inside eval] my ( $self, $event, $group_by ) = @_;
+    21	../mk-log-parser:1803 0.39124 93690: [at line 95 inside eval] $global->{max} = $val if !defined $global->{max} || $val gt $global->{max};
+    22	../mk-log-parser:1063 0.39032 93741: my ( $self, $query ) = @_;
+    23	../mk-log-parser:1071 0.34388 93741: $query =~ s/'.*?'/?/g;                # quoted strings
+    24	../mk-log-parser:3060 0.33352 93741: return 1; # required to keep callback chain going
+    25	../mk-log-parser:1091 0.33037 93741: return $query;
+    26	../mk-log-parser:1803 0.32777 93690: [at line 11 inside eval] $class->{min} = $val if !defined $class->{min} || $val < $class->{min};
+    27	../mk-log-parser:1069 0.32651 93741: $query =~ s/\\["']//g;                # quoted strings
+    28	../mk-log-parser:1070 0.32407 93741: $query =~ s/".*?"/?/g;                # quoted strings
+    29	../mk-log-parser:1065 0.31883 93741: $query =~ s/$mlc_re//go;
+    30	../mk-log-parser:1086 0.31594 93741: $query =~ s{
