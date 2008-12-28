@@ -1599,7 +1599,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2701
+# SQLMetrics package 2704
 # ###########################################################################
 
 package SQLMetrics;
@@ -1708,6 +1708,15 @@ sub make_handler {
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
+   my @unrolled = (
+      '$val = $event->{' . $attrib . '};',
+      (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
+      'defined $val && do {',
+      ( map { s/^/   /gm; $_ } @lines ), # Indent for debugging
+      '};',
+   );
+   $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
+
    unshift @lines, (
       'sub {',
       'my ( $event, $class, $global ) = @_;',
@@ -1728,20 +1737,20 @@ sub make_handler {
 sub calc_event_metrics {
    my ( $self, $event ) = @_;
 
-   if ( defined $self->{unrolled_loops} ) {
-      return $self->{unrolled_loops}->($event);
-   }
-
    $self->{n_events}++;
 
    my $group_by = $event->{ $self->{group_by} };
    return unless defined $group_by;
 
+   $self->{n_queries}++;
+
+   if ( defined $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($self, $event, $group_by);
+   }
+
    my @attrs = sort keys %{$self->{attributes}};
    my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
       ||= { map { $_ => {} } @attrs };
-
-   $self->{n_queries}++;
 
    ATTRIB:
    foreach my $attrib ( @attrs ) {
@@ -1769,24 +1778,30 @@ sub calc_event_metrics {
    {
       my @attrs = grep { $self->{handlers}->{$_} } @attrs;
       my @handl = @{$self->{handlers}}{@attrs};
-      my @st_fa = @{$self->{metrics}->{all}}{@attrs};
+      my @st_fa = @{$self->{metrics}->{all}}{@attrs}; # Stats for attribute
 
-      my $sub = sub {
-         my ( $event ) = @_;
-         $self->{n_events}++;
-         my $group_by = $event->{ $self->{group_by} };
-         return unless defined $group_by;
-         $self->{n_queries}++;
-         my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-            ||= { map { $_ => {} } @attrs };
-         my @st_fc = @{$fp_ds}{@attrs};
-         foreach my $i ( 0 .. $#attrs ) {
-            my $attrib_val = $event->{$attrs[$i]};
-            next unless defined $attrib_val;
-            $handl[$i]->($event, $st_fc[$i], $st_fa[$i]);
-         }
-      };
+      my @lines = (
+         'my ( $self, $event, $group_by ) = @_;',
+         'my ($val, $class, $global);',
+         'my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
+            ||= { map { $_ => {} } @attrs };',
+         'my @st_fc = @{$fp_ds}{@attrs};', # Stats for class
+      );
+      foreach my $i ( 0 .. $#attrs ) {
+         push @lines, (
+            '$class  = $st_fc[' . $i . '];',
+            '$global = $st_fa[' . $i . '];',
+            $self->{unrolled_for}->{$attrs[$i]},
+         );
+      }
+      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+      unshift @lines, 'sub {';
+      push @lines, '}';
 
+      my $code = join("\n", @lines);
+      MKDEBUG && _d("Unrolled subroutine: ", @lines);
+      my $sub = eval $code;
+      die if $EVAL_ERROR;
       $self->{unrolled_loops} = $sub;
    }
 
