@@ -1599,7 +1599,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2683
+# SQLMetrics package 2701
 # ###########################################################################
 
 package SQLMetrics;
@@ -1608,7 +1608,6 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
-use Time::Local qw(timelocal);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1617,107 +1616,109 @@ sub new {
    foreach my $arg ( qw(group_by attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   $args{handlers} ||= {};
 
    my %attributes = map {
-      my @attribs = split qr/\|/, $_;
-      my %aliases = map { $_ => 0 } @attribs[1..$#attribs];
-      $attribs[0] => \%aliases;
+      my ($name, @aliases) = split qr/\|/, $_;
+      $name => \@aliases;
    } @{$args{attributes}};
 
    my $self = {
-      group_by              => $args{group_by},
-      attributes            => \%attributes,
-      handlers              => $args{handlers},
-      worst_attrib          => $args{worst_attrib},
-      metrics               => { all => {}, unique => {} },
-      n_events              => 0,
-      n_queries             => 0,
+      group_by     => $args{group_by},
+      attributes   => \%attributes,
+      handlers     => $args{handlers} || {},
+      worst_attrib => $args{worst_attrib},
+      metrics      => { all => {}, unique => {} },
+      n_events     => 0,
+      n_queries    => 0,
+      unroll_limit => 50,
    };
 
    return bless $self, $class;
 }
 
 sub make_handler {
-   my ( $attrib, $value, %args ) = @_;
-   die "I need a attrib and value" unless (defined $attrib && defined $value);
-   return unless defined $value; # Can't decide type if it's undef.
-   my $type = $attrib =~ m/^(?:ts|timestamp)$/ ? 'time'
-            : $value  =~ m/^\d+/               ? 'num'
-            : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
+   my ( $self, $attrib, $event, %args ) = @_;
+   die "I need an attrib" unless defined $attrib;
+   return unless $event;
+   my ($val) =
+      grep { defined $_ }
+      map  { $event->{$_} }
+           ( $attrib, @{ $args{alt} || [] } );
+   return unless defined $val; # Can't decide type if it's undef.
+
+   my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
+   my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
+            : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d("Type for $attrib is $type (sample: $value)");
+   MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
+
    %args = ( # Set up defaults
-      min => $type eq 'string' ? 0 : 1,
-      max => $type eq 'string' ? 0 : 1,
-      sum => $type =~ m/num|bool/ ? 1 : 0,
-      cnt => $type eq 'string' ? 0 : 1,
+      min => 1,
+      max => 1,
+      sum => $type =~ m/num|bool/    ? 1 : 0,
+      cnt => $type eq 'string'       ? 0 : 1,
       unq => $type =~ m/bool|string/ ? 1 : 0,
-      all => $type eq 'num' ? 1 : 0,
+      all => $type eq 'num'          ? 1 : 0,
       glo => 1,
-      trx => ($type eq 'time') ? 'parse_timestamp($val)'
-           : ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0}
-           :                     undef,
+      trf => ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0} : undef,
       wor => 0,
+      alt => [],
       %args,
    );
 
-   my @lines = ( # Lines of code for the subroutine
-      'sub {',
-      'my ( $event, $val, $class, $global ) = @_;',
-      'return unless defined $val;',
-   );
-   if ( $args{trx} ) {
-      push @lines, q{$val = } . $args{trx} . ';';
+   my @lines; # Lines of code for the subroutine
+   if ( $args{trf} ) {
+      push @lines, q{$val = } . $args{trf} . ';';
    }
+
    foreach my $place ( $args{glo} ? qw($class $global) : qw($class) ) {
+      my @tmp;
       if ( $args{min} ) {
-         my $op = $type =~ m/num|time/ ? '<' : 'lt';
-         my $code = 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+         my $op   = $type eq 'num' ? '<' : 'lt';
+         push @tmp, 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
             . $op . ' PLACE->{min};';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
       }
       if ( $args{max} ) {
-         my $op = ($type =~ m/num|time/) ? '>' : 'gt';
-         my $code = 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+         my $op = ($type eq 'num') ? '>' : 'gt';
+         push @tmp, 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
             . $op . ' PLACE->{max};';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
       }
       if ( $args{sum} ) {
-         my $code = 'PLACE->{sum} += $val;';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
+         push @tmp, 'PLACE->{sum} += $val;';
       }
       if ( $args{cnt} ) {
-         my $code = '++PLACE->{cnt};';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
+         push @tmp, '++PLACE->{cnt};';
       }
       if ( $place eq '$class' ) {
          if ( $args{unq} ) {
-            my $code = '++PLACE->{unq}->{$val};';
-            $code =~ s/PLACE/$place/g;
-            push @lines, $code;
+            push @tmp, '++PLACE->{unq}->{$val};';
          }
          if ( $args{all} ) {
-            my $code = 'push @{PLACE->{all}}, $val;';
-            $code =~ s/PLACE/$place/g;
-            push @lines, $code;
+            push @tmp, 'push @{PLACE->{all}}, $val;';
          }
          if ( $args{wor} ) {
             my $op = $type eq 'num' ? '>=' : 'ge';
-            push @lines, (
+            push @tmp, (
                'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-                  '$class->{sample}     = $event->{arg};',
-                  '$class->{pos_in_log} = $event->{pos_in_log};',
+               '   $class->{sample} = $event;',
                '}',
             );
          }
       }
+      push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
+
+   unshift @lines, (
+      'sub {',
+      'my ( $event, $class, $global ) = @_;',
+      'my $val = $event->{' . $attrib . '};',
+      (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
+      'return unless defined $val;',
+   );
    push @lines, '}';
+   my $code = join("\n", @lines);
+   $self->{code_for}->{$attrib} = $code;
+
    MKDEBUG && _d("Metric handler for $attrib: ", @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
@@ -1727,43 +1728,66 @@ sub make_handler {
 sub calc_event_metrics {
    my ( $self, $event ) = @_;
 
+   if ( defined $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($event);
+   }
+
    $self->{n_events}++;
 
    my $group_by = $event->{ $self->{group_by} };
    return unless defined $group_by;
-   my $fp_ds = $self->{metrics}->{unique}->{ $group_by } ||= {};
+
+   my @attrs = sort keys %{$self->{attributes}};
+   my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
+      ||= { map { $_ => {} } @attrs };
 
    $self->{n_queries}++;
 
    ATTRIB:
-   foreach my $attrib ( keys %{ $self->{attributes} } ) {
-      my $attrib_val = $event->{ $attrib };
-      if ( !defined $attrib_val ) {
-         ATTRIB_ALIAS:
-         foreach my $attrib_alias ( keys %{$self->{attributes}->{$attrib}} ) {
-            if ( defined $event->{ $attrib_alias } ) {
-               $attrib_val = $event->{ $attrib_alias };
-               last ATTRIB_ALIAS;
-            }
-         }
-         next ATTRIB unless defined $attrib_val;
-      }
-
+   foreach my $attrib ( @attrs ) {
       my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
       my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
 
-      my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
-         $attrib,
-         $attrib_val,
-         wor => (($self->{worst_attrib} || '') eq $attrib)
-      );
-      if ( ref $handler eq 'CODE' ) {
-         $handler->($event, $attrib_val, $stats_for_class, $stats_for_attrib);
+      my $handler = $self->{handlers}->{ $attrib };
+      if ( !$handler ) {
+         $handler = $self->make_handler(
+            $attrib,
+            $event,
+            wor => (($self->{worst_attrib} || '') eq $attrib),
+            alt => $self->{attributes}->{$attrib},
+         );
+         if ( $handler ) {
+            $self->{handlers}->{$attrib} = $handler;
+         }
       }
-      else {
-         MKDEBUG && _d("Handler for $attrib is not a sub ref. "
-                       . "Perl says it's a " . ref $handler);
-      }
+      next ATTRIB unless $handler;
+      $handler->($event, $stats_for_class, $stats_for_attrib);
+   }
+
+   if ( $self->{n_queries} > $self->{unroll_limit}
+      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs)
+   {
+      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
+      my @handl = @{$self->{handlers}}{@attrs};
+      my @st_fa = @{$self->{metrics}->{all}}{@attrs};
+
+      my $sub = sub {
+         my ( $event ) = @_;
+         $self->{n_events}++;
+         my $group_by = $event->{ $self->{group_by} };
+         return unless defined $group_by;
+         $self->{n_queries}++;
+         my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
+            ||= { map { $_ => {} } @attrs };
+         my @st_fc = @{$fp_ds}{@attrs};
+         foreach my $i ( 0 .. $#attrs ) {
+            my $attrib_val = $event->{$attrs[$i]};
+            next unless defined $attrib_val;
+            $handl[$i]->($event, $st_fc[$i], $st_fa[$i]);
+         }
+      };
+
+      $self->{unrolled_loops} = $sub;
    }
 
    return;
@@ -1835,16 +1859,6 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{max}    = $max;
 
    return $statistical_metrics;
-}
-
-sub parse_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
-   {
-      $val = timelocal($s, $i, $h, $d, $m - 1, $y + 2000);
-   }
-   return $val;
 }
 
 sub _d {
@@ -2863,6 +2877,7 @@ package main;
 # TODO: tail -c +160665 /home/baron/smalltest.log | less
 
 use English qw(-no_match_vars);
+use Time::Local qw(timelocal);
 use Data::Dumper;
 $Data::Dumper::Indent=1;
 
@@ -2921,6 +2936,7 @@ my @callbacks;
 # If this happens, the chain restarts immediately with the next event.
 push @callbacks, sub {
    my ( $event ) = @_;
+   # TODO: save db and ts from last event and apply it here.  (Before skipping!)
    # Skip events which do not have the group_by attribute.
    my $group_by_val = $event->{arg}; # TODO: this may change for non-slowlogs
    return 0 unless defined $group_by_val;
@@ -3013,7 +3029,7 @@ sub get_analyze_callback {
                           Rows_sent
                           Rows_examined
                           user
-                          Schema|db
+                          db|Schema
                           ts
                        )],
                        # TODO: add values from command-line options
@@ -3115,14 +3131,15 @@ sub report_queries {
       my $qps = 0;
       if ( $class->{Query_time}->{cnt} > 1
             && $class->{ts}->{min}
-            && $class->{ts}->{max} > $class->{ts}->{min}
+            && $class->{ts}->{max} gt $class->{ts}->{min}
       ) {
-         $qps = $class->{Query_time}->{cnt}
-            / ( $class->{ts}->{max} - $class->{ts}->{min} );
+         my $min = parse_timestamp($class->{ts}->{min});
+         my $max = parse_timestamp($class->{ts}->{max});
+         $qps = $class->{Query_time}->{cnt} / ( $max - $min );
       }
 
       my $header = sprintf $query_hdr_fmt, $i + 1, shorten($qps,p=>1,d=>1000),
-            $checksum, $class->{$opts{w}}->{pos_in_log};
+            $checksum, $class->{$opts{w}}->{sample}->{pos_in_log} || 0;
 
       print  $header, ('_' x (73 - length($header))), "\n";
       printf $metrics_hdr_fmt;
@@ -3135,10 +3152,10 @@ sub report_queries {
          my $metric = $r->{metric};
          my $val    = $class->{ $metric };
 
-         next if !defined $val;
+         next unless $val && %$val;
          MKDEBUG && _d("Reporting metrics for $metric");
 
-         my $save_distro = $metric eq 'Query_time' ? 1 : 0;
+         my $save_distro = $metric eq 'Query_time' ? 1 : 0; # TODO: $worst?
          my $stats
             = $sm->calculate_statistical_metrics($val->{all},
                distro => $save_distro);
@@ -3163,9 +3180,7 @@ sub report_queries {
 
       # TODO: permit to switch off with cmdline option --verbosity or --quiet
       if ( $class->{ts}->{min} ) {
-         printf $timestamp_fmt,
-            ts($class->{ts}->{min}),
-            ts($class->{ts}->{max});
+         printf $timestamp_fmt, $class->{ts}->{min}, $class->{ts}->{max};
       }
       print "# Execution times\n";
       print chart_distro($Query_time_distro);
@@ -3192,10 +3207,10 @@ sub report_queries {
       # between multiple logged dbs. As a last report, print_tables()
       # will simply omit the FROM `db` clause and it's left to the user
       # to determine the correct db.
-      my ( $default_db ) = keys %{$class->{Schema}->{all}}
-         if scalar keys %{$class->{Schema}->{all}} == 1;
+      my ( $default_db ) = keys %{$class->{db}->{all}}
+         if scalar keys %{$class->{db}->{all}} == 1;
 
-      my $sample = $class->{$opts{w}}->{sample};
+      my $sample = $class->{$opts{w}}->{sample}->{arg};
       my $select_pattern = qr/^[\s\(]*SELECT /i;
       if ( $sample =~ m/$select_pattern/ ) {
          print_tables($sample, $default_db) if $opts{forexplain};
@@ -3308,6 +3323,17 @@ sub sig_int {
       print STDERR "# Exiting on SIG$signal.\n";
       exit(1);
    }
+}
+
+# Turns 071015 21:43:52 into a Unix timestamp.
+sub parse_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   {
+      $val = timelocal($s, $i, $h, $d, $m - 1, $y + 2000);
+   }
+   return $val;
 }
 
 # #############################################################################
