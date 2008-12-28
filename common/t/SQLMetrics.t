@@ -14,14 +14,13 @@ my $qr = new QueryRewriter();
 
 my $sm  = new SQLMetrics(
    group_by        => 'fingerprint',
-   attributes      => [qw(Query_time user ts)],
+   attributes      => [qw(Query_time user ts Rows_sent)],
 );
 
 isa_ok($sm, 'SQLMetrics');
 
 my $events = [
-   {  ts            => '071015 21:43:52',
-      cmd           => 'Query',
+   {  cmd           => 'Query',
       user          => 'root',
       host          => 'localhost',
       ip            => '',
@@ -44,7 +43,7 @@ my $events = [
       Rows_examined => 0,
       pos_in_log    => 1,
    },
-   {
+   {  ts            => '071015 21:43:52',
       cmd           => 'Query',
       user          => 'bob',
       host          => 'localhost',
@@ -83,6 +82,13 @@ my $metrics = {
                '071015 21:43:52' => 1,
             }
          },
+         Rows_sent => {
+            min => 1,
+            max => 1,
+            all => [1, 1],
+            sum => 2,
+            cnt => 2,
+         }
       },
       'insert ignore into articles (id, body,)values(?+)' => {
          Query_time => {
@@ -104,6 +110,13 @@ my $metrics = {
                '071015 21:43:52' => 1,
             }
          },
+         Rows_sent => {
+            min => 0,
+            max => 0,
+            all => [0],
+            sum => 0,
+            cnt => 1,
+         }
       }
    },
    all => {
@@ -120,6 +133,12 @@ my $metrics = {
       ts => {
          min => '071015 21:43:52',
          max => '071015 21:43:52',
+      },
+      Rows_sent => {
+         min => 0,
+         max => 1,
+         sum => 2,
+         cnt => 3,
       },
    }
 };

@@ -153,10 +153,10 @@ sub make_handler {
    return unless defined $val; # Can't decide type if it's undef.
 
    # Ripped off from Regexp::Common::number.
-   my $num_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)};
-   my $type = $val  =~ m/^$num_re$/    ? 'num'
-            : $val  =~ m/^(?:Yes|No)$/ ? 'bool'
-            :                            'string';
+   my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
+   my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
+            : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
+            :                                    'string';
    MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
 
    %args = ( # Set up defaults
@@ -215,16 +215,17 @@ sub make_handler {
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
-   my $code = join("\n", @lines);
-   $self->{code_for}->{$attrib} = $code;
-
    unshift @lines, (
       'sub {',
       'my ( $event, $class, $global ) = @_;',
       'my $val = $event->{' . $attrib . '};',
-      map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}
+      (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
+      'return unless defined $val;',
    );
    push @lines, '}';
+   my $code = join("\n", @lines);
+   $self->{code_for}->{$attrib} = $code;
+
    MKDEBUG && _d("Metric handler for $attrib: ", @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
