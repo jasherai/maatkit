@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 59;
+use Test::More tests => 62;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -42,6 +42,42 @@ is(
    $q->strip_comments("select foo -- bar"),
    "select foo ",
    'Removes one-line comments at end of line',
+);
+
+is(
+   $q->fingerprint("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
+   "mysqldump",
+   'Fingerprints all mysqldump SELECTs together',
+);
+
+is(
+   $q->fingerprint("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
+   "mysqldump",
+   'Fingerprints all mysqldump SELECTs together',
+);
+
+is(
+   $q->fingerprint(
+      q{REPLACE /*foo.bar:3/3*/ INTO checksum.checksum (db, tbl, }
+      .q{chunk, boundaries, this_cnt, this_crc) SELECT 'foo', 'bar', }
+      .q{2 AS chunk_num, '`id` >= 2166633', COUNT(*) AS cnt, }
+      .q{LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `id`, `created_by`, }
+      .q{`created_date`, `updated_by`, `updated_date`, `ppc_provider`, }
+      .q{`account_name`, `provider_account_id`, `campaign_name`, }
+      .q{`provider_campaign_id`, `adgroup_name`, `provider_adgroup_id`, }
+      .q{`provider_keyword_id`, `provider_ad_id`, `foo`, `reason`, }
+      .q{`foo_bar_bazz_id`, `foo_bar_baz`, CONCAT(ISNULL(`created_by`), }
+      .q{ISNULL(`created_date`), ISNULL(`updated_by`), ISNULL(`updated_date`), }
+      .q{ISNULL(`ppc_provider`), ISNULL(`account_name`), }
+      .q{ISNULL(`provider_account_id`), ISNULL(`campaign_name`), }
+      .q{ISNULL(`provider_campaign_id`), ISNULL(`adgroup_name`), }
+      .q{ISNULL(`provider_adgroup_id`), ISNULL(`provider_keyword_id`), }
+      .q{ISNULL(`provider_ad_id`), ISNULL(`foo`), ISNULL(`reason`), }
+      .q{ISNULL(`foo_base_foo_id`), ISNULL(`fooe_foo_id`)))) AS UNSIGNED)), 10, }
+      .q{16)) AS crc FROM `foo`.`bar` USE INDEX (`PRIMARY`) WHERE }
+      .q{(`id` >= 2166633); }),
+   'maatkit',
+   'Fingerprints mk-table-checksum queries together',
 );
 
 is(

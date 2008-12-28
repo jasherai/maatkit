@@ -37,7 +37,10 @@ $bal         = qr/
                   )*
                   \)
                  /x;
-my $olc_re = qr/(?:--|#).*/;           # One-line comments
+
+# The one-line comment pattern is quite crude.  This is intentional for
+# performance.
+my $olc_re = qr/(?:--|#)[^'"\r\n]*/;   # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;      # Multi-line comments, but not /*!version */
 
 sub new {
@@ -62,6 +65,11 @@ sub strip_comments {
 # revisions of this subroutine for more correct, but slower, regexes.
 sub fingerprint {
    my ( $self, $query ) = @_;
+   $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
+      && return 'mysqldump';
+   # Matches queries like REPLACE /*foo.bar:3/3*/ INTO checksum.checksum
+   $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
+      && return 'maatkit';
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
