@@ -73,6 +73,8 @@ my $metrics = {
                bob  => 1,
                root => 1
             },
+            min => 'bob',
+            max => 'root',
          },
       },
       'insert ignore into articles (id, body,)values(?+)' => {
@@ -85,6 +87,8 @@ my $metrics = {
          },
          user => {
             unq => { root => 1 },
+            min => 'root',
+            max => 'root',
          },
       }
    },
@@ -96,6 +100,8 @@ my $metrics = {
          cnt => 3
       },
       user => {
+         min => 'bob',
+         max => 'root',
       }
    }
 };
@@ -141,7 +147,7 @@ foreach my $event ( @$events ) {
    $event->{fingerprint} = $qr->fingerprint($event->{arg});
    $sm->calc_event_metrics($event);
 }
-is($sm->{metrics}->{unique}->{'foo ?'}->{Query_time}->{sample},
+is($sm->{metrics}->{unique}->{'foo ?'}->{Query_time}->{sample}->{arg},
    'foo 2', 'Keeps worst sample for Query_time');
 
 # #############################################################################
@@ -200,7 +206,7 @@ is_deeply(
    'Calculates statistical metrics for 1 value'
 );
 
-my $handler = SQLMetrics::make_handler('foo', 0);
+my $handler = $sm->make_handler('foo', {foo => 0});
 is(ref $handler, 'CODE', 'make_handler with 0 as sample value');
 
 # #############################################################################

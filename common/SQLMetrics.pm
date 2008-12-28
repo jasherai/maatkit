@@ -104,9 +104,8 @@ sub new {
    # Parse attribute aliases like db|Schema where db is the real attribute
    # name and Schema is an alias.
    my %attributes = map {
-      my @attribs = split qr/\|/, $_;
-      my %aliases = map { $_ => 0 } @attribs[1..$#attribs];
-      $attribs[0] => \%aliases;
+      my ($name, @aliases) = split qr/\|/, $_;
+      $name => \@aliases;
    } @{$args{attributes}};
 
    my $self = {
@@ -134,8 +133,9 @@ sub new {
 #     unq => keep all unique values per-class (default for strings and bools)
 #     all => keep a list of all values seen per class (default for numerics)
 #     glo => keep stats globally as well as per-class (default)
-#     trx => An expression to transform the value before working with it
+#     trf => An expression to transform the value before working with it
 #     wor => Whether to keep worst-samples for this attrib (default no)
+#     alt => Arrayref of other name(s) for the attribute, like db => Schema.
 #
 # Return value:
 # a subroutine with this signature:
@@ -146,89 +146,83 @@ sub new {
 #  $class   is the stats for the event's class
 #  $global  is the global data store
 sub make_handler {
-   my ( $attrib, $value, %args ) = @_;
-   die "I need a attrib and value" unless (defined $attrib && defined $value);
-   return unless defined $value; # Can't decide type if it's undef.
-   my $type = $attrib =~ m/^(?:ts|timestamp)$/ ? 'time'
-            : $value  =~ m/^\d+/               ? 'num'
-            : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
-            :                                    'string';
-   MKDEBUG && _d("Type for $attrib is $type (sample: $value)");
+   my ( $self, $attrib, $event, %args ) = @_;
+   die "I need an attrib" unless defined $attrib;
+   return unless $event;
+   my ($val) =
+      grep { defined $_ }
+      map  { $event->{$_} }
+           ( $attrib, @{ $args{alt} || [] } );
+   return unless defined $val; # Can't decide type if it's undef.
+   my $type = $val  =~ m/^\d+/         ? 'num'
+            : $val  =~ m/^(?:Yes|No)$/ ? 'bool'
+            :                            'string';
+   MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
    %args = ( # Set up defaults
-      min => $type eq 'string' ? 0 : 1,
-      max => $type eq 'string' ? 0 : 1,
-      sum => $type =~ m/num|bool/ ? 1 : 0,
-      cnt => $type eq 'string' ? 0 : 1,
+      min => 1,
+      max => 1,
+      sum => $type =~ m/num|bool/    ? 1 : 0,
+      cnt => $type eq 'string'       ? 0 : 1,
       unq => $type =~ m/bool|string/ ? 1 : 0,
-      all => $type eq 'num' ? 1 : 0,
+      all => $type eq 'num'          ? 1 : 0,
       glo => 1,
-      # TODO: don't do parse_timestamp here -- just treat as a string and let
-      # min/max be handled when all analysis is done.
-      trx => ($type eq 'time') ? 'parse_timestamp($val)'
-           : ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0}
-           :                     undef,
+      trf => ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0} : undef,
       wor => 0,
+      alt => [],
       %args,
    );
 
-   my @lines = ( # Lines of code for the subroutine
-      'sub {',
-      'my ( $event, $val, $class, $global ) = @_;',
-      'return unless defined $val;',
-   );
-   if ( $args{trx} ) {
-      push @lines, q{$val = } . $args{trx} . ';';
+   my @lines; # Lines of code for the subroutine
+   if ( $args{trf} ) {
+      push @lines, q{$val = } . $args{trf} . ';';
    }
+
    foreach my $place ( $args{glo} ? qw($class $global) : qw($class) ) {
+      my @tmp;
       if ( $args{min} ) {
-         my $op = $type =~ m/num|time/ ? '<' : 'lt';
-         my $code = 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+         my $op   = $type eq 'num' ? '<' : 'lt';
+         push @tmp, 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
             . $op . ' PLACE->{min};';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
       }
       if ( $args{max} ) {
-         my $op = ($type =~ m/num|time/) ? '>' : 'gt';
-         my $code = 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+         my $op = ($type eq 'num') ? '>' : 'gt';
+         push @tmp, 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
             . $op . ' PLACE->{max};';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
       }
       if ( $args{sum} ) {
-         my $code = 'PLACE->{sum} += $val;';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
+         push @tmp, 'PLACE->{sum} += $val;';
       }
       if ( $args{cnt} ) {
-         my $code = '++PLACE->{cnt};';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
+         push @tmp, '++PLACE->{cnt};';
       }
       if ( $place eq '$class' ) {
          if ( $args{unq} ) {
-            my $code = '++PLACE->{unq}->{$val};';
-            $code =~ s/PLACE/$place/g;
-            push @lines, $code;
+            push @tmp, '++PLACE->{unq}->{$val};';
          }
          if ( $args{all} ) {
-            my $code = 'push @{PLACE->{all}}, $val;';
-            $code =~ s/PLACE/$place/g;
-            push @lines, $code;
+            push @tmp, 'push @{PLACE->{all}}, $val;';
          }
          if ( $args{wor} ) {
             my $op = $type eq 'num' ? '>=' : 'ge';
-            # Update the sample and pos_in_log if this event is worst in class.
-            # TODO: store the whole event!  Silly rabbit!
-            push @lines, (
+            push @tmp, (
                'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-                  '$class->{sample}     = $event->{arg};',
-                  '$class->{pos_in_log} = $event->{pos_in_log};',
+               '   $class->{sample} = $event;',
                '}',
             );
          }
       }
-      # TODO: glo for strings to save all unique strings
+      push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
+
+   my $code = join("\n", @lines);
+   $self->{code_for}->{$attrib} = $code;
+
+   unshift @lines, (
+      'sub {',
+      'my ( $event, $class, $global ) = @_;',
+      'my $val = $event->{' . $attrib . '};',
+      map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}
+   );
    push @lines, '}';
    MKDEBUG && _d("Metric handler for $attrib: ", @lines);
    my $sub = eval join("\n", @lines);
@@ -241,6 +235,12 @@ sub make_handler {
 sub calc_event_metrics {
    my ( $self, $event ) = @_;
 
+   # There might be a specially defined subroutine for each instance of this
+   # class.
+   if ( defined $self->{"$self"} ) {
+      return $self->{"$self"}->($event);
+   }
+
    $self->{n_events}++;
 
    # Get a shortcut to the data store (ds) for this class of events.  Skip
@@ -251,41 +251,25 @@ sub calc_event_metrics {
 
    $self->{n_queries}++;
 
-   # Calculate the metrics for all our attributes.
-   # Metric handlers are auto-vivified as needed.
+   # Calculate the metrics for all our attributes.  Handlers are auto-vivified
+   # as needed, based on the actual data being passed in.  (They can't be
+   # pre-generated for that reason.)
    ATTRIB:
    foreach my $attrib ( keys %{ $self->{attributes} } ) {
-      my $attrib_val = $event->{ $attrib };
-      if ( !defined $attrib_val ) {
-         # The event does not have the real attribute, but perhaps
-         # it has an alias of the attribute, like Schema can be an
-         # alias for db. TODO: this is buggy.  ts and timestamp don't have the
-         # same "type" of value.  Passing a timestamp value to make_handler for
-         # ts is not what we should be doing here.  Plus this loop should be
-         # unrolled anyway.
-         ATTRIB_ALIAS:
-         foreach my $attrib_alias ( keys %{$self->{attributes}->{$attrib}} ) {
-            if ( defined $event->{ $attrib_alias } ) {
-               $attrib_val = $event->{ $attrib_alias };
-               last ATTRIB_ALIAS;
-            }
-         }
-         next ATTRIB unless defined $attrib_val;
-      }
-
       # Get data store shortcuts.
       my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
       my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
 
-      my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
+      my $handler = $self->{handlers}->{ $attrib } ||= $self->make_handler(
          $attrib,
-         $attrib_val,
-         wor => (($self->{worst_attrib} || '') eq $attrib)
+         $event,
+         wor => (($self->{worst_attrib} || '') eq $attrib),
+         alt => $self->{attributes}->{$attrib},
       );
-      $handler->($event, $attrib_val, $stats_for_class, $stats_for_attrib);
+      $handler->($event, $stats_for_class, $stats_for_attrib);
    }
 
-   # Figure out whether we are ready to overwrite this sub with a faster version.
+   # Figure out whether we are ready to generate a faster version.
    if (!grep {!ref $self->{handlers}->{$_} eq 'CODE'} keys %{$self->{attributes}}) {
       # All attributes have handlers, so let's combine them into one faster sub.
       # Start by getting direct handles to the location of each data store and
@@ -293,20 +277,26 @@ sub calc_event_metrics {
       my @attrs = sort keys %{$self->{attributes}};
       my @handl = @{$self->{handlers}}{@attrs};
       my @st_fa = @{$self->{metrics}->{all}}{@attrs};
-      my @st_fc = @{$fp_ds}{@attrs};
+
+      # Now the tricky part -- must make sure only the desired variables from
+      # the outer scope are re-used, and any variables that should have their
+      # own scope are declared within the subroutine.
       my $sub = sub {
-         my ( $__self, $__event ) = @_;
+         my ( $event ) = @_;
+         my $group_by = $event->{ $self->{group_by} };
+         return unless defined $group_by;
+         $self->{n_queries}++;
+         my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
+            ||= { map { $_ => {} } @attrs };
+         my @st_fc = @{$fp_ds}{@attrs};
          foreach my $i ( 0 .. $#attrs ) {
-            my $attrib_val = $__event->{$attrs[$i]};
+            my $attrib_val = $event->{$attrs[$i]};
             next unless defined $attrib_val;
-            $handl[$i]->($__event, $attrib_val, $st_fc[$i], $st_fa[$i]);
+            $handl[$i]->($event, $st_fc[$i], $st_fa[$i]);
          }
       };
-      # Turn off "Subroutine SQLMetrics::calc_event_metrics redefined..."
-      no strict;
-      no warnings;
-      local $WARNING = 0;
-      *{calc_event_metrics} = $sub;
+
+      $self->{"$self"} = $sub;
    }
 
    return;
