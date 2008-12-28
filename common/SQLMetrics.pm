@@ -219,6 +219,17 @@ sub make_handler {
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
+   # Save the code for later, as part of an "unrolled" subroutine.
+   my @unrolled = (
+      '$val = $event->{' . $attrib . '};',
+      (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
+      'defined $val && do {',
+      ( map { s/^/   /gm; $_ } @lines ), # Indent for debugging
+      '};',
+   );
+   $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
+
+   # Build a subroutine with the code.
    unshift @lines, (
       'sub {',
       'my ( $event, $class, $global ) = @_;',
@@ -241,23 +252,23 @@ sub make_handler {
 sub calc_event_metrics {
    my ( $self, $event ) = @_;
 
-   # There might be a specially built sub that handles the work.
-   if ( defined $self->{unrolled_loops} ) {
-      return $self->{unrolled_loops}->($event);
-   }
-
    $self->{n_events}++;
 
    # Skip events which do not have the group_by attribute.
    my $group_by = $event->{ $self->{group_by} };
    return unless defined $group_by;
 
+   $self->{n_queries}++;
+
+   # There might be a specially built sub that handles the work.
+   if ( defined $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($self, $event, $group_by);
+   }
+
    # Get a shortcut to the data store (ds) for this class of events.  
    my @attrs = sort keys %{$self->{attributes}};
    my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
       ||= { map { $_ => {} } @attrs };
-
-   $self->{n_queries}++;
 
    # Calculate the metrics for all our attributes.  Handlers are auto-vivified
    # as needed, based on the actual data being passed in.  (They can't be
@@ -293,28 +304,35 @@ sub calc_event_metrics {
       # thing that would otherwise be looked up via hash keys.
       my @attrs = grep { $self->{handlers}->{$_} } @attrs;
       my @handl = @{$self->{handlers}}{@attrs};
-      my @st_fa = @{$self->{metrics}->{all}}{@attrs};
+      my @st_fa = @{$self->{metrics}->{all}}{@attrs}; # Stats for attribute
 
       # Now the tricky part -- must make sure only the desired variables from
       # the outer scope are re-used, and any variables that should have their
       # own scope are declared within the subroutine.
-      my $sub = sub {
-         my ( $event ) = @_;
-         $self->{n_events}++;
-         my $group_by = $event->{ $self->{group_by} };
-         return unless defined $group_by;
-         $self->{n_queries}++;
+      my @lines = (
+         'my ( $self, $event, $group_by ) = @_;',
+         'my ($val, $class, $global);',
          # Must re-create; it may not exist for this $group_by yet.
-         my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-            ||= { map { $_ => {} } @attrs };
-         my @st_fc = @{$fp_ds}{@attrs};
-         foreach my $i ( 0 .. $#attrs ) {
-            my $attrib_val = $event->{$attrs[$i]};
-            next unless defined $attrib_val;
-            $handl[$i]->($event, $st_fc[$i], $st_fa[$i]);
-         }
-      };
+         'my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
+            ||= { map { $_ => {} } @attrs };',
+         'my @st_fc = @{$fp_ds}{@attrs};', # Stats for class
+      );
+      foreach my $i ( 0 .. $#attrs ) {
+         push @lines, (
+            '$class  = $st_fc[' . $i . '];',
+            '$global = $st_fa[' . $i . '];',
+            $self->{unrolled_for}->{$attrs[$i]},
+         );
+      }
+      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+      unshift @lines, 'sub {';
+      push @lines, '}';
 
+      # Make the subroutine
+      my $code = join("\n", @lines);
+      MKDEBUG && _d("Unrolled subroutine: ", @lines);
+      my $sub = eval $code;
+      die if $EVAL_ERROR;
       $self->{unrolled_loops} = $sub;
    }
 
