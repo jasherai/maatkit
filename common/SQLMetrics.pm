@@ -61,7 +61,6 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
-use Time::Local qw(timelocal);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -83,6 +82,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #              subrefs are returned by make_handler(). If a handler is given
 #              for an attribute that is not in the attributes list (see above),
 #              the handler is not used and the attribute is not auto-created.
+#              You generally do NOT need to specify any handlers.
 # worst_attrib An attribute name.  When an event is seen, its worst_attrib
 #              value is compared to the greatest worst_attrib value ever seen
 #              for this class of event.  If it's greater, the event's
@@ -98,7 +98,6 @@ sub new {
    foreach my $arg ( qw(group_by attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   $args{handlers} ||= {};
 
    # Parse attribute aliases like db|Schema where db is the real attribute
    # name and Schema is an alias.
@@ -110,7 +109,7 @@ sub new {
    my $self = {
       group_by     => $args{group_by},
       attributes   => \%attributes,
-      handlers     => $args{handlers},
+      handlers     => $args{handlers} || {},
       worst_attrib => $args{worst_attrib},
       metrics      => { all => {}, unique => {} },
       n_events     => 0,
@@ -264,18 +263,24 @@ sub calc_event_metrics {
       my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
       my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
 
-      my $handler = $self->{handlers}->{ $attrib } ||= $self->make_handler(
-         $attrib,
-         $event,
-         wor => (($self->{worst_attrib} || '') eq $attrib),
-         alt => $self->{attributes}->{$attrib},
-      );
+      my $handler = $self->{handlers}->{ $attrib };
+      if ( !$handler ) {
+         $handler = $self->make_handler(
+            $attrib,
+            $event,
+            wor => (($self->{worst_attrib} || '') eq $attrib),
+            alt => $self->{attributes}->{$attrib},
+         );
+         if ( $handler ) {
+            $self->{handlers}->{$attrib} = $handler;
+         }
+      }
       next ATTRIB unless $handler;
       $handler->($event, $stats_for_class, $stats_for_attrib);
    }
 
    # Figure out whether we are ready to generate a faster version.
-   if (!grep {!ref $self->{handlers}->{$_} eq 'CODE'} keys %{$self->{attributes}}) {
+   if (!grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs) {
       # All attributes have handlers, so let's combine them into one faster sub.
       # Start by getting direct handles to the location of each data store and
       # thing that would otherwise be looked up via hash keys.
@@ -402,17 +407,6 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{max}    = $max;
 
    return $statistical_metrics;
-}
-
-# Turns 071015 21:43:52 into a Unix timestamp.
-sub parse_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
-   {
-      $val = timelocal($s, $i, $h, $d, $m - 1, $y + 2000);
-   }
-   return $val;
 }
 
 sub _d {

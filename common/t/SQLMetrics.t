@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 13;
+use Test::More tests => 14;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -241,6 +241,10 @@ eval {
    $sm->calc_event_metrics({ fingerprint => 'foo' });
 };
 is($EVAL_ERROR, '', "Handles an undef attrib OK");
+
+# And, make sure it didn't create a "fast" version of the subroutine yet --
+# there should not have been enough information to do so.
+is($sm->{unrolled_loops}, undef, 'Waits till all samples to unroll loops');
 
 # #############################################################################
 # Issue 184:
