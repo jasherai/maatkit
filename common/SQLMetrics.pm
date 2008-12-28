@@ -75,9 +75,8 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 #              they'll be auto-created.  In most cases this will work fine.
 #              If you specify an attribute with an | symbol, it means that
 #              the subsequent attributes are aliases.  For example,
-#              ts|timestamp means if ts is available, it'll be used, and if
-#              timestamp is available it will be used and saved as ts.
-#              Similarly with Schema|db.
+#              db|Schema means if db is available, it'll be used, and if
+#              Schema is available it will be used and saved as db.
 #
 # Optional:
 # handlers     A hashref with explicit attribute => subref handlers. Handler
@@ -124,7 +123,7 @@ sub new {
 # Make subroutines that do things with events.
 #
 # $attrib: the name of the attrib (Query_time, Rows_read, etc)
-# $value:  a sample of the attrib's value
+# $event:  a sample event
 # %args:
 #     min => keep min for this attrib (default except strings)
 #     max => keep max (default except strings)
@@ -139,10 +138,9 @@ sub new {
 #
 # Return value:
 # a subroutine with this signature:
-#    my ( $event, $val, $class, $global ) = @_;
+#    my ( $event, $class, $global ) = @_;
 # where
 #  $event   is the event
-#  $val     is the attrib value for the event
 #  $class   is the stats for the event's class
 #  $global  is the global data store
 sub make_handler {
@@ -154,10 +152,14 @@ sub make_handler {
       map  { $event->{$_} }
            ( $attrib, @{ $args{alt} || [] } );
    return unless defined $val; # Can't decide type if it's undef.
-   my $type = $val  =~ m/^\d+/         ? 'num'
+
+   # Ripped off from Regexp::Common::number.
+   my $num_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)};
+   my $type = $val  =~ m/^$num_re$/    ? 'num'
             : $val  =~ m/^(?:Yes|No)$/ ? 'bool'
             :                            'string';
    MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
+
    %args = ( # Set up defaults
       min => 1,
       max => 1,
@@ -235,19 +237,21 @@ sub make_handler {
 sub calc_event_metrics {
    my ( $self, $event ) = @_;
 
-   # There might be a specially defined subroutine for each instance of this
-   # class.
-   if ( defined $self->{"$self"} ) {
-      return $self->{"$self"}->($event);
+   # There might be a specially built sub that handles the work.
+   if ( defined $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($event);
    }
 
    $self->{n_events}++;
 
-   # Get a shortcut to the data store (ds) for this class of events.  Skip
-   # events which do not have the group_by attribute.
+   # Skip events which do not have the group_by attribute.
    my $group_by = $event->{ $self->{group_by} };
    return unless defined $group_by;
-   my $fp_ds = $self->{metrics}->{unique}->{ $group_by } ||= {};
+
+   # Get a shortcut to the data store (ds) for this class of events.  
+   my @attrs = sort keys %{$self->{attributes}};
+   my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
+      ||= { map { $_ => {} } @attrs };
 
    $self->{n_queries}++;
 
@@ -255,7 +259,7 @@ sub calc_event_metrics {
    # as needed, based on the actual data being passed in.  (They can't be
    # pre-generated for that reason.)
    ATTRIB:
-   foreach my $attrib ( keys %{ $self->{attributes} } ) {
+   foreach my $attrib ( @attrs ) {
       # Get data store shortcuts.
       my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
       my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
@@ -266,6 +270,7 @@ sub calc_event_metrics {
          wor => (($self->{worst_attrib} || '') eq $attrib),
          alt => $self->{attributes}->{$attrib},
       );
+      next ATTRIB unless $handler;
       $handler->($event, $stats_for_class, $stats_for_attrib);
    }
 
@@ -274,7 +279,6 @@ sub calc_event_metrics {
       # All attributes have handlers, so let's combine them into one faster sub.
       # Start by getting direct handles to the location of each data store and
       # thing that would otherwise be looked up via hash keys.
-      my @attrs = sort keys %{$self->{attributes}};
       my @handl = @{$self->{handlers}}{@attrs};
       my @st_fa = @{$self->{metrics}->{all}}{@attrs};
 
@@ -283,9 +287,11 @@ sub calc_event_metrics {
       # own scope are declared within the subroutine.
       my $sub = sub {
          my ( $event ) = @_;
+         $self->{n_events}++;
          my $group_by = $event->{ $self->{group_by} };
          return unless defined $group_by;
          $self->{n_queries}++;
+         # Must re-create; it may not exist for this $group_by yet.
          my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
             ||= { map { $_ => {} } @attrs };
          my @st_fc = @{$fp_ds}{@attrs};
@@ -296,7 +302,7 @@ sub calc_event_metrics {
          }
       };
 
-      $self->{"$self"} = $sub;
+      $self->{unrolled_loops} = $sub;
    }
 
    return;

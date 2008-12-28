@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 13;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -14,7 +14,7 @@ my $qr = new QueryRewriter();
 
 my $sm  = new SQLMetrics(
    group_by        => 'fingerprint',
-   attributes      => [qw(Query_time user)],
+   attributes      => [qw(Query_time user ts)],
 );
 
 isa_ok($sm, 'SQLMetrics');
@@ -76,6 +76,13 @@ my $metrics = {
             min => 'bob',
             max => 'root',
          },
+         ts => {
+            min => '071015 21:43:52',
+            max => '071015 21:43:52',
+            unq => {
+               '071015 21:43:52' => 1,
+            }
+         },
       },
       'insert ignore into articles (id, body,)values(?+)' => {
          Query_time => {
@@ -90,6 +97,13 @@ my $metrics = {
             min => 'root',
             max => 'root',
          },
+         ts => {
+            min => '071015 21:43:52',
+            max => '071015 21:43:52',
+            unq => {
+               '071015 21:43:52' => 1,
+            }
+         },
       }
    },
    all => {
@@ -102,7 +116,11 @@ my $metrics = {
       user => {
          min => 'bob',
          max => 'root',
-      }
+      },
+      ts => {
+         min => '071015 21:43:52',
+         max => '071015 21:43:52',
+      },
    }
 };
 
@@ -111,6 +129,8 @@ foreach my $event ( @$events ) {
    $sm->calc_event_metrics($event);
 }
 is_deeply($sm->{metrics}, $metrics, 'Calcs metrics');
+is($sm->{n_events}, 3, 'Got 3 events');
+is($sm->{n_queries}, 3, 'Got 3 queries');
 
 # #############################################################################
 # Test that the sample of the worst occurrence is saved.
@@ -208,6 +228,19 @@ is_deeply(
 
 my $handler = $sm->make_handler('foo', {foo => 0});
 is(ref $handler, 'CODE', 'make_handler with 0 as sample value');
+
+# #############################################################################
+# Make sure it doesn't die when I try to parse an event that doesn't have an
+# expected attribute.
+# #############################################################################
+$sm  = new SQLMetrics(
+   group_by        => 'fingerprint',
+   attributes      => [qw(foobar)],
+);
+eval {
+   $sm->calc_event_metrics({ fingerprint => 'foo' });
+};
+is($EVAL_ERROR, '', "Handles an undef attrib OK");
 
 # #############################################################################
 # Issue 184:
