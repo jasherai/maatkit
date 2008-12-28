@@ -6,7 +6,7 @@
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  foo
-#     Users  
+#     Users  [SQL_SLAVE]
 # Time range 2007-12-18T11:48:27 to 2007-12-18T11:49:30
 # Execution times
 #   1us
@@ -31,7 +31,7 @@ SELECT col FROM foo_tbl\G
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  bar
-#     Users  
+#     Users  [SQL_SLAVE]
 # Time range 2007-12-18T11:48:57 to 2007-12-18T11:49:07
 # Execution times
 #   1us

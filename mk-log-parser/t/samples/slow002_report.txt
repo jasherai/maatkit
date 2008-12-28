@@ -6,7 +6,7 @@
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam    63.0k  100   63.0k   63.0k   63.0k   63.0k       0   63.0k
 #       DBs  db1
-#     Users  
+#     Users  [SQL_SLAVE]
 # Execution times
 #   1us
 #  10us
@@ -37,7 +37,7 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  
-#     Users  
+#     Users  [SQL_SLAVE]
 # Execution times
 #   1us
 #  10us
@@ -65,7 +65,7 @@ select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   va
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  
-#     Users  
+#     Users  [SQL_SLAVE]
 # Execution times
 #   1us
 #  10us
@@ -92,7 +92,7 @@ select     biz = '91848182522' from foo.bar \G
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  
-#     Users  
+#     Users  [SQL_SLAVE]
 # Execution times
 #   1us
 #  10us
@@ -120,7 +120,7 @@ select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  
-#     Users  
+#     Users  [SQL_SLAVE]
 # Execution times
 #   1us
 #  10us
@@ -147,7 +147,7 @@ select * from  db1.conch  where word3='211' and  vid83= '18'\G
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  
-#     Users  
+#     Users  [SQL_SLAVE]
 # Execution times
 #   1us
 #  10us
@@ -174,7 +174,7 @@ select * from  db3.vendor11gonzo  where makef='' and  bizzle= 'Exact'\G
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  
-#     Users  
+#     Users  [SQL_SLAVE]
 # Time range 2007-12-18T11:48:27 to 2007-12-18T11:48:27
 # Execution times
 #   1us

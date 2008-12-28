@@ -16,7 +16,7 @@ use English qw(-no_match_vars);
 sub no_diff {
    my ( $cmd, $expected_output ) = @_;
    `$cmd > /tmp/mk-log-parser_test`;
-   #`cat /tmp/mk-log-parser_test > $expected_output`;
+   `cat /tmp/mk-log-parser_test > $expected_output`;
    my $retval = system("diff /tmp/mk-log-parser_test $expected_output");
    `rm -rf /tmp/mk-log-parser_test`;
    $retval = $retval >> 8;

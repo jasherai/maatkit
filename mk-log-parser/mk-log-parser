@@ -922,7 +922,7 @@ our @EXPORT_OK   = qw(
 sub micro_t {
    my ( $t, %args ) = @_;
    my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
-   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 3;  # precision for s vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
    my $f;
 
    $t = 0 if $t < 0;
@@ -1191,7 +1191,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2688
+# LogParser package 2710
 # ###########################################################################
 package LogParser;
 
@@ -1228,7 +1228,7 @@ my $general_log_any_line = qr{
 }xs;
 
 my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
-my $slow_log_uh_line = qr/# User\@Host: ([^\[]+).*?@ (\S*) \[(.*)\]/;
+my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
 
 my $binlog_line_1 = qr{^# at (\d+)};
 my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
@@ -3407,14 +3407,18 @@ mk-log-parser - Parse, transform and analyze MySQL logs.
 
 =head1 SYNOPSIS
 
-   # Analyze and report on a slow log.
-   mk-log-parser slow.log
+Analyze and report on a slow log:
 
-   # Review a slow log, saving query info to host1, db.query_review.
-   mk-log-parser --review h=host1,D=db,t=query_review
+ mk-log-parser /path/to/slow.log
 
-   # Analyze a slow log and report on only not-reviewed queries.
-   mk-log-parser --analyze --review h=host1,D=db,t=query_review slow.log
+Review a slow log, saving results to the test.query_review table in a MySQL
+server running on host1.  See L<--review> for more on reviewing queries:
+
+ mk-log-parser --review h=host1,D=test,t=query_review
+
+Analyze a slow log and report queries that haven't been reviewed yet:
+
+ mk-log-parser --analyze --review h=host1,D=test,t=query_review slow.log
 
 =head1 DESCRIPTION
 
@@ -3437,17 +3441,147 @@ option. This allows you to parse log files and automatically ignore queries
 which are "old" and considered "approved." Approved queries are those which
 have been reviewed by a human.
 
-=head2 QUERY SOURCES
+=head1 OUTPUT
 
-By default C<mk-log-parser> reads/parses files given on the command line
-as MySQL slow log files. Or, if no files are given, it reads standard input.
-Therefore, with no explicit options and only log files given, C<mk-log-parser>
-will do an analysis on those log files, print the report and exit.
+The default output is a query analysis report.  There is one paragraph for each
+class of query analyzed.  A "class" of queries all have the same fingerprint,
+which is an abstracted version of the query text with literals removed,
+whitespace collapsed, and so forth.  The report is formatted so it's easy to
+paste into emails without wrapping, and all non-query lines begin with a
+comment, so you can save it to a .sql file and open it in your favorite
+syntax-highlighting text editor.
 
-The L<"--proclist"> option allows you to specify a DSN from which
-C<mk-log-parser> will read queries from the process list.
+The report begins with one paragraph about the entire analysis run:
 
-Other query sources, like output from a proxy or a sniffer, are planned.
+   # Queries: 8, Time: 762.1ms
+   # CPU times: 260ms user, 30ms system
+   # Memory use: 5.63M rss,  8.40M vsz
+
+This file had 8 queries total, with a total execution time of 762.1ms.  The CPU
+and memory lines are statistics about the analysis tool; we are trying very hard
+to make the tool fast and lean.  If you find a log file that takes an unusually
+long time or a lot of memory, please submit a bug report.
+
+Each query then appears in a paragraph.  Here's a sample, slightly reformatted
+so 'perldoc' will not wrap lines in a terminal:
+
+ # Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 ________________
+ #              total   %     min     max     avg     95% stddev  median
+ #     Count        1  12
+ #      Time  726.1ms  95 726.1ms 726.1ms 726.1ms 726.1ms      0 726.1ms
+ #      Lock     91us  29    91us    91us    91us    91us      0    91us
+ # Rows sent        0   0       0       0       0       0      0       0
+ # Rows exam    63.0k 100   63.0k   63.0k   63.0k   63.0k      0   63.0k
+ #       DBs  db1
+ #     Users  [SQL_SLAVE]
+ # Execution times
+ #   1us
+ #  10us
+ # 100us
+ #   1ms
+ #  10ms
+ # 100ms  ##############################################################
+ #    1s
+ #  10s+
+ # Tables
+ #    SHOW TABLE STATUS FROM `db2` LIKE 'table1'\G
+ #    SHOW CREATE TABLE `db2`.`table1`\G
+ #    SHOW TABLE STATUS FROM `db1` LIKE 'table2'\G
+ #    SHOW CREATE TABLE `db1`.`table2`\G
+ update db2.table1 n
+       inner join db1.table2 a using(table2) 
+       set n.column1 = a.column1, n.word3 = a.word3\G
+ # Converted for EXPLAIN
+ # EXPLAIN
+ select  n.column1 = a.column1, n.word3 = a.word3 from db2.table1 n
+       inner join db1.table2 a using(table2) \G
+
+Let's take that line by line.  Line 1 is the header:
+
+ # Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 ________________
+
+This line identifies the sequential number of the query in the sort order
+specified by L<--sort>.  Then there's the queries per second, and a query ID.
+This ID is a hex version of the query's checksum in the database, if you're
+using L<--review>.  You can select the reviewed query's details from the
+database with a query like C<SELECT .... WHERE checksum=0x66825DDC008FFA89>.
+
+Finally, in case you want to find a sample of the query in the log file, there's
+the byte offset where you can look.  (This is not always accurate, due to some
+silly anomalies in the slow-log format, but it's usually right.)  The position
+refers to the L<--worst> sample, which we'll see more about below.
+
+Next is the table of metrics about this class of queries.
+
+ #              total   %     min     max     avg     95% stddev  median
+ #     Count        1  12
+ #      Time  726.1ms  95 726.1ms 726.1ms 726.1ms 726.1ms      0 726.1ms
+ #      Lock     91us  29    91us    91us    91us    91us      0    91us
+ # Rows sent        0   0       0       0       0       0      0       0
+ # Rows exam    63.0k 100   63.0k   63.0k   63.0k   63.0k      0   63.0k
+
+The first line is column headers for the table.  The total
+is the actual value of the specified metric, and the percentage is the percent
+of the total for the whole analysis run.  For example, in this case we can see
+that the query executed 1 time, which is 12% of the total number of queries in
+the file.  The min, max and avg columns are self-explanatory.  The 95% column
+shows the 95th percentile; 95% of the values are less than or equal to this
+value.  The standard deviation shows you how tightly grouped the values are.
+The standard deviation and median are both calculated from the 95th percentile,
+discarding the extremely large values.
+
+ #       DBs  db1
+ #     Users  [SQL_SLAVE]
+
+These two lines show you from which databases the queries in this class were
+executed, and the users who ran them.  In this case, the queries were all run by
+the replication SQL slave thread.  This is a feature of Percona's enhanced
+slow-query-logging functionality.  Normal unpatched servers don't log
+replication activity to the slow query log.
+
+ # Execution times
+ #   1us
+ #  10us
+ # 100us
+ #   1ms
+ #  10ms
+ # 100ms  ##############################################################
+ #    1s
+ #  10s+
+
+The execution times show a logarithmic chart of time clustering.  Each query
+goes into one of the "buckets" and is counted up.  The buckets are powers of
+ten.  The first bucket is all values in the "single microsecond range" -- that
+is, less than 10us.  The second is "tens of microseconds," which is from 10us
+up to (but not including) 100us; and so on.
+
+ # Tables
+ #    SHOW TABLE STATUS FROM `db2` LIKE 'table1'\G
+ #    SHOW CREATE TABLE `db2`.`table1`\G
+ #    SHOW TABLE STATUS FROM `db1` LIKE 'table2'\G
+ #    SHOW CREATE TABLE `db1`.`table2`\G
+
+This section is a convenience: if you're trying to optimize the queries you see
+in the slow log, you probably want to examine their structure and size.  These
+are copy-and-paste-ready commands to do that.  The values are extracted from the
+query sample, and are usually correct.  If you find a query that isn't parsed
+right, submit a bug report.
+
+ update db2.table1 n
+       inner join db1.table2 a using(table2) 
+       set n.column1 = a.column1, n.word3 = a.word3\G
+
+This is a sample of the queries in this class of query.  This is not a random
+sample.  It is the query that performed the worst, according to L<--worst>.
+You would normally see a commented C<# EXPLAIN> line just before it, so you can
+copy-paste the query to examine its EXPLAIN plan. But for non-SELECT queries
+such as this one, that isn't possible to do, so the tool tries to transform the
+query into a roughly equivalent SELECT query, and adds that below:
+
+ # Converted for EXPLAIN
+ # EXPLAIN
+ select  n.column1 = a.column1, n.word3 = a.word3 from db2.table1 n
+       inner join db1.table2 a using(table2) \G
 
 =head1 ATTRIBUTE AND METRIC NAMES
 
@@ -3556,12 +3690,6 @@ copy-and-paste while working to optimize the query.
 default: yes; negatable: yes
 
 Print an informative header about the entire analysis run.
-
-=item --proclist
-
-Not yet implemented.
-
-TODO
 
 =item --review
 

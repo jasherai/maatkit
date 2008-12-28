@@ -6,7 +6,7 @@
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  
-#     Users  
+#     Users  [SQL_SLAVE]
 # Time range 2007-12-18T11:48:27 to 2007-12-18T11:48:27
 # Execution times
 #   1us
