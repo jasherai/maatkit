@@ -52,7 +52,7 @@ my $general_log_any_line = qr{
 }xs;
 
 my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
-my $slow_log_uh_line = qr/# User\@Host: ([^\[]+).*?@ (\S*) \[(.*)\]/;
+my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
 
 my $binlog_line_1 = qr{^# at (\d+)};
 my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
