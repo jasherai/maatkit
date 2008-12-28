@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 
 # #############################################################################
@@ -16,16 +16,15 @@ use English qw(-no_match_vars);
 sub no_diff {
    my ( $cmd, $expected_output ) = @_;
    `$cmd > /tmp/mk-log-parser_test`;
-   `cat /tmp/mk-log-parser_test > $expected_output`;
-#   my $output = `cat /tmp/mk-log-parser_test`;
-#   print $output;
+   #`cat /tmp/mk-log-parser_test > $expected_output`;
    my $retval = system("diff /tmp/mk-log-parser_test $expected_output");
    `rm -rf /tmp/mk-log-parser_test`;
    $retval = $retval >> 8;
    return !$retval;
 }
 
-my $run_with = '../mk-log-parser --norusage ../../common/t/samples/';
+my $run_with = '../mk-log-parser --noheader --top 10 ../../common/t/samples/';
+my $run_notop = '../mk-log-parser --noheader ../../common/t/samples/';
 
 ok(
    no_diff($run_with.'slow001.txt', 'samples/slow001_report.txt'),
@@ -34,6 +33,10 @@ ok(
 ok(
    no_diff($run_with.'slow002.txt', 'samples/slow002_report.txt'),
    'Analysis for slow002'
+);
+ok(
+   no_diff($run_notop.'slow002.txt --top 5%', 'samples/slow002_top_report.txt'),
+   'Analysis for slow002 with --top',
 );
 ok(
    no_diff($run_with.'slow003.txt', 'samples/slow003_report.txt'),

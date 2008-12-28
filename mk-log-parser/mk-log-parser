@@ -922,7 +922,7 @@ our @EXPORT_OK   = qw(
 sub micro_t {
    my ( $t, %args ) = @_;
    my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
-   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 3;  # precision for s vals
    my $f;
 
    $t = 0 if $t < 0;
@@ -2925,11 +2925,17 @@ $opt_parser->{descr}  = q{parses and analyzes MySQL log files.  With no }
                       . q{FILE, or when FILE is -, read standard input.};
 my %opts = $opt_parser->parse();
 
-if ( $opts{A} && !$opts{R} ) {
-   $opt_parser->error('--analyze requires --review');
-};
-if ( $opts{R} && (!defined $opts{R}->{D} || !defined $opts{R}->{t}) ) {
-   $opt_parser->error('The --review DSN requires a D (database) and t (table) part specifying the query review table');
+if ( !$opts{help} ) {
+   if ( $opts{A} && !$opts{R} ) {
+      $opt_parser->error('--analyze requires --review');
+   }
+   if ( $opts{R} && (!defined $opts{R}->{D} || !defined $opts{R}->{t}) ) {
+      $opt_parser->error('The --review DSN requires a D (database) and t"
+         . " (table) part specifying the query review table');
+   }
+   if ( $opts{t} !~ m/^\d+%?$/ ) {
+      $opt_parser->error('Invalid syntax for --top.  See perldoc for details.');
+   }
 }
 
 $opt_parser->usage_or_errors(%opts);
@@ -3074,7 +3080,20 @@ sub find_top_queries {
       reverse sort {
          $classes->{$a}->{$worst}->{$sort} <=> $classes->{$b}->{$worst}->{$sort}
       } keys %$classes;
-   my $count = @sorted > $top ? $top : scalar @sorted;
+   my $count = 0;
+   if ( $top =~ m/^\d+$/ ) {
+      $count = @sorted > $top ? $top : scalar @sorted;
+   }
+   else {
+      # It's a percentage, so grab as many as needed to get to that % of the
+      # file.
+      ($top) = $top =~ m/(\d+)/;
+      my $so_far = 0;
+      my $target = $sm->{metrics}->{all}->{$worst}->{sum} * ($top / 100);
+      while ( $so_far < $target && $count < @sorted) {
+         $so_far += $classes->{$sorted[$count++]}->{$worst}->{$sort};
+      }
+   }
    # Add event's fingerprint to itself as a pseudo-attribute for use in
    # report_queries() to correlate with query review table info.
    return map { $classes->{$_}->{fingerprint} = $_; $classes->{$_}; }
@@ -3088,16 +3107,19 @@ sub report_queries {
    my $Query_time_distro;
 
    # Print header
-   if ( $opts{rusage} ) {
-      printf "# CPU times:  %s user, %s system\n",
-         map { micro_t($_) } times();
-      eval {
-         my $mem = `ps -o rss,vsz $PID`;
-         printf "# Memory use: %s rss,  %s vsz\n",
-            map {shorten($_ * 1_024)} $mem =~ m/(\d+)/g;
-      };
-   }
-   if ( $opts{rusage} ) {
+   if ( $opts{header} ) {
+      printf "# Queries: %s, Time: %s\n",
+         shorten($sm->{n_queries}),
+         micro_t($sm->{metrics}->{all}->{Query_time}->{sum}, p_s => 1, p_ms => 1);
+      if ( $opts{rusage} ) {
+         printf "# CPU times: %s user, %s system\n",
+            map { micro_t($_, p_s => 1, p_ms => 1) } times();
+         eval {
+            my $mem = `ps -o rss,vsz $PID`;
+            printf "# Memory use: %s rss,  %s vsz\n",
+               map {shorten($_ * 1_024)} $mem =~ m/(\d+)/g;
+         };
+      }
       print  "\n";
    }
 
@@ -3529,6 +3551,12 @@ STATUS.
 Shows some extra information about the query and the tables in it, to help you
 copy-and-paste while working to optimize the query.
 
+=item --header
+
+default: yes; negatable: yes
+
+Print an informative header about the entire analysis run.
+
 =item --proclist
 
 Not yet implemented.
@@ -3595,7 +3623,7 @@ See also L<"--worst"> and L<"ATTRIBUTE AND METRIC NAMES">.
 
 =item --top
 
-short form: -t; type: int; default: 10
+short form: -t; type: string; default: 95%
 
 Report only the top N worst queries.
 

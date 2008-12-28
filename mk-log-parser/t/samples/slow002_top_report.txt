@@ -1,0 +1,31 @@
+# Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 __________________
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   12
+#      Time  726.1ms   95 726.1ms 726.1ms 726.1ms 726.1ms       0 726.1ms
+#      Lock     91us   29    91us    91us    91us    91us       0    91us
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam    63.0k  100   63.0k   63.0k   63.0k   63.0k       0   63.0k
+#       DBs  db1
+#     Users  
+# Execution times
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms
+# 100ms  ################################################################
+#    1s
+#  10s+
+# Tables
+#    SHOW TABLE STATUS FROM `db2` LIKE 'tuningdetail_21_265507'\G
+#    SHOW CREATE TABLE `db2`.`tuningdetail_21_265507`\G
+#    SHOW TABLE STATUS FROM `db1` LIKE 'gonzo'\G
+#    SHOW CREATE TABLE `db1`.`gonzo`\G
+update db2.tuningdetail_21_265507 n
+      inner join db1.gonzo a using(gonzo) 
+      set n.column1 = a.column1, n.word3 = a.word3\G
+# Converted for EXPLAIN
+# EXPLAIN
+select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507 n
+      inner join db1.gonzo a using(gonzo) \G
+
