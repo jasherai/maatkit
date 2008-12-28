@@ -1,50 +1,50 @@
 # Query 001 (0.0 QPS) ID: 0xA20C29AF174CE545 at byte 1803 _______________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           3   50
-# Time         36us   50     12us    12us    12us    12us       0    12us
-# Lock            0    0        0       0       0       0       0       0
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs         foo                                                         
-# Users                                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        3   50
+#      Time     36us   50    12us    12us    12us    12us       0    12us
+#      Lock        0    0       0       0       0       0       0       0
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  foo
+#     Users  
 # Time range 2007-12-18T11:48:27 to 2007-12-18T11:49:30
 # Execution times
-#      1us                                                               
-#     10us  #############################################################
-#    100us                                                               
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us  ################################################################
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 # Tables
-#    SHOW TABLE STATUS LIKE 'foo_tbl'\G
-#    SHOW CREATE TABLE `foo_tbl`\G
+#    SHOW TABLE STATUS FROM `foo` LIKE 'foo_tbl'\G
+#    SHOW CREATE TABLE `foo`.`foo_tbl`\G
 # EXPLAIN
 SELECT col FROM foo_tbl\G
 
 # Query 002 (0.3 QPS) ID: 0xD4CD74934382A184 at byte 1445 _______________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           3   50
-# Time         36us   50     12us    12us    12us    12us       0    12us
-# Lock            0    0        0       0       0       0       0       0
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs         bar                                                         
-# Users                                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        3   50
+#      Time     36us   50    12us    12us    12us    12us       0    12us
+#      Lock        0    0       0       0       0       0       0       0
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  bar
+#     Users  
 # Time range 2007-12-18T11:48:57 to 2007-12-18T11:49:07
 # Execution times
-#      1us                                                               
-#     10us  #############################################################
-#    100us                                                               
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us  ################################################################
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 # Tables
-#    SHOW TABLE STATUS LIKE 'bar_tbl'\G
-#    SHOW CREATE TABLE `bar_tbl`\G
+#    SHOW TABLE STATUS FROM `bar` LIKE 'bar_tbl'\G
+#    SHOW CREATE TABLE `bar`.`bar_tbl`\G
 # EXPLAIN
 SELECT col FROM bar_tbl\G
 

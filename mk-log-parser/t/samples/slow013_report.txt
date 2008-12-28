@@ -1,82 +1,82 @@
 # Query 001 (0 QPS) ID: 0x31DA25F95494CA95 at byte 174 __________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           1   20
-# Time      149.4ms   99  149.4ms 149.4ms 149.4ms 149.4ms       0 149.4ms
-# Lock         70us  100     70us    70us    70us    70us       0    70us
-# Rows sent     226  100      226     226     226     226       0     226
-# Rows exam     226  100      226     226     226     226       0     226
-# DBs         test                                                        
-# Users       mytopuser                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   20
+#      Time  149.4ms   99 149.4ms 149.4ms 149.4ms 149.4ms       0 149.4ms
+#      Lock     70us  100    70us    70us    70us    70us       0    70us
+# Rows sent      226  100     226     226     226     226       0     226
+# Rows exam      226  100     226     226     226     226       0     226
+#       DBs  test
+#     Users  mytopuser
 # Time range 2008-11-27T08:51:20 to 2008-11-27T08:51:20
 # Execution times
-#      1us                                                               
-#     10us                                                               
-#    100us                                                               
-#      1ms                                                               
-#     10ms                                                               
-#    100ms  #############################################################
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms
+# 100ms  ################################################################
+#    1s
+#  10s+
 SHOW STATUS\G
 
 # Query 002 (0 QPS) ID: 0x3AEAAD0E15D725B5 at byte 600 __________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           2   40
-# Time         82us    0     15us    67us    41us    67us    36us    41us
-# Lock            0    0        0       0       0       0       0       0
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs         abc                                                         
-# Users       foo_app                                                     
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        2   40
+#      Time     82us    0    15us    67us    41us    67us    36us    41us
+#      Lock        0    0       0       0       0       0       0       0
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  abc
+#     Users  foo_app
 # Execution times
-#      1us                                                               
-#     10us  #############################################################
-#    100us                                                               
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us  ################################################################
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 SET autocommit=0\G
 
 # Query 003 (0 QPS) ID: 0x813031B8BBC3B329 at byte 782 __________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           1   20
-# Time         15us    0     15us    15us    15us    15us       0    15us
-# Lock            0    0        0       0       0       0       0       0
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs         abc                                                         
-# Users       foo_app                                                     
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   20
+#      Time     15us    0    15us    15us    15us    15us       0    15us
+#      Lock        0    0       0       0       0       0       0       0
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  abc
+#     Users  foo_app
 # Execution times
-#      1us                                                               
-#     10us  #############################################################
-#    100us                                                               
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us  ################################################################
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 commit\G
 
 # Query 004 (0 QPS) ID: 0xE9800998ECF8427E at byte 385 __________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           1   20
-# Time          5us    0      5us     5us     5us     5us       0     5us
-# Lock            0    0        0       0       0       0       0       0
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs         test                                                        
-# Users       mytopuser                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   20
+#      Time      5us    0     5us     5us     5us     5us       0     5us
+#      Lock        0    0       0       0       0       0       0       0
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  test
+#     Users  mytopuser
 # Time range 2008-11-27T08:51:21 to 2008-11-27T08:51:21
 # Execution times
-#      1us  #############################################################
-#     10us                                                               
-#    100us                                                               
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us  ################################################################
+#  10us
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 # administrator command: Quit\G
 

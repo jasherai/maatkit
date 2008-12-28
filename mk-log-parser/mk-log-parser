@@ -1022,7 +1022,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2690
+# QueryRewriter package 2707
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1044,7 +1044,8 @@ $bal         = qr/
                   )*
                   \)
                  /x;
-my $olc_re = qr/(?:--|#).*/;           # One-line comments
+
+my $olc_re = qr/(?:--|#)[^'"\r\n]*/;   # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;      # Multi-line comments, but not /*!version */
 
 sub new {
@@ -1061,6 +1062,10 @@ sub strip_comments {
 
 sub fingerprint {
    my ( $self, $query ) = @_;
+   $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
+      && return 'mysqldump';
+   $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
+      && return 'maatkit';
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
@@ -3049,8 +3054,6 @@ sub get_analyze_callback {
                        )],
                        # TODO: add values from command-line options
                        # TODO: name=expression syntax
-                       #ts=ts||timestamp
-                       #db=db||Schema
                        #withoutlocks=Query_time-Lock_time
    );
 
@@ -3084,14 +3087,28 @@ sub report_queries {
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
 
+   # Print header
+   if ( $opts{rusage} ) {
+      printf "# CPU times:  %s user, %s system\n",
+         map { micro_t($_) } times();
+      eval {
+         my $mem = `ps -o rss,vsz $PID`;
+         printf "# Memory use: %s rss,  %s vsz\n",
+            map {shorten($_ * 1_024)} $mem =~ m/(\d+)/g;
+      };
+   }
+   if ( $opts{rusage} ) {
+      print  "\n";
+   }
+
    my $query_hdr_fmt   = "# Query %03d (%s QPS) ID: 0x%s at byte %d ";
-   my $metrics_hdr_fmt = "#             total    %%      min     max     "
+   my $metrics_hdr_fmt = "#              total    %%     min     max     "
                        . "avg     95%%  stddev  median\n";
-   my $count_line_fmt  = "# %-9s %7s  %3d\n";
-   my $metric_line_fmt = "# %-9s %7s  %3d  %7s %7s %7s %7s %7s %7s\n";
-   my $list_line_fmt   = "# %-9s   %-60s\n";
+   my $count_line_fmt  = "# %9s %8s  %3d\n";
+   my $metric_line_fmt = "# %9s %8s  %3d %7s %7s %7s %7s %7s %7s\n";
+   my $list_line_fmt   = "# %9s  %s\n";
    my $timestamp_fmt   = "# Time range %s to %s\n";
-   my $review_info_fmt = "#    %-13s %-s\n";
+   my $review_info_fmt = "# %13s: %-s\n";
 
    my @reported_metrics = (
       {
@@ -3190,12 +3207,13 @@ sub report_queries {
             $r->{fmt}->($stats->{median});          # 95% med
       }
 
-      printf $list_line_fmt, 'DBs', join(', ', keys %{$class->{Schema}->{unq}});
+      printf $list_line_fmt, 'DBs',   join(', ', keys %{$class->{db}->{unq}});
       printf $list_line_fmt, 'Users', join(', ', keys %{$class->{user}->{unq}});
 
       # TODO: permit to switch off with cmdline option --verbosity or --quiet
       if ( $class->{ts}->{min} ) {
-         printf $timestamp_fmt, $class->{ts}->{min}, $class->{ts}->{max};
+         printf $timestamp_fmt,
+            map { ts(parse_timestamp($_)) } @{$class->{ts}}{qw(min max)};
       }
       print "# Execution times\n";
       print chart_distro($Query_time_distro);
@@ -3222,8 +3240,8 @@ sub report_queries {
       # between multiple logged dbs. As a last report, print_tables()
       # will simply omit the FROM `db` clause and it's left to the user
       # to determine the correct db.
-      my ( $default_db ) = keys %{$class->{db}->{all}}
-         if scalar keys %{$class->{db}->{all}} == 1;
+      my ( $default_db ) = keys %{$class->{db}->{unq}}
+         if scalar keys %{$class->{db}->{unq}} == 1;
 
       my $sample = $class->{$opts{w}}->{sample}->{arg};
       my $select_pattern = qr/^[\s\(]*SELECT /i;
@@ -3269,8 +3287,8 @@ sub chart_distro {
    return "\n" if !defined $distro || scalar @$distro== 0;
    my $max_val = 0;
    my $vals_per_mark; # number of vals represented by 1 #-mark
-   my $max_disp_width = 61;
-   my $bar_fmt = "# %8s  %-${max_disp_width}s\n";
+   my $max_disp_width = 64;
+   my $bar_fmt = "# %5s%s\n";
    my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
 
    # Find the distro with the most values. This will set
@@ -3293,7 +3311,8 @@ sub chart_distro {
       # see all buckets that have values.
       $n_marks = 1 if $n_marks < 1 && $n_vals > 0;
 
-      my $bar     = '#' x $n_marks;
+      my $bar = ($n_marks ? '  ' : '') . '#' x $n_marks;
+
       printf $bar_fmt, $distro_labels[$i++], $bar;
    }
 
@@ -3309,10 +3328,12 @@ sub print_tables {
       next if $table_alias eq 'DATABASE';
       my $tbl = $table_aliases->{$table_alias};
       my $db  = $table_aliases->{DATABASE}->{$tbl} || $default_db;
-      print '#    SHOW TABLE STATUS'
-         , defined $db && $db ? " FROM `$db`" : ''
-         , " LIKE '$tbl'\\G\n";
-      print "#    SHOW CREATE TABLE `$tbl`\\G\n";
+      print '#    SHOW TABLE STATUS',
+         (defined $db && $db ? " FROM `$db`" : ''),
+         " LIKE '$tbl'\\G\n";
+      print "#    SHOW CREATE TABLE ",
+         (defined $db && $db ? "`$db`." : ''),
+         "`$tbl`\\G\n";
    }
    # If no tables are printed, this may be due to a query like
    #    SELECT col FROM (SELECT col FROM tbl2) AS tbl1
@@ -3340,7 +3361,8 @@ sub sig_int {
    }
 }
 
-# Turns 071015 21:43:52 into a Unix timestamp.
+# Turns 071015 21:43:52 into a Unix timestamp. TODO: put this into transformers
+# and make it not use timelocal, just return formatted string.
 sub parse_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
@@ -3552,6 +3574,14 @@ If you want to combine a review and an analysis, see L<"--analyze">.
 =item --reportall
 
 Report all queries with --analyze and --review.
+
+=item --rusage
+
+default: yes; negatable: yes
+
+Show resource usage report.
+
+Report CPU times and memory usage in the header of the query analysis report.
 
 =item --sort
 

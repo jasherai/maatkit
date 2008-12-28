@@ -16,6 +16,7 @@ use English qw(-no_match_vars);
 sub no_diff {
    my ( $cmd, $expected_output ) = @_;
    `$cmd > /tmp/mk-log-parser_test`;
+   `cat /tmp/mk-log-parser_test > $expected_output`;
 #   my $output = `cat /tmp/mk-log-parser_test`;
 #   print $output;
    my $retval = system("diff /tmp/mk-log-parser_test $expected_output");
@@ -24,7 +25,7 @@ sub no_diff {
    return !$retval;
 }
 
-my $run_with = '../mk-log-parser ../../common/t/samples/';
+my $run_with = '../mk-log-parser --norusage ../../common/t/samples/';
 
 ok(
    no_diff($run_with.'slow001.txt', 'samples/slow001_report.txt'),
@@ -85,7 +86,7 @@ my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master');
 SKIP: {
-   skip 'Cannot connect to sandbox master', 8 if !$dbh;
+   skip 'Cannot connect to sandbox master', 7 if !$dbh;
 
    $sb->create_dbs($dbh, ['test']);
    $sb->load_file('master', 'samples/query_review.sql');

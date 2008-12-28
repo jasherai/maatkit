@@ -1,26 +1,26 @@
 # Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 __________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           1   12
-# Time      726.1ms   95  726.1ms 726.1ms 726.1ms 726.1ms       0 726.1ms
-# Lock         91us   29     91us    91us    91us    91us       0    91us
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam   63.0k  100    63.0k   63.0k   63.0k   63.0k       0   63.0k
-# DBs         db1                                                         
-# Users                                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   12
+#      Time  726.1ms   95 726.1ms 726.1ms 726.1ms 726.1ms       0 726.1ms
+#      Lock     91us   29    91us    91us    91us    91us       0    91us
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam    63.0k  100   63.0k   63.0k   63.0k   63.0k       0   63.0k
+#       DBs  db1
+#     Users  
 # Execution times
-#      1us                                                               
-#     10us                                                               
-#    100us                                                               
-#      1ms                                                               
-#     10ms                                                               
-#    100ms  #############################################################
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms
+# 100ms  ################################################################
+#    1s
+#  10s+
 # Tables
 #    SHOW TABLE STATUS FROM `db2` LIKE 'tuningdetail_21_265507'\G
-#    SHOW CREATE TABLE `tuningdetail_21_265507`\G
+#    SHOW CREATE TABLE `db2`.`tuningdetail_21_265507`\G
 #    SHOW TABLE STATUS FROM `db1` LIKE 'gonzo'\G
-#    SHOW CREATE TABLE `gonzo`\G
+#    SHOW CREATE TABLE `db1`.`gonzo`\G
 update db2.tuningdetail_21_265507 n
       inner join db1.gonzo a using(gonzo) 
       set n.column1 = a.column1, n.word3 = a.word3\G
@@ -30,26 +30,26 @@ select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507
       inner join db1.gonzo a using(gonzo) \G
 
 # Query 002 (0 QPS) ID: 0x0FFE94ABA6A2A9E8 at byte 1316 _________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           1   12
-# Time       33.4ms    4   33.4ms  33.4ms  33.4ms  33.4ms       0  33.4ms
-# Lock         28us    9     28us    28us    28us    28us       0    28us
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs                                                                     
-# Users                                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   12
+#      Time   33.4ms    4  33.4ms  33.4ms  33.4ms  33.4ms       0  33.4ms
+#      Lock     28us    9    28us    28us    28us    28us       0    28us
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  
+#     Users  
 # Execution times
-#      1us                                                               
-#     10us                                                               
-#    100us                                                               
-#      1ms                                                               
-#     10ms  #############################################################
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms  ################################################################
+# 100ms
+#    1s
+#  10s+
 # Tables
 #    SHOW TABLE STATUS FROM `db4` LIKE 'vab3concept1upload'\G
-#    SHOW CREATE TABLE `vab3concept1upload`\G
+#    SHOW CREATE TABLE `db4`.`vab3concept1upload`\G
 UPDATE db4.vab3concept1upload
 SET    vab3concept1id = '91848182522'
 WHERE  vab3concept1upload='6994465'\G
@@ -58,26 +58,26 @@ WHERE  vab3concept1upload='6994465'\G
 select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   vab3concept1upload='6994465'\G
 
 # Query 003 (0 QPS) ID: 0xB211BA2B8D6D065C at byte 3332 _________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           2   25
-# Time        1.1ms    0    530us   530us   530us   530us       0   530us
-# Lock         54us   17     27us    27us    27us    27us       0    27us
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs                                                                     
-# Users                                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        2   25
+#      Time    1.1ms    0   530us   530us   530us   530us       0   530us
+#      Lock     54us   17    27us    27us    27us    27us       0    27us
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  
+#     Users  
 # Execution times
-#      1us                                                               
-#     10us                                                               
-#    100us  #############################################################
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us
+# 100us  ################################################################
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 # Tables
 #    SHOW TABLE STATUS FROM `foo` LIKE 'bar'\G
-#    SHOW CREATE TABLE `bar`\G
+#    SHOW CREATE TABLE `foo`.`bar`\G
 UPDATE foo.bar
 SET    biz = '91848182522'\G
 # Converted for EXPLAIN
@@ -85,26 +85,26 @@ SET    biz = '91848182522'\G
 select     biz = '91848182522' from foo.bar \G
 
 # Query 004 (0 QPS) ID: 0x6969975466519B81 at byte 2825 _________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           1   12
-# Time        530us    0    530us   530us   530us   530us       0   530us
-# Lock         27us    8     27us    27us    27us    27us       0    27us
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs                                                                     
-# Users                                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   12
+#      Time    530us    0   530us   530us   530us   530us       0   530us
+#      Lock     27us    8    27us    27us    27us    27us       0    27us
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  
+#     Users  
 # Execution times
-#      1us                                                               
-#     10us                                                               
-#    100us  #############################################################
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us
+# 100us  ################################################################
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 # Tables
 #    SHOW TABLE STATUS FROM `bizzle` LIKE 'bat'\G
-#    SHOW CREATE TABLE `bat`\G
+#    SHOW CREATE TABLE `bizzle`.`bat`\G
 UPDATE bizzle.bat
 SET    boop='bop: 899'
 WHERE  fillze='899'\G
@@ -113,26 +113,26 @@ WHERE  fillze='899'\G
 select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 
 # Query 005 (0 QPS) ID: 0xC22D235B07D1D774 at byte 1840 _________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           1   12
-# Time        530us    0    530us   530us   530us   530us       0   530us
-# Lock         27us    8     27us    27us    27us    27us       0    27us
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs                                                                     
-# Users                                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   12
+#      Time    530us    0   530us   530us   530us   530us       0   530us
+#      Lock     27us    8    27us    27us    27us    27us       0    27us
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  
+#     Users  
 # Execution times
-#      1us                                                               
-#     10us                                                               
-#    100us  #############################################################
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us
+# 100us  ################################################################
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 # Tables
 #    SHOW TABLE STATUS FROM `db1` LIKE 'conch'\G
-#    SHOW CREATE TABLE `conch`\G
+#    SHOW CREATE TABLE `db1`.`conch`\G
 INSERT INTO db1.conch (word3, vid83)
 VALUES ('211', '18')\G
 # Converted for EXPLAIN
@@ -140,26 +140,26 @@ VALUES ('211', '18')\G
 select * from  db1.conch  where word3='211' and  vid83= '18'\G
 
 # Query 006 (0 QPS) ID: 0x7546F89214254F2F at byte 803 __________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           1   12
-# Time        512us    0    512us   512us   512us   512us       0   512us
-# Lock         77us   25     77us    77us    77us    77us       0    77us
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs                                                                     
-# Users                                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   12
+#      Time    512us    0   512us   512us   512us   512us       0   512us
+#      Lock     77us   25    77us    77us    77us    77us       0    77us
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  
+#     Users  
 # Execution times
-#      1us                                                               
-#     10us                                                               
-#    100us  #############################################################
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us
+# 100us  ################################################################
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 # Tables
 #    SHOW TABLE STATUS FROM `db3` LIKE 'vendor11gonzo'\G
-#    SHOW CREATE TABLE `vendor11gonzo`\G
+#    SHOW CREATE TABLE `db3`.`vendor11gonzo`\G
 INSERT INTO db3.vendor11gonzo (makef, bizzle)
 VALUES ('', 'Exact')\G
 # Converted for EXPLAIN
@@ -167,23 +167,23 @@ VALUES ('', 'Exact')\G
 select * from  db3.vendor11gonzo  where makef='' and  bizzle= 'Exact'\G
 
 # Query 007 (0 QPS) ID: 0x85FFF5AA78E5FF6A at byte 0 ____________________
-#             total    %      min     max     avg     95%  stddev  median
-# Count           1   12
-# Time         12us    0     12us    12us    12us    12us       0    12us
-# Lock            0    0        0       0       0       0       0       0
-# Rows sent       0    0        0       0       0       0       0       0
-# Rows exam       0    0        0       0       0       0       0       0
-# DBs                                                                     
-# Users                                                                   
+#              total    %     min     max     avg     95%  stddev  median
+#     Count        1   12
+#      Time     12us    0    12us    12us    12us    12us       0    12us
+#      Lock        0    0       0       0       0       0       0       0
+# Rows sent        0    0       0       0       0       0       0       0
+# Rows exam        0    0       0       0       0       0       0       0
+#       DBs  
+#     Users  
 # Time range 2007-12-18T11:48:27 to 2007-12-18T11:48:27
 # Execution times
-#      1us                                                               
-#     10us  #############################################################
-#    100us                                                               
-#      1ms                                                               
-#     10ms                                                               
-#    100ms                                                               
-#       1s                                                               
-#     10s+                                                               
+#   1us
+#  10us  ################################################################
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s
+#  10s+
 BEGIN\G
 
