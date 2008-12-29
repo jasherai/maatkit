@@ -1022,7 +1022,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2707
+# QueryRewriter package 2713
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3403,7 +3403,7 @@ sub parse_timestamp {
 
 =head1 NAME
 
-mk-log-parser - Parse, transform and analyze MySQL logs.
+mk-log-parser - Analyze and review MySQL logs.
 
 =head1 SYNOPSIS
 
@@ -3416,30 +3416,28 @@ server running on host1.  See L<--review> for more on reviewing queries:
 
  mk-log-parser --review h=host1,D=test,t=query_review
 
-Analyze a slow log and report queries that haven't been reviewed yet:
+Or a combination: analyze a slow log and report queries that haven't been
+reviewed yet.
 
  mk-log-parser --analyze --review h=host1,D=test,t=query_review slow.log
 
 =head1 DESCRIPTION
 
-C<mk-log-parser> has two distinct but related functions. Fistly, it can do a
-query analysis by parsing queries from one or more source (see
-L<"QUERY SOURCES"> below) and generating a report that is useful for optimizing
-a server. This report details performance and statistical metrics for the top N
-worst queries in the log files.
+C<mk-log-parser> is a framework for much greater functionality in the future,
+but at present it can analyze MySQL slow query logs and report on aggregate
+statistics by grouping similar queries together and showing the worst ones first
+in a report.  It can also do a "query review," which means to save a sample of
+each type of query into a MySQL table so you can easily see whether you've
+reviewed and analyzed a query before.  The benefit of this is that you can
+keep track of changes to your server's queries and avoid repeated work.  You can
+also save other information with the queries, such as comments, issue numbers in
+your ticketing system, and so on.
 
-Secondly, C<mk-log-parser> can do a "query review." Query reviews are done
-on a regular basis (daily, weekly, etc.) in order to track all distinct queries
-on your server, and to alert you when new queries appear. Information about
-the distinct queries is saved in a table; this information includes when the
-query was first seen, last seen, its performance and statistical metrics,
-etc.
+By default the tool does slow-query-log analysis, and there are options to make
+it do reviews and other advanced functionality.
 
-These two functions, analysis and review, are related because an analysis
-can be done for only not-reviewed queries by using the L<"--analyze">
-option. This allows you to parse log files and automatically ignore queries
-which are "old" and considered "approved." Approved queries are those which
-have been reviewed by a human.
+Note that this is a work in *very* active progress and you should expect
+incompatible changes in the future.
 
 =head1 OUTPUT
 
@@ -3583,50 +3581,95 @@ query into a roughly equivalent SELECT query, and adds that below:
  select  n.column1 = a.column1, n.word3 = a.word3 from db2.table1 n
        inner join db1.table2 a using(table2) \G
 
-=head1 ATTRIBUTE AND METRIC NAMES
+There is different output for query reviews.
 
-When C<mk-log-parser> report on queries' performance and statistical metrics,
-the report is human readable, but the underlying attribute and metric names can
-be important to know. For example, to have them saved/updated in a
-L<"--review"> requires adding columns named for the desired attribute or
-metric.
+=head1 QUERY REVIEWS
 
-Metric names are derived from attribute names. Attribute names are
-usually those seen in slow logs, like Query_time, Lock_time, Rows_sent, etc.
-(If you are using a Percona-patched slow log, then you have a lot more
-attributes like Thread_id, Schema, QC_Hit, etc.).
+A "query review" is the process of storing all the query fingerprints you find
+so you can add meta-data to them, mark them for follow up, etc.  But most
+importantly, you can refer to the stored values on subsequent runs so you'll
+knowh whether you've seen a query before, and not waste your time on it.
 
-Other query sources have other attribute names, but we generally rename these
-attributes to match the slow log attibutes. For example, a process list has
-a Time attribute, but this is the same as the Query_time attribute from a slow
-log so we use Query_time instead. This change is made inside the script, so
-as long as you use Query_time, it will work for slow logs or process lists, or
-other query sources.
+You can do even more with C<mk-log-parser>'s query review functionality, though.
+You can add meta-data to each row by adding more columns.  These can be
+arbitrary columns, such as the ticket ID of a JIRA ticket you open for a given
+query.  And you can add comments and other information.
 
-The metric names are derived from these attribute names by appending the
-following suffixes:
+Next time you run C<mk-log-parser> in L<--review> mode with L<--analyze>, it
+will do the following:
 
-   _sum     -- total
-   _min
-   _max
-   _avg
-   _cnt     -- count
-   _wor     -- worst
-   _95_max  -- max of lower 95%
-   _stddev  -- standard deviation
-   _median
+=over
 
-Of course not all attributes have derived metrics. Most string attributes
-do not have an average (_avg) or standard deviation (_stddev), and the db
-and Schema attributes (if available), do not have any derived metrics (because
-their values are not technically metrics).
+=item *
 
-Therefore, the end result is metric names like Query_time_sum (a.k.a. total
-query time) and Lock_time_wor (worst lock time value).
+It won't show you queries you've already reviewed.  A query is considered to be
+already reviewed if you've set a value for the C<reviewed_by> column.
 
-As noted above, these metric names can be used as column names for the
-review table with L<"--review">. They are also related to L<"--worst"> and
-L<"--sort">.
+=item *
+
+Queries that you've reviewed, and don't appear in the output, will cause gaps in
+the query number sequence in the first line of each paragraph.  And the value
+you've specified for L<--top> will still be honored.  So if you've reviewed all
+queries in the top 10 and you ask for the top 10, you won't see anything in the
+output.
+
+=item *
+
+If you want to see the queries you've already reviewed, you can specify
+L<--reportall>.  Then you'll see the normal analysis output, but you'll also see
+the information from the review table, just below the execution time graph.  For
+example,
+
+  # Review information
+  #      comments: really bad IN() subquery, fix soon!
+  #    first_seen: 2008-12-01 11:48:57
+  #   jira_ticket: 1933
+  #     last_seen: 2008-12-18 11:49:07
+  #      priority: high
+  #   reviewed_by: xaprb
+  #   reviewed_on: 2008-12-18 15:03:11
+
+You can see how useful this meta-data is -- as you analyze your queries, you get
+your comments integrated right into the report.
+
+=back
+
+=head1 INTERNALS
+
+A few things that might help you understand what this tool does.  First, a query
+fingerprint.  This is the abstracted form of a query, which makes it possible to
+group similar queries together.  Abstracting a query removes literal values,
+normalizes whitespace, and so on.  For example, these two queries:
+
+  SELECT name, password FROM user WHERE id='12823';
+  select name ,   password from user
+     where id = 5;
+
+Both of those queries will fingerprint to
+
+  select name, password from user where id=?
+
+Once the query's fingerprint is known, we can then talk about a query as though
+it represents all similar queries.
+
+What C<mk-log-parser> does is analogous to a GROUP BY statement in SQL.  If your
+command-line looks like this,
+
+  mk-log-parser /path/to/slow.log --sort sum \
+     --worst Query_time --top 10
+
+The corresponding pseudo-SQL looks like this:
+
+  SELECT WORST(query BY Query_time), SUM(Query_time), ...
+  FROM /path/to/slow.log
+  GROUP BY FINGERPRINT(query)
+  ORDER BY SUM(Query_time) DESC
+  LIMIT 10
+
+This will matter a lot more in the future when we add more capabilities to
+C<mk-log-parser>.  (At that point we'll dig back in SVN history for the
+documentation that we've removed from this tool due to unimplemented
+functionality.)
 
 =head1 DOWNLOADING
 
@@ -3652,56 +3695,54 @@ prefix.
 
 =item --analyze
 
-short form: -A
+short form: -A; default: yes; negatable: yes
 
-Do a special analysis using --review.
+Group similar queries and report on them.
 
-When used with L<"--review">, this option causes a special type of analysis
-to be done. First, all queries are stored/updated for L<"--review"> and then
-analyzed and ranked to determine the L<"--top"> worst according to
-L<"--worst"> and L<"--sort"> (just like a regular analysis). Finally, queries
-in the top worst which have not been reviewed are removed from the report,
-but their original query rank is kept the same. Therefore you will probably
-see a random spread of query ranks reported (e.g., queries 3, 4, 8, 10).
-Use the L<"--reportall"> option if you want all the top worst queries to
-be reported.
-
-See L<"--review"> for the minimal table structure required for the query
-review table.
+This is the standard slow-log analysis functionality.  See OUTPUT for the
+description of what this does and what the results look like.
 
 =item --fingerprints
 
 short form: -f
 
-Report fingerprints in analyze.
+Add query fingerprints to the L<--analyze> report.  This is mostly useful for
+debugging purposes.
 
 =item --forexplain
 
 negatable: yes; default: yes
 
-Add code snippets to make it easy to run SHOW CREATE TABLE and SHOW TABLE
-STATUS.
+Print extra information to make analysis easy.
 
-Shows some extra information about the query and the tables in it, to help you
-copy-and-paste while working to optimize the query.
+This option adds code snippets to make it easy to run SHOW CREATE TABLE and SHOW
+TABLE STATUS for the query's tables.  It also rewrites non-SELECT queries into a
+SELECT that might be helpful for determining the non-SELECT statement's index
+usage.
 
 =item --header
 
 default: yes; negatable: yes
 
-Print an informative header about the entire analysis run.
+Print information about the entire analysis run.
+
+See L<OUTPUT> for more information on the header.
 
 =item --review
 
 short form: -R; type: DSN
 
-Save the results of a query review in this DSN.
+Store a sample of each class of query in this DSN.
 
-The option specifies a table to store all unique query fingerprints in.  The
-table must have at least the following columns:
+This option disables --analyze by default, but you can re-enable it if you want.
+It's a little faster to disable it, but not much.
+
+The argument specifies a table to store all unique query fingerprints in.  The
+table must have at least the following columns, but you can add any more columns
+you wish:
 
   CREATE TABLE query_review (
-     checksum     BIGINT UNSIGNED NOT NULL PRIMARY KEY, -- md5 of fingerprint
+     checksum     BIGINT UNSIGNED NOT NULL PRIMARY KEY,
      fingerprint  TEXT NOT NULL,
      sample       TEXT NOT NULL,
      first_seen   DATETIME,
@@ -3709,33 +3750,29 @@ table must have at least the following columns:
      reviewed_by  VARCHAR(20),
      reviewed_on  DATETIME,
      comments     VARCHAR(100),
-     cnt          INT UNSIGNED NOT NULL DEFAULT 1
   );
 
-As the log is parsed, each time a "new" query is seen it is stored into this
-table.  The first_seen column is populated with either the query's timestamp
-from the log, or the current timestamp if that is unknown.
+As the tool parses the log, it keeps track of which query fingerprints it has
+seen.  Each time it sees a new one, it inserts the query into this table.  In
+this mode, C<mk-log-parser> does not store queries and compute statistics about
+them, and it doesn't print out a report.  It just runs forever until either it
+reaches the end of the input, or you cancel it.
 
-Any column names that match L<"ATTRIBUTE AND METRIC NAMES"> will be
-populated/update with the corresponding value. For example, if there is
-a C<Query_time_sum> column, then it will be incremented to keep track of
-the query's total time.
+When you're done, your table should contain a row for each fingerprint.
 
-Since this option enables completely different behavior from the default slow
-log analysis, certain analysis-related options, like L<"--top">, are ignored
-when using --review.
-
-If you want to combine a review and an analysis, see L<"--analyze">.
+Since this option behaves differently from the default slow log analysis,
+by default it ignores certain analysis-related options, like L<--top>.  If you
+combine review and analysis by specifying L<--analyze> it will re-enable all the
+normal options.
 
 =item --reportall
 
-Report all queries with --analyze and --review.
+With L<--review> and L<--analyze>, include all queries, even if they have
+already been reviewed.
 
 =item --rusage
 
 default: yes; negatable: yes
-
-Show resource usage report.
 
 Report CPU times and memory usage in the header of the query analysis report.
 
@@ -3745,47 +3782,28 @@ short form: -s; type: string; default: sum
 
 Sort the reported queries by this aggregate value of L<--worst>.
 
-Valid aggregate values are: sum, min, max, avg, cnt.
-
-See also L<"--worst"> and L<"ATTRIBUTE AND METRIC NAMES">.
+Valid aggregate values are: sum, min, max, avg, cnt.  For example, if you want
+to sort by the sum of Query_time, then specify --worst Query_time --sort sum.
 
 =item --top
 
 short form: -t; type: string; default: 95%
 
-Report only the top N worst queries.
+Limit output to the worst offenders.
 
-See also L<"--worst">.
-
-=item --type
-
-type: string; default: slow
-
-Specify the log format: slow, general, binary.
-
-mk-log-parser has special parsers for various log types.  The slow log parser
-can handle ordinary slow logs and slow logs with various combinations of
-Percona's patches, some of which are included in MySQL 5.1 and newer.  (If
-you're trying to analyze the performance of your server, a Percona build is
-extremely helpful.)
-
-The general and binary log types are not yet integrated into mk-log-parser,
-although the code exists because it's in a module shared with other Maatkit
-tools.
+If the argument is an integer, report only the top N worst queries.  If the
+argument is an integer followed by the C<%> sign, report that percentage of the
+worst queries.
 
 =item --worst
 
 short form: -w; type: string; default: Query_time
 
-Find which queries are the worst according to this attribute.
+The attribute that measures a query's badness.
 
-Only basic attributes are valid: Query_time, Lock_time, Rows_read, etc.
-
-This option affects the report. Only the L<"--top"> N worst queries
-according to this attribute are reported. The top N worst queries are
-determined by L<"--sort">.
-
-See also L<"ATTRIBUTE AND METRIC NAMES">.
+Only basic attributes are valid: Query_time, Lock_time, Rows_read, etc.  This
+option is not fully implemented.  It's possible that non-default values will do
+strange things.
 
 =back
 
