@@ -3737,6 +3737,23 @@ you wish:
      comments     VARCHAR(100),
   );
 
+The columns are as follows:
+
+  COLUMN       MEANING
+  ===========  ===============
+  checksum     A 64-bit checksum of the query fingerprint
+  fingerprint  The abstracted version of the query; its primary key
+  sample       The query text of a sample of the class of queries
+  first_seen   The smallest timestamp of this class of queries
+  last_seen    The largest timestamp of this class of queries
+  reviewed_by  Initially NULL; if set, query is skipped thereafter
+  reviewed_on  Initially NULL; not assigned any special meaning
+  comments     Initially NULL; not assigned any special meaning
+
+Note that the C<fingerprint> column is the true primary key for a class of
+queries.  The C<checksum> is just a cryptographic hash of this value, which
+provides a shorter value that is very likely to also be unique.
+
 As the tool parses the log, it keeps track of which query fingerprints it has
 seen.  Each time it sees a new one, it inserts the query into this table.  When
 you're done, your table should contain a row for each fingerprint.

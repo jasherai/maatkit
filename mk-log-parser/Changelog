@@ -3,10 +3,13 @@ Changelog for mk-log-parser:
    * Added --analyze option to combine analysis and --review (issue 162).
    * Added --fingerprints (-f) option (issue 160).
    * Trying to take log of 0 caused a crash (issue 141).
-   * Greatly improved performance of log parsing and fingerprinting (issue 137).
-   * Slow log parsing was buggy (issue 136).
+   * Improved performance of log parsing and fingerprinting about 2x (issue 137).
+   * Slow log parsing was buggy (issue 136 and many smaller issues discovered).
    * Converted a lot of hardcoded things into dynamically built functions.
-   * Added some more information to the default output.
+   * Added more information to the default output and reformatted it.
+   * Incompatible changes to fingerprint; old reviews will lost their history.
+   * Much enhanced --review functionality.
+   * Default --top to 95% to analyze the top 95% of the load (issue 171).
 
 2008-12-01: version 0.9.0
 
