@@ -5,7 +5,7 @@ mk-deadlock-logger 1.0.13
 mk-duplicate-key-checker 1.1.9
 mk-find 0.9.14
 mk-heartbeat 1.0.12
-mk-log-parser 0.9.0
+mk-log-parser 0.9.1
 mk-parallel-dump 1.0.11
 mk-parallel-restore 1.0.10
 mk-query-profiler 1.1.13
@@ -15,6 +15,6 @@ mk-slave-find 1.0.4
 mk-slave-move 0.9.4
 mk-slave-prefetch 1.0.5
 mk-slave-restart 1.0.10
-mk-table-checksum 1.2.1
+mk-table-checksum 1.2.2
 mk-table-sync 1.0.11
 mk-visual-explain 1.0.12
