@@ -308,3 +308,37 @@ Revision 2581
     28	../mk-log-parser:1956 0.72835 187439: $lp->parse_event($fh, sub { $sm->calc_event_metrics(@_) });
     29	../mk-log-parser:1648 0.63552 236517: my $avg = $e_ds->{total} / $fp_ds->{count};
     30	../mk-log-parser:1594 0.62704 78839: if ( exists $self->{metrics}->{unique}->{ $fp } ) {
+
+Revision 2714
+0.28user 0.12system 0:00.42elapsed 95%CPU (0avgtext+0avgdata 0maxresident)k
+0inputs+16outputs (0major+1723minor)pagefaults 0swaps
+     1	../mk-log-parser:782 0.00452 477: next unless $para =~ m/^=head1 OPTIONS/;
+     2	../mk-log-parser:828 0.00042 23: if ( my ($line)
+     3	../mk-log-parser:802 0.00030 30: %props = map { split(/: /, $_) } split(/; /, $para);
+     4	../mk-log-parser:45 0.00026 1: my $self = {
+     5	../mk-log-parser:814 0.00020 10: push @spec, {
+     6	../mk-log-parser:2904 0.00019 1: Transformers->import( qw(shorten micro_t percentage_of ts) );
+     7	../mk-log-parser:839 0.00016 23: last if $para =~ m/^=item --/;
+     8	/usr/share/perl/5.10/Getopt/Long.pm:362 0.00016 12: $opt = $+ if $opt =~ /^$prefix+(.*)$/s;
+     9	../mk-log-parser:386 0.00014 12: my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+    10	../mk-log-parser:810 0.00013 10: $para =~ s/$POD_link_re/$1/go;
+    11	../mk-log-parser:809 0.00013 10: $para =~ s/\s+/ /g;
+    12	/usr/share/perl/5.10/Getopt/Long.pm:775 0.00013 12: if ( $opt !~ m;^
+    13	../mk-log-parser:808 0.00013 10: $para =~ s/\s+\Z//g;
+    14	../mk-log-parser:679 0.00012 1: exit(0);
+    15	../mk-log-parser:776 0.00012 1: open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+    16	/usr/share/perl/5.10/Getopt/Long.pm:889 0.00011 12: ($names[0], $orig);
+    17	../mk-log-parser:791 0.00010 1: $para =~ s/$POD_link_re/$1/go;
+    18	../mk-log-parser:796 0.00010 11: if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+    19	../mk-log-parser:406 0.00009 12: if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
+    20	../mk-log-parser:801 0.00009 9: $para =~ s/\s+\Z//g;
+    21	../mk-log-parser:824 0.00009 11: while ( $para = <$fh> ) {
+    22	../mk-log-parser:811 0.00009 10: if ( $para =~ m/^[^.]+\.$/ ) {
+    23	../mk-log-parser:410 0.00009 12: if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
+    24	../mk-log-parser:395 0.00008 12: $opt->{n} = $opt->{s} =~ m/!/;
+    25	/usr/share/perl/5.10/Getopt/Long.pm:796 0.00008 12: my ($names, $spec) = ($1, $2);
+    26	../mk-log-parser:835 0.00008 24: if ( $para =~ m/^=head1/ ) {
+    27	/usr/share/perl/5.10/Getopt/Long.pm:809 0.00008 12: @names =  split (/\|/, $names);
+    28	../mk-log-parser:392 0.00008 12: die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
+    29	/usr/share/perl/5.10/Getopt/Long.pm:819 0.00008 12: if ( $spec eq '' || $spec eq '+' || $spec eq '!' ) {
+    30	/usr/share/perl/5.10/Getopt/Long.pm:880 0.00007 13: $opctl->{$_} = $entry;
