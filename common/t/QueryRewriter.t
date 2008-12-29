@@ -104,6 +104,15 @@ is(
    'Removes one-line EOL comments in fingerprints',
 );
 
+=pod
+is(
+   $q->fingerprint(
+      "select a,b ,c , d from tbl where a=5 or a = 5 or a=5 or a =5"),
+   "select a, b, c, d from tbl where a=? or a=? or a=? or a=?",
+   "Normalizes commas and equals",
+);
+=cut
+
 is(
    $q->fingerprint("select 5.001, 5001. from foo"),
    "select ?, ? from foo",

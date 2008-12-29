@@ -99,6 +99,11 @@ sub fingerprint {
               }
               {$1 /*repeat$2*/}xg; # UNION
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+   # The following are disabled because of speed issues.  Should we try to
+   # normalize whitespace between and around operators?  My gut feeling is no.
+   # $query =~ s/ , | ,|, /,/g;    # Normalize commas
+   # $query =~ s/ = | =|= /=/g;       # Normalize equals
+   # $query =~ s# [,=+*/-] ?|[,=+*/-] #+#g;    # Normalize operators
    return $query;
 }
 
