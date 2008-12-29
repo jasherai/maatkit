@@ -31,7 +31,6 @@ package QueryReview;
 #    reviewed_by
 #    reviewed_on
 #    comments
-#    cnt
 # The QueryReview module keeps these (and potentially other) columns
 # updated for each unique query (also called "events"). The module is
 # given events by calling cache_event() which adds the event to the
@@ -78,7 +77,7 @@ sub new {
 
    my @basic_cols
       = qw(checksum fingerprint sample first_seen last_seen
-           reviewed_by reviewed_on comments cnt);
+           reviewed_by reviewed_on comments);
    foreach my $col ( @basic_cols ) {
       die "Query review table $args{db_tbl} does not have a $col column"
          unless $args{tbl_struct}->{is_col}->{$col};
@@ -89,7 +88,7 @@ sub new {
    # Pre-load cache of fingerprint-checksums from the query review table.
    # TODO: pre-load extra cols
    my $sql = "SELECT fingerprint, CONV(checksum, 10, 16) as checksum_hex, "
-           . "cnt, first_seen, last_seen "
+           . "first_seen, last_seen "
            . "FROM $args{db_tbl} "
            . ($args{where} ? $args{where} : '');
    my %cache = map {
@@ -97,7 +96,6 @@ sub new {
          checksum => $_->{checksum_hex},
          dirty    => 0,
          cols     => {
-            cnt        => $_->{cnt},
             first_seen => $_->{first_seen},
             last_seen  => $_->{last_seen},
          }
@@ -153,7 +151,6 @@ sub cache_event {
             checksum => $checksum,
             dirty    => 1,
             cols     => {
-               cnt        => $review_info->{$checksum}->{cnt},
                first_seen => $review_info->{$checksum}->{first_seen} || '',
                last_seen  => $review_info->{$checksum}->{last_seen}  || '',
                # TODO: init extra cols
@@ -179,7 +176,6 @@ sub cache_event {
             checksum => $checksum,
             dirty    => 0,
             cols     => {
-               cnt        => 1,
                first_seen => $ts,
                last_seen  => $ts,
             },
@@ -210,8 +206,6 @@ sub _update_cache {
    my $fp_ds = $self->{cache}->{$group_by};
 
    $fp_ds->{dirty} = 1;  # group_by in cache differs from query review tbl
-
-   $fp_ds->{cols}->{cnt}++;  # count of group_by's occurrences
 
    # Update first_seen and last_seen. Timestamps may not always increase.
    # They can decrease, for example, if the user parses and old log.
