@@ -2688,7 +2688,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 2683
+# QueryReview package 2719
 # ###########################################################################
 package QueryReview;
 
@@ -2709,7 +2709,7 @@ sub new {
 
    my @basic_cols
       = qw(checksum fingerprint sample first_seen last_seen
-           reviewed_by reviewed_on comments cnt);
+           reviewed_by reviewed_on comments);
    foreach my $col ( @basic_cols ) {
       die "Query review table $args{db_tbl} does not have a $col column"
          unless $args{tbl_struct}->{is_col}->{$col};
@@ -2718,7 +2718,7 @@ sub new {
    my @extra_cols = grep { !$basic_cols{$_} } @{$args{tbl_struct}->{cols}};
 
    my $sql = "SELECT fingerprint, CONV(checksum, 10, 16) as checksum_hex, "
-           . "cnt, first_seen, last_seen "
+           . "first_seen, last_seen "
            . "FROM $args{db_tbl} "
            . ($args{where} ? $args{where} : '');
    my %cache = map {
@@ -2726,7 +2726,6 @@ sub new {
          checksum => $_->{checksum_hex},
          dirty    => 0,
          cols     => {
-            cnt        => $_->{cnt},
             first_seen => $_->{first_seen},
             last_seen  => $_->{last_seen},
          }
@@ -2777,7 +2776,6 @@ sub cache_event {
             checksum => $checksum,
             dirty    => 1,
             cols     => {
-               cnt        => $review_info->{$checksum}->{cnt},
                first_seen => $review_info->{$checksum}->{first_seen} || '',
                last_seen  => $review_info->{$checksum}->{last_seen}  || '',
             },
@@ -2799,7 +2797,6 @@ sub cache_event {
             checksum => $checksum,
             dirty    => 0,
             cols     => {
-               cnt        => 1,
                first_seen => $ts,
                last_seen  => $ts,
             },
@@ -2828,8 +2825,6 @@ sub _update_cache {
    my $fp_ds = $self->{cache}->{$group_by};
 
    $fp_ds->{dirty} = 1;  # group_by in cache differs from query review tbl
-
-   $fp_ds->{cols}->{cnt}++;  # count of group_by's occurrences
 
    my $ts = _parse_timestamp($event->{ts});
    $fp_ds->{cols}->{first_seen} = $ts if $ts le $fp_ds->{cols}->{first_seen};
@@ -3658,21 +3653,6 @@ C<mk-log-parser>.  (At that point we'll dig back in SVN history for the
 documentation that we've removed from this tool due to unimplemented
 functionality.)
 
-=head1 DOWNLOADING
-
-You can download Maatkit from Google Code at
-L<http://code.google.com/p/maatkit/>, or you can get any of the tools
-easily with a command like the following:
-
-   wget http://www.maatkit.org/get/toolname
-   or
-   wget http://www.maatkit.org/trunk/toolname
-
-Where C<toolname> can be replaced with the name (or fragment of a name) of any
-of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
-needed.  The first URL gets the latest released version of the tool, and the
-second gets the latest trunk code from Subversion.
-
 =head1 OPTIONS
 
 Some options are negatable by specifying them in their long form with a --no
@@ -3734,7 +3714,7 @@ you wish:
      last_seen    DATETIME,
      reviewed_by  VARCHAR(20),
      reviewed_on  DATETIME,
-     comments     VARCHAR(100),
+     comments     VARCHAR(100)
   );
 
 The columns are as follows:
@@ -3801,6 +3781,21 @@ option is not fully implemented.  It's possible that non-default values will do
 strange things.
 
 =back
+
+=head1 DOWNLOADING
+
+You can download Maatkit from Google Code at
+L<http://code.google.com/p/maatkit/>, or you can get any of the tools
+easily with a command like the following:
+
+   wget http://www.maatkit.org/get/toolname
+   or
+   wget http://www.maatkit.org/trunk/toolname
+
+Where C<toolname> can be replaced with the name (or fragment of a name) of any
+of the Maatkit tools.  Once downloaded, they're ready to run; no installation is
+needed.  The first URL gets the latest released version of the tool, and the
+second gets the latest trunk code from Subversion.
 
 =head1 SYSTEM REQUIREMENTS
 
