@@ -274,3 +274,37 @@ Revision 2705
     28	../mk-log-parser:1075 0.32659 93604: $query =~ s/".*?"/?/g;                # quoted strings
     29	../mk-log-parser:1070 0.31848 93604: $query =~ s/$mlc_re//go;
     30	../mk-log-parser:1067 0.31825 93741: $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
+
+Revision 2581
+65.09user 65.24system 2:11.11elapsed 99%CPU (0avgtext+0avgdata 0maxresident)k
+0inputs+118104outputs (0major+5354minor)pagefaults 0swaps
+     1	../mk-log-parser:1071 25.43445 78839: $query =~ s{
+     2	../mk-log-parser:1095 6.96144 78839: $query =~ s/(?<=\w_)\d+(_\d+)?\b/$1 ? "N_N" : "N"/eg;
+     3	../mk-log-parser:1300 5.12337 471021: if ( $line =~ m/^# No InnoDB statistics available/ ) {
+     4	../mk-log-parser:1401 2.01991 471021: $line = <$fh> unless $done;
+     5	../mk-log-parser:1088 1.81214 78839: $query =~ s/\s{2,}/ /g;                      # Collapse all whitespace
+     6	../mk-log-parser:1627 1.45203 393465: my ( $self, $metric_val, $handler, $fp_ds ) = @_;
+     7	../mk-log-parser:1259 1.29313 471055: if ( $line =~ m/Version:.+ started with:/ ) {
+     8	../mk-log-parser:1399 1.28450 471021: $event->{NR} = $NR;
+     9	../mk-log-parser:1350 1.21588 187482: @{$event}{keys %hash} = values %hash;
+    10	../mk-log-parser:1617 1.19396 473034: my $metric_val = $event->{ $handler->{metric} };
+    11	../mk-log-parser:1681 1.08349 393465: return;
+    12	../mk-log-parser:1634 1.07682 393465: my $g_ds = $self->{metrics}->{all}->{ $metric } ||= {};
+    13	../mk-log-parser:1254 1.05129 471055: if ( !$mode && $line =~ m/^# [A-Z]/ ) {
+    14	../mk-log-parser:1618 0.96741 473034: next METRIC if !defined $metric_val;
+    15	../mk-log-parser:1636 0.95925 393465: if ( $handler->{type} == METRIC_TYPE_NUMERIC ) {
+    16	../mk-log-parser:1620 0.95511 393465: $self->_calc_metric($metric_val, $handler, $fp_ds);
+    17	../mk-log-parser:1363 0.94712 234360: $type = 0;
+    18	../mk-log-parser:1252 0.94429 471055: my $handled_line = 0;
+    19	../mk-log-parser:1367 0.94032 471021: if ( !$handled_line ) {
+    20	../mk-log-parser:1086 0.92112 78839: $query =~ s/(["']).*?\1/S/g;                 # Turn quoted strings into S
+    21	../mk-log-parser:1633 0.91638 393465: my $e_ds = $fp_ds->{ $metric } ||= {};
+    22	../mk-log-parser:1628 0.90424 393465: my $metric = $handler->{metric};
+    23	../mk-log-parser:1630 0.87544 393465: $metric_val = $handler->{transformer}->($metric_val)
+    24	../mk-log-parser:1251 0.87090 471055: MKDEBUG && _d('type: ', $type, ' ', $line);
+    25	../mk-log-parser:1089 0.84491 78839: $query =~ s/[\n\r\f]+/ /g;                   # Collapse newlines etc
+    26	../mk-log-parser:1415 0.78085 93720: return $event;
+    27	../mk-log-parser:1653 0.74255 236517: push @{ $e_ds->{all_vals} }, $metric_val
+    28	../mk-log-parser:1956 0.72835 187439: $lp->parse_event($fh, sub { $sm->calc_event_metrics(@_) });
+    29	../mk-log-parser:1648 0.63552 236517: my $avg = $e_ds->{total} / $fp_ds->{count};
+    30	../mk-log-parser:1594 0.62704 78839: if ( exists $self->{metrics}->{unique}->{ $fp } ) {
