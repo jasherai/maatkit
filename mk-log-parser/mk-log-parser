@@ -2926,9 +2926,6 @@ $opt_parser->{descr}  = q{parses and analyzes MySQL log files.  With no }
 my %opts = $opt_parser->parse();
 
 if ( !$opts{help} ) {
-   if ( $opts{A} && !$opts{R} ) {
-      $opt_parser->error('--analyze requires --review');
-   }
    if ( $opts{R} && (!defined $opts{R}->{D} || !defined $opts{R}->{t}) ) {
       $opt_parser->error('The --review DSN requires a D (database) and t"
          . " (table) part specifying the query review table');
@@ -2939,8 +2936,6 @@ if ( !$opts{help} ) {
 }
 
 $opt_parser->usage_or_errors(%opts);
-
-my $do_analysis = ($opts{R} && $opts{A}) || (!$opts{R} && !$opts{A}) ? 1 : 0;
 
 # #############################################################################
 # Set up callbacks for the various event handling behaviors.
@@ -2972,7 +2967,7 @@ push @callbacks, sub {
 };
 
 push @callbacks, get_query_review_callback() if $opts{R};
-push @callbacks, get_analyze_callback()      if $do_analysis;
+push @callbacks, get_analyze_callback()      if $opts{A};
 
 # ############################################################################
 # Parse the input.
@@ -3003,12 +2998,11 @@ while ( $oktorun && (my $fh = shift(@fhs)) ) {
 # Flush before reporting so that the report gets the latest review vals.
 $qv->flush_event_cache() if $opts{R};
 
-if ( $do_analysis ) {
+if ( $opts{A} ) {
    my @worst = find_top_queries($sm, $opts{s}, $opts{t}, $opts{w});
    report_queries(@worst);
 }
 
-# Disconnect after reporting because the report uses dbh to get review vals.
 $dp->disconnect($dbh) if $opts{R};
 
 exit;
@@ -3025,14 +3019,13 @@ sub get_query_review_callback {
          . "does not exist or you do not have INSERT privileges";
    }
    my $du     = new MySQLDump();
-   my $qv_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
+   my $db_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
    my $struct = $tp->parse(
       $du->dump($dbh, $q, $opts{R}->{D}, $opts{R}->{t}, 'table'));
    $qv        = new QueryReview(
       group_by    => 'fingerprint',
-      fingerprint => sub { return $_[1]->{fingerprint}; },
       dbh         => $dbh,
-      db_tbl      => $qv_tbl,
+      db_tbl      => $db_tbl,
       tbl_struct  => $struct,
    );
 
@@ -3046,21 +3039,23 @@ sub get_query_review_callback {
 
 sub get_analyze_callback {
    $sm = new SQLMetrics(
-      group_by      => 'fingerprint',
-      worst_attrib  => $opts{w}, # TODO this can be an expr, add to attributes
-      attributes    => [qw(
-                          Query_time
-                          Lock_time
-                          Rows_read
-                          Rows_sent
-                          Rows_examined
-                          user
-                          db|Schema
-                          ts
-                       )],
-                       # TODO: add values from command-line options
-                       # TODO: name=expression syntax
-                       #withoutlocks=Query_time-Lock_time
+      group_by     => 'fingerprint',
+      worst_attrib => $opts{w},  # TODO this can be an expr, add to attributes
+      attributes   => [
+         qw(
+            Query_time
+            Lock_time
+            Rows_read
+            Rows_sent
+            Rows_examined
+            user
+            db|Schema
+            ts
+            )
+      ],
+      # TODO: add values from command-line options
+      # TODO: name=expression syntax
+      #withoutlocks=Query_time-Lock_time
    );
 
    return sub {
@@ -3162,7 +3157,7 @@ sub report_queries {
 
    my @review_cols;
    my %exclude_cols = (fingerprint => 1, sample => 1, checksum => 1);
-   if ( $opts{A} ) {
+   if ( $opts{R} ) {
       @review_cols = sort
                      grep { !$exclude_cols{$_} }
                      (@{$qv->{basic_cols}}, @{$qv->{extra_cols}});
@@ -3175,9 +3170,9 @@ sub report_queries {
       my $checksum    =  QueryReview::make_checksum($fingerprint);
 
       my $review_vals;
-      if ( $opts{A} ) {
+      if ( $opts{R} ) {
          $review_vals = get_review_vals($checksum, \@review_cols);
-         return next QUERY if ( defined $review_vals->{reviewed_by}
+         next QUERY if ( defined $review_vals->{reviewed_by}
                                 && !$opts{reportall} );
       }
 
@@ -3243,7 +3238,7 @@ sub report_queries {
       # TODO
       # print "# Time clustering\n";
 
-      if ( $opts{A} ) {
+      if ( $opts{R} ) {
          print "# Review information\n";
          foreach my $j ( 0..$#review_cols ) {
             my $col = $review_cols[$j];
@@ -3291,10 +3286,10 @@ sub report_queries {
 sub get_review_vals {
    my ( $checksum, $cols ) = @_;
    return unless defined $checksum;
-   my $qv_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
+   my $db_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
    my $select_cols  = join(',', @$cols);
    my $sql  = "SELECT $select_cols, CONV(checksum,10,16) AS checksum_conv "
-            . "FROM $qv_tbl "
+            . "FROM $db_tbl "
             . "WHERE checksum=CONV('$checksum',16,10)";
    MKDEBUG && _d("select for review vals: $sql");
    # There should only be 1 result.
@@ -3416,14 +3411,9 @@ server running on host1.  See L<--review> for more on reviewing queries:
 
  mk-log-parser --review h=host1,D=test,t=query_review
 
-Or a combination: analyze a slow log and report queries that haven't been
-reviewed yet.
-
- mk-log-parser --analyze --review h=host1,D=test,t=query_review slow.log
-
 =head1 DESCRIPTION
 
-C<mk-log-parser> is a framework for much greater functionality in the future,
+C<mk-log-parser> is a framework for much more functionality in the future,
 but at present it can analyze MySQL slow query logs and report on aggregate
 statistics by grouping similar queries together and showing the worst ones first
 in a report.  It can also do a "query review," which means to save a sample of
@@ -3434,7 +3424,7 @@ also save other information with the queries, such as comments, issue numbers in
 your ticketing system, and so on.
 
 By default the tool does slow-query-log analysis, and there are options to make
-it do reviews and other advanced functionality.
+it do reviews.
 
 Note that this is a work in *very* active progress and you should expect
 incompatible changes in the future.
@@ -3581,8 +3571,6 @@ query into a roughly equivalent SELECT query, and adds that below:
  select  n.column1 = a.column1, n.word3 = a.word3 from db2.table1 n
        inner join db1.table2 a using(table2) \G
 
-There is different output for query reviews.
-
 =head1 QUERY REVIEWS
 
 A "query review" is the process of storing all the query fingerprints you find
@@ -3595,8 +3583,8 @@ You can add meta-data to each row by adding more columns.  These can be
 arbitrary columns, such as the ticket ID of a JIRA ticket you open for a given
 query.  And you can add comments and other information.
 
-Next time you run C<mk-log-parser> in L<--review> mode with L<--analyze>, it
-will do the following:
+Next time you run C<mk-log-parser> in L<--review> mode, it will do the
+following:
 
 =over
 
@@ -3636,14 +3624,14 @@ your comments integrated right into the report.
 
 =head1 INTERNALS
 
-A few things that might help you understand what this tool does.  First, a query
+A few concepts might help you understand what this tool does.  First, a query
 fingerprint.  This is the abstracted form of a query, which makes it possible to
 group similar queries together.  Abstracting a query removes literal values,
 normalizes whitespace, and so on.  For example, these two queries:
 
   SELECT name, password FROM user WHERE id='12823';
-  select name ,   password from user
-     where id = 5;
+  select name,   password from user
+     where id=5;
 
 Both of those queries will fingerprint to
 
@@ -3655,8 +3643,7 @@ it represents all similar queries.
 What C<mk-log-parser> does is analogous to a GROUP BY statement in SQL.  If your
 command-line looks like this,
 
-  mk-log-parser /path/to/slow.log --sort sum \
-     --worst Query_time --top 10
+  mk-log-parser /path/to/slow.log --sort sum --worst Query_time --top 10
 
 The corresponding pseudo-SQL looks like this:
 
@@ -3700,7 +3687,8 @@ short form: -A; default: yes; negatable: yes
 Group similar queries and report on them.
 
 This is the standard slow-log analysis functionality.  See OUTPUT for the
-description of what this does and what the results look like.
+description of what this does and what the results look like.  You can disable
+it for L<--review> if you don't want to see any reports on queries.
 
 =item --fingerprints
 
@@ -3734,9 +3722,6 @@ short form: -R; type: DSN
 
 Store a sample of each class of query in this DSN.
 
-This option disables --analyze by default, but you can re-enable it if you want.
-It's a little faster to disable it, but not much.
-
 The argument specifies a table to store all unique query fingerprints in.  The
 table must have at least the following columns, but you can add any more columns
 you wish:
@@ -3753,22 +3738,15 @@ you wish:
   );
 
 As the tool parses the log, it keeps track of which query fingerprints it has
-seen.  Each time it sees a new one, it inserts the query into this table.  In
-this mode, C<mk-log-parser> does not store queries and compute statistics about
-them, and it doesn't print out a report.  It just runs forever until either it
-reaches the end of the input, or you cancel it.
+seen.  Each time it sees a new one, it inserts the query into this table.  When
+you're done, your table should contain a row for each fingerprint.
 
-When you're done, your table should contain a row for each fingerprint.
-
-Since this option behaves differently from the default slow log analysis,
-by default it ignores certain analysis-related options, like L<--top>.  If you
-combine review and analysis by specifying L<--analyze> it will re-enable all the
-normal options.
+If you enable this option and disable L<--analyze>, the tool will ignore certain
+analysis-related options, like L<--top>.
 
 =item --reportall
 
-With L<--review> and L<--analyze>, include all queries, even if they have
-already been reviewed.
+Include all queries, even if they have already been reviewed.
 
 =item --rusage
 

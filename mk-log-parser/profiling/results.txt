@@ -310,35 +310,35 @@ Revision 2581
     30	../mk-log-parser:1594 0.62704 78839: if ( exists $self->{metrics}->{unique}->{ $fp } ) {
 
 Revision 2714
-0.28user 0.12system 0:00.42elapsed 95%CPU (0avgtext+0avgdata 0maxresident)k
-0inputs+16outputs (0major+1723minor)pagefaults 0swaps
-     1	../mk-log-parser:782 0.00452 477: next unless $para =~ m/^=head1 OPTIONS/;
-     2	../mk-log-parser:828 0.00042 23: if ( my ($line)
-     3	../mk-log-parser:802 0.00030 30: %props = map { split(/: /, $_) } split(/; /, $para);
-     4	../mk-log-parser:45 0.00026 1: my $self = {
-     5	../mk-log-parser:814 0.00020 10: push @spec, {
-     6	../mk-log-parser:2904 0.00019 1: Transformers->import( qw(shorten micro_t percentage_of ts) );
-     7	../mk-log-parser:839 0.00016 23: last if $para =~ m/^=item --/;
-     8	/usr/share/perl/5.10/Getopt/Long.pm:362 0.00016 12: $opt = $+ if $opt =~ /^$prefix+(.*)$/s;
-     9	../mk-log-parser:386 0.00014 12: my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-    10	../mk-log-parser:810 0.00013 10: $para =~ s/$POD_link_re/$1/go;
-    11	../mk-log-parser:809 0.00013 10: $para =~ s/\s+/ /g;
-    12	/usr/share/perl/5.10/Getopt/Long.pm:775 0.00013 12: if ( $opt !~ m;^
-    13	../mk-log-parser:808 0.00013 10: $para =~ s/\s+\Z//g;
-    14	../mk-log-parser:679 0.00012 1: exit(0);
-    15	../mk-log-parser:776 0.00012 1: open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
-    16	/usr/share/perl/5.10/Getopt/Long.pm:889 0.00011 12: ($names[0], $orig);
-    17	../mk-log-parser:791 0.00010 1: $para =~ s/$POD_link_re/$1/go;
-    18	../mk-log-parser:796 0.00010 11: if ( ($option) = $para =~ m/^=item --(.*)/ ) {
-    19	../mk-log-parser:406 0.00009 12: if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
-    20	../mk-log-parser:801 0.00009 9: $para =~ s/\s+\Z//g;
-    21	../mk-log-parser:824 0.00009 11: while ( $para = <$fh> ) {
-    22	../mk-log-parser:811 0.00009 10: if ( $para =~ m/^[^.]+\.$/ ) {
-    23	../mk-log-parser:410 0.00009 12: if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
-    24	../mk-log-parser:395 0.00008 12: $opt->{n} = $opt->{s} =~ m/!/;
-    25	/usr/share/perl/5.10/Getopt/Long.pm:796 0.00008 12: my ($names, $spec) = ($1, $2);
-    26	../mk-log-parser:835 0.00008 24: if ( $para =~ m/^=head1/ ) {
-    27	/usr/share/perl/5.10/Getopt/Long.pm:809 0.00008 12: @names =  split (/\|/, $names);
-    28	../mk-log-parser:392 0.00008 12: die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
-    29	/usr/share/perl/5.10/Getopt/Long.pm:819 0.00008 12: if ( $spec eq '' || $spec eq '+' || $spec eq '!' ) {
-    30	/usr/share/perl/5.10/Getopt/Long.pm:880 0.00007 13: $opctl->{$_} = $entry;
+33.72user 45.84system 1:20.06elapsed 99%CPU (0avgtext+0avgdata 0maxresident)k
+0inputs+68376outputs (0major+14052minor)pagefaults 0swaps
+     1	../mk-log-parser:1078 7.63237 93604: $query =~ s{                          # Anything vaguely resembling numbers
+     2	../mk-log-parser:1462 3.77607 330270: if ( !$got_ts
+     3	../mk-log-parser:1531 1.44177 93741: ++$num_events;
+     4	../mk-log-parser:1508 1.37287 330270: if ( !$found_arg && $pos == $len ) {
+     5	../mk-log-parser:1430 1.25774 93741: if ( $stmt =~ s{
+     6	../mk-log-parser:1083 1.20696 93604: $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+     7	../mk-log-parser:1069 1.12506 93604: $query =~ s/$olc_re//go;
+     8	../mk-log-parser:1458 1.08634 377133: my $line = $1;          # Necessary for /g and pos() to work.
+     9	../mk-log-parser:1460 1.07869 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
+    10	../mk-log-parser:1526 0.81410 93741: my $event = { @properties };
+    11	../mk-log-parser:1457 0.78938 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    12	../mk-log-parser:1085 0.69289 93604: $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+    13	../mk-log-parser:1808 0.67380 93690: [at line 5 inside eval] ||= { map { $_ => {} } @attrs };
+    14	../mk-log-parser:1087 0.62678 93604: $query =~ s{
+    15	../mk-log-parser:1086 0.58240 93604: $query = lc $query;
+    16	../mk-log-parser:1808 0.52405 93690: [at line 6 inside eval] my @st_fc = @{$fp_ds}{@attrs};
+    17	../mk-log-parser:1448 0.45695 93741: $stmt =~ s/;\n#?\Z//;
+    18	../mk-log-parser:1447 0.43749 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    19	../mk-log-parser:1529 0.41829 187482: last CALLBACK unless $callback->($event);
+    20	../mk-log-parser:1064 0.41361 93741: my ( $self, $query ) = @_;
+    21	../mk-log-parser:1808 0.39552 93690: [at line 2 inside eval] my ( $self, $event, $group_by ) = @_;
+    22	../mk-log-parser:1808 0.37585 93690: [at line 95 inside eval] $global->{max} = $val if !defined $global->{max} || $val gt $global->{max};
+    23	../mk-log-parser:1076 0.33802 93604: $query =~ s/'.*?'/?/g;                # quoted strings
+    24	../mk-log-parser:3064 0.33284 93741: return 1; # required to keep callback chain going
+    25	../mk-log-parser:1808 0.32498 93690: [at line 11 inside eval] $class->{min} = $val if !defined $class->{min} || $val < $class->{min};
+    26	../mk-log-parser:1074 0.32119 93604: $query =~ s/\\["']//g;                # quoted strings
+    27	../mk-log-parser:1096 0.31986 93604: return $query;
+    28	../mk-log-parser:1075 0.31977 93604: $query =~ s/".*?"/?/g;                # quoted strings
+    29	../mk-log-parser:1067 0.31126 93741: $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
+    30	../mk-log-parser:1070 0.31108 93604: $query =~ s/$mlc_re//go;

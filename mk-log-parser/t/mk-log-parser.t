@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 19;
 use English qw(-no_match_vars);
 
 # #############################################################################
@@ -77,9 +77,6 @@ like($output, qr/--review DSN requires a D/, 'Dies if no D part in --review DSN'
 $output = `../mk-log-parser --review h=127.1,P=12345,D=test`;
 like($output, qr/--review DSN requires a D/, 'Dies if no t part in --review DSN');
 
-$output = `../mk-log-parser --analyze`;
-like($output, qr/--analyze requires --review/, '--analyze requires --review');
-
 # #############################################################################
 # Tests for query reviewing.
 # #############################################################################
@@ -97,7 +94,7 @@ SKIP: {
    $sb->load_file('master', 'samples/query_review.sql');
 
    $output = 'foo'; # clear previous test results
-   $output = `${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review`;
+   $output = `${run_with}slow006.txt --noanalyze --review h=127.1,P=12345,D=test,t=query_review`;
    my $res = $dbh->selectall_arrayref('SELECT * FROM test.query_review');
    is_deeply(
       $res,
