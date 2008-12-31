@@ -96,6 +96,8 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # unroll_limit If this many events have been processed and some handlers haven't
 #              been generated yet (due to lack of sample data) unroll the loop
 #              anyway.  Defaults to 50.
+# attrib_limit Sanity limit for attribute values.  If the value exceeds the
+#              limit, use the last-seen for this fingerprint; if none, then 0.
 sub new {
    my ( $class, %args ) = @_;
    foreach my $arg ( qw(group_by attributes) ) {
@@ -118,6 +120,7 @@ sub new {
       n_events     => 0,
       n_queries    => 0,
       unroll_limit => 50,
+      attrib_limit => $args{attrib_limit},
    };
 
    return bless $self, $class;
@@ -219,12 +222,22 @@ sub make_handler {
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
+   # Make sure the value is constrained to legal limits
+   my @limit;
+   if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
+      push @limit, (
+         "if ( \$val > $self->{attrib_limit} ) {",
+         '   $val = $class->{all}->[-1] || 0;',
+         '}',
+      );
+   }
+
    # Save the code for later, as part of an "unrolled" subroutine.
    my @unrolled = (
       '$val = $event->{' . $attrib . '};',
       (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
       'defined $val && do {',
-      ( map { s/^/   /gm; $_ } @lines ), # Indent for debugging
+      ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
       '};',
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
@@ -236,6 +249,7 @@ sub make_handler {
       'my $val = $event->{' . $attrib . '};',
       (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
       'return unless defined $val;',
+      @limit,
    );
    push @lines, '}';
    my $code = join("\n", @lines);

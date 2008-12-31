@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 15;
+use Test::More tests => 16;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -302,7 +302,6 @@ $sm  = new SQLMetrics(
    attributes      => [qw(Schema|db)],
    worst_attrib    => 'Query_time',
 );
-
 $events = [
    {
       arg         => "foo 1",
@@ -321,4 +320,69 @@ foreach my $event ( @$events ) {
 }
 ok(exists $sm->{metrics}->{unique}->{'foo ?'}->{Schema}->{unq}->{db1},
    'Gets db for Schema|db (issue 184)');
-exit;
+
+$sm  = new SQLMetrics(
+   group_by        => 'arg',
+   attributes      => [qw(Rows_read)],
+   worst_attrib    => 'Rows_read',
+   attrib_limit    => 1000,
+);
+$events = [
+   {
+      arg         => "SELECT template FROM template WHERE title='options'",
+      Rows_read   => 4,
+   },
+   {
+      arg         => "# administrator command: Init DB;",
+      Rows_read   => 4124524590823728995,
+   },
+   {
+      arg         => "SELECT template FROM template WHERE title='options'",
+      Rows_read   => 4124524590823728995,
+   },
+];
+foreach my $event ( @$events ) {
+   $sm->calc_event_metrics($event);
+}
+is_deeply(
+   $sm->{metrics},
+   {  'unique' => {
+         '# administrator command: Init DB;' => {
+            'Rows_read' => {
+               'min'    => 0,
+               'max'    => 0,
+               'sample' => {
+                  'Rows_read' => '4.12452459082373e+18',
+                  'arg'       => '# administrator command: Init DB;'
+               },
+               'all' => [ '0' ],
+               'sum' => 0,
+               'cnt' => 1
+            }
+         },
+         'SELECT template FROM template WHERE title=\'options\'' => {
+            'Rows_read' => {
+               'min'    => 4,
+               'max'    => 4,
+               'sample' => {
+                  'Rows_read' => '4.12452459082373e+18',
+                  'arg' =>
+                     'SELECT template FROM template WHERE title=\'options\''
+               },
+               'all' => [ 4, 4 ],
+               'sum' => 8,
+               'cnt' => 2
+            }
+         }
+      },
+      'all' => {
+         'Rows_read' => {
+            'min' => 0,
+            'max' => 4,
+            'sum' => 8,
+            'cnt' => 3
+         }
+      }
+   },
+   'attrib_limit prevents big values',
+);
