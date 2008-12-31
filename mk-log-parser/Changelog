@@ -1,5 +1,7 @@
 Changelog for mk-log-parser:
 
+   * Very large attribute values in slowlogs caused a crash (issue 197).
+
 2008-12-29: version 0.9.1
 
    * Added --analyze option to combine analysis and --review (issue 162).

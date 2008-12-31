@@ -896,7 +896,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2627
+# Transformers package 2728
 # ###########################################################################
 
 package Transformers;
@@ -988,8 +988,8 @@ sub shorten {
    my $p = defined $args{p} ? $args{p} : 2;     # float precision
    my $d = defined $args{d} ? $args{d} : 1_024; # divisor
    my $n = 0;
-
-   while ( $num >= $d ) {
+   my @units = ('', qw(k M G T P E Z Y));
+   while ( $num >= $d && $n < @units - 1 ) {
       $num /= $d;
       ++$n;
    }
@@ -997,7 +997,7 @@ sub shorten {
       $num =~ m/\./ || $n
          ? "%.${p}f%s"
          : '%d',
-      $num, ('','k','M','G', 'T')[$n]);
+      $num, $units[$n]);
 }
 
 sub ts {
@@ -1604,7 +1604,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2704
+# SQLMetrics package 2729
 # ###########################################################################
 
 package SQLMetrics;
@@ -1636,6 +1636,7 @@ sub new {
       n_events     => 0,
       n_queries    => 0,
       unroll_limit => 50,
+      attrib_limit => $args{attrib_limit},
    };
 
    return bless $self, $class;
@@ -1713,11 +1714,20 @@ sub make_handler {
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
+   my @limit;
+   if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
+      push @limit, (
+         "if ( \$val > $self->{attrib_limit} ) {",
+         '   $val = $class->{all}->[-1] || 0;',
+         '}',
+      );
+   }
+
    my @unrolled = (
       '$val = $event->{' . $attrib . '};',
       (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
       'defined $val && do {',
-      ( map { s/^/   /gm; $_ } @lines ), # Indent for debugging
+      ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
       '};',
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
@@ -1728,6 +1738,7 @@ sub make_handler {
       'my $val = $event->{' . $attrib . '};',
       (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
       'return unless defined $val;',
+      @limit,
    );
    push @lines, '}';
    my $code = join("\n", @lines);
@@ -3036,6 +3047,7 @@ sub get_analyze_callback {
    $sm = new SQLMetrics(
       group_by     => 'fingerprint',
       worst_attrib => $opts{w},  # TODO this can be an expr, add to attributes
+      attrib_limit => $opts{attriblimit},
       attributes   => [
          qw(
             Query_time
@@ -3097,6 +3109,10 @@ sub report_queries {
    my $Query_time_distro;
 
    # Print header
+   # TODO: maybe this can be more like mysqlsla: also list the unique queries
+   # (but don't call them that, it's confusing, maybe "distinct fingerprints")
+   # and the totals for all the things the user has selected to be totalled up
+   # in the stats table (once it is user-selectable).
    if ( $opts{header} ) {
       printf "# Queries: %s, Time: %s\n",
          shorten($sm->{n_queries}),
@@ -3221,6 +3237,12 @@ sub report_queries {
 
       printf $list_line_fmt, 'DBs',   join(', ', keys %{$class->{db}->{unq}});
       printf $list_line_fmt, 'Users', join(', ', keys %{$class->{user}->{unq}});
+      # TODO: also print hosts
+      # TODO: print DBs, Users, Hosts in this format: foo(8), bar(10)
+      # so the count follows the value
+      # TODO: when there are a TON of unique user/host/whatever, just print "<N>
+      # distinct values" and maybe also print the top 5 by default (make an
+      # option to control this).  Good example of this is in issue 2193.
 
       # TODO: permit to switch off with cmdline option --verbosity or --quiet
       if ( $class->{ts}->{min} ) {
@@ -3669,6 +3691,16 @@ Group similar queries and report on them.
 This is the standard slow-log analysis functionality.  See OUTPUT for the
 description of what this does and what the results look like.  You can disable
 it for L<--review> if you don't want to see any reports on queries.
+
+=item --attriblimit
+
+type: int; default: 4294967296
+
+A sanity limit for attribute values.
+
+This option deals with bugs in slow-logging functionality that causes large
+values for attributes.  If the attribute's value is bigger than this, the
+last-seen value for that class of query is used instead.
 
 =item --fingerprints
 
