@@ -279,9 +279,10 @@ sub parse_event {
    return $event;
 }
 
-# This method accepts an open slow log filehandle and a callback function.
-# It reads events from the filehandle and calls the callback with each event.
-# It may find more than one event per call.
+# This method accepts an open slow log filehandle and callback functions.
+# It reads events from the filehandle and calls the callbacks with each event.
+# It may find more than one event per call.  $misc is some placeholder for the
+# future and for compatibility with other query sources.
 #
 # Each event is a hashref of attribute => value pairs like:
 #  my $event = {
@@ -300,7 +301,7 @@ sub parse_event {
 # TODO: pass in hooks to let something filter out events as early as possible
 # without parsing more of them than needed.
 sub parse_slowlog_event {
-   my ( $self, $fh, $callbacks ) = @_;
+   my ( $self, $fh, $misc, @callbacks ) = @_;
    my $num_events = 0;
 
    # Read a whole stmt at a time.  But, to make things even more fun, sometimes
@@ -470,7 +471,7 @@ sub parse_slowlog_event {
 
       my $event = { @properties };
       CALLBACK:
-      foreach my $callback ( @$callbacks ) {
+      foreach my $callback ( @callbacks ) {
          last CALLBACK unless $callback->($event);
       }
       ++$num_events;
