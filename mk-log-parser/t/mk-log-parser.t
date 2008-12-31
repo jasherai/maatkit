@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 
 # #############################################################################
@@ -67,6 +67,14 @@ ok(
 ok(
    no_diff($run_with.'slow014.txt', 'samples/slow014_report.txt'),
    'Analysis for slow014'
+);
+
+# #############################################################################
+# Issue 154: Add --since option to mk-log-parser
+# #############################################################################
+ok(
+   no_diff($run_with.'slow006.txt --since "20071218 11:49:06"', 'samples/slow006_since.txt'),
+   '--since "20071218 11:49:06"'
 );
 
 # #############################################################################
