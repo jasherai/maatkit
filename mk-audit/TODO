@@ -112,8 +112,10 @@ The following items are unimplemented at this time:
            100GB buffer pool -- limits should include the buffer pool size and
            key buffer size and mysql vsize
          * Watch for "bad query patterns" such as RAND() or storing IP addresses
-         as varchar or using TO_DAYS(column) < TO_DAYS(NOW()) - 5
+           as varchar or using TO_DAYS(column) < TO_DAYS(NOW()) - 5
          * Actually, DATE_FORMAT(), or TO_DAYS() are just red flags
+         * SELECT * is a bad habit, flag it.
+         * SELECT tbl.* is bad, too.
       * Connections and users
          * report anonymous users
            * Complain loudly if connected as anonymous user -- print out what
