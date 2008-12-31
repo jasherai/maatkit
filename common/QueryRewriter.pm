@@ -76,8 +76,8 @@ sub fingerprint {
       && return $query;
 
    $query =~ s/\\["']//g;                # quoted strings
-   $query =~ s/".*?"/?/g;                # quoted strings
-   $query =~ s/'.*?'/?/g;                # quoted strings
+   $query =~ s/".*?"/?/sg;               # quoted strings
+   $query =~ s/'.*?'/?/sg;               # quoted strings
 
    # This regex is extremely broad in its definition of what looks like a
    # number.  That is for speed.
