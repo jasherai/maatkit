@@ -1022,7 +1022,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2713
+# QueryRewriter package 2733
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1066,14 +1066,16 @@ sub fingerprint {
       && return 'mysqldump';
    $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
+   $query =~ m/\A# administrator command: /
+      && return $query;
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
       && return $query;
 
    $query =~ s/\\["']//g;                # quoted strings
-   $query =~ s/".*?"/?/g;                # quoted strings
-   $query =~ s/'.*?'/?/g;                # quoted strings
+   $query =~ s/".*?"/?/sg;               # quoted strings
+   $query =~ s/'.*?'/?/sg;               # quoted strings
 
    $query =~ s{                          # Anything vaguely resembling numbers
       (?<=[^0-9+-])
@@ -1082,6 +1084,7 @@ sub fingerprint {
       }{?}gx;
    $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
    $query =~ s/\A\s+//;                  # Chop off leading whitespace
+   chomp $query;                         # Kill trailing whitespace
    $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
    $query =~ s{
