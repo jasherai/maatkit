@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 62;
+use Test::More tests => 64;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -54,6 +54,12 @@ is(
    $q->fingerprint("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
    "mysqldump",
    'Fingerprints all mysqldump SELECTs together',
+);
+
+is(
+   $q->fingerprint('# administrator command: Init DB'),
+   '# administrator command: Init DB',
+   'Fingerprints admin commands as themselves',
 );
 
 is(
@@ -123,6 +129,12 @@ is(
    $q->fingerprint("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
    "select ?, ?, ?, ? from foo",
    "Handles quoted strings",
+);
+
+is(
+   $q->fingerprint("select 'hello'\n"),
+   "select ?",
+   "Handles trailing newline",
 );
 
 # This is a known deficiency, fixes seem to be expensive though.

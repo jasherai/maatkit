@@ -70,6 +70,9 @@ sub fingerprint {
    # Matches queries like REPLACE /*foo.bar:3/3*/ INTO checksum.checksum
    $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
+   # Administrator commands appear to be a comment, so return them as-is
+   $query =~ m/\A# administrator command: /
+      && return $query;
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
@@ -88,6 +91,7 @@ sub fingerprint {
       }{?}gx;
    $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
    $query =~ s/\A\s+//;                  # Chop off leading whitespace
+   chomp $query;                         # Kill trailing whitespace
    $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
    $query =~ s{
