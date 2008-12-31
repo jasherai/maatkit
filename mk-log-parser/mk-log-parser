@@ -3081,7 +3081,10 @@ sub find_top_queries {
    my @sorted =
       reverse sort {
          $classes->{$a}->{$worst}->{$sort} <=> $classes->{$b}->{$worst}->{$sort}
-      } keys %$classes;
+      }
+      # Protect against parser errors; not really a solution, just a defense
+      grep { defined $classes->{$_}->{$worst}->{$sort} }
+      keys %$classes;
    my $count = 0;
    if ( $top =~ m/^\d+$/ ) {
       $count = @sorted > $top ? $top : scalar @sorted;
