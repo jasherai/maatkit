@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 22;
 use English qw(-no_match_vars);
 
 BEGIN {
@@ -42,6 +42,8 @@ is(micro_t('123.060123', p_s=>1), '123.1s', 'Can change float precision for seco
 is(shorten('1024.00'), '1.00k', 'Shortens 1024.00 to 1.00k');
 is(shorten('100'),     '100',   '100 does not shorten (stays 100)');
 is(shorten('99999', p => 1, d => 1_000), '100.0k', 'Can change float precision and divisor in shorten');
+is(shorten('6.992e+19', 'p', 1, 'd', 1000), '69.9E', 'really big number');
+is(shorten('1000e+52'), '8271806125530276833376576995328.00Y', 'Number bigger than any units');
 
 
 is(secs_to_time(0), '00:00', 'secs_to_time 0 s = 00:00');

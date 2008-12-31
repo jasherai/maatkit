@@ -114,8 +114,8 @@ sub shorten {
    my $p = defined $args{p} ? $args{p} : 2;     # float precision
    my $d = defined $args{d} ? $args{d} : 1_024; # divisor
    my $n = 0;
-
-   while ( $num >= $d ) {
+   my @units = ('', qw(k M G T P E Z Y));
+   while ( $num >= $d && $n < @units - 1 ) {
       $num /= $d;
       ++$n;
    }
@@ -123,7 +123,7 @@ sub shorten {
       $num =~ m/\./ || $n
          ? "%.${p}f%s"
          : '%d',
-      $num, ('','k','M','G', 'T')[$n]);
+      $num, $units[$n]);
 }
 
 sub ts {
