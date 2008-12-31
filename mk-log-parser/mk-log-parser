@@ -1194,7 +1194,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2710
+# LogParser package 2740
 # ###########################################################################
 package LogParser;
 
@@ -1416,7 +1416,7 @@ sub parse_event {
 }
 
 sub parse_slowlog_event {
-   my ( $self, $fh, $callbacks ) = @_;
+   my ( $self, $fh, $misc, @callbacks ) = @_;
    my $num_events = 0;
 
    my @pending;
@@ -1528,7 +1528,7 @@ sub parse_slowlog_event {
 
       my $event = { @properties };
       CALLBACK:
-      foreach my $callback ( @$callbacks ) {
+      foreach my $callback ( @callbacks ) {
          last CALLBACK unless $callback->($event);
       }
       ++$num_events;
@@ -2996,7 +2996,7 @@ else {
 my $oktorun = 1;
 my $lp = new LogParser();
 while ( $oktorun && (my $fh = shift(@fhs)) ) {
-   1 while ( $oktorun && $lp->parse_slowlog_event($fh, \@callbacks) );
+   1 while ( $oktorun && $lp->parse_slowlog_event($fh, undef, @callbacks) );
    close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
 }
 
