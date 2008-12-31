@@ -857,7 +857,6 @@ package Processlist;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::HiRes qw(time);
 use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -889,23 +888,39 @@ sub parse_event {
 
    do { 
       if ( !$curr && @curr ) {
-         MKDEBUG && _d('Fetching row from curr');
          $curr = shift @curr;
       }
       if ( !$prev && @prev ) {
-         MKDEBUG && _d('Fetching row from prev');
          $prev = shift @prev;
       }
       if ( $curr || $prev ) {
          if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
             MKDEBUG && _d('$curr and $prev are the same cxn');
-            if ( $prev->[INFO]
-               && ((!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO])
-                  || ($curr->[INFO]
-                     && $misc->{time} - $curr->[TIME] > $prev->[START]))
-            ) {
-               fire_event( $prev, @callbacks );
-               if ( $curr->[INFO] ) {
+            my $fudge = $curr->[TIME] =~ m/\D/ ? 0 : 1;
+            my $is_new = 0;
+            if ( $prev->[INFO] ) {
+               if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
+                  MKDEBUG && _d('$curr has a new query');
+                  $is_new = 1;
+               }
+               elsif ( $curr->[INFO] && defined $curr->[TIME]
+                     && $misc->{time} - $curr->[TIME] - $fudge > $prev->[START]
+               ) {
+                  MKDEBUG && _d('$curr has same query that restarted');
+                  $is_new = 1;
+               }
+               if ( $is_new ) {
+                  fire_event( $prev, @callbacks );
+               }
+            }
+
+            if ( $curr->[INFO] ) {
+               if ( $prev->[INFO] && !$is_new ) {
+                  MKDEBUG && _d('Pushing old history item back onto $prev');
+                  push @new, [ @$prev ];
+               }
+               else {
+                  MKDEBUG && _d('Pushing new history item onto $prev');
                   push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
                }
             }
@@ -913,14 +928,15 @@ sub parse_event {
          }
          elsif ( !$curr
                || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
-            MKDEBUG && _d('$curr is not in $prev');
             fire_event( $prev, @callbacks );
             $prev = undef;
          }
-         else {
-            MKDEBUG && _d('$prev is not in $curr');
-            push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
-            $curr = undef;
+         else { # This else must be entered, to prevent infinite loops.
+            if ( $curr->[INFO] && defined $curr->[TIME] ) {
+               MKDEBUG && _d('Pushing new history item onto $prev');
+               push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
+            }
+            $curr = undef; # No infinite loops.
          }
       }
    } while ( @curr || @prev || $curr || $prev );
@@ -957,7 +973,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2688
+# LogParser package 2710
 # ###########################################################################
 package LogParser;
 
@@ -994,7 +1010,7 @@ my $general_log_any_line = qr{
 }xs;
 
 my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
-my $slow_log_uh_line = qr/# User\@Host: ([^\[]+).*?@ (\S*) \[(.*)\]/;
+my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
 
 my $binlog_line_1 = qr{^# at (\d+)};
 my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
@@ -1412,6 +1428,7 @@ else {
 my $dbh;
 my $callback;
 my $curdb;
+my $time;
 if ( $opts{x} ) {
    $dbh = $dp->get_dbh($dp->get_cxn_params($opts{x}), {AutoCommit => 1});
    $callback = sub {
@@ -1436,7 +1453,7 @@ else {
          print "USE $db;\n";
          $curdb = $db;
       }
-      print $query, ";\n";
+      print $time, " ", $query, ", $_[0]->{Query_time} ;\n";
    };
 }
 
@@ -1448,7 +1465,7 @@ while ( my $fh = shift(@fhs) ) {
    my $cxn = $dbh2->{mysql_thread_id};
    my $misc = { prev => [], time => 0 };
    while ( 1 ) {
-      $misc->{time} = time();
+      $misc->{time} = $time = time();
       $p->parse_event(
          sub {
             $sth->execute;
