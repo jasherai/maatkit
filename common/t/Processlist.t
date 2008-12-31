@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 14;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -36,6 +36,61 @@ my $pl = Processlist->new();
 my @events;
 my $callback = sub { push @events, @_ };
 my $prev     = [];
+
+# An unfinished query doesn't crash anything.
+@events = ();
+$pl->parse_event(
+   sub {
+      return [
+         [1, 'unauthenticated user', 'localhost', undef, 'Connect', undef,
+         'Reading from net', undef],
+      ],
+   },
+   {
+      prev => $prev,
+      time => 1000,
+   },
+   $callback,
+);
+is_deeply($prev, [], 'Prev does not know about undef query');
+is(scalar @events, 0, 'No events fired from connection in process');
+
+# Make a new one to replicate a bug with certainty...
+$pl = Processlist->new();
+
+# An existing sleeping query that goes away doesn't crash anything.
+@events = ();
+$pl->parse_event(
+   sub {
+      return [
+         [1, 'root', 'localhost', undef, 'Sleep', 7, '', undef],
+      ],
+   },
+   {
+      prev => $prev,
+      time => 1000,
+   },
+   $callback,
+);
+
+# And now the connection goes away...
+$pl->parse_event(
+   sub {
+      return [
+      ],
+   },
+   {
+      prev => $prev,
+      time => 1001,
+   },
+   $callback,
+);
+
+is_deeply($prev, [], 'everything went away');
+is(scalar @events, 0, 'No events fired from sleeping connection that left');
+
+# Make sure there's a fresh start...
+$pl = Processlist->new();
 
 # The initial processlist shows a query in progress.
 @events = ();
@@ -175,7 +230,7 @@ is_deeply(
 );
 
 # In this sample, the "same" query is running one second later but this time
-# it seems to have a start time of 1004, so it must be a new query.
+# it seems to have a start time of 1005, so it must be a new query.
 @events = ();
 $pl->parse_event(
    sub {
@@ -185,7 +240,7 @@ $pl->parse_event(
    },
    {
       prev => $prev,
-      time => 1004,
+      time => 1005,
    },
    $callback,
 );
@@ -195,9 +250,9 @@ $pl->parse_event(
 is_deeply(
    $prev,
    [
-      [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2', 1004],
+      [ 2, 'root', 'localhost', 'test', 'Query', 0, 'executing', 'query2_2', 1005],
    ],
-   'After query2_2 fired, the prev array has the one starting at 1004',
+   'After query2_2 fired, the prev array has the one starting at 1005',
 );
 
 # And the query has fired an event.

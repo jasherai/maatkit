@@ -22,7 +22,6 @@ package Processlist;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::HiRes qw(time);
 use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -95,11 +94,9 @@ sub new {
 # 2) What about splitting the difference?  If I see a query now with 0s, and one
 #    second later I look and see it's gone, should I split the middle and say it
 #    ran for .5s?
-# 3) Is the timestamp of the query in the slow log the timestamp when it
-#    started, or when it ended?  This code should match that behavior.
-# 4) I think user/host needs to do user/host/ip, really.  And actually, port
+# 3) I think user/host needs to do user/host/ip, really.  And actually, port
 #    will show up in the processlist -- make that a property too.
-# 5) It should put cmd => Query, Admin, or whatever
+# 4) It should put cmd => Query, cmd => Admin, or whatever
 sub parse_event {
    my ( $self, $code, $misc, @callbacks ) = @_;
    my $num_events = 0;
@@ -111,26 +108,49 @@ sub parse_event {
 
    do { 
       if ( !$curr && @curr ) {
-         MKDEBUG && _d('Fetching row from curr');
+         # MKDEBUG && _d('Fetching row from curr');
          $curr = shift @curr;
       }
       if ( !$prev && @prev ) {
-         MKDEBUG && _d('Fetching row from prev');
+         # MKDEBUG && _d('Fetching row from prev');
          $prev = shift @prev;
       }
       if ( $curr || $prev ) {
+         # In each of the if/elses, something must be undef'ed to prevent
+         # infinite looping.
          if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
             MKDEBUG && _d('$curr and $prev are the same cxn');
             # If the query is different from the previously seen one, it's a new
             # query.  Or, if its start time seems to be after the start time of
-            # the previously seen one, it's also a new query.
-            if ( $prev->[INFO]
-               && ((!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO])
-                  || ($curr->[INFO]
-                     && $misc->{time} - $curr->[TIME] > $prev->[START]))
-            ) {
-               fire_event( $prev, @callbacks );
-               if ( $curr->[INFO] ) {
+            # the previously seen one, it's also a new query.  Because of the
+            # limited precision of the standard processlist, it's easy to get
+            # into a race condition and fire before the query is done, so we add
+            # 1 second when the time is a whole number.
+            my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1;
+            my $is_new = 0;
+            if ( $prev->[INFO] ) {
+               if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
+                  # This is a different query or a new query
+                  MKDEBUG && _d('$curr has a new query');
+                  $is_new = 1;
+               }
+               elsif ( $curr->[INFO] && defined $curr->[TIME]
+                     && $misc->{time} - $curr->[TIME] - $fudge > $prev->[START]
+               ) {
+                  MKDEBUG && _d('$curr has same query that restarted');
+                  $is_new = 1;
+               }
+               if ( $is_new ) {
+                  fire_event( $prev, @callbacks );
+               }
+            }
+            if ( $curr->[INFO] ) {
+               if ( $prev->[INFO] && !$is_new ) {
+                  MKDEBUG && _d('Pushing old history item back onto $prev');
+                  push @new, [ @$prev ];
+               }
+               else {
+                  MKDEBUG && _d('Pushing new history item onto $prev');
                   push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
                }
             }
@@ -139,15 +159,18 @@ sub parse_event {
          # The row in the prev doesn't exist in the curr.  Fire an event.
          elsif ( !$curr
                || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
-            MKDEBUG && _d('$curr is not in $prev');
+            #MKDEBUG && _d('$curr is not in $prev');
             fire_event( $prev, @callbacks );
             $prev = undef;
          }
          # The row in curr isn't in prev; start a new event.
-         else {
-            MKDEBUG && _d('$prev is not in $curr');
-            push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
-            $curr = undef;
+         else { # This else must be entered, to prevent infinite loops.
+            #MKDEBUG && _d('$prev is not in $curr');
+            if ( $curr->[INFO] && defined $curr->[TIME] ) {
+               MKDEBUG && _d('Pushing new history item onto $prev');
+               push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
+            }
+            $curr = undef; # No infinite loops.
          }
       }
    } while ( @curr || @prev || $curr || $prev );
@@ -159,6 +182,7 @@ sub parse_event {
 
 sub fire_event {
    my ( $row, @callbacks ) = @_;
+   #print Dumper($row);
    my $event = {
       id         => $row->[ID],
       db         => $row->[DB],
