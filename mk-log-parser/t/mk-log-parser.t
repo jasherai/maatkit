@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -31,41 +31,55 @@ my $run_with = '../mk-log-parser --noheader --top 10 ../../common/t/samples/';
 my $run_notop = '../mk-log-parser --noheader ../../common/t/samples/';
 
 ok(
+   no_diff($run_with.'empty', 'samples/empty_report.txt'),
+   'Analysis for empty log'
+);
+
+ok(
    no_diff($run_with.'slow001.txt', 'samples/slow001_report.txt'),
    'Analysis for slow001'
 );
+
 ok(
    no_diff($run_with.'slow002.txt', 'samples/slow002_report.txt'),
    'Analysis for slow002'
 );
+
 ok(
    no_diff($run_notop.'slow002.txt --top 5%', 'samples/slow002_top_report.txt'),
    'Analysis for slow002 with --top',
 );
+
 ok(
    no_diff($run_with.'slow003.txt', 'samples/slow003_report.txt'),
    'Analysis for slow003'
 );
+
 ok(
    no_diff($run_with.'slow004.txt', 'samples/slow004_report.txt'),
    'Analysis for slow004'
 );
+
 ok(
    no_diff($run_with.'slow006.txt', 'samples/slow006_report.txt'),
    'Analysis for slow006'
 );
+
 ok(
    no_diff($run_with.'slow008.txt', 'samples/slow008_report.txt'),
    'Analysis for slow008'
 );
+
 ok(
    no_diff($run_with.'slow011.txt', 'samples/slow011_report.txt'),
    'Analysis for slow011'
 );
+
 ok(
    no_diff($run_with.'slow013.txt', 'samples/slow013_report.txt'),
    'Analysis for slow013'
 );
+
 ok(
    no_diff($run_with.'slow014.txt', 'samples/slow014_report.txt'),
    'Analysis for slow014'
