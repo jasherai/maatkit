@@ -570,7 +570,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2601
+# LogParser package 2740
 # ###########################################################################
 package LogParser;
 
@@ -607,7 +607,7 @@ my $general_log_any_line = qr{
 }xs;
 
 my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
-my $slow_log_uh_line = qr/# User\@Host: ([^\[]+).*?@ (\S*) \[(.*)\]/;
+my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
 
 my $binlog_line_1 = qr{^# at (\d+)};
 my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
@@ -792,7 +792,7 @@ sub parse_event {
 }
 
 sub parse_slowlog_event {
-   my ( $self, $fh, $code ) = @_;
+   my ( $self, $fh, $misc, @callbacks ) = @_;
    my $num_events = 0;
 
    my @pending;
@@ -836,7 +836,7 @@ sub parse_slowlog_event {
          $pos     = pos($stmt);  # Be careful not to mess this up!
          my $line = $1;          # Necessary for /g and pos() to work.
 
-         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
 
             if ( !$got_ts
                && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
@@ -871,14 +871,14 @@ sub parse_slowlog_event {
             }
 
             elsif ( !$got_db
-                  && (my ( $db ) = $line =~ m/^use ([^;]+)/ )
+                  && (my ( $db ) = $line =~ m/^USE ([^;]+)/i )
                   && ++$got_db
             ) {
                push @properties, 'db', $db;
             }
 
             elsif ( !$got_set
-                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/ )
+                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/i )
                   && ++$got_set
             ) {
                push @properties, split(/,|\s*=\s*/, $setting);
@@ -886,9 +886,13 @@ sub parse_slowlog_event {
 
             if ( !$found_arg && $pos == $len ) {
                local $INPUT_RECORD_SEPARATOR = ";\n";
-               if ( chomp(my $l = <$fh>) ) {
+               if ( defined(my $l = <$fh>) ) {
+                  chomp $l;
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
                   $found_arg++;
+               }
+               else {
+                  next EVENT;
                }
             }
          }
@@ -899,7 +903,10 @@ sub parse_slowlog_event {
       }
 
       my $event = { @properties };
-      $code->($event) if $code;
+      CALLBACK:
+      foreach my $callback ( @callbacks ) {
+         last CALLBACK unless $callback->($event);
+      }
       ++$num_events;
    }
    return $num_events;
@@ -976,7 +983,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2590
+# QueryRewriter package 2733
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -999,6 +1006,8 @@ $bal         = qr/
                   \)
                  /x;
 
+my $olc_re = qr/(?:--|#)[^'"\r\n]*/;   # One-line comments
+my $mlc_re = qr#/\*[^!].*?\*/#sm;      # Multi-line comments, but not /*!version */
 
 sub new {
    my ( $class ) = @_;
@@ -1007,45 +1016,47 @@ sub new {
 
 sub strip_comments {
    my ( $self, $query ) = @_;
-   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
-   $query =~ s#/\*[^!]*?\*/##gsm;   # /*..*/ comments, but not /*!version */
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
    return $query;
 }
 
 sub fingerprint {
-   my ( $self, $query, $opts ) = @_;
-   $opts ||= {};
+   my ( $self, $query ) = @_;
+   $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
+      && return 'mysqldump';
+   $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
+      && return 'maatkit';
+   $query =~ m/\A# administrator command: /
+      && return $query;
+   $query =~ s/$olc_re//go;
+   $query =~ s/$mlc_re//go;
+   $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
+      && return $query;
+
    $query =~ s/\\["']//g;                # quoted strings
-   $query =~ s/".*?"/?/g;                # quoted strings
-   $query =~ s/'.*?'/?/g;                # quoted strings
-   $query =~ s/[\r\n]+\s*(?:--|#).*//gm; # One-line comments
-   $query =~ s#/\*[^!]*?\*/##gsm;        # /*..*/ comments
-   $query =~ s{                          # Float/real into ?
-              (?<![\w.+-])
-              [+-]?
-              (?:
-                \d+
-                (?:[.]\d*)?
-                |[.]\d+
-              )
-              (?:[Ee][+-]?\d+)?
-              (?!\w)
-             }
-             {?}gx;
-   $query =~ s/\b0(?:x[0-9a-f]+|b[01]+)\b/?/g;  # Hex/bin into ?
-   $query =~ s/[xb]\?/?/g;                      # Hex/bin into ?
-   $query =~ s/\A\s+//;                         # Chop off leading whitespace
-   $query =~ tr[ \n\t\r\f][ ]s;                 # Collapse whitespace
+   $query =~ s/".*?"/?/sg;               # quoted strings
+   $query =~ s/'.*?'/?/sg;               # quoted strings
+
+   $query =~ s{                          # Anything vaguely resembling numbers
+      (?<=[^0-9+-])
+      [0-9+-].*?
+      (?=[^0-9a-f.xb+-]|\Z)
+      }{?}gx;
+   $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+   $query =~ s/\A\s+//;                  # Chop off leading whitespace
+   chomp $query;                         # Kill trailing whitespace
+   $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
-   $query =~ s/\Ause \S+\Z/use ?/;              # Abstract the DB in USE
    $query =~ s{
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
               {$1(?+)}gx;      # Collapse IN() and VALUES() lists
-   $query =~ s/(?<=[a-z_])\d[_0-9]*\b/N/g; # Tables ending with groups of digits
-   if ( $opts->{prefixes} ) {
-      $query =~ s/\b[\d+_]*\d(?=\w)/N/g;   # Tables starting with groups of digits
-   }
+   $query =~ s{
+               \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
+              }
+              {$1 /*repeat$2*/}xg; # UNION
+   $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
    return $query;
 }
 
@@ -1056,7 +1067,7 @@ sub convert_to_select {
                  \A.*?
                  update\s+(.*?)
                  \s+set\b(.*?)
-                 (?:\s+where\b(.*?))?
+                 (?:\s*where\b(.*?))?
                  (limit\s*\d+(?:\s*,\s*\d+)?)?
                  \Z
               }
@@ -1144,7 +1155,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 2614
+# LogSplitter package 2742
 # ###########################################################################
 
 package LogSplitter;
@@ -1167,16 +1178,18 @@ sub new {
 
    my $self = {
       %args,
-      n_dirs       => 0,  # number of dirs created
-      n_files      => -1, # number of session files created in current dir
-      n_sessions   => 0,  # total number of session files created in all dirs
-      session_fhs  => [], # filehandles for each session
-      n_open_fhs   => 0,  # number of open session filehandles
-      sessions     => {}, # sessions data store
+      n_dirs          => 0,  # number of dirs created
+      n_files         => -1, # number of session files in current dir
+      n_sessions      => 0,  # number of sessions saved
+      n_session_files => 0,  # number of session files created
+      session_fhs     => [], # filehandles for each session
+      n_open_fhs      => 0,  # number of open session filehandles
+      sessions        => {}, # sessions data store
    };
    $self->{maxfiles}          ||= 100;
    $self->{maxdirs}           ||= 100;
    $self->{maxsessions}       ||= 100000;
+   $self->{maxsessionfiles}   ||= 0;
    $self->{verbosity}         ||= 0;
    $self->{session_file_name} ||= 'mysql_log_session_';
 
@@ -1187,7 +1200,7 @@ sub split_logs {
    my ( $self, $logs ) = @_;
    my $oktorun = 1; # true as long as we haven't created too many
 
-   @{$self}{qw(n_dirs n_files n_sessions)} = (0, -1, 0);
+   @{$self}{qw(n_dirs n_files n_sessions n_session_files)} = qw(0 -1 0 0);
    $self->{sessions} = {};
 
    if ( !defined $logs || scalar @$logs == 0 ) {
@@ -1195,113 +1208,139 @@ sub split_logs {
       push @$logs, '-';
    }
 
-   my @fhs;
+   my $callback;
+   if ( $self->{maxsessionfiles} ) {
+      $callback = sub {
+         my ( $event ) = @_;
+         my ($session, $sesion_id) = $self->_get_session_ds($event);
+         return 1 unless defined $session;
+         $self->{n_sessions}++ if !$session->{already_seen}++;
+         my $db = $event->{db} || $event->{Schema};
+         if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
+            push @{$session->{queries}}, "USE `$db`";
+            $session->{db} = $db;
+         }
+         push @{$session->{queries}}, $event->{arg};
+         return 1;
+      };
+   }
+   else {
+      $callback = sub {
+         my ( $event ) = @_; 
+         my ($session, $session_id) = $self->_get_session_ds($event);
+         return 1 unless defined $session;
+
+         if ( !defined $session->{fh} ) {
+            $self->{n_sessions}++;
+            MKDEBUG && _d("New session: $session_id "
+                          . "($self->{n_sessions} of $self->{maxsessions})");
+
+            my $session_file = $self->_next_session_file();
+            if ( !$session_file ) {
+               $oktorun = 0;
+               MKDEBUG && _d('No longer oktorun because no _next_session_file');
+               return 1;
+            }
+
+            $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
+
+            open $session->{fh}, '>', $session_file
+               or die "Cannot open log split file $session_file: $OS_ERROR";
+            $self->{n_open_fhs}++;
+
+            $session->{active}       = 1;
+            $session->{session_file} = $session_file;
+            push @{ $self->{session_fhs} },
+               { fh => $session->{fh}, session_id => $session_id };
+
+            MKDEBUG && _d("Created $session_file "
+                          . "for session $self->{attribute}=$session_id");
+         }
+         elsif ( !$session->{active} ) {
+
+            $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
+
+             open $session->{fh}, '>>', $session->{session_file}
+                or die "Cannot reopen log split file "
+                  . "$session->{session_file}: $OS_ERROR";
+             $self->{n_open_fhs}++;
+
+             $session->{active} = 1;
+
+             MKDEBUG && _d("Reopend $session->{session_file} "
+                           . "for session $self->{attribute}=$session_id");
+         }
+         else {
+            MKDEBUG && _d("Event belongs to active session $session_id");
+         }
+
+         my $session_fh = $session->{fh};
+
+         my $db = $event->{db} || $event->{Schema};
+         if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
+            print $session_fh "USE `$db`\n\n";
+            $session->{db} = $db;
+         }
+
+         print $session_fh "$event->{arg}\n\n";
+
+         return 1;
+      };
+   }
+
+   LOG:
    foreach my $log ( @$logs ) {
       next unless defined $log;
       if ( !-f $log && $log ne '-' ) {
-         MKDEBUG && _d("Skipping $log because it is not a file");
-         next;
+         warn "Skipping $log because it is not a file";
+         next LOG;
       }
       my $fh;
       if ( $log eq '-' ) {
          $fh = *STDIN;
       }
       else {
-         open $fh, "<", $log or die "Cannot open $log: $OS_ERROR\n";
+         open $fh, "<", $log or warn "Cannot open $log: $OS_ERROR\n";
       }
-      push @fhs, $fh;
+      if ( $fh ) {
+         1 while $oktorun && $self->{LogParser}->parse_slowlog_event(
+            $fh, undef, $callback);
+         close $fh;
+         last LOG if !$oktorun;
+      }
    }
 
-   my $callback = sub {
-      my ( $event ) = @_; 
-
-      my $attrib = $self->{attribute};
-      if ( !exists $event->{ $attrib } ) {
-         if ( MKDEBUG ) {
-            use Data::Dumper;
-            _d("No attribute $attrib in event: " . Dumper($event));
-         }
-         return;
-      }
-
-      return if !defined $event->{arg};
-
-      return if $event->{cmd} eq 'Admin';
-
-      my $session_id = $event->{ $attrib };
-
-      my $session;
-      if ( $self->{n_sessions} < $self->{maxsessions} ) {
-         $session = $self->{sessions}->{ $session_id } ||= {};
-      }
-      elsif ( exists $self->{sessions}->{ $session_id } ) {
-         $session = $self->{sessions}->{ $session_id };
-      }
-      else {
-         MKDEBUG && _d("Skipping new session $session_id because "
-                       . "maxsessions is reached");
-         return;
-      }
-
-      if ( !defined $session->{fh} ) {
-         $self->{n_sessions}++;
-         MKDEBUG && _d("New session: $session_id "
-                       . "($self->{n_sessions} of $self->{maxsessions})");
-
-         my $session_file = $self->_next_session_file();
-         if ( !$session_file ) {
-            $oktorun = 0;
-            MKDEBUG && _d('No longer oktorun because no _next_session_file()');
-            return;
-         }
-
-         $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
-
-         open $session->{fh}, '>', $session_file
-            or die "Cannot open log split file $session_file: $OS_ERROR";
-         $self->{n_open_fhs}++;
-
-         $session->{active}       = 1;
-         $session->{session_file} = $session_file;
+   if ( $self->{maxsessionfiles} ) {   
+      for my $i ( 1..$self->{maxsessionfiles} ) {
+         my $session_file = $self->_next_session_file($i);
+         last if !$session_file;
+         open my $fh, '>', $session_file
+            or die "Cannot open session file $session_file: $OS_ERROR";
+         $self->{n_session_files}++;
          push @{ $self->{session_fhs} },
-            { fh => $session->{fh}, session_id => $session_id };
-
-         MKDEBUG && _d("Created $session_file "
-                       . "for session $attrib=$session_id");
-      }
-      elsif ( !$session->{active} ) {
-
-         $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
-
-          open $session->{fh}, '>>', $session->{session_file}
-             or die "Cannot reopen log split file "
-               . "$session->{session_file}: $OS_ERROR";
-          $self->{n_open_fhs}++;
-
-          $session->{active} = 1;
-
-          MKDEBUG && _d("Reopend $session->{session_file} "
-                        . "for session $attrib=$session_id");
-      }
-      else {
-         MKDEBUG && _d("Event belongs to active session $session_id");
+            { fh => $fh, session_file => $session_file };
       }
 
-      my $session_fh = $session->{fh};
+      my $sessions_per_file = int( $self->{n_sessions}
+                                   / $self->{maxsessionfiles} );
+      MKDEBUG && _d("$self->{n_sessions} session, "
+                    . "$sessions_per_file per file");
 
-      my $db = $event->{db} || $event->{Schema};
-      if ( $db && ( !defined $session->{db} || $session->{db} ne $db ) ) {
-         print $session_fh "USE `$db`\n\n";
-         $session->{db} = $db;
+      my $i      = 0;
+      my $file_n = 0;
+      my $fh     = $self->{session_fhs}->[0]->{fh};
+      while ( my ($session_id, $session) = each %{$self->{sessions}} ) {
+         $session->{session_file}
+            = $self->{session_fhs}->[$file_n]->{session_file};
+         print $fh "-- session $session_id\n\n";
+         print $fh join("\n\n", @{$session->{queries}});
+         print $fh "\n\n"; # because join() doesn't do this
+         if ( ++$i >= $sessions_per_file ) {
+            $i = 0;
+            $file_n++ if $file_n < $self->{n_session_files} - 1;
+            $fh = $self->{session_fhs}->[$file_n]->{fh};
+         }
       }
-
-      print $session_fh "$event->{arg}\n\n";
-   };
-
-   LOG:
-   foreach my $fh ( @fhs ) {
-      1 while $oktorun && $self->{LogParser}->parse_event($fh, $callback);
-      last LOG if !$oktorun;
    }
 
    while ( my $fh = pop @{ $self->{session_fhs} } ) {
@@ -1320,6 +1359,39 @@ sub split_logs {
    }
 
    return;
+}
+
+sub _get_session_ds {
+   my ( $self, $event ) = @_;
+
+   my $attrib = $self->{attribute};
+   if ( !exists $event->{ $attrib } ) {
+      if ( MKDEBUG ) {
+         use Data::Dumper;
+         _d("No attribute $attrib in event: " . Dumper($event));
+      }
+      return;
+   }
+
+   return if !defined $event->{arg};
+
+   return if $event->{cmd} eq 'Admin';
+
+   my $session;
+   my $session_id = $event->{ $attrib };
+
+   if ( $self->{n_sessions} < $self->{maxsessions} ) {
+      $session = $self->{sessions}->{ $session_id } ||= {};
+   }
+   elsif ( exists $self->{sessions}->{ $session_id } ) {
+      $session = $self->{sessions}->{ $session_id };
+   }
+   else {
+      MKDEBUG && _d("Skipping new session $session_id because "
+                    . "maxsessions is reached");
+   }
+
+   return ($session, $session_id);
 }
 
 sub _close_lru_session {
@@ -1342,7 +1414,7 @@ sub _close_lru_session {
 }
 
 sub _next_session_file {
-   my ( $self ) = @_;
+   my ( $self, $n ) = @_;
    return '' if $self->{n_dirs} >= $self->{maxdirs};
 
    if ( $self->{n_files} >= $self->{maxfiles} || $self->{n_files} < 0) {
@@ -1363,7 +1435,7 @@ sub _next_session_file {
 
    $self->{n_files}++;
    my $dir_n        = $self->{n_dirs} . '/';
-   my $session_n    = sprintf '%04d', $self->{n_sessions};
+   my $session_n    = sprintf '%04d', $n || $self->{n_sessions};
    my $session_file = $self->{saveto_dir}
                     . $dir_n
                     . $self->{session_file_name} . $session_n;
@@ -1663,7 +1735,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2529
+# Transformers package 2728
 # ###########################################################################
 
 package Transformers;
@@ -1679,18 +1751,12 @@ our @ISA         = qw(Exporter);
 our %EXPORT_TAGS = ();
 our @EXPORT      = ();
 our @EXPORT_OK   = qw(
-   float_6
    micro_t
    percentage_of
    secs_to_time
    shorten 
    ts
 );
-
-sub float_6 {
-   my ( $val ) = @_;
-   return sprintf('%.6f', $val);
-}
 
 sub micro_t {
    my ( $t, %args ) = @_;
@@ -1761,8 +1827,8 @@ sub shorten {
    my $p = defined $args{p} ? $args{p} : 2;     # float precision
    my $d = defined $args{d} ? $args{d} : 1_024; # divisor
    my $n = 0;
-
-   while ( $num >= $d ) {
+   my @units = ('', qw(k M G T P E Z Y));
+   while ( $num >= $d && $n < @units - 1 ) {
       $num /= $d;
       ++$n;
    }
@@ -1770,7 +1836,7 @@ sub shorten {
       $num =~ m/\./ || $n
          ? "%.${p}f%s"
          : '%d',
-      $num, ('','k','M','G', 'T')[$n]);
+      $num, $units[$n]);
 }
 
 sub ts {
@@ -1795,7 +1861,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2616
+# SQLMetrics package 2729
 # ###########################################################################
 
 package SQLMetrics;
@@ -1804,120 +1870,137 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
-use Time::Local qw(timelocal);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(key_attrib attributes) ) {
+   foreach my $arg ( qw(group_by attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
-   $args{handlers} ||= {};
 
-   my %attribute_spec = map {
-      (my $key = $_) =~ s/\|.*//;
-      $key => $_;
+   my %attributes = map {
+      my ($name, @aliases) = split qr/\|/, $_;
+      $name => \@aliases;
    } @{$args{attributes}};
-   foreach my $attrib ( keys %{$args{handlers}} ) {
-      $attribute_spec{$attrib}++;
-   }
 
    my $self = {
-      key_attrib            => $args{key_attrib},
-      fingerprint           => $args{fingerprint}
-                               || sub { $_[0]->{$args{key_attrib}} },
-      attributes            => \%attribute_spec,
-      handlers              => $args{handlers},
-      worst_attrib          => $args{worst_attrib},
-      metrics               => { all => {}, unique => {} },
-      n_events              => 0,
-      n_queries             => 0,
+      group_by     => $args{group_by},
+      attributes   => \%attributes,
+      handlers     => $args{handlers} || {},
+      worst_attrib => $args{worst_attrib},
+      metrics      => { all => {}, unique => {} },
+      n_events     => 0,
+      n_queries    => 0,
+      unroll_limit => 50,
+      attrib_limit => $args{attrib_limit},
    };
 
    return bless $self, $class;
 }
 
 sub make_handler {
-   my ( $attrib, $value, %args ) = @_;
-   die "I need a attrib and value" unless (defined $attrib && defined $value);
-   return unless defined $value; # Can't decide type if it's undef.
-   my $type = $attrib =~ m/^(?:ts|timestamp)$/ ? 'time'
-            : $value  =~ m/^\d+/               ? 'num'
-            : $value  =~ m/^(?:Yes|No)$/       ? 'bool'
+   my ( $self, $attrib, $event, %args ) = @_;
+   die "I need an attrib" unless defined $attrib;
+   return unless $event;
+   my ($val) =
+      grep { defined $_ }
+      map  { $event->{$_} }
+           ( $attrib, @{ $args{alt} || [] } );
+   return unless defined $val; # Can't decide type if it's undef.
+
+   my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
+   my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
+            : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d("Type for $attrib is $type (sample: $value)");
+   MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
+
    %args = ( # Set up defaults
       min => 1,
       max => 1,
-      sum => $type =~ m/num|bool/ ? 1 : 0,
-      cnt => 1,
+      sum => $type =~ m/num|bool/    ? 1 : 0,
+      cnt => $type eq 'string'       ? 0 : 1,
       unq => $type =~ m/bool|string/ ? 1 : 0,
-      all => $type eq 'num' ? 1 : 0,
+      all => $type eq 'num'          ? 1 : 0,
       glo => 1,
-      trx => ($type eq 'time') ? 'parse_timestamp($val)'
-           : ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0}
-           :                     undef,
+      trf => ($type eq 'bool') ? q{($val || '' eq 'Yes') ? 1 : 0} : undef,
       wor => 0,
+      alt => [],
       %args,
    );
 
-   my @lines = ( # Lines of code for the subroutine
-      'sub {',
-      'my ( $event, $val, $class, $global ) = @_;',
-      'return unless defined $val;',
-   );
-   if ( $args{trx} ) {
-      push @lines, q{$val = } . $args{trx} . ';';
+   my @lines; # Lines of code for the subroutine
+   if ( $args{trf} ) {
+      push @lines, q{$val = } . $args{trf} . ';';
    }
+
    foreach my $place ( $args{glo} ? qw($class $global) : qw($class) ) {
+      my @tmp;
       if ( $args{min} ) {
-         my $op = $type =~ m/num|time/ ? '<' : 'lt';
-         my $code = 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+         my $op   = $type eq 'num' ? '<' : 'lt';
+         push @tmp, 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
             . $op . ' PLACE->{min};';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
       }
       if ( $args{max} ) {
-         my $op = ($type =~ m/num|time/) ? '>' : 'gt';
-         my $code = 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+         my $op = ($type eq 'num') ? '>' : 'gt';
+         push @tmp, 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
             . $op . ' PLACE->{max};';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
       }
       if ( $args{sum} ) {
-         my $code = 'PLACE->{sum} += $val;';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
+         push @tmp, 'PLACE->{sum} += $val;';
       }
       if ( $args{cnt} ) {
-         my $code = '++PLACE->{cnt};';
-         $code =~ s/PLACE/$place/g;
-         push @lines, $code;
+         push @tmp, '++PLACE->{cnt};';
       }
       if ( $place eq '$class' ) {
          if ( $args{unq} ) {
-            my $code = '++PLACE->{unq}->{$val};';
-            $code =~ s/PLACE/$place/g;
-            push @lines, $code;
+            push @tmp, '++PLACE->{unq}->{$val};';
          }
          if ( $args{all} ) {
-            my $code = 'push @{PLACE->{all}}, $val;';
-            $code =~ s/PLACE/$place/g;
-            push @lines, $code;
+            push @tmp, 'push @{PLACE->{all}}, $val;';
          }
          if ( $args{wor} ) {
             my $op = $type eq 'num' ? '>=' : 'ge';
-            push @lines, (
+            push @tmp, (
                'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-                  '$class->{sample}     = $event->{arg};',
-                  '$class->{pos_in_log} = $event->{pos_in_log};',
+               '   $class->{sample} = $event;',
                '}',
             );
          }
       }
+      push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
+
+   my @limit;
+   if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
+      push @limit, (
+         "if ( \$val > $self->{attrib_limit} ) {",
+         '   $val = $class->{all}->[-1] || 0;',
+         '}',
+      );
+   }
+
+   my @unrolled = (
+      '$val = $event->{' . $attrib . '};',
+      (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
+      'defined $val && do {',
+      ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
+      '};',
+   );
+   $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
+
+   unshift @lines, (
+      'sub {',
+      'my ( $event, $class, $global ) = @_;',
+      'my $val = $event->{' . $attrib . '};',
+      (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
+      'return unless defined $val;',
+      @limit,
+   );
    push @lines, '}';
+   my $code = join("\n", @lines);
+   $self->{code_for}->{$attrib} = $code;
+
    MKDEBUG && _d("Metric handler for $attrib: ", @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
@@ -1929,35 +2012,70 @@ sub calc_event_metrics {
 
    $self->{n_events}++;
 
-   my $key_attrib_val = $event->{ $self->{key_attrib} };
-   return unless defined $key_attrib_val;
+   my $group_by = $event->{ $self->{group_by} };
+   return unless defined $group_by;
 
    $self->{n_queries}++;
 
-   my $fp = $self->{fingerprint}->($key_attrib_val);
+   if ( defined $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($self, $event, $group_by);
+   }
 
-   my $fp_ds = $self->{metrics}->{unique}->{ $fp } ||= {};
+   my @attrs = sort keys %{$self->{attributes}};
+   my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
+      ||= { map { $_ => {} } @attrs };
 
    ATTRIB:
-   foreach my $attrib ( keys %{ $self->{attributes} } ) {
-      my $attrib_val = $event->{ $attrib };
-      next ATTRIB unless defined $attrib_val;
-
+   foreach my $attrib ( @attrs ) {
       my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
       my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
 
-      my $handler = $self->{handlers}->{ $attrib } ||= make_handler(
-         $self->{attributes}->{$attrib},
-         $attrib_val,
-         wor => (($self->{worst_attrib} || '') eq $attrib)
+      my $handler = $self->{handlers}->{ $attrib };
+      if ( !$handler ) {
+         $handler = $self->make_handler(
+            $attrib,
+            $event,
+            wor => (($self->{worst_attrib} || '') eq $attrib),
+            alt => $self->{attributes}->{$attrib},
+         );
+         if ( $handler ) {
+            $self->{handlers}->{$attrib} = $handler;
+         }
+      }
+      next ATTRIB unless $handler;
+      $handler->($event, $stats_for_class, $stats_for_attrib);
+   }
+
+   if ( $self->{n_queries} > $self->{unroll_limit}
+      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs)
+   {
+      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
+      my @handl = @{$self->{handlers}}{@attrs};
+      my @st_fa = @{$self->{metrics}->{all}}{@attrs}; # Stats for attribute
+
+      my @lines = (
+         'my ( $self, $event, $group_by ) = @_;',
+         'my ($val, $class, $global);',
+         'my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
+            ||= { map { $_ => {} } @attrs };',
+         'my @st_fc = @{$fp_ds}{@attrs};', # Stats for class
       );
-      if ( ref $handler eq 'CODE' ) {
-         $handler->($event, $attrib_val, $stats_for_class, $stats_for_attrib);
+      foreach my $i ( 0 .. $#attrs ) {
+         push @lines, (
+            '$class  = $st_fc[' . $i . '];',
+            '$global = $st_fa[' . $i . '];',
+            $self->{unrolled_for}->{$attrs[$i]},
+         );
       }
-      else {
-         MKDEBUG && _d("Handler for $attrib is not a sub ref. "
-                       . "Perl says it's a " . ref $handler);
-      }
+      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+      unshift @lines, 'sub {';
+      push @lines, '}';
+
+      my $code = join("\n", @lines);
+      MKDEBUG && _d("Unrolled subroutine: ", @lines);
+      my $sub = eval $code;
+      die if $EVAL_ERROR;
+      $self->{unrolled_loops} = $sub;
    }
 
    return;
@@ -2031,16 +2149,6 @@ sub calculate_statistical_metrics {
    return $statistical_metrics;
 }
 
-sub parse_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
-   {
-      $val = timelocal($s, $i, $h, $d, $m - 1, $y + 2000);
-   }
-   return $val;
-}
-
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# SQLMetrics:$line $PID ", @_, "\n";
@@ -2067,7 +2175,7 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-Transformers->import( qw(float_6 micro_t shorten) );
+Transformers->import( qw(micro_t shorten) );
 
 # #############################################################################
 # Get configuration information.
@@ -2119,6 +2227,7 @@ if ( $opts{s} ) {
       maxdirs           => $opts{D},
       maxfiles          => $opts{F},
       maxsessions       => $opts{S},
+      maxsessionfiles   => $opts{M},
       verbosity         => $opts{v},
       session_file_name => $opts{sessionfilename},
       LogParser         => $lp,
@@ -2285,9 +2394,8 @@ sub play_session {
    my $query_n    = 0;
    my $total_time = time;
    my $sm         = new SQLMetrics(
-      key_attrib   => 'arg',
+      group_by     => 'arg',
       attributes   => [qw(query_time n_rows)],
-      fingerprint  => sub { return $qr->fingerprint(@_); },
       worst_attrib => 'query_time',
    );
 
@@ -2409,7 +2517,7 @@ sub report_session_stats {
          .  "$s$query->{n_rows}->{sum}"
          .  "$s$query->{n_rows}->{min}"
          .  "$s$query->{n_rows}->{max}"
-         .  "$s$query->{query_time}->{sample}"
+         .  "$s$query->{query_time}->{sample}->{arg}"
          .  "\n";
    }
    print "\n";
@@ -2567,6 +2675,24 @@ log file. For huge logs, however, this can result in hundreds of thousands of
 sessions. This option causes only the first N number of sessions to be saved.
 
 See also L<"--maxdirs"> and L<"--maxfiles">.
+
+=item --maxsessionfiles
+
+short form: -M; type: int; default: 0
+
+Max number of session files in which sessions are saved with --split.
+
+By default, one session is saved in one file up to L<"--maxsessions">
+(and L<"--maxfiles"> and L<"--maxdirs">). This option causes several sessions
+to be saved to a limited number of files up to L<"--maxsessions">.
+
+For example, if you want to split a lot with 10,000 sessions into only two
+session files, each one containing 5,000 session, then specify
+--maxsessionfiles 2.
+
+If, for the same 10,000 session log, you specify --maxsessionfiles 2
+and --maxsessions 2000, then the two session files will each contain 1,000
+sessions.
 
 =item --onlyselect
 
