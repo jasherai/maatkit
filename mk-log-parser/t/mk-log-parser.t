@@ -5,6 +5,7 @@ use warnings FATAL => 'all';
 
 use Test::More tests => 20;
 use English qw(-no_match_vars);
+use constant MKDEBUG => $ENV{MKDEBUG};
 
 # #############################################################################
 # First, some basic input-output diffs to make sure that
@@ -15,6 +16,7 @@ use English qw(-no_match_vars);
 # cmd's output and the expected output.
 sub no_diff {
    my ( $cmd, $expected_output ) = @_;
+   MKDEBUG && diag($cmd);
    `$cmd > /tmp/mk-log-parser_test`;
    # Uncomment this line to update the $expected_output files when there is a
    # fix.

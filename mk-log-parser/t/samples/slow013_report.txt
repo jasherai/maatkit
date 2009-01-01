@@ -59,7 +59,7 @@ SET autocommit=0\G
 #  10s+
 commit\G
 
-# Query 004 (0 QPS) ID: 0xE9800998ECF8427E at byte 385 __________________
+# Query 004 (0 QPS) ID: 0x8EC70FAF5FB095A9 at byte 385 __________________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        1   20
 #      Time      5us    0     5us     5us     5us     5us       0     5us
