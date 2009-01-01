@@ -3067,9 +3067,11 @@ my $dp = new DSNParser (
    { key => 't', desc => 'Table to use as the query review table' } );
 my $q  = new Quoter();
 my $qr = new QueryRewriter();
-my $qv; # QueryReview
-my $qv_dbh;
-my $sm; # SQLMetrics
+my $qv;     # QueryReview
+my $qv_dbh; # For QueryReview
+my $ex_dbh; # For --execute
+my $ps_dbh; # For Processlist
+my $sm;     # SQLMetrics
 
 { # Begin a global scope to avoid poisoning subroutines with global variables.
 
@@ -3121,7 +3123,7 @@ my $sm; # SQLMetrics
    };
 
    push @callbacks, get_post_filter_callbacks(\%opts);
-   push @callbacks, get_replay_callbacks(\%opts);
+   push @callbacks, get_execute_callback(\%opts);
    push @callbacks, get_query_review_callback(\%opts);
    push @callbacks, get_analyze_callback(\%opts);
 
@@ -3136,7 +3138,7 @@ my $sm; # SQLMetrics
 
    if ( $opts{processlist} ) {    # Sniff SHOW FULL PROCESSLIST
       require Time::HiRes;
-      my $ps_dbh = $dp->get_dbh( $dp->get_cxn_params( $opts{processlist} ),
+      $ps_dbh = $dp->get_dbh( $dp->get_cxn_params( $opts{processlist} ),
          { AutoCommit => 1 } );
       my $ps   = new Processlist();
       my $sth  = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
@@ -3187,12 +3189,11 @@ my $sm; # SQLMetrics
 
    if ( $opts{A} ) {
       my @worst = find_top_queries($sm, $opts{s}, $opts{t}, $opts{w});
-      report_queries(\%opts, @worst);
+      print_analysis_report(\%opts, @worst);
    }
 
-   if ( $qv_dbh ) {
-      $dp->disconnect($qv_dbh);
-   }
+   # Disconnect all open $dbh's
+   map { $dp->disconnect($_) } grep { $_ } ($qv_dbh, $ex_dbh, $ps_dbh);
 
    exit;
 } # End global scope.
@@ -3206,9 +3207,32 @@ sub get_post_filter_callbacks {
    return ();
 }
 
-sub get_replay_callbacks {
+sub get_execute_callback {
    my ( $opts ) = @_;
-   return ();
+   return () unless $opts->{execute};
+   require Time::HiRes;
+   $ex_dbh = $dp->get_dbh($dp->get_cxn_params($opts->{execute}), {AutoCommit => 1});
+   my $curdb;
+   return sub {
+      my ( $event ) = @_;
+      my $db = $event->{db};
+      if ( $db && (!$curdb || $db ne $curdb) ) {
+         $ex_dbh->do("USE $db");
+         $curdb = $db;
+      }
+      my $start = Time::HiRes::time();
+      eval {
+         # TODO: only if it's a cmd=Query event
+         $ex_dbh->do($event->{arg});
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+         return 0;
+      }
+      my $end = Time::HiRes::time();
+      $event->{Query_time} = $end - $start;
+      return 1;
+   };
 }
 
 # TODO: if there's no --analyze, then we shouldn't cache, we should insert as
@@ -3305,12 +3329,12 @@ sub find_top_queries {
       }
    }
    # Add event's fingerprint to itself as a pseudo-attribute for use in
-   # report_queries() to correlate with query review table info.
+   # print_analysis_report() to correlate with query review table info.
    return map { $classes->{$_}->{fingerprint} = $_; $classes->{$_}; }
       @sorted[0 .. $count - 1];
 }
 
-sub report_queries {
+sub print_analysis_report {
    my ( $opts, @worst ) = @_;
    my $u = $sm->{metrics}->{unique};
    my $g = $sm->{metrics}->{all};
@@ -3906,6 +3930,17 @@ A sanity limit for attribute values.
 This option deals with bugs in slow-logging functionality that causes large
 values for attributes.  If the attribute's value is bigger than this, the
 last-seen value for that class of query is used instead.
+
+=item --execute
+
+type: DSN
+
+Execute queries on this DSN.
+
+Adds a callback into the chain, after filters but before L<"--review"> or
+L<"--analyze">.  Events are executed on this DSN.  If they are successful, the
+time they take to execute overwrites the event's Query_time attribute.  If
+unsuccessful, the callback returns false and terminates the chain.
 
 =item --fingerprints
 
