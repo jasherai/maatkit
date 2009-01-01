@@ -850,7 +850,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 2694
+# Processlist package 2738
 # ###########################################################################
 package Processlist;
 
@@ -869,7 +869,9 @@ use constant {
    TIME    => 5,
    STATE   => 6,
    INFO    => 7,
-   START   => 8,
+   START   => 8, # Calculated start time of statement
+   ETIME   => 9, # Exec time of SHOW PROCESSLIST (margin of error in START)
+   FSEEN   => 10, # First time ever seen
 };
 
 sub new {
@@ -896,24 +898,28 @@ sub parse_event {
       if ( $curr || $prev ) {
          if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
             MKDEBUG && _d('$curr and $prev are the same cxn');
-            my $fudge = $curr->[TIME] =~ m/\D/ ? 0 : 1;
+            my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
             my $is_new = 0;
             if ( $prev->[INFO] ) {
                if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
                   MKDEBUG && _d('$curr has a new query');
                   $is_new = 1;
                }
+               elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
+                  MKDEBUG && _d('$curr time is less than $prev time');
+                  $is_new = 1;
+               }
                elsif ( $curr->[INFO] && defined $curr->[TIME]
-                     && $misc->{time} - $curr->[TIME] - $fudge > $prev->[START]
+                  && $misc->{time} - $curr->[TIME] - $prev->[START]
+                     - $prev->[ETIME] - $misc->{etime} > $fudge
                ) {
                   MKDEBUG && _d('$curr has same query that restarted');
                   $is_new = 1;
                }
                if ( $is_new ) {
-                  fire_event( $prev, @callbacks );
+                  fire_event( $prev, $misc->{time}, @callbacks );
                }
             }
-
             if ( $curr->[INFO] ) {
                if ( $prev->[INFO] && !$is_new ) {
                   MKDEBUG && _d('Pushing old history item back onto $prev');
@@ -921,20 +927,26 @@ sub parse_event {
                }
                else {
                   MKDEBUG && _d('Pushing new history item onto $prev');
-                  push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
+                  push @new,
+                     [ @$curr, int($misc->{time} - $curr->[TIME]),
+                        $misc->{etime}, $misc->{time} ];
                }
             }
             $curr = $prev = undef; # Fetch another from each.
          }
          elsif ( !$curr
                || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
-            fire_event( $prev, @callbacks );
+            MKDEBUG && _d('$curr is not in $prev');
+            fire_event( $prev, $misc->{time}, @callbacks );
             $prev = undef;
          }
          else { # This else must be entered, to prevent infinite loops.
+            MKDEBUG && _d('$prev is not in $curr');
             if ( $curr->[INFO] && defined $curr->[TIME] ) {
                MKDEBUG && _d('Pushing new history item onto $prev');
-               push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
+               push @new,
+                  [ @$curr, int($misc->{time} - $curr->[TIME]),
+                     $misc->{etime}, $misc->{time} ];
             }
             $curr = undef; # No infinite loops.
          }
@@ -947,7 +959,11 @@ sub parse_event {
 }
 
 sub fire_event {
-   my ( $row, @callbacks ) = @_;
+   my ( $row, $time, @callbacks ) = @_;
+   my $Query_time = $row->[TIME];
+   if ( $row->[TIME] < $time - $row->[FSEEN] ) {
+      $Query_time = $time - $row->[FSEEN];
+   }
    my $event = {
       id         => $row->[ID],
       db         => $row->[DB],
@@ -955,7 +971,7 @@ sub fire_event {
       host       => $row->[HOST],
       arg        => $row->[INFO],
       ts         => $row->[START] + $row->[TIME], # Query END time
-      Query_time => $row->[TIME],
+      Query_time => $Query_time,
       Lock_time  => 0,               # TODO
    };
    map { return unless $_->($event) } @callbacks;
@@ -973,7 +989,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2710
+# LogParser package 2740
 # ###########################################################################
 package LogParser;
 
@@ -1195,7 +1211,7 @@ sub parse_event {
 }
 
 sub parse_slowlog_event {
-   my ( $self, $fh, $callbacks ) = @_;
+   my ( $self, $fh, $misc, @callbacks ) = @_;
    my $num_events = 0;
 
    my @pending;
@@ -1307,7 +1323,7 @@ sub parse_slowlog_event {
 
       my $event = { @properties };
       CALLBACK:
-      foreach my $callback ( @$callbacks ) {
+      foreach my $callback ( @callbacks ) {
          last CALLBACK unless $callback->($event);
       }
       ++$num_events;
@@ -1391,6 +1407,7 @@ use Data::Dumper;
 use English qw(-no_match_vars);
 use Digest::MD5 qw(md5_hex);
 use constant MKDEBUG => $ENV{MKDEBUG};
+$OUTPUT_AUTOFLUSH = 1;
 
 # ############################################################################
 # Get configuration information.
@@ -1445,22 +1462,13 @@ if ( $opts{x} ) {
    };
 }
 else {
-   $callback = sub {
-      my $query = $_[0]->{arg};
-      return unless $query =~ m/$opts{regex}/o;
-      my $db    = $_[0]->{db};
-      if ( $db && (!$curdb || $db ne $curdb) ) {
-         print "USE $db;\n";
-         $curdb = $db;
-      }
-      print $time, " ", $query, ", $_[0]->{Query_time} ;\n";
-   };
+   $callback = sub { print Dumper @_; };
 }
 
 my $p = new Processlist;
 my $dbh2 = $dp->get_dbh($dp->get_cxn_params($opts{p}), {AutoCommit => 1}); # TODO
 while ( my $fh = shift(@fhs) ) {
-#   1 while $lp->parse_slowlog_event($fh, sub { $callback->(@_) });
+#   1 while $lp->parse_slowlog_event($fh, $callback });
    my $sth = $dbh2->prepare('show full processlist');
    my $cxn = $dbh2->{mysql_thread_id};
    my $misc = { prev => [], time => 0 };
@@ -1469,10 +1477,11 @@ while ( my $fh = shift(@fhs) ) {
       $p->parse_event(
          sub {
             $sth->execute;
+            $misc->{etime} = time();
             [ grep { $_->[0] != $cxn } @{$sth->fetchall_arrayref();} ]
          },
          $misc,
-         sub { $callback->(@_) }
+         sub { print "got called", Dumper(\@_) },
       );
    }
    close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
