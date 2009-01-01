@@ -3136,7 +3136,6 @@ my $sm; # SQLMetrics
 
    if ( $opts{processlist} ) {    # Sniff SHOW FULL PROCESSLIST
       require Time::HiRes;
-      import Time::HiRes qw(time sleep);
       my $ps_dbh = $dp->get_dbh( $dp->get_cxn_params( $opts{processlist} ),
          { AutoCommit => 1 } );
       my $ps   = new Processlist();
@@ -3144,17 +3143,17 @@ my $sm; # SQLMetrics
       my $cxn  = $ps_dbh->{mysql_thread_id};
       my $misc = { prev => [], time => 0, etime => 0 };
       while ($oktorun) {
-         my $time = $misc->{time} = time();
+         my $time = $misc->{time} = Time::HiRes::time();
          $ps->parse_event(
             sub {
                $sth->execute;
-               $misc->{etime} = time() - $time;
+               $misc->{etime} = Time::HiRes::time() - $time;
                [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
             },
             $misc,
             @callbacks,
          );
-         sleep $opts{i};
+         Time::HiRes::usleep($opts{i} * 1_000_000);
       }
    }
    else { # Parse log files
@@ -3275,10 +3274,15 @@ sub get_analyze_callback {
 
 sub find_top_queries {
    my ( $sm, $sort, $top, $worst ) = @_;
-   my $classes = $sm->{metrics}->{unique};
-   my @worst;
-
    MKDEBUG && _d("sort $sort top $top worst $worst");
+
+   my $classes = $sm->{metrics}->{unique};
+   if ( ! %{$classes} ) {
+      print "# No events processed.\n";
+      exit;
+   }
+
+   my @worst;
    my @sorted =
       reverse sort {
          $classes->{$a}->{$worst}->{$sort} <=> $classes->{$b}->{$worst}->{$sort}
@@ -3931,9 +3935,9 @@ See L<OUTPUT> for more information on the header.
 
 =item --interval
 
-short form: -i; type: time; default: .1
+short form: -i; type: string; default: .1
 
-How frequently to poll the processlist.
+How frequently to poll the processlist, in seconds.
 
 =item --processlist
 
