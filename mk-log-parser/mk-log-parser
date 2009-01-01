@@ -896,7 +896,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2728
+# Transformers package 2749
 # ###########################################################################
 
 package Transformers;
@@ -915,7 +915,7 @@ our @EXPORT_OK   = qw(
    micro_t
    percentage_of
    secs_to_time
-   shorten 
+   shorten
    ts
 );
 
@@ -1194,7 +1194,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 2745
+# Processlist package 2750
 # ###########################################################################
 package Processlist;
 
@@ -1222,101 +1222,6 @@ sub new {
    bless {}, $class;
 }
 
-# This method accepts a $code coderef, which is typically going to return SHOW
-# FULL PROCESSLIST, and an array of callbacks.  The $code coderef can be any
-# subroutine that can return an array of arrayrefs that have the same structure
-# as SHOW FULL PRCESSLIST (see the defined constants above).  When it sees a
-# query complete, it turns the query into an "event" and calls the callbacks
-# with it.  It may find more than one event per call.  It also expects a $misc
-# hashref, which it will use to maintain state in the caller's namespace across
-# calls.  It expects this hashref to have the following:
-#
-#  my $misc = { prev => [], time => time(), etime => ? };
-#
-# Where etime is how long SHOW FULL PROCESSLIST took to execute.
-#
-# Each event is a hashref of attribute => value pairs like:
-#
-#  my $event = {
-#     ts  => '',    # Timestamp
-#     id  => '',    # Connection ID
-#     arg => '',    # Argument to the command
-#     other attributes...
-#  };
-#
-# Returns the number of events it finds.
-#
-# Technical details: keeps the previous run's processes in an array, gets the
-# current processes, and iterates through them, comparing prev and curr.  There
-# are several cases:
-#
-# 1) Connection is in curr, not in prev.  This is a new connection.  Calculate
-#    the time at which the statement must have started to execute.  Save this as
-#    a property of the event.
-# 2) Connection is in curr and prev, and the statement is the same, and the
-#    current time minus the start time of the event in prev matches the Time
-#    column of the curr.  This is the same statement we saw last time we looked
-#    at this connection, so do nothing.
-# 3) Same as 2) but the Info is different.  Then sometime between the prev
-#    and curr snapshots, that statement finished.  Assume it finished
-#    immediately after we saw it last time.  Fire the event handlers.
-#    TODO: if the statement is now running something else or Sleep for a certain
-#    time, then that shows the max end time of the last statement.  If it's 10s
-#    later and it's now been Sleep for 8s, then it might have ended up to 8s
-#    ago.
-# 4) Connection went away, or Info went NULL.  Same as 3).
-#
-# The default MySQL server has one-second granularity in the Time column.  This
-# means that a statement that starts at X.9 seconds shows 0 seconds for only 0.1
-# second.  A statement that starts at X.0 seconds shows 0 secs for a second, and
-# 1 second up until it has actually been running 2 seconds.  This makes it
-# tricky to determine when a statement has been re-issued.  Further, this
-# program and MySQL may have some clock skew.  Even if they are running on the
-# same machine, it's possible that at X.999999 seconds we get the time, and at 
-# X+1.000001 seconds we get the snapshot from MySQL.  (Fortunately MySQL doesn't
-# re-evaluate now() for every process, or that would cause even more problems.)
-# And a query that's issued to MySQL may stall for any amount of time before
-# it's executed, making even more skew between the times.
-#
-# As a result of all this, this program assumes that the time it is passed in
-# $misc is measured consistently *after* calling SHOW PROCESSLIST, and is
-# measured with high precision (not second-level precision, which would
-# introduce an extra second of possible error in each direction).  That is a
-# convention that's up to the caller to follow.  One worst case is this:
-#
-#  * The processlist measures time at 100.01 and it's 100.
-#  * We measure the time.  It says 100.02.
-#  * A query was started at 90.  Processlist says Time=10.
-#  * We calculate that the query was started at 90.02.
-#  * Processlist measures it at 100.998 and it's 100.
-#  * We measure time again, it says 100.999.
-#  * Time has passed, but the Time column still says 10.
-#
-# Another:
-#
-#  * We get the processlist, then the time.
-#  * A second later we get the processlist, but it takes 2 sec to fetch.
-#  * We measure the time and it looks like 3 sec have passed, but ps says only
-#    one has passed.  (This is why $misc->{etime} is necessary).
-#
-# What should we do?  Well, the key thing to notice here is that a new statement
-# has started if a) the Time column actually decreases since we last saw the
-# process, or b) the Time column does not increase for 2 seconds, plus the etime
-# of the first and second measurements combined!
-#
-# The $code shouldn't return itself, e.g. if it's a PROCESSLIST you should
-# filter out $dbh->{mysql_thread_id}.
-#
-# TODO: unresolved issues are
-# 1) What about Lock_time?  It's unclear if a query starts at 100, unlocks at
-#    105 and completes at 110, is it 5s lock and 5s exec?  Or 5s lock, 10s exec?
-#    This code should match that behavior.
-# 2) What about splitting the difference?  If I see a query now with 0s, and one
-#    second later I look and see it's gone, should I split the middle and say it
-#    ran for .5s?
-# 3) I think user/host needs to do user/host/ip, really.  And actually, port
-#    will show up in the processlist -- make that a property too.
-# 4) It should put cmd => Query, cmd => Admin, or whatever
 sub parse_event {
    my ( $self, $code, $misc, @callbacks ) = @_;
    my $num_events = 0;
@@ -1326,7 +1231,7 @@ sub parse_event {
    my @new; # Will become next invocation's @prev
    my ($curr, $prev); # Rows from each source
 
-   do { 
+   do {
       if ( !$curr && @curr ) {
          MKDEBUG && _d('Fetching row from curr');
          $curr = shift @curr;
@@ -1336,17 +1241,12 @@ sub parse_event {
          $prev = shift @prev;
       }
       if ( $curr || $prev ) {
-         # In each of the if/elses, something must be undef'ed to prevent
-         # infinite looping.
          if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
             MKDEBUG && _d('$curr and $prev are the same cxn');
-            # Or, if its start time seems to be after the start time of
-            # the previously seen one, it's also a new query.
             my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
             my $is_new = 0;
             if ( $prev->[INFO] ) {
                if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
-                  # This is a different query or a new query
                   MKDEBUG && _d('$curr has a new query');
                   $is_new = 1;
                }
@@ -1379,14 +1279,12 @@ sub parse_event {
             }
             $curr = $prev = undef; # Fetch another from each.
          }
-         # The row in the prev doesn't exist in the curr.  Fire an event.
          elsif ( !$curr
                || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
             MKDEBUG && _d('$curr is not in $prev');
             fire_event( $prev, $misc->{time}, @callbacks );
             $prev = undef;
          }
-         # The row in curr isn't in prev; start a new event.
          else { # This else must be entered, to prevent infinite loops.
             MKDEBUG && _d('$prev is not in $curr');
             if ( $curr->[INFO] && defined $curr->[TIME] ) {
@@ -1405,10 +1303,6 @@ sub parse_event {
    return $num_events;
 }
 
-# The exec time of the query is the max of the time from the processlist, or the
-# time during which we've actually observed the query running.  In case two
-# back-to-back queries executed as the same one and we weren't able to tell them
-# apart, their time will add up, which is kind of what we want.
 sub fire_event {
    my ( $row, $time, @callbacks ) = @_;
    my $Query_time = $row->[TIME];
@@ -1440,7 +1334,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2740
+# LogParser package 2749
 # ###########################################################################
 package LogParser;
 
@@ -1585,7 +1479,7 @@ sub parse_event {
          }
 
          elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
-            
+
             if ( $type == 0 ) {
                if ( $line =~ m/^#.+;/ ) {
                   MKDEBUG && _d('Commented event line ends header');
@@ -1639,7 +1533,7 @@ sub parse_event {
             MKDEBUG && _d('Line is a continuation of prev line');
             $event->{arg} .= $line;
             $type = 2;
-         } 
+         }
       }
 
       $event->{NR} = $NR;
@@ -2564,7 +2458,7 @@ sub _d {
 # #############################################################################
 
 # ###########################################################################
-# TableParser package 2631
+# TableParser package 2749
 # ###########################################################################
 package TableParser;
 
@@ -2701,7 +2595,7 @@ sub sort_indexes {
          $tbl->{keys}->{$_}->{type} eq 'BTREE'
       }
       sort keys %{$tbl->{keys}};
-   
+
    MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
    return @indexes;
 }
@@ -2773,7 +2667,7 @@ sub get_engine {
 sub get_keys {
    my ( $self, $ddl, $opts ) = @_;
 
-   my @indexes = 
+   my @indexes =
       grep { $_ !~ m/FOREIGN/ }
       $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
 
@@ -2948,7 +2842,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 2719
+# QueryReview package 2749
 # ###########################################################################
 package QueryReview;
 
@@ -3039,7 +2933,7 @@ sub cache_event {
                first_seen => $review_info->{$checksum}->{first_seen} || '',
                last_seen  => $review_info->{$checksum}->{last_seen}  || '',
             },
-         }; 
+         };
          $self->_update_cache($group_by, $event);
       }
       else {
@@ -3060,9 +2954,9 @@ sub cache_event {
                first_seen => $ts,
                last_seen  => $ts,
             },
-         }; 
+         };
       }
-   } 
+   }
 
    $event->{checksum} = $checksum;
 
@@ -3165,146 +3059,177 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 $SIG{INT} = \&sig_int;
 
 # #############################################################################
-# Get configuration information.
+# Global variables.  Only really essential variables should be here.
 # #############################################################################
-
+my $oktorun = 1;
 my $dp = new DSNParser (
    { key => 'D', desc => 'Database that contains the query review table' },
    { key => 't', desc => 'Table to use as the query review table' } );
-
-my @opt_spec   = OptionParser::pod_to_spec();
-my $opt_parser = new OptionParser(@opt_spec);
-$opt_parser->{strict} = 0;
-$opt_parser->{dsn}    = $dp;
-$opt_parser->{prompt} = '[OPTION...] [FILE]';
-$opt_parser->{descr}  = q{parses and analyzes MySQL log files.  With no }
-                      . q{FILE, or when FILE is -, read standard input.};
-my %opts = $opt_parser->parse();
-
-if ( !$opts{help} ) {
-   if ( $opts{R} && (!defined $opts{R}->{D} || !defined $opts{R}->{t}) ) {
-      $opt_parser->error('The --review DSN requires a D (database) and t"
-         . " (table) part specifying the query review table');
-   }
-   if ( $opts{t} !~ m/^\d+%?$/ ) {
-      $opt_parser->error('Invalid syntax for --top.  See perldoc for details.');
-   }
-}
-
-$opt_parser->usage_or_errors(%opts);
-
-# #############################################################################
-# Set up callbacks for the various event handling behaviors.
-# #############################################################################
 my $q  = new Quoter();
 my $qr = new QueryRewriter();
-my $qv;           # used if --review
-my $dbh;          # used if --review
-my $sm;           # used if do_analysis
-my @callbacks;
+my $qv; # QueryReview
+my $qv_dbh;
+my $sm; # SQLMetrics
 
-# This chain of callbacks begins with the sub below which only
-# fingerprints the event and adds that fingerprint to the event.
-# Subsequent callbacks--for review and/or analyze--expect the event
-# to have its own fingerprint. This way we fingerprint only once.
-# Only the event is passed to each callback. Each callback is called
-# in order in LogParser::parse_slowlog_event().
-# The chain can terminate early if one of the callbacks returns 0.
-# If this happens, the chain restarts immediately with the next event.
-push @callbacks, sub {
-   my ( $event ) = @_;
-   # TODO: save db and ts from last event and apply it here.  (Before skipping!)
-   # Skip events which do not have the group_by attribute.
-   my $group_by_val = $event->{arg};
-   return 0 unless defined $group_by_val;
-   my $fingerprint = $qr->fingerprint($group_by_val);
-   $event->{fingerprint} = $fingerprint;
-   return 1;
-};
+{ # Begin a global scope to avoid poisoning subroutines with global variables.
 
-push @callbacks, get_query_review_callback() if $opts{R};
-push @callbacks, get_analyze_callback()      if $opts{A};
+   # #############################################################################
+   # Get configuration information.
+   # #############################################################################
+   my @opt_spec   = OptionParser::pod_to_spec();
+   my $opt_parser = new OptionParser(@opt_spec);
+   $opt_parser->{strict} = 0;
+   $opt_parser->{dsn}    = $dp;
+   $opt_parser->{prompt} = '[OPTION...] [FILE]';
+   $opt_parser->{descr}  = q{parses and analyzes MySQL log files.  With no }
+                         . q{FILE, or when FILE is -, read standard input.};
+   my %opts = $opt_parser->parse();
 
-# ############################################################################
-# Parse the input.
-# ############################################################################
-my @fhs;
-if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
-   my $fh = *STDIN;
-   push @fhs, $fh;
-}
-else {
-   foreach my $arg ( @ARGV ) {
-      open my $fh, "<", $arg or die "Cannot open $arg: $OS_ERROR\n";
-      push @fhs, $fh;
+   if ( !$opts{help} ) {
+      if ( $opts{R} && (!defined $opts{R}->{D} || !defined $opts{R}->{t}) ) {
+         $opt_parser->error('The --review DSN requires a D (database) and t"
+            . " (table) part specifying the query review table');
+      }
+      if ( $opts{t} !~ m/^\d+%?$/ ) {
+         $opt_parser->error('Invalid syntax for --top.  See perldoc for details.');
+      }
    }
-}
 
-my $oktorun = 1;
-if ( $opts{processlist} ) {
-   require Time::HiRes;
-   import Time::HiRes qw(time sleep);
-   my $ps_dbh = $dp->get_dbh($dp->get_cxn_params($opts{processlist}), {AutoCommit => 1});
-   my $ps = new Processlist();
-   my $sth = $ps_dbh->prepare('show full processlist');
-   my $cxn = $ps_dbh->{mysql_thread_id};
-   my $misc = { prev => [], time => 0, etime => 0 };
-   while ( $oktorun ) {
-      $misc->{time} = time();
-      $ps->parse_event(
-         sub {
-            $sth->execute;
-            $misc->{etime} = time();
-            [ grep { $_->[0] != $cxn } @{$sth->fetchall_arrayref();} ]
-         },
-         $misc,
-         @callbacks,
-      );
-      sleep($opts{i});
+   $opt_parser->usage_or_errors(%opts);
+
+   # #############################################################################
+   # Set up callbacks for the various event handling behaviors.
+   #
+   # This chain of callbacks begins with the sub below which only fingerprints
+   # the event and adds that fingerprint to the event.  Subsequent callbacks
+   # expect the event to have its own fingerprint. This way we fingerprint only
+   # once.  Only the event is passed to each callback. Each callback is called
+   # in order in the parse_X subroutines.  The chain can terminate early if one
+   # of the callbacks returns 0.  If this happens, the chain restarts
+   # immediately with the next event.
+   # #############################################################################
+   my @callbacks;
+   push @callbacks, sub {
+      my ( $event ) = @_;
+      # TODO: save db and ts from last event and apply it here.  (Before skipping!)
+      # Skip events which do not have the group_by attribute.
+      my $group_by_val = $event->{arg};
+      return 0 unless defined $group_by_val;
+      my $fingerprint = $qr->fingerprint($group_by_val);
+      $event->{fingerprint} = $fingerprint;
+      return 1;
+   };
+
+   push @callbacks, get_post_filter_callbacks(\%opts);
+   push @callbacks, get_replay_callbacks(\%opts);
+   push @callbacks, get_query_review_callback(\%opts);
+   push @callbacks, get_analyze_callback(\%opts);
+
+   # ############################################################################
+   # Parse the input.
+   # ############################################################################
+
+   # TODO: some cmdline opts ought to pass filters into the $misc argument here for
+   # efficiency.  But the easiest thing to do for right now is post-filter with
+   # get_post_filter_callbacks() above.  Ultimately we'd get_pre_filter_callbacks() into
+   # an arrayref here and use that as an argument to the parse_X calls below.
+
+   if ( $opts{processlist} ) {    # Sniff SHOW FULL PROCESSLIST
+      require Time::HiRes;
+      import Time::HiRes qw(time sleep);
+      my $ps_dbh = $dp->get_dbh( $dp->get_cxn_params( $opts{processlist} ),
+         { AutoCommit => 1 } );
+      my $ps   = new Processlist();
+      my $sth  = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
+      my $cxn  = $ps_dbh->{mysql_thread_id};
+      my $misc = { prev => [], time => 0, etime => 0 };
+      while ($oktorun) {
+         my $time = $misc->{time} = time();
+         $ps->parse_event(
+            sub {
+               $sth->execute;
+               $misc->{etime} = time() - $time;
+               [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
+            },
+            $misc,
+            @callbacks,
+         );
+         sleep $opts{i};
+      }
    }
-}
-else {
-   my $lp = new LogParser();
-   while ( $oktorun && (my $fh = shift(@fhs)) ) {
-      1 while ( $oktorun && $lp->parse_slowlog_event($fh, undef, @callbacks) );
-      close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
+   else { # Parse log files
+      my @fhs;
+      if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
+         my $fh = *STDIN;
+         push @fhs, $fh;
+      }
+      else {
+         foreach my $arg ( @ARGV ) {
+            open my $fh, "<", $arg or die "Cannot open $arg: $OS_ERROR\n";
+            push @fhs, $fh;
+         }
+      }
+
+      my $lp = new LogParser();
+      while ( $oktorun && (my $fh = shift(@fhs)) ) {
+         1 while ( $oktorun && $lp->parse_slowlog_event($fh, undef, @callbacks) );
+         close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
+      }
    }
-}
 
-# ############################################################################
-# Finish up (print results, etc).
-# ############################################################################
+   # ############################################################################
+   # Finish up (print results, etc).
+   # ############################################################################
 
-# Flush before reporting so that the report gets the latest review vals.
-$qv->flush_event_cache() if $opts{R};
+   # Flush before reporting so that the report gets the latest review vals.
+   if ( $opts{R} ) {
+      $qv->flush_event_cache(); # TODO see below.
+   }
 
-if ( $opts{A} ) {
-   my @worst = find_top_queries($sm, $opts{s}, $opts{t}, $opts{w});
-   report_queries(@worst);
-}
+   if ( $opts{A} ) {
+      my @worst = find_top_queries($sm, $opts{s}, $opts{t}, $opts{w});
+      report_queries(\%opts, @worst);
+   }
 
-$dp->disconnect($dbh) if $opts{R};
+   if ( $qv_dbh ) {
+      $dp->disconnect($qv_dbh);
+   }
 
-exit;
+   exit;
+} # End global scope.
 
 # ############################################################################
 # Subroutines.
 # ############################################################################
 
+sub get_post_filter_callbacks {
+   my ( $opts ) = @_;
+   return ();
+}
+
+sub get_replay_callbacks {
+   my ( $opts ) = @_;
+   return ();
+}
+
+# TODO: if there's no --analyze, then we shouldn't cache, we should insert as
+# soon as we see a new fingerprint.
 sub get_query_review_callback {
-   $dbh = $dp->get_dbh($dp->get_cxn_params($opts{R}), {AutoCommit => 1});
+   my ( $opts ) = @_;
+   return () unless $opts->{R};
+   $qv_dbh = $dp->get_dbh($dp->get_cxn_params($opts->{R}), {AutoCommit => 1});
    my $tp  = new TableParser();
-   if ( !$tp->table_exists($dbh, $opts{R}->{D}, $opts{R}->{t}, $q, 1) ) {
-      die "The query review table $opts{R}->{D}.$opts{R}->{t} "
+   if ( !$tp->table_exists($qv_dbh, $opts->{R}->{D}, $opts->{R}->{t}, $q, 1) ) {
+      die "The query review table $opts->{R}->{D}.$opts->{R}->{t} "
          . "does not exist or you do not have INSERT privileges";
    }
    my $du     = new MySQLDump();
-   my $db_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
+   my $db_tbl = $q->quote($opts->{R}->{D}, $opts->{R}->{t});
    my $struct = $tp->parse(
-      $du->dump($dbh, $q, $opts{R}->{D}, $opts{R}->{t}, 'table'));
-   $qv        = new QueryReview(
+      $du->dump($qv_dbh, $q, $opts->{R}->{D}, $opts->{R}->{t}, 'table'));
+   $qv = new QueryReview(
       group_by    => 'fingerprint',
-      dbh         => $dbh,
+      dbh         => $qv_dbh,
       db_tbl      => $db_tbl,
       tbl_struct  => $struct,
    );
@@ -3318,10 +3243,12 @@ sub get_query_review_callback {
 }
 
 sub get_analyze_callback {
+   my ( $opts ) = @_;
+   return () unless $opts->{A};
    $sm = new SQLMetrics(
       group_by     => 'fingerprint',
-      worst_attrib => $opts{w},  # TODO this can be an expr, add to attributes
-      attrib_limit => $opts{attriblimit},
+      worst_attrib => $opts->{w},  # TODO this can be an expr, add to attributes
+      attrib_limit => $opts->{attriblimit},
       attributes   => [
          qw(
             Query_time
@@ -3380,7 +3307,7 @@ sub find_top_queries {
 }
 
 sub report_queries {
-   my ( @worst ) = @_;
+   my ( $opts, @worst ) = @_;
    my $u = $sm->{metrics}->{unique};
    my $g = $sm->{metrics}->{all};
    my $Query_time_distro;
@@ -3390,11 +3317,11 @@ sub report_queries {
    # (but don't call them that, it's confusing, maybe "distinct fingerprints")
    # and the totals for all the things the user has selected to be totalled up
    # in the stats table (once it is user-selectable).
-   if ( $opts{header} ) {
+   if ( $opts->{header} ) {
       printf "# Queries: %s, Time: %s\n",
          shorten($sm->{n_queries}),
          micro_t($sm->{metrics}->{all}->{Query_time}->{sum}, p_s => 1, p_ms => 1);
-      if ( $opts{rusage} ) {
+      if ( $opts->{rusage} ) {
          printf "# CPU times: %s user, %s system\n",
             map { micro_t($_, p_s => 1, p_ms => 1) } times();
          eval {
@@ -3443,12 +3370,20 @@ sub report_queries {
       },
    );
 
+   # Prepare to get review values from the --review table.
+   my $review_sth;
    my @review_cols;
-   my %exclude_cols = (fingerprint => 1, sample => 1, checksum => 1);
-   if ( $opts{R} ) {
-      @review_cols = sort
-                     grep { !$exclude_cols{$_} }
-                     (@{$qv->{basic_cols}}, @{$qv->{extra_cols}});
+   if ( $opts->{R} ) {
+      my %exclude_cols = (fingerprint => 1, sample => 1, checksum => 1);
+      @review_cols = grep { !$exclude_cols{$_} }
+                        (@{$qv->{basic_cols}}, @{$qv->{extra_cols}});
+      my $sql = "SELECT "
+              . join(', ', map { $q->quote($_) } @review_cols)
+              . ", CONV(checksum, 10, 16) AS checksum_conv FROM "
+              . $q->quote($opts->{R}->{D}, $opts->{R}->{t})
+              . " WHERE checksum=CONV(?, 16, 10)";
+      MKDEBUG && _d("select for review vals: $sql");
+      $review_sth = $qv_dbh->prepare($sql);
    }
 
    QUERY:
@@ -3458,10 +3393,16 @@ sub report_queries {
       my $checksum    =  QueryReview::make_checksum($fingerprint);
 
       my $review_vals;
-      if ( $opts{R} ) {
-         $review_vals = get_review_vals($checksum, \@review_cols);
-         next QUERY if ( defined $review_vals->{reviewed_by}
-                                && !$opts{reportall} );
+      if ( $opts->{R} ) {
+         $review_sth->execute($checksum);
+         $review_vals = $review_sth->fetchall_arrayref({});
+         if ( $review_vals && @$review_vals == 1 ) {
+            $review_vals = $review_vals->[0];
+            delete $review_vals->{checksum};
+            if ( defined $review_vals->{reviewed_by} && !$opts->{reportall} ) {
+               next QUERY;
+            }
+         }
       }
 
       # Calculate QPS (queries per second) by looking at the min/max timestamp.
@@ -3476,7 +3417,7 @@ sub report_queries {
       }
 
       my $header = sprintf $query_hdr_fmt, $i + 1, shorten($qps,p=>1,d=>1000),
-            $checksum, $class->{$opts{w}}->{sample}->{pos_in_log} || 0;
+            $checksum, $class->{$opts->{w}}->{sample}->{pos_in_log} || 0;
 
       print  $header, ('_' x (73 - length($header))), "\n";
       printf $metrics_hdr_fmt;
@@ -3532,16 +3473,15 @@ sub report_queries {
       # TODO
       # print "# Time clustering\n";
 
-      if ( $opts{R} ) {
+      if ( $opts->{R} ) {
          print "# Review information\n";
-         foreach my $j ( 0..$#review_cols ) {
-            my $col = $review_cols[$j];
+         foreach my $col ( @review_cols ) {
             my $val = $review_vals->{$col};
             printf $review_info_fmt, $col, (defined $val ? $val : '');
          }
       }
 
-      print "# Fingerprint\n#    $fingerprint\n" if $opts{f};
+      print "# Fingerprint\n#    $fingerprint\n" if $opts->{f};
 
       # If the query uses qualified table names (db.tbl), print_tables()
       # will print SHOW TABLE STATUS FROM `db` LIKE 'tbl'. Otherwise,
@@ -3554,43 +3494,27 @@ sub report_queries {
       my ( $default_db ) = keys %{$class->{db}->{unq}}
          if scalar keys %{$class->{db}->{unq}} == 1;
 
-      my $sample = $class->{$opts{w}}->{sample}->{arg};
+      my $sample = $class->{$opts->{w}}->{sample}->{arg};
       my $select_pattern = qr/^[\s\(]*SELECT /i;
       if ( $sample =~ m/$select_pattern/ ) {
-         print_tables($sample, $default_db) if $opts{forexplain};
+         print_tables($sample, $default_db) if $opts->{forexplain};
          print "# EXPLAIN\n$sample\\G\n";
       }
       else {
          my $converted_sample = $qr->convert_to_select($sample);
          if ( $converted_sample =~ m/$select_pattern/ ) {
-            print_tables($converted_sample, $default_db) if $opts{forexplain};
+            print_tables($converted_sample, $default_db) if $opts->{forexplain};
             print "$sample\\G\n";
-            print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts{forexplain};
+            print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts->{forexplain};
          }
          # converted_sample will be the original sample if it
          # failed to convert. Otherwise, it will be a SELECT.
-         print "$converted_sample\\G\n" if $opts{forexplain};
+         print "$converted_sample\\G\n" if $opts->{forexplain};
       }
       print "\n";
    }
 
    return;
-}
-
-sub get_review_vals {
-   my ( $checksum, $cols ) = @_;
-   return unless defined $checksum;
-   my $db_tbl = $q->quote($opts{R}->{D}, $opts{R}->{t});
-   my $select_cols  = join(',', @$cols);
-   my $sql  = "SELECT $select_cols, CONV(checksum,10,16) AS checksum_conv "
-            . "FROM $db_tbl "
-            . "WHERE checksum=CONV('$checksum',16,10)";
-   MKDEBUG && _d("select for review vals: $sql");
-   # There should only be 1 result.
-   my $res = $dbh->selectall_hashref($sql, 'checksum_conv');
-   my $review_vals = $res->{$checksum};
-   delete $review_vals->{checksum_conv};
-   return $review_vals;
 }
 
 sub chart_distro {
