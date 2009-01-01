@@ -3,11 +3,20 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 26;
 use English qw(-no_match_vars);
 
 require '../LogSplitter.pm';
 require '../LogParser.pm';
+
+# Returns true (1) if there's no difference between the
+# output and the expected output.
+sub no_diff {
+   my ( $output, $expected_output ) = @_;
+   my $retval = system("diff $output $expected_output");
+   $retval = $retval >> 8;
+   return !$retval;
+}
 
 my $tmpdir = '/tmp/logettes';
 diag(`rm -rf $tmpdir ; mkdir $tmpdir`);
@@ -87,9 +96,7 @@ diag(`rm -rf $tmpdir/*`);
 $output = `cat samples/slow006.txt | samples/log_splitter.pl blahblah`;
 like($output, qr/Parsed 0 sessions/, 'Does nothing if no valid logs are given');
 
-diag(`rm -rf $tmpdir`);
-
-
+diag(`rm -rf $tmpdir/*`);
 $ls = new LogSplitter(
    attribute   => 'Thread_id',
    saveto_dir  => "$tmpdir/",
@@ -106,4 +113,24 @@ cmp_ok($ls->{maxfiles}, '==', '100', 'Undef maxfiles gets default');
 cmp_ok($ls->{maxdirs}, '==', '100', 'Undef maxdirs gets default');
 is($ls->{session_file_name}, 'mysql_log_session_', 'Undef session_file_name gets default');
 
+# Test maxsessionfiles (multiple sessions in a limited number of files).
+$ls = new LogSplitter(
+   attribute       => 'Thread_id',
+   saveto_dir      => "$tmpdir/",
+   LogParser       => $lp,
+   verbosity       => 0,
+   maxsessionfiles => 2,
+);
+$ls->split_logs(['samples/slow006.txt' ]);
+is(`ls -1 $tmpdir/1/ | wc -l`, "2\n", 'maxsessionfiles created only 2 files');
+ok(
+   no_diff("$tmpdir/1/mysql_log_session_0001", 'samples/maxsessionfiles_01'),
+   'maxsessionfiles file 1 of 2'
+);
+ok(
+   no_diff("$tmpdir/1/mysql_log_session_0002", 'samples/maxsessionfiles_02'),
+   'maxsessionfiles file 2 of 2'
+);
+
+#diag(`rm -rf $tmpdir`);
 exit;

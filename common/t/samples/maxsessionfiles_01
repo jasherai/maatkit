@@ -1,0 +1,6 @@
+-- session 30
+
+USE `foo`
+
+SELECT col FROM foo_tbl
+
