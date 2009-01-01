@@ -178,7 +178,7 @@ sub sort_indexes {
          $tbl->{keys}->{$_}->{type} eq 'BTREE'
       }
       sort keys %{$tbl->{keys}};
-   
+
    MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
    return @indexes;
 }
@@ -264,7 +264,7 @@ sub get_keys {
    my ( $self, $ddl, $opts ) = @_;
 
    # Find and filter the indexes.
-   my @indexes = 
+   my @indexes =
       grep { $_ !~ m/FOREIGN/ }
       $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
 

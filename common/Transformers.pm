@@ -35,7 +35,7 @@ our @EXPORT_OK   = qw(
    micro_t
    percentage_of
    secs_to_time
-   shorten 
+   shorten
    ts
 );
 

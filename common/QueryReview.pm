@@ -155,7 +155,7 @@ sub cache_event {
                last_seen  => $review_info->{$checksum}->{last_seen}  || '',
                # TODO: init extra cols
             },
-         }; 
+         };
          $self->_update_cache($group_by, $event);
       }
       else {
@@ -179,9 +179,9 @@ sub cache_event {
                first_seen => $ts,
                last_seen  => $ts,
             },
-         }; 
+         };
       }
-   } 
+   }
 
    # Add event's checksum to itself as a pseudo-attribute.
    $event->{checksum} = $checksum;

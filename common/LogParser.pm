@@ -192,7 +192,7 @@ sub parse_event {
          # as that... they typically look like this:
          # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
          elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
-            
+
             if ( $type == 0 ) {
                # Handle commented events like # administrator command: Quit;
                if ( $line =~ m/^#.+;/ ) {
@@ -253,7 +253,7 @@ sub parse_event {
             MKDEBUG && _d('Line is a continuation of prev line');
             $event->{arg} .= $line;
             $type = 2;
-         } 
+         }
       }
 
       # TODO: I think $NR may be misleading because Perl may not distinguish
@@ -297,7 +297,7 @@ sub parse_event {
 # NOTE: If you change anything inside this subroutine, you need to profile
 # the result.  Sometimes a line of code has been changed from an alternate
 # form for performance reasons -- sometimes as much as 20x better performance.
-# 
+#
 # TODO: pass in hooks to let something filter out events as early as possible
 # without parsing more of them than needed.
 sub parse_slowlog_event {
