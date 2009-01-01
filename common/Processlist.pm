@@ -22,7 +22,6 @@ package Processlist;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 use constant {
@@ -34,7 +33,9 @@ use constant {
    TIME    => 5,
    STATE   => 6,
    INFO    => 7,
-   START   => 8,
+   START   => 8, # Calculated start time of statement
+   ETIME   => 9, # Exec time of SHOW PROCESSLIST (margin of error in START)
+   FSEEN   => 10, # First time ever seen
 };
 
 sub new {
@@ -51,7 +52,9 @@ sub new {
 # hashref, which it will use to maintain state in the caller's namespace across
 # calls.  It expects this hashref to have the following:
 #
-#  my $misc = { prev => [], time => time() };
+#  my $misc = { prev => [], time => time(), etime => ? };
+#
+# Where etime is how long SHOW FULL PROCESSLIST took to execute.
 #
 # Each event is a hashref of attribute => value pairs like:
 #
@@ -84,6 +87,44 @@ sub new {
 #    ago.
 # 4) Connection went away, or Info went NULL.  Same as 3).
 #
+# The default MySQL server has one-second granularity in the Time column.  This
+# means that a statement that starts at X.9 seconds shows 0 seconds for only 0.1
+# second.  A statement that starts at X.0 seconds shows 0 secs for a second, and
+# 1 second up until it has actually been running 2 seconds.  This makes it
+# tricky to determine when a statement has been re-issued.  Further, this
+# program and MySQL may have some clock skew.  Even if they are running on the
+# same machine, it's possible that at X.999999 seconds we get the time, and at 
+# X+1.000001 seconds we get the snapshot from MySQL.  (Fortunately MySQL doesn't
+# re-evaluate now() for every process, or that would cause even more problems.)
+# And a query that's issued to MySQL may stall for any amount of time before
+# it's executed, making even more skew between the times.
+#
+# As a result of all this, this program assumes that the time it is passed in
+# $misc is measured consistently *after* calling SHOW PROCESSLIST, and is
+# measured with high precision (not second-level precision, which would
+# introduce an extra second of possible error in each direction).  That is a
+# convention that's up to the caller to follow.  One worst case is this:
+#
+#  * The processlist measures time at 100.01 and it's 100.
+#  * We measure the time.  It says 100.02.
+#  * A query was started at 90.  Processlist says Time=10.
+#  * We calculate that the query was started at 90.02.
+#  * Processlist measures it at 100.998 and it's 100.
+#  * We measure time again, it says 100.999.
+#  * Time has passed, but the Time column still says 10.
+#
+# Another:
+#
+#  * We get the processlist, then the time.
+#  * A second later we get the processlist, but it takes 2 sec to fetch.
+#  * We measure the time and it looks like 3 sec have passed, but ps says only
+#    one has passed.  (This is why $misc->{etime} is necessary).
+#
+# What should we do?  Well, the key thing to notice here is that a new statement
+# has started if a) the Time column actually decreases since we last saw the
+# process, or b) the Time column does not increase for 2 seconds, plus the etime
+# of the first and second measurements combined!
+#
 # The $code shouldn't return itself, e.g. if it's a PROCESSLIST you should
 # filter out $dbh->{mysql_thread_id}.
 #
@@ -108,11 +149,11 @@ sub parse_event {
 
    do { 
       if ( !$curr && @curr ) {
-         # MKDEBUG && _d('Fetching row from curr');
+         MKDEBUG && _d('Fetching row from curr');
          $curr = shift @curr;
       }
       if ( !$prev && @prev ) {
-         # MKDEBUG && _d('Fetching row from prev');
+         MKDEBUG && _d('Fetching row from prev');
          $prev = shift @prev;
       }
       if ( $curr || $prev ) {
@@ -120,13 +161,9 @@ sub parse_event {
          # infinite looping.
          if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
             MKDEBUG && _d('$curr and $prev are the same cxn');
-            # If the query is different from the previously seen one, it's a new
-            # query.  Or, if its start time seems to be after the start time of
-            # the previously seen one, it's also a new query.  Because of the
-            # limited precision of the standard processlist, it's easy to get
-            # into a race condition and fire before the query is done, so we add
-            # 1 second when the time is a whole number.
-            my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1;
+            # Or, if its start time seems to be after the start time of
+            # the previously seen one, it's also a new query.
+            my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
             my $is_new = 0;
             if ( $prev->[INFO] ) {
                if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
@@ -134,14 +171,19 @@ sub parse_event {
                   MKDEBUG && _d('$curr has a new query');
                   $is_new = 1;
                }
+               elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
+                  MKDEBUG && _d('$curr time is less than $prev time');
+                  $is_new = 1;
+               }
                elsif ( $curr->[INFO] && defined $curr->[TIME]
-                     && $misc->{time} - $curr->[TIME] - $fudge > $prev->[START]
+                  && $misc->{time} - $curr->[TIME] - $prev->[START]
+                     - $prev->[ETIME] - $misc->{etime} > $fudge
                ) {
                   MKDEBUG && _d('$curr has same query that restarted');
                   $is_new = 1;
                }
                if ( $is_new ) {
-                  fire_event( $prev, @callbacks );
+                  fire_event( $prev, $misc->{time}, @callbacks );
                }
             }
             if ( $curr->[INFO] ) {
@@ -151,7 +193,9 @@ sub parse_event {
                }
                else {
                   MKDEBUG && _d('Pushing new history item onto $prev');
-                  push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
+                  push @new,
+                     [ @$curr, int($misc->{time} - $curr->[TIME]),
+                        $misc->{etime}, $misc->{time} ];
                }
             }
             $curr = $prev = undef; # Fetch another from each.
@@ -159,16 +203,18 @@ sub parse_event {
          # The row in the prev doesn't exist in the curr.  Fire an event.
          elsif ( !$curr
                || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
-            #MKDEBUG && _d('$curr is not in $prev');
-            fire_event( $prev, @callbacks );
+            MKDEBUG && _d('$curr is not in $prev');
+            fire_event( $prev, $misc->{time}, @callbacks );
             $prev = undef;
          }
          # The row in curr isn't in prev; start a new event.
          else { # This else must be entered, to prevent infinite loops.
-            #MKDEBUG && _d('$prev is not in $curr');
+            MKDEBUG && _d('$prev is not in $curr');
             if ( $curr->[INFO] && defined $curr->[TIME] ) {
                MKDEBUG && _d('Pushing new history item onto $prev');
-               push @new, [ @$curr, $misc->{time} - $curr->[TIME] ];
+               push @new,
+                  [ @$curr, int($misc->{time} - $curr->[TIME]),
+                     $misc->{etime}, $misc->{time} ];
             }
             $curr = undef; # No infinite loops.
          }
@@ -180,9 +226,16 @@ sub parse_event {
    return $num_events;
 }
 
+# The exec time of the query is the max of the time from the processlist, or the
+# time during which we've actually observed the query running.  In case two
+# back-to-back queries executed as the same one and we weren't able to tell them
+# apart, their time will add up, which is kind of what we want.
 sub fire_event {
-   my ( $row, @callbacks ) = @_;
-   #print Dumper($row);
+   my ( $row, $time, @callbacks ) = @_;
+   my $Query_time = $row->[TIME];
+   if ( $row->[TIME] < $time - $row->[FSEEN] ) {
+      $Query_time = $time - $row->[FSEEN];
+   }
    my $event = {
       id         => $row->[ID],
       db         => $row->[DB],
@@ -190,7 +243,7 @@ sub fire_event {
       host       => $row->[HOST],
       arg        => $row->[INFO],
       ts         => $row->[START] + $row->[TIME], # Query END time
-      Query_time => $row->[TIME],
+      Query_time => $Query_time,
       Lock_time  => 0,               # TODO
    };
    map { return unless $_->($event) } @callbacks;
