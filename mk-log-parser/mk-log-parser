@@ -3204,7 +3204,14 @@ my $sm;     # SQLMetrics
 
 sub get_post_filter_callbacks {
    my ( $opts ) = @_;
-   return ();
+   return () unless $opts->{filter};
+   my $code = "sub{ my(\$event) = shift; $opts->{filter}}";
+   MKDEBUG && _d("--filter code: ", $code);
+   my $sub  = eval $code;
+   if ( $EVAL_ERROR ) {
+      die $EVAL_ERROR;
+   }
+   return $sub;
 }
 
 sub get_execute_callback {
@@ -3941,6 +3948,21 @@ Adds a callback into the chain, after filters but before L<"--review"> or
 L<"--analyze">.  Events are executed on this DSN.  If they are successful, the
 time they take to execute overwrites the event's Query_time attribute.  If
 unsuccessful, the callback returns false and terminates the chain.
+
+=item --filter
+
+type: string
+
+Discard events for which this Perl code doesn't return true.
+
+This option is a string of Perl code that gets compiled into a subroutine with
+one argument: $event.  This is a hashref.  If the code returns true, the chain
+of callbacks continues; otherwise it ends.  The code is the last statement in
+the subroutine.
+
+An example filter that discards everything but SELECT statements:
+
+  --filter '$event->{arg} =~ m/^select/i'
 
 =item --fingerprints
 
