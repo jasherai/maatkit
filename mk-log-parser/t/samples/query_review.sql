@@ -8,6 +8,5 @@ CREATE TABLE query_review (
   last_seen    DATETIME,
   reviewed_by  VARCHAR(20),
   reviewed_on  DATETIME,
-  comments     VARCHAR(100),
-  cnt          INT UNSIGNED NOT NULL DEFAULT 1
+  comments     VARCHAR(100)
 );

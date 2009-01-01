@@ -18,12 +18,11 @@
 #    1s
 #  10s+
 # Review information
-#           cnt: 12
-#      comments: foo_tbl is ok, so are cranberries
 #    first_seen: 2007-12-18 11:48:27
 #     last_seen: 2007-12-18 11:49:30
 #   reviewed_by: daniel
 #   reviewed_on: 2008-12-24 12:00:00
+#      comments: foo_tbl is ok, so are cranberries
 # Tables
 #    SHOW TABLE STATUS FROM `foo` LIKE 'foo_tbl'\G
 #    SHOW CREATE TABLE `foo`.`foo_tbl`\G
@@ -50,12 +49,11 @@ SELECT col FROM foo_tbl\G
 #    1s
 #  10s+
 # Review information
-#           cnt: 12
-#      comments: 
 #    first_seen: 2007-12-18 11:48:57
 #     last_seen: 2007-12-18 11:49:07
 #   reviewed_by: 
 #   reviewed_on: 
+#      comments: 
 # Tables
 #    SHOW TABLE STATUS FROM `bar` LIKE 'bar_tbl'\G
 #    SHOW CREATE TABLE `bar`.`bar_tbl`\G

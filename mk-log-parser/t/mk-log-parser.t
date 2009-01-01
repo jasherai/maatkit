@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 19;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -75,8 +75,8 @@ ok(
 # Issue 154: Add --since option to mk-log-parser
 # #############################################################################
 ok(
-   no_diff($run_with.'slow006.txt --since "20071218 11:49:06"', 'samples/slow006_since.txt'),
-   '--since "20071218 11:49:06"'
+   no_diff($run_with.'slow006.txt --since "2007-12-18 11:49:06"', 'samples/slow006_since.txt'),
+   '--since "2007-12-18 11:49:06"'
 );
 
 # #############################################################################
@@ -105,32 +105,28 @@ SKIP: {
 
    $output = 'foo'; # clear previous test results
    $output = `${run_with}slow006.txt --noanalyze --review h=127.1,P=12345,D=test,t=query_review`;
-   my $res = $dbh->selectall_arrayref('SELECT * FROM test.query_review');
+   my $res = $dbh->selectall_arrayref( 'SELECT * FROM test.query_review',
+      { Slice => {} } );
    is_deeply(
       $res,
-      [
-         [
-         '11676753765851784517',
-         'select col from foo_tbl',
-         'SELECT col FROM foo_tbl',
-         '2007-12-18 11:48:27',
-         '2007-12-18 11:49:30',
-         undef,
-         undef,
-         undef,
-         '3'
-         ],
-         [
-         '15334040482108055940',
-         'select col from bar_tbl',
-         'SELECT col FROM bar_tbl',
-         '2007-12-18 11:48:57',
-         '2007-12-18 11:49:07',
-         undef,
-         undef,
-         undef,
-         '3'
-         ],
+      [  {  checksum    => '11676753765851784517',
+            reviewed_by => undef,
+            reviewed_on => undef,
+            last_seen   => '2007-12-18 11:49:30',
+            first_seen  => '2007-12-18 11:48:27',
+            sample      => 'SELECT col FROM foo_tbl',
+            fingerprint => 'select col from foo_tbl',
+            comments    => undef,
+         },
+         {  checksum    => '15334040482108055940',
+            reviewed_by => undef,
+            reviewed_on => undef,
+            last_seen   => '2007-12-18 11:49:07',
+            first_seen  => '2007-12-18 11:48:57',
+            sample      => 'SELECT col FROM bar_tbl',
+            fingerprint => 'select col from bar_tbl',
+            comments    => undef,
+         },
       ],
       'Adds/updates queries to query review table'
    );
@@ -143,9 +139,6 @@ SKIP: {
       no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
       'Analyze-review pass 1 reports not-reviewed queries'
    );
-
-   $res = $dbh->selectall_arrayref('SELECT * FROM test.query_review');
-   ok( ($res->[0]->[8] == 6 && $res->[1]->[8] == 6), 'Analyze-review pass 1 updated cnt');
 
    # Mark a query as reviewed and run --analyze again and that query should
    # not be reported.
