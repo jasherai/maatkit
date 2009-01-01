@@ -3943,7 +3943,7 @@ How frequently to poll the processlist, in seconds.
 
 type: DSN
 
-Poll this DSN's processlist for queries.
+Poll this DSN's processlist for queries, with L<"--interval"> sleep between.
 
 =item --review
 
