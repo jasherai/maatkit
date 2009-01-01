@@ -93,7 +93,7 @@ sub new {
 # 1 second up until it has actually been running 2 seconds.  This makes it
 # tricky to determine when a statement has been re-issued.  Further, this
 # program and MySQL may have some clock skew.  Even if they are running on the
-# same machine, it's possible that at X.999999 seconds we get the time, and at 
+# same machine, it's possible that at X.999999 seconds we get the time, and at
 # X+1.000001 seconds we get the snapshot from MySQL.  (Fortunately MySQL doesn't
 # re-evaluate now() for every process, or that would cause even more problems.)
 # And a query that's issued to MySQL may stall for any amount of time before
@@ -147,7 +147,7 @@ sub parse_event {
    my @new; # Will become next invocation's @prev
    my ($curr, $prev); # Rows from each source
 
-   do { 
+   do {
       if ( !$curr && @curr ) {
          MKDEBUG && _d('Fetching row from curr');
          $curr = shift @curr;
