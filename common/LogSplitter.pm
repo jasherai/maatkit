@@ -113,15 +113,17 @@ sub split_logs {
             $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
 
             # Open a fh for the log split file.
-            open $session->{fh}, '>', $session_file
+            open my $fh, '>', $session_file
                or die "Cannot open log split file $session_file: $OS_ERROR";
+            print $fh "-- ONE SESSION\n";
+            $session->{fh} = $fh;
             $self->{n_open_fhs}++;
 
             # Save fh and log split file info for this session.
             $session->{active}       = 1;
             $session->{session_file} = $session_file;
             push @{ $self->{session_fhs} },
-               { fh => $session->{fh}, session_id => $session_id };
+               { fh => $fh, session_id => $session_id };
 
             MKDEBUG && _d("Created $session_file "
                           . "for session $self->{attribute}=$session_id");

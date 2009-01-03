@@ -1,3 +1,4 @@
+-- ONE SESSION
 USE `foo`
 
 SELECT col FROM foo_tbl
