@@ -2438,13 +2438,6 @@ sub get_next_session_itr {
    }
 }
 
-# Returns a subref used as an iterator in play_session() by a child
-# to get queries one-by-one. This particular iterator reads a whole
-# session file.
-sub read_session_file {
-   my ( $session_fh ) = @_;
-}
-
 sub play_session {
    my ( $session_n, $get_next_query ) = @_;
    my $dbh        = get_cxn($dsn) unless $opts{print};
