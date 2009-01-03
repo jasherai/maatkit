@@ -1,5 +1,4 @@
 -- MULTIPLE SESSIONS
--- session 10
 
 USE `foo`
 
@@ -10,12 +9,12 @@ SELECT col FROM foo_tbl
 USE `bar`
 
 SELECT col FROM bar_tbl
-
--- session 20
+-- END SESSION
 
 USE `bar`
 
 SELECT col FROM bar_tbl
 
 SELECT col FROM bar_tbl
+-- END SESSION
 

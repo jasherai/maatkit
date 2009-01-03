@@ -198,7 +198,7 @@ sub split_logs {
          open my $fh, '>', $session_file
             or die "Cannot open session file $session_file: $OS_ERROR";
          $self->{n_session_files}++;
-         print $fh "-- MULTIPLE SESSIONS\n";
+         print $fh "-- MULTIPLE SESSIONS\n\n";
          push @{ $self->{session_fhs} },
             { fh => $fh, session_file => $session_file };
       }
@@ -214,10 +214,10 @@ sub split_logs {
       my $fh     = $self->{session_fhs}->[0]->{fh};
       while ( my ($session_id, $session) = each %{$self->{sessions}} ) {
          $session->{session_file}
-            = $self->{session_fhs}->[$file_n]->{session_file};
-         print $fh "-- session $session_id\n\n";
+            = $self->{session_fhs}->[$file_n]->{session_file}; 
          print $fh join("\n\n", @{$session->{queries}});
-         print $fh "\n\n"; # because join() doesn't do this
+         print $fh "\n"; # because join() doesn't do this
+         print $fh "-- END SESSION\n\n";
          if ( ++$i >= $sessions_per_file ) {
             $i = 0;
             $file_n++ if $file_n < $self->{n_session_files} - 1;
