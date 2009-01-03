@@ -196,8 +196,11 @@ The following items are unimplemented at this time:
      for queries on any of those columns.
    * look for columns named UUID or GUID or session_id which may contain hex
      data stored as strings, which would be better stored unhexed in binary
+      * Check LIMIT 1 from all columns and look for UUID/GUID-looking values.
    * Look for nullable columns that contain no NULLs, especially indexed columns
    * Automatically run PROCEDURE ANALYSE on tables that look bad.
+   * For each indexed int, check whether it's getting close to the limit of the
+     values it can hold with SELECT MAX(...).
    * Determine the thoroughness of the search by how large the DB/table is.
    * watch how much data InnoDB writes to the log files per second, recommend
      log buffer size.
