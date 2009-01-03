@@ -132,5 +132,5 @@ ok(
    'maxsessionfiles file 2 of 2'
 );
 
-#diag(`rm -rf $tmpdir`);
+diag(`rm -rf $tmpdir`);
 exit;
