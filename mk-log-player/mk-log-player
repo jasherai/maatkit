@@ -570,7 +570,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2740
+# LogParser package 2749
 # ###########################################################################
 package LogParser;
 
@@ -715,7 +715,7 @@ sub parse_event {
          }
 
          elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
-            
+
             if ( $type == 0 ) {
                if ( $line =~ m/^#.+;/ ) {
                   MKDEBUG && _d('Commented event line ends header');
@@ -769,7 +769,7 @@ sub parse_event {
             MKDEBUG && _d('Line is a continuation of prev line');
             $event->{arg} .= $line;
             $type = 2;
-         } 
+         }
       }
 
       $event->{NR} = $NR;
@@ -1155,7 +1155,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 2742
+# LogSplitter package 2761
 # ###########################################################################
 
 package LogSplitter;
@@ -1244,14 +1244,16 @@ sub split_logs {
 
             $self->_close_lru_session() if $self->{n_open_fhs} >= MAX_OPEN_FILES;
 
-            open $session->{fh}, '>', $session_file
+            open my $fh, '>', $session_file
                or die "Cannot open log split file $session_file: $OS_ERROR";
+            print $fh "-- ONE SESSION\n";
+            $session->{fh} = $fh;
             $self->{n_open_fhs}++;
 
             $session->{active}       = 1;
             $session->{session_file} = $session_file;
             push @{ $self->{session_fhs} },
-               { fh => $session->{fh}, session_id => $session_id };
+               { fh => $fh, session_id => $session_id };
 
             MKDEBUG && _d("Created $session_file "
                           . "for session $self->{attribute}=$session_id");
@@ -1317,6 +1319,7 @@ sub split_logs {
          open my $fh, '>', $session_file
             or die "Cannot open session file $session_file: $OS_ERROR";
          $self->{n_session_files}++;
+         print $fh "-- MULTIPLE SESSIONS\n";
          push @{ $self->{session_fhs} },
             { fh => $fh, session_file => $session_file };
       }
@@ -1331,10 +1334,10 @@ sub split_logs {
       my $fh     = $self->{session_fhs}->[0]->{fh};
       while ( my ($session_id, $session) = each %{$self->{sessions}} ) {
          $session->{session_file}
-            = $self->{session_fhs}->[$file_n]->{session_file};
-         print $fh "-- session $session_id\n\n";
+            = $self->{session_fhs}->[$file_n]->{session_file}; 
          print $fh join("\n\n", @{$session->{queries}});
-         print $fh "\n\n"; # because join() doesn't do this
+         print $fh "\n"; # because join() doesn't do this
+         print $fh "-- END SESSION\n\n";
          if ( ++$i >= $sessions_per_file ) {
             $i = 0;
             $file_n++ if $file_n < $self->{n_session_files} - 1;
@@ -1735,7 +1738,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2728
+# Transformers package 2749
 # ###########################################################################
 
 package Transformers;
@@ -1754,7 +1757,7 @@ our @EXPORT_OK   = qw(
    micro_t
    percentage_of
    secs_to_time
-   shorten 
+   shorten
    ts
 );
 
@@ -2250,9 +2253,9 @@ foreach my $session_file ( split ',', $opts{p} ) {
       opendir my $dir, $session_file
          or die "Cannot open directory $session_file: $OS_ERROR";
       push @session_files,
-         map  { "$session_file/$_" }    # 3. Save full dir/file
-         grep { -f "$session_file/$_" } # 2. If it's a file
-         readdir $dir;                  # 1. Each file in dir
+         map     { "$session_file/$_"    } # 3. Save full dir/file
+         grep    { -f "$session_file/$_" } # 2. If it's a file
+         readdir $dir;                     # 1. Each file in dir
       closedir $dir;
    }
    else {
@@ -2279,62 +2282,73 @@ if ( !$opts{print} ) {
 }
 
 # #############################################################################
-# Assign the sessions to child processes.
+# Assign sessions to child processes.
 # #############################################################################
-my %kids;
+my %children;
 my %exited_children;
-
 # This signal handler will do nothing but wake up the sleeping parent process
 # and record the exit status and time of the child that exited (as a side
 # effect of not discarding the signal).
+# -- Presently, however, we do not use this information.
 $SIG{CHLD} = sub {
-   my $kid;
-   while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
+   my $pid;
+   while (($pid = waitpid(-1, POSIX::WNOHANG)) > 0) {
       # Must right-shift to get the actual exit status of the child.
-      $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
-      $exited_children{$kid}->{exit_time}   = time;
+      $exited_children{$pid}->{exit_status} = $CHILD_ERROR >> 8;
+      $exited_children{$pid}->{exit_time}   = time;
    }
 };
 
 my $qr = new QueryRewriter(); # shared by the children
 my $session_n = 0;
-while ( @session_files || %kids ) {
+my $session_itr;
+
+# These 3 vars are used by get_next_session_itr().
+# TODO: modularize this; something like SessionItr.pm.
+my $session_file;
+my $session_fh;
+my $done_reading_session_file = 1;
+
+do {
    wait_for_server($parent_dbh, $dsn) unless $opts{print};
 
-   # Start a new child process.
-   while ( @session_files && $opts{c} > keys %kids ) {
+   while ( $opts{c} > keys %children
+           && ($session_itr = get_next_session_itr()) ) {
       usleep( get_delay($opts{'delaysessions'}) );
       $session_n++;
-      my $session_file = shift @session_files;
       my $pid = fork();
-      die "Can't fork: $OS_ERROR" unless defined $pid;
+      die "Cannot fork: $OS_ERROR" unless defined $pid;
       if ( $pid ) {              # I'm the parent.
-         $kids{$pid} = $session_file;
+         $children{$pid} = $session_file;
       }
       else {                     # I'm the child.
          $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
-         MKDEBUG && _d("PID $PID got $session_file ($session_n)");
-         my $get_next_query = make_session_itr($session_file);
-         play_session($session_n, $get_next_query);
+         MKDEBUG && _d("Child PID $PID got $session_file ($session_n)");
+         play_session($session_n, $session_itr);
+         MKDEBUG && _d("Child PID $PID done");
          exit;
       }
-   }
+   } 
 
    # Possibly wait for child.
    my $reaped = 0;
-   foreach my $kid ( keys %exited_children ) { 
-      delete $kids{$kid};
-      delete $exited_children{$kid};
+   foreach my $pid ( keys %exited_children ) { 
+      delete $children{$pid};
+      delete $exited_children{$pid};
       $reaped = 1;
+      MKDEBUG && _d("Reaped child PID $pid");
    }
 
-   if ( !$reaped ) {
+   if ( keys %children && !$reaped ) {
       # Don't busy-wait.  But don't wait forever either, as a child may exit
       # and signal while we're not sleeping, so if we sleep forever we may
       # not get the signal.
+      MKDEBUG && _d("Sleeping to wait for children");
       sleep(1);
    }
-}
+   MKDEBUG && _d(scalar keys %children, ' children are still working');
+
+} while ( $session_itr || keys %children );
 
 exit;
 
@@ -2360,32 +2374,75 @@ sub wait_for_server {
    }
 }
 
-# Returns a subref used as an iterator in play_session() to get
-# queries one-by-one. The parent makes these iterators--one for
-# each session file--and then passes them to the children which
-# do their work in play_session().
-sub make_session_itr {
-   my ( $session_file ) = @_;
-   my $session_fh;
-   if ( $session_file eq '-' ) {
-      $session_fh = *STDIN;
-   }
-   else {
-      open $session_fh, '<', $session_file
-         or die "Cannot open session file $session_file: $OS_ERROR";
-   }
+sub get_next_session_itr {
+   if ( $done_reading_session_file ) {
+      MKDEBUG && _d("Done reading session file "
+         . ($session_file || '(opening first session file)'));
+      close $session_fh if defined $session_fh;
+      $session_file = shift @session_files;
+      return unless defined $session_file;
+      MKDEBUG && _d("Opened session file $session_file");
 
-   return sub {
-      local $INPUT_RECORD_SEPARATOR = '';
-      my $query = <$session_fh>;
-      if ( $query ) {
-         $query =~ s/\n+$//;
+      if ( $session_file eq '-' ) {
+         $session_fh = *STDIN;
       }
       else {
-         close $session_fh;
+         if ( !open $session_fh, '<', $session_file ) {
+            warn "Cannot open session file $session_file: $OS_ERROR";
+            $done_reading_session_file = 1;
+            return get_next_session_itr();
+         }
       }
-      return $query;
-   };
+
+      # TODO: don't hard-code the delimiters below. Make them constants
+      # or something in LogSplitter.
+      # TODO: will this even work if reading STDIN?
+      my $first_line = <$session_fh>;
+      if ( $first_line =~ m/-- MULTIPLE SESSIONS/ ) {
+         MKDEBUG && _d('Multiple sessions in this file');
+         $done_reading_session_file = 0;
+         return get_next_session_itr();
+      }
+      elsif ( $first_line =~ m/-- ONE SESSION/ ) {
+         MKDEBUG && _d('One session in this file');
+         $done_reading_session_file = 1;
+         return sub {
+            local $INPUT_RECORD_SEPARATOR = '';
+            my $query = <$session_fh>;
+            $query =~ s/\n+$// if $query;
+            return $query;
+         };
+      }
+      else {
+         warn "Malformed session file: $session_file\n"
+            . "First line is not -- MULTIPLE SESSION or -- ONE SESSION";
+         $done_reading_session_file = 1;
+         return get_next_session_itr();
+      }
+   }
+   else {
+      local $INPUT_RECORD_SEPARATOR = "\n-- END SESSION\n\n";
+      my $session = <$session_fh>;
+      if ( $session ) {
+         MKDEBUG && _d("Read a session in $session_file");
+         $done_reading_session_file = 0;
+         chomp $session;
+         my @queries = split("\n\n", $session);
+         return sub { return shift @queries; };
+      }
+      else {
+         MKDEBUG && _d("No more sessions in $session_file");
+         $done_reading_session_file = 1;
+         return get_next_session_itr();
+      }
+   }
+}
+
+# Returns a subref used as an iterator in play_session() by a child
+# to get queries one-by-one. This particular iterator reads a whole
+# session file.
+sub read_session_file {
+   my ( $session_fh ) = @_;
 }
 
 sub play_session {
