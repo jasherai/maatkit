@@ -196,6 +196,7 @@ sub split_logs {
          open my $fh, '>', $session_file
             or die "Cannot open session file $session_file: $OS_ERROR";
          $self->{n_session_files}++;
+         print $fh "-- MULTIPLE SESSIONS\n";
          push @{ $self->{session_fhs} },
             { fh => $fh, session_file => $session_file };
       }
