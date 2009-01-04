@@ -1976,7 +1976,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2768
+# MySQLInstance package 2770
 # ###########################################################################
 
 package MySQLInstance;
@@ -2328,20 +2328,18 @@ sub out_of_sync_sys_vars {
       my $var_out_of_sync = 0;
 
 
-      if ( exists $eq_for{$var} ) {
-         $var_out_of_sync = !$eq_for{$var}->($conf_val, $online_val);
-      }
-      else {
-         if ( ($conf_val || $online_val) && ($conf_val ne $online_val) ) {
-            $var_out_of_sync = 1;
+      if ( ($conf_val || $online_val) && ($conf_val ne $online_val) ) {
+         $var_out_of_sync = 1;
 
-            if ( exists $alias_for{$online_val} ) {
-               $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
-            }
+         if ( exists $eq_for{$var} ) {
+            $var_out_of_sync = !$eq_for{$var}->($conf_val, $online_val);
+         }
+         if ( exists $alias_for{$online_val} ) {
+            $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
          }
       }
 
-      if($var_out_of_sync) {
+      if ( $var_out_of_sync ) {
          $out_of_sync_vars{$var} = { online=>$online_val, config=>$conf_val };
       }
    }
