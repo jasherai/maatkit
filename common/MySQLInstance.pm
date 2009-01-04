@@ -41,40 +41,20 @@ my %alias_for = (
    NO   => '0',
 );
 
+# Many vars can have undefined values which, unless we always check,
+# will cause Perl errors. Therefore, for certain vars an undefined
+# value means something specific, as seen in the hash below. Otherwise,
+# a blank string is used in place of an undefined value.
 my %undef_for = (
-   bdb_home                      => '',
-   bdb_logdir                    => '',
-   bdb_tmpdir                    => '',
-   date_format                   => '',
-   datetime_format               => '',
-   ft_stopword_file              => '',
-   init_connect                  => '',
-   init_file                     => '',
-   init_slave                    => '',
-   innodb_data_home_dir          => '',
-   innodb_flush_method           => '',
-   innodb_log_arch_dir           => '',
-   innodb_log_group_home_dir     => '',
    'log'                         => 'OFF',
    log_bin                       => 'OFF',
-   log_error                     => '',
    log_slow_queries              => 'OFF',
    log_slave_updates             => 'ON',
    log_queries_not_using_indexes => 'ON',
    log_update                    => 'OFF',
-   ndb_connectstring             => '',
-   relay_log_index               => '',
-   secure_file_priv              => '',
    skip_bdb                      => 0,
    skip_external_locking         => 'ON',
    skip_name_resolve             => 'ON',
-   ssl_ca                        => '',
-   ssl_capath                    => '',
-   ssl_cert                      => '',
-   ssl_cipher                    => '',
-   ssl_key                       => '',
-   time_format                   => '',
-   tmpdir                        => '',
 );
 
 # About these sys vars the MySQL manual says: "This variable is unused."
@@ -150,9 +130,7 @@ sub new {
       = map {
            my ( $var, $val ) = m/$option_pattern/o;
            $var =~ s/-/_/go;
-           if ( !defined $val && exists $undef_for{$var} ) {
-              $val = $undef_for{$var};
-           }
+           $val ||= $undef_for{$var} || '';
            $var => $val;
         } ($cmd =~ m/--(\S+)/g);
    $self->{cmd_line_ops}->{defaults_file} ||= '';
@@ -212,9 +190,7 @@ sub load_sys_vars {
                  if ( $val && $val =~ m/\(No/ ) { # (No default value)
                     $val = undef;
                  }
-                 if ( !defined $val && exists $undef_for{$var} ) {
-                    $val = $undef_for{$var};
-                 }
+                 $val ||= $undef_for{$var} || '';
                  $var => $val;
               } split "\n", $sys_vars;
 
@@ -383,9 +359,7 @@ sub _vars_from_defaults_file {
                   $val = $1 * $digits_for{$2};
                }
             }
-            if ( !defined $val && exists $undef_for{$var} ) {
-               $val = $undef_for{$var};
-            }
+            $val ||= $undef_for{$var} || '';
             push @{ $self->{defaults_file_sys_vars} }, [ $var, $val ];
          }
       }
@@ -469,47 +443,33 @@ sub out_of_sync_sys_vars {
    my ( $self ) = @_;
    my %out_of_sync_vars;
 
+   VAR:
    foreach my $var ( keys %{ $self->{conf_sys_vars} } ) {
-      next if !exists $self->{online_sys_vars}->{$var};
-      next if exists $ignore_sys_var{$var};
+      next VAR if exists $ignore_sys_var{$var};
+      next VAR unless exists $self->{online_sys_vars}->{$var};
 
       my $conf_val        = $self->{conf_sys_vars}->{$var};
       my $online_val      = $self->{online_sys_vars}->{$var};
       my $var_out_of_sync = 0;
 
-      # Global %undef_for and the subs that populated conf_sys_vars
-      # and online_sys_vars should have taken care of any undefined
-      # values. If not, this sub will warn.
-      if ( defined $conf_val && defined $online_val ) {
+      # TODO: try this on a server with skip_grant_tables set, it crashes on
+      # me in a not-friendly way.  Probably ought to use eval {} and catch
+      # error.
 
-         # TODO: try this on a server with skip_grant_tables set, it crashes on
-         # me in a not-friendly way.  Probably ought to use eval {} and catch
-         # error.
-
-         if ( exists $eq_for{$var} ) {
-            # If they're equal then they're not (!) out of sync
-            $var_out_of_sync = !$eq_for{$var}->($conf_val, $online_val);
-         }
-         else {
-            if ( $conf_val ne $online_val ) {
-               $var_out_of_sync = 1;
-
-               # But handle excepts where SHOW GLOBAL VARIABLES says ON and 
-               # mysqld --help --verbose says TRUE
-               if ( exists $alias_for{$online_val} ) {
-                  $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
-               }
-            }
-         }
+      if ( exists $eq_for{$var} ) {
+         # If they're equal then they're not (!) out of sync
+         $var_out_of_sync = !$eq_for{$var}->($conf_val, $online_val);
       }
       else {
-         warn "Undefined system variable: $var";
-         if ( MKDEBUG ) {
-            my $dump_conf   = Dumper($conf_val);
-            my $dump_online = Dumper($online_val);
-            _d("Undefined val: conf=$dump_conf online=$dump_online");
+         if ( $conf_val ne $online_val ) {
+            $var_out_of_sync = 1;
+
+            # Handle excepts like where SHOW GLOBAL VARIABLES says ON and 
+            # mysqld --help --verbose says TRUE
+            if ( exists $alias_for{$online_val} ) {
+               $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
+            }
          }
-         next;
       }
 
       if($var_out_of_sync) {
