@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 37;
+use Test::More tests => 38;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -366,6 +366,23 @@ foreach my $m ( @$mysqld_procs_ref ) {
       "DSN for Baron\'s mysqld instance $i"
    );
 }
+
+# #############################################################################
+# Issue 139: mk-audit out-of-sync false-positive for sql_mode
+# NO_UNSIGNED_SUBTRACTION
+# #############################################################################
+
+# This issue actually affects any var that has an eq_for calling _veq().
+# _veq() returns false even if the var values are the same (and this is
+# correct for _veq()). The real problem is that the eq_for subs should only
+# be called after a standard eq comparison fails.
+$myi->{conf_sys_vars}   = {};
+$myi->{online_sys_vars} = {};
+# sql_mode has an eq_for calling _veq()
+$myi->{conf_sys_vars}->{sql_mode}   = 'foo';
+$myi->{online_sys_vars}->{sql_mode} = 'foo';
+$ret = $myi->out_of_sync_sys_vars();
+ok(scalar keys %$ret == 0, 'Var with _veq eq_for and same vals (issue 139)');
 
 $sb->wipe_clean($dbh);
 exit;

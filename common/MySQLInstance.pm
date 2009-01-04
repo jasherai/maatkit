@@ -456,25 +456,25 @@ sub out_of_sync_sys_vars {
       # me in a not-friendly way.  Probably ought to use eval {} and catch
       # error.
 
-      if ( exists $eq_for{$var} ) {
-         # If they're equal then they're not (!) out of sync
-         $var_out_of_sync = !$eq_for{$var}->($conf_val, $online_val);
-      }
-      else {
-         # If one var has a value and that value isn't equal to the
-         # other var's value, then they're out of sync. However, if
-         # both vars are valueless (0, '0', or ''), then they are
-         # in sync--this prevents 0 and '' being treated as out of sync.
-         if ( ($conf_val || $online_val) && ($conf_val ne $online_val) ) {
-            $var_out_of_sync = 1;
+      # If one var has a value and that value isn't equal to the
+      # other var's value, then they're out of sync. However, if
+      # both vars are valueless (0, '0', or ''), then they are
+      # in sync--this prevents 0 and '' being treated as out of sync.
+      if ( ($conf_val || $online_val) && ($conf_val ne $online_val) ) {
+         $var_out_of_sync = 1;
 
-            if ( exists $alias_for{$online_val} ) {
-               $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
-            }
+         # Try some exceptions, cases like where ON and TRUE are the
+         # same to us but not to Perl.
+         if ( exists $eq_for{$var} ) {
+            # If they're equal then they're not (!) out of sync
+            $var_out_of_sync = !$eq_for{$var}->($conf_val, $online_val);
+         }
+         if ( exists $alias_for{$online_val} ) {
+            $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
          }
       }
 
-      if($var_out_of_sync) {
+      if ( $var_out_of_sync ) {
          $out_of_sync_vars{$var} = { online=>$online_val, config=>$conf_val };
       }
    }
