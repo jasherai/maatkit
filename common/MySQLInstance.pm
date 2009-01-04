@@ -26,7 +26,6 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 use File::Temp ();
-use Carp;
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
@@ -97,6 +96,9 @@ my %eq_for = (
    query_cache_type => sub { return _veq(@_, 'ON', '1');        },
    ssl              => sub { return _veq(@_, '1', 'TRUE');      },
    sql_mode         => sub { return _veq(@_, '', 'OFF');        },
+   language         => sub { return _patheq(@_);                },
+   basedir          => sub { return _patheq(@_);                },
+   log_bin          => sub { return _eqifon(@_);                },
 );
 
 # Returns an array ref of hashes. Each hash represents a single mysqld process.
@@ -456,8 +458,13 @@ sub overriden_sys_vars {
 
 # out_of_sync_sys_vars() returns a hash ref of sys vars that differ in their
 # online vs. config values:
-#    key   = sys var that is out of sync
-#    value = array [ val online, val config ]
+#    {
+#       out of sync sys var => {
+#          online => val,
+#          config => val,
+#       },
+#       etc.
+#    }
 sub out_of_sync_sys_vars {
    my ( $self ) = @_;
    my %out_of_sync_vars;
@@ -477,9 +484,7 @@ sub out_of_sync_sys_vars {
 
          # TODO: try this on a server with skip_grant_tables set, it crashes on
          # me in a not-friendly way.  Probably ought to use eval {} and catch
-         # error.  Also, carp() may not be right here, it gives the wrong
-         # impression I think.  (I guess I just am used to seeing die show the
-         # real line....)
+         # error.
 
          if ( exists $eq_for{$var} ) {
             # If they're equal then they're not (!) out of sync
@@ -498,7 +503,7 @@ sub out_of_sync_sys_vars {
          }
       }
       else {
-         carp "Undefined system variable: $var";
+         warn "Undefined system variable: $var";
          if ( MKDEBUG ) {
             my $dump_conf   = Dumper($conf_val);
             my $dump_online = Dumper($online_val);
@@ -508,7 +513,7 @@ sub out_of_sync_sys_vars {
       }
 
       if($var_out_of_sync) {
-         $out_of_sync_vars{$var} = [ $online_val, $conf_val ];
+         $out_of_sync_vars{$var} = { online=>$online_val, config=>$conf_val };
       }
    }
 
@@ -533,12 +538,29 @@ sub get_eq_for {
    return;
 }
 
-# variable eq: returns 1 if x and y equal each other where x and y can
-# be either val1 or val2.
-# TODO: is there some deep-magick way of doing this?
+# variable eq: returns true if x and y equal each other
+# where x and y can be either val1 or val2.
 sub _veq { 
    my ( $x, $y, $val1, $val2 ) = @_;
    return 1 if ( ($x eq $val1 || $x eq $val2) && ($y eq $val1 || $y eq $val2) );
+   return 0;
+}
+
+# path eq: returns true if x and y are directory paths that differ
+# only by a trailing /.
+sub _patheq {
+   my ( $x, $y ) = @_;
+   $x .= '/' if $x !~ m/\/$/;
+   $y .= '/' if $y !~ m/\/$/;
+   return $x eq $y;
+}
+
+# eq if ON: returns true if either x or y is ON and the other value
+# is any value.
+sub _eqifon { 
+   my ( $x, $y ) = @_;
+   return 1 if ( $x && $x eq 'ON' && $y );
+   return 1 if ( $y && $y eq 'ON' && $x );
    return 0;
 }
 

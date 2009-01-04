@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 33;
+use Test::More tests => 37;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -71,7 +71,6 @@ is(
    MySQLInstance::find_mysqld_binary_unix($cmd),
    'Found mysqld binary',
 );
-
 is(MySQLInstance::get_register_size(
    q{/bin/ls: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), for }),
    64,
@@ -90,6 +89,7 @@ is(
    "$msandbox_basedir/bin/mysqld",
    'mysqld_binary parsed'
 );
+
 $myi = new MySQLInstance(q{mysql    16420 20249 99 Aug27 ?        2-21:38:12 /usr/libexec/mysqld --defaults-file=/etc/my.cnf --basedir=/usr --datadir=/db/mysql --user=mysql --pid-file=/var/run/mysqld/mysqld.pid --skip-locking --socket=/db/mysql/mysql.sock});
 is(
    $myi->{mysqld_binary},
@@ -112,26 +112,17 @@ is(
       . q{--log-error=/var/log/mysqld.log}),
    '', 'No mysqld binary found'
 );
-
 is(
    MySQLInstance::find_mysqld_binary_unix('/usr/libexec/mysqld'),
    '/usr/libexec/mysqld', 'Found mysqld binary at end of string'
 );
 
 $myi = new MySQLInstance($cmd);
-
 is_deeply(
    \%{ $myi->{cmd_line_ops} },
    \%ops,
    'cmd_line_ops parsed'
 );
-
-my $expect_dsn_01 = {
-   P => 12345,
-   S => '/tmp/12345/mysql_sandbox12345.sock',
-   h => '127.0.0.1',
-};
-
 is_deeply(
    $myi->get_DSN(S => 'foo'),
    {
@@ -145,54 +136,29 @@ is_deeply(
 $myi->load_sys_vars($dbh);
 # Sample of stable/predictable vars to make sure load_online_sys_vars()
 # actually did something, otherwise $myi->{online_sys_vars} will be empty
-my %expect_online_sys_vars_01 = (
-   basedir     => '/usr/',
-   datadir     => '/tmp/12345/data/',
-   'log'       => 'OFF',
-   'log_bin'   => 'ON',
-   'port'      => 12345,
-);
-# The call to keys here and a few lines below is guaranteed to return in the
-# same order the var names from %expect_online_sys_vars_01
-my @expect_online_sys_vars
-   = @expect_online_sys_vars_01{ keys %expect_online_sys_vars_01 };
-# I can't get a hash slice like:
-# @myi->{online_sys_vars}->{ keys %expect_online_sys_vars_01 }
-# because @myi isn't valid and @$myi makes Perl think I want an array ref
-# That's why I copy the whole hash:
-my %online_sys_vars = %{ $myi->{online_sys_vars} };
-my @online_sys_vars
-   = @online_sys_vars{ keys %expect_online_sys_vars_01 };
-is_deeply(
-   \@online_sys_vars,
-   \@expect_online_sys_vars,
-   'Online sys vars'
-);
+is($myi->{online_sys_vars}->{datadir}, '/tmp/12345/data/', 'Loads online sys vars (1/3)');
+is($myi->{online_sys_vars}->{log_bin}, 'ON', 'Loads online sys var (2/3)');
+is($myi->{online_sys_vars}->{port}, '12345', 'Loads online sys var (3/3)');
 
-my @expect_duplicate_vars_01 = qw(max_connections long_query_time);
-my $duplicate_vars = $myi->duplicate_sys_vars();
+my $ret = $myi->duplicate_sys_vars();
 is_deeply(
-   $duplicate_vars,
-   \@expect_duplicate_vars_01,
+   $ret,
+   [qw(max_connections long_query_time)],
    'Duplicate vars'
 );
 
-my %expect_overriden_vars_01 = (
-   long_query_time => [ '3', '1' ],
-);
-my $overriden_vars = $myi->overriden_sys_vars();
+$ret = $myi->overriden_sys_vars();
 is_deeply(
-   $overriden_vars,
-   \%expect_overriden_vars_01,
+   $ret,
+   { long_query_time => [ '3', '1' ], },
    'Overriden sys vars'
 );
 
-my $oos = $myi->out_of_sync_sys_vars();
-my @expect_oos_long_query_time = (3, 1);
+$ret = $myi->out_of_sync_sys_vars();
 is_deeply(
-   \@{$oos->{long_query_time}},
-   \@expect_oos_long_query_time,
-   'out of sync sys vars: long_query_time online=3 conf=1'
+   $ret->{long_query_time},
+   {online=>3, config=>1},
+   'out of sync sys var}: long_query_time online=3 conf=1'
 );
 
 $myi->load_status_vals($dbh);
@@ -200,6 +166,36 @@ ok(exists $myi->{status_vals}->{Aborted_clients},
    'status vals: Aborted_clients');
 ok(exists $myi->{status_vals}->{Uptime},
    'status vals: Uptime');
+
+my $eq = MySQLInstance::get_eq_for('query_cache_type');
+is(
+   $eq->('1', 'ON'),
+   '1',
+   'eq_for query_cache_type true for 1 and ON'
+);
+$eq = MySQLInstance::get_eq_for('ft_stopword_file');
+is(
+   $eq->('', '(built-in)'),
+   '1',
+   "eq_for ft_stopword_file true for '' and (built-in)"
+);
+$eq = MySQLInstance::get_eq_for('language');
+is(
+   $eq->('/usr/share/mysql/english', '/usr/share/mysql/english/'),
+   '1',
+   'eq_for language true for /path and /path/ (issue 102)');
+$eq = MySQLInstance::get_eq_for('log_bin');
+is(
+   $eq->('mysql-bin', 'ON'),
+   '1',
+   'eq_for mysql-bin true for mysql-bin and ON'
+);
+
+# Check that missing my_print_defaults causes the obj to die
+eval {
+   $myi->_vars_from_defaults_file('', 'my_print_defaults_foozed');
+};
+like($EVAL_ERROR, qr/Cannot execute my_print_defaults command/, 'Dies if my_print_defaults cannot be executed');
 
 # #############################################################################
 # Issue 49: mk-audit doesn't parse server binary right
@@ -240,7 +236,6 @@ is_deeply(
    'cmd line ops parsed (issue 49)'
 );
 
-
 # #############################################################################
 # Issue 58: mk-audit warns about bogus differences between online values
 # and my.cnf values
@@ -259,29 +254,6 @@ is_deeply(
 @{ $myi->{default_defaults_files} } = ();
 eval { $myi->_vars_from_defaults_file(); };
 like($EVAL_ERROR, qr/MySQL instance has no valid defaults files/, 'Dies if no valid defaults files');
-
-###############################################################################
-
-my $eq = MySQLInstance::get_eq_for('query_cache_type');
-cmp_ok(
-   $eq->('1', 'ON'),
-   '==',
-   '1',
-   "eq_for query_cache_type returns 1 for '1' and 'ON'"
-);
-$eq = MySQLInstance::get_eq_for('ft_stopword_file');
-cmp_ok(
-   $eq->('', '(built-in)'),
-   '==',
-   '1',
-   "eq_for ft_stopword_file returns 1 for '' and '(built-in)'"
-);
-
-# Check that missing my_print_defaults causes the obj to die
-eval {
-   $myi->_vars_from_defaults_file('', 'my_print_defaults_foozed');
-};
-like($EVAL_ERROR, qr/Cannot execute my_print_defaults command/, 'Dies if my_print_defaults cannot be executed');
 
 # #############################################################################
 # Issue 135: mk-audit dies if running mysqld --help --verbose dies      
@@ -395,4 +367,5 @@ foreach my $m ( @$mysqld_procs_ref ) {
    );
 }
 
+$sb->wipe_clean($dbh);
 exit;
