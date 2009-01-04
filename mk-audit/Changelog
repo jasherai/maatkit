@@ -1,7 +1,7 @@
 Changelog for mk-audit:
 
-   * Out-of-sync vars reported false-positive for language, basedir and log-bin
-	  (issue 102).
+   * Removed warnings for undefined system variables (issue 114).
+   * Out-of-sync vars reported several false-positives (issue 102).
 
 2008-12-01: version 0.9.4
 
