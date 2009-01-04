@@ -1,5 +1,8 @@
 Changelog for mk-audit:
 
+   * Out-of-sync vars reported false-positive for language, basedir and log-bin
+	  (issue 102).
+
 2008-12-01: version 0.9.4
 
    * Updates to shared code.

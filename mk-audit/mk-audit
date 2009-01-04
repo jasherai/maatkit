@@ -27,16 +27,16 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# MySQLDump package 2215
+# MySQLDump package 2468
 # ###########################################################################
+package MySQLDump;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLDump;
+use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
-
-use English qw(-no_match_vars);
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -870,20 +870,23 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2382
+# TableParser package 2749
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package TableParser;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
+use List::Util qw(min);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   bless {}, shift;
+   my ( $class ) = @_;
+   return bless {}, $class;
 }
+
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -992,6 +995,7 @@ sub parse {
 
 sub sort_indexes {
    my ( $self, $tbl ) = @_;
+
    my @indexes
       = sort {
          (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
@@ -1003,6 +1007,7 @@ sub sort_indexes {
          $tbl->{keys}->{$_}->{type} eq 'BTREE'
       }
       sort keys %{$tbl->{keys}};
+
    MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
    return @indexes;
 }
@@ -1054,12 +1059,187 @@ sub find_possible_keys {
 }
 
 sub table_exists {
-   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
-   my $sql = 'SELECT * FROM ' . $quoter->quote($db, $tbl) . ' LIMIT 0';
-   my $href;
-   eval { $href = $dbh->selectrow_hashref($sql) };
+   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
+   my $db_tbl = $q->quote($db, $tbl);
+   my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
+   $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d("table_exists check for $db_tbl: $sql");
+   eval { $dbh->do($sql); };
+   MKDEBUG && _d("eval error (if any): $EVAL_ERROR");
    return 0 if $EVAL_ERROR;
    return 1;
+}
+
+sub get_engine {
+   my ( $self, $ddl, $opts ) = @_;
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   return $engine || undef;
+}
+
+sub get_keys {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @indexes =
+      grep { $_ !~ m/FOREIGN/ }
+      $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
+
+   my $engine = $self->get_engine($ddl);
+   if ( $engine !~ m/MEMORY|HEAP/ ) {
+      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
+   }
+
+   my @keys = map {
+      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
+      $struct = $struct || $special || 'BTREE';
+      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
+
+      if ( $opts->{version} lt '004001000' && $engine =~ m/HEAP|MEMORY/i ) {
+         $struct = 'HASH';
+      }
+
+      {
+         struct   => $struct,
+         cols     => $cols,
+         name     => $name || 'PRIMARY',
+      }
+   } @indexes;
+
+   return \@keys;
+}
+
+sub get_fks {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
+
+   my @result = map {
+      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
+      my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
+      my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
+      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
+      if ( $parent !~ m/\./ ) {
+         $parent = "`$opts->{database}`.$parent";
+      }
+      {  name   => $name,
+         parent => $parent,
+         cols   => $cols,
+         fkcols => $fkcols,
+      };
+   } @fks;
+   return \@result;
+}
+
+sub get_duplicate_keys {
+   my ( $self, $keys, $opts ) = @_;
+   my @keys = @$keys;
+   my %seen; # Avoid outputting a key more than once.
+   my @result;
+
+   foreach my $i ( 0..$#keys - 1 ) {
+      foreach my $j ( $i+1..$#keys ) {
+         my $i_cols        = $keys[$i]->{cols};
+         my $j_cols        = $keys[$j]->{cols};
+         my $type_i_cols   = $keys[$i]->{struct};
+         my $type_j_cols   = $keys[$j]->{struct};
+         my $len_i_cols    = length($i_cols);
+         my $len_j_cols    = length($j_cols);
+         my $min_len       = min($len_i_cols, $len_j_cols);
+         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
+                               && $type_j_cols eq 'FULLTEXT'
+                             ) ? 1 : 0;
+         if ( MKDEBUG ) {
+            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
+               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
+         }
+
+         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
+            $i_cols = join(',', sort(split(/`/, $i_cols)));
+            $j_cols = join(',', sort(split(/`/, $j_cols)));
+         }
+         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
+                || $opts->{ignore_type}
+              )
+              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
+         {
+            if ( $both_FULLTEXT ) {
+               if ( $len_i_cols == $len_j_cols ) {
+                  MKDEBUG && _d("Indexes are DUPLICATES (fulltext)");
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+               }
+               else {
+                  MKDEBUG && _d("Indexes are not duplicates (fulltext)");
+               }
+            }
+            else {
+               MKDEBUG && _d("Indexes are DUPLICATES");
+               push @result, $keys[$i] unless $seen{$i}++;
+               push @result, $keys[$j] unless $seen{$j}++;
+            }
+         }
+         else {
+            MKDEBUG && _d("Indexes are not duplicates");
+         }
+      }
+   }
+
+   if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
+      my $i = 0;
+      my $found = 0;
+      while ( $i < @keys ) {
+         if ( $keys[$i]->{name} eq 'PRIMARY' ) {
+            $found = 1;
+            last;
+         }
+         $i++;
+      }
+      if ( $found ) {
+         my $pkcols = $keys[$i]->{cols};
+         KEY:
+         foreach my $j ( 0..$#keys ) {
+            next KEY if $i == $j;
+            my $suffix = $keys[$j]->{cols};
+            SUFFIX:
+            while ( $suffix =~ s/`[^`]+`,// ) {
+               my $len = min(length($pkcols), length($suffix));
+               if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
+                  && substr($suffix, 0, $len) eq substr($pkcols, 0, $len))
+               {
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+                  last SUFFIX;
+               }
+            }
+         }
+      }
+   }
+
+   return \@result;
+}
+
+sub get_duplicate_fks {
+   my ( $self, $fks, $opts ) = @_;
+   my @fks = @$fks;
+   my %seen; # Avoid outputting a fk more than once.
+   my @result;
+   foreach my $i ( 0..$#fks - 1 ) {
+      foreach my $j ( $i+1..$#fks ) {
+         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
+         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
+         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
+         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
+               && $i_cols eq $j_cols
+               && $i_fkcols eq $j_fkcols
+         ) {
+            push @result, $fks[$i] unless $seen{$i}++;
+            push @result, $fks[$j] unless $seen{$j}++;
+         }
+      }
+   }
+
+   return \@result;
 }
 
 sub _d {
@@ -1074,7 +1254,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2215
+# DSNParser package 2460
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1160,35 +1340,50 @@ sub parse {
    MKDEBUG && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
-   my %vals;
+   my %given_props;
+   my %final_props;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
-      MKDEBUG && _d("Interpreting $dsn as $p=$dsn");
-      $dsn = "$p=$dsn";
+   my $prop_autokey = $self->prop('autokey');
+
+   foreach my $dsn_part ( split(/,/, $dsn) ) {
+      if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
+         $given_props{$prop_key} = $prop_val;
+      }
+      elsif ( $prop_autokey ) {
+         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         $given_props{$prop_autokey} = $dsn_part;
+      }
+      else {
+         MKDEBUG && _d("Bad DSN part: $dsn_part");
+      }
    }
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+
    foreach my $key ( keys %opts ) {
       MKDEBUG && _d("Finding value for $key");
-      $vals{$key} = $hash{$key};
-      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-         $vals{$key} = $prev->{$key};
+      $final_props{$key} = $given_props{$key};
+      if (   !defined $final_props{$key}
+           && defined $prev->{$key} && $opts{$key}->{copy} )
+      {
+         $final_props{$key} = $prev->{$key};
          MKDEBUG && _d("Copying value for $key from previous DSN");
       }
-      if ( !defined $vals{$key} ) {
-         $vals{$key} = $defaults->{$key};
+      if ( !defined $final_props{$key} ) {
+         $final_props{$key} = $defaults->{$key};
          MKDEBUG && _d("Copying value for $key from defaults");
       }
    }
-   foreach my $key ( keys %hash ) {
+
+   foreach my $key ( keys %given_props ) {
       die "Unrecognized DSN part '$key' in '$dsn'\n"
          unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
       }
    }
-   return \%vals;
+
+   return \%final_props;
 }
 
 sub as_string {
@@ -1781,7 +1976,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2458
+# MySQLInstance package 2765
 # ###########################################################################
 
 package MySQLInstance;
@@ -1791,7 +1986,6 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 use File::Temp ();
-use Carp;
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
@@ -1853,6 +2047,9 @@ my %eq_for = (
    query_cache_type => sub { return _veq(@_, 'ON', '1');        },
    ssl              => sub { return _veq(@_, '1', 'TRUE');      },
    sql_mode         => sub { return _veq(@_, '', 'OFF');        },
+   language         => sub { return _patheq(@_);                },
+   basedir          => sub { return _patheq(@_);                },
+   log_bin          => sub { return _eqifon(@_);                },
 );
 
 sub mysqld_processes
@@ -1908,9 +2105,11 @@ sub new {
            $var => $val;
         } ($cmd =~ m/--(\S+)/g);
    $self->{cmd_line_ops}->{defaults_file} ||= '';
+   $self->{conf_sys_vars}   = {};
+   $self->{online_sys_vars} = {};
    if ( MKDEBUG ) {
       my $self_dump = Dumper($self);
-      _d("$self_dump");
+      _d("self dump: $self_dump");
    }
    return bless $self, $class;
 }
@@ -1930,28 +2129,44 @@ sub find_mysqld_binary_unix {
 sub load_sys_vars {
    my ( $self, $dbh ) = @_;
 
+   my $mysqld_broken_msg
+      = "The mysqld binary may be broken. "
+      . "Try manually running the command above.\n"
+      . "Information about system variables from the defaults file "
+      . "will not be available.\n";
+
    my ( $defaults_file_op, $tmp_file ) = $self->_defaults_file_op();
    my $cmd = "$self->{mysqld_binary} $defaults_file_op --help --verbose";
    MKDEBUG && _d("Getting sys vars from mysqld: $cmd");
-   if ( my $mysqld_output = `$cmd` ) {
-      my ($sys_vars) = $mysqld_output =~ m/---\n(.*?)\n\n/ms;
-      %{ $self->{conf_sys_vars} }
-         = map {
-              my ( $var, $val ) = m/^(\S+)\s+(?:(\S+))?/;
-              $var =~ s/-/_/go;
-              if ( $val && $val =~ m/\(No/ ) { # (No default value)
-                 $val = undef;
-              }
-              if ( !defined $val && exists $undef_for{$var} ) {
-                 $val = $undef_for{$var};
-              }
-              $var => $val;
-           } split "\n", $sys_vars;
-
-      $self->_load_default_defaults_files($mysqld_output);
+   my $retval = system("$cmd 1>/dev/null 2>/dev/null");
+   $retval = $retval >> 8;
+   if ( $retval != 0 ) {
+      my $self_dump = Dumper($self);
+      MKDEBUG && _d("self dump: $self_dump");
+      warn "Cannot execute $cmd\n" . $mysqld_broken_msg;
    }
    else {
-      die "Failed to get system variable values from mysqld by running $cmd";
+      if ( my $mysqld_output = `$cmd` ) {
+         my ($sys_vars) = $mysqld_output =~ m/---\n(.*?)\n\n/ms;
+         %{ $self->{conf_sys_vars} }
+            = map {
+                 my ( $var, $val ) = m/^(\S+)\s+(?:(\S+))?/;
+                 $var =~ s/-/_/go;
+                 if ( $val && $val =~ m/\(No/ ) { # (No default value)
+                    $val = undef;
+                 }
+                 if ( !defined $val && exists $undef_for{$var} ) {
+                    $val = $undef_for{$var};
+                 }
+                 $var => $val;
+              } split "\n", $sys_vars;
+
+         $self->_load_default_defaults_files($mysqld_output);
+      }
+      else {
+         warn "MySQL returned no information by running $cmd\n"
+            . $mysqld_broken_msg;
+      }
    }
 
    $self->_load_online_sys_vars($dbh);
@@ -1967,6 +2182,7 @@ sub load_sys_vars {
          $self->{online_sys_vars}->{$var} = $val;
       }
    }
+
    return;
 }
 
@@ -2014,7 +2230,7 @@ sub _vars_from_defaults_file {
    $retval = $retval >> 8;
    if ( $retval != 0 ) {
       my $self_dump = Dumper($self);
-      MKDEBUG && _d("$self_dump");
+      MKDEBUG && _d("self dump: $self_dump");
       die "Cannot execute my_print_defaults command '$my_print_defaults_cmd'";
    }
 
@@ -2037,7 +2253,7 @@ sub _vars_from_defaults_file {
 
    if ( scalar @defaults_file_ops == 0 ) {
       my $self_dump = Dumper($self);
-      MKDEBUG && _d("$self_dump");
+      MKDEBUG && _d("self dump: $self_dump");
       die 'MySQL instance has no valid defaults files.'
    }
 
@@ -2085,7 +2301,7 @@ sub _load_online_sys_vars {
 
 sub get_DSN {
    my ( $self, %opts ) = @_;
-   my $port   = $self->{cmd_line_ops}->{port}     || '';
+   my $port   = $self->{cmd_line_ops}->{port} || '';
    my $socket = $opts{S} || $self->{cmd_line_ops}->{'socket'} || '';
    my $host   = $opts{S}      ? 'localhost'
               : $port ne 3306 ? '127.0.0.1'
@@ -2157,7 +2373,7 @@ sub out_of_sync_sys_vars {
          }
       }
       else {
-         carp "Undefined system variable: $var";
+         warn "Undefined system variable: $var";
          if ( MKDEBUG ) {
             my $dump_conf   = Dumper($conf_val);
             my $dump_online = Dumper($online_val);
@@ -2167,7 +2383,7 @@ sub out_of_sync_sys_vars {
       }
 
       if($var_out_of_sync) {
-         $out_of_sync_vars{$var} = [ $online_val, $conf_val ];
+         $out_of_sync_vars{$var} = { online=>$online_val, config=>$conf_val };
       }
    }
 
@@ -2195,6 +2411,20 @@ sub get_eq_for {
 sub _veq { 
    my ( $x, $y, $val1, $val2 ) = @_;
    return 1 if ( ($x eq $val1 || $x eq $val2) && ($y eq $val1 || $y eq $val2) );
+   return 0;
+}
+
+sub _patheq {
+   my ( $x, $y ) = @_;
+   $x .= '/' if $x !~ m/\/$/;
+   $y .= '/' if $y !~ m/\/$/;
+   return $x eq $y;
+}
+
+sub _eqifon { 
+   my ( $x, $y ) = @_;
+   return 1 if ( $x && $x eq 'ON' && $y );
+   return 1 if ( $y && $y eq 'ON' && $x );
    return 0;
 }
 
@@ -2323,7 +2553,7 @@ sub discover_triggers_routines_events {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLAdvisor package 2416
+# MySQLAdvisor package 2466
 # ###########################################################################
 
 package MySQLAdvisor;
@@ -2380,7 +2610,7 @@ my %checks = (
          if ( exists $sys_vars->{query_cache_type} ) {
             if (    $sys_vars->{query_cache_type} eq 'ON'
                  && $sys_vars->{query_cache_size} == 0) {
-               return "Query cache enabled but size zero";
+               return "Query caching is enabled but query_cache_size is zero";
             }
          }
          return 0;
@@ -2399,7 +2629,7 @@ my %checks = (
       sub {
          my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          if ( !exists $sys_vars->{skip_name_resolve} ) {
-            return "skip-name-resolve not set";
+            return "skip-name-resolve is not set";
          }
          return 0;
       },
@@ -2411,7 +2641,7 @@ my %checks = (
                > max($counts->{engines}->{MyISAM}->{data_size}, 33554432); # 32M
          return 0;
       },
-   'InnoDB buffer too large' =>
+   'InnoDB buffer pool too small' =>
       sub {
          my ( $sys_vars, $status_vals, $schema, $counts ) = @_;
          if (    exists $sys_vars->{innodb_buffer_pool_size} 
@@ -2567,7 +2797,7 @@ sub have_priv {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2368
+# Transformers package 2749
 # ###########################################################################
 
 package Transformers;
@@ -2582,15 +2812,18 @@ require Exporter;
 our @ISA         = qw(Exporter);
 our %EXPORT_TAGS = ();
 our @EXPORT      = ();
-our @EXPORT_OK   = qw(float_6 micro_t secs_to_time shorten ts);
-
-sub float_6 {
-   my ( $val ) = @_;
-   return sprintf('%.6f', $val);
-}
+our @EXPORT_OK   = qw(
+   micro_t
+   percentage_of
+   secs_to_time
+   shorten
+   ts
+);
 
 sub micro_t {
-   my ( $t ) = @_;
+   my ( $t, %args ) = @_;
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
    my $f;
 
    $t = 0 if $t < 0;
@@ -2600,21 +2833,28 @@ sub micro_t {
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
-      $f = ($t * 1000000) . ' us';
+      $f = ($t * 1000000) . 'us';
    }
    elsif ($t >= 0.001000 && $t <= 0.999999) {
-      $f = sprintf('%.3f', $t * 1000);
-      $f = ($f * 1) . ' ms'; # * 1 to remove insignificant zeros
+      $f = sprintf("%.${p_ms}f", $t * 1000);
+      $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
    }
    elsif ($t >= 1) {
-      $f = sprintf('%.6f', $t);
-      $f = ($f * 1) . ' s'; # * 1 to remove insignificant zeros
+      $f = sprintf("%.${p_s}f", $t);
+      $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
    }
    else {
       $f = 0;  # $t should = 0 at this point
    }
 
    return $f;
+}
+
+sub percentage_of {
+   my ( $is, $of, %args ) = @_;
+   my $p   = defined $args{p} ? $args{p} : 2; # float precision
+   my $fmt = $p ? "%.${p}f" : "%d";
+   return sprintf $fmt, ($is * 100) / ($of ||= 1);
 }
 
 sub secs_to_time {
@@ -2645,17 +2885,20 @@ sub secs_to_time {
 }
 
 sub shorten {
-   my ( $num ) = @_;
+   my ( $num, %args ) = @_;
+   my $p = defined $args{p} ? $args{p} : 2;     # float precision
+   my $d = defined $args{d} ? $args{d} : 1_024; # divisor
    my $n = 0;
-   while ( $num >= 1_024 ) {
-      $num /= 1_024;
+   my @units = ('', qw(k M G T P E Z Y));
+   while ( $num >= $d && $n < @units - 1 ) {
+      $num /= $d;
       ++$n;
    }
    return sprintf(
       $num =~ m/\./ || $n
-         ? "%.2f%s"
+         ? "%.${p}f%s"
          : '%d',
-      $num, ('','k','M','G', 'T')[$n]);
+      $num, $units[$n]);
 }
 
 sub ts {
@@ -2921,7 +3164,7 @@ $instance->{cmd_line_ops}->{defaults_file}
    SCHEMA ________________________________________________________________
       #DATABASES   #TABLES   #ROWS     #INDEXES   SIZE DATA   SIZE INDEXES
       @<<<<<<      @<<<<<<   @<<<<<<   @<<<<<<    @<<<<<<     @<<<<<<
-$schema->{counts}->{TOTAL}->{dbs}, $schema->{counts}->{TOTAL}->{tables}, shorten($schema->{counts}->{TOTAL}->{rows}, 0), $schema->{counts}->{TOTAL}->{indexes} || 'NA', shorten($schema->{counts}->{TOTAL}->{data_size}), shorten($schema->{counts}->{TOTAL}->{index_size})
+$schema->{counts}->{TOTAL}->{dbs}, $schema->{counts}->{TOTAL}->{tables}, shorten($schema->{counts}->{TOTAL}->{rows}, d=>1000), $schema->{counts}->{TOTAL}->{indexes} || 'NA', shorten($schema->{counts}->{TOTAL}->{data_size}), shorten($schema->{counts}->{TOTAL}->{index_size})
 
       Key buffer size        : @<<<<<<
 shorten($instance->{online_sys_vars}->{key_buffer_size})
@@ -2974,8 +3217,8 @@ exists $instance->{online_sys_vars}->{innodb_buffer_pool_size} ? shorten($instan
       foreach my $var ( keys %{ $oos } ) {
          printf($three_cols,
                 $var,
-                $oos->{$var}->[0],
-                $oos->{$var}->[1]);
+                $oos->{$var}->{online},
+                $oos->{$var}->{config});
       }
       print "\n";
    }
@@ -3054,7 +3297,7 @@ $db_tbl, $size_data, $size_index, $n_rows, $engine
       my ( $db, $tbl ) = split '\.', $db_tbl;
       $size_data  = shorten($dbs_tbls{$db_tbl});
       $size_index = shorten($dbs->{$db}->{$tbl}->{index_length});
-      $n_rows     = shorten($dbs->{$db}->{$tbl}->{rows}, 0);
+      $n_rows     = shorten($dbs->{$db}->{$tbl}->{rows}, d=>1000);
       $engine     = $dbs->{$db}->{$tbl}->{engine};
       write;
       delete $dbs_tbls{$db_tbl};
