@@ -461,11 +461,13 @@ sub out_of_sync_sys_vars {
          $var_out_of_sync = !$eq_for{$var}->($conf_val, $online_val);
       }
       else {
-         if ( $conf_val ne $online_val ) {
+         # If one var has a value and that value isn't equal to the
+         # other var's value, then they're out of sync. However, if
+         # both vars are valueless (0, '0', or ''), then they are
+         # in sync--this prevents 0 and '' being treated as out of sync.
+         if ( ($conf_val || $online_val) && ($conf_val ne $online_val) ) {
             $var_out_of_sync = 1;
 
-            # Handle excepts like where SHOW GLOBAL VARIABLES says ON and 
-            # mysqld --help --verbose says TRUE
             if ( exists $alias_for{$online_val} ) {
                $var_out_of_sync = 0 if $conf_val eq $alias_for{$online_val};
             }
