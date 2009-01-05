@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 38;
+use Test::More tests => 39;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -383,6 +383,26 @@ $myi->{conf_sys_vars}->{sql_mode}   = 'foo';
 $myi->{online_sys_vars}->{sql_mode} = 'foo';
 $ret = $myi->out_of_sync_sys_vars();
 ok(scalar keys %$ret == 0, 'Var with _veq eq_for and same vals (issue 139)');
+
+# #############################################################################
+# Issue 115: mk-audit false-positive duplicate system variables
+# #############################################################################
+# According to
+# http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html
+# these vars can be given multiple times.
+my @dupes = (
+   ['replicate_wild_do_table',''],
+   ['replicate_wild_ignore_table',''],
+   ['replicate_rewrite_db',''],
+   ['replicate_ignore_table',''],
+   ['replicate_ignore_db',''],
+   ['replicate_do_table',''],
+   ['replicate_do_db',''],
+);
+$myi->{defaults_file_sys_vars} = [];
+push @{$myi->{defaults_file_sys_vars}}, @dupes, @dupes;
+$ret = $myi->duplicate_sys_vars();
+ok(scalar @$ret == 0, 'Exceptions to duplicate sys vars like replicate-do-db (issue 115)');
 
 $sb->wipe_clean($dbh);
 exit;

@@ -81,6 +81,19 @@ my %eq_for = (
    log_bin          => sub { return _eqifon(@_);                },
 );
 
+# Certain sys vars can be given multiple times in the defaults file.
+# Therefore, they are exceptions to duplicate checking.
+# See http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html
+my %can_be_duplicate = (
+   replicate_wild_do_table     => 1,
+   replicate_wild_ignore_table => 1,
+   replicate_rewrite_db        => 1,
+   replicate_ignore_table      => 1,
+   replicate_ignore_db         => 1,
+   replicate_do_table          => 1,
+   replicate_do_db             => 1,
+);
+
 # Returns an array ref of hashes. Each hash represents a single mysqld process.
 # The cmd key val is suitable for passing to MySQLInstance::new().
 sub mysqld_processes
@@ -402,6 +415,7 @@ sub duplicate_sys_vars {
    my %have_seen;
    foreach my $var_val ( @{ $self->{defaults_file_sys_vars} } ) {
       my ( $var, $val ) = ( $var_val->[0], $var_val->[1] );
+      next if $can_be_duplicate{$var};
       push @duplicate_vars, $var if $have_seen{$var}++ == 1;
    }
    return \@duplicate_vars;
