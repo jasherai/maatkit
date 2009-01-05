@@ -95,10 +95,11 @@ sub server_specs {
    }
 
    # LVM
-   if ( -f '/sbin/vgs' ) {
-      chomp(my $vgs = `vgs`);
-      $vgs =~ s/^\s*/\t/g;
-      $server{storage}->{vgs} = $vgs;
+   chomp(my $vgs_cmd = `which vgs`);
+   if ( -f $vgs_cmd ) {
+      chomp(my $vgs_output = `$vgs_cmd`);
+      $vgs_output =~ s/^\s*/\t/g;
+      $server{storage}->{vgs} = $vgs_output;
    }
    else {
       $server{storage}->{vgs} = 'No LVM2';
