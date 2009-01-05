@@ -17,10 +17,15 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
+# Add samples dir to our PATH so that ServerSpecs will see the
+# dummy dmesg, megarc, etc. and fill in $server->{storage}->{raid}
+# as well as the dummy vgs.
+$ENV{PATH} = "./samples/:$ENV{PATH}";
+
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 7;
+use Test::More tests => 11;
 use English qw(-no_match_vars);
 
 require '../ServerSpecs.pm';
@@ -59,5 +64,23 @@ my @mem = ServerSpecs::_memory_slots();
 ok(!scalar @mem, 'Cannot exec dmidecode so no memory slot info');
 
 ok(!ServerSpecs::_can_run('/tmp/blahblah'), 'Cannot exec non-existent app');
+
+unlike(
+   $server->{storage}->{raid}->{aacraid},
+   qr/unable to check/,
+   'Dummy aacraid info'
+);
+unlike(
+   $server->{storage}->{raid}->{'LSI Logic SAS based MegaRAID'},
+   qr/unable to check/,
+   'Dummy MegaRAID info'
+);
+unlike(
+   $server->{storage}->{raid}->{'3ware 9000 Storage Controller'},
+   qr/unable to check/,
+   'Dummy 3ware RAID info'
+);
+
+ok($server->{storage}->{vgs} ne 'No LVM2', 'Gets dummy LVM (vgs) info');
 
 exit;

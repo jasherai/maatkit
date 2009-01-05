@@ -121,12 +121,23 @@ sub get_raid_info
 {
    my ( $server ) = @_;
 
-   if ( chomp(my $dmesg = `dmesg`) ) {
-      my ($raid) = $dmesg =~ m/(Direct-Access\s+MegaRaid.*$)/m;
-      $server->{storage}->{raid} = $raid ? $raid : 'unknown';
+   $server->{storage}->{raid} = {};
+   if ( chomp(my $dmesg = `dmesg | grep '^scsi[0-9]'`) ) {
+      if (my ($raid) = $dmesg =~ m/: (.*MegaRaid)/mi) {
+         $server->{storage}->{raid}{$raid} = _get_raid_info_megarc();
+      }
+      if (my ($raid) = $dmesg =~ m/: (aacraid)/m) {
+         $server->{storage}->{raid}{$raid} = _get_raid_info_arcconf();
+      }
+      if (my ($raid) = $dmesg =~ m/: (3ware [0-9]+ Storage Controller)/m) {
+         $server->{storage}->{raid}{$raid} = _get_raid_info_tw_cli();
+      }
    }
+}
 
-   # Try several possible cmds to get raid status
+sub _get_raid_info_megarc
+{
+   my $result = '';
    # TODO: MegaCli may exist on a 64-bit machine, we should choose the correct
    # one based on 64-bitness of the OS.
    my $megarc = `which megarc && megarc -AllAdpInfo -aALL`;
@@ -149,32 +160,65 @@ sub get_raid_info
       }
    }
 
-   # Parse raid status if available
-   if( $megarc ) {
-      $server->{storage}->{megarc}
-         .= ($megarc =~ /^(Product Name.*\n)/m ? $1 : '');
-      $server->{storage}->{megarc}
-         .= ($megarc =~ /^(BBU.*\n)/m ? $1 : '');
-      $server->{storage}->{megarc}
-         .= ($megarc =~ /^(Battery Warning.*\n)/m ? $1 : '');
-      $server->{storage}->{megarc}
-         .= ($megarc =~ /^(Alarm.*\n)/m ? $1 : '');
-      $server->{storage}->{megarc}
-         .= ($megarc =~ /(Device Present.*?\n)\s+Supported/ms ? $1 : '');
-      $server->{storage}->{megarc}
-         .= ($megarc =~ /(Battery state.*?\n)isSOHGood/ms ? $1 : '');
+   if ( $megarc ) {
+      $result .= ($megarc =~ /^(Product Name.*\n)/m ? $1 : '');
+      $result .= ($megarc =~ /^(BBU.*\n)/m ? $1 : '');
+      $result .= ($megarc =~ /^(Battery Warning.*\n)/m ? $1 : '');
+      $result .= ($megarc =~ /^(Alarm.*\n)/m ? $1 : '');
+      $result .= ($megarc =~ /(Device Present.*?\n)\s+Supported/ms ? $1 : '');
+      $result .= ($megarc =~ /(Battery state.*?\n)isSOHGood/ms ? $1 : '');
+      $result =~ s/^/   /mg;
    }
    else {
-      if ( $server->{storage}->{raid} ne 'unknown' ) {
-         $server->{storage}->{megarc}
-            .= "\n*** RAID present but unable to check its status";
-      }
-      else {
-         $server->{storage}->{megarc} = '';
-      }
+      $result .= "\n*** MegaRAID present but unable to check its status";
    }
 
-   return;
+   return $result;
+}
+
+sub _get_raid_info_arcconf
+{
+   my $result = '';
+   my $arcconf;
+   if (-x '/usr/StorMan/arcconf') {
+      $arcconf = `/usr/StorMan/arcconf GETCONFIG 1`;
+   }
+   else {
+      $arcconf = `which arcconf && arcconf GETCONFIG 1`;
+   }
+   if ( $arcconf ) {
+      $result .= ($arcconf =~ /^(\s*Controller Model.*\n)/m ? $1 : '');
+      $result .= ($arcconf =~ /^(\s*Controller Status.*\n)/m ? $1 : '');
+      $result .= ($arcconf =~ /^(\s*Installed memory.*\n)/m ? $1 : '');
+      $result .= ($arcconf =~ /^(\s*Temperature.*\n)/m ? $1 : '');
+      $result .= ($arcconf =~ /^(\s*Defunct disk drive count.*\n)/m ? $1 : '');
+      $result .= ($arcconf =~ /^(\s*Logical devices\/Failed \(error\)\/Degraded.*\n)/m ? $1 : '');
+      $result .= ($arcconf =~ /^(\s*Write-cache mode.*\n)/m ? $1 : '');
+      $result .= ($arcconf =~ /^(\s*Write-cache setting.*\n)/m ? $1 : '');
+      $result .= ($arcconf =~ /^(\s*Controller Battery Information.*?\n\n)/ms ? $1 : '');
+   }
+   else {
+      $result .= "\n*** aacraid present but unable to check its status";
+   }
+
+   return $result;
+}
+
+sub _get_raid_info_tw_cli
+{
+   my $result = '';
+   my $tw_cli = `which tw_cli && tw_cli /c0 show all`;
+   if ( $tw_cli ) {
+      $result .= ($tw_cli =~ /^\/c0\s*(Model.*\n)/m ? $1 : '');
+      $result .= ($tw_cli =~ /^\/c0\s*(Memory Installed.*\n)/m ? $1 : '');
+      $result .= ($tw_cli =~ /\n(\n.*)/ms ? $1 : '');
+      $result =~ s/^/   /mg;
+   }
+   else {
+      $result .= "\n*** 3ware Storage Controller present but unable to check its status";
+   }
+
+   return $result;
 }
 
 sub check_proc_sys_net_ipv4_values
