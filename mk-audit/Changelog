@@ -4,7 +4,7 @@ Changelog for mk-audit:
    * Path to vgs was hard-coded instead of using which (issue 116).
    * Duplicate vars reported several false-positives (issue 115).
    * Removed warnings for undefined system variables (issue 114).
-   * Out-of-sync vars reported several false-positives (issue 102).
+   * Out-of-sync vars reported several false-positives (issue 102 & 138).
 
 2008-12-01: version 0.9.4
 
