@@ -72,17 +72,17 @@ my %ignore_sys_var = (
 # TODO: These need to be tested more thoroughly. Some will want to check
 #       ON/1 as well as OFF/0, etc.
 my %eq_for = (
-   ft_stopword_file      => sub { return _veq(@_, '(built-in)', ''); },
-   query_cache_type      => sub { return _veq(@_, 'ON', '1');        },
-   ssl                   => sub { return _veq(@_, '1', 'TRUE');      },
-   sql_mode              => sub { return _veq(@_, '', 'OFF');        },
-   language              => sub { return _patheq(@_);                },
-   basedir               => sub { return _patheq(@_);                },
-   log_bin               => sub { return _eqifon(@_);                },
-   log_slow_queries      => sub { return _eqifon(@_);                },
-   open_files_limit      => sub { return _eqifconfundef(@_);         },
-   innodb_log_group_home => sub { return _eqifconfundef(@_);         },
-   tmpdir                => sub { return _eqifconfundef(@_);         },
+   ft_stopword_file          => sub { return _veq(@_, '(built-in)', ''); },
+   query_cache_type          => sub { return _veq(@_, 'ON', '1');        },
+   ssl                       => sub { return _veq(@_, '1', 'TRUE');      },
+   sql_mode                  => sub { return _veq(@_, '', 'OFF');        },
+   language                  => sub { return _patheq(@_);                },
+   basedir                   => sub { return _patheq(@_);                },
+   log_bin                   => sub { return _eqifon(@_);                },
+   log_slow_queries          => sub { return _eqifon(@_);                },
+   open_files_limit          => sub { return _eqifconfundef(@_);         },
+   innodb_log_group_home_dir => sub { return _eqifconfundef(@_);         },
+   tmpdir                    => sub { return _eqifconfundef(@_);         },
 );
 
 # Certain sys vars can be given multiple times in the defaults file.
