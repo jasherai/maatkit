@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 40;
+use Test::More tests => 41;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -202,6 +202,19 @@ eval {
    $myi->_vars_from_defaults_file('', 'my_print_defaults_foozed');
 };
 like($EVAL_ERROR, qr/Cannot execute my_print_defaults command/, 'Dies if my_print_defaults cannot be executed');
+
+# Handle pathological oos cases like 2.2 and 2.200000 for long_query_time.
+$myi->{conf_sys_vars}   = {};
+$myi->{online_sys_vars} = {};
+# sql_mode has an eq_for calling _veq()
+$myi->{conf_sys_vars}->{long_query_time}   = '2.2';
+$myi->{online_sys_vars}->{long_query_time} = '2.200000';
+$ret = $myi->out_of_sync_sys_vars();
+ok(scalar keys %$ret == 0, 'long_query_time 2.2 is not oos with 2.200000');
+
+# !!! REMEMBER !!!
+# I just destroyed parts of $myi in the test above. Therefore, if you
+# add tests below here, you may want to make a new MySQLInstance obj.
 
 # #############################################################################
 # Issue 49: mk-audit doesn't parse server binary right

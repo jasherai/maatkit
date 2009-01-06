@@ -76,13 +76,22 @@ my %eq_for = (
    query_cache_type          => sub { return _veq(@_, 'ON', '1');        },
    ssl                       => sub { return _veq(@_, '1', 'TRUE');      },
    sql_mode                  => sub { return _veq(@_, '', 'OFF');        },
-   language                  => sub { return _patheq(@_);                },
+
    basedir                   => sub { return _patheq(@_);                },
+   language                  => sub { return _patheq(@_);                },
+
    log_bin                   => sub { return _eqifon(@_);                },
    log_slow_queries          => sub { return _eqifon(@_);                },
-   open_files_limit          => sub { return _eqifconfundef(@_);         },
+
+   general_log_file          => sub { return _eqifconfundef(@_);         },
+   innodb_data_file_path     => sub { return _eqifconfundef(@_);         },
    innodb_log_group_home_dir => sub { return _eqifconfundef(@_);         },
+   log_error                 => sub { return _eqifconfundef(@_);         },
+   open_files_limit          => sub { return _eqifconfundef(@_);         },
+   slow_query_log_file       => sub { return _eqifconfundef(@_);         },
    tmpdir                    => sub { return _eqifconfundef(@_);         },
+
+   long_query_time           => sub { return _numericeq(@_);             },
 );
 
 # Certain sys vars can be given multiple times in the defaults file.
@@ -551,6 +560,16 @@ sub _eqifon {
 sub _eqifconfundef {
    my ( $conf_val, $online_val ) = @_;
    return ($conf_val eq '' ? 1 : 0);
+}
+
+# numeric eq: returns true if the two vals are numerically eq. A string
+# eq test works for most cases, even numbers, except when decimal precision
+# becomes an issue. long_query_time, for example, can be set to 2.2 in the
+# config file, but the online value shows its full precision as 2.200000.
+# Thus, a string eq incorrectly fails.
+sub _numericeq {
+   my ( $x, $y ) = @_;
+   return ($x == $y ? 1 : 0);
 }
 
 sub _d {
