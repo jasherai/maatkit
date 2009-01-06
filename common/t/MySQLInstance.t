@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 39;
+use Test::More tests => 40;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -189,6 +189,12 @@ is(
    $eq->('mysql-bin', 'ON'),
    '1',
    'eq_for mysql-bin true for mysql-bin and ON'
+);
+$eq = MySQLInstance::get_eq_for('open_files_limit');
+is(
+   $eq->('', '/tmp/'),
+   '1',
+   'eq_for open_files_limit true for undef and /tmp/ (issue 138)'
 );
 
 # Check that missing my_print_defaults causes the obj to die

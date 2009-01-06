@@ -72,13 +72,17 @@ my %ignore_sys_var = (
 # TODO: These need to be tested more thoroughly. Some will want to check
 #       ON/1 as well as OFF/0, etc.
 my %eq_for = (
-   ft_stopword_file => sub { return _veq(@_, '(built-in)', ''); },
-   query_cache_type => sub { return _veq(@_, 'ON', '1');        },
-   ssl              => sub { return _veq(@_, '1', 'TRUE');      },
-   sql_mode         => sub { return _veq(@_, '', 'OFF');        },
-   language         => sub { return _patheq(@_);                },
-   basedir          => sub { return _patheq(@_);                },
-   log_bin          => sub { return _eqifon(@_);                },
+   ft_stopword_file      => sub { return _veq(@_, '(built-in)', ''); },
+   query_cache_type      => sub { return _veq(@_, 'ON', '1');        },
+   ssl                   => sub { return _veq(@_, '1', 'TRUE');      },
+   sql_mode              => sub { return _veq(@_, '', 'OFF');        },
+   language              => sub { return _patheq(@_);                },
+   basedir               => sub { return _patheq(@_);                },
+   log_bin               => sub { return _eqifon(@_);                },
+   log_slow_queries      => sub { return _eqifon(@_);                },
+   open_files_limit      => sub { return _eqifconfundef(@_);         },
+   innodb_log_group_home => sub { return _eqifconfundef(@_);         },
+   tmpdir                => sub { return _eqifconfundef(@_);         },
 );
 
 # Certain sys vars can be given multiple times in the defaults file.
@@ -538,6 +542,15 @@ sub _eqifon {
    return 1 if ( $x && $x eq 'ON' && $y );
    return 1 if ( $y && $y eq 'ON' && $x );
    return 0;
+}
+
+# eq if config value is undefined (''): returns true if the config value
+# is undefined because for certain vars and undefined conf val results
+# in the online value showing the built-in default val. These vals, then,
+# are not technically out-of-sync.
+sub _eqifconfundef {
+   my ( $conf_val, $online_val ) = @_;
+   return ($conf_val eq '' ? 1 : 0);
 }
 
 sub _d {
