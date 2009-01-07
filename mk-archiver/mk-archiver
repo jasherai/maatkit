@@ -585,20 +585,23 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2291
+# TableParser package 2749
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package TableParser;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
+use List::Util qw(min);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   bless {}, shift;
+   my ( $class ) = @_;
+   return bless {}, $class;
 }
+
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -707,6 +710,7 @@ sub parse {
 
 sub sort_indexes {
    my ( $self, $tbl ) = @_;
+
    my @indexes
       = sort {
          (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
@@ -718,6 +722,7 @@ sub sort_indexes {
          $tbl->{keys}->{$_}->{type} eq 'BTREE'
       }
       sort keys %{$tbl->{keys}};
+
    MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
    return @indexes;
 }
@@ -768,6 +773,190 @@ sub find_possible_keys {
    }
 }
 
+sub table_exists {
+   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
+   my $db_tbl = $q->quote($db, $tbl);
+   my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
+   $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d("table_exists check for $db_tbl: $sql");
+   eval { $dbh->do($sql); };
+   MKDEBUG && _d("eval error (if any): $EVAL_ERROR");
+   return 0 if $EVAL_ERROR;
+   return 1;
+}
+
+sub get_engine {
+   my ( $self, $ddl, $opts ) = @_;
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   return $engine || undef;
+}
+
+sub get_keys {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @indexes =
+      grep { $_ !~ m/FOREIGN/ }
+      $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
+
+   my $engine = $self->get_engine($ddl);
+   if ( $engine !~ m/MEMORY|HEAP/ ) {
+      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
+   }
+
+   my @keys = map {
+      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
+      $struct = $struct || $special || 'BTREE';
+      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
+
+      if ( $opts->{version} lt '004001000' && $engine =~ m/HEAP|MEMORY/i ) {
+         $struct = 'HASH';
+      }
+
+      {
+         struct   => $struct,
+         cols     => $cols,
+         name     => $name || 'PRIMARY',
+      }
+   } @indexes;
+
+   return \@keys;
+}
+
+sub get_fks {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
+
+   my @result = map {
+      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
+      my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
+      my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
+      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
+      if ( $parent !~ m/\./ ) {
+         $parent = "`$opts->{database}`.$parent";
+      }
+      {  name   => $name,
+         parent => $parent,
+         cols   => $cols,
+         fkcols => $fkcols,
+      };
+   } @fks;
+   return \@result;
+}
+
+sub get_duplicate_keys {
+   my ( $self, $keys, $opts ) = @_;
+   my @keys = @$keys;
+   my %seen; # Avoid outputting a key more than once.
+   my @result;
+
+   foreach my $i ( 0..$#keys - 1 ) {
+      foreach my $j ( $i+1..$#keys ) {
+         my $i_cols        = $keys[$i]->{cols};
+         my $j_cols        = $keys[$j]->{cols};
+         my $type_i_cols   = $keys[$i]->{struct};
+         my $type_j_cols   = $keys[$j]->{struct};
+         my $len_i_cols    = length($i_cols);
+         my $len_j_cols    = length($j_cols);
+         my $min_len       = min($len_i_cols, $len_j_cols);
+         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
+                               && $type_j_cols eq 'FULLTEXT'
+                             ) ? 1 : 0;
+         if ( MKDEBUG ) {
+            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
+               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
+         }
+
+         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
+            $i_cols = join(',', sort(split(/`/, $i_cols)));
+            $j_cols = join(',', sort(split(/`/, $j_cols)));
+         }
+         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
+                || $opts->{ignore_type}
+              )
+              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
+         {
+            if ( $both_FULLTEXT ) {
+               if ( $len_i_cols == $len_j_cols ) {
+                  MKDEBUG && _d("Indexes are DUPLICATES (fulltext)");
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+               }
+               else {
+                  MKDEBUG && _d("Indexes are not duplicates (fulltext)");
+               }
+            }
+            else {
+               MKDEBUG && _d("Indexes are DUPLICATES");
+               push @result, $keys[$i] unless $seen{$i}++;
+               push @result, $keys[$j] unless $seen{$j}++;
+            }
+         }
+         else {
+            MKDEBUG && _d("Indexes are not duplicates");
+         }
+      }
+   }
+
+   if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
+      my $i = 0;
+      my $found = 0;
+      while ( $i < @keys ) {
+         if ( $keys[$i]->{name} eq 'PRIMARY' ) {
+            $found = 1;
+            last;
+         }
+         $i++;
+      }
+      if ( $found ) {
+         my $pkcols = $keys[$i]->{cols};
+         KEY:
+         foreach my $j ( 0..$#keys ) {
+            next KEY if $i == $j;
+            my $suffix = $keys[$j]->{cols};
+            SUFFIX:
+            while ( $suffix =~ s/`[^`]+`,// ) {
+               my $len = min(length($pkcols), length($suffix));
+               if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
+                  && substr($suffix, 0, $len) eq substr($pkcols, 0, $len))
+               {
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+                  last SUFFIX;
+               }
+            }
+         }
+      }
+   }
+
+   return \@result;
+}
+
+sub get_duplicate_fks {
+   my ( $self, $fks, $opts ) = @_;
+   my @fks = @$fks;
+   my %seen; # Avoid outputting a fk more than once.
+   my @result;
+   foreach my $i ( 0..$#fks - 1 ) {
+      foreach my $j ( $i+1..$#fks ) {
+         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
+         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
+         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
+         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
+               && $i_cols eq $j_cols
+               && $i_fkcols eq $j_fkcols
+         ) {
+            push @result, $fks[$i] unless $seen{$i}++;
+            push @result, $fks[$j] unless $seen{$j}++;
+         }
+      }
+   }
+
+   return \@result;
+}
+
 sub _d {
    my ( $line ) = (caller(0))[2];
    print "# TableParser:$line $PID ", @_, "\n";
@@ -780,7 +969,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2215
+# DSNParser package 2460
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -866,35 +1055,50 @@ sub parse {
    MKDEBUG && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
-   my %vals;
+   my %given_props;
+   my %final_props;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
-      MKDEBUG && _d("Interpreting $dsn as $p=$dsn");
-      $dsn = "$p=$dsn";
+   my $prop_autokey = $self->prop('autokey');
+
+   foreach my $dsn_part ( split(/,/, $dsn) ) {
+      if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
+         $given_props{$prop_key} = $prop_val;
+      }
+      elsif ( $prop_autokey ) {
+         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         $given_props{$prop_autokey} = $dsn_part;
+      }
+      else {
+         MKDEBUG && _d("Bad DSN part: $dsn_part");
+      }
    }
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+
    foreach my $key ( keys %opts ) {
       MKDEBUG && _d("Finding value for $key");
-      $vals{$key} = $hash{$key};
-      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-         $vals{$key} = $prev->{$key};
+      $final_props{$key} = $given_props{$key};
+      if (   !defined $final_props{$key}
+           && defined $prev->{$key} && $opts{$key}->{copy} )
+      {
+         $final_props{$key} = $prev->{$key};
          MKDEBUG && _d("Copying value for $key from previous DSN");
       }
-      if ( !defined $vals{$key} ) {
-         $vals{$key} = $defaults->{$key};
+      if ( !defined $final_props{$key} ) {
+         $final_props{$key} = $defaults->{$key};
          MKDEBUG && _d("Copying value for $key from defaults");
       }
    }
-   foreach my $key ( keys %hash ) {
+
+   foreach my $key ( keys %given_props ) {
       die "Unrecognized DSN part '$key' in '$dsn'\n"
          unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
       }
    }
-   return \%vals;
+
+   return \%final_props;
 }
 
 sub as_string {
@@ -1137,7 +1341,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 2215
+# TableNibbler package 2783
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1346,29 +1550,26 @@ sub generate_del_stmt {
 
 sub generate_ins_stmt {
    my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ins_tbl sel_cols) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $ins_tbl  = $args{ins_tbl};
+   my @sel_cols = @{$args{sel_cols}};
 
-   my $tbl  = $args{tbl};
-   my @cols = @{$args{cols}};
+   die "You didn't specify any SELECT columns" unless @sel_cols;
 
-   die "You didn't specify any columns" unless @cols;
-
-   my %col_posn = do { my $i = 0; map { $_ => $i++ } @{$tbl->{cols}} };
    my @ins_cols;
    my @ins_slice;
-
-   foreach my $col ( @cols ) {
-      if ( exists $col_posn{$col} ) {
-         push @ins_cols, $col;
-         push @ins_slice, $col_posn{$col};
-      }
+   for my $i ( 0..$#sel_cols ) {
+      next unless $ins_tbl->{is_col}->{$sel_cols[$i]};
+      push @ins_cols, $sel_cols[$i];
+      push @ins_slice, $i;
    }
 
-   my $ins_stmt = {
+   return {
       cols  => \@ins_cols,
       slice => \@ins_slice,
    };
-
-   return $ins_stmt;
 }
 
 sub _d {
@@ -1383,16 +1584,16 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 2215
+# MySQLDump package 2468
 # ###########################################################################
+package MySQLDump;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLDump;
+use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
-
-use English qw(-no_match_vars);
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -1690,6 +1891,8 @@ use English qw(-no_match_vars);
 use List::Util qw(max);
 use IO::File;
 use sigtrap qw(handler finish untrapped normal-signals);
+use Data::Dumper;
+$Data::Dumper::Indent=1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -2141,8 +2344,8 @@ else {
 
 if ( $dst ) {
    $ins_stmt = $nibbler->generate_ins_stmt(
-      tbl  => $dst->{info},
-      cols => \@sel_cols,
+      ins_tbl  => $dst->{info},
+      sel_cols => \@sel_cols,
    );
    @ins_slice = @{$ins_stmt->{slice}};
    if ( $opts{bulkins} ) {
@@ -2176,6 +2379,13 @@ if ( $opts{t} ) {
             $first_sql, $next_sql, $del_sql, $ins_sql), "\n";
    }
    exit(0);
+}
+
+if ( MKDEBUG ) {
+   _d("get first sql: $first_sql");
+   _d("get next sql: $next_sql");
+   _d("del row sql: $del_sql");
+   _d("ins row sql: $ins_sql");
 }
 
 my $get_first = $dbh->prepare($first_sql);
@@ -2682,6 +2892,11 @@ sub get_irot {
       { Slice => {} });
    return 0 unless $rows;
    return @$rows && $rows->[0]->{Value} ne 'OFF';
+}
+
+sub _d {
+   my ( $line ) = (caller(0))[2];
+   print "# main:$line ", @_, "\n";
 }
 
 # ############################################################################

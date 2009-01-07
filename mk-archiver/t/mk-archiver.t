@@ -121,7 +121,7 @@ like($output, qr/Cannot find an ascendable index/, 'Got need-PK-error OK');
 # Test ascending index explicitly
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_3,F=$opt_file,i=PRIMARY --purge 2>&1`;
-is($output, '', 'No output');
+is($output, '', 'No output for ascending index explicitly');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_3"`;
 is($output + 0, 0, 'Ascended explicit key OK');
 
@@ -136,7 +136,7 @@ is($output + 0, 0, 'Ascended out-of-order PK OK');
 # Archive only part of the table
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --where 'a<4' --purge 2>&1`;
-is($output, '', 'No output');
+is($output, '', 'No output for archiving only part of a table');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 1, 'Purged some rows ok');
 
@@ -144,7 +144,7 @@ is($output + 0, 1, 'Purged some rows ok');
 `mysql --defaults-file=$opt_file < before.sql`;
 `rm -f archive.test.table_1`;
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --file 'archive.%D.%t' 2>&1`;
-is($output, '', 'No output');
+is($output, '', 'No output for archiving to a file');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged all rows ok');
 ok(-f 'archive.test.table_1', 'Archive file written OK');
@@ -177,16 +177,16 @@ EOF
 # Archive to another table.
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
-is($output, '', 'No output');
+is($output, '', 'No output for archiving to another table');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged all rows ok');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_2"`;
-is($output + 0, 4, 'Found rows in new table OK');
+is($output + 0, 4, 'Found rows in new table OK when archiving to another table');
 
 # Archive only some columns to another table.
 `mysql --defaults-file=$opt_file < before.sql`;
 $output = `perl ../mk-archiver -c b,c -W 1=1 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
-is($output, '', 'No output');
+is($output, '', 'No output for archiving only some cols to another table');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged all rows ok');
 $output = `mysql --defaults-file=$opt_file -t -e "select * from test.table_2"`;
@@ -200,7 +200,7 @@ is($output, <<EOF
 | 4 |    3 | 4 | NULL | 
 +---+------+---+------+
 EOF
-, 'Found rows in new table OK');
+, 'Found rows in new table OK when archiving only some columns to another table');
 
 # Test the output
 `mysql --defaults-file=$opt_file < before.sql`;
@@ -221,7 +221,7 @@ is($output, '', 'Commit every 0 rows worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged all rows ok');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_2"`;
-is($output + 0, 4, 'Found rows in new table OK');
+is($output + 0, 4, 'Found rows in new table OK when archiving to another table with autocommit');
 
 # Archive to another table with commit every 2 rows
 `mysql --defaults-file=$opt_file < before.sql`;
@@ -230,7 +230,7 @@ is($output, '', 'Commit every 2 rows worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged all rows ok');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_2"`;
-is($output + 0, 4, 'Found rows in new table OK');
+is($output + 0, 4, 'Found rows in new table OK when archiving to another table with commit every 2 rows');
 
 # Test --columns
 $output = `perl ../mk-archiver -W 1=1 -t --source D=test,t=table_1,F=$opt_file --columns=a,b --purge 2>&1`;
@@ -403,5 +403,30 @@ $output = `mysql --defaults-file=$opt_file -N -e "checksum table test.table_5_de
 my ( $chks ) = $output =~ m/dest\s+(\d+)/;
 like($output, qr/copy\s+$chks/, 'copy checksum');
 
+# #############################################################################
+# Issue 131: mk-archiver fails to insert records if destination table columns
+# in different order than source table
+# #############################################################################
+require '../../common/DSNParser.pm';
+require '../../common/Sandbox.pm';
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+$sb->create_dbs($dbh, ['test']);
+
+$sb->load_file('master', 'samples/issue_131.sql');
+$output = `perl ../mk-archiver -W 1=1 --source h=127.1,P=12345,D=test,t=issue_131_src --statistics --dest t=issue_131_dst 2>&1`;
+my $ret = $dbh->selectall_arrayref('SELECT * FROM test.issue_131_dst');
+is_deeply(
+   $ret,
+   [
+      ['aaa','1'],
+      ['bbb','2'],
+   ],
+   'Dest table has different column order (issue 131)'
+);
+
 # Clean up.
+$sb->wipe_clean($dbh);
 `mysql --defaults-file=$opt_file < after.sql`;
