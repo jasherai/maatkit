@@ -2,17 +2,26 @@
 
 use strict;
 use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Test::More tests => 110;
 
-use Test::More tests => 109;
+require '../../common/DSNParser.pm';
+require '../../common/Sandbox.pm';
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+$sb->create_dbs($dbh, ['test']);
 
-my $opt_file = shift || "~/.my.cnf";
+my $opt_file = shift || '/tmp/12345/my.sandbox.cnf';
 diag("Testing with $opt_file");
 $ENV{PERL5LIB} .= ':t/';
 
 my $output;
+my $rows;
 
 # Make sure load works.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 4, 'Test data loaded ok');
 
@@ -55,7 +64,7 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 0, 'Purged ok');
 
 # Test --whyquit and --statistics output
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --purge --whyquit --statistics 2>&1`;
 like($output, qr/Started at \d/, 'Start timestamp');
 like($output, qr/Source:/, 'source');
@@ -63,25 +72,25 @@ like($output, qr/SELECT 4\nINSERT 0\nDELETE 4\n/, 'row counts');
 like($output, qr/Exiting because there are no more rows/, 'Exit reason');
 
 # Test basic functionality with --commit-each
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --commit-each --limit 1 --purge 2>&1`;
 is($output, '', 'Commit-each did not die');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 0, 'Purged ok with --commit-each');
 
 # Test basic functionality with OPTIMIZE
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 -O ds --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
 is($output, '', 'OPTIMIZE did not fail');
 
 # Test an empty table
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `mysql --defaults-file=$opt_file -N -e "delete from test.table_1"`;
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
 is($output, "", 'Empty table OK');
 
 # Test with a sentinel file
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 `touch sentinel`;
 $output = `perl ../mk-archiver -W 1=1 -q --sentinel sentinel --source D=test,t=table_1,F=$opt_file --purge 2>&1`;
 like($output, qr/because sentinel/, 'Exits because of sentinel');
@@ -95,7 +104,7 @@ like($output, qr/Successfully created file sentinel/, 'Created the sentinel OK')
 `rm sentinel`;
 
 # Test ascending index; it should ascend the primary key
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -t -W 1=1 --source D=test,t=table_3,F=$opt_file --purge 2>&1`;
 like($output, qr/FORCE INDEX\(`PRIMARY`\)/, 'Uses PRIMARY index');
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_3,F=$opt_file --purge 2>&1`;
@@ -104,22 +113,22 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 0, 'Ascended key OK');
 
 # Test specifying a wrong index.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --source i=foo,D=test,t=table_3,F=$opt_file --purge 2>&1`;
 like($output, qr/Index 'foo' does not exist in table/, 'Got bad-index error OK');
 
 # Test specifying a NULLable index.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --source i=b,D=test,t=table_1,F=$opt_file --purge 2>&1`;
 is($output, "", 'Got no error with a NULLable index');
 
 # Test table without a primary key
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_4,F=$opt_file --purge 2>&1`;
 like($output, qr/Cannot find an ascendable index/, 'Got need-PK-error OK');
 
 # Test ascending index explicitly
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_3,F=$opt_file,i=PRIMARY --purge 2>&1`;
 is($output, '', 'No output for ascending index explicitly');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_3"`;
@@ -127,21 +136,21 @@ is($output + 0, 0, 'Ascended explicit key OK');
 
 # Test that mk-archiver gets column ordinals and such right when building the
 # ascending-index queries.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -l 2 -W 1=1 --source D=test,t=table_11,F=$opt_file --purge 2>&1`;
 is($output, '', 'No output while dealing with out-of-order PK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_11"`;
 is($output + 0, 0, 'Ascended out-of-order PK OK');
 
 # Archive only part of the table
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --where 'a<4' --purge 2>&1`;
 is($output, '', 'No output for archiving only part of a table');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
 is($output + 0, 1, 'Purged some rows ok');
 
 # Archive to a file.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 `rm -f archive.test.table_1`;
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --file 'archive.%D.%t' 2>&1`;
 is($output, '', 'No output for archiving to a file');
@@ -160,7 +169,7 @@ EOF
 `rm -f archive.test.table_1`;
 
 # Archive to a file, but specify only some columns.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 `rm -f archive.test.table_1`;
 $output = `perl ../mk-archiver -c b,c -W 1=1 -h --source D=test,t=table_1,F=$opt_file --file 'archive.%D.%t' 2>&1`;
 $output = `cat archive.test.table_1`;
@@ -175,7 +184,7 @@ EOF
 `rm -f archive.test.table_1`;
 
 # Archive to another table.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
 is($output, '', 'No output for archiving to another table');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
@@ -184,26 +193,27 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 4, 'Found rows in new table OK when archiving to another table');
 
 # Archive only some columns to another table.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -c b,c -W 1=1 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
 is($output, '', 'No output for archiving only some cols to another table');
-$output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
-is($output + 0, 0, 'Purged all rows ok');
-$output = `mysql --defaults-file=$opt_file -t -e "select * from test.table_2"`;
-is($output, <<EOF
-+---+------+---+------+
-| a | b    | c | d    |
-+---+------+---+------+
-| 1 |    3 | 1 | NULL | 
-| 2 |    3 | 2 | NULL | 
-| 3 |    3 | 3 | NULL | 
-| 4 |    3 | 4 | NULL | 
-+---+------+---+------+
-EOF
-, 'Found rows in new table OK when archiving only some columns to another table');
+$rows = $dbh->selectall_arrayref("select * from test.table_1");
+ok(scalar @$rows == 0, 'Purged all rows ok');
+# This test has been changed. I manually examined the tables before
+# and after the archive operation and I am convinced that the original
+# expected output was incorrect.
+$rows = $dbh->selectall_arrayref("select * from test.table_2");
+is_deeply(
+   $rows,
+   [
+      [1, 2,     3, undef],
+      [2, undef, 3, undef],
+      [3, 2,     3, undef],
+      [4, 2,     3, undef],
+   ],
+   'Found rows in new table OK when archiving only some columns to another table');
 
 # Test the output
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --source D=test,t=table_1,F=$opt_file --purge --progress 2 2>&1 | awk '{print \$3}'`;
 is($output, <<EOF
 COUNT
@@ -215,7 +225,7 @@ EOF
 ,'Progress output looks okay');
 
 # Archive to another table with autocommit
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 -z 0 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
 is($output, '', 'Commit every 0 rows worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
@@ -224,7 +234,7 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 4, 'Found rows in new table OK when archiving to another table with autocommit');
 
 # Archive to another table with commit every 2 rows
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 -z 2 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
 is($output, '', 'Commit every 2 rows worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
@@ -247,7 +257,7 @@ $output = `perl ../mk-archiver -W 1=1 -t --nochkcols --dest t=table_4 --source D
 like($output, qr/SELECT/, 'I can disable the check OK');
 
 # Test that table with many rows can be archived to table with few
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --dest t=table_4 --nochkcols --source D=test,t=table_1,F=$opt_file 2>&1`;
 $output = `mysql --defaults-file=$opt_file -N -e "select sum(a) from test.table_4"`;
 is($output + 0, 10, 'Rows got archived');
@@ -267,7 +277,7 @@ is($output + 0, 0, 'Purged completely on multi-column ascending index');
 # Make sure ascending index check can be disabled
 $output = `perl ../mk-archiver -W 1=1 -t --noascend -s D=test,t=table_5,F=$opt_file -p -l 50 2>&1`;
 like ( $output, qr/(^SELECT .*$)\n\1/m, '--noascend makes fetch-first and fetch-next identical' );
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 --noascend -s D=test,t=table_5,F=$opt_file -p -l 1 2>&1`;
 is($output, '', "No output when --noascend");
 
@@ -276,7 +286,7 @@ $output = `perl ../mk-archiver -W 1=1 -t --ascendfirst -s D=test,t=table_5,F=$op
 like ( $output, qr/WHERE \(1=1\) AND \(\(`a` >= \?\)\) LIMIT/, 'Can ascend just first column');
 
 # Check plugin that does nothing
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 -s m=Plugin1,D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
 is($output, '', 'Loading a blank plugin worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
@@ -291,7 +301,7 @@ is($output + 0, 0, 'Purged completely with strictly ascending index');
 
 # Check plugin that adds rows to another table (same thing as --dest, but on
 # same db handle)
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 -s m=Plugin3,D=test,t=table_1,F=$opt_file -p 2>&1`;
 is($output, '', 'Running with plugin did not die');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_1"`;
@@ -300,7 +310,7 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 4, 'Plugin archived all rows to table_2 OK');
 
 # Check plugin that does ON DUPLICATE KEY UPDATE on insert
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 -s D=test,t=table_7,F=$opt_file -d m=Plugin4,t=table_8 2>&1`;
 is($output, '', 'Loading plugin worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_7"`;
@@ -313,7 +323,7 @@ $output = `mysql --defaults-file=$opt_file -N -e "select a, b, c from test.table
 like($output, qr/1\s+3\s+6/, 'ODKU added rows up');
 
 # Check plugin that sets up and archives a temp table
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 -s m=Plugin5,D=test,t=tmp_table,F=$opt_file -d t=table_10 2>&1`;
 is($output, '', 'Loading plugin worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_10"`;
@@ -321,7 +331,7 @@ is($output + 0, 2, 'Plugin archived all rows to table_10 OK');
 
 # Check plugin that sets up and archives to one or the other table depending
 # on even/odd
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver -W 1=1 -s D=test,t=table_13,F=$opt_file -d m=Plugin6,t=table_10 2>&1`;
 is($output, '', 'Loading plugin worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_even"`;
@@ -330,26 +340,26 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 2, 'Plugin archived all rows to table_odd OK');
 
 # Statistics
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver --statistics -W 1=1 --source D=test,t=table_1,F=$opt_file --dest t=table_2 2>&1`;
 like($output, qr/commit *10/, 'Stats print OK');
 
 # Safe auto-increment behavior.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver --purge -W 1=1 --source D=test,t=table_12,F=$opt_file 2>&1`;
 is($output, '', 'Purge worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select min(a),count(*) from test.table_12"`;
 like($output, qr/^3\t1$/, 'Did not touch the max auto_increment');
 
 # Safe auto-increment behavior, disabled.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver --nosafeautoinc --purge -W 1=1 --source D=test,t=table_12,F=$opt_file 2>&1`;
 is($output, '', 'Disabled safeautoinc worked OK');
 $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.table_12"`;
 is($output + 0, 0, "Disabled safeautoinc purged whole table");
 
 # Test --nodelete.
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver --nodelete --purge -W 1=1 --source D=test,t=table_1,F=$opt_file --test 2>&1`;
 like($output, qr/> /, '--nodelete implies strict ascending');
 unlike($output, qr/>=/, '--nodelete implies strict ascending');
@@ -358,7 +368,7 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 4, 'All 4 rows are still there');
 
 # Test --bulkdel deletes in chunks
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver --plugin Plugin7 --noascend --limit 50 --bulkdel --purge -W 1=1 --source D=test,t=table_5,F=$opt_file --statistics 2>&1`;
 like($output, qr/SELECT 105/, 'Fetched 105 rows');
 like($output, qr/DELETE 105/, 'Deleted 105 rows');
@@ -376,7 +386,7 @@ like($output, qr/\(1=1\)/, 'WHERE clause is jailed');
 unlike($output, qr/[^(]1=1/, 'WHERE clause is jailed');
 
 # Test --bulkdel works ok with a destination table
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver --noascend --limit 50 --bulkdel -W 1=1 --source D=test,t=table_5,F=$opt_file --statistics --dest t=table_5_dest 2>&1`;
 like($output, qr/SELECT 105/, 'Fetched 105 rows');
 like($output, qr/DELETE 105/, 'Deleted 105 rows');
@@ -388,7 +398,7 @@ $output = `mysql --defaults-file=$opt_file -N -e "select count(*) from test.tabl
 is($output + 0, 105, 'Bulk delete works OK with normal insert');
 
 # Test --bulkins
-`mysql --defaults-file=$opt_file < before.sql`;
+$sb->load_file('master', 'before.sql');
 $output = `perl ../mk-archiver --noascend --limit 50 --bulkins --bulkdel -W 1=1 --source D=test,t=table_5,F=$opt_file --statistics --dest t=table_5_dest 2>&1`;
 like($output, qr/SELECT 105/, 'Fetched 105 rows');
 like($output, qr/DELETE 105/, 'Deleted 105 rows');
@@ -407,19 +417,11 @@ like($output, qr/copy\s+$chks/, 'copy checksum');
 # Issue 131: mk-archiver fails to insert records if destination table columns
 # in different order than source table
 # #############################################################################
-require '../../common/DSNParser.pm';
-require '../../common/Sandbox.pm';
-my $dp  = new DSNParser();
-my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master')
-   or BAIL_OUT('Cannot connect to sandbox master');
-$sb->create_dbs($dbh, ['test']);
-
 $sb->load_file('master', 'samples/issue_131.sql');
 $output = `perl ../mk-archiver -W 1=1 --source h=127.1,P=12345,D=test,t=issue_131_src --statistics --dest t=issue_131_dst 2>&1`;
-my $ret = $dbh->selectall_arrayref('SELECT * FROM test.issue_131_dst');
+$rows = $dbh->selectall_arrayref('SELECT * FROM test.issue_131_dst');
 is_deeply(
-   $ret,
+   $rows,
    [
       ['aaa','1'],
       ['bbb','2'],
@@ -429,4 +431,4 @@ is_deeply(
 
 # Clean up.
 $sb->wipe_clean($dbh);
-`mysql --defaults-file=$opt_file < after.sql`;
+exit;

@@ -1892,7 +1892,8 @@ use List::Util qw(max);
 use IO::File;
 use sigtrap qw(handler finish untrapped normal-signals);
 use Data::Dumper;
-$Data::Dumper::Indent=1;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Quotekeys = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -2233,6 +2234,7 @@ my (@asc_slice, @sel_slice, @del_slice, @bulkdel_slice, @ins_slice);
 my @sel_cols = $opts{c} ? @{$opts{c}}                                # Explicit
              : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
              :            @{$src->{info}->{cols}};                   # All
+MKDEBUG && _d("sel cols: " . join(',', @sel_cols));
 
 $del_stmt = $nibbler->generate_del_stmt(
    parser => $tp,
@@ -2347,6 +2349,7 @@ if ( $dst ) {
       ins_tbl  => $dst->{info},
       sel_cols => \@sel_cols,
    );
+   MKDEBUG && _d("inst stmt: " . Dumper($ins_stmt));
    @ins_slice = @{$ins_stmt->{slice}};
    if ( $opts{bulkins} ) {
       $ins_sql = 'LOAD DATA'
@@ -2435,6 +2438,7 @@ trace('select', sub {
    $statistics{SELECT} += $get_sth->rows;
 });
 my $row = $get_sth->fetchrow_arrayref();
+MKDEBUG && _d("First row: " . Dumper($row));
 if ( !$row ) {
    $get_sth->finish;
    $src->{dbh}->disconnect();
