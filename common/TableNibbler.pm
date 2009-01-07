@@ -292,35 +292,45 @@ sub generate_del_stmt {
 # the columns you know you'll get from the SELECT statement onto the columns
 # in the INSERT statement, returning only those that exist in both sets.
 # Arguments:
-# * tbl * cols
-# These are the same as the arguments to generate_asc_stmt().  Return value is
-# similar too, but you only get back cols and slice.
+#    ins_tbl   hashref returned by TableParser::parse() for the INSERT table
+#    sel_cols  arrayref of columns to SELECT from the SELECT table
+# Returns a hashref:
+#    cols  => arrayref of columns for INSERT
+#    slice => arrayref of sel_cols indices corresponding to the INSERT cols
+# The cols array is used to construct the INSERT's INTO clause like:
+#    INSERT INTO ins_tbl (@cols) VALUES ...
+# The slice array is used like:
+#    $row = $sel_sth->fetchrow_arrayref();
+#    $ins_sth->execute(@{$row}[@slice]);
+# For example, if we select columns (a, b, c) but the insert table only
+# has columns (a, c), then the return hashref will be:
+#    cols  => [a, c]
+#    slice => [0, 2]
+# Therefore, the select statement will return an array with 3 elements
+# (one for each column), but the insert statement will slice this array
+# to get only the elements/columns it needs.
 sub generate_ins_stmt {
    my ( $self, %args ) = @_;
+   foreach my $arg ( qw(ins_tbl sel_cols) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $ins_tbl  = $args{ins_tbl};
+   my @sel_cols = @{$args{sel_cols}};
 
-   my $tbl  = $args{tbl};
-   my @cols = @{$args{cols}};
+   die "You didn't specify any SELECT columns" unless @sel_cols;
 
-   die "You didn't specify any columns" unless @cols;
-
-   # Find column positions for use as array slices.
-   my %col_posn = do { my $i = 0; map { $_ => $i++ } @{$tbl->{cols}} };
    my @ins_cols;
    my @ins_slice;
-
-   foreach my $col ( @cols ) {
-      if ( exists $col_posn{$col} ) {
-         push @ins_cols, $col;
-         push @ins_slice, $col_posn{$col};
-      }
+   for my $i ( 0..$#sel_cols ) {
+      next unless $ins_tbl->{is_col}->{$sel_cols[$i]};
+      push @ins_cols, $sel_cols[$i];
+      push @ins_slice, $i;
    }
 
-   my $ins_stmt = {
+   return {
       cols  => \@ins_cols,
       slice => \@ins_slice,
    };
-
-   return $ins_stmt;
 }
 
 sub _d {

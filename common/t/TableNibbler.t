@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 24;
+use Test::More tests => 25;
 use English qw(-no_match_vars);
 
 require "../TableParser.pm";
@@ -282,16 +282,29 @@ is_deeply(
 # Check that I can select from one table and insert into another OK
 my $f = $p->parse( load_file('samples/sakila.film.sql') );
 is_deeply(
-   $n->generate_ins_stmt (
-      parser => $p,
-      tbl    => $f,
-      cols   => $t->{cols},
+   $n->generate_ins_stmt(
+      ins_tbl  => $f,
+      sel_cols => $t->{cols},
    ),
    {
       cols  => [qw(last_update)],
-      slice => [12],
+      slice => [6],
    },
    'Generated an INSERT statement from film into rental',
+);
+
+my $sel_tbl = $p->parse( load_file('samples/issue_131_sel.sql') );
+my $ins_tbl = $p->parse( load_file('samples/issue_131_ins.sql') );  
+is_deeply(
+   $n->generate_ins_stmt(
+      ins_tbl  => $ins_tbl,
+      sel_cols => $sel_tbl->{cols},
+   ),
+   {
+      cols  => [qw(id name)],
+      slice => [0, 2],
+   },
+   'INSERT stmt with different col order and a missing ins col'
 );
 
 is_deeply(
