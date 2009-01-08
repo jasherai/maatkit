@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Fixed infinite "Fetching row from" loop with DBD::mysql v3 (issue 11).
+
 2008-12-01: version 1.0.11
 
    * Updates to shared code.

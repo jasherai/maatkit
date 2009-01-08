@@ -16,16 +16,14 @@ my $slave_dbh   = $sb->get_dbh_for('slave1')
 
 $sb->create_dbs($master_dbh, [qw(test)]);
 
-(my $cnf=`realpath $0`) =~ s/mk-table-sync\.t.*$/cnf/s;
-
-sub query {
-   return $master_dbh->selectall_arrayref(@_, {Slice => {}});
+sub query_slave {
+   return $slave_dbh->selectall_arrayref(@_, {Slice => {}});
 }
 
 sub run {
    my ($src, $dst, $other) = @_;
    my $output;
-   my $cmd = "../mk-table-sync -px F=$cnf,D=test,t=$src t=$dst $other 2>&1";
+   my $cmd = "../mk-table-sync -px h=127.1,P=12345,D=test,t=$src h=127.1,P=12346,D=test,t=$dst $other 2>&1";
    chomp($output=`$cmd`);
    return $output;
 }
@@ -41,7 +39,7 @@ $output = run('test1', 'test2', '--skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'No alg sync');
 is_deeply(
-   query('select * from test.test2'),
+   query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with no alg'
 );
@@ -51,7 +49,7 @@ $output = run('test1', 'test2', '-a Stream --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Stream sync');
 is_deeply(
-   query('select * from test.test2'),
+   query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with Stream'
 );
@@ -61,7 +59,7 @@ $output = run('test1', 'test2', '-a GroupBy --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic GroupBy sync');
 is_deeply(
-   query('select * from test.test2'),
+   query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with GroupBy'
 );
@@ -71,7 +69,7 @@ $output = run('test1', 'test2', '-a Chunk --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Chunk sync');
 is_deeply(
-   query('select * from test.test2'),
+   query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with Chunk'
 );
@@ -81,7 +79,7 @@ $output = run('test1', 'test2', '-a Nibble --skipbinlog');
 is($output, "INSERT INTO `test`.`test2`(`a`, `b`) VALUES (1, 'en');
 INSERT INTO `test`.`test2`(`a`, `b`) VALUES (2, 'ca');", 'Basic Nibble sync');
 is_deeply(
-   query('select * from test.test2'),
+   query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with Nibble'
 );
@@ -96,7 +94,7 @@ like(
    'Nibble with transactions and locking'
 );
 is_deeply(
-   query('select * from test.test2'),
+   query_slave('select * from test.test2'),
    [ {   a => 1, b => 'en' }, { a => 2, b => 'ca' } ],
    'Synced OK with Nibble'
 );
@@ -238,12 +236,6 @@ like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
 # $output = `../mk-table-sync h=127.1,P=12345 P=12346 -a Nibble --chunksize 2 -x`;
 
 # #############################################################################
-# Issue 11: Possible infinite loop in mk-table-sync
-# #############################################################################
-# This issue is a work in progress, too.
-# We'll reuse the test.messages table.
-
-# #############################################################################
 # Issue 111: Make mk-table-sync require --print or --execute or --test
 # #############################################################################
 
@@ -255,4 +247,3 @@ like($output, qr/Specify at least one of --print, --execute or --test/,
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
 exit;
-
