@@ -970,7 +970,6 @@ use sigtrap qw(handler finish untrapped normal-signals);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $dsn_parser = new DSNParser();
-$dsn_parser->prop('required', { h => 1 });
 $dsn_parser->prop('autokey', 'h' );
 my $vp = new VersionParser();
 my @opt_spec = OptionParser::pod_to_spec();

@@ -1,5 +1,7 @@
 Changelog for mk-slave-delay:
 
+   * h DSN part was required even if an S part was given (issue 149).
+
 2008-12-01: version 1.0.10
 
    * Updates to shared code.
