@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 52;
+use Test::More tests => 53;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -966,5 +966,27 @@ sub cmp_ddls {
 }
 
 cmp_ddls('v5.0 vs. v5.1', 'samples/issue_109-01-v50.sql', 'samples/issue_109-01-v51.sql');
+
+# #############################################################################
+# Issue 132: mk-parallel-dump halts with error when enum contains backtick
+# #############################################################################
+$t = $p->parse( load_file('samples/issue_132.sql') );
+is_deeply(
+   $t,
+   {  cols         => [qw(country)],
+      col_posn     => { country => 0 },
+      is_col       => { country => 1 },
+      is_autoinc   => { country => 0 },
+      null_cols    => [qw(country)],
+      is_nullable  => { country => 1 },
+      keys         => {},
+      defs         => { country => "  `country` enum('','Cote D`ivoire') default NULL"},
+      numeric_cols => [],
+      is_numeric   => {},
+      engine       => 'MyISAM',
+      type_for     => { country => 'enum' },
+   },
+   'ENUM col with backtick in value (issue 132)'
+);
 
 exit;
