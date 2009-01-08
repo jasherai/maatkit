@@ -69,6 +69,9 @@ require '../TableParser.pm';
 require '../MySQLDump.pm';
 require '../Quoter.pm';
 
+use Data::Dumper;
+$Data::Dumper::Indent=1;
+
 sub throws_ok {
    my ( $code, $pat, $msg ) = @_;
    eval { $code->(); };

@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -42,17 +42,44 @@ sub compare_sets {
    my ( $left, $right, $syncer, $tbl )
       = @args{qw(left right syncer tbl)};
 
-   my ($lr, $rr);       # Current row from the left/right sources.
+   my ($lr, $rr);  # Current row from the left/right sources.
+
+   # We have to manually track if the left or right sth is done
+   # fetching rows because sth->{Active} is always true with
+   # DBD::mysql v3. And we cannot simply while ( $lr || $rr )
+   # because in the case where left and right have the same key,
+   # we do this:
+   #    $lr = $rr = undef; # Fetch another row from each side.
+   # Unsetting both $lr and $rr there would cause while () to
+   # terminate. (And while ( $lr && $rr ) is not what we want
+   # either.) Furthermore, we need to avoid trying to fetch more
+   # rows if there are none to fetch because doing this would
+   # cause a DBI error ("fetch without execute"). That's why we
+   # make these checks:
+   #    if ( !$lr && !$left_done )
+   #    if ( !$rr && !$right_done )
+   # If you make changes here, be sure to test both RowDiff.t
+   # and RowDiff-custom.t. Look inside the later to see what
+   # is custom about it.
+   my ($left_done, $right_done) = (0, 0);
 
    do {
-
-      if ( !$lr && $left->{Active} ) {
+      if ( !$lr && !$left_done ) {
          MKDEBUG && _d('Fetching row from left');
-         $lr = $left->fetchrow_hashref;
+         $lr = $left->fetchrow_hashref();
+         $left_done = ($lr ? 0 : 1);
       }
-      if ( !$rr && $right->{Active} ) {
+      elsif ( MKDEBUG ) {
+         _d('Left still has rows');
+      }
+
+      if ( !$rr && !$right_done ) {
          MKDEBUG && _d('Fetching row from right');
-         $rr = $right->fetchrow_hashref;
+         $rr = $right->fetchrow_hashref();
+         $right_done = ($rr ? 0 : 1);
+      }
+      elsif ( MKDEBUG ) {
+         _d('Right still has rows');
       }
 
       my $cmp;
@@ -83,7 +110,7 @@ sub compare_sets {
             $rr = undef;
          }
       }
-   } while ( $left->{Active} || $right->{Active} || $lr || $rr );
+   } while ( !($left_done && $right_done) );
    MKDEBUG && _d('No more rows');
    $syncer->done_with_rows();
 }
