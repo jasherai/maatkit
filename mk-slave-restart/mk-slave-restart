@@ -1879,7 +1879,7 @@ sub watch_server {
             }
 
             if ( $opts{e} && !exists($opts{e}->{$stat->{last_errno}}) ) {
-               die "Error $stat->{lasthash_errno} is not in --error-numbers.\n";
+               die "Error $stat->{last_errno} is not in --error-numbers.\n";
             }
             elsif ( $opts{E} && $stat->{last_error}
                   && $stat->{last_error} !~ m/$opts{E}/ )
