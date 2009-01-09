@@ -105,17 +105,17 @@ sub get_dbh_for {
 }
 
 sub load_file {
-   my ( $self, $server, $file ) = @_;
+   my ( $self, $server, $file, $use_db ) = @_;
    _check_server($server);
    if ( !-f $file ) {
       die "$file is not a file";
    }
 
-   MKDEBUG && _d("Loading $file on $server");
-   my $use = $self->_use_for($server);
-   eval {
-      `$use < $file`;
-   };
+   my $d = $use_db ? "-D $use_db" : '';
+
+   my $use = $self->_use_for($server) . " $d < $file";
+   MKDEBUG && _d("Loading $file on $server: $use");
+   eval { `$use` };
    if ( $EVAL_ERROR ) {
       die "Failed to execute $file on $server: $EVAL_ERROR";
    }

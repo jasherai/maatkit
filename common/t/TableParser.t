@@ -886,55 +886,50 @@ is_deeply(
 # #############################################################################
 # Sandbox tests
 # #############################################################################
+require '../DSNParser.pm';
+require '../Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 
-my $dbh;
-eval {
-   $dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
-   { PrintError => 0, RaiseError => 1 })
-};
+my $dbh = $sb->get_dbh_for('master');
 SKIP: {
-   skip 'Cannot connect to MySQL', 4
-      unless $dbh;
-   skip 'Sakila is not installed', 4
-      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
+   skip 'Cannot connect to sandbox master', 5 unless $dbh;
+   $sb->create_dbs($dbh, [qw(test)]);
 
+   # msandbox user does not have GRANT privs.
+   my $root_dbh = DBI->connect(
+      "DBI:mysql:host=127.0.0.1;port=12345", 'root', 'msandbox',
+      { PrintError => 0, RaiseError => 1 });
+   $root_dbh->do("GRANT SELECT ON test.* TO 'user'\@'\%'");
+   $root_dbh->do('FLUSH PRIVILEGES');
+   $root_dbh->disconnect();
+   my $user_dbh = DBI->connect(
+      "DBI:mysql:host=127.0.0.1;port=12345", 'user', undef,
+      { PrintError => 0, RaiseError => 1 });
+   is($p->table_exists($user_dbh, 'mysql', 'db', $q, 1), '0', 'table_exists but no insert privs');
+   $user_dbh->disconnect();
+
+   # The following tests require that you manually load the
+   # sakila db into the sandbox master.
+   skip 'Sandbox master does not have the sakila database', 4
+      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
    is_deeply(
       [$p->find_possible_keys(
          $dbh, 'sakila', 'film_actor', $q, 'film_id > 990  and actor_id > 1')],
       [qw(idx_fk_film_id PRIMARY)],
       'Best index for WHERE clause'
    );
-
    is_deeply(
       [$p->find_possible_keys(
          $dbh, 'sakila', 'film_actor', $q, 'film_id > 990 or actor_id > 1')],
       [qw(idx_fk_film_id PRIMARY)],
       'Best index for WHERE clause with sort_union'
    );
-
    is($p->table_exists($dbh, 'sakila', 'film_actor', $q), '1', 'table_exists returns true when the table exists');
    is($p->table_exists($dbh, 'sakila', 'foo', $q), '0', 'table_exists returns false when the table does not exist');
+
+   $sb->wipe_clean($dbh);
 }
-
-# TODO: use Sandbox
-my $sb_dbh = DBI->connect(
-   "DBI:mysql:host=127.0.0.1;port=12345", 'root', 'msandbox',
-   { PrintError => 0, RaiseError => 1 });
-$sb_dbh->do("DROP DATABASE IF EXISTS foo");
-$sb_dbh->do("CREATE DATABASE foo");
-$sb_dbh->do("GRANT SELECT ON test.* TO 'user'\@'\%'");
-$sb_dbh->do('FLUSH PRIVILEGES');
-
-my $sb_dbh2 = DBI->connect(
-   "DBI:mysql:host=127.0.0.1;port=12345", 'user', undef,
-   { PrintError => 0, RaiseError => 1 });
-is($p->table_exists($sb_dbh2, 'mysql', 'db', $q, 1), '0', 'table_exists but no insert privs');
-$sb_dbh2->disconnect();
-
-$sb_dbh->do('DROP DATABASE foo');
-$sb_dbh->do("DROP USER 'user'");
-$sb_dbh->disconnect();
 
 # #############################################################################
 # Issue 109: Test schema changes in 5.1
