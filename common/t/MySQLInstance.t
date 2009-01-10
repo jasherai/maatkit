@@ -278,12 +278,17 @@ like($EVAL_ERROR, qr/MySQL instance has no valid defaults files/, 'Dies if no va
 # Issue 135: mk-audit dies if running mysqld --help --verbose dies      
 # #############################################################################
 $myi = new MySQLInstance($cmd);
-$myi->{mysqld_binary} = 'samples/segfault';
-{
-   local $SIG{__WARN__} = sub { $EVAL_ERROR = $_[0]; }; # suppress warn output
-   $myi->load_sys_vars($dbh);
+SKIP: {
+   skip 'segfault.c is not compiled', 1
+      unless -f 'samples/segfault';
+   $myi->{mysqld_binary} = 'samples/segfault';
+   {
+      local $SIG{__WARN__}
+         = sub { $EVAL_ERROR = $_[0]; }; # suppress warn output
+      $myi->load_sys_vars($dbh);
+   };
+   like($EVAL_ERROR, qr/Cannot execute $myi->{mysqld_binary}/, "Warns if mysqld fails to execute");
 };
-like($EVAL_ERROR, qr/Cannot execute $myi->{mysqld_binary}/, "Warns if mysqld fails to execute");
 
 $myi->{mysqld_binary} = 'true';
 {
