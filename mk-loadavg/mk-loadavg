@@ -1231,13 +1231,13 @@ Connect to host.
 
 =item --incstatus
 
-Calculate the L<--status> metric over a 1-second interval.
+Calculate the L<"--status"> metric over a 1-second interval.
 
 =item --info
 
 type:Array
 
-A list of info to print when L<--metrics> are exceeded.
+A list of info to print when L<"--metrics"> are exceeded.
 
 This comma-separated list can include status, processlist, innodbstatus, uptime.
 
@@ -1249,7 +1249,7 @@ A comma-separated list of metric:val pairs to calculate.
 
 The list is of the form metric:value.  The value is optional; if given, it
 specifies an upper limit of acceptable values for the metric.  If it isn't
-given, then the value will be calculated and printed (if L<--print> is given)
+given, then the value will be calculated and printed (if L<"--print"> is given)
 but it won't be checked to see if it's too high.
 
 The possible metrics are trevorprice, num_locked, loadavg, slavelag, and status.
@@ -1258,7 +1258,7 @@ For example you can say
   --metric trevorprice:1,num_locked:5
 
 In this example, if either trevorprice exceeds 1 or num_locked exceeds 5, the
-L<--info> information will be printed out.  The possible metrics mean the
+L<"--info"> information will be printed out.  The possible metrics mean the
 following:
 
   METRIC       MEANING
@@ -1268,7 +1268,7 @@ following:
   slavelag     The server's slave lag from Seconds_behind_master
   status       Any value from SHOW GLOBAL STATUS
 
-The status metric is special.  You have to give L<--status> to say which value
+The status metric is special.  You have to give L<"--status"> to say which value
 from SHOW GLOBAL STATUS you want to measure against.  The loadavg metric works
 only on the machine on which mk-loadavg is running.
 
@@ -1292,7 +1292,7 @@ Print metrics even if they don't exceed limits.
 
 type:int
 
-How many samples to use for calculating the trevorprice L<--metric>.
+How many samples to use for calculating the trevorprice L<"--metrics">.
 
 =item --setvars
 
@@ -1321,9 +1321,9 @@ type: string
 
 Value from SHOW GLOBAL STATUS to measure.
 
-This affects the 'status' value for L<--metric>.
+This affects the 'status' value for L<"--metrics">.
 
-See also L<--incstatus>.
+See also L<"--incstatus">.
 
 =item --time
 

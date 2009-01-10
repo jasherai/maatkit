@@ -1,5 +1,7 @@
 Changelog for mk-slave-move:
 
+   * Fixed and updated POD.
+
 2008-12-01: version 0.9.4
 
    * Updates to shared code.

@@ -3660,7 +3660,7 @@ Analyze and report on a slow log:
  mk-log-parser /path/to/slow.log
 
 Review a slow log, saving results to the test.query_review table in a MySQL
-server running on host1.  See L<--review> for more on reviewing queries:
+server running on host1.  See L<"--review"> for more on reviewing queries:
 
  mk-log-parser --review h=host1,D=test,t=query_review
 
@@ -3742,15 +3742,15 @@ Let's take that line by line.  Line 1 is the header:
  # Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 ________________
 
 This line identifies the sequential number of the query in the sort order
-specified by L<--sort>.  Then there's the queries per second, and a query ID.
+specified by L<"--sort">.  Then there's the queries per second, and a query ID.
 This ID is a hex version of the query's checksum in the database, if you're
-using L<--review>.  You can select the reviewed query's details from the
+using L<"--review">.  You can select the reviewed query's details from the
 database with a query like C<SELECT .... WHERE checksum=0x66825DDC008FFA89>.
 
 Finally, in case you want to find a sample of the query in the log file, there's
 the byte offset where you can look.  (This is not always accurate, due to some
 silly anomalies in the slow-log format, but it's usually right.)  The position
-refers to the L<--worst> sample, which we'll see more about below.
+refers to the L<"--worst"> sample, which we'll see more about below.
 
 Next is the table of metrics about this class of queries.
 
@@ -3813,7 +3813,7 @@ right, submit a bug report.
        set n.column1 = a.column1, n.word3 = a.word3\G
 
 This is a sample of the queries in this class of query.  This is not a random
-sample.  It is the query that performed the worst, according to L<--worst>.
+sample.  It is the query that performed the worst, according to L<"--worst">.
 You would normally see a commented C<# EXPLAIN> line just before it, so you can
 copy-paste the query to examine its EXPLAIN plan. But for non-SELECT queries
 such as this one, that isn't possible to do, so the tool tries to transform the
@@ -3836,7 +3836,7 @@ You can add meta-data to each row by adding more columns.  These can be
 arbitrary columns, such as the ticket ID of a JIRA ticket you open for a given
 query.  And you can add comments and other information.
 
-Next time you run C<mk-log-parser> in L<--review> mode, it will do the
+Next time you run C<mk-log-parser> in L<"--review"> mode, it will do the
 following:
 
 =over
@@ -3850,14 +3850,14 @@ already reviewed if you've set a value for the C<reviewed_by> column.
 
 Queries that you've reviewed, and don't appear in the output, will cause gaps in
 the query number sequence in the first line of each paragraph.  And the value
-you've specified for L<--top> will still be honored.  So if you've reviewed all
+you've specified for L<"--top"> will still be honored.  So if you've reviewed all
 queries in the top 10 and you ask for the top 10, you won't see anything in the
 output.
 
 =item *
 
 If you want to see the queries you've already reviewed, you can specify
-L<--reportall>.  Then you'll see the normal analysis output, but you'll also see
+L<"--reportall">.  Then you'll see the normal analysis output, but you'll also see
 the information from the review table, just below the execution time graph.  For
 example,
 
@@ -3926,7 +3926,7 @@ Group similar queries and report on them.
 
 This is the standard slow-log analysis functionality.  See OUTPUT for the
 description of what this does and what the results look like.  You can disable
-it for L<--review> if you don't want to see any reports on queries.
+it for L<"--review"> if you don't want to see any reports on queries.
 
 =item --attriblimit
 
@@ -3968,7 +3968,7 @@ An example filter that discards everything but SELECT statements:
 
 short form: -f
 
-Add query fingerprints to the L<--analyze> report.  This is mostly useful for
+Add query fingerprints to the L<"--analyze"> report.  This is mostly useful for
 debugging purposes.
 
 =item --forexplain
@@ -4044,8 +4044,8 @@ As the tool parses the log, it keeps track of which query fingerprints it has
 seen.  Each time it sees a new one, it inserts the query into this table.  When
 you're done, your table should contain a row for each fingerprint.
 
-If you enable this option and disable L<--analyze>, the tool will ignore certain
-analysis-related options, like L<--top>.
+If you enable this option and disable L<"--analyze">, the tool will ignore certain
+analysis-related options, like L<"--top">.
 
 =item --reportall
 
@@ -4061,7 +4061,7 @@ Report CPU times and memory usage in the header of the query analysis report.
 
 short form: -s; type: string; default: sum
 
-Sort the reported queries by this aggregate value of L<--worst>.
+Sort the reported queries by this aggregate value of L<"--worst">.
 
 Valid aggregate values are: sum, min, max, avg, cnt.  For example, if you want
 to sort by the sum of Query_time, then specify --worst Query_time --sort sum.

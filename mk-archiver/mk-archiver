@@ -3648,8 +3648,8 @@ This method's return value etc is similar to the L<"custom_sth()"> method.
 
 This method is called after mk-archiver exits the archiving loop, commits all
 database handles, closes L<"--file">, and prints the final statistics, but
-before mk-archiver runs ANALYZE or OPTIMIZE (see L<"--analyze> and
-L<"--optimize>).
+before mk-archiver runs ANALYZE or OPTIMIZE (see L<"--analyze"> and
+L<"--optimize">).
 
 =back
 
@@ -3665,29 +3665,29 @@ that L<"--source"> and L<"--dest"> are separate handles.
 A sample module might look like this:
 
    package My::Module;
-   
+
    sub new {
       my ( $class, %args ) = @_;
       return bless(\%args, $class);
    }
-   
+
    sub before_begin {
       my ( $self, %args ) = @_;
       # Save column names for later
       $self->{cols} = $args{cols};
    }
-   
+
    sub is_archivable {
       my ( $self, %args ) = @_;
       # Do some advanced logic with $args{row}
       return 1;
    }
-   
+
    sub before_delete {} # Take no action
    sub before_insert {} # Take no action
    sub custom_sth    {} # Take no action
    sub after_finish  {} # Take no action
-   
+
    1;
 
 =head1 ENVIRONMENT
@@ -3704,9 +3704,9 @@ installed in any reasonably new version of Perl.
 
 =head1 OUTPUT
 
-If you specify L<"--print">, the output is a header row, plus status output at
-intervals.  Each row in the status output lists the current date and time, how
-many seconds mk-archiver has been running, and how many rows it has
+If you specify L<"--progress">, the output is a header row, plus status output
+at intervals.  Each row in the status output lists the current date and time,
+how many seconds mk-archiver has been running, and how many rows it has
 archived.
 
 If you specify L<"--statistics">, C<mk-archiver> outputs timing and other

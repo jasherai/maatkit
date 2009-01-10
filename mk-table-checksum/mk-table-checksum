@@ -4859,7 +4859,7 @@ This option isn't very useful by itself, so you probably want to use L<"--wait">
 instead.
 
 Note: if you're checksumming a slave against its master, you should use
-L<--replicate>.  In that case, there's no need for locking, waiting, or any of
+L<"--replicate">.  In that case, there's no need for locking, waiting, or any of
 that.
 
 =item --maxlag
@@ -5106,16 +5106,16 @@ The command line options given to the first run and the resumed run must
 be identical (except, of course, for --resume). If they are not, the result
 will be unpredictible and probably wrong.
 
-L<--resume> does not work with L<--replicate>; for that, use
-L<--resume-replicate>.
+L<"--resume"> does not work with L<"--replicate">; for that, use
+L<"--resume-replicate">.
 
 =item --resume-replicate
 
-Resume L<--replicate>.
+Resume L<"--replicate">.
 
-This option resumes a previous checksum operation using L<--replicate>.
-It is like L<--resume> but does not require an output file. Instead,
-it uses the checksum table given to L<--replicate> to determine where to
+This option resumes a previous checksum operation using L<"--replicate">.
+It is like L<"--resume"> but does not require an output file. Instead,
+it uses the checksum table given to L<"--replicate"> to determine where to
 resume the checksum operation.
 
 =item --savesince
@@ -5125,7 +5125,7 @@ value into that table's C<since> column after checksumming.  In this way you can
 incrementally checksum tables by starting where the last one finished.
 
 The value to be saved could be the current timestamp, or it could be the maximum
-existing value of the column given by L<"--sincecol">.  It depends on what
+existing value of the column given by L<"--sincecolumn">.  It depends on what
 options are in effect.  See the description of L<"--since"> to see how
 timestamps are different from ordinary values.
 

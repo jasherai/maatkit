@@ -3,6 +3,7 @@ Changelog for mk-log-parser:
    * Very large attribute values in slowlogs caused a crash (issue 197).
    * Added the ability to watch the processlist with --processlist (issue 151).
    * Added --execute and --filter options.
+   * Fixed and updated POD.
 
 2008-12-29: version 0.9.1
 

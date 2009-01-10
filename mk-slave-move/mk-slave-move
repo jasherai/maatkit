@@ -1730,8 +1730,6 @@ http://www.pythian.com/blogs/876/when-show-slave-status-and-the-error-log-disagr
 You need Perl, DBI, DBD::mysql, and some core packages that ought to be
 installed in any reasonably new version of Perl.
 
-=head1 OUTPUT
-
 =head1 EXIT STATUS
 
 Successful exit status is 0.  Any other value represents the exit status of
