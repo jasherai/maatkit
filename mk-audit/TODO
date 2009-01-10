@@ -15,7 +15,8 @@ The following items are unimplemented at this time:
    Hardware
       * raid status: (is this working? other info to capture?)
          - parse multiple adapters
-         - /usr/StorMan/arcconf GETCONFIG 1 LD 1 is apparently something to test
+         - /usr/StorMan/arcconf GETCONFIG 1 LD 1 is something to test
+           sample on issue 2398, email 9
          - check issue 1445, the first attached file has some dmesg stuff that
            is parseable.
       * check where MySQL data is stored, and make sure that filesystem is
