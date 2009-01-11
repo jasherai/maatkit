@@ -43,7 +43,7 @@ my $dbh = $sb->get_dbh_for('master');
 
 $sb->create_dbs($dbh,
    [qw(lost+found test_mysql_finder_1 test_mysql_finder_2)],
-   drop => 1, repl => 0);
+   drop => 1, repl => 1);
 
 $f = new MySQLFind(
    quoter    => $q,

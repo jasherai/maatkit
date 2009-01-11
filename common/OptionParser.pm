@@ -610,11 +610,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 # This is debug code I want to run for all tools, and this is a module I
 # certainly include in all tools, but otherwise there's no real reason to put
 # it here.
@@ -630,6 +625,16 @@ if ( MKDEBUG ) {
       ($main::SVN_REV || ''), __LINE__);
    print('# Arguments: ',
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   # Use $$ instead of $PID in case the package
+   # does not use English.
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;

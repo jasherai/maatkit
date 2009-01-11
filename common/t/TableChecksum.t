@@ -30,6 +30,12 @@ require "../TableParser.pm";
 require "../Quoter.pm";
 require "../MySQLDump.pm";
 require "../DSNParser.pm";
+require '../Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+$sb->create_dbs($dbh, ['test']);
 
 my $c  = new TableChecksum();
 my $vp = new VersionParser();
@@ -611,74 +617,69 @@ is (
 
 is ( $c->crc32('hello world'), 222957957, 'CRC32 of hello world');
 
-diag(`../../sandbox/stop_all`);
-diag(`../../sandbox/make_sandbox 12345`);
-diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
+# #############################################################################
+# Sandbox tests.
+# #############################################################################
+like(
+   $c->choose_hash_func(
+      dbh => $dbh,
+   ),
+   qr/CRC32|FNV_64|MD5/,
+   'CRC32, FNV_64 or MD5 is default',
+);
 
-my $dp = new DSNParser();
-my $dsn = $dp->parse("h=127.0.0.1,P=12345");
-my $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
+like(
+   $c->choose_hash_func(
+      dbh => $dbh,
+      func => 'SHA99',
+   ),
+   qr/CRC32|FNV_64|MD5/,
+   'SHA99 does not exist so I get CRC32 or friends',
+);
 
-   like(
-      $c->choose_hash_func(
-         dbh => $dbh,
-      ),
-      qr/CRC32|FNV_64|MD5/,
-      'CRC32, FNV_64 or MD5 is default',
-   );
+is(
+   $c->choose_hash_func(
+      dbh => $dbh,
+      func => 'MD5',
+   ),
+   'MD5',
+   'MD5 requested and MD5 granted',
+);
 
-   like(
-      $c->choose_hash_func(
-         dbh => $dbh,
-         func => 'SHA99',
-      ),
-      qr/CRC32|FNV_64|MD5/,
-      'SHA99 does not exist so I get CRC32 or friends',
-   );
+is(
+   $c->optimize_xor(
+      dbh  => $dbh,
+      func => 'SHA1',
+   ),
+   '2',
+   'SHA1 slice is 2',
+);
 
-   is(
-      $c->choose_hash_func(
-         dbh => $dbh,
-         func => 'MD5',
-      ),
-      'MD5',
-      'MD5 requested and MD5 granted',
-   );
+is(
+   $c->optimize_xor(
+      dbh  => $dbh,
+      func => 'MD5',
+   ),
+   '1',
+   'MD5 slice is 1',
+);
 
-   is(
-      $c->optimize_xor(
-         dbh  => $dbh,
-         func => 'SHA1',
-      ),
-      '2',
-      'SHA1 slice is 2',
-   );
+is_deeply(
+   [$c->get_crc_type($dbh, 'CRC32')],
+   [qw(int 10)],
+   'Type and length of CRC32'
+);
 
-   is(
-      $c->optimize_xor(
-         dbh  => $dbh,
-         func => 'MD5',
-      ),
-      '1',
-      'MD5 slice is 1',
-   );
-
-   is_deeply(
-      [$c->get_crc_type($dbh, 'CRC32')],
-      [qw(int 10)],
-      'Type and length of CRC32'
-   );
-
-   is_deeply(
-      [$c->get_crc_type($dbh, 'MD5')],
-      [qw(varchar 32)],
-      'Type and length of MD5'
-   );
+is_deeply(
+   [$c->get_crc_type($dbh, 'MD5')],
+   [qw(varchar 32)],
+   'Type and length of MD5'
+);
 
 # #############################################################################
 # Issue 94: Enhance mk-table-checksum, add a --ignorecols option
 # #############################################################################
-diag(`/tmp/12345/use < samples/issue_94.sql`);
+$sb->load_file('master', 'samples/issue_94.sql');
 $t= $tp->parse( $du->get_create_table($dbh, $q, 'test', 'issue_94') );
 my $query = $c->make_checksum_query(
    dbname      => 'test',
@@ -701,5 +702,5 @@ is($query,
    'SELECT /*PROGRESS_COMMENT*//*CHUNK_NUM*/ COUNT(*) AS cnt, RIGHT(MAX(@crc := CONCAT(LPAD(@cnt := @cnt + 1, 16, \'0\'), CONV(CAST(CRC32(CONCAT(@crc, CRC32(CONCAT_WS(\'#\', `a`, `b`)))) AS UNSIGNED), 10, 16))), 16) AS crc FROM /*DB_TBL*//*INDEX_HINT*//*WHERE*/',
    'Ignores specified columns');
 
-diag(`../../sandbox/stop_all`);
+$sb->wipe_clean($dbh);
 exit;

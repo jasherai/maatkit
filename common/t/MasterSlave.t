@@ -25,15 +25,60 @@ use English qw(-no_match_vars);
 require "../MasterSlave.pm";
 require "../DSNParser.pm";
 
-`./make_repl_sandbox`;
+# #############################################################################
+# First we need to setup a special replication sandbox environment apart from
+# the usual persistent sandbox servers on ports 12345 and 12346.
+# The tests in this script require a master with 3 slaves in a setup like:
+#    127.0.0.1:master
+#    +- 127.0.0.1:slave0
+#    |  +- 127.0.0.1:slave1
+#    +- 127.0.0.1:slave2
+# The servers will have the ports (which won't conflict with the persistent
+# sandbox servers) as seen in the %port_for hash below.
+# #############################################################################
+my %port_for = (
+   master => 2900,
+   slave0 => 2901,
+   slave1 => 2902,
+   slave2 => 2903,
+);
+foreach my $port ( sort values %port_for ) {
+   diag(`../../sandbox/make_sandbox $port`);
+}
 
+# I discovered something weird while updating this test. Below, you see that
+# slave2 is started first, then the others. Before, slave2 was started last,
+# but this caused the tests to fail because SHOW SLAVE HOSTS on the master
+# returned:
+# +-----------+-----------+------+-------------------+-----------+
+# | Server_id | Host      | Port | Rpl_recovery_rank | Master_id |
+# +-----------+-----------+------+-------------------+-----------+
+# |      2903 | 127.0.0.1 | 2903 |                 0 |      2900 | 
+# |      2901 | 127.0.0.1 | 2901 |                 0 |      2900 | 
+# +-----------+-----------+------+-------------------+-----------+
+# This caused recurse_to_slaves() to report 2903, 2901, 2902.
+# Since the tests are senstive to the order of @slaves, they failed
+# because $slaves->[1] was no longer slave1 but slave0. Starting slave2
+# last fixes/works around this.
+diag(`/tmp/$port_for{slave2}/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=$port_for{master}"`);
+diag(`/tmp/$port_for{slave2}/use -e "start slave"`);
+
+diag(`/tmp/$port_for{slave0}/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=$port_for{master}"`);
+diag(`/tmp/$port_for{slave0}/use -e "start slave"`);
+
+diag(`/tmp/$port_for{slave1}/use -e "change master to master_host='127.0.0.1', master_log_file='mysql-bin.000001', master_log_pos=0, master_user='msandbox', master_password='msandbox', master_port=$port_for{slave0}"`);
+diag(`/tmp/$port_for{slave1}/use -e "start slave"`);
+
+# #############################################################################
+# Now the test.
+# #############################################################################
 my $dbh;
 my @slaves;
 my @sldsns;
 my $ms = new MasterSlave();
 my $dp = new DSNParser();
 
-my $dsn = $dp->parse("h=127.0.0.1,P=12345");
+my $dsn = $dp->parse("h=127.0.0.1,P=$port_for{master}");
 $dbh    = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 });
 
 my $callback = sub {
@@ -67,7 +112,7 @@ is_deeply(
    $ms->get_master_dsn( $slaves[0], undef, $dp ),
    {  h => '127.0.0.1',
       u => undef,
-      P => '12345',
+      P => $port_for{master},
       S => undef,
       F => undef,
       p => undef,
@@ -78,13 +123,13 @@ is_deeply(
 );
 
 # The picture:
-# 127.0.0.1:12345
-# +- 127.0.0.1:12346
-# |  +- 127.0.0.1:12347
-# +- 127.0.0.1:12348
-is($ms->get_slave_status($slaves[0])->{master_port}, 12345, 'slave 1 port');
-is($ms->get_slave_status($slaves[1])->{master_port}, 12346, 'slave 2 port');
-is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
+# 127.0.0.1:master
+# +- 127.0.0.1:slave0
+# |  +- 127.0.0.1:slave1
+# +- 127.0.0.1:slave2
+is($ms->get_slave_status($slaves[0])->{master_port}, $port_for{master}, 'slave 1 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, $port_for{slave0}, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3 port');
 
 ok($ms->is_master_of($slaves[0], $slaves[1]), 'slave 1 is slave of slave 0');
 eval {
@@ -105,7 +150,7 @@ ok(defined $res && $res >= 0, 'Wait was successful');
 
 $ms->stop_slave($slaves[0]);
 $dbh->do('drop database if exists test'); # Any stmt will do
-`(sleep 1; echo "start slave" | /tmp/12346/use)&`;
+diag(`(sleep 1; echo "start slave" | /tmp/$port_for{slave0}/use)&`);
 eval {
    $res = $ms->wait_for_master($dbh, $slaves[0], 1, 0);
 };
@@ -133,13 +178,13 @@ diag $EVAL_ERROR if $EVAL_ERROR;
 ok(!$EVAL_ERROR, 'Made slave sibling of master');
 
 # The picture now:
-# 127.0.0.1:12345
-# +- 127.0.0.1:12346
-# +- 127.0.0.1:12347
-# +- 127.0.0.1:12348
-is($ms->get_slave_status($slaves[0])->{master_port}, 12345, 'slave 1 port');
-is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
-is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
+# 127.0.0.1:master
+# +- 127.0.0.1:slave0
+# +- 127.0.0.1:slave1
+# +- 127.0.0.1:slave2
+is($ms->get_slave_status($slaves[0])->{master_port}, $port_for{master}, 'slave 1 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, $port_for{master}, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3 port');
 
 eval {
    map { $ms->start_slave($_) } @slaves;
@@ -159,13 +204,13 @@ diag $EVAL_ERROR if $EVAL_ERROR;
 ok(!$EVAL_ERROR, 'Made slave of sibling');
 
 # The picture now:
-# 127.0.0.1:12345
-# +- 127.0.0.1:12347
-# |  +- 127.0.0.1:12346
-# +- 127.0.0.1:12348
-is($ms->get_slave_status($slaves[0])->{master_port}, 12347, 'slave 1 port');
-is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
-is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
+# 127.0.0.1:master
+# +- 127.0.0.1:slave1
+# |  +- 127.0.0.1:slave0
+# +- 127.0.0.1:slave2
+is($ms->get_slave_status($slaves[0])->{master_port}, $port_for{slave1}, 'slave 1 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, $port_for{master}, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3 port');
 
 eval {
    map { $ms->start_slave($_) } @slaves;
@@ -177,13 +222,13 @@ diag $EVAL_ERROR if $EVAL_ERROR;
 ok(!$EVAL_ERROR, 'Made slave of uncle');
 
 # The picture now:
-# 127.0.0.1:12345
-# +- 127.0.0.1:12347
-# +- 127.0.0.1:12348
-#    +- 127.0.0.1:12346
-is($ms->get_slave_status($slaves[0])->{master_port}, 12348, 'slave 1 port');
-is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
-is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
+# 127.0.0.1:master
+# +- 127.0.0.1:slave1
+# +- 127.0.0.1:slave2
+#    +- 127.0.0.1:slave0
+is($ms->get_slave_status($slaves[0])->{master_port}, $port_for{slave2}, 'slave 1 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, $port_for{master}, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3 port');
 
 eval {
    map { $ms->start_slave($_) } @slaves;
@@ -193,9 +238,15 @@ diag $EVAL_ERROR if $EVAL_ERROR;
 ok(!$EVAL_ERROR, 'Detached slave');
 
 # The picture now:
-# 127.0.0.1:12345
-# +- 127.0.0.1:12347
-# +- 127.0.0.1:12348
+# 127.0.0.1:master
+# +- 127.0.0.1:slave1
+# +- 127.0.0.1:slave2
 is($ms->get_slave_status($slaves[0]), 0, 'slave 1 detached');
-is($ms->get_slave_status($slaves[1])->{master_port}, 12345, 'slave 2 port');
-is($ms->get_slave_status($slaves[2])->{master_port}, 12345, 'slave 3 port');
+is($ms->get_slave_status($slaves[1])->{master_port}, $port_for{master}, 'slave 2 port');
+is($ms->get_slave_status($slaves[2])->{master_port}, $port_for{master}, 'slave 3 port');
+
+foreach my $port ( reverse sort values %port_for ) {
+   diag(`/tmp/$port/stop`);
+   diag(`rm -rf /tmp/$port`);
+}
+exit;

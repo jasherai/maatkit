@@ -1,5 +1,4 @@
 #!/usr/bin/perl
-
 # This program is copyright 2008 Percona Inc.
 # Feedback and improvements are welcome.
 #
@@ -22,45 +21,22 @@ use warnings FATAL => 'all';
 
 use Test::More tests => 5;
 use English qw(-no_match_vars);
-
 use DBI;
 
+require '../DSNParser.pm';
+require '../Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+
+my $dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+
 require '../SchemaDiscover.pm';
-require '../MySQLInstance.pm';
 require '../DSNParser.pm';
 require '../MySQLDump.pm';
 require '../Quoter.pm';
 require '../TableParser.pm';
 
-use Data::Dumper;
-$Data::Dumper::Indent    = 1;
-$Data::Dumper::Quotekeys = 0;
-
-print `../../sandbox/simple/make_sandbox 5126`;
-
-# #############################################################################
-# First, setup a MySQLInstance... 
-# #############################################################################
-my $cmd_01 = '/usr/sbin/mysqld --defaults-file=/tmp/5126/my.sandbox.cnf --basedir=/usr --datadir=/tmp/5126/data --pid-file=/tmp/5126/data/mysql_sandbox5126.pid --skip-external-locking --port=5126 --socket=/tmp/5126/mysql_sandbox5126.sock --long-query-time=3';
-my $myi = new MySQLInstance($cmd_01);
-my $dsn = $myi->get_DSN();
-$dsn->{u} = 'msandbox';
-$dsn->{p} = 'msandbox';
-my $dbh;
-my $dp = new DSNParser();
-eval {
-   $dbh = $dp->get_dbh($dp->get_cxn_params($dsn));
-};
-if ( $EVAL_ERROR ) {
-   chomp $EVAL_ERROR;
-   print "Cannot connect to " . $dp->as_string($dsn)
-         . ": $EVAL_ERROR\n\n";
-}
-$myi->load_sys_vars($dbh);
-
-# #############################################################################
-# Now, begin checking SchemaDiscover
-# #############################################################################
 my $d = new MySQLDump();
 my $q = new Quoter();
 my $t = new TableParser();
@@ -73,20 +49,28 @@ my $params = { dbh         => $dbh,
 my $sd = new SchemaDiscover($params);
 isa_ok($sd, 'SchemaDiscover');
 
-ok(exists $sd->{dbs}->{test},     'test db exists'      );
-ok(exists $sd->{dbs}->{mysql},    'mysql db exists'     );
-ok(exists $sd->{counts}->{TOTAL}, 'TOTAL counts exists' );
+SKIP: {
+   skip 'Sandbox master does not have the sakila database', 4
+      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
-$sd->discover_triggers_routines_events();
-my @expect_tre_01 = ('sakila func 3', 'sakila proc 3');
-is_deeply(
-   \@{ $sd->{trigs_routines_events} },
-   \@expect_tre_01,
-   'discover_triggers_routines_events'
-);
+   ok(exists $sd->{dbs}->{sakila},   'sakila db exists'    );
+   ok(exists $sd->{dbs}->{mysql},    'mysql db exists'     );
+   ok(exists $sd->{counts}->{TOTAL}, 'TOTAL counts exists' );
 
-# print Dumper($sd);
+   $sd->discover_triggers_routines_events();
+   is_deeply(
+      \@{ $sd->{trigs_routines_events} },
+      [
+         'sakila del_trg 1',
+         'sakila ins_trg 4',
+         'sakila upd_trg 1',
+         'sakila func 3',
+         'sakila proc 3',
+      ],
+      'discover_triggers_routines_events'
+   );
 
-$dbh->disconnect() if defined $dbh;
+   $dbh->disconnect() if defined $dbh;
+};
 
 exit;

@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-my $skippable = 19;
+
 use Test::More tests => 29;
 use DBI;
 use English qw(-no_match_vars);
@@ -28,6 +28,13 @@ require "../TableParser.pm";
 require "../TableChunker.pm";
 require "../MySQLDump.pm";
 require "../Quoter.pm";
+require '../DSNParser.pm';
+require '../Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+$sb->create_dbs($dbh, ['test']);
 
 my $q = new Quoter();
 my $p = new TableParser();
@@ -136,18 +143,12 @@ is(
    'Inject WHERE with defined item',
 );
 
-# Open a connection to MySQL, or skip the rest of the tests.
-# TODO: set up a sandbox server for this!
-my $dbh;
-eval {
-   $dbh = DBI->connect(
-      "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
-      { RaiseError => 1 })
-};
+# #############################################################################
+# Sandbox tests.
+# #############################################################################
 SKIP: {
-   skip 'Cannot connect to MySQL', $skippable if $EVAL_ERROR;
-   skip 'Sakila is not installed', $skippable
-         unless @{$dbh->selectall_arrayref('show databases like "sakila"')};
+   skip 'Sandbox master does not have the sakila database', 19
+      unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
 
    my @chunks;
 
@@ -384,15 +385,15 @@ SKIP: {
    );
 
    eval {
-   @chunks = $c->calculate_chunks(
-      table         => $t,
-      col           => 'a',
-      min           => '1',
-      max           => '2',
-      rows_in_range => 50000000,
-      size          => 3,
-      dbh           => $dbh,
-   );
+      @chunks = $c->calculate_chunks(
+         table         => $t,
+         col           => 'a',
+         min           => '1',
+         max           => '2',
+         rows_in_range => 50000000,
+         size          => 3,
+         dbh           => $dbh,
+      );
    };
    is(
       $EVAL_ERROR,
@@ -455,20 +456,12 @@ SKIP: {
    is( $c->size_to_rows($dbh, 'sakila', 'film', '5', $d), 5, 'Numeric size' );
    my $size = $c->size_to_rows($dbh, 'sakila', 'film', '5k', $d);
    ok($size >= 20 && $size <= 30, 'Convert bytes to rows');
-
-   $dbh->disconnect();
-
-}  # End of block with live $dbh inside
-
-diag(`../../sandbox/stop_all`);
-diag(`../../sandbox/make_sandbox 12345`);
-diag(`/tmp/12345/use -e 'CREATE DATABASE test'`);
-$dbh = DBI->connect("DBI:mysql:host=127.0.0.1;port=12345;database=test;", 'msandbox', 'msandbox', { RaiseError => 1 });
+};
 
 # #############################################################################
 # Issue 47: TableChunker::range_num broken for very large bigint
 # #############################################################################
-`/tmp/12345/use < 'samples/issue_47.sql'`;
+$sb->load_file('master', 'samples/issue_47.sql');
 $t = $p->parse( $d->get_create_table($dbh, $q, 'test', 'issue_47') );
 my %params = $c->get_range_statistics($dbh, 'test', 'issue_47', 'userid');
 my @chunks;
@@ -500,10 +493,9 @@ is(
    'Adds USE INDEX (issue 8)'
 );
 
-diag(`/tmp/12345/use < samples/issue_8.sql`);
+$sb->load_file('master', 'samples/issue_8.sql');
 $t = $p->parse( $d->get_create_table($dbh, $q, 'test', 'issue_8') );
 my @candidates = $c->find_chunk_columns($t);
-
 is_deeply(
    \@candidates,
    [
@@ -515,6 +507,6 @@ is_deeply(
    ],
    'find_chunk_columns() returns col and idx candidates'
 );
- 
-diag(`../../sandbox/stop_all`);
+
+$sb->wipe_clean($dbh);
 exit;

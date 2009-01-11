@@ -442,8 +442,13 @@ sub find_replication_differences {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableChecksum:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   # Use $$ instead of $PID in case the package
+   # does not use English.
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;

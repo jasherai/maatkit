@@ -84,7 +84,7 @@ sub create_dbs {
       die $EVAL_ERROR if $EVAL_ERROR;
    }
 
-   $dbh->do('SET SQL_LOG_BIN=1') unless $args{repl};
+   $dbh->do('SET SQL_LOG_BIN=1');
 
    return;
 }
@@ -141,14 +141,20 @@ sub wipe_clean {
    foreach my $db ( @{$dbh->selectcol_arrayref('SHOW DATABASES')} ) {
       next if $db eq 'mysql';
       next if $db eq 'information_schema';
+      next if $db eq 'sakila';
       $dbh->do("DROP DATABASE IF EXISTS `$db`");
    }
    return;
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# Sandbox:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   # Use $$ instead of $PID in case the package
+   # does not use English.
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
