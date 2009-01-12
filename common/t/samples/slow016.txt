@@ -1,0 +1,28 @@
+# User@Host: root[root] @ localhost [127.0.0.1]
+# Thread_id: 6997  Schema: user_chos
+# Query_time: 0.000020  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0  Rows_read: 1
+use user_chos;
+USE `user_chos`;
+# User@Host: user_user[user_user] @ my-server.myplace.net [192.168.100.1]
+# Thread_id: 6996  Schema: user_sfn
+# Query_time: 0.000020  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0  Rows_read: 0
+use user_sfn;
+SELECT * FROM moderator WHERE userid='0' AND (forumid='215' OR forumid='250' OR forumid='-1');
+# User@Host: root[root] @ localhost [127.0.0.1]
+# Thread_id: 6997  Schema: user_chos
+# Query_time: 0.000061  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0  Rows_read: 1
+use user_chos;
+SHOW CREATE TABLE `user_chos`.`karma`;
+# User@Host: root[root] @ localhost [127.0.0.1]
+# Thread_id: 6997  Schema: user_chos
+# Query_time: 0.000029  Lock_time: 0.000000  Rows_sent: 1  Rows_examined: 0  Rows_affected: 0  Rows_read: 1
+SELECT DATABASE();
+# User@Host: root[root] @ localhost [127.0.0.1]
+# Thread_id: 6997  Schema: mysql
+# Query_time: 0.000022  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0  Rows_read: 1
+use mysql;
+USE `mysql`;
+# User@Host: root[root] @ localhost [127.0.0.1]
+# Thread_id: 6997  Schema: mysql
+# Query_time: 0.000032  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0  Rows_read: 1
+/*!40101 SET @@SQL_MODE := @OLD_SQL_MODE, @@SQL_QUOTE_SHOW_CREATE := @OLD_QUOTE */;
