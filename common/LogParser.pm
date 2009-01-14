@@ -407,10 +407,13 @@ sub parse_slowlog_event {
                $found_arg++;
             }
 
-            # Maybe it's the timing line of a slow query log, or another line such
-            # as that... they typically look like this:
+            # Maybe it's the timing line of a slow query log, or another line
+            # such as that... they typically look like this:
             # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
-            elsif ( my @temp = $line =~ m/(\w+):\s+(\S+)/g ) {
+            # If issue 234 bites us, we may see something like
+            # Query_time: 18446744073708.796870.000036 so we match only up to
+            # the second decimal place for numbers.
+            elsif ( my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+)/g ) {
                push @properties, @temp;
             }
 

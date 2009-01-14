@@ -1070,7 +1070,7 @@ $events = [
       'Query_time'    => '0.000899',
       'Lock_time'     => '0.000000',
       'Rows_sent'     => '0',
-      pos_in_log      => 633,
+      pos_in_log      => 663,
       cmd             => 'Query',
    }
 ];
@@ -1192,6 +1192,29 @@ open $file, "<", 'samples/slow013.txt' or die $OS_ERROR;
 1 while ( $p->parse_slowlog_event( $file, undef, \&simple_callback ) );
 close $file;
 is_deeply( \@e, $events, 'Parses events that might look like meta');
+
+# Check that issue 234 doesn't kill us
+$events = [
+   {  ts            => '081116 15:07:11',
+      cmd           => 'Query',
+      user          => 'user',
+      host          => 'host',
+      ip            => '10.1.65.120',
+      db            => 'mydb',
+      arg           => 'SELECT * FROM mytbl',
+      Query_time    => '18446744073708.796870',
+      Lock_time     => '0.000036',
+      Rows_sent     => 1,
+      Rows_examined => 127,
+      pos_in_log    => 0,
+   },
+];
+
+open $file, "<", 'samples/slow017.txt' or die $OS_ERROR;
+@e = ();
+1 while ( $p->parse_slowlog_event( $file, undef, \&simple_callback ) );
+close $file;
+is_deeply( \@e, $events, "Parsed event with broken Query_time", );
 
 # Check that lots of header lines don't cause problems.
 $events = [

@@ -180,7 +180,7 @@ sub make_handler {
       %args,
    );
 
-   my @lines; # Lines of code for the subroutine
+   my @lines = ("# type: $type"); # Lines of code for the subroutine
    if ( $args{trf} ) {
       push @lines, q{$val = } . $args{trf} . ';';
    }
