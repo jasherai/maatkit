@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 27;
+use Test::More tests => 29;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
