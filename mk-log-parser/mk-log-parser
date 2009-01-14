@@ -1352,7 +1352,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2806
+# LogParser package 2813
 # ###########################################################################
 package LogParser;
 
@@ -1648,7 +1648,7 @@ sub parse_slowlog_event {
                $found_arg++;
             }
 
-            elsif ( my @temp = $line =~ m/(\w+):\s+(\S+)/g ) {
+            elsif ( my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+)/g ) {
                push @properties, @temp;
             }
 
@@ -1769,7 +1769,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2801
+# SQLMetrics package 2813
 # ###########################################################################
 
 package SQLMetrics;
@@ -1837,7 +1837,7 @@ sub make_handler {
       %args,
    );
 
-   my @lines; # Lines of code for the subroutine
+   my @lines = ("# type: $type"); # Lines of code for the subroutine
    if ( $args{trf} ) {
       push @lines, q{$val = } . $args{trf} . ';';
    }
