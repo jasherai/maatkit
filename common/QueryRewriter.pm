@@ -65,6 +65,10 @@ sub strip_comments {
 # revisions of this subroutine for more correct, but slower, regexes.
 sub fingerprint {
    my ( $self, $query ) = @_;
+
+   # First, we start with a bunch of special cases that we can optimize because
+   # they are special behavior or because they are really big and we want to
+   # throw them away as early as possible.
    $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
       && return 'mysqldump';
    # Matches queries like REPLACE /*foo.bar:3/3*/ INTO checksum.checksum
@@ -73,6 +77,13 @@ sub fingerprint {
    # Administrator commands appear to be a comment, so return them as-is
    $query =~ m/\A# administrator command: /
       && return $query;
+   # mysqldump's INSERT statements will have long values() lists, don't waste
+   # time on them... they also tend to segfault Perl on some machines when you
+   # get to the "# Collapse IN() and VALUES() lists" regex below!
+   if ( my ($beginning) = $query =~ m/\A(INSERT INTO \S+ VALUES \(.*?\)),\(/ ) {
+      $query = $beginning; # Shorten multi-value INSERT statements ASAP
+   }
+
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
