@@ -519,8 +519,10 @@ $events = [
 ];
 @e = ();
 open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
-1 while ( $p->parse_event( $file, \&simple_callback ) );
+my $num_events = 0;
+$num_events++ while ( $p->parse_event( $file, \&simple_callback ) );
 close $file;
+is($num_events, 3, "callback actually returned before EOF");
 is_deeply( \@e, $events, 'Parses commented event (admin cmd) (parse_event)' );
 @e = ();
 $events->[0]->{arg} = '# administrator command: Quit';
@@ -533,9 +535,11 @@ $events->[0]->{pos_in_log} = 0;
 $events->[1]->{pos_in_log} = 221;
 $events->[2]->{pos_in_log} = 435;
 open $file, "<", 'samples/slow008.txt' or die $OS_ERROR;
-1 while ( $p->parse_slowlog_event( $file, undef, \&simple_callback ) );
+$num_events = 0;
+$num_events ++ while ( $p->parse_slowlog_event( $file, undef, \&simple_callback ) );
 close $file;
 is_deeply( \@e, $events, 'Parses commented event (admin cmd) (parse_slowlog_event)' );
+is($num_events, 3, "callback for parse_slowlog_event returned before EOF");
 
 @e = ();
 open $file, "<", 'samples/slow011.txt' or die $OS_ERROR;

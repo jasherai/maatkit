@@ -475,6 +475,7 @@ sub parse_slowlog_event {
          last CALLBACK unless $callback->($event);
       }
       ++$num_events;
+      last EVENT unless @pending;
    }
    return $num_events;
 }
