@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 2460
+# DSNParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -293,9 +293,11 @@ sub print_active_handles {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -351,7 +353,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 2300
+# OptionParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -870,11 +872,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -889,6 +886,14 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -896,7 +901,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2749
+# Transformers package 2801
 # ###########################################################################
 
 package Transformers;
@@ -1011,8 +1016,11 @@ sub ts {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# Transformers:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1022,7 +1030,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2733
+# QueryRewriter package 2809
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1062,12 +1070,17 @@ sub strip_comments {
 
 sub fingerprint {
    my ( $self, $query ) = @_;
+
    $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
       && return 'mysqldump';
    $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
    $query =~ m/\A# administrator command: /
       && return $query;
+   if ( my ($beginning) = $query =~ m/\A(INSERT INTO \S+ VALUES \(.*?\)),\(/ ) {
+      $query = $beginning; # Shorten multi-value INSERT statements ASAP
+   }
+
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
@@ -1182,9 +1195,11 @@ sub wrap_in_derived {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# QueryRewriter:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1194,7 +1209,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 2750
+# Processlist package 2801
 # ###########################################################################
 package Processlist;
 
@@ -1323,8 +1338,11 @@ sub fire_event {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# Processlist:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1334,7 +1352,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2749
+# LogParser package 2806
 # ###########################################################################
 package LogParser;
 
@@ -1672,6 +1690,7 @@ sub parse_slowlog_event {
          last CALLBACK unless $callback->($event);
       }
       ++$num_events;
+      last EVENT unless @pending;
    }
    return $num_events;
 }
@@ -1736,8 +1755,11 @@ sub parse_binlog_event {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# LogParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1747,7 +1769,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2729
+# SQLMetrics package 2801
 # ###########################################################################
 
 package SQLMetrics;
@@ -2036,8 +2058,11 @@ sub calculate_statistical_metrics {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# SQLMetrics:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -2047,7 +2072,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 2648
+# QueryParser package 2801
 # ###########################################################################
 package QueryParser;
 
@@ -2143,18 +2168,21 @@ sub parse_table_aliases {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# QueryParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
+
 # ###########################################################################
 # End QueryParser package
 # ###########################################################################
 
 # #############################################################################
-# MySQLDump package 2468
+# MySQLDump package 2801
 # #############################################################################
 package MySQLDump;
 
@@ -2458,7 +2486,7 @@ sub _d {
 # #############################################################################
 
 # ###########################################################################
-# TableParser package 2749
+# TableParser package 2801
 # ###########################################################################
 package TableParser;
 
@@ -2831,8 +2859,11 @@ sub get_duplicate_fks {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -2842,7 +2873,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 2749
+# QueryReview package 2801
 # ###########################################################################
 package QueryReview;
 
@@ -3025,9 +3056,11 @@ sub _parse_timestamp {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# QueryReview:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
