@@ -1077,6 +1077,8 @@ sub fingerprint {
       && return 'maatkit';
    $query =~ m/\A# administrator command: /
       && return $query;
+   $query =~ m/\A\s*(call\s+\S+)\(/i
+      && return lc($1); # Warning! $1 used, be careful.
    if ( my ($beginning) = $query =~ m/\A(INSERT INTO \S+ VALUES \(.*?\)),\(/ ) {
       $query = $beginning; # Shorten multi-value INSERT statements ASAP
    }
@@ -1100,6 +1102,7 @@ sub fingerprint {
    chomp $query;                         # Kill trailing whitespace
    $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
+   $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
    $query =~ s{
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }

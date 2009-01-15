@@ -77,6 +77,9 @@ sub fingerprint {
    # Administrator commands appear to be a comment, so return them as-is
    $query =~ m/\A# administrator command: /
       && return $query;
+   # Special-case for stored procedures.
+   $query =~ m/\A\s*(call\s+\S+)\(/i
+      && return lc($1); # Warning! $1 used, be careful.
    # mysqldump's INSERT statements will have long values() lists, don't waste
    # time on them... they also tend to segfault Perl on some machines when you
    # get to the "# Collapse IN() and VALUES() lists" regex below!
@@ -105,6 +108,7 @@ sub fingerprint {
    chomp $query;                         # Kill trailing whitespace
    $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
+   $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
    $query =~ s{
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }

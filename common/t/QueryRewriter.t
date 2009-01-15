@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 64;
+use Test::More tests => 65;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -48,6 +48,12 @@ is(
    $q->fingerprint("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
    "mysqldump",
    'Fingerprints all mysqldump SELECTs together',
+);
+
+is(
+   $q->fingerprint("CALL foo(1, 2, 3)"),
+   "call foo",
+   'Fingerprints stored procedure calls specially',
 );
 
 is(
@@ -110,18 +116,17 @@ is(
    'Removes one-line EOL comments in fingerprints',
 );
 
-=pod
-is(
-   $q->fingerprint(
-      "select a,b ,c , d from tbl where a=5 or a = 5 or a=5 or a =5"),
-   "select a, b, c, d from tbl where a=? or a=? or a=? or a=?",
-   "Normalizes commas and equals",
-);
-=cut
+# This one is too expensive!
+#is(
+#   $q->fingerprint(
+#      "select a,b ,c , d from tbl where a=5 or a = 5 or a=5 or a =5"),
+#   "select a, b, c, d from tbl where a=? or a=? or a=? or a=?",
+#   "Normalizes commas and equals",
+#);
 
 is(
-   $q->fingerprint("select 5.001, 5001. from foo"),
-   "select ?, ? from foo",
+   $q->fingerprint("select null, 5.001, 5001. from foo"),
+   "select ?, ?, ? from foo",
    "Handles bug from perlmonks thread 728718",
 );
 
