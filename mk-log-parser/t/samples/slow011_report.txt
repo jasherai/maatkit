@@ -18,7 +18,7 @@
 #  10s+
 # administrator command: Quit\G
 
-# Query 002 (0 QPS) ID: 0xCC47B42511EA22DD at byte 633 __________________
+# Query 002 (0 QPS) ID: 0xCC47B42511EA22DD at byte 663 __________________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        2   50
 #      Time    1.8ms    8   899us   899us   899us   899us       0   899us

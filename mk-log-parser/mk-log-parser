@@ -3565,7 +3565,12 @@ sub print_analysis_report {
       my ( $default_db ) = keys %{$class->{db}->{unq}}
          if scalar keys %{$class->{db}->{unq}} == 1;
 
+      # Get the sample query and shorten it for readability if necessary (issue
+      # 216).
       my $sample = $class->{$opts->{w}}->{sample}->{arg};
+      $sample =~ s{\A(INSERT INTO \S+ VALUES \(.*?\)),\(.*\Z}
+                  {$1/*multi-value INSERT omitted*/}s;
+
       my $select_pattern = qr/^[\s\(]*SELECT /i;
       if ( $sample =~ m/$select_pattern/ ) {
          print_tables($sample, $default_db) if $opts->{forexplain};

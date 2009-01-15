@@ -1,5 +1,6 @@
 Changelog for mk-log-parser:
 
+   * Trimmed mysqldump insert samples (issue 216).
    * Enhanced the query fingerprinting (issue 220).
    * Query_time with two decimal points caused a crash (issue 234).
    * Very large INSERT statements from mysqldump segfaulted on older Perl.

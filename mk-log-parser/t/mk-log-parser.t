@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -83,6 +83,11 @@ ok(
 ok(
    no_diff($run_with.'slow014.txt', 'samples/slow014_report.txt'),
    'Analysis for slow014'
+);
+
+ok(
+   no_diff($run_with.'slow018.txt', 'samples/slow018_report.txt'),
+   'Analysis for slow018'
 );
 
 # #############################################################################
