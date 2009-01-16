@@ -18,7 +18,9 @@
 # #############################################################################
 # SQLMetrics package $Revision$
 # #############################################################################
+
 package SQLMetrics;
+
 # Since this module is pretty advanced and abstract, it is difficult to
 # understand what it does by looking at the code without some background
 # information. Here is the relevant background information.
@@ -62,7 +64,27 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG     => $ENV{MKDEBUG};
+use constant BASE_LOG    => log(1.05);
+use constant BASE_OFFSET => -floor(log(.000001) / BASE_LOG); # typically 284
+use constant NUM_BUCK    => 1000;
+
+my @buckets   = map { 0 } (1 .. NUM_BUCK);
+my @buck_vals = (.000001);
+{
+   my $cur = 1.05;
+   for ( 1 .. NUM_BUCK - 1 ) {
+      push @buck_vals, .000001 * ($cur *= 1.05);
+   }
+}
+# Break the buckets down into powers of ten, in 8 coarser buckets.  Bucket 0
+# represents (0 <= val < 10us) and 7 represents 10s and greater.  The powers are
+# thus constrained to between -6 and 1.  Because these are used as array
+# indexes, we shift up so it's non-negative, to get 0 to 7.
+my @buck_tens = map {
+   my $f = floor(log($_) / log(10)) + 6;
+   $f > 7 ? 7 : $f;
+} @buck_vals;
 
 # %args is a hash containing:
 # REQUIRED:
@@ -136,11 +158,23 @@ sub new {
 #     sum => keep sum (default for numerics)
 #     cnt => keep count (default except strings)
 #     unq => keep all unique values per-class (default for strings and bools)
-#     all => keep a list of all values seen per class (default for numerics)
+#     all => keep a bucketed list of values seen per class (default for numerics)
 #     glo => keep stats globally as well as per-class (default)
 #     trf => An expression to transform the value before working with it
 #     wor => Whether to keep worst-samples for this attrib (default no)
 #     alt => Arrayref of other name(s) for the attribute, like db => Schema.
+#
+# The bucketed list works this way: each range of values from .000001 in
+# increments of 1.05 (that is 5%) we consider a bucket.  We keep 1000 buckets.
+# The upper end of the range is more than 1.5e15 so it should be big enough for
+# almost anything.  The buckets are accessed by a log base 1.05, so
+# floor(log(N)/log(1.05)).  The smallest bucket's value is -284. We shift all
+# values up 284 so we have values from 0 to 999 that can be used as array
+# indexes.  A value that falls into a bucket simply increments the array entry.
+#
+# This eliminates the need to keep and sort all values to calculate median,
+# standard deviation, 95th percentile etc.  Thus the memory usage is bounded by
+# the number of distinct queries, not the number of log entries.
 #
 # Return value:
 # a subroutine with this signature:
@@ -208,7 +242,11 @@ sub make_handler {
             push @tmp, '++PLACE->{unq}->{$val};';
          }
          if ( $args{all} ) {
-            push @tmp, 'push @{PLACE->{all}}, $val;';
+            push @tmp, (
+               # If you change this code, change the similar code in bucketize.
+               'my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
+               '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+            );
          }
          if ( $args{wor} ) {
             my $op = $type eq 'num' ? '>=' : 'ge';
@@ -222,13 +260,15 @@ sub make_handler {
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
-   # Make sure the value is constrained to legal limits
+   # Make sure the value is constrained to legal limits.  If it's out of bounds,
+   # just use the last-seen value for it.
    my @limit;
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
          "if ( \$val > $self->{attrib_limit} ) {",
-         '   $val = $class->{all}->[-1] || 0;',
+         '   $val = $class->{last} ||= 0;',
          '}',
+         '$class->{last} = $val;',
       );
    }
 
@@ -261,6 +301,32 @@ sub make_handler {
    return $sub;
 }
 
+# This method is for testing only.  If you change this code, change the code
+# above too (look for bucketize).
+sub bucketize {
+   my ( $self, $vals ) = @_;
+   my @bucketed = @buckets;
+   map {
+      my $idx = BASE_OFFSET + ($_ > 0 ? floor(log($_) / BASE_LOG) : 0);
+      ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
+   } @$vals;
+   return \@bucketed;
+}
+
+# This method is for testing only.
+sub unbucketize {
+   my ( $self, $vals ) = @_;
+   my @result;
+   foreach my $i ( 0 .. NUM_BUCK - 1 ) {
+      next unless $vals->[$i];
+      foreach my $j ( 1 .. $vals->[$i] ) {
+         push @result, $buck_vals[$i];
+      }
+   }
+   return @result;
+}
+
+
 # Calculate metrics about a single event.  Usually an event will be something
 # like a query from a slow log, and the $event->{arg} will be the query text.
 sub calc_event_metrics {
@@ -279,10 +345,11 @@ sub calc_event_metrics {
       return $self->{unrolled_loops}->($self, $event, $group_by);
    }
 
-   # Get a shortcut to the data store (ds) for this class of events.  
+   # Get a shortcut to the data store (ds) for this class of events.  If you
+   # change this code, look at the "Must re-create" code below too.
    my @attrs = sort keys %{$self->{attributes}};
    my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-      ||= { map { $_ => {} } @attrs };
+      ||= { map { $_ => { all => [ @buckets ] } } @attrs };
 
    # Calculate the metrics for all our attributes.  Handlers are auto-vivified
    # as needed, based on the actual data being passed in.  (They can't be
@@ -290,8 +357,10 @@ sub calc_event_metrics {
    ATTRIB:
    foreach my $attrib ( @attrs ) {
       # Get data store shortcuts.
-      my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
-      my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
+      my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {
+         all => [ @buckets ],
+      };
+      my $stats_for_class  = $fp_ds->{ $attrib }; # Created a few lines up.
 
       my $handler = $self->{handlers}->{ $attrib };
       if ( !$handler ) {
@@ -328,7 +397,7 @@ sub calc_event_metrics {
          'my ($val, $class, $global);',
          # Must re-create; it may not exist for this $group_by yet.
          'my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-            ||= { map { $_ => {} } @attrs };',
+            ||= { map { $_ => { all => [ @buckets ] } } @attrs };',
          'my @st_fc = @{$fp_ds}{@attrs};', # Stats for class
       );
       foreach my $i ( 0 .. $#attrs ) {
@@ -365,11 +434,10 @@ sub reset_metrics {
 # Given an arrayref of vals, returns a hashref with the following
 # statistical metrics:
 # {
-#    avg       => (of 95% vals),
 #    max       => (of 95% vals -- thus the 95th percentile),
 #    stddev    => (of 95% vals),
 #    median    => (of 95% vals),
-#    distro    => (if $arg{distro})
+#    distro    =>
 #       [
 #          0: number of vals in the 1us range  (0    <= val < 10us)
 #          1: number of vals in the 10us range (10us <= val < 100us)
@@ -378,63 +446,67 @@ sub reset_metrics {
 #       ],
 #    cutoff    => cutoff point for 95% vals
 # }
+#
+# The vals arrayref is the buckets as per the above (see the comments at the top
+# of this file).
+# TODO: pass in $sum and $cnt already
 sub calculate_statistical_metrics {
    my ( $self, $vals, %args ) = @_;
    my @distro              = qw(0 0 0 0 0 0 0 0);
    my $statistical_metrics = {
-      avg       => 0,
       max       => 0,
       stddev    => 0,
       median    => 0,
       distro    => \@distro,
       cutoff    => undef,
    };
-   return $statistical_metrics unless defined $vals;
+   return $statistical_metrics unless defined $vals && @$vals;
 
-   my $n_vals = scalar @$vals;
-   return $statistical_metrics unless $n_vals;
+   # Count the number of values.
+   my $n_vals = 0;
+   map { $n_vals += $_ } @$vals;
 
    # Determine cutoff point for 95% if there are at least 10 vals.
    # Cutoff serves also for the number of vals left in the 95%.
    # E.g. with 50 vals the cutoff is 47 which means there are 47 vals: 0..46.
-   my $cutoff = $n_vals >= 10 ? int ( scalar @$vals * 0.95 ) : $n_vals;
+   my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
-   # Used for getting the median val.
-   my $middle_val_n = int $statistical_metrics->{cutoff} / 2;
-   my $previous_val;
+   my $total_left = $n_vals;
+   my $i = NUM_BUCK - 1;
 
-   my $sum    = 0; # stddev and 95% avg
-   my $sumsq  = 0; # stddev
-   my $max    = 0; # 95th percentile
-   my $i      = 0; # for knowing when we've reached the 95%
-   foreach my $val ( sort { $a <=> $b } @$vals ) {
-      # Distribution of vals for all vals, if requested.
-      if ( defined $val && $val > 0 && $args{distro} ) {
-         # The buckets are powers of ten. Bucket 0 represents (0 <= val < 10us) 
-         # and 7 represents 10s and greater.  The powers are thus constrained to
-         # between -6 and 1.  Because these are used as array indexes, we shift
-         # up so it's non-negative, to get 0 - 7.
-         my $bucket = floor(log($val) / log(10)) + 6;
-         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
-         $distro[ $bucket ]++;
+   # Find the 95th percentile biggest value.
+   my $bucket_95 = 0;
+   while ( $i-- && $total_left >= $cutoff ) {
+      if ( $vals->[$i] ) {
+         $total_left -= $vals->[$i];
+         $distro[ $buck_tens[$i] ] += $vals->[$i];
       }
+      $bucket_95 = $i; # The greatest remaining after tossing top 5%
+   }
 
-      # stddev and median only for 95% vals.
-      if ( $i < $cutoff ) {
-         # Median
-         if ( $i == $middle_val_n ) {
-            $statistical_metrics->{median}
-               = $cutoff % 2 ? $val : ($previous_val + $val) / 2;
+   return $statistical_metrics unless $vals->[$bucket_95];
+
+   # Calculate the standard deviation.  The standard deviation is the square
+   # root of the sum of the squared deviations from the mean.  So we need the
+   # mean of the 95th percentile and the sum of the squared values.  Also get
+   # the median.
+   my $sum   = $buck_vals[$bucket_95] * $vals->[$bucket_95];
+   my $sumsq = $sum ** 2;
+   my $mid   = int($cutoff / 2);
+
+   # Continue through the rest of the values.
+   my $median = $bucket_95;
+   while ( $i-- ) {
+      my $val = $vals->[$i];
+      if ( $val ) {
+         if ( $total_left > $mid ) {
+            $median = $i;
          }
-
-         $sum   += $val;
-         $sumsq += ($val **2);
-         $max   = $val;
-         $i++;
-
-         # Needed for calcing median when list has even number of elements.
-         $previous_val = $val;
+         $total_left -= $val;
+         $sum        += $buck_vals[$i] * $val;
+         $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
+         $distro[ $buck_tens[$i] ] += $val;
       }
    }
 
@@ -443,8 +515,8 @@ sub calculate_statistical_metrics {
    MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
 
    $statistical_metrics->{stddev} = $stddev;
-   $statistical_metrics->{avg}    = $sum / $cutoff;
-   $statistical_metrics->{max}    = $max;
+   $statistical_metrics->{max}    = $buck_vals[$bucket_95];
+   $statistical_metrics->{median} = $buck_vals[$median];
 
    return $statistical_metrics;
 }

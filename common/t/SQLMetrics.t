@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 16;
+use Test::More tests => 18;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -63,7 +63,8 @@ my $metrics = {
          Query_time => {
             min => '0.000652',
             max => '0.000682',
-            all => [ '0.000652', '0.000682' ],
+            # all => [ '0.000652', '0.000682' ] # buckets 133, 134
+            all => [ (map { 0 } (0 .. 132)), 1, 1, (map{0}(135..999))],
             sum => '0.001334',
             cnt => 2
          },
@@ -74,18 +75,21 @@ my $metrics = {
             },
             min => 'bob',
             max => 'root',
+            all => [ map { 0 } ( 1 .. 1000 ) ],
          },
          ts => {
             min => '071015 21:43:52',
             max => '071015 21:43:52',
             unq => {
                '071015 21:43:52' => 1,
-            }
+            },
+            all => [ map { 0 } ( 1 .. 1000 ) ],
          },
          Rows_sent => {
             min => 1,
             max => 1,
-            all => [1, 1],
+            # all => [1, 1],
+            all => [ (map { 0 } (0 .. 283)), 2, (map{0}(285..999))],
             sum => 2,
             cnt => 2,
          }
@@ -94,7 +98,8 @@ my $metrics = {
          Query_time => {
             min => '0.001943',
             max => '0.001943',
-            all => [ '0.001943' ],
+            # all => [ '0.001943' ],
+            all => [ (map { 0 } (0 .. 155)), 1, (map{0}(157..999))],
             sum => '0.001943',
             cnt => 1
          },
@@ -102,10 +107,12 @@ my $metrics = {
             unq => { root => 1 },
             min => 'root',
             max => 'root',
+            all => [ map { 0 } ( 1 .. 1000 ) ],
          },
          ts => {
             min => '071015 21:43:52',
             max => '071015 21:43:52',
+            all => [ map { 0 } ( 1 .. 1000 ) ],
             unq => {
                '071015 21:43:52' => 1,
             }
@@ -113,7 +120,7 @@ my $metrics = {
          Rows_sent => {
             min => 0,
             max => 0,
-            all => [0],
+            all => [ (map { 0 } (0..283)), 1, (map {0}(285..999)) ],
             sum => 0,
             cnt => 1,
          }
@@ -124,21 +131,25 @@ my $metrics = {
          min => '0.000652',
          max => '0.001943',
          sum => '0.003277',
-         cnt => 3
+         cnt => 3,
+         all => [ map { 0 } ( 1 .. 1000 ) ],
       },
       user => {
          min => 'bob',
          max => 'root',
+         all => [ map { 0 } ( 1 .. 1000 ) ],
       },
       ts => {
          min => '071015 21:43:52',
          max => '071015 21:43:52',
+         all => [ map { 0 } ( 1 .. 1000 ) ],
       },
       Rows_sent => {
          min => 0,
          max => 1,
          sum => 2,
          cnt => 3,
+         all => [ map { 0 } ( 1 .. 1000 ) ],
       },
    }
 };
@@ -190,18 +201,49 @@ is($sm->{metrics}->{unique}->{'foo ?'}->{Query_time}->{sample}->{arg},
    'foo 2', 'Keeps worst sample for Query_time');
 
 # #############################################################################
-# Test statistical metrics: 95% avg, stddev and median
+# Test bucketizing a straightforward list.
+# #############################################################################
+is_deeply(
+   $sm->bucketize([2,3,6,4,8,9,1,1,1,5,4,3,1]),
+   [
+      (map{0} (0..283)),
+      4,
+      (map{0} (285..297)),
+      1,
+      (map{0} (299..305)),
+      2,
+      (map{0} (307..311)),
+      2,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,1,
+      (map{0} (330..999)),
+   ],
+   'Bucketizes values right',
+);
+
+is_deeply(
+   [$sm->unbucketize($sm->bucketize([2,3,6,4,8,9,1,1,1,5,4,3,1]))],
+   # If there were no loss of precision, we'd get this:
+   # [1, 1, 1, 1, 2, 3, 3, 4, 4, 5, 6, 8, 9]
+   # But we have only 5% precision in the buckets, so...
+   [  '1.09383101885044', '1.09383101885044', '1.09383101885044', '1.09383101885044',
+      '2.16571059866897', '3.19974091367515', '3.19974091367515', '4.28795884954552',
+      '4.28795884954552', '5.21204078136539', '6.33526814500451', '8.48986522331098',
+      '9.82808022913538',
+   ],
+   "Unbucketizes okay",
+);
+
+# #############################################################################
+# Test statistical metrics: 95% stddev and median
 # #############################################################################
 my $expected_stats = {
-   avg       => 3.25,
-   stddev    => 2.26133508433323,
-   median    => 3,
+   stddev    => 2.37817678034088,
+   median    => 3.19974091367515,
    distro    => [qw(0 0 0 0 0 0 13 0)],
    cutoff    => 12,
-   max       => 8,
+   max       => 8.48986522331098,
 };
-my $stats = $sm->calculate_statistical_metrics([2,3,6,4,8,9,1,1,1,5,4,3,1],
-                                              distro => 1);
+my $stats = $sm->calculate_statistical_metrics(
+   $sm->bucketize([2,3,6,4,8,9,1,1,1,5,4,3,1]));
 is_deeply(
    $stats,
    $expected_stats,
@@ -209,21 +251,20 @@ is_deeply(
 );
 
 $expected_stats = {
-   avg       => 0,
    stddev    => 0,
    median    => 0,
    distro    => [qw(0 0 0 0 0 0 0 0)],
    cutoff    => undef,
    max       => 0,
 };
-$stats = $sm->calculate_statistical_metrics(undef, distro=>1);
+$stats = $sm->calculate_statistical_metrics(undef);
 is_deeply(
    $stats,
    $expected_stats,
    'Calculates statistical metrics for undef array'
 );
 
-$stats = $sm->calculate_statistical_metrics([], distro=>1);
+$stats = $sm->calculate_statistical_metrics([]);
 is_deeply(
    $stats,
    $expected_stats,
@@ -231,14 +272,13 @@ is_deeply(
 );
  
 $expected_stats = {
-   avg       => 0.9,
    stddev    => 0,
-   median    => 0.9,
+   median    => 0.944892360523,
    distro    => [qw(0 0 0 0 0 1 0 0)],
    cutoff    => 1,
-   max       => 0.9,
+   max       => 0.944892360523,
 };
-$stats = $sm->calculate_statistical_metrics([0.9], distro=>1);
+$stats = $sm->calculate_statistical_metrics($sm->bucketize([0.9]));
 is_deeply(
    $stats,
    $expected_stats,
@@ -344,8 +384,7 @@ $events = [
 foreach my $event ( @$events ) {
    $sm->calc_event_metrics($event);
 }
-is_deeply(
-   $sm->{metrics},
+my $expected = 
    {  'unique' => {
          '# administrator command: Init DB;' => {
             'Rows_read' => {
@@ -355,9 +394,10 @@ is_deeply(
                   'Rows_read' => '4.12452459082373e+18',
                   'arg'       => '# administrator command: Init DB;'
                },
-               'all' => [ '0' ],
+               all => [ (map { 0 } (0 .. 283)), 1, (map{0}(285..999))],
                'sum' => 0,
-               'cnt' => 1
+               'cnt' => 1,
+               'last' => 0,
             }
          },
          'SELECT template FROM template WHERE title=\'options\'' => {
@@ -369,9 +409,10 @@ is_deeply(
                   'arg' =>
                      'SELECT template FROM template WHERE title=\'options\''
                },
-               'all' => [ 4, 4 ],
+               all => [ (map { 0 } (0 .. 311)), 2, (map{0}(313..999))],
                'sum' => 8,
-               'cnt' => 2
+               'cnt' => 2,
+               'last' => 4,
             }
          }
       },
@@ -380,9 +421,13 @@ is_deeply(
             'min' => 0,
             'max' => 4,
             'sum' => 8,
-            'cnt' => 3
+            'cnt' => 3,
+            all => [ map { 0 } (0 .. 999) ],
          }
       }
-   },
+   };
+is_deeply(
+   $sm->{metrics},
+   $expected,
    'attrib_limit prevents big values',
 );
