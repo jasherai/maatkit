@@ -1772,17 +1772,35 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2813
+# SQLMetrics package 2818
 # ###########################################################################
 
+
 package SQLMetrics;
+
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG     => $ENV{MKDEBUG};
+use constant BASE_LOG    => log(1.05);
+use constant BASE_OFFSET => -floor(log(.000001) / BASE_LOG); # typically 284
+use constant NUM_BUCK    => 1000;
+
+my @buckets   = map { 0 } (1 .. NUM_BUCK);
+my @buck_vals = (.000001);
+{
+   my $cur = 1.05;
+   for ( 1 .. NUM_BUCK - 1 ) {
+      push @buck_vals, .000001 * ($cur *= 1.05);
+   }
+}
+my @buck_tens = map {
+   my $f = floor(log($_) / log(10)) + 6;
+   $f > 7 ? 7 : $f;
+} @buck_vals;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1868,7 +1886,10 @@ sub make_handler {
             push @tmp, '++PLACE->{unq}->{$val};';
          }
          if ( $args{all} ) {
-            push @tmp, 'push @{PLACE->{all}}, $val;';
+            push @tmp, (
+               'my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
+               '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+            );
          }
          if ( $args{wor} ) {
             my $op = $type eq 'num' ? '>=' : 'ge';
@@ -1886,8 +1907,9 @@ sub make_handler {
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
          "if ( \$val > $self->{attrib_limit} ) {",
-         '   $val = $class->{all}->[-1] || 0;',
+         '   $val = $class->{last} ||= 0;',
          '}',
+         '$class->{last} = $val;',
       );
    }
 
@@ -1918,6 +1940,29 @@ sub make_handler {
    return $sub;
 }
 
+sub bucketize {
+   my ( $self, $vals ) = @_;
+   my @bucketed = @buckets;
+   map {
+      my $idx = BASE_OFFSET + ($_ > 0 ? floor(log($_) / BASE_LOG) : 0);
+      ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
+   } @$vals;
+   return \@bucketed;
+}
+
+sub unbucketize {
+   my ( $self, $vals ) = @_;
+   my @result;
+   foreach my $i ( 0 .. NUM_BUCK - 1 ) {
+      next unless $vals->[$i];
+      foreach my $j ( 1 .. $vals->[$i] ) {
+         push @result, $buck_vals[$i];
+      }
+   }
+   return @result;
+}
+
+
 sub calc_event_metrics {
    my ( $self, $event ) = @_;
 
@@ -1934,12 +1979,14 @@ sub calc_event_metrics {
 
    my @attrs = sort keys %{$self->{attributes}};
    my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-      ||= { map { $_ => {} } @attrs };
+      ||= { map { $_ => { all => [ @buckets ] } } @attrs };
 
    ATTRIB:
    foreach my $attrib ( @attrs ) {
-      my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
-      my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
+      my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {
+         all => [ @buckets ],
+      };
+      my $stats_for_class  = $fp_ds->{ $attrib }; # Created a few lines up.
 
       my $handler = $self->{handlers}->{ $attrib };
       if ( !$handler ) {
@@ -1968,7 +2015,7 @@ sub calc_event_metrics {
          'my ( $self, $event, $group_by ) = @_;',
          'my ($val, $class, $global);',
          'my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-            ||= { map { $_ => {} } @attrs };',
+            ||= { map { $_ => { all => [ @buckets ] } } @attrs };',
          'my @st_fc = @{$fp_ds}{@attrs};', # Stats for class
       );
       foreach my $i ( 0 .. $#attrs ) {
@@ -2005,47 +2052,49 @@ sub calculate_statistical_metrics {
    my ( $self, $vals, %args ) = @_;
    my @distro              = qw(0 0 0 0 0 0 0 0);
    my $statistical_metrics = {
-      avg       => 0,
       max       => 0,
       stddev    => 0,
       median    => 0,
       distro    => \@distro,
       cutoff    => undef,
    };
-   return $statistical_metrics unless defined $vals;
+   return $statistical_metrics unless defined $vals && @$vals;
 
-   my $n_vals = scalar @$vals;
-   return $statistical_metrics unless $n_vals;
+   my $n_vals = 0;
+   map { $n_vals += $_ } @$vals;
 
-   my $cutoff = $n_vals >= 10 ? int ( scalar @$vals * 0.95 ) : $n_vals;
+   my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
-   my $middle_val_n = int $statistical_metrics->{cutoff} / 2;
-   my $previous_val;
+   my $total_left = $n_vals;
+   my $i = NUM_BUCK - 1;
 
-   my $sum    = 0; # stddev and 95% avg
-   my $sumsq  = 0; # stddev
-   my $max    = 0; # 95th percentile
-   my $i      = 0; # for knowing when we've reached the 95%
-   foreach my $val ( sort { $a <=> $b } @$vals ) {
-      if ( defined $val && $val > 0 && $args{distro} ) {
-         my $bucket = floor(log($val) / log(10)) + 6;
-         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
-         $distro[ $bucket ]++;
+   my $bucket_95 = 0;
+   while ( $i-- && $total_left >= $cutoff ) {
+      if ( $vals->[$i] ) {
+         $total_left -= $vals->[$i];
+         $distro[ $buck_tens[$i] ] += $vals->[$i];
       }
+      $bucket_95 = $i; # The greatest remaining after tossing top 5%
+   }
 
-      if ( $i < $cutoff ) {
-         if ( $i == $middle_val_n ) {
-            $statistical_metrics->{median}
-               = $cutoff % 2 ? $val : ($previous_val + $val) / 2;
+   return $statistical_metrics unless $vals->[$bucket_95];
+
+   my $sum   = $buck_vals[$bucket_95] * $vals->[$bucket_95];
+   my $sumsq = $sum ** 2;
+   my $mid   = int($cutoff / 2);
+
+   my $median = $bucket_95;
+   while ( $i-- ) {
+      my $val = $vals->[$i];
+      if ( $val ) {
+         if ( $total_left > $mid ) {
+            $median = $i;
          }
-
-         $sum   += $val;
-         $sumsq += ($val **2);
-         $max   = $val;
-         $i++;
-
-         $previous_val = $val;
+         $total_left -= $val;
+         $sum        += $buck_vals[$i] * $val;
+         $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
+         $distro[ $buck_tens[$i] ] += $val;
       }
    }
 
@@ -2054,8 +2103,8 @@ sub calculate_statistical_metrics {
    MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
 
    $statistical_metrics->{stddev} = $stddev;
-   $statistical_metrics->{avg}    = $sum / $cutoff;
-   $statistical_metrics->{max}    = $max;
+   $statistical_metrics->{max}    = $buck_vals[$bucket_95];
+   $statistical_metrics->{median} = $buck_vals[$median];
 
    return $statistical_metrics;
 }
@@ -3413,34 +3462,6 @@ sub print_analysis_report {
    my $timestamp_fmt   = "# Time range %s to %s\n";
    my $review_info_fmt = "# %13s: %-s\n";
 
-   my @reported_metrics = (
-      {
-         metric => 'Query_time',
-         name   => 'Time',
-         fmt    => sub { return micro_t(@_, p_ms => 1, p_s => 1); },
-      },
-      {
-         metric => 'Lock_time',
-         name   => 'Lock',
-         fmt    => sub { return micro_t(@_, p_ms => 1, p_s => 1); },
-      },
-      {
-         metric => 'Rows_read',
-         name   => 'Rows read',
-         fmt    => sub { return shorten(@_, p => 1, d => 1000); },
-      },
-      {
-         metric => 'Rows_sent',
-         name   => 'Rows sent',
-         fmt    => sub { return shorten(@_, p => 1, d => 1000); },
-      },
-      {
-         metric => 'Rows_examined',
-         name   => 'Rows exam',
-         fmt    => sub { return shorten(@_, p => 1, d => 1000); },
-      },
-   );
-
    # Prepare to get review values from the --review table.
    my $review_sth;
    my @review_cols;
@@ -3497,31 +3518,41 @@ sub print_analysis_report {
          $class->{Query_time}->{cnt},
          percentage_of($class->{Query_time}->{cnt}, $sm->{n_queries});
 
-      foreach my $r ( @reported_metrics ) {
-         my $metric = $r->{metric};
+      # TODO: get this list from cmdline arguments
+      foreach my $metric ( qw(Query_time Lock_time Rows_sent Rows_examined) ) {
          my $val    = $class->{ $metric };
 
          next unless $val && %$val;
          MKDEBUG && _d("Reporting metrics for $metric");
 
-         my $save_distro = $metric eq 'Query_time' ? 1 : 0; # TODO: $worst?
-         my $stats
-            = $sm->calculate_statistical_metrics($val->{all},
-               distro => $save_distro);
+         my $stats = $sm->calculate_statistical_metrics($val->{all});
 
-         $Query_time_distro = $stats->{distro} if $save_distro;
+         # TODO: this should be the $worst.  And of course that means we need an
+         # adaptable distribution, because Rows_sent has a larger typical range
+         # than Query_time for example.
+         $Query_time_distro = $stats->{distro} if $metric eq 'Query_time';
 
+         my $fmt_sub = $metric =~ m/time/
+            ? sub { return micro_t(@_, p_ms => 1, p_s => 1); }
+            : sub { return shorten(@_, p => 1, d => 1000); };
+
+         (my $name = $metric) =~ s/_/ /g;
+         $name = substr($name, 0, 9);
+         # Special case :-)
+         if ( $metric eq 'Query_time' ) {
+            $name = 'Time';
+         }
          printf $metric_line_fmt,
-            $r->{name},                             # friendly metric name
-            $r->{fmt}->($val->{sum}),               # total
+            $name,                                 # friendly metric name
+            $fmt_sub->($val->{sum}),               # total
             percentage_of($val->{sum},
-                          $g->{$metric}->{sum}),    # % total/grand total
-            $r->{fmt}->($val->{min}),               # min
-            $r->{fmt}->($val->{max}),               # max
-            $r->{fmt}->($val->{sum}/$val->{cnt}),   # avg
-            $r->{fmt}->($stats->{max}),             # 95% are within this
-            $r->{fmt}->($stats->{stddev}),          # 95% stdev
-            $r->{fmt}->($stats->{median});          # 95% med
+                          $g->{$metric}->{sum}),   # % total/grand total
+            $fmt_sub->($val->{min}),               # min
+            $fmt_sub->($val->{max}),               # max
+            $fmt_sub->($val->{sum}/$val->{cnt}),   # avg
+            $fmt_sub->($stats->{max}),             # 95% are within this
+            $fmt_sub->($stats->{stddev}),          # 95% stdev
+            $fmt_sub->($stats->{median});          # 95% med
       }
 
       printf $list_line_fmt, 'DBs',   join(', ', keys %{$class->{db}->{unq}});
