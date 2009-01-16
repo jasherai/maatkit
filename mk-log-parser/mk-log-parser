@@ -3499,13 +3499,13 @@ sub print_analysis_report {
 
       # Calculate QPS (queries per second) by looking at the min/max timestamp.
       my $qps = 0;
-      if ( $class->{Query_time}->{cnt} > 1
+      if ( $class->{$opts->{w}}->{cnt} > 1
             && $class->{ts}->{min}
             && $class->{ts}->{max} gt $class->{ts}->{min}
       ) {
          my $min = parse_timestamp($class->{ts}->{min});
          my $max = parse_timestamp($class->{ts}->{max});
-         $qps = $class->{Query_time}->{cnt} / ( $max - $min );
+         $qps = $class->{$opts->{w}}->{cnt} / ( $max - $min );
       }
 
       my $header = sprintf $query_hdr_fmt, $i + 1, shorten($qps,p=>1,d=>1000),
@@ -3515,8 +3515,8 @@ sub print_analysis_report {
       printf $metrics_hdr_fmt;
       printf $count_line_fmt,
          'Count',
-         $class->{Query_time}->{cnt},
-         percentage_of($class->{Query_time}->{cnt}, $sm->{n_queries});
+         $class->{$opts->{w}}->{cnt},
+         percentage_of($class->{$opts->{w}}->{cnt}, $sm->{n_queries});
 
       # TODO: get this list from cmdline arguments
       foreach my $metric ( qw(Query_time Lock_time Rows_sent Rows_examined) ) {
@@ -3538,7 +3538,7 @@ sub print_analysis_report {
 
          (my $name = $metric) =~ s/_/ /g;
          $name = substr($name, 0, 9);
-         # Special case :-)
+         # Special case :-) TODO
          if ( $metric eq 'Query_time' ) {
             $name = 'Time';
          }
