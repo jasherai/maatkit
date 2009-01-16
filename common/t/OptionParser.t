@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 54;
+use Test::More tests => 55;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -802,6 +802,21 @@ is_deeply(
       help     => undef,
    },
    'Other ops parse correctly w/o special only allowed opt'
+);
+
+# #############################################################################
+# Check that new style (issue 140) =item --[no]foo works like old style:
+# =item --foo
+# negatable: yes
+# #############################################################################
+@opt_spec = $p->pod_to_spec("samples/podsample_issue_140.txt");
+is_deeply(
+   \@opt_spec,
+   [
+      { s => 'foo',   d => 'Basic foo' },
+      { s => 'bar!',  d => 'New negatable bar'},
+   ],
+   'New =item --[no]foo style for negatables'
 );
 
 exit;

@@ -547,6 +547,13 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         # Change [no]foo to foo and set negatable prop. See issue 140.
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
