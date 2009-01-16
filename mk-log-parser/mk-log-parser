@@ -3683,11 +3683,6 @@ sub print_tables {
    return;
 }
       
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# main:$line ", @_, "\n";
-}
-
 # Catches signals so we can exit gracefully.
 # TODO: test this
 # TODO: break wait for <$fh> with SIGINT.
@@ -3713,6 +3708,16 @@ sub parse_timestamp {
       $val = timelocal($s, $i, $h, $d, $m - 1, $y + 2000);
    }
    return $val;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   # Use $$ instead of $PID in case the package
+   # does not use English.
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 # #############################################################################

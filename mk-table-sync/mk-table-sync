@@ -5242,11 +5242,6 @@ exit $exit_status;
 # Subroutines
 # ############################################################################
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# main:$line $PID ", @_, "\n";
-}
-
 # Tries to extract the MySQL error message and print it
 sub print_err {
    my ( $msg, $database, $table, $host ) = @_;
@@ -5347,6 +5342,16 @@ sub tbl_permitted {
    # Else, table is not permitted.
    MKDEBUG && _d("Table not permitted by --tables: $db.$tbl");
    return 0;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   # Use $$ instead of $PID in case the package
+   # does not use English.
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 # ############################################################################
