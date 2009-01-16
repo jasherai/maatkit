@@ -3150,6 +3150,7 @@ my $oktorun = 1;
 my $dp = new DSNParser (
    { key => 'D', desc => 'Database that contains the query review table' },
    { key => 't', desc => 'Table to use as the query review table' } );
+$dp->prop('autokey', 'h');
 my $q  = new Quoter();
 my $qr = new QueryRewriter();
 my $qv;     # QueryReview
@@ -3160,9 +3161,9 @@ my $sm;     # SQLMetrics
 
 { # Begin a global scope to avoid poisoning subroutines with global variables.
 
-   # #############################################################################
+   # ##########################################################################
    # Get configuration information.
-   # #############################################################################
+   # ##########################################################################
    my @opt_spec   = OptionParser::pod_to_spec();
    my $opt_parser = new OptionParser(@opt_spec);
    $opt_parser->{strict} = 0;
@@ -3184,7 +3185,7 @@ my $sm;     # SQLMetrics
 
    $opt_parser->usage_or_errors(%opts);
 
-   # #############################################################################
+   # ##########################################################################
    # Set up callbacks for the various event handling behaviors.
    #
    # This chain of callbacks begins with the sub below which only fingerprints
@@ -3194,7 +3195,7 @@ my $sm;     # SQLMetrics
    # in order in the parse_X subroutines.  The chain can terminate early if one
    # of the callbacks returns 0.  If this happens, the chain restarts
    # immediately with the next event.
-   # #############################################################################
+   # ##########################################################################
    my @callbacks;
    push @callbacks, sub {
       my ( $event ) = @_;
@@ -3212,14 +3213,15 @@ my $sm;     # SQLMetrics
    push @callbacks, get_query_review_callback(\%opts);
    push @callbacks, get_analyze_callback(\%opts);
 
-   # ############################################################################
+   # ##########################################################################
    # Parse the input.
-   # ############################################################################
+   # ##########################################################################
 
-   # TODO: some cmdline opts ought to pass filters into the $misc argument here for
-   # efficiency.  But the easiest thing to do for right now is post-filter with
-   # get_post_filter_callbacks() above.  Ultimately we'd get_pre_filter_callbacks() into
-   # an arrayref here and use that as an argument to the parse_X calls below.
+   # TODO: some cmdline opts ought to pass filters into the $misc argument here
+   # for efficiency.  But the easiest thing to do for right now is post-filter
+   # with get_post_filter_callbacks() above.  Ultimately we'd
+   # get_pre_filter_callbacks() into an arrayref here and use that as an
+   # argument to the parse_X calls below.
 
    if ( $opts{processlist} ) {    # Sniff SHOW FULL PROCESSLIST
       require Time::HiRes;
@@ -3263,9 +3265,9 @@ my $sm;     # SQLMetrics
       }
    }
 
-   # ############################################################################
+   # ##########################################################################
    # Finish up (print results, etc).
-   # ############################################################################
+   # ##########################################################################
 
    # Flush before reporting so that the report gets the latest review vals.
    if ( $opts{R} ) {
