@@ -40,7 +40,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 2300
+# OptionParser package 2825
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -500,6 +500,12 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
@@ -559,11 +565,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -578,6 +579,14 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -585,7 +594,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2749
+# TableParser package 2801
 # ###########################################################################
 package TableParser;
 
@@ -958,8 +967,11 @@ sub get_duplicate_fks {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -969,7 +981,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2460
+# DSNParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1237,9 +1249,11 @@ sub print_active_handles {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1249,7 +1263,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 2215
+# VersionParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1284,8 +1298,11 @@ sub version_ge {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# VersionParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1341,7 +1358,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 2783
+# TableNibbler package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1573,8 +1590,11 @@ sub generate_ins_stmt {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableNibbler:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1584,7 +1604,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 2468
+# MySQLDump package 2801
 # ###########################################################################
 package MySQLDump;
 
@@ -1868,11 +1888,12 @@ sub get_table_list {
    return @{$self->{table_list}->{$db}};
 }
 
-
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# MySQLDump:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1927,114 +1948,8 @@ my $q  = new Quoter;
 # ############################################################################
 # Get configuration information.
 # ############################################################################
-
-# Define cmdline args.
-my @opt_spec = (
-   {  s => 'analyze|Z=s',
-      d => 'Run ANALYZE TABLE afterwards on --source and/or --dest' },
-   {  s => 'ascendfirst',
-      d => 'Ascend only first column of index' },
-   {  s => 'askpass',
-      d => 'Prompt for password for connections' },
-   {  s => 'buffer|b',
-      d => 'Buffer output to --file and flush at commit' },
-   {  s => 'bulkdel',
-      d => 'Delete each chunk with a single statement (implies --commit-each)' },
-   {  s => 'bulkins',
-      d => 'Insert each chunk with LOAD DATA INFILE (implies '
-         . '--bulkdel --commit-each)' },
-   {  s => 'charset|A=s',
-      d => 'Default character set' },
-   {  s => 'chkcols|C!',
-      d => 'Ensure --source and --dest have same columns (default)' },
-   {  s => 'columns|c=a',
-      d => 'Comma-separated list of columns to archive' },
-   {  s => 'commit-each',
-      d => 'Commit each set of fetched and archived rows (disables -z)' },
-   {  s => 'dest|d=d',
-      d => 'Table to archive to' },
-   {  s => 'delayedins',
-      d => 'Add the DELAYED modifier to INSERT statements' },
-   {  s => 'file|f=s',
-      d => 'File to archive to, with DATE_FORMAT()-like formatting' },
-   {  s => 'forupdate',
-      d => 'Adds the FOR UPDATE modifier to SELECT statements' },
-   {  s => 'header|h',
-      d => 'Print column header at top of --file' },
-   {  s => 'hpselect',
-      d => 'Adds the HIGH_PRIORITY modifier to SELECT statements' },
-   {  s => 'ignore|i',
-      d => 'Use IGNORE for INSERT statements' },
-   {  s => 'limit|l=i',
-      d => 'Number of rows to fetch and archive per statement (default 1)' },
-   {  s => 'local|L',
-      d => 'Do not write OPTIMIZE or ANALYZE queries to binlog' },
-   {  s => 'lpdel',
-      d => 'Add the LOW_PRIORITY modifier to DELETE statements' },
-   {  s => 'lpins',
-      d => 'Add the LOW_PRIORITY modifier to INSERT statements' },
-   {  s => 'noascend',
-      d => 'Do not use ascending index optimization' },
-   {  s => 'nodelete',
-      d => 'Do not delete archived rows' },
-   {  s => 'optimize|O=s',
-      d => 'Run OPTIMIZE TABLE afterwards on --source and/or --dest' },
-   {  s => 'pkonly|k',
-      d => 'Primary key columns only' },
-   {  s => 'plugin=s',
-      d => 'Perl module name to use as a generic plugin' },
-   {  s => 'progress|P=i',d => 'Print progress information every X rows' },
-   {  s => 'purge|p',
-      d => 'Purge, not archive; allows to omit --file and --dest' },
-   {  s => 'quickdel',
-      d => 'Add the QUICK modifier to DELETE statements' },
-   {  s => 'quiet',
-      d => 'Do not print any output, such as for --statistics' },
-   {  s => 'replace|r',
-      d => 'Use REPLACE instead of INSERT statements' },
-   {  s => 'retries|R=i',
-      d => 'Number of retries per timeout or deadlock (default 1)' },
-   {  s => 'safeautoinc!',
-      d => 'Do not archive row with max AUTO_INCREMENT (default)'},
-   {  s => 'sentinel|S=s',
-      d => 'Sentinel file; default /tmp/mk-archiver-sentinel' },
-   {  s => 'setvars=s',
-      d => 'Set these MySQL variables (default wait_timeout=10000)' },
-   {  s => 'sharelock',
-      d => 'Adds LOCK IN SHARE MODE to SELECT statements' },
-   {  s => 'skipfkchk|K',
-      d => 'Turn off foreign key checks' },
-   {  s => 'sleep|e=i',
-      d => 'Sleep time between fetches' },
-   {  s => 'source|s=d',
-      d => 'Table to archive from (required)' },
-   {  s => 'statistics',
-      d => 'Collect and print timing statistics' },
-   {  s => 'stop',
-      d => 'Stop running instances by creating the sentinel file' },
-   {  s => 'test|t',
-      d => 'Test: print queries and exit without doing anything' },
-   {  s => 'time|m=m',
-      d => 'Time to run before exiting' },
-   {  s => 'txnsize|z=i',
-      d => 'Number of rows per transaction; disable with 0; default 1)' },
-   {  s => 'where|W=s',
-      d => 'WHERE clause to limit which rows to archive (required)' },
-   {  s => 'whyquit|q',
-      d => 'Print reason for exiting unless rows exhausted' },
-   '--ignore and --replace are mutually exclusive.',
-   '--txnsize and --commit-each are mutually exclusive.',
-   '--lpins and --delayedins are mutually exclusive.',
-   '--sharelock and --forupdate are mutually exclusive.',
-   '--analyze and --optimize are mutually exclusive.',
-   # $opts{p} -- satisfy the auto-checking, because line below uses --purge
-   'Specify at least one of --dest, --file, or --purge.',
-   'DSN values in --dest default to values from --source if COPY is yes.',
-   '--noascend and --nodelete are mutually exclusive.',
-);
-
+my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
-
 $opt_parser->{prompt} = '--source DSN --where WHERE <options>';
 $opt_parser->{dsn}    = $dp;
 $opt_parser->{descr}  = 'nibbles records from a MySQL table.  The --source '
@@ -2984,12 +2899,29 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-Some options are negatable by specifying them in their long form with a --no
-prefix.
+Specify at least one of L<"--dest">, L<"--file">, or L<"--purge">.
+
+L<"--ignore"> and L<"--replace"> are mutually exclusive.
+
+L<"--txnsize"> and L<"--commit-each"> are mutually exclusive.
+
+L<"--lpins"> and L<"--delayedins"> are mutually exclusive.
+
+L<"--sharelock"> and L<"--forupdate"> are mutually exclusive.
+
+L<"--analyze"> and L<"--optimize"> are mutually exclusive.
+
+L<"--noascend"> and L<"--nodelete"> are mutually exclusive.
+
+DSN values in L<"--dest"> default to values from L<"--source"> if COPY is yes.
 
 =over
 
 =item --analyze
+
+short form: -Z; type: string
+
+Run ANALYZE TABLE afterwards on --source and/or --dest.
 
 Runs ANALYZE TABLE after finishing.  The argument is an arbitrary string.  If it
 contains the letter 's', the source will be analyzed.  If it contains 'd', the
@@ -3006,6 +2938,8 @@ so I changed it to -Z.
 
 =item --ascendfirst
 
+Ascend only first column of index.
+
 If you do want to use the ascending index optimization (see L<"--noascend">),
 but do not want to incur the overhead of ascending a large multi-column index,
 you can use this option to tell mk-archiver to ascend only the leftmost column
@@ -3021,6 +2955,10 @@ Prompt for a password when connecting to MySQL.
 
 =item --buffer
 
+short form: -b
+
+Buffer output to --file and flush at commit.
+
 Disables autoflushing to L<"--file"> and flushes L<"--file"> to disk only when a
 transaction commits.  This typically means the file is block-flushed by the
 operating system, so there may be some implicit flushes to disk between
@@ -3032,6 +2970,8 @@ The performance increase I have seen from using L<"--buffer"> is around 5 to 15
 percent.  Your mileage may vary.
 
 =item --bulkdel
+
+Delete each chunk with a single statement (implies --commit-each).
 
 Delete each chunk of rows in bulk with a single C<DELETE> statement.  The
 statement deletes every row between the first and last row of the chunk,
@@ -3053,6 +2993,8 @@ it'll still be deleted by the bulk delete!
 
 =item --bulkins
 
+Insert each chunk with LOAD DATA INFILE (implies --bulkdel --commit-each).
+
 Insert each chunk of rows with C<LOAD DATA LOCAL INFILE>.  This may be much
 faster than inserting a row at a time with C<INSERT> statements.  It is
 implemented by creating a temporary file for each chunk of rows, and writing the
@@ -3069,13 +3011,21 @@ option, but L<"--delayedins"> does not.
 
 =item --charset
 
+short form: -A; type: string
+
+Default character set.
+
 Enables character set settings in Perl and MySQL.  If the value is C<utf8>, sets
 Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option to
 DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL.  Any other
 value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES> after
 connecting to MySQL.
 
-=item --chkcols
+=item --[no]chkcols
+
+short form: -C; default: yes
+
+Ensure --source and --dest have same columns.
 
 Enabled by default; causes mk-archiver to check that the source and destination
 tables have the same columns.  It does not check column order, data type, etc.
@@ -3083,7 +3033,13 @@ It just checks that all columns in the source exist in the destination and
 vice versa.  If there are any differences, mk-archiver will exit with an
 error.
 
+To disable this check, specify --nochkcols.
+
 =item --columns
+
+short form: -c; type: array
+
+Comma-separated list of columns to archive.
 
 Specify a comma-separated list of columns to fetch, write to the file, and
 insert into the destination table.  If specified, mk-archiver ignores other
@@ -3095,6 +3051,8 @@ them to plugins.
 See also --pkonly.
 
 =item --commit-each
+
+Commit each set of fetched and archived rows (disables -z).
 
 Commits transactions and flushes L<"--file"> after each set of rows has been
 archived, before fetching the next set of rows, and before sleeping if
@@ -3113,10 +3071,16 @@ determine it is finished anyway.  You can use L<"--commit-each"> to avoid this.
 
 =item --delayedins
 
+Add the DELAYED modifier to INSERT statements.
+
 Adds the DELAYED modifier to INSERT or REPLACE statements.  See
 L<http://dev.mysql.com/doc/en/insert.html> for details.
 
 =item --dest
+
+short form: -d; type: DSN
+
+DSN specifying the table to archive to.
 
 This item specifies a table into which mk-archiver will insert rows
 archived from L<"--source">.  It uses the same key=val argument format as
@@ -3126,6 +3090,10 @@ L<"--source"> and L<"--dest">.  Use the L<"--help"> option to see which values
 are copied from L<"--source">.
 
 =item --file
+
+short form: -f; type: string
+
+File to archive to, with DATE_FORMAT()-like formatting.
 
 Filename to write archived rows to.  A subset of MySQL's DATE_FORMAT()
 formatting codes are allowed in the filename, as follows:
@@ -3157,29 +3125,39 @@ is auto-flushed by default; see L<"--buffer">.
 
 =item --forupdate
 
-Adds the FOR UPDATE modifier to SELECT statements.  For details, see
-L<http://dev.mysql.com/doc/en/innodb-locking-reads.html>.
+Adds the FOR UPDATE modifier to SELECT statements.
+
+For details, see L<http://dev.mysql.com/doc/en/innodb-locking-reads.html>.
 
 =item --header
+
+short form: -h
+
+Print column header at top of --file.
 
 Writes column names as the first line in the file given by L<"--file">.  If the
 file exists, does not write headers; this keeps the file loadable with LOAD
 DATA INFILE in case you append more output to it.
 
-=item --help
-
-Displays a help message.
-
 =item --hpselect
 
-Adds the HIGH_PRIORITY modifier to SELECT statements.  See
-L<http://dev.mysql.com/doc/en/select.html> for details.
+Adds the HIGH_PRIORITY modifier to SELECT statements.
+
+See L<http://dev.mysql.com/doc/en/select.html> for details.
 
 =item --ignore
+
+short form: -i
+
+Use IGNORE for INSERT statements.
 
 Causes INSERTs into L<"--dest"> to be INSERT IGNORE.
 
 =item --limit
+
+short form: -l; type: int; default: 1
+
+Number of rows to fetch and archive per statement.
 
 Limits the number of rows returned by the SELECT statements that retrieve rows
 to archive.  Default is one row.  It may be more efficient to increase the
@@ -3190,20 +3168,28 @@ L<"--forupdate">.
 
 =item --local
 
+short form: -L
+
+Do not write OPTIMIZE or ANALYZE queries to binlog.
+
 Adds the NO_WRITE_TO_BINLOG modifier to ANALYZE and OPTIMIZE queries.  See
 L<"--analyze"> for details.
 
 =item --lpdel
 
-Adds the LOW_PRIORITY modifier to DELETE statements.  See
-L<http://dev.mysql.com/doc/en/delete.html> for details.
+Adds the LOW_PRIORITY modifier to DELETE statements.
+
+See L<http://dev.mysql.com/doc/en/delete.html> for details.
 
 =item --lpins
 
-Adds the LOW_PRIORITY modifier to INSERT or REPLACE statements.  See
-L<http://dev.mysql.com/doc/en/insert.html> for details.
+Adds the LOW_PRIORITY modifier to INSERT or REPLACE statements.
+
+See L<http://dev.mysql.com/doc/en/insert.html> for details.
 
 =item --noascend
+
+Do not use ascending index optimization.
 
 The default ascending-index optimization causes C<mk-archiver> to optimize
 repeated C<SELECT> queries so they seek into the index where the previous query
@@ -3236,6 +3222,8 @@ interacts with plugins.
 
 =item --nodelete
 
+Do not delete archived rows.
+
 Causes C<mk-archiver> not to delete rows after processing them.  This disallows
 L<"--noascend">, because enabling them both would cause an infinite loop.
 
@@ -3245,11 +3233,19 @@ L<"EXTENDING"> for more on plugins.
 
 =item --optimize
 
+short form: -O; type: string
+
+Run OPTIMIZE TABLE afterwards on --source and/or --dest.
+
 Runs OPTIMIZE TABLE after finishing.  See L<"--analyze"> for the option syntax
 and L<http://dev.mysql.com/doc/en/optimize-table.html> for details on OPTIMIZE
 TABLE.
 
 =item --pkonly
+
+short form: -k
+
+Primary key columns only.
 
 A shortcut for specifying L<"--columns"> with the primary key columns.  This is
 an efficiency if you just want to purge rows; it avoids fetching the entire row,
@@ -3257,6 +3253,10 @@ when only the primary key columns are needed for C<DELETE> statements.  See also
 L<"--purge">.
 
 =item --plugin
+
+type: string
+
+Perl module name to use as a generic plugin.
 
 Specify the Perl module name of a general-purpose plugin.  It is currently used
 only for statistics (see L<"--statistics">) and must have C<new()> and a
@@ -3271,9 +3271,17 @@ collected by the archiving job, and the time the whole job started.
 
 =item --progress
 
+short form: -P; type: int
+
+Print progress information every X rows.
+
 Prints current time, elapsed time, and rows archived every X rows.
 
 =item --purge
+
+short form: -p
+
+Purge instead of archiving; allows omitting --file and --dest.
 
 Allows archiving without a L<"--file"> or L<"--dest"> argument, which is
 effectively a purge since the rows are just deleted.
@@ -3284,21 +3292,30 @@ server for no reason.
 
 =item --quickdel
 
-Adds the QUICK modifier to DELETE statements.  See
-L<http://dev.mysql.com/doc/en/delete.html> for details.  As stated in the
+Adds the QUICK modifier to DELETE statements.
+
+See L<http://dev.mysql.com/doc/en/delete.html> for details.  As stated in the
 documentation, in some cases it may be faster to use DELETE QUICK followed by
 OPTIMIZE TABLE.  You can use L<"--optimize"> for this.
 
 =item --quiet
+
+Do not print any output, such as for --statistics.
 
 Suppresses normal output, including the output of L<"--statistics">, but doesn't
 suppress the output from L<"--whyquit">.
 
 =item --replace
 
+short form: -r
+
 Causes INSERTs into L<"--dest"> to be written as REPLACE.
 
 =item --retries
+
+short form: -R; type: int; default: 1
+
+Number of retries per timeout or deadlock.
 
 Specifies the number of times mk-archiver should retry when there is an
 InnoDB lock wait timeout or deadlock.  When retries are exhausted,
@@ -3315,7 +3332,11 @@ connections.
 At this time I have not written any code to handle errors with transactional
 storage engines other than InnoDB.  Request that feature if you need it.
 
-=item --safeautoinc
+=item --[no]safeautoinc
+
+default: yes
+
+Do not archive row with max AUTO_INCREMENT.
 
 Adds an extra WHERE clause to prevent mk-archiver from removing the newest
 row when ascending a single-column AUTO_INCREMENT key.  This guards against
@@ -3328,6 +3349,10 @@ mk-archiver is running, it will not see them.
 
 =item --sentinel
 
+short form: -S; type: string; default: /tmp/mk-archiver-sentinel
+
+Sentinel file.
+
 The presence of the file specified by L<"--sentinel"> will cause mk-archiver to
 stop archiving and exit.  The default is /tmp/mk-archiver-sentinel.  You
 might find this handy to stop cron jobs gracefully if necessary.  See also
@@ -3335,19 +3360,30 @@ L<"--stop">.
 
 =item --setvars
 
+type: string; default: wait_timeout=10000
+
+Set these MySQL variables.
+
 Specify any variables you want to be set immediately after connecting to MySQL.
 These will be included in a C<SET> command.
 
 =item --sharelock
 
-Adds the LOCK IN SHARE MODE modifier to SELECT statements.  For details, see
-L<http://dev.mysql.com/doc/en/innodb-locking-reads.html>.
+Adds the LOCK IN SHARE MODE modifier to SELECT statements.
+
+See L<http://dev.mysql.com/doc/en/innodb-locking-reads.html>.
 
 =item --skipfkchk
+
+short form: -K
 
 Disables foreign key checks with SET FOREIGN_KEY_CHECKS=0.
 
 =item --sleep
+
+short form: -e; type: int
+
+Sleep time between fetches.
 
 Specifies how long to sleep between SELECT statements.  Default is not to
 sleep at all.  Transactions are NOT committed, and the L<"--file"> file is NOT
@@ -3358,9 +3394,12 @@ sleeping.
 
 =item --source
 
-Specifies a table to archive from.  This argument is specially formatted as a
-key=value,key=value string.  Keys are a single letter.  Most options control
-how mk-archiver connects to MySQL:
+short form: -s; type: DSN
+
+DSN specifying the table to archive from (required).
+
+This argument is specially formatted as a key=value,key=value string.  Keys are
+a single letter.  Most options control how mk-archiver connects to MySQL:
 
    KEY MEANING
    === =======
@@ -3425,6 +3464,8 @@ method of choice.
 
 =item --statistics
 
+Collect and print timing statistics.
+
 Causes mk-archiver to collect timing statistics about what it does.  These
 statistics are available to the plugin specified by L<"--plugin">
 
@@ -3461,25 +3502,39 @@ on reasonably new Perl releases.
 
 =item --stop
 
+Stop running instances by creating the sentinel file.
+
 Causes mk-archiver to create the sentinel file specified by L<"--sentinel"> and
 exit.  This should have the effect of stopping all running instances which are
 watching the same sentinel file.
 
 =item --test
 
+short form: -t
+
+Print queries and exit without doing anything.
+
 Causes mk-archiver to exit after printing the filename and SQL statements
 it will use.
 
 =item --time
 
-Causes mk-archiver to stop after the specified time has elapsed.
+short form: -m; type: time
+
+Time to run before exiting.
+
+Optional suffix s=seconds, m=minutes, h=hours, d=days; if no suffix, s is used.
 
 =item --txnsize
 
-Specifies the size, in number of rows, of each transaction.  Default is one row.
-Zero disables transactions altogether.  After mk-archiver processes this many
-rows, it commits both the L<"--source"> and the L<"--dest"> if given, and
-flushes the file given by L<"--file">.
+short form: -z; type: int; default: 1
+
+Number of rows per transaction.
+
+Specifies the size, in number of rows, of each transaction. Zero disables
+transactions altogether.  After mk-archiver processes this many rows, it
+commits both the L<"--source"> and the L<"--dest"> if given, and flushes the
+file given by L<"--file">.
 
 This parameter is critical to performance.  If you are archiving from a live
 server, which for example is doing heavy OLTP work, you need to choose a good
@@ -3495,11 +3550,11 @@ autocommit, dropped performance to 38 seconds per thousand rows.
 If you are not archiving from or to a transactional storage engine, you may
 want to disable transactions so mk-archiver doesn't try to commit.
 
-=item --version
-
-Output version information and exit.
-
 =item --where
+
+short form: -W; type: string
+
+WHERE clause to limit which rows to archive (required).
 
 Specifies a WHERE clause to limit which rows are archived.  Do not include the
 word WHERE.  You may need to quote the argument to prevent your shell from
@@ -3511,6 +3566,10 @@ For safety, L<"--where"> is required.  If you do not require a WHERE clause, use
 L<"--where"> 1=1.
 
 =item --whyquit
+
+short form: -q
+
+Print reason for exiting unless rows exhausted.
 
 Causes mk-archiver to print a message if it exits for any reason other than
 running out of rows to archive.  This can be useful if you have a cron job with
