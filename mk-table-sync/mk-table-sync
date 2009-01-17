@@ -34,7 +34,7 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# OptionParser package 2300
+# OptionParser package 2825
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -494,6 +494,12 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
@@ -553,11 +559,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -570,6 +571,14 @@ if ( MKDEBUG ) {
       ($main::SVN_REV || ''), __LINE__);
    print('# Arguments: ',
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -625,7 +634,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2460
+# DSNParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -893,9 +902,11 @@ sub print_active_handles {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -905,7 +916,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 2215
+# VersionParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -940,8 +951,11 @@ sub version_ge {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# VersionParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -951,7 +965,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncStream package 2215
+# TableSyncStream package 2801
 # ###########################################################################
 
 use strict;
@@ -1018,8 +1032,11 @@ sub pending_changes {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableSyncStream:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1029,7 +1046,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2749
+# TableParser package 2801
 # ###########################################################################
 package TableParser;
 
@@ -1402,8 +1419,11 @@ sub get_duplicate_fks {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1413,7 +1433,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# RowDiff package 2786
+# RowDiff package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1545,8 +1565,11 @@ sub db_cmp {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# RowDiff:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1556,7 +1579,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 2468
+# MySQLDump package 2801
 # ###########################################################################
 package MySQLDump;
 
@@ -1840,11 +1863,12 @@ sub get_table_list {
    return @{$self->{table_list}->{$db}};
 }
 
-
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# MySQLDump:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1854,7 +1878,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# ChangeHandler package 2215
+# ChangeHandler package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2046,8 +2070,11 @@ sub get_changes {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# ChangeHandler:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -2057,7 +2084,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 2401
+# TableChunker package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2427,8 +2454,11 @@ sub timestampdiff {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableChunker:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -2438,7 +2468,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChecksum package 2607
+# TableChecksum package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2772,8 +2802,11 @@ sub find_replication_differences {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableChecksum:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -2783,7 +2816,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncChunk package 2292
+# TableSyncChunk package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -2995,8 +3028,11 @@ sub key_cols {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableSyncChunk:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -3006,7 +3042,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncNibble package 2215
+# TableSyncNibble package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3258,8 +3294,11 @@ sub key_cols {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableSyncNibble:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -3269,7 +3308,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncGroupBy package 2215
+# TableSyncGroupBy package 2801
 # ###########################################################################
 
 use strict;
@@ -3368,8 +3407,11 @@ sub pending_changes {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableSyncGroupBy:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -3379,7 +3421,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableSyncer package 2310
+# TableSyncer package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3736,8 +3778,11 @@ sub lock_and_wait {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableSyncer:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -3747,7 +3792,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 2475
+# MySQLFind package 2797
 # ###########################################################################
 package MySQLFind;
 
@@ -3944,8 +3989,11 @@ sub _test_date {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# MySQLFind:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -3955,7 +4003,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableNibbler package 2783
+# TableNibbler package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -4187,8 +4235,11 @@ sub generate_ins_stmt {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableNibbler:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -4198,7 +4249,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 2405
+# MasterSlave package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -4759,8 +4810,11 @@ sub pos_to_string {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# MasterSlave:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -5715,12 +5769,12 @@ changes from taking place.  (You are not changing data on your slave, right?)
 If L<"--wait"> is given, the master (source) is locked and then the tool waits
 for the slave to catch up to the master before continuing.
 
-If L<"--transaction"> is specified, C<LOCK TABLES> is not used.  Instead, lock
+If --transaction is specified, C<LOCK TABLES> is not used.  Instead, lock
 and unlock are implemented by beginning and committing transactions.
 The exception is if L<"--lock"> is 3.
 
 If --notransaction is specified, then C<LOCK TABLES> is used for any
-value of L<"--lock">. See also L<"--transaction">.
+value of L<"--lock">. See L<"--[no]transaction">.
 
 =item --nouseindex
 
@@ -5832,8 +5886,8 @@ Treat the server you specified as a slave.  Inspect C<SHOW SLAVE STATUS>,
 connect to the server's master, and treat the master as the source and the slave
 as the destination.  Causes changes to be made on the master.  Sets L<"--wait">
 to 60 by default, sets L<"--lock"> to 1 by default, and disables
-L<"--transaction"> by default.  See also L<"--replicate">, which changes this
-option's behavior.
+L<"--[no]transaction"> by default.  See also L<"--replicate">, which changes
+this option's behavior.
 
 =item --tables
 
@@ -5863,9 +5917,7 @@ option makes the tool keep going anyway.  B<Warning>: if you are trying to get a
 consistent comparision between the two servers, you probably don't want to keep
 going after a timeout.
 
-=item --transaction
-
-negatable: yes
+=item --[no]transaction
 
 Use transactions instead of C<LOCK TABLES>.
 
@@ -5895,9 +5947,9 @@ MySQL versions which vary in their handling of trailing spaces. MySQL 5.0 and
 later all retain trailing spaces in C<VARCHAR>, while previous versions would 
 remove them.
 
-=item --utf8
+=item --[no]utf8
 
-negatable: yes; default: yes
+default: yes
 
 Enable UTF-8 options in Perl and MySQL.
 
@@ -5926,8 +5978,8 @@ How long to wait for slaves to catch up to their master.
 
 Make the master wait for the slave to catch up in replication before comparing
 the tables.  The value is the number of seconds to wait before timing out (see
-also L<"--timeoutok">).  Sets L<"--lock"> to 1 and L<"--transaction"> to 0 by
-default.  If you see an error such as the following,
+also L<"--timeoutok">).  Sets L<"--lock"> to 1 and L<"--[no]transaction"> to 0
+by default.  If you see an error such as the following,
 
   MASTER_POS_WAIT returned -1
 
