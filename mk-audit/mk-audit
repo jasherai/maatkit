@@ -27,7 +27,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# MySQLDump package 2468
+# MySQLDump package 2801
 # ###########################################################################
 package MySQLDump;
 
@@ -311,11 +311,12 @@ sub get_table_list {
    return @{$self->{table_list}->{$db}};
 }
 
-
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# MySQLDump:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -325,7 +326,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 2300
+# OptionParser package 2825
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -785,6 +786,12 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
@@ -844,11 +851,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -863,6 +865,14 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -870,7 +880,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2749
+# TableParser package 2801
 # ###########################################################################
 package TableParser;
 
@@ -1243,8 +1253,11 @@ sub get_duplicate_fks {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1254,7 +1267,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2460
+# DSNParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1522,9 +1535,11 @@ sub print_active_handles {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1534,7 +1549,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 2215
+# VersionParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1569,8 +1584,11 @@ sub version_ge {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# VersionParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1626,7 +1644,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# ServerSpecs package 2776
+# ServerSpecs package 2801
 # ###########################################################################
 
 package ServerSpecs;
@@ -2012,8 +2030,11 @@ sub shorten
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# ServerSpecs:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -2023,7 +2044,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLInstance package 2781
+# MySQLInstance package 2801
 # ###########################################################################
 
 package MySQLInstance;
@@ -2467,8 +2488,11 @@ sub _numericeq {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# MySQLInstance:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -2478,7 +2502,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SchemaDiscover package 2215
+# SchemaDiscover package 2801
 # ###########################################################################
 
 package SchemaDiscover;
@@ -2584,6 +2608,14 @@ sub discover_triggers_routines_events {
    return;
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -2591,7 +2623,7 @@ sub discover_triggers_routines_events {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLAdvisor package 2466
+# MySQLAdvisor package 2801
 # ###########################################################################
 
 package MySQLAdvisor;
@@ -2731,6 +2763,14 @@ sub run_checks {
    return \%problems;
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -2738,7 +2778,7 @@ sub run_checks {
 # ###########################################################################
 
 # ###########################################################################
-# AggregateProcessList package 2215
+# AggregateProcessList package 2801
 # ###########################################################################
 
 package AggregateProcessList;
@@ -2781,8 +2821,11 @@ sub aggregate_processlist {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# AggregateProcessList:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -2792,7 +2835,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Grants package 2420
+# Grants package 2801
 # ###########################################################################
 
 package Grants;
@@ -2828,6 +2871,14 @@ sub have_priv {
    return $check_for_priv{$priv}->($dbh);
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -2835,7 +2886,7 @@ sub have_priv {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2749
+# Transformers package 2801
 # ###########################################################################
 
 package Transformers;
@@ -2950,8 +3001,11 @@ sub ts {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# Transformers:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
