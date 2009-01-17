@@ -90,13 +90,14 @@ sub create_dbs {
 }
    
 sub get_dbh_for {
-   my ( $self, $server ) = @_;
+   my ( $self, $server, $cxn_ops ) = @_;
    _check_server($server);
+   $cxn_ops ||= { AutoCommit => 1 };
    MKDEBUG && _d("Dbh for $server on port $port_for{$server}");
    my $dp = $self->{DSNParser};
    my $dsn = $dp->parse('h=127.0.0.1,P=' . $port_for{$server});
    my $dbh;
-   eval { $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), { AutoCommit => 1 }) };
+   eval { $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), $cxn_ops) };
    if ( $EVAL_ERROR ) {
       MKDEBUG && _d("Failed to get dbh for $server: $EVAL_ERROR");
       return 0;
