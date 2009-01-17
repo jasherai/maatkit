@@ -353,7 +353,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 2801
+# OptionParser package 2825
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -813,6 +813,12 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
@@ -3997,9 +4003,9 @@ prefix.
 
 =over
 
-=item --analyze
+=item --[no]analyze
 
-short form: -A; default: yes; negatable: yes
+short form: -A; default: yes
 
 Group similar queries and report on them.
 
@@ -4024,8 +4030,8 @@ type: DSN
 Execute queries on this DSN.
 
 Adds a callback into the chain, after filters but before L<"--review"> or
-L<"--analyze">.  Events are executed on this DSN.  If they are successful, the
-time they take to execute overwrites the event's Query_time attribute.  If
+L<"--[no]analyze">.  Events are executed on this DSN.  If they are successful,
+the time they take to execute overwrites the event's Query_time attribute.  If
 unsuccessful, the callback returns false and terminates the chain.
 
 =item --filter
@@ -4047,12 +4053,12 @@ An example filter that discards everything but SELECT statements:
 
 short form: -f
 
-Add query fingerprints to the L<"--analyze"> report.  This is mostly useful for
-debugging purposes.
+Add query fingerprints to the L<"--[no]analyze"> report.  This is mostly useful
+for debugging purposes.
 
-=item --forexplain
+=item --[no]forexplain
 
-negatable: yes; default: yes
+default: yes
 
 Print extra information to make analysis easy.
 
@@ -4061,9 +4067,9 @@ TABLE STATUS for the query's tables.  It also rewrites non-SELECT queries into a
 SELECT that might be helpful for determining the non-SELECT statement's index
 usage.
 
-=item --header
+=item --[no]header
 
-default: yes; negatable: yes
+default: yes
 
 Print information about the entire analysis run.
 
@@ -4123,16 +4129,16 @@ As the tool parses the log, it keeps track of which query fingerprints it has
 seen.  Each time it sees a new one, it inserts the query into this table.  When
 you're done, your table should contain a row for each fingerprint.
 
-If you enable this option and disable L<"--analyze">, the tool will ignore certain
-analysis-related options, like L<"--top">.
+If you enable this option and disable L<"--[no]analyze">, the tool will ignore
+certain analysis-related options, like L<"--top">.
 
 =item --reportall
 
 Include all queries, even if they have already been reviewed.
 
-=item --rusage
+=item --[no]rusage
 
-default: yes; negatable: yes
+default: yes
 
 Report CPU times and memory usage in the header of the query analysis report.
 
