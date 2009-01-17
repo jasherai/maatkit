@@ -30,7 +30,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 2300
+# OptionParser package 2825
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -490,6 +490,12 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
@@ -549,11 +555,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -566,6 +567,14 @@ if ( MKDEBUG ) {
       ($main::SVN_REV || ''), __LINE__);
    print('# Arguments: ',
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -621,7 +630,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2215
+# DSNParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -707,35 +716,50 @@ sub parse {
    MKDEBUG && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
-   my %vals;
+   my %given_props;
+   my %final_props;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
-      MKDEBUG && _d("Interpreting $dsn as $p=$dsn");
-      $dsn = "$p=$dsn";
+   my $prop_autokey = $self->prop('autokey');
+
+   foreach my $dsn_part ( split(/,/, $dsn) ) {
+      if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
+         $given_props{$prop_key} = $prop_val;
+      }
+      elsif ( $prop_autokey ) {
+         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         $given_props{$prop_autokey} = $dsn_part;
+      }
+      else {
+         MKDEBUG && _d("Bad DSN part: $dsn_part");
+      }
    }
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+
    foreach my $key ( keys %opts ) {
       MKDEBUG && _d("Finding value for $key");
-      $vals{$key} = $hash{$key};
-      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-         $vals{$key} = $prev->{$key};
+      $final_props{$key} = $given_props{$key};
+      if (   !defined $final_props{$key}
+           && defined $prev->{$key} && $opts{$key}->{copy} )
+      {
+         $final_props{$key} = $prev->{$key};
          MKDEBUG && _d("Copying value for $key from previous DSN");
       }
-      if ( !defined $vals{$key} ) {
-         $vals{$key} = $defaults->{$key};
+      if ( !defined $final_props{$key} ) {
+         $final_props{$key} = $defaults->{$key};
          MKDEBUG && _d("Copying value for $key from defaults");
       }
    }
-   foreach my $key ( keys %hash ) {
+
+   foreach my $key ( keys %given_props ) {
       die "Unrecognized DSN part '$key' in '$dsn'\n"
          unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
       }
    }
-   return \%vals;
+
+   return \%final_props;
 }
 
 sub as_string {
@@ -874,9 +898,11 @@ sub print_active_handles {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1745,9 +1771,9 @@ second gets the latest trunk code from Subversion.
 
 Prompt for a password when connecting to MySQL.
 
-=item --atomicresume
+=item --[no]atomicresume
 
-negatable: yes; default: yes
+default: yes
 
 Treat chunks as atomic when resuming restore.
 
@@ -1767,9 +1793,9 @@ type: string
 
 Directory where FIFO files will be created.
 
-=item --biggestfirst
+=item --[no]biggestfirst
 
-negatable: yes; default: yes
+default: yes
 
 Restore the biggest tables first for highest concurrency.
 
@@ -1836,15 +1862,13 @@ short form: -F; type: string
 Only read mysql options from the given file.  You must give an absolute
 pathname.
 
-=item --disablekeys
-
-negatable: yes
+=item --[no]disablekeys
 
 Execute C<ALTER TABLE DISABLE KEYS> before each table.
 
-=item --fifo
+=item --[no]fifo
 
-negatable: yes; default: yes
+default: yes
 
 Stream files into a FIFO for --tab.
 
@@ -1887,29 +1911,21 @@ Uses the C<LOCAL> option to C<LOAD DATA INFILE>.
 If you enable this option, the files are read locally by the client library, not
 by the server.
 
-=item --locktables
-
-negatable: yes
+=item --[no]locktables
 
 Lock tables before C<LOAD DATA INFILE>.
 
-=item --noautovalon0
-
-negatable: yes
+=item --[no]noautovalon0
 
 Set SQL C<NO_AUTO_VALUE_ON_ZERO> before C<LOAD DATA INFILE>.
 
-=item --nobinlog
-
-negatable: yes
+=item --[no]nobinlog
 
 Set C<SQL_LOG_BIN=0> before C<LOAD DATA INFILE>.
 
 This prevents large loads from being logged to the server's binary log.
 
-=item --noforeignkeys
-
-negatable: yes
+=item --[no]noforeignkeys
 
 Set C<FOREIGN_KEY_CHECKS=0> before C<LOAD DATA INFILE>.
 
@@ -1924,9 +1940,7 @@ option disables restore resumption and fully restores every table.
 Restore resumption does not work with tab-separated files or dumps that were
 not chunked.
 
-=item --nouniquechecks
-
-negatable: yes
+=item --[no]nouniquechecks
 
 Set C<UNIQUE_CHECKS=0> before C<LOAD DATA INFILE>.
 
@@ -1997,8 +2011,8 @@ Load tab-separated files with C<LOAD DATA INFILE>.
 
 This is similar to what C<mysqlimport> does, but more flexible.
 Enables the following options, unless they are specifically disabled:
-L<"--commit">, L<"--disablekeys">, L<"--noautovalon0">, L<"--nobinlog">,
-L<"--nouniquechecks">, L<"--noforeignkeys">.
+L<"--commit">, L<"--[no]disablekeys">, L<"--[no]noautovalon0">,
+L<"--[no]nobinlog">, L<"--[no]nouniquechecks">, L<"--[no]noforeignkeys">.
 
 =item --tables
 
