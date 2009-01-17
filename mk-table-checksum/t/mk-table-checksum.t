@@ -195,7 +195,15 @@ diag(`$rm_missing_slave_tbl_cmd`);
 # #############################################################################
 # Issue 5: Add ability to checksum table schema instead of data
 # #############################################################################
-$cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --schema | awk '{print \$1,\$2,\$7}' | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
+
+# The following --schema tests are sensitive to what schemas exist on the
+# sandbox server. The sample file is for a blank server, i.e. just the mysql
+# db and maybe or not the sakila db.
+$sb->wipe_clean($master_dbh);
+
+my $awk_slice = "awk '{print \$1,\$2,\$7}'";
+
+$cmd = "perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -g sakila --schema | $awk_slice | diff ./samples/sample_schema_opt - 2>&1 > /dev/null";
 my $ret_val = system($cmd);
 cmp_ok($ret_val, '==', 0, 'Only option --schema');
 
@@ -225,7 +233,7 @@ my @opt_combos = ( # --schema and
 
 `touch /tmp/mktc.out`;
 foreach my $opt_combo ( @opt_combos ) {
-   `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 --schema $opt_combo | awk '{print \$1,\$2,\$7}' > /tmp/mktc.out`;
+   `perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -g sakila --schema $opt_combo | $awk_slice > /tmp/mktc.out`;
    $cmd = "diff ./samples/sample_schema_opt /tmp/mktc.out 2>&1 > /dev/null";
    $ret_val = system($cmd);
    cmp_ok($ret_val, '==', 0, "--schema $opt_combo");
@@ -250,6 +258,8 @@ unlike($output, qr/LOCK TABLES /, '--schema does not lock tables even with --loc
 # This test requires that the test db has only the table created by
 # issue_21.sql. If there are other tables, the first test below
 # will fail because samples/basic_replicate_output will differ.
+$sb->wipe_clean($master_dbh);
+$sb->create_dbs($master_dbh, ['test']);
 
 $sb->load_file('master', 'samples/checksum_tbl.sql');
 $sb->load_file('master', 'samples/issue_21.sql');
@@ -314,7 +324,7 @@ $master_dbh->do('DROP TABLE test.issue_21');
 
 # First re-checksum and replicate using chunks so we can more easily break,
 # resume and test it.
-`../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum --emptyrepltbl -C 100`;
+`../mk-table-checksum h=127.0.0.1,P=12345 -g sakila --replicate test.checksum --emptyrepltbl -C 100`;
 
 # Make sure the results propagate
 sleep 1;
@@ -325,7 +335,7 @@ sleep 1;
 `/tmp/12345/use -e "DELETE FROM test.checksum WHERE tbl LIKE 'proc%' OR tbl LIKE 't%' OR tbl = 'user'"`;
 
 # And now test --resume with --replicate
-`../mk-table-checksum h=127.0.0.1,P=12345 --resume-replicate --replicate test.checksum -C 100 > /tmp/mktc_issue36.txt`;
+`../mk-table-checksum h=127.0.0.1,P=12345 -g sakila --resume-replicate --replicate test.checksum -C 100 > /tmp/mktc_issue36.txt`;
 
 # We have to chop the output because a simple diff on the whole thing won't
 # work well because the TIME column can sometimes change from 0 to 1.
@@ -343,7 +353,7 @@ ok(!$output, 'Resumes with --replicate (2/2)');
 # Issue 81: put some data that's too big into the boundaries table
 # #############################################################################
 diag(`/tmp/12345/use < samples/checksum_tbl_truncated.sql`);
-$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 --emptyrepltbl --replicate test.checksum 2>&1`;
+$output = `perl ../mk-table-checksum h=127.0.0.1,P=12345 -g sakila --emptyrepltbl --replicate test.checksum 2>&1`;
 like($output, qr/boundaries/, 'Truncation causes an error');
 
 # Restore the proper checksum table.
@@ -393,7 +403,7 @@ $output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12346 -d test -C 3
 ok(!$output, 'Resumes checksum of chunked data (1 db)');
 
 # but this tests two.
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12346 --resume samples/resume03_partial.txt | diff samples/resume03_whole.txt -`;
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 h=127.1,P=12346 -g sakila --resume samples/resume03_partial.txt | diff samples/resume03_whole.txt -`;
 ok(!$output, 'Resumes checksum of non-chunked data (2 dbs)');
 
 # #############################################################################
@@ -405,7 +415,7 @@ ok(!$output, 'Resumes checksum of non-chunked data (2 dbs)');
 $output = `../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum 2>&1`;
 like($output, qr/replicate table .+ does not exist/, 'Dies with honor when replication table does not exist');
 
-$output = `../mk-table-checksum h=127.0.0.1,P=12345 --replicate test.checksum --createreplicate`;
+$output = `../mk-table-checksum h=127.0.0.1,P=12345 -g sakila --replicate test.checksum --createreplicate`;
 like($output, qr/DATABASE\s+TABLE\s+CHUNK/, '--createreplicate creates the replicate table');
 
 # #############################################################################
@@ -421,7 +431,7 @@ like($output, qr/CHECKSUM\n000000066094F8AA\n000000066094F8AA/, 'Checksum ok wit
 # #############################################################################
 # Issue 103: mk-table-checksum doesn't honor --checksum in --schema mode
 # #############################################################################
-$output = `../mk-table-checksum --checksum h=127.1,P=12345 --schema`;
+$output = `../mk-table-checksum --checksum h=127.1,P=12345 --schema -g sakila`;
 unlike($output, qr/DATABASE\s+TABLE/, '--checksum in --schema mode prints terse output');
 
 # #############################################################################
