@@ -28,29 +28,37 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# MySQLFind package 2215
+# MySQLFind package 2797
 # ###########################################################################
+package MySQLFind;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLFind;
-
+use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 
-use English qw(-no_match_vars);
-
 sub new {
    my ( $class, %args ) = @_;
-   my $self = bless \%args, $class;
-   map { die "I need a $_ argument" unless defined $args{$_} } qw(dumper quoter);
+   foreach my $arg ( qw(dumper quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    die "Do not pass me a dbh argument" if $args{dbh};
-   $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   my $self = bless \%args, $class;
+   $self->{need_engine}
+      = (   $self->{engines}->{permit}
+         || $self->{engines}->{reject}
+         || $self->{engines}->{regexp} ? 1 : 0);
+   die "I need a parser argument"
+      if $self->{need_engine} && !defined $args{parser};
+   MKDEBUG && _d('Need engine: ' , $self->{need_engine} ? 'yes' : 'no');
+   $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
+   $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
    if ( $args{useddl} ) {
       MKDEBUG && _d('Will prefer DDL');
    }
@@ -78,16 +86,26 @@ sub find_databases {
 }
 
 sub find_tables {
-   my ( $self, $dbh, %args ) = @_;
-   my $views = $self->{engines}->{views};
-   my @tables 
-      = $self->_filter('engines', sub { $_[0]->{engine} },
-         $self->_filter('tables', sub { $_[0]->{name} },
-            $self->_fetch_tbl_list($dbh, %args)));
-   @tables = grep {
-         ( $views || ($_->{engine} ne 'VIEW') )
-      } @tables;
-   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
+   my ( $self, $dbh, %args ) = @_; 
+
+   my @tables
+      = $self->_filter('tables', sub { $_[0]->{name} },
+         $self->_fetch_tbl_list($dbh, %args));
+
+   if ( $self->{need_engine} ) {
+      foreach my $tbl ( @tables ) {
+         next if $tbl->{engine};
+         my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
+         my $struct = $self->{parser}->parse(
+            $self->{dumper}->get_create_table(
+               $dbh, $self->{quoter}, $args{database}, $tbl_name));
+         $tbl->{engine} = $struct->{engine};
+      }
+      @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
+   }
+
+   map { $_->{name} =~ s/^[^.]*\.// } @tables;
+
    foreach my $crit ( @{$self->{tables}->{status}} ) {
       my ($key, $test) = %$crit;
       @tables
@@ -95,6 +113,7 @@ sub find_tables {
             $self->_test_date($_, $key, $test, $dbh)
          } @tables;
    }
+
    return map { $_->{name} } @tables;
 }
 
@@ -128,46 +147,37 @@ sub _use_db {
 sub _fetch_tbl_list {
    my ( $self, $dbh, %args ) = @_;
    die "database is required" unless $args{database};
+
    my $curr_db = $self->_use_db($dbh, $args{database});
-   my $need_engine = $self->{engines}->{permit}
-        || $self->{engines}->{reject}
-        || $self->{engines}->{regexp};
-   my $need_status = $self->{tables}->{status};
-   if ( $need_status || ($need_engine && !$self->{useddl}) ) {
-      my @tables = $self->{dumper}->get_table_status(
+
+   my @tables;
+   if ( scalar @{$self->{tables}->{status}} ) {
+      @tables = $self->{dumper}->get_table_status(
          $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
-      @tables = map {
-         my %hash = %$_;
-         $hash{name} = join('.', $args{database}, $hash{name});
-         \%hash;
-      } @tables;
-      return @tables;
    }
    else {
-      my @result;
-      my @tables = $self->{dumper}->get_table_list(
+      @tables = $self->{dumper}->get_table_list(
          $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
-      foreach my $tbl ( @tables ) {
-         if ( $need_engine && !$tbl->{engine} ) {
-            my $struct = $self->{parser}->parse(
-               $self->{dumper}->get_create_table(
-                  $dbh, $self->{quoter}, $args{database}, $tbl->{name}));
-            $tbl->{engine} = $struct->{engine};
-         }
-         push @result,
-         {  name   => join('.', $args{database}, $tbl->{name}),
-            engine => $tbl->{engine},
-         }
-      }
-      return @result;
    }
+
+   @tables = map {
+      my %hash = %$_;
+      $hash{name} = join('.', $args{database}, $hash{name});
+      \%hash;
+   }
+   grep {
+      ( $self->{engines}->{views} || ($_->{engine} ne 'VIEW') )
+   } @tables;
+
    $self->_use_db($dbh, $curr_db);
+
+   return @tables;
 }
 
 sub _filter {
@@ -215,8 +225,11 @@ sub _test_date {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# MySQLFind:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -226,7 +239,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2215
+# DSNParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -312,35 +325,50 @@ sub parse {
    MKDEBUG && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
-   my %vals;
+   my %given_props;
+   my %final_props;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
-      MKDEBUG && _d("Interpreting $dsn as $p=$dsn");
-      $dsn = "$p=$dsn";
+   my $prop_autokey = $self->prop('autokey');
+
+   foreach my $dsn_part ( split(/,/, $dsn) ) {
+      if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
+         $given_props{$prop_key} = $prop_val;
+      }
+      elsif ( $prop_autokey ) {
+         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         $given_props{$prop_autokey} = $dsn_part;
+      }
+      else {
+         MKDEBUG && _d("Bad DSN part: $dsn_part");
+      }
    }
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+
    foreach my $key ( keys %opts ) {
       MKDEBUG && _d("Finding value for $key");
-      $vals{$key} = $hash{$key};
-      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-         $vals{$key} = $prev->{$key};
+      $final_props{$key} = $given_props{$key};
+      if (   !defined $final_props{$key}
+           && defined $prev->{$key} && $opts{$key}->{copy} )
+      {
+         $final_props{$key} = $prev->{$key};
          MKDEBUG && _d("Copying value for $key from previous DSN");
       }
-      if ( !defined $vals{$key} ) {
-         $vals{$key} = $defaults->{$key};
+      if ( !defined $final_props{$key} ) {
+         $final_props{$key} = $defaults->{$key};
          MKDEBUG && _d("Copying value for $key from defaults");
       }
    }
-   foreach my $key ( keys %hash ) {
+
+   foreach my $key ( keys %given_props ) {
       die "Unrecognized DSN part '$key' in '$dsn'\n"
          unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
       }
    }
-   return \%vals;
+
+   return \%final_props;
 }
 
 sub as_string {
@@ -479,9 +507,11 @@ sub print_active_handles {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -491,7 +521,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 2300
+# OptionParser package 2825
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -951,6 +981,12 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
@@ -1010,11 +1046,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -1029,6 +1060,14 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -1036,20 +1075,23 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2291
+# TableParser package 2801
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package TableParser;
 
+use strict;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+
+use List::Util qw(min);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   bless {}, shift;
+   my ( $class ) = @_;
+   return bless {}, $class;
 }
+
 
 sub parse {
    my ( $self, $ddl, $opts ) = @_;
@@ -1158,6 +1200,7 @@ sub parse {
 
 sub sort_indexes {
    my ( $self, $tbl ) = @_;
+
    my @indexes
       = sort {
          (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
@@ -1169,6 +1212,7 @@ sub sort_indexes {
          $tbl->{keys}->{$_}->{type} eq 'BTREE'
       }
       sort keys %{$tbl->{keys}};
+
    MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
    return @indexes;
 }
@@ -1219,9 +1263,196 @@ sub find_possible_keys {
    }
 }
 
+sub table_exists {
+   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
+   my $db_tbl = $q->quote($db, $tbl);
+   my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
+   $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d("table_exists check for $db_tbl: $sql");
+   eval { $dbh->do($sql); };
+   MKDEBUG && _d("eval error (if any): $EVAL_ERROR");
+   return 0 if $EVAL_ERROR;
+   return 1;
+}
+
+sub get_engine {
+   my ( $self, $ddl, $opts ) = @_;
+   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   return $engine || undef;
+}
+
+sub get_keys {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @indexes =
+      grep { $_ !~ m/FOREIGN/ }
+      $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
+
+   my $engine = $self->get_engine($ddl);
+   if ( $engine !~ m/MEMORY|HEAP/ ) {
+      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
+   }
+
+   my @keys = map {
+      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
+      $struct = $struct || $special || 'BTREE';
+      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
+
+      if ( $opts->{version} lt '004001000' && $engine =~ m/HEAP|MEMORY/i ) {
+         $struct = 'HASH';
+      }
+
+      {
+         struct   => $struct,
+         cols     => $cols,
+         name     => $name || 'PRIMARY',
+      }
+   } @indexes;
+
+   return \@keys;
+}
+
+sub get_fks {
+   my ( $self, $ddl, $opts ) = @_;
+
+   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
+
+   my @result = map {
+      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
+      my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
+      my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
+      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
+      if ( $parent !~ m/\./ ) {
+         $parent = "`$opts->{database}`.$parent";
+      }
+      {  name   => $name,
+         parent => $parent,
+         cols   => $cols,
+         fkcols => $fkcols,
+      };
+   } @fks;
+   return \@result;
+}
+
+sub get_duplicate_keys {
+   my ( $self, $keys, $opts ) = @_;
+   my @keys = @$keys;
+   my %seen; # Avoid outputting a key more than once.
+   my @result;
+
+   foreach my $i ( 0..$#keys - 1 ) {
+      foreach my $j ( $i+1..$#keys ) {
+         my $i_cols        = $keys[$i]->{cols};
+         my $j_cols        = $keys[$j]->{cols};
+         my $type_i_cols   = $keys[$i]->{struct};
+         my $type_j_cols   = $keys[$j]->{struct};
+         my $len_i_cols    = length($i_cols);
+         my $len_j_cols    = length($j_cols);
+         my $min_len       = min($len_i_cols, $len_j_cols);
+         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
+                               && $type_j_cols eq 'FULLTEXT'
+                             ) ? 1 : 0;
+         if ( MKDEBUG ) {
+            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
+               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
+         }
+
+         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
+            $i_cols = join(',', sort(split(/`/, $i_cols)));
+            $j_cols = join(',', sort(split(/`/, $j_cols)));
+         }
+         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
+                || $opts->{ignore_type}
+              )
+              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
+         {
+            if ( $both_FULLTEXT ) {
+               if ( $len_i_cols == $len_j_cols ) {
+                  MKDEBUG && _d("Indexes are DUPLICATES (fulltext)");
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+               }
+               else {
+                  MKDEBUG && _d("Indexes are not duplicates (fulltext)");
+               }
+            }
+            else {
+               MKDEBUG && _d("Indexes are DUPLICATES");
+               push @result, $keys[$i] unless $seen{$i}++;
+               push @result, $keys[$j] unless $seen{$j}++;
+            }
+         }
+         else {
+            MKDEBUG && _d("Indexes are not duplicates");
+         }
+      }
+   }
+
+   if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
+      my $i = 0;
+      my $found = 0;
+      while ( $i < @keys ) {
+         if ( $keys[$i]->{name} eq 'PRIMARY' ) {
+            $found = 1;
+            last;
+         }
+         $i++;
+      }
+      if ( $found ) {
+         my $pkcols = $keys[$i]->{cols};
+         KEY:
+         foreach my $j ( 0..$#keys ) {
+            next KEY if $i == $j;
+            my $suffix = $keys[$j]->{cols};
+            SUFFIX:
+            while ( $suffix =~ s/`[^`]+`,// ) {
+               my $len = min(length($pkcols), length($suffix));
+               if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
+                  && substr($suffix, 0, $len) eq substr($pkcols, 0, $len))
+               {
+                  push @result, $keys[$i] unless $seen{$i}++;
+                  push @result, $keys[$j] unless $seen{$j}++;
+                  last SUFFIX;
+               }
+            }
+         }
+      }
+   }
+
+   return \@result;
+}
+
+sub get_duplicate_fks {
+   my ( $self, $fks, $opts ) = @_;
+   my @fks = @$fks;
+   my %seen; # Avoid outputting a fk more than once.
+   my @result;
+   foreach my $i ( 0..$#fks - 1 ) {
+      foreach my $j ( $i+1..$#fks ) {
+         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
+         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
+         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
+         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
+               && $i_cols eq $j_cols
+               && $i_fkcols eq $j_fkcols
+         ) {
+            push @result, $fks[$i] unless $seen{$i}++;
+            push @result, $fks[$j] unless $seen{$j}++;
+         }
+      }
+   }
+
+   return \@result;
+}
+
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1231,7 +1462,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# VersionParser package 2215
+# VersionParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1266,8 +1497,11 @@ sub version_ge {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# VersionParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1277,16 +1511,16 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 2215
+# MySQLDump package 2801
 # ###########################################################################
+package MySQLDump;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLDump;
+use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
-
-use English qw(-no_match_vars);
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -1561,11 +1795,12 @@ sub get_table_list {
    return @{$self->{table_list}->{$db}};
 }
 
-
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# MySQLDump:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1575,7 +1810,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableChunker package 2289
+# TableChunker package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1585,6 +1820,9 @@ package TableChunker;
 use English qw(-no_match_vars);
 use POSIX qw(ceil);
 use List::Util qw(min max);
+use Data::Dumper;
+$Data::Dumper::Quotekeys = 0;
+$Data::Dumper::Indent    = 0;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1817,7 +2055,19 @@ sub get_range_statistics {
       . ") FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);
-   my ( $min, $max ) = $dbh->selectrow_array($sql);
+   my ( $min, $max );
+   eval {
+      ( $min, $max ) = $dbh->selectrow_array($sql);
+   };
+   if ( $EVAL_ERROR ) {
+      chomp $EVAL_ERROR;
+      if ( $EVAL_ERROR =~ m/in your SQL syntax/ ) {
+         die "$EVAL_ERROR (WHERE clause: $where)";
+      }
+      else {
+         die $EVAL_ERROR;
+      }
+   }
    $sql = "EXPLAIN SELECT * FROM " . $q->quote($db, $tbl)
       . ($where ? " WHERE $where" : '');
    MKDEBUG && _d($sql);
@@ -1854,6 +2104,8 @@ sub inject_chunks {
    my $index_hint = defined $args{index_hint}
                     ? "USE INDEX (`$args{index_hint}`)"
                     : '';
+   MKDEBUG && _d("Parameters: ",
+      Dumper({WHERE => $where, DB_TBL => $db_tbl, INDEX_HINT => $index_hint}));
    $args{query} =~ s!/\*WHERE\*/! $where!;
    $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
    $args{query} =~ s!/\*INDEX_HINT\*/! $index_hint!;
@@ -1911,8 +2163,9 @@ sub range_timestamp {
 
 sub timestampdiff {
    my ( $self, $dbh, $time ) = @_;
-   my $sql = "SELECT (TO_DAYS('$time') * 86400 + TIME_TO_SEC('$time')) "
+   my $sql = "SELECT (COALESCE(TO_DAYS('$time'), 0) * 86400 + TIME_TO_SEC('$time')) "
       . "- TO_DAYS('$EPOCH 00:00:00') * 86400";
+   MKDEBUG && _d($sql);
    my ( $diff ) = $dbh->selectrow_array($sql);
    $sql = "SELECT DATE_ADD('$EPOCH', INTERVAL $diff SECOND)";
    MKDEBUG && _d($sql);
@@ -1927,8 +2180,11 @@ sub timestampdiff {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableChunker:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -3126,7 +3382,7 @@ successfully dumps a table.
 
 Don't use C<default> as a set name.  It is used when you don't specify any
 sets and when you want all tables not explicitly assigned to a set to be
-dumped (see L<"--defaultset">).
+dumped (see L<"--[no]defaultset">).
 
 Set names may contain only lowercase letters, numbers, and underscores.
 
@@ -3264,7 +3520,7 @@ second gets the latest trunk code from Subversion.
 
 =head1 OPTIONS
 
-L<"--locktables"> and L<"--flushlock"> are mutually exclusive.
+L<"--locktables"> and L<"--[no]flushlock"> are mutually exclusive.
 
 L<"--sets"> and L<"--setperdb"> are mutually exclusive.
 
@@ -3316,9 +3572,9 @@ arguments in the command line are filenames, and thus doesn't know the
 eventual destination of the dump files.  It does not try to create parent
 directories in this case.
 
-=item --biggestfirst
+=item --[no]biggestfirst
 
-default: yes; negatable: yes
+default: yes
 
 Process tables largest first.
 
@@ -3329,9 +3585,9 @@ have the max number of threads running at a time for as long as possible.
 
 Ignored when L<"--settable"> is given.
 
-=item --binlogpos
+=item --[no]binlogpos
 
-short form: -b; default: yes; negatable: yes
+short form: -b; default: yes
 
 Dump the master/slave position.
 
@@ -3397,18 +3653,16 @@ short form: -F; type: string
 Only read mysql options from the given file.  You must give an absolute
 pathname.
 
-=item --defaultset
-
-negatable: yes
+=item --[no]defaultset
 
 When L<"--sets"> given, dump tables not in any set.
 
 The result will be a C<default> set consisting of tables not explicitly included
 in any set.
 
-=item --flushlock
+=item --[no]flushlock
 
-short form: -k; negatable: yes; default: yes
+short form: -k
 
 Use C<FLUSH TABLES WITH READ LOCK>.
 
@@ -3425,9 +3679,7 @@ This is done for each backup set.  This option is NOT enabled by default because
 it causes the MySQL server to rotate its error log, potentially overwriting
 error messages.
 
-=item --gzip
-
-negatable: yes
+=item --[no]gzip
 
 Compress files with gzip.
 
@@ -3470,11 +3722,11 @@ Table names may be qualified with the database name.
 
 =item --locktables
 
-Use C<LOCK TABLES> (disables L<"--flushlock">).
+Use C<LOCK TABLES> (disables L<"--[no]flushlock">).
 
-Disables L<"--flushlock"> (unless it was explicitly set) and locks tables with
-C<LOCK TABLES READ>.  Enabled by default when L<"--sets"> is specified.  The
-lock is taken and released with every set of tables dumped.
+Disables L<"--[no]flushlock"> (unless it was explicitly set) and locks tables
+with C<LOCK TABLES READ>.  Enabled by default when L<"--sets"> is specified.
+The lock is taken and released with every set of tables dumped.
 
 =item --losslessfp
 
@@ -3550,7 +3802,7 @@ type: string
 The database.table in which backup sets are kept.
 
 As mentioned earlier, you can manually specify the ordering of tables in a
-backup set.  Therefore L<"--biggestfirst"> has no effect when this option is
+backup set.  Therefore L<"--[no]biggestfirst"> has no effect when this option is
 given.
 
 =item --setvars
@@ -3593,9 +3845,9 @@ Before you use this option, make sure you know what C<SELECT INTO OUTFILE> does!
 I recommend using it only if you're running mk-parallel-dump on the same
 machine as the MySQL server, but there is no protection if you don't.
 
-The files will be gzipped after dumping if L<"--gzip"> is enabled.  This option
-sets L<"--umask"> to zero so auto-created directories are writable by the MySQL
-server.
+The files will be gzipped after dumping if L<"--[no]gzip"> is enabled.  This
+option sets L<"--umask"> to zero so auto-created directories are writable by
+the MySQL server.
 
 Triggers are dumped into C<.trg> files, and views are postponed until the end of
 the dump, then dumped all together into the C<00_views.sql> file.  This allows
