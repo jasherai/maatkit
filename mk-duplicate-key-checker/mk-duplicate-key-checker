@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# VersionParser package 2215
+# VersionParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -63,8 +63,11 @@ sub version_ge {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# VersionParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -120,7 +123,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2462
+# TableParser package 2801
 # ###########################################################################
 package TableParser;
 
@@ -257,7 +260,7 @@ sub sort_indexes {
          $tbl->{keys}->{$_}->{type} eq 'BTREE'
       }
       sort keys %{$tbl->{keys}};
-   
+
    MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
    return @indexes;
 }
@@ -309,10 +312,13 @@ sub find_possible_keys {
 }
 
 sub table_exists {
-   my ( $self, $dbh, $db, $tbl, $quoter ) = @_;
-   my $sql = 'SELECT * FROM ' . $quoter->quote($db, $tbl) . ' LIMIT 0';
-   my $href;
-   eval { $href = $dbh->selectrow_hashref($sql) };
+   my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
+   my $db_tbl = $q->quote($db, $tbl);
+   my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
+   $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
+   MKDEBUG && _d("table_exists check for $db_tbl: $sql");
+   eval { $dbh->do($sql); };
+   MKDEBUG && _d("eval error (if any): $EVAL_ERROR");
    return 0 if $EVAL_ERROR;
    return 1;
 }
@@ -326,7 +332,7 @@ sub get_engine {
 sub get_keys {
    my ( $self, $ddl, $opts ) = @_;
 
-   my @indexes = 
+   my @indexes =
       grep { $_ !~ m/FOREIGN/ }
       $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
 
@@ -490,8 +496,11 @@ sub get_duplicate_fks {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# TableParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -501,16 +510,16 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 2215
+# MySQLDump package 2801
 # ###########################################################################
+package MySQLDump;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLDump;
+use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
-
-use English qw(-no_match_vars);
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -785,11 +794,12 @@ sub get_table_list {
    return @{$self->{table_list}->{$db}};
 }
 
-
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# MySQLDump:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -799,29 +809,37 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 2215
+# MySQLFind package 2797
 # ###########################################################################
+package MySQLFind;
+
 use strict;
 use warnings FATAL => 'all';
 
-package MySQLFind;
-
+use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 
-use English qw(-no_match_vars);
-
 sub new {
    my ( $class, %args ) = @_;
-   my $self = bless \%args, $class;
-   map { die "I need a $_ argument" unless defined $args{$_} } qw(dumper quoter);
+   foreach my $arg ( qw(dumper quoter) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
    die "Do not pass me a dbh argument" if $args{dbh};
-   $self->{engines}->{views} = 1 unless defined $self->{engines}->{views};
+   my $self = bless \%args, $class;
+   $self->{need_engine}
+      = (   $self->{engines}->{permit}
+         || $self->{engines}->{reject}
+         || $self->{engines}->{regexp} ? 1 : 0);
+   die "I need a parser argument"
+      if $self->{need_engine} && !defined $args{parser};
+   MKDEBUG && _d('Need engine: ' , $self->{need_engine} ? 'yes' : 'no');
+   $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
+   $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
    if ( $args{useddl} ) {
       MKDEBUG && _d('Will prefer DDL');
    }
@@ -849,16 +867,26 @@ sub find_databases {
 }
 
 sub find_tables {
-   my ( $self, $dbh, %args ) = @_;
-   my $views = $self->{engines}->{views};
-   my @tables 
-      = $self->_filter('engines', sub { $_[0]->{engine} },
-         $self->_filter('tables', sub { $_[0]->{name} },
-            $self->_fetch_tbl_list($dbh, %args)));
-   @tables = grep {
-         ( $views || ($_->{engine} ne 'VIEW') )
-      } @tables;
-   map { $_->{name} =~ s/^[^.]*\.// } @tables; # <database>.<table> => <table> 
+   my ( $self, $dbh, %args ) = @_; 
+
+   my @tables
+      = $self->_filter('tables', sub { $_[0]->{name} },
+         $self->_fetch_tbl_list($dbh, %args));
+
+   if ( $self->{need_engine} ) {
+      foreach my $tbl ( @tables ) {
+         next if $tbl->{engine};
+         my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
+         my $struct = $self->{parser}->parse(
+            $self->{dumper}->get_create_table(
+               $dbh, $self->{quoter}, $args{database}, $tbl_name));
+         $tbl->{engine} = $struct->{engine};
+      }
+      @tables = $self->_filter('engines', sub { $_[0]->{engine} }, @tables);
+   }
+
+   map { $_->{name} =~ s/^[^.]*\.// } @tables;
+
    foreach my $crit ( @{$self->{tables}->{status}} ) {
       my ($key, $test) = %$crit;
       @tables
@@ -866,6 +894,7 @@ sub find_tables {
             $self->_test_date($_, $key, $test, $dbh)
          } @tables;
    }
+
    return map { $_->{name} } @tables;
 }
 
@@ -899,46 +928,37 @@ sub _use_db {
 sub _fetch_tbl_list {
    my ( $self, $dbh, %args ) = @_;
    die "database is required" unless $args{database};
+
    my $curr_db = $self->_use_db($dbh, $args{database});
-   my $need_engine = $self->{engines}->{permit}
-        || $self->{engines}->{reject}
-        || $self->{engines}->{regexp};
-   my $need_status = $self->{tables}->{status};
-   if ( $need_status || ($need_engine && !$self->{useddl}) ) {
-      my @tables = $self->{dumper}->get_table_status(
+
+   my @tables;
+   if ( scalar @{$self->{tables}->{status}} ) {
+      @tables = $self->{dumper}->get_table_status(
          $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
-      @tables = map {
-         my %hash = %$_;
-         $hash{name} = join('.', $args{database}, $hash{name});
-         \%hash;
-      } @tables;
-      return @tables;
    }
    else {
-      my @result;
-      my @tables = $self->{dumper}->get_table_list(
+      @tables = $self->{dumper}->get_table_list(
          $dbh,
          $self->{quoter},
          $args{database},
          $self->{tables}->{like});
-      foreach my $tbl ( @tables ) {
-         if ( $need_engine && !$tbl->{engine} ) {
-            my $struct = $self->{parser}->parse(
-               $self->{dumper}->get_create_table(
-                  $dbh, $self->{quoter}, $args{database}, $tbl->{name}));
-            $tbl->{engine} = $struct->{engine};
-         }
-         push @result,
-         {  name   => join('.', $args{database}, $tbl->{name}),
-            engine => $tbl->{engine},
-         }
-      }
-      return @result;
    }
+
+   @tables = map {
+      my %hash = %$_;
+      $hash{name} = join('.', $args{database}, $hash{name});
+      \%hash;
+   }
+   grep {
+      ( $self->{engines}->{views} || ($_->{engine} ne 'VIEW') )
+   } @tables;
+
    $self->_use_db($dbh, $curr_db);
+
+   return @tables;
 }
 
 sub _filter {
@@ -986,8 +1006,11 @@ sub _test_date {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# MySQLFind:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -997,7 +1020,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2460
+# DSNParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1265,9 +1288,11 @@ sub print_active_handles {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1277,7 +1302,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 2300
+# OptionParser package 2825
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1737,6 +1762,12 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
@@ -1796,11 +1827,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -1813,6 +1839,14 @@ if ( MKDEBUG ) {
       ($main::SVN_REV || ''), __LINE__);
    print('# Arguments: ',
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
