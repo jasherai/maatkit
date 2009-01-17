@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 2300
+# OptionParser package 2825
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -488,6 +488,12 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
@@ -547,11 +553,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -566,6 +567,14 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -573,7 +582,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2215
+# DSNParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -659,35 +668,50 @@ sub parse {
    MKDEBUG && _d("Parsing $dsn");
    $prev     ||= {};
    $defaults ||= {};
-   my %vals;
+   my %given_props;
+   my %final_props;
    my %opts = %{$self->{opts}};
-   if ( $dsn !~ m/=/ && (my $p = $self->prop('autokey')) ) {
-      MKDEBUG && _d("Interpreting $dsn as $p=$dsn");
-      $dsn = "$p=$dsn";
+   my $prop_autokey = $self->prop('autokey');
+
+   foreach my $dsn_part ( split(/,/, $dsn) ) {
+      if ( my ($prop_key, $prop_val) = $dsn_part =~  m/^(.)=(.*)$/ ) {
+         $given_props{$prop_key} = $prop_val;
+      }
+      elsif ( $prop_autokey ) {
+         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         $given_props{$prop_autokey} = $dsn_part;
+      }
+      else {
+         MKDEBUG && _d("Bad DSN part: $dsn_part");
+      }
    }
-   my %hash = map { m/^(.)=(.*)$/g } split(/,/, $dsn);
+
    foreach my $key ( keys %opts ) {
       MKDEBUG && _d("Finding value for $key");
-      $vals{$key} = $hash{$key};
-      if ( !defined $vals{$key} && defined $prev->{$key} && $opts{$key}->{copy} ) {
-         $vals{$key} = $prev->{$key};
+      $final_props{$key} = $given_props{$key};
+      if (   !defined $final_props{$key}
+           && defined $prev->{$key} && $opts{$key}->{copy} )
+      {
+         $final_props{$key} = $prev->{$key};
          MKDEBUG && _d("Copying value for $key from previous DSN");
       }
-      if ( !defined $vals{$key} ) {
-         $vals{$key} = $defaults->{$key};
+      if ( !defined $final_props{$key} ) {
+         $final_props{$key} = $defaults->{$key};
          MKDEBUG && _d("Copying value for $key from defaults");
       }
    }
-   foreach my $key ( keys %hash ) {
+
+   foreach my $key ( keys %given_props ) {
       die "Unrecognized DSN part '$key' in '$dsn'\n"
          unless exists $opts{$key};
    }
    if ( (my $required = $self->prop('required')) ) {
       foreach my $key ( keys %$required ) {
-         die "Missing DSN part '$key' in '$dsn'\n" unless $vals{$key};
+         die "Missing DSN part '$key' in '$dsn'\n" unless $final_props{$key};
       }
    }
-   return \%vals;
+
+   return \%final_props;
 }
 
 sub as_string {
@@ -826,9 +850,11 @@ sub print_active_handles {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -838,7 +864,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MasterSlave package 2215
+# MasterSlave package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1367,6 +1393,12 @@ sub repl_posn {
    }
 }
 
+sub get_slave_lag {
+   my ( $self, $dbh ) = @_;
+   my $stat = $self->get_slave_status($dbh);
+   return $stat->{seconds_behind_master};
+}
+
 sub pos_cmp {
    my ( $self, $a, $b ) = @_;
    return $self->pos_to_string($a) cmp $self->pos_to_string($b);
@@ -1393,8 +1425,11 @@ sub pos_to_string {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# MasterSlave:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;

@@ -25,7 +25,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 2300
+# OptionParser package 2825
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -485,6 +485,12 @@ sub pod_to_spec {
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
          }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
          push @spec, {
             s => $option
                . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
@@ -544,11 +550,6 @@ sub groups {
    push @{$self->{groups}}, @groups;
 }
 
-sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# OptionParser:$line $PID ", @_, "\n";
-}
-
 if ( MKDEBUG ) {
    print '# ', $^X, ' ', $], "\n";
    my $uname = `uname -a`;
@@ -563,6 +564,14 @@ if ( MKDEBUG ) {
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
 }
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
 1;
 
 # ###########################################################################
@@ -570,7 +579,7 @@ if ( MKDEBUG ) {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2749
+# LogParser package 2813
 # ###########################################################################
 package LogParser;
 
@@ -866,7 +875,7 @@ sub parse_slowlog_event {
                $found_arg++;
             }
 
-            elsif ( my @temp = $line =~ m/(\w+):\s+(\S+)/g ) {
+            elsif ( my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+)/g ) {
                push @properties, @temp;
             }
 
@@ -908,6 +917,7 @@ sub parse_slowlog_event {
          last CALLBACK unless $callback->($event);
       }
       ++$num_events;
+      last EVENT unless @pending;
    }
    return $num_events;
 }
@@ -972,8 +982,11 @@ sub parse_binlog_event {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# LogParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -983,7 +996,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2733
+# QueryRewriter package 2815
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1023,12 +1036,19 @@ sub strip_comments {
 
 sub fingerprint {
    my ( $self, $query ) = @_;
+
    $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
       && return 'mysqldump';
    $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
    $query =~ m/\A# administrator command: /
       && return $query;
+   $query =~ m/\A\s*(call\s+\S+)\(/i
+      && return lc($1); # Warning! $1 used, be careful.
+   if ( my ($beginning) = $query =~ m/\A(INSERT INTO \S+ VALUES \(.*?\)),\(/ ) {
+      $query = $beginning; # Shorten multi-value INSERT statements ASAP
+   }
+
    $query =~ s/$olc_re//go;
    $query =~ s/$mlc_re//go;
    $query =~ s/\Ause \S+\Z/use ?/i       # Abstract the DB in USE
@@ -1048,6 +1068,7 @@ sub fingerprint {
    chomp $query;                         # Kill trailing whitespace
    $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
+   $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
    $query =~ s{
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
@@ -1143,9 +1164,11 @@ sub wrap_in_derived {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; } @_;
-   print "# QueryRewriter:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1155,7 +1178,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogSplitter package 2761
+# LogSplitter package 2801
 # ###########################################################################
 
 package LogSplitter;
@@ -1447,8 +1470,11 @@ sub _next_session_file {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# LogSplitter:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1458,7 +1484,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2460
+# DSNParser package 2801
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1726,9 +1752,11 @@ sub print_active_handles {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   @_ = map { defined $_ ? $_ : 'undef' } @_;
-   print "# DSNParser:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1738,7 +1766,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2749
+# Transformers package 2801
 # ###########################################################################
 
 package Transformers;
@@ -1853,8 +1881,11 @@ sub ts {
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# Transformers:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
@@ -1864,17 +1895,35 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2729
+# SQLMetrics package 2818
 # ###########################################################################
 
+
 package SQLMetrics;
+
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG     => $ENV{MKDEBUG};
+use constant BASE_LOG    => log(1.05);
+use constant BASE_OFFSET => -floor(log(.000001) / BASE_LOG); # typically 284
+use constant NUM_BUCK    => 1000;
+
+my @buckets   = map { 0 } (1 .. NUM_BUCK);
+my @buck_vals = (.000001);
+{
+   my $cur = 1.05;
+   for ( 1 .. NUM_BUCK - 1 ) {
+      push @buck_vals, .000001 * ($cur *= 1.05);
+   }
+}
+my @buck_tens = map {
+   my $f = floor(log($_) / log(10)) + 6;
+   $f > 7 ? 7 : $f;
+} @buck_vals;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -1932,7 +1981,7 @@ sub make_handler {
       %args,
    );
 
-   my @lines; # Lines of code for the subroutine
+   my @lines = ("# type: $type"); # Lines of code for the subroutine
    if ( $args{trf} ) {
       push @lines, q{$val = } . $args{trf} . ';';
    }
@@ -1960,7 +2009,10 @@ sub make_handler {
             push @tmp, '++PLACE->{unq}->{$val};';
          }
          if ( $args{all} ) {
-            push @tmp, 'push @{PLACE->{all}}, $val;';
+            push @tmp, (
+               'my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
+               '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+            );
          }
          if ( $args{wor} ) {
             my $op = $type eq 'num' ? '>=' : 'ge';
@@ -1978,8 +2030,9 @@ sub make_handler {
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
          "if ( \$val > $self->{attrib_limit} ) {",
-         '   $val = $class->{all}->[-1] || 0;',
+         '   $val = $class->{last} ||= 0;',
          '}',
+         '$class->{last} = $val;',
       );
    }
 
@@ -2010,6 +2063,29 @@ sub make_handler {
    return $sub;
 }
 
+sub bucketize {
+   my ( $self, $vals ) = @_;
+   my @bucketed = @buckets;
+   map {
+      my $idx = BASE_OFFSET + ($_ > 0 ? floor(log($_) / BASE_LOG) : 0);
+      ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
+   } @$vals;
+   return \@bucketed;
+}
+
+sub unbucketize {
+   my ( $self, $vals ) = @_;
+   my @result;
+   foreach my $i ( 0 .. NUM_BUCK - 1 ) {
+      next unless $vals->[$i];
+      foreach my $j ( 1 .. $vals->[$i] ) {
+         push @result, $buck_vals[$i];
+      }
+   }
+   return @result;
+}
+
+
 sub calc_event_metrics {
    my ( $self, $event ) = @_;
 
@@ -2026,12 +2102,14 @@ sub calc_event_metrics {
 
    my @attrs = sort keys %{$self->{attributes}};
    my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-      ||= { map { $_ => {} } @attrs };
+      ||= { map { $_ => { all => [ @buckets ] } } @attrs };
 
    ATTRIB:
    foreach my $attrib ( @attrs ) {
-      my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {};
-      my $stats_for_class  = $fp_ds->{ $attrib } ||= {};
+      my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {
+         all => [ @buckets ],
+      };
+      my $stats_for_class  = $fp_ds->{ $attrib }; # Created a few lines up.
 
       my $handler = $self->{handlers}->{ $attrib };
       if ( !$handler ) {
@@ -2060,7 +2138,7 @@ sub calc_event_metrics {
          'my ( $self, $event, $group_by ) = @_;',
          'my ($val, $class, $global);',
          'my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-            ||= { map { $_ => {} } @attrs };',
+            ||= { map { $_ => { all => [ @buckets ] } } @attrs };',
          'my @st_fc = @{$fp_ds}{@attrs};', # Stats for class
       );
       foreach my $i ( 0 .. $#attrs ) {
@@ -2097,47 +2175,49 @@ sub calculate_statistical_metrics {
    my ( $self, $vals, %args ) = @_;
    my @distro              = qw(0 0 0 0 0 0 0 0);
    my $statistical_metrics = {
-      avg       => 0,
       max       => 0,
       stddev    => 0,
       median    => 0,
       distro    => \@distro,
       cutoff    => undef,
    };
-   return $statistical_metrics unless defined $vals;
+   return $statistical_metrics unless defined $vals && @$vals;
 
-   my $n_vals = scalar @$vals;
-   return $statistical_metrics unless $n_vals;
+   my $n_vals = 0;
+   map { $n_vals += $_ } @$vals;
 
-   my $cutoff = $n_vals >= 10 ? int ( scalar @$vals * 0.95 ) : $n_vals;
+   my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
-   my $middle_val_n = int $statistical_metrics->{cutoff} / 2;
-   my $previous_val;
+   my $total_left = $n_vals;
+   my $i = NUM_BUCK - 1;
 
-   my $sum    = 0; # stddev and 95% avg
-   my $sumsq  = 0; # stddev
-   my $max    = 0; # 95th percentile
-   my $i      = 0; # for knowing when we've reached the 95%
-   foreach my $val ( sort { $a <=> $b } @$vals ) {
-      if ( defined $val && $val > 0 && $args{distro} ) {
-         my $bucket = floor(log($val) / log(10)) + 6;
-         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
-         $distro[ $bucket ]++;
+   my $bucket_95 = 0;
+   while ( $i-- && $total_left >= $cutoff ) {
+      if ( $vals->[$i] ) {
+         $total_left -= $vals->[$i];
+         $distro[ $buck_tens[$i] ] += $vals->[$i];
       }
+      $bucket_95 = $i; # The greatest remaining after tossing top 5%
+   }
 
-      if ( $i < $cutoff ) {
-         if ( $i == $middle_val_n ) {
-            $statistical_metrics->{median}
-               = $cutoff % 2 ? $val : ($previous_val + $val) / 2;
+   return $statistical_metrics unless $vals->[$bucket_95];
+
+   my $sum   = $buck_vals[$bucket_95] * $vals->[$bucket_95];
+   my $sumsq = $sum ** 2;
+   my $mid   = int($cutoff / 2);
+
+   my $median = $bucket_95;
+   while ( $i-- ) {
+      my $val = $vals->[$i];
+      if ( $val ) {
+         if ( $total_left > $mid ) {
+            $median = $i;
          }
-
-         $sum   += $val;
-         $sumsq += ($val **2);
-         $max   = $val;
-         $i++;
-
-         $previous_val = $val;
+         $total_left -= $val;
+         $sum        += $buck_vals[$i] * $val;
+         $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
+         $distro[ $buck_tens[$i] ] += $val;
       }
    }
 
@@ -2146,15 +2226,18 @@ sub calculate_statistical_metrics {
    MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
 
    $statistical_metrics->{stddev} = $stddev;
-   $statistical_metrics->{avg}    = $sum / $cutoff;
-   $statistical_metrics->{max}    = $max;
+   $statistical_metrics->{max}    = $buck_vals[$bucket_95];
+   $statistical_metrics->{median} = $buck_vals[$median];
 
    return $statistical_metrics;
 }
 
 sub _d {
-   my ( $line ) = (caller(0))[2];
-   print "# SQLMetrics:$line $PID ", @_, "\n";
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
