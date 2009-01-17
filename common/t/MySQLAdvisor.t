@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 12;
+use Test::More tests => 11;
 use English qw(-no_match_vars);
 
 use DBI;
@@ -97,6 +97,11 @@ like($problems->{ERROR}, qr/No check named foo exists/, 'check foo does not exis
 $problems = $ma->run_checks('Innodb_buffer_pool_pages_free');
 ok(!exists $problems->{ERROR}, 'check Innodb_buffer_pool_pages_free does exist');
 
-ok(!exists $problems->{Innodb_buffer_pool_pages_free}, 'check Innodb_buffer_pool_pages_free fails');
+# This test was removed because it was unrealiable. If MySQLAdvisor.t was
+# tested alone, then the buff pool wasn't filled so the test would pass.
+# But if ran as part of prove common/t/*.t, then the other scripts would
+# access the sakila db causing the buff pool to fill, and then this test
+# would fail.
+# ok(!exists $problems->{Innodb_buffer_pool_pages_free}, 'check Innodb_buffer_pool_pages_free fails');
 
 exit;

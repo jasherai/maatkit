@@ -44,7 +44,7 @@ sleep 1;
 $output = `ps -eaf | grep mk-slave-restart | grep -v grep`;
 unlike($output, qr/mk-slave-restart -M/, 'It is dead');
 
-diag(`rm /tmp/mk-slave-re*`);
+diag(`rm -f /tmp/mk-slave-re*`);
 ok(! -f '/tmp/mk-slave-restart.pid', 'PID file removed');
 
 # #############################################################################
@@ -53,6 +53,7 @@ ok(! -f '/tmp/mk-slave-restart.pid', 'PID file removed');
 $output = `../mk-slave-restart --stop --sentinel /tmp/mk-slave-restartup --error-numbers=1205,1317`;
 like($output, qr{Successfully created file /tmp/mk-slave-restartup}, '--error-numbers works (issue 118)');
 
+diag(`rm -f /tmp/mk-slave-re*`);
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
 exit;
