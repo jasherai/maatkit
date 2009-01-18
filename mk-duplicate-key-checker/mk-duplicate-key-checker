@@ -1895,7 +1895,6 @@ my $dp = new DSNParser;
 $dp->prop('setvars', $opts{setvars});
 my $dbh = $dp->get_dbh( $dp->get_cxn_params(\%opts), { AutoCommit => 1 } );
 
-my @whole_batch;
 # TODO: use VersionParser
 my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
 
@@ -1953,20 +1952,20 @@ foreach my $database ( $finder->find_databases($dbh) ) {
       }
    }
 
-   my @to_print;
    foreach my $table ( sort keys %info_for ) {
+      my @dupe_keys;
       my $tbl = $info_for{$table};
 
       # Prepare indexes
       if ( $opts{f} =~ m/k/ ) {
          if ( $opts{v} ) {
             # Print all
-            push @to_print, map { make_hash($tbl, 'KEY', $_) }
+            push @dupe_keys, map { make_hash($tbl, 'KEY', $_) }
                @{$tbl->{keys}};
          }
          else {
             # Find duplicate/redundant by prefix matching.
-            push @to_print,
+            push @dupe_keys,
                map { make_hash($tbl, 'KEY', $_) }
                   @{ $tp->get_duplicate_keys($tbl->{keys},
                      { engine => $tbl->{engine}, %$tp_opts})
@@ -1978,29 +1977,20 @@ foreach my $database ( $finder->find_databases($dbh) ) {
       if ( $opts{f} =~ m/f/ ) {
          if ( $opts{v} ) {
             # Print all
-            push @to_print, map { make_hash($tbl, 'FK', $_) } @{$tbl->{fks}};
+            push @dupe_keys, map { make_hash($tbl, 'FK', $_) } @{$tbl->{fks}};
          }
          else {
             # Otherwise output duplicates.
-            push @to_print,
+            push @dupe_keys,
                map { make_hash($tbl, 'FK', $_) }
                   @{$tp->get_duplicate_fks($tbl->{fks})};
          }
       }
-   }
 
-   next DATABASE unless @to_print;
-
-   if ( $opts{s} ) {
-      push @whole_batch, @to_print;
+      print_dupe_key_info(@dupe_keys);
+      print_drop_key_sql(@dupe_keys) if $opts{sql};
    }
-   else {
-      print_batch(@to_print);
-   }
-}
-
-if ( @whole_batch && $opts{s} ) {
-   print_batch(@whole_batch);
+   next DATABASE;
 }
 
 exit;
@@ -2023,24 +2013,62 @@ sub make_hash {
    };
 }
 
-sub print_batch {
-   my ( @batch ) = @_;
+sub print_dupe_key_info {
+   my ( @dupe_keys ) = @_;
+   return unless @dupe_keys;
+   my $n_cols = $opts{compact} ? 7 : 8;
    my $hdr;
    if ( $opts{b} ) {
-      $hdr = ( "%s\t" x 8 ) . "\n";
+      $hdr = ( "%s\t" x $n_cols ) . "\n";
    }
    else {
-      my $max_idx  = max(6, map { length($_->{name}) } @batch);
-      my $max_tbl  = max(5, map { length($_->{table}) } @batch);
-      my $max_db   = max(8, map { length($_->{database}) } @batch);
-      my $max_par  = max(6, map { length($_->{parent} || '') } @batch);
-      $hdr         = "%-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %-4s %-8s %-${max_par}s %s\n";
+      my $min_db  = $opts{compact} ? 1 : 8;
+      my $min_tbl = $opts{compact} ? 1 : 5;
+      my $max_db  = max($min_db, map { length($_->{database}) } @dupe_keys);
+      my $max_tbl = max($max_db, map { length($_->{table}) } @dupe_keys);
+      my $max_idx = max(6, map { length($_->{name}) } @dupe_keys);
+      my $max_par = max(6, map { length($_->{parent} || '') } @dupe_keys);
+      if ( $opts{compact} ) {
+         my $max_db_tbl = $max_db + $max_tbl + 1; # +1 for the . in db.tbl
+         $hdr = "# %-${max_db_tbl}s %-6s %-${max_idx}s %-4s %-8s %-${max_par}s %s\n";
+         printf($hdr, qw(TABLE ENGINE OBJECT TYPE STRUCT PARENT COLUMNS));
+      }
+      else {
+         $hdr = "# %-${max_db}s %-${max_tbl}s %-6s %-${max_idx}s %-4s %-8s %-${max_par}s %s\n";
+         printf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT PARENT COLUMNS));
+      }
    }
 
-   printf($hdr, qw(DATABASE TABLE ENGINE OBJECT TYPE STRUCT PARENT COLUMNS));
-   foreach my $thing ( @batch ) {
-      printf($hdr, @{$thing}{qw(database table engine name type struct parent cols)});
+   foreach my $dupe_key ( @dupe_keys ) {
+      if ( $opts{compact} ) {
+         printf($hdr,
+            "$dupe_key->{database}.$dupe_key->{table}",
+            @{$dupe_key}{qw(engine name type struct parent cols)});
+      }
+      else {
+         printf($hdr,
+            @{$dupe_key}{qw(database table engine name type struct parent cols)});
+      }
    }
+
+   return;
+}
+
+# The given dupe keys should all be for one table because this sub
+# is lazy and does not want to check for other tables in order to
+# make other ALTER TABLE statements. It could, but it doesn't.
+sub print_drop_key_sql {
+   my ( @dupe_keys ) = @_;
+   return unless @dupe_keys;
+   my $db_tbl = $q->quote($dupe_keys[0]->{database}, $dupe_keys[0]->{table});
+   my $sql = "ALTER TABLE $db_tbl\n";
+   my @drop_keys;
+   foreach my $dupe_key ( @dupe_keys ) {
+      push @drop_keys, "\tDROP KEY `$dupe_key->{name}`";
+   }
+   $sql .= join(",\n", @drop_keys);
+   print "$sql\n";
+   return;
 }
 
 # ############################################################################
@@ -2053,6 +2081,10 @@ sub print_batch {
 
 mk-duplicate-key-checker - Find possible duplicate indexes and foreign keys on
 MySQL tables.
+
+=head1 SYNOPSIS
+
+   mk-duplicate-key-checker --host host1
 
 =head1 DESCRIPTION
 
@@ -2085,15 +2117,6 @@ second gets the latest trunk code from Subversion.
 =head1 OPTIONS
 
 =over
-
-=item --allatonce
-
-short form: -s
-
-Print only once, instead of one DB at a time.
-
-Prints everything it finds in one chunk. The default is to print a database at
-a time.
 
 =item --allstruct
 
@@ -2140,6 +2163,16 @@ Here's an example of a key that is considered redundant with this option:
 
   PRIMARY KEY  (`a`)
   KEY `b` (`b`,`a`)
+
+=item --[no]compact
+
+default: yes
+
+Compact output.
+
+This option causes the L<"OUTPUT"> to be compacted. At present, this only
+causes the DATABASE and TABLE columns to be joined into a single column
+called TABLE which lists the database-qualified table (like database.table).
 
 =item --databases
 
@@ -2224,6 +2257,18 @@ short form: -S; type: string
 
 Socket file to use for connection.
 
+=item --[no]sql
+
+default: yes
+
+Print DROP INDEX statements for each duplicate key.
+
+By default a DROP INDEX statement is printed below each duplicate key so that,
+if you want to remove the duplicate key, you can copy-paste the statement into
+MySQL.
+
+To disable printing these statements, specify --nosql.
+
 =item --tab
 
 short form: -b
@@ -2256,12 +2301,20 @@ Output all keys and/or foreign keys found, not just redundant ones.
 
 =head1 OUTPUT
 
-Output is to STDOUT, one line per server and table, with header lines for each
-database.  I tried to make the output easy to process with awk.  For this reason
+Output is to STDOUT, one line per database and table, with header lines for
+each table.  After each table, a SQL statement to drop all the table's
+duplicate keys is printed (see L<"--[no]sql">).
+
+I tried to make the output easy to process with awk.  For this reason
 columns are always present.  If there's no value, the script prints 'NULL'.
 Output is sorted by database and table.
 
-The columns in the output are as follows.
+By default output is compact (see L<"--[no]compact">). Therefore some
+column/values are printed under a single column.  For example, compact output
+prints the database and table for each duplicate key as a single value
+(like database.table) under the TABLE column.
+
+All possible columns in the output are as follows.
 
 =over
 

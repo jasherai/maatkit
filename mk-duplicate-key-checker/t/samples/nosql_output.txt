@@ -1,0 +1,3 @@
+# TABLE         ENGINE OBJECT TYPE STRUCT   PARENT COLUMNS
+# test.dupe_key MyISAM a      KEY  BTREE    NULL   `a`
+# test.dupe_key MyISAM a_2    KEY  BTREE    NULL   `a`,`b`
