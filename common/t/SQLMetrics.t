@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -317,6 +317,13 @@ is_deeply(
    'Calculates statistical metrics for empty array'
 );
  
+$stats = $sm->calculate_statistical_metrics([1, 2], {});
+is_deeply(
+   $stats,
+   $expected_stats,
+   'Calculates statistical metrics for when $stats missing'
+);
+
 $expected_stats = {
    stddev    => 0,
    median    => 0.9,

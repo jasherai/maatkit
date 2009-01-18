@@ -466,7 +466,12 @@ sub calculate_statistical_metrics {
       distro    => \@distro,
       cutoff    => undef,
    };
-   return $statistical_metrics unless defined $vals && @$vals;
+
+   # These cases might happen when there is nothing to get from the event, for
+   # example, processlist sniffing doesn't gather Rows_examined, so $args won't
+   # have {cnt} or other properties.
+   return $statistical_metrics
+      unless defined $vals && @$vals && $args->{cnt};
 
    # Return accurate metrics for some cases.
    my $n_vals = $args->{cnt};
