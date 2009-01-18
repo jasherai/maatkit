@@ -1778,7 +1778,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2849
+# SQLMetrics package 2853
 # ###########################################################################
 
 
@@ -2071,7 +2071,9 @@ sub calculate_statistical_metrics {
       distro    => \@distro,
       cutoff    => undef,
    };
-   return $statistical_metrics unless defined $vals && @$vals;
+
+   return $statistical_metrics
+      unless defined $vals && @$vals && $args->{cnt};
 
    my $n_vals = $args->{cnt};
    if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
@@ -3374,20 +3376,41 @@ my $sm;     # SQLMetrics
 
    if ( $opts{processlist} ) {    # Sniff SHOW FULL PROCESSLIST
       require Time::HiRes;
-      $ps_dbh = $dp->get_dbh( $dp->get_cxn_params( $opts{processlist} ),
-         { AutoCommit => 1 } );
       my $ps   = new Processlist();
-      my $sth  = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
-      my $cxn  = $ps_dbh->{mysql_thread_id};
+      my ( $sth, $cxn );
       my $misc = { prev => [], time => 0, etime => 0 };
-      while ($oktorun) {
+      my $get_processlist_sub = sub {
          my $time = $misc->{time} = Time::HiRes::time();
+         my $err;
+         do {
+            # Try to reconnect when there's an error.
+            eval { $sth->execute; };
+            $err = $EVAL_ERROR;
+            if ( $err ) {
+               $misc = { prev => [], time => 0, etime => 0 };
+               eval {
+                  if ( !$ps_dbh || !$ps_dbh->ping) {
+                     $ps_dbh = $dp->get_dbh(
+                        $dp->get_cxn_params($opts{processlist}),
+                        { AutoCommit => 1 } );
+                  }
+                  $sth  = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
+                  $cxn  = $ps_dbh->{mysql_thread_id};
+                  $sth->execute();
+               };
+               $err = $EVAL_ERROR;
+               if ( $err ) {
+                  print STDERR $err;
+                  sleep 1;
+               }
+            }
+         } until ( $sth && !$err );
+         $misc->{etime} = Time::HiRes::time() - $time;
+         [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
+      };
+      while ($oktorun) {
          $ps->parse_event(
-            sub {
-               $sth->execute;
-               $misc->{etime} = Time::HiRes::time() - $time;
-               [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
-            },
+            $get_processlist_sub,
             $misc,
             @callbacks,
          );
@@ -3685,7 +3708,8 @@ sub print_analysis_report {
 
       # TODO: get this list from cmdline arguments
       foreach my $metric ( qw(Query_time Lock_time Rows_sent Rows_examined) ) {
-         my $val    = $class->{ $metric };
+         my $val = $class->{ $metric };
+         next unless $val->{cnt}; # There's nothing to report.
 
          next unless $val && %$val;
          MKDEBUG && _d("Reporting metrics for $metric");
@@ -4258,6 +4282,8 @@ The PID file is removed when the daemonized instance exits.
 type: DSN
 
 Poll this DSN's processlist for queries, with L<"--interval"> sleep between.
+
+If the connection fails, mk-log-parser tries to reopen it once per second.
 
 =item --review
 
