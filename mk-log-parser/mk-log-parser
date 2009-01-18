@@ -3263,8 +3263,8 @@ my $sm;     # SQLMetrics
    push @callbacks, get_post_filter_callbacks(\%opts);
    push @callbacks, get_execute_callback(\%opts);
    push @callbacks, get_query_review_callback(\%opts);
-   push @callbacks, get_analyze_callback(\%opts);
    push @callbacks, get_zeroadmin_callback(\%opts);
+   push @callbacks, get_analyze_callback(\%opts);
 
    # ##########################################################################
    # Parse the input.

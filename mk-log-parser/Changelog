@@ -1,5 +1,6 @@
 Changelog for mk-log-parser:
 
+   * Buggy log output for administrator commands skewed results (issue 239).
    * Switched to logarithmic buckets to save memory (issue 224).
    * Trimmed mysqldump insert samples (issue 216).
    * Enhanced the query fingerprinting (issue 220).

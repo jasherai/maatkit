@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 23;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -88,6 +88,16 @@ ok(
 ok(
    no_diff($run_with.'slow018.txt', 'samples/slow018_report.txt'),
    'Analysis for slow018'
+);
+
+ok(
+   no_diff($run_with.'slow019.txt', 'samples/slow019_report.txt'),
+   '--zeroadmin works'
+);
+
+ok(
+   no_diff($run_with.'slow019.txt --nozeroadmin', 'samples/slow019_report_noza.txt'),
+   '--nozeroadmin works'
 );
 
 # #############################################################################
