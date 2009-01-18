@@ -1,5 +1,6 @@
 Changelog for mk-log-parser:
 
+   * Made --execute reconnect when the server goes away (issue 237).
    * Made --processlist reconnect when the server goes away (issue 237).
    * Added --daemonize and --pid (issue 235).
    * Buggy log output for administrator commands skewed results (issue 239).
