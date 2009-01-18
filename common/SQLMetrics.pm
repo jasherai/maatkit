@@ -65,16 +65,18 @@ use English qw(-no_match_vars);
 use POSIX qw(floor);
 
 use constant MKDEBUG     => $ENV{MKDEBUG};
-use constant BASE_LOG    => log(1.05);
+use constant BUCK_SIZE   => 1.05;
+use constant BASE_LOG    => log(BUCK_SIZE);
 use constant BASE_OFFSET => -floor(log(.000001) / BASE_LOG); # typically 284
 use constant NUM_BUCK    => 1000;
+use constant MIN_BUCK    => .000001;
 
 my @buckets   = map { 0 } (1 .. NUM_BUCK);
-my @buck_vals = (.000001);
+my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
 {
-   my $cur = 1.05;
-   for ( 1 .. NUM_BUCK - 1 ) {
-      push @buck_vals, .000001 * ($cur *= 1.05);
+   my $cur = BUCK_SIZE;
+   for ( 2 .. NUM_BUCK - 1 ) {
+      push @buck_vals, MIN_BUCK * ($cur *= BUCK_SIZE);
    }
 }
 # Break the buckets down into powers of ten, in 8 coarser buckets.  Bucket 0
@@ -164,11 +166,11 @@ sub new {
 #     wor => Whether to keep worst-samples for this attrib (default no)
 #     alt => Arrayref of other name(s) for the attribute, like db => Schema.
 #
-# The bucketed list works this way: each range of values from .000001 in
-# increments of 1.05 (that is 5%) we consider a bucket.  We keep 1000 buckets.
+# The bucketed list works this way: each range of values from MIN_BUCK in
+# increments of BUCK_SIZE (that is 5%) we consider a bucket.  We keep 1000 buckets.
 # The upper end of the range is more than 1.5e15 so it should be big enough for
-# almost anything.  The buckets are accessed by a log base 1.05, so
-# floor(log(N)/log(1.05)).  The smallest bucket's value is -284. We shift all
+# almost anything.  The buckets are accessed by a log base BUCK_SIZE, so
+# floor(log(N)/log(BUCK_SIZE)).  The smallest bucket's value is -284. We shift all
 # values up 284 so we have values from 0 to 999 that can be used as array
 # indexes.  A value that falls into a bucket simply increments the array entry.
 #
@@ -306,11 +308,16 @@ sub make_handler {
 sub bucketize {
    my ( $self, $vals ) = @_;
    my @bucketed = @buckets;
-   map {
-      my $idx = BASE_OFFSET + ($_ > 0 ? floor(log($_) / BASE_LOG) : 0);
+   my ($sum, $max, $min);
+   $max = $min = $vals->[0];
+   foreach my $val ( @$vals ) {
+      my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);
       ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
-   } @$vals;
-   return \@bucketed;
+      $max = $max > $val ? $max : $val;
+      $min = $min < $val ? $min : $val;
+      $sum += $val;
+   }
+   return (\@bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals});
 }
 
 # This method is for testing only.
@@ -448,10 +455,9 @@ sub reset_metrics {
 # }
 #
 # The vals arrayref is the buckets as per the above (see the comments at the top
-# of this file).
-# TODO: pass in $sum and $cnt already
+# of this file).  $args should contain cnt, min, max and sum properties.
 sub calculate_statistical_metrics {
-   my ( $self, $vals, %args ) = @_;
+   my ( $self, $vals, $args ) = @_;
    my @distro              = qw(0 0 0 0 0 0 0 0);
    my $statistical_metrics = {
       max       => 0,
@@ -462,61 +468,102 @@ sub calculate_statistical_metrics {
    };
    return $statistical_metrics unless defined $vals && @$vals;
 
-   # Count the number of values.
-   my $n_vals = 0;
-   map { $n_vals += $_ } @$vals;
+   # Return accurate metrics for some cases.
+   my $n_vals = $args->{cnt};
+   if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
+      my $v      = $args->{max} || 0;
+      my $bucket = floor( log($v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+      $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+      $distro[ $bucket ] = $n_vals;
+      return {
+         max    => $v,
+         stddev => 0,
+         median => $v,
+         distro => \@distro,
+         cutoff => $n_vals,
+      };
+   }
+   elsif ( $n_vals == 2 ) {
+      foreach my $v ( $args->{min}, $args->{max} ) {
+         my $bucket = floor( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+         $distro[ $bucket ]++;
+      }
+      my $v      = $args->{max} || 0;
+      my $mean = (($args->{min} || 0) + $v) / 2;
+      return {
+         max    => $v,
+         stddev => sqrt((($v - $mean) ** 2) *2),
+         median => $mean,
+         distro => \@distro,
+         cutoff => $n_vals,
+      };
+   }
 
-   # Determine cutoff point for 95% if there are at least 10 vals.
-   # Cutoff serves also for the number of vals left in the 95%.
-   # E.g. with 50 vals the cutoff is 47 which means there are 47 vals: 0..46.
+   # Determine cutoff point for 95% if there are at least 10 vals.  Cutoff
+   # serves also for the number of vals left in the 95%.  E.g. with 50 vals the
+   # cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT an array
+   # index.
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
    my $total_left = $n_vals;
    my $i = NUM_BUCK - 1;
 
-   # Find the 95th percentile biggest value.
-   my $bucket_95 = 0;
-   while ( $i-- && $total_left >= $cutoff ) {
+   # Find the 95th percentile biggest value.  And calculate the values of the
+   # ones we exclude.
+   my $sum_excl  = 0;
+   while ( $i-- && $total_left > $cutoff ) {
       if ( $vals->[$i] ) {
          $total_left -= $vals->[$i];
+         $sum_excl   += $buck_vals[$i] * $vals->[$i];
          $distro[ $buck_tens[$i] ] += $vals->[$i];
       }
-      $bucket_95 = $i; # The greatest remaining after tossing top 5%
    }
 
+   # Continue until we find the next array element that has a value.
+   my $bucket_95;
+   while ( $i-- ){
+      $bucket_95 = $i;
+      last if $vals->[$i];
+   }
    return $statistical_metrics unless $vals->[$bucket_95];
+   # At this point, $bucket_95 points to the first value we want to keep.
 
-   # Calculate the standard deviation.  The standard deviation is the square
-   # root of the sum of the squared deviations from the mean.  So we need the
-   # mean of the 95th percentile and the sum of the squared values.  Also get
-   # the median.
-   my $sum   = $buck_vals[$bucket_95] * $vals->[$bucket_95];
-   my $sumsq = $sum ** 2;
-   my $mid   = int($cutoff / 2);
+   # Calculate the standard deviation, median, and max value of the 95th
+   # percentile of values.
+   my $sum    = $buck_vals[$bucket_95] * $vals->[$bucket_95];
+   my $sumsq  = $sum ** 2;
+   my $mid    = int($cutoff / 2);
+   my $median = 0;
+   my $prev   = $bucket_95; # Used for getting median when $cutoff is odd
+   $distro[ $buck_tens[$bucket_95] ] += $vals->[$bucket_95];
 
    # Continue through the rest of the values.
-   my $median = $bucket_95;
    while ( $i-- ) {
       my $val = $vals->[$i];
       if ( $val ) {
-         if ( $total_left > $mid ) {
-            $median = $i;
-         }
          $total_left -= $val;
+         if ( !$median && $total_left <= $mid ) {
+            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$i]
+                    : ($buck_vals[$i] + $buck_vals[$prev]) / 2;
+         }
          $sum        += $buck_vals[$i] * $val;
          $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
+         $prev       =  $i;
          $distro[ $buck_tens[$i] ] += $val;
       }
    }
 
-   my $stddev = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $stddev   = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
+   $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
    MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
 
    $statistical_metrics->{stddev} = $stddev;
    $statistical_metrics->{max}    = $buck_vals[$bucket_95];
-   $statistical_metrics->{median} = $buck_vals[$median];
+   $statistical_metrics->{median} = $median;
 
    return $statistical_metrics;
 }

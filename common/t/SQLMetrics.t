@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 18;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 use Data::Dumper;
 
@@ -204,17 +204,24 @@ is($sm->{metrics}->{unique}->{'foo ?'}->{Query_time}->{sample}->{arg},
 # Test bucketizing a straightforward list.
 # #############################################################################
 is_deeply(
-   $sm->bucketize([2,3,6,4,8,9,1,1,1,5,4,3,1]),
+   [$sm->bucketize([2,3,6,4,8,9,1,1,1,5,4,3,1])],
    [
-      (map{0} (0..283)),
-      4,
-      (map{0} (285..297)),
-      1,
-      (map{0} (299..305)),
-      2,
-      (map{0} (307..311)),
-      2,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,1,
-      (map{0} (330..999)),
+      [
+         (map{0} (0..283)),
+         4,
+         (map{0} (285..297)),
+         1,
+         (map{0} (299..305)),
+         2,
+         (map{0} (307..311)),
+         2,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,1,
+         (map{0} (330..999)),
+      ],
+      {  sum => 48,
+         max => 9,
+         min => 1,
+         cnt => 13,
+      },
    ],
    'Bucketizes values right',
 );
@@ -224,23 +231,27 @@ is_deeply(
    # If there were no loss of precision, we'd get this:
    # [1, 1, 1, 1, 2, 3, 3, 4, 4, 5, 6, 8, 9]
    # But we have only 5% precision in the buckets, so...
-   [  '1.09383101885044', '1.09383101885044', '1.09383101885044', '1.09383101885044',
-      '2.16571059866897', '3.19974091367515', '3.19974091367515', '4.28795884954552',
-      '4.28795884954552', '5.21204078136539', '6.33526814500451', '8.48986522331098',
-      '9.82808022913538',
+   [  '1.04174382747661', '1.04174382747661',
+      '1.04174382747661', '1.04174382747661',
+      '2.06258152254188', '3.04737229873823',
+      '3.04737229873823', '4.08377033290049',
+      '4.08377033290049', '4.96384836320513',
+      '6.03358870952811', '8.08558592696284',
+      '9.36007640870036'
    ],
    "Unbucketizes okay",
 );
 
 # #############################################################################
-# Test statistical metrics: 95% stddev and median
+# Test statistical metrics: 95%, stddev, and median
 # #############################################################################
+
 my $expected_stats = {
-   stddev    => 2.37817678034088,
-   median    => 3.19974091367515,
+   stddev    => 2.26493026699131,
+   median    => 3.04737229873823,
    distro    => [qw(0 0 0 0 0 0 13 0)],
    cutoff    => 12,
-   max       => 8.48986522331098,
+   max       => 8.08558592696284,
 };
 my $stats = $sm->calculate_statistical_metrics(
    $sm->bucketize([2,3,6,4,8,9,1,1,1,5,4,3,1]));
@@ -248,6 +259,41 @@ is_deeply(
    $stats,
    $expected_stats,
    'Calculates statistical metrics'
+);
+
+$expected_stats = {
+   stddev    => 2.23248737175256,
+   median    => 3.56557131581936,
+   distro    => [qw(0 0 0 0 0 0 13 0)],
+   cutoff    => 12,
+   max       => 8.08558592696284,
+};
+$stats = $sm->calculate_statistical_metrics(
+   $sm->bucketize([1,1,1,1,2,3,4,4,4,4,6,8,9]));
+   # 95th pct: --------------------------^
+   # median:------------------^ = 3.5
+is_deeply(
+   $stats,
+   $expected_stats,
+   'Calculates median when it is halfway between two elements',
+);
+
+# This is a special case: only two values, widely separated.  The median should
+# be exact (because we pass in min/max) and the stdev should never be bigger
+# than half the difference between min/max.
+$expected_stats = {
+   stddev    => 0.0132914861659635,
+   median    => 0.0094005,
+   distro    => [qw(1 0 0 0 1 0 0 0)],
+   cutoff    => 2,
+   max       => 0.018799,
+};
+$stats = $sm->calculate_statistical_metrics(
+   $sm->bucketize([0.000002, 0.018799]));
+is_deeply(
+   $stats,
+   $expected_stats,
+   'Calculates stats for two-element special case',
 );
 
 $expected_stats = {
@@ -273,10 +319,10 @@ is_deeply(
  
 $expected_stats = {
    stddev    => 0,
-   median    => 0.944892360523,
+   median    => 0.9,
    distro    => [qw(0 0 0 0 0 1 0 0)],
    cutoff    => 1,
-   max       => 0.944892360523,
+   max       => 0.9,
 };
 $stats = $sm->calculate_statistical_metrics($sm->bucketize([0.9]));
 is_deeply(
