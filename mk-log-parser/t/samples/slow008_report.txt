@@ -1,8 +1,8 @@
 # Query 001 (0 QPS) ID: 0xC72BF45D68E35A6E at byte 435 __________________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        1   33
-#      Time   18.8ms   95  18.8ms  18.8ms  18.8ms  18.8ms       0  18.8ms
-#      Lock    9.5ms  100   9.5ms   9.5ms   9.5ms   9.5ms       0   9.5ms
+# Exec time   18.8ms   95  18.8ms  18.8ms  18.8ms  18.8ms       0  18.8ms
+# Lock time    9.5ms  100   9.5ms   9.5ms   9.5ms   9.5ms       0   9.5ms
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  db2
@@ -25,8 +25,8 @@ SELECT MIN(id),MAX(id) FROM tbl\G
 # Query 002 (0 QPS) ID: 0xCC47B42511EA22DD at byte 221 __________________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        1   33
-#      Time    899us    4   899us   899us   899us   899us       0   899us
-#      Lock        0    0       0       0       0       0       0       0
+# Exec time    899us    4   899us   899us   899us   899us       0   899us
+# Lock time        0    0       0       0       0       0       0       0
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  db
@@ -45,8 +45,8 @@ SET NAMES utf8\G
 # Query 003 (0 QPS) ID: 0x8EC70FAF5FB095A9 at byte 0 ____________________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        1   33
-#      Time      2us    0     2us     2us     2us     2us       0     2us
-#      Lock        0    0       0       0       0       0       0       0
+# Exec time      2us    0     2us     2us     2us     2us       0     2us
+# Lock time        0    0       0       0       0       0       0       0
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  db1

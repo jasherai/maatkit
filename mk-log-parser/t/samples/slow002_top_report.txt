@@ -1,8 +1,8 @@
 # Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 __________________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        1   12
-#      Time  726.1ms   95 726.1ms 726.1ms 726.1ms 726.1ms       0 726.1ms
-#      Lock     91us   29    91us    91us    91us    91us       0    91us
+# Exec time  726.1ms   95 726.1ms 726.1ms 726.1ms 726.1ms       0 726.1ms
+# Lock time     91us   29    91us    91us    91us    91us       0    91us
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam    63.0k  100   63.0k   63.0k   63.0k   63.0k       0   63.0k
 #       DBs  db1

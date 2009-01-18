@@ -1778,7 +1778,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2818
+# SQLMetrics package 2849
 # ###########################################################################
 
 
@@ -1791,16 +1791,18 @@ use English qw(-no_match_vars);
 use POSIX qw(floor);
 
 use constant MKDEBUG     => $ENV{MKDEBUG};
-use constant BASE_LOG    => log(1.05);
+use constant BUCK_SIZE   => 1.05;
+use constant BASE_LOG    => log(BUCK_SIZE);
 use constant BASE_OFFSET => -floor(log(.000001) / BASE_LOG); # typically 284
 use constant NUM_BUCK    => 1000;
+use constant MIN_BUCK    => .000001;
 
 my @buckets   = map { 0 } (1 .. NUM_BUCK);
-my @buck_vals = (.000001);
+my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
 {
-   my $cur = 1.05;
-   for ( 1 .. NUM_BUCK - 1 ) {
-      push @buck_vals, .000001 * ($cur *= 1.05);
+   my $cur = BUCK_SIZE;
+   for ( 2 .. NUM_BUCK - 1 ) {
+      push @buck_vals, MIN_BUCK * ($cur *= BUCK_SIZE);
    }
 }
 my @buck_tens = map {
@@ -1949,11 +1951,16 @@ sub make_handler {
 sub bucketize {
    my ( $self, $vals ) = @_;
    my @bucketed = @buckets;
-   map {
-      my $idx = BASE_OFFSET + ($_ > 0 ? floor(log($_) / BASE_LOG) : 0);
+   my ($sum, $max, $min);
+   $max = $min = $vals->[0];
+   foreach my $val ( @$vals ) {
+      my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);
       ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
-   } @$vals;
-   return \@bucketed;
+      $max = $max > $val ? $max : $val;
+      $min = $min < $val ? $min : $val;
+      $sum += $val;
+   }
+   return (\@bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals});
 }
 
 sub unbucketize {
@@ -2055,7 +2062,7 @@ sub reset_metrics {
 }
 
 sub calculate_statistical_metrics {
-   my ( $self, $vals, %args ) = @_;
+   my ( $self, $vals, $args ) = @_;
    my @distro              = qw(0 0 0 0 0 0 0 0);
    my $statistical_metrics = {
       max       => 0,
@@ -2066,8 +2073,36 @@ sub calculate_statistical_metrics {
    };
    return $statistical_metrics unless defined $vals && @$vals;
 
-   my $n_vals = 0;
-   map { $n_vals += $_ } @$vals;
+   my $n_vals = $args->{cnt};
+   if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
+      my $v      = $args->{max} || 0;
+      my $bucket = floor( log($v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+      $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+      $distro[ $bucket ] = $n_vals;
+      return {
+         max    => $v,
+         stddev => 0,
+         median => $v,
+         distro => \@distro,
+         cutoff => $n_vals,
+      };
+   }
+   elsif ( $n_vals == 2 ) {
+      foreach my $v ( $args->{min}, $args->{max} ) {
+         my $bucket = floor( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+         $distro[ $bucket ]++;
+      }
+      my $v      = $args->{max} || 0;
+      my $mean = (($args->{min} || 0) + $v) / 2;
+      return {
+         max    => $v,
+         stddev => sqrt((($v - $mean) ** 2) *2),
+         median => $mean,
+         distro => \@distro,
+         cutoff => $n_vals,
+      };
+   }
 
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
@@ -2075,42 +2110,53 @@ sub calculate_statistical_metrics {
    my $total_left = $n_vals;
    my $i = NUM_BUCK - 1;
 
-   my $bucket_95 = 0;
-   while ( $i-- && $total_left >= $cutoff ) {
+   my $sum_excl  = 0;
+   while ( $i-- && $total_left > $cutoff ) {
       if ( $vals->[$i] ) {
          $total_left -= $vals->[$i];
+         $sum_excl   += $buck_vals[$i] * $vals->[$i];
          $distro[ $buck_tens[$i] ] += $vals->[$i];
       }
-      $bucket_95 = $i; # The greatest remaining after tossing top 5%
    }
 
+   my $bucket_95;
+   while ( $i-- ){
+      $bucket_95 = $i;
+      last if $vals->[$i];
+   }
    return $statistical_metrics unless $vals->[$bucket_95];
 
-   my $sum   = $buck_vals[$bucket_95] * $vals->[$bucket_95];
-   my $sumsq = $sum ** 2;
-   my $mid   = int($cutoff / 2);
+   my $sum    = $buck_vals[$bucket_95] * $vals->[$bucket_95];
+   my $sumsq  = $sum ** 2;
+   my $mid    = int($cutoff / 2);
+   my $median = 0;
+   my $prev   = $bucket_95; # Used for getting median when $cutoff is odd
+   $distro[ $buck_tens[$bucket_95] ] += $vals->[$bucket_95];
 
-   my $median = $bucket_95;
    while ( $i-- ) {
       my $val = $vals->[$i];
       if ( $val ) {
-         if ( $total_left > $mid ) {
-            $median = $i;
-         }
          $total_left -= $val;
+         if ( !$median && $total_left <= $mid ) {
+            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$i]
+                    : ($buck_vals[$i] + $buck_vals[$prev]) / 2;
+         }
          $sum        += $buck_vals[$i] * $val;
          $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
+         $prev       =  $i;
          $distro[ $buck_tens[$i] ] += $val;
       }
    }
 
-   my $stddev = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $stddev   = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
+   $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
    MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
 
    $statistical_metrics->{stddev} = $stddev;
    $statistical_metrics->{max}    = $buck_vals[$bucket_95];
-   $statistical_metrics->{median} = $buck_vals[$median];
+   $statistical_metrics->{median} = $median;
 
    return $statistical_metrics;
 }
@@ -3218,6 +3264,7 @@ my $sm;     # SQLMetrics
    push @callbacks, get_execute_callback(\%opts);
    push @callbacks, get_query_review_callback(\%opts);
    push @callbacks, get_analyze_callback(\%opts);
+   push @callbacks, get_zeroadmin_callback(\%opts);
 
    # ##########################################################################
    # Parse the input.
@@ -3332,6 +3379,22 @@ sub get_execute_callback {
       my $end = Time::HiRes::time();
       $event->{Query_time} = $end - $start;
       return 1;
+   };
+}
+
+# TODO: if there's no --analyze, then we shouldn't cache, we should insert as
+# soon as we see a new fingerprint.
+sub get_zeroadmin_callback {
+   my ( $opts ) = @_;
+   return () unless $opts->{zeroadmin};
+   return sub {
+      my ( $event ) = @_;
+      if ( $event->{arg} && $event->{arg} =~ m/^# administrator/ ) {
+         $event->{Rows_sent}     = 0;
+         $event->{Rows_read}     = 0;
+         $event->{Rows_examined} = 0;
+      }
+      return 1; # required to keep callback chain going
    };
 }
 
@@ -3533,7 +3596,7 @@ sub print_analysis_report {
          next unless $val && %$val;
          MKDEBUG && _d("Reporting metrics for $metric");
 
-         my $stats = $sm->calculate_statistical_metrics($val->{all});
+         my $stats = $sm->calculate_statistical_metrics($val->{all}, $val);
 
          # TODO: this should be the $worst.  And of course that means we need an
          # adaptable distribution, because Rows_sent has a larger typical range
@@ -3548,7 +3611,7 @@ sub print_analysis_report {
          $name = substr($name, 0, 9);
          # Special case :-) TODO
          if ( $metric eq 'Query_time' ) {
-            $name = 'Time';
+            $name = 'Exec time';
          }
          printf $metric_line_fmt,
             $name,                                 # friendly metric name
@@ -4170,6 +4233,12 @@ The attribute that measures a query's badness.
 Only basic attributes are valid: Query_time, Lock_time, Rows_read, etc.  This
 option is not fully implemented.  It's possible that non-default values will do
 strange things.
+
+=item --[no]zeroadmin
+
+default: yes
+
+Zero out the Rows_XXX properties for administrator command events.
 
 =back
 

@@ -1,8 +1,8 @@
 # Query 001 (0 QPS) ID: 0x7F7D57ACDD8A346E at byte 0 ____________________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        1   50
-#      Time       2s   50      2s      2s      2s      2s       0      2s
-#      Lock        0    0       0       0       0       0       0       0
+# Exec time       2s   50      2s      2s      2s      2s       0      2s
+# Lock time        0    0       0       0       0       0       0       0
 # Rows sent        1   50       1       1       1       1       0       1
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  test
@@ -26,8 +26,8 @@ select sleep(2) from n\G
 # Query 002 (0 QPS) ID: 0x3A99CC42AEDCCFCD at byte 359 __________________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        1   50
-#      Time       2s   50      2s      2s      2s      2s       0      2s
-#      Lock        0    0       0       0       0       0       0       0
+# Exec time       2s   50      2s      2s      2s      2s       0      2s
+# Lock time        0    0       0       0       0       0       0       0
 # Rows sent        1   50       1       1       1       1       0       1
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  sakila

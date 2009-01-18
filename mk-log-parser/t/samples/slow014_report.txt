@@ -1,8 +1,8 @@
 # Query 001 (0 QPS) ID: 0x7F7D57ACDD8A346E at byte 1313 _________________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        2  100
-#      Time       4s  100      2s      2s      2s      2s       0      2s
-#      Lock        0    0       0       0       0       0       0       0
+# Exec time       4s  100      2s      2s      2s      2s       0      2s
+# Lock time        0    0       0       0       0       0       0       0
 # Rows sent        2  100       1       1       1       1       0       1
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  test
