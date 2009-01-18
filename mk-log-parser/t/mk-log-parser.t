@@ -109,7 +109,25 @@ $output = `../mk-log-parser --review h=127.1,P=12345,D=test`;
 like($output, qr/--review DSN requires a D/, 'Dies if no t part in --review DSN');
 
 # #############################################################################
-# Tests for query reviewing.
+# Daemonizing and pid creation
+# #############################################################################
+# Start one daemonized instance to update it
+`../mk-log-parser --daemonize --pid /tmp/mk-log-parser.pid --processlist localhost`;
+$output = `ps -eaf | grep mk-log-parser | grep daemonize`;
+like($output, qr/perl ...mk-log-parser/, 'It is running');
+
+ok(-f '/tmp/mk-log-parser.pid', 'PID file created');
+my ($pid) = $output =~ /\s+(\d+)\s+/;
+$output = `cat /tmp/mk-log-parser.pid`;
+is($output, $pid, 'PID file has correct PID');
+kill 15, $pid;
+sleep 1;
+$output = `ps -eaf | grep mk-log-parser | grep daemonize`;
+unlike($output, qr/perl ...mk-log-parser/, 'It is not running');
+unlink '/tmp/mk-log-parser.pid' or die $OS_ERROR;
+
+# #############################################################################
+# Tests for query reviewing and other stuff that requires a DB server.
 # #############################################################################
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';

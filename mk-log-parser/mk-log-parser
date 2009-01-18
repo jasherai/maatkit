@@ -3172,6 +3172,93 @@ sub _d {
 # End QueryReview package
 # ###########################################################################
 
+# ###########################################################################
+# Daemon package 2801
+# ###########################################################################
+
+package Daemon;
+
+use strict;
+use warnings FATAL => 'all';
+
+use POSIX;
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   $self->{reopen_STDIN}  ||= '/dev/null';
+   $self->{reopen_STDOUT} ||= '/dev/null';
+   $self->{reopen_STDERR} ||= '&STDOUT';
+
+   $self->{PID_file}        = undef;
+
+   return bless $self, $class;
+}
+
+sub daemonize {
+   my ( $self ) = @_;
+
+   defined( my $pid = fork ) or die "Can't fork: $OS_ERROR";
+   exit if $pid;
+   POSIX::setsid() or die "Can't start a new session: $OS_ERROR";
+
+   chdir '/' or die "Can't chdir to /: $OS_ERROR";
+
+   open STDIN,  "$self->{reopen_STDIN}",
+      or die "Cannot reopen STDIN $self->{reopen_STDIN}: $OS_ERROR";
+   open STDOUT, ">$self->{reopen_STDOUT}"
+      or die "Cannot reopen STDOUT >$self->{reopen_STDOUT}: $OS_ERROR";
+   open STDERR, ">$self->{reopen_STDERR}"
+      or die "Cannot reopen STDERR >$self->{reopen_STDERR}: $OS_ERROR";
+
+
+   return;
+}
+
+sub create_PID_file {
+   my ( $self, $PID_file ) = @_;
+   return if !$PID_file;
+   $self->{PID_file} = $PID_file; # save for unlink in DESTORY()
+   open my $PID_FILE, "+> $self->{PID_file}"
+      or die "Cannot open PID file '$self->{PID_file}': $OS_ERROR";
+   print $PID_FILE $PID;
+   close $PID_FILE
+      or die "Cannot close PID file '$self->{PID_file}': $OS_ERROR";
+   return;
+}
+
+sub remove_PID_file {
+   my ( $self ) = @_;
+   if ( defined $self->{PID_file} ) {
+      unlink $self->{PID_file}
+         or warn "Cannot remove PID file '$self->{PID_file}': $OS_ERROR";
+   }
+   return;
+}
+
+sub DESTROY {
+   my ( $self ) = @_;
+   $self->remove_PID_file();
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Daemon package
+# ###########################################################################
+
 # #############################################################################
 # mk-log-parser
 # #############################################################################
@@ -3180,7 +3267,6 @@ package main;
 # TODO: sort by ninetyfive, stddev and med.
 # TODO: reverse sorting.
 # TODO: sort by expressions like Rows_sent/Rows_examined
-# TODO: tail -c +160665 /home/baron/smalltest.log | less
 
 use English qw(-no_match_vars);
 use Time::Local qw(timelocal);
@@ -3236,6 +3322,16 @@ my $sm;     # SQLMetrics
    }
 
    $opt_parser->usage_or_errors(%opts);
+
+   my $daemon;
+   if ( $opts{daemonize} ) {
+      $daemon = new Daemon() or die "Cannot daemonize: $OS_ERROR";
+      $daemon->daemonize();
+      if ( defined $opts{pid} ) {
+         $daemon->create_PID_file( $opts{pid} );
+      } 
+      # I'm a daemon now.
+   }
 
    # ##########################################################################
    # Set up callbacks for the various event handling behaviors.
@@ -3382,8 +3478,6 @@ sub get_execute_callback {
    };
 }
 
-# TODO: if there's no --analyze, then we shouldn't cache, we should insert as
-# soon as we see a new fingerprint.
 sub get_zeroadmin_callback {
    my ( $opts ) = @_;
    return () unless $opts->{zeroadmin};
@@ -4086,6 +4180,10 @@ This option deals with bugs in slow-logging functionality that causes large
 values for attributes.  If the attribute's value is bigger than this, the
 last-seen value for that class of query is used instead.
 
+=item --daemonize
+
+Fork to the background and detach from the shell.  POSIX only.
+
 =item --execute
 
 type: DSN
@@ -4143,6 +4241,17 @@ See L<OUTPUT> for more information on the header.
 short form: -i; type: string; default: .1
 
 How frequently to poll the processlist, in seconds.
+
+=item --pid
+
+type: string 
+
+Create the given PID file when daemonized.
+
+For example, C<--daemonize --pid /tmp/mk-log-parser.pid>.  /var/run/ is usually
+not writable by non-root users, so /tmp/ is a more reliable alternative.
+
+The PID file is removed when the daemonized instance exits.
 
 =item --processlist
 
