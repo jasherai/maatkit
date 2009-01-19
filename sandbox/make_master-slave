@@ -6,5 +6,6 @@ cd `dirname $DIR`
 M=12345
 S=12346
 
-./make_sandbox $M
-./make_slave $S
+./make_sandbox $M;
+./make_slave $S;
+/tmp/$S/use -e "set global read_only=1";
