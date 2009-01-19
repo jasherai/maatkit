@@ -51,6 +51,5 @@ is(
    'dupe_key key a_2'
 );
 
-exit;
 $sb->wipe_clean($dbh);
 exit;
