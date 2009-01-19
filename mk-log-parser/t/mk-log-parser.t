@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 28;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -135,16 +135,17 @@ use Data::Dumper;
 $Data::Dumper::Indent=1;
 my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master');
+my $dbh1 = $sb->get_dbh_for('master');
+my $dbh2 = $sb->get_dbh_for('slave1');
 SKIP: {
-   skip 'Cannot connect to sandbox master', 7 if !$dbh;
+   skip 'Cannot connect to sandbox master', 9 if !$dbh1;
 
-   $sb->create_dbs($dbh, ['test']);
+   $sb->create_dbs($dbh1, ['test']);
    $sb->load_file('master', 'samples/query_review.sql');
 
    $output = 'foo'; # clear previous test results
    $output = `${run_with}slow006.txt --noanalyze --review h=127.1,P=12345,D=test,t=query_review`;
-   my $res = $dbh->selectall_arrayref( 'SELECT * FROM test.query_review',
+   my $res = $dbh1->selectall_arrayref( 'SELECT * FROM test.query_review',
       { Slice => {} } );
    is_deeply(
       $res,
@@ -181,7 +182,7 @@ SKIP: {
 
    # Mark a query as reviewed and run --analyze again and that query should
    # not be reported.
-   $dbh->do('UPDATE test.query_review
+   $dbh1->do('UPDATE test.query_review
       SET reviewed_by="daniel", reviewed_on="2008-12-24 12:00:00", comments="foo_tbl is ok, so are cranberries"
       WHERE checksum=11676753765851784517');
    ok(
@@ -198,15 +199,57 @@ SKIP: {
    );
 
    # Test that reported review info gets all meta-columns dynamically.
-   $dbh->do('ALTER TABLE test.query_review ADD COLUMN foo INT');
-   $dbh->do('UPDATE test.query_review
+   $dbh1->do('ALTER TABLE test.query_review ADD COLUMN foo INT');
+   $dbh1->do('UPDATE test.query_review
       SET foo=42 WHERE checksum=15334040482108055940');
    ok(
       no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_5.txt'),
       'Analyze-review pass 5 reports new review info column'
    );
 
-   $sb->wipe_clean($dbh);
+   # ##########################################################################
+   # Tests for swapping --processlist and --execute
+   # ##########################################################################
+   $dbh1->do('set global read_only=0');
+   $dbh2->do('set global read_only=1');
+   my $cmd  = "perl ../mk-log-parser --processlist h=127.1,P=12345 "
+            . "--execute h=127.1,P=12346 --mirror 1";
+   $ENV{MKDEBUG}=1;
+   `$cmd > /tmp/read_only.txt &`;
+   $ENV{MKDEBUG}=0;
+   sleep 5;
+   $dbh1->do('select sleep(1)');
+   sleep 1;
+   $dbh1->do('set global read_only=1');
+   $dbh2->do('set global read_only=0');
+   $dbh1->do('select sleep(1)');
+   sleep 2;
+   $output = `ps -eaf | grep parser | grep mirror | awk '{print \$2}'`;
+   ($output) = $output =~ m/(\d+)/;
+   kill 2, $output;
+   $dbh1->do('set global read_only=0');
+   $dbh2->do('set global read_only=1');
+   $output = `grep read_only /tmp/read_only.txt`;
+   # Sample output:
+   # # main:3619 6897 read_only on execute for --execute: 1 (want 1)
+   # # main:3619 6897 read_only on processlist for --processlist: 0 (want 0)
+   # # main:3619 6897 read_only on processlist for --processlist: 0 (want 0)
+   # # main:3619 6897 read_only on processlist for --processlist: 0 (want 0)
+   # # main:3619 6897 read_only on processlist for --processlist: 0 (want 0)
+   # # main:3619 6897 read_only on processlist for --processlist: 0 (want 0)
+   # # main:3619 6897 read_only on processlist for --processlist: 0 (want 0)
+   # # main:3619 6897 read_only on execute for --execute: 0 (want 1)
+   # # main:3622 6897 read_only wrong for --execute, getting a dbh from processlist
+   # # main:3619 6897 read_only on processlist for --processlist: 1 (want 0)
+   # # main:3622 6897 read_only wrong for --processlist, getting a dbh from execute
+   # # main:3619 6897 read_only on processlist for --execute: 1 (want 1)
+   # # main:3619 6897 read_only on execute for --processlist: 0 (want 0)
+   like($output, qr/wrong for --execute, getting a dbh from processlist/,
+       'switching --processlist works');
+   like($output, qr/wrong for --processlist, getting a dbh from execute/,
+       'switching --execute works');
+
+   $sb->wipe_clean($dbh1);
 };
 
 exit;

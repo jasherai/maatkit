@@ -1,8 +1,8 @@
 # Query 002 (0.3 QPS) ID: 0xD4CD74934382A184 at byte 1445 _______________
 #              total    %     min     max     avg     95%  stddev  median
 #     Count        3   50
-#      Time     36us   50    12us    12us    12us    12us       0    12us
-#      Lock        0    0       0       0       0       0       0       0
+# Exec time     36us   50    12us    12us    12us    12us       0    12us
+# Lock time        0    0       0       0       0       0       0       0
 # Rows sent        0    0       0       0       0       0       0       0
 # Rows exam        0    0       0       0       0       0       0       0
 #       DBs  bar

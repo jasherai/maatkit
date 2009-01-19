@@ -3298,6 +3298,7 @@ my $qv_dbh; # For QueryReview
 my $ex_dbh; # For --execute
 my $ps_dbh; # For Processlist
 my $sm;     # SQLMetrics
+my @fhs;    # File handles
 
 { # Begin a global scope to avoid poisoning subroutines with global variables.
 
@@ -3320,6 +3321,9 @@ my $sm;     # SQLMetrics
       }
       if ( $opts{t} !~ m/^\d+%?$/ ) {
          $opt_parser->error('Invalid syntax for --top.  See perldoc for details.');
+      }
+      if ( $opts{mirror} && (!$opts{execute} || !$opts{processlist}) ) {
+         $opt_parser->error('--mirror requires --execute and --processlist');
       }
    }
 
@@ -3378,24 +3382,23 @@ my $sm;     # SQLMetrics
       require Time::HiRes;
       my $ps   = new Processlist();
       my ( $sth, $cxn );
-      my $misc = { prev => [], time => 0, etime => 0 };
+      my $cur_server = 'processlist';
+      my $cur_time   = 0;
+      my $misc       = { prev => [], time => 0, etime => 0 };
       my $get_processlist_sub = sub {
          my $time = $misc->{time} = Time::HiRes::time();
          my $err;
          do {
-            # Try to reconnect when there's an error.
             eval { $sth->execute; };
             $err = $EVAL_ERROR;
-            if ( $err ) {
+            if ( $err ) { # Try to reconnect when there's an error.
                $misc = { prev => [], time => 0, etime => 0 };
                eval {
-                  if ( !$ps_dbh || !$ps_dbh->ping) {
-                     $ps_dbh = $dp->get_dbh(
-                        $dp->get_cxn_params($opts{processlist}),
-                        { AutoCommit => 1 } );
-                  }
-                  $sth  = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
-                  $cxn  = $ps_dbh->{mysql_thread_id};
+                  ($cur_server, $ps_dbh) = find_role(
+                     \%opts, $ps_dbh, $cur_server, 0, 'for --processlist');
+                  $cur_time = Time::HiRes::time();
+                  $sth      = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
+                  $cxn      = $ps_dbh->{mysql_thread_id};
                   $sth->execute();
                };
                $err = $EVAL_ERROR;
@@ -3405,6 +3408,11 @@ my $sm;     # SQLMetrics
                }
             }
          } until ( $sth && !$err );
+         if ($opts{mirror} && Time::HiRes::time() - $cur_time > $opts{mirror}) {
+            ($cur_server, $ps_dbh) = find_role(\%opts, $ps_dbh, $cur_server,
+               0, 'for --processlist');
+            $cur_time = Time::HiRes::time();
+         }
          $misc->{etime} = Time::HiRes::time() - $time;
          [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
       };
@@ -3418,7 +3426,6 @@ my $sm;     # SQLMetrics
       }
    }
    else { # Parse log files
-      my @fhs;
       if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
          my $fh = *STDIN;
          push @fhs, $fh;
@@ -3477,7 +3484,10 @@ sub get_execute_callback {
    my ( $opts ) = @_;
    return () unless $opts->{execute};
    require Time::HiRes;
-   $ex_dbh = $dp->get_dbh($dp->get_cxn_params($opts->{execute}), {AutoCommit => 1});
+   my $cur_server = 'execute';
+   ($cur_server, $ex_dbh) = find_role($opts, $ex_dbh, $cur_server,
+         1, 'for --execute');
+   my $cur_time = Time::HiRes::time();
    my $curdb;
    return sub {
       my ( $event ) = @_;
@@ -3491,14 +3501,20 @@ sub get_execute_callback {
          # TODO: only if it's a cmd=Query event
          $ex_dbh->do($event->{arg});
          my $end = Time::HiRes::time();
+         if ( $opts->{mirror} && $end - $cur_time > $opts->{mirror} ) {
+            ($cur_server, $ex_dbh) = find_role($opts, $ex_dbh, $cur_server,
+                  1, 'for --execute');
+            $cur_time = $end;
+         }
          $event->{Query_time} = $end - $start;
       };
       # Don't try to re-execute the statement.  Just skip it.
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/server has gone away/ ) {
          print STDERR $EVAL_ERROR;
          eval {
-            $ex_dbh = $dp->get_dbh(
-               $dp->get_cxn_params($opts->{execute}), {AutoCommit => 1});
+            ($cur_server, $ex_dbh) = find_role($opts, $ex_dbh, $cur_server,
+                  1, 'for --execute');
+            $cur_time = Time::HiRes::time();
          };
          if ( $EVAL_ERROR ) {
             print STDERR $EVAL_ERROR;
@@ -3583,6 +3599,35 @@ sub get_analyze_callback {
       $sm->calc_event_metrics($event);
       return 1; # required to keep callback chain going
    };
+}
+
+# Pass in the currently open $dbh (if any), where $current points to ('execute'
+# or 'processlist') and whether you want to be connected to the read_only
+# server.  Get back which server you're looking at, and the $dbh.  Assumes that
+# one of the servers is ALWAYS read only and the other is ALWAYS not!  If
+# there's some transition period where this isn't true, maybe both will end up
+# pointing to the same place, but that should resolve shortly.
+# The magic switching functionality only works if --mirror is given!  Otherwise
+# it just returns the correct $dbh.  $comment is some descriptive text for
+# debuggin, like 'for --execute'.
+sub find_role {
+   my ( $opts, $dbh, $current, $read_only, $comment ) = @_;
+   if ( !$dbh || !$dbh->ping ) {
+      MKDEBUG && _d("Getting a dbh from $current $comment");
+      $dbh = $dp->get_dbh(
+         $dp->get_cxn_params($opts->{$current}), {AutoCommit => 1});
+   }
+   if ( $opts->{mirror} ) {
+      my ( $is_read_only ) = $dbh->selectrow_array('SELECT @@global.read_only');
+      MKDEBUG && _d("read_only on $current $comment: $is_read_only (want $read_only)");
+      if ( $is_read_only != $read_only ) {
+         $current = $current eq 'execute' ? 'processlist' : 'execute';
+         MKDEBUG && _d("read_only wrong $comment, getting a dbh from $current");
+         $dbh = $dp->get_dbh(
+            $dp->get_cxn_params($opts->{$current}), {AutoCommit => 1});
+      }
+   }
+   return ($current, $dbh);
 }
 
 sub find_top_queries {
@@ -3883,12 +3928,15 @@ sub print_tables {
       
 # Catches signals so we can exit gracefully.
 # TODO: test this
-# TODO: break wait for <$fh> with SIGINT.
+# TODO: break wait for <$fh> with SIGINT.  Possibly by closing all $fh?
 sub sig_int {
    my ( $signal ) = @_;
    if ( $oktorun ) {
       print STDERR "# Caught SIG$signal.\n";
       $oktorun = 0;
+      foreach my $fh ( @fhs ) {
+         close $fh or warn "Can't close filehandle: $OS_ERROR";
+      }
    }
    else {
       print STDERR "# Exiting on SIG$signal.\n";
@@ -4271,9 +4319,27 @@ See L<OUTPUT> for more information on the header.
 
 =item --interval
 
-short form: -i; type: string; default: .1
+short form: -i; type: float; default: .1
 
 How frequently to poll the processlist, in seconds.
+
+=item --mirror
+
+type: float
+
+How often to check whether connections should be moved, depending on
+C<read_only>.  Requires L<"--processlist"> and L<"--execute">.
+
+This option causes mk-log-parser to check every N seconds whether it is reading
+from a read-write server and executing against a read-only server, which is a
+sensible way to set up two servers if you're doing something like master-master
+replication.  The L<http://code.google.com/p/mysql-master-master/> master-master
+toolkit does this. The aim is to keep the passive server ready for failover,
+which is impossible without putting it under a realistic workload.
+
+When the tool starts, it assumes the --execute is against the read-only
+(passive) server and the --processlist is against the read-write (active)
+server.
 
 =item --pid
 

@@ -1,5 +1,6 @@
 Changelog for mk-log-parser:
 
+   * Added the --mirror option (issue 236).
    * Made --execute reconnect when the server goes away (issue 237).
    * Made --processlist reconnect when the server goes away (issue 237).
    * Added --daemonize and --pid (issue 235).
