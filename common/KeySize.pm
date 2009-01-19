@@ -74,8 +74,21 @@ sub get_key_size {
    MKDEBUG && _d("key size sql: $sql");
 
    my $explain = $args{dbh}->selectall_hashref($sql, 'id');
+   my $key_len = $explain->{1}->{key_len};
+   my $rows    = $explain->{1}->{rows};
 
-   return $explain->{1}->{key_len} * $explain->{1}->{rows};
+   my $key_size = 0;
+   if ( defined $key_len && defined $rows ) {
+      $key_size = $key_len * $rows;
+   }
+   elsif ( MKDEBUG ) {
+      _d("key_len or rows NULL in EXPLAIN:\n"
+         . join("\n",
+            map { "$_: ".($explain->{1}->{$_} ? $explain->{1}->{$_} : 'NULL') }
+            keys %{$explain->{1}}));
+   }
+
+   return $key_size;
 }
 
 sub _d {

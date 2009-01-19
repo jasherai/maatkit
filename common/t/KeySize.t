@@ -1,8 +1,9 @@
 #!/usr/bin/perl
 
+
 use strict;
 use warnings FATAL => 'all';
-use Test::More tests => 3;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 
 require '../KeySize.pm';
@@ -35,10 +36,20 @@ isa_ok($ks, 'KeySize');
 
 $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', 'samples/dupe_key.sql', 'test');
-$dbh->do('INSERT INTO test.dupe_key VALUE (1,2,3),(4,5,6),(7,8,9),(0,0,0)');
 
 my $tbl    = $q->quote('test', 'dupe_key');
 my $struct = $tp->parse( load_file('samples/dupe_key.sql') );
+
+# The tbl is empty so MySQL should optimize away the query and
+# therefore key_len and rows will be NULL. This tests that
+# get_key_size doesn't blow up for such a case.
+is(
+   $ks->get_key_size(tbl=>$tbl,key=>$struct->{keys}->{a},dbh=>$dbh),
+   '0',
+   'dupe_key key a impossible where'
+);
+
+$dbh->do('INSERT INTO test.dupe_key VALUE (1,2,3),(4,5,6),(7,8,9),(0,0,0)');
 is(
    $ks->get_key_size(tbl=>$tbl,key=>$struct->{keys}->{a},dbh=>$dbh),
    '20',
