@@ -1855,6 +1855,80 @@ sub _d {
 # End OptionParser package
 # ###########################################################################
 
+# ###########################################################################
+# KeySize package 2864
+# ###########################################################################
+package KeySize;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = {};
+   return bless $self, $class;
+}
+
+sub get_key_size {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(tbl key dbh) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $key = $args{key};
+   foreach my $req_key ( qw(name cols) ) {
+      die "The key hashref argument does not have a $req_key key"
+         unless exists $key->{$req_key};
+   }
+
+   my $sql = 'EXPLAIN SELECT ' . join(', ', @{$key->{cols}})
+           . ' FROM ' . $args{tbl}
+           . " FORCE INDEX (`$key->{name}`)"
+           . ' WHERE ';
+   my @where_cols;
+   foreach my $col ( @{$key->{cols}} ) {
+      push @where_cols, "$col=1";
+   }
+   if ( scalar @{$key->{cols}} == 1 ) {
+      push @where_cols, "$key->{cols}->[0]<>1";
+   }
+   $sql .= join(' OR ', @where_cols);
+   MKDEBUG && _d("key size sql: $sql");
+
+   my $explain = $args{dbh}->selectall_hashref($sql, 'id');
+   my $key_len = $explain->{1}->{key_len};
+   my $rows    = $explain->{1}->{rows};
+
+   my $key_size = 0;
+   if ( defined $key_len && defined $rows ) {
+      $key_size = $key_len * $rows;
+   }
+   elsif ( MKDEBUG ) {
+      _d("key_len or rows NULL in EXPLAIN:\n"
+         . join("\n",
+            map { "$_: ".($explain->{1}->{$_} ? $explain->{1}->{$_} : 'NULL') }
+            keys %{$explain->{1}}));
+   }
+
+   return $key_size;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End KeySize package
+# ###########################################################################
+
 # #############################################################################
 # And now for the "program".
 # #############################################################################
@@ -1897,6 +1971,9 @@ my $dbh = $dp->get_dbh( $dp->get_cxn_params(\%opts), { AutoCommit => 1 } );
 
 # TODO: use VersionParser
 my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
+
+my %summary;
+my $ks = $opts{summary} ? new KeySize() : undef;
 
 my $q  = new Quoter();
 my $tp = new TableParser();
@@ -1949,6 +2026,10 @@ foreach my $database ( $finder->find_databases($dbh) ) {
             keys     => $keys,
             fks      => $fks,
          };
+
+         if ( $opts{summary} ) {
+            $summary{'Total Keys'} += scalar @$keys + scalar @$fks;
+         }
       }
    }
 
@@ -1989,9 +2070,28 @@ foreach my $database ( $finder->find_databases($dbh) ) {
 
       print_dupe_key_info(@dupe_keys);
       print_drop_key_sql(@dupe_keys) if $opts{sql};
+
+      if ( $opts{summary} ) {
+         $summary{'Total Duplicate Keys'} += scalar @dupe_keys;
+         foreach my $key ( @dupe_keys ) {
+            my $key_info = {
+               name => $key->{name},
+               cols => [ split(',', $key->{cols}) ],
+            };
+            $summary{'Size Duplicate Keys'} += $ks->get_key_size(
+               dbh => $dbh,
+               tbl => $q->quote($database, $table),
+               key => $key_info,
+            )
+         }
+      }
+
    }
+
    next DATABASE;
 }
+
+print_key_summary(%summary) if $opts{summary};
 
 exit;
 
@@ -2069,6 +2169,27 @@ sub print_drop_key_sql {
    $sql .= join(",\n", @drop_keys);
    print "$sql\n";
    return;
+}
+
+sub print_key_summary {
+   my ( %summary ) = @_;
+   my $max_item = max(17, map { length($_) } keys %summary);
+   my $line_fmt = "# %-${max_item}s  %-s\n";
+   printf $line_fmt, 'KEYS SUMMARY ITEM', 'VALUE';
+   foreach my $item ( sort keys %summary ) {
+      printf $line_fmt, $item, $summary{$item};
+   }
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   # Use $$ instead of $PID in case the package
+   # does not use English.
+   print "# $package:$line $$ ", @_, "\n";
 }
 
 # ############################################################################
@@ -2256,6 +2377,12 @@ These will be included in a C<SET> command.
 short form: -S; type: string
 
 Socket file to use for connection.
+
+=item --[no]summary
+
+default: yes
+
+Print summary of indexes at end of output.
 
 =item --[no]sql
 
