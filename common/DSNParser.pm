@@ -259,7 +259,7 @@ sub get_dbh {
       };
       if ( !$dbh && $EVAL_ERROR ) {
          MKDEBUG && _d($EVAL_ERROR);
-         if ( $EVAL_ERROR =~ m/character set utf8/ ) {
+         if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
             MKDEBUG && _d("Going to try again without utf8 support");
             delete $defaults->{mysql_enable_utf8};
          }
