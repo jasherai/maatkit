@@ -144,6 +144,7 @@ sub get_create_table {
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
       eval { $dbh->do($sql); };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
@@ -208,6 +209,7 @@ sub get_triggers {
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
       eval { $dbh->do($sql); };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
       $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
       MKDEBUG && _d($sql);
       my $sth = $dbh->prepare($sql);

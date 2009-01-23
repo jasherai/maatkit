@@ -235,21 +235,37 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
-   MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
-      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
-   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
-   # Immediately set character set and binmode on STDOUT.
-   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
-      my $sql = "/*!40101 SET NAMES $charset*/";
-      MKDEBUG && _d("$dbh: $sql");
-      $dbh->do($sql);
-      MKDEBUG && _d('Enabling charset for STDOUT');
-      if ( $charset eq 'utf8' ) {
-         binmode(STDOUT, ':utf8')
-            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
-      }
-      else {
-         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+   my $dbh;
+   my $tries = 2;
+   while ( !$dbh && $tries-- ) {
+      eval {
+         MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+            join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+         $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+         # Immediately set character set and binmode on STDOUT.
+         if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+            my $sql = "/*!40101 SET NAMES $charset*/";
+            MKDEBUG && _d("$dbh: $sql");
+            $dbh->do($sql);
+            MKDEBUG && _d('Enabling charset for STDOUT');
+            if ( $charset eq 'utf8' ) {
+               binmode(STDOUT, ':utf8')
+                  or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+            }
+            else {
+               binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+            }
+         }
+      };
+      if ( !$dbh && $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+         if ( $EVAL_ERROR =~ m/character set utf8/ ) {
+            MKDEBUG && _d("Going to try again without utf8 support");
+            delete $defaults->{mysql_enable_utf8};
+         }
+         if ( !$tries ) {
+            die $EVAL_ERROR;
+         }
       }
    }
    # If setvars exists and it's MySQL connection, set them
@@ -257,7 +273,12 @@ sub get_dbh {
    if ( $cxn_string =~ m/mysql/i && $setvars ) {
       my $sql = "SET $setvars";
       MKDEBUG && _d("$dbh: $sql");
-      $dbh->do($sql);
+      eval {
+         $dbh->do($sql);
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+      }
    }
    MKDEBUG && _d('DBH info: ',
       $dbh,
