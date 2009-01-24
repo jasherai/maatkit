@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * Resume died if the table did not exist (issue 221).
+
 2008-12-01: version 1.0.10
 
    * Updates to shared code.
