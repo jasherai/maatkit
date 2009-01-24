@@ -1518,8 +1518,9 @@ sub do_table {
 sub skip_finished_chunks {
    my ( $db, $tbl, $files_ref ) = @_;
    my $chunks_ref = $chunks_for_table{$db}->{$tbl};
-   
-   MKDEBUG && _d("Checking if restore of $db.$tbl can be resumed");
+   my $db_tbl = $q->quote($db, $tbl);
+
+   MKDEBUG && _d("Checking if restore of $db_tbl can be resumed");
 
    if ( !defined $chunks_ref ) {
       MKDEBUG && _d('Cannot resume restore: no chunks file');
@@ -1535,22 +1536,32 @@ sub skip_finished_chunks {
    $dbh->do("USE `$db`");
 
    my $first_missing_chunk = 0;
-   foreach my $chunk ( @$chunks_ref ) {
-      my $select_chunk = "SELECT 1 FROM `$db`.`$tbl` WHERE ( $chunk ) LIMIT 1";
-      my $chunk_restored = $dbh->selectall_arrayref($select_chunk);
-      last if ( scalar @$chunk_restored == 0 );
-      $first_missing_chunk++;
+   # First check that the table exists (issue 221).
+   # If not, then we resume from chunk 0 which will contain
+   # the create table def.
+   eval {
+      $dbh->do("REPLACE INTO $db_tbl SELECT * FROM $db_tbl LIMIT 0");
+   };
+   if ( !$EVAL_ERROR ) {
+      # Table exists, so figure out the first missing chunk.
+      foreach my $chunk ( @$chunks_ref ) {
+         my $select_chunk   = "SELECT 1 FROM $db_tbl WHERE ( $chunk ) LIMIT 1";
+         my $chunk_restored = $dbh->selectall_arrayref($select_chunk);
+         last if scalar @$chunk_restored == 0;
+         $first_missing_chunk++;
+      }
    }
-
-   if ( $first_missing_chunk ) {
-      $first_missing_chunk -= 1 unless $opts{'atomicresume'};
+   elsif ( MKDEBUG ) {
+      _d("Restoring from chunk 0 because table $db_tbl does not exist");
    }
 
    my $bytes_done = 0;
    if ( $first_missing_chunk ) {
+      $first_missing_chunk -= 1 unless $opts{'atomicresume'};
+
       # We need to DELETE the first missing chunk otherwise we may try to
       # INSERT dupliate values.
-      $dbh->do("DELETE FROM `$db`.`$tbl` WHERE "
+      $dbh->do("DELETE FROM $db_tbl WHERE "
                . $chunks_ref->[$first_missing_chunk]);
 
       foreach my $file ( @$files_ref[0..($first_missing_chunk-1)] ) {
@@ -1559,7 +1570,7 @@ sub skip_finished_chunks {
       }
    }
 
-   MKDEBUG && _d("Resuming restore of $db.$tbl from chunk "
+   MKDEBUG && _d("Resuming restore of $db_tbl from chunk "
                  . $first_missing_chunk
                  . " ($bytes_done bytes already done)");
 

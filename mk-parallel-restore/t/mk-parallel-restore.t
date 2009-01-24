@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 18;
+use Test::More tests => 19;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -18,6 +18,7 @@ my $cmd = "perl ../mk-parallel-restore -F $cnf ";
 my $mysql = $sb->_use_for('master');
 
 $sb->create_dbs($dbh, ['test']);
+`rm -rf /tmp/default`;
 
 my $output = `$cmd mk_parallel_restore_foo --test`;
 like(
@@ -114,7 +115,7 @@ $sb->load_file('master', 'samples/issue_30.sql');
 `$mysql -D test -e 'SELECT * FROM issue_30' > /tmp/mkpr_i30`;
 `$mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
 $output = `MKDEBUG=1 $cmd --noatomicresume -D test /tmp/default/test/ | grep 'Resuming'`;
-like($output, qr/Resuming restore of test.issue_30 from chunk 2 \(1\d+ bytes/, 'Reports non-atomic resume from chunk 2 (issue 30)');
+like($output, qr/Resuming restore of `test`.`issue_30` from chunk 2 \(1\d+ bytes/, 'Reports non-atomic resume from chunk 2 (issue 30)');
 
 $output = '';
 $output = `$mysql -e 'SELECT * FROM test.issue_30' | diff /tmp/mkpr_i30 -`;
@@ -126,7 +127,7 @@ ok(!$output, 'Resume restored all 100 rows exactly (issue 30)');
 # TRUE and so we should resume from the first fully missing chunk: 3.
 `$mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
 $output = `MKDEBUG=1 $cmd -D test /tmp/default/test/ | grep 'Resuming'`;
-like($output, qr/Resuming restore of test.issue_30 from chunk 3 \(20\d\d bytes/, 'Reports atomic resume from chunk 3 (issue 30)');
+like($output, qr/Resuming restore of `test`.`issue_30` from chunk 3 \(20\d\d bytes/, 'Reports atomic resume from chunk 3 (issue 30)');
 
 `rm -rf /tmp/default`;
 
@@ -146,5 +147,16 @@ like($output, qr/Cannot resume restore: only 1 chunk \(1=1\)/, 'Does not resume 
 
 `rm -rf /tmp/default`;
 
+# #############################################################################
+# Issue 221: mk-parallel-restore resume functionality broken
+# #############################################################################
+
+# Test that resume does not die if the table isn't present.
+`../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 -C 25`;
+`$mysql -D test -e 'DROP TABLE issue_30'`;
+$output = `MKDEBUG=1 $cmd -D test /tmp/default/test/ 2>&1 | grep Restoring`;
+like($output, qr/Restoring from chunk 0 because table `test`.`issue_30` does not exist/, 'Resume does not die when table is not present (issue 221)');
+
+`rm -rf /tmp/default`;
 $sb->wipe_clean($dbh);
 exit;
