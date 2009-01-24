@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 28;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -54,7 +54,7 @@ SKIP: {
    `rm -rf /tmp/default`;
 
    # Fixes bug #1850998 (workaround for MySQL bug #29408)
-   `$mysql < bug_29408.sql`;
+   `$mysql < samples/bug_29408.sql`;
    $output = `$cmd -E foo -C 100 --basedir /tmp -T --d mk_parallel_dump_foo 2>&1`;
    unlike($output, qr/No database selected/, 'Bug did not affect it');
    `$mysql -e 'drop database if exists mk_parallel_dump_foo'`;
@@ -102,5 +102,45 @@ SKIP: {
    `rm -rf /tmp/default`;
 }
 
+# #############################################################################
+# Issue 223: mk-parallel-dump includes trig definitions into each chunk file
+# #############################################################################
+$sb->load_file('master', 'samples/issue_223.sql');
+diag(`rm -rf /tmp/default/`);
+
+# Dump table t1 and make sure its trig def is not in any chunk.
+diag(`MKDEBUG=1 $cmd --basedir /tmp/ -C 30 -d test > /dev/null`);
+is(
+   `zcat /tmp/default/test/t1.000000.sql.gz | grep TRIGGER`,
+   '',
+   'No trigger def in chunk 0 (issue 223)'
+);
+is(
+   `zcat /tmp/default/test/t1.000001.sql.gz | grep TRIGGER`,
+   '',
+   'No trigger def in chunk 1 (issue 223)'
+);
+
+# Restore t1 and make sure t2 is not affected by the t1 trigger.
+diag(`$mysql -e 'TRUNCATE TABLE test.t1'`);
+diag(`$mysql -e 'TRUNCATE TABLE test.t2'`);
+diag(`../../mk-parallel-restore/mk-parallel-restore -F $cnf -d test /tmp/default/ 1>/dev/null 2>/dev/null`);
+$output = $dbh->selectall_arrayref('SELECT * FROM test.t2');
+is_deeply(
+   $output,
+   [],
+   'Trigger restored after all table chunks (issue 223)'
+);
+
+# And for good measure, check that the trigger actually works.
+$dbh->do('INSERT INTO test.t1 VALUES (999)');
+$output = $dbh->selectall_arrayref('SELECT * FROM test.t2');
+is_deeply(
+   $output,
+   [ [999] ],
+   'Trigger still works after being restored (issue 223)'
+);
+
+diag(`rm -rf /tmp/default/`);
 $sb->wipe_clean($dbh);
 exit;
