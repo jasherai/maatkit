@@ -454,6 +454,55 @@ sub calculate_statistical_metrics {
    return $statistical_metrics;
 }
 
+# Find the top N or top % event keys, in sorted order, optionally including
+# outliers that are notable for some reason.  %args looks like this:
+#
+#  groupby     group-by attribute, usually 'fingerprint'
+#  attrib      order-by attribute (usually Query_time)
+#  orderby     order-by aggregate expression (should be numeric, usually sum)
+#  total       include events whose summed attribs are <= this number...
+#  count       ...or this many events, whichever is less...
+#  ol_attrib   ...or events where the 95th percentile of this attribute...
+#  ol_limit    ...is greater than this value, AND...
+#  ol_freq     ...the event occurred at least this many times.
+sub top_events {
+   my ( $self, %args ) = @_;
+   my $classes = $self->{result_class}->{$args{groupby}};
+   my @sorted = reverse sort { # Sorted list of $groupby values
+      $classes->{$a}->{$args{attrib}}->{$args{orderby}}
+         <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
+      } keys %$classes;
+   my @chosen;
+   my ($total, $count) = (0, 0);
+   foreach my $groupby ( @sorted ) {
+      # Events that fall into the top criterion for some reason
+      if ( 
+         (!$args{total} || $total < $args{total} )
+         && ( !$args{count} || $count < $args{count} )
+      ) {
+         push @chosen, $groupby;
+      }
+
+      # Events that are notable outliers
+      elsif ( $args{ol_attrib}
+         && $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq}
+      ) {
+         # Calculate the 95th percentile of this event's specified attribute.
+         my $stats = $self->calculate_statistical_metrics(
+            $classes->{$groupby}->{$args{ol_attrib}}->{all},
+            $classes->{$groupby}->{$args{ol_attrib}}
+         );
+         if ( $stats->{pct_95} >= $args{ol_limit} ) {
+            push @chosen, $groupby;
+         }
+      }
+
+      $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
+      $count++;
+   }
+   return @chosen;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }

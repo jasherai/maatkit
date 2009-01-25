@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 17;
+use Test::More tests => 18;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -450,3 +450,58 @@ $result = {
 };
 
 is_deeply( $ea->results, $result, 'Limited attribute values', );
+
+# #############################################################################
+# For issue 171, the enhanced --top syntax, we need to pick events by complex
+# criteria.  It's too messy to do with a log file, so we'll do it with an event
+# generator function.
+# #############################################################################
+{
+   my $i = 0;
+   my @events = (
+      # fingerprint, time, count; 1350 seconds total
+      [ 'event1', 10, 5   ], # An outlier, but not in top 95%
+      [ 'event2', 2,  500 ], # 1000 seconds total
+      [ 'event3', 1,  500 ], # 500  seconds total
+      [ 'event4', 1,  300 ], # 300  seconds total
+   );
+   sub generate_event {
+      START:
+      if ( $i >= $events[0]->[2] ) {
+         shift @events;
+         $i = 0;
+      }
+      $i++;
+      return undef unless @events;
+      return {
+         fingerprint => $events[0]->[0],
+         Query_time  => $events[0]->[1],
+      };
+   }
+}
+
+$ea = new EventAggregator(
+   classes => {
+      fingerprint => {
+         Query_time => [qw(Query_time)],
+      },
+   },
+);
+
+while ( my $event = generate_event() ) {
+   $ea->aggregate($event);
+}
+
+my @chosen = $ea->top_events(
+   groupby => 'fingerprint',
+   attrib  => 'Query_time',
+   orderby => 'sum',
+   total   => 1300,
+   count   => 2,               # Get event2/3 but not event4
+   # Or outlier events that usually take > 5s to execute and happened > 3 times
+   ol_attrib => 'Query_time',
+   ol_limit  => 5,
+   ol_freq   => 3,
+);
+
+is_deeply( \@chosen, [qw(event2 event3 event1)], 'Got top events' );
