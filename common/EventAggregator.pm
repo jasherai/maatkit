@@ -159,6 +159,13 @@ sub results {
    };
 }
 
+# Return the attributes that this object is tracking, and their data types, as
+# a hashref of name => type.
+sub attributes {
+   my ( $self ) = @_;
+   return $self->{attributes};
+}
+
 # Make subroutines that do things with events.
 #
 # $attrib: the name of the attrib (Query_time, Rows_read, etc)
@@ -208,6 +215,7 @@ sub make_handler {
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
    MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
+   $self->{attributes}->{$attrib} = $type;
 
    %args = ( # Set up defaults
       min => 1,
@@ -484,8 +492,8 @@ sub top_events {
       }
 
       # Events that are notable outliers
-      elsif ( $args{ol_attrib}
-         && $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq}
+      elsif ( $args{ol_attrib} && (!$args{ol_freq}
+         || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
          # Calculate the 95th percentile of this event's specified attribute.
          my $stats = $self->calculate_statistical_metrics(

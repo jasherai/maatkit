@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 18;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -73,8 +73,6 @@ $result = {
          Query_time => {
             min => '0.000652',
             max => '0.000682',
-
-            # all => [ '0.000652', '0.000682' ] # buckets 133, 134
             all =>
                [ ( map {0} ( 0 .. 132 ) ), 1, 1, ( map {0} ( 135 .. 999 ) ) ],
             sum => '0.001334',
@@ -96,8 +94,6 @@ $result = {
          Rows_sent => {
             min => 1,
             max => 1,
-
-            # all => [1, 1],
             all =>
                [ ( map {0} ( 0 .. 283 ) ), 2, ( map {0} ( 285 .. 999 ) ) ],
             sum => 2,
@@ -108,8 +104,6 @@ $result = {
          Query_time => {
             min => '0.001943',
             max => '0.001943',
-
-            # all => [ '0.001943' ],
             all =>
                [ ( map {0} ( 0 .. 155 ) ), 1, ( map {0} ( 157 .. 999 ) ) ],
             sum => '0.001943',
@@ -144,6 +138,16 @@ foreach my $event (@$events) {
 
 is_deeply( $ea->results->{classes},
    $result, 'Simple fingerprint aggregation' );
+
+is_deeply(
+   $ea->attributes,
+   {  Query_time => 'num',
+      user       => 'string',
+      ts         => 'string',
+      Rows_sent  => 'num',
+   },
+   'Found attribute types',
+);
 
 $ea = new EventAggregator(
    classes => {},
@@ -460,6 +464,7 @@ is_deeply( $ea->results, $result, 'Limited attribute values', );
    my $i = 0;
    my @events = (
       # fingerprint, time, count; 1350 seconds total
+      [ 'event0', 10, 1   ], # An outlier, but happens once
       [ 'event1', 10, 5   ], # An outlier, but not in top 95%
       [ 'event2', 2,  500 ], # 1000 seconds total
       [ 'event3', 1,  500 ], # 500  seconds total
@@ -492,7 +497,9 @@ while ( my $event = generate_event() ) {
    $ea->aggregate($event);
 }
 
-my @chosen = $ea->top_events(
+my @chosen;
+
+@chosen = $ea->top_events(
    groupby => 'fingerprint',
    attrib  => 'Query_time',
    orderby => 'sum',
@@ -505,3 +512,18 @@ my @chosen = $ea->top_events(
 );
 
 is_deeply( \@chosen, [qw(event2 event3 event1)], 'Got top events' );
+
+@chosen = $ea->top_events(
+   groupby => 'fingerprint',
+   attrib  => 'Query_time',
+   orderby => 'sum',
+   total   => 1300,
+   count   => 2,               # Get event2/3 but not event4
+   # Or outlier events that usually take > 5s to execute
+   ol_attrib => 'Query_time',
+   ol_limit  => 5,
+   ol_freq   => undef,
+);
+
+is_deeply( \@chosen, [qw(event2 event3 event1 event0)],
+   'Got top events with outlier' );
