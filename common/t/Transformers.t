@@ -20,22 +20,23 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 24;
 use English qw(-no_match_vars);
 
 BEGIN {
    require '../Transformers.pm';
-   Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time percentage_of) );
+   Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time
+   percentage_of unix_timestamp) );
 };
 
 is(micro_t('0.000001'),       "1us",        'Formats 1 microsecond');
 is(micro_t('0.001000'),       '1ms',        'Formats 1 milliseconds');
 is(micro_t('1.000000'),       '1s',         'Formats 1 second');
-is(micro_t('0.123456789999'), '123.456ms',  'Truncates long value, does not round');
-is(micro_t('1.123000000000'), '1.123s',     'Truncates, removes insignificant zeros');
+is(micro_t('0.123456789999'), '123ms',  'Truncates long value, does not round');
+is(micro_t('1.123000000000'), '1s',     'Truncates, removes insignificant zeros');
 is(micro_t('0.000000'), '0', 'Zero is zero');
 is(micro_t('-1.123'), '0', 'Negative number becomes zero');
-is(micro_t('0.9999998'), '999.999ms', 'ms high edge is not rounded (999.999 ms)');
+is(micro_t('0.9999998', p_ms => 3), '999.999ms', 'ms high edge is not rounded (999.999 ms)');
 is(micro_t('.060123', p_ms=>1), '60.1ms', 'Can change float precision for ms in micro_t');
 is(micro_t('123.060123', p_s=>1), '123.1s', 'Can change float precision for seconds in micro_t');
  
@@ -56,3 +57,4 @@ is(percentage_of(25, 100, p=>1), '25.0', 'Percentage with less precision');
 is(percentage_of(25, 100, p=>0), '25', 'Percentage as int');
 
 is(parse_timestamp('071015  1:43:52'), '2007-10-15 01:43:52', 'timestamp');
+is(unix_timestamp('2007-10-15 01:43:52'), 1192427032, 'unix_timestamp');

@@ -24,6 +24,7 @@ package Transformers;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Time::Local qw(timelocal);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -38,12 +39,13 @@ our @EXPORT_OK   = qw(
    shorten
    ts
    parse_timestamp
+   unix_timestamp
 );
 
 sub micro_t {
    my ( $t, %args ) = @_;
-   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
-   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
    my $f;
 
    $t = 0 if $t < 0;
@@ -149,6 +151,16 @@ sub parse_timestamp {
    return $val;
 }
 
+# Turns a properly formatted timestamp into an int (seconds since epoch)
+sub unix_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+   {
+      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   }
+   return $val;
+}
 
 sub _d {
    my ($package, undef, $line) = caller 0;
