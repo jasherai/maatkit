@@ -336,6 +336,124 @@ sub unbucketize {
    return @result;
 }
 
+# Given an arrayref of vals, returns a hashref with the following
+# statistical metrics:
+#
+#    pct_95    => The 95th percentile
+#    cutoff    => How many values fall into the 95th percentile
+#    stddev    => of 95% values
+#    median    => of 95% values
+#
+# The vals arrayref is the buckets as per the above (see the comments at the top
+# of this file).  $args should contain cnt, min, max and sum properties.
+sub calculate_statistical_metrics {
+   my ( $self, $vals, $args ) = @_;
+   my $statistical_metrics = {
+      pct_95    => 0,
+      stddev    => 0,
+      median    => 0,
+      cutoff    => undef,
+   };
+
+   # These cases might happen when there is nothing to get from the event, for
+   # example, processlist sniffing doesn't gather Rows_examined, so $args won't
+   # have {cnt} or other properties.
+   return $statistical_metrics
+      unless defined $vals && @$vals && $args->{cnt};
+
+   # Return accurate metrics for some cases.
+   my $n_vals = $args->{cnt};
+   if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
+      my $v      = $args->{max} || 0;
+      my $bucket = floor( log($v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+      $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+      return {
+         pct_95 => $v,
+         stddev => 0,
+         median => $v,
+         cutoff => $n_vals,
+      };
+   }
+   elsif ( $n_vals == 2 ) {
+      foreach my $v ( $args->{min}, $args->{max} ) {
+         my $bucket = floor( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+      }
+      my $v      = $args->{max} || 0;
+      my $mean = (($args->{min} || 0) + $v) / 2;
+      return {
+         pct_95 => $v,
+         stddev => sqrt((($v - $mean) ** 2) *2),
+         median => $mean,
+         cutoff => $n_vals,
+      };
+   }
+
+   # Determine cutoff point for 95% if there are at least 10 vals.  Cutoff
+   # serves also for the number of vals left in the 95%.  E.g. with 50 vals the
+   # cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT an array
+   # index.
+   my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
+   $statistical_metrics->{cutoff} = $cutoff;
+
+   my $total_left = $n_vals;
+   my $i = NUM_BUCK - 1;
+
+   # Find the 95th percentile biggest value.  And calculate the values of the
+   # ones we exclude.
+   my $sum_excl  = 0;
+   while ( $i-- && $total_left > $cutoff ) {
+      if ( $vals->[$i] ) {
+         $total_left -= $vals->[$i];
+         $sum_excl   += $buck_vals[$i] * $vals->[$i];
+      }
+   }
+
+   # Continue until we find the next array element that has a value.
+   my $bucket_95;
+   while ( $i-- ){
+      $bucket_95 = $i;
+      last if $vals->[$i];
+   }
+   return $statistical_metrics unless $vals->[$bucket_95];
+   # At this point, $bucket_95 points to the first value we want to keep.
+
+   # Calculate the standard deviation, median, and max value of the 95th
+   # percentile of values.
+   my $sum    = $buck_vals[$bucket_95] * $vals->[$bucket_95];
+   my $sumsq  = $sum ** 2;
+   my $mid    = int($cutoff / 2);
+   my $median = 0;
+   my $prev   = $bucket_95; # Used for getting median when $cutoff is odd
+
+   # Continue through the rest of the values.
+   while ( $i-- ) {
+      my $val = $vals->[$i];
+      if ( $val ) {
+         $total_left -= $val;
+         if ( !$median && $total_left <= $mid ) {
+            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$i]
+                    : ($buck_vals[$i] + $buck_vals[$prev]) / 2;
+         }
+         $sum        += $buck_vals[$i] * $val;
+         $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
+         $prev       =  $i;
+      }
+   }
+
+   my $stddev   = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
+   $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
+
+   MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
+
+   $statistical_metrics->{stddev} = $stddev;
+   $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
+   $statistical_metrics->{median} = $median;
+
+   return $statistical_metrics;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
