@@ -37,6 +37,7 @@ our @EXPORT_OK   = qw(
    secs_to_time
    shorten
    ts
+   parse_timestamp
 );
 
 sub micro_t {
@@ -135,6 +136,19 @@ sub ts {
    return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
       $year, $mon, $mday, $hour, $min, $sec);
 }
+
+# Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.
+sub parse_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   {
+      return sprintf "%d-%02d-%02d %02d:%02d:%02d",
+                     $y + 2000, $m, $d, $h, $i, $s;
+   }
+   return $val;
+}
+
 
 sub _d {
    my ($package, undef, $line) = caller 0;

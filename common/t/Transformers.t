@@ -20,12 +20,12 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 22;
+use Test::More tests => 23;
 use English qw(-no_match_vars);
 
 BEGIN {
    require '../Transformers.pm';
-   Transformers->import( qw(micro_t shorten secs_to_time percentage_of) );
+   Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time percentage_of) );
 };
 
 is(micro_t('0.000001'),       "1us",        'Formats 1 microsecond');
@@ -55,4 +55,4 @@ is(percentage_of(25, 100), '25.00', 'Percentage with precision');
 is(percentage_of(25, 100, p=>1), '25.0', 'Percentage with less precision');
 is(percentage_of(25, 100, p=>0), '25', 'Percentage as int');
 
-exit;
+is(parse_timestamp('071015  1:43:52'), '2007-10-15 01:43:52', 'timestamp');
