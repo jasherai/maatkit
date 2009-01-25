@@ -38,11 +38,11 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
 
-# #############################################################################
+# ###########################################################################
 # Set up some constants for bucketing values.  It is impossible to keep all
 # values seen in memory, but putting them into logarithmically scaled buckets
 # and just incrementing the bucket each time works, although it is imprecise.
-# #############################################################################
+# ###########################################################################
 use constant MKDEBUG      => $ENV{MKDEBUG};
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
