@@ -246,7 +246,9 @@ sub fire_event {
       Query_time => $Query_time,
       Lock_time  => 0,               # TODO
    };
-   map { return unless $_->($event) } @callbacks;
+   foreach my $callback ( @callbacks ) {
+      last unless $event = $callback->($event);
+   }
 }
 
 sub _d {
