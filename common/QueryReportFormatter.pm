@@ -15,9 +15,9 @@
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
-# #############################################################################
+# ###########################################################################
 # QueryReportFormatter package $Revision: 2880 $
-# #############################################################################
+# ###########################################################################
 
 package QueryReportFormatter;
 
@@ -103,7 +103,7 @@ sub global_report {
    my $line = sprintf('# Overall: %s total, %s unique, %s QPS ',
       shorten($global_cnt),
       shorten(scalar keys %{$stats->{classes}->{$opts{groupby}}}),
-      $qps);
+      shorten($qps));
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
@@ -418,6 +418,6 @@ sub _d {
 
 1;
 
-# #############################################################################
+# ###########################################################################
 # End QueryReportFormatter package
-# #############################################################################
+# ###########################################################################
