@@ -16,6 +16,7 @@ my $dbh = $sb->get_dbh_for('master')
 $sb->create_dbs($dbh, ['test']);
 $sb->load_file('master', 'samples/query_review.sql');
 
+require '../Transformers.pm';
 require '../QueryReview.pm';
 require '../QueryRewriter.pm';
 require '../MySQLDump.pm';
@@ -110,7 +111,7 @@ my $event = {
 };
 my $fp = $qr->fingerprint($event->{arg});
 $event->{fingerprint} = $fp;
-my $checksum = QueryReview::make_checksum($fp);
+my $checksum = Transformers::make_checksum($fp);
 $qv->cache_event($event);
 is($event->{checksum}, $checksum, 'Adds checksum to event');
 

@@ -20,13 +20,13 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 24;
+use Test::More tests => 25;
 use English qw(-no_match_vars);
 
 BEGIN {
    require '../Transformers.pm';
    Transformers->import( qw(parse_timestamp micro_t shorten secs_to_time
-   percentage_of unix_timestamp) );
+   percentage_of unix_timestamp make_checksum) );
 };
 
 is(micro_t('0.000001'),       "1us",        'Formats 1 microsecond');
@@ -58,3 +58,4 @@ is(percentage_of(25, 100, p=>0), '25', 'Percentage as int');
 
 is(parse_timestamp('071015  1:43:52'), '2007-10-15 01:43:52', 'timestamp');
 is(unix_timestamp('2007-10-15 01:43:52'), 1192427032, 'unix_timestamp');
+is(make_checksum('hello world'), '93CB22BB8F5ACDC3', 'make_checksum');
