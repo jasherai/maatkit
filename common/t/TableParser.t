@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 53;
+use Test::More tests => 58;
 use English qw(-no_match_vars);
 use DBI;
 
@@ -475,6 +475,7 @@ is_deeply(
          struct => 'BTREE',
          name   => 'PRIMARY',
          cols   => '`a`',
+         unique => 1,
       },
    ],
    'One key'
@@ -488,6 +489,7 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a',
          cols   => '`a`',
+         unique => 0,
       },
    ],
    'One key with one FK'
@@ -513,11 +515,13 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a',
          cols   => '`a`',
+         unique => 0,
       },
       {
          struct => 'BTREE',
          name   => 'a_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
    ],
    'Two keys on table dupe_key'
@@ -529,11 +533,13 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a',
          cols   => '`a`',
+         unique => 0,
       },
       {
          struct => 'BTREE',
          name   => 'a_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
    ],
    'Two dupe keys on table dupe_key'
@@ -547,11 +553,13 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
       {
          struct => 'BTREE',
          name   => 'a',
          cols   => '`a`',
+         unique => 0,
       },
    ],
    'Two keys on table dupe_key in reverse'
@@ -563,11 +571,13 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
       {
          struct => 'BTREE',
          name   => 'a',
          cols   => '`a`',
+         unique => 0,
       },
    ],
    'Two dupe keys on table dupe_key in reverse'
@@ -581,16 +591,19 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a',
          cols   => '`a`',
+         unique => 0,
       },
       {
          struct => 'BTREE',
          name   => 'a_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
       {
          struct => 'BTREE',
          name   => 'a_3',
          cols   => '`a`,`b`',
+         unique => 0,
       },
    ],
    'Three keys on table dupe_key'
@@ -602,16 +615,19 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a',
          cols   => '`a`',
+         unique => 0,
       },
       {
          struct => 'BTREE',
          name   => 'a_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
       {
          struct => 'BTREE',
          name   => 'a_3',
          cols   => '`a`,`b`',
+         unique => 0,
       },
    ],
    'Dupe keys only output once'
@@ -625,11 +641,13 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a',
          cols   => '`a`',
+         unique => 0,
       },
       {
          struct => 'FULLTEXT',
          name   => 'a_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
    ],
    'Fulltext keys on table dupe_key'
@@ -648,11 +666,13 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a',
          cols   => '`a`',
+         unique => 0,
       },
       {
          struct => 'FULLTEXT',
          name   => 'a_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
    ],
    'Dupe keys when ignoring type'
@@ -666,16 +686,19 @@ is_deeply(
          struct => 'FULLTEXT',
          name   => 'ft_idx_a_b',
          cols   => '`a`,`b`',
+         unique => 0,
       },
       {
          struct => 'FULLTEXT',
          name   => 'ft_idx_b',
          cols   => '`b`',
+         unique => 0,
       },
       {
          struct => 'FULLTEXT',
          name   => 'ft_idx_a',
          cols   => '`a`',
+         unique => 0,
       },
    ],
    'Fulltext keys on table ft_not_dupe_key (for issue 10)'
@@ -695,11 +718,13 @@ is_deeply(
          struct => 'FULLTEXT',
          name   => 'ft_idx_a_b_1',
          cols   => '`a`,`b`',
+         unique => 0,
       },
       {
          struct => 'FULLTEXT',
          name   => 'ft_idx_a_b_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
    ],
    'Fulltext keys on table ft_dupe_key_exact (issue 10)'
@@ -711,11 +736,13 @@ is_deeply(
          struct => 'FULLTEXT',
          name   => 'ft_idx_a_b_1',
          cols   => '`a`,`b`',
+         unique => 0,
       },
       {
          struct => 'FULLTEXT',
          name   => 'ft_idx_a_b_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
    ],
    'Dupe exact fulltext keys (issue 10)'
@@ -729,11 +756,13 @@ is_deeply(
          struct => 'FULLTEXT',
          name   => 'ft_idx_a_b',
          cols   => '`a`,`b`',
+         unique => 0,
       },
       {
          struct => 'FULLTEXT',
          name   => 'ft_idx_b_a',
          cols   => '`b`,`a`',
+         unique => 0,
       },
    ],
    'Fulltext keys on table ft_dupe_key_reverse_order (issue 10)'
@@ -745,11 +774,13 @@ is_deeply(
          struct => 'FULLTEXT',
          name   => 'ft_idx_a_b',
          cols   => '`a`,`b`',
+         unique => 0,
       },
       {
          struct => 'FULLTEXT',
          name   => 'ft_idx_b_a',
          cols   => '`b`,`a`',
+         unique => 0,
       },
    ],
    'Dupe reverse order fulltext keys (issue 10)'
@@ -770,11 +801,13 @@ is_deeply(
          struct => 'BTREE',
          name   => 'a',
          cols   => '`b`,`a`',
+         unique => 0,
       },
       {
          struct => 'BTREE',
          name   => 'a_2',
          cols   => '`a`,`b`',
+         unique => 0,
       },
    ],
    'Two dupe keys when ignoring order'
@@ -857,11 +890,13 @@ is_deeply(
          struct => 'BTREE',
          name   => 'PRIMARY',
          cols   => '`a`',
+         unique => 1,
       },
       {
          struct => 'BTREE',
          name   => 'b',
          cols   => '`b`,`a`',
+         unique => 0,
       },
    ],
    'Duplicate keys with cluster options'
@@ -883,6 +918,81 @@ is_deeply(
    'No cluster-duplicate keys in mysql.db'
 );
 
+# #############################################################################
+# Issue 9: mk-duplicate-key-checker should treat unique and FK indexes specially
+# #############################################################################
+$ddl = load_file('samples/issue_9-1.sql');
+is_deeply(
+   $p->get_duplicate_keys($p->get_keys($ddl, $opt)),
+   [
+   ],
+   'Unique and non-unique keys with common prefix not dupes (issue 9, 1/5)'
+);
+
+$ddl = load_file('samples/issue_9-2.sql');
+is_deeply(
+   $p->get_duplicate_keys($p->get_keys($ddl, $opt)),
+   [
+   ],
+   'PRIMARY and non-unique keys with common prefix not dupes (issue 9, 2/5)'
+);
+$ddl = load_file('samples/issue_9-3.sql');
+is_deeply(
+   $p->get_duplicate_keys($p->get_keys($ddl, $opt)),
+   [
+      {
+         struct => 'BTREE',
+         name   => 'i',
+         cols   => '`a`,`b`',
+         unique => 1,
+      },
+      {
+         struct => 'BTREE',
+         name   => 'j',
+         cols   => '`a`,`b`',
+         unique => 0,
+      },
+   ],
+   'Non-unique key dupes unique key with same col cover (issue 9, 3/5)'
+);
+$ddl = load_file('samples/issue_9-4.sql');
+is_deeply(
+   $p->get_duplicate_keys($p->get_keys($ddl, $opt)),
+   [
+      {
+         struct => 'BTREE',
+         name   => 'PRIMARY',
+         cols   => '`a`,`b`',
+         unique => 1,
+      },
+      {
+         struct => 'BTREE',
+         name   => 'j',
+         cols   => '`a`,`b`',
+         unique => 0,
+      },
+   ],
+   'Non-unique key dupes PRIMARY key same col cover (issue 9, 4/5)'
+);
+$ddl = load_file('samples/issue_9-5.sql');
+is_deeply(
+   $p->get_duplicate_keys($p->get_keys($ddl, $opt)),
+   [
+      {
+         struct => 'BTREE',
+         name   => 'i',
+         cols   => '`a`,`b`',
+         unique => 1,
+      },
+      {
+         struct => 'BTREE',
+         name   => 'j',
+         cols   => '`a`',
+         unique => 1,
+      },
+   ],
+   'Two unique keys with common prefix are dupes (issue 9, 5/5)'
+);
 # #############################################################################
 # Sandbox tests
 # #############################################################################

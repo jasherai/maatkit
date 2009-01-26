@@ -277,7 +277,8 @@ sub get_keys {
    }
 
    my @keys = map {
-      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $unique, $struct, $cols )
+         = $_ =~ m/(?:(\w+) )?KEY.+(?:USING (\w+))? \((.+)\)/;
       my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
       $struct = $struct || $special || 'BTREE';
       my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
@@ -291,6 +292,7 @@ sub get_keys {
          struct   => $struct,
          cols     => $cols,
          name     => $name || 'PRIMARY',
+         unique   => $unique && $unique =~ m/(UNIQUE|PRIMARY)/ ? 1 : 0,
       }
    } @indexes;
 
@@ -331,12 +333,15 @@ sub get_duplicate_keys {
          my $j_cols        = $keys[$j]->{cols};
          my $type_i_cols   = $keys[$i]->{struct};
          my $type_j_cols   = $keys[$j]->{struct};
+         my $unique_i_cols = $keys[$i]->{unique};
+         my $unique_j_cols = $keys[$j]->{unique};
          my $len_i_cols    = length($i_cols);
          my $len_j_cols    = length($j_cols);
          my $min_len       = min($len_i_cols, $len_j_cols);
          my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
                                && $type_j_cols eq 'FULLTEXT'
                              ) ? 1 : 0;
+
          if ( MKDEBUG ) {
             _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
                ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
@@ -362,6 +367,17 @@ sub get_duplicate_keys {
                else {
                   MKDEBUG && _d("Indexes are not duplicates (fulltext)");
                }
+            }
+            elsif ( ($unique_i_cols xor $unique_j_cols)
+                    && $len_i_cols != $len_j_cols ) {
+               # For issue 9:
+               # UNIQUE  KEY i (a) does not duplicate KEY j (a,b).
+               # PRIMARY KEY i (a) does not duplicate KEY j (a,b).
+               # But,
+               # KEY j (a,b) duplicates UNIQUE KEY i (a,b).
+               # KEY j (a,b) duplicates PRIMARY KEY (a, b). 
+               MKDEBUG && _d('Indexes are not duplicates because one or '
+                  . 'the other is unique and a prefix of the other');
             }
             else {
                MKDEBUG && _d("Indexes are DUPLICATES");
