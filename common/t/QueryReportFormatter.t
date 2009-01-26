@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 3;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -49,12 +49,13 @@ like($result,
    'Header looks ok');
 
 $events = [
-   {  cmd           => 'Query',
+   {  ts            => '071015 21:43:52',
+      cmd           => 'Query',
       user          => 'root',
       host          => 'localhost',
       ip            => '',
       arg           => "SELECT id FROM users WHERE name='foo'",
-      Query_time    => '0.000652',
+      Query_time    => '8.000652',
       Lock_time     => '0.000109',
       Rows_sent     => 1,
       Rows_examined => 1,
@@ -68,20 +69,20 @@ $events = [
       ip   => '',
       arg =>
          "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
-      Query_time    => '0.001943',
+      Query_time    => '1.001943',
       Lock_time     => '0.000145',
       Rows_sent     => 0,
       Rows_examined => 0,
       pos_in_log    => 1,
       db            => 'test1',
    },
-   {  ts            => '071015 21:43:52',
+   {  ts            => '071015 21:43:53',
       cmd           => 'Query',
       user          => 'bob',
       host          => 'localhost',
       ip            => '',
       arg           => "SELECT id FROM users WHERE name='bar'",
-      Query_time    => '0.000682',
+      Query_time    => '1.000682',
       Lock_time     => '0.000201',
       Rows_sent     => 1,
       Rows_examined => 2,
@@ -91,13 +92,13 @@ $events = [
 ];
 
 $expected = <<EOF;
-# Overall: 3 total, 2 unique, 0 QPS ______________________________________
+# Overall: 3 total, 2 unique, 3 QPS, 10.00x concurrency __________________
 #                    total     min     max     avg     95%  stddev  median
-# Exec time            3ms   652us     2ms     1ms     2ms   645us   657us
+# Exec time            10s      1s      8s      3s      8s      3s      1s
 # Lock time          455us   109us   201us   151us   204us    46us   108us
 # Rows sent              2       0       1    0.67    1.04    0.50       0
 # Rows exam              3       0       2       1    2.06    0.59    1.04
-# Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:52
+# Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
 EOF
 
 foreach my $event (@$events) {
