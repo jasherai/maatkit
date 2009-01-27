@@ -1,14 +1,14 @@
-# Query 001 (0 QPS) ID: 0x85FFF5AA78E5FF6A at byte 0 ____________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1  100
-# Exec time     12us  100    12us    12us    12us    12us       0    12us
-# Lock time        0    0       0       0       0       0       0       0
-# Rows sent        0    0       0       0       0       0       0       0
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  
-#     Users  [SQL_SLAVE]
-# Time range 2007-12-18T11:48:27 to 2007-12-18T11:48:27
-# Execution times
+
+# Query 1: 0 QPS, 0x concurrency, ID 0x85FFF5AA78E5FF6A at byte 0 ________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       1
+# Exec time    100    12us    12us    12us    12us    12us       0    12us
+# Lock time      0       0       0       0       0       0       0       0
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1 [SQL_SLAVE]
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
+# Query_time distribution
 #   1us
 #  10us  ################################################################
 # 100us
@@ -18,4 +18,3 @@
 #    1s
 #  10s+
 BEGIN\G
-

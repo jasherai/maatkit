@@ -1,14 +1,14 @@
-# Query 001 (0 QPS) ID: 0xB16C9E5B3D9C484F at byte 0 ____________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1  100
-# Exec time       2s  100      2s      2s      2s      2s       0      2s
-# Lock time        0    0       0       0       0       0       0       0
-# Rows sent        1  100       1       1       1       1       0       1
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  
-#     Users  root
-# Time range 2007-10-15T21:43:52 to 2007-10-15T21:43:52
-# Execution times
+
+# Query 1: 0 QPS, 0x concurrency, ID 0xB16C9E5B3D9C484F at byte 0 ________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       1
+# Exec time    100      2s      2s      2s      2s      2s       0      2s
+# Lock time      0       0       0       0       0       0       0       0
+# Rows sent    100       1       1       1       1       1       0       1
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1    root
+# Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:52
+# Query_time distribution
 #   1us
 #  10us
 # 100us
@@ -20,4 +20,3 @@
 # Tables
 # EXPLAIN
 select 12_13_foo from (select 12foo from 123_bar) as 123baz\G
-

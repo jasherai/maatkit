@@ -1,14 +1,15 @@
-# Query 001 (0 QPS) ID: 0x7F7D57ACDD8A346E at byte 0 ____________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1   50
-# Exec time       2s   50      2s      2s      2s      2s       0      2s
-# Lock time        0    0       0       0       0       0       0       0
-# Rows sent        1   50       1       1       1       1       0       1
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  test
-#     Users  root
-# Time range 2007-10-15T21:43:52 to 2007-10-15T21:43:52
-# Execution times
+
+# Query 1: 0 QPS, 0x concurrency, ID 0x7F7D57ACDD8A346E at byte 0 ________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         50       1
+# Exec time     50      2s      2s      2s      2s      2s       0      2s
+# Lock time      0       0       0       0       0       0       0       0
+# Rows sent     50       1       1       1       1       1       0       1
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1    root
+# Databases      1    test
+# Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:52
+# Query_time distribution
 #   1us
 #  10us
 # 100us
@@ -23,17 +24,17 @@
 # EXPLAIN
 select sleep(2) from n\G
 
-# Query 002 (0 QPS) ID: 0x3A99CC42AEDCCFCD at byte 359 __________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1   50
-# Exec time       2s   50      2s      2s      2s      2s       0      2s
-# Lock time        0    0       0       0       0       0       0       0
-# Rows sent        1   50       1       1       1       1       0       1
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  sakila
-#     Users  root
-# Time range 2007-10-15T21:45:10 to 2007-10-15T21:45:10
-# Execution times
+# Query 2: 0 QPS, 0x concurrency, ID 0x3A99CC42AEDCCFCD at byte 359 ______
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         50       1
+# Exec time     50      2s      2s      2s      2s      2s       0      2s
+# Lock time      0       0       0       0       0       0       0       0
+# Rows sent     50       1       1       1       1       1       0       1
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1    root
+# Databases      1  sakila
+# Time range 2007-10-15 21:45:10 to 2007-10-15 21:45:10
+# Query_time distribution
 #   1us
 #  10us
 # 100us
@@ -47,4 +48,3 @@ select sleep(2) from n\G
 #    SHOW CREATE TABLE `test`.`n`\G
 # EXPLAIN
 select sleep(2) from test.n\G
-

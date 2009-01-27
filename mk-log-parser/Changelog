@@ -1,5 +1,10 @@
 Changelog for mk-log-parser:
 
+   * Rewrote internals to aid in other projects (partial work on issue 242).
+   * Made the SHOW CREATE/SHOW STATUS have the sample query's DB (issue 213).
+   * Added more information to the global header (issue 200).
+   * Reformatted the query report header (issue 205).
+   * Added the --outliers option (issue 171).
    * Added the --mirror option (issue 236).
    * Made --execute reconnect when the server goes away (issue 237).
    * Made --processlist reconnect when the server goes away (issue 237).
@@ -12,7 +17,7 @@ Changelog for mk-log-parser:
    * Very large INSERT statements from mysqldump segfaulted on older Perl.
    * Very large attribute values in slowlogs caused a crash (issue 197).
    * Added the ability to watch the processlist with --processlist (issue 151).
-   * Added --execute and --filter options.
+   * Added --execute and --filter options (issue 207).
    * Fixed and updated POD.
 
 2008-12-29: version 0.9.1

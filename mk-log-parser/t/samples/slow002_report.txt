@@ -1,13 +1,15 @@
-# Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 __________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1   12
-# Exec time  726.1ms   95 726.1ms 726.1ms 726.1ms 726.1ms       0 726.1ms
-# Lock time     91us   29    91us    91us    91us    91us       0    91us
-# Rows sent        0    0       0       0       0       0       0       0
-# Rows exam    63.0k  100   63.0k   63.0k   63.0k   63.0k       0   63.0k
-#       DBs  db1
-#     Users  [SQL_SLAVE]
-# Execution times
+
+# Query 1: 0 QPS, 0x concurrency, ID 0x66825DDC008FFA89 at byte 332 ______
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         12       1
+# Exec time     95   726ms   726ms   726ms   726ms   726ms       0   726ms
+# Lock time     29    91us    91us    91us    91us    91us       0    91us
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam    100  61.48k  61.48k  61.48k  61.48k  61.48k       0  61.48k
+# Users          1 [SQL_SLAVE]
+# Databases      1     db1
+# Time range
+# Query_time distribution
 #   1us
 #  10us
 # 100us
@@ -29,16 +31,17 @@ update db2.tuningdetail_21_265507 n
 select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507 n
       inner join db1.gonzo a using(gonzo) \G
 
-# Query 002 (0 QPS) ID: 0x0FFE94ABA6A2A9E8 at byte 1316 _________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1   12
-# Exec time   33.4ms    4  33.4ms  33.4ms  33.4ms  33.4ms       0  33.4ms
-# Lock time     28us    9    28us    28us    28us    28us       0    28us
-# Rows sent        0    0       0       0       0       0       0       0
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  
-#     Users  [SQL_SLAVE]
-# Execution times
+# Query 2: 0 QPS, 0x concurrency, ID 0x0FFE94ABA6A2A9E8 at byte 1316 _____
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         12       1
+# Exec time      4    33ms    33ms    33ms    33ms    33ms       0    33ms
+# Lock time      9    28us    28us    28us    28us    28us       0    28us
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1 [SQL_SLAVE]
+# Databases      0
+# Time range
+# Query_time distribution
 #   1us
 #  10us
 # 100us
@@ -57,16 +60,17 @@ WHERE  vab3concept1upload='6994465'\G
 # EXPLAIN
 select     vab3concept1id = '91848182522' from db4.vab3concept1upload where   vab3concept1upload='6994465'\G
 
-# Query 003 (0 QPS) ID: 0xB211BA2B8D6D065C at byte 3332 _________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        2   25
-# Exec time    1.1ms    0   530us   530us   530us   530us       0   530us
-# Lock time     54us   17    27us    27us    27us    27us       0    27us
-# Rows sent        0    0       0       0       0       0       0       0
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  
-#     Users  [SQL_SLAVE]
-# Execution times
+# Query 3: 0 QPS, 0x concurrency, ID 0xB211BA2B8D6D065C at byte 3332 _____
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         25       2
+# Exec time      0     1ms   530us   530us   530us   530us       0   530us
+# Lock time     17    54us    27us    27us    27us    27us       0    27us
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1 [SQL_SLAVE]
+# Databases      0
+# Time range
+# Query_time distribution
 #   1us
 #  10us
 # 100us  ################################################################
@@ -84,16 +88,17 @@ SET    biz = '91848182522'\G
 # EXPLAIN
 select     biz = '91848182522' from foo.bar \G
 
-# Query 004 (0 QPS) ID: 0x6969975466519B81 at byte 2825 _________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1   12
-# Exec time    530us    0   530us   530us   530us   530us       0   530us
-# Lock time     27us    8    27us    27us    27us    27us       0    27us
-# Rows sent        0    0       0       0       0       0       0       0
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  
-#     Users  [SQL_SLAVE]
-# Execution times
+# Query 4: 0 QPS, 0x concurrency, ID 0x6969975466519B81 at byte 2825 _____
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         12       1
+# Exec time      0   530us   530us   530us   530us   530us       0   530us
+# Lock time      8    27us    27us    27us    27us    27us       0    27us
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1 [SQL_SLAVE]
+# Databases      0
+# Time range
+# Query_time distribution
 #   1us
 #  10us
 # 100us  ################################################################
@@ -112,16 +117,17 @@ WHERE  fillze='899'\G
 # EXPLAIN
 select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 
-# Query 005 (0 QPS) ID: 0xC22D235B07D1D774 at byte 1840 _________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1   12
-# Exec time    530us    0   530us   530us   530us   530us       0   530us
-# Lock time     27us    8    27us    27us    27us    27us       0    27us
-# Rows sent        0    0       0       0       0       0       0       0
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  
-#     Users  [SQL_SLAVE]
-# Execution times
+# Query 5: 0 QPS, 0x concurrency, ID 0xC22D235B07D1D774 at byte 1840 _____
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         12       1
+# Exec time      0   530us   530us   530us   530us   530us       0   530us
+# Lock time      8    27us    27us    27us    27us    27us       0    27us
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1 [SQL_SLAVE]
+# Databases      0
+# Time range
+# Query_time distribution
 #   1us
 #  10us
 # 100us  ################################################################
@@ -139,16 +145,17 @@ VALUES ('211', '18')\G
 # EXPLAIN
 select * from  db1.conch  where word3='211' and  vid83= '18'\G
 
-# Query 006 (0 QPS) ID: 0x7546F89214254F2F at byte 803 __________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1   12
-# Exec time    512us    0   512us   512us   512us   512us       0   512us
-# Lock time     77us   25    77us    77us    77us    77us       0    77us
-# Rows sent        0    0       0       0       0       0       0       0
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  
-#     Users  [SQL_SLAVE]
-# Execution times
+# Query 6: 0 QPS, 0x concurrency, ID 0x7546F89214254F2F at byte 803 ______
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         12       1
+# Exec time      0   512us   512us   512us   512us   512us       0   512us
+# Lock time     25    77us    77us    77us    77us    77us       0    77us
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1 [SQL_SLAVE]
+# Databases      0
+# Time range
+# Query_time distribution
 #   1us
 #  10us
 # 100us  ################################################################
@@ -166,17 +173,17 @@ VALUES ('', 'Exact')\G
 # EXPLAIN
 select * from  db3.vendor11gonzo  where makef='' and  bizzle= 'Exact'\G
 
-# Query 007 (0 QPS) ID: 0x85FFF5AA78E5FF6A at byte 0 ____________________
-#              total    %     min     max     avg     95%  stddev  median
-#     Count        1   12
-# Exec time     12us    0    12us    12us    12us    12us       0    12us
-# Lock time        0    0       0       0       0       0       0       0
-# Rows sent        0    0       0       0       0       0       0       0
-# Rows exam        0    0       0       0       0       0       0       0
-#       DBs  
-#     Users  [SQL_SLAVE]
-# Time range 2007-12-18T11:48:27 to 2007-12-18T11:48:27
-# Execution times
+# Query 7: 0 QPS, 0x concurrency, ID 0x85FFF5AA78E5FF6A at byte 0 ________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         12       1
+# Exec time      0    12us    12us    12us    12us    12us       0    12us
+# Lock time      0       0       0       0       0       0       0       0
+# Rows sent      0       0       0       0       0       0       0       0
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1 [SQL_SLAVE]
+# Databases      0
+# Time range 2007-12-18 11:48:27 to 2007-12-18 11:48:27
+# Query_time distribution
 #   1us
 #  10us  ################################################################
 # 100us
@@ -186,4 +193,3 @@ select * from  db3.vendor11gonzo  where makef='' and  bizzle= 'Exact'\G
 #    1s
 #  10s+
 BEGIN\G
-
