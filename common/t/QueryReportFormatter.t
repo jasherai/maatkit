@@ -134,7 +134,8 @@ EOF
 $result = $qrf->event_report(
    $ea,
    attributes => [
-      qw(Query_time Lock_time Rows_sent Rows_examined ts db user)
+      # "users" is here to try to cause a failure
+      qw(Query_time Lock_time Rows_sent Rows_examined ts db user users)
    ],
    groupby => 'fingerprint',
    which   => 'select id from users where name=?',
