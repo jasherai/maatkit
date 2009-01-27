@@ -100,6 +100,7 @@ sub header {
 # hash that has the following keys:
 #  * attributes   An arrayref of attributes to print statistics lines for.
 #  * groupby      The group-by attribute (usually 'fingerprint')
+#  * worst        The attribute in which the sample is stored.
 # TODO: if we don't do aggregation multiple directions in a single object then
 # it already knows its fingerprint.
 sub global_report {
@@ -107,8 +108,8 @@ sub global_report {
    my $stats = $ea->results;
    my @result;
 
-   # Pick the first attribute to get global count
-   my $global_cnt = $stats->{globals}->{$opts{attributes}->[0]}->{cnt};
+   # Get global count
+   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
 
    # Calculate QPS (queries per second) by looking at the min/max timestamp.
    my ($qps, $conc) = (0, 0);
@@ -175,6 +176,7 @@ sub global_report {
 #  * groupby      The group-by attribute (usually 'fingerprint')
 #  * which        The value of the group-by attribute, such as the fingerprint.
 #  * rank         The (optional) rank of the query, for the header
+#  * worst        The attribute in which the sample is stored.
 # TODO: if we don't do aggregation multiple directions in a single object then
 # it already knows its fingerprint.
 sub event_report {
@@ -185,11 +187,11 @@ sub event_report {
    # Is there a sample event?
    my $store = $stats->{classes}->{$opts{groupby}}->{$opts{which}};
    return "# No such event $opts{groupby}/$opts{which}\n" unless $store;
-   my $sample = $store->{sample};
+   my $sample = $store->{$opts{worst}}->{sample};
 
    # Pick the first attribute to get counts
-   my $global_cnt = $stats->{globals}->{$opts{attributes}->[0]}->{cnt};
-   my $class_cnt  = $store->{$opts{attributes}->[0]}->{cnt};
+   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
+   my $class_cnt  = $store->{$opts{worst}}->{cnt};
 
    # Calculate QPS (queries per second) by looking at the min/max timestamp.
    my ($qps, $conc) = (0, 0);

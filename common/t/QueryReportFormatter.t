@@ -19,6 +19,7 @@ my ( $qrf, $result, $events, $expected, $qr, $ea );
 $qr  = new QueryRewriter();
 $qrf = new QueryReportFormatter();
 $ea  = new EventAggregator(
+   save    => 'Query_time',
    classes => {
       fingerprint => {
          Query_time    => [qw(Query_time)],
@@ -59,7 +60,7 @@ $events = [
       Lock_time     => '0.000109',
       Rows_sent     => 1,
       Rows_examined => 1,
-      pos_in_log    => 0,
+      pos_in_log    => 1,
       db            => 'test3',
    },
    {  ts   => '071015 21:43:52',
@@ -73,7 +74,7 @@ $events = [
       Lock_time     => '0.000145',
       Rows_sent     => 0,
       Rows_examined => 0,
-      pos_in_log    => 1,
+      pos_in_log    => 2,
       db            => 'test1',
    },
    {  ts            => '071015 21:43:53',
@@ -111,13 +112,14 @@ $result = $qrf->global_report(
    attributes => [
       qw(Query_time Lock_time Rows_sent Rows_examined ts)
    ],
+   worst   => 'Query_time',
    groupby => 'fingerprint',
 );
 
 is($result, $expected, 'Global report');
 
 $expected = <<EOF;
-# Query 1: 3 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 _____
+# Query 1: 3 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         66       2
 # Exec time     89      9s      1s      8s      5s      8s      5s      5s
@@ -137,6 +139,7 @@ $result = $qrf->event_report(
    groupby => 'fingerprint',
    which   => 'select id from users where name=?',
    rank    => 1,
+   worst   => 'Query_time',
 );
 
 is($result, $expected, 'Event report');
