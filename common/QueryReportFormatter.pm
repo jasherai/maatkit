@@ -57,7 +57,7 @@ my %formatting_function = (
       my ( $stats ) = @_;
       my $min = parse_timestamp($stats->{min} || '');
       my $max = parse_timestamp($stats->{max} || '');
-      return "$min to $max";
+      return $min && $max ? "$min to $max" : '';
    },
    user => sub {
       my ( $stats ) = @_;
