@@ -81,7 +81,7 @@ sub micro_t {
 # Returns what percentage $is of $of.
 sub percentage_of {
    my ( $is, $of, %args ) = @_;
-   my $p   = defined $args{p} ? $args{p} : 2; # float precision
+   my $p   = $args{p} || 0; # float precision
    my $fmt = $p ? "%.${p}f" : "%d";
    return sprintf $fmt, ($is * 100) / ($of ||= 1);
 }

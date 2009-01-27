@@ -20,7 +20,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 25;
+use Test::More tests => 24;
 use English qw(-no_match_vars);
 
 BEGIN {
@@ -52,9 +52,8 @@ is(secs_to_time(60), '01:00', 'secs_to_time 60 s = 1 minute');
 is(secs_to_time(3600), '01:00:00', 'secs_to_time 3600 s = 1 hour');
 is(secs_to_time(86400), '1+00:00:00', 'secd_to_time 86400 = 1 day');
 
-is(percentage_of(25, 100), '25.00', 'Percentage with precision');
-is(percentage_of(25, 100, p=>1), '25.0', 'Percentage with less precision');
-is(percentage_of(25, 100, p=>0), '25', 'Percentage as int');
+is(percentage_of(25, 100, p=>2), '25.00', 'Percentage with precision');
+is(percentage_of(25, 100), '25', 'Percentage as int');
 
 is(parse_timestamp('071015  1:43:52'), '2007-10-15 01:43:52', 'timestamp');
 is(unix_timestamp('2007-10-15 01:43:52'), 1192427032, 'unix_timestamp');
