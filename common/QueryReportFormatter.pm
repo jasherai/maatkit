@@ -224,7 +224,7 @@ sub event_report {
       shorten($qps),
       shorten($conc),
       make_checksum($opts{which}),
-      ($sample ? $sample->{pos_in_log} : 0));
+      $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
