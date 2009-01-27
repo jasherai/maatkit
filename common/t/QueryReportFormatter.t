@@ -127,8 +127,8 @@ $expected = <<EOF;
 # Rows sent    100       2       1       1       1       1       0       1
 # Rows exam    100       3       1       2    1.50       2    0.71    1.50
 # Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:53
-# Databases      2  test1:1 test3:1
-# Users          2  bob:1 root:1
+# Databases      2 test1 (1), test3 (1)
+# Users          2 bob (1), root (1)
 EOF
 
 $result = $qrf->event_report(

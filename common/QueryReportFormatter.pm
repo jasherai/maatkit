@@ -35,15 +35,19 @@ my %formatting_function = (
    db => sub {
       my ( $stats ) = @_;
       my $cnt_for = $stats->{unq};
+      if ( 1 == keys %$cnt_for ) {
+         return 1, keys %$cnt_for;
+      }
       my $line = '';
       my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
                      keys %$cnt_for;
       my $i = 0;
       foreach my $db ( @top ) {
          last if length($line) > LINE_LENGTH - 27;
-         $line .= " $db:$cnt_for->{$db}";
+         $line .= "$db ($cnt_for->{$db}), ";
          $i++;
       }
+      $line =~ s/, $//;
       if ( $i < $#top ) {
          $line .= "... " . ($#top - $i) . " more";
       }
@@ -58,15 +62,19 @@ my %formatting_function = (
    user => sub {
       my ( $stats ) = @_;
       my $cnt_for = $stats->{unq};
+      if ( 1 == keys %$cnt_for ) {
+         return 1, keys %$cnt_for;
+      }
       my $line = '';
       my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
                      keys %$cnt_for;
       my $i = 0;
       foreach my $user ( @top ) {
          last if length($line) > LINE_LENGTH - 27;
-         $line .= " $user:$cnt_for->{$user}";
+         $line .= "$user ($cnt_for->{$user}), ";
          $i++;
       }
+      $line =~ s/, $//;
       if ( $i < $#top ) {
          $line .= "... " . ($#top - $i) . " more";
       }
