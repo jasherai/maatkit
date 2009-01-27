@@ -221,7 +221,7 @@ sub make_handler {
       min => 1,
       max => 1,
       sum => $type =~ m/num|bool/    ? 1 : 0,
-      cnt => $type eq 'string'       ? 0 : 1,
+      cnt => 1,
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num'          ? 1 : 0,
       glo => 1,
