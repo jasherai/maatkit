@@ -161,11 +161,3 @@ $result = $qrf->chart_distro(
 );
 
 is($result, $expected, 'Query_time distro');
-
-__DATA__
-# Tables
-#    SHOW TABLE STATUS FROM `test` LIKE 'n'\\G
-#    SHOW CREATE TABLE `test`.`n`\\G
-# EXPLAIN
-select sleep(2) from n\\G
-EOF

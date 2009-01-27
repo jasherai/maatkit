@@ -121,6 +121,41 @@ sub new {
    return bless $self, $class;
 }
 
+my $review_sth;
+my @review_cols;
+
+# Fetch information from the database about a query that's been reviewed.
+sub get_review_info {
+   my ( $self, $q, $id ) = @_;
+   if ( !$review_sth ) {
+      @review_cols = grep { $_ !~ m/^(?:fingerprint|sample|checksum)$/ }
+                     ( @{$self->{basic_cols}}, @{$self->{extra_cols}} );
+      my $$sql = "SELECT "
+              . join(', ', map { $q->quote($_) } @review_cols)
+              . ", CONV(checksum, 10, 16) AS checksum_conv FROM "
+              . $q->quote($opts->{R}->{D}, $opts->{R}->{t})
+              . " WHERE checksum=CONV(?, 16, 10)";
+       MKDEBUG && _d("select for review vals: $sql");
+       $review_sth = $self->{dbh}->prepare($sql);
+   }
+   $review_sth->execute($id);
+   $review_vals = $review_sth->fetchall_arrayref({});
+   if ( $review_vals && @$review_vals == 1 ) {
+      $review_vals = $review_vals->[0];
+      delete $review_vals->{checksum};
+      return $review_vals;
+   }
+}
+
+# Return the columns we'll be using from the review table.
+sub review_cols {
+   if ( !@review_cols ) {
+      @review_cols = grep { $_ !~ m/^(?:fingerprint|sample|checksum)$/ }
+                     ( @{$self->{basic_cols}}, @{$self->{extra_cols}} );
+   }
+   return @review_cols;
+}
+
 sub cache_event {
    my ( $self, $event ) = @_;
    my $checksum;
