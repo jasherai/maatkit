@@ -261,6 +261,53 @@ sub event_report {
    return join("\n", map { s/\s+$//; $_ } @result) . "\n";
 }
 
+# Creates a chart of value distributions in buckets.  Right now it bucketizes
+# into 8 buckets, powers of ten starting with .000001. %opts has:
+#  * groupby      The group-by attribute (usually 'fingerprint')
+#  * which        The value of the group-by attribute, such as the fingerprint.
+#  * attribute    An attribute to chart.
+# TODO: if we don't do aggregation multiple directions in a single object then
+# it already knows its fingerprint.
+sub chart_distro {
+   my ( $self, $ea, %opts ) = @_;
+   my $stats = $ea->results;
+   my $store
+      = $stats->{classes}->{$opts{groupby}}->{$opts{which}}->{$opts{attribute}};
+   my $vals = $store->{all};
+   return "" unless defined $vals && scalar @$vals;
+
+   my @buck_tens = $ea->buckets_of(10);
+   my @distro = map { 0 } (0 .. 7);
+   map { $distro[$buck_tens[$_]] += $vals->[$_] } (0 .. @$vals - 1);
+
+   my $max_val = 0;
+   my $vals_per_mark; # number of vals represented by 1 #-mark
+   my $max_disp_width = 64;
+   my $bar_fmt = "# %5s%s";
+   my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
+   my @results = "# $opts{attribute} distribution";
+
+   # Find the distro with the most values. This will set
+   # vals_per_mark and become the bar at max_disp_width.
+   foreach my $n_vals ( @distro ) {
+      $max_val = $n_vals if $n_vals > $max_val;
+   }
+   $vals_per_mark = $max_val / $max_disp_width;
+
+   foreach my $i ( 0 .. $#distro ) {
+      my $n_vals = $distro[$i];
+      my $n_marks = $n_vals / $vals_per_mark;
+      # Always print at least 1 mark for any bucket that has at least
+      # 1 value. This skews the graph a tiny bit, but it allows us to
+      # see all buckets that have values.
+      $n_marks = 1 if $n_marks < 1 && $n_vals > 0;
+      my $bar = ($n_marks ? '  ' : '') . '#' x $n_marks;
+      push @results, sprintf $bar_fmt, $distro_labels[$i], $bar;
+   }
+
+   return join("\n", @results) . "\n";
+}
+
 # Makes a header format and returns the format and the column header names.  The
 # argument is either 'global' or anything else.
 sub make_header {

@@ -344,6 +344,25 @@ sub unbucketize {
    return @result;
 }
 
+# Break the buckets down into powers of ten, in 8 coarser buckets.  Bucket 0
+# represents (0 <= val < 10us) and 7 represents 10s and greater.  The powers are
+# thus constrained to between -6 and 1.  Because these are used as array
+# indexes, we shift up so it's non-negative, to get 0 to 7.  Now you have a list
+# of 1000 buckets that act as a lookup table between the 5% buckets and buckets
+# of 10. TODO: right now it's hardcoded to buckets of 10, in the future maybe
+# not.
+{
+   my @buck_tens;
+   sub buckets_of {
+      return @buck_tens if @buck_tens;
+      @buck_tens = map {
+         my $f = floor(log($_) / log(10)) + 6;
+         $f > 7 ? 7 : $f;
+      } @buck_vals;
+      return @buck_tens;
+   }
+}
+
 # Given an arrayref of vals, returns a hashref with the following
 # statistical metrics:
 #

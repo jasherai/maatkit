@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -142,7 +142,7 @@ $result = $qrf->event_report(
 is($result, $expected, 'Event report');
 
 $expected = <<EOF;
-# Execution times
+# Query_time distribution
 #   1us
 #  10us
 # 100us
@@ -151,6 +151,18 @@ $expected = <<EOF;
 # 100ms
 #    1s  ################################################################
 #  10s+
+EOF
+
+$result = $qrf->chart_distro(
+   $ea,
+   attribute => 'Query_time',
+   groupby   => 'fingerprint',
+   which     => 'select id from users where name=?',
+);
+
+is($result, $expected, 'Query_time distro');
+
+__DATA__
 # Tables
 #    SHOW TABLE STATUS FROM `test` LIKE 'n'\\G
 #    SHOW CREATE TABLE `test`.`n`\\G
