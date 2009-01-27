@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 3;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -115,3 +115,45 @@ $result = $qrf->global_report(
 );
 
 is($result, $expected, 'Global report');
+
+$expected = <<EOF;
+# Query 1: 3 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 0 _____
+#              pct   total     min     max     avg     95%  stddev  median
+# Count         66       2
+# Exec time     89      9s      1s      8s      5s      8s      5s      5s
+# Lock time     68   310us   109us   201us   155us   201us    65us   155us
+# Rows sent    100       2       1       1       1       1       0       1
+# Rows exam    100       3       1       2    1.50       2    0.71    1.50
+# Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:53
+# Databases      2  test1:1 test3:1
+# Users          2  bob:1 root:1
+EOF
+
+$result = $qrf->event_report(
+   $ea,
+   attributes => [
+      qw(Query_time Lock_time Rows_sent Rows_examined ts db user)
+   ],
+   groupby => 'fingerprint',
+   which   => 'select id from users where name=?',
+   rank    => 1,
+);
+
+is($result, $expected, 'Event report');
+
+$expected = <<EOF;
+# Execution times
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s  ################################################################
+#  10s+
+# Tables
+#    SHOW TABLE STATUS FROM `test` LIKE 'n'\\G
+#    SHOW CREATE TABLE `test`.`n`\\G
+# EXPLAIN
+select sleep(2) from n\\G
+EOF
