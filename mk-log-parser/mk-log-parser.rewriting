@@ -928,7 +928,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2881
+# Transformers package 2893
 # ###########################################################################
 
 package Transformers;
@@ -936,6 +936,8 @@ package Transformers;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Time::Local qw(timelocal);
+use Digest::MD5 qw(md5_hex);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -950,12 +952,14 @@ our @EXPORT_OK   = qw(
    shorten
    ts
    parse_timestamp
+   unix_timestamp
+   make_checksum
 );
 
 sub micro_t {
    my ( $t, %args ) = @_;
-   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
-   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
    my $f;
 
    $t = 0 if $t < 0;
@@ -984,7 +988,7 @@ sub micro_t {
 
 sub percentage_of {
    my ( $is, $of, %args ) = @_;
-   my $p   = defined $args{p} ? $args{p} : 2; # float precision
+   my $p   = $args{p} || 0; # float precision
    my $fmt = $p ? "%.${p}f" : "%d";
    return sprintf $fmt, ($is * 100) / ($of ||= 1);
 }
@@ -1054,6 +1058,15 @@ sub parse_timestamp {
    return $val;
 }
 
+sub unix_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+   {
+      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   }
+   return $val;
+}
 
 sub _d {
    my ($package, undef, $line) = caller 0;
@@ -1061,6 +1074,13 @@ sub _d {
         map { defined $_ ? $_ : 'undef' }
         @_;
    print "# $package:$line $$ ", @_, "\n";
+}
+
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d("$checksum checksum for $val");
+   return $checksum;
 }
 
 1;
@@ -1813,7 +1833,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 2880
+# EventAggregator package 2896
 # ###########################################################################
 
 
@@ -1920,6 +1940,11 @@ sub results {
    };
 }
 
+sub attributes {
+   my ( $self ) = @_;
+   return $self->{attributes};
+}
+
 sub make_handler {
    my ( $self, $attrib, $event, %args ) = @_;
    die "I need an attrib" unless defined $attrib;
@@ -1932,12 +1957,13 @@ sub make_handler {
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
    MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
+   $self->{attributes}->{$attrib} = $type;
 
    %args = ( # Set up defaults
       min => 1,
       max => 1,
       sum => $type =~ m/num|bool/    ? 1 : 0,
-      cnt => $type eq 'string'       ? 0 : 1,
+      cnt => 1,
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num'          ? 1 : 0,
       glo => 1,
@@ -2051,6 +2077,18 @@ sub unbucketize {
    return @result;
 }
 
+{
+   my @buck_tens;
+   sub buckets_of {
+      return @buck_tens if @buck_tens;
+      @buck_tens = map {
+         my $f = floor(log($_) / log(10)) + 6;
+         $f > 7 ? 7 : $f;
+      } @buck_vals;
+      return @buck_tens;
+   }
+}
+
 sub calculate_statistical_metrics {
    my ( $self, $vals, $args ) = @_;
    my $statistical_metrics = {
@@ -2161,8 +2199,8 @@ sub top_events {
          push @chosen, $groupby;
       }
 
-      elsif ( $args{ol_attrib}
-         && $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq}
+      elsif ( $args{ol_attrib} && (!$args{ol_freq}
+         || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
          my $stats = $self->calculate_statistical_metrics(
             $classes->{$groupby}->{$args{ol_attrib}}->{all},
@@ -2191,6 +2229,295 @@ sub _d {
 
 # ###########################################################################
 # End EventAggregator package
+# ###########################################################################
+
+# ###########################################################################
+# QueryReportFormatter package 2880
+# ###########################################################################
+
+
+package QueryReportFormatter;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+Transformers->import(
+   qw(shorten micro_t parse_timestamp unix_timestamp
+      make_checksum percentage_of));
+
+use constant LINE_LENGTH => 74;
+
+my %formatting_function = (
+   db => sub {
+      my ( $stats ) = @_;
+      my $cnt_for = $stats->{unq};
+      my $line = '';
+      my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
+                     keys %$cnt_for;
+      my $i = 0;
+      foreach my $db ( @top ) {
+         last if length($line) > LINE_LENGTH - 27;
+         $line .= " $db:$cnt_for->{$db}";
+         $i++;
+      }
+      if ( $i < $#top ) {
+         $line .= "... " . ($#top - $i) . " more";
+      }
+      return (scalar keys %$cnt_for, $line);
+   },
+   ts => sub {
+      my ( $stats ) = @_;
+      my $min = parse_timestamp($stats->{min} || '');
+      my $max = parse_timestamp($stats->{max} || '');
+      return "$min to $max";
+   },
+   user => sub {
+      my ( $stats ) = @_;
+      my $cnt_for = $stats->{unq};
+      my $line = '';
+      my @top = sort { $cnt_for->{$b} <=> $cnt_for->{$a} || $a cmp $b }
+                     keys %$cnt_for;
+      my $i = 0;
+      foreach my $user ( @top ) {
+         last if length($line) > LINE_LENGTH - 27;
+         $line .= " $user:$cnt_for->{$user}";
+         $i++;
+      }
+      if ( $i < $#top ) {
+         $line .= "... " . ($#top - $i) . " more";
+      }
+      return (scalar keys %$cnt_for, $line);
+   },
+);
+
+sub new {
+   my ( $class, %args ) = @_;
+   return bless { }, $class;
+}
+
+sub header {
+   my ( $self ) = @_;
+
+   my ( $rss, $vsz, $user, $system );
+   eval {
+      my $mem = `ps -o rss,vsz $PID`;
+      ($rss, $vsz) = $mem =~ m/(\d+)/g;
+   };
+   ($user, $system) = times();
+
+   sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
+         micro_t($user, p_s => 1, p_ms => 1),
+         micro_t($system, p_s => 1, p_ms => 1),
+         shorten($rss * 1_024),
+         shorten($vsz * 1_024);
+}
+
+sub global_report {
+   my ( $self, $ea, %opts ) = @_;
+   my $stats = $ea->results;
+   my @result;
+
+   my $global_cnt = $stats->{globals}->{$opts{attributes}->[0]}->{cnt};
+
+   my ($qps, $conc) = (0, 0);
+   if ( $global_cnt && $stats->{globals}->{ts}
+      && ($stats->{globals}->{ts}->{max} || '')
+         gt ($stats->{globals}->{ts}->{min} || '')
+   ) {
+      eval {
+         my $min  = parse_timestamp($stats->{globals}->{ts}->{min});
+         my $max  = parse_timestamp($stats->{globals}->{ts}->{max});
+         my $diff = unix_timestamp($max) - unix_timestamp($min);
+         $qps     = $global_cnt / $diff;
+         $conc    = $stats->{globals}->{Query_time}->{sum} / $diff;
+      };
+   }
+
+   my $line = sprintf(
+      '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
+      shorten($global_cnt),
+      shorten(scalar keys %{$stats->{classes}->{$opts{groupby}}}),
+      shorten($qps),
+      shorten($conc));
+   $line .= ('_' x (LINE_LENGTH - length($line)));
+   push @result, $line;
+
+   my ($format, @headers) = make_header('global');
+   push @result, sprintf($format, '', @headers);
+
+   foreach my $attrib ( @{$opts{attributes}} ) {
+      if ( $formatting_function{$attrib} ) { # Handle special cases
+         push @result, sprintf $format, make_label($attrib),
+            $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
+            (map { '' } 0..9);# just for good measure
+      }
+      else {
+         my $store = $stats->{globals}->{$attrib};
+         my @values;
+         if ( $ea->attributes->{$attrib} eq 'num' ) {
+            my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+            my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
+            @values = (
+               @{$store}{qw(sum min max)},
+               $store->{sum} / $store->{cnt},
+               @{$metrics}{qw(pct_95 stddev median)},
+            );
+            @values = map { defined $_ ? $func->($_) : '' } @values;
+         }
+         else {
+            @values = ('', $store->{min}, $store->{max}, '', '', '', '');
+         }
+         push @result, sprintf $format, make_label($attrib), @values;
+      }
+   }
+
+   return join("\n", map { s/\s+$//; $_ } @result) . "\n";
+}
+
+sub event_report {
+   my ( $self, $ea, %opts ) = @_;
+   my $stats = $ea->results;
+   my @result;
+
+   my $store = $stats->{classes}->{$opts{groupby}}->{$opts{which}};
+   return "# No such event $opts{groupby}/$opts{which}\n" unless $store;
+   my $sample = $store->{sample};
+
+   my $global_cnt = $stats->{globals}->{$opts{attributes}->[0]}->{cnt};
+   my $class_cnt  = $store->{$opts{attributes}->[0]}->{cnt};
+
+   my ($qps, $conc) = (0, 0);
+   if ( $global_cnt && $store->{ts}
+      && ($store->{ts}->{max} || '')
+         gt ($store->{ts}->{min} || '')
+   ) {
+      eval {
+         my $min  = parse_timestamp($store->{ts}->{min});
+         my $max  = parse_timestamp($store->{ts}->{max});
+         my $diff = unix_timestamp($max) - unix_timestamp($min);
+         $qps     = $global_cnt / $diff;
+         $conc    = $store->{Query_time}->{sum} / $diff;
+      };
+   }
+
+   my $line = sprintf(
+      '# Query %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
+      $opts{rank} || 0,
+      shorten($qps),
+      shorten($conc),
+      make_checksum($opts{which}),
+      ($sample ? $sample->{pos_in_log} : 0));
+   $line .= ('_' x (LINE_LENGTH - length($line)));
+   push @result, $line;
+
+   my ($format, @headers) = make_header();
+   push @result, sprintf($format, '', @headers);
+
+   push @result, sprintf
+      $format, 'Count', percentage_of($class_cnt, $global_cnt), $class_cnt,
+         map { '' } (1 ..9);
+
+   foreach my $attrib ( @{$opts{attributes}} ) {
+      my $vals = $store->{$attrib};
+      if ( $formatting_function{$attrib} ) { # Handle special cases
+         push @result, sprintf $format, make_label($attrib),
+            $formatting_function{$attrib}->($vals),
+            (map { '' } 0..9);# just for good measure
+      }
+      else {
+         my @values;
+         my $pct;
+         if ( $ea->attributes->{$attrib} eq 'num' ) {
+            my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+            my $metrics
+               = $ea->calculate_statistical_metrics($vals->{all}, $vals);
+            @values = (
+               @{$vals}{qw(sum min max)},
+               $vals->{sum} / $vals->{cnt},
+               @{$metrics}{qw(pct_95 stddev median)},
+            );
+            @values = map { defined $_ ? $func->($_) : '' } @values;
+            $pct = percentage_of($vals->{sum},
+               $stats->{globals}->{$attrib}->{sum});
+         }
+         else {
+            @values = ('', $vals->{min}, $vals->{max}, '', '', '', '');
+            $pct = 0;
+         }
+         push @result, sprintf $format, make_label($attrib), $pct, @values;
+      }
+   }
+
+   return join("\n", map { s/\s+$//; $_ } @result) . "\n";
+}
+
+sub chart_distro {
+   my ( $self, $ea, %opts ) = @_;
+   my $stats = $ea->results;
+   my $store
+      = $stats->{classes}->{$opts{groupby}}->{$opts{which}}->{$opts{attribute}};
+   my $vals = $store->{all};
+   return "" unless defined $vals && scalar @$vals;
+
+   my @buck_tens = $ea->buckets_of(10);
+   my @distro = map { 0 } (0 .. 7);
+   map { $distro[$buck_tens[$_]] += $vals->[$_] } (0 .. @$vals - 1);
+
+   my $max_val = 0;
+   my $vals_per_mark; # number of vals represented by 1 #-mark
+   my $max_disp_width = 64;
+   my $bar_fmt = "# %5s%s";
+   my @distro_labels = qw(1us 10us 100us 1ms 10ms 100ms 1s 10s+);
+   my @results = "# $opts{attribute} distribution";
+
+   foreach my $n_vals ( @distro ) {
+      $max_val = $n_vals if $n_vals > $max_val;
+   }
+   $vals_per_mark = $max_val / $max_disp_width;
+
+   foreach my $i ( 0 .. $#distro ) {
+      my $n_vals = $distro[$i];
+      my $n_marks = $n_vals / $vals_per_mark;
+      $n_marks = 1 if $n_marks < 1 && $n_vals > 0;
+      my $bar = ($n_marks ? '  ' : '') . '#' x $n_marks;
+      push @results, sprintf $bar_fmt, $distro_labels[$i], $bar;
+   }
+
+   return join("\n", @results) . "\n";
+}
+
+sub make_header {
+   my ( $global ) = @_;
+   my $format = "# %-9s %6s %7s %7s %7s %7s %7s %7s %7s";
+   my @headers = qw(pct total min max avg 95% stddev median);
+   if ( $global ) {
+      $format =~ s/%(\d+)s/' ' x $1/e;
+      shift @headers;
+   }
+   return $format, @headers;
+}
+
+sub make_label {
+   my ( $val ) = @_;
+   return $val eq 'ts'          ? 'Time range'
+         : $val eq 'user'       ? 'Users'
+         : $val eq 'db'         ? 'Databases'
+         : $val eq 'Query_time' ? 'Exec time'
+         : do { $val =~ s/_/ /g; $val = substr($val, 0, 9); $val };
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print "# $package:$line $$ ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End QueryReportFormatter package
 # ###########################################################################
 
 # ###########################################################################
@@ -2304,7 +2631,7 @@ sub _d {
 # ###########################################################################
 
 # #############################################################################
-# MySQLDump package 2869
+# MySQLDump package 2889
 # #############################################################################
 package MySQLDump;
 
@@ -2608,7 +2935,7 @@ sub _d {
 # #############################################################################
 
 # ###########################################################################
-# TableParser package 2801
+# TableParser package 2890
 # ###########################################################################
 package TableParser;
 
@@ -2827,7 +3154,8 @@ sub get_keys {
    }
 
    my @keys = map {
-      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $unique, $struct, $cols )
+         = $_ =~ m/(?:(\w+) )?KEY.+(?:USING (\w+))? \((.+)\)/;
       my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
       $struct = $struct || $special || 'BTREE';
       my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
@@ -2840,6 +3168,7 @@ sub get_keys {
          struct   => $struct,
          cols     => $cols,
          name     => $name || 'PRIMARY',
+         unique   => $unique && $unique =~ m/(UNIQUE|PRIMARY)/ ? 1 : 0,
       }
    } @indexes;
 
@@ -2880,12 +3209,15 @@ sub get_duplicate_keys {
          my $j_cols        = $keys[$j]->{cols};
          my $type_i_cols   = $keys[$i]->{struct};
          my $type_j_cols   = $keys[$j]->{struct};
+         my $unique_i_cols = $keys[$i]->{unique};
+         my $unique_j_cols = $keys[$j]->{unique};
          my $len_i_cols    = length($i_cols);
          my $len_j_cols    = length($j_cols);
          my $min_len       = min($len_i_cols, $len_j_cols);
          my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
                                && $type_j_cols eq 'FULLTEXT'
                              ) ? 1 : 0;
+
          if ( MKDEBUG ) {
             _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
                ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
@@ -2909,6 +3241,11 @@ sub get_duplicate_keys {
                else {
                   MKDEBUG && _d("Indexes are not duplicates (fulltext)");
                }
+            }
+            elsif ( ($unique_i_cols xor $unique_j_cols)
+                    && $len_i_cols != $len_j_cols ) {
+               MKDEBUG && _d('Indexes are not duplicates because one or '
+                  . 'the other is unique and a prefix of the other');
             }
             else {
                MKDEBUG && _d("Indexes are DUPLICATES");
@@ -2995,15 +3332,15 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 2801
+# QueryReview package 2892
 # ###########################################################################
 package QueryReview;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+Transformers->import(qw(make_checksum parse_timestamp));
 
-use Digest::MD5 qw(md5_hex);
 use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
@@ -3090,7 +3427,7 @@ sub cache_event {
          $self->_update_cache($group_by, $event);
       }
       else {
-         my $ts = _parse_timestamp($event->{ts});
+         my $ts = parse_timestamp($event->{ts});
 
          $self->{insert_new_sth}->execute(
             $checksum,
@@ -3133,7 +3470,7 @@ sub _update_cache {
 
    $fp_ds->{dirty} = 1;  # group_by in cache differs from query review tbl
 
-   my $ts = _parse_timestamp($event->{ts});
+   my $ts = parse_timestamp($event->{ts});
    $fp_ds->{cols}->{first_seen} = $ts if $ts le $fp_ds->{cols}->{first_seen};
    $fp_ds->{cols}->{last_seen}  = $ts if $ts ge $fp_ds->{cols}->{last_seen};
 
@@ -3161,20 +3498,6 @@ sub flush_event_cache {
    }
 
    return;
-}
-
-sub make_checksum {
-   my ( $val ) = @_;
-   my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
-   return $checksum;
-}
-
-sub _parse_timestamp {
-   my ( $val ) = @_;
-   return '' unless defined $val;
-   $val =~ s/^(\d\d)(\d\d)(\d\d) /20$1-$2-$3 /;
-   return $val;
 }
 
 sub _d {
@@ -3341,8 +3664,8 @@ my $ea;     # EventAggregator
       if ( $opts{mirror} && (!$opts{execute} || !$opts{processlist}) ) {
          $opt_parser->error('--mirror requires --execute and --processlist');
       }
-      if ( $opts{outliers} && $opts{outliers} !~ m/^\w+:[0-9.]+:[0-9.]+$/ ) {
-         $opt_parser->error('--outlier requires three colon-separated fields');
+      if ( $opts{outliers} && $opts{outliers} !~ m/^\w+:[0-9.]+(?::[0-9.]+)?$/ ) {
+         $opt_parser->error('--outliers requires two or three colon-separated fields');
       }
    }
 
@@ -3540,10 +3863,9 @@ my $ea;     # EventAggregator
    # ##########################################################################
 
    # Flush before reporting so that the report gets the latest review vals.
-   # TODO
-   # if ( $opts{R} ) {
-    #   $qv->flush_event_cache(); # TODO see below.
-   # }
+   if ( $opts{R} ) {
+      $qv->flush_event_cache(); # TODO see below.
+   }
 
    if ( $opts{A} ) {
       my ($total, $count);
@@ -3572,12 +3894,60 @@ my $ea;     # EventAggregator
       # Find the queries to include in the report
       my @worst = $ea->top_events(%top_spec);
 
-      # Print the report
-      # my $qrf = new QueryReportFormatter();
-      # print $qrf->global_report($ea);
+      # Print the global report
+      my $qrf = new QueryReportFormatter();
+      print $qrf->header();
+      print $qrf->global_report(
+         $ea,
+         groupby    => 'fingerprint',
+         attributes => [ grep { $_ !~ m/^(?:user|db)$/ } @{$opts{attributes}} ],
+      );
+
+      # Print a report for each query.
+      my $rank = 1;
       foreach my $query ( @worst ) {
-         # print $qrf->query_report($ea, $query);
-         print $query, "\n";
+         print "\n";
+         print $qrf->event_report(
+            $ea,
+            groupby    => 'fingerprint',
+            attributes => $opts{attributes},
+            rank       => $rank++,
+            which      => $query,
+         );
+         print $qrf->chart_distro(
+            $ea,
+            groupby    => 'fingerprint',
+            attribute  => 'Query_time', # TODO
+            which      => $query,
+         );
+         if ( $opts{f} ) {
+            print "# Fingerprint\n#    $query\n";
+         }
+
+         # Find the sample query.  Shorten it if necessary (issue 216).
+         my $sample = $ea->results->{classes}->{'fingerprint'}->{$query}
+            ->{$opts{w}}->{sample};
+         my $samp_query = $sample->{arg};
+         $samp_query =~ s{\A(INSERT INTO \S+ VALUES \(.*?\)),\(.*\Z}
+                         {$1/*multi-value INSERT omitted*/}s;
+
+         # Print out tables for the query, and if it's a SELECT statement, print
+         # out its EXPLAIN...
+         if ( $query =~ m/^[\(\s]*select/ ) {
+            print_tables($samp_query, $sample->{db}) if $opts{forexplain};
+            print "# EXPLAIN\n$samp_query\\G\n";
+         }
+         else {
+            my $converted_sample = $qr->convert_to_select($samp_query);
+            if ( $converted_sample =~ m/^[\(\s]*select/i ) {
+               print_tables($converted_sample, $sample->{db}) if $opts{forexplain};
+               print "$sample\\G\n";
+               print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts{forexplain};
+            }
+            # converted_sample will be the original sample if it
+            # failed to convert. Otherwise, it will be a SELECT.
+            print "$converted_sample\\G\n" if $opts{forexplain};
+         }
       }
    }
 
@@ -3590,6 +3960,27 @@ my $ea;     # EventAggregator
 # ############################################################################
 # Subroutines.
 # ############################################################################
+
+# If no tables are printed, this may be due to a query like
+#    SELECT col FROM (SELECT col FROM tbl2) AS tbl1
+# because QueryParser ignores subquery tables.
+sub print_tables {
+   my ( $query, $default_db ) = @_;
+   my $qp = new QueryParser();
+   my $table_aliases = $qp->parse_table_aliases( $qp->get_table_ref($query) );
+   print "# Tables\n";
+   foreach my $table_alias ( keys %$table_aliases ) {
+      next if $table_alias eq 'DATABASE';
+      my $tbl = $table_aliases->{$table_alias};
+      my $db  = $table_aliases->{DATABASE}->{$tbl} || $default_db;
+      print '#    SHOW TABLE STATUS',
+         (defined $db && $db ? " FROM `$db`" : ''),
+         " LIKE '$tbl'\\G\n";
+      print "#    SHOW CREATE TABLE ",
+         (defined $db && $db ? "`$db`." : ''),
+         "`$tbl`\\G\n";
+   }
+}
 
 # TODO: if there's no --analyze, then we shouldn't cache, we should insert as
 # soon as we see a new fingerprint.
@@ -3993,6 +4384,16 @@ This option deals with bugs in slow-logging functionality that causes large
 values for attributes.  If the attribute's value is bigger than this, the
 last-seen value for that class of query is used instead.
 
+=item --attributes
+
+type: Array; default: Query_time,Lock_time,Rows_sent,Rows_examined,user,db,ts
+
+Show these attributes in the L<"--[no]analyze"> report.
+
+The value is a comma-separated list of items you can see in the slow query log,
+or otherwise know are attributes in the query events.  Specifying an attribute
+here automatically makes mk-log-parser record the attribute.
+
 =item --daemonize
 
 Fork to the background and detach from the shell.  POSIX only.
@@ -4080,9 +4481,9 @@ Report outliers as defined by attribute:percentile:count.
 
 The syntax of this option is a colon-delimited string.  The first field is the
 attribute by which an outlier is defined.  The second is a number that is
-compared to the attribute's 95th percentile.  The third is compared to the
-attribute's cnt aggregate.  Queries that pass this specification are added to
-the report, regardless of any limits you specified in L<"--top">.
+compared to the attribute's 95th percentile.  The third is optional, and is
+compared to the attribute's cnt aggregate.  Queries that pass this specification
+are added to the report, regardless of any limits you specified in L<"--top">.
 
 For example, to include queries whose 95th percentile Query_time is at least 60
 seconds and which are seen at least 5 times, use the following argument:
