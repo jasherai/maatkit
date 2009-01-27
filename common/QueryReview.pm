@@ -126,20 +126,20 @@ my @review_cols;
 
 # Fetch information from the database about a query that's been reviewed.
 sub get_review_info {
-   my ( $self, $q, $id ) = @_;
+   my ( $self, $q, $id, $db_tbl ) = @_;
    if ( !$review_sth ) {
       @review_cols = grep { $_ !~ m/^(?:fingerprint|sample|checksum)$/ }
                      ( @{$self->{basic_cols}}, @{$self->{extra_cols}} );
-      my $$sql = "SELECT "
+      my $sql = "SELECT "
               . join(', ', map { $q->quote($_) } @review_cols)
               . ", CONV(checksum, 10, 16) AS checksum_conv FROM "
-              . $q->quote($opts->{R}->{D}, $opts->{R}->{t})
+              . $q->quote($db_tbl->{D}, $db_tbl->{t})
               . " WHERE checksum=CONV(?, 16, 10)";
        MKDEBUG && _d("select for review vals: $sql");
        $review_sth = $self->{dbh}->prepare($sql);
    }
    $review_sth->execute($id);
-   $review_vals = $review_sth->fetchall_arrayref({});
+   my $review_vals = $review_sth->fetchall_arrayref({});
    if ( $review_vals && @$review_vals == 1 ) {
       $review_vals = $review_vals->[0];
       delete $review_vals->{checksum};
@@ -149,6 +149,7 @@ sub get_review_info {
 
 # Return the columns we'll be using from the review table.
 sub review_cols {
+   my ( $self ) = @_;
    if ( !@review_cols ) {
       @review_cols = grep { $_ !~ m/^(?:fingerprint|sample|checksum)$/ }
                      ( @{$self->{basic_cols}}, @{$self->{extra_cols}} );
