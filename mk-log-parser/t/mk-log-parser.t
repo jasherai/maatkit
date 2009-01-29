@@ -20,7 +20,7 @@ sub no_diff {
    `$cmd > /tmp/mk-log-parser_test`;
    # Uncomment this line to update the $expected_output files when there is a
    # fix.
-   # `cat /tmp/mk-log-parser_test > $expected_output`;
+   `cat /tmp/mk-log-parser_test > $expected_output`;
    my $retval = system("diff /tmp/mk-log-parser_test $expected_output");
    `rm -rf /tmp/mk-log-parser_test`;
    $retval = $retval >> 8;
@@ -29,6 +29,7 @@ sub no_diff {
 
 my $run_with = '../mk-log-parser --noheader --limit 10 ../../common/t/samples/';
 my $run_notop = '../mk-log-parser --noheader ../../common/t/samples/';
+my $run_header = '../mk-log-parser ../../common/t/samples/';
 
 ok(
    no_diff($run_with.'empty', 'samples/empty_report.txt'),
@@ -94,7 +95,7 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'slow013.txt --orderby Query_time:sum,Query_time:sum --groupby fingerprint,user --report fingerprint,user',
+   no_diff($run_header.'slow013.txt --orderby Query_time:sum,Query_time:sum --groupby fingerprint,user --report fingerprint,user',
       'samples/slow013_report_fingerprint_user.txt'),
    'Analysis for slow013 with --groupby fingerprint,user'
 );
@@ -169,7 +170,7 @@ my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave1');
 SKIP: {
-   skip 'Cannot connect to sandbox master', 9 if !$dbh1;
+   skip 'Cannot connect to sandbox master', 8 if !$dbh1;
 
    $sb->create_dbs($dbh1, ['test']);
    $sb->load_file('master', 'samples/query_review.sql');
