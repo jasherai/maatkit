@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -213,6 +213,134 @@ $result = {
 
 is_deeply( $ea->results->{globals},
    $result, 'Simple fingerprint aggregation all' );
+
+# #############################################################################
+# Test grouping on user
+# #############################################################################
+$ea = new EventAggregator(
+   groupby    => 'user',
+   worst      => 'Query_time',
+   attributes => {
+      Query_time => [qw(Query_time)],
+      user       => [qw(user)], # It should ignore the groupby attribute
+      ts         => [qw(ts)],
+      Rows_sent  => [qw(Rows_sent)],
+   },
+);
+
+$result = {
+   classes => {
+      bob => {
+         ts => {
+            min => '071015 21:43:52',
+            max => '071015 21:43:52',
+            unq => { '071015 21:43:52' => 1 },
+            cnt => 1
+         },
+         Query_time => {
+            min    => '0.000682',
+            max    => '0.000682',
+            sample => {
+               cmd           => 'Query',
+               arg           => 'SELECT id FROM users WHERE name=\'bar\'',
+               ip            => '',
+               ts            => '071015 21:43:52',
+               fingerprint   => 'select id from users where name=?',
+               host          => 'localhost',
+               pos_in_log    => 5,
+               Rows_examined => 2,
+               user          => 'bob',
+               Query_time    => '0.000682',
+               Lock_time     => '0.000201',
+               Rows_sent     => 1
+            },
+            all => [ ( map {0} ( 0 .. 133 ) ), 1, ( map {0} ( 135 .. 999 ) ) ],
+            sum => '0.000682',
+            cnt => 1
+         },
+         Rows_sent => {
+            min => 1,
+            max => 1,
+            all => [ ( map {0} ( 0 .. 283 ) ), 1, ( map {0} ( 285 .. 999 ) ) ],
+            sum => 1,
+            cnt => 1
+         }
+      },
+      root => {
+         ts => {
+            min => '071015 21:43:52',
+            max => '071015 21:43:52',
+            unq => { '071015 21:43:52' => 1 },
+            cnt => 1
+         },
+         Query_time => {
+            min    => '0.000652',
+            max    => '0.001943',
+            sample => {
+               cmd => 'Query',
+               arg =>
+                  'INSERT IGNORE INTO articles (id, body,)VALUES(3558268,\'sample text\')',
+               ip => '',
+               ts => '071015 21:43:52',
+               fingerprint =>
+                  'insert ignore into articles (id, body,)values(?+)',
+               host          => 'localhost',
+               pos_in_log    => 1,
+               Rows_examined => 0,
+               user          => 'root',
+               Query_time    => '0.001943',
+               Lock_time     => '0.000145',
+               Rows_sent     => 0
+            },
+            all => [
+               ( map {0} ( 0 .. 132 ) ), 1,
+               ( map {0} ( 134 .. 155 ) ), 1,
+               ( map {0} ( 157 .. 999 ) )
+            ],
+            sum => '0.002595',
+            cnt => 2
+         },
+         Rows_sent => {
+            min => 0,
+            max => 1,
+            all => [ ( map {0} ( 0 .. 283 ) ), 2, ( map {0} ( 285 .. 999 ) ) ],
+            sum => 1,
+            cnt => 2
+         }
+      }
+   },
+   globals => {
+      ts => {
+         min => '071015 21:43:52',
+         max => '071015 21:43:52',
+         cnt => 2
+      },
+      Query_time => {
+         min => '0.000652',
+         max => '0.001943',
+         all => [
+            ( map {0} ( 0 .. 132 ) ), 1, 1,
+            ( map {0} ( 135 .. 155 ) ), 1,
+            ( map {0} ( 157 .. 999 ) )
+         ],
+         sum => '0.003277',
+         cnt => 3
+      },
+      Rows_sent => {
+         min => 0,
+         max => 1,
+         all => [ ( map {0} ( 0 .. 283 ) ), 3, ( map {0} ( 285 .. 999 ) ) ],
+         sum => 2,
+         cnt => 3
+      }
+   }
+};
+
+foreach my $event (@$events) {
+   $ea->aggregate($event);
+}
+
+is_deeply( $ea->results, $result, 'user aggregation' );
 
 # #############################################################################
 # Test bucketizing a straightforward list.

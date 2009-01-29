@@ -83,7 +83,11 @@ sub new {
 
    return bless {
       groupby      => $args{groupby},
-      attributes   => $args{attributes},
+      attributes   => {
+         map  { $_ => $args{attributes}->{$_} }
+         grep { $_ ne $args{groupby} }
+         keys %{$args{attributes}}
+      },
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
