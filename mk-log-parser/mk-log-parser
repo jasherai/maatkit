@@ -3892,128 +3892,131 @@ my %ea;     # EventAggregators
       $qv->flush_event_cache(); # TODO see below.
    }
 
-   foreach my $i ( 0 .. @{$opts{report}} - 1 ) {
-      my $groupby = $opts{report}->[$i];
-
-      if ( @{$opts{report}} > 1 || $groupby ne 'fingerprint' ) {
-         print "\n# ", ( '#' x 72 ), "\n";
-         print "# Report grouped by $groupby\n";
-         print '# ', ( '#' x 72 ), "\n";
-      }
-
-      my $ea      = $ea{$groupby};
-      my ( $attrib, $orderby ) = split(/:/, $opts{orderby}->[$i]);
-      my $limit = $opts{limit}->[$i] || '95%:20';
-      my ($total, $count);
-      if ( $limit =~ m/^\d+$/ ) {
-         $count = $limit;
-      }
-      else {
-         # It's a percentage, so grab as many as needed to get to that % of the
-         # file.
-         ($total, $count) = $limit =~ m/(\d+)/g;
-         $total *= ($ea->results->{globals}->{$attrib}->{sum} || 0) / 100;
-      }
-
-      my %top_spec = (
-         attrib  => $attrib,
-         orderby => $orderby || 'cnt',
-         total   => $total,
-         count   => $count,
-      );
-      if ( $opts{outliers}->[$i] ) {
-         @top_spec{qw(ol_attrib ol_limit ol_freq)}
-            = split(/:/, $opts{outliers}->[$i]);
-      }
-
-      # Find the items to include in the report
-      my @worst = $ea->top_events(%top_spec);
-
-      # Print the global report
+   if ( @{$opts{report}} ) {
+      # Pick the first one and run the global report.
       my @select = map {my ($name) = split(/:/, $_); $name} @{$opts{select}};
       my $qrf = new QueryReportFormatter();
       if ( $opts{header} ) {
+         my $ea = $ea{$opts{report}->[0]};
          print $qrf->header();
-         if ( !$ea->results->{globals}->{$attrib}->{cnt} ) {
+         if ( !$ea->results->{globals}->{$select[0]}->{cnt} ) {
             print "# No events processed.\n";
             exit 0;
          }
          print $qrf->global_report(
             $ea,
-            select => [ grep { $_ !~ m/^(?:user|db|$groupby)$/ } @select ],
-            worst  => $attrib,
+            select => [ grep { $_ !~ m/^(?:user|db)$/ } @select ],
+            worst  => $select[0],
          );
       }
 
-      # Print a report for each item.
-      ITEM:
-      foreach my $rank ( 1 .. @worst ) {
-         my $item = $worst[$rank - 1];
+      foreach my $i ( 0 .. @{$opts{report}} - 1 ) {
+         my $groupby = $opts{report}->[$i];
 
-         my $review_vals;
-         if ( $groupby eq 'fingerprint' && $opts{R} ) {
-            $review_vals
-               = $qv->get_review_info($q, make_checksum($item), $opts{R});
-            if ( defined $review_vals->{reviewed_by} && !$opts{reportall} ) {
-               next ITEM;
-            }
+         if ( @{$opts{report}} > 1 || $groupby ne 'fingerprint' ) {
+            print "\n# ", ( '#' x 72 ), "\n";
+            print "# Report grouped by $groupby\n";
+            print '# ', ( '#' x 72 ), "\n";
          }
 
-         print "\n";
-         print $qrf->event_report(
-            $ea,
-            select => \@select,
-            where  => $item,
-            rank   => $rank,
-            worst  => $attrib,
-         );
-         print $qrf->chart_distro(
-            $ea,
-            attribute  => $attrib,
-            where      => $item,
-         );
-
-         # Print the review information
-         if ( $groupby eq 'fingerprint' && $opts{R} ) {
-            print "# Review information\n";
-            foreach my $col ($qv->review_cols) {
-               my $val = $review_vals->{$col};
-               printf "# %13s: %-s\n", $col, ( defined $val ? $val : '' );
-            }
-         }
-
-         # Print the query fingerprint.
-         if ( $groupby eq 'fingerprint' && $opts{f} ) {
-            print "# Fingerprint\n#    $item\n";
-         }
-
-         if ( $groupby eq 'fingerprint' ) {
-            # Find the sample query.  Shorten it if necessary (issue 216).
-            my $sample = $ea->results->{classes}->{$item}->{$attrib}->{sample};
-            my $samp_query = $sample->{arg} || '';
-            $samp_query =~ s{\A(INSERT INTO \S+ VALUES \(.*?\)),\(.*\Z}
-                            {$1/*multi-value INSERT omitted*/}s;
-
-            # Print out tables for the query, and if it's a SELECT statement, print
-            # out its EXPLAIN...
-            if ( $item =~ m/^[\(\s]*select/ ) {
-               print_tables($samp_query, $sample->{db}) if $opts{forexplain};
-               print "# EXPLAIN\n$samp_query\\G\n";
-            }
-            else {
-               my $converted_sample = $qr->convert_to_select($samp_query);
-               if ( $converted_sample =~ m/^[\(\s]*select/i ) {
-                  print_tables($converted_sample, $sample->{db}) if $opts{forexplain};
-                  print "$samp_query\\G\n";
-                  print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts{forexplain};
-               }
-               # converted_sample will be the original sample if it
-               # failed to convert. Otherwise, it will be a SELECT.
-               print "$converted_sample\\G\n" if $opts{forexplain};
-            }
+         my $ea      = $ea{$groupby};
+         my ( $attrib, $orderby ) = split(/:/, $opts{orderby}->[$i]);
+         my $limit = $opts{limit}->[$i] || '95%:20';
+         my ($total, $count);
+         if ( $limit =~ m/^\d+$/ ) {
+            $count = $limit;
          }
          else {
-            print $item, "\n";
+            # It's a percentage, so grab as many as needed to get to that % of the
+            # file.
+            ($total, $count) = $limit =~ m/(\d+)/g;
+            $total *= ($ea->results->{globals}->{$attrib}->{sum} || 0) / 100;
+         }
+
+         my %top_spec = (
+            attrib  => $attrib,
+            orderby => $orderby || 'cnt',
+            total   => $total,
+            count   => $count,
+         );
+         if ( $opts{outliers}->[$i] ) {
+            @top_spec{qw(ol_attrib ol_limit ol_freq)}
+               = split(/:/, $opts{outliers}->[$i]);
+         }
+
+         # Find the items to include in the report
+         my @worst = $ea->top_events(%top_spec);
+
+         # Print a report for each item.
+         ITEM:
+         foreach my $rank ( 1 .. @worst ) {
+            my $item = $worst[$rank - 1];
+
+            my $review_vals;
+            if ( $groupby eq 'fingerprint' && $opts{R} ) {
+               $review_vals
+                  = $qv->get_review_info($q, make_checksum($item), $opts{R});
+               if ( defined $review_vals->{reviewed_by} && !$opts{reportall} ) {
+                  next ITEM;
+               }
+            }
+
+            print "\n";
+            print $qrf->event_report(
+               $ea,
+               select => \@select,
+               where  => $item,
+               rank   => $rank,
+               worst  => $attrib,
+            );
+            print $qrf->chart_distro(
+               $ea,
+               attribute  => $attrib,
+               where      => $item,
+            );
+
+            # Print the review information
+            if ( $groupby eq 'fingerprint' && $opts{R} ) {
+               print "# Review information\n";
+               foreach my $col ($qv->review_cols) {
+                  my $val = $review_vals->{$col};
+                  printf "# %13s: %-s\n", $col, ( defined $val ? $val : '' );
+               }
+            }
+
+            # Print the query fingerprint.
+            if ( $groupby eq 'fingerprint' && $opts{f} ) {
+               print "# Fingerprint\n#    $item\n";
+            }
+
+            if ( $groupby eq 'fingerprint' ) {
+               # Find the sample query.  Shorten it if necessary (issue 216).
+               my $sample = $ea->results->{classes}->{$item}->{$attrib}->{sample};
+               my $samp_query = $sample->{arg} || '';
+               $samp_query =~ s{\A(INSERT INTO \S+ VALUES \(.*?\)),\(.*\Z}
+                               {$1/*multi-value INSERT omitted*/}s;
+
+               # Print out tables for the query, and if it's a SELECT statement, print
+               # out its EXPLAIN...
+               if ( $item =~ m/^[\(\s]*select/ ) {
+                  print_tables($samp_query, $sample->{db}) if $opts{forexplain};
+                  print "# EXPLAIN\n$samp_query\\G\n";
+               }
+               else {
+                  my $converted_sample = $qr->convert_to_select($samp_query);
+                  if ( $converted_sample =~ m/^[\(\s]*select/i ) {
+                     print_tables($converted_sample, $sample->{db}) if $opts{forexplain};
+                     print "$samp_query\\G\n";
+                     print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts{forexplain};
+                  }
+                  # converted_sample will be the original sample if it
+                  # failed to convert. Otherwise, it will be a SELECT.
+                  print "$converted_sample\\G\n" if $opts{forexplain};
+               }
+            }
+            else {
+               print $item, "\n";
+            }
          }
       }
    }
