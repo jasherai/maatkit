@@ -27,7 +27,7 @@ sub no_diff {
    return !$retval;
 }
 
-my $run_with = '../mk-log-parser --noheader --top 10 ../../common/t/samples/';
+my $run_with = '../mk-log-parser --noheader --limit 10 ../../common/t/samples/';
 my $run_notop = '../mk-log-parser --noheader ../../common/t/samples/';
 
 ok(
@@ -41,13 +41,20 @@ ok(
 );
 
 ok(
+   no_diff($run_with.'slow001.txt --select Query_time',
+      'samples/slow001_select_report.txt'),
+   'Analysis for slow001 --select'
+);
+
+ok(
    no_diff($run_with.'slow002.txt', 'samples/slow002_report.txt'),
    'Analysis for slow002'
 );
 
 ok(
-   no_diff($run_notop.'slow002.txt --top 5%', 'samples/slow002_top_report.txt'),
-   'Analysis for slow002 with --top',
+   no_diff($run_with.'slow002.txt --orderby Query_time:cnt --limit 2',
+      'samples/slow002_orderbyreport.txt'),
+   'Analysis for slow002 --orderby --limit'
 );
 
 ok(
