@@ -1833,7 +1833,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 2896
+# EventAggregator package 2911
 # ###########################################################################
 
 
@@ -1851,8 +1851,6 @@ use constant BASE_LOG     => log(BUCK_SIZE);
 use constant BASE_OFFSET  => -floor(log(.000001) / BASE_LOG); # typically 284
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
-use constant WHERE_CLASS  => 0;
-use constant WHERE_GLOBAL => 1;
 
 our @buckets  = map { 0 } (1 .. NUM_BUCK);
 my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
@@ -1865,14 +1863,14 @@ my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
 
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(classes) ) {
+   foreach my $arg ( qw(groupby worst attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
    return bless {
-      classes      => $args{classes},
-      globals      => $args{globals},
-      save         => $args{save},
+      groupby      => $args{groupby},
+      attributes   => $args{attributes},
+      worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
    }, $class;
@@ -1881,55 +1879,26 @@ sub new {
 sub aggregate {
    my ( $self, $event ) = @_;
 
-   CLASS:
-   foreach my $class ( keys %{$self->{classes}} ) {
-      my @attribs = sort keys %{$self->{classes}->{$class}};
-      my $group_by = $event->{$class};
-      defined $group_by or next CLASS;
-      ATTRIB:
-      foreach my $attrib ( @attribs ) {
-         my $class_attrib
-            = $self->{result_class}->{$class}->{$group_by}->{$attrib} ||= {};
-         my $handler = $self->{handlers}->{ $attrib };
-         if ( !$handler ) {
-            $handler = $self->make_handler(
-               $attrib,
-               $event,
-               wor => (($self->{save} || '') eq $attrib),
-               alt => $self->{classes}->{$class}->{$attrib},
-            );
-            if ( $handler ) {
-               $self->{handlers}->{$attrib} = $handler;
-            }
-         }
-         next ATTRIB unless $handler;
-         $handler->($event, $class_attrib, WHERE_CLASS);
-      }
-   }
+   my $group_by = $event->{$self->{groupby}};
+   return unless defined $group_by;
 
-   if ( $self->{globals} ) {
-      my @attribs = sort keys %{$self->{globals}};
-      ATTRIB:
-      foreach my $attrib ( @attribs ) {
-         my $global_attrib
-            = $self->{result_globals}->{$attrib} ||= {};
-         my $handler = $self->{handlers}->{ $attrib };
-         if ( !$handler ) {
-            $handler = $self->make_handler(
-               $attrib,
-               $event,
-               alt => $self->{globals}->{$attrib},
-            );
-            if ( $handler ) {
-               $self->{handlers}->{$attrib} = $handler;
-            }
-         }
-         next ATTRIB unless $handler;
-         $handler->($event, $global_attrib, WHERE_GLOBAL);
+   ATTRIB:
+   foreach my $attrib ( keys %{$self->{attributes}} ) {
+      my $class_attrib  = $self->{result_class}->{$group_by}->{$attrib} ||= {};
+      my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+      my $handler = $self->{handlers}->{ $attrib };
+      if ( !$handler ) {
+         $handler = $self->make_handler(
+            $attrib,
+            $event,
+            wor => $self->{worst} eq $attrib,
+            alt => $self->{attributes}->{$attrib},
+         );
+         $self->{handlers}->{$attrib} = $handler;
       }
+      next ATTRIB unless $handler;
+      $handler->($event, $class_attrib, $global_attrib);
    }
-
-   return;
 }
 
 sub results {
@@ -1942,13 +1911,12 @@ sub results {
 
 sub attributes {
    my ( $self ) = @_;
-   return $self->{attributes};
+   return $self->{type_for};
 }
 
 sub make_handler {
    my ( $self, $attrib, $event, %args ) = @_;
    die "I need an attrib" unless defined $attrib;
-   return unless $event;
    my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
    return unless defined $val; # Can't decide type if it's undef.
 
@@ -1957,7 +1925,7 @@ sub make_handler {
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
    MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
-   $self->{attributes}->{$attrib} = $type;
+   $self->{type_for}->{$attrib} = $type;
 
    %args = ( # Set up defaults
       min => 1,
@@ -1978,37 +1946,46 @@ sub make_handler {
       push @lines, q{$val = } . $args{trf} . ';';
    }
 
-   if ( $args{min} ) {
-      my $op   = $type eq 'num' ? '<' : 'lt';
-      push @lines, '$store->{min} = $val if !defined $store->{min} || $val '
-         . $op . ' $store->{min};';
+   foreach my $place ( qw($class $global) ) {
+      my @tmp;
+      if ( $args{min} ) {
+         my $op   = $type eq 'num' ? '<' : 'lt';
+         push @tmp, (
+            'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+               . $op . ' PLACE->{min};',
+         );
+      }
+      if ( $args{max} ) {
+         my $op = ($type eq 'num') ? '>' : 'gt';
+         push @tmp, (
+            'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+               . $op . ' PLACE->{max};',
+         );
+      }
+      if ( $args{sum} ) {
+         push @tmp, 'PLACE->{sum} += $val;';
+      }
+      if ( $args{cnt} ) {
+         push @tmp, '++PLACE->{cnt};';
+      }
+      if ( $args{all} ) {
+         push @tmp, (
+            'PLACE->{all} ||= [ @buckets ];',
+            '$idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
+            '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+         );
+      }
+      push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
-   if ( $args{max} ) {
-      my $op = ($type eq 'num') ? '>' : 'gt';
-      push @lines, '$store->{max} = $val if !defined $store->{max} || $val '
-         . $op . ' $store->{max};';
-   }
-   if ( $args{sum} ) {
-      push @lines, '$store->{sum} += $val;';
-   }
-   if ( $args{cnt} ) {
-      push @lines, '++$store->{cnt};';
-   }
+
    if ( $args{unq} ) {
-      push @lines, '++$store->{unq}->{$val} unless $where == WHERE_GLOBAL;';
-   }
-   if ( $args{all} ) {
-      push @lines, (
-         '$store->{all} ||= [ @buckets ];',
-         'my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
-         '++$store->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
-      );
+      push @lines, '++$class->{unq}->{$val};';
    }
    if ( $args{wor} ) {
       my $op = $type eq 'num' ? '>=' : 'ge';
       push @lines, (
-         'if ( $where ne WHERE_GLOBAL && $val ' . $op . ' ($store->{max} || 0) ) {',
-         '   $store->{sample} = $event;',
+         'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
+         '   $class->{sample} = $event;',
          '}',
       );
    }
@@ -2017,9 +1994,9 @@ sub make_handler {
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
          "if ( \$val > $self->{attrib_limit} ) {",
-         '   $val = $store->{last} ||= 0;',
+         '   $val = $class->{last} ||= 0;',
          '}',
-         '$store->{last} = $val;',
+         '$class->{last} = $val;',
       );
    }
 
@@ -2034,8 +2011,8 @@ sub make_handler {
 
    unshift @lines, (
       'sub {',
-      'my ( $event, $store, $where ) = @_;',
-      'my $val = $event->{' . $attrib . '};',
+      'my ( $event, $class, $global ) = @_;',
+      'my ($val, $idx);', # NOTE: define all variables here
       (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
       'return unless defined $val;',
       @limit,
@@ -2184,7 +2161,7 @@ sub calculate_statistical_metrics {
 
 sub top_events {
    my ( $self, %args ) = @_;
-   my $classes = $self->{result_class}->{$args{groupby}};
+   my $classes = $self->{result_class};
    my @sorted = reverse sort { # Sorted list of $groupby values
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
@@ -2344,7 +2321,7 @@ sub global_report {
    my $line = sprintf(
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
       shorten($global_cnt),
-      shorten(scalar keys %{$stats->{classes}->{$opts{groupby}}}),
+      shorten(scalar keys %{$stats->{classes}}),
       shorten($qps),
       shorten($conc));
    $line .= ('_' x (LINE_LENGTH - length($line)));
@@ -2388,7 +2365,7 @@ sub event_report {
    my $stats = $ea->results;
    my @result;
 
-   my $store = $stats->{classes}->{$opts{groupby}}->{$opts{which}};
+   my $store = $stats->{classes}->{$opts{which}};
    return "# No such event $opts{groupby}/$opts{which}\n" unless $store;
    my $sample = $store->{$opts{worst}}->{sample};
 
@@ -2465,7 +2442,7 @@ sub chart_distro {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
    my $store
-      = $stats->{classes}->{$opts{groupby}}->{$opts{which}}->{$opts{attribute}};
+      = $stats->{classes}->{$opts{which}}->{$opts{attribute}};
    my $vals = $store->{all};
    return "" unless defined $vals && scalar @$vals;
 
@@ -3806,6 +3783,7 @@ my $ea;     # EventAggregator
 
    if ( $opts{A} ) {
       # TODO: add values from command-line options
+      # TODO: simplify....
       my %attributes = (
          Query_time    => [qw(Query_time)],
          Lock_time     => [qw(Lock_time)],
@@ -3817,12 +3795,10 @@ my $ea;     # EventAggregator
          ts            => [qw(ts)],
       );
       $ea = new EventAggregator(
-         save         => $opts{w},
+         worst        => $opts{w},
          attrib_limit => $opts{attriblimit},
-         classes      => {
-            fingerprint => { %attributes },
-         },
-         globals => { %attributes },
+         groupby      => $opts{groupby},
+         attributes   => { %attributes },
       );
       push @callbacks, sub {
          my ( $event ) = @_;
@@ -4000,9 +3976,8 @@ my $ea;     # EventAggregator
          }
 
          # Find the sample query.  Shorten it if necessary (issue 216).
-         my $sample = $ea->results->{classes}->{'fingerprint'}->{$query}
-            ->{$opts{w}}->{sample};
-         my $samp_query = $sample->{arg};
+         my $sample = $ea->results->{classes}->{$query}->{$opts{w}}->{sample};
+         my $samp_query = $sample->{arg} || '';
          $samp_query =~ s{\A(INSERT INTO \S+ VALUES \(.*?\)),\(.*\Z}
                          {$1/*multi-value INSERT omitted*/}s;
 
@@ -4519,6 +4494,16 @@ This option adds code snippets to make it easy to run SHOW CREATE TABLE and SHOW
 TABLE STATUS for the query's tables.  It also rewrites non-SELECT queries into a
 SELECT that might be helpful for determining the non-SELECT statement's index
 usage.
+
+=item --groupby
+
+type: string; default: fingerprint
+
+Which attribute of the events to group by.
+
+The default value 'fingerprint' causes events to be fingerprinted to abstract
+queries into a canonical form, which is then used to group events together into
+a class.  You could use something else if you wish, though.
 
 =item --[no]header
 
