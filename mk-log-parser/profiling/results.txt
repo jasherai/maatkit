@@ -32,3 +32,37 @@ Revision 2810
     28	../mk-log-parser:1076 0.31580 93741: $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
     29	../mk-log-parser:1588 0.29855 93741: my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
     30	../mk-log-parser:3154 0.29855 93741: $event->{fingerprint} = $fingerprint;
+
+Revision 2919
+46.74user 70.33system 1:57.95elapsed 99%CPU (0avgtext+0avgdata 0maxresident)k
+195880inputs+111096outputs (1major+15475minor)pagefaults 0swaps
+     1	../mk-log-parser:1155 8.19669 46726: $query =~ s{                          # Anything vaguely resembling numbers
+     2	../mk-log-parser:1891 4.71539 656187: my $class_attrib  = $self->{result_class}->{$group_by}->{$attrib} ||= {};
+     3	../mk-log-parser:1688 4.22971 330270: if ( !$got_ts
+     4	../mk-log-parser:1892 1.64964 656187: my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+     5	../mk-log-parser:1893 1.61037 656187: my $handler = $self->{handlers}->{ $attrib };
+     6	../mk-log-parser:1904 1.48911 656187: $handler->($event, $class_attrib, $global_attrib);
+     7	../mk-log-parser:1734 1.47036 330270: if ( !$found_arg && $pos == $len ) {
+     8	../mk-log-parser:1894 1.32128 656187: if ( !$handler ) {
+     9	../mk-log-parser:1656 1.27455 93741: if ( $stmt =~ s{
+    10	../mk-log-parser:1903 1.25998 656187: next ATTRIB unless $handler;
+    11	../mk-log-parser:1160 1.16364 46726: $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+    12	../mk-log-parser:1684 1.12764 377133: my $line = $1;          # Necessary for /g and pos() to work.
+    13	../mk-log-parser:1652 1.11920 93720: while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
+    14	../mk-log-parser:1686 1.08842 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
+    15	../mk-log-parser:1146 0.91048 46726: $query =~ s/$olc_re//go;
+    16	../mk-log-parser:1757 0.90277 93741: last EVENT unless @pending;
+    17	../mk-log-parser:1752 0.86003 93741: my $event = { @properties };
+    18	../mk-log-parser:1683 0.80257 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    19	../mk-log-parser:1754 0.63316 281223: last unless $event = $callback->($event);
+    20	../mk-log-parser:1163 0.62289 46726: $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+    21	../mk-log-parser:1759 0.56729 93720: return $num_events;
+    22	../mk-log-parser:1166 0.53052 46726: $query =~ s{
+    23	../mk-log-parser:1673 0.48444 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    24	../mk-log-parser:2029 0.47867 93741: [at line 24 inside eval] ++$global->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
+    25	../mk-log-parser:1674 0.47785 93741: $stmt =~ s/;\n#?\Z//;
+    26	../mk-log-parser:1164 0.45798 46726: $query = lc $query;
+    27	../mk-log-parser:1132 0.40571 93741: my ( $self, $query ) = @_;
+    28	../mk-log-parser:1890 0.38182 93741: foreach my $attrib ( keys %{$self->{attributes}} ) {
+    29	../mk-log-parser:1646 0.37975 93720: local $INPUT_RECORD_SEPARATOR = ";\n#";
+    30	../mk-log-parser:1642 0.35587 93720: my ( $self, $fh, $misc, @callbacks ) = @_;
