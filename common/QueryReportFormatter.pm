@@ -127,7 +127,7 @@ sub global_report {
          my $max  = parse_timestamp($stats->{globals}->{ts}->{max});
          my $diff = unix_timestamp($max) - unix_timestamp($min);
          $qps     = $global_cnt / $diff;
-         $conc    = $stats->{globals}->{Query_time}->{sum} / $diff;
+         $conc    = $stats->{globals}->{$opts{worst}}->{sum} / $diff;
       };
    }
 
@@ -207,7 +207,7 @@ sub event_report {
          my $max  = parse_timestamp($store->{ts}->{max});
          my $diff = unix_timestamp($max) - unix_timestamp($min);
          $qps     = $global_cnt / $diff;
-         $conc    = $store->{Query_time}->{sum} / $diff;
+         $conc    = $store->{$opts{worst}}->{sum} / $diff;
       };
    }
 
