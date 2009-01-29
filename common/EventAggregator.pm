@@ -49,8 +49,6 @@ use constant BASE_LOG     => log(BUCK_SIZE);
 use constant BASE_OFFSET  => -floor(log(.000001) / BASE_LOG); # typically 284
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
-use constant WHERE_CLASS  => 0;
-use constant WHERE_GLOBAL => 1;
 
 our @buckets  = map { 0 } (1 .. NUM_BUCK);
 my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
@@ -64,15 +62,12 @@ my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
 # The best way to see how to use this is to look at the .t file.
 #
 # %args is a hash containing:
-# classes      A hashref.  Each key of the hashref is the name of an element to
-#              group-by.  Usually this will be 'fingerprint' at a minimum when
-#              you're processing a slow log.  The value is a hashref itself,
-#              whose keys are names of elements to aggregate within that
-#              group-by.  And the values of those elements are arrayrefs of the
+# groupby      The name of the property to group/aggregate by.
+# attributes   A hashref.  Each key is the name of an element to aggregate.
+#              And the values of those elements are arrayrefs of the
 #              values to pull from the hashref, with any second or subsequent
 #              values being fallbacks for the first in case it's not defined.
-# globals      Similar to classes, but not a deeply nested structure.
-# save         The name of an element which defines the "worst" hashref in its
+# worst        The name of an element which defines the "worst" hashref in its
 #              class.  If this is Query_time, then each class will contain
 #              a sample that holds the event with the largest Query_time.
 # unroll_limit If this many events have been processed and some handlers haven't
@@ -82,14 +77,14 @@ my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
 #              limit, use the last-seen for this class; if none, then 0.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(classes) ) {
+   foreach my $arg ( qw(groupby worst attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
    return bless {
-      classes      => $args{classes},
-      globals      => $args{globals},
-      save         => $args{save},
+      groupby      => $args{groupby},
+      attributes   => $args{attributes},
+      worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
    }, $class;
@@ -99,55 +94,26 @@ sub new {
 sub aggregate {
    my ( $self, $event ) = @_;
 
-   CLASS:
-   foreach my $class ( keys %{$self->{classes}} ) {
-      my @attribs = sort keys %{$self->{classes}->{$class}};
-      my $group_by = $event->{$class};
-      defined $group_by or next CLASS;
-      ATTRIB:
-      foreach my $attrib ( @attribs ) {
-         my $class_attrib
-            = $self->{result_class}->{$class}->{$group_by}->{$attrib} ||= {};
-         my $handler = $self->{handlers}->{ $attrib };
-         if ( !$handler ) {
-            $handler = $self->make_handler(
-               $attrib,
-               $event,
-               wor => (($self->{save} || '') eq $attrib),
-               alt => $self->{classes}->{$class}->{$attrib},
-            );
-            if ( $handler ) {
-               $self->{handlers}->{$attrib} = $handler;
-            }
-         }
-         next ATTRIB unless $handler;
-         $handler->($event, $class_attrib, WHERE_CLASS);
-      }
-   }
+   my $group_by = $event->{$self->{groupby}};
+   return unless defined $group_by;
 
-   if ( $self->{globals} ) {
-      my @attribs = sort keys %{$self->{globals}};
-      ATTRIB:
-      foreach my $attrib ( @attribs ) {
-         my $global_attrib
-            = $self->{result_globals}->{$attrib} ||= {};
-         my $handler = $self->{handlers}->{ $attrib };
-         if ( !$handler ) {
-            $handler = $self->make_handler(
-               $attrib,
-               $event,
-               alt => $self->{globals}->{$attrib},
-            );
-            if ( $handler ) {
-               $self->{handlers}->{$attrib} = $handler;
-            }
-         }
-         next ATTRIB unless $handler;
-         $handler->($event, $global_attrib, WHERE_GLOBAL);
+   ATTRIB:
+   foreach my $attrib ( keys %{$self->{attributes}} ) {
+      my $class_attrib  = $self->{result_class}->{$group_by}->{$attrib} ||= {};
+      my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+      my $handler = $self->{handlers}->{ $attrib };
+      if ( !$handler ) {
+         $handler = $self->make_handler(
+            $attrib,
+            $event,
+            wor => $self->{worst} eq $attrib,
+            alt => $self->{attributes}->{$attrib},
+         );
+         $self->{handlers}->{$attrib} = $handler;
       }
+      next ATTRIB unless $handler;
+      $handler->($event, $class_attrib, $global_attrib);
    }
-
-   return;
 }
 
 # Return the aggregated results.
@@ -197,15 +163,14 @@ sub attributes {
 #
 # Return value:
 # a subroutine with this signature:
-#    my ( $event, $store, $where ) = @_;
+#    my ( $event, $class, $global ) = @_;
 # where
 #  $event   is the event
-#  $store   is the container to store the aggregated values
-#  $where   is either WHERE_CLASS or WHERE_GLOBAL
+#  $class   is the container to store the aggregated values
+#  $global  is is the container to store the globally aggregated values
 sub make_handler {
    my ( $self, $attrib, $event, %args ) = @_;
    die "I need an attrib" unless defined $attrib;
-   return unless $event;
    my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
    return unless defined $val; # Can't decide type if it's undef.
 
@@ -236,39 +201,48 @@ sub make_handler {
       push @lines, q{$val = } . $args{trf} . ';';
    }
 
-   if ( $args{min} ) {
-      my $op   = $type eq 'num' ? '<' : 'lt';
-      push @lines, '$store->{min} = $val if !defined $store->{min} || $val '
-         . $op . ' $store->{min};';
+   foreach my $place ( qw($class $global) ) {
+      my @tmp;
+      if ( $args{min} ) {
+         my $op   = $type eq 'num' ? '<' : 'lt';
+         push @tmp, (
+            'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+               . $op . ' PLACE->{min};',
+         );
+      }
+      if ( $args{max} ) {
+         my $op = ($type eq 'num') ? '>' : 'gt';
+         push @tmp, (
+            'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+               . $op . ' PLACE->{max};',
+         );
+      }
+      if ( $args{sum} ) {
+         push @tmp, 'PLACE->{sum} += $val;';
+      }
+      if ( $args{cnt} ) {
+         push @tmp, '++PLACE->{cnt};';
+      }
+      if ( $args{all} ) {
+         push @tmp, (
+            # If you change this code, change the similar code in bucketize.
+            'PLACE->{all} ||= [ @buckets ];',
+            '$idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
+            '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+         );
+      }
+      push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
-   if ( $args{max} ) {
-      my $op = ($type eq 'num') ? '>' : 'gt';
-      push @lines, '$store->{max} = $val if !defined $store->{max} || $val '
-         . $op . ' $store->{max};';
-   }
-   if ( $args{sum} ) {
-      push @lines, '$store->{sum} += $val;';
-   }
-   if ( $args{cnt} ) {
-      push @lines, '++$store->{cnt};';
-   }
+
+   # We only save unique/worst values for the class, not globally.
    if ( $args{unq} ) {
-      push @lines, '++$store->{unq}->{$val} unless $where == WHERE_GLOBAL;';
-   }
-   if ( $args{all} ) {
-      push @lines, (
-         # If you change this code, change the similar code in bucketize.
-         # '$store->{all} ||= [ map { 0 } (1..NUM_BUCK) ];',
-         '$store->{all} ||= [ @buckets ];',
-         'my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
-         '++$store->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
-      );
+      push @lines, '++$class->{unq}->{$val};';
    }
    if ( $args{wor} ) {
       my $op = $type eq 'num' ? '>=' : 'ge';
       push @lines, (
-         'if ( $where ne WHERE_GLOBAL && $val ' . $op . ' ($store->{max} || 0) ) {',
-         '   $store->{sample} = $event;',
+         'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
+         '   $class->{sample} = $event;',
          '}',
       );
    }
@@ -279,9 +253,9 @@ sub make_handler {
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
          "if ( \$val > $self->{attrib_limit} ) {",
-         '   $val = $store->{last} ||= 0;',
+         '   $val = $class->{last} ||= 0;',
          '}',
-         '$store->{last} = $val;',
+         '$class->{last} = $val;',
       );
    }
 
@@ -298,8 +272,8 @@ sub make_handler {
    # Build a subroutine with the code.
    unshift @lines, (
       'sub {',
-      'my ( $event, $store, $where ) = @_;',
-      'my $val = $event->{' . $attrib . '};',
+      'my ( $event, $class, $global ) = @_;',
+      'my ($val, $idx);', # NOTE: define all variables here
       (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
       'return unless defined $val;',
       @limit,
@@ -482,9 +456,8 @@ sub calculate_statistical_metrics {
 }
 
 # Find the top N or top % event keys, in sorted order, optionally including
-# outliers that are notable for some reason.  %args looks like this:
+# outliers (ol_...) that are notable for some reason.  %args looks like this:
 #
-#  groupby     group-by attribute, usually 'fingerprint'
 #  attrib      order-by attribute (usually Query_time)
 #  orderby     order-by aggregate expression (should be numeric, usually sum)
 #  total       include events whose summed attribs are <= this number...
@@ -494,7 +467,7 @@ sub calculate_statistical_metrics {
 #  ol_freq     ...the event occurred at least this many times.
 sub top_events {
    my ( $self, %args ) = @_;
-   my $classes = $self->{result_class}->{$args{groupby}};
+   my $classes = $self->{result_class};
    my @sorted = reverse sort { # Sorted list of $groupby values
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}

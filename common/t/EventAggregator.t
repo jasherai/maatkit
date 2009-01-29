@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 19;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -16,13 +16,13 @@ my $qr = new QueryRewriter();
 my ( $result, $events, $ea, $expected );
 
 $ea = new EventAggregator(
-   classes => {
-      fingerprint => {
-         Query_time => [qw(Query_time)],
-         user       => [qw(user)],
-         ts         => [qw(ts)],
-         Rows_sent  => [qw(Rows_sent)],
-      },
+   groupby    => 'fingerprint',
+   worst      => 'Query_time',
+   attributes => {
+      Query_time => [qw(Query_time)],
+      user       => [qw(user)],
+      ts         => [qw(ts)],
+      Rows_sent  => [qw(Rows_sent)],
    },
 );
 
@@ -68,71 +68,98 @@ $events = [
 ];
 
 $result = {
-   fingerprint => {
-      'select id from users where name=?' => {
-         Query_time => {
-            min => '0.000652',
-            max => '0.000682',
-            all =>
-               [ ( map {0} ( 0 .. 132 ) ), 1, 1, ( map {0} ( 135 .. 999 ) ) ],
-            sum => '0.001334',
-            cnt => 2,
+   'select id from users where name=?' => {
+      Query_time => {
+         min => '0.000652',
+         max => '0.000682',
+         all =>
+            [ ( map {0} ( 0 .. 132 ) ), 1, 1, ( map {0} ( 135 .. 999 ) ) ],
+         sum => '0.001334',
+         cnt => 2,
+         sample =>
+         {  ts            => '071015 21:43:52',
+            cmd           => 'Query',
+            user          => 'bob',
+            host          => 'localhost',
+            ip            => '',
+            arg           => "SELECT id FROM users WHERE name='bar'",
+            Query_time    => '0.000682',
+            Lock_time     => '0.000201',
+            Rows_sent     => 1,
+            Rows_examined => 2,
+            pos_in_log    => 5,
+            fingerprint   => 'select id from users where name=?',
          },
-         user => {
-            unq => {
-               bob  => 1,
-               root => 1
-            },
-            min => 'bob',
-            max => 'root',
-            cnt => 2,
-         },
-         ts => {
-            min => '071015 21:43:52',
-            max => '071015 21:43:52',
-            unq => { '071015 21:43:52' => 1, },
-            cnt => 1,
-         },
-         Rows_sent => {
-            min => 1,
-            max => 1,
-            all =>
-               [ ( map {0} ( 0 .. 283 ) ), 2, ( map {0} ( 285 .. 999 ) ) ],
-            sum => 2,
-            cnt => 2,
-         }
       },
-      'insert ignore into articles (id, body,)values(?+)' => {
-         Query_time => {
-            min => '0.001943',
-            max => '0.001943',
-            all =>
-               [ ( map {0} ( 0 .. 155 ) ), 1, ( map {0} ( 157 .. 999 ) ) ],
-            sum => '0.001943',
-            cnt => 1,
+      user => {
+         unq => {
+            bob  => 1,
+            root => 1
          },
-         user => {
-            unq => { root => 1 },
-            min => 'root',
-            max => 'root',
-            cnt => 1,
-         },
-         ts => {
-            min => '071015 21:43:52',
-            max => '071015 21:43:52',
-            unq => { '071015 21:43:52' => 1, },
-            cnt => 1,
-         },
-         Rows_sent => {
-            min => 0,
-            max => 0,
-            all =>
-               [ ( map {0} ( 0 .. 283 ) ), 1, ( map {0} ( 285 .. 999 ) ) ],
-            sum => 0,
-            cnt => 1,
-         }
+         min => 'bob',
+         max => 'root',
+         cnt => 2,
+      },
+      ts => {
+         min => '071015 21:43:52',
+         max => '071015 21:43:52',
+         unq => { '071015 21:43:52' => 1, },
+         cnt => 1,
+      },
+      Rows_sent => {
+         min => 1,
+         max => 1,
+         all =>
+            [ ( map {0} ( 0 .. 283 ) ), 2, ( map {0} ( 285 .. 999 ) ) ],
+         sum => 2,
+         cnt => 2,
       }
    },
+   'insert ignore into articles (id, body,)values(?+)' => {
+      Query_time => {
+         min => '0.001943',
+         max => '0.001943',
+         all =>
+            [ ( map {0} ( 0 .. 155 ) ), 1, ( map {0} ( 157 .. 999 ) ) ],
+         sum => '0.001943',
+         cnt => 1,
+         sample =>
+         {  ts   => '071015 21:43:52',
+            cmd  => 'Query',
+            user => 'root',
+            host => 'localhost',
+            ip   => '',
+            arg =>
+               "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
+            Query_time    => '0.001943',
+            Lock_time     => '0.000145',
+            Rows_sent     => 0,
+            Rows_examined => 0,
+            pos_in_log    => 1,
+            fingerprint   => 'insert ignore into articles (id, body,)values(?+)',
+         },
+      },
+      user => {
+         unq => { root => 1 },
+         min => 'root',
+         max => 'root',
+         cnt => 1,
+      },
+      ts => {
+         min => '071015 21:43:52',
+         max => '071015 21:43:52',
+         unq => { '071015 21:43:52' => 1, },
+         cnt => 1,
+      },
+      Rows_sent => {
+         min => 0,
+         max => 0,
+         all =>
+            [ ( map {0} ( 0 .. 283 ) ), 1, ( map {0} ( 285 .. 999 ) ) ],
+         sum => 0,
+         cnt => 1,
+      }
+   }
 };
 
 foreach my $event (@$events) {
@@ -151,16 +178,6 @@ is_deeply(
       Rows_sent  => 'num',
    },
    'Found attribute types',
-);
-
-$ea = new EventAggregator(
-   classes => {},
-   globals => {
-      Query_time => [qw(Query_time)],
-      user       => [qw(user)],
-      ts         => [qw(ts)],
-      Rows_sent  => [qw(Rows_sent)],
-   },
 );
 
 $result = {
@@ -194,41 +211,8 @@ $result = {
    },
 };
 
-foreach my $event (@$events) {
-   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
-   $ea->aggregate($event);
-}
-
 is_deeply( $ea->results->{globals},
    $result, 'Simple fingerprint aggregation all' );
-
-# #############################################################################
-# Test that the sample of the worst occurrence is saved.
-# #############################################################################
-
-$ea = new EventAggregator(
-   classes => { arg => { Query_time => [qw(Query_time)], }, },
-   save    => 'Query_time',
-);
-
-$events = [
-   {  user       => 'bob',
-      arg        => "foo 1",
-      Query_time => '1',
-   },
-   {  user       => 'root',
-      arg        => "foo 1",
-      Query_time => '5',
-   }
-];
-
-foreach my $event (@$events) {
-   $ea->aggregate($event);
-}
-
-is($ea->results->{classes}->{arg}->{'foo 1'}->{Query_time}->{sample}->{user},
-   'root', "Keeps the worst sample"
-);
 
 # #############################################################################
 # Test bucketizing a straightforward list.
@@ -374,7 +358,12 @@ is( $EVAL_ERROR, '', "Handles an undef attrib OK" );
 # #############################################################################
 # Issue 184: db OR Schema
 # #############################################################################
-$ea = new EventAggregator( classes => { arg => { db => [qw(db Schema)], }, },
+$ea = new EventAggregator(
+   groupby => 'arg',
+   attributes => {
+      db => [qw(db Schema)],
+   },
+   worst => 'foo',
 );
 
 $events = [
@@ -389,19 +378,20 @@ foreach my $event (@$events) {
    $ea->aggregate($event);
 }
 
-is( $ea->results->{classes}->{arg}->{foo1}->{db}->{min},
+is( $ea->results->{classes}->{foo1}->{db}->{min},
    'db1', 'Gets Schema for db|Schema (issue 184)' );
 
-is( $ea->results->{classes}->{arg}->{foo2}->{db}->{min},
+is( $ea->results->{classes}->{foo2}->{db}->{min},
    'db1', 'Gets db for db|Schema (issue 184)' );
 
 # #############################################################################
 # Make sure large values are kept reasonable.
 # #############################################################################
 $ea = new EventAggregator(
-   classes      => { arg       => { Rows_read => [qw(Rows_read)], }, },
-   globals      => { Rows_read => [qw(Rows_read)], },
+   attributes   => { Rows_read => [qw(Rows_read)], },
    attrib_limit => 1000,
+   worst        => 'foo',
+   groupby      => 'arg',
 );
 
 $events = [
@@ -422,39 +412,41 @@ foreach my $event (@$events) {
 
 $result = {
    classes => {
-      arg => {
-         'arg1' => {
-            Rows_read => {
-               min => 4,
-               max => 4,
-               all =>
-                  [ ( map {0} ( 0 .. 311 ) ), 2, ( map {0} ( 313 .. 999 ) ) ],
-               sum    => 8,
-               cnt    => 2,
-               'last' => 4,
-            }
-         },
-         'arg2' => {
-            Rows_read => {
-               min => 0,
-               max => 0,
-               all =>
-                  [ ( map {0} ( 0 .. 283 ) ), 1, ( map {0} ( 285 .. 999 ) ) ],
-               sum    => 0,
-               cnt    => 1,
-               'last' => 0,
-            }
-         },
+      'arg1' => {
+         Rows_read => {
+            min => 4,
+            max => 4,
+            all =>
+               [ ( map {0} ( 0 .. 311 ) ), 2, ( map {0} ( 313 .. 999 ) ) ],
+            sum    => 8,
+            cnt    => 2,
+            'last' => 4,
+         }
+      },
+      'arg2' => {
+         Rows_read => {
+            min => 0,
+            max => 0,
+            all =>
+               [ ( map {0} ( 0 .. 283 ) ), 1, ( map {0} ( 285 .. 999 ) ) ],
+            sum    => 0,
+            cnt    => 1,
+            'last' => 0,
+         }
       },
    },
    globals => {
       Rows_read => {
-         min => 4,
+         min => 0, # Because 'last' is only kept at the class level
          max => 4,
-         all => [ ( map {0} ( 0 .. 311 ) ), 3, ( map {0} ( 313 .. 999 ) ) ],
-         sum => 12,
+         all => [
+            ( map {0} ( 0 .. 283 ) ), 1,
+            ( map {0} ( 285 .. 311 ) ),
+            2,
+            ( map {0} ( 313 .. 999 ) ),
+         ],
+         sum => 8,
          cnt => 3,
-         'last' => 4,
       },
    },
 };
@@ -492,10 +484,10 @@ is_deeply( $ea->results, $result, 'Limited attribute values', );
 }
 
 $ea = new EventAggregator(
-   classes => {
-      fingerprint => {
-         Query_time => [qw(Query_time)],
-      },
+   groupby    => 'fingerprint',
+   worst      => 'foo',
+   attributes => {
+      Query_time => [qw(Query_time)],
    },
 );
 
