@@ -1,5 +1,6 @@
 Changelog for mk-log-parser:
 
+   * Changed the names of options --top, --analyze, --worst, etc.
    * Added the ability to aggregate the log multiple ways (issue 176).
    * Rewrote internals to aid in other projects (partial work on issue 242).
    * Made the SHOW CREATE/SHOW STATUS have the sample query's DB (issue 213).

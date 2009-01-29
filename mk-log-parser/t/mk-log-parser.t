@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 31;
+use Test::More tests => 33;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -97,6 +97,18 @@ ok(
    no_diff($run_with.'slow013.txt --orderby Query_time:sum,Query_time:sum --groupby fingerprint,user --report fingerprint,user',
       'samples/slow013_report_fingerprint_user.txt'),
    'Analysis for slow013 with --groupby fingerprint,user'
+);
+
+ok(
+   no_diff($run_with.'slow013.txt --groupby user --report user --outliers Query_time:.0000001:1',
+      'samples/slow013_report_outliers.txt'),
+   'Analysis for slow013 with --outliers'
+);
+
+ok(
+   no_diff($run_with.'slow013.txt --limit 100%:1',
+      'samples/slow013_report_limit.txt'),
+   'Analysis for slow013 with --limit'
 );
 
 ok(

@@ -3687,7 +3687,9 @@ my %ea;     # EventAggregators
       if ( $opts{mirror} && (!$opts{execute} || !$opts{processlist}) ) {
          $opt_parser->error('--mirror requires --execute and --processlist');
       }
-      if ( $opts{outliers} && $opts{outliers} !~ m/^\w+:[0-9.]+(?::[0-9.]+)?$/ ) {
+      if ( $opts{outliers}
+         && grep { $_ !~ m/^\w+:[0-9.]+(?::[0-9.]+)?$/ } @{$opts{outliers}}
+      ) {
          $opt_parser->error('--outliers requires two or three colon-separated fields');
       }
    }
@@ -3901,7 +3903,7 @@ my %ea;     # EventAggregators
 
       my $ea      = $ea{$groupby};
       my ( $attrib, $orderby ) = split(/:/, $opts{orderby}->[$i]);
-      my $limit = $opts{limit}->[$i] || '95%';
+      my $limit = $opts{limit}->[$i] || '95%:20';
       my ($total, $count);
       if ( $limit =~ m/^\d+$/ ) {
          $count = $limit;
@@ -3909,7 +3911,7 @@ my %ea;     # EventAggregators
       else {
          # It's a percentage, so grab as many as needed to get to that % of the
          # file.
-         ($total) = $limit =~ m/(\d+)/;
+         ($total, $count) = $limit =~ m/(\d+)/g;
          $total *= ($ea->results->{globals}->{$attrib}->{sum} || 0) / 100;
       }
 
@@ -4513,7 +4515,7 @@ How frequently to poll the processlist, in seconds.
 
 =item --limit
 
-type: Array; default: 95%
+type: Array; default: 95%:20
 
 Limit output to the given percentage or count.
 
@@ -4555,9 +4557,9 @@ Valid aggregates are sum, min, max, cnt.
 
 =item --outliers
 
-type: array
+type: array; default: Query_time:1:10
 
-Report outliers as defined by attribute:percentile:count.
+Report outliers by attribute:percentile:count.
 
 The syntax of this option is a comma-separated list of colon-delimited strings.
 The first field is the attribute by which an outlier is defined.  The second is
@@ -4566,7 +4568,7 @@ optional, and is compared to the attribute's cnt aggregate.  Queries that pass
 this specification are added to the report, regardless of any limits you
 specified in L<"--limit">.
 
-For example, to include queries whose 95th percentile Query_time is at least 60
+For example, to report queries whose 95th percentile Query_time is at least 60
 seconds and which are seen at least 5 times, use the following argument:
 
   --outliers Query_time:60:5
