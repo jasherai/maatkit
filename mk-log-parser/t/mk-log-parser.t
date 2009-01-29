@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 28;
+use Test::More tests => 31;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -88,6 +88,18 @@ ok(
 );
 
 ok(
+   no_diff($run_with.'slow013.txt --groupby user --report user',
+      'samples/slow013_report_user.txt'),
+   'Analysis for slow013 with --groupby user'
+);
+
+ok(
+   no_diff($run_with.'slow013.txt --orderby Query_time:sum,Query_time:sum --groupby fingerprint,user --report fingerprint,user',
+      'samples/slow013_report_fingerprint_user.txt'),
+   'Analysis for slow013 with --groupby fingerprint,user'
+);
+
+ok(
    no_diff($run_with.'slow014.txt', 'samples/slow014_report.txt'),
    'Analysis for slow014'
 );
@@ -151,7 +163,7 @@ SKIP: {
    $sb->load_file('master', 'samples/query_review.sql');
 
    $output = 'foo'; # clear previous test results
-   $output = `${run_with}slow006.txt --noanalyze --review h=127.1,P=12345,D=test,t=query_review`;
+   $output = `${run_with}slow006.txt --report '' --review h=127.1,P=12345,D=test,t=query_review`;
    my $res = $dbh1->selectall_arrayref( 'SELECT * FROM test.query_review',
       { Slice => {} } );
    is_deeply(
@@ -179,21 +191,21 @@ SKIP: {
    );
    is($output, '', '--review alone produces no output');
 
-   # This time we'll run with --analze and since none of the queries
+   # This time we'll run with --report and since none of the queries
    # have been reviewed, the report should include both of them with
    # their respective query review info added to the report.
    ok(
-      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
+      no_diff($run_with.'slow006.txt -R h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_1.txt'),
       'Analyze-review pass 1 reports not-reviewed queries'
    );
 
-   # Mark a query as reviewed and run --analyze again and that query should
+   # Mark a query as reviewed and run --report again and that query should
    # not be reported.
    $dbh1->do('UPDATE test.query_review
       SET reviewed_by="daniel", reviewed_on="2008-12-24 12:00:00", comments="foo_tbl is ok, so are cranberries"
       WHERE checksum=11676753765851784517');
    ok(
-      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_2.txt'),
+      no_diff($run_with.'slow006.txt -R h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_2.txt'),
       'Analyze-review pass 2 does not report the reviewed query'
    );
 
@@ -201,7 +213,7 @@ SKIP: {
    # to re-appear in the report with the reviewed_by, reviewed_on and comments
    # info included.
    ok(
-      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review   --reportall', 'samples/slow006_AR_4.txt'),
+      no_diff($run_with.'slow006.txt -R h=127.1,P=12345,D=test,t=query_review   --reportall', 'samples/slow006_AR_4.txt'),
       'Analyze-review pass 4 with --reportall reports reviewed query'
    );
 
@@ -210,7 +222,7 @@ SKIP: {
    $dbh1->do('UPDATE test.query_review
       SET foo=42 WHERE checksum=15334040482108055940');
    ok(
-      no_diff($run_with.'slow006.txt -AR h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_5.txt'),
+      no_diff($run_with.'slow006.txt -R h=127.1,P=12345,D=test,t=query_review', 'samples/slow006_AR_5.txt'),
       'Analyze-review pass 5 reports new review info column'
    );
 

@@ -1,5 +1,6 @@
 Changelog for mk-log-parser:
 
+   * Added the ability to aggregate the log multiple ways (issue 176).
    * Rewrote internals to aid in other projects (partial work on issue 242).
    * Made the SHOW CREATE/SHOW STATUS have the sample query's DB (issue 213).
    * Added more information to the global header (issue 200).

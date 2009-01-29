@@ -1833,7 +1833,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 2911
+# EventAggregator package 2916
 # ###########################################################################
 
 
@@ -1869,7 +1869,11 @@ sub new {
 
    return bless {
       groupby      => $args{groupby},
-      attributes   => $args{attributes},
+      attributes   => {
+         map  { $_ => $args{attributes}->{$_} }
+         grep { $_ ne $args{groupby} }
+         keys %{$args{attributes}}
+      },
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
@@ -2314,7 +2318,7 @@ sub global_report {
          my $max  = parse_timestamp($stats->{globals}->{ts}->{max});
          my $diff = unix_timestamp($max) - unix_timestamp($min);
          $qps     = $global_cnt / $diff;
-         $conc    = $stats->{globals}->{Query_time}->{sum} / $diff;
+         $conc    = $stats->{globals}->{$opts{worst}}->{sum} / $diff;
       };
    }
 
@@ -2382,12 +2386,13 @@ sub event_report {
          my $max  = parse_timestamp($store->{ts}->{max});
          my $diff = unix_timestamp($max) - unix_timestamp($min);
          $qps     = $global_cnt / $diff;
-         $conc    = $store->{Query_time}->{sum} / $diff;
+         $conc    = $store->{$opts{worst}}->{sum} / $diff;
       };
    }
 
    my $line = sprintf(
-      '# Query %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
+      '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
+      ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
       $opts{rank} || 0,
       shorten($qps),
       shorten($conc),
@@ -3658,7 +3663,7 @@ my $qv_dbh; # For QueryReview
 my $ex_dbh; # For --execute
 my $ps_dbh; # For Processlist
 my @fhs;    # File handles
-my $ea;     # EventAggregator
+my %ea;     # EventAggregators
 
 { # Begin a global scope to avoid poisoning subroutines with global variables.
 
@@ -3678,9 +3683,6 @@ my $ea;     # EventAggregator
       if ( $opts{R} && (!defined $opts{R}->{D} || !defined $opts{R}->{t}) ) {
          $opt_parser->error('The --review DSN requires a D (database) and t"
             . " (table) part specifying the query review table');
-      }
-      if ( $opts{limit} !~ m/^\d+%?$/ ) {
-         $opt_parser->error('Invalid syntax for --limit.  See perldoc for details.');
       }
       if ( $opts{mirror} && (!$opts{execute} || !$opts{processlist}) ) {
          $opt_parser->error('--mirror requires --execute and --processlist');
@@ -3709,15 +3711,17 @@ my $ea;     # EventAggregator
    # terminates the chain).
    # ##########################################################################
    my @callbacks;
-   push @callbacks, sub {
-      my ( $event ) = @_;
-      # TODO: save db and ts from last event and apply it here.  (Before skipping!)
-      # Skip events which do not have the group_by attribute.
-      my $group_by_val = $event->{arg};
-      return 0 unless defined $group_by_val;
-      $event->{fingerprint} = $qr->fingerprint($group_by_val);
-      return $event;
-   };
+   if ( grep { m/fingerprint/ } @{$opts{groupby}} ) {
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         # TODO: save db and ts from last event and apply it here.  (Before skipping!)
+         # Skip events which do not have the group_by attribute.
+         my $group_by_val = $event->{arg};
+         return 0 unless defined $group_by_val;
+         $event->{fingerprint} = $qr->fingerprint($group_by_val);
+         return $event;
+      };
+   }
 
    if ( $opts{filter} ) {
       my $code = "sub{ my(\$event) = shift; $opts{filter}; return \$event; };";
@@ -3781,21 +3785,26 @@ my $ea;     # EventAggregator
       };
    }
 
-   if ( $opts{A} ) {
-      my ( $attrib, $orderby ) = split(/:/, $opts{orderby});
+   my $i = 0;
+   foreach my $i ( 0 .. @{$opts{groupby}} - 1 ) {
+      my $groupby = $opts{groupby}->[$i];
+      die "You need to specify an --orderby for each --groupby"
+         unless $opts{orderby}->[$i];
+      my ( $attrib, $orderby ) = split(/:/, $opts{orderby}->[$i]);
       my %attributes = map {
          my ($name, @alt) = split(/:/, $_);
          $name => [$name, @alt];
-      } @{$opts{select}};
-      $ea = new EventAggregator(
-         groupby      => $opts{groupby},
+      } grep { $_ !~ m/^$groupby\b/ } @{$opts{select}};
+      my $e = new EventAggregator(
+         groupby      => $groupby,
          attributes   => { %attributes },
          worst        => $attrib,
          attrib_limit => $opts{attriblimit},
       );
+      $ea{$groupby} = $e;
       push @callbacks, sub {
          my ( $event ) = @_;
-         $ea->aggregate($event);
+         $e->aggregate($event);
          return $event;
       };
    }
@@ -3881,16 +3890,26 @@ my $ea;     # EventAggregator
       $qv->flush_event_cache(); # TODO see below.
    }
 
-   if ( $opts{A} ) {
-      my ( $attrib, $orderby ) = split(/:/, $opts{orderby});
+   foreach my $i ( 0 .. @{$opts{report}} - 1 ) {
+      my $groupby = $opts{report}->[$i];
+
+      if ( @{$opts{report}} > 1 || $groupby ne 'fingerprint' ) {
+         print "\n# ", ( '#' x 72 ), "\n";
+         print "# Report grouped by $groupby\n";
+         print '# ', ( '#' x 72 ), "\n";
+      }
+
+      my $ea      = $ea{$groupby};
+      my ( $attrib, $orderby ) = split(/:/, $opts{orderby}->[$i]);
+      my $limit = $opts{limit}->[$i] || '95%';
       my ($total, $count);
-      if ( $opts{limit} =~ m/^\d+$/ ) {
-         $count = $opts{limit};
+      if ( $limit =~ m/^\d+$/ ) {
+         $count = $limit;
       }
       else {
          # It's a percentage, so grab as many as needed to get to that % of the
          # file.
-         ($total) = $opts{limit} =~ m/(\d+)/;
+         ($total) = $limit =~ m/(\d+)/;
          $total *= ($ea->results->{globals}->{$attrib}->{sum} || 0) / 100;
       }
 
@@ -3900,12 +3919,12 @@ my $ea;     # EventAggregator
          total   => $total,
          count   => $count,
       );
-      if ( $opts{outliers} ) {
+      if ( $opts{outliers}->[$i] ) {
          @top_spec{qw(ol_attrib ol_limit ol_freq)}
-            = split(/:/, $opts{outliers});
+            = split(/:/, $opts{outliers}->[$i]);
       }
 
-      # Find the queries to include in the report
+      # Find the items to include in the report
       my @worst = $ea->top_events(%top_spec);
 
       # Print the global report
@@ -3919,22 +3938,22 @@ my $ea;     # EventAggregator
          }
          print $qrf->global_report(
             $ea,
-            select => [ grep { $_ !~ m/^(?:user|db)$/ } @select ],
+            select => [ grep { $_ !~ m/^(?:user|db|$groupby)$/ } @select ],
             worst  => $attrib,
          );
       }
 
-      # Print a report for each query.
-      QUERY:
+      # Print a report for each item.
+      ITEM:
       foreach my $rank ( 1 .. @worst ) {
-         my $query = $worst[$rank - 1];
+         my $item = $worst[$rank - 1];
 
          my $review_vals;
-         if ( $opts{R} ) {
+         if ( $groupby eq 'fingerprint' && $opts{R} ) {
             $review_vals
-               = $qv->get_review_info($q, make_checksum($query), $opts{R});
+               = $qv->get_review_info($q, make_checksum($item), $opts{R});
             if ( defined $review_vals->{reviewed_by} && !$opts{reportall} ) {
-               next QUERY;
+               next ITEM;
             }
          }
 
@@ -3942,18 +3961,18 @@ my $ea;     # EventAggregator
          print $qrf->event_report(
             $ea,
             select => \@select,
-            where  => $query,
+            where  => $item,
             rank   => $rank,
             worst  => $attrib,
          );
          print $qrf->chart_distro(
             $ea,
             attribute  => $attrib,
-            where      => $query,
+            where      => $item,
          );
 
          # Print the review information
-         if ( $opts{R} ) {
+         if ( $groupby eq 'fingerprint' && $opts{R} ) {
             print "# Review information\n";
             foreach my $col ($qv->review_cols) {
                my $val = $review_vals->{$col};
@@ -3962,32 +3981,37 @@ my $ea;     # EventAggregator
          }
 
          # Print the query fingerprint.
-         if ( $opts{f} ) {
-            print "# Fingerprint\n#    $query\n";
+         if ( $groupby eq 'fingerprint' && $opts{f} ) {
+            print "# Fingerprint\n#    $item\n";
          }
 
-         # Find the sample query.  Shorten it if necessary (issue 216).
-         my $sample = $ea->results->{classes}->{$query}->{$attrib}->{sample};
-         my $samp_query = $sample->{arg} || '';
-         $samp_query =~ s{\A(INSERT INTO \S+ VALUES \(.*?\)),\(.*\Z}
-                         {$1/*multi-value INSERT omitted*/}s;
+         if ( $groupby eq 'fingerprint' ) {
+            # Find the sample query.  Shorten it if necessary (issue 216).
+            my $sample = $ea->results->{classes}->{$item}->{$attrib}->{sample};
+            my $samp_query = $sample->{arg} || '';
+            $samp_query =~ s{\A(INSERT INTO \S+ VALUES \(.*?\)),\(.*\Z}
+                            {$1/*multi-value INSERT omitted*/}s;
 
-         # Print out tables for the query, and if it's a SELECT statement, print
-         # out its EXPLAIN...
-         if ( $query =~ m/^[\(\s]*select/ ) {
-            print_tables($samp_query, $sample->{db}) if $opts{forexplain};
-            print "# EXPLAIN\n$samp_query\\G\n";
+            # Print out tables for the query, and if it's a SELECT statement, print
+            # out its EXPLAIN...
+            if ( $item =~ m/^[\(\s]*select/ ) {
+               print_tables($samp_query, $sample->{db}) if $opts{forexplain};
+               print "# EXPLAIN\n$samp_query\\G\n";
+            }
+            else {
+               my $converted_sample = $qr->convert_to_select($samp_query);
+               if ( $converted_sample =~ m/^[\(\s]*select/i ) {
+                  print_tables($converted_sample, $sample->{db}) if $opts{forexplain};
+                  print "$samp_query\\G\n";
+                  print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts{forexplain};
+               }
+               # converted_sample will be the original sample if it
+               # failed to convert. Otherwise, it will be a SELECT.
+               print "$converted_sample\\G\n" if $opts{forexplain};
+            }
          }
          else {
-            my $converted_sample = $qr->convert_to_select($samp_query);
-            if ( $converted_sample =~ m/^[\(\s]*select/i ) {
-               print_tables($converted_sample, $sample->{db}) if $opts{forexplain};
-               print "$samp_query\\G\n";
-               print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts{forexplain};
-            }
-            # converted_sample will be the original sample if it
-            # failed to convert. Otherwise, it will be a SELECT.
-            print "$converted_sample\\G\n" if $opts{forexplain};
+            print $item, "\n";
          }
       }
    }
@@ -4023,7 +4047,7 @@ sub print_tables {
    }
 }
 
-# TODO: if there's no --analyze, then we shouldn't cache, we should insert as
+# TODO: if there's no --report, then we shouldn't cache, we should insert as
 # soon as we see a new fingerprint.
 sub get_query_review_callback {
    my ( $opts ) = @_;
@@ -4401,16 +4425,6 @@ prefix.
 
 =over
 
-=item --[no]analyze
-
-short form: -A; default: yes
-
-Group similar queries and report on them.
-
-This is the standard slow-log analysis functionality.  See OUTPUT for the
-description of what this does and what the results look like.  You can disable
-it for L<"--review"> if you don't want to see any reports on queries.
-
 =item --attriblimit
 
 type: int; default: 4294967296
@@ -4432,7 +4446,7 @@ type: DSN
 Execute queries on this DSN.
 
 Adds a callback into the chain, after filters but before L<"--review"> or
-L<"--[no]analyze">.  Events are executed on this DSN.  If they are successful,
+L<"--report">.  Events are executed on this DSN.  If they are successful,
 the time they take to execute overwrites the event's Query_time attribute.  If
 unsuccessful, the callback returns false and terminates the chain.
 
@@ -4458,7 +4472,7 @@ An example filter that discards everything but SELECT statements:
 
 short form: -f
 
-Add query fingerprints to the L<"--[no]analyze"> report.  This is mostly useful
+Add query fingerprints to the L<"--report">.  This is mostly useful
 for debugging purposes.
 
 =item --[no]forexplain
@@ -4474,13 +4488,14 @@ usage.
 
 =item --groupby
 
-type: string; default: fingerprint
+type: Array; default: fingerprint
 
 Which attribute of the events to group by.
 
 The default value 'fingerprint' causes events to be fingerprinted to abstract
 queries into a canonical form, which is then used to group events together into
-a class.
+a class.  This is a comma-separated list of items that must contain at least the
+same items as L<"--report"> but may contain extras.
 
 =item --[no]header
 
@@ -4495,6 +4510,24 @@ See L<OUTPUT> for more information on the header.
 short form: -i; type: float; default: .1
 
 How frequently to poll the processlist, in seconds.
+
+=item --limit
+
+type: Array; default: 95%
+
+Limit output to the given percentage or count.
+
+If the argument is an integer, report only the top N worst queries.  If the
+argument is an integer followed by the C<%> sign, report that percentage of the
+worst queries.  If the percentage is followed by a colon and another integer,
+report the top percentage or the number specified by that integer, whichever
+comes first.
+
+The value is actually a comma-separated array of values, one for each item in
+L<"--report">.  If you don't specify a value for any of those items, the default
+is the top 95%.
+
+See also L<"--outliers">.
 
 =item --mirror
 
@@ -4512,28 +4545,33 @@ which is impossible without putting it under a realistic workload.
 
 =item --orderby
 
-type: string; default: Query_time:sum
+type: Array; default: Query_time:sum
 
 Sort events by this attribute and aggregate function.
 
-The syntax is attribute:aggregate.  Valid aggregates are sum, min, max, cnt.
+This is a comma-separated list of order-by expressions, one for each attribute
+you wish to report by (see L<"--report">).  The syntax is attribute:aggregate.
+Valid aggregates are sum, min, max, cnt.
 
 =item --outliers
 
-type: string
+type: array
 
 Report outliers as defined by attribute:percentile:count.
 
-The syntax of this option is a colon-delimited string.  The first field is the
-attribute by which an outlier is defined.  The second is a number that is
-compared to the attribute's 95th percentile.  The third is optional, and is
-compared to the attribute's cnt aggregate.  Queries that pass this specification
-are added to the report, regardless of any limits you specified in L<"--limit">.
+The syntax of this option is a comma-separated list of colon-delimited strings.
+The first field is the attribute by which an outlier is defined.  The second is
+a number that is compared to the attribute's 95th percentile.  The third is
+optional, and is compared to the attribute's cnt aggregate.  Queries that pass
+this specification are added to the report, regardless of any limits you
+specified in L<"--limit">.
 
 For example, to include queries whose 95th percentile Query_time is at least 60
 seconds and which are seen at least 5 times, use the following argument:
 
   --outliers Query_time:60:5
+
+You can specify an --outliers option for each value in L<"--report">.
 
 =item --pid
 
@@ -4597,8 +4635,18 @@ As the tool parses the log, it keeps track of which query fingerprints it has
 seen.  Each time it sees a new one, it inserts the query into this table.  When
 you're done, your table should contain a row for each fingerprint.
 
-If you enable this option and disable L<"--[no]analyze">, the tool will ignore
+If you enable this option and disable L<"--report">, the tool will ignore
 certain analysis-related options, like L<"--limit">.
+
+=item --report
+
+type: Array; default: fingerprint
+
+Print out reports on the aggregate results from L<"--groupby">.
+
+This is the standard slow-log analysis functionality.  See OUTPUT for the
+description of what this does and what the results look like.  You can disable
+it for L<"--review"> if you don't want to see any reports on queries.
 
 =item --reportall
 
@@ -4620,20 +4668,6 @@ The value is a comma-separated list of items you can see in the slow query log,
 or otherwise know are attributes in the query events.  You can specify an
 alternative attribute with a colon.  For example, C<db:Schema> uses db if it's
 available, and Schema if it's not.
-
-=item --limit
-
-type: string; default: 95%
-
-Limit output to the given percentage or count.
-
-If the argument is an integer, report only the top N worst queries.  If the
-argument is an integer followed by the C<%> sign, report that percentage of the
-worst queries.  If the percentage is followed by a colon and another integer,
-report the top percentage or the number specified by that integer, whichever
-comes first.
-
-See also L<"--outliers">.
 
 =item --[no]zeroadmin
 
