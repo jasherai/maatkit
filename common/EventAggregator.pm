@@ -129,7 +129,7 @@ sub results {
 # a hashref of name => type.
 sub attributes {
    my ( $self ) = @_;
-   return $self->{attributes};
+   return $self->{type_for};
 }
 
 # Make subroutines that do things with events.
@@ -180,7 +180,7 @@ sub make_handler {
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
    MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
-   $self->{attributes}->{$attrib} = $type;
+   $self->{type_for}->{$attrib} = $type;
 
    %args = ( # Set up defaults
       min => 1,
