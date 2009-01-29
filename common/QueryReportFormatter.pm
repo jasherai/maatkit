@@ -213,7 +213,8 @@ sub event_report {
 
    # First line
    my $line = sprintf(
-      '# Query %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
+      '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
+      ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
       $opts{rank} || 0,
       shorten($qps),
       shorten($conc),
