@@ -35,13 +35,13 @@ sub new {
 
 sub get_table_ref {
    my ( $self, $query ) = @_;
-   return if !defined $query || !$query;
+   return unless $query;
    my $table_ref;
 
-   if ( $query =~ m/FROM\s+(.+?)(?:WHERE|ORDER|LIMIT|HAVING)+.+/is ) {
+   if ( $query =~ m/FROM\s+(.+?)\b(?:WHERE|ORDER|LIMIT|HAVING)+.+/is ) {
       $table_ref = $1;
    }
-   elsif( $query =~ m/FROM\s+(.+?);?$/is ) {
+   elsif ( $query =~ m/FROM\s+(.+?);?$/is ) {
       # This handles queries like "SELECT COUNT(id) FROM table;"
       chomp($table_ref = $1);
    }

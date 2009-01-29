@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 19;
+use Test::More tests => 20;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -97,6 +97,15 @@ test_query(
       },
    },
    'single fully-qualified and aliased table'
+);
+
+test_query(
+   q{SELECT a FROM store_orders_line_items JOIN store_orders},
+   'store_orders_line_items JOIN store_orders',
+   {  store_orders_line_items => 'store_orders_line_items',
+      store_orders            => 'store_orders',
+   },
+   'A funny query Baron found',
 );
 
 # #############################################################################
