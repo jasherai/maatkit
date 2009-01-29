@@ -99,11 +99,8 @@ foreach my $event (@$events) {
 
 $result = $qrf->global_report(
    $ea,
-   attributes => [
-      qw(Query_time Lock_time Rows_sent Rows_examined ts)
-   ],
+   select  => [ qw(Query_time Lock_time Rows_sent Rows_examined ts) ],
    worst   => 'Query_time',
-   groupby => 'fingerprint',
 );
 
 is($result, $expected, 'Global report');
@@ -123,12 +120,9 @@ EOF
 
 $result = $qrf->event_report(
    $ea,
-   attributes => [
-      # "users" is here to try to cause a failure
-      qw(Query_time Lock_time Rows_sent Rows_examined ts db user users)
-   ],
-   groupby => 'fingerprint',
-   which   => 'select id from users where name=?',
+   # "users" is here to try to cause a failure
+   select => [ qw(Query_time Lock_time Rows_sent Rows_examined ts db user users) ],
+   where   => 'select id from users where name=?',
    rank    => 1,
    worst   => 'Query_time',
 );
@@ -150,8 +144,7 @@ EOF
 $result = $qrf->chart_distro(
    $ea,
    attribute => 'Query_time',
-   groupby   => 'fingerprint',
-   which     => 'select id from users where name=?',
+   where     => 'select id from users where name=?',
 );
 
 is($result, $expected, 'Query_time distro');

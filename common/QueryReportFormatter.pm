@@ -88,29 +88,26 @@ sub new {
 }
 
 sub header {
-   my ( $self ) = @_;
+   my ($self) = @_;
 
-   my ( $rss, $vsz, $user, $system );
+   my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
    eval {
       my $mem = `ps -o rss,vsz $PID`;
-      ($rss, $vsz) = $mem =~ m/(\d+)/g;
+      ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
    };
-   ($user, $system) = times();
+   ( $user, $system ) = times();
 
    sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
-         micro_t($user, p_s => 1, p_ms => 1),
-         micro_t($system, p_s => 1, p_ms => 1),
-         shorten($rss * 1_024),
-         shorten($vsz * 1_024);
+      micro_t( $user,   p_s => 1, p_ms => 1 ),
+      micro_t( $system, p_s => 1, p_ms => 1 ),
+      shorten( $rss * 1_024 ),
+      shorten( $vsz * 1_024 );
 }
 
 # Print a report about the global statistics in the EventAggregator.  %opts is a
 # hash that has the following keys:
-#  * attributes   An arrayref of attributes to print statistics lines for.
-#  * groupby      The group-by attribute (usually 'fingerprint')
+#  * select       An arrayref of attributes to print statistics lines for.
 #  * worst        The attribute in which the sample is stored.
-# TODO: if we don't do aggregation multiple directions in a single object then
-# it already knows its fingerprint.
 sub global_report {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
@@ -149,7 +146,7 @@ sub global_report {
    push @result, sprintf($format, '', @headers);
 
    # Each additional line
-   foreach my $attrib ( @{$opts{attributes}} ) {
+   foreach my $attrib ( @{$opts{select}} ) {
       next unless $ea->attributes->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
@@ -181,21 +178,18 @@ sub global_report {
 
 # Print a report about the statistics in the EventAggregator.  %opts is a
 # hash that has the following keys:
-#  * attributes   An arrayref of attributes to print statistics lines for.
-#  * groupby      The group-by attribute (usually 'fingerprint')
-#  * which        The value of the group-by attribute, such as the fingerprint.
+#  * select       An arrayref of attributes to print statistics lines for.
+#  * where        The value of the group-by attribute, such as the fingerprint.
 #  * rank         The (optional) rank of the query, for the header
 #  * worst        The attribute in which the sample is stored.
-# TODO: if we don't do aggregation multiple directions in a single object then
-# it already knows its fingerprint.
 sub event_report {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
    my @result;
 
    # Is there a sample event?
-   my $store = $stats->{classes}->{$opts{which}};
-   return "# No such event $opts{groupby}/$opts{which}\n" unless $store;
+   my $store = $stats->{classes}->{$opts{where}};
+   return "# No such event $opts{where}\n" unless $store;
    my $sample = $store->{$opts{worst}}->{sample};
 
    # Pick the first attribute to get counts
@@ -223,7 +217,7 @@ sub event_report {
       $opts{rank} || 0,
       shorten($qps),
       shorten($conc),
-      make_checksum($opts{which}),
+      make_checksum($opts{where}),
       $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
@@ -238,7 +232,7 @@ sub event_report {
          map { '' } (1 ..9);
 
    # Each additional line
-   foreach my $attrib ( @{$opts{attributes}} ) {
+   foreach my $attrib ( @{$opts{select}} ) {
       next unless $ea->attributes->{$attrib};
       my $vals = $store->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
@@ -275,16 +269,13 @@ sub event_report {
 
 # Creates a chart of value distributions in buckets.  Right now it bucketizes
 # into 8 buckets, powers of ten starting with .000001. %opts has:
-#  * groupby      The group-by attribute (usually 'fingerprint')
-#  * which        The value of the group-by attribute, such as the fingerprint.
+#  * where        The value of the group-by attribute, such as the fingerprint.
 #  * attribute    An attribute to chart.
-# TODO: if we don't do aggregation multiple directions in a single object then
-# it already knows its fingerprint.
 sub chart_distro {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
    my $store
-      = $stats->{classes}->{$opts{which}}->{$opts{attribute}};
+      = $stats->{classes}->{$opts{where}}->{$opts{attribute}};
    my $vals = $store->{all};
    return "" unless defined $vals && scalar @$vals;
 
