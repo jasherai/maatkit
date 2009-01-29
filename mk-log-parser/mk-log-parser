@@ -2281,20 +2281,20 @@ sub new {
 }
 
 sub header {
-   my ( $self ) = @_;
+   my ($self) = @_;
 
-   my ( $rss, $vsz, $user, $system );
+   my ( $rss, $vsz, $user, $system ) = ( 0, 0, 0, 0 );
    eval {
       my $mem = `ps -o rss,vsz $PID`;
-      ($rss, $vsz) = $mem =~ m/(\d+)/g;
+      ( $rss, $vsz ) = $mem =~ m/(\d+)/g;
    };
-   ($user, $system) = times();
+   ( $user, $system ) = times();
 
    sprintf "# %s user time, %s system time, %s rss, %s vsz\n",
-         micro_t($user, p_s => 1, p_ms => 1),
-         micro_t($system, p_s => 1, p_ms => 1),
-         shorten($rss * 1_024),
-         shorten($vsz * 1_024);
+      micro_t( $user,   p_s => 1, p_ms => 1 ),
+      micro_t( $system, p_s => 1, p_ms => 1 ),
+      shorten( $rss * 1_024 ),
+      shorten( $vsz * 1_024 );
 }
 
 sub global_report {
@@ -2330,7 +2330,7 @@ sub global_report {
    my ($format, @headers) = make_header('global');
    push @result, sprintf($format, '', @headers);
 
-   foreach my $attrib ( @{$opts{attributes}} ) {
+   foreach my $attrib ( @{$opts{select}} ) {
       next unless $ea->attributes->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
@@ -2365,8 +2365,8 @@ sub event_report {
    my $stats = $ea->results;
    my @result;
 
-   my $store = $stats->{classes}->{$opts{which}};
-   return "# No such event $opts{groupby}/$opts{which}\n" unless $store;
+   my $store = $stats->{classes}->{$opts{where}};
+   return "# No such event $opts{where}\n" unless $store;
    my $sample = $store->{$opts{worst}}->{sample};
 
    my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
@@ -2391,7 +2391,7 @@ sub event_report {
       $opts{rank} || 0,
       shorten($qps),
       shorten($conc),
-      make_checksum($opts{which}),
+      make_checksum($opts{where}),
       $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
@@ -2403,7 +2403,7 @@ sub event_report {
       $format, 'Count', percentage_of($class_cnt, $global_cnt), $class_cnt,
          map { '' } (1 ..9);
 
-   foreach my $attrib ( @{$opts{attributes}} ) {
+   foreach my $attrib ( @{$opts{select}} ) {
       next unless $ea->attributes->{$attrib};
       my $vals = $store->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
@@ -2442,7 +2442,7 @@ sub chart_distro {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
    my $store
-      = $stats->{classes}->{$opts{which}}->{$opts{attribute}};
+      = $stats->{classes}->{$opts{where}}->{$opts{attribute}};
    my $vals = $store->{all};
    return "" unless defined $vals && scalar @$vals;
 
@@ -3679,8 +3679,8 @@ my $ea;     # EventAggregator
          $opt_parser->error('The --review DSN requires a D (database) and t"
             . " (table) part specifying the query review table');
       }
-      if ( $opts{t} !~ m/^\d+%?$/ ) {
-         $opt_parser->error('Invalid syntax for --top.  See perldoc for details.');
+      if ( $opts{limit} !~ m/^\d+%?$/ ) {
+         $opt_parser->error('Invalid syntax for --limit.  See perldoc for details.');
       }
       if ( $opts{mirror} && (!$opts{execute} || !$opts{processlist}) ) {
          $opt_parser->error('--mirror requires --execute and --processlist');
@@ -3782,23 +3782,16 @@ my $ea;     # EventAggregator
    }
 
    if ( $opts{A} ) {
-      # TODO: add values from command-line options
-      # TODO: simplify....
-      my %attributes = (
-         Query_time    => [qw(Query_time)],
-         Lock_time     => [qw(Lock_time)],
-         Rows_read     => [qw(Rows_read)],
-         Rows_sent     => [qw(Rows_sent)],
-         Rows_examined => [qw(Rows_examined)],
-         user          => [qw(user)],
-         db            => [qw(db Schema)],
-         ts            => [qw(ts)],
-      );
+      my ( $attrib, $orderby ) = split(/:/, $opts{orderby});
+      my %attributes = map {
+         my ($name, @alt) = split(/:/, $_);
+         $name => [$name, @alt];
+      } @{$opts{select}};
       $ea = new EventAggregator(
-         worst        => $opts{w},
-         attrib_limit => $opts{attriblimit},
          groupby      => $opts{groupby},
          attributes   => { %attributes },
+         worst        => $attrib,
+         attrib_limit => $opts{attriblimit},
       );
       push @callbacks, sub {
          my ( $event ) = @_;
@@ -3889,21 +3882,21 @@ my $ea;     # EventAggregator
    }
 
    if ( $opts{A} ) {
+      my ( $attrib, $orderby ) = split(/:/, $opts{orderby});
       my ($total, $count);
-      if ( $opts{t} =~ m/^\d+$/ ) {
-         $count = $opts{t};
+      if ( $opts{limit} =~ m/^\d+$/ ) {
+         $count = $opts{limit};
       }
       else {
          # It's a percentage, so grab as many as needed to get to that % of the
          # file.
-         ($total) = $opts{t} =~ m/(\d+)/;
-         $total *= ($ea->results->{globals}->{$opts{w}}->{sum} || 0) / 100;
+         ($total) = $opts{limit} =~ m/(\d+)/;
+         $total *= ($ea->results->{globals}->{$attrib}->{sum} || 0) / 100;
       }
 
       my %top_spec = (
-         groupby => 'fingerprint',
-         attrib  => $opts{w},
-         orderby => $opts{s},
+         attrib  => $attrib,
+         orderby => $orderby || 'cnt',
          total   => $total,
          count   => $count,
       );
@@ -3916,18 +3909,18 @@ my $ea;     # EventAggregator
       my @worst = $ea->top_events(%top_spec);
 
       # Print the global report
+      my @select = map {my ($name) = split(/:/, $_); $name} @{$opts{select}};
       my $qrf = new QueryReportFormatter();
       if ( $opts{header} ) {
          print $qrf->header();
-         if ( !$ea->results->{globals}->{$opts{w}}->{cnt} ) {
+         if ( !$ea->results->{globals}->{$attrib}->{cnt} ) {
             print "# No events processed.\n";
             exit 0;
          }
          print $qrf->global_report(
             $ea,
-            groupby    => 'fingerprint',
-            attributes => [ grep { $_ !~ m/^(?:user|db)$/ } @{$opts{attributes}} ],
-            worst      => $opts{w},
+            select => [ grep { $_ !~ m/^(?:user|db)$/ } @select ],
+            worst  => $attrib,
          );
       }
 
@@ -3948,17 +3941,15 @@ my $ea;     # EventAggregator
          print "\n";
          print $qrf->event_report(
             $ea,
-            groupby    => 'fingerprint',
-            attributes => $opts{attributes},
-            rank       => $rank,
-            which      => $query,
-            worst      => $opts{w},
+            select => \@select,
+            where  => $query,
+            rank   => $rank,
+            worst  => $attrib,
          );
          print $qrf->chart_distro(
             $ea,
-            groupby    => 'fingerprint',
-            attribute  => 'Query_time', # TODO
-            which      => $query,
+            attribute  => $attrib,
+            where      => $query,
          );
 
          # Print the review information
@@ -3976,7 +3967,7 @@ my $ea;     # EventAggregator
          }
 
          # Find the sample query.  Shorten it if necessary (issue 216).
-         my $sample = $ea->results->{classes}->{$query}->{$opts{w}}->{sample};
+         my $sample = $ea->results->{classes}->{$query}->{$attrib}->{sample};
          my $samp_query = $sample->{arg} || '';
          $samp_query =~ s{\A(INSERT INTO \S+ VALUES \(.*?\)),\(.*\Z}
                          {$1/*multi-value INSERT omitted*/}s;
@@ -4230,7 +4221,7 @@ Let's take that line by line.  Line 1 is the header:
  # Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 ________________
 
 This line identifies the sequential number of the query in the sort order
-specified by L<"--sort">.  Then there's the queries per second, and a query ID.
+specified by L<"--orderby">.  Then there's the queries per second, and a query ID.
 This ID is a hex version of the query's checksum in the database, if you're
 using L<"--review">.  You can select the reviewed query's details from the
 database with a query like C<SELECT .... WHERE checksum=0x66825DDC008FFA89>.
@@ -4346,7 +4337,7 @@ already reviewed if you've set a value for the C<reviewed_by> column.
 
 Queries that you've reviewed, and don't appear in the output, will cause gaps in
 the query number sequence in the first line of each paragraph.  And the value
-you've specified for L<"--top"> will still be honored.  So if you've reviewed all
+you've specified for L<"--limit"> will still be honored.  So if you've reviewed all
 queries in the top 10 and you ask for the top 10, you won't see anything in the
 output.
 
@@ -4392,7 +4383,8 @@ it represents all similar queries.
 What C<mk-log-parser> does is analogous to a GROUP BY statement in SQL.  If your
 command-line looks like this,
 
-  mk-log-parser /path/to/slow.log --sort sum --worst Query_time --top 10
+  mk-log-parser /path/to/slow.log --select Rows_read,Rows_sent \
+      --groupby fingerprint --orderby Query_time:sum --limit 10
 
 The corresponding pseudo-SQL looks like this:
 
@@ -4401,11 +4393,6 @@ The corresponding pseudo-SQL looks like this:
   GROUP BY FINGERPRINT(query)
   ORDER BY SUM(Query_time) DESC
   LIMIT 10
-
-This will matter a lot more in the future when we add more capabilities to
-C<mk-log-parser>.  (At that point we'll dig back in SVN history for the
-documentation that we've removed from this tool due to unimplemented
-functionality.)
 
 =head1 OPTIONS
 
@@ -4433,16 +4420,6 @@ A sanity limit for attribute values.
 This option deals with bugs in slow-logging functionality that causes large
 values for attributes.  If the attribute's value is bigger than this, the
 last-seen value for that class of query is used instead.
-
-=item --attributes
-
-type: Array; default: Query_time,Lock_time,Rows_sent,Rows_examined,user,db,ts
-
-Show these attributes in the L<"--[no]analyze"> report.
-
-The value is a comma-separated list of items you can see in the slow query log,
-or otherwise know are attributes in the query events.  Specifying an attribute
-here automatically makes mk-log-parser record the attribute.
 
 =item --daemonize
 
@@ -4503,7 +4480,7 @@ Which attribute of the events to group by.
 
 The default value 'fingerprint' causes events to be fingerprinted to abstract
 queries into a canonical form, which is then used to group events together into
-a class.  You could use something else if you wish, though.
+a class.
 
 =item --[no]header
 
@@ -4533,6 +4510,14 @@ replication.  The L<http://code.google.com/p/mysql-master-master/> master-master
 toolkit does this. The aim is to keep the passive server ready for failover,
 which is impossible without putting it under a realistic workload.
 
+=item --orderby
+
+type: string; default: Query_time:sum
+
+Sort events by this attribute and aggregate function.
+
+The syntax is attribute:aggregate.  Valid aggregates are sum, min, max, cnt.
+
 =item --outliers
 
 type: string
@@ -4543,7 +4528,7 @@ The syntax of this option is a colon-delimited string.  The first field is the
 attribute by which an outlier is defined.  The second is a number that is
 compared to the attribute's 95th percentile.  The third is optional, and is
 compared to the attribute's cnt aggregate.  Queries that pass this specification
-are added to the report, regardless of any limits you specified in L<"--top">.
+are added to the report, regardless of any limits you specified in L<"--limit">.
 
 For example, to include queries whose 95th percentile Query_time is at least 60
 seconds and which are seen at least 5 times, use the following argument:
@@ -4613,7 +4598,7 @@ seen.  Each time it sees a new one, it inserts the query into this table.  When
 you're done, your table should contain a row for each fingerprint.
 
 If you enable this option and disable L<"--[no]analyze">, the tool will ignore
-certain analysis-related options, like L<"--top">.
+certain analysis-related options, like L<"--limit">.
 
 =item --reportall
 
@@ -4625,20 +4610,22 @@ default: yes
 
 Report CPU times and memory usage in the header of the query analysis report.
 
-=item --sort
+=item --select
 
-short form: -s; type: string; default: sum
+type: Array; default: Query_time,Lock_time,Rows_sent,Rows_examined,user,db:Schema,ts
 
-Sort the reported queries by this aggregate value of L<"--worst">.
+Compute aggregate statistics for these attributes.
 
-Valid aggregate values are: sum, min, max, avg, cnt.  For example, if you want
-to sort by the sum of Query_time, then specify --worst Query_time --sort sum.
+The value is a comma-separated list of items you can see in the slow query log,
+or otherwise know are attributes in the query events.  You can specify an
+alternative attribute with a colon.  For example, C<db:Schema> uses db if it's
+available, and Schema if it's not.
 
-=item --top
+=item --limit
 
-short form: -t; type: string; default: 95%
+type: string; default: 95%
 
-Limit output to the worst offenders.
+Limit output to the given percentage or count.
 
 If the argument is an integer, report only the top N worst queries.  If the
 argument is an integer followed by the C<%> sign, report that percentage of the
@@ -4647,16 +4634,6 @@ report the top percentage or the number specified by that integer, whichever
 comes first.
 
 See also L<"--outliers">.
-
-=item --worst
-
-short form: -w; type: string; default: Query_time
-
-The attribute that measures a query's badness.
-
-Only basic attributes are valid: Query_time, Lock_time, Rows_read, etc.  This
-option is not fully implemented.  It's possible that non-default values will do
-strange things.
 
 =item --[no]zeroadmin
 
