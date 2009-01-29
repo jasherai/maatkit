@@ -138,7 +138,7 @@ sub global_report {
    my $line = sprintf(
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
       shorten($global_cnt),
-      shorten(scalar keys %{$stats->{classes}->{$opts{groupby}}}),
+      shorten(scalar keys %{$stats->{classes}}),
       shorten($qps),
       shorten($conc));
    $line .= ('_' x (LINE_LENGTH - length($line)));
@@ -194,7 +194,7 @@ sub event_report {
    my @result;
 
    # Is there a sample event?
-   my $store = $stats->{classes}->{$opts{groupby}}->{$opts{which}};
+   my $store = $stats->{classes}->{$opts{which}};
    return "# No such event $opts{groupby}/$opts{which}\n" unless $store;
    my $sample = $store->{$opts{worst}}->{sample};
 
@@ -284,7 +284,7 @@ sub chart_distro {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
    my $store
-      = $stats->{classes}->{$opts{groupby}}->{$opts{which}}->{$opts{attribute}};
+      = $stats->{classes}->{$opts{which}}->{$opts{attribute}};
    my $vals = $store->{all};
    return "" unless defined $vals && scalar @$vals;
 

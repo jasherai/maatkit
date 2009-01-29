@@ -19,19 +19,9 @@ my ( $qrf, $result, $events, $expected, $qr, $ea );
 $qr  = new QueryRewriter();
 $qrf = new QueryReportFormatter();
 $ea  = new EventAggregator(
-   save    => 'Query_time',
-   classes => {
-      fingerprint => {
-         Query_time    => [qw(Query_time)],
-         Lock_time     => [qw(Lock_time)],
-         user          => [qw(user)],
-         ts            => [qw(ts)],
-         Rows_sent     => [qw(Rows_sent)],
-         Rows_examined => [qw(Rows_examined)],
-         db            => [qw(db)],
-      },
-   },
-   globals => {
+   groupby => 'fingerprint',
+   worst   => 'Query_time',
+   attributes => {
       Query_time    => [qw(Query_time)],
       Lock_time     => [qw(Lock_time)],
       user          => [qw(user)],
@@ -39,7 +29,7 @@ $ea  = new EventAggregator(
       Rows_sent     => [qw(Rows_sent)],
       Rows_examined => [qw(Rows_examined)],
       db            => [qw(db)],
-   }
+   },
 );
 
 isa_ok( $qrf, 'QueryReportFormatter' );
