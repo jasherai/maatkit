@@ -243,7 +243,7 @@ SKIP: {
 
    $p->fill_in_dsn($dbh, $d);
    is($d->{P}, 3306, 'Filled in port');
-   is($d->{u}, 'baron', 'Filled in username');
+   is($d->{u}, 'msandbox', 'Filled in username');
    is($d->{S}, '/var/run/mysqld/mysqld.sock', 'filled in socket');
    is($d->{h}, '127.0.0.1', 'left hostname alone');
    $p->disconnect($dbh);
