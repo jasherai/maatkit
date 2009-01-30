@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 24;
 use English qw(-no_match_vars);
 
 require "../TableParser.pm";
@@ -154,7 +154,11 @@ $ddl = load_file('samples/dupe_fk_one.sql');
 is_deeply(
    $tp->get_duplicate_fks($tp->get_fks($ddl, { database => 'test' } )),
    [
-   'todo',
+      {
+         'key'          => 't1_ibfk_2',
+         'duplicate_of' => 't1_ibfk_1',
+         'reason'       => 'FOREIGN KEY t1_ibfk_2 (`b`, `a`) REFERENCES `test`.`t2` (`b`, `a`) is a duplicate of FOREIGN KEY t1_ibfk_1 (`a`, `b`) REFERENCES `test`.`t2` (`a`, `b`)',
+      },
    ],
    'Two duplicate foreign keys'
 );
@@ -163,9 +167,8 @@ $ddl = load_file('samples/sakila_film.sql');
 is_deeply(
    $tp->get_duplicate_fks($tp->get_fks($ddl, { database => 'sakila' } )),
    [
-   'todo',
    ],
-   'No duplicate foreign keys'
+   'No duplicate foreign keys in sakila_film.sql'
 );
 
 $ddl = load_file('samples/innodb_dupe.sql');
@@ -177,7 +180,11 @@ is_deeply(
 is_deeply(
    $tp->get_duplicate_keys($tp->get_keys($ddl, $opt), { clustered => 1, engine => 'InnoDB' }),
    [
-   'todo',
+      {
+         'key'          => 'b',
+         'duplicate_of' => 'PRIMARY',
+         'reason'       => 'Clustered key b (`b`,`a`) is a duplicate of PRIMARY (`a`)',
+      }
    ],
    'Duplicate keys with cluster options'
 );
@@ -186,7 +193,6 @@ $ddl = load_file('samples/dupe_if_it_were_innodb.sql');
 is_deeply(
    $tp->get_duplicate_keys($tp->get_keys($ddl, $opt), { clustered => 1, engine => 'MyISAM' }),
    [
-   'todo',
    ],
    'No cluster-duplicate keys because not InnoDB'
 );
@@ -197,7 +203,6 @@ $ddl = load_file('samples/mysql_db.sql');
 is_deeply(
    $tp->get_duplicate_keys($tp->get_keys($ddl, $opt), { clustered => 1, engine => 'InnoDB' }),
    [
-   'todo',
    ],
    'No cluster-duplicate keys in mysql.db'
 );
@@ -211,7 +216,7 @@ is_deeply(
    $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
    [
    ],
-   'Unique and non-unique keys with common prefix not dupes (issue 9, 1/5)'
+   'Unique and non-unique keys with common prefix not dupes (issue 9)'
 );
 
 $ddl = load_file('samples/issue_9-2.sql');
@@ -219,7 +224,7 @@ is_deeply(
    $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
    [
    ],
-   'PRIMARY and non-unique keys with common prefix not dupes (issue 9, 2/5)'
+   'PRIMARY and non-unique keys with common prefix not dupes (issue 9)'
 );
 
 $ddl = load_file('samples/issue_9-3.sql');
@@ -232,7 +237,7 @@ is_deeply(
          'reason'       => 'j (`a`,`b`) is a duplicate of i (`a`,`b`)',
       }
    ],
-   'Non-unique key dupes unique key with same col cover (issue 9, 3/5)'
+   'Non-unique key dupes unique key with same col cover (issue 9)'
 );
 
 $ddl = load_file('samples/issue_9-4.sql');
@@ -245,7 +250,7 @@ is_deeply(
          'reason'       => 'j (`a`,`b`) is a duplicate of PRIMARY (`a`,`b`)',
       }
    ],
-   'Non-unique key dupes PRIMARY key same col cover (issue 9, 4/5)'
+   'Non-unique key dupes PRIMARY key same col cover (issue 9)'
 );
 
 $ddl = load_file('samples/issue_9-5.sql');
@@ -258,7 +263,21 @@ is_deeply(
          'reason'       => 'j (`a`) is a left-prefix of i (`a`,`b`)',
       }
    ],
-   'Two unique keys with common prefix are dupes (issue 9, 5/5)'
+   'Two unique keys with common prefix are dupes (issue 9)'
+);
+
+
+$ddl = load_file('samples/issue_9-7.sql');
+is_deeply(
+   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   [
+      {
+         'key'          => 'ua_b',
+         'duplicate_of' => 'PRIMARY',
+         'reason'       => 'ua_b (`a`,`b`) is an unnecessary UNIQUE constraint for a_b_c (`a`,`b`,`c`) because PRIMARY (`a`) alone preserves key column uniqueness',
+      }
+   ],
+   'Dupe unique prefix of non-unique with PRIMARY constraint (issue 9)'
 );
 
 $ddl = load_file('samples/issue_9-6.sql');

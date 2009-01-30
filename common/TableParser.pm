@@ -422,6 +422,37 @@ sub _remove_duplicate_left_prefixes {
    return ($i_keys, $j_keys, \@dupes);
 }
 
+sub _remove_duplicate_cluster_keys {
+   my ( $primary_key, $keys ) = @_;
+   return unless $primary_key;
+   my $pkcols = $primary_key->{cols};
+   my @keys = @$keys;
+   my @dupes;
+   KEY:
+   for my $i ( 0..$#keys ) {
+      my $suffix = $keys[$i]->{cols};
+      SUFFIX:
+      while ( $suffix =~ s/`[^`]+`,// ) {
+         my $len = min(length($pkcols), length($suffix));
+         if ( substr($suffix, 0, $len) eq substr($pkcols, 0, $len) ) {
+            push @dupes,
+               {
+                  key          => $keys[$i]->{name},
+                  duplicate_of => $primary_key->{name},
+                  reason       =>
+                       "Clustered key $keys[$i]->{name} ($keys[$i]->{cols}) "
+                     . "is a duplicate of PRIMARY ($primary_key->{cols})",
+               };
+            delete $keys[$i];
+            last SUFFIX;
+         }
+      }
+   }
+   MKDEBUG && _d('No more clustered keys');
+   @keys = grep { defined $_; } @keys;
+   return (\@keys, \@dupes);
+}
+
 sub get_duplicate_keys {
    my ( $self, $all_keys, $opts ) = @_;
    my $primary_key;
@@ -488,7 +519,7 @@ sub get_duplicate_keys {
    ($good_keys, undef, $dupe_keys)
       = _remove_duplicate_left_prefixes(\@unique_keys);
    push @dupes, @$dupe_keys;
-   @unique_keys= @$good_keys;
+   @unique_keys = @$good_keys;
 
    MKDEBUG && _d('Start comparing regular keys');
    ($good_keys, undef, $dupe_keys)
@@ -502,6 +533,44 @@ sub get_duplicate_keys {
    push @dupes, @$dupe_keys;
    @keys = @$good_keys;
 
+   MKDEBUG && _d('Start removing unnecessary constraints');
+   KEY:
+   foreach my $key ( @keys ) {
+      my @constrainers;
+      foreach my $unique_key ( $primary_key, @unique_keys ) {
+         next unless $unique_key;
+         if (    substr($unique_key->{cols}, 0, $unique_key->{len_cols})
+              eq substr($key->{cols}, 0, $unique_key->{len_cols}) ) {
+            MKDEBUG && _d("$unique_key->{name} constrains $key->{name}");
+            push @constrainers, $unique_key;
+         }
+      }
+      next KEY unless @constrainers;
+
+      @constrainers = sort { $a->{len_cols}<=>$b->{len_cols} } @constrainers;
+      my $min_constrainer = shift @constrainers;
+      MKDEBUG && _d("$key->{name} min constrainer: $min_constrainer->{name}");
+
+      foreach my $constrainer ( @constrainers ) {
+         for my $i ( 0..$#unique_keys ) {
+            if ( $unique_keys[$i]->{name} eq $constrainer->{name} ) {
+               push @dupes,
+                  {
+                     key          => $constrainer->{name},
+                     duplicate_of => $min_constrainer->{name},
+                     reason       =>
+                          "$constrainer->{name} ($constrainer->{cols}) "
+                        . 'is an unnecessary UNIQUE constraint for '
+                        . "$key->{name} ($key->{cols}) because "
+                        . "$min_constrainer->{name} ($min_constrainer->{cols}) "
+                        . 'alone preserves key column uniqueness'
+                  };
+               delete $unique_keys[$i];
+            }
+         }
+      }
+   }
+
    # If --allstruct, then these special struct keys (FULLTEXT, HASH, etc.)
    # will have already been put in and handled by @keys.
    MKDEBUG && _d('Start comparing FULLTEXT keys');
@@ -512,70 +581,70 @@ sub get_duplicate_keys {
    @fulltext_keys = @$good_keys;
 
    # TODO: other structs
-   return \@dupes;
 
+   # For engines with clustered indexes, if a key ends with a prefix
+   # of the primary key, it's a duplicate. Example:
+   #    PRIMARY KEY (a)
+   #    KEY foo (b, a)
+   # Key foo is a duplicate of PRIMARY.
+   if ( $primary_key
+        && $opts->{clustered}
+        && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
 
-   # TODO: update code below
-   my @result;
-   my %seen;
-   # If the key ends with a prefix of the primary key, it's a duplicate.
-   if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
-      my $i = 0;
-      my $found = 0;
-      while ( $i < @keys ) {
-         if ( $keys[$i]->{name} eq 'PRIMARY' ) {
-            $found = 1;
-            last;
-         }
-         $i++;
-      }
-      if ( $found ) {
-         my $pkcols = $keys[$i]->{cols};
-         KEY:
-         foreach my $j ( 0..$#keys ) {
-            next KEY if $i == $j;
-            my $suffix = $keys[$j]->{cols};
-            SUFFIX:
-            while ( $suffix =~ s/`[^`]+`,// ) {
-               my $len = min(length($pkcols), length($suffix));
-               if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
-                  && substr($suffix, 0, $len) eq substr($pkcols, 0, $len))
-               {
-                  push @result, $keys[$i] unless $seen{$i}++;
-                  push @result, $keys[$j] unless $seen{$j}++;
-                  last SUFFIX;
-               }
-            }
-         }
-      }
+      MKDEBUG && _d('Start removing clustered UNIQUE key dupes');
+      ($good_keys, $dupe_keys)
+         = _remove_duplicate_cluster_keys($primary_key, \@unique_keys);
+      push @dupes, @$dupe_keys;
+      @unique_keys = @$good_keys;
+
+      MKDEBUG && _d('Start removing clustered regular key dupes');
+      ($good_keys, $dupe_keys)
+         = _remove_duplicate_cluster_keys($primary_key, \@keys);
+      push @dupes, @$dupe_keys;
+      @keys = @$good_keys;
    }
 
+   return \@dupes;
 }
 
 sub get_duplicate_fks {
    my ( $self, $fks, $opts ) = @_;
    my @fks = @$fks;
-   my %seen; # Avoid outputting a fk more than once.
-   my @result;
+   my @dupes;
    foreach my $i ( 0..$#fks - 1 ) {
+      next unless $fks[$i];
       foreach my $j ( $i+1..$#fks ) {
-         # A foreign key is a duplicate no matter what order the columns are in, so
-         # re-order them alphabetically so they can be compared.
-         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
-         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
-         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
-         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+         next unless $fks[$j];
+         # A foreign key is a duplicate no matter what order the
+         # columns are in, so re-order them alphabetically so they
+         # can be compared.
+         my $i_cols = join(', ',
+            map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
+         my $j_cols = join(', ',
+            map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
+         my $i_fkcols = join(', ',
+            map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
+         my $j_fkcols = join(', ',
+            map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+
          if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
-               && $i_cols eq $j_cols
-               && $i_fkcols eq $j_fkcols
-         ) {
-            push @result, $fks[$i] unless $seen{$i}++;
-            push @result, $fks[$j] unless $seen{$j}++;
+              && $i_cols   eq $j_cols
+              && $i_fkcols eq $j_fkcols ) {
+            push @dupes,
+               {
+                  key          => $fks[$j]->{name},
+                  duplicate_of => $fks[$i]->{name},
+                  reason       =>
+                       "FOREIGN KEY $fks->[$j]->{name} ($fks->[$j]->{cols}) "
+                     . "REFERENCES $fks->[$j]->{parent} ($fks->[$j]->{fkcols}) "                     .  'is a duplicate of '
+                     . "FOREIGN KEY $fks->[$i]->{name} ($fks->[$i]->{cols}) "
+                     . "REFERENCES $fks->[$i]->{parent} ($fks->[$i]->{fkcols})"
+               };
+            delete $fks[$j];
          }
       }
    }
-
-   return \@result;
+   return \@dupes;
 }
 
 sub _d {
