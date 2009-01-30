@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 21;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -11,8 +11,10 @@ $Data::Dumper::Quotekeys = 0;
 
 require '../QueryRewriter.pm';
 require '../EventAggregator.pm';
+require '../QueryParser.pm';
 
 my $qr = new QueryRewriter();
+my $qp = new QueryParser();
 my ( $result, $events, $ea, $expected );
 
 $ea = new EventAggregator(
@@ -588,7 +590,7 @@ is_deeply( $ea->results, $result, 'Limited attribute values', );
 # #############################################################################
 {
    my $i = 0;
-   my @events = (
+   my @event_specs = (
       # fingerprint, time, count; 1350 seconds total
       [ 'event0', 10, 1   ], # An outlier, but happens once
       [ 'event1', 10, 5   ], # An outlier, but not in top 95%
@@ -598,15 +600,15 @@ is_deeply( $ea->results, $result, 'Limited attribute values', );
    );
    sub generate_event {
       START:
-      if ( $i >= $events[0]->[2] ) {
-         shift @events;
+      if ( $i >= $event_specs[0]->[2] ) {
+         shift @event_specs;
          $i = 0;
       }
       $i++;
-      return undef unless @events;
+      return undef unless @event_specs;
       return {
-         fingerprint => $events[0]->[0],
-         Query_time  => $events[0]->[1],
+         fingerprint => $event_specs[0]->[0],
+         Query_time  => $event_specs[0]->[1],
       };
    }
 }
@@ -653,3 +655,84 @@ is_deeply( \@chosen, [qw(event2 event3 event1)], 'Got top events' );
 
 is_deeply( \@chosen, [qw(event2 event3 event1 event0)],
    'Got top events with outlier' );
+
+$events = [
+   {  Query_time    => '0.000652',
+      arg           => 'select * from sakila.actor join sakila.film_actor using(actor_id)',
+   },
+   {  Query_time    => '1.000652',
+      arg           => 'select * from sakila.actor',
+   },
+   {  Query_time    => '2.000652',
+      arg           => 'select * from sakila.actor join sakila.film_actor using(actor_id)',
+   },
+   {  Query_time    => '0.000652',
+      arg           => 'select * from sakila.actor',
+   },
+];
+
+$ea = new EventAggregator(
+   groupby    => 'tables',
+   worst      => 'foo',
+   attributes => {
+      Query_time => [qw(Query_time)],
+   },
+);
+
+foreach my $event ( @$events ) {
+   $event->{tables} = [ $qp->get_tables($event->{arg}) ];
+   $ea->aggregate($event);
+}
+
+is_deeply(
+   $ea->results,
+   {
+      classes => {
+         'sakila.actor' => {
+            Query_time => {
+               min => '0.000652',
+               max => '2.000652',
+               all =>
+                  [ 
+                     ( map {0} ( 1 .. 133 ) ), 2,
+                     ( map {0} ( 134 .. 283 ) ), 1,
+                     ( map {0} ( 285 .. 297 ) ), 1,
+                     ( map {0} ( 299 .. 999 ) )
+                  ],
+               sum => '3.002608',
+               cnt => 4,
+            },
+         },
+         'sakila.film_actor' => {
+            Query_time => {
+               min => '0.000652',
+               max => '2.000652',
+               all =>
+                  [ 
+                     ( map {0} ( 1 .. 133 ) ), 1,
+                     ( map {0} ( 134 .. 297 ) ), 1,
+                     ( map {0} ( 299 .. 999 ) )
+                  ],
+               sum => '2.001304',
+               cnt => 2,
+            },
+         },
+      },
+      globals => {
+         Query_time => {
+            min => '0.000652',
+            max => '2.000652',
+            all =>
+               [ 
+                  ( map {0} ( 1 .. 133 ) ), 3,
+                  ( map {0} ( 134 .. 283 ) ), 1,
+                  ( map {0} ( 285 .. 297 ) ), 2,
+                  ( map {0} ( 299 .. 999 ) )
+               ],
+            sum => '5.003912',
+            cnt => 6,
+         },
+      },
+   },
+   'Aggregation by tables',
+);

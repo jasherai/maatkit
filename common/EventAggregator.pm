@@ -103,20 +103,24 @@ sub aggregate {
 
    ATTRIB:
    foreach my $attrib ( keys %{$self->{attributes}} ) {
-      my $class_attrib  = $self->{result_class}->{$group_by}->{$attrib} ||= {};
-      my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
-      my $handler = $self->{handlers}->{ $attrib };
-      if ( !$handler ) {
-         $handler = $self->make_handler(
-            $attrib,
-            $event,
-            wor => $self->{worst} eq $attrib,
-            alt => $self->{attributes}->{$attrib},
-         );
-         $self->{handlers}->{$attrib} = $handler;
+      # The value of the attribute ( $group_by ) may be an arrayref.
+      GROUPBY:
+      foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
+         my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
+         my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+         my $handler = $self->{handlers}->{ $attrib };
+         if ( !$handler ) {
+            $handler = $self->make_handler(
+               $attrib,
+               $event,
+               wor => $self->{worst} eq $attrib,
+               alt => $self->{attributes}->{$attrib},
+            );
+            $self->{handlers}->{$attrib} = $handler;
+         }
+         next GROUPBY unless $handler;
+         $handler->($event, $class_attrib, $global_attrib);
       }
-      next ATTRIB unless $handler;
-      $handler->($event, $class_attrib, $global_attrib);
    }
 }
 
@@ -176,6 +180,11 @@ sub make_handler {
    my ( $self, $attrib, $event, %args ) = @_;
    die "I need an attrib" unless defined $attrib;
    my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
+   my $is_array = 0;
+   if (ref $val eq 'ARRAY') {
+      $is_array = 1;
+      $val      = $val->[0];
+   }
    return unless defined $val; # Can't decide type if it's undef.
 
    # Ripped off from Regexp::Common::number.
@@ -183,7 +192,7 @@ sub make_handler {
    my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
+   MKDEBUG && _d("Type for $attrib is $type (sample: $val), is array: $is_array");
    $self->{type_for}->{$attrib} = $type;
 
    %args = ( # Set up defaults
@@ -280,7 +289,9 @@ sub make_handler {
       'my ($val, $idx);', # NOTE: define all variables here
       (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
       'return unless defined $val;',
+      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       @limit,
+      ($is_array ? ('}') : ()),
    );
    push @lines, '}';
    my $code = join("\n", @lines);
