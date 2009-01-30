@@ -1,4 +1,3 @@
-# 130ms user time, 0 system time, 6.79M rss, 9.58M vsz
 # Overall: 5 total, 4 unique, 5 QPS, 0.15x concurrency ___________________
 #                    total     min     max     avg     95%  stddev  median
 # Exec time          150ms     5us   149ms    30ms   155ms    69ms    15us

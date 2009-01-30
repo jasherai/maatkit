@@ -20,7 +20,7 @@ sub no_diff {
    `$cmd > /tmp/mk-log-parser_test`;
    # Uncomment this line to update the $expected_output files when there is a
    # fix.
-   `cat /tmp/mk-log-parser_test > $expected_output`;
+   # `cat /tmp/mk-log-parser_test > $expected_output`;
    my $retval = system("diff /tmp/mk-log-parser_test $expected_output");
    `rm -rf /tmp/mk-log-parser_test`;
    $retval = $retval >> 8;
@@ -39,6 +39,12 @@ ok(
 ok(
    no_diff($run_with.'slow001.txt', 'samples/slow001_report.txt'),
    'Analysis for slow001'
+);
+
+ok(
+   no_diff($run_with.'slow001.txt --groupby tables --report tables',
+      'samples/slow001_tablesreport.txt'),
+   'Analysis for slow001 with --groupby tables'
 );
 
 ok(
@@ -95,7 +101,7 @@ ok(
 );
 
 ok(
-   no_diff($run_header.'slow013.txt --orderby Query_time:sum,Query_time:sum --groupby fingerprint,user --report fingerprint,user',
+   no_diff($run_header.'slow013.txt --norusage --orderby Query_time:sum,Query_time:sum --groupby fingerprint,user --report fingerprint,user',
       'samples/slow013_report_fingerprint_user.txt'),
    'Analysis for slow013 with --groupby fingerprint,user'
 );

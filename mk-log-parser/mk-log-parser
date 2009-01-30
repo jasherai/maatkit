@@ -1833,7 +1833,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 2916
+# EventAggregator package 2927
 # ###########################################################################
 
 
@@ -1888,20 +1888,23 @@ sub aggregate {
 
    ATTRIB:
    foreach my $attrib ( keys %{$self->{attributes}} ) {
-      my $class_attrib  = $self->{result_class}->{$group_by}->{$attrib} ||= {};
-      my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
-      my $handler = $self->{handlers}->{ $attrib };
-      if ( !$handler ) {
-         $handler = $self->make_handler(
-            $attrib,
-            $event,
-            wor => $self->{worst} eq $attrib,
-            alt => $self->{attributes}->{$attrib},
-         );
-         $self->{handlers}->{$attrib} = $handler;
+      GROUPBY:
+      foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
+         my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
+         my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+         my $handler = $self->{handlers}->{ $attrib };
+         if ( !$handler ) {
+            $handler = $self->make_handler(
+               $attrib,
+               $event,
+               wor => $self->{worst} eq $attrib,
+               alt => $self->{attributes}->{$attrib},
+            );
+            $self->{handlers}->{$attrib} = $handler;
+         }
+         next GROUPBY unless $handler;
+         $handler->($event, $class_attrib, $global_attrib);
       }
-      next ATTRIB unless $handler;
-      $handler->($event, $class_attrib, $global_attrib);
    }
 }
 
@@ -1922,13 +1925,18 @@ sub make_handler {
    my ( $self, $attrib, $event, %args ) = @_;
    die "I need an attrib" unless defined $attrib;
    my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
+   my $is_array = 0;
+   if (ref $val eq 'ARRAY') {
+      $is_array = 1;
+      $val      = $val->[0];
+   }
    return unless defined $val; # Can't decide type if it's undef.
 
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
    my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
+   MKDEBUG && _d("Type for $attrib is $type (sample: $val), is array: $is_array");
    $self->{type_for}->{$attrib} = $type;
 
    %args = ( # Set up defaults
@@ -2019,7 +2027,9 @@ sub make_handler {
       'my ($val, $idx);', # NOTE: define all variables here
       (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
       'return unless defined $val;',
+      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       @limit,
+      ($is_array ? ('}') : ()),
    );
    push @lines, '}';
    my $code = join("\n", @lines);
@@ -2513,7 +2523,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 2922
+# QueryParser package 2926
 # ###########################################################################
 package QueryParser;
 
@@ -2606,6 +2616,18 @@ sub parse_table_aliases {
    MKDEBUG && _d('table aliases: ' . Dumper($table_aliases));
 
    return $table_aliases;
+}
+
+sub get_tables {
+   my ( $self, $query ) = @_;
+   my $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
+   my @tables;
+   foreach my $tbls (
+      $query =~ m/(?:FROM|JOIN|UPDATE|INTO)\b\s*(?:($ident(?:\s*,\s*$ident)*))/gio)
+   {
+      push @tables, $tbls =~ m/($ident)/g;
+   }
+   return @tables;
 }
 
 sub _d {
@@ -3658,6 +3680,7 @@ my $dp = new DSNParser (
 $dp->prop('autokey', 'h');
 my $q  = new Quoter();
 my $qr = new QueryRewriter();
+my $qp = new QueryParser();
 my $qv;     # QueryReview
 my $qv_dbh; # For QueryReview
 my $ex_dbh; # For --execute
@@ -3721,6 +3744,25 @@ my %ea;     # EventAggregators
          my $group_by_val = $event->{arg};
          return 0 unless defined $group_by_val;
          $event->{fingerprint} = $qr->fingerprint($group_by_val);
+         return $event;
+      };
+   }
+   if ( grep { m/tables/ } @{$opts{groupby}} ) {
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         my $group_by_val = $event->{arg};
+         return 0 unless defined $group_by_val;
+         $event->{tables} = [
+            map {
+               # Canonicalize and add the db name in front
+               $_ =~ s/`//g;
+               if ( $_ !~ m/\./ && ( my $db = $event->{db} || $event->{Schema}) ) {
+                  $_ = "$db.$_";
+               }
+               $_;
+            }
+            $qp->get_tables($group_by_val)
+         ];
          return $event;
       };
    }
@@ -3898,7 +3940,7 @@ my %ea;     # EventAggregators
       my $qrf = new QueryReportFormatter();
       if ( $opts{header} ) {
          my $ea = $ea{$opts{report}->[0]};
-         print $qrf->header();
+         print $qrf->header() if $opts{rusage};
          if ( !$ea->results->{globals}->{$select[0]}->{cnt} ) {
             print "# No events processed.\n";
             exit 0;
@@ -4497,10 +4539,24 @@ type: Array; default: fingerprint
 
 Which attribute of the events to group by.
 
+This option is a comma-separated list of items that must contain at least the
+same items as L<"--report"> but may contain extras.
+
+In general, you can group queries into classes based on any attribute of the
+query, such as C<user> or C<db>, which will by default show you which users
+and which databases get the most C<Query_time>.
+
+There are two magical values that cause some extra data mining to happen before
+the grouping takes place.   These are C<tables> and C<fingerprint>.
+
 The default value 'fingerprint' causes events to be fingerprinted to abstract
 queries into a canonical form, which is then used to group events together into
-a class.  This is a comma-separated list of items that must contain at least the
-same items as L<"--report"> but may contain extras.
+a class.
+
+The special value C<tables> causes events to be inspected for what appear to be
+tables, and then aggregated by that.  Note that a query that contains two or
+more tables will be counted as many times as there are tables; so a join against
+two tables will count the Query_time against both tables.
 
 =item --[no]header
 

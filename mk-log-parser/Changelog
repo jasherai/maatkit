@@ -1,5 +1,6 @@
 Changelog for mk-log-parser:
 
+   * Added the ability to analyze with --groupby tables (issue 230).
    * Table names with reserved words weren't recognized (issue 209).
    * Changed the names of options --top, --analyze, --worst, etc.
    * Added the ability to aggregate the log multiple ways (issue 176).
