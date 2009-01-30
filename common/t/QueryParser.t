@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 20;
+use Test::More tests => 31;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -15,17 +15,22 @@ my $qp = new QueryParser;
 isa_ok($qp, 'QueryParser');
 
 sub test_query {
-   my ( $query, $expected_ref, $expected_aliases, $msg ) = @_;
+   my ( $query, $expected_ref, $expected_aliases, $tables, $msg ) = @_;
    my $tr = $qp->get_table_ref($query);
    is(
       $tr,
       $expected_ref,
-      "table ref: $msg"
+      "get_table_ref: $msg"
    );
    is_deeply(
       $qp->parse_table_aliases($tr),
       $expected_aliases,
-      "table aliases: $msg",
+      "parse_table_aliases: $msg",
+   );
+   is_deeply(
+      [$qp->get_tables($query)],
+      $tables,
+      "get_tables: $msg",
    );
    return;
 }
@@ -36,6 +41,7 @@ test_query(
    {
       'tbl' => 'tbl',
    },
+   [ qw(tbl) ],
    'basic single table'
 );
 
@@ -46,6 +52,7 @@ test_query(
       'tbl1' => 'tbl1',
       'tbl2' => 'tbl2',
    },
+   [qw(tbl1 tbl2)],
    'basic two table'
 );
 
@@ -55,6 +62,7 @@ test_query(
    {
       'tbl_alias' => 'tbl',
    },
+   [qw(tbl)],
    'basic single AS-aliased'
 );
 
@@ -64,6 +72,7 @@ test_query(
    {
       'tbl_alias' => 'tbl',
    },
+   [qw(tbl)],
    'basic single implicitly aliased'
 );
 
@@ -74,6 +83,7 @@ test_query(
       'a1' => 'tbl1',
       'a2' => 'tbl2',
    },
+   [qw(tbl1)],
    'mixed two table'
 );
 
@@ -84,6 +94,7 @@ test_query(
       'a1' => 'tbl1',
       'a2' => 'tbl2',
    },
+   [qw(tbl1 tbl2)],
    'two table LEFT JOIN'
 );
 
@@ -96,6 +107,7 @@ test_query(
          'tbl1' => 'db',
       },
    },
+   [qw(db.tbl1)],
    'single fully-qualified and aliased table'
 );
 
@@ -105,7 +117,8 @@ test_query(
    {  store_orders_line_items => 'store_orders_line_items',
       store_orders            => 'store_orders',
    },
-   'A funny query Baron found',
+   [qw(store_orders_line_items store_orders)],
+   'Embedded ORDER keyword',
 );
 
 # #############################################################################
@@ -122,6 +135,7 @@ test_query(
          'gonzo' => 'db1',
       },
    },
+   [qw(db2.tuningdetail_21_265507 db1.gonzo)],
    'SELECT with JOIN ON and no WHERE (issue 185)'
 );
 
@@ -130,8 +144,10 @@ test_query(
    'select 12_13_foo from (select 12foo from 123_bar) as 123baz',
    '(select 12foo from 123_bar) as 123baz',
    {
+      '123_bar' => '123_bar',
    },
-   'Subquery as aliased table is ignored'
+   [qw(123_bar)],
+   'Subquery in the FROM clause'
 );
 
 exit;

@@ -112,6 +112,19 @@ sub parse_table_aliases {
    return $table_aliases;
 }
 
+# Returns an array of tables to which the query refers.
+sub get_tables {
+   my ( $self, $query ) = @_;
+   my $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
+   my @tables;
+   foreach my $tbls (
+      $query =~ m/(?:FROM|JOIN|UPDATE|INTO)\b\s*(?:($ident(?:\s*,\s*$ident)*))/gio)
+   {
+      push @tables, $tbls =~ m/($ident)/g;
+   }
+   return @tables;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
