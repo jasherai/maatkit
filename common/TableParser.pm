@@ -321,76 +321,203 @@ sub get_fks {
    return \@result;
 }
 
-sub get_duplicate_keys {
-   my ( $self, $keys, $opts ) = @_;
-   my @keys = @$keys;
-   my %seen; # Avoid outputting a key more than once.
-   my @result;
+sub _remove_duplicate_left_prefixes {
+   my ( $preferred_keys, $secondary_keys, %args ) = @_;
+   return unless $preferred_keys;
+   my @dupes;
+   my ($rm_from, $keep_in);
+   my ($rm_key, $keep_key);
+   my ($last_i, $j_offset);
 
-   foreach my $i ( 0..$#keys - 1 ) {
-      foreach my $j ( $i+1..$#keys ) {
-         my $i_cols        = $keys[$i]->{cols};
-         my $j_cols        = $keys[$j]->{cols};
-         my $type_i_cols   = $keys[$i]->{struct};
-         my $type_j_cols   = $keys[$j]->{struct};
-         my $unique_i_cols = $keys[$i]->{unique};
-         my $unique_j_cols = $keys[$j]->{unique};
-         my $len_i_cols    = length($i_cols);
-         my $len_j_cols    = length($j_cols);
-         my $min_len       = min($len_i_cols, $len_j_cols);
-         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
-                               && $type_j_cols eq 'FULLTEXT'
-                             ) ? 1 : 0;
+   my $i_keys = [];
+   @$i_keys   = sort { $a->{cols} cmp $b->{cols} }
+                     grep { defined $_; }
+                     @$preferred_keys;
 
-         if ( MKDEBUG ) {
-            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
-               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
-         }
+   my $j_keys;
+   if ( $secondary_keys ) {
+      # If secondary keys are given, then the preferred keys
+      # really are preferred, so we remove secondary keys.
+      @$j_keys  = sort { $a->{cols} cmp $b->{cols} }
+                  grep { defined $_; }
+                  @$secondary_keys;
+      $rm_key   = 1; # secondary (j keys)
+      $keep_key = 0; # preferred (i keys)
+      $rm_from  = $j_keys;
+      $keep_in  = $i_keys;
+      $last_i   = scalar @$i_keys - 1;
+      $j_offset = 0;
+   }
+   else {
+      # If secondary keys are not given, then the preferred and
+      # secondary keys are really the same list of keys, so we
+      # remove i keys;
+      $j_keys   = $i_keys;
+      $rm_key   = 0; # i keys
+      $keep_key = 1; # j keys
+      $rm_from  = $i_keys;
+      $keep_in  = $j_keys;
+      $last_i   = scalar @$i_keys - 2;
+      $j_offset = 1;
+   }
+   my $n_j_keys = scalar @$j_keys - 1;
 
-         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
-            $i_cols = join(',', sort(split(/`/, $i_cols)));
-            $j_cols = join(',', sort(split(/`/, $j_cols)));
-         }
-         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
-                || $opts->{ignore_type}
-              )
-              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
-         {
-            # Handle FULLTEXT indexes speically: only exact matches are
-            # duplicates. E.g. FULLTEXT `a`,`b` and `a` are *not* dupes
-            if ( $both_FULLTEXT ) {
-               if ( $len_i_cols == $len_j_cols ) {
-                  MKDEBUG && _d("Indexes are DUPLICATES (fulltext)");
-                  push @result, $keys[$i] unless $seen{$i}++;
-                  push @result, $keys[$j] unless $seen{$j}++;
-               }
-               else {
-                  MKDEBUG && _d("Indexes are not duplicates (fulltext)");
-               }
+   I_KEY:
+   foreach my $i ( 0..$last_i ) {
+      next I_KEY unless defined $i_keys->[$i];
+
+      J_KEY:
+      foreach my $j ( $i+$j_offset..$n_j_keys ) {
+         next KEY_J unless defined $j_keys->[$j];
+
+         my $keep = ($i, $j)[$keep_key];
+         my $rm   = ($i, $j)[$rm_key];
+
+         my $keep_name     = $keep_in->[$keep]->{name};
+         my $keep_cols     = $keep_in->[$keep]->{cols};
+         my $keep_len_cols = $keep_in->[$keep]->{len_cols};
+         my $rm_name       = $rm_from->[$rm]->{name};
+         my $rm_cols       = $rm_from->[$rm]->{cols};
+         my $rm_len_cols   = $rm_from->[$rm]->{len_cols};
+
+         MKDEBUG && _d("Comparing [keep] $keep_name ($keep_cols) "
+            . "to [remove if dupe] $rm_name ($rm_cols)");
+
+         if (    substr($rm_cols, 0, $rm_len_cols)
+              eq substr($keep_cols, 0, $rm_len_cols) ) {
+
+            # FULLTEXT keys, for example, are only duplicates if they
+            # are exact duplicates.
+            if ( $args{exact_duplicates} && ($rm_len_cols < $keep_len_cols) ) {
+               MKDEBUG && _d("$rm_name not exact duplicate of $keep_name");
+               next J_KEY;
             }
-            elsif ( ($unique_i_cols xor $unique_j_cols)
-                    && $len_i_cols != $len_j_cols ) {
-               # For issue 9:
-               # UNIQUE  KEY i (a) does not duplicate KEY j (a,b).
-               # PRIMARY KEY i (a) does not duplicate KEY j (a,b).
-               # But,
-               # KEY j (a,b) duplicates UNIQUE KEY i (a,b).
-               # KEY j (a,b) duplicates PRIMARY KEY (a, b). 
-               MKDEBUG && _d('Indexes are not duplicates because one or '
-                  . 'the other is unique and a prefix of the other');
-            }
-            else {
-               MKDEBUG && _d("Indexes are DUPLICATES");
-               push @result, $keys[$i] unless $seen{$i}++;
-               push @result, $keys[$j] unless $seen{$j}++;
-            }
+
+            MKDEBUG && _d("Remove $rm_from->[$rm]->{name}");
+            my $reason = "$rm_from->[$rm]->{name} "
+                       . "($rm_from->[$rm]->{cols}) is a "
+                       . ($rm_len_cols < $keep_len_cols ? 'left-prefix of '
+                                                        : 'duplicate of ')
+                       . "$keep_in->[$keep]->{name} "
+                       . "($keep_in->[$keep]->{cols})";
+            push @dupes,
+               {
+                  key          => $rm_name,
+                  duplicate_of => $keep_name,
+                  reason       => $reason,
+               };
+            delete $rm_from->[$rm];
+            next I_KEY if $rm_key == $i;
+            next J_KEY if $rm_key == $j;
          }
          else {
-            MKDEBUG && _d("Indexes are not duplicates");
+            MKDEBUG && _d("$rm_name not left-prefix of $keep_name");
+            next I_KEY;
          }
       }
    }
+   MKDEBUG && _d('No more keys');
+   @$i_keys = grep { defined $_; } @$i_keys;
+   @$j_keys = grep { defined $_; } @$j_keys if $secondary_keys;
+   return ($i_keys, $j_keys, \@dupes);
+}
 
+sub get_duplicate_keys {
+   my ( $self, $all_keys, $opts ) = @_;
+   my $primary_key;
+   my @unique_keys;
+   my @keys;
+   my @fulltext_keys;
+
+   ALL_KEYS:
+   foreach my $key ( @$all_keys ) {
+      $key->{len_cols} = length $key->{cols};
+
+      # The PRIMARY KEY is treated specially. It is effectively never a
+      # duplicate, so it is never removed. It is compared to all other
+      # keys, and in any case of duplication, the PRIMARY is always kept
+      # and the other key removed.
+      if ( $key->{name} eq 'PRIMARY' ) {
+         $primary_key = $key;
+         next ALL_KEYS;
+      }
+
+      my $is_fulltext = $key->{struct} eq 'FULLTEXT' ? 1 : 0;
+
+      # Key column order matters for all keys except FULLTEXT, so we only
+      # sort if --ignoreorder or FULLTEXT.
+      if ( $opts->{ignore_order} || $is_fulltext  ) {
+         my $ordered_cols = join(',', sort(split(/,/, $key->{cols})));
+         MKDEBUG && _d("Reordered $key->{name} cols "
+            . "from ($key->{cols}) to ($ordered_cols)");
+         $key->{cols} = $ordered_cols;
+      }
+
+      # By default --allstruct is false, so keys of different structs
+      # (BTREE, HASH, FULLTEXT, SPATIAL) are kept and compared separately.
+      # UNIQUE keys are also separated just to make comparisons easier.
+      my $push_to = $key->{unique} ? \@unique_keys : \@keys;
+      if ( !$opts->{ignore_type} ) {
+         $push_to = \@fulltext_keys if $is_fulltext;
+         # TODO:
+         # $push_to = \@hash_keys     if $is_hash;
+         # $push_to = \@spatial_keys  if $is_spatial;
+      }
+      push @$push_to, $key; 
+   }
+
+   my $good_keys;
+   my $dupe_keys;
+   my @dupes;
+
+   if ( $primary_key ) {
+      MKDEBUG && _d('Start comparing PRIMARY KEY to UNIQUE keys');
+      (undef, $good_keys, $dupe_keys)
+         = _remove_duplicate_left_prefixes([$primary_key], \@unique_keys);
+      push @dupes, @$dupe_keys;
+      @unique_keys = @$good_keys;
+
+      MKDEBUG && _d('Start comparing PRIMARY KEY to regular keys');
+      (undef, $good_keys, $dupe_keys)
+         = _remove_duplicate_left_prefixes([$primary_key], \@keys);
+      push @dupes, @$dupe_keys;
+      @keys = @$good_keys;
+   }
+
+   MKDEBUG && _d('Start comparing UNIQUE keys');
+   ($good_keys, undef, $dupe_keys)
+      = _remove_duplicate_left_prefixes(\@unique_keys);
+   push @dupes, @$dupe_keys;
+   @unique_keys= @$good_keys;
+
+   MKDEBUG && _d('Start comparing regular keys');
+   ($good_keys, undef, $dupe_keys)
+      = _remove_duplicate_left_prefixes(\@keys);
+   push @dupes, @$dupe_keys;
+   @keys = @$good_keys;
+
+   MKDEBUG && _d('Start comparing UNIQUE keys to regular keys');
+   (undef, $good_keys, $dupe_keys)
+      = _remove_duplicate_left_prefixes(\@unique_keys, \@keys);
+   push @dupes, @$dupe_keys;
+   @keys = @$good_keys;
+
+   # If --allstruct, then these special struct keys (FULLTEXT, HASH, etc.)
+   # will have already been put in and handled by @keys.
+   MKDEBUG && _d('Start comparing FULLTEXT keys');
+   ($good_keys, undef, $dupe_keys)
+      = _remove_duplicate_left_prefixes(\@fulltext_keys, undef,
+            exact_duplicates => 1);
+   push @dupes, @$dupe_keys;
+   @fulltext_keys = @$good_keys;
+
+   # TODO: other structs
+   return \@dupes;
+
+
+   # TODO: update code below
+   my @result;
+   my %seen;
    # If the key ends with a prefix of the primary key, it's a duplicate.
    if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
       my $i = 0;
@@ -423,7 +550,6 @@ sub get_duplicate_keys {
       }
    }
 
-   return \@result;
 }
 
 sub get_duplicate_fks {
