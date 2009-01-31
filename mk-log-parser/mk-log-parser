@@ -4078,13 +4078,14 @@ my %ea;     # EventAggregators
 # because QueryParser ignores subquery tables.
 sub print_tables {
    my ( $query, $default_db ) = @_;
-   my $qp = new QueryParser();
-   my $table_aliases = $qp->parse_table_aliases( $qp->get_table_ref($query) );
    print "# Tables\n";
-   foreach my $table_alias ( keys %$table_aliases ) {
-      next if $table_alias eq 'DATABASE';
-      my $tbl = $table_aliases->{$table_alias};
-      my $db  = $table_aliases->{DATABASE}->{$tbl} || $default_db;
+   foreach my $db_tbl ( $qp->get_tables($query) ) {
+      $db_tbl =~ s/`//g;
+      my ( $db, $tbl ) = split(/[.]/, $db_tbl);
+      if ( !$tbl ) {
+         $tbl = $db;
+         $db  = $default_db;
+      }
       print '#    SHOW TABLE STATUS',
          (defined $db && $db ? " FROM `$db`" : ''),
          " LIKE '$tbl'\\G\n";

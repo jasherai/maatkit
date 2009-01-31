@@ -18,5 +18,7 @@
 #    1s  ################################################################
 #  10s+
 # Tables
+#    SHOW TABLE STATUS LIKE '123_bar'\G
+#    SHOW CREATE TABLE `123_bar`\G
 # EXPLAIN
 select 12_13_foo from (select 12foo from 123_bar) as 123baz\G
