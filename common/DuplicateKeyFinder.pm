@@ -349,7 +349,7 @@ sub remove_prefix_duplicates {
 
       J_KEY:
       foreach my $j ( $i+$remove_key_offset..$last_remove_key ) {
-         next KEY_J unless defined $remove_keys->[$j];
+         next J_KEY unless defined $remove_keys->[$j];
 
          my $keep = ($i, $j)[$keep_index];
          my $rm   = ($i, $j)[$remove_index];
