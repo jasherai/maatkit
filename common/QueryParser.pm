@@ -27,6 +27,7 @@ use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
+my $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
 
 sub new {
    my ( $class ) = @_;
@@ -116,7 +117,6 @@ sub parse_table_aliases {
 # XXX If you change this code, also change QueryRewriter::distill().
 sub get_tables {
    my ( $self, $query ) = @_;
-   my $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
    my @tables;
    foreach my $tbls (
       $query =~ m{

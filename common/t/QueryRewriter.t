@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 65;
+use Test::More tests => 86;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -64,7 +64,7 @@ is(
 
 is(
    $q->distill("CALL foo(1, 2, 3)"),
-   "call foo",
+   "CALL foo",
    'Distills stored procedure calls specially',
 );
 
@@ -76,7 +76,7 @@ is(
 
 is(
    $q->distill('# administrator command: Init DB'),
-   'administrator command',
+   'ADMIN',
    'Distills admin commands together',
 );
 
@@ -124,7 +124,7 @@ is(
       .q{ISNULL(`foo_base_foo_id`), ISNULL(`fooe_foo_id`)))) AS UNSIGNED)), 10, }
       .q{16)) AS crc FROM `foo`.`bar` USE INDEX (`PRIMARY`) WHERE }
       .q{(`id` >= 2166633); }),
-   'REPLACE checksum.checksum SELECT foo.bar',
+   'REPLACE SELECT checksum.checksum foo.bar',
    'Distills mk-table-checksum query',
 );
 
@@ -136,7 +136,7 @@ is(
 
 is(
    $q->distill("use `foo`"),
-   "USE foo",
+   "USE",
    'distills USE',
 );
 
@@ -290,7 +290,7 @@ is(
 
 is(
    $q->distill("insert into abtemp.coxed select foo.bar from foo"),
-   'INSERT abtemp.coxed SELECT foo',
+   'INSERT SELECT abtemp.coxed foo',
    'distills insert/select',
 );
 
@@ -344,7 +344,7 @@ is(
 
 is(
    $q->distill('select 1 union select 2 union select 4'),
-   'SELECT UNION /*repeat union*/',
+   'SELECT UNION',
    'union distills together',
 );
 
@@ -352,12 +352,6 @@ is(
    $q->fingerprint('select 1 union all select 2 union all select 4'),
    'select ? /*repeat union all*/',
    'union all fingerprints together',
-);
-
-is(
-   $q->distill('select 1 union all select 2 union all select 4'),
-   'SELECT UNION /*repeat union*/',
-   'union all distills together',
 );
 
 is(
@@ -423,7 +417,7 @@ is(
    $q->distill(
       'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
    ),
-   'REPLACE foo ODKU',
+   'REPLACE UPDATE foo',
    'distills ODKU',
 );
 
@@ -455,7 +449,7 @@ is(
    $q->distill(
       'insert into foo select * from bar join baz using (bat)',
    ),
-   'INSERT foo SELECT bar, baz',
+   'INSERT SELECT foo bar baz',
    'distills insert select',
 );
 
@@ -495,7 +489,7 @@ is(
    $q->distill(
       'update foo inner join bar using(baz) set big=little',
    ),
-   'UPDATE foo, bar',
+   'UPDATE foo bar',
    'distills update-multi',
 );
 
@@ -576,7 +570,7 @@ update db2.tbl1 as p
    ) as chosen on chosen.col1 = p.col1
       and chosen.col2 = p.col2
    set p.col4 = 149945'),
-   'UPDATE db2.tbl1 SELECT db2.tbl1, tbl2.tbl3',
+   'UPDATE SELECT db?.tbl?',
    'distills complex subquery',
 );
 
@@ -596,7 +590,7 @@ is(
 
 is(
    $q->distill(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
-   'DELETE foo.bar, baz.bat',
+   'DELETE foo.bar baz.bat',
    'distills and then collapses same tables',
 );
 
@@ -614,8 +608,7 @@ is (
 REPLACE DELAYED INTO
 `db1`.`tbl2`(`col1`,col2)
 VALUES ('617653','2007-09-11')}),
-   qq{select * from \n`db1`.`tbl2` where `col1`='617653' and col2='2007-09-11'},
-   'REPLACE db1.tbl2',
+   'REPLACE db?.tbl?',
    'distills replace-delayed',
 );
 
@@ -681,7 +674,7 @@ is($q->distill(
    . q{APLTRACT_GARDENPLANT_ID = ABU.ID AND GC.MATCHING_POT = 0 AND GC.PERFORM_DIG=1}
    . q{ AND ABU.DIG = 6 AND ( ((SOIL-COST) > -80.0}
    . q{ AND BUGS < 60.0 AND (SOIL-COST) < 200.0) AND POTS < 10.0 )}),
-   'UPDATE GARDEN_CLUPL, GARDENJOB, APLTRACT_GARDENPLANT',
+   'UPDATE GARDEN_CLUPL GARDENJOB APLTRACT_GARDENPLANT',
    'distills where there is alias and comma-join',
 );
 

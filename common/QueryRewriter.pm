@@ -26,6 +26,7 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+my $ident    = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
@@ -123,6 +124,65 @@ sub fingerprint {
    # $query =~ s/ , | ,|, /,/g;    # Normalize commas
    # $query =~ s/ = | =|= /=/g;       # Normalize equals
    # $query =~ s# [,=+*/-] ?|[,=+*/-] #+#g;    # Normalize operators
+   return $query;
+}
+
+# This is kind of like fingerprinting, but it super-fingerprints to something
+# that shows the query type and the tables/objects it accesses.
+sub distill {
+   my ( $self, $query ) = @_;
+
+   # Special cases.
+   $query =~ m/\A\s*call\s+(\S+)\(/i
+      && return "CALL $1"; # Warning! $1 used, be careful.
+   $query =~ m/\A# administrator/
+      && return "ADMIN";
+   $query =~ m/\A\s*use\s+/
+      && return "USE";
+
+   # First, get the query type -- just extract all the verbs and collapse them
+   # together.
+   my @verbs = $query =~ m/\b(SELECT|INSERT|UPDATE|DELETE|REPLACE|^SET|UNION)\b/gi;
+   @verbs    = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
+   };
+   my $verbs = join(q{ }, @verbs);
+   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+
+   # Now get the objects in the query.  XXX This code is taken from
+   # QueryParser::get_tables() so please keep it in sync with that code.
+   my @tables;
+   foreach my $tbls (
+      $query =~ m{
+         (?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
+         \b\s*
+         # Capture the identifier and any number of comma-join identifiers that
+         # follow it, optionally with aliases with or without the AS keyword
+         ($ident
+            (?:\s*(?:(?:AS\s*)?\w*)?,\s*$ident)*
+         )
+      }xgio)
+   {
+      # Remove [AS] foo aliases
+      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
+      push @tables, $tbls =~ m/($ident)/g;
+   }
+
+   # "Fingerprint" the tables.
+   @tables = map {
+      $_ =~ s/`//g;
+      $_ =~ s/(_?)\d+/$1?/g;
+      $_;
+   } @tables;
+
+   # Collapse the table list
+   @tables = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
+   };
+
+   $query = join(q{ }, $verbs, @tables);
    return $query;
 }
 
