@@ -27,6 +27,8 @@ package EventTimeline;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+Transformers->import(qw(parse_timestamp secs_to_time unix_timestamp));
+
 use constant MKDEBUG => $ENV{MKDEBUG};
 use constant KEY     => 0;
 use constant CNT     => 1;
@@ -152,6 +154,31 @@ sub make_handler {
    my $sub = eval $code;
    die if $EVAL_ERROR;
    return $sub;
+}
+
+sub report {
+   my ( $self, $results, $callback ) = @_;
+   $callback->("# " . join(',', @{$self->{groupby}}) . " report\n");
+   foreach my $res ( @$results ) {
+      my $t;
+      my @vals;
+      if ( ($t = $res->[ATT]->{ts}) && $t->{min} ) {
+         my $min = parse_timestamp($t->{min});
+         push @vals, $min;
+         if ( $t->{max} && $t->{max} gt $t->{min} ) {
+            my $max  = parse_timestamp($t->{max});
+            my $diff = secs_to_time(unix_timestamp($max) - unix_timestamp($min));
+            push @vals, $diff;
+         }
+         else {
+            push @vals, '0:00';
+         }
+      }
+      else {
+         push @vals, ('', '');
+      }
+      $callback->(sprintf("# %19s %7s %3d %s\n", @vals, $res->[CNT], $res->[KEY]->[0]));
+   }
 }
 
 sub _d {
