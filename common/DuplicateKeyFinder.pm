@@ -110,7 +110,8 @@ sub get_duplicate_keys {
 
    ALL_KEYS:
    foreach my $key ( @{$args{keys}} ) {
-      $key->{len_cols} = length $key->{cols};
+      $key->{real_cols} = $key->{cols}; 
+      $key->{len_cols}  = length $key->{cols};
 
       # The PRIMARY KEY is treated specially. It is effectively never a
       # duplicate, so it is never removed. It is compared to all other
@@ -124,11 +125,11 @@ sub get_duplicate_keys {
       my $is_fulltext = $key->{struct} eq 'FULLTEXT' ? 1 : 0;
 
       # Key column order matters for all keys except FULLTEXT, so we only
-      # sort if --ignoreorder or FULLTEXT.
+      # sort if --ignoreorder or FULLTEXT. 
       if ( $args{ignore_order} || $is_fulltext  ) {
          my $ordered_cols = join(',', sort(split(/,/, $key->{cols})));
          MKDEBUG && _d("Reordered $key->{name} cols "
-            . "from ($key->{cols}) to ($ordered_cols)");
+            . "from ($key->{cols}) to ($ordered_cols)"); 
          $key->{cols} = $ordered_cols;
       }
 
@@ -207,6 +208,7 @@ sub get_duplicate_keys {
             if ( $unique_keys[$i]->{name} eq $constrainer->{name} ) {
                my $dupe = {
                   key          => $constrainer->{name},
+                  real_cols    => $constrainer->{real_cols},
                   duplicate_of => $min_constrainer->{name},
                   reason       =>
                        "$constrainer->{name} ($constrainer->{cols}) "
@@ -285,6 +287,7 @@ sub get_duplicate_fks {
               && $i_fkcols eq $j_fkcols ) {
             my $dupe = {
                key          => $fks[$j]->{name},
+               real_cols    => $fks[$j]->{cols},
                duplicate_of => $fks[$i]->{name},
                reason       =>
                     "FOREIGN KEY $fks->[$j]->{name} ($fks->[$j]->{cols}) "
@@ -374,13 +377,14 @@ sub remove_prefix_duplicates {
 
             MKDEBUG && _d("Remove $remove_keys->[$rm]->{name}");
             my $reason = "$remove_keys->[$rm]->{name} "
-                       . "($remove_keys->[$rm]->{cols}) is a "
+                       . "($remove_keys->[$rm]->{real_cols}) is a "
                        . ($rm_len_cols < $keep_len_cols ? 'left-prefix of '
                                                         : 'duplicate of ')
                        . "$keys->[$keep]->{name} "
-                       . "($keys->[$keep]->{cols})";
+                       . "($keys->[$keep]->{real_cols})";
             my $dupe = {
                key          => $rm_name,
+               real_cols    => $remove_keys->[$rm]->{real_cols},
                duplicate_of => $keep_name,
                reason       => $reason,
             };
@@ -423,6 +427,7 @@ sub remove_clustered_duplicates {
          if ( substr($suffix, 0, $len) eq substr($pkcols, 0, $len) ) {
             my $dupe = {
                key          => $keys->[$i]->{name},
+               real_cols    => $keys->[$i]->{real_cols},
                duplicate_of => $args{primary_key}->{name},
                reason       =>
                   "Clustered key $keys->[$i]->{name} ($keys->[$i]->{cols}) "
