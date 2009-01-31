@@ -1,9 +1,11 @@
 Changelog for mk-duplicate-key-checker:
 
-   * #-commented all lines except SQL statements (issue 82).
+   * Changed output from tabular to human-readable.
+   * Improved duplicate key finding (issue 9).
+   * Added DROP KEY statement to output for each duplicate key (issue 82).
+   * -- commented all output lines except SQL statements (issue 82).
    * Added --[no]sql option (issue 82).
-   * Added --[no]compact option (issue 82).
-   * Print header for every table instead of every database.
+   * Added summary of keys to end of output (182).
    * Removed --allatonce option.
    * Updated documentation and shared code.
 
