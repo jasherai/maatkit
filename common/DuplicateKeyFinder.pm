@@ -331,14 +331,14 @@ sub remove_prefix_duplicates {
 
       $remove_index      = 1;
       $keep_index        = 0;
-      $last_key          = $#{@$keys};
+      $last_key          = scalar(@$keys) - 1;
       $remove_key_offset = 0;
    }
    else {
       $remove_keys       = $keys;
       $remove_index      = 0;
       $keep_index        = 1;
-      $last_key          = ($#{@$keys}) - 1;
+      $last_key          = scalar(@$keys) - 2;
       $remove_key_offset = 1;
    }
    my $last_remove_key = $#{@$remove_keys};
