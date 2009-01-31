@@ -1090,7 +1090,7 @@ sub make_checksum {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2959
+# QueryRewriter package 2963
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -3826,15 +3826,13 @@ my %ea;     # EventAggregators
          my $group_by_val = $event->{arg};
          return 0 unless defined $group_by_val;
          $event->{distill} = $qr->distill($group_by_val);
-         if ( !$event->{distill} ) {
-            print $event->{arg}, "\n";
-         }
+         MKDEBUG && !$event->{distill} && _d("Cannot distill ", $event->{arg});
          return $event;
       };
    }
 
    if ( $opts{filter} ) {
-      my $code = "sub{ my(\$event) = shift; $opts{filter}; return \$event; };";
+      my $code = "sub{ my(\$event) = shift; $opts{filter} && return \$event; };";
       MKDEBUG && _d("--filter code: ", $code);
       my $sub = eval $code or die;
       push @callbacks, $sub;
@@ -4589,11 +4587,17 @@ Discard events for which this Perl code doesn't return true.
 This option is a string of Perl code that gets compiled into a subroutine with
 one argument: $event.  This is a hashref.  If the code returns true, the chain
 of callbacks continues; otherwise it ends.  The code is the last statement in
-the subroutine.
+the subroutine other than C<return $event>.
 
 An example filter that discards everything but SELECT statements:
 
   --filter '$event->{arg} =~ m/^select/i'
+
+This is compiled into a subroutine like the following:
+
+  sub { $event = shift; $event->{arg} =~ m/^select/i && return $event; }
+
+It is permissible for the code to have side effects (to alter $event).
 
 =item --fingerprints
 
