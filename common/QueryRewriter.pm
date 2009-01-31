@@ -26,7 +26,12 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-our $ident    = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
+# A list of verbs that can appear in queries.  I know this is incomplete -- it
+# does not have CREATE, DROP, ALTER, TRUNCATE for example.  But I don't need
+# those for my client yet.
+our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
+                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START}xi;
+our $ident   = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
@@ -142,7 +147,7 @@ sub distill {
 
    # First, get the query type -- just extract all the verbs and collapse them
    # together.
-   my @verbs = $query =~ m/\b(SELECT|INSERT|UPDATE|DELETE|REPLACE|^SET|UNION)\b/gi;
+   my @verbs = $query =~ m/\b($verbs)\b/gio;
    @verbs    = do {
       my $last = '';
       grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;

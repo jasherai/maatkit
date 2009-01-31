@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 86;
+use Test::More tests => 92;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -677,6 +677,18 @@ is($q->distill(
    'UPDATE GARDEN_CLUPL GARDENJOB APLTRACT_GARDENPLANT',
    'distills where there is alias and comma-join',
 );
+
+is($q->distill('SHOW STATUS'), 'SHOW', 'distill SHOW');
+
+is($q->distill('commit'), 'COMMIT', 'distill COMMIT');
+
+is($q->distill('FLUSH TABLES WITH READ LOCK'), 'FLUSH', 'distill FLUSH');
+
+is($q->distill('BEGIN'), 'BEGIN', 'distill BEGIN');
+
+is($q->distill('start'), 'START', 'distill START');
+
+is($q->distill('ROLLBACK'), 'ROLLBACK', 'distill ROLLBACK');
 
 is(
    $q->convert_to_select("UPDATE tbl SET col='wherex'WHERE crazy=1"),
