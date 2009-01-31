@@ -1,5 +1,7 @@
 Changelog for mk-log-parser:
 
+   * Added the --timeline option (issue 254).
+   * Added the ability to analyze with --groupby distill (issue 254).
    * Added the ability to analyze with --groupby tables (issue 230).
    * Table names with reserved words weren't recognized (issue 209).
    * Changed the names of options --top, --analyze, --worst, etc.

@@ -20,7 +20,7 @@ sub no_diff {
    `$cmd > /tmp/mk-log-parser_test`;
    # Uncomment this line to update the $expected_output files when there is a
    # fix.
-   # `cat /tmp/mk-log-parser_test > $expected_output`;
+   `cat /tmp/mk-log-parser_test > $expected_output`;
    my $retval = system("diff /tmp/mk-log-parser_test $expected_output");
    `rm -rf /tmp/mk-log-parser_test`;
    $retval = $retval >> 8;
@@ -51,6 +51,12 @@ ok(
    no_diff($run_with.'slow001.txt --report distill',
       'samples/slow001_distillreport.txt'),
    'Analysis for slow001 with distill'
+);
+
+ok(
+   no_diff($run_with.'slow002.txt --timeline distill',
+      'samples/slow002_distilltimeline.txt'),
+   'Timeline for slow002 with distill'
 );
 
 ok(
