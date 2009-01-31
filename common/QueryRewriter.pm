@@ -26,7 +26,7 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-my $ident    = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
+our $ident    = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/

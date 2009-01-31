@@ -27,7 +27,7 @@ use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
-my $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
+our $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
 
 sub new {
    my ( $class ) = @_;
