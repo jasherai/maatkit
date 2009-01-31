@@ -207,10 +207,11 @@ sub get_duplicate_keys {
          for my $i ( 0..$#unique_keys ) {
             if ( $unique_keys[$i]->{name} eq $constrainer->{name} ) {
                my $dupe = {
-                  key          => $constrainer->{name},
-                  real_cols    => $constrainer->{real_cols},
-                  duplicate_of => $min_constrainer->{name},
-                  reason       =>
+                  key               => $constrainer->{name},
+                  cols              => $constrainer->{real_cols},
+                  duplicate_of      => $min_constrainer->{name},
+                  duplicate_of_cols => $min_constrainer->{real_cols},
+                  reason            =>
                        "$constrainer->{name} ($constrainer->{cols}) "
                      . 'is an unnecessary UNIQUE constraint for '
                      . "$key->{name} ($key->{cols}) because "
@@ -286,9 +287,10 @@ sub get_duplicate_fks {
               && $i_cols   eq $j_cols
               && $i_fkcols eq $j_fkcols ) {
             my $dupe = {
-               key          => $fks[$j]->{name},
-               real_cols    => $fks[$j]->{cols},
-               duplicate_of => $fks[$i]->{name},
+               key               => $fks[$j]->{name},
+               cols              => $fks[$j]->{cols},
+               duplicate_of      => $fks[$i]->{name},
+               duplicate_of_cols => $fks[$i]->{cols},
                reason       =>
                     "FOREIGN KEY $fks->[$j]->{name} ($fks->[$j]->{cols}) "
                   . "REFERENCES $fks->[$j]->{parent} ($fks->[$j]->{fkcols}) "                     .  'is a duplicate of '
@@ -383,9 +385,10 @@ sub remove_prefix_duplicates {
                        . "$keys->[$keep]->{name} "
                        . "($keys->[$keep]->{real_cols})";
             my $dupe = {
-               key          => $rm_name,
-               real_cols    => $remove_keys->[$rm]->{real_cols},
-               duplicate_of => $keep_name,
+               key               => $rm_name,
+               cols              => $remove_keys->[$rm]->{real_cols},
+               duplicate_of      => $keep_name,
+               duplicate_of_cols => $keys->[$keep]->{real_cols},
                reason       => $reason,
             };
             push @dupes, $dupe;
@@ -426,10 +429,11 @@ sub remove_clustered_duplicates {
          my $len = min(length($pkcols), length($suffix));
          if ( substr($suffix, 0, $len) eq substr($pkcols, 0, $len) ) {
             my $dupe = {
-               key          => $keys->[$i]->{name},
-               real_cols    => $keys->[$i]->{real_cols},
-               duplicate_of => $args{primary_key}->{name},
-               reason       =>
+               key               => $keys->[$i]->{name},
+               cols              => $keys->[$i]->{real_cols},
+               duplicate_of      => $args{primary_key}->{name},
+               duplicate_of_cols => $args{primary_key}->{real_cols},
+               reason         =>
                   "Clustered key $keys->[$i]->{name} ($keys->[$i]->{cols}) "
                   . "is a duplicate of PRIMARY ($args{primary_key}->{cols})",
             };

@@ -53,8 +53,9 @@ is_deeply(
    [
       {
          'key'          => 'a',
-         'real_cols'    => '`a`',
+         'cols'         => '`a`',
          'duplicate_of' => 'a_2',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'a (`a`) is a left-prefix of a_2 (`a`,`b`)',
       }
    ],
@@ -71,8 +72,9 @@ is_deeply(
    [
       {
          'key'          => 'a',
-         'real_cols'    => '`a`',
+         'cols'         => '`a`',
          'duplicate_of' => 'a_2',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'a (`a`) is a left-prefix of a_2 (`a`,`b`)',
       }
    ],
@@ -92,14 +94,16 @@ is_deeply(
    [
       {
          'key'          => 'a',
-         'real_cols'    => '`a`',
+         'cols'         => '`a`',
          'duplicate_of' => 'a_2',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'a (`a`) is a left-prefix of a_2 (`a`,`b`)',
       },
       {
          'key'          => 'a_2',
-         'real_cols'    => '`a`,`b`',
+         'cols'         => '`a`,`b`',
          'duplicate_of' => 'a_3',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'a_2 (`a`,`b`) is a duplicate of a_3 (`a`,`b`)',
       }
    ],
@@ -126,8 +130,9 @@ is_deeply(
    [
       {
          'key'          => 'a',
-         'real_cols'    => '`a`',
+         'cols'         => '`a`',
          'duplicate_of' => 'a_2',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'a (`a`) is a left-prefix of a_2 (`a`,`b`)',
       },
    ],
@@ -155,8 +160,9 @@ is_deeply(
    [
       {
          'key'          => 'ft_idx_a_b_1',
-         'real_cols'    => '`a`,`b`',
+         'cols'         => '`a`,`b`',
          'duplicate_of' => 'ft_idx_a_b_2',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'ft_idx_a_b_1 (`a`,`b`) is a duplicate of ft_idx_a_b_2 (`a`,`b`)',
       }
    ],
@@ -173,8 +179,9 @@ is_deeply(
    [
       {
          'key'          => 'ft_idx_a_b',
-         'real_cols'    => '`a`,`b`',
+         'cols'         => '`a`,`b`',
          'duplicate_of' => 'ft_idx_b_a',
+         'duplicate_of_cols' => '`b`,`a`',
          'reason'       => 'ft_idx_a_b (`a`,`b`) is a duplicate of ft_idx_b_a (`b`,`a`)',
       }
    ],
@@ -201,8 +208,9 @@ is_deeply(
    [
       {
          'key'          => 'a',
-         'real_cols'    => '`b`,`a`',
+         'cols'         => '`b`,`a`',
          'duplicate_of' => 'a_2',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'a (`b`,`a`) is a duplicate of a_2 (`a`,`b`)',
       }
    ],
@@ -234,8 +242,9 @@ is_deeply(
    [
       {
          'key'          => 'b',
-         'real_cols'    => '`b`,`a`',
+         'cols'         => '`b`,`a`',
          'duplicate_of' => 'PRIMARY',
+         'duplicate_of_cols' => '`a`',
          'reason'       => 'Clustered key b (`b`,`a`) is a duplicate of PRIMARY (`a`)',
       }
    ],
@@ -283,8 +292,9 @@ is_deeply(
    [
       {
          'key'          => 't1_ibfk_2',
-         'real_cols'    => '`b`, `a`',
+         'cols'         => '`b`, `a`',
          'duplicate_of' => 't1_ibfk_1',
+         'duplicate_of_cols' => '`a`, `b`',
          'reason'       => 'FOREIGN KEY t1_ibfk_2 (`b`, `a`) REFERENCES `test`.`t2` (`b`, `a`) is a duplicate of FOREIGN KEY t1_ibfk_1 (`a`, `b`) REFERENCES `test`.`t2` (`a`, `b`)',
       },
    ],
@@ -338,8 +348,9 @@ is_deeply(
    [
       {
          'key'          => 'j',
-         'real_cols'    => '`a`,`b`',
+         'cols'         => '`a`,`b`',
          'duplicate_of' => 'i',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'j (`a`,`b`) is a duplicate of i (`a`,`b`)',
       }
    ],
@@ -356,8 +367,9 @@ is_deeply(
    [
       {
          'key'          => 'j',
-         'real_cols'    => '`a`,`b`',
+         'cols'         => '`a`,`b`',
          'duplicate_of' => 'PRIMARY',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'j (`a`,`b`) is a duplicate of PRIMARY (`a`,`b`)',
       }
    ],
@@ -374,8 +386,9 @@ is_deeply(
    [
       {
          'key'          => 'j',
-         'real_cols'    => '`a`',
+         'cols'         => '`a`',
          'duplicate_of' => 'i',
+         'duplicate_of_cols' => '`a`,`b`',
          'reason'       => 'j (`a`) is a left-prefix of i (`a`,`b`)',
       }
    ],
@@ -393,8 +406,9 @@ is_deeply(
    [
       {
          'key'          => 'ua_b',
-         'real_cols'    => '`a`,`b`',
+         'cols'         => '`a`,`b`',
          'duplicate_of' => 'PRIMARY',
+         'duplicate_of_cols' => '`a`',
          'reason'       => 'ua_b (`a`,`b`) is an unnecessary UNIQUE constraint for a_b_c (`a`,`b`,`c`) because PRIMARY (`a`) alone preserves key column uniqueness',
       }
    ],
@@ -411,32 +425,37 @@ is_deeply(
    [
       {
        'key'          => 'ua',
-       'real_cols'    => '`a`',
+       'cols'         => '`a`',
        'duplicate_of' => 'PRIMARY',
+       'duplicate_of_cols' => '`a`,`b`',
        'reason'       => 'ua (`a`) is a left-prefix of PRIMARY (`a`,`b`)',
       },
       {
        'key'          => 'ua_b',
-       'real_cols'    => '`a`,`b`',
+       'cols'         => '`a`,`b`',
        'duplicate_of' => 'PRIMARY',
+       'duplicate_of_cols' => '`a`,`b`',
        'reason'       => 'ua_b (`a`,`b`) is a duplicate of PRIMARY (`a`,`b`)',
       },
       {
        'key'          => 'ua_b2',
-       'real_cols'    => '`a`,`b`',
+       'cols'         => '`a`,`b`',
        'duplicate_of' => 'PRIMARY',
+       'duplicate_of_cols' => '`a`,`b`',
        'reason'       => 'ua_b2 (`a`,`b`) is a duplicate of PRIMARY (`a`,`b`)',
       },
       {
        'key'          => 'a',
-       'real_cols'    => '`a`',
+       'cols'         => '`a`',
        'duplicate_of' => 'PRIMARY',
+       'duplicate_of_cols' => '`a`,`b`',
        'reason'       => 'a (`a`) is a left-prefix of PRIMARY (`a`,`b`)',
       },
       {
        'key'          => 'a_b',
-       'real_cols'    => '`a`,`b`',
+       'cols'         => '`a`,`b`',
        'duplicate_of' => 'PRIMARY',
+       'duplicate_of_cols' => '`a`,`b`',
        'reason'       => 'a_b (`a`,`b`) is a duplicate of PRIMARY (`a`,`b`)',
       }
    ],
