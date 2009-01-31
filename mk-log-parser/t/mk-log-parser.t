@@ -48,6 +48,12 @@ ok(
 );
 
 ok(
+   no_diff($run_with.'slow001.txt --report distill',
+      'samples/slow001_distillreport.txt'),
+   'Analysis for slow001 with distill'
+);
+
+ok(
    no_diff($run_with.'slow001.txt --select Query_time',
       'samples/slow001_select_report.txt'),
    'Analysis for slow001 --select'

@@ -1090,7 +1090,7 @@ sub make_checksum {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2815
+# QueryRewriter package 2942
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1101,6 +1101,9 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
+                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START}xi;
+our $ident   = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
@@ -1172,6 +1175,53 @@ sub fingerprint {
               }
               {$1 /*repeat$2*/}xg; # UNION
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+   return $query;
+}
+
+sub distill {
+   my ( $self, $query ) = @_;
+
+   $query =~ m/\A\s*call\s+(\S+)\(/i
+      && return "CALL $1"; # Warning! $1 used, be careful.
+   $query =~ m/\A# administrator/
+      && return "ADMIN";
+   $query =~ m/\A\s*use\s+/
+      && return "USE";
+
+   my @verbs = $query =~ m/\b($verbs)\b/gio;
+   @verbs    = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
+   };
+   my $verbs = join(q{ }, @verbs);
+   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+
+   my @tables;
+   foreach my $tbls (
+      $query =~ m{
+         (?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
+         \b\s*
+         ($ident
+            (?:\s*(?:(?:AS\s*)?\w*)?,\s*$ident)*
+         )
+      }xgio)
+   {
+      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
+      push @tables, $tbls =~ m/($ident)/g;
+   }
+
+   @tables = map {
+      $_ =~ s/`//g;
+      $_ =~ s/(_?)\d+/$1?/g;
+      $_;
+   } @tables;
+
+   @tables = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
+   };
+
+   $query = join(q{ }, $verbs, @tables);
    return $query;
 }
 
@@ -1833,7 +1883,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 2927
+# EventAggregator package 2936
 # ###########################################################################
 
 
@@ -2179,6 +2229,8 @@ sub top_events {
    my @sorted = reverse sort { # Sorted list of $groupby values
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
+      } grep {
+         defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
       } keys %$classes;
    my @chosen;
    my ($total, $count) = (0, 0);
@@ -2523,7 +2575,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 2926
+# QueryParser package 2940
 # ###########################################################################
 package QueryParser;
 
@@ -2535,6 +2587,7 @@ use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
+our $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
 
 sub new {
    my ( $class ) = @_;
@@ -2620,11 +2673,17 @@ sub parse_table_aliases {
 
 sub get_tables {
    my ( $self, $query ) = @_;
-   my $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
    my @tables;
    foreach my $tbls (
-      $query =~ m/(?:FROM|JOIN|UPDATE|INTO)\b\s*(?:($ident(?:\s*,\s*$ident)*))/gio)
+      $query =~ m{
+         (?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
+         \b\s*
+         ($ident
+            (?:\s*(?:(?:AS\s*)?\w*)?,\s*$ident)*
+         )
+      }xgio)
    {
+      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
       push @tables, $tbls =~ m/($ident)/g;
    }
    return @tables;
@@ -2949,7 +3008,7 @@ sub _d {
 # #############################################################################
 
 # ###########################################################################
-# TableParser package 2890
+# TableParser package 2935
 # ###########################################################################
 package TableParser;
 
@@ -3199,10 +3258,12 @@ sub get_fks {
       my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
       my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
       my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
-      if ( $parent !~ m/\./ ) {
+      if ( $parent !~ m/\./ && $opts->{database} ) {
          $parent = "`$opts->{database}`.$parent";
       }
-      {  name   => $name,
+
+      {
+         name   => $name,
          parent => $parent,
          cols   => $cols,
          fkcols => $fkcols,
@@ -3211,124 +3272,325 @@ sub get_fks {
    return \@result;
 }
 
-sub get_duplicate_keys {
-   my ( $self, $keys, $opts ) = @_;
-   my @keys = @$keys;
-   my %seen; # Avoid outputting a key more than once.
-   my @result;
+sub _remove_duplicate_left_prefixes {
+   my ( %args ) = @_;
+   die "I need a keys argument" unless $args{keys};
+   my $keys;
+   my $remove_keys;
+   my @dupes;
+   my $keep_index;
+   my $remove_index;
+   my $last_key;
+   my $remove_key_offset;
 
-   foreach my $i ( 0..$#keys - 1 ) {
-      foreach my $j ( $i+1..$#keys ) {
-         my $i_cols        = $keys[$i]->{cols};
-         my $j_cols        = $keys[$j]->{cols};
-         my $type_i_cols   = $keys[$i]->{struct};
-         my $type_j_cols   = $keys[$j]->{struct};
-         my $unique_i_cols = $keys[$i]->{unique};
-         my $unique_j_cols = $keys[$j]->{unique};
-         my $len_i_cols    = length($i_cols);
-         my $len_j_cols    = length($j_cols);
-         my $min_len       = min($len_i_cols, $len_j_cols);
-         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
-                               && $type_j_cols eq 'FULLTEXT'
-                             ) ? 1 : 0;
+   $keys  = $args{keys};
+   @$keys = sort { $a->{cols} cmp $b->{cols} }
+            grep { defined $_; }
+            @$keys;
 
-         if ( MKDEBUG ) {
-            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
-               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
-         }
+   if ( $args{remove_keys} ) {
+      $remove_keys  = $args{remove_keys};
+      @$remove_keys = sort { $a->{cols} cmp $b->{cols} }
+                      grep { defined $_; }
+                      @$remove_keys;
 
-         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
-            $i_cols = join(',', sort(split(/`/, $i_cols)));
-            $j_cols = join(',', sort(split(/`/, $j_cols)));
-         }
-         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
-                || $opts->{ignore_type}
-              )
-              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
-         {
-            if ( $both_FULLTEXT ) {
-               if ( $len_i_cols == $len_j_cols ) {
-                  MKDEBUG && _d("Indexes are DUPLICATES (fulltext)");
-                  push @result, $keys[$i] unless $seen{$i}++;
-                  push @result, $keys[$j] unless $seen{$j}++;
-               }
-               else {
-                  MKDEBUG && _d("Indexes are not duplicates (fulltext)");
-               }
+      $remove_index      = 0;
+      $keep_index        = 1;
+      $last_key          = $#{@$keys};
+      $remove_key_offset = 0;
+   }
+   else {
+      $remove_keys       = $keys;
+      $remove_index      = 0;
+      $keep_index        = 1;
+      $last_key          = ($#{@$keys}) - 1;
+      $remove_key_offset = 1;
+   }
+   my $last_remove_key = $#{@$remove_keys};
+
+   I_KEY:
+   foreach my $i ( 0..$last_key ) {
+      next I_KEY unless defined $keys->[$i];
+
+      J_KEY:
+      foreach my $j ( $i+$remove_key_offset..$last_remove_key ) {
+         next KEY_J unless defined $remove_keys->[$j];
+
+         my $keep = ($i, $j)[$keep_index];
+         my $rm   = ($i, $j)[$remove_index];
+
+         my $keep_name     = $keys->[$keep]->{name};
+         my $keep_cols     = $keys->[$keep]->{cols};
+         my $keep_len_cols = $keys->[$keep]->{len_cols};
+         my $rm_name       = $remove_keys->[$rm]->{name};
+         my $rm_cols       = $remove_keys->[$rm]->{cols};
+         my $rm_len_cols   = $remove_keys->[$rm]->{len_cols};
+
+         my $min_len_cols  = min($keys->[$keep]->{len_cols},
+                                 $remove_keys->[$rm]->{len_cols});
+
+         MKDEBUG && _d("Comparing [keep] $keep_name ($keep_cols) "
+            . "to [remove if dupe] $rm_name ($rm_cols)");
+
+         if (    substr($rm_cols, 0, $min_len_cols)
+              eq substr($keep_cols, 0, $min_len_cols) ) {
+
+            if ( $args{exact_duplicates} && ($rm_len_cols < $keep_len_cols) ) {
+               MKDEBUG && _d("$rm_name not exact duplicate of $keep_name");
+               next J_KEY;
             }
-            elsif ( ($unique_i_cols xor $unique_j_cols)
-                    && $len_i_cols != $len_j_cols ) {
-               MKDEBUG && _d('Indexes are not duplicates because one or '
-                  . 'the other is unique and a prefix of the other');
-            }
-            else {
-               MKDEBUG && _d("Indexes are DUPLICATES");
-               push @result, $keys[$i] unless $seen{$i}++;
-               push @result, $keys[$j] unless $seen{$j}++;
-            }
+
+            MKDEBUG && _d("Remove $remove_keys->[$rm]->{name}");
+            my $reason = "$remove_keys->[$rm]->{name} "
+                       . "($remove_keys->[$rm]->{cols}) is a "
+                       . ($rm_len_cols < $keep_len_cols ? 'left-prefix of '
+                                                        : 'duplicate of ')
+                       . "$keys->[$keep]->{name} "
+                       . "($keys->[$keep]->{cols})";
+            my $dupe = {
+               key          => $rm_name,
+               duplicate_of => $keep_name,
+               reason       => $reason,
+            };
+            push @dupes, $dupe;
+            delete $remove_keys->[$rm];
+
+            $args{callback}->($dupe, %args) if $args{callback};
+
+            next I_KEY if $remove_index == $i;
+            next J_KEY if $remove_index == $j;
          }
          else {
-            MKDEBUG && _d("Indexes are not duplicates");
+            MKDEBUG && _d("$rm_name not left-prefix of $keep_name");
+            next I_KEY;
          }
       }
    }
+   MKDEBUG && _d('No more keys');
 
-   if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
-      my $i = 0;
-      my $found = 0;
-      while ( $i < @keys ) {
-         if ( $keys[$i]->{name} eq 'PRIMARY' ) {
-            $found = 1;
-            last;
+   @$keys        = grep { defined $_; } @$keys;
+   @$remove_keys = grep { defined $_; } @$remove_keys if $args{remove_keys};
+
+   push @{$args{duplicate_keys}}, @dupes if $args{duplice_keys};
+
+   return;
+}
+
+sub _remove_duplicate_cluster_keys {
+   my ( %args ) = @_;
+   die "I need a primary_key argument" unless $args{primary_key};
+   die "I need a keys argument"        unless $args{keys};
+   my $pkcols = $args{primary_key}->{cols};
+   my @keys = @{$args{keys}};
+   my @dupes;
+   KEY:
+   for my $i ( 0..$#keys ) {
+      my $suffix = $keys[$i]->{cols};
+      SUFFIX:
+      while ( $suffix =~ s/`[^`]+`,// ) {
+         my $len = min(length($pkcols), length($suffix));
+         if ( substr($suffix, 0, $len) eq substr($pkcols, 0, $len) ) {
+            my $dupe = {
+               key          => $keys[$i]->{name},
+               duplicate_of => $args{primary_key}->{name},
+               reason       =>
+                  "Clustered key $keys[$i]->{name} ($keys[$i]->{cols}) "
+                  . "is a duplicate of PRIMARY ($args{primary_key}->{cols})",
+            };
+            push @dupes, $dupe;
+            delete $keys[$i];
+            $args{callback}->($dupe, %args) if $args{callback};
+            last SUFFIX;
          }
-         $i++;
       }
-      if ( $found ) {
-         my $pkcols = $keys[$i]->{cols};
-         KEY:
-         foreach my $j ( 0..$#keys ) {
-            next KEY if $i == $j;
-            my $suffix = $keys[$j]->{cols};
-            SUFFIX:
-            while ( $suffix =~ s/`[^`]+`,// ) {
-               my $len = min(length($pkcols), length($suffix));
-               if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
-                  && substr($suffix, 0, $len) eq substr($pkcols, 0, $len))
-               {
-                  push @result, $keys[$i] unless $seen{$i}++;
-                  push @result, $keys[$j] unless $seen{$j}++;
-                  last SUFFIX;
-               }
+   }
+   MKDEBUG && _d('No more clustered keys');
+   @keys = grep { defined $_; } @keys;
+   return (\@keys, \@dupes);
+}
+
+sub get_duplicate_keys {
+   my ( $self, %args ) = @_;
+   die "I need a keys argument" unless $args{keys};
+   my $primary_key;
+   my @unique_keys;
+   my @keys;
+   my @fulltext_keys;
+   my %pass_args = %args;
+   delete $pass_args{keys};
+
+   ALL_KEYS:
+   foreach my $key ( @{$args{keys}} ) {
+      $key->{len_cols} = length $key->{cols};
+
+      if ( $key->{name} eq 'PRIMARY' ) {
+         $primary_key = $key;
+         next ALL_KEYS;
+      }
+
+      my $is_fulltext = $key->{struct} eq 'FULLTEXT' ? 1 : 0;
+
+      if ( $args{ignore_order} || $is_fulltext  ) {
+         my $ordered_cols = join(',', sort(split(/,/, $key->{cols})));
+         MKDEBUG && _d("Reordered $key->{name} cols "
+            . "from ($key->{cols}) to ($ordered_cols)");
+         $key->{cols} = $ordered_cols;
+      }
+
+      my $push_to = $key->{unique} ? \@unique_keys : \@keys;
+      if ( !$args{ignore_type} ) {
+         $push_to = \@fulltext_keys if $is_fulltext;
+      }
+      push @$push_to, $key; 
+   }
+
+   my $good_keys;
+   my $dupe_keys;
+   my @dupes;
+
+   if ( $primary_key ) {
+      MKDEBUG && _d('Start comparing PRIMARY KEY to UNIQUE keys');
+      _remove_duplicate_left_prefixes(
+            keys           => [$primary_key],
+            remove_keys    => \@unique_keys,
+            duplicate_keys => \@dupes,
+            %pass_args);
+
+      MKDEBUG && _d('Start comparing PRIMARY KEY to regular keys');
+      _remove_duplicate_left_prefixes(
+            keys           => [$primary_key],
+            remove_keys    => \@keys,
+            duplicate_keys => \@dupes,
+            %pass_args);
+   }
+
+   MKDEBUG && _d('Start comparing UNIQUE keys');
+   _remove_duplicate_left_prefixes(
+         keys           => \@unique_keys,
+         duplicate_keys => \@dupes,
+         %pass_args);
+
+   MKDEBUG && _d('Start comparing regular keys');
+   _remove_duplicate_left_prefixes(
+         keys           => \@keys,
+         duplicate_keys => \@dupes,
+         %pass_args);
+
+   MKDEBUG && _d('Start comparing UNIQUE keys to regular keys');
+   _remove_duplicate_left_prefixes(
+         keys           => \@unique_keys,
+         remove_keys    => \@keys,
+         duplicate_keys => \@dupes,
+         %pass_args);
+
+   MKDEBUG && _d('Start removing unnecessary constraints');
+   KEY:
+   foreach my $key ( @keys ) {
+      my @constrainers;
+      foreach my $unique_key ( $primary_key, @unique_keys ) {
+         next unless $unique_key;
+         if (    substr($unique_key->{cols}, 0, $unique_key->{len_cols})
+              eq substr($key->{cols}, 0, $unique_key->{len_cols}) ) {
+            MKDEBUG && _d("$unique_key->{name} constrains $key->{name}");
+            push @constrainers, $unique_key;
+         }
+      }
+      next KEY unless @constrainers;
+
+      @constrainers = sort { $a->{len_cols}<=>$b->{len_cols} } @constrainers;
+      my $min_constrainer = shift @constrainers;
+      MKDEBUG && _d("$key->{name} min constrainer: $min_constrainer->{name}");
+
+      foreach my $constrainer ( @constrainers ) {
+         for my $i ( 0..$#unique_keys ) {
+            if ( $unique_keys[$i]->{name} eq $constrainer->{name} ) {
+               my $dupe = {
+                  key          => $constrainer->{name},
+                  duplicate_of => $min_constrainer->{name},
+                  reason       =>
+                       "$constrainer->{name} ($constrainer->{cols}) "
+                     . 'is an unnecessary UNIQUE constraint for '
+                     . "$key->{name} ($key->{cols}) because "
+                     . "$min_constrainer->{name} ($min_constrainer->{cols}) "
+                     . 'alone preserves key column uniqueness'
+               };
+               push @dupes, $dupe;
+               delete $unique_keys[$i];
+               $args{callback}->($dupe, %pass_args) if $args{callback};
             }
          }
       }
    }
 
-   return \@result;
+   MKDEBUG && _d('Start comparing FULLTEXT keys');
+   _remove_duplicate_left_prefixes(
+         keys             => \@fulltext_keys,
+         exact_duplicates => 1,
+         %pass_args);
+
+
+   if ( $primary_key
+        && $args{clustered}
+        && $args{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
+
+      MKDEBUG && _d('Start removing clustered UNIQUE key dupes');
+      ($good_keys, $dupe_keys) = _remove_duplicate_cluster_keys(
+            primary_key => $primary_key,
+            keys        => \@unique_keys,
+            %pass_args);
+      push @dupes, @$dupe_keys;
+      @unique_keys = @$good_keys;
+
+      MKDEBUG && _d('Start removing clustered regular key dupes');
+      ($good_keys, $dupe_keys) = _remove_duplicate_cluster_keys(
+            primary_key => $primary_key,
+            keys        => \@keys,
+            %pass_args);
+      push @dupes, @$dupe_keys;
+      @keys = @$good_keys;
+   }
+
+   return \@dupes;
 }
 
 sub get_duplicate_fks {
-   my ( $self, $fks, $opts ) = @_;
+   my ( $self, %args ) = @_;
+   die "I need a keys argument" unless $args{keys};
+   my $fks = $args{keys};
    my @fks = @$fks;
-   my %seen; # Avoid outputting a fk more than once.
-   my @result;
+   my @dupes;
    foreach my $i ( 0..$#fks - 1 ) {
+      next unless $fks[$i];
       foreach my $j ( $i+1..$#fks ) {
-         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
-         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
-         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
-         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+         next unless $fks[$j];
+         my $i_cols = join(', ',
+            map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
+         my $j_cols = join(', ',
+            map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
+         my $i_fkcols = join(', ',
+            map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
+         my $j_fkcols = join(', ',
+            map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
+
          if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
-               && $i_cols eq $j_cols
-               && $i_fkcols eq $j_fkcols
-         ) {
-            push @result, $fks[$i] unless $seen{$i}++;
-            push @result, $fks[$j] unless $seen{$j}++;
+              && $i_cols   eq $j_cols
+              && $i_fkcols eq $j_fkcols ) {
+            my $dupe = {
+               key          => $fks[$j]->{name},
+               duplicate_of => $fks[$i]->{name},
+               reason       =>
+                    "FOREIGN KEY $fks->[$j]->{name} ($fks->[$j]->{cols}) "
+                  . "REFERENCES $fks->[$j]->{parent} ($fks->[$j]->{fkcols}) "                     .  'is a duplicate of '
+                  . "FOREIGN KEY $fks->[$i]->{name} ($fks->[$i]->{cols}) "
+                  . "REFERENCES $fks->[$i]->{parent} ($fks->[$i]->{fkcols})"
+            };
+            push @dupes, $dupe;
+            delete $fks[$j];
+            $args{callback}->($dupe, %args) if $args{callback};
          }
       }
    }
-
-   return \@result;
+   return \@dupes;
 }
 
 sub _d {
@@ -3746,7 +4008,7 @@ my %ea;     # EventAggregators
    # terminates the chain).
    # ##########################################################################
    my @callbacks;
-   if ( grep { m/fingerprint/ } @{$opts{groupby}} ) {
+   if ( grep { $_ eq 'fingerprint' } @{$opts{groupby}} ) {
       push @callbacks, sub {
          my ( $event ) = @_;
          # TODO: save db and ts from last event and apply it here.  (Before skipping!)
@@ -3757,7 +4019,7 @@ my %ea;     # EventAggregators
          return $event;
       };
    }
-   if ( grep { m/tables/ } @{$opts{groupby}} ) {
+   if ( grep { $_ eq 'tables' } @{$opts{groupby}} ) {
       push @callbacks, sub {
          my ( $event ) = @_;
          my $group_by_val = $event->{arg};
@@ -3773,6 +4035,18 @@ my %ea;     # EventAggregators
             }
             $qp->get_tables($group_by_val)
          ];
+         return $event;
+      };
+   }
+   if ( grep { $_ eq 'distill' } @{$opts{groupby}} ) {
+      push @callbacks, sub {
+         my ( $event ) = @_;
+         my $group_by_val = $event->{arg};
+         return 0 unless defined $group_by_val;
+         $event->{distill} = $qr->distill($group_by_val);
+         if ( !$event->{distill} ) {
+            print $event->{arg}, "\n";
+         }
          return $event;
       };
    }
@@ -4563,17 +4837,30 @@ values to --orderby, for your convenience.  And, since L<"--report">
 automatically adds values to --groupby, these cascade through to --orderby.  So
 you generally don't need to think about anything except --report.
 
-There are two magical values that cause some extra data mining to happen before
-the grouping takes place.   These are C<tables> and C<fingerprint>.
+There are several magical values that cause some extra data mining to happen before
+the grouping takes place:
 
-The default value 'fingerprint' causes events to be fingerprinted to abstract
-queries into a canonical form, which is then used to group events together into
-a class.
+=over
 
-The special value C<tables> causes events to be inspected for what appear to be
-tables, and then aggregated by that.  Note that a query that contains two or
-more tables will be counted as many times as there are tables; so a join against
-two tables will count the Query_time against both tables.
+=item *
+
+B<fingerprint>.  This causes events to be fingerprinted to abstract queries into
+a canonical form, which is then used to group events together into a class.  See
+L<"INTERNALS"> for more about fingerprinting.
+
+=item *
+
+B<tables>.  This causes events to be inspected for what appear to be tables, and
+then aggregated by that.  Note that a query that contains two or more tables
+will be counted as many times as there are tables; so a join against two tables
+will count the Query_time against both tables.
+
+=item *
+
+B<distill>.  This is a sort of super-fingerprint that collapses queries down
+into a suggestion of what they do, such as C<INSERT SELECT table1 table2>.
+
+=back
 
 =item --[no]header
 
