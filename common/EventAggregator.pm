@@ -486,6 +486,9 @@ sub top_events {
    my @sorted = reverse sort { # Sorted list of $groupby values
       $classes->{$a}->{$args{attrib}}->{$args{orderby}}
          <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
+      } grep {
+         # Defensive programming
+         defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
       } keys %$classes;
    my @chosen;
    my ($total, $count) = (0, 0);

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 21;
+use Test::More tests => 22;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -655,6 +655,21 @@ is_deeply( \@chosen, [qw(event2 event3 event1)], 'Got top events' );
 
 is_deeply( \@chosen, [qw(event2 event3 event1 event0)],
    'Got top events with outlier' );
+
+# Try to make it fail
+eval {
+   $ea->aggregate({foo         => 'FAIL'});
+   $ea->aggregate({fingerprint => 'FAIL'});
+   # but not this one -- the caller should eval to catch this.
+   # $ea->aggregate({fingerprint => 'FAIL2', Query_time => 'FAIL' });
+   @chosen = $ea->top_events(
+      groupby => 'fingerprint',
+      attrib  => 'Query_time',
+      orderby => 'sum',
+      count   => 2,
+   );
+};
+is($EVAL_ERROR, '', 'It handles incomplete/malformed events');
 
 $events = [
    {  Query_time    => '0.000652',
