@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 92;
+use Test::More tests => 94;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -677,6 +677,18 @@ is($q->distill(
    'UPDATE GARDEN_CLUPL GARDENJOB APLTRACT_GARDENPLANT',
    'distills where there is alias and comma-join',
 );
+
+is(
+   $q->distill(q{SELECT STRAIGHT_JOIN distinct foo, bar FROM A, B, C}),
+   'SELECT A B C',
+   'distill with STRAIGHT_JOIN',
+);
+
+is(
+   $q->distill(
+      'replace into checksum.checksum select `last_update`, `foo` from foo.foo'),
+   'REPLACE SELECT checksum.checksum foo.foo',
+   'distill with reserved words');
 
 is($q->distill('SHOW STATUS'), 'SHOW', 'distill SHOW');
 

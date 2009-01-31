@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 35;
+use Test::More tests => 37;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -192,5 +192,17 @@ is_deeply(
    [qw(checksum.checksum `foo`.`bar`)],
    'gets tables from nasty checksum query',
 );
+
+is_deeply(
+   [ $qp->get_tables(q{SELECT STRAIGHT_JOIN distinct foo, bar FROM A, B, C}) ],
+   [qw(A B C)],
+   'gets tables from STRAIGHT_JOIN',
+);
+
+is_deeply(
+   [ $qp->get_tables(
+      'replace into checksum.checksum select `last_update`, `foo` from foo.foo')],
+   [qw(checksum.checksum foo.foo)],
+   'gets tables with reserved words');
 
 exit;

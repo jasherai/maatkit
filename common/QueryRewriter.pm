@@ -160,7 +160,7 @@ sub distill {
    my @tables;
    foreach my $tbls (
       $query =~ m{
-         (?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
+         \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
          \b\s*
          # Capture the identifier and any number of comma-join identifiers that
          # follow it, optionally with aliases with or without the AS keyword

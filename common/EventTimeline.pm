@@ -158,7 +158,9 @@ sub make_handler {
 
 sub report {
    my ( $self, $results, $callback ) = @_;
+   $callback->("# " . ('#' x 72));
    $callback->("# " . join(',', @{$self->{groupby}}) . " report\n");
+   $callback->("# " . ('#' x 72));
    foreach my $res ( @$results ) {
       my $t;
       my @vals;
