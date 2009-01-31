@@ -113,6 +113,7 @@ sub parse_table_aliases {
 }
 
 # Returns an array of tables to which the query refers.
+# XXX If you change this code, also change QueryRewriter::distill().
 sub get_tables {
    my ( $self, $query ) = @_;
    my $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
@@ -124,7 +125,7 @@ sub get_tables {
          # Capture the identifier and any number of comma-join identifiers that
          # follow it, optionally with aliases with or without the AS keyword
          ($ident
-            (?:\s*(?:(?:AS\s*)?\S*)?,\s*$ident)*
+            (?:\s*(?:(?:AS\s*)?\w*)?,\s*$ident)*
          )
       }xgio)
    {
