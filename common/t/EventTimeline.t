@@ -125,7 +125,9 @@ is_deeply( $et->results,
    $result, 'Simple fingerprint aggregation' );
 
 $expected = <<EOF;
+# ########################################################################
 # fingerprint report
+# ########################################################################
 # 2007-10-15 21:43:52    0:00   1 select id from users where name=?
 # 2007-10-15 21:43:52   06:00   2 insert ignore into articles (id, body,)values(?+)
 # 2007-10-15 21:43:52    0:00   1 select id from users where name=?
