@@ -28,7 +28,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 # A list of verbs that can appear in queries.  I know this is incomplete -- it
 # does not have CREATE, DROP, ALTER, TRUNCATE for example.  But I don't need
-# those for my client yet.
+# those for my client yet.  Other verbs: KILL, LOCK, UNLOCK
 our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
                   |UPDATE|DELETE|REPLACE|^SET|UNION|^START}xi;
 our $ident   = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
