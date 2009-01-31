@@ -7,8 +7,3 @@
 --	  `b` int(11) default NULL
 -- To remove this duplicate key, execute:
 ALTER TABLE `test`.`dupe_key` DROP KEY `a`;
---
--- Summary of keys       
--- Size Duplicate Keys   0
--- Total Duplicate Keys  1
--- Total Keys            2
