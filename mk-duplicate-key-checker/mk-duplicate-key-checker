@@ -2411,6 +2411,10 @@ my $dbh = $dp->get_dbh( $dp->get_cxn_params(\%opts), { AutoCommit => 1 } );
 
 my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
 
+my $max_width = 74;
+my $hdr_width = $max_width - 2;  # for '# '
+my $hdr_fmt   = "# %-${hdr_width}s\n";
+
 my %summary;
 my %seen_tbl;
 my $ks = $opts{summary} ? new KeySize() : undef;
@@ -2498,11 +2502,15 @@ sub print_all_keys {
    return unless $keys;
    my $db  = $tbl_info->{db};
    my $tbl = $tbl_info->{tbl};
-   print "--\n-- All keys on table $db.$tbl\n--\n"
-      if !$seen_tbl{"$db$tbl"}++;
-   foreach my $key ( @$keys ) {
-      print "-- $key->{name} ($key->{cols})\n";
+   if ( !$seen_tbl{"$db$tbl"}++ ) {
+      printf $hdr_fmt, ('#' x $hdr_width);
+      printf $hdr_fmt, "$db.$tbl";
+      printf $hdr_fmt, ('#' x $hdr_width);
    }
+   foreach my $key ( @$keys ) {
+      print "\n# $key->{name} ($key->{cols})";
+   }
+   print "\n";
    return;
 }
 
@@ -2513,23 +2521,28 @@ sub print_duplicate_key {
    my $tbl    = $args{tbl_info}->{tbl};
    my $struct = $tp->parse($args{tbl_info}->{ddl});
 
-   print "--\n-- Duplicate keys on table $db.$tbl\n--\n"
-      if !$seen_tbl{"$db$tbl"}++;
+   if ( !$seen_tbl{"$db$tbl"}++ ) {
+      printf $hdr_fmt, ('#' x $hdr_width);
+      printf $hdr_fmt, "$db.$tbl";
+      printf $hdr_fmt, ('#' x $hdr_width);
+      print "\n";
+   }
 
-   print "-- $dupe->{reason}\n";
+   print "# $dupe->{reason}\n";
 
-   print "-- Column types:\n";
+   print "# Column types:\n";
    my %seen_col;
    my @cols = map { s/`//g; $_; }
               grep { $_ if !$seen_col{$_}++; }
               split(',', "$dupe->{cols},$dupe->{duplicate_of_cols}");
    foreach my $col ( @cols ) {
-      print "--\t" . $struct->{defs}->{$col} . "\n";
+      print "#\t" . $struct->{defs}->{$col} . "\n";
    }
 
-   print "-- To remove this duplicate key, execute:\n"
+   print "# To remove this duplicate key, execute:\n"
       . 'ALTER TABLE '.$q->quote($db, $tbl)." DROP KEY `$dupe->{key}`;\n"
          if $opts{sql};
+   print "\n";
 
    if ( $opts{summary} ) {
       $summary{'Total Duplicate Keys'} += 1;
@@ -2549,9 +2562,12 @@ sub print_duplicate_key {
 # TODO: would be nice to shorten/format some of these values.
 sub print_key_summary {
    my ( %summary ) = @_;
-   my $max_item = max(17, map { length($_) } keys %summary);
-   my $line_fmt = "-- %-${max_item}s  %-s\n";
-   printf "--\n$line_fmt", 'Summary of keys', '';
+   printf $hdr_fmt, ('#' x $hdr_width);
+   printf $hdr_fmt, 'Summary of keys';
+   printf $hdr_fmt, ('#' x $hdr_width);
+   print "\n";
+   my $max_item = max(map { length($_) } keys %summary);
+   my $line_fmt = "# %-${max_item}s  %-s\n";
    foreach my $item ( sort keys %summary ) {
       printf $line_fmt, $item, $summary{$item};
    }
