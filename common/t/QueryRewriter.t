@@ -51,21 +51,33 @@ is(
 );
 
 is(
+   $q->distill("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
+   "SELECT film",
+   'Distills mysqldump SELECTs to selects',
+);
+
+is(
    $q->fingerprint("CALL foo(1, 2, 3)"),
    "call foo",
    'Fingerprints stored procedure calls specially',
 );
 
 is(
-   $q->fingerprint("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
-   "mysqldump",
-   'Fingerprints all mysqldump SELECTs together',
+   $q->distill("CALL foo(1, 2, 3)"),
+   "call foo",
+   'Distills stored procedure calls specially',
 );
 
 is(
    $q->fingerprint('# administrator command: Init DB'),
    '# administrator command: Init DB',
    'Fingerprints admin commands as themselves',
+);
+
+is(
+   $q->distill('# administrator command: Init DB'),
+   'administrator command',
+   'Distills admin commands together',
 );
 
 is(
@@ -93,15 +105,51 @@ is(
 );
 
 is(
+   $q->distill(
+      q{REPLACE /*foo.bar:3/3*/ INTO checksum.checksum (db, tbl, }
+      .q{chunk, boundaries, this_cnt, this_crc) SELECT 'foo', 'bar', }
+      .q{2 AS chunk_num, '`id` >= 2166633', COUNT(*) AS cnt, }
+      .q{LOWER(CONV(BIT_XOR(CAST(CRC32(CONCAT_WS('#', `id`, `created_by`, }
+      .q{`created_date`, `updated_by`, `updated_date`, `ppc_provider`, }
+      .q{`account_name`, `provider_account_id`, `campaign_name`, }
+      .q{`provider_campaign_id`, `adgroup_name`, `provider_adgroup_id`, }
+      .q{`provider_keyword_id`, `provider_ad_id`, `foo`, `reason`, }
+      .q{`foo_bar_bazz_id`, `foo_bar_baz`, CONCAT(ISNULL(`created_by`), }
+      .q{ISNULL(`created_date`), ISNULL(`updated_by`), ISNULL(`updated_date`), }
+      .q{ISNULL(`ppc_provider`), ISNULL(`account_name`), }
+      .q{ISNULL(`provider_account_id`), ISNULL(`campaign_name`), }
+      .q{ISNULL(`provider_campaign_id`), ISNULL(`adgroup_name`), }
+      .q{ISNULL(`provider_adgroup_id`), ISNULL(`provider_keyword_id`), }
+      .q{ISNULL(`provider_ad_id`), ISNULL(`foo`), ISNULL(`reason`), }
+      .q{ISNULL(`foo_base_foo_id`), ISNULL(`fooe_foo_id`)))) AS UNSIGNED)), 10, }
+      .q{16)) AS crc FROM `foo`.`bar` USE INDEX (`PRIMARY`) WHERE }
+      .q{(`id` >= 2166633); }),
+   'REPLACE checksum.checksum SELECT foo.bar',
+   'Distills mk-table-checksum query',
+);
+
+is(
    $q->fingerprint("use `foo`"),
    "use ?",
    'Removes identifier from USE',
 );
 
 is(
+   $q->distill("use `foo`"),
+   "USE foo",
+   'distills USE',
+);
+
+is(
    $q->fingerprint("select \n--bar\n foo"),
    "select foo",
    'Removes one-line comments in fingerprints',
+);
+
+is(
+   $q->distill("select \n--bar\n foo"),
+   "SELECT",
+   'distills queries from DUAL',
 );
 
 is(
@@ -131,9 +179,21 @@ is(
 );
 
 is(
+   $q->distill("select null, 5.001, 5001. from foo"),
+   "SELECT foo",
+   "distills simple select",
+);
+
+is(
    $q->fingerprint("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
    "select ?, ?, ?, ? from foo",
    "Handles quoted strings",
+);
+
+is(
+   $q->distill("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
+   "SELECT foo",
+   "distills with quoted strings",
 );
 
 is(
@@ -203,6 +263,12 @@ is(
    'Numeric table names',
 );
 
+is(
+   $q->distill("select foo_1 from foo_2_3"),
+   'SELECT foo_?_?',
+   'distills numeric table names',
+);
+
 # 123f00 => ?oo because f "looks like it could be a number".
 is(
    $q->fingerprint("select 123foo from 123foo", { prefixes => 1 }),
@@ -223,9 +289,21 @@ is(
 );
 
 is(
+   $q->distill("insert into abtemp.coxed select foo.bar from foo"),
+   'INSERT abtemp.coxed SELECT foo',
+   'distills insert/select',
+);
+
+is(
    $q->fingerprint('insert into foo(a, b, c) values(2, 4, 5)'),
    'insert into foo(a, b, c) values(?+)',
    'VALUES lists',
+);
+
+is(
+   $q->distill('insert into foo(a, b, c) values(2, 4, 5)'),
+   'INSERT foo',
+   'distills value lists',
 );
 
 is(
@@ -265,9 +343,21 @@ is(
 );
 
 is(
+   $q->distill('select 1 union select 2 union select 4'),
+   'SELECT UNION /*repeat union*/',
+   'union distills together',
+);
+
+is(
    $q->fingerprint('select 1 union all select 2 union all select 4'),
    'select ? /*repeat union all*/',
    'union all fingerprints together',
+);
+
+is(
+   $q->distill('select 1 union all select 2 union all select 4'),
+   'SELECT UNION /*repeat union*/',
+   'union all distills together',
 );
 
 is(
@@ -330,6 +420,14 @@ is(
 );
 
 is(
+   $q->distill(
+      'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
+   ),
+   'REPLACE foo ODKU',
+   'distills ODKU',
+);
+
+is(
    $q->convert_to_select(
       'replace into foo(a, b, c) values(now(), "3", 5)',
    ),
@@ -354,6 +452,14 @@ is(
 );
 
 is(
+   $q->distill(
+      'insert into foo select * from bar join baz using (bat)',
+   ),
+   'INSERT foo SELECT bar, baz',
+   'distills insert select',
+);
+
+is(
    $q->convert_to_select(
       'insert into foo select * from bar where baz=bat on duplicate key update',
    ),
@@ -370,11 +476,27 @@ is(
 );
 
 is(
+   $q->distill(
+      'update foo set bar=baz where bat=fiz',
+   ),
+   'UPDATE foo',
+   'distills update',
+);
+
+is(
    $q->convert_to_select(
       'update foo inner join bar using(baz) set big=little',
    ),
    'select  big=little from foo inner join bar using(baz) ',
    'delete inner join',
+);
+
+is(
+   $q->distill(
+      'update foo inner join bar using(baz) set big=little',
+   ),
+   'UPDATE foo, bar',
+   'distills update-multi',
 );
 
 is(
@@ -401,6 +523,14 @@ is(
    ),
    'select * from  foo where bar = baz',
    'delete',
+);
+
+is(
+   $q->distill(
+      'delete from foo where bar = baz',
+   ),
+   'DELETE foo',
+   'distills delete',
 );
 
 # Insanity...
@@ -433,6 +563,24 @@ update db2.tbl1 as p
 );
 
 is(
+   $q->distill('
+update db2.tbl1 as p
+   inner join (
+      select p2.col1, p2.col2
+      from db2.tbl1 as p2
+         inner join db2.tbl3 as ba
+            on p2.col1 = ba.tbl3
+      where col4 = 0
+      order by priority desc, col1, col2
+      limit 10
+   ) as chosen on chosen.col1 = p.col1
+      and chosen.col2 = p.col2
+   set p.col4 = 149945'),
+   'UPDATE db2.tbl1 SELECT db2.tbl1, tbl2.tbl3',
+   'distills complex subquery',
+);
+
+is(
    $q->convert_to_select(q{INSERT INTO foo.bar (col1, col2, col3)
        VALUES ('unbalanced(', 'val2', 3)}),
    q{select * from  foo.bar  where col1='unbalanced(' and  }
@@ -446,6 +594,12 @@ is(
    'Do not select * from a join',
 );
 
+is(
+   $q->distill(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
+   'DELETE foo.bar, baz.bat',
+   'distills and then collapses same tables',
+);
+
 is (
    $q->convert_to_select(q{
 REPLACE DELAYED INTO
@@ -453,6 +607,16 @@ REPLACE DELAYED INTO
 VALUES ('617653','2007-09-11')}),
    qq{select * from \n`db1`.`tbl2` where `col1`='617653' and col2='2007-09-11'},
    'replace delayed',
+);
+
+is (
+   $q->distill(q{
+REPLACE DELAYED INTO
+`db1`.`tbl2`(`col1`,col2)
+VALUES ('617653','2007-09-11')}),
+   qq{select * from \n`db1`.`tbl2` where `col1`='617653' and col2='2007-09-11'},
+   'REPLACE db1.tbl2',
+   'distills replace-delayed',
 );
 
 is(
@@ -480,6 +644,12 @@ is(
 );
 
 is(
+   $q->distill('set timestamp=134'),
+   'SET',
+   'distills set',
+);
+
+is(
    $q->convert_select_list('select * from tbl'),
    'select 1 from tbl',
    'Star to one',
@@ -503,9 +673,20 @@ is($q->convert_to_select(
    'update with no space between quoted string and where (issue 168)'
 );
 
+is($q->distill(
+   q{UPDATE GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU SET }
+   . q{GC.MATCHING_POT = 5, GC.LAST_GARDENPOT = 5, GC.LAST_NAME=}
+   . q{'Rotary', GC.LAST_BUCKET='Pail', GC.LAST_UPDATE='2008-11-27 04:00:59'WHERE}
+   . q{ PL.APLTRACT_GARDENPLANT_ID = GC.APLTRACT_GARDENPLANT_ID AND PL.}
+   . q{APLTRACT_GARDENPLANT_ID = ABU.ID AND GC.MATCHING_POT = 0 AND GC.PERFORM_DIG=1}
+   . q{ AND ABU.DIG = 6 AND ( ((SOIL-COST) > -80.0}
+   . q{ AND BUGS < 60.0 AND (SOIL-COST) < 200.0) AND POTS < 10.0 )}),
+   'UPDATE GARDEN_CLUPL, GARDENJOB, APLTRACT_GARDENPLANT',
+   'distills where there is alias and comma-join',
+);
+
 is(
    $q->convert_to_select("UPDATE tbl SET col='wherex'WHERE crazy=1"),
    "select  col='wherex' from tbl where  crazy=1",
    "update with SET col='wherex'WHERE"
 );
-
