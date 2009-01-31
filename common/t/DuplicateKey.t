@@ -19,21 +19,35 @@ sub load_file {
    close $fh;
    return $contents;
 }
+use Data::Dumper;
+my $dupes;
+my $callback = sub {
+   push @$dupes, $_[0];
+};
 
 my $opt = { version => '004001000' };
 my $ddl;
+my $tbl;
 
-$ddl = load_file('samples/one_key.sql');
+$ddl   = load_file('samples/one_key.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [
    ],
    'One key, no dupes'
 );
 
-$ddl = load_file('samples/dupe_key.sql');
+$ddl   = load_file('samples/dupe_key.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [
       {
          'key'          => 'a',
@@ -44,9 +58,13 @@ is_deeply(
    'Two dupe keys on table dupe_key'
 );
 
-$ddl = load_file('samples/dupe_key_reversed.sql');
+$ddl   = load_file('samples/dupe_key_reversed.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [
       {
          'key'          => 'a',
@@ -60,9 +78,13 @@ is_deeply(
 # This test might fail if your system sorts a_3 before a_2, because the
 # keys are sorted by columns, not name. If this happens, then a_3 will
 # duplicate a_2.
-$ddl = load_file('samples/dupe_keys_thrice.sql');
+$ddl   = load_file('samples/dupe_keys_thrice.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [
       {
          'key'          => 'a',
@@ -78,15 +100,24 @@ is_deeply(
    'Dupe keys only output once'
 );
 
-$ddl = load_file('samples/nondupe_fulltext.sql');
+$ddl   = load_file('samples/nondupe_fulltext.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [
    ],
    'No dupe keys b/c of fulltext'
 );
+$dupes = [];
+$tp->get_duplicate_keys(
+   ignore_type => 1,
+   keys        => $tp->get_keys($ddl, $opt),
+   callback    => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt), { ignore_type => 1 }),
+   $dupes,
    [
       {
          'key'          => 'a',
@@ -97,17 +128,25 @@ is_deeply(
    'Dupe keys when ignoring type'
 );
 
-$ddl = load_file('samples/nondupe_fulltext_not_exact.sql');
+$ddl   = load_file('samples/nondupe_fulltext_not_exact.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [
    ],
    'No dupe keys b/c fulltext requires exact match (issue 10)'
 );
 
-$ddl = load_file('samples/dupe_fulltext_exact.sql');
+$ddl   = load_file('samples/dupe_fulltext_exact.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [
       {
          'key'          => 'ft_idx_a_b_1',
@@ -118,9 +157,13 @@ is_deeply(
    'Dupe exact fulltext keys (issue 10)'
 );
 
-$ddl = load_file('samples/dupe_fulltext_reverse_order.sql');
+$ddl   = load_file('samples/dupe_fulltext_reverse_order.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [
       {
          'key'          => 'ft_idx_a_b',
@@ -131,15 +174,24 @@ is_deeply(
    'Dupe reverse order fulltext keys (issue 10)'
 );
 
-$ddl = load_file('samples/dupe_key_unordered.sql');
+$ddl   = load_file('samples/dupe_key_unordered.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [
    ],
    'No dupe keys because of order'
 );
+$dupes = [];
+$tp->get_duplicate_keys(
+   ignore_order => 1,
+   keys         => $tp->get_keys($ddl, $opt),
+   callback     => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt), { ignore_order => 1 }),
+   $dupes,
    [
       {
          'key'          => 'a',
@@ -150,35 +202,28 @@ is_deeply(
    'Two dupe keys when ignoring order'
 );
 
-$ddl = load_file('samples/dupe_fk_one.sql');
-is_deeply(
-   $tp->get_duplicate_fks($tp->get_fks($ddl, { database => 'test' } )),
-   [
-      {
-         'key'          => 't1_ibfk_2',
-         'duplicate_of' => 't1_ibfk_1',
-         'reason'       => 'FOREIGN KEY t1_ibfk_2 (`b`, `a`) REFERENCES `test`.`t2` (`b`, `a`) is a duplicate of FOREIGN KEY t1_ibfk_1 (`a`, `b`) REFERENCES `test`.`t2` (`a`, `b`)',
-      },
-   ],
-   'Two duplicate foreign keys'
-);
+# #############################################################################
+# Clustered key tests.
+# #############################################################################
+$ddl   = load_file('samples/innodb_dupe.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
 
-$ddl = load_file('samples/sakila_film.sql');
 is_deeply(
-   $tp->get_duplicate_fks($tp->get_fks($ddl, { database => 'sakila' } )),
-   [
-   ],
-   'No duplicate foreign keys in sakila_film.sql'
-);
-
-$ddl = load_file('samples/innodb_dupe.sql');
-is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt)),
+   $dupes,
    [],
    'No duplicate keys with ordinary options'
 );
+$dupes = [];
+$tp->get_duplicate_keys(
+   clustered => 1,
+   engine    => 'InnoDB',
+   keys      => $tp->get_keys($ddl, $opt),
+   callback  => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt), { clustered => 1, engine => 'InnoDB' }),
+   $dupes,
    [
       {
          'key'          => 'b',
@@ -190,22 +235,67 @@ is_deeply(
 );
 
 $ddl = load_file('samples/dupe_if_it_were_innodb.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   clustered => 1,
+   engine    => 'MyISAM',
+   keys      => $tp->get_keys($ddl, $opt),
+   callback  => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt), { clustered => 1, engine => 'MyISAM' }),
-   [
-   ],
+   $dupes,
+   [],
    'No cluster-duplicate keys because not InnoDB'
 );
 
 # This table is a test case for an infinite loop I ran into while writing the
 # cluster stuff
 $ddl = load_file('samples/mysql_db.sql');
+$dupes = [];
+$tp->get_duplicate_keys(
+   clustered => 1,
+   engine    => 'InnoDB',
+   keys      => $tp->get_keys($ddl, $opt),
+   callback  => $callback);
 is_deeply(
-   $tp->get_duplicate_keys($tp->get_keys($ddl, $opt), { clustered => 1, engine => 'InnoDB' }),
+   $dupes,
    [
    ],
    'No cluster-duplicate keys in mysql.db'
 );
+
+# #############################################################################
+# Duplicate FOREIGN KEY tests.
+# #############################################################################
+$ddl   = load_file('samples/dupe_fk_one.sql');
+$dupes = [];
+$tp->get_duplicate_fks(
+   keys     => $tp->get_fks($ddl, {database => 'test'}),
+   callback => $callback);
+is_deeply(
+   $dupes,
+   [
+      {
+         'key'          => 't1_ibfk_2',
+         'duplicate_of' => 't1_ibfk_1',
+         'reason'       => 'FOREIGN KEY t1_ibfk_2 (`b`, `a`) REFERENCES `test`.`t2` (`b`, `a`) is a duplicate of FOREIGN KEY t1_ibfk_1 (`a`, `b`) REFERENCES `test`.`t2` (`a`, `b`)',
+      },
+   ],
+   'Two duplicate foreign keys'
+);
+
+$ddl   = load_file('samples/sakila_film.sql');
+$dupes = [];
+$tp->get_duplicate_fks(
+   keys     => $tp->get_fks($ddl, {database => 'sakila'}),
+   callback => $callback);
+is_deeply(
+   $dupes,
+   [
+   ],
+   'No duplicate foreign keys in sakila_film.sql'
+);
+exit;
+# TODO: update tests below
 
 # #############################################################################
 # Issue 9: mk-duplicate-key-checker should treat unique and FK indexes specially

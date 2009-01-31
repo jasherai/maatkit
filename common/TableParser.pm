@@ -309,10 +309,12 @@ sub get_fks {
       my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
       my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
       my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
-      if ( $parent !~ m/\./ ) {
+      if ( $parent !~ m/\./ && $opts->{database} ) {
          $parent = "`$opts->{database}`.$parent";
       }
-      {  name   => $name,
+
+      {
+         name   => $name,
          parent => $parent,
          cols   => $cols,
          fkcols => $fkcols,
@@ -322,69 +324,67 @@ sub get_fks {
 }
 
 sub _remove_duplicate_left_prefixes {
-   my ( $preferred_keys, $secondary_keys, %args ) = @_;
-   return unless $preferred_keys;
+   my ( %args ) = @_;
+   die "I need a keys argument" unless $args{keys};
+   my $keys;
+   my $remove_keys;
    my @dupes;
-   my ($rm_from, $keep_in);
-   my ($rm_key, $keep_key);
-   my ($last_i, $j_offset);
+   my $keep_index;
+   my $remove_index;
+   my $last_key;
+   my $remove_key_offset;
 
-   my $i_keys = [];
-   @$i_keys   = sort { $a->{cols} cmp $b->{cols} }
-                     grep { defined $_; }
-                     @$preferred_keys;
+   $keys  = $args{keys};
+   @$keys = sort { $a->{cols} cmp $b->{cols} }
+            grep { defined $_; }
+            @$keys;
 
-   my $j_keys;
-   if ( $secondary_keys ) {
-      # If secondary keys are given, then the preferred keys
-      # really are preferred, so we remove secondary keys.
-      @$j_keys  = sort { $a->{cols} cmp $b->{cols} }
-                  grep { defined $_; }
-                  @$secondary_keys;
-      $rm_key   = 1; # secondary (j keys)
-      $keep_key = 0; # preferred (i keys)
-      $rm_from  = $j_keys;
-      $keep_in  = $i_keys;
-      $last_i   = scalar @$i_keys - 1;
-      $j_offset = 0;
+   if ( $args{remove_keys} ) {
+      $remove_keys  = $args{remove_keys};
+      @$remove_keys = sort { $a->{cols} cmp $b->{cols} }
+                      grep { defined $_; }
+                      @$remove_keys;
+
+      $remove_index      = 0;
+      $keep_index        = 1;
+      $last_key          = $#{@$keys};
+      $remove_key_offset = 0;
    }
    else {
-      # If secondary keys are not given, then the preferred and
-      # secondary keys are really the same list of keys, so we
-      # remove i keys;
-      $j_keys   = $i_keys;
-      $rm_key   = 0; # i keys
-      $keep_key = 1; # j keys
-      $rm_from  = $i_keys;
-      $keep_in  = $j_keys;
-      $last_i   = scalar @$i_keys - 2;
-      $j_offset = 1;
+      $remove_keys       = $keys;
+      $remove_index      = 0;
+      $keep_index        = 1;
+      $last_key          = ($#{@$keys}) - 1;
+      $remove_key_offset = 1;
    }
-   my $n_j_keys = scalar @$j_keys - 1;
+   my $last_remove_key = $#{@$remove_keys};
 
    I_KEY:
-   foreach my $i ( 0..$last_i ) {
-      next I_KEY unless defined $i_keys->[$i];
+   foreach my $i ( 0..$last_key ) {
+      next I_KEY unless defined $keys->[$i];
 
       J_KEY:
-      foreach my $j ( $i+$j_offset..$n_j_keys ) {
-         next KEY_J unless defined $j_keys->[$j];
+      foreach my $j ( $i+$remove_key_offset..$last_remove_key ) {
+         next KEY_J unless defined $remove_keys->[$j];
 
-         my $keep = ($i, $j)[$keep_key];
-         my $rm   = ($i, $j)[$rm_key];
+         my $keep = ($i, $j)[$keep_index];
+         my $rm   = ($i, $j)[$remove_index];
 
-         my $keep_name     = $keep_in->[$keep]->{name};
-         my $keep_cols     = $keep_in->[$keep]->{cols};
-         my $keep_len_cols = $keep_in->[$keep]->{len_cols};
-         my $rm_name       = $rm_from->[$rm]->{name};
-         my $rm_cols       = $rm_from->[$rm]->{cols};
-         my $rm_len_cols   = $rm_from->[$rm]->{len_cols};
+         my $keep_name     = $keys->[$keep]->{name};
+         my $keep_cols     = $keys->[$keep]->{cols};
+         my $keep_len_cols = $keys->[$keep]->{len_cols};
+         my $rm_name       = $remove_keys->[$rm]->{name};
+         my $rm_cols       = $remove_keys->[$rm]->{cols};
+         my $rm_len_cols   = $remove_keys->[$rm]->{len_cols};
+
+         my $min_len_cols  = min($keys->[$keep]->{len_cols},
+                                 $remove_keys->[$rm]->{len_cols});
 
          MKDEBUG && _d("Comparing [keep] $keep_name ($keep_cols) "
             . "to [remove if dupe] $rm_name ($rm_cols)");
 
-         if (    substr($rm_cols, 0, $rm_len_cols)
-              eq substr($keep_cols, 0, $rm_len_cols) ) {
+         if (    substr($rm_cols, 0, $min_len_cols)
+              eq substr($keep_cols, 0, $min_len_cols) ) {
 
             # FULLTEXT keys, for example, are only duplicates if they
             # are exact duplicates.
@@ -393,22 +393,25 @@ sub _remove_duplicate_left_prefixes {
                next J_KEY;
             }
 
-            MKDEBUG && _d("Remove $rm_from->[$rm]->{name}");
-            my $reason = "$rm_from->[$rm]->{name} "
-                       . "($rm_from->[$rm]->{cols}) is a "
+            MKDEBUG && _d("Remove $remove_keys->[$rm]->{name}");
+            my $reason = "$remove_keys->[$rm]->{name} "
+                       . "($remove_keys->[$rm]->{cols}) is a "
                        . ($rm_len_cols < $keep_len_cols ? 'left-prefix of '
                                                         : 'duplicate of ')
-                       . "$keep_in->[$keep]->{name} "
-                       . "($keep_in->[$keep]->{cols})";
-            push @dupes,
-               {
-                  key          => $rm_name,
-                  duplicate_of => $keep_name,
-                  reason       => $reason,
-               };
-            delete $rm_from->[$rm];
-            next I_KEY if $rm_key == $i;
-            next J_KEY if $rm_key == $j;
+                       . "$keys->[$keep]->{name} "
+                       . "($keys->[$keep]->{cols})";
+            my $dupe = {
+               key          => $rm_name,
+               duplicate_of => $keep_name,
+               reason       => $reason,
+            };
+            push @dupes, $dupe;
+            delete $remove_keys->[$rm];
+
+            $args{callback}->($dupe, %args) if $args{callback};
+
+            next I_KEY if $remove_index == $i;
+            next J_KEY if $remove_index == $j;
          }
          else {
             MKDEBUG && _d("$rm_name not left-prefix of $keep_name");
@@ -417,16 +420,22 @@ sub _remove_duplicate_left_prefixes {
       }
    }
    MKDEBUG && _d('No more keys');
-   @$i_keys = grep { defined $_; } @$i_keys;
-   @$j_keys = grep { defined $_; } @$j_keys if $secondary_keys;
-   return ($i_keys, $j_keys, \@dupes);
+
+   # Remove undef elements.
+   @$keys        = grep { defined $_; } @$keys;
+   @$remove_keys = grep { defined $_; } @$remove_keys if $args{remove_keys};
+
+   push @{$args{duplicate_keys}}, @dupes if $args{duplice_keys};
+
+   return;
 }
 
 sub _remove_duplicate_cluster_keys {
-   my ( $primary_key, $keys ) = @_;
-   return unless $primary_key;
-   my $pkcols = $primary_key->{cols};
-   my @keys = @$keys;
+   my ( %args ) = @_;
+   die "I need a primary_key argument" unless $args{primary_key};
+   die "I need a keys argument"        unless $args{keys};
+   my $pkcols = $args{primary_key}->{cols};
+   my @keys = @{$args{keys}};
    my @dupes;
    KEY:
    for my $i ( 0..$#keys ) {
@@ -435,15 +444,16 @@ sub _remove_duplicate_cluster_keys {
       while ( $suffix =~ s/`[^`]+`,// ) {
          my $len = min(length($pkcols), length($suffix));
          if ( substr($suffix, 0, $len) eq substr($pkcols, 0, $len) ) {
-            push @dupes,
-               {
-                  key          => $keys[$i]->{name},
-                  duplicate_of => $primary_key->{name},
-                  reason       =>
-                       "Clustered key $keys[$i]->{name} ($keys[$i]->{cols}) "
-                     . "is a duplicate of PRIMARY ($primary_key->{cols})",
-               };
+            my $dupe = {
+               key          => $keys[$i]->{name},
+               duplicate_of => $args{primary_key}->{name},
+               reason       =>
+                  "Clustered key $keys[$i]->{name} ($keys[$i]->{cols}) "
+                  . "is a duplicate of PRIMARY ($args{primary_key}->{cols})",
+            };
+            push @dupes, $dupe;
             delete $keys[$i];
+            $args{callback}->($dupe, %args) if $args{callback};
             last SUFFIX;
          }
       }
@@ -454,14 +464,17 @@ sub _remove_duplicate_cluster_keys {
 }
 
 sub get_duplicate_keys {
-   my ( $self, $all_keys, $opts ) = @_;
+   my ( $self, %args ) = @_;
+   die "I need a keys argument" unless $args{keys};
    my $primary_key;
    my @unique_keys;
    my @keys;
    my @fulltext_keys;
+   my %pass_args = %args;
+   delete $pass_args{keys};
 
    ALL_KEYS:
-   foreach my $key ( @$all_keys ) {
+   foreach my $key ( @{$args{keys}} ) {
       $key->{len_cols} = length $key->{cols};
 
       # The PRIMARY KEY is treated specially. It is effectively never a
@@ -477,7 +490,7 @@ sub get_duplicate_keys {
 
       # Key column order matters for all keys except FULLTEXT, so we only
       # sort if --ignoreorder or FULLTEXT.
-      if ( $opts->{ignore_order} || $is_fulltext  ) {
+      if ( $args{ignore_order} || $is_fulltext  ) {
          my $ordered_cols = join(',', sort(split(/,/, $key->{cols})));
          MKDEBUG && _d("Reordered $key->{name} cols "
             . "from ($key->{cols}) to ($ordered_cols)");
@@ -488,7 +501,7 @@ sub get_duplicate_keys {
       # (BTREE, HASH, FULLTEXT, SPATIAL) are kept and compared separately.
       # UNIQUE keys are also separated just to make comparisons easier.
       my $push_to = $key->{unique} ? \@unique_keys : \@keys;
-      if ( !$opts->{ignore_type} ) {
+      if ( !$args{ignore_type} ) {
          $push_to = \@fulltext_keys if $is_fulltext;
          # TODO:
          # $push_to = \@hash_keys     if $is_hash;
@@ -503,35 +516,38 @@ sub get_duplicate_keys {
 
    if ( $primary_key ) {
       MKDEBUG && _d('Start comparing PRIMARY KEY to UNIQUE keys');
-      (undef, $good_keys, $dupe_keys)
-         = _remove_duplicate_left_prefixes([$primary_key], \@unique_keys);
-      push @dupes, @$dupe_keys;
-      @unique_keys = @$good_keys;
+      _remove_duplicate_left_prefixes(
+            keys           => [$primary_key],
+            remove_keys    => \@unique_keys,
+            duplicate_keys => \@dupes,
+            %pass_args);
 
       MKDEBUG && _d('Start comparing PRIMARY KEY to regular keys');
-      (undef, $good_keys, $dupe_keys)
-         = _remove_duplicate_left_prefixes([$primary_key], \@keys);
-      push @dupes, @$dupe_keys;
-      @keys = @$good_keys;
+      _remove_duplicate_left_prefixes(
+            keys           => [$primary_key],
+            remove_keys    => \@keys,
+            duplicate_keys => \@dupes,
+            %pass_args);
    }
 
    MKDEBUG && _d('Start comparing UNIQUE keys');
-   ($good_keys, undef, $dupe_keys)
-      = _remove_duplicate_left_prefixes(\@unique_keys);
-   push @dupes, @$dupe_keys;
-   @unique_keys = @$good_keys;
+   _remove_duplicate_left_prefixes(
+         keys           => \@unique_keys,
+         duplicate_keys => \@dupes,
+         %pass_args);
 
    MKDEBUG && _d('Start comparing regular keys');
-   ($good_keys, undef, $dupe_keys)
-      = _remove_duplicate_left_prefixes(\@keys);
-   push @dupes, @$dupe_keys;
-   @keys = @$good_keys;
+   _remove_duplicate_left_prefixes(
+         keys           => \@keys,
+         duplicate_keys => \@dupes,
+         %pass_args);
 
    MKDEBUG && _d('Start comparing UNIQUE keys to regular keys');
-   (undef, $good_keys, $dupe_keys)
-      = _remove_duplicate_left_prefixes(\@unique_keys, \@keys);
-   push @dupes, @$dupe_keys;
-   @keys = @$good_keys;
+   _remove_duplicate_left_prefixes(
+         keys           => \@unique_keys,
+         remove_keys    => \@keys,
+         duplicate_keys => \@dupes,
+         %pass_args);
 
    MKDEBUG && _d('Start removing unnecessary constraints');
    KEY:
@@ -554,18 +570,19 @@ sub get_duplicate_keys {
       foreach my $constrainer ( @constrainers ) {
          for my $i ( 0..$#unique_keys ) {
             if ( $unique_keys[$i]->{name} eq $constrainer->{name} ) {
-               push @dupes,
-                  {
-                     key          => $constrainer->{name},
-                     duplicate_of => $min_constrainer->{name},
-                     reason       =>
-                          "$constrainer->{name} ($constrainer->{cols}) "
-                        . 'is an unnecessary UNIQUE constraint for '
-                        . "$key->{name} ($key->{cols}) because "
-                        . "$min_constrainer->{name} ($min_constrainer->{cols}) "
-                        . 'alone preserves key column uniqueness'
-                  };
+               my $dupe = {
+                  key          => $constrainer->{name},
+                  duplicate_of => $min_constrainer->{name},
+                  reason       =>
+                       "$constrainer->{name} ($constrainer->{cols}) "
+                     . 'is an unnecessary UNIQUE constraint for '
+                     . "$key->{name} ($key->{cols}) because "
+                     . "$min_constrainer->{name} ($min_constrainer->{cols}) "
+                     . 'alone preserves key column uniqueness'
+               };
+               push @dupes, $dupe;
                delete $unique_keys[$i];
+               $args{callback}->($dupe, %pass_args) if $args{callback};
             }
          }
       }
@@ -574,11 +591,10 @@ sub get_duplicate_keys {
    # If --allstruct, then these special struct keys (FULLTEXT, HASH, etc.)
    # will have already been put in and handled by @keys.
    MKDEBUG && _d('Start comparing FULLTEXT keys');
-   ($good_keys, undef, $dupe_keys)
-      = _remove_duplicate_left_prefixes(\@fulltext_keys, undef,
-            exact_duplicates => 1);
-   push @dupes, @$dupe_keys;
-   @fulltext_keys = @$good_keys;
+   _remove_duplicate_left_prefixes(
+         keys             => \@fulltext_keys,
+         exact_duplicates => 1,
+         %pass_args);
 
    # TODO: other structs
 
@@ -588,18 +604,22 @@ sub get_duplicate_keys {
    #    KEY foo (b, a)
    # Key foo is a duplicate of PRIMARY.
    if ( $primary_key
-        && $opts->{clustered}
-        && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
+        && $args{clustered}
+        && $args{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
 
       MKDEBUG && _d('Start removing clustered UNIQUE key dupes');
-      ($good_keys, $dupe_keys)
-         = _remove_duplicate_cluster_keys($primary_key, \@unique_keys);
+      ($good_keys, $dupe_keys) = _remove_duplicate_cluster_keys(
+            primary_key => $primary_key,
+            keys        => \@unique_keys,
+            %pass_args);
       push @dupes, @$dupe_keys;
       @unique_keys = @$good_keys;
 
       MKDEBUG && _d('Start removing clustered regular key dupes');
-      ($good_keys, $dupe_keys)
-         = _remove_duplicate_cluster_keys($primary_key, \@keys);
+      ($good_keys, $dupe_keys) = _remove_duplicate_cluster_keys(
+            primary_key => $primary_key,
+            keys        => \@keys,
+            %pass_args);
       push @dupes, @$dupe_keys;
       @keys = @$good_keys;
    }
@@ -608,7 +628,9 @@ sub get_duplicate_keys {
 }
 
 sub get_duplicate_fks {
-   my ( $self, $fks, $opts ) = @_;
+   my ( $self, %args ) = @_;
+   die "I need a keys argument" unless $args{keys};
+   my $fks = $args{keys};
    my @fks = @$fks;
    my @dupes;
    foreach my $i ( 0..$#fks - 1 ) {
@@ -630,17 +652,18 @@ sub get_duplicate_fks {
          if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
               && $i_cols   eq $j_cols
               && $i_fkcols eq $j_fkcols ) {
-            push @dupes,
-               {
-                  key          => $fks[$j]->{name},
-                  duplicate_of => $fks[$i]->{name},
-                  reason       =>
-                       "FOREIGN KEY $fks->[$j]->{name} ($fks->[$j]->{cols}) "
-                     . "REFERENCES $fks->[$j]->{parent} ($fks->[$j]->{fkcols}) "                     .  'is a duplicate of '
-                     . "FOREIGN KEY $fks->[$i]->{name} ($fks->[$i]->{cols}) "
-                     . "REFERENCES $fks->[$i]->{parent} ($fks->[$i]->{fkcols})"
-               };
+            my $dupe = {
+               key          => $fks[$j]->{name},
+               duplicate_of => $fks[$i]->{name},
+               reason       =>
+                    "FOREIGN KEY $fks->[$j]->{name} ($fks->[$j]->{cols}) "
+                  . "REFERENCES $fks->[$j]->{parent} ($fks->[$j]->{fkcols}) "                     .  'is a duplicate of '
+                  . "FOREIGN KEY $fks->[$i]->{name} ($fks->[$i]->{cols}) "
+                  . "REFERENCES $fks->[$i]->{parent} ($fks->[$i]->{fkcols})"
+            };
+            push @dupes, $dupe;
             delete $fks[$j];
+            $args{callback}->($dupe, %args) if $args{callback};
          }
       }
    }
