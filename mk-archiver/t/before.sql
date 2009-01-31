@@ -36,10 +36,10 @@ create table table_4(
 ) type=innodb;
 
 insert into table_1 values
-   (1, 2, 3, 4),
+   (1, 2,    3, 4),
    (2, null, 3, 4),
-   (3, 2, 3, "\t"),
-   (4, 2, 3, "\n");
+   (3, 2,    3, "\t"),
+   (4, 2,    3, "\n");
 
 insert into table_3 select * from table_1;
 

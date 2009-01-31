@@ -201,14 +201,13 @@ ok(scalar @$rows == 0, 'Purged all rows ok');
 # This test has been changed. I manually examined the tables before
 # and after the archive operation and I am convinced that the original
 # expected output was incorrect.
-$rows = $dbh->selectall_arrayref("select * from test.table_2");
+$rows = $dbh->selectall_arrayref("select * from test.table_2", { Slice => {}});
 is_deeply(
    $rows,
-   [
-      [1, 2,     3, undef],
-      [2, undef, 3, undef],
-      [3, 2,     3, undef],
-      [4, 2,     3, undef],
+   [  {  a => '1', b => '2',   c => '3', d => undef },
+      {  a => '2', b => undef, c => '3', d => undef },
+      {  a => '3', b => '2',   c => '3', d => undef },
+      {  a => '4', b => '2',   c => '3', d => undef },
    ],
    'Found rows in new table OK when archiving only some columns to another table');
 
