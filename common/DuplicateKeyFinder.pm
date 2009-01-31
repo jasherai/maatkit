@@ -341,7 +341,7 @@ sub remove_prefix_duplicates {
       $last_key          = scalar(@$keys) - 2;
       $remove_key_offset = 1;
    }
-   my $last_remove_key = $#{@$remove_keys};
+   my $last_remove_key = scalar(@$remove_keys) - 1;
 
    I_KEY:
    foreach my $i ( 0..$last_key ) {
