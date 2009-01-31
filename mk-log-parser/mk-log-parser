@@ -3717,6 +3717,16 @@ my %ea;     # EventAggregators
       }
    }
 
+   # --report cascades to --groupby which cascades to --orderby.
+   foreach my $r ( @{$opts{report}} ) {
+      if ( !grep { $_ eq $r } @{$opts{groupby}} ) {
+         push @{$opts{groupby}}, $r;
+      }
+   }
+   foreach my $i ( 1 .. @{$opts{groupby}} - 1 ) {
+      $opts{orderby}->[$i] ||= $opts{orderby}->[0];
+   }
+
    $opt_parser->usage_or_errors(%opts);
 
    my $daemon;
@@ -4536,16 +4546,22 @@ usage.
 
 =item --groupby
 
-type: Array; default: fingerprint
+type: Array
 
 Which attribute of the events to group by.
 
-This option is a comma-separated list of items that must contain at least the
-same items as L<"--report"> but may contain extras.
+This option is a comma-separated list of items that defaults to the same items
+as L<"--report"> but may contain extras.
 
 In general, you can group queries into classes based on any attribute of the
 query, such as C<user> or C<db>, which will by default show you which users
 and which databases get the most C<Query_time>.
+
+Every value must have a corresponding value in the same position in
+L<"--orderby">.  However, adding values to --groupby will automatically add
+values to --orderby, for your convenience.  And, since L<"--report">
+automatically adds values to --groupby, these cascade through to --orderby.  So
+you generally don't need to think about anything except --report.
 
 There are two magical values that cause some extra data mining to happen before
 the grouping takes place.   These are C<tables> and C<fingerprint>.
@@ -4613,7 +4629,11 @@ Sort events by this attribute and aggregate function.
 
 This is a comma-separated list of order-by expressions, one for each attribute
 you wish to report by (see L<"--report">).  The syntax is attribute:aggregate.
-Valid aggregates are sum, min, max, cnt.
+Valid aggregates are sum, min, max, cnt.  See the default value for an example.
+
+If you're grouping and/or reporting by more than one attribute, values will
+automatically be added here.  Each one defaults to the same thing as the first
+one.
 
 =item --outliers
 
@@ -4709,6 +4729,9 @@ Print out reports on the aggregate results from L<"--groupby">.
 This is the standard slow-log analysis functionality.  See OUTPUT for the
 description of what this does and what the results look like.  You can disable
 it for L<"--review"> if you don't want to see any reports on queries.
+
+Any value you specify here automatically adds a corresponding value to
+L<"--groupby">.
 
 =item --reportall
 

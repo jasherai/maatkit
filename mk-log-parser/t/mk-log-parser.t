@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 33;
+use Test::More tests => 36;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -145,6 +145,14 @@ my $output = `../mk-log-parser --review h=127.1,P=12345`;
 like($output, qr/--review DSN requires a D/, 'Dies if no D part in --review DSN');
 $output = `../mk-log-parser --review h=127.1,P=12345,D=test`;
 like($output, qr/--review DSN requires a D/, 'Dies if no t part in --review DSN');
+
+# #############################################################################
+# Test that --report cascades to --groupby which cascades to --orderby.
+# #############################################################################
+$output = `../mk-log-parser --report foo,bar --groupby bar --help`;
+like($output, qr/--groupby\s+bar,foo/, '--report cascades to --groupby');
+like($output, qr/--orderby\s+Query_time:sum,Query_time:sum/,
+   '--groupby cascades to --orderby');
 
 # #############################################################################
 # Daemonizing and pid creation
