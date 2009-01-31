@@ -83,7 +83,7 @@ test_query(
       'a1' => 'tbl1',
       'a2' => 'tbl2',
    },
-   [qw(tbl1)],
+   [qw(tbl1 tbl2)],
    'mixed two table'
 );
 

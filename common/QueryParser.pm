@@ -118,8 +118,18 @@ sub get_tables {
    my $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
    my @tables;
    foreach my $tbls (
-      $query =~ m/(?:FROM|JOIN|UPDATE|INTO)\b\s*(?:($ident(?:\s*,\s*$ident)*))/gio)
+      $query =~ m{
+         (?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
+         \b\s*
+         # Capture the identifier and any number of comma-join identifiers that
+         # follow it, optionally with aliases with or without the AS keyword
+         ($ident
+            (?:\s*(?:(?:AS\s*)?\S*)?,\s*$ident)*
+         )
+      }xgio)
    {
+      # Remove [AS] foo aliases
+      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
       push @tables, $tbls =~ m/($ident)/g;
    }
    return @tables;
