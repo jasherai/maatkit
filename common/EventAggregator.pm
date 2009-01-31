@@ -29,9 +29,7 @@ package EventAggregator;
 # incoming hashrefs are parsed query events from the MySQL slow query log, and
 # you want it to calculate stats for Query_time, Rows_read etc aggregated by
 # query fingerprint.  It automatically determines whether a specified property
-# is a string, number or Yes/No value and aggregates them appropriately.  It can
-# collect and aggregate by several things simultaneously, e.g. you could group
-# by fingerprint at the same time that you group by user.
+# is a string, number or Yes/No value and aggregates them appropriately.
 
 use strict;
 use warnings FATAL => 'all';
