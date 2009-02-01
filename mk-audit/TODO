@@ -57,6 +57,9 @@ The following items are unimplemented at this time:
          * note if a storage engine is enabled but not in use -- but check for
            permissions to see everything before warning about this, otherwise
            can have false pos.
+         * estimate how much smaller we can make a table by optimizing its data
+           types.  Calculate the space savings for primary/secondary keys for
+           InnoDB.  See Percona customer case #2389.
          * fragmentation from SHOW TABLE STATUS (as reported by innodb free
            space, depending on file-per-table; or for single-file, amount of
            space used/free in ibdata1) or for myisam, Data_free field; show
