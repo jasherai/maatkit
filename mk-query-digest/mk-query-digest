@@ -4270,7 +4270,7 @@ sub _d {
 
 =head1 NAME
 
-mk-query-digest - Analyze and review MySQL logs.
+mk-query-digest - Analyze, transform, filter, review and report on queries.
 
 =head1 SYNOPSIS
 
@@ -4297,18 +4297,18 @@ from replaying them to analyze their performance:
 
 =head1 DESCRIPTION
 
-C<mk-query-digest> is a framework for much more functionality in the future,
-but at present it can analyze MySQL slow query logs and report on aggregate
-statistics by grouping similar queries together and showing the worst ones first
-in a report.  It can also do a "query review," which means to save a sample of
-each type of query into a MySQL table so you can easily see whether you've
-reviewed and analyzed a query before.  The benefit of this is that you can
-keep track of changes to your server's queries and avoid repeated work.  You can
-also save other information with the queries, such as comments, issue numbers in
-your ticketing system, and so on.
+This tool was formerly known as mk-log-parser.
 
-By default the tool does slow-query-log analysis, and there are options to make
-it do reviews.
+C<mk-query-digest> is a framework for doing things with events from a query
+source such as the slow query log or PROCESSLIST.  By default it acts as a very
+sophisticated log analysis tool.  You can group and sort queries in many
+different ways simultaneously and find the most expensive queries, or create a
+timeline of queries in the log, for example.  It can also do a "query review,"
+which means to save a sample of each type of query into a MySQL table so you can
+easily see whether you've reviewed and analyzed a query before.  The benefit of
+this is that you can keep track of changes to your server's queries and avoid
+repeated work.  You can also save other information with the queries, such as
+comments, issue numbers in your ticketing system, and so on.
 
 Note that this is a work in *very* active progress and you should expect
 incompatible changes in the future.
@@ -4323,137 +4323,49 @@ paste into emails without wrapping, and all non-query lines begin with a
 comment, so you can save it to a .sql file and open it in your favorite
 syntax-highlighting text editor.
 
-The report begins with one paragraph about the entire analysis run:
+The report begins with one paragraph about the entire analysis run.  The
+information is very similar to what you'll see for each class of queries in the
+log, but it doesn't have some information that would be too expensive to keep
+globally for the analysis.  It also has some statistics about the code's
+excution itself, such as the CPU and memory usage.
 
-   # Queries: 8, Time: 762.1ms
-   # CPU times: 260ms user, 30ms system
-   # Memory use: 5.63M rss,  8.40M vsz
+Following this, each query then appears in a paragraph.  Here's a sample,
+slightly reformatted so 'perldoc' will not wrap lines in a terminal.  The
+following will all be one paragraph, but we'll break it up for commentary.
 
-This file had 8 queries total, with a total execution time of 762.1ms.  The CPU
-and memory lines are statistics about the analysis tool; we are trying very hard
-to make the tool fast and lean.  If you find a log file that takes an unusually
-long time or a lot of memory, please submit a bug report.
-
-Each query then appears in a paragraph.  Here's a sample, slightly reformatted
-so 'perldoc' will not wrap lines in a terminal:
-
- # Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 ________________
- #              total   %     min     max     avg     95% stddev  median
- #     Count        1  12
- # Exec time  726.1ms  95 726.1ms 726.1ms 726.1ms 726.1ms      0 726.1ms
- # Lock time     91us  29    91us    91us    91us    91us      0    91us
- # Rows sent        0   0       0       0       0       0      0       0
- # Rows exam    63.0k 100   63.0k   63.0k   63.0k   63.0k      0   63.0k
- #       DBs  db1
- #     Users  [SQL_SLAVE]
- # Execution times
- #   1us
- #  10us
- # 100us
- #   1ms
- #  10ms
- # 100ms  ##############################################################
- #    1s
- #  10s+
- # Tables
- #    SHOW TABLE STATUS FROM `db2` LIKE 'table1'\G
- #    SHOW CREATE TABLE `db2`.`table1`\G
- #    SHOW TABLE STATUS FROM `db1` LIKE 'table2'\G
- #    SHOW CREATE TABLE `db1`.`table2`\G
- update db2.table1 n
-       inner join db1.table2 a using(table2) 
-       set n.column1 = a.column1, n.word3 = a.word3\G
- # Converted for EXPLAIN
- # EXPLAIN
- select  n.column1 = a.column1, n.word3 = a.word3 from db2.table1 n
-       inner join db1.table2 a using(table2) \G
-
-Let's take that line by line.  Line 1 is the header:
-
- # Query 001 (0 QPS) ID: 0x66825DDC008FFA89 at byte 332 ________________
+ # Query 2: 0.01 QPS, 0.02x conc, ID 0xFDEA8D2993C9CAF3 at byte 160665
 
 This line identifies the sequential number of the query in the sort order
-specified by L<"--orderby">.  Then there's the queries per second, and a query ID.
-This ID is a hex version of the query's checksum in the database, if you're
-using L<"--review">.  You can select the reviewed query's details from the
-database with a query like C<SELECT .... WHERE checksum=0x66825DDC008FFA89>.
+specified by L<"--orderby">.  Then there's the queries per second, and the
+approximate concurrency for this query (calculated as a function of the timespan
+and total Query_time).  Next there's a query ID.  This ID is a hex version of
+the query's checksum in the database, if you're using L<"--review">.  You can
+select the reviewed query's details from the database with a query like C<SELECT
+.... WHERE checksum=0xFDEA8D2993C9CAF3>.
 
 Finally, in case you want to find a sample of the query in the log file, there's
 the byte offset where you can look.  (This is not always accurate, due to some
 silly anomalies in the slow-log format, but it's usually right.)  The position
-refers to the L<"--worst"> sample, which we'll see more about below.
+refers to the worst sample, which we'll see more about below.
 
 Next is the table of metrics about this class of queries.
 
- #              total   %     min     max     avg     95% stddev  median
- #     Count        1  12
- # Exec time  726.1ms  95 726.1ms 726.1ms 726.1ms 726.1ms      0 726.1ms
- # Lock time     91us  29    91us    91us    91us    91us      0    91us
- # Rows sent        0   0       0       0       0       0      0       0
- # Rows exam    63.0k 100   63.0k   63.0k   63.0k   63.0k      0   63.0k
+ #           pct   total    min    max     avg     95%  stddev  median
+ # Count       0       2
+ # Exec time  13   1105s   552s   554s    553s    554s      2s    553s
+ # Lock time   0   216us   99us  117us   108us   117us    12us   108us
+ # Rows sent  20   6.26M  3.13M  3.13M   3.13M   3.13M   12.73   3.13M
+ # Rows exam   0   6.26M  3.13M  3.13M   3.13M   3.13M   12.73   3.13M
 
-The first line is column headers for the table.  The total
-is the actual value of the specified metric, and the percentage is the percent
-of the total for the whole analysis run.  For example, in this case we can see
-that the query executed 1 time, which is 12% of the total number of queries in
-the file.  The min, max and avg columns are self-explanatory.  The 95% column
-shows the 95th percentile; 95% of the values are less than or equal to this
-value.  The standard deviation shows you how tightly grouped the values are.
-The standard deviation and median are both calculated from the 95th percentile,
-discarding the extremely large values.
-
- #       DBs  db1
- #     Users  [SQL_SLAVE]
-
-These two lines show you from which databases the queries in this class were
-executed, and the users who ran them.  In this case, the queries were all run by
-the replication SQL slave thread.  This is a feature of Percona's enhanced
-slow-query-logging functionality.  Normal unpatched servers don't log
-replication activity to the slow query log.
-
- # Execution times
- #   1us
- #  10us
- # 100us
- #   1ms
- #  10ms
- # 100ms  ##############################################################
- #    1s
- #  10s+
-
-The execution times show a logarithmic chart of time clustering.  Each query
-goes into one of the "buckets" and is counted up.  The buckets are powers of
-ten.  The first bucket is all values in the "single microsecond range" -- that
-is, less than 10us.  The second is "tens of microseconds," which is from 10us
-up to (but not including) 100us; and so on.
-
- # Tables
- #    SHOW TABLE STATUS FROM `db2` LIKE 'table1'\G
- #    SHOW CREATE TABLE `db2`.`table1`\G
- #    SHOW TABLE STATUS FROM `db1` LIKE 'table2'\G
- #    SHOW CREATE TABLE `db1`.`table2`\G
-
-This section is a convenience: if you're trying to optimize the queries you see
-in the slow log, you probably want to examine their structure and size.  These
-are copy-and-paste-ready commands to do that.  The values are extracted from the
-query sample, and are usually correct.  If you find a query that isn't parsed
-right, submit a bug report.
-
- update db2.table1 n
-       inner join db1.table2 a using(table2) 
-       set n.column1 = a.column1, n.word3 = a.word3\G
-
-This is a sample of the queries in this class of query.  This is not a random
-sample.  It is the query that performed the worst, according to L<"--worst">.
-You would normally see a commented C<# EXPLAIN> line just before it, so you can
-copy-paste the query to examine its EXPLAIN plan. But for non-SELECT queries
-such as this one, that isn't possible to do, so the tool tries to transform the
-query into a roughly equivalent SELECT query, and adds that below:
-
- # Converted for EXPLAIN
- # EXPLAIN
- select  n.column1 = a.column1, n.word3 = a.word3 from db2.table1 n
-       inner join db1.table2 a using(table2) \G
+The first line is column headers for the table.  The percentage is the percent
+of the total for the whole analysis run, and the total is the actual value of
+the specified metric.  For example, in this case we can see that the query
+executed 2 times, which is 13% of the total number of queries in the file.  The
+min, max and avg columns are self-explanatory.  The 95% column shows the 95th
+percentile; 95% of the values are less than or equal to this value.  The
+standard deviation shows you how tightly grouped the values are.  The standard
+deviation and median are both calculated from the 95th percentile, discarding
+the extremely large values.
 
 The stddev, median and 95th percentile statistics are approximate.  Exact
 statistics require keeping every value seen, sorting, and doing some
@@ -4462,6 +4374,49 @@ buckets, each of them 5% bigger than the one before, ranging from .000001 up to
 a very big number.  When we see a value we increment the bucket into which it
 falls.  Thus we have fixed memory per class of queries.  The drawback is the
 imprecision, which typically falls in the 5 percent range.
+
+Next we have statistics on the users, databases and time range for the query.
+
+ # Users       1   user1
+ # Databases   2     db1(1), db2(1)
+ # Time range 2008-11-26 04:55:18 to 2008-11-27 00:15:15
+
+The users and databases are shown as a count of distinct values, followed by the
+values.  If there's only one, it's shown alone; if there are many, we show each
+of the most frequent ones, followed by the number of times it appears.
+
+ # Query_time distribution
+ #   1us
+ #  10us
+ # 100us
+ #   1ms
+ #  10ms
+ # 100ms
+ #    1s
+ #  10s+  #############################################################
+
+The execution times show a logarithmic chart of time clustering.  Each query
+goes into one of the "buckets" and is counted up.  The buckets are powers of
+ten.  The first bucket is all values in the "single microsecond range" -- that
+is, less than 10us.  The second is "tens of microseconds," which is from 10us
+up to (but not including) 100us; and so on.
+
+ # Tables
+ #    SHOW TABLE STATUS LIKE 'table1'\G
+ #    SHOW CREATE TABLE `table1`\G
+ # EXPLAIN
+ SELECT * FROM table1\G
+
+This section is a convenience: if you're trying to optimize the queries you see
+in the slow log, you probably want to examine the table structure and size.
+These are copy-and-paste-ready commands to do that.
+
+Finally, we see a sample of the queries in this class of query.  This is not a
+random sample.  It is the query that performed the worst, according to the sort
+order given by L<"--orderby">.  You will normally see a commented C<# EXPLAIN>
+line just before it, so you can copy-paste the query to examine its EXPLAIN
+plan. But for non-SELECT queries that isn't possible to do, so the tool tries to
+transform the query into a roughly equivalent SELECT query, and adds that below.
 
 =head1 QUERY REVIEWS
 
@@ -4514,11 +4469,10 @@ your comments integrated right into the report.
 
 =back
 
-=head1 INTERNALS
+=head1 FINGERPRINTS
 
-A few concepts might help you understand what this tool does.  First, a query
-fingerprint.  This is the abstracted form of a query, which makes it possible to
-group similar queries together.  Abstracting a query removes literal values,
+A query fingerprint is the abstracted form of a query, which makes it possible
+to group similar queries together.  Abstracting a query removes literal values,
 normalizes whitespace, and so on.  For example, these two queries:
 
   SELECT name, password FROM user WHERE id='12823';
@@ -4545,6 +4499,9 @@ The corresponding pseudo-SQL looks like this:
   GROUP BY FINGERPRINT(query)
   ORDER BY SUM(Query_time) DESC
   LIMIT 10
+
+You can also use the value C<distill>, which is a kind of super-fingerprint.
+See L<"--groupby"> for more.
 
 =head1 OPTIONS
 
@@ -4645,7 +4602,7 @@ the grouping takes place:
 
 B<fingerprint>.  This causes events to be fingerprinted to abstract queries into
 a canonical form, which is then used to group events together into a class.  See
-L<"INTERNALS"> for more about fingerprinting.
+L<"FINGERPRINTS"> for more about fingerprinting.
 
 =item *
 
@@ -4667,7 +4624,7 @@ default: yes
 
 Print information about the entire analysis run.
 
-See L<OUTPUT> for more information on the header.
+See L<"OUTPUT"> for more information on the header.
 
 =item --interval
 
@@ -4717,9 +4674,7 @@ This is a comma-separated list of order-by expressions, one for each attribute
 you wish to report by (see L<"--report">).  The syntax is attribute:aggregate.
 Valid aggregates are sum, min, max, cnt.  See the default value for an example.
 
-If you're grouping and/or reporting by more than one attribute, values will
-automatically be added here.  Each one defaults to the same thing as the first
-one.
+This option is automatically altered by L<"--groupby">.
 
 =item --outliers
 
