@@ -66,3 +66,37 @@ Revision 2919
     28	../mk-log-parser:1890 0.38182 93741: foreach my $attrib ( keys %{$self->{attributes}} ) {
     29	../mk-log-parser:1646 0.37975 93720: local $INPUT_RECORD_SEPARATOR = ";\n#";
     30	../mk-log-parser:1642 0.35587 93720: my ( $self, $fh, $misc, @callbacks ) = @_;
+
+Revision 2972
+46.43user 72.84system 1:59.74elapsed 99%CPU (0avgtext+0avgdata 0maxresident)k
+184inputs+115408outputs (1major+15470minor)pagefaults 0swaps
+     1	../mk-query-digest:1158 7.78335 46726: $query =~ s{                          # Anything vaguely resembling numbers
+     2	../mk-query-digest:1943 4.64022 656187: my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
+     3	../mk-query-digest:1738 4.04822 330270: if ( !$got_ts
+     4	../mk-query-digest:1944 1.64977 656187: my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+     5	../mk-query-digest:1945 1.57666 656187: my $handler = $self->{handlers}->{ $attrib };
+     6	../mk-query-digest:1956 1.49958 656187: $handler->($event, $class_attrib, $global_attrib);
+     7	../mk-query-digest:1942 1.47923 656187: foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
+     8	../mk-query-digest:1784 1.38555 330270: if ( !$found_arg && $pos == $len ) {
+     9	../mk-query-digest:1946 1.31005 656187: if ( !$handler ) {
+    10	../mk-query-digest:1955 1.29441 656187: next GROUPBY unless $handler;
+    11	../mk-query-digest:1706 1.23686 93741: if ( $stmt =~ s{
+    12	../mk-query-digest:1734 1.15786 377133: my $line = $1;          # Necessary for /g and pos() to work.
+    13	../mk-query-digest:1163 1.12268 46726: $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+    14	../mk-query-digest:1736 1.07612 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
+    15	../mk-query-digest:1702 1.02631 93720: while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
+    16	../mk-query-digest:1807 0.88137 93741: last EVENT unless @pending;
+    17	../mk-query-digest:1149 0.87938 46726: $query =~ s/$olc_re//go;
+    18	../mk-query-digest:1802 0.84345 93741: my $event = { @properties };
+    19	../mk-query-digest:1733 0.77968 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    20	../mk-query-digest:1804 0.63095 281223: last unless $event = $callback->($event);
+    21	../mk-query-digest:1166 0.60150 46726: $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+    22	../mk-query-digest:1809 0.52615 93720: return $num_events;
+    23	../mk-query-digest:1169 0.52430 46726: $query =~ s{
+    24	../mk-query-digest:2089 0.50641 93741: [at line 24 inside eval] ++$global->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
+    25	../mk-query-digest:1723 0.47284 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    26	../mk-query-digest:1724 0.46897 93741: $stmt =~ s/;\n#?\Z//;
+    27	../mk-query-digest:1167 0.43735 46726: $query = lc $query;
+    28	../mk-query-digest:1135 0.40189 93741: my ( $self, $query ) = @_;
+    29	../mk-query-digest:1940 0.38611 93741: foreach my $attrib ( keys %{$self->{attributes}} ) {
+    30	../mk-query-digest:2089 0.37923 93008: [at line 14 inside eval] ++$class->{unq}->{$val};
