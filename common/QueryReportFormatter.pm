@@ -16,7 +16,7 @@
 # Place, Suite 330, Boston, MA  02111-1307  USA.
 
 # ###########################################################################
-# QueryReportFormatter package $Revision: 2880 $
+# QueryReportFormatter package $Revision$
 # ###########################################################################
 
 package QueryReportFormatter;
