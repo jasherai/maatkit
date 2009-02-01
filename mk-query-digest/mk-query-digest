@@ -3693,7 +3693,7 @@ sub _d {
 # ###########################################################################
 
 # #############################################################################
-# mk-log-parser
+# mk-query-digest
 # #############################################################################
 package main;
 
@@ -4270,34 +4270,34 @@ sub _d {
 
 =head1 NAME
 
-mk-log-parser - Analyze and review MySQL logs.
+mk-query-digest - Analyze and review MySQL logs.
 
 =head1 SYNOPSIS
 
 Analyze and report on a slow log:
 
- mk-log-parser /path/to/slow.log
+ mk-query-digest /path/to/slow.log
 
 Review a slow log, saving results to the test.query_review table in a MySQL
 server running on host1.  See L<"--review"> for more on reviewing queries:
 
- mk-log-parser --review h=host1,D=test,t=query_review
+ mk-query-digest --review h=host1,D=test,t=query_review
 
 Watch a server's SHOW FULL PROCESSLIST and analyze the queries as if they were
 from a slow query log:
 
- mk-log-parser --processlist h=host1
+ mk-query-digest --processlist h=host1
 
 Watch a server's SHOW FULL PROCESSLIST, filter out everything but SELECT
 queries, and replay the queries against another server, then use the timings
 from replaying them to analyze their performance:
 
- mk-log-parser --processlist h=host1 --execute h=another_server \
+ mk-query-digest --processlist h=host1 --execute h=another_server \
    --filter '$event->{fingerprint} =~ m/^select/'
 
 =head1 DESCRIPTION
 
-C<mk-log-parser> is a framework for much more functionality in the future,
+C<mk-query-digest> is a framework for much more functionality in the future,
 but at present it can analyze MySQL slow query logs and report on aggregate
 statistics by grouping similar queries together and showing the worst ones first
 in a report.  It can also do a "query review," which means to save a sample of
@@ -4470,12 +4470,12 @@ so you can add meta-data to them, mark them for follow up, etc.  But most
 importantly, you can refer to the stored values on subsequent runs so you'll
 knowh whether you've seen a query before, and not waste your time on it.
 
-You can do even more with C<mk-log-parser>'s query review functionality, though.
+You can do even more with C<mk-query-digest>'s query review functionality, though.
 You can add meta-data to each row by adding more columns.  These can be
 arbitrary columns, such as the ticket ID of a JIRA ticket you open for a given
 query.  And you can add comments and other information.
 
-Next time you run C<mk-log-parser> in L<"--review"> mode, it will do the
+Next time you run C<mk-query-digest> in L<"--review"> mode, it will do the
 following:
 
 =over
@@ -4532,10 +4532,10 @@ Both of those queries will fingerprint to
 Once the query's fingerprint is known, we can then talk about a query as though
 it represents all similar queries.
 
-What C<mk-log-parser> does is analogous to a GROUP BY statement in SQL.  If your
+What C<mk-query-digest> does is analogous to a GROUP BY statement in SQL.  If your
 command-line looks like this,
 
-  mk-log-parser /path/to/slow.log --select Rows_read,Rows_sent \
+  mk-query-digest /path/to/slow.log --select Rows_read,Rows_sent \
       --groupby fingerprint --orderby Query_time:sum --limit 10
 
 The corresponding pseudo-SQL looks like this:
@@ -4575,7 +4575,7 @@ L<"--report">.  Events are executed on this DSN.  If they are successful,
 the time they take to execute overwrites the event's Query_time attribute.  If
 unsuccessful, the callback returns false and terminates the chain.
 
-If the connection fails, mk-log-parser tries to reconnect once per second.  See
+If the connection fails, mk-query-digest tries to reconnect once per second.  See
 also L<"--mirror">.
 
 =item --filter
@@ -4700,7 +4700,7 @@ type: float
 How often to check whether connections should be moved, depending on
 C<read_only>.  Requires L<"--processlist"> and L<"--execute">.
 
-This option causes mk-log-parser to check every N seconds whether it is reading
+This option causes mk-query-digest to check every N seconds whether it is reading
 from a read-write server and executing against a read-only server, which is a
 sensible way to set up two servers if you're doing something like master-master
 replication.  The L<http://code.google.com/p/mysql-master-master/> master-master
@@ -4747,7 +4747,7 @@ type: string
 
 Create the given PID file when daemonized.
 
-For example, C<--daemonize --pid /tmp/mk-log-parser.pid>.  /var/run/ is usually
+For example, C<--daemonize --pid /tmp/mk-query-digest.pid>.  /var/run/ is usually
 not writable by non-root users, so /tmp/ is a more reliable alternative.
 
 The PID file is removed when the daemonized instance exits.
@@ -4758,7 +4758,7 @@ type: DSN
 
 Poll this DSN's processlist for queries, with L<"--interval"> sleep between.
 
-If the connection fails, mk-log-parser tries to reopen it once per second. See
+If the connection fails, mk-query-digest tries to reopen it once per second. See
 also L<"--mirror">.
 
 =item --review
@@ -4846,7 +4846,7 @@ type: Array
 
 Show a timeline of events (disables L<"--report">).
 
-This option makes mk-log-parser aggregate events into a timeline by the
+This option makes mk-query-digest aggregate events into a timeline by the
 specified attribute.  Each event is compared to the previous one, and if the
 specified attribute is the same, they are aggregated together.  At the end, the
 report prints out the timestamp, interval, count and value of each aggregated
@@ -4859,7 +4859,7 @@ merely unset --report.
 
 Example:
 
-  mk-log-parser /path/to/log --timeline distill
+  mk-query-digest /path/to/log --timeline distill
 
 =item --[no]zeroadmin
 

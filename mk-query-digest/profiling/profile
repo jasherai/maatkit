@@ -1,12 +1,12 @@
 #!/bin/sh
 
-REV=`grep 'SVN_REV.*Revision' ../mk-log-parser  | awk '{print $6}'`;
-/usr/bin/time perl -d:FastProf ../mk-log-parser barontest.log > /dev/null 2>times
+REV=`grep 'SVN_REV.*Revision' ../mk-query-digest  | awk '{print $6}'`;
+/usr/bin/time perl -d:FastProf ../mk-query-digest barontest.log > /dev/null 2>times
 echo "" >> results.txt
 echo "Revision $REV" >> results.txt
 cat times >> results.txt
 fprofpp -t 30 | grep -v '^#' | nl >> results.txt
-if svn st ../mk-log-parser | grep -q '^M'; then
+if svn st ../mk-query-digest | grep -q '^M'; then
    echo "Not committing"
 else
    svn ci -m "Profiling results as of revision $REV" results.txt

@@ -17,19 +17,19 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 sub no_diff {
    my ( $cmd, $expected_output ) = @_;
    MKDEBUG && diag($cmd);
-   `$cmd > /tmp/mk-log-parser_test`;
+   `$cmd > /tmp/mk-query-digest_test`;
    # Uncomment this line to update the $expected_output files when there is a
    # fix.
-   # `cat /tmp/mk-log-parser_test > $expected_output`;
-   my $retval = system("diff /tmp/mk-log-parser_test $expected_output");
-   `rm -rf /tmp/mk-log-parser_test`;
+   # `cat /tmp/mk-query-digest_test > $expected_output`;
+   my $retval = system("diff /tmp/mk-query-digest_test $expected_output");
+   `rm -rf /tmp/mk-query-digest_test`;
    $retval = $retval >> 8;
    return !$retval;
 }
 
-my $run_with = '../mk-log-parser --noheader --limit 10 ../../common/t/samples/';
-my $run_notop = '../mk-log-parser --noheader ../../common/t/samples/';
-my $run_header = '../mk-log-parser ../../common/t/samples/';
+my $run_with = '../mk-query-digest --noheader --limit 10 ../../common/t/samples/';
+my $run_notop = '../mk-query-digest --noheader ../../common/t/samples/';
+my $run_header = '../mk-query-digest ../../common/t/samples/';
 
 ok(
    no_diff($run_with.'empty', 'samples/empty_report.txt'),
@@ -153,15 +153,15 @@ ok(
 # #############################################################################
 # Test cmd line op sanity.
 # #############################################################################
-my $output = `../mk-log-parser --review h=127.1,P=12345`;
+my $output = `../mk-query-digest --review h=127.1,P=12345`;
 like($output, qr/--review DSN requires a D/, 'Dies if no D part in --review DSN');
-$output = `../mk-log-parser --review h=127.1,P=12345,D=test`;
+$output = `../mk-query-digest --review h=127.1,P=12345,D=test`;
 like($output, qr/--review DSN requires a D/, 'Dies if no t part in --review DSN');
 
 # #############################################################################
 # Test that --report cascades to --groupby which cascades to --orderby.
 # #############################################################################
-$output = `../mk-log-parser --report foo,bar --groupby bar --help`;
+$output = `../mk-query-digest --report foo,bar --groupby bar --help`;
 like($output, qr/--groupby\s+bar,foo/, '--report cascades to --groupby');
 like($output, qr/--orderby\s+Query_time:sum,Query_time:sum/,
    '--groupby cascades to --orderby');
@@ -170,19 +170,19 @@ like($output, qr/--orderby\s+Query_time:sum,Query_time:sum/,
 # Daemonizing and pid creation
 # #############################################################################
 # Start one daemonized instance to update it
-`../mk-log-parser --daemonize --pid /tmp/mk-log-parser.pid --processlist localhost`;
-$output = `ps -eaf | grep mk-log-parser | grep daemonize`;
-like($output, qr/perl ...mk-log-parser/, 'It is running');
+`../mk-query-digest --daemonize --pid /tmp/mk-query-digest.pid --processlist localhost`;
+$output = `ps -eaf | grep mk-query-digest | grep daemonize`;
+like($output, qr/perl ...mk-query-digest/, 'It is running');
 
-ok(-f '/tmp/mk-log-parser.pid', 'PID file created');
+ok(-f '/tmp/mk-query-digest.pid', 'PID file created');
 my ($pid) = $output =~ /\s+(\d+)\s+/;
-$output = `cat /tmp/mk-log-parser.pid`;
+$output = `cat /tmp/mk-query-digest.pid`;
 is($output, $pid, 'PID file has correct PID');
 kill 15, $pid;
 sleep 1;
-$output = `ps -eaf | grep mk-log-parser | grep daemonize`;
-unlike($output, qr/perl ...mk-log-parser/, 'It is not running');
-unlink '/tmp/mk-log-parser.pid' or die $OS_ERROR;
+$output = `ps -eaf | grep mk-query-digest | grep daemonize`;
+unlike($output, qr/perl ...mk-query-digest/, 'It is not running');
+unlink '/tmp/mk-query-digest.pid' or die $OS_ERROR;
 
 # #############################################################################
 # Tests for query reviewing and other stuff that requires a DB server.
@@ -270,7 +270,7 @@ SKIP: {
    # ##########################################################################
    $dbh1->do('set global read_only=0');
    $dbh2->do('set global read_only=1');
-   my $cmd  = "perl ../mk-log-parser --processlist h=127.1,P=12345 "
+   my $cmd  = "perl ../mk-query-digest --processlist h=127.1,P=12345 "
             . "--execute h=127.1,P=12346 --mirror 1";
    $ENV{MKDEBUG}=1;
    `$cmd > /tmp/read_only.txt &`;

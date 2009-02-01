@@ -1,5 +1,6 @@
-Changelog for mk-log-parser:
+Changelog for mk-query-digest:
 
+   * Renamed from mk-log-parser to mk-query-digest.
    * Added the --timeline option (issue 254).
    * Added the ability to analyze with --groupby distill (issue 254).
    * Added the ability to analyze with --groupby tables (issue 230).
