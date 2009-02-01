@@ -320,7 +320,7 @@ sub print_active_handles {
       $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
-      $self->print_active_handles->( $handle, $level + 1 );
+      $self->print_active_handles( $handle, $level + 1 );
    }
 }
 
