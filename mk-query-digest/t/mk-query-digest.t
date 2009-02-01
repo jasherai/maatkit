@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 37;
+use Test::More tests => 38;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -282,9 +282,17 @@ SKIP: {
    $dbh2->do('set global read_only=0');
    $dbh1->do('select sleep(1)');
    sleep 2;
-   $output = `ps -eaf | grep parser | grep mirror | awk '{print \$2}'`;
+   $output = `ps -eaf | grep mk-query-diges[t] | awk '{print \$2}'`;
    ($output) = $output =~ m/(\d+)/;
    kill 2, $output;
+   # Verify that it's dead...
+   $output = `ps -eaf | grep mk-query-diges[t]`;
+   if ( $output =~ m/digest/ ) {
+      sleep 1;
+      $output = `ps -eaf | grep mk-query-diges[t]`;
+   }
+   unlike($output, qr/mk-query-digest/, 'It is stopped now');
+
    $dbh1->do('set global read_only=0');
    $dbh2->do('set global read_only=1');
    $output = `grep read_only /tmp/read_only.txt`;
