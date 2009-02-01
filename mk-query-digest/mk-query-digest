@@ -309,7 +309,7 @@ sub print_active_handles {
       $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
-      $self->print_active_handles->( $handle, $level + 1 );
+      $self->print_active_handles( $handle, $level + 1 );
    }
 }
 
@@ -4175,8 +4175,6 @@ sub print_tables {
    }
 }
 
-# TODO: if there's no --report, then we shouldn't cache, we should insert as
-# soon as we see a new fingerprint.
 sub get_query_review_callback {
    my ( $opts ) = @_;
    return () unless $opts->{R};
@@ -4191,7 +4189,7 @@ sub get_query_review_callback {
    my $struct = $tp->parse(
       $du->dump($qv_dbh, $q, $opts->{R}->{D}, $opts->{R}->{t}, 'table'));
    $qv = new QueryReview(
-      group_by    => 'fingerprint',
+      group_by    => $opts->{groupby}->[0],
       dbh         => $qv_dbh,
       db_tbl      => $db_tbl,
       tbl_struct  => $struct,
@@ -4201,7 +4199,7 @@ sub get_query_review_callback {
       my ( $event ) = @_;
       return 0 unless defined $event;
       $qv->cache_event($event);
-      return 1; # required to keep callback chain going
+      return $event; # required to keep callback chain going
    };
 }
 

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 36;
+use Test::More tests => 37;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -202,7 +202,8 @@ SKIP: {
    $sb->load_file('master', 'samples/query_review.sql');
 
    $output = 'foo'; # clear previous test results
-   $output = `${run_with}slow006.txt --report '' --review h=127.1,P=12345,D=test,t=query_review`;
+   my $cmd = "${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review"; 
+   $output = `$cmd`;
    my $res = $dbh1->selectall_arrayref( 'SELECT * FROM test.query_review',
       { Slice => {} } );
    is_deeply(
@@ -228,7 +229,6 @@ SKIP: {
       ],
       'Adds/updates queries to query review table'
    );
-   is($output, '', '--review alone produces no output');
 
    # This time we'll run with --report and since none of the queries
    # have been reviewed, the report should include both of them with
@@ -270,7 +270,7 @@ SKIP: {
    # ##########################################################################
    $dbh1->do('set global read_only=0');
    $dbh2->do('set global read_only=1');
-   my $cmd  = "perl ../mk-query-digest --processlist h=127.1,P=12345 "
+   $cmd  = "perl ../mk-query-digest --processlist h=127.1,P=12345 "
             . "--execute h=127.1,P=12346 --mirror 1";
    $ENV{MKDEBUG}=1;
    `$cmd > /tmp/read_only.txt &`;
