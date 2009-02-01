@@ -1,6 +1,8 @@
 Changelog for mk-duplicate-key-checker:
 
-   * Changed output from tabular to human-readable.
+2009-02-01: version 1.2.0
+
+   * Changed output from tabular to human-readable (issue 196).
    * Improved duplicate key finding (issue 9).
    * Added DROP KEY statement to output for each duplicate key (issue 82).
    * -- commented all output lines except SQL statements (issue 82).

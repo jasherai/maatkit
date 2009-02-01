@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2009-02-01: version 1.0.12
+
    * CREATE TRIGGER defs were wrongly included in chunk files (issue 223).
 
 2008-12-01: version 1.0.11

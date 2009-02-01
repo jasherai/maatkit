@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2009-02-01: version 0.9.2
+
    * Renamed from mk-log-parser to mk-query-digest.
    * Added the --timeline option (issue 254).
    * Added the ability to analyze with --groupby distill (issue 254).

@@ -1,5 +1,7 @@
 Changelog for mk-slave-restart:
 
+2009-02-01: version 1.0.11
+
    * --error-numbers did not work (issue 118).
 
 2008-12-01: version 1.0.10

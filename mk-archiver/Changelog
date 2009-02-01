@@ -1,5 +1,7 @@
 Changelog for mk-archiver:
 
+2009-02-01: version 1.0.13
+
    * Fixed insert on destination table with different column order (issue 131).
    * Updates to shared code.
    * Fixed and updated POD.

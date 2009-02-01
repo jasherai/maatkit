@@ -1,5 +1,7 @@
 Changelog for mk-audit:
 
+2009-02-01: version 0.9.5
+
    * Added detection of 3ware and Adaptec RAID controllers (issue 123).
    * Path to vgs was hard-coded instead of using which (issue 116).
    * Duplicate vars reported several false-positives (issue 115).
