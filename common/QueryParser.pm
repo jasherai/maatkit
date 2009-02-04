@@ -34,90 +34,45 @@ sub new {
    bless {}, $class;
 }
 
-sub get_table_ref {
-   my ( $self, $query ) = @_;
-   return unless $query;
-   my $table_ref;
-
-   if ( $query =~ m/FROM\s+(.+?)\b(?:WHERE|ORDER|LIMIT|HAVING)+.+/is ) {
-      $table_ref = $1;
-   }
-   elsif ( $query =~ m/FROM\s+(.+?);?$/is ) {
-      # This handles queries like "SELECT COUNT(id) FROM table;"
-      chomp($table_ref = $1);
-   }
-
-   MKDEBUG && _d($table_ref ? "table ref: $table_ref"
-                            : "Failed to parse table ref");
-
-   return $table_ref;
-}
-
-sub parse_table_aliases {
-   my ( $self, $table_ref ) = @_;
-   my $table_aliases = {};
-   return $table_aliases if !defined $table_ref || !$table_ref;
-   my @tables;
-
-   $table_ref =~ s/\n/ /g;
-   $table_ref =~ s/`//g; # Graves break database discovery
-
-   if( $table_ref =~ m/ (:?straight_)?join /i ) {
-      $table_ref =~ s/ join /,/ig;
-      1 while ($table_ref =~ s/ (?:inner|outer|cross|left|right|natural),/,/ig);
-      $table_ref =~ s/ using\s*\(.+?\)//ig;
-      $table_ref =~ s/ on \([\w\s=.,]+\),?/,/ig;
-      $table_ref =~ s/ on [\w\s=.]+,?/,/ig;
-      $table_ref =~ s/ straight_join /,/ig;
-   }
-
-   @tables = split /,/, $table_ref;
-
-   my @alias_patterns = (
-      qr/\s*(\S+)\s+AS\s+(\S+)\s*/i,
-      qr/^\s*(\S+)\s+(\S+)\s*$/,
-      qr/^\s*(\S+)+\s*$/, # Not an alias but we save it anyway to be complete
-   );
-
-   TABLE:
-   foreach my $table ( @tables ) {
-      my ( $db_tbl, $alias );
-
-      # Ignore "tables" that are really subqueries.
-      if ( $table =~ m/\(\s*SELECT\s+/i ) {
-         MKDEBUG && _d("Ignoring subquery table: $table");
-         next TABLE;
-      }
-
-      ALIAS_PATTERN:
-      foreach my $alias_pattern ( @alias_patterns ) {
-         if ( ( $db_tbl, $alias ) = $table =~ m/$alias_pattern/ ) {
-            MKDEBUG && _d("$table matches $alias_pattern");
-            last ALIAS_PATTERN;
-         }
-      }
-
-      if ( defined $db_tbl && $db_tbl ) {
-         my ( $db, $tbl ) = $db_tbl =~ m/^(?:(\S+)\.)?(\S+)/;
-
-         $table_aliases->{$alias || $tbl} = $tbl;
-         $table_aliases->{DATABASE}->{$tbl} = $db if defined $db && $db;
-      }
-      elsif ( MKDEBUG ) {
-         _d("Failed to parse table alias for $table");
-      }
-   }
-
-   MKDEBUG && _d('table aliases: ' . Dumper($table_aliases));
-
-   return $table_aliases;
-}
-
-# Returns an array of tables to which the query refers.
-# XXX If you change this code, also change QueryRewriter::distill().
 sub get_tables {
    my ( $self, $query ) = @_;
-   my @tables;
+   return unless $query;
+   my @tables = ();
+   my $callback = sub {
+      my ( $tbls ) = @_;
+      # Remove [AS] foo aliases
+      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
+      push @tables, $tbls =~ m/($ident)/g;
+   };
+   $self->_get_table_refs($query, $callback);
+   return @tables;
+}
+
+sub get_table_aliases {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   my $aliases = {};
+   my $save_alias = sub {
+      my ( $db_tbl, $alias ) = @_;
+      my ( $db, $tbl ) = $db_tbl =~ m/^(?:(\S+)\.)?(\S+)/;
+      $aliases->{$alias || $tbl} = $tbl;
+      $aliases->{DATABASE}->{$tbl} = $db if $db;
+      return 1;
+   };
+   my $callback = sub {
+      my ( $tbls ) = @_;
+      $tbls =~ s/($ident)(?:\s+(?:as\s+(\w+)|(\w+))*)*/$save_alias->($1,$2)/gie;
+   };
+   $self->_get_table_refs($query, $callback);
+   return $aliases;
+}
+ 
+# Returns an array of tables to which the query refers.
+# XXX If you change this code, also change QueryRewriter::distill().
+sub _get_table_refs {
+   my ( $self, $query, $callback ) = @_;
+   return unless $query;
+   return unless $callback;
    foreach my $tbls (
       $query =~ m{
          \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
@@ -129,11 +84,10 @@ sub get_tables {
          )
       }xgio)
    {
-      # Remove [AS] foo aliases
-      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
-      push @tables, $tbls =~ m/($ident)/g;
+      MKDEBUG && _d("table ref: $tbls");
+      $callback->($tbls);
    }
-   return @tables;
+   return;
 }
 
 sub _d {

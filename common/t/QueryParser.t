@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 37;
+use Test::More tests => 29;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -15,17 +15,11 @@ my $qp = new QueryParser;
 isa_ok($qp, 'QueryParser');
 
 sub test_query {
-   my ( $query, $expected_ref, $expected_aliases, $tables, $msg ) = @_;
-   my $tr = $qp->get_table_ref($query);
-   is(
-      $tr,
-      $expected_ref,
-      "get_table_ref: $msg"
-   );
+   my ( $query, $aliases, $tables, $msg ) = @_;
    is_deeply(
-      $qp->parse_table_aliases($tr),
-      $expected_aliases,
-      "parse_table_aliases: $msg",
+      $qp->get_table_aliases($query),
+      $aliases,
+      "get_table_aliases: $msg",
    );
    is_deeply(
       [$qp->get_tables($query)],
@@ -35,9 +29,39 @@ sub test_query {
    return;
 }
 
+my @table_refs;
+my $save_tbl_refs = sub {
+   my ( $tbl_ref ) = @_;
+   push @table_refs, $tbl_ref;
+   return;
+};
+
+@table_refs = ();
+$qp->_get_table_refs('SELECT * FROM tbl AS tbl_alias WHERE id = 1', $save_tbl_refs);
+is(
+   $table_refs[0],
+   'tbl AS tbl_alias',
+   'get tbl ref with one AS alias'
+);
+
+@table_refs = ();
+$qp->_get_table_refs('SELECT * FROM tbl tbl_alias WHERE id = 1', $save_tbl_refs);
+is(
+   $table_refs[0],
+   'tbl tbl_alias',
+   'get tbl ref with one implicit alias'
+);
+
+@table_refs = ();
+$qp->_get_table_refs('SELECT * FROM t1 AS a, t2 WHERE id = 1', $save_tbl_refs);
+is(
+   $table_refs[0],
+   't1 AS a, t2',
+   'get tbl ref with one AS alias and another non-aliased tbl'
+);
+
 test_query(
    'SELECT * FROM tbl WHERE id = 1',
-   'tbl ',
    {
       'tbl' => 'tbl',
    },
@@ -47,7 +71,6 @@ test_query(
 
 test_query(
    'SELECT * FROM tbl1, tbl2 WHERE id = 1',
-   'tbl1, tbl2 ',
    {
       'tbl1' => 'tbl1',
       'tbl2' => 'tbl2',
@@ -58,7 +81,6 @@ test_query(
 
 test_query(
    'SELECT * FROM tbl AS tbl_alias WHERE id = 1',
-   'tbl AS tbl_alias ',
    {
       'tbl_alias' => 'tbl',
    },
@@ -68,7 +90,6 @@ test_query(
 
 test_query(
    'SELECT * FROM tbl tbl_alias WHERE id = 1',
-   'tbl tbl_alias ',
    {
       'tbl_alias' => 'tbl',
    },
@@ -78,7 +99,6 @@ test_query(
 
 test_query(
    'SELECT * FROM tbl1 AS a1, tbl2 a2 WHERE id = 1',
-   'tbl1 AS a1, tbl2 a2 ',
    {
       'a1' => 'tbl1',
       'a2' => 'tbl2',
@@ -89,7 +109,6 @@ test_query(
 
 test_query(
    'SELECT * FROM tbl1 AS a1 LEFT JOIN tbl2 as a2 ON a1.id = a2.id',
-   'tbl1 AS a1 LEFT JOIN tbl2 as a2 ON a1.id = a2.id',
    {
       'a1' => 'tbl1',
       'a2' => 'tbl2',
@@ -100,7 +119,6 @@ test_query(
 
 test_query(
    'SELECT * FROM db.tbl1 AS a1 WHERE id = 1',
-   'db.tbl1 AS a1 ',
    {
       'a1'       => 'tbl1',
       'DATABASE' => {
@@ -113,8 +131,8 @@ test_query(
 
 test_query(
    q{SELECT a FROM store_orders_line_items JOIN store_orders},
-   'store_orders_line_items JOIN store_orders',
-   {  store_orders_line_items => 'store_orders_line_items',
+   {
+      store_orders_line_items => 'store_orders_line_items',
       store_orders            => 'store_orders',
    },
    [qw(store_orders_line_items store_orders)],
@@ -126,7 +144,6 @@ test_query(
 # #############################################################################
 test_query(
     'select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507 n inner join db1.gonzo a using(gonzo)', 
-    'db2.tuningdetail_21_265507 n inner join db1.gonzo a using(gonzo)',
    {
       'n' => 'tuningdetail_21_265507',
       'a' => 'gonzo',
@@ -142,7 +159,6 @@ test_query(
 # #############################################################################
 test_query(
    'select 12_13_foo from (select 12foo from 123_bar) as 123baz',
-   '(select 12foo from 123_bar) as 123baz',
    {
       '123_bar' => '123_bar',
    },
@@ -158,8 +174,8 @@ test_query(
    . q{APLTRACT_GARDENPLANT_ID = ABU.ID AND GC.MATCHING_POT = 0 AND GC.PERFORM_DIG=1}
    . q{ AND ABU.DIG = 6 AND ( ((SOIL-COST) > -80.0}
    . q{ AND BUGS < 60.0 AND (SOIL-COST) < 200.0) AND POTS < 10.0 )},
-   'GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU ',
-   {  PL => 'GARDEN_CLUPL',
+   {
+      PL => 'GARDEN_CLUPL',
       GC => 'GARDENJOB',
       ABU => 'APLTRACT_GARDENPLANT',
    },
@@ -201,7 +217,8 @@ is_deeply(
 
 is_deeply(
    [ $qp->get_tables(
-      'replace into checksum.checksum select `last_update`, `foo` from foo.foo')],
+      'replace into checksum.checksum select `last_update`, `foo` from foo.foo')
+   ],
    [qw(checksum.checksum foo.foo)],
    'gets tables with reserved words');
 

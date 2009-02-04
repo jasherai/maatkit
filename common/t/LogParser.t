@@ -1435,12 +1435,12 @@ my $callback1 = sub {
    my ( $event ) = @_;
    return 0 if $i >= 5;
    $event->{foo} = ++$i;
-   return 1;
+   return $event;
 };
 my $callback2 = sub {
    my ( $event ) = @_;
    push @e, $event;
-   return 1;
+   return $event;
 };
 
 @e = ();
