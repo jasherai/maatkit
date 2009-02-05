@@ -17,7 +17,9 @@
 # ###########################################################################
 # QueryReview package $Revision$
 # ###########################################################################
+
 package QueryReview;
+
 # This module is an interface to a "query review table" in which certain
 # historical information about unique queries is stored. This review
 # information is primarily used by mk-log-parser to do a "query review"
@@ -43,6 +45,8 @@ package QueryReview;
 # Events in the query review table are identified by a checksum. The
 # checksum is part of an MD5 hash of the query's group-by value (usually the
 # fingerprint of the $event->{arg}).
+
+# TODO: we need to use prepared statements for SQL in this class.
 
 use strict;
 use warnings FATAL => 'all';
@@ -89,7 +93,6 @@ sub new {
    my @extra_cols = grep { !$basic_cols{$_} } @{$args{tbl_struct}->{cols}};
 
    # Pre-load cache of fingerprint-checksums from the query review table.
-   # TODO: pre-load extra cols
    my $sql = "SELECT fingerprint, CONV(checksum, 10, 16) as checksum_hex, "
            . "first_seen, last_seen "
            . "FROM $args{db_tbl} "
@@ -176,12 +179,21 @@ sub cache_event {
    # in the query review table). Else, add the new event to the query
    # review table and the cache.
    if ( exists $self->{cache}->{$group_by} ) {
-      $checksum = $self->{cache}->{$group_by}->{checksum};
-      $self->_update_cache($group_by, $event);
+      my $fp_ds = $self->{cache}->{$group_by};
+      $checksum = $fp_ds->{checksum};
+      $fp_ds->{dirty} = 1;  # group_by in cache differs from query review tbl
+      # Update first_seen and last_seen. Timestamps may not always increase.
+      # They can decrease, for example, if the user parses an old log.
+      if ( $event->{ts} && ( my $ts = parse_timestamp($event->{ts}) ) ) {
+         my $cols = $fp_ds->{cols};
+         $cols->{first_seen}
+            = $ts if !$cols->{first_seen} || $ts le $cols->{first_seen};
+         $cols->{last_seen}
+            = $ts if !$cols->{last_seen}  || $ts ge $cols->{last_seen};
+      }
    }
    else {
       $checksum = make_checksum($group_by);
-
       if ( $self->event_is_stored($checksum) ) {
          # Event not cached but stored in the db_tbl.
          my $review_info = $self->{dbh}->selectall_hashref(
@@ -196,10 +208,8 @@ sub cache_event {
             cols     => {
                first_seen => $review_info->{$checksum}->{first_seen} || '',
                last_seen  => $review_info->{$checksum}->{last_seen}  || '',
-               # TODO: init extra cols
             },
          };
-         $self->_update_cache($group_by, $event);
       }
       else {
          # New event.
@@ -234,32 +244,13 @@ sub cache_event {
 
 sub event_is_stored {
    my ( $self, $checksum ) = @_;
+   return 1 if $self->{seen}->{$checksum};
    my $sql = "SELECT checksum FROM $self->{db_tbl} "
            . "WHERE checksum=CONV('$checksum',16,10)";
    MKDEBUG && _d($sql);
-   my $event = $self->{dbh}->selectall_arrayref($sql);
-   return scalar @$event ? 1 : 0;
-}
-
-sub _update_cache {
-   my ( $self, $group_by, $event ) = @_;
-   return unless exists $self->{cache}->{$group_by};
-
-   # Shortcut to group_by's data store in cache.
-   my $fp_ds = $self->{cache}->{$group_by};
-
-   $fp_ds->{dirty} = 1;  # group_by in cache differs from query review tbl
-
-   # Update first_seen and last_seen. Timestamps may not always increase.
-   # They can decrease, for example, if the user parses and old log.
-   my $ts = parse_timestamp($event->{ts});
-   $fp_ds->{cols}->{first_seen} = $ts if $ts le $fp_ds->{cols}->{first_seen};
-   $fp_ds->{cols}->{last_seen}  = $ts if $ts ge $fp_ds->{cols}->{last_seen};
-
-   # TODO: update extra columns
-   # TODO: need a way to update worst sample only if it changes
-
-   return;
+   my ($is_there) = $self->{dbh}->selectrow_array($sql);
+   $self->{seen}->{$checksum} = $is_there;
+   return scalar $is_there ? 1 : 0;
 }
 
 # Update query review table according to new values in cache.

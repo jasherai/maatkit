@@ -29,6 +29,7 @@ my $q  = new Quoter();
 my $tp = new TableParser();
 my $du = new MySQLDump();
 my $tbl_struct = $tp->parse($du->dump($dbh, $q, 'test', 'query_review', 'table'));
+
 my $qv = new QueryReview(
    group_by    => 'fingerprint',
    dbh        => $dbh,
@@ -146,22 +147,29 @@ is_deeply(
 );
 is($qv->{cache}->{$fp}->{checksum}, $checksum, 'Caches new checksum');
 
-# Remove checksum from cache to test that it will query the table
-# to see that the event is not new and therefore update it instead
-# of trying to add it again.
-delete $qv->{cache}->{$fp};
-$event->{ts} = '081222 17:17:17',
+# Test that it will query the table to see that the event is not new and
+# therefore update it instead of trying to add it again.
+$qv = new QueryReview(
+   group_by    => 'fingerprint',
+   dbh        => $dbh,
+   db_tbl     => 'test.query_review',
+   tbl_struct => $tbl_struct,
+   ts_default => '"2009-01-01"',
+);
+
+$event->{ts} = '081222 17:17:17';
 $qv->cache_event($event);
 $qv->flush_event_cache();
-$res = $dbh->selectall_arrayref("SELECT first_seen, last_seen FROM
-test.query_review WHERE checksum=CONV('$checksum',16,10)");
+$res = $dbh->selectall_arrayref(
+   "SELECT first_seen, last_seen FROM test.query_review "
+      . "WHERE checksum=CONV('$checksum',16,10)",
+   { Slice => {} });
 is_deeply(
    $res,
    [
-      [
-         '2008-12-22 13:13:13',
-         '2008-12-22 17:17:17',
-      ],
+      {  first_seen => '2008-12-22 13:13:13',
+         last_seen  => '2008-12-22 17:17:17',
+      },
    ],
    'Updates old, non-cached event'
 );
