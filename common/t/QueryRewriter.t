@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 94;
+use Test::More tests => 95;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -42,6 +42,13 @@ is(
    $q->strip_comments("select foo -- bar"),
    "select foo ",
    'Removes one-line comments at end of line',
+);
+
+is(
+   $q->fingerprint(
+      q{UPDATE groups_search SET  charter = '   -------3\'\' XXXXXXXXX.\n    \n    -----------------------------------------------------', show_in_list = 'Y' WHERE group_id='aaaaaaaa'}),
+   'update groups_search set charter = ?, show_in_list = ? where group_id=?',
+   'complex comments',
 );
 
 is(
