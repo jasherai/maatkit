@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 38;
+use Test::More tests => 39;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -229,6 +229,13 @@ SKIP: {
       ],
       'Adds/updates queries to query review table'
    );
+
+   # Make sure a missing Time property does not cause a crash.
+   $output = 'foo'; # clear previous test results
+   $cmd = "${run_with}slow021.txt --review h=127.1,P=12345,D=test,t=query_review"; 
+   $output = `$cmd`;
+   # Don't test data in table, because it varies based on when you run the test.
+   unlike($output, qr/Use of uninitialized value/, 'didnt crash due to undef ts');
 
    # This time we'll run with --report and since none of the queries
    # have been reviewed, the report should include both of them with

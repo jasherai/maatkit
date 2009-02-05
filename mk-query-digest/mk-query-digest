@@ -3390,7 +3390,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 2899
+# QueryReview package 2989
 # ###########################################################################
 package QueryReview;
 
@@ -3435,10 +3435,13 @@ sub new {
    }
    @{ $args{dbh}->selectall_arrayref($sql, { Slice => {} }) };
 
-   my $insert_new_sth = $args{dbh}->prepare(
+   my $now = defined $args{ts_default} ? $args{ts_default} : 'NOW()';
+   $sql =
          'INSERT IGNORE INTO ' . $args{db_tbl}
          . '(checksum, fingerprint, sample, first_seen, last_seen) VALUES( '
-         . 'CONV(?, 16, 10), ?, ?, COALESCE(?, NOW()), COALESCE(?, NOW()))');
+         . "CONV(?, 16, 10), ?, ?, COALESCE(?, $now), COALESCE(?, $now))";
+   MKDEBUG && _d("SQL to insert into review table:", $sql);
+   my $insert_new_sth = $args{dbh}->prepare($sql);
 
    my $self = {
       dbh            => $args{dbh},
@@ -3448,6 +3451,7 @@ sub new {
       group_by       => $args{group_by},
       basic_cols     => \@basic_cols,
       extra_cols     => \@extra_cols,
+      ts_default     => $now,
    };
    MKDEBUG && _d("new QueryReview obj: " . Dumper($self));
    return bless $self, $class;
@@ -3519,7 +3523,7 @@ sub cache_event {
          $self->_update_cache($group_by, $event);
       }
       else {
-         my $ts = parse_timestamp($event->{ts});
+         my $ts = $event->{ts} ? parse_timestamp($event->{ts}) : undef;
 
          $self->{insert_new_sth}->execute(
             $checksum,
@@ -3527,7 +3531,7 @@ sub cache_event {
             $event->{arg},
             $ts,
             $ts);
-         MKDEBUG && _d("Stored new event: $checksum $group_by $ts");
+         MKDEBUG && _d("Stored new event: ", $checksum, $group_by, $ts);
 
          $self->{cache}->{$group_by} = {
             checksum => $checksum,
@@ -3580,6 +3584,10 @@ sub flush_event_cache {
       my @sets;
       foreach my $col ( keys %{$fp_ds->{cols}} ) {
          push @sets, "$col='$fp_ds->{cols}->{$col}'";
+      }
+      foreach my $col ( qw(first_seen last_seen) ) {
+         next if defined $fp_ds->{cols}->{$col};
+         push @sets, "$col=$col";
       }
       my $set_clause = join(', ', @sets);
       my $sql = "UPDATE $self->{db_tbl} SET "
