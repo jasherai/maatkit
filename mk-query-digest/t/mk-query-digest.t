@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 39;
+use Test::More tests => 43;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -237,6 +237,13 @@ SKIP: {
    # Don't test data in table, because it varies based on when you run the test.
    unlike($output, qr/Use of uninitialized value/, 'didnt crash due to undef ts');
 
+   # Make sure a really ugly Time property that doesn't parser does not cause a crash.
+   $output = 'foo'; # clear previous test results
+   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,D=test,t=query_review"; 
+   $output = `$cmd`;
+   # Don't test data in table, because it varies based on when you run the test.
+   unlike($output, qr/Use of uninitialized value/, 'no crash due to totally missing ts');
+
    # This time we'll run with --report and since none of the queries
    # have been reviewed, the report should include both of them with
    # their respective query review info added to the report.
@@ -272,6 +279,17 @@ SKIP: {
       'Analyze-review pass 5 reports new review info column'
    );
 
+   # Make sure that when we run with all-0 timestamps they don't show up in the
+   # output because they are useless of course (issue 202).
+   $dbh1->do("update test.query_review set first_seen='0000-00-00 00:00:00', "
+      . " last_seen='0000-00-00 00:00:00'");
+   $output = 'foo'; # clear previous test results
+   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,D=test,t=query_review"; 
+   $output = `$cmd`;
+   unlike($output, qr/last_seen/, 'no last_seen when 0000 timestamp');
+   unlike($output, qr/first_seen/, 'no first_seen when 0000 timestamp');
+   unlike($output, qr/0000-00-00 00:00:00/, 'no 0000-00-00 00:00:00 timestamp');
+
    # ##########################################################################
    # Tests for swapping --processlist and --execute
    # ##########################################################################
@@ -290,8 +308,7 @@ SKIP: {
    $dbh1->do('select sleep(1)');
    sleep 2;
    $output = `ps -eaf | grep mk-query-diges[t] | awk '{print \$2}'`;
-   ($output) = $output =~ m/(\d+)/;
-   kill 2, $output;
+   kill 15, $output =~ m/(\d+)/g;
    # Verify that it's dead...
    $output = `ps -eaf | grep mk-query-diges[t]`;
    if ( $output =~ m/digest/ ) {

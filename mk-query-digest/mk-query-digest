@@ -3390,9 +3390,12 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 2989
+# QueryReview package 2992
 # ###########################################################################
+
 package QueryReview;
+
+
 
 use strict;
 use warnings FATAL => 'all';
@@ -3499,12 +3502,19 @@ sub cache_event {
    return unless defined $group_by;
 
    if ( exists $self->{cache}->{$group_by} ) {
-      $checksum = $self->{cache}->{$group_by}->{checksum};
-      $self->_update_cache($group_by, $event);
+      my $fp_ds = $self->{cache}->{$group_by};
+      $checksum = $fp_ds->{checksum};
+      $fp_ds->{dirty} = 1;  # group_by in cache differs from query review tbl
+      if ( $event->{ts} && ( my $ts = parse_timestamp($event->{ts}) ) ) {
+         my $cols = $fp_ds->{cols};
+         $cols->{first_seen}
+            = $ts if !$cols->{first_seen} || $ts le $cols->{first_seen};
+         $cols->{last_seen}
+            = $ts if !$cols->{last_seen}  || $ts ge $cols->{last_seen};
+      }
    }
    else {
       $checksum = make_checksum($group_by);
-
       if ( $self->event_is_stored($checksum) ) {
          my $review_info = $self->{dbh}->selectall_hashref(
             'SELECT CONV(checksum,10,16) AS checksum_conv, '
@@ -3520,7 +3530,6 @@ sub cache_event {
                last_seen  => $review_info->{$checksum}->{last_seen}  || '',
             },
          };
-         $self->_update_cache($group_by, $event);
       }
       else {
          my $ts = $event->{ts} ? parse_timestamp($event->{ts}) : undef;
@@ -3545,33 +3554,17 @@ sub cache_event {
    }
 
    $event->{checksum} = $checksum;
-
-   return;
 }
 
 sub event_is_stored {
    my ( $self, $checksum ) = @_;
+   return 1 if $self->{seen}->{$checksum};
    my $sql = "SELECT checksum FROM $self->{db_tbl} "
            . "WHERE checksum=CONV('$checksum',16,10)";
    MKDEBUG && _d($sql);
-   my $event = $self->{dbh}->selectall_arrayref($sql);
-   return scalar @$event ? 1 : 0;
-}
-
-sub _update_cache {
-   my ( $self, $group_by, $event ) = @_;
-   return unless exists $self->{cache}->{$group_by};
-
-   my $fp_ds = $self->{cache}->{$group_by};
-
-   $fp_ds->{dirty} = 1;  # group_by in cache differs from query review tbl
-
-   my $ts = parse_timestamp($event->{ts});
-   $fp_ds->{cols}->{first_seen} = $ts if $ts le $fp_ds->{cols}->{first_seen};
-   $fp_ds->{cols}->{last_seen}  = $ts if $ts ge $fp_ds->{cols}->{last_seen};
-
-
-   return;
+   my ($is_there) = $self->{dbh}->selectrow_array($sql);
+   $self->{seen}->{$checksum} = $is_there;
+   return scalar $is_there ? 1 : 0;
 }
 
 sub flush_event_cache {
@@ -3580,24 +3573,20 @@ sub flush_event_cache {
    CLASS:
    foreach my $class ( keys %{$self->{cache}} ) {
       my $fp_ds = $self->{cache}->{$class};
-      next CLASS if !$fp_ds->{dirty};
-      my @sets;
-      foreach my $col ( keys %{$fp_ds->{cols}} ) {
-         push @sets, "$col='$fp_ds->{cols}->{$col}'";
-      }
-      foreach my $col ( qw(first_seen last_seen) ) {
-         next if defined $fp_ds->{cols}->{$col};
-         push @sets, "$col=$col";
-      }
-      my $set_clause = join(', ', @sets);
+      next CLASS unless $fp_ds->{dirty};
       my $sql = "UPDATE $self->{db_tbl} SET "
-              . $set_clause
-              . " WHERE checksum=CONV('$fp_ds->{checksum}',16,10)";
+              . join(', ',
+                   map {
+                      $_ =~ m/first_seen|last_seen/
+                         ? "$_=COALESCE(?, $self->{ts_default})"
+                         : "$_=?"
+                   } keys %{$fp_ds->{cols}}
+                )
+              . " WHERE checksum=CONV(?, 16, 10)";
       MKDEBUG && _d("update sql for cached event: $sql");
-      $self->{dbh}->do($sql);
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(values %{$fp_ds->{cols}}, $fp_ds->{checksum});
    }
-
-   return;
 }
 
 sub _d {
@@ -4103,7 +4092,9 @@ my %ea;     # EventAggregators
                print "# Review information\n";
                foreach my $col ($qv->review_cols) {
                   my $val = $review_vals->{$col};
-                  printf "# %13s: %-s\n", $col, ( defined $val ? $val : '' );
+                  if ( !$val || $val ne '0000-00-00 00:00:00' ) { # See issue 202
+                     printf "# %13s: %-s\n", $col, ( defined $val ? $val : '' );
+                  }
                }
             }
 
