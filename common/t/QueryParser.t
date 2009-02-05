@@ -29,45 +29,66 @@ sub test_query {
    return;
 }
 
-my @table_refs;
-my $save_tbl_refs = sub {
-   my ( $tbl_ref ) = @_;
-   push @table_refs, $tbl_ref;
+sub test_get_tbl_refs {
+   my ( $query, $tbl_ref, $msg ) = @_;
+   my @table_refs = $qp->_get_table_refs($query);
+   is_deeply(
+      \@table_refs,
+      $tbl_ref,
+      "_get_tbl_refs: $msg",
+   );
    return;
-};
+}
 
-@table_refs = ();
-$qp->_get_table_refs('SELECT * FROM tbl AS tbl_alias WHERE id = 1', $save_tbl_refs);
-is(
-   $table_refs[0],
-   'tbl AS tbl_alias',
-   '_get_tbl_refs: one AS alias'
+test_get_tbl_refs(
+   'SELECT * FROM tbl tbl_alias WHERE id = 1',
+   ['tbl tbl_alias '],
+   'one implicit alias'
 );
 
-@table_refs = ();
-$qp->_get_table_refs('SELECT * FROM tbl tbl_alias WHERE id = 1', $save_tbl_refs);
-is(
-   $table_refs[0],
-   'tbl tbl_alias',
-   '_get_tbl_refs: one implicit alias'
+test_get_tbl_refs(
+   'SELECT * FROM tbl AS tbl_alias WHERE id = 1',
+   ['tbl AS tbl_alias '],
+   'one AS alias'
 );
 
-@table_refs = ();
-$qp->_get_table_refs('SELECT * FROM t1 AS a, t2 WHERE id = 1', $save_tbl_refs);
-is(
-   $table_refs[0],
-   't1 AS a, t2',
-   '_get_tbl_refs: one AS alias, one not aliased'
+test_get_tbl_refs(
+   'SELECT * FROM t1 AS a, t2 WHERE id = 1',
+   ['t1 AS a, t2 '],
+   'one AS alias, one not aliased'
+);
+test_get_tbl_refs(
+   'SELECT * FROM t1 AS a, t2, t3 c WHERE id = 1',
+   ['t1 AS a, t2, t3 c '],
+   'one AS alias, one not aliased, one implicit alias'
 );
 
-@table_refs = ();
-$qp->_get_table_refs('SELECT * FROM t1', $save_tbl_refs);
-is(
-   $table_refs[0],
-   't1',
-   '_get_tbl_refs: one not aliased, no following clauses',
+test_get_tbl_refs(
+   'SELECT * FROM t1',
+   ['t1'],
+   'one not aliased, no following clauses',
 );
+
+test_get_tbl_refs(
+   'SELECT * FROM t1 a JOIN t2 b ON a.id=b.id WHERE foo = "bar"',
+   ['t1 a', 't2 b'],
+   'two tables implicitly aliased and JOIN',
+);
+
+test_get_tbl_refs(
+   'UPDATE foo AS bar SET value = 1 WHERE 1',
+   ['foo AS bar '],
+   'update with one AS alias',
+);
+
+test_get_tbl_refs(
+   'INSERT INTO foo VALUES (1)',
+   ['foo '],
+   'insert with one not aliased',
+);
+
 exit;
+
 test_query(
    'SELECT * FROM tbl WHERE id = 1',
    {

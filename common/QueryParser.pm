@@ -70,26 +70,27 @@ sub get_table_aliases {
 # Returns an array of tables to which the query refers.
 # XXX If you change this code, also change QueryRewriter::distill().
 sub _get_table_refs {
-   my ( $self, $query, $callback ) = @_;
+   my ( $self, $query ) = @_;
    return unless $query;
-   return unless $callback;
-   my ($tbl_ref) = $query =~ m/FROM\s+(.+?)\b(?:WHERE|ORDER|LIMIT|HAVING|\z)/is;
-   print ">>$tbl_ref\n";
-   foreach my $tbls (
-      $tbl_ref =~ m{
-         \b(?:OM|JOIN|UPDATE|INTO) # Words that precede table names
+   my @tbl_refs;
+
+   my ($tbl_refs) = $query =~ m/((?:FROM|INTO|UPDATE)\s+.+?)\b(?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z)/is;
+   MKDEBUG && _d("table refs: $tbl_refs");
+
+   foreach my $tbl_ref (
+      $tbl_refs =~ m{
+         \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
          \b\s*
          # Capture the identifier and any number of comma-join identifiers that
          # follow it, optionally with aliases with or without the AS keyword
          ($ident
-            (?:\s*(?:(?:AS\s*)?\w*)?,\s*$ident)*
+            (?:\s*(?:(?:AS\s*)?\w*)?(?:,\s*$ident)?)*
          )
       }xgio)
    {
-      MKDEBUG && _d("table ref: $tbls");
-      $callback->($tbls);
+      push @tbl_refs, $tbl_ref;
    }
-   return;
+   return @tbl_refs;
 }
 
 sub _d {
