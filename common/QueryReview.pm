@@ -238,8 +238,6 @@ sub cache_event {
 
    # Add event's checksum to itself as a pseudo-attribute.
    $event->{checksum} = $checksum;
-
-   return;
 }
 
 sub event_is_stored {
@@ -260,24 +258,22 @@ sub flush_event_cache {
    CLASS:
    foreach my $class ( keys %{$self->{cache}} ) {
       my $fp_ds = $self->{cache}->{$class};
-      next CLASS if !$fp_ds->{dirty};
-      my @sets;
-      foreach my $col ( keys %{$fp_ds->{cols}} ) {
-         push @sets, "$col='$fp_ds->{cols}->{$col}'";
-      }
-      foreach my $col ( qw(first_seen last_seen) ) {
-         next if defined $fp_ds->{cols}->{$col};
-         push @sets, "$col=$col";
-      }
-      my $set_clause = join(', ', @sets);
+      next CLASS unless $fp_ds->{dirty};
       my $sql = "UPDATE $self->{db_tbl} SET "
-              . $set_clause
-              . " WHERE checksum=CONV('$fp_ds->{checksum}',16,10)";
+              . join(', ',
+                   map {
+                      # Special case for timestamp columns
+                      # TODO: column names need to be run through a Quoter!
+                      $_ =~ m/first_seen|last_seen/
+                         ? "$_=COALESCE(?, $self->{ts_default})"
+                         : "$_=?"
+                   } keys %{$fp_ds->{cols}}
+                )
+              . " WHERE checksum=CONV(?, 16, 10)";
       MKDEBUG && _d("update sql for cached event: $sql");
-      $self->{dbh}->do($sql);
+      my $sth = $self->{dbh}->prepare($sql);
+      $sth->execute(values %{$fp_ds->{cols}}, $fp_ds->{checksum});
    }
-
-   return;
 }
 
 sub _d {

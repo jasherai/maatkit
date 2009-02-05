@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 10;
+use Test::More tests => 11;
 use English qw(-no_match_vars);
 
 require '../DSNParser.pm';
@@ -175,5 +175,25 @@ is_deeply(
 );
 is($qv->{cache}->{$fp}->{checksum}, $checksum, 'Adds old event\'s checksum to cache');
 
+# Test that it will query the table to see that the event is not new and
+# therefore update it instead of trying to add it again.
+$dbh->do('truncate table test.query_review');
+$qv = new QueryReview(
+   group_by    => 'fingerprint',
+   dbh        => $dbh,
+   db_tbl     => 'test.query_review',
+   tbl_struct => $tbl_struct,
+   ts_default => '"2009-01-01"',
+);
+
+$event->{ts} = undef;
+eval {
+   $qv->cache_event($event);
+   $qv->cache_event($event);
+   $qv->flush_event_cache();
+   $qv->cache_event($event);
+   $qv->flush_event_cache();
+};
+is($EVAL_ERROR, '', 'No error on undef ts');
+
 $sb->wipe_clean($dbh);
-exit;
