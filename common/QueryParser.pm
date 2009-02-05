@@ -73,9 +73,11 @@ sub _get_table_refs {
    my ( $self, $query, $callback ) = @_;
    return unless $query;
    return unless $callback;
+   my ($tbl_ref) = $query =~ m/FROM\s+(.+?)\b(?:WHERE|ORDER|LIMIT|HAVING|\z)/is;
+   print ">>$tbl_ref\n";
    foreach my $tbls (
-      $query =~ m{
-         \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
+      $tbl_ref =~ m{
+         \b(?:OM|JOIN|UPDATE|INTO) # Words that precede table names
          \b\s*
          # Capture the identifier and any number of comma-join identifiers that
          # follow it, optionally with aliases with or without the AS keyword

@@ -41,7 +41,7 @@ $qp->_get_table_refs('SELECT * FROM tbl AS tbl_alias WHERE id = 1', $save_tbl_re
 is(
    $table_refs[0],
    'tbl AS tbl_alias',
-   'get tbl ref with one AS alias'
+   '_get_tbl_refs: one AS alias'
 );
 
 @table_refs = ();
@@ -49,7 +49,7 @@ $qp->_get_table_refs('SELECT * FROM tbl tbl_alias WHERE id = 1', $save_tbl_refs)
 is(
    $table_refs[0],
    'tbl tbl_alias',
-   'get tbl ref with one implicit alias'
+   '_get_tbl_refs: one implicit alias'
 );
 
 @table_refs = ();
@@ -57,9 +57,17 @@ $qp->_get_table_refs('SELECT * FROM t1 AS a, t2 WHERE id = 1', $save_tbl_refs);
 is(
    $table_refs[0],
    't1 AS a, t2',
-   'get tbl ref with one AS alias and another non-aliased tbl'
+   '_get_tbl_refs: one AS alias, one not aliased'
 );
 
+@table_refs = ();
+$qp->_get_table_refs('SELECT * FROM t1', $save_tbl_refs);
+is(
+   $table_refs[0],
+   't1',
+   '_get_tbl_refs: one not aliased, no following clauses',
+);
+exit;
 test_query(
    'SELECT * FROM tbl WHERE id = 1',
    {
