@@ -1090,7 +1090,7 @@ sub make_checksum {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2963
+# QueryRewriter package 2984
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1116,8 +1116,8 @@ $bal         = qr/
                   \)
                  /x;
 
-my $olc_re = qr/(?:--|#)[^'"\r\n]*/;   # One-line comments
-my $mlc_re = qr#/\*[^!].*?\*/#sm;      # Multi-line comments, but not /*!version */
+my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
+my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
 
 sub new {
    my ( $class ) = @_;
