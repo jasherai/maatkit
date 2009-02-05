@@ -47,7 +47,6 @@ $bal         = qr/
 # The one-line comment pattern is quite crude.  This is intentional for
 # performance.  The multi-line pattern does not match version-comments.
 my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
-#my $olc_re = qr/(?:--|#)[^'"\r\n]*/;  # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
 
 sub new {
