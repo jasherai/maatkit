@@ -9,6 +9,9 @@ use English qw(-no_match_vars);
 require '../QueryRewriter.pm';
 require '../QueryParser.pm';
 
+use Data::Dumper;
+$Data::Dumper::Indent=1;
+
 my $qr = new QueryRewriter;
 my $qp = new QueryParser;
 
@@ -42,49 +45,89 @@ sub test_get_tbl_refs {
 
 test_get_tbl_refs(
    'SELECT * FROM tbl tbl_alias WHERE id = 1',
-   ['tbl tbl_alias '],
+   ['tbl tbl_alias'],
    'one implicit alias'
 );
-
 test_get_tbl_refs(
    'SELECT * FROM tbl AS tbl_alias WHERE id = 1',
-   ['tbl AS tbl_alias '],
+   ['tbl AS tbl_alias'],
    'one AS alias'
 );
-
 test_get_tbl_refs(
    'SELECT * FROM t1 AS a, t2 WHERE id = 1',
-   ['t1 AS a, t2 '],
+   ['t1 AS a', 't2'],
    'one AS alias, one not aliased'
 );
 test_get_tbl_refs(
    'SELECT * FROM t1 AS a, t2, t3 c WHERE id = 1',
-   ['t1 AS a, t2, t3 c '],
+   ['t1 AS a', 't2', 't3 c'],
    'one AS alias, one not aliased, one implicit alias'
 );
-
 test_get_tbl_refs(
    'SELECT * FROM t1',
    ['t1'],
    'one not aliased, no following clauses',
 );
-
 test_get_tbl_refs(
-   'SELECT * FROM t1 a JOIN t2 b ON a.id=b.id WHERE foo = "bar"',
+   'SELECT * FROM t1 a, t2 b WHERE foo = "bar"',
+   ['t1 a', 't2 b'],
+   'two tables implicitly aliased',
+);
+test_get_tbl_refs(
+   'SELECT * FROM t1 a JOIN t2 b ON a.col1=b.col2 WHERE foo = "bar"',
    ['t1 a', 't2 b'],
    'two tables implicitly aliased and JOIN',
 );
-
+test_get_tbl_refs(
+   'SELECT * FROM t1 JOIN t2 ON t1.col1=t2.col2 JOIN t3 ON t2.col3 = t3.col4 WHERE foo = "bar"',
+   ['t1', 't2', 't3'],
+   'three table JOIN, none aliased',
+);
 test_get_tbl_refs(
    'UPDATE foo AS bar SET value = 1 WHERE 1',
-   ['foo AS bar '],
+   ['foo AS bar'],
    'update with one AS alias',
+);
+test_get_tbl_refs(
+   'UPDATE IGNORE foo bar SET value = 1 WHERE 1',
+   ['foo bar'],
+   'update ignore with one implicit alias',
+);
+test_get_tbl_refs(
+   'UPDATE IGNORE bar SET value = 1 WHERE 1',
+   ['bar'],
+   'update ignore with one not aliased',
+);
+test_get_tbl_refs(
+   'UPDATE LOW_PRIORITY baz SET value = 1 WHERE 1',
+   ['baz'],
+   'update low_priority with one not aliased',
+);
+test_get_tbl_refs(
+   'UPDATE LOW_PRIORITY IGNORE bat SET value = 1 WHERE 1',
+   ['bat'],
+   'update low_priority ignore with one not aliased',
+);
+test_get_tbl_refs(
+   'INSERT INTO foo VALUES (1)',
+   ['foo'],
+   'insert with one not aliased',
 );
 
 test_get_tbl_refs(
-   'INSERT INTO foo VALUES (1)',
-   ['foo '],
-   'insert with one not aliased',
+   'select * from `my table` limit 1;',
+   ['`my table`'],
+   'one table with space in name, not aliased',
+);
+test_get_tbl_refs(
+   'select * from `my database`.mytable limit 1;',
+   ['`my database`.mytable'],
+   'one db.tbl with space in db, not aliased',
+);
+test_get_tbl_refs(
+   'select * from `my database`.`my table` limit 1; ',
+   ['`my database`.`my table`'],
+   'one db.tbl with space in both db and tbl, not aliased',
 );
 
 exit;

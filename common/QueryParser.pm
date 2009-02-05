@@ -27,7 +27,7 @@ use Data::Dumper;
 $Data::Dumper::Indent = 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
-our $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
+our $tbl_ref_pattern = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 
 sub new {
    my ( $class ) = @_;
@@ -38,13 +38,9 @@ sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
    my @tables = ();
-   my $callback = sub {
-      my ( $tbls ) = @_;
-      # Remove [AS] foo aliases
-      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
-      push @tables, $tbls =~ m/($ident)/g;
-   };
-   $self->_get_table_refs($query, $callback);
+   # Remove [AS] foo aliases
+   # $tbls =~ s/($tbl_ref_pattern)\s+(?:as\s+\w+|\w+)/$1/gi;
+   $self->_get_table_refs($query);
    return @tables;
 }
 
@@ -52,18 +48,10 @@ sub get_table_aliases {
    my ( $self, $query ) = @_;
    return unless $query;
    my $aliases = {};
-   my $save_alias = sub {
-      my ( $db_tbl, $alias ) = @_;
-      my ( $db, $tbl ) = $db_tbl =~ m/^(?:(\S+)\.)?(\S+)/;
-      $aliases->{$alias || $tbl} = $tbl;
-      $aliases->{DATABASE}->{$tbl} = $db if $db;
-      return 1;
-   };
-   my $callback = sub {
-      my ( $tbls ) = @_;
-      $tbls =~ s/($ident)(?:\s+(?:as\s+(\w+)|(\w+))*)*/$save_alias->($1,$2)/gie;
-   };
-   $self->_get_table_refs($query, $callback);
+   #   my ( $db, $tbl ) = $db_tbl =~ m/^(?:(\S+)\.)?(\S+)/;
+   #   $aliases->{$alias || $tbl} = $tbl;
+   #   $aliases->{DATABASE}->{$tbl} = $db if $db;
+   $self->_get_table_refs($query);
    return $aliases;
 }
  
@@ -74,21 +62,51 @@ sub _get_table_refs {
    return unless $query;
    my @tbl_refs;
 
-   my ($tbl_refs) = $query =~ m/((?:FROM|INTO|UPDATE)\s+.+?)\b(?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z)/is;
+   MKDEBUG && _d("original query: $query");
+
+   # Since these keywords may appear between UPDATE and the table refs,
+   # they need to be removed so they do not get mistaken as tables.
+   $query =~ s/ (?:LOW_PRIORITY|IGNORE)//g;
+
+   # Get the table references clause and the keyword that starts the clause.
+   # See the next comments below for why we need this starting keyword.
+   my ($tbl_refs, $from) = $query =~ m/((FROM|INTO|UPDATE)\b\s*.+?)\b\s*(?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z)/is;
+
+   die "Failed to parse table references from $query"
+      unless $tbl_refs && $from;
+
+   # The keyword that beings the table refs clause must be included so
+   # that the first table will match. We could not include it and make
+   # the before_tbl keywords match optionally, but then queries like:
+   #    FROM t1 a JOIN t2 b ON a.col1=b.col2
+   # will have col2 match as a tbl because no specific before_tbl keywords
+   # were required so after matching 't2 b', Perl will ignore everything
+   # until col2 which matches the 2nd line in the regex in foreach below.
+   my $before_tbl = qr/(?:$from|,|JOIN|\s)+/;
+
+   # These keywords signal the end of one table ref and the start of another,
+   # or the start the ON|USING part of a JOIN clause (which we want to skip
+   # over), or the end of the string (\z). We need these ending keywords so
+   # that they are not mistaken as an implicit alias name for a preceding tbl.
+   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/;
+
+   # This is required for cases like:
+   #    FROM t1 JOIN t2 ON t1.col1=t2.col2 JOIN t3 ON t2.col3 = t3.col4
+   # Because spaces may precede a tbl and a tbl may end with \z, then
+   # t3.col4 will match as a table. However, t2.col3=t3.col4 will not match.
+   $tbl_refs =~ s/ = /=/g;
+
    MKDEBUG && _d("table refs: $tbl_refs");
 
    foreach my $tbl_ref (
       $tbl_refs =~ m{
-         \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
-         \b\s*
-         # Capture the identifier and any number of comma-join identifiers that
-         # follow it, optionally with aliases with or without the AS keyword
-         ($ident
-            (?:\s*(?:(?:AS\s*)?\w*)?(?:,\s*$ident)?)*
-         )
-      }xgio)
+         $before_tbl\b\s*
+            ($tbl_ref_pattern (?:\s+ (?:AS\s+)?\w+)?)
+         \s*$after_tbl
+      }xgi)
    {
       push @tbl_refs, $tbl_ref;
+      MKDEBUG && _d("tbl ref match: '$tbl_ref'");
    }
    return @tbl_refs;
 }
