@@ -34,6 +34,7 @@ my $qv = new QueryReview(
    dbh        => $dbh,
    db_tbl     => 'test.query_review',
    tbl_struct => $tbl_struct,
+   ts_default => '"2009-01-01"',
 );
 
 isa_ok($qv, 'QueryReview');
@@ -85,22 +86,32 @@ my $log;
 open $log, '<', 'samples/slow006.txt' or bail_out($OS_ERROR);
 1 while ( $lp->parse_event($log, $callback) );
 close $log;
+open $log, '<', 'samples/slow021.txt' or bail_out($OS_ERROR);
+1 while ( $lp->parse_event($log, $callback) );
+close $log;
 $qv->flush_event_cache();
 
-my $res = $dbh->selectall_arrayref('SELECT checksum, first_seen, last_seen FROM query_review');
+my $res = $dbh->selectall_arrayref(
+   'SELECT checksum, first_seen, last_seen FROM query_review order by checksum',
+   { Slice => {} });
 is_deeply(
    $res,
-   [
-      [
-         '11676753765851784517',
-         '2007-12-18 11:48:27',
-         '2007-12-18 11:49:30',
-      ],
-      [
-         '15334040482108055940',
-         '2005-12-19 16:56:31',
-         '2007-12-18 11:49:07',
-      ],
+   [  {  checksum   => '4222630712410165197',
+         last_seen  => '2007-10-15 21:45:10',
+         first_seen => '2007-10-15 21:45:10'
+      },
+      {  checksum   => '9186595214868493422',
+         last_seen  => '2009-01-01 00:00:00',
+         first_seen => '2009-01-01 00:00:00'
+      },
+      {  checksum   => '11676753765851784517',
+         last_seen  => '2007-12-18 11:49:30',
+         first_seen => '2007-12-18 11:48:27'
+      },
+      {  checksum   => '15334040482108055940',
+         last_seen  => '2007-12-18 11:49:07',
+         first_seen => '2005-12-19 16:56:31'
+      }
    ],
    'Updates last_seen'
 );
