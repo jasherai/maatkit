@@ -643,7 +643,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 2889
+# MySQLFind package 2987
 # ###########################################################################
 package MySQLFind;
 
@@ -711,6 +711,7 @@ sub find_tables {
       foreach my $tbl ( @tables ) {
          next if $tbl->{engine};
          my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
+         $tbl_name ||= $tbl->{name};
          my $struct = $self->{parser}->parse(
             $self->{dumper}->get_create_table(
                $dbh, $self->{quoter}, $args{database}, $tbl_name));
@@ -854,7 +855,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2871
+# DSNParser package 2971
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1138,7 +1139,7 @@ sub print_active_handles {
       $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
-      $self->print_active_handles->( $handle, $level + 1 );
+      $self->print_active_handles( $handle, $level + 1 );
    }
 }
 
