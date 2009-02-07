@@ -1467,7 +1467,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 2996
+# SlowLogParser package 3001
 # ###########################################################################
 package SlowLogParser;
 
@@ -1484,6 +1484,15 @@ sub new {
 
 my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
 my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
+my $slow_log_hd_line = qr{
+      ^(?:
+      T[cC][pP]\s[pP]ort:\s+\d+ # case differs on windows/unix
+      |
+      [/A-Z].*mysqld,\sVersion.*(?:started\swith:|embedded\slibrary)
+      |
+      Time\s+Id\s+Command
+      ).*\n
+   }xm;
 
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
@@ -1500,16 +1509,7 @@ sub parse_event {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
-      if ( $stmt =~ s{
-            ^(?:
-            Tcp\sport:\s+\d+
-            |
-            /.*Version.*started
-            |
-            Time\s+Id\s+Command
-            ).*\n
-         }{}gmxo
-      ){
+      if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
          my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
          if ( @chunks > 1 ) {
             $stmt = shift @chunks;
@@ -1521,7 +1521,7 @@ sub parse_event {
       $stmt =~ s/;\n#?\Z//;
 
 
-      my ($got_ts, $got_uh, $got_ac, $got_db, $got_set);
+      my ($got_ts, $got_uh, $got_ac, $got_db, $got_set, $got_embed);
       my $pos = 0;
       my $len = length($stmt);
       my $found_arg = 0;
@@ -1530,52 +1530,46 @@ sub parse_event {
          $pos     = pos($stmt);  # Be careful not to mess this up!
          my $line = $1;          # Necessary for /g and pos() to work.
 
-         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
+         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
 
             if ( !$got_ts
                && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
-               && ++$got_ts
             ) {
                push @properties, 'ts', $time;
+               ++$got_ts;
                if ( !$got_uh
                   && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-                  && ++$got_uh
                ) {
                   push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+                  ++$got_uh;
                }
             }
 
             elsif ( !$got_uh
                   && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-                  && ++$got_uh
             ) {
                push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+               ++$got_uh;
             }
 
-            elsif ( !$got_ac
-                  && $line =~ m/^# (?:administrator command:.*)$/
-                  && ++$got_ac
-            ) {
+            elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
                push @properties, 'cmd', 'Admin', 'arg', $line;
-               $found_arg++;
+               ++$found_arg;
+               ++$got_ac;
             }
 
             elsif ( my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+)/g ) {
                push @properties, @temp;
             }
 
-            elsif ( !$got_db
-                  && (my ( $db ) = $line =~ m/^USE ([^;]+)/i )
-                  && ++$got_db
-            ) {
+            elsif ( !$got_db && (my ( $db ) = $line =~ m/^use ([^;]+)/ ) ) {
                push @properties, 'db', $db;
+               ++$got_db;
             }
 
-            elsif ( !$got_set
-                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/i )
-                  && ++$got_set
-            ) {
+            elsif (!$got_set && (my ($setting) = $line =~ m/^SET\s+([^;]*)/)) {
                push @properties, split(/,|\s*=\s*/, $setting);
+               ++$got_set;
             }
 
             if ( !$found_arg && $pos == $len ) {
@@ -1592,6 +1586,11 @@ sub parse_event {
          }
          else {
             push @properties, 'arg', substr($stmt, $pos - length($line));
+            if ( $misc && $misc->{embed}
+               && ( my ($e) = $properties[-1] =~ m/($misc->{embed})/)
+            ) {
+               push @properties, $e =~ m/$misc->{capture}/g;
+            }
             last LINE;
          }
       }
@@ -3528,7 +3527,6 @@ my %ea;     # EventAggregators
    if ( grep { $_ eq 'fingerprint' } @{$opts{groupby}} ) {
       push @callbacks, sub {
          my ( $event ) = @_;
-         # TODO: save db and ts from last event and apply it here.  (Before skipping!)
          # Skip events which do not have the group_by attribute.
          my $group_by_val = $event->{arg};
          return 0 unless defined $group_by_val;
@@ -3726,9 +3724,18 @@ my %ea;     # EventAggregators
          }
       }
 
-      my $lp = new SlowLogParser();
+      my $lp   = new SlowLogParser();
+      my $misc = undef;
+      if ( $opts{embeddedattr} ) {
+         $misc = {
+            embed   => $opts{embeddedattr},
+            capture => $opts{embeddedattrcapt},
+         };
+      }
+      # TODO: carry the last db and ts values forward if they're undefined
+      # now.  Do that by unshifting a new callback onto the front of @callbacks.
       while ( $oktorun && (my $fh = shift(@fhs)) ) {
-         1 while ( $oktorun && $lp->parse_event($fh, undef, @callbacks) );
+         1 while ( $oktorun && $lp->parse_event($fh, $misc, @callbacks) );
          close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
       }
    }
@@ -4255,6 +4262,35 @@ last-seen value for that class of query is used instead.
 =item --daemonize
 
 Fork to the background and detach from the shell.  POSIX only.
+
+=item --embeddedattr
+
+type: string
+
+Perl regex to capture pseudo-attributes in queries.
+
+Embedded attributes might be special name-value pairs that you've hidden in
+comments.  This regex should match the entire set of attributes (in case there
+are multiples).  See also L<"--embeddedattrcapt">.
+
+=item --embeddedattrcapt
+
+type: string
+
+Perl regex to extract pseudo-attribute names and values from the string captured
+by L<"--embeddedattr">.
+
+For example, suppose your query looks like the following:
+
+  SELECT * from users -- file: /login.php, line: 493;
+
+You might run mk-query-digest with the following options:
+
+  mk-query-digest --embeddedattr ' -- .*' \
+      --embeddedattrcapt '(\w+): ([^,]+)'
+
+The first regular expression captures the comment; the second one splits it into
+name-value pairs and adds them as attributes of the event.
 
 =item --execute
 

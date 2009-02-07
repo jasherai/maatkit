@@ -1,0 +1,24 @@
+
+# ########################################################################
+# Report grouped by file
+# ########################################################################
+
+# Item 1: 0 QPS, 0x concurrency, ID 0xE0976A52E15A18AC at byte 0 _________
+#              pct   total     min     max     avg     95%  stddev  median
+# Count        100       1
+# Exec time    100      2s      2s      2s      2s      2s       0      2s
+# Lock time      0       0       0       0       0       0       0       0
+# Rows sent    100       1       1       1       1       1       0       1
+# Rows exam      0       0       0       0       0       0       0       0
+# Users          1    root
+# Time range 2007-10-15 21:43:52 to 2007-10-15 21:43:52
+# Query_time distribution
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms
+# 100ms
+#    1s  ################################################################
+#  10s+
+/user.php

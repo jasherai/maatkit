@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 43;
+use Test::More tests => 44;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -94,6 +94,15 @@ ok(
 ok(
    no_diff($run_with.'slow008.txt', 'samples/slow008_report.txt'),
    'Analysis for slow008'
+);
+
+ok(
+   no_diff(
+      $run_with
+         . 'slow010.txt --embeddedattr \' -- .*\' --embeddedattrcapt '
+         . '\'(\w+): ([^,]+)\' --report file',
+      'samples/slow010_reportbyfile.txt'),
+   'Analysis for slow010'
 );
 
 ok(
