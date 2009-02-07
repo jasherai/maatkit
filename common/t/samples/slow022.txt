@@ -18,7 +18,7 @@ SELECT col FROM foo_tbl;
 # QC_Hit: No  Full_scan: No  Full_join: No  Tmp_table: No  Disk_tmp_table: No
 # Filesort: No  Disk_filesort: No  Merge_passes: 0
 # No InnoDB statistics available for this query
-USE bar;
+use bar;
 SELECT col FROM bar_tbl;
 # Time: margdl 11:49:05 # User@Host: [SQL_SLAVE] @  []
 # Thread_id: 10  Schema: bar
@@ -33,7 +33,7 @@ SELECT col FROM bar_tbl;
 # QC_Hit: No  Full_scan: No  Full_join: No  Tmp_table: No  Disk_tmp_table: No
 # Filesort: No  Disk_filesort: No  Merge_passes: 0
 # No InnoDB statistics available for this query
-USE bar;
+use bar;
 SELECT col FROM bar_tbl;
 # Time: margdl 11:49:30 # User@Host: [SQL_SLAVE] @  []
 # Thread_id: 30  Schema: foo

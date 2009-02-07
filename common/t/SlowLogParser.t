@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 32;
+use Test::More tests => 42;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -17,13 +17,13 @@ my $p = new SlowLogParser;
 sub run_test {
    my ( $def ) = @_;
    map     { die "What is $_ for?" }
-      grep { $_ !~ m/^(?:file|result|num_events)$/ }
+      grep { $_ !~ m/^(?:misc|file|result|num_events)$/ }
       keys %$def;
    my @e;
    my $num_events = 0;
    eval {
       open my $fh, "<", $def->{file} or die $OS_ERROR;
-      $num_events++ while $p->parse_event($fh, undef, sub { push @e, @_ });
+      $num_events++ while $p->parse_event($fh, $def->{misc}, sub { push @e, @_ });
       close $fh;
    };
    is($EVAL_ERROR, '', "No error on $def->{file}");
@@ -69,7 +69,7 @@ run_test({
    ],
 });
 
-# I forget what's special about this one.
+# This one has complex SET insert_id=34484549,timestamp=1197996507;
 run_test({
    file => 'samples/slow002.txt',
    result => [
@@ -616,6 +616,33 @@ run_test({
    ],
 });
 
+# Parse embedded meta-attributes
+run_test({
+   misc => {
+      embed   => qr/ -- .*/,
+      capture => qr/(\w+): ([^,]+)/
+   },
+   file => 'samples/slow010.txt',
+   result => [
+      {  Lock_time     => '0',
+         Query_time    => '2',
+         Rows_examined => '0',
+         Rows_sent     => '1',
+         arg           => 'SELECT foo -- file: /user.php, line: 417, url: d217d035a34ac9e693b41d4c2&limit=500&offset=0',
+         cmd           => 'Query',
+         host          => 'localhost',
+         ip            => '',
+         pos_in_log    => '0',
+         ts            => '071015 21:43:52',
+         user          => 'root',
+         file          => '/user.php',
+         line          => '417',
+         url           => 'd217d035a34ac9e693b41d4c2&limit=500&offset=0',
+      },
+   ],
+});
+$p = new SlowLogParser;
+
 # Parses commented event lines after uncommented meta-lines
 run_test({
    file => 'samples/slow011.txt',
@@ -711,7 +738,8 @@ run_test({
    ],
 });
 
-# A pathological test case to be sure a crash doesn't happen
+# A pathological test case to be sure a crash doesn't happen.  Has a bunch of
+# "use" and "set" and administrator commands etc.
 run_test({
    file => 'samples/slow013.txt',
    result => [
@@ -825,6 +853,45 @@ run_test({
    file => 'samples/slow015.txt',
 });
 
+# Some more silly stuff with USE meta-data lines.
+run_test({
+   file => 'samples/slow016.txt',
+   result => [
+      {  user          => 'root',
+         cmd           => 'Query',
+         db            => 'user_chos',
+         host          => 'localhost',
+         ip            => '127.0.0.1',
+         Thread_id     => 6997,
+         Schema        => 'user_chos',
+         Query_time    => '0.000020',
+         Lock_time     => '0.000000',
+         Rows_sent     => 0,
+         Rows_examined => 0,
+         Rows_affected => 0,
+         Rows_read     => 1,
+         arg           => 'USE `user_chos`',
+         pos_in_log    => 0,
+      },
+      {  user          => 'user_user',
+         cmd           => 'Query',
+         db            => 'user_sfn',
+         host          => 'my-server.myplace.net',
+         ip            => '192.168.100.1',
+         Thread_id     => 6996,
+         Schema        => 'user_sfn',
+         Query_time    => '0.000020',
+         Lock_time     => '0.000000',
+         Rows_sent     => 0,
+         Rows_examined => 0,
+         Rows_affected => 0,
+         Rows_read     => 0,
+         arg           => 'SELECT * FROM moderator',
+         pos_in_log    => 226,
+      },
+   ],
+});
+
 # Check that issue 234 doesn't kill us (broken Query_time).
 run_test({
    file => 'samples/slow017.txt',
@@ -841,6 +908,214 @@ run_test({
          Rows_sent     => 1,
          Rows_examined => 127,
          pos_in_log    => 0,
+      },
+   ],
+});
+
+# samples/slow018.txt is a test for mk-query-digest.
+
+# Has some more combinations of meta-data and explicit query lines and
+# administrator commands.
+run_test({
+   file => 'samples/slow019.txt',
+   result => [
+      {  Lock_time     => '0.000000',
+         Query_time    => '0.000002',
+         Rows_examined => '3',
+         Rows_sent     => '5',
+         Schema        => 'db1',
+         Thread_id     => '5',
+         arg           => '# administrator command: Quit',
+         cmd           => 'Admin',
+         host          => '',
+         ip            => '1.2.3.8',
+         pos_in_log    => '0',
+         user          => 'meow'
+      },
+      {  Lock_time     => '0.000000',
+         Query_time    => '0.000899',
+         Rows_examined => '3',
+         Rows_sent     => '0',
+         Schema        => 'db2',
+         Thread_id     => '6',
+         arg           => 'SET NAMES utf8',
+         cmd           => 'Query',
+         db            => 'db',
+         host          => '',
+         ip            => '1.2.3.8',
+         pos_in_log    => '221',
+         user          => 'meow'
+      },
+      {  Lock_time     => '0.009453',
+         Query_time    => '0.018799',
+         Rows_examined => '2',
+         Rows_sent     => '9',
+         Schema        => 'db2',
+         Thread_id     => '7',
+         arg           => '# administrator command: Quit',
+         cmd           => 'Admin',
+         db            => 'db2',
+         host          => '',
+         ip            => '1.2.3.8',
+         pos_in_log    => '435',
+         user          => 'meow'
+      }
+   ],
+});
+
+# Parse files that begin with Windows paths.  It also has TWO lines of meta-data.
+# This is from MySQL 5.1 on Windows.
+run_test({
+   file => 'samples/slow020.txt',
+   result => [
+      {  Lock_time     => '0.000000',
+         Query_time    => '0.453125',
+         Rows_examined => '2160',
+         Rows_sent     => '2160',
+         arg           => 'SELECT * FROM cottages',
+         cmd           => 'Query',
+         db            => 'myplace',
+         host          => 'secure.myplace.co.uk',
+         ip            => '88.208.248.160',
+         pos_in_log    => '0',
+         timestamp     => '1233019414',
+         ts            => '090127  1:23:34',
+         user          => 'swuser'
+      },
+   ],
+});
+
+# samples/slow021.txt is for mk-query-digest.  It has an entry without a Time.
+
+# samples/slow022.txt has garbled Time entries.
+run_test({
+   file => 'samples/slow022.txt',
+   result => [
+      {  Disk_filesort  => 'No',
+         Disk_tmp_table => 'No',
+         Filesort       => 'No',
+         Full_join      => 'No',
+         Full_scan      => 'No',
+         Lock_time      => '0.000000',
+         Merge_passes   => '0',
+         QC_Hit         => 'No',
+         Query_time     => '0.000012',
+         Rows_examined  => '0',
+         Rows_sent      => '0',
+         Schema         => 'foo',
+         Thread_id      => '10',
+         Tmp_table      => 'No',
+         arg            => 'SELECT col FROM foo_tbl',
+         cmd            => 'Query',
+         host           => '',
+         ip             => '',
+         pos_in_log     => '0',
+         user           => '[SQL_SLAVE]'
+      },
+      {  Disk_filesort  => 'No',
+         Disk_tmp_table => 'No',
+         Filesort       => 'No',
+         Full_join      => 'No',
+         Full_scan      => 'No',
+         Lock_time      => '0.000000',
+         Merge_passes   => '0',
+         QC_Hit         => 'No',
+         Query_time     => '0.000012',
+         Rows_examined  => '0',
+         Rows_sent      => '0',
+         Schema         => 'foo',
+         Thread_id      => '10',
+         Tmp_table      => 'No',
+         arg            => 'SELECT col FROM foo_tbl',
+         cmd            => 'Query',
+         host           => '',
+         ip             => '',
+         pos_in_log     => '363',
+         user           => '[SQL_SLAVE]'
+      },
+      {  Disk_filesort  => 'No',
+         Disk_tmp_table => 'No',
+         Filesort       => 'No',
+         Full_join      => 'No',
+         Full_scan      => 'No',
+         Lock_time      => '0.000000',
+         Merge_passes   => '0',
+         QC_Hit         => 'No',
+         Query_time     => '0.000012',
+         Rows_examined  => '0',
+         Rows_sent      => '0',
+         Thread_id      => '20',
+         Tmp_table      => 'No',
+         arg            => 'SELECT col FROM bar_tbl',
+         cmd            => 'Query',
+         db             => 'bar',
+         host           => '',
+         ip             => '',
+         pos_in_log     => '725',
+         user           => '[SQL_SLAVE]'
+      },
+      {  Disk_filesort  => 'No',
+         Disk_tmp_table => 'No',
+         Filesort       => 'No',
+         Full_join      => 'No',
+         Full_scan      => 'No',
+         Lock_time      => '0.000000',
+         Merge_passes   => '0',
+         QC_Hit         => 'No',
+         Query_time     => '0.000012',
+         Rows_examined  => '0',
+         Rows_sent      => '0',
+         Schema         => 'bar',
+         Thread_id      => '10',
+         Tmp_table      => 'No',
+         arg            => 'SELECT col FROM bar_tbl',
+         cmd            => 'Query',
+         host           => '',
+         ip             => '',
+         pos_in_log     => '1083',
+         user           => '[SQL_SLAVE]'
+      },
+      {  Disk_filesort  => 'No',
+         Disk_tmp_table => 'No',
+         Filesort       => 'No',
+         Full_join      => 'No',
+         Full_scan      => 'No',
+         Lock_time      => '0.000000',
+         Merge_passes   => '0',
+         QC_Hit         => 'No',
+         Query_time     => '0.000012',
+         Rows_examined  => '0',
+         Rows_sent      => '0',
+         Thread_id      => '20',
+         Tmp_table      => 'No',
+         arg            => 'SELECT col FROM bar_tbl',
+         cmd            => 'Query',
+         db             => 'bar',
+         host           => '',
+         ip             => '',
+         pos_in_log     => '1445',
+         user           => '[SQL_SLAVE]'
+      },
+      {  Disk_filesort  => 'No',
+         Disk_tmp_table => 'No',
+         Filesort       => 'No',
+         Full_join      => 'No',
+         Full_scan      => 'No',
+         Lock_time      => '0.000000',
+         Merge_passes   => '0',
+         QC_Hit         => 'No',
+         Query_time     => '0.000012',
+         Rows_examined  => '0',
+         Rows_sent      => '0',
+         Schema         => 'foo',
+         Thread_id      => '30',
+         Tmp_table      => 'No',
+         arg            => 'SELECT col FROM foo_tbl',
+         cmd            => 'Query',
+         host           => '',
+         ip             => '',
+         pos_in_log     => '1803',
+         user           => '[SQL_SLAVE]'
       },
    ],
 });

@@ -32,6 +32,21 @@ sub new {
 
 my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
 my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
+# These can appear in the log file when it's opened -- for example, when someone
+# runs FLUSH LOGS or the server starts.
+# /usr/sbin/mysqld, Version: 5.0.67-0ubuntu6-log ((Ubuntu)). started with:
+# Tcp port: 3306  Unix socket: /var/run/mysqld/mysqld.sock
+# Time                 Id Command    Argument
+# These lines vary depending on OS and whether it's embedded.
+my $slow_log_hd_line = qr{
+      ^(?:
+      T[cC][pP]\s[pP]ort:\s+\d+ # case differs on windows/unix
+      |
+      [/A-Z].*mysqld,\sVersion.*(?:started\swith:|embedded\slibrary)
+      |
+      Time\s+Id\s+Command
+      ).*\n
+   }xm;
 
 # This method accepts an open slow log filehandle and callback functions.
 # It reads events from the filehandle and calls the callbacks with each event.
@@ -76,24 +91,10 @@ sub parse_event {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
-      # These can appear in the log file when it's opened -- for example, when
-      # someone runs FLUSH LOGS or the server starts.
-      # /usr/sbin/mysqld, Version: 5.0.67-0ubuntu6-log ((Ubuntu)). started with:
-      # Tcp port: 3306  Unix socket: /var/run/mysqld/mysqld.sock
-      # Time                 Id Command    Argument
       # If there were such lines in the file, we may have slurped > 1 event.
       # Delete the lines and re-split if there were deletes.  This causes the
       # pos_in_log to be inaccurate, but that's really okay.
-      if ( $stmt =~ s{
-            ^(?:
-            Tcp\sport:\s+\d+
-            |
-            /.*Version.*started
-            |
-            Time\s+Id\s+Command
-            ).*\n
-         }{}gmxo
-      ){
+      if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
          my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
          if ( @chunks > 1 ) {
             $stmt = shift @chunks;
@@ -115,7 +116,7 @@ sub parse_event {
       # particular things once and only once, for those regexes that will
       # match only one line per event, so we don't keep trying to re-match
       # regexes.
-      my ($got_ts, $got_uh, $got_ac, $got_db, $got_set);
+      my ($got_ts, $got_uh, $got_ac, $got_db, $got_set, $got_embed);
       my $pos = 0;
       my $len = length($stmt);
       my $found_arg = 0;
@@ -124,21 +125,23 @@ sub parse_event {
          $pos     = pos($stmt);  # Be careful not to mess this up!
          my $line = $1;          # Necessary for /g and pos() to work.
 
-         # Handle meta-data lines.
-         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/oi) {
+         # Handle meta-data lines.  These are case-sensitive.  If they appear in
+         # the log with a different case, they are from a user query, not from
+         # something printed out by sql/log.cc.
+         if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
 
             # Maybe it's the beginning of the slow query log event.
             if ( !$got_ts
                && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
-               && ++$got_ts
             ) {
                push @properties, 'ts', $time;
+               ++$got_ts;
                # The User@Host might be concatenated onto the end of the Time.
                if ( !$got_uh
                   && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-                  && ++$got_uh
                ) {
                   push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+                  ++$got_uh;
                }
             }
 
@@ -146,19 +149,17 @@ sub parse_event {
             # # User@Host: root[root] @ localhost []
             elsif ( !$got_uh
                   && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
-                  && ++$got_uh
             ) {
                push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+               ++$got_uh;
             }
 
             # A line that looks like meta-data but is not:
             # # administrator command: Quit;
-            elsif ( !$got_ac
-                  && $line =~ m/^# (?:administrator command:.*)$/
-                  && ++$got_ac
-            ) {
+            elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
                push @properties, 'cmd', 'Admin', 'arg', $line;
-               $found_arg++;
+               ++$found_arg;
+               ++$got_ac;
             }
 
             # Maybe it's the timing line of a slow query log, or another line
@@ -171,26 +172,25 @@ sub parse_event {
                push @properties, @temp;
             }
 
-            # Include the current default database given by 'use <db>;'
-            elsif ( !$got_db
-                  && (my ( $db ) = $line =~ m/^USE ([^;]+)/i )
-                  && ++$got_db
-            ) {
+            # Include the current default database given by 'use <db>;'  Again
+            # as per the code in sql/log.cc this is case-sensitive.
+            elsif ( !$got_db && (my ( $db ) = $line =~ m/^use ([^;]+)/ ) ) {
                push @properties, 'db', $db;
+               ++$got_db;
             }
 
-            # Some things you might see in the log output:
-            # set timestamp=foo;
-            # set timestamp=foo,insert_id=bar;
-            # set names utf8;
-            elsif ( !$got_set
-                  && ( my ( $setting ) = $line =~ m/^SET\s+([^;]*)/i )
-                  && ++$got_set
-            ) {
+            # Some things you might see in the log output, as printed by
+            # sql/log.cc (this time the SET is uppercaes, and again it is
+            # case-sensitive).
+            # SET timestamp=foo;
+            # SET timestamp=foo,insert_id=123;
+            # SET insert_id=123;
+            elsif (!$got_set && (my ($setting) = $line =~ m/^SET\s+([^;]*)/)) {
                # Note: this assumes settings won't be complex things like
                # SQL_MODE, which as of 5.0.51 appears to be true (see sql/log.cc,
                # function MYSQL_LOG::write(THD, char*, uint, time_t)).
                push @properties, split(/,|\s*=\s*/, $setting);
+               ++$got_set;
             }
 
             # Handle pathological special cases. The "# administrator command"
@@ -222,6 +222,12 @@ sub parse_event {
             # the 'if' above because it looks like meta-data, later
             # we'll remedy that.
             push @properties, 'arg', substr($stmt, $pos - length($line));
+            # Handle embedded attributes.
+            if ( $misc && $misc->{embed}
+               && ( my ($e) = $properties[-1] =~ m/($misc->{embed})/)
+            ) {
+               push @properties, $e =~ m/$misc->{capture}/g;
+            }
             last LINE;
          }
       }
