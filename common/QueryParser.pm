@@ -23,11 +23,8 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use Data::Dumper;
-$Data::Dumper::Indent = 1;
-
 use constant MKDEBUG => $ENV{MKDEBUG};
-our $tbl_ref_pattern = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
+our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 
 sub new {
    my ( $class ) = @_;
@@ -37,58 +34,82 @@ sub new {
 sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
-   my @tables = ();
-   # Remove [AS] foo aliases
-   # $tbls =~ s/($tbl_ref_pattern)\s+(?:as\s+\w+|\w+)/$1/gi;
-   $self->_get_table_refs($query);
+
+   # Since these keywords may appear between UPDATE or SELECT and
+   # the table refs, they need to be removed so they do not get
+   # mistaken as tables.
+   $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
+
+   my @tables;
+   foreach my $tbls (
+      $query =~ m{
+         \b(?:\,|FROM|JOIN|UPDATE|INTO) # Words that precede table names
+         \b\s*
+         # Capture the identifier and any number of comma-join identifiers that
+         # follow it, optionally with aliases with or without the AS keyword
+         ($tbl_ident
+            (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
+         )
+      }xgio )
+   {
+      MKDEBUG && _d("match: $tbls");
+      foreach my $tbl ( split(',', $tbls) ) {
+         # Remove implicit or explicit (AS) alias.
+         $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gi;
+         push @tables, $tbl;
+      }
+   }
    return @tables;
 }
 
-sub get_table_aliases {
+sub get_aliases {
    my ( $self, $query ) = @_;
    return unless $query;
-   my $aliases = {};
-   #   my ( $db, $tbl ) = $db_tbl =~ m/^(?:(\S+)\.)?(\S+)/;
-   #   $aliases->{$alias || $tbl} = $tbl;
-   #   $aliases->{DATABASE}->{$tbl} = $db if $db;
-   $self->_get_table_refs($query);
-   return $aliases;
-}
- 
-# Returns an array of tables to which the query refers.
-# XXX If you change this code, also change QueryRewriter::distill().
-sub _get_table_refs {
-   my ( $self, $query ) = @_;
-   return unless $query;
-   my @tbl_refs;
+   my $aliases;
 
-   MKDEBUG && _d("original query: $query");
+   # Since these keywords may appear between UPDATE or SELECT and
+   # the table refs, they need to be removed so they do not get
+   # mistaken as tables.
+   $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
-   # Since these keywords may appear between UPDATE and the table refs,
-   # they need to be removed so they do not get mistaken as tables.
-   $query =~ s/ (?:LOW_PRIORITY|IGNORE)//g;
+   # These keywords may appeart before JOIN which will be mistaken as
+   # an implicit alias to the preceding table if they are not removed.
+   $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
 
    # Get the table references clause and the keyword that starts the clause.
    # See the next comments below for why we need this starting keyword.
-   my ($tbl_refs, $from) = $query =~ m/((FROM|INTO|UPDATE)\b\s*.+?)\b\s*(?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z)/is;
+   my ($tbl_refs, $from) = $query =~ m{
+      (
+         (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
+         .+?                       # Table refs
+      )
+      (?:\s+|\z)                   # If the query does not end with the table
+                                   # refs then there must be at least 1 space
+                                   # between the last tbl ref and the next
+                                   # keyword
+      (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
+   }ix;
 
+   # This shouldn't happen, often at least.
    die "Failed to parse table references from $query"
       unless $tbl_refs && $from;
 
-   # The keyword that beings the table refs clause must be included so
+   MKDEBUG && _d("tbl refs: $tbl_refs");
+
+   # The keyword that being the table refs clause must be included so
    # that the first table will match. We could not include it and make
    # the before_tbl keywords match optionally, but then queries like:
    #    FROM t1 a JOIN t2 b ON a.col1=b.col2
    # will have col2 match as a tbl because no specific before_tbl keywords
    # were required so after matching 't2 b', Perl will ignore everything
-   # until col2 which matches the 2nd line in the regex in foreach below.
-   my $before_tbl = qr/(?:$from|,|JOIN|\s)+/;
+   # until col2 which matches the 2nd line in the regex in while below.
+   my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
 
    # These keywords signal the end of one table ref and the start of another,
-   # or the start the ON|USING part of a JOIN clause (which we want to skip
+   # or the start of an ON|USING part of a JOIN clause (which we want to skip
    # over), or the end of the string (\z). We need these ending keywords so
-   # that they are not mistaken as an implicit alias name for a preceding tbl.
-   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/;
+   # that they are not mistaken as an implicit alias name for the preceding tbl.
+   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
 
    # This is required for cases like:
    #    FROM t1 JOIN t2 ON t1.col1=t2.col2 JOIN t3 ON t2.col3 = t3.col4
@@ -96,19 +117,34 @@ sub _get_table_refs {
    # t3.col4 will match as a table. However, t2.col3=t3.col4 will not match.
    $tbl_refs =~ s/ = /=/g;
 
-   MKDEBUG && _d("table refs: $tbl_refs");
-
-   foreach my $tbl_ref (
+   while (
       $tbl_refs =~ m{
          $before_tbl\b\s*
-            ($tbl_ref_pattern (?:\s+ (?:AS\s+)?\w+)?)
+            ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
          \s*$after_tbl
-      }xgi)
+      }xgio )
    {
-      push @tbl_refs, $tbl_ref;
-      MKDEBUG && _d("tbl ref match: '$tbl_ref'");
+      my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
+      MKDEBUG && _d("match: $tbl_ref");
+
+      # Handle subqueries.
+      if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
+         # According the the manual
+         # http://dev.mysql.com/doc/refman/5.0/en/unnamed-views.html:
+         # "The [AS] name  clause is mandatory, because every table in a
+         # FROM clause must have a name."
+         # So if the tbl ref begins with 'AS', then we probably have a
+         # subquery.
+         MKDEBUG && _d("Subquery $tbl_ref");
+         $aliases->{$alias} = undef;
+         next;
+      }
+
+      my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
+      $aliases->{$alias || $tbl} = $tbl;
+      $aliases->{DATABASE}->{$tbl} = $db if $db;
    }
-   return @tbl_refs;
+   return $aliases;
 }
 
 sub _d {

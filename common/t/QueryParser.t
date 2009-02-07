@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 29;
+use Test::More tests => 76;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -20,9 +20,9 @@ isa_ok($qp, 'QueryParser');
 sub test_query {
    my ( $query, $aliases, $tables, $msg ) = @_;
    is_deeply(
-      $qp->get_table_aliases($query),
+      $qp->get_aliases($query),
       $aliases,
-      "get_table_aliases: $msg",
+      "get_aliases: $msg",
    );
    is_deeply(
       [$qp->get_tables($query)],
@@ -32,175 +32,231 @@ sub test_query {
    return;
 }
 
-sub test_get_tbl_refs {
-   my ( $query, $tbl_ref, $msg ) = @_;
-   my @table_refs = $qp->_get_table_refs($query);
-   is_deeply(
-      \@table_refs,
-      $tbl_ref,
-      "_get_tbl_refs: $msg",
-   );
-   return;
-}
+# #############################################################################
+# All manner of "normal" SELECT queries.
+# #############################################################################
 
-test_get_tbl_refs(
-   'SELECT * FROM tbl tbl_alias WHERE id = 1',
-   ['tbl tbl_alias'],
-   'one implicit alias'
+# 1 table
+test_query(
+   'SELECT * FROM t1 WHERE id = 1',
+   {
+      't1' => 't1',
+   },
+   [qw(t1)],
+   'one table no alias'
 );
-test_get_tbl_refs(
-   'SELECT * FROM tbl AS tbl_alias WHERE id = 1',
-   ['tbl AS tbl_alias'],
-   'one AS alias'
+test_query(
+   'SELECT * FROM t1 a WHERE id = 1',
+   {
+      'a' => 't1',
+   },
+   [qw(t1)],
+   'one table implicit alias'
 );
-test_get_tbl_refs(
-   'SELECT * FROM t1 AS a, t2 WHERE id = 1',
-   ['t1 AS a', 't2'],
-   'one AS alias, one not aliased'
+test_query(
+   'SELECT * FROM t1 AS a WHERE id = 1',
+   {
+      'a' => 't1',
+   },
+   [qw(t1)],
+   'one table AS alias'
 );
-test_get_tbl_refs(
-   'SELECT * FROM t1 AS a, t2, t3 c WHERE id = 1',
-   ['t1 AS a', 't2', 't3 c'],
-   'one AS alias, one not aliased, one implicit alias'
-);
-test_get_tbl_refs(
+test_query(
    'SELECT * FROM t1',
-   ['t1'],
-   'one not aliased, no following clauses',
+   {
+      t1 => 't1',
+   },
+   [qw(t1)],
+   'one table no alias and no following clauses',
 );
-test_get_tbl_refs(
-   'SELECT * FROM t1 a, t2 b WHERE foo = "bar"',
-   ['t1 a', 't2 b'],
-   'two tables implicitly aliased',
+
+# 2 tables
+test_query(
+   'SELECT * FROM t1, t2 WHERE id = 1',
+   {
+      't1' => 't1',
+      't2' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables no aliases'
 );
-test_get_tbl_refs(
-   'SELECT * FROM t1 a JOIN t2 b ON a.col1=b.col2 WHERE foo = "bar"',
-   ['t1 a', 't2 b'],
-   'two tables implicitly aliased and JOIN',
+test_query(
+   'SELECT * FROM t1 a, t2 WHERE foo = "bar"',
+   {
+      a  => 't1',
+      t2 => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables implicit alias and no alias',
 );
-test_get_tbl_refs(
+test_query(
+   'SELECT * FROM t1 a, t2 b WHERE id = 1',
+   {
+      'a' => 't1',
+      'b' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables implicit aliases'
+);
+test_query(
+   'SELECT * FROM t1 AS a, t2 AS b WHERE id = 1',
+   {
+      'a' => 't1',
+      'b' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables AS aliases'
+);
+test_query(
+   'SELECT * FROM t1 AS a, t2 b WHERE id = 1',
+   {
+      'a' => 't1',
+      'b' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables AS alias and implicit alias'
+);
+test_query(
+   'SELECT * FROM t1 a, t2 AS b WHERE id = 1',
+   {
+      'a' => 't1',
+      'b' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables implicit alias and AS alias'
+);
+
+# ANSI JOINs
+test_query(
+   'SELECT * FROM t1 JOIN t2 ON a.id = b.id',
+   {
+      't1' => 't1',
+      't2' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables no aliases JOIN'
+);
+test_query(
+   'SELECT * FROM t1 a JOIN t2 b ON a.id = b.id',
+   {
+      'a' => 't1',
+      'b' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables implicit aliases JOIN'
+);
+test_query(
+   'SELECT * FROM t1 AS a JOIN t2 as b ON a.id = b.id',
+   {
+      'a' => 't1',
+      'b' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables AS aliases JOIN'
+);
+test_query(
+   'SELECT * FROM t1 AS a JOIN t2 b ON a.id=b.id WHERE id = 1',
+   {
+      a => 't1',
+      b => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables AS alias and implicit alias JOIN'
+);
+test_query(
+   'SELECT * FROM t1 LEFT JOIN t2 ON a.id = b.id',
+   {
+      't1' => 't1',
+      't2' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables no aliases LEFT JOIN'
+);
+test_query(
+   'SELECT * FROM t1 a LEFT JOIN t2 b ON a.id = b.id',
+   {
+      'a' => 't1',
+      'b' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables implicit aliases LEFT JOIN'
+);
+test_query(
+   'SELECT * FROM t1 AS a LEFT JOIN t2 as b ON a.id = b.id',
+   {
+      'a' => 't1',
+      'b' => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables AS aliases LEFT JOIN'
+);
+test_query(
+   'SELECT * FROM t1 AS a LEFT JOIN t2 b ON a.id=b.id WHERE id = 1',
+   {
+      a => 't1',
+      b => 't2',
+   },
+   [qw(t1 t2)],
+   'two tables AS alias and implicit alias LEFT JOIN'
+);
+
+# 3 tables
+test_query(
    'SELECT * FROM t1 JOIN t2 ON t1.col1=t2.col2 JOIN t3 ON t2.col3 = t3.col4 WHERE foo = "bar"',
-   ['t1', 't2', 't3'],
-   'three table JOIN, none aliased',
-);
-test_get_tbl_refs(
-   'UPDATE foo AS bar SET value = 1 WHERE 1',
-   ['foo AS bar'],
-   'update with one AS alias',
-);
-test_get_tbl_refs(
-   'UPDATE IGNORE foo bar SET value = 1 WHERE 1',
-   ['foo bar'],
-   'update ignore with one implicit alias',
-);
-test_get_tbl_refs(
-   'UPDATE IGNORE bar SET value = 1 WHERE 1',
-   ['bar'],
-   'update ignore with one not aliased',
-);
-test_get_tbl_refs(
-   'UPDATE LOW_PRIORITY baz SET value = 1 WHERE 1',
-   ['baz'],
-   'update low_priority with one not aliased',
-);
-test_get_tbl_refs(
-   'UPDATE LOW_PRIORITY IGNORE bat SET value = 1 WHERE 1',
-   ['bat'],
-   'update low_priority ignore with one not aliased',
-);
-test_get_tbl_refs(
-   'INSERT INTO foo VALUES (1)',
-   ['foo'],
-   'insert with one not aliased',
-);
-
-test_get_tbl_refs(
-   'select * from `my table` limit 1;',
-   ['`my table`'],
-   'one table with space in name, not aliased',
-);
-test_get_tbl_refs(
-   'select * from `my database`.mytable limit 1;',
-   ['`my database`.mytable'],
-   'one db.tbl with space in db, not aliased',
-);
-test_get_tbl_refs(
-   'select * from `my database`.`my table` limit 1; ',
-   ['`my database`.`my table`'],
-   'one db.tbl with space in both db and tbl, not aliased',
-);
-
-exit;
-
-test_query(
-   'SELECT * FROM tbl WHERE id = 1',
    {
-      'tbl' => 'tbl',
+      t1 => 't1',
+      t2 => 't2',
+      t3 => 't3',
    },
-   [ qw(tbl) ],
-   'basic single table'
+   [qw(t1 t2 t3)],
+   'three tables no aliases JOIN'
 );
-
 test_query(
-   'SELECT * FROM tbl1, tbl2 WHERE id = 1',
+   'SELECT * FROM t1 AS a, t2, t3 c WHERE id = 1',
    {
-      'tbl1' => 'tbl1',
-      'tbl2' => 'tbl2',
+      a  => 't1',
+      t2 => 't2',
+      c  => 't3',
    },
-   [qw(tbl1 tbl2)],
-   'basic two table'
+   [qw(t1 t2 t3)],
+   'three tables AS alias, no alias, implicit alias'
 );
-
 test_query(
-   'SELECT * FROM tbl AS tbl_alias WHERE id = 1',
+   'SELECT * FROM t1 a, t2 b, t3 c WHERE id = 1',
    {
-      'tbl_alias' => 'tbl',
+      a => 't1',
+      b => 't2',
+      c => 't3',
    },
-   [qw(tbl)],
-   'basic single AS-aliased'
+   [qw(t1 t2 t3)],
+   'three tables implicit aliases'
 );
 
+# Db-qualified tables
 test_query(
-   'SELECT * FROM tbl tbl_alias WHERE id = 1',
+   'SELECT * FROM db.t1 AS a WHERE id = 1',
    {
-      'tbl_alias' => 'tbl',
-   },
-   [qw(tbl)],
-   'basic single implicitly aliased'
-);
-
-test_query(
-   'SELECT * FROM tbl1 AS a1, tbl2 a2 WHERE id = 1',
-   {
-      'a1' => 'tbl1',
-      'a2' => 'tbl2',
-   },
-   [qw(tbl1 tbl2)],
-   'mixed two table'
-);
-
-test_query(
-   'SELECT * FROM tbl1 AS a1 LEFT JOIN tbl2 as a2 ON a1.id = a2.id',
-   {
-      'a1' => 'tbl1',
-      'a2' => 'tbl2',
-   },
-   [qw(tbl1 tbl2)],
-   'two table LEFT JOIN'
-);
-
-test_query(
-   'SELECT * FROM db.tbl1 AS a1 WHERE id = 1',
-   {
-      'a1'       => 'tbl1',
+      'a'        => 't1',
       'DATABASE' => {
-         'tbl1' => 'db',
+         't1' => 'db',
       },
    },
-   [qw(db.tbl1)],
-   'single fully-qualified and aliased table'
+   [qw(db.t1)],
+   'one db-qualified table AS alias'
+);
+test_query(
+   'SELECT * FROM `db`.`t1` AS a WHERE id = 1',
+   {
+      'a'        => '`t1`',
+      'DATABASE' => {
+         '`t1`' => '`db`',
+      },
+   },
+   [qw(`db`.`t1`)],
+   'one db-qualified table AS alias with backticks'
 );
 
+# Other cases
 test_query(
    q{SELECT a FROM store_orders_line_items JOIN store_orders},
    {
@@ -212,16 +268,103 @@ test_query(
 );
 
 # #############################################################################
-# Issue 185: QueryParser fails to parse table ref for a JOIN ... ON
+# Non-SELECT queries.
+# #############################################################################
+test_query(
+   'UPDATE foo AS bar SET value = 1 WHERE 1',
+   {
+      bar => 'foo',
+   },
+   [qw(foo)],
+   'update with one AS alias',
+);
+test_query(
+   'UPDATE IGNORE foo bar SET value = 1 WHERE 1',
+   {
+      bar => 'foo',
+   },
+   [qw(foo)],
+   'update ignore with one implicit alias',
+);
+test_query(
+   'UPDATE IGNORE bar SET value = 1 WHERE 1',
+   {
+      bar => 'bar',
+   },
+   [qw(bar)],
+   'update ignore with one not aliased',
+);
+test_query(
+   'UPDATE LOW_PRIORITY baz SET value = 1 WHERE 1',
+   {
+      baz => 'baz',
+   },
+   [qw(baz)],
+   'update low_priority with one not aliased',
+);
+test_query(
+   'UPDATE LOW_PRIORITY IGNORE bat SET value = 1 WHERE 1',
+   {
+      bat => 'bat',
+   },
+   [qw(bat)],
+   'update low_priority ignore with one not aliased',
+);
+test_query(
+   'INSERT INTO foo VALUES (1)',
+   {
+      foo => 'foo',
+   },
+   [qw(foo)],
+   'insert with one not aliased',
+);
+
+# #############################################################################
+# Diabolical dbs and tbls with spaces in their names.
+# #############################################################################
+
+test_query(
+   'select * from `my table` limit 1;',
+   {
+      '`my table`' => '`my table`',
+   },
+   ['`my table`'],
+   'one table with space in name, not aliased',
+);
+test_query(
+   'select * from `my database`.mytable limit 1;',
+   {
+      mytable  => 'mytable',
+      DATABASE => {
+         mytable => '`my database`',
+      },
+   },
+   ['`my database`.mytable'],
+   'one db.tbl with space in db, not aliased',
+);
+test_query(
+   'select * from `my database`.`my table` limit 1; ',
+   {
+      '`my table`'  => '`my table`',
+      DATABASE => {
+         '`my table`' => '`my database`',
+      },
+   },
+   ['`my database`.`my table`'],
+   'one db.tbl with space in both db and tbl, not aliased',
+);
+
+# #############################################################################
+# Issue 185: QueryParser fails to parse table ref for a JOIN ... USING
 # #############################################################################
 test_query(
     'select  n.column1 = a.column1, n.word3 = a.word3 from db2.tuningdetail_21_265507 n inner join db1.gonzo a using(gonzo)', 
    {
-      'n' => 'tuningdetail_21_265507',
-      'a' => 'gonzo',
+      'n'        => 'tuningdetail_21_265507',
+      'a'        => 'gonzo',
       'DATABASE' => {
          'tuningdetail_21_265507' => 'db2',
-         'gonzo' => 'db1',
+         'gonzo'                  => 'db1',
       },
    },
    [qw(db2.tuningdetail_21_265507 db1.gonzo)],
@@ -232,7 +375,7 @@ test_query(
 test_query(
    'select 12_13_foo from (select 12foo from 123_bar) as 123baz',
    {
-      '123_bar' => '123_bar',
+      '123baz' => undef,
    },
    [qw(123_bar)],
    'Subquery in the FROM clause'
