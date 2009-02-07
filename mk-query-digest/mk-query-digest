@@ -1467,9 +1467,9 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2879
+# SlowLogParser package 2996
 # ###########################################################################
-package LogParser;
+package SlowLogParser;
 
 use strict;
 use warnings FATAL => 'all';
@@ -1482,213 +1482,10 @@ sub new {
    bless {}, $class;
 }
 
-my $general_log_first_line = qr{
-   \A
-   (?:(\d{6}\s+\d{1,2}:\d\d:\d\d)|\t)? # Timestamp
-   \t
-   (?:\s*(\d+))                        # Thread ID
-   \s
-   (.*)                                # Everything else
-   \Z
-}xs;
-
-my $general_log_any_line = qr{
-   \A(
-      Connect
-      |Field\sList
-      |Init\sDB
-      |Query
-      |Quit
-   )
-   (?:\s+(.*\Z))?
-}xs;
-
 my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
 my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
 
-my $binlog_line_1 = qr{^# at (\d+)};
-my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end_log_pos\s+(\d+)\s+(\S+)\s*([^\n]*)$/;
-my $binlog_line_2_rest = qr{Query\s+thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)};
-
 sub parse_event {
-   my ( $self, $fh, $code, $mode ) = @_;
-   my $event; # Don't initialize, that'll cause a loop.
-
-   my $done = 0;
-   my $type = 0; # 0 = comments, 1 = USE and SET etc, 2 = the actual query
-   my $line = defined $self->{last_line} ? $self->{last_line} : <$fh>;
-   $mode  ||= '';
-
-   LINE:
-   while ( !$done && defined $line ) {
-      MKDEBUG && _d('type: ', $type, ' ', $line);
-      my $handled_line = 0;
-
-      if ( !$mode && $line =~ m/^# [A-Z]/ ) {
-         MKDEBUG && _d('Setting mode to slow log');
-         $mode ||= 'slow';
-      }
-
-      if ( $line =~ m/Version:.+ started with:/ ) {
-         MKDEBUG && _d('Chomping out header lines');
-         <$fh>; # Tcp port: etc
-         <$fh>; # Column headers
-         $line = <$fh>;
-         $type = 0;
-         redo LINE;
-      }
-
-      elsif ( $mode ne 'slow'
-         && (my ( $ts, $id, $rest ) = $line =~ m/$general_log_first_line/s)
-      ) {
-         MKDEBUG && _d('Beginning of general log event');
-         $handled_line = 1;
-         $mode ||= 'log';
-         $self->{last_line} = undef;
-         if ( $type == 0 ) {
-            MKDEBUG && _d('Type 0');
-            my ( $cmd, $arg ) = $rest =~ m/$general_log_any_line/;
-            $event = {
-               ts  => $ts || '',
-               id  => $id,
-               cmd => $cmd,
-               arg => $arg || '',
-            };
-            if ( $cmd ne 'Query' ) {
-               MKDEBUG && _d('Not a query, done with this event');
-               $done = 1;
-               chomp $event->{arg} if $event->{arg};
-            }
-            $type = 2;
-         }
-         else {
-            MKDEBUG && _d('Saving line for next invocation');
-            $self->{last_line} = $line;
-            $done = 1;
-            chomp $event->{arg} if $event->{arg};
-         }
-      }
-
-      elsif ( $mode eq 'slow' ) {
-         if ( $line =~ m/^# No InnoDB statistics available/ ) {
-            $handled_line = 1;
-            MKDEBUG && _d('Ignoring line');
-            $line = <$fh>;
-            $type = 0;
-            next LINE;
-         }
-
-         elsif ( my ( $time ) = $line =~ m/$slow_log_ts_line/ ) {
-            $handled_line = 1;
-            MKDEBUG && _d('Beginning of slow log event');
-            $self->{last_line} = undef;
-            if ( $type == 0 ) {
-               MKDEBUG && _d('Type 0');
-               $event->{ts} = $time;
-               if ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-                  @{$event}{qw(user host ip)} = ($user, $host, $ip);
-               }
-            }
-            else {
-               MKDEBUG && _d('Saving line for next invocation');
-               $self->{last_line} = $line;
-               $done = 1;
-            }
-            $type = 0;
-         }
-
-         elsif ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/ ) {
-            $handled_line = 1;
-            if ( $type == 0 ) {
-               MKDEBUG && _d('Type 0');
-               @{$event}{qw(user host ip)} = ($user, $host, $ip);
-            }
-            else {
-               MKDEBUG && _d('Saving line for next invocation');
-               $self->{last_line} = $line;
-               $done = 1;
-            }
-            $type = 0;
-         }
-
-         elsif ( $line =~ m/^# / && (my %hash = $line =~ m/(\w+):\s+(\S+)/g ) ) {
-
-            if ( $type == 0 ) {
-               if ( $line =~ m/^#.+;/ ) {
-                  MKDEBUG && _d('Commented event line ends header');
-               }
-               else {
-                  $handled_line = 1;
-                  MKDEBUG && _d('Splitting line into fields');
-                  @{$event}{keys %hash} = values %hash;
-               }
-            }
-            elsif ( $type == 1 && $line =~ m/^#.+;/ ) {
-               MKDEBUG && _d('Commented event line after type 1 line');
-               $handled_line = 0;
-            }
-            else {
-               $handled_line = 1;
-               MKDEBUG && _d('Saving line for next invocation');
-               $self->{last_line} = $line;
-               $done = 1;
-            }
-            $type = 0;
-         }
-      }
-
-      if ( !$handled_line ) {
-         $event->{cmd} = 'Query';
-         if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
-            MKDEBUG && _d('Line is the end of a query within event');
-            if ( my ( $db ) = $line =~ m/^use (.*);/i ) {
-               MKDEBUG && _d('Setting event DB to ', $db);
-               $event->{db} = $db;
-               $type = 1;
-            }
-            elsif ( $type < 2 && (my ( $setting ) = $line =~ m/^(SET .*);\s+\Z/ ) ) {
-               MKDEBUG && _d('Setting a property for event');
-               push @{$event->{settings}}, $setting;
-               $type = 1;
-            }
-            else {
-               MKDEBUG && _d('Line is a continuation of prev line');
-               if ( $line =~ m/^# / ) {
-                  MKDEBUG && _d('Line is a commented event line');
-                  $line =~ s/.+: (.+);\n/$1/;
-                  $event->{cmd} = 'Admin';
-               }
-               $event->{arg} .= $line;
-               $type = 2;
-            }
-         }
-         else {
-            MKDEBUG && _d('Line is a continuation of prev line');
-            $event->{arg} .= $line;
-            $type = 2;
-         }
-      }
-
-      $event->{NR} = $NR;
-
-      $line = <$fh> unless $done;
-   }
-
-   if ( !defined $line ) {
-      MKDEBUG && _d('EOF found');
-      $self->{last_line} = undef;
-   }
-
-   if ( $mode && $mode eq 'slow' ) {
-      MKDEBUG && _d('Slow log, trimming');
-      $event->{arg} =~ s/;\s*\Z// if $event->{arg};
-   }
-
-   $code->($event) if $event && $code;
-   return $event;
-}
-
-sub parse_slowlog_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
    my $num_events = 0;
 
@@ -1809,65 +1606,6 @@ sub parse_slowlog_event {
    return $num_events;
 }
 
-sub parse_binlog_event {
-   my ( $self, $fh, $code ) = @_;
-   my $event;
-
-   my $term  = $self->{term} || ";\n"; # Corresponds to DELIMITER
-   my $tpat  = quotemeta $term;
-   local $RS = $term;
-   my $line  = <$fh>;
-
-   LINE: {
-      return unless $line;
-
-      if ( $line =~ m/^DELIMITER/m ) {
-         my($del)      = $line =~ m/^DELIMITER ([^\n]+)/m;
-         $self->{term} = $del;
-         local $RS     = $del;
-         $line         = <$fh>; # Throw away DELIMITER line
-         MKDEBUG && _d('New record separator: ', $del);
-         redo LINE;
-      }
-
-      $line =~ s/$tpat\Z//;
-
-      if ( my ( $offset ) = $line =~ m/$binlog_line_1/m ) {
-         $self->{last_line} = undef;
-         $event = {
-            offset => $offset,
-         };
-         my ( $ts, $sid, $end, $type, $rest ) = $line =~ m/$binlog_line_2/m;
-         @{$event}{qw(ts server_id end type)} = ($ts, $sid, $end, $type);
-         (my $arg = $line) =~ s/\n*^#.*\n//gm; # Remove comment lines
-         $event->{arg} = $arg;
-         if ( $type eq 'Xid' ) {
-            my ($xid) = $rest =~ m/(\d+)/;
-            $event->{xid} = $xid;
-         }
-         elsif ( $type eq 'Query' ) {
-            @{$event}{qw(id time code)} = $rest =~ m/$binlog_line_2_rest/;
-         }
-         else {
-            die "Unknown event type $type"
-               unless $type =~ m/Rotate|Start|Execute_load_query|Append_block|Begin_load_query|Rand|User_var|Intvar/;
-         }
-      }
-      else {
-         $event = {
-            arg => $line,
-         };
-      }
-   }
-
-   if ( !defined $line ) {
-      delete $self->{term};
-   }
-
-   $code->($event) if $event && $code;
-   return $event;
-}
-
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1879,7 +1617,7 @@ sub _d {
 1;
 
 # ###########################################################################
-# End LogParser package
+# End SlowLogParser package
 # ###########################################################################
 
 # ###########################################################################
@@ -3988,9 +3726,9 @@ my %ea;     # EventAggregators
          }
       }
 
-      my $lp = new LogParser();
+      my $lp = new SlowLogParser();
       while ( $oktorun && (my $fh = shift(@fhs)) ) {
-         1 while ( $oktorun && $lp->parse_slowlog_event($fh, undef, @callbacks) );
+         1 while ( $oktorun && $lp->parse_event($fh, undef, @callbacks) );
          close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
       }
    }
