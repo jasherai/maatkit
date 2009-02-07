@@ -25,17 +25,21 @@ use DBI;
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $dbh;
-eval {
-   $dbh = DBI->connect(
-   "DBI:mysql:;mysql_read_default_group=mysql", undef, undef,
-   { PrintError => 0, RaiseError => 1 })
-};
+require '../../common/DSNParser.pm';
+require '../../common/Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+
+$dbh     = $sb->get_dbh_for('master');
+
 if ( $dbh ) {
    plan tests => 23;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
 }
+
+$sb->create_dbs($dbh, ['test']);
 
 require "../TableSyncNibble.pm";
 require "../Quoter.pm";
@@ -53,7 +57,9 @@ sub throws_ok {
    like( $EVAL_ERROR, $pat, $msg );
 }
 
-`mysql < samples/before-TableSyncNibble.sql`;
+my $mysql = $sb->_use_for('master');
+
+diag(`$mysql < samples/before-TableSyncNibble.sql`);
 
 my $tp = new TableParser();
 my $du = new MySQLDump();
@@ -119,7 +125,6 @@ SKIP: {
       . q{AND `b` <= 'en'))) AND ((foo=1))},
       'First nibble SQL with FNV_64',
    );
-
 }
 
 $t = new TableSyncNibble(
@@ -371,3 +376,6 @@ like (
    qr/SELECT SQL_BUFFER_RESULT/,
    'Buffering in next nibble',
 );
+
+$sb->wipe_clean($dbh);
+exit;

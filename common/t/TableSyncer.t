@@ -21,24 +21,26 @@ use warnings FATAL => 'all';
 
 use Test::More;
 use English qw(-no_match_vars);
-use DBI;
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my ( $src_dbh, $dst_dbh, $dbh );
-eval {
-   $src_dbh = DBI->connect( "DBI:mysql:;mysql_read_default_group=mysql",
-      undef, undef, { PrintError => 0, RaiseError => 1 } );
-   $dst_dbh = DBI->connect( "DBI:mysql:;mysql_read_default_group=mysql",
-      undef, undef, { PrintError => 0, RaiseError => 1 } );
-   $dbh = DBI->connect( "DBI:mysql:;mysql_read_default_group=mysql",
-      undef, undef, { PrintError => 0, RaiseError => 1 } );
-};
+require '../../common/DSNParser.pm';
+require '../../common/Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+
+$src_dbh = $sb->get_dbh_for('master');
+$dst_dbh = $sb->get_dbh_for('master');
+$dbh     = $sb->get_dbh_for('master');
+
 if ($src_dbh) {
    plan tests => 16;
 }
 else {
-   plan skip_all => 'Cannot connect to MySQL';
+   plan skip_all => 'Cannot connect to sandbox master';
 }
+
+$sb->create_dbs($dbh, ['test']);
 
 require "../ChangeHandler.pm";
 require "../MySQLDump.pm";
@@ -62,7 +64,9 @@ sub throws_ok {
    like( $EVAL_ERROR, $pat, $msg );
 }
 
-`mysql < samples/before-TableSyncChunk.sql`;
+my $mysql = $sb->_use_for('master');
+
+diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 my $ts         = new TableSyncer();
 my $tp         = new TableParser();
@@ -184,7 +188,7 @@ $cnt = $dbh->selectall_arrayref('select count(*) from test.test2')
    ->[0]->[0];
 is( $cnt, 4, 'Four rows in destination after Chunk' );
 
-`mysql < samples/before-TableSyncChunk.sql`;
+diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 # This should be OK because it ought to convert the size to rows.
 $ts->sync_table(
@@ -197,7 +201,7 @@ $ts->sync_table(
    src_tbl       => 'test1',
 );
 
-`mysql < samples/before-TableSyncChunk.sql`;
+diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 $ts->sync_table(
    %args,
@@ -211,7 +215,7 @@ $ts->sync_table(
 $cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
 is( $cnt, 4, 'Four rows in destination after Stream' );
 
-`mysql < samples/before-TableSyncChunk.sql`;
+diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 $ts->sync_table(
    %args,
@@ -225,7 +229,7 @@ $ts->sync_table(
 $cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
 is( $cnt, 4, 'Four rows in destination after GroupBy' );
 
-print `mysql < samples/before-TableSyncGroupBy.sql`;
+diag(`$mysql < samples/before-TableSyncGroupBy.sql`);
 
 my $ddl2        = $du->get_create_table( $src_dbh, $q, 'test', 'test1' );
 my $tbl_struct2 = $tp->parse($ddl2);
@@ -258,7 +262,7 @@ is_deeply($rows,
    'Table synced with GroupBy',
 );
 
-`mysql < samples/before-TableSyncChunk.sql`;
+diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 $ts->sync_table(
    %args,
@@ -272,7 +276,7 @@ $ts->sync_table(
 $cnt = $dbh->selectall_arrayref('select count(*) from test.test2')->[0]->[0];
 is( $cnt, 4, 'Four rows in destination after Nibble' );
 
-`mysql < samples/before-TableSyncChunk.sql`;
+diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 $ts->sync_table(
    %args,
@@ -289,7 +293,8 @@ is_deeply($rows,
    [ { a => 1, b => 2 }, { a => 2, b => 1 } ],
    'Resolves unique key violations with Stream' );
 
-`mysql < samples/before-TableSyncChunk.sql`;
+diag(`$mysql < samples/before-TableSyncChunk.sql`);
+
 
 $ts->sync_table(
    %args,
@@ -306,7 +311,7 @@ is_deeply($rows,
    [ { a => 1, b => 2 }, { a => 2, b => 1 } ],
    'Resolves unique key violations with Chunk' );
 
-`mysql < samples/before-TableSyncChunk.sql`;
+diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 $ts->sync_table(
    %args,
@@ -381,6 +386,6 @@ throws_ok (
 # a lock.
 $src_dbh->disconnect;
 $dst_dbh->disconnect;
-$dbh->disconnect;
-
-`mysql < samples/after-TableSyncChunk.sql`;
+sleep 1;
+$sb->wipe_clean($dbh);
+exit;

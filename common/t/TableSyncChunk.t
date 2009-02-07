@@ -25,17 +25,21 @@ use DBI;
 
 # Open a connection to MySQL, or skip the rest of the tests.
 my $dbh;
-eval {
-   $dbh = DBI->connect(
-   "DBI:mysql:test;mysql_read_default_group=mysql", undef, undef,
-   { PrintError => 0, RaiseError => 1 })
-};
+require '../../common/DSNParser.pm';
+require '../../common/Sandbox.pm';
+my $dp = new DSNParser();
+my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+
+$dbh     = $sb->get_dbh_for('master');
+
 if ( $dbh ) {
    plan tests => 24;
 }
 else {
    plan skip_all => 'Cannot connect to MySQL';
 }
+
+$sb->create_dbs($dbh, ['test']);
 
 require "../TableSyncChunk.pm";
 require "../Quoter.pm";
@@ -52,7 +56,9 @@ sub throws_ok {
    like( $EVAL_ERROR, $pat, $msg );
 }
 
-`mysql < samples/before-TableSyncChunk.sql`;
+my $mysql = $sb->_use_for('master');
+
+diag(`$mysql < samples/before-TableSyncChunk.sql`);
 
 my $tp = new TableParser();
 my $du = new MySQLDump();
@@ -80,7 +86,7 @@ my $t;
 # Test with FNV_64 just to make sure there are no errors
 eval { $dbh->do('select fnv_64(1)') };
 SKIP: {
-   skip 'No FNV_64 function installed', 1 if $EVAL_ERROR;
+   skip 'No FNV_64 function installed', 2 if $EVAL_ERROR;
 
    $t = new TableSyncChunk(
       handler  => $ch,
@@ -117,7 +123,6 @@ SKIP: {
       . q{crc FROM `test`.`test1` USE INDEX (`PRIMARY`) WHERE (1=1) AND ((foo=1))},
       'First nibble SQL with FNV_64 (with USE INDEX)',
    );
-
 }
 
 $t = new TableSyncChunk(
@@ -334,8 +339,5 @@ $t->done_with_rows();
 is($t->{state}, 0, 'Now not working inside chunk');
 is($t->pending_changes(), 0, 'No pending changes');
 
-# Issue 8: Add --force-index parameter to mk-table-checksum and mk-table-sync
-
-
-
-
+$sb->wipe_clean($dbh);
+exit;
