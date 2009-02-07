@@ -153,7 +153,8 @@ sub parse_timestamp {
    return $val;
 }
 
-# Turns a properly formatted timestamp into an int (seconds since epoch)
+# Turns a properly formatted timestamp like 2007-10-15 01:43:52
+# into an int (seconds since epoch)
 sub unix_timestamp {
    my ( $val ) = @_;
    if ( my($y, $m, $d, $h, $i, $s)
@@ -164,6 +165,14 @@ sub unix_timestamp {
    return $val;
 }
 
+# Returns the rightmost 64 bits of an MD5 checksum of the value.
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d("$checksum checksum for $val");
+   return $checksum;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -172,14 +181,6 @@ sub _d {
    # Use $$ instead of $PID in case the package
    # does not use English.
    print "# $package:$line $$ ", @_, "\n";
-}
-
-# Returns the rightmost 64 bits of an MD5 checksum of the value.
-sub make_checksum {
-   my ( $val ) = @_;
-   my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
-   return $checksum;
 }
 
 1;
