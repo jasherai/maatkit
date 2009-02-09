@@ -444,7 +444,7 @@ my $expected =
                'min'    => 0,
                'max'    => 0,
                'sample' => {
-                  'Rows_read' => '4124524590823728995',
+                  'Rows_read' => 4124524590823728995,
                   'arg'       => '# administrator command: Init DB;'
                },
                all => [ (map { 0 } (0 .. 283)), 1, (map{0}(285..999))],
@@ -458,7 +458,7 @@ my $expected =
                'min'    => 4,
                'max'    => 4,
                'sample' => {
-                  'Rows_read' => '4124524590823728995',
+                  'Rows_read' => 4124524590823728995,
                   'arg' =>
                      'SELECT template FROM template WHERE title=\'options\''
                },
