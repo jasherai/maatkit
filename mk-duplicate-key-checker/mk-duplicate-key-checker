@@ -643,7 +643,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 2987
+# MySQLFind package 3009
 # ###########################################################################
 package MySQLFind;
 
@@ -710,8 +710,7 @@ sub find_tables {
    if ( $self->{need_engine} ) {
       foreach my $tbl ( @tables ) {
          next if $tbl->{engine};
-         my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
-         $tbl_name ||= $tbl->{name};
+         my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
          my $struct = $self->{parser}->parse(
             $self->{dumper}->get_create_table(
                $dbh, $self->{quoter}, $args{database}, $tbl_name));
@@ -2207,7 +2206,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2893
+# Transformers package 2999
 # ###########################################################################
 
 package Transformers;
@@ -2347,19 +2346,19 @@ sub unix_timestamp {
    return $val;
 }
 
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d("$checksum checksum for $val");
+   return $checksum;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
    print "# $package:$line $$ ", @_, "\n";
-}
-
-sub make_checksum {
-   my ( $val ) = @_;
-   my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
-   return $checksum;
 }
 
 1;

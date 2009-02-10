@@ -3647,7 +3647,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 2987
+# MySQLFind package 3009
 # ###########################################################################
 package MySQLFind;
 
@@ -3714,8 +3714,7 @@ sub find_tables {
    if ( $self->{need_engine} ) {
       foreach my $tbl ( @tables ) {
          next if $tbl->{engine};
-         my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
-         $tbl_name ||= $tbl->{name};
+         my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
          my $struct = $self->{parser}->parse(
             $self->{dumper}->get_create_table(
                $dbh, $self->{quoter}, $args{database}, $tbl_name));

@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# MySQLFind package 2797
+# MySQLFind package 3009
 # ###########################################################################
 package MySQLFind;
 
@@ -95,7 +95,7 @@ sub find_tables {
    if ( $self->{need_engine} ) {
       foreach my $tbl ( @tables ) {
          next if $tbl->{engine};
-         my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
+         my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
          my $struct = $self->{parser}->parse(
             $self->{dumper}->get_create_table(
                $dbh, $self->{quoter}, $args{database}, $tbl_name));
@@ -239,7 +239,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2801
+# DSNParser package 2971
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -443,27 +443,48 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
-   MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
-      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
-   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
-   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
-      my $sql = "/*!40101 SET NAMES $charset*/";
-      MKDEBUG && _d("$dbh: $sql");
-      $dbh->do($sql);
-      MKDEBUG && _d('Enabling charset for STDOUT');
-      if ( $charset eq 'utf8' ) {
-         binmode(STDOUT, ':utf8')
-            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
-      }
-      else {
-         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+   my $dbh;
+   my $tries = 2;
+   while ( !$dbh && $tries-- ) {
+      eval {
+         MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+            join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+         $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+         if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+            my $sql = "/*!40101 SET NAMES $charset*/";
+            MKDEBUG && _d("$dbh: $sql");
+            $dbh->do($sql);
+            MKDEBUG && _d('Enabling charset for STDOUT');
+            if ( $charset eq 'utf8' ) {
+               binmode(STDOUT, ':utf8')
+                  or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+            }
+            else {
+               binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+            }
+         }
+      };
+      if ( !$dbh && $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+         if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
+            MKDEBUG && _d("Going to try again without utf8 support");
+            delete $defaults->{mysql_enable_utf8};
+         }
+         if ( !$tries ) {
+            die $EVAL_ERROR;
+         }
       }
    }
    my $setvars = $self->prop('setvars');
    if ( $cxn_string =~ m/mysql/i && $setvars ) {
       my $sql = "SET $setvars";
       MKDEBUG && _d("$dbh: $sql");
-      $dbh->do($sql);
+      eval {
+         $dbh->do($sql);
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+      }
    }
    MKDEBUG && _d('DBH info: ',
       $dbh,
@@ -502,7 +523,7 @@ sub print_active_handles {
       $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
-      $self->print_active_handles->( $handle, $level + 1 );
+      $self->print_active_handles( $handle, $level + 1 );
    }
 }
 
@@ -1075,15 +1096,13 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 2801
+# TableParser package 2941
 # ###########################################################################
 package TableParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
-use List::Util qw(min);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1281,172 +1300,6 @@ sub get_engine {
    return $engine || undef;
 }
 
-sub get_keys {
-   my ( $self, $ddl, $opts ) = @_;
-
-   my @indexes =
-      grep { $_ !~ m/FOREIGN/ }
-      $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
-
-   my $engine = $self->get_engine($ddl);
-   if ( $engine !~ m/MEMORY|HEAP/ ) {
-      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
-   }
-
-   my @keys = map {
-      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
-      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
-      $struct = $struct || $special || 'BTREE';
-      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
-
-      if ( $opts->{version} lt '004001000' && $engine =~ m/HEAP|MEMORY/i ) {
-         $struct = 'HASH';
-      }
-
-      {
-         struct   => $struct,
-         cols     => $cols,
-         name     => $name || 'PRIMARY',
-      }
-   } @indexes;
-
-   return \@keys;
-}
-
-sub get_fks {
-   my ( $self, $ddl, $opts ) = @_;
-
-   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
-
-   my @result = map {
-      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
-      my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
-      my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
-      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
-      if ( $parent !~ m/\./ ) {
-         $parent = "`$opts->{database}`.$parent";
-      }
-      {  name   => $name,
-         parent => $parent,
-         cols   => $cols,
-         fkcols => $fkcols,
-      };
-   } @fks;
-   return \@result;
-}
-
-sub get_duplicate_keys {
-   my ( $self, $keys, $opts ) = @_;
-   my @keys = @$keys;
-   my %seen; # Avoid outputting a key more than once.
-   my @result;
-
-   foreach my $i ( 0..$#keys - 1 ) {
-      foreach my $j ( $i+1..$#keys ) {
-         my $i_cols        = $keys[$i]->{cols};
-         my $j_cols        = $keys[$j]->{cols};
-         my $type_i_cols   = $keys[$i]->{struct};
-         my $type_j_cols   = $keys[$j]->{struct};
-         my $len_i_cols    = length($i_cols);
-         my $len_j_cols    = length($j_cols);
-         my $min_len       = min($len_i_cols, $len_j_cols);
-         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
-                               && $type_j_cols eq 'FULLTEXT'
-                             ) ? 1 : 0;
-         if ( MKDEBUG ) {
-            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
-               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
-         }
-
-         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
-            $i_cols = join(',', sort(split(/`/, $i_cols)));
-            $j_cols = join(',', sort(split(/`/, $j_cols)));
-         }
-         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
-                || $opts->{ignore_type}
-              )
-              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
-         {
-            if ( $both_FULLTEXT ) {
-               if ( $len_i_cols == $len_j_cols ) {
-                  MKDEBUG && _d("Indexes are DUPLICATES (fulltext)");
-                  push @result, $keys[$i] unless $seen{$i}++;
-                  push @result, $keys[$j] unless $seen{$j}++;
-               }
-               else {
-                  MKDEBUG && _d("Indexes are not duplicates (fulltext)");
-               }
-            }
-            else {
-               MKDEBUG && _d("Indexes are DUPLICATES");
-               push @result, $keys[$i] unless $seen{$i}++;
-               push @result, $keys[$j] unless $seen{$j}++;
-            }
-         }
-         else {
-            MKDEBUG && _d("Indexes are not duplicates");
-         }
-      }
-   }
-
-   if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
-      my $i = 0;
-      my $found = 0;
-      while ( $i < @keys ) {
-         if ( $keys[$i]->{name} eq 'PRIMARY' ) {
-            $found = 1;
-            last;
-         }
-         $i++;
-      }
-      if ( $found ) {
-         my $pkcols = $keys[$i]->{cols};
-         KEY:
-         foreach my $j ( 0..$#keys ) {
-            next KEY if $i == $j;
-            my $suffix = $keys[$j]->{cols};
-            SUFFIX:
-            while ( $suffix =~ s/`[^`]+`,// ) {
-               my $len = min(length($pkcols), length($suffix));
-               if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
-                  && substr($suffix, 0, $len) eq substr($pkcols, 0, $len))
-               {
-                  push @result, $keys[$i] unless $seen{$i}++;
-                  push @result, $keys[$j] unless $seen{$j}++;
-                  last SUFFIX;
-               }
-            }
-         }
-      }
-   }
-
-   return \@result;
-}
-
-sub get_duplicate_fks {
-   my ( $self, $fks, $opts ) = @_;
-   my @fks = @$fks;
-   my %seen; # Avoid outputting a fk more than once.
-   my @result;
-   foreach my $i ( 0..$#fks - 1 ) {
-      foreach my $j ( $i+1..$#fks ) {
-         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
-         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
-         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
-         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
-         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
-               && $i_cols eq $j_cols
-               && $i_fkcols eq $j_fkcols
-         ) {
-            push @result, $fks[$i] unless $seen{$i}++;
-            push @result, $fks[$j] unless $seen{$j}++;
-         }
-      }
-   }
-
-   return \@result;
-}
-
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1511,7 +1364,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 2801
+# MySQLDump package 2889
 # ###########################################################################
 package MySQLDump;
 
@@ -1636,7 +1489,8 @@ sub get_create_table {
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
-      $dbh->do($sql);
+      eval { $dbh->do($sql); };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
@@ -1700,7 +1554,8 @@ sub get_triggers {
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
-      $dbh->do($sql);
+      eval { $dbh->do($sql); };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
       $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
       MKDEBUG && _d($sql);
       my $sth = $dbh->prepare($sql);
@@ -2240,15 +2095,16 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2801
+# Transformers package 2999
 # ###########################################################################
 
-# Transformers - Common transformation and beautification subroutines
 package Transformers;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Time::Local qw(timelocal);
+use Digest::MD5 qw(md5_hex);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -2262,22 +2118,21 @@ our @EXPORT_OK   = qw(
    secs_to_time
    shorten
    ts
+   parse_timestamp
+   unix_timestamp
+   make_checksum
 );
 
 sub micro_t {
    my ( $t, %args ) = @_;
-   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
-   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
    my $f;
 
    $t = 0 if $t < 0;
 
-   # "Remove" scientific notation so the regex below does not make
-   # 6.123456e+18 into 6.123456.
    $t = sprintf('%.17f', $t) if $t =~ /e/;
 
-   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
-   # because sprintf() rounds.
    $t =~ s/\.(\d{1,6})\d*/\.$1/;
 
    if ($t > 0 && $t <= 0.000999) {
@@ -2298,10 +2153,9 @@ sub micro_t {
    return $f;
 }
 
-# Returns what percentage $is of $of.
 sub percentage_of {
    my ( $is, $of, %args ) = @_;
-   my $p   = defined $args{p} ? $args{p} : 2; # float precision
+   my $p   = $args{p} || 0; # float precision
    my $fmt = $p ? "%.${p}f" : "%d";
    return sprintf $fmt, ($is * 100) / ($of ||= 1);
 }
@@ -2311,7 +2165,6 @@ sub secs_to_time {
    $secs ||= 0;
    return '00:00' unless $secs;
 
-   # Decide what format to use, if not given
    $fmt ||= $secs >= 86_400 ? 'd'
           : $secs >= 3_600  ? 'h'
           :                   'm';
@@ -2361,13 +2214,39 @@ sub ts {
       $year, $mon, $mday, $hour, $min, $sec);
 }
 
+sub parse_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   {
+      return sprintf "%d-%02d-%02d %02d:%02d:%02d",
+                     $y + 2000, $m, $d, $h, $i, $s;
+   }
+   return $val;
+}
+
+sub unix_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+   {
+      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   }
+   return $val;
+}
+
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d("$checksum checksum for $val");
+   return $checksum;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
    print "# $package:$line $$ ", @_, "\n";
 }
 

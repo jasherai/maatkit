@@ -27,15 +27,13 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# TableParser package 2801
+# TableParser package 2941
 # ###########################################################################
 package TableParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
-use List::Util qw(min);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -231,172 +229,6 @@ sub get_engine {
    my ( $self, $ddl, $opts ) = @_;
    my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
    return $engine || undef;
-}
-
-sub get_keys {
-   my ( $self, $ddl, $opts ) = @_;
-
-   my @indexes =
-      grep { $_ !~ m/FOREIGN/ }
-      $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
-
-   my $engine = $self->get_engine($ddl);
-   if ( $engine !~ m/MEMORY|HEAP/ ) {
-      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
-   }
-
-   my @keys = map {
-      my ( $struct, $cols ) = $_ =~ m/(?:USING (\w+))? \((.+)\)/;
-      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
-      $struct = $struct || $special || 'BTREE';
-      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
-
-      if ( $opts->{version} lt '004001000' && $engine =~ m/HEAP|MEMORY/i ) {
-         $struct = 'HASH';
-      }
-
-      {
-         struct   => $struct,
-         cols     => $cols,
-         name     => $name || 'PRIMARY',
-      }
-   } @indexes;
-
-   return \@keys;
-}
-
-sub get_fks {
-   my ( $self, $ddl, $opts ) = @_;
-
-   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
-
-   my @result = map {
-      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
-      my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
-      my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
-      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
-      if ( $parent !~ m/\./ ) {
-         $parent = "`$opts->{database}`.$parent";
-      }
-      {  name   => $name,
-         parent => $parent,
-         cols   => $cols,
-         fkcols => $fkcols,
-      };
-   } @fks;
-   return \@result;
-}
-
-sub get_duplicate_keys {
-   my ( $self, $keys, $opts ) = @_;
-   my @keys = @$keys;
-   my %seen; # Avoid outputting a key more than once.
-   my @result;
-
-   foreach my $i ( 0..$#keys - 1 ) {
-      foreach my $j ( $i+1..$#keys ) {
-         my $i_cols        = $keys[$i]->{cols};
-         my $j_cols        = $keys[$j]->{cols};
-         my $type_i_cols   = $keys[$i]->{struct};
-         my $type_j_cols   = $keys[$j]->{struct};
-         my $len_i_cols    = length($i_cols);
-         my $len_j_cols    = length($j_cols);
-         my $min_len       = min($len_i_cols, $len_j_cols);
-         my $both_FULLTEXT = (    $type_i_cols eq 'FULLTEXT'
-                               && $type_j_cols eq 'FULLTEXT'
-                             ) ? 1 : 0;
-         if ( MKDEBUG ) {
-            _d( "Checking $type_i_cols $keys[$i]->{name} ($i_cols)"
-               ." against $type_j_cols $keys[$j]->{name} ($j_cols)");
-         }
-
-         if ( $opts->{ignore_order} || $both_FULLTEXT ) {
-            $i_cols = join(',', sort(split(/`/, $i_cols)));
-            $j_cols = join(',', sort(split(/`/, $j_cols)));
-         }
-         if ( ( ($keys[$i]->{struct} eq $keys[$j]->{struct})
-                || $opts->{ignore_type}
-              )
-              && substr($i_cols, 0, $min_len) eq substr($j_cols, 0, $min_len))
-         {
-            if ( $both_FULLTEXT ) {
-               if ( $len_i_cols == $len_j_cols ) {
-                  MKDEBUG && _d("Indexes are DUPLICATES (fulltext)");
-                  push @result, $keys[$i] unless $seen{$i}++;
-                  push @result, $keys[$j] unless $seen{$j}++;
-               }
-               else {
-                  MKDEBUG && _d("Indexes are not duplicates (fulltext)");
-               }
-            }
-            else {
-               MKDEBUG && _d("Indexes are DUPLICATES");
-               push @result, $keys[$i] unless $seen{$i}++;
-               push @result, $keys[$j] unless $seen{$j}++;
-            }
-         }
-         else {
-            MKDEBUG && _d("Indexes are not duplicates");
-         }
-      }
-   }
-
-   if ( $opts->{clustered} && $opts->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
-      my $i = 0;
-      my $found = 0;
-      while ( $i < @keys ) {
-         if ( $keys[$i]->{name} eq 'PRIMARY' ) {
-            $found = 1;
-            last;
-         }
-         $i++;
-      }
-      if ( $found ) {
-         my $pkcols = $keys[$i]->{cols};
-         KEY:
-         foreach my $j ( 0..$#keys ) {
-            next KEY if $i == $j;
-            my $suffix = $keys[$j]->{cols};
-            SUFFIX:
-            while ( $suffix =~ s/`[^`]+`,// ) {
-               my $len = min(length($pkcols), length($suffix));
-               if ( (($keys[$i]->{struct} eq $keys[$j]->{struct}) || $opts->{ignore_type})
-                  && substr($suffix, 0, $len) eq substr($pkcols, 0, $len))
-               {
-                  push @result, $keys[$i] unless $seen{$i}++;
-                  push @result, $keys[$j] unless $seen{$j}++;
-                  last SUFFIX;
-               }
-            }
-         }
-      }
-   }
-
-   return \@result;
-}
-
-sub get_duplicate_fks {
-   my ( $self, $fks, $opts ) = @_;
-   my @fks = @$fks;
-   my %seen; # Avoid outputting a fk more than once.
-   my @result;
-   foreach my $i ( 0..$#fks - 1 ) {
-      foreach my $j ( $i+1..$#fks ) {
-         my $i_cols = join(', ', map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
-         my $j_cols = join(', ', map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
-         my $i_fkcols = join(', ', map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
-         my $j_fkcols = join(', ', map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
-         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
-               && $i_cols eq $j_cols
-               && $i_fkcols eq $j_fkcols
-         ) {
-            push @result, $fks[$i] unless $seen{$i}++;
-            push @result, $fks[$j] unless $seen{$j}++;
-         }
-      }
-   }
-
-   return \@result;
 }
 
 sub _d {
@@ -1316,7 +1148,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2801
+# DSNParser package 2971
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1520,27 +1352,48 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
-   MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
-      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
-   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
-   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
-      my $sql = "/*!40101 SET NAMES $charset*/";
-      MKDEBUG && _d("$dbh: $sql");
-      $dbh->do($sql);
-      MKDEBUG && _d('Enabling charset for STDOUT');
-      if ( $charset eq 'utf8' ) {
-         binmode(STDOUT, ':utf8')
-            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
-      }
-      else {
-         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+   my $dbh;
+   my $tries = 2;
+   while ( !$dbh && $tries-- ) {
+      eval {
+         MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+            join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+         $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+         if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+            my $sql = "/*!40101 SET NAMES $charset*/";
+            MKDEBUG && _d("$dbh: $sql");
+            $dbh->do($sql);
+            MKDEBUG && _d('Enabling charset for STDOUT');
+            if ( $charset eq 'utf8' ) {
+               binmode(STDOUT, ':utf8')
+                  or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+            }
+            else {
+               binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+            }
+         }
+      };
+      if ( !$dbh && $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+         if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
+            MKDEBUG && _d("Going to try again without utf8 support");
+            delete $defaults->{mysql_enable_utf8};
+         }
+         if ( !$tries ) {
+            die $EVAL_ERROR;
+         }
       }
    }
    my $setvars = $self->prop('setvars');
    if ( $cxn_string =~ m/mysql/i && $setvars ) {
       my $sql = "SET $setvars";
       MKDEBUG && _d("$dbh: $sql");
-      $dbh->do($sql);
+      eval {
+         $dbh->do($sql);
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+      }
    }
    MKDEBUG && _d('DBH info: ',
       $dbh,
@@ -1579,7 +1432,7 @@ sub print_active_handles {
       $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
-      $self->print_active_handles->( $handle, $level + 1 );
+      $self->print_active_handles( $handle, $level + 1 );
    }
 }
 
@@ -1647,7 +1500,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 2801
+# MySQLDump package 2889
 # ###########################################################################
 package MySQLDump;
 
@@ -1772,7 +1625,8 @@ sub get_create_table {
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
-      $dbh->do($sql);
+      eval { $dbh->do($sql); };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       $sql = "SHOW CREATE TABLE " . $quoter->quote($db, $tbl);
       MKDEBUG && _d($sql);
@@ -1836,7 +1690,8 @@ sub get_triggers {
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
-      $dbh->do($sql);
+      eval { $dbh->do($sql); };
+      MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
       $sql = "SHOW TRIGGERS FROM " . $quoter->quote($db);
       MKDEBUG && _d($sql);
       my $sth = $dbh->prepare($sql);
@@ -2376,7 +2231,7 @@ sub quote_val {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLFind package 2797
+# MySQLFind package 3009
 # ###########################################################################
 package MySQLFind;
 
@@ -2443,7 +2298,7 @@ sub find_tables {
    if ( $self->{need_engine} ) {
       foreach my $tbl ( @tables ) {
          next if $tbl->{engine};
-         my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
+         my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
          my $struct = $self->{parser}->parse(
             $self->{dumper}->get_create_table(
                $dbh, $self->{quoter}, $args{database}, $tbl_name));
