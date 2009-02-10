@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 76;
+use Test::More tests => 77;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -436,5 +436,13 @@ is_deeply(
    ],
    [qw(checksum.checksum foo.foo)],
    'gets tables with reserved words');
+
+is_deeply(
+   [ $qp->get_tables(
+      'SELECT * FROM (SELECT * FROM foo WHERE UserId = 577854809 ORDER BY foo DESC) q1 GROUP BY foo ORDER BY bar DESC LIMIT 3')
+   ],
+   [qw(foo)],
+   'get_tables on simple subquery'
+);
 
 exit;

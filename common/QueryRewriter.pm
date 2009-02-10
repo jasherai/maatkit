@@ -31,7 +31,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # those for my client yet.  Other verbs: KILL, LOCK, UNLOCK
 our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
                   |UPDATE|DELETE|REPLACE|^SET|UNION|^START}xi;
-our $ident   = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
@@ -50,8 +49,9 @@ my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
 
 sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 # Strips comments out of queries.
@@ -135,7 +135,9 @@ sub fingerprint {
 # This is kind of like fingerprinting, but it super-fingerprints to something
 # that shows the query type and the tables/objects it accesses.
 sub distill {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, %args ) = @_;
+   my $qp = $args{qp} || $self->{QueryParser};
+   die "I need a qp argument" unless $qp;
 
    # Special cases.
    $query =~ m/\A\s*call\s+(\S+)\(/i
@@ -155,31 +157,12 @@ sub distill {
    my $verbs = join(q{ }, @verbs);
    $verbs =~ s/( UNION SELECT)+/ UNION/g;
 
-   # Now get the objects in the query.  XXX This code is taken from
-   # QueryParser::get_tables() so please keep it in sync with that code.
-   my @tables;
-   foreach my $tbls (
-      $query =~ m{
-         \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
-         \b\s*
-         # Capture the identifier and any number of comma-join identifiers that
-         # follow it, optionally with aliases with or without the AS keyword
-         ($ident
-            (?:\s*(?:(?:AS\s*)?\w*)?,\s*$ident)*
-         )
-      }xgio)
-   {
-      # Remove [AS] foo aliases
-      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
-      push @tables, $tbls =~ m/($ident)/g;
-   }
-
    # "Fingerprint" the tables.
-   @tables = map {
+   my @tables = map {
       $_ =~ s/`//g;
       $_ =~ s/(_?)\d+/$1?/g;
       $_;
-   } @tables;
+   } $qp->get_tables($query);
 
    # Collapse the table list
    @tables = do {

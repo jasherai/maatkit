@@ -35,9 +35,8 @@ sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
 
-   # Since these keywords may appear between UPDATE or SELECT and
-   # the table refs, they need to be removed so they do not get
-   # mistaken as tables.
+   # These keywords may appear between UPDATE or SELECT and the table refs.
+   # They need to be removed so that they are not mistaken for tables.
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
    my @tables;
@@ -67,17 +66,16 @@ sub get_aliases {
    return unless $query;
    my $aliases;
 
-   # Since these keywords may appear between UPDATE or SELECT and
-   # the table refs, they need to be removed so they do not get
-   # mistaken as tables.
+   # These keywords may appear between UPDATE or SELECT and the table refs.
+   # They need to be removed so that they are not mistaken for tables.
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
-   # These keywords may appeart before JOIN which will be mistaken as
-   # an implicit alias to the preceding table if they are not removed.
+   # These keywords may appear before JOIN. They need to be removed so
+   # that they are not mistaken for implicit aliases of the preceding table.
    $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
 
    # Get the table references clause and the keyword that starts the clause.
-   # See the next comments below for why we need this starting keyword.
+   # See the comments below for why we need the starting keyword.
    my ($tbl_refs, $from) = $query =~ m{
       (
          (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
@@ -96,19 +94,16 @@ sub get_aliases {
 
    MKDEBUG && _d("tbl refs: $tbl_refs");
 
-   # The keyword that being the table refs clause must be included so
-   # that the first table will match. We could not include it and make
-   # the before_tbl keywords match optionally, but then queries like:
-   #    FROM t1 a JOIN t2 b ON a.col1=b.col2
-   # will have col2 match as a tbl because no specific before_tbl keywords
-   # were required so after matching 't2 b', Perl will ignore everything
-   # until col2 which matches the 2nd line in the regex in while below.
+   # These keywords precede a table ref. They signal the start of a table
+   # ref, but to know where the table ref ends we need the after tbl ref
+   # keywords below.
    my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
 
-   # These keywords signal the end of one table ref and the start of another,
-   # or the start of an ON|USING part of a JOIN clause (which we want to skip
-   # over), or the end of the string (\z). We need these ending keywords so
-   # that they are not mistaken as an implicit alias name for the preceding tbl.
+   # These keywords signal the end of a table ref and either 1) the start
+   # of another table ref, or 2) the start of an ON|USING part of a JOIN
+   # clause (which we want to skip over), or 3) the end of the string (\z).
+   # We need these after tbl ref keywords so that they are not mistaken
+   # for implicit aliases of the preceding table.
    my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
 
    # This is required for cases like:

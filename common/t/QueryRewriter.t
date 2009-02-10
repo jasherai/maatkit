@@ -23,72 +23,74 @@ use Test::More tests => 95;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
+require '../QueryParser.pm';
 
-my $q = new QueryRewriter();
+my $qp = new QueryParser();
+my $qr  = new QueryRewriter(QueryParser=>$qp);
 
 is(
-   $q->strip_comments("select \n--bar\n foo"),
+   $qr->strip_comments("select \n--bar\n foo"),
    "select \n\n foo",
    'Removes one-line comments',
 );
 
 is(
-   $q->strip_comments("select foo--bar\nfoo"),
+   $qr->strip_comments("select foo--bar\nfoo"),
    "select foo\nfoo",
    'Removes one-line comments without running them together',
 );
 
 is(
-   $q->strip_comments("select foo -- bar"),
+   $qr->strip_comments("select foo -- bar"),
    "select foo ",
    'Removes one-line comments at end of line',
 );
 
 is(
-   $q->fingerprint(
+   $qr->fingerprint(
       q{UPDATE groups_search SET  charter = '   -------3\'\' XXXXXXXXX.\n    \n    -----------------------------------------------------', show_in_list = 'Y' WHERE group_id='aaaaaaaa'}),
    'update groups_search set charter = ?, show_in_list = ? where group_id=?',
    'complex comments',
 );
 
 is(
-   $q->fingerprint("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
+   $qr->fingerprint("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
    "mysqldump",
    'Fingerprints all mysqldump SELECTs together',
 );
 
 is(
-   $q->distill("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
+   $qr->distill("SELECT /*!40001 SQL_NO_CACHE */ * FROM `film`"),
    "SELECT film",
    'Distills mysqldump SELECTs to selects',
 );
 
 is(
-   $q->fingerprint("CALL foo(1, 2, 3)"),
+   $qr->fingerprint("CALL foo(1, 2, 3)"),
    "call foo",
    'Fingerprints stored procedure calls specially',
 );
 
 is(
-   $q->distill("CALL foo(1, 2, 3)"),
+   $qr->distill("CALL foo(1, 2, 3)"),
    "CALL foo",
    'Distills stored procedure calls specially',
 );
 
 is(
-   $q->fingerprint('# administrator command: Init DB'),
+   $qr->fingerprint('# administrator command: Init DB'),
    '# administrator command: Init DB',
    'Fingerprints admin commands as themselves',
 );
 
 is(
-   $q->distill('# administrator command: Init DB'),
+   $qr->distill('# administrator command: Init DB'),
    'ADMIN',
    'Distills admin commands together',
 );
 
 is(
-   $q->fingerprint(
+   $qr->fingerprint(
       q{REPLACE /*foo.bar:3/3*/ INTO checksum.checksum (db, tbl, }
       .q{chunk, boundaries, this_cnt, this_crc) SELECT 'foo', 'bar', }
       .q{2 AS chunk_num, '`id` >= 2166633', COUNT(*) AS cnt, }
@@ -112,7 +114,7 @@ is(
 );
 
 is(
-   $q->distill(
+   $qr->distill(
       q{REPLACE /*foo.bar:3/3*/ INTO checksum.checksum (db, tbl, }
       .q{chunk, boundaries, this_cnt, this_crc) SELECT 'foo', 'bar', }
       .q{2 AS chunk_num, '`id` >= 2166633', COUNT(*) AS cnt, }
@@ -136,233 +138,233 @@ is(
 );
 
 is(
-   $q->fingerprint("use `foo`"),
+   $qr->fingerprint("use `foo`"),
    "use ?",
    'Removes identifier from USE',
 );
 
 is(
-   $q->distill("use `foo`"),
+   $qr->distill("use `foo`"),
    "USE",
    'distills USE',
 );
 
 is(
-   $q->fingerprint("select \n--bar\n foo"),
+   $qr->fingerprint("select \n--bar\n foo"),
    "select foo",
    'Removes one-line comments in fingerprints',
 );
 
 is(
-   $q->distill("select \n--bar\n foo"),
+   $qr->distill("select \n--bar\n foo"),
    "SELECT",
    'distills queries from DUAL',
 );
 
 is(
-   $q->fingerprint("select foo--bar\nfoo"),
+   $qr->fingerprint("select foo--bar\nfoo"),
    "select foo foo",
    'Removes one-line comments in fingerprint without mushing things together',
 );
 
 is(
-   $q->fingerprint("select foo -- bar\n"),
+   $qr->fingerprint("select foo -- bar\n"),
    "select foo ",
    'Removes one-line EOL comments in fingerprints',
 );
 
 # This one is too expensive!
 #is(
-#   $q->fingerprint(
+#   $qr->fingerprint(
 #      "select a,b ,c , d from tbl where a=5 or a = 5 or a=5 or a =5"),
 #   "select a, b, c, d from tbl where a=? or a=? or a=? or a=?",
 #   "Normalizes commas and equals",
 #);
 
 is(
-   $q->fingerprint("select null, 5.001, 5001. from foo"),
+   $qr->fingerprint("select null, 5.001, 5001. from foo"),
    "select ?, ?, ? from foo",
    "Handles bug from perlmonks thread 728718",
 );
 
 is(
-   $q->distill("select null, 5.001, 5001. from foo"),
+   $qr->distill("select null, 5.001, 5001. from foo"),
    "SELECT foo",
    "distills simple select",
 );
 
 is(
-   $q->fingerprint("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
+   $qr->fingerprint("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
    "select ?, ?, ?, ? from foo",
    "Handles quoted strings",
 );
 
 is(
-   $q->distill("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
+   $qr->distill("select 'hello', '\nhello\n', \"hello\", '\\'' from foo"),
    "SELECT foo",
    "distills with quoted strings",
 );
 
 is(
-   $q->fingerprint("select 'hello'\n"),
+   $qr->fingerprint("select 'hello'\n"),
    "select ?",
    "Handles trailing newline",
 );
 
 # This is a known deficiency, fixes seem to be expensive though.
 is(
-   $q->fingerprint("select '\\\\' from foo"),
+   $qr->fingerprint("select '\\\\' from foo"),
    "select '\\ from foo",
    "Does not handle all quoted strings",
 );
 
 is(
-   $q->fingerprint("select   foo"),
+   $qr->fingerprint("select   foo"),
    "select foo",
    'Collapses whitespace',
 );
 
 is(
-   $q->strip_comments("select /*\nhello!*/ 1"),
+   $qr->strip_comments("select /*\nhello!*/ 1"),
    'select  1',
    'Stripped star comment',
 );
 
 is(
-   $q->strip_comments('select /*!40101 hello*/ 1'),
+   $qr->strip_comments('select /*!40101 hello*/ 1'),
    'select /*!40101 hello*/ 1',
    'Left version star comment',
 );
 
 is(
-   $q->fingerprint('SELECT * from foo where a = 5'),
+   $qr->fingerprint('SELECT * from foo where a = 5'),
    'select * from foo where a = ?',
    'Lowercases, replaces integer',
 );
 
 is(
-   $q->fingerprint('select 0e0, +6e-30, -6.00 from foo where a = 5.5 or b=0.5 or c=.5'),
+   $qr->fingerprint('select 0e0, +6e-30, -6.00 from foo where a = 5.5 or b=0.5 or c=.5'),
    'select ?, ?, ? from foo where a = ? or b=? or c=?',
    'Floats',
 );
 
 is(
-   $q->fingerprint("select 0x0, x'123', 0b1010, b'10101' from foo"),
+   $qr->fingerprint("select 0x0, x'123', 0b1010, b'10101' from foo"),
    'select ?, ?, ?, ? from foo',
    'Hex/bit',
 );
 
 is(
-   $q->fingerprint(" select  * from\nfoo where a = 5"),
+   $qr->fingerprint(" select  * from\nfoo where a = 5"),
    'select * from foo where a = ?',
    'Collapses whitespace',
 );
 
 is(
-   $q->fingerprint("select * from foo where a in (5) and b in (5, 8,9 ,9 , 10)"),
+   $qr->fingerprint("select * from foo where a in (5) and b in (5, 8,9 ,9 , 10)"),
    'select * from foo where a in(?+) and b in(?+)',
    'IN lists',
 );
 
 is(
-   $q->fingerprint("select foo_1 from foo_2_3"),
+   $qr->fingerprint("select foo_1 from foo_2_3"),
    'select foo_? from foo_?_?',
    'Numeric table names',
 );
 
 is(
-   $q->distill("select foo_1 from foo_2_3"),
+   $qr->distill("select foo_1 from foo_2_3"),
    'SELECT foo_?_?',
    'distills numeric table names',
 );
 
 # 123f00 => ?oo because f "looks like it could be a number".
 is(
-   $q->fingerprint("select 123foo from 123foo", { prefixes => 1 }),
+   $qr->fingerprint("select 123foo from 123foo", { prefixes => 1 }),
    'select ?oo from ?oo',
    'Numeric table name prefixes',
 );
 
 is(
-   $q->fingerprint("select 123_foo from 123_foo", { prefixes => 1 }),
+   $qr->fingerprint("select 123_foo from 123_foo", { prefixes => 1 }),
    'select ?_foo from ?_foo',
    'Numeric table name prefixes with underscores',
 );
 
 is(
-   $q->fingerprint("insert into abtemp.coxed select foo.bar from foo"),
+   $qr->fingerprint("insert into abtemp.coxed select foo.bar from foo"),
    'insert into abtemp.coxed select foo.bar from foo',
    'A string that needs no changes',
 );
 
 is(
-   $q->distill("insert into abtemp.coxed select foo.bar from foo"),
+   $qr->distill("insert into abtemp.coxed select foo.bar from foo"),
    'INSERT SELECT abtemp.coxed foo',
    'distills insert/select',
 );
 
 is(
-   $q->fingerprint('insert into foo(a, b, c) values(2, 4, 5)'),
+   $qr->fingerprint('insert into foo(a, b, c) values(2, 4, 5)'),
    'insert into foo(a, b, c) values(?+)',
    'VALUES lists',
 );
 
 is(
-   $q->distill('insert into foo(a, b, c) values(2, 4, 5)'),
+   $qr->distill('insert into foo(a, b, c) values(2, 4, 5)'),
    'INSERT foo',
    'distills value lists',
 );
 
 is(
-   $q->fingerprint('insert into foo(a, b, c) values(2, 4, 5) , (2,4,5)'),
+   $qr->fingerprint('insert into foo(a, b, c) values(2, 4, 5) , (2,4,5)'),
    'insert into foo(a, b, c) values(?+)',
    'VALUES lists with multiple ()',
 );
 
 is(
-   $q->fingerprint('insert into foo(a, b, c) value(2, 4, 5)'),
+   $qr->fingerprint('insert into foo(a, b, c) value(2, 4, 5)'),
    'insert into foo(a, b, c) value(?+)',
    'VALUES lists with VALUE()',
 );
 
 is(
-   $q->fingerprint('select * from foo limit 5'),
+   $qr->fingerprint('select * from foo limit 5'),
    'select * from foo limit ?',
    'limit alone',
 );
 
 is(
-   $q->fingerprint('select * from foo limit 5, 10'),
+   $qr->fingerprint('select * from foo limit 5, 10'),
    'select * from foo limit ?',
    'limit with comma-offset',
 );
 
 is(
-   $q->fingerprint('select * from foo limit 5 offset 10'),
+   $qr->fingerprint('select * from foo limit 5 offset 10'),
    'select * from foo limit ?',
    'limit with offset',
 );
 
 is(
-   $q->fingerprint('select 1 union select 2 union select 4'),
+   $qr->fingerprint('select 1 union select 2 union select 4'),
    'select ? /*repeat union*/',
    'union fingerprints together',
 );
 
 is(
-   $q->distill('select 1 union select 2 union select 4'),
+   $qr->distill('select 1 union select 2 union select 4'),
    'SELECT UNION',
    'union distills together',
 );
 
 is(
-   $q->fingerprint('select 1 union all select 2 union all select 4'),
+   $qr->fingerprint('select 1 union all select 2 union all select 4'),
    'select ? /*repeat union all*/',
    'union all fingerprints together',
 );
 
 is(
-   $q->fingerprint(
+   $qr->fingerprint(
       q{select * from (select 1 union all select 2 union all select 4) as x }
       . q{join (select 2 union select 2 union select 3) as y}),
    q{select * from (select ? /*repeat union all*/) as x }
@@ -370,10 +372,10 @@ is(
    'union all fingerprints together',
 );
 
-is($q->convert_to_select(), undef, 'No query');
+is($qr->convert_to_select(), undef, 'No query');
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'replace into foo select * from bar',
    ),
    'select * from bar',
@@ -381,7 +383,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'replace into foo select`faz` from bar',
    ),
    'select`faz` from bar',
@@ -389,7 +391,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'insert into foo(a, b, c) values(1, 3, 5)',
    ),
    'select * from  foo where a=1 and  b= 3 and  c= 5',
@@ -397,7 +399,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'insert ignore into foo(a, b, c) values(1, 3, 5)',
    ),
    'select * from  foo where a=1 and  b= 3 and  c= 5',
@@ -405,7 +407,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'insert into foo(a, b, c) value(1, 3, 5)',
    ),
    'select * from  foo where a=1 and  b= 3 and  c= 5',
@@ -413,7 +415,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
    ),
    'select * from  foo where a=1 and  b= 3 and  c= 5',
@@ -421,7 +423,7 @@ is(
 );
 
 is(
-   $q->distill(
+   $qr->distill(
       'replace into foo(a, b, c) values(1, 3, 5) on duplicate key update foo=bar',
    ),
    'REPLACE UPDATE foo',
@@ -429,7 +431,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'replace into foo(a, b, c) values(now(), "3", 5)',
    ),
    'select * from  foo where a=now() and  b= "3" and  c= 5',
@@ -437,7 +439,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'replace into foo(a, b, c) values(current_date - interval 1 day, "3", 5)',
    ),
    'select * from  foo where a=current_date - interval 1 day and  b= "3" and  c= 5',
@@ -445,7 +447,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'insert into foo select * from bar join baz using (bat)',
    ),
    'select * from bar join baz using (bat)',
@@ -453,7 +455,7 @@ is(
 );
 
 is(
-   $q->distill(
+   $qr->distill(
       'insert into foo select * from bar join baz using (bat)',
    ),
    'INSERT SELECT foo bar baz',
@@ -461,7 +463,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'insert into foo select * from bar where baz=bat on duplicate key update',
    ),
    'select * from bar where baz=bat',
@@ -469,7 +471,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'update foo set bar=baz where bat=fiz',
    ),
    'select  bar=baz from foo where  bat=fiz',
@@ -477,7 +479,7 @@ is(
 );
 
 is(
-   $q->distill(
+   $qr->distill(
       'update foo set bar=baz where bat=fiz',
    ),
    'UPDATE foo',
@@ -485,7 +487,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'update foo inner join bar using(baz) set big=little',
    ),
    'select  big=little from foo inner join bar using(baz) ',
@@ -493,7 +495,7 @@ is(
 );
 
 is(
-   $q->distill(
+   $qr->distill(
       'update foo inner join bar using(baz) set big=little',
    ),
    'UPDATE foo bar',
@@ -501,7 +503,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'update foo set bar=baz limit 50',
    ),
    'select  bar=baz  from foo  limit 50 ',
@@ -509,7 +511,7 @@ is(
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
 q{UPDATE foo.bar
 SET    whereproblem= '3364', apple = 'fish'
 WHERE  gizmo='5091'}
@@ -519,7 +521,7 @@ WHERE  gizmo='5091'}
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'delete from foo where bar = baz',
    ),
    'select * from  foo where bar = baz',
@@ -527,7 +529,7 @@ is(
 );
 
 is(
-   $q->distill(
+   $qr->distill(
       'delete from foo where bar = baz',
    ),
    'DELETE foo',
@@ -536,7 +538,7 @@ is(
 
 # Insanity...
 is(
-   $q->convert_to_select('
+   $qr->convert_to_select('
 update db2.tbl1 as p
    inner join (
       select p2.col1, p2.col2
@@ -564,7 +566,7 @@ update db2.tbl1 as p
 );
 
 is(
-   $q->distill('
+   $qr->distill('
 update db2.tbl1 as p
    inner join (
       select p2.col1, p2.col2
@@ -582,7 +584,7 @@ update db2.tbl1 as p
 );
 
 is(
-   $q->convert_to_select(q{INSERT INTO foo.bar (col1, col2, col3)
+   $qr->convert_to_select(q{INSERT INTO foo.bar (col1, col2, col3)
        VALUES ('unbalanced(', 'val2', 3)}),
    q{select * from  foo.bar  where col1='unbalanced(' and  }
    . q{col2= 'val2' and  col3= 3},
@@ -590,19 +592,19 @@ is(
 );
 
 is(
-   $q->convert_to_select(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
+   $qr->convert_to_select(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
    'select 1 from  foo.bar b left join baz.bat c on a=b where nine>eight',
    'Do not select * from a join',
 );
 
 is(
-   $q->distill(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
+   $qr->distill(q{delete foo.bar b from foo.bar b left join baz.bat c on a=b where nine>eight}),
    'DELETE foo.bar baz.bat',
    'distills and then collapses same tables',
 );
 
 is (
-   $q->convert_to_select(q{
+   $qr->convert_to_select(q{
 REPLACE DELAYED INTO
 `db1`.`tbl2`(`col1`,col2)
 VALUES ('617653','2007-09-11')}),
@@ -611,7 +613,7 @@ VALUES ('617653','2007-09-11')}),
 );
 
 is (
-   $q->distill(q{
+   $qr->distill(q{
 REPLACE DELAYED INTO
 `db1`.`tbl2`(`col1`,col2)
 VALUES ('617653','2007-09-11')}),
@@ -620,17 +622,17 @@ VALUES ('617653','2007-09-11')}),
 );
 
 is(
-   $q->convert_to_select(
+   $qr->convert_to_select(
       'select * from tbl where id = 1'
    ),
    'select * from tbl where id = 1',
    'Does not convert select to select',
 );
 
-is($q->wrap_in_derived(), undef, 'Cannot wrap undef');
+is($qr->wrap_in_derived(), undef, 'Cannot wrap undef');
 
 is(
-   $q->wrap_in_derived(
+   $qr->wrap_in_derived(
       'select * from foo',
    ),
    'select 1 from (select * from foo) as x limit 1',
@@ -638,30 +640,30 @@ is(
 );
 
 is(
-   $q->wrap_in_derived('set timestamp=134'),
+   $qr->wrap_in_derived('set timestamp=134'),
    'set timestamp=134',
    'Do not wrap non-SELECT queries',
 );
 
 is(
-   $q->distill('set timestamp=134'),
+   $qr->distill('set timestamp=134'),
    'SET',
    'distills set',
 );
 
 is(
-   $q->convert_select_list('select * from tbl'),
+   $qr->convert_select_list('select * from tbl'),
    'select 1 from tbl',
    'Star to one',
 );
 
 is(
-   $q->convert_select_list('select a, b, c from tbl'),
+   $qr->convert_select_list('select a, b, c from tbl'),
    'select isnull(coalesce( a, b, c )) from tbl',
    'column list to isnull/coalesce'
 );
 
-is($q->convert_to_select(
+is($qr->convert_to_select(
    q{UPDATE GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU SET }
    . q{GC.MATCHING_POT = 5, GC.LAST_GARDENPOT = 5, GC.LAST_NAME=}
    . q{'Rotary', GC.LAST_BUCKET='Pail', GC.LAST_UPDATE='2008-11-27 04:00:59'WHERE}
@@ -673,7 +675,7 @@ is($q->convert_to_select(
    'update with no space between quoted string and where (issue 168)'
 );
 
-is($q->distill(
+is($qr->distill(
    q{UPDATE GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU SET }
    . q{GC.MATCHING_POT = 5, GC.LAST_GARDENPOT = 5, GC.LAST_NAME=}
    . q{'Rotary', GC.LAST_BUCKET='Pail', GC.LAST_UPDATE='2008-11-27 04:00:59'WHERE}
@@ -686,31 +688,31 @@ is($q->distill(
 );
 
 is(
-   $q->distill(q{SELECT STRAIGHT_JOIN distinct foo, bar FROM A, B, C}),
+   $qr->distill(q{SELECT STRAIGHT_JOIN distinct foo, bar FROM A, B, C}),
    'SELECT A B C',
    'distill with STRAIGHT_JOIN',
 );
 
 is(
-   $q->distill(
+   $qr->distill(
       'replace into checksum.checksum select `last_update`, `foo` from foo.foo'),
    'REPLACE SELECT checksum.checksum foo.foo',
    'distill with reserved words');
 
-is($q->distill('SHOW STATUS'), 'SHOW', 'distill SHOW');
+is($qr->distill('SHOW STATUS'), 'SHOW', 'distill SHOW');
 
-is($q->distill('commit'), 'COMMIT', 'distill COMMIT');
+is($qr->distill('commit'), 'COMMIT', 'distill COMMIT');
 
-is($q->distill('FLUSH TABLES WITH READ LOCK'), 'FLUSH', 'distill FLUSH');
+is($qr->distill('FLUSH TABLES WITH READ LOCK'), 'FLUSH', 'distill FLUSH');
 
-is($q->distill('BEGIN'), 'BEGIN', 'distill BEGIN');
+is($qr->distill('BEGIN'), 'BEGIN', 'distill BEGIN');
 
-is($q->distill('start'), 'START', 'distill START');
+is($qr->distill('start'), 'START', 'distill START');
 
-is($q->distill('ROLLBACK'), 'ROLLBACK', 'distill ROLLBACK');
+is($qr->distill('ROLLBACK'), 'ROLLBACK', 'distill ROLLBACK');
 
 is(
-   $q->convert_to_select("UPDATE tbl SET col='wherex'WHERE crazy=1"),
+   $qr->convert_to_select("UPDATE tbl SET col='wherex'WHERE crazy=1"),
    "select  col='wherex' from tbl where  crazy=1",
    "update with SET col='wherex'WHERE"
 );
