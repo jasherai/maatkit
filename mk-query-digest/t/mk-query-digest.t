@@ -205,7 +205,7 @@ my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave1');
 SKIP: {
-   skip 'Cannot connect to sandbox master', 8 if !$dbh1;
+   skip 'Cannot connect to sandbox master', 13 if !$dbh1;
 
    $sb->create_dbs($dbh1, ['test']);
    $sb->load_file('master', 'samples/query_review.sql');

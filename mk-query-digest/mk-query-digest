@@ -928,7 +928,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2893
+# Transformers package 2999
 # ###########################################################################
 
 package Transformers;
@@ -1068,19 +1068,19 @@ sub unix_timestamp {
    return $val;
 }
 
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d("$checksum checksum for $val");
+   return $checksum;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
    print "# $package:$line $$ ", @_, "\n";
-}
-
-sub make_checksum {
-   my ( $val ) = @_;
-   my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
-   return $checksum;
 }
 
 1;
@@ -1090,7 +1090,7 @@ sub make_checksum {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2984
+# QueryRewriter package 3007
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1103,7 +1103,6 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
                   |UPDATE|DELETE|REPLACE|^SET|UNION|^START}xi;
-our $ident   = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
@@ -1120,8 +1119,9 @@ my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
 my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
 
 sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 sub strip_comments {
@@ -1179,7 +1179,9 @@ sub fingerprint {
 }
 
 sub distill {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, %args ) = @_;
+   my $qp = $args{qp} || $self->{QueryParser};
+   die "I need a qp argument" unless $qp;
 
    $query =~ m/\A\s*call\s+(\S+)\(/i
       && return "CALL $1"; # Warning! $1 used, be careful.
@@ -1196,25 +1198,11 @@ sub distill {
    my $verbs = join(q{ }, @verbs);
    $verbs =~ s/( UNION SELECT)+/ UNION/g;
 
-   my @tables;
-   foreach my $tbls (
-      $query =~ m{
-         \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
-         \b\s*
-         ($ident
-            (?:\s*(?:(?:AS\s*)?\w*)?,\s*$ident)*
-         )
-      }xgio)
-   {
-      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
-      push @tables, $tbls =~ m/($ident)/g;
-   }
-
-   @tables = map {
+   my @tables = map {
       $_ =~ s/`//g;
       $_ =~ s/(_?)\d+/$1?/g;
       $_;
-   } @tables;
+   } $qp->get_tables($query);
 
    @tables = do {
       my $last = '';
@@ -2475,7 +2463,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 2959
+# QueryParser package 3007
 # ###########################################################################
 package QueryParser;
 
@@ -2483,110 +2471,89 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use Data::Dumper;
-$Data::Dumper::Indent = 1;
-
 use constant MKDEBUG => $ENV{MKDEBUG};
-our $ident = qr/(?:`[^`]+`|\w+)(?:\s*\.\s*(?:`[^`]+`|\w+))?/; # db.tbl identifier
+our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
 }
 
-sub get_table_ref {
-   my ( $self, $query ) = @_;
-   return unless $query;
-   my $table_ref;
-
-   if ( $query =~ m/FROM\s+(.+?)\b(?:WHERE|ORDER|LIMIT|HAVING)+.+/is ) {
-      $table_ref = $1;
-   }
-   elsif ( $query =~ m/FROM\s+(.+?);?$/is ) {
-      chomp($table_ref = $1);
-   }
-
-   MKDEBUG && _d($table_ref ? "table ref: $table_ref"
-                            : "Failed to parse table ref");
-
-   return $table_ref;
-}
-
-sub parse_table_aliases {
-   my ( $self, $table_ref ) = @_;
-   my $table_aliases = {};
-   return $table_aliases if !defined $table_ref || !$table_ref;
-   my @tables;
-
-   $table_ref =~ s/\n/ /g;
-   $table_ref =~ s/`//g; # Graves break database discovery
-
-   if( $table_ref =~ m/ (:?straight_)?join /i ) {
-      $table_ref =~ s/ join /,/ig;
-      1 while ($table_ref =~ s/ (?:inner|outer|cross|left|right|natural),/,/ig);
-      $table_ref =~ s/ using\s*\(.+?\)//ig;
-      $table_ref =~ s/ on \([\w\s=.,]+\),?/,/ig;
-      $table_ref =~ s/ on [\w\s=.]+,?/,/ig;
-      $table_ref =~ s/ straight_join /,/ig;
-   }
-
-   @tables = split /,/, $table_ref;
-
-   my @alias_patterns = (
-      qr/\s*(\S+)\s+AS\s+(\S+)\s*/i,
-      qr/^\s*(\S+)\s+(\S+)\s*$/,
-      qr/^\s*(\S+)+\s*$/, # Not an alias but we save it anyway to be complete
-   );
-
-   TABLE:
-   foreach my $table ( @tables ) {
-      my ( $db_tbl, $alias );
-
-      if ( $table =~ m/\(\s*SELECT\s+/i ) {
-         MKDEBUG && _d("Ignoring subquery table: $table");
-         next TABLE;
-      }
-
-      ALIAS_PATTERN:
-      foreach my $alias_pattern ( @alias_patterns ) {
-         if ( ( $db_tbl, $alias ) = $table =~ m/$alias_pattern/ ) {
-            MKDEBUG && _d("$table matches $alias_pattern");
-            last ALIAS_PATTERN;
-         }
-      }
-
-      if ( defined $db_tbl && $db_tbl ) {
-         my ( $db, $tbl ) = $db_tbl =~ m/^(?:(\S+)\.)?(\S+)/;
-
-         $table_aliases->{$alias || $tbl} = $tbl;
-         $table_aliases->{DATABASE}->{$tbl} = $db if defined $db && $db;
-      }
-      elsif ( MKDEBUG ) {
-         _d("Failed to parse table alias for $table");
-      }
-   }
-
-   MKDEBUG && _d('table aliases: ' . Dumper($table_aliases));
-
-   return $table_aliases;
-}
-
 sub get_tables {
    my ( $self, $query ) = @_;
+   return unless $query;
+
+   $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
+
    my @tables;
    foreach my $tbls (
       $query =~ m{
-         \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
+         \b(?:\,|FROM|JOIN|UPDATE|INTO) # Words that precede table names
          \b\s*
-         ($ident
-            (?:\s*(?:(?:AS\s*)?\w*)?,\s*$ident)*
+         ($tbl_ident
+            (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
          )
-      }xgio)
+      }xgio )
    {
-      $tbls =~ s/($ident)\s+(?:as\s+\w+|\w+)/$1/gi;
-      push @tables, $tbls =~ m/($ident)/g;
+      MKDEBUG && _d("match: $tbls");
+      foreach my $tbl ( split(',', $tbls) ) {
+         $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gi;
+         push @tables, $tbl;
+      }
    }
    return @tables;
+}
+
+sub get_aliases {
+   my ( $self, $query ) = @_;
+   return unless $query;
+   my $aliases;
+
+   $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
+
+   $query =~ s/ (?:INNER|OUTER|CROSS|LEFT|RIGHT|NATURAL)//ig;
+
+   my ($tbl_refs, $from) = $query =~ m{
+      (
+         (FROM|INTO|UPDATE)\b\s*   # Keyword before table refs
+         .+?                       # Table refs
+      )
+      (?:\s+|\z)                   # If the query does not end with the table
+      (?:WHERE|ORDER|LIMIT|HAVING|SET|VALUES|\z) # Keyword after table refs
+   }ix;
+
+   die "Failed to parse table references from $query"
+      unless $tbl_refs && $from;
+
+   MKDEBUG && _d("tbl refs: $tbl_refs");
+
+   my $before_tbl = qr/(?:,|JOIN|\s|$from)+/i;
+
+   my $after_tbl  = qr/(?:,|JOIN|ON|USING|\z)/i;
+
+   $tbl_refs =~ s/ = /=/g;
+
+   while (
+      $tbl_refs =~ m{
+         $before_tbl\b\s*
+            ( ($tbl_ident) (?:\s+ (?:AS\s+)? (\w+))? )
+         \s*$after_tbl
+      }xgio )
+   {
+      my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
+      MKDEBUG && _d("match: $tbl_ref");
+
+      if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
+         MKDEBUG && _d("Subquery $tbl_ref");
+         $aliases->{$alias} = undef;
+         next;
+      }
+
+      my ( $db, $tbl ) = $db_tbl =~ m/^(?:(.*?)\.)?(.*)/;
+      $aliases->{$alias || $tbl} = $tbl;
+      $aliases->{DATABASE}->{$tbl} = $db if $db;
+   }
+   return $aliases;
 }
 
 sub _d {
@@ -3457,8 +3424,8 @@ my $dp = new DSNParser (
    { key => 't', desc => 'Table to use as the query review table' } );
 $dp->prop('autokey', 'h');
 my $q  = new Quoter();
-my $qr = new QueryRewriter();
 my $qp = new QueryParser();
+my $qr = new QueryRewriter(QueryParser=>$qp);
 my $qv;     # QueryReview
 my $qv_dbh; # For QueryReview
 my $ex_dbh; # For --execute
