@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 40;
+use Test::More tests => 41;
 use English qw(-no_match_vars);
 use List::Util qw(max);
 use DBI;
@@ -39,8 +39,9 @@ my $d  = new MySQLDump();
 my $dp = new DSNParser();
 
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
-my $dbh = $sb->get_dbh_for('master');
-
+my $dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+ 
 $sb->create_dbs($dbh,
    [qw(lost+found test_mysql_finder_1 test_mysql_finder_2)],
    drop => 1, repl => 1);
@@ -480,6 +481,38 @@ is($output, '1', 'Does SHOW CREATE only for filtered tables');
 # skip views
 # apply list-o-engines
 # apply ignore-these-engines
+
+# #############################################################################
+# Issue 262
+# #############################################################################
+$sb->load_file('master', 'samples/issue_262.sql');
+$f = new MySQLFind(
+   quoter    => $q,
+   dumper    => $d,
+   parser    => $p,
+   databases => {
+      permit => { 'my db' => 1 },
+   },
+   engines   => {
+      reject => { FEDERATED => 1, MRG_MyISAM => 1, },
+   },
+);
+my @dbs_tbls;
+foreach my $db ( $f->find_databases($dbh) ) {
+   foreach my $tbl ( $f->find_tables($dbh, database => $db) ) {
+      push @dbs_tbls, { db => $db, tbl => $tbl };
+   }
+}
+is_deeply(
+   \@dbs_tbls,
+   [
+      {
+         db  => 'my db',
+         tbl => 'my tbl',
+      },
+   ],
+   'finds db and tbl names with space',
+);
 
 $sb->wipe_clean($dbh);
 exit;

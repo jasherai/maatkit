@@ -116,9 +116,7 @@ sub find_tables {
          next if $tbl->{engine};
          # Strip db from tbl name. The tbl name was qualified with its
          # db during _fetch_tbl_list() above.
-         my ( $tbl_name ) = $tbl->{name} =~ m/\.(\S+)$/;
-         # Fix issue 262?
-         $tbl_name ||= $tbl->{name};
+         my ( $tbl_name ) = $tbl->{name} =~ m/\.(.+)$/;
          my $struct = $self->{parser}->parse(
             $self->{dumper}->get_create_table(
                $dbh, $self->{quoter}, $args{database}, $tbl_name));
