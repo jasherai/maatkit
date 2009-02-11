@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 35;
+use Test::More tests => 36;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -243,6 +243,20 @@ like($output,   qr/test2/,    '--replicate honors --tables (4/4)');
 $output = `../mk-table-sync h=127.1,P=12345,D=test,t=messages P=12346`;
 like($output, qr/Specify at least one of --print, --execute or --test/,
    'Requires --print, --execute or --test');
+
+# #############################################################################
+# Issue 262
+# #############################################################################
+$sb->create_dbs($master_dbh, ['foo']);
+$sb->use('master', '-e "create table foo.t1 (i int)"');
+$sb->use('master', '-e "SET SQL_LOG_BIN=0; insert into foo.t1 values (1)"');
+$sb->use('slave1', '-e "truncate table foo.t1"');
+$output = `perl ../mk-table-sync --print h=127.1,P=12345 -d mysql,foo h=127.1,P=12346 2>&1`;
+like(
+   $output,
+   qr/INSERT INTO `foo`\.`t1`\(`i`\) VALUES \(1\)/,
+   'Does not die checking tables for triggers (issue 262)'
+);
 
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);

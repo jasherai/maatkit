@@ -5228,9 +5228,8 @@ sub check_tables_for_triggers {
                     . $dsn_parser->as_string($dsn);
             MKDEBUG && _d($msg);
          }
-         $dbh->disconnect();
       }
-
+      $dbh->disconnect();
    }
 
    return 0;

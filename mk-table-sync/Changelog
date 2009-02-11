@@ -1,5 +1,8 @@
 Changelog for mk-table-sync:
 
+   * Checking tables for triggers caused a crash (issue 262).
+   * Database or table names with spaces caused a crash (issue 262).
+
 2009-02-01: version 1.0.12
 
    * An older DBD library caused an infinite loop (issue 11).
