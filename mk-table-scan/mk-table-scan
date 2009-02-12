@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 
-# This is mk-duplicate-key-checker, a program to analyze MySQL tables for
+# TODO This is mk-duplicate-key-checker, a program to analyze MySQL tables for
 # duplicated or redundant indexes and foreign key constraints.
 # 
 # This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
@@ -2374,11 +2374,6 @@ sub make_checksum {
 package main;
 
 use English qw(-no_match_vars);
-use Getopt::Long;
-use List::Util qw(max);
-
-Transformers->import(qw(shorten));
-
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 $OUTPUT_AUTOFLUSH = 1;
@@ -2392,7 +2387,7 @@ my $opt_parser = OptionParser->new(@opt_spec);
 $opt_parser->{prompt} = '<options>';
 $opt_parser->{descr}  = q{examines MySQL tables for duplicate or redundant }
                       . q{indexes and foreign keys.  Connection options }
-                      . q{are read from MySQL option files.};
+                      . q{are read from MySQL option files.}; # TODO
 my %opts = $opt_parser->parse();
 $opt_parser->usage_or_errors(%opts);
 
@@ -2405,29 +2400,13 @@ if ( !defined $opts{p} && $opts{askpass} ) {
    $opts{p} = OptionParser::prompt_noecho("Enter password: ");
 }
 
-my $vp = new VersionParser();
 my $dp = new DSNParser;
 $dp->prop('setvars', $opts{setvars});
 my $dbh = $dp->get_dbh( $dp->get_cxn_params(\%opts), { AutoCommit => 1 } );
 
-my $version = $vp->parse($dbh->selectrow_array('SELECT VERSION()'));
-
-my $max_width = 74;
-my $hdr_width = $max_width - 2;  # for '# '
-my $hdr_fmt   = "# %-${hdr_width}s\n";
-
-my %summary;
-my %seen_tbl;
-my $ks = $opts{summary} ? new KeySize() : undef;
-my $dk = new DuplicateKeyFinder();
 my $q  = new Quoter();
 my $tp = new TableParser();
 my $du = new MySQLDump();
-my $tp_opts = {
-   ignore_type  => $opts{a},
-   ignore_order => $opts{ignoreorder},
-   clustered    => $opts{c},
-};
 
 my $finder = new MySQLFind(
    quoter    => $q,
@@ -2454,126 +2433,26 @@ foreach my $database ( $finder->find_databases($dbh) ) {
    TABLE:
    foreach my $table ( $finder->find_tables($dbh, database => $database) ) {
       my $ddl      = $du->get_create_table($dbh, $q, $database, $table)->[1];
-      my $engine   = $tp->get_engine($ddl) || next TABLE;
-      my $tbl_info = {
-         db     => $database,
-         tbl    => $table,
-         engine => $engine,
-         ddl    => $ddl,
-      };
-
-      my $keys = $dk->get_keys($ddl,{version => $version }) if $opts{f} =~ m/k/;
-      my $fks  = $dk->get_fks($ddl,{database => $database}) if $opts{f} =~ m/f/;
-
-      next TABLE unless @$keys || @$fks;
-
-      if ( $opts{v} ) {
-         print_all_keys($keys, $tbl_info) if $keys;
-         print_all_keys($fks,  $tbl_info) if $fks;
+      my $struct   = $tp->parse($ddl);
+      _d("$database.$table");
+      # Scan the table...
+      my $sql = "CHECKSUM TABLE " . $q->quote($database, $table);
+      MKDEBUG && _d($sql);
+      $dbh->do($sql);
+      foreach my $key ( grep { $_ ne 'PRIMARY' } keys %{$struct->{keys}} ) {
+         $sql = 'select count(*) FROM ' . $q->quote($database, $table)
+            . ' FORCE INDEX(' . $q->quote($key) . ')';
+         MKDEBUG && _d($sql);
+         $dbh->do($sql);
       }
-      else {
-         $dk->get_duplicate_keys(
-            keys     => $keys,
-            tbl_info => $tbl_info,
-            callback => \&print_duplicate_key,
-            %$tp_opts,
-         ) if $keys;
-
-         $dk->get_duplicate_fks(
-            keys     => $fks,
-            tbl_info => $tbl_info,
-            callback => \&print_duplicate_key,
-            %$tp_opts,
-         ) if $fks;
-      }
-      $summary{'Total Keys'} += scalar @$keys + scalar @$fks if $opts{summary};
    }
 }
-
-print_key_summary(%summary) if $opts{summary};
 
 exit;
 
 # ##########################################################################
 # Subroutines
 # ##########################################################################
-
-sub print_all_keys {
-   my ( $keys, $tbl_info ) = @_;
-   return unless $keys;
-   my $db  = $tbl_info->{db};
-   my $tbl = $tbl_info->{tbl};
-   if ( !$seen_tbl{"$db$tbl"}++ ) {
-      printf $hdr_fmt, ('#' x $hdr_width);
-      printf $hdr_fmt, "$db.$tbl";
-      printf $hdr_fmt, ('#' x $hdr_width);
-   }
-   foreach my $key ( @$keys ) {
-      print "\n# $key->{name} ($key->{cols})";
-   }
-   print "\n";
-   return;
-}
-
-sub print_duplicate_key {
-   my ( $dupe, %args ) = @_;
-   return unless $dupe;
-   my $db     = $args{tbl_info}->{db};
-   my $tbl    = $args{tbl_info}->{tbl};
-   my $struct = $tp->parse($args{tbl_info}->{ddl});
-
-   if ( !$seen_tbl{"$db$tbl"}++ ) {
-      printf $hdr_fmt, ('#' x $hdr_width);
-      printf $hdr_fmt, "$db.$tbl";
-      printf $hdr_fmt, ('#' x $hdr_width);
-      print "\n";
-   }
-
-   print "# $dupe->{reason}\n";
-
-   print "# Column types:\n";
-   my %seen_col;
-   my @cols = map { s/`//g; $_; }
-              grep { $_ if !$seen_col{$_}++; }
-              split(',', "$dupe->{cols},$dupe->{duplicate_of_cols}");
-   foreach my $col ( @cols ) {
-      print "#\t" . $struct->{defs}->{$col} . "\n";
-   }
-
-   print "# To remove this duplicate key, execute:\n"
-      . 'ALTER TABLE '.$q->quote($db, $tbl)." DROP KEY `$dupe->{key}`;\n"
-         if $opts{sql};
-   print "\n";
-
-   if ( $opts{summary} ) {
-      $summary{'Total Duplicate Keys'} += 1;
-      my $key_info = {
-         name => $dupe->{key},
-         cols => [ split(',', $dupe->{cols}) ],
-      };
-      $summary{'Size Duplicate Keys'} += $ks->get_key_size(
-         dbh => $dbh,
-         tbl => $q->quote($db, $tbl),
-         key => $key_info,
-      )
-   }
-   return;
-}
-
-# TODO: would be nice to shorten/format some of these values.
-sub print_key_summary {
-   my ( %summary ) = @_;
-   printf $hdr_fmt, ('#' x $hdr_width);
-   printf $hdr_fmt, 'Summary of keys';
-   printf $hdr_fmt, ('#' x $hdr_width);
-   print "\n";
-   my $max_item = max(map { length($_) } keys %summary);
-   my $line_fmt = "# %-${max_item}s  %-s\n";
-   foreach my $item ( sort keys %summary ) {
-      printf $line_fmt, $item, $summary{$item};
-   }
-   return;
-}
 
 sub _d {
    my ($package, undef, $line) = caller 0;
