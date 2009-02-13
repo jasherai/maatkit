@@ -305,7 +305,14 @@ SKIP: {
    $dbh1->do('set global read_only=0');
    $dbh2->do('set global read_only=1');
    $cmd  = "perl ../mk-query-digest --processlist h=127.1,P=12345 "
-            . "--execute h=127.1,P=12346 --mirror 1";
+            . "--execute h=127.1,P=12346 --mirror 1 "
+            . "--pid foobar";
+   # --pid actually does nothing because the script is not daemonizing.
+   # I include it for the identifier (foobar) so that we can more easily
+   # grep the PID below. Otherwise, a ps | grep mk-query-digest will
+   # match this test script and any vi mk-query-digest[.t] that may happen
+   # to be running.
+
    $ENV{MKDEBUG}=1;
    `$cmd > /tmp/read_only.txt &`;
    $ENV{MKDEBUG}=0;
@@ -316,10 +323,10 @@ SKIP: {
    $dbh2->do('set global read_only=0');
    $dbh1->do('select sleep(1)');
    sleep 2;
-   $output = `ps -eaf | grep mk-query-diges[t] | awk '{print \$2}'`;
+   $output = `ps -eaf | grep mk-query-diges[t] | grep foobar | awk '{print \$2}'`;
    kill 15, $output =~ m/(\d+)/g;
    # Verify that it's dead...
-   $output = `ps -eaf | grep mk-query-diges[t]`;
+   $output = `ps -eaf | grep mk-query-diges[t] | grep foobar`;
    if ( $output =~ m/digest/ ) {
       sleep 1;
       $output = `ps -eaf | grep mk-query-diges[t]`;
