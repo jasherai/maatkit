@@ -60,12 +60,13 @@ $myi->load_status_vals($dbh);
 my $d = new MySQLDump();
 my $q = new Quoter();
 my $t = new TableParser();
-my $params = { dbh         => $dbh,
-               MySQLDump   => $d,
-               Quoter      => $q,
-               TableParser => $t,
-             };
-my $sd = new SchemaDiscover($params);
+my $sd = new SchemaDiscover(
+   dbh         => $dbh,
+   MySQLDump   => $d,
+   Quoter      => $q,
+   TableParser => $t,
+);
+
 
 # #############################################################################
 # Now, begin checking MySQLAdvisor.

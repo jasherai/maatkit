@@ -1,4 +1,4 @@
-# This program is copyright 2008 Percona Inc.
+# This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -25,49 +25,45 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
-use Carp;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
-   my ( $class, $params ) = @_;
-   if ( scalar keys %{ $params } < 4 ) {
-      croak   "Error: Not enough parameters for SchemaDiscover::new()\n"
-            . "Required keys in named parameters hash: "
-            . "dbh, MySQLDump, Quoter, TableParser\n"
-            . "Optional: opts\n";
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(dbh MySQLDump Quoter TableParser) ) {
+      die "I need a $arg argument" unless $args{$arg};
    }
    my $self = {
-      %{ $params },
+      %args,
       dbs    => {},
       counts => {},
    };
-   # brevity:
-   my $dbs         = $self->{dbs};
-   my $counts      = $self->{counts};
-   my $dbh         = $self->{dbh};
-   my $MySQLDump   = $self->{MySQLDump};
-   my $Quoter      = $self->{Quoter};
-   my $TableParser = $self->{TableParser};
-   my $opts        = $self->{opts} || {};
 
-   %{$dbs} = map { $_ => {} } $MySQLDump->get_databases($dbh, $Quoter);
+   # brevity:
+   my $dbs     = $self->{dbs};
+   my $counts  = $self->{counts};
+   my $dbh     = $self->{dbh};
+   my $du      = $self->{MySQLDump};
+   my $q       = $self->{Quoter};
+   my $tp      = $self->{TableParser};
+
+   %$dbs = map { $_ => {} } $du->get_databases($dbh, $q);
 
    delete $dbs->{information_schema}
       if exists $dbs->{information_schema};
 
    $counts->{TOTAL}->{dbs} = scalar keys %{$dbs};
 
-   foreach my $db ( keys %{$dbs} ) {
-      %{$dbs->{$db}} = map { $_->{name} => {} }
-                           $MySQLDump->get_table_list($dbh, $Quoter, $db);
-      foreach my $tbl_stat ($MySQLDump->get_table_status($dbh, $Quoter, $db)) {
+   foreach my $db ( keys %$dbs ) {
+      %{$dbs->{$db}}
+         = map { $_->{name} => {} } $du->get_table_list($dbh, $q, $db);
+      foreach my $tbl_stat ($du->get_table_status($dbh, $q, $db)) {
          %{$dbs->{$db}->{"$tbl_stat->{name}"}} = %$tbl_stat;
       }
       foreach my $table ( keys %{$dbs->{$db}} ) {
-         my $ddl = $MySQLDump->get_create_table($dbh, $Quoter, $db, $table);
-         my $table_info = TableParser->parse($ddl);
-         my $n_indexes = scalar keys %{ $table_info->{keys} };
+         my $ddl        = $du->get_create_table($dbh, $q, $db, $table);
+         my $table_info = $tp->parse($ddl);
+         my $n_indexes  = scalar keys %{ $table_info->{keys} };
          # TODO: pass mysql version to TableParser->parse()
          # TODO: also aggregate indexes by type: BTREE, HASH, FULLTEXT etc
          #       so we can get a count + size along that dimension too
@@ -97,8 +93,8 @@ sub new {
          $counts->{TOTAL}->{rows}       += $rows;
          $counts->{TOTAL}->{data_size}  += $data_size;
          $counts->{TOTAL}->{index_size} += $index_size;
-      } # foreach table
-   } # foreach db
+      }
+   }
 
    return bless $self, $class;
 }
