@@ -579,7 +579,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# LogParser package 2813
+# LogParser package 2879
 # ###########################################################################
 package LogParser;
 
@@ -912,9 +912,8 @@ sub parse_slowlog_event {
       }
 
       my $event = { @properties };
-      CALLBACK:
       foreach my $callback ( @callbacks ) {
-         last CALLBACK unless $callback->($event);
+         last unless $event = $callback->($event);
       }
       ++$num_events;
       last EVENT unless @pending;
@@ -996,7 +995,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 2815
+# QueryRewriter package 3007
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1007,6 +1006,8 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
+our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
+                  |UPDATE|DELETE|REPLACE|^SET|UNION|^START}xi;
 my $quote_re = qr/"(?:(?!(?<!\\)").)*"|'(?:(?!(?<!\\)').)*'/; # Costly!
 my $bal;
 $bal         = qr/
@@ -1019,12 +1020,13 @@ $bal         = qr/
                   \)
                  /x;
 
-my $olc_re = qr/(?:--|#)[^'"\r\n]*/;   # One-line comments
-my $mlc_re = qr#/\*[^!].*?\*/#sm;      # Multi-line comments, but not /*!version */
+my $olc_re = qr/(?:--|#)[^'"\r\n]*(?=[\r\n]|\Z)/;  # One-line comments
+my $mlc_re = qr#/\*[^!].*?\*/#sm;                  # But not /*!version */
 
 sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
+   my ( $class, %args ) = @_;
+   my $self = { %args };
+   return bless $self, $class;
 }
 
 sub strip_comments {
@@ -1078,6 +1080,41 @@ sub fingerprint {
               }
               {$1 /*repeat$2*/}xg; # UNION
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
+   return $query;
+}
+
+sub distill {
+   my ( $self, $query, %args ) = @_;
+   my $qp = $args{qp} || $self->{QueryParser};
+   die "I need a qp argument" unless $qp;
+
+   $query =~ m/\A\s*call\s+(\S+)\(/i
+      && return "CALL $1"; # Warning! $1 used, be careful.
+   $query =~ m/\A# administrator/
+      && return "ADMIN";
+   $query =~ m/\A\s*use\s+/
+      && return "USE";
+
+   my @verbs = $query =~ m/\b($verbs)\b/gio;
+   @verbs    = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } map { uc } @verbs;
+   };
+   my $verbs = join(q{ }, @verbs);
+   $verbs =~ s/( UNION SELECT)+/ UNION/g;
+
+   my @tables = map {
+      $_ =~ s/`//g;
+      $_ =~ s/(_?)\d+/$1?/g;
+      $_;
+   } $qp->get_tables($query);
+
+   @tables = do {
+      my $last = '';
+      grep { my $pass = $_ ne $last; $last = $_; $pass } @tables;
+   };
+
+   $query = join(q{ }, $verbs, @tables);
    return $query;
 }
 
@@ -1484,7 +1521,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 2801
+# DSNParser package 2971
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1688,27 +1725,48 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
-   MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
-      join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
-   my $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
-   if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
-      my $sql = "/*!40101 SET NAMES $charset*/";
-      MKDEBUG && _d("$dbh: $sql");
-      $dbh->do($sql);
-      MKDEBUG && _d('Enabling charset for STDOUT');
-      if ( $charset eq 'utf8' ) {
-         binmode(STDOUT, ':utf8')
-            or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
-      }
-      else {
-         binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+   my $dbh;
+   my $tries = 2;
+   while ( !$dbh && $tries-- ) {
+      eval {
+         MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+            join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+         $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
+         if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+            my $sql = "/*!40101 SET NAMES $charset*/";
+            MKDEBUG && _d("$dbh: $sql");
+            $dbh->do($sql);
+            MKDEBUG && _d('Enabling charset for STDOUT');
+            if ( $charset eq 'utf8' ) {
+               binmode(STDOUT, ':utf8')
+                  or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+            }
+            else {
+               binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+            }
+         }
+      };
+      if ( !$dbh && $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+         if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
+            MKDEBUG && _d("Going to try again without utf8 support");
+            delete $defaults->{mysql_enable_utf8};
+         }
+         if ( !$tries ) {
+            die $EVAL_ERROR;
+         }
       }
    }
    my $setvars = $self->prop('setvars');
    if ( $cxn_string =~ m/mysql/i && $setvars ) {
       my $sql = "SET $setvars";
       MKDEBUG && _d("$dbh: $sql");
-      $dbh->do($sql);
+      eval {
+         $dbh->do($sql);
+      };
+      if ( $EVAL_ERROR ) {
+         MKDEBUG && _d($EVAL_ERROR);
+      }
    }
    MKDEBUG && _d('DBH info: ',
       $dbh,
@@ -1747,7 +1805,7 @@ sub print_active_handles {
       $thing, (($thing->{Type} || '') eq 'st' ? $thing->{Statement} || '' : ''))
       or die "Cannot print: $OS_ERROR";
    foreach my $handle ( grep {defined} @{ $thing->{ChildHandles} } ) {
-      $self->print_active_handles->( $handle, $level + 1 );
+      $self->print_active_handles( $handle, $level + 1 );
    }
 }
 
@@ -1766,7 +1824,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 2801
+# Transformers package 2999
 # ###########################################################################
 
 package Transformers;
@@ -1774,6 +1832,8 @@ package Transformers;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Time::Local qw(timelocal);
+use Digest::MD5 qw(md5_hex);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1787,12 +1847,15 @@ our @EXPORT_OK   = qw(
    secs_to_time
    shorten
    ts
+   parse_timestamp
+   unix_timestamp
+   make_checksum
 );
 
 sub micro_t {
    my ( $t, %args ) = @_;
-   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 3;  # precision for ms vals
-   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 6;  # precision for s vals
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
    my $f;
 
    $t = 0 if $t < 0;
@@ -1821,7 +1884,7 @@ sub micro_t {
 
 sub percentage_of {
    my ( $is, $of, %args ) = @_;
-   my $p   = defined $args{p} ? $args{p} : 2; # float precision
+   my $p   = $args{p} || 0; # float precision
    my $fmt = $p ? "%.${p}f" : "%d";
    return sprintf $fmt, ($is * 100) / ($of ||= 1);
 }
@@ -1880,6 +1943,34 @@ sub ts {
       $year, $mon, $mday, $hour, $min, $sec);
 }
 
+sub parse_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   {
+      return sprintf "%d-%02d-%02d %02d:%02d:%02d",
+                     $y + 2000, $m, $d, $h, $i, $s;
+   }
+   return $val;
+}
+
+sub unix_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+   {
+      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   }
+   return $val;
+}
+
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d("$checksum checksum for $val");
+   return $checksum;
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -1895,83 +1986,188 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SQLMetrics package 2818
+# EventAggregator package 3018
 # ###########################################################################
 
+package EventAggregator;
 
-package SQLMetrics;
-
+# This package's function is to take hashrefs and aggregate them as you specify.
+# It basically does a GROUP BY.  If you say to group by z and calculate
+# aggregate statistics for a, b, c then it manufactures functions to record
+# various kinds of stats for the a per z, b per z, and c per z in incoming
+# hashrefs.  Usually you'll use it a little less abstractly: you'll say the
+# incoming hashrefs are parsed query events from the MySQL slow query log, and
+# you want it to calculate stats for Query_time, Rows_read etc aggregated by
+# query fingerprint.  It automatically determines whether a specified property
+# is a string, number or Yes/No value and aggregates them appropriately.
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use POSIX qw(floor);
 
-use constant MKDEBUG     => $ENV{MKDEBUG};
-use constant BASE_LOG    => log(1.05);
-use constant BASE_OFFSET => -floor(log(.000001) / BASE_LOG); # typically 284
-use constant NUM_BUCK    => 1000;
+# ###########################################################################
+# Set up some constants for bucketing values.  It is impossible to keep all
+# values seen in memory, but putting them into logarithmically scaled buckets
+# and just incrementing the bucket each time works, although it is imprecise.
+# ###########################################################################
+use constant MKDEBUG      => $ENV{MKDEBUG};
+use constant BUCK_SIZE    => 1.05;
+use constant BASE_LOG     => log(BUCK_SIZE);
+use constant BASE_OFFSET  => -floor(log(.000001) / BASE_LOG); # typically 284
+use constant NUM_BUCK     => 1000;
+use constant MIN_BUCK     => .000001;
 
-my @buckets   = map { 0 } (1 .. NUM_BUCK);
-my @buck_vals = (.000001);
+our @buckets  = map { 0 } (1 .. NUM_BUCK);
+my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
 {
-   my $cur = 1.05;
-   for ( 1 .. NUM_BUCK - 1 ) {
-      push @buck_vals, .000001 * ($cur *= 1.05);
+   my $cur = BUCK_SIZE;
+   for ( 2 .. NUM_BUCK - 1 ) {
+      push @buck_vals, MIN_BUCK * ($cur *= BUCK_SIZE);
    }
 }
-my @buck_tens = map {
-   my $f = floor(log($_) / log(10)) + 6;
-   $f > 7 ? 7 : $f;
-} @buck_vals;
 
+# The best way to see how to use this is to look at the .t file.
+#
+# %args is a hash containing:
+# groupby      The name of the property to group/aggregate by.
+# attributes   A hashref.  Each key is the name of an element to aggregate.
+#              And the values of those elements are arrayrefs of the
+#              values to pull from the hashref, with any second or subsequent
+#              values being fallbacks for the first in case it's not defined.
+# worst        The name of an element which defines the "worst" hashref in its
+#              class.  If this is Query_time, then each class will contain
+#              a sample that holds the event with the largest Query_time.
+# unroll_limit If this many events have been processed and some handlers haven't
+#              been generated yet (due to lack of sample data) unroll the loop
+#              anyway.  Defaults to 50.
+# attrib_limit Sanity limit for attribute values.  If the value exceeds the
+#              limit, use the last-seen for this class; if none, then 0.
 sub new {
    my ( $class, %args ) = @_;
-   foreach my $arg ( qw(group_by attributes) ) {
+   foreach my $arg ( qw(groupby worst attributes) ) {
       die "I need a $arg argument" unless $args{$arg};
    }
 
-   my %attributes = map {
-      my ($name, @aliases) = split qr/\|/, $_;
-      $name => \@aliases;
-   } @{$args{attributes}};
-
-   my $self = {
-      group_by     => $args{group_by},
-      attributes   => \%attributes,
-      handlers     => $args{handlers} || {},
-      worst_attrib => $args{worst_attrib},
-      metrics      => { all => {}, unique => {} },
-      n_events     => 0,
-      n_queries    => 0,
-      unroll_limit => 50,
+   return bless {
+      groupby      => $args{groupby},
+      attributes   => {
+         map  { $_ => $args{attributes}->{$_} }
+         grep { $_ ne $args{groupby} }
+         keys %{$args{attributes}}
+      },
+      worst        => $args{worst},
+      unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
-   };
-
-   return bless $self, $class;
+   }, $class;
 }
 
+# Aggregate an event hashref's properties.
+sub aggregate {
+   my ( $self, $event ) = @_;
+
+   my $group_by = $event->{$self->{groupby}};
+   return unless defined $group_by;
+
+   ATTRIB:
+   foreach my $attrib ( keys %{$self->{attributes}} ) {
+      # The value of the attribute ( $group_by ) may be an arrayref.
+      GROUPBY:
+      foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
+         my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
+         my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+         my $handler = $self->{handlers}->{ $attrib };
+         if ( !$handler ) {
+            $handler = $self->make_handler(
+               $attrib,
+               $event,
+               wor => $self->{worst} eq $attrib,
+               alt => $self->{attributes}->{$attrib},
+            );
+            $self->{handlers}->{$attrib} = $handler;
+         }
+         next GROUPBY unless $handler;
+         $handler->($event, $class_attrib, $global_attrib);
+      }
+   }
+}
+
+# Return the aggregated results.
+sub results {
+   my ( $self ) = @_;
+   return {
+      classes => $self->{result_class},
+      globals => $self->{result_globals},
+   };
+}
+
+# Return the attributes that this object is tracking, and their data types, as
+# a hashref of name => type.
+sub attributes {
+   my ( $self ) = @_;
+   return $self->{type_for};
+}
+
+# Make subroutines that do things with events.
+#
+# $attrib: the name of the attrib (Query_time, Rows_read, etc)
+# $event:  a sample event
+# %args:
+#     min => keep min for this attrib (default except strings)
+#     max => keep max (default except strings)
+#     sum => keep sum (default for numerics)
+#     cnt => keep count (default except strings)
+#     unq => keep all unique values per-class (default for strings and bools)
+#     all => keep a bucketed list of values seen per class (default for numerics)
+#     glo => keep stats globally as well as per-class (default)
+#     trf => An expression to transform the value before working with it
+#     wor => Whether to keep worst-samples for this attrib (default no)
+#     alt => Arrayref of other name(s) for the attribute, like db => Schema.
+#
+# The bucketed list works this way: each range of values from MIN_BUCK in
+# increments of BUCK_SIZE (that is 5%) we consider a bucket.  We keep NUM_BUCK
+# buckets.  The upper end of the range is more than 1.5e15 so it should be big
+# enough for almost anything.  The buckets are accessed by a log base BUCK_SIZE,
+# so floor(log(N)/log(BUCK_SIZE)).  The smallest bucket's index is -284. We
+# shift all values up 284 so we have values from 0 to 999 that can be used as
+# array indexes.  A value that falls into a bucket simply increments the array
+# entry.
+#
+# This eliminates the need to keep and sort all values to calculate median,
+# standard deviation, 95th percentile etc.  Thus the memory usage is bounded by
+# the number of distinct aggregated values, not the number of events.
+#
+# Return value:
+# a subroutine with this signature:
+#    my ( $event, $class, $global ) = @_;
+# where
+#  $event   is the event
+#  $class   is the container to store the aggregated values
+#  $global  is is the container to store the globally aggregated values
 sub make_handler {
    my ( $self, $attrib, $event, %args ) = @_;
    die "I need an attrib" unless defined $attrib;
-   return unless $event;
-   my ($val) =
-      grep { defined $_ }
-      map  { $event->{$_} }
-           ( $attrib, @{ $args{alt} || [] } );
+   my ($val) = grep { defined $_ } map { $event->{$_} } @{ $args{alt} };
+   my $is_array = 0;
+   if (ref $val eq 'ARRAY') {
+      $is_array = 1;
+      $val      = $val->[0];
+   }
    return unless defined $val; # Can't decide type if it's undef.
 
+   # Ripped off from Regexp::Common::number.
    my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
    my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d("Type for $attrib is $type (sample: $val)");
+   MKDEBUG && _d("Type for $attrib is $type (sample: $val), is array: $is_array");
+   $self->{type_for}->{$attrib} = $type;
 
    %args = ( # Set up defaults
       min => 1,
       max => 1,
       sum => $type =~ m/num|bool/    ? 1 : 0,
-      cnt => $type eq 'string'       ? 0 : 1,
+      cnt => 1,
       unq => $type =~ m/bool|string/ ? 1 : 0,
       all => $type eq 'num'          ? 1 : 0,
       glo => 1,
@@ -1986,17 +2182,21 @@ sub make_handler {
       push @lines, q{$val = } . $args{trf} . ';';
    }
 
-   foreach my $place ( $args{glo} ? qw($class $global) : qw($class) ) {
+   foreach my $place ( qw($class $global) ) {
       my @tmp;
       if ( $args{min} ) {
          my $op   = $type eq 'num' ? '<' : 'lt';
-         push @tmp, 'PLACE->{min} = $val if !defined PLACE->{min} || $val '
-            . $op . ' PLACE->{min};';
+         push @tmp, (
+            'PLACE->{min} = $val if !defined PLACE->{min} || $val '
+               . $op . ' PLACE->{min};',
+         );
       }
       if ( $args{max} ) {
          my $op = ($type eq 'num') ? '>' : 'gt';
-         push @tmp, 'PLACE->{max} = $val if !defined PLACE->{max} || $val '
-            . $op . ' PLACE->{max};';
+         push @tmp, (
+            'PLACE->{max} = $val if !defined PLACE->{max} || $val '
+               . $op . ' PLACE->{max};',
+         );
       }
       if ( $args{sum} ) {
          push @tmp, 'PLACE->{sum} += $val;';
@@ -2004,28 +2204,32 @@ sub make_handler {
       if ( $args{cnt} ) {
          push @tmp, '++PLACE->{cnt};';
       }
-      if ( $place eq '$class' ) {
-         if ( $args{unq} ) {
-            push @tmp, '++PLACE->{unq}->{$val};';
-         }
-         if ( $args{all} ) {
-            push @tmp, (
-               'my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
-               '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
-            );
-         }
-         if ( $args{wor} ) {
-            my $op = $type eq 'num' ? '>=' : 'ge';
-            push @tmp, (
-               'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-               '   $class->{sample} = $event;',
-               '}',
-            );
-         }
+      if ( $args{all} ) {
+         push @tmp, (
+            # If you change this code, change the similar code in bucketize.
+            'PLACE->{all} ||= [ @buckets ];',
+            '$idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
+            '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+         );
       }
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
    }
 
+   # We only save unique/worst values for the class, not globally.
+   if ( $args{unq} ) {
+      push @lines, '++$class->{unq}->{$val};';
+   }
+   if ( $args{wor} ) {
+      my $op = $type eq 'num' ? '>=' : 'ge';
+      push @lines, (
+         'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
+         '   $class->{sample} = $event;',
+         '}',
+      );
+   }
+
+   # Make sure the value is constrained to legal limits.  If it's out of bounds,
+   # just use the last-seen value for it.
    my @limit;
    if ( $args{all} && $type eq 'num' && $self->{attrib_limit} ) {
       push @limit, (
@@ -2036,43 +2240,55 @@ sub make_handler {
       );
    }
 
+   # Save the code for later, as part of an "unrolled" subroutine.
    my @unrolled = (
-      '$val = $event->{' . $attrib . '};',
-      (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
+      "\$val = \$event->{'$attrib'};",
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
       'defined $val && do {',
       ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
       '};',
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
 
+   # Build a subroutine with the code.
    unshift @lines, (
       'sub {',
       'my ( $event, $class, $global ) = @_;',
-      'my $val = $event->{' . $attrib . '};',
-      (map { "\$val = \$event->{$_} unless defined \$val;" } @{$args{alt}}),
+      'my ($val, $idx);', # NOTE: define all variables here
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
       'return unless defined $val;',
+      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       @limit,
+      ($is_array ? ('}') : ()),
    );
    push @lines, '}';
    my $code = join("\n", @lines);
    $self->{code_for}->{$attrib} = $code;
 
-   MKDEBUG && _d("Metric handler for $attrib: ", @lines);
+   MKDEBUG && _d("Metric handler for '$attrib': ", @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;
 }
 
+# This method is for testing only.  If you change this code, change the code
+# above too (look for bucketize).
 sub bucketize {
    my ( $self, $vals ) = @_;
    my @bucketed = @buckets;
-   map {
-      my $idx = BASE_OFFSET + ($_ > 0 ? floor(log($_) / BASE_LOG) : 0);
+   my ($sum, $max, $min);
+   $max = $min = $vals->[0];
+   foreach my $val ( @$vals ) {
+      my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);
       ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
-   } @$vals;
-   return \@bucketed;
+      $max = $max > $val ? $max : $val;
+      $min = $min < $val ? $min : $val;
+      $sum += $val;
+   }
+   return (\@bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals});
 }
 
+# This method is for testing only.
 sub unbucketize {
    my ( $self, $vals ) = @_;
    my @result;
@@ -2085,151 +2301,192 @@ sub unbucketize {
    return @result;
 }
 
-
-sub calc_event_metrics {
-   my ( $self, $event ) = @_;
-
-   $self->{n_events}++;
-
-   my $group_by = $event->{ $self->{group_by} };
-   return unless defined $group_by;
-
-   $self->{n_queries}++;
-
-   if ( defined $self->{unrolled_loops} ) {
-      return $self->{unrolled_loops}->($self, $event, $group_by);
+# Break the buckets down into powers of ten, in 8 coarser buckets.  Bucket 0
+# represents (0 <= val < 10us) and 7 represents 10s and greater.  The powers are
+# thus constrained to between -6 and 1.  Because these are used as array
+# indexes, we shift up so it's non-negative, to get 0 to 7.  Now you have a list
+# of 1000 buckets that act as a lookup table between the 5% buckets and buckets
+# of 10. TODO: right now it's hardcoded to buckets of 10, in the future maybe
+# not.
+{
+   my @buck_tens;
+   sub buckets_of {
+      return @buck_tens if @buck_tens;
+      @buck_tens = map {
+         my $f = floor(log($_) / log(10)) + 6;
+         $f > 7 ? 7 : $f;
+      } @buck_vals;
+      return @buck_tens;
    }
-
-   my @attrs = sort keys %{$self->{attributes}};
-   my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-      ||= { map { $_ => { all => [ @buckets ] } } @attrs };
-
-   ATTRIB:
-   foreach my $attrib ( @attrs ) {
-      my $stats_for_attrib = $self->{metrics}->{all}->{ $attrib } ||= {
-         all => [ @buckets ],
-      };
-      my $stats_for_class  = $fp_ds->{ $attrib }; # Created a few lines up.
-
-      my $handler = $self->{handlers}->{ $attrib };
-      if ( !$handler ) {
-         $handler = $self->make_handler(
-            $attrib,
-            $event,
-            wor => (($self->{worst_attrib} || '') eq $attrib),
-            alt => $self->{attributes}->{$attrib},
-         );
-         if ( $handler ) {
-            $self->{handlers}->{$attrib} = $handler;
-         }
-      }
-      next ATTRIB unless $handler;
-      $handler->($event, $stats_for_class, $stats_for_attrib);
-   }
-
-   if ( $self->{n_queries} > $self->{unroll_limit}
-      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs)
-   {
-      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
-      my @handl = @{$self->{handlers}}{@attrs};
-      my @st_fa = @{$self->{metrics}->{all}}{@attrs}; # Stats for attribute
-
-      my @lines = (
-         'my ( $self, $event, $group_by ) = @_;',
-         'my ($val, $class, $global);',
-         'my $fp_ds = $self->{metrics}->{unique}->{ $group_by }
-            ||= { map { $_ => { all => [ @buckets ] } } @attrs };',
-         'my @st_fc = @{$fp_ds}{@attrs};', # Stats for class
-      );
-      foreach my $i ( 0 .. $#attrs ) {
-         push @lines, (
-            '$class  = $st_fc[' . $i . '];',
-            '$global = $st_fa[' . $i . '];',
-            $self->{unrolled_for}->{$attrs[$i]},
-         );
-      }
-      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
-      unshift @lines, 'sub {';
-      push @lines, '}';
-
-      my $code = join("\n", @lines);
-      MKDEBUG && _d("Unrolled subroutine: ", @lines);
-      my $sub = eval $code;
-      die if $EVAL_ERROR;
-      $self->{unrolled_loops} = $sub;
-   }
-
-   return;
 }
 
-sub reset_metrics {
-   my ( $self ) = @_;
-   $self->{n_events}          = 0;
-   $self->{n_queries}         = 0;
-   $self->{metrics}->{all}    = {};
-   $self->{metrics}->{unique} = {};
-   return;
-}
-
+# Given an arrayref of vals, returns a hashref with the following
+# statistical metrics:
+#
+#    pct_95    => The 95th percentile
+#    cutoff    => How many values fall into the 95th percentile
+#    stddev    => of 95% values
+#    median    => of 95% values
+#
+# The vals arrayref is the buckets as per the above (see the comments at the top
+# of this file).  $args should contain cnt, min, max and sum properties.
 sub calculate_statistical_metrics {
-   my ( $self, $vals, %args ) = @_;
-   my @distro              = qw(0 0 0 0 0 0 0 0);
+   my ( $self, $vals, $args ) = @_;
    my $statistical_metrics = {
-      max       => 0,
+      pct_95    => 0,
       stddev    => 0,
       median    => 0,
-      distro    => \@distro,
       cutoff    => undef,
    };
-   return $statistical_metrics unless defined $vals && @$vals;
 
-   my $n_vals = 0;
-   map { $n_vals += $_ } @$vals;
+   # These cases might happen when there is nothing to get from the event, for
+   # example, processlist sniffing doesn't gather Rows_examined, so $args won't
+   # have {cnt} or other properties.
+   return $statistical_metrics
+      unless defined $vals && @$vals && $args->{cnt};
 
+   # Return accurate metrics for some cases.
+   my $n_vals = $args->{cnt};
+   if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
+      my $v      = $args->{max} || 0;
+      my $bucket = floor( log($v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+      $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+      return {
+         pct_95 => $v,
+         stddev => 0,
+         median => $v,
+         cutoff => $n_vals,
+      };
+   }
+   elsif ( $n_vals == 2 ) {
+      foreach my $v ( $args->{min}, $args->{max} ) {
+         my $bucket = floor( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+         $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
+      }
+      my $v      = $args->{max} || 0;
+      my $mean = (($args->{min} || 0) + $v) / 2;
+      return {
+         pct_95 => $v,
+         stddev => sqrt((($v - $mean) ** 2) *2),
+         median => $mean,
+         cutoff => $n_vals,
+      };
+   }
+
+   # Determine cutoff point for 95% if there are at least 10 vals.  Cutoff
+   # serves also for the number of vals left in the 95%.  E.g. with 50 vals the
+   # cutoff is 47 which means there are 47 vals: 0..46.  $cutoff is NOT an array
+   # index.
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
    my $total_left = $n_vals;
    my $i = NUM_BUCK - 1;
 
-   my $bucket_95 = 0;
-   while ( $i-- && $total_left >= $cutoff ) {
+   # Find the 95th percentile biggest value.  And calculate the values of the
+   # ones we exclude.
+   my $sum_excl  = 0;
+   while ( $i-- && $total_left > $cutoff ) {
       if ( $vals->[$i] ) {
          $total_left -= $vals->[$i];
-         $distro[ $buck_tens[$i] ] += $vals->[$i];
+         $sum_excl   += $buck_vals[$i] * $vals->[$i];
       }
-      $bucket_95 = $i; # The greatest remaining after tossing top 5%
    }
 
+   # Continue until we find the next array element that has a value.
+   my $bucket_95;
+   while ( $i-- ){
+      $bucket_95 = $i;
+      last if $vals->[$i];
+   }
    return $statistical_metrics unless $vals->[$bucket_95];
+   # At this point, $bucket_95 points to the first value we want to keep.
 
-   my $sum   = $buck_vals[$bucket_95] * $vals->[$bucket_95];
-   my $sumsq = $sum ** 2;
-   my $mid   = int($cutoff / 2);
+   # Calculate the standard deviation, median, and max value of the 95th
+   # percentile of values.
+   my $sum    = $buck_vals[$bucket_95] * $vals->[$bucket_95];
+   my $sumsq  = $sum ** 2;
+   my $mid    = int($cutoff / 2);
+   my $median = 0;
+   my $prev   = $bucket_95; # Used for getting median when $cutoff is odd
 
-   my $median = $bucket_95;
+   # Continue through the rest of the values.
    while ( $i-- ) {
       my $val = $vals->[$i];
       if ( $val ) {
-         if ( $total_left > $mid ) {
-            $median = $i;
-         }
          $total_left -= $val;
+         if ( !$median && $total_left <= $mid ) {
+            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$i]
+                    : ($buck_vals[$i] + $buck_vals[$prev]) / 2;
+         }
          $sum        += $buck_vals[$i] * $val;
          $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
-         $distro[ $buck_tens[$i] ] += $val;
+         $prev       =  $i;
       }
    }
 
-   my $stddev = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $stddev   = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
+   $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
    MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
 
    $statistical_metrics->{stddev} = $stddev;
-   $statistical_metrics->{max}    = $buck_vals[$bucket_95];
-   $statistical_metrics->{median} = $buck_vals[$median];
+   $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
+   $statistical_metrics->{median} = $median;
 
    return $statistical_metrics;
+}
+
+# Find the top N or top % event keys, in sorted order, optionally including
+# outliers (ol_...) that are notable for some reason.  %args looks like this:
+#
+#  attrib      order-by attribute (usually Query_time)
+#  orderby     order-by aggregate expression (should be numeric, usually sum)
+#  total       include events whose summed attribs are <= this number...
+#  count       ...or this many events, whichever is less...
+#  ol_attrib   ...or events where the 95th percentile of this attribute...
+#  ol_limit    ...is greater than this value, AND...
+#  ol_freq     ...the event occurred at least this many times.
+sub top_events {
+   my ( $self, %args ) = @_;
+   my $classes = $self->{result_class};
+   my @sorted = reverse sort { # Sorted list of $groupby values
+      $classes->{$a}->{$args{attrib}}->{$args{orderby}}
+         <=> $classes->{$b}->{$args{attrib}}->{$args{orderby}}
+      } grep {
+         # Defensive programming
+         defined $classes->{$_}->{$args{attrib}}->{$args{orderby}}
+      } keys %$classes;
+   my @chosen;
+   my ($total, $count) = (0, 0);
+   foreach my $groupby ( @sorted ) {
+      # Events that fall into the top criterion for some reason
+      if ( 
+         (!$args{total} || $total < $args{total} )
+         && ( !$args{count} || $count < $args{count} )
+      ) {
+         push @chosen, $groupby;
+      }
+
+      # Events that are notable outliers
+      elsif ( $args{ol_attrib} && (!$args{ol_freq}
+         || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
+      ) {
+         # Calculate the 95th percentile of this event's specified attribute.
+         my $stats = $self->calculate_statistical_metrics(
+            $classes->{$groupby}->{$args{ol_attrib}}->{all},
+            $classes->{$groupby}->{$args{ol_attrib}}
+         );
+         if ( $stats->{pct_95} >= $args{ol_limit} ) {
+            push @chosen, $groupby;
+         }
+      }
+
+      $total += $classes->{$groupby}->{$args{attrib}}->{$args{orderby}};
+      $count++;
+   }
+   return @chosen;
 }
 
 sub _d {
@@ -2237,13 +2494,15 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
+   # Use $$ instead of $PID in case the package
+   # does not use English.
    print "# $package:$line $$ ", @_, "\n";
 }
 
 1;
 
 # ###########################################################################
-# End SQLMetrics package
+# End EventAggregator package
 # ###########################################################################
 
 # ###########################################################################
@@ -2525,13 +2784,16 @@ sub play_session {
    my ( $session_n, $get_next_query ) = @_;
    my $dbh        = get_cxn($dsn) unless $opts{print};
    my $query_n    = 0;
-   my $total_time = time;
-   my $sm         = new SQLMetrics(
-      group_by     => 'arg',
-      attributes   => [qw(query_time n_rows)],
-      worst_attrib => 'query_time',
+   my $ea         = new EventAggregator(
+      groupby      => 'arg',
+      attributes   => {
+         query_time => [qw(query_time)],
+         n_rows     => [qw(n_rows)],
+      },
+      worst=>       => 'query_time',
    );
 
+   my $total_time = time;
    QUERY:
    while ( defined (my $query = $get_next_query->()) ) {
 
@@ -2549,7 +2811,10 @@ sub play_session {
 
       # USE statements are not timed.
       if ( $query =~ /^USE /i ) {
-         $dbh->do($query);
+         eval { $dbh->do($query); };
+         if ( $EVAL_ERROR ) {
+            # TODO: save errors to be optionally reported later
+         }
          next QUERY;
       }
 
@@ -2574,36 +2839,39 @@ sub play_session {
          query_time => time - $query_start_time,
          n_rows     => $n_rows,
       };
-      $sm->calc_event_metrics($event);
+      $ea->aggregate($event);
    }
 
    if ( !$opts{print} ) {
       $total_time = time - $total_time;
       $dbh->disconnect();
-      report_session_stats($session_n, $total_time, $sm);
+      my $results = $ea->results();
+      report_session_stats($session_n, $total_time, $results);
    }
 
    return;
 }
 
 sub report_session_stats {
-   my ( $session_n, $total_time, $sm ) = @_;
-   my $unique = $sm->{metrics}->{unique};
-   my $all    = $sm->{metrics}->{all};
+   my ( $session_n, $total_time, $results ) = @_;
+   my $global = $results->{globals};
 
-   if ( $sm->{n_queries} == 0 ) {
+   if ( !$global->{query_time}->{cnt} ) {
       # This can happen if a session was all non-SELECTs and
       # --onlyselect was given.
       MKDEBUG && _d("Session $session_n has no valid queries");
       return;
    }
 
-   # Queries and Rows per second, and avg query time.
-   my $qps = sprintf('%.6f', $sm->{n_queries} / $all->{query_time}->{sum});
-   my $rps = sprintf('%.6f', $all->{n_rows}->{sum} / $all->{query_time}->{sum});
-   my $avg = sprintf('%.6f', $all->{query_time}->{sum} / $sm->{n_queries});
+   # Global Queries and Rows per second, and avg query time.
+   my $qps = sprintf '%.6f',
+      $global->{query_time}->{cnt} / $global->{query_time}->{sum};
+   my $rps = sprintf '%.6f',
+      $global->{n_rows}->{sum} / $global->{query_time}->{sum};
+   my $avg = sprintf '%.6f',
+      $global->{query_time}->{sum} / $global->{query_time}->{cnt};
 
-   # Stats for all queries.
+   # Stats for all queries (global).
    my $s = $opts{csv} ? ',' : "\t";
    print "session number"
       .  "$s"."total time"
@@ -2618,12 +2886,12 @@ sub report_session_stats {
 
    print "$session_n"
       .  "$s$total_time"
-      .  "$s$all->{query_time}->{min}"
-      .  "$s$all->{query_time}->{max}"
+      .  "$s$global->{query_time}->{min}"
+      .  "$s$global->{query_time}->{max}"
       .  "$s$avg"
-      .  "$s$sm->{n_queries}"
+      .  "$s$global->{query_time}->{cnt}"
       .  "$s$qps"
-      .  "$s$all->{n_rows}->{sum}"
+      .  "$s$global->{n_rows}->{sum}"
       .  "$s$rps"
       .  "\n";
 
@@ -2639,7 +2907,7 @@ sub report_session_stats {
       .  "$s"."sample"
       .  "\n";
 
-   foreach my $query ( values %$unique ) {
+   foreach my $query ( values %{$results->{classes}} ) {
       $avg = sprintf('%.6f',
          $query->{query_time}->{sum} / $query->{query_time}->{cnt});
       print "$query->{query_time}->{cnt}"
