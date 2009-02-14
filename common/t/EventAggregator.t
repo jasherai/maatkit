@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 22;
+use Test::More tests => 23;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -751,3 +751,24 @@ is_deeply(
    },
    'Aggregation by tables',
 );
+
+# Event attribute with space in name.
+$ea = new EventAggregator(
+   groupby    => 'fingerprint',
+   worst      => 'Query time',
+   attributes => {
+      'Query time' => ['Query time'],
+   },
+);
+$events = {
+   fingerprint  => 'foo',
+   'Query time' => 123,
+};
+$ea->aggregate($events);
+is(
+   $ea->results->{classes}->{foo}->{'Query time'}->{min},
+   123,
+   'Aggregates attributes with spaces in their names'
+);
+
+exit;
