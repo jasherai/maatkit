@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright (c) 2007-@CURRENTYEAR@ Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,10 +17,10 @@
 # ###########################################################################
 # OptionParser package $Revision$
 # ###########################################################################
+package OptionParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package OptionParser;
 
 use Getopt::Long;
 use List::Util qw(max);
@@ -30,30 +30,164 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
-# Holds command-line options.  Each option is a hashref:
-# {
-#   s => GetOpt::Long specification,
-#   d => --help output
-#   g => Optional grouping (default is "o => Options")
-# }
-# Supported 's' values are long|short key, whether something is negatable and
-# whether it can be specified multiple times. Expands the compact specs into
-# their full form.
-# * k is the option's key
-# * l is the option's long name
-# * t is the option's short name
-# * n is whether the option is negatable
-# * r is whether the option is required
-# * y is the option's type.  In addition to Getopt::Long's types (sif), the
-#     following types can be used:
-#     * t = time, with an optional suffix of s/h/m/d
-#     * d = DSN, as provided by a DSNParser which is in $self->{dsn}.
-#     * H = hash, formed from a comma-separated list
-#     * h = hash as above, but only if a value is given
-#     * A,h = array, similar to hashes.
-#     * z = size with kMG suffix (powers of 2^10)
-# Returns the options as a hashref.  Options can also be plain-text
-# instructions, and instructions are recognized inside the 'd' as well.
+# Parse command line options from the OPTIONS section of the POD in the
+# given file. If no file is given, the currently running program's POD
+# is parsed.
+# Returns an array of hashrefs which is usually passed to OptionParser::new().
+# Each hashref in the array corresponds to one command line option from
+# the POD. Each hashref has the structure:
+#    {
+#       s => GetOpt::Long specification,
+#       d => --help output (see HELP_DESCRIPTION below)
+#       g => Optional grouping (default is "o => Options")
+#    }
+# Each option in the OPTIONS seciont of the POD must have the following form
+# to be parsed correctly:
+#    =item --OPTION_NAME
+#
+#    ATTRIBUTES
+#
+#    HELP_DESCRIPTION
+#
+#    FULL_DESCRIPTION
+#
+# OPTION_NAME is the full (long) name of the option, like --foo. Optionally,
+# the name can be prefixed with [no] (--[no]foo) to make the option negatable.
+#
+# ATTRIBUTES is a single, optional line that allows you to specifiy the
+# following attribues:
+#    short form: short name of the option, like -f (short for --foo)
+#    type:       standard Getopt types (sif) and more; see %types below
+#    default:    option's default value if none is given on the command line
+#    cumulative: if 'yes' then sets the Getopt + spec so that "The option does
+#                not take an argument and will be incremented by 1 every time
+#                it appears on the command line."
+# Each attribute is given like "attribute: value" and multiple attributes
+# are separated by semicolons. Example:
+#    short form: -w; type: time; default: 5m
+#
+# HELP_DESCRIPTION is a single line that briefly describes the option. It
+# is what --help prints about the option. Technically, it is optional if
+# there is at least one sentence in FULL_DESCRIPTION. In such a case, that
+# first full period-terminated sentance in FULL_DESCRIPTION is printed by
+# --help.
+#
+# FULL_DESCRIPTION is optional (unless, as noted above, no HELP_DESCRIPTION
+# is given). Here you can write your novel about the gory details of the
+# option.
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+   $file ||= __FILE__;
+   open my $fh, '<', $file or die "Can't open $file: $OS_ERROR";
+
+   my %types = (
+      string => 's', # standard Getopt type
+      'int'  => 'i', # standard Getopt type
+      float  => 'f', # standard Getopt type
+      Hash   => 'H', # hash, formed from a comma-separated list
+      hash   => 'h', # hash as above, but only if a value is given
+      Array  => 'A', # array, similar to Hash
+      array  => 'a', # array, similar to hash
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dsn}
+      size   => 'z', # size with kMG suffix (powers of 2^10)
+      'time' => 'm', # time, with an optional suffix of s/h/m/d
+   );
+   my @specs = ();
+   my @rules = ();
+   my $para;
+   my $option;
+
+   # Read a paragraph at a time from the file.  Skip everything until options
+   # are reached...
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   # ... then read any option rules...
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $para =~ s/$POD_link_re/$1/go;
+      MKDEBUG && _d('First option rules: '. $para);
+      push @rules, $para;
+   }
+
+   # ... then start reading options.
+   do {
+      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+         MKDEBUG && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/$POD_link_re/$1/go;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+
+         # Change [no]foo to foo and set negatable prop. See issue 140.
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
+         push @specs, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . (defined $props{default} ? " (default $props{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+
+         # Look for rules in the option's full description.
+         # TODO: I hacked this in here but I don't like it. Fishing around
+         # in the full description is dangerous.
+         if ( $option ) {
+            if ( my ($line)
+                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
+               1 while ( $line =~ s/$POD_link_re/$1/go );
+               push @rules, $line;
+            }
+         }
+
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @specs, @rules;
+}
+
+# Parse an array of option specs and rules (usually the return value of
+# pod_to_spec()). Each option spec is parsed and the following key: value
+# pairs are added to its hashref:
+#    k: the option's key (usually the option's short form)
+#    l: the option's long name
+#    t: the option's short name
+#    c: whether the option is cumulative
+#    n: whether the option is negatable
+#    r: whether the option is required
+#    y: option's type (see %types in pod_to_spec() above)
 sub new {
    my ( $class, @opts ) = @_;
    my %key_seen;
@@ -66,11 +200,14 @@ sub new {
    my %disables;
    my %copyfrom;
    my @allowed_with;
+
+   # Add these standard options automagically.
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
+
    foreach my $opt ( @opts ) {
-      if ( ref $opt ) {
+      if ( ref $opt ) { # It's an option spec, not a rule.
          my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
          $opt->{k} = $short || $long;
          $key_for{$long} = $opt->{k};
@@ -81,6 +218,7 @@ sub new {
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
+         $opt->{c} = $opt->{s} =~ m/\+/;
          $opt->{g} ||= 'o';
          # Option has a type
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
@@ -104,8 +242,7 @@ sub new {
             MKDEBUG && _d("Option $opt->{k} $dis");
          }
       }
-      else { # It's an instruction.
-
+      else { # It's an option rule, not a spec.
          if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
             my @participants = map {
                   die "No such option '$_' in $opt" unless $long_for{$_};
@@ -137,7 +274,6 @@ sub new {
                } $class->get_participants($opt);
             push @allowed_with, \@participants;
          }
-
       }
    }
 
@@ -155,7 +291,7 @@ sub new {
 
    my $self = {
       specs        => [ grep { ref $_ } @opts ],
-      notes        => [],
+      errors       => [],
       instr        => [ grep { !ref $_ } @opts ],
       mutex        => \@mutex,
       defaults     => \%defaults,
@@ -189,11 +325,16 @@ sub get_participants {
    return @participants;
 }
 
+# Parse options on the command line (ARGV) according to the option specs
+# and enforce option rules.
+# Returns a hash of all options and their final values. An option's final
+# value depends on many factors: it's default value, it's value given on
+# the command line, whether it is subject to a rule, etc.
 sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
    my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-
+   my %opt_given;
    my %opt_seen;
    my %vals = %{$self->{defaults}};
    # Defaults passed as arg override defaults from descriptions.
@@ -209,8 +350,24 @@ sub parse {
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $self->error('Error parsing options');
+   GetOptions(
+      map {
+         my $spec = $_;
+         $spec->{s} => sub {
+                          my ( $opt, $val ) = @_;
+                          MKDEBUG && _d("Given option: $opt ($spec->{k}) "
+                             . " = $val");
+                          $opt_given{$spec->{k}}++;
+                          if ( $spec->{s} =~ m/\+/ ) {
+                             # Repeatable/cumulative option like -v -v
+                             $vals{$spec->{k}}++
+                          }
+                          else {
+                             $vals{$spec->{k}} = $val;
+                          }
+                       }
+      } @specs
+   ) or $self->error('Error parsing options');
 
    if ( $vals{version} ) {
       my $prog = $self->prog;
@@ -325,6 +482,7 @@ sub parse {
    }
 
    # Check allowed options
+   # TODO: do this better now that we have %opt_given
    foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
       # First element is opt with which the other ops are allowed
       my $opt = $allowed_opts->[0];
@@ -353,7 +511,7 @@ sub parse {
 sub error {
    my ( $self, $note ) = @_;
    $self->{__error__} = 1;
-   push @{$self->{notes}}, $note;
+   push @{$self->{errors}}, $note;
 }
 
 sub prog {
@@ -398,8 +556,8 @@ sub usage_or_errors {
 sub errors {
    my ( $self ) = @_;
    my $usage = $self->prompt() . "\n";
-   if ( (my @notes = @{$self->{notes}}) ) {
-      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   if ( (my @errors = @{$self->{errors}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors) . "\n";
    }
    return $usage . "\n" . $self->descr();
 }
@@ -482,110 +640,6 @@ sub usage {
       $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
    }
    return $usage;
-}
-
-# Parses POD and figures out command-line options.  If no filename is given,
-# uses the filename of the currently running program.
-sub pod_to_spec {
-   my ( $self, $file ) = @_;
-
-   my %types = (
-      'time' => 'm',
-      'int'  => 'i',
-      string => 's',
-      hash   => 'h',
-      Hash   => 'H',
-      array  => 'a',
-      Array  => 'A',
-      size   => 'z',
-      DSN    => 'd',
-      float  => 'f',
-   );
-
-   my @spec = ();
-   my @special_options = ();
-   $file ||= __FILE__;
-   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
-   my $para;
-   my $option;
-
-   # Read a paragraph at a time from the file.  Skip everything until options
-   # are reached...
-   local $INPUT_RECORD_SEPARATOR = '';
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 OPTIONS/;
-      last;
-   }
-
-   # ... then read special options...
-   while ( $para = <$fh> ) {
-      MKDEBUG && _d($para);
-      last if $para =~ m/^=over/;
-      chomp $para;
-      $para =~ s/\s+/ /g;
-      $para =~ s/$POD_link_re/$1/go;
-      push @special_options, $para;
-   }
-
-   # ... then start reading options.
-   do {
-      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
-         MKDEBUG && _d($para);
-         my %props;
-         $para = <$fh>;
-         if ( $para =~ m/: / ) {
-            $para =~ s/\s+\Z//g;
-            %props = map { split(/: /, $_) } split(/; /, $para);
-            if ( $props{'short form'} ) {
-               $props{'short form'} =~ s/-//;
-            }
-            $para = <$fh>;
-         }
-         $para =~ s/\s+\Z//g;
-         $para =~ s/\s+/ /g;
-         $para =~ s/$POD_link_re/$1/go;
-         if ( $para =~ m/^[^.]+\.$/ ) {
-            $para =~ s/\.$//;
-         }
-
-         # Change [no]foo to foo and set negatable prop. See issue 140.
-         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
-            $option = $base_option;
-            $props{'negatable'} = 1;
-         }
-
-         push @spec, {
-            s => $option
-               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
-               . ( $props{'negatable'}  ? '!'                        : '' )
-               . ( $props{'cumulative'} ? '+'                        : '' )
-               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
-            d => $para
-               . (defined $props{default} ? " (default $props{default})" : ''),
-         };
-      }
-      while ( $para = <$fh> ) {
-         last unless $para;
-
-         # Look for special instructions in the option's full description
-         if ( $option ) {
-            if ( my ($line)
-                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
-               1 while ( $line =~ s/$POD_link_re/$1/go );
-               push @special_options, $line;
-            }
-         }
-
-         if ( $para =~ m/^=head1/ ) {
-            $para = undef; # Can't 'last' out of a do {} block.
-            last;
-         }
-         last if $para =~ m/^=item --/;
-      }
-   } while ( $para );
-
-   close $fh;
-   return @spec, @special_options;
 }
 
 # Tries to prompt and read the answer without echoing the answer to the

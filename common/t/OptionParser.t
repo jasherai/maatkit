@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 55;
+use Test::More tests => 56;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -162,7 +162,7 @@ is(
 );
 
 is_deeply(
-   $p->{notes},
+   $p->{errors},
    ['Required option --cat must be specified'],
    'Note set upon missing --cat',
 );
@@ -234,7 +234,7 @@ is(
 );
 
 is_deeply(
-   $p->{notes},
+   $p->{errors},
    ['--ignore and --replace are mutually exclusive.'],
    'Note set when instruction violated',
 );
@@ -254,7 +254,7 @@ is(
 );
 
 is_deeply(
-   $p->{notes},
+   $p->{errors},
    ['--ignore, --replace and --delete are mutually exclusive.'],
    'Note set with long opt name and nice commas when instruction violated',
 );
@@ -284,7 +284,7 @@ is(
 );
 
 is_deeply(
-   $p->{notes},
+   $p->{errors},
    ['--ignore, --replace and --delete are mutually exclusive.'],
    'Note set with one-and-only-one',
 );
@@ -303,7 +303,7 @@ is(
 );
 
 is_deeply(
-   $p->{notes},
+   $p->{errors},
    ['Specify at least one of --ignore, --replace or --delete'],
    'Note set with one-and-only-one when none specified',
 );
@@ -322,7 +322,7 @@ is(
 );
 
 is_deeply(
-   $p->{notes},
+   $p->{errors},
    ['Specify at least one of --ignore, --replace or --delete'],
    'Note set with at-least-one when none specified',
 );
@@ -401,7 +401,7 @@ is(
    'Bad number value threw error',
 );
 is_deeply(
-   $p->{notes},
+   $p->{errors},
    ['Invalid --foo argument'],
    'Bad number argument set note',
 );
@@ -447,7 +447,7 @@ is(
    'Bad time value threw error',
 );
 is_deeply(
-   $p->{notes},
+   $p->{errors},
    ['Invalid --foo argument'],
    'Bad time argument set note',
 );
@@ -817,6 +817,24 @@ is_deeply(
       { s => 'bar!',  d => 'New negatable bar'},
    ],
    'New =item --[no]foo style for negatables'
+);
+
+# #############################################################################
+# Issue 48: OptionParser: bar disables foo but nobar also disables foo
+# #############################################################################
+@opt_spec = $p->pod_to_spec("samples/podsample_issue_48.txt");
+$p = new OptionParser(@opt_spec);
+@ARGV = qw(--nobar);
+%opts = $p->parse();
+is_deeply(
+   \%opts,
+   {
+      bar      => 0,
+      foo      => 'yes',
+      version  => undef,
+      help     => undef,
+   },
+   '--nobar does not disable --foo'
 );
 
 exit;
