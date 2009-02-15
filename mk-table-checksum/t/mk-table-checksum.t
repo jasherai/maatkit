@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 94;
+use Test::More tests => 95;
 use List::Util qw(sum);
 
 require '../../common/DSNParser.pm';
@@ -463,6 +463,31 @@ $master_dbh->do('UPDATE test.argtable SET since = "current_date - interval 3 day
 $output = `../mk-table-checksum --argtable=test.argtable --savesince h=127.1,P=12345 -t test.issue_122 -C 2`;
 $res = $master_dbh->selectall_arrayref("SELECT since FROM test.argtable WHERE db='test' AND tbl='issue_122'");
 like($res->[0]->[0], qr/^\d{4}-\d{2}-\d{2}(?:.[0-9:]+)?/, 'Temporal since is saved when temporal since is given');
+
+# #############################################################################
+# Issue 51: --wait option prevents data from being inserted
+# #############################################################################
+
+# This test relies on table issue_94 created somewhere above, which has
+# something like:
+# mysql> select * from issue_94;
+# +----+----+---------+
+# | a  | b  | c       |
+# +----+----+---------+
+# |  1 |  2 | apple   | 
+# |  3 |  4 | banana  | 
+# |  5 |  6 | kiwi    | 
+# |  7 |  8 | orange  | 
+# |  9 | 10 | grape   | 
+# | 11 | 12 | coconut | 
+# +----+----+---------+
+
+$master_dbh->do('DELETE FROM test.checksum');
+# Give it something to think about. 
+$slave_dbh->do('DELETE FROM test.issue_94 WHERE a > 5');
+`perl ../mk-table-checksum --replicate=test.checksum --algorithm=BIT_XOR h=127.1,P=12345 --databases test --tables issue_94 --chunksize 500000 --wait 900`;
+$res = $master_dbh->selectall_arrayref("SELECT * FROM test.checksum");
+is($res->[0]->[1], 'issue_94', '--wait does not prevent update to --replicate tbl (issue 51)');
 
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);

@@ -4034,7 +4034,7 @@ sub do_tbl_replicate {
    );
 
    if ( MKDEBUG && $chunk_num == 0 ) {
-      _d("SQL for chunk 0: $sql");
+      _d("SQL for inject chunk 0: $sql");
    }
 
    my $where = $info->{chunks}->[$chunk_num];
