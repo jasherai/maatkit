@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 56;
+use Test::More tests => 55;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -817,24 +817,6 @@ is_deeply(
       { s => 'bar!',  d => 'New negatable bar'},
    ],
    'New =item --[no]foo style for negatables'
-);
-
-# #############################################################################
-# Issue 48: OptionParser: bar disables foo but nobar also disables foo
-# #############################################################################
-@opt_spec = $p->pod_to_spec("samples/podsample_issue_48.txt");
-$p = new OptionParser(@opt_spec);
-@ARGV = qw(--nobar);
-%opts = $p->parse();
-is_deeply(
-   \%opts,
-   {
-      bar      => 0,
-      foo      => 'yes',
-      version  => undef,
-      help     => undef,
-   },
-   '--nobar does not disable --foo'
 );
 
 exit;

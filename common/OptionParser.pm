@@ -358,7 +358,7 @@ sub parse {
                           MKDEBUG && _d("Given option: $opt ($spec->{k}) "
                              . " = $val");
                           $opt_given{$spec->{k}}++;
-                          if ( $spec->{s} =~ m/\+/ ) {
+                          if ( $spec->{c} ) {
                              # Repeatable/cumulative option like -v -v
                              $vals{$spec->{k}}++
                           }
@@ -482,11 +482,11 @@ sub parse {
    }
 
    # Check allowed options
-   # TODO: do this better now that we have %opt_given
+   # TODO: do this with groups
    foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
       # First element is opt with which the other ops are allowed
       my $opt = $allowed_opts->[0];
-      next if !defined $vals{$opt};
+      next unless $vals{$opt};
       # This process could be more terse but by doing it this way we
       # can see what opts were defined (by either being given on the
       # cmd line or having default values) and therefore which of
