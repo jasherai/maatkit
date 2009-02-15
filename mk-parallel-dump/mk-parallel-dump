@@ -2346,7 +2346,7 @@ if ( !$opts{help} ) {
    }
 }
 
-if ( $opts{csv} ) { # TODO: --csv implies --[no-]tab
+if ( $opts{csv} ) { # TODO: --csv implies --[no]tab
    $opts{T} = 1;
 }
 
@@ -3276,7 +3276,7 @@ generated command-line.
 There's no reason you can't use mk-parallel-dump to do other tasks in
 parallel, such as C<OPTIMIZE TABLE>:
 
-  mk-parallel-dump --noflushlock --nolocktables -- mysqlcheck \
+  mk-parallel-dump --noflushlock --locktables -- mysqlcheck \
     --optimize '%D' '%N'
 
 When you use built-in defaults, mk-parallel-dump will relay these arguments
