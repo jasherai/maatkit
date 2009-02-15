@@ -28,12 +28,12 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# OptionParser package 2825
+# OptionParser package 3023
 # ###########################################################################
+package OptionParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package OptionParser;
 
 use Getopt::Long;
 use List::Util qw(max);
@@ -42,6 +42,101 @@ use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
+
+sub pod_to_spec {
+   my ( $self, $file ) = @_;
+   $file ||= __FILE__;
+   open my $fh, '<', $file or die "Can't open $file: $OS_ERROR";
+
+   my %types = (
+      string => 's', # standard Getopt type
+      'int'  => 'i', # standard Getopt type
+      float  => 'f', # standard Getopt type
+      Hash   => 'H', # hash, formed from a comma-separated list
+      hash   => 'h', # hash as above, but only if a value is given
+      Array  => 'A', # array, similar to Hash
+      array  => 'a', # array, similar to hash
+      DSN    => 'd', # DSN, as provided by a DSNParser which is in $self->{dsn}
+      size   => 'z', # size with kMG suffix (powers of 2^10)
+      'time' => 'm', # time, with an optional suffix of s/h/m/d
+   );
+   my @specs = ();
+   my @rules = ();
+   my $para;
+   my $option;
+
+   local $INPUT_RECORD_SEPARATOR = '';
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=head1 OPTIONS/;
+      last;
+   }
+
+   while ( $para = <$fh> ) {
+      last if $para =~ m/^=over/;
+      chomp $para;
+      $para =~ s/\s+/ /g;
+      $para =~ s/$POD_link_re/$1/go;
+      MKDEBUG && _d('First option rules: '. $para);
+      push @rules, $para;
+   }
+
+   do {
+      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+         MKDEBUG && _d($para);
+         my %props;
+         $para = <$fh>;
+         if ( $para =~ m/: / ) {
+            $para =~ s/\s+\Z//g;
+            %props = map { split(/: /, $_) } split(/; /, $para);
+            if ( $props{'short form'} ) {
+               $props{'short form'} =~ s/-//;
+            }
+            $para = <$fh>;
+         }
+         $para =~ s/\s+\Z//g;
+         $para =~ s/\s+/ /g;
+         $para =~ s/$POD_link_re/$1/go;
+         if ( $para =~ m/^[^.]+\.$/ ) {
+            $para =~ s/\.$//;
+         }
+
+         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
+            $option = $base_option;
+            $props{'negatable'} = 1;
+         }
+
+         push @specs, {
+            s => $option
+               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
+               . ( $props{'negatable'}  ? '!'                        : '' )
+               . ( $props{'cumulative'} ? '+'                        : '' )
+               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
+            d => $para
+               . (defined $props{default} ? " (default $props{default})" : ''),
+         };
+      }
+      while ( $para = <$fh> ) {
+         last unless $para;
+
+         if ( $option ) {
+            if ( my ($line)
+                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
+               1 while ( $line =~ s/$POD_link_re/$1/go );
+               push @rules, $line;
+            }
+         }
+
+         if ( $para =~ m/^=head1/ ) {
+            $para = undef; # Can't 'last' out of a do {} block.
+            last;
+         }
+         last if $para =~ m/^=item --/;
+      }
+   } while ( $para );
+
+   close $fh;
+   return @specs, @rules;
+}
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -55,11 +150,13 @@ sub new {
    my %disables;
    my %copyfrom;
    my @allowed_with;
+
    unshift @opts,
       { s => 'help',    d => 'Show this help message' },
       { s => 'version', d => 'Output version information and exit' };
+
    foreach my $opt ( @opts ) {
-      if ( ref $opt ) {
+      if ( ref $opt ) { # It's an option spec, not a rule.
          my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
          $opt->{k} = $short || $long;
          $key_for{$long} = $opt->{k};
@@ -70,6 +167,7 @@ sub new {
          die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
          $opt->{t} = $short;
          $opt->{n} = $opt->{s} =~ m/!/;
+         $opt->{c} = $opt->{s} =~ m/\+/;
          $opt->{g} ||= 'o';
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
             MKDEBUG && _d("Option $opt->{k} type: $y");
@@ -89,8 +187,7 @@ sub new {
             MKDEBUG && _d("Option $opt->{k} $dis");
          }
       }
-      else { # It's an instruction.
-
+      else { # It's an option rule, not a spec.
          if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
             my @participants = map {
                   die "No such option '$_' in $opt" unless $long_for{$_};
@@ -121,7 +218,6 @@ sub new {
                } $class->get_participants($opt);
             push @allowed_with, \@participants;
          }
-
       }
    }
 
@@ -138,7 +234,7 @@ sub new {
 
    my $self = {
       specs        => [ grep { ref $_ } @opts ],
-      notes        => [],
+      errors       => [],
       instr        => [ grep { !ref $_ } @opts ],
       mutex        => \@mutex,
       defaults     => \%defaults,
@@ -176,7 +272,7 @@ sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
    my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-
+   my %opt_given;
    my %opt_seen;
    my %vals = %{$self->{defaults}};
    @vals{keys %defaults} = values %defaults;
@@ -191,8 +287,23 @@ sub parse {
    }
 
    Getopt::Long::Configure('no_ignore_case', 'bundling');
-   GetOptions( map { $_->{s} => \$vals{$_->{k}} } @specs )
-      or $self->error('Error parsing options');
+   GetOptions(
+      map {
+         my $spec = $_;
+         $spec->{s} => sub {
+                          my ( $opt, $val ) = @_;
+                          MKDEBUG && _d("Given option: $opt ($spec->{k}) "
+                             . " = $val");
+                          $opt_given{$spec->{k}}++;
+                          if ( $spec->{c} ) {
+                             $vals{$spec->{k}}++
+                          }
+                          else {
+                             $vals{$spec->{k}} = $val;
+                          }
+                       }
+      } @specs
+   ) or $self->error('Error parsing options');
 
    if ( $vals{version} ) {
       my $prog = $self->prog;
@@ -301,7 +412,7 @@ sub parse {
 
    foreach my $allowed_opts ( @{ $self->{allowed_with} } ) {
       my $opt = $allowed_opts->[0];
-      next if !defined $vals{$opt};
+      next unless $vals{$opt};
       my %defined_opts = map { $_ => 1 } grep { defined $vals{$_} } keys %vals;
       delete @defined_opts{ @$allowed_opts };
       foreach my $defined_opt ( keys %defined_opts ) {
@@ -317,7 +428,7 @@ sub parse {
 sub error {
    my ( $self, $note ) = @_;
    $self->{__error__} = 1;
-   push @{$self->{notes}}, $note;
+   push @{$self->{errors}}, $note;
 }
 
 sub prog {
@@ -360,8 +471,8 @@ sub usage_or_errors {
 sub errors {
    my ( $self ) = @_;
    my $usage = $self->prompt() . "\n";
-   if ( (my @notes = @{$self->{notes}}) ) {
-      $usage .= join("\n  * ", 'Errors in command-line arguments:', @notes) . "\n";
+   if ( (my @errors = @{$self->{errors}}) ) {
+      $usage .= join("\n  * ", 'Errors in command-line arguments:', @errors) . "\n";
    }
    return $usage . "\n" . $self->descr();
 }
@@ -429,102 +540,6 @@ sub usage {
       $usage .= sprintf("  --%-${lcol}s  %s\n", $spec->{l}, $val);
    }
    return $usage;
-}
-
-sub pod_to_spec {
-   my ( $self, $file ) = @_;
-
-   my %types = (
-      'time' => 'm',
-      'int'  => 'i',
-      string => 's',
-      hash   => 'h',
-      Hash   => 'H',
-      array  => 'a',
-      Array  => 'A',
-      size   => 'z',
-      DSN    => 'd',
-      float  => 'f',
-   );
-
-   my @spec = ();
-   my @special_options = ();
-   $file ||= __FILE__;
-   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
-   my $para;
-   my $option;
-
-   local $INPUT_RECORD_SEPARATOR = '';
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/^=head1 OPTIONS/;
-      last;
-   }
-
-   while ( $para = <$fh> ) {
-      MKDEBUG && _d($para);
-      last if $para =~ m/^=over/;
-      chomp $para;
-      $para =~ s/\s+/ /g;
-      $para =~ s/$POD_link_re/$1/go;
-      push @special_options, $para;
-   }
-
-   do {
-      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
-         MKDEBUG && _d($para);
-         my %props;
-         $para = <$fh>;
-         if ( $para =~ m/: / ) {
-            $para =~ s/\s+\Z//g;
-            %props = map { split(/: /, $_) } split(/; /, $para);
-            if ( $props{'short form'} ) {
-               $props{'short form'} =~ s/-//;
-            }
-            $para = <$fh>;
-         }
-         $para =~ s/\s+\Z//g;
-         $para =~ s/\s+/ /g;
-         $para =~ s/$POD_link_re/$1/go;
-         if ( $para =~ m/^[^.]+\.$/ ) {
-            $para =~ s/\.$//;
-         }
-
-         if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
-            $option = $base_option;
-            $props{'negatable'} = 1;
-         }
-
-         push @spec, {
-            s => $option
-               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
-               . ( $props{'negatable'}  ? '!'                        : '' )
-               . ( $props{'cumulative'} ? '+'                        : '' )
-               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
-            d => $para
-               . (defined $props{default} ? " (default $props{default})" : ''),
-         };
-      }
-      while ( $para = <$fh> ) {
-         last unless $para;
-
-         if ( $option ) {
-            if ( my ($line)
-                  = $para =~ m/(allowed with --$option[:]?.*?)\./ ) {
-               1 while ( $line =~ s/$POD_link_re/$1/go );
-               push @special_options, $line;
-            }
-         }
-
-         if ( $para =~ m/^=head1/ ) {
-            $para = undef; # Can't 'last' out of a do {} block.
-            last;
-         }
-         last if $para =~ m/^=item --/;
-      }
-   } while ( $para );
-
-   close $fh;
-   return @spec, @special_options;
 }
 
 sub prompt_noecho {
