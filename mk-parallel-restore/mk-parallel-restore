@@ -1416,15 +1416,44 @@ sub do_table {
       next if !defined $file;
 
       if ( filetype($file) =~ m/^(?:sql|trg)$/ ) {
-         my @args;
+         # Execute sql statements in .sql and .trg files through DBI
+         # so that we can control things like SQL_LOG_BIN. Otherwise,
+         # we may replicate DROP TABLE statments.
+         local $INPUT_RECORD_SEPARATOR = ";\n";
+         my $fh;
          if ( $file =~ m/\.gz/ ) {
-            @args = (qw(gunzip --stdout), qq{'$file'}, qw(| mysql),
-                     @conn_params, $db);
+            open $fh, '-|', "zcat $file"
+               or die "Cannot zcat $file: $OS_ERROR";
          }
          else {
-            @args = (qw(mysql), @conn_params, $db, '<', qq{'$file'});
+            open $fh, '<', "$file"
+               or die "Cannot open $file: $OS_ERROR";
          }
-         $exit_status = system_call( @args ) || $exit_status;
+
+         if ( !$opts{test} ) {
+            $dbh ||= get_cxn();
+            $dbh->do("USE `$db`");
+            if ( $opts{nobinlog} ) {
+               $dbh->do('SET SQL_LOG_BIN=0');
+            }
+         }
+
+         while ( my $sql = <$fh> ) {
+            if ( $opts{test} ) {
+               print $sql;
+            }
+            else {
+               eval {
+                  $dbh->do($sql);
+               };
+               if ( $EVAL_ERROR ) {
+                  $dbh->disconnect();
+                  die mysql_error_msg($EVAL_ERROR)
+                     . " while restoring $db.$tbl";
+               }
+            } 
+         }
+         close $fh;
       }
       else {
          if ( $file =~ m/\.gz$/ ) {

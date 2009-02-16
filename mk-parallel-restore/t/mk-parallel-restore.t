@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 19;
+use Test::More tests => 21;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -23,7 +23,7 @@ $sb->create_dbs($dbh, ['test']);
 my $output = `$cmd mk_parallel_restore_foo --test`;
 like(
    $output,
-   qr{mysql .* mk_parallel_restore_foo < '.*?foo/bar.sql'},
+   qr/CREATE TABLE bar\(a int\)/,
    'Found the file',
 );
 like(
@@ -158,5 +158,34 @@ $output = `MKDEBUG=1 $cmd -D test /tmp/default/test/ 2>&1 | grep Restoring`;
 like($output, qr/Restoring from chunk 0 because table `test`.`issue_30` does not exist/, 'Resume does not die when table is not present (issue 221)');
 
 `rm -rf /tmp/default`;
-$sb->wipe_clean($dbh);
+
+# #############################################################################
+# Issue 57: mk-parallel-restore with --tab doesn't fully replicate 
+# #############################################################################
+
+# This test relies on the issue_30 table created somewhere above.
+
+my $slave_dbh = $sb->get_dbh_for('slave1');
+SKIP: {
+   skip 'Cannot connect to sandbox slave', 2 unless $slave_dbh;
+
+   `../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 --tab`;
+
+   diag(`/tmp/12345/use -e 'DROP TABLE test.issue_30'`);
+   $slave_dbh->do('USE test');
+   my $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
+   ok(!scalar @$res, 'Slave does not have table before --tab restore');
+
+   `$cmd --tab --replace --local --database test /tmp/default/`;
+   sleep 1;
+
+   $slave_dbh->do('USE test');
+   $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
+   ok(!scalar @$res, 'Slave does not have table after --tab restore');
+
+#   $res = $slave_dbh->selectall_arrayref('SELECT * FROM test.issue_30');
+#   is(scalar @$res, 66, 'Table and data replicated to slave by default with --tab (issue 57)');
+};
+
+#$sb->wipe_clean($dbh);
 exit;
