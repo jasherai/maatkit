@@ -1422,7 +1422,7 @@ sub do_table {
          local $INPUT_RECORD_SEPARATOR = ";\n";
          my $fh;
          if ( $file =~ m/\.gz/ ) {
-            open $fh, '-|', "zcat $file"
+            open $fh, '-|', "$opts{decompress} $file"
                or die "Cannot zcat $file: $OS_ERROR";
          }
          else {
@@ -1915,6 +1915,12 @@ Restore only this comma-separated list of databases.
 type: string
 
 Restore only databases whose names match this regex.
+
+=item --decompress
+
+type: string; default: gzip -d -c
+
+Command used to decompress and print .gz files to STDOUT (like zcat).
 
 =item --defaults-file
 
