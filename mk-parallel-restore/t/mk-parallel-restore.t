@@ -186,7 +186,7 @@ SKIP: {
 
    # Test that a --tab --logbin 1 overrides default behavoir
    # and replicates the restore.
-   diag(`/tmp/12345/use -e 'DROP TABLE test.issue_30'`);
+   diag(`/tmp/12345/use -e 'SET SQL_LOG_BIN=0; DROP TABLE test.issue_30'`);
    `$cmd --logbin 1 --tab --replace --local --database test /tmp/default/`;
    sleep 1;
 
@@ -195,5 +195,5 @@ SKIP: {
    is(scalar @$res, 66, '--tab with --logbin 1 allows replication');
 };
 
-#$sb->wipe_clean($dbh);
+$sb->wipe_clean($dbh);
 exit;
