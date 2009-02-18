@@ -184,15 +184,15 @@ SKIP: {
    $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
    ok(!scalar @$res, 'Slave does not have table after --tab restore');
 
-   # Test that a --tab --logbin 1 overrides default behavoir
+   # Test that a --tab --binlog 1 overrides default behavoir
    # and replicates the restore.
    diag(`/tmp/12345/use -e 'SET SQL_LOG_BIN=0; DROP TABLE test.issue_30'`);
-   `$cmd --logbin 1 --tab --replace --local --database test /tmp/default/`;
+   `$cmd --binlog 1 --tab --replace --local --database test /tmp/default/`;
    sleep 1;
 
    $slave_dbh->do('USE test');
    $res = $slave_dbh->selectall_arrayref('SELECT * FROM test.issue_30');
-   is(scalar @$res, 66, '--tab with --logbin 1 allows replication');
+   is(scalar @$res, 66, '--tab with --binlog 1 allows replication');
 };
 
 $sb->wipe_clean($dbh);

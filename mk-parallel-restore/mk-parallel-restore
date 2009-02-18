@@ -1013,7 +1013,7 @@ if ( $opts{csv} ) {
 if ( $opts{T} ) { # TODO 'implies
    $opts{disablekeys}    = 1 unless $opt_parser->{given}->{disablekeys};
    $opts{noautovalon0}   = 1 unless $opt_parser->{given}->{noautovalon0};
-   $opts{logbin}         = 0 unless $opt_parser->{given}->{logbin};
+   $opts{binlog}         = 0 unless $opt_parser->{given}->{binlog};
    $opts{nouniquechecks} = 1 unless $opt_parser->{given}->{nouniquechecks};
    $opts{noforeignkeys}  = 1 unless $opt_parser->{given}->{noforeignkeys};
 }
@@ -1450,7 +1450,7 @@ sub do_table {
          if ( !$opts{test} ) {
             $dbh ||= get_cxn();
             $dbh->do("USE `$db`");
-            $dbh->do('SET SQL_LOG_BIN=0') if $opts{logbin} == 0;
+            $dbh->do('SET SQL_LOG_BIN=0') if $opts{binlog} == 0;
          }
 
          while ( my $sql = <$fh> ) {
@@ -1535,7 +1535,7 @@ sub do_table {
                if ( $opts{noforeignkeys} ) {
                   $dbh->do('SET FOREIGN_KEY_CHECKS=0');
                }
-               if ( $opts{logbin} == 0 ) {
+               if ( $opts{binlog} == 0 ) {
                   $dbh->do('SET SQL_LOG_BIN=0');
                }
                if ( $opts{bulkinsbufsize} ) {
@@ -2001,18 +2001,18 @@ Lock tables before C<LOAD DATA INFILE>.
 
 Set SQL C<NO_AUTO_VALUE_ON_ZERO> before C<LOAD DATA INFILE>.
 
-=item --logbin
+=item --binlog
 
 type: int; default: 1
 
-Set SQL_LOG_BIN to 1 or 0 to control replication.
+Set SQL_LOG_BIN to 1 or 0 to enable or disable binary logging.
 
 Restore operations are replicated by default (SQL_LOG_BIN=1) except for
 L<"--tab"> restores which are not replicated by default (SQL_LOG_BIN=0).
 This prevents large loads from being logged to the server's binary log.
 
 The value given on the command line overrides the defaults. Therefore,
-C<--tab> with C<--logbin 1> will allow replication for a C<--tab> restore.
+C<--tab> with C<--binlog 1> will allow replication for a C<--tab> restore.
 
 =item --[no]noforeignkeys
 
@@ -2107,8 +2107,8 @@ on the command line:
    L<"--[no]noautovalon0">,
    L<"--[no]nouniquechecks">
    L<"--[no]noforeignkeys">
-Also, L<"--logbin"> is set to 0 to disable replication unless specifically
-enabled on the command line (C<--logbin 1>).
+Also, L<"--binlog"> is set to 0 to disable replication unless specifically
+enabled on the command line (C<--binlog 1>).
 
 =item --tables
 
