@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 55;
+use Test::More tests => 56;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -802,6 +802,15 @@ is_deeply(
       help     => undef,
    },
    'Other ops parse correctly w/o special only allowed opt'
+);
+
+is_deeply(
+   $p->{given},
+   {
+      barely => '1',
+      hops   => 'Strisselspalt',
+   },
+   'Given opts'
 );
 
 # #############################################################################

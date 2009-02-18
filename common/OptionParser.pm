@@ -303,6 +303,7 @@ sub new {
       strict       => 1,
       groups       => [ { k => 'o', d => 'Options' } ],
       allowed_with => \@allowed_with,
+      given        => {},
    };
 
    return bless $self, $class;
@@ -334,7 +335,6 @@ sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
    my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-   my %opt_given;
    my %opt_seen;
    my %vals = %{$self->{defaults}};
    # Defaults passed as arg override defaults from descriptions.
@@ -349,15 +349,14 @@ sub parse {
          unless $opt_seen{$key};
    }
 
+   $self->{given} = {}; # in case options are re-parsed
+
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions(
       map {
          my $spec = $_;
          $spec->{s} => sub {
                           my ( $opt, $val ) = @_;
-                          MKDEBUG && _d("Given option: $opt ($spec->{k}) "
-                             . " = $val");
-                          $opt_given{$spec->{k}}++;
                           if ( $spec->{c} ) {
                              # Repeatable/cumulative option like -v -v
                              $vals{$spec->{k}}++
@@ -365,6 +364,9 @@ sub parse {
                           else {
                              $vals{$spec->{k}} = $val;
                           }
+                          MKDEBUG && _d("Given option: $opt ($spec->{k}) "
+                             . " = $val");
+                          $self->{given}->{$spec->{k}} = $vals{$spec->{k}};
                        }
       } @specs
    ) or $self->error('Error parsing options');
