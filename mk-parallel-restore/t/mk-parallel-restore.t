@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 21;
+use Test::More tests => 22;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -171,6 +171,7 @@ SKIP: {
 
    `../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 --tab`;
 
+   # By default a --tab restore should not replicate.
    diag(`/tmp/12345/use -e 'DROP TABLE test.issue_30'`);
    $slave_dbh->do('USE test');
    my $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
@@ -183,8 +184,15 @@ SKIP: {
    $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
    ok(!scalar @$res, 'Slave does not have table after --tab restore');
 
-#   $res = $slave_dbh->selectall_arrayref('SELECT * FROM test.issue_30');
-#   is(scalar @$res, 66, 'Table and data replicated to slave by default with --tab (issue 57)');
+   # Test that a --tab --logbin 1 overrides default behavoir
+   # and replicates the restore.
+   diag(`/tmp/12345/use -e 'DROP TABLE test.issue_30'`);
+   `$cmd --logbin 1 --tab --replace --local --database test /tmp/default/`;
+   sleep 1;
+
+   $slave_dbh->do('USE test');
+   $res = $slave_dbh->selectall_arrayref('SELECT * FROM test.issue_30');
+   is(scalar @$res, 66, '--tab with --logbin 1 allows replication');
 };
 
 #$sb->wipe_clean($dbh);
