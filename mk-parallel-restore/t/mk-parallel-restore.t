@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 22;
+use Test::More tests => 24;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -172,7 +172,7 @@ SKIP: {
    `../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 --tab`;
 
    # By default a --tab restore should not replicate.
-   diag(`/tmp/12345/use -e 'DROP TABLE test.issue_30'`);
+   diag(`/tmp/12345/use -e 'DROP TABLE IF EXISTS test.issue_30'`);
    $slave_dbh->do('USE test');
    my $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
    ok(!scalar @$res, 'Slave does not have table before --tab restore');
@@ -186,13 +186,36 @@ SKIP: {
 
    # Test that a --tab --binlog 1 overrides default behavoir
    # and replicates the restore.
-   diag(`/tmp/12345/use -e 'SET SQL_LOG_BIN=0; DROP TABLE test.issue_30'`);
+   diag(`/tmp/12345/use -e 'SET SQL_LOG_BIN=0; DROP TABLE IF EXISTS test.issue_30'`);
    `$cmd --binlog 1 --tab --replace --local --database test /tmp/default/`;
    sleep 1;
 
    $slave_dbh->do('USE test');
    $res = $slave_dbh->selectall_arrayref('SELECT * FROM test.issue_30');
    is(scalar @$res, 66, '--tab with --binlog 1 allows replication');
+
+
+   # Check that non-tab restores do replicate by default.
+   `rm -rf /tmp/default/`;
+   `../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 -C 25`;
+
+   diag(`/tmp/12345/use -e 'DROP TABLE IF EXISTS test.issue_30'`);
+   `$cmd /tmp/default`;
+   sleep 1;
+
+   $slave_dbh->do('USE test');
+   $res = $slave_dbh->selectall_arrayref('SELECT * FROM test.issue_30');
+   is(scalar @$res, 66, 'Non-tab restore replicates by default');
+
+   # Make doubly sure that for a restore that defaults to binlog=1
+   # that --binlog=0 truly prevents binary logging/replication.
+   diag(`/tmp/12345/use -e 'DROP TABLE IF EXISTS test.issue_30'`);
+   `$cmd --binlog 0 /tmp/default/`;
+   sleep 1;
+
+   $slave_dbh->do('USE test');
+   $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
+   ok(!scalar @$res, 'Non-tab restore does not replicate with --binlog 0');
 };
 
 $sb->wipe_clean($dbh);

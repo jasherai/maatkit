@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * Changed --nobinlog to --binlog 0|1 (default 1).
+
 2009-02-01: version 1.0.11
 
    * Resume died if the table did not exist (issue 221).
