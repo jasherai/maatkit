@@ -19,6 +19,7 @@ The following items are unimplemented at this time:
            sample on issue 2398, email 9
          - check issue 1445, the first attached file has some dmesg stuff that
            is parseable.
+         - see http://tools.rapidsoft.de/perc/rs_check_raid_perc5i.class.phps
       * check where MySQL data is stored, and make sure that filesystem is
         mounted with noatime.
       * Check that filesystems are as big as the partitions they live on.
