@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 24;
+use Test::More tests => 26;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -177,12 +177,18 @@ SKIP: {
    my $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
    ok(!scalar @$res, 'Slave does not have table before --tab restore');
 
+   $res = $dbh->selectall_arrayref('SHOW MASTER STATUS');
+   my $master_pos = $res->[0]->[1];
+
    `$cmd --tab --replace --local --database test /tmp/default/`;
    sleep 1;
 
    $slave_dbh->do('USE test');
    $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
    ok(!scalar @$res, 'Slave does not have table after --tab restore');
+
+   $res = $dbh->selectall_arrayref('SHOW MASTER STATUS');
+   is($master_pos, $res->[0]->[1], 'Bin log pos unchanged');
 
    # Test that a --tab --binlog 1 overrides default behavoir
    # and replicates the restore.
@@ -210,12 +216,18 @@ SKIP: {
    # Make doubly sure that for a restore that defaults to binlog=1
    # that --binlog=0 truly prevents binary logging/replication.
    diag(`/tmp/12345/use -e 'DROP TABLE IF EXISTS test.issue_30'`);
+   $res = $dbh->selectall_arrayref('SHOW MASTER STATUS');
+   $master_pos = $res->[0]->[1];
+
    `$cmd --binlog 0 /tmp/default/`;
    sleep 1;
 
    $slave_dbh->do('USE test');
    $res = $slave_dbh->selectall_arrayref('SHOW TABLES LIKE "issue_30"');
    ok(!scalar @$res, 'Non-tab restore does not replicate with --binlog 0');
+
+   $res = $dbh->selectall_arrayref('SHOW MASTER STATUS');
+   is($master_pos, $res->[0]->[1], 'Bin log pos unchanged');
 };
 
 $sb->wipe_clean($dbh);

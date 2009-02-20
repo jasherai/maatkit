@@ -949,6 +949,184 @@ sub _d {
 # End DSNParser package
 # ###########################################################################
 
+# ###########################################################################
+# Transformers package 2999
+# ###########################################################################
+
+# Transformers - Common transformation and beautification subroutines
+package Transformers;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Time::Local qw(timelocal);
+use Digest::MD5 qw(md5_hex);
+
+use constant MKDEBUG => $ENV{MKDEBUG};
+
+require Exporter;
+our @ISA         = qw(Exporter);
+our %EXPORT_TAGS = ();
+our @EXPORT      = ();
+our @EXPORT_OK   = qw(
+   micro_t
+   percentage_of
+   secs_to_time
+   shorten
+   ts
+   parse_timestamp
+   unix_timestamp
+   make_checksum
+);
+
+sub micro_t {
+   my ( $t, %args ) = @_;
+   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
+   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
+   my $f;
+
+   $t = 0 if $t < 0;
+
+   # "Remove" scientific notation so the regex below does not make
+   # 6.123456e+18 into 6.123456.
+   $t = sprintf('%.17f', $t) if $t =~ /e/;
+
+   # Truncate after 6 decimal places to avoid 0.9999997 becoming 1
+   # because sprintf() rounds.
+   $t =~ s/\.(\d{1,6})\d*/\.$1/;
+
+   if ($t > 0 && $t <= 0.000999) {
+      $f = ($t * 1000000) . 'us';
+   }
+   elsif ($t >= 0.001000 && $t <= 0.999999) {
+      $f = sprintf("%.${p_ms}f", $t * 1000);
+      $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
+   }
+   elsif ($t >= 1) {
+      $f = sprintf("%.${p_s}f", $t);
+      $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
+   }
+   else {
+      $f = 0;  # $t should = 0 at this point
+   }
+
+   return $f;
+}
+
+# Returns what percentage $is of $of.
+sub percentage_of {
+   my ( $is, $of, %args ) = @_;
+   my $p   = $args{p} || 0; # float precision
+   my $fmt = $p ? "%.${p}f" : "%d";
+   return sprintf $fmt, ($is * 100) / ($of ||= 1);
+}
+
+sub secs_to_time {
+   my ( $secs, $fmt ) = @_;
+   $secs ||= 0;
+   return '00:00' unless $secs;
+
+   # Decide what format to use, if not given
+   $fmt ||= $secs >= 86_400 ? 'd'
+          : $secs >= 3_600  ? 'h'
+          :                   'm';
+
+   return
+      $fmt eq 'd' ? sprintf(
+         "%d+%02d:%02d:%02d",
+         int($secs / 86_400),
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : $fmt eq 'h' ? sprintf(
+         "%02d:%02d:%02d",
+         int(($secs % 86_400) / 3_600),
+         int(($secs % 3_600) / 60),
+         $secs % 60)
+      : sprintf(
+         "%02d:%02d",
+         int(($secs % 3_600) / 60),
+         $secs % 60);
+}
+
+sub shorten {
+   my ( $num, %args ) = @_;
+   my $p = defined $args{p} ? $args{p} : 2;     # float precision
+   my $d = defined $args{d} ? $args{d} : 1_024; # divisor
+   my $n = 0;
+   my @units = ('', qw(k M G T P E Z Y));
+   while ( $num >= $d && $n < @units - 1 ) {
+      $num /= $d;
+      ++$n;
+   }
+   return sprintf(
+      $num =~ m/\./ || $n
+         ? "%.${p}f%s"
+         : '%d',
+      $num, $units[$n]);
+}
+
+sub ts {
+   my ( $time ) = @_;
+   my ( $sec, $min, $hour, $mday, $mon, $year )
+      = localtime($time);
+   $mon  += 1;
+   $year += 1900;
+   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+      $year, $mon, $mday, $hour, $min, $sec);
+}
+
+# Turns MySQL's 071015 21:43:52 into a properly formatted timestamp.
+sub parse_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
+   {
+      return sprintf "%d-%02d-%02d %02d:%02d:%02d",
+                     $y + 2000, $m, $d, $h, $i, $s;
+   }
+   return $val;
+}
+
+# Turns a properly formatted timestamp like 2007-10-15 01:43:52
+# into an int (seconds since epoch)
+sub unix_timestamp {
+   my ( $val ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s)
+         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
+   {
+      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   }
+   return $val;
+}
+
+# Returns the rightmost 64 bits of an MD5 checksum of the value.
+sub make_checksum {
+   my ( $val ) = @_;
+   my $checksum = uc substr(md5_hex($val), -16);
+   MKDEBUG && _d("$checksum checksum for $val");
+   return $checksum;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   # Use $$ instead of $PID in case the package
+   # does not use English.
+   print "# $package:$line $$ ", @_, "\n";
+}
+
+1;
+
+# ###########################################################################
+# End Transformers package
+# ###########################################################################
+
+# ###########################################################################
+# mk-parallel-restore
+# ##########################################################################
 package main;
 
 use English qw(-no_match_vars);
@@ -963,13 +1141,11 @@ $Data::Dumper::Indent = 1;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-my @conn_params;
-my $dp = new DSNParser;
+Transformers->import(qw(shorten secs_to_time ts));
 
 # ############################################################################
 # Get configuration information.
 # ############################################################################
-my $q          = new Quoter();
 my @opt_spec   = OptionParser::pod_to_spec();
 my $opt_parser = new OptionParser(@opt_spec);
 $opt_parser->{strict} = 0;
@@ -993,6 +1169,8 @@ $opts{m} ||= $ENV{NUMBER_OF_PROCESSORS}; # MSWin32
 $opts{m} = max(2, $opts{m} || 0);
 
 %opts = $opt_parser->parse(%opts);
+
+my $dp = new DSNParser;
 $dp->prop('setvars', $opts{setvars});
 
 # ############################################################################
@@ -1044,25 +1222,12 @@ if ( defined $opts{umask} ) {
 $opt_parser->usage_or_errors(%opts);
 
 # ############################################################################
-# Gather connection parameters to pass to mysql.  Order matters; mysql
-# will have a problem if --defaults-file isn't first.
+# Connect.
 # ############################################################################
 if ( !defined $opts{p} && $opts{askpass} ) {
    $opts{p} = OptionParser::prompt_noecho("Enter password: ");
 }
-@conn_params = (
-   [qw(--defaults-file F)],
-   [qw(--host          h)],
-   [qw(--password      p)],
-   [qw(--port          P)],
-   [qw(--socket        S)],
-   [qw(--user          u)],
-);
-@conn_params = map { "$_->[0]='$opts{$_->[1]}'" } grep { defined $opts{$_->[1]} } @conn_params;
 
-# ############################################################################
-# Connect.
-# ############################################################################
 my $dbh = get_cxn();
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
 $dbh->{FetchHashKeyName} = 'NAME_lc'; # Lowercases all column names for fetchrow_hashref()
@@ -1148,6 +1313,7 @@ File::Find::find(
 # Canonicalize table list in the order they were discovered, filtering out
 # tables that should not be done.
 # ############################################################################
+my $q = new Quoter();
 {
    my %seen;
    @tables_to_do = grep { !$seen{$_->{D}}->{$_->{N}}++ } @tables_to_do;
@@ -1209,8 +1375,8 @@ if (    (@ARGV == 1 && $opts{biggestfirst})
 # number of children.  Each child that exits will trigger a new one to start
 # after that.
 # #########################################################################
-my $start = time();
-my $done = 0; # For progress measurements.
+my $start           = time();
+my $done            = 0; # For progress measurements.
 my $last_bytes_done = 0;
 
 my %kids;
@@ -1224,7 +1390,8 @@ while ( @tables_to_do || %kids ) {
          $dbh = get_cxn();
       };
       if ( $EVAL_ERROR ) {
-         info(0, 'Waiting: ' . scalar(localtime) . ' ' . mysql_error_msg($EVAL_ERROR));
+         info(0, 'Waiting: ' . scalar(localtime) . ' '
+            . mysql_error_msg($EVAL_ERROR));
       }
    }
    if ( $tries >= $opts{w} ) {
@@ -1289,14 +1456,11 @@ print_progress_report($done, undef, $bytes, $start) if $opts{progress};
 
 # Load views.
 foreach my $file ( @view_files ) {
-   my @args;
-   if ( $file =~ m/\.gz/ ) {
-      @args = (qw(gunzip --stdout), qq{'$file'}, qw(| mysql), @conn_params);
-   }
-   else {
-      @args = (qw(mysql), @conn_params, '<', qq{'$file'});
-   }
-   my $exit_status = system_call( @args );
+   my $exit_status = do_sql_file(
+      dbh  => $dbh,
+      file => $file,
+      type => 'views'
+   );
    $stats{ $exit_status ? 'failure' : 'success' }++;
 }
 
@@ -1316,61 +1480,6 @@ exit( $stats{failure} ? 1 : 0 );
 # ############################################################################
 # Subroutines
 # ############################################################################
-
-# TODO: modularize
-sub secs_to_time {
-   my ( $secs, $fmt ) = @_;
-   $secs ||= 0;
-   return '00:00' unless $secs;
-
-   # Decide what format to use, if not given
-   $fmt ||= $secs >= 86_400 ? 'd'
-          : $secs >= 3_600  ? 'h'
-          :                   'm';
-
-   return
-      $fmt eq 'd' ? sprintf(
-         "%d+%02d:%02d:%02d",
-         int($secs / 86_400),
-         int(($secs % 86_400) / 3_600),
-         int(($secs % 3_600) / 60),
-         $secs % 60)
-      : $fmt eq 'h' ? sprintf(
-         "%02d:%02d:%02d",
-         int(($secs % 86_400) / 3_600),
-         int(($secs % 3_600) / 60),
-         $secs % 60)
-      : sprintf(
-         "%02d:%02d",
-         int(($secs % 3_600) / 60),
-         $secs % 60);
-}
-
-# TODO: modularize
-sub shorten {
-   my ( $num ) = @_;
-   my $n = 0;
-   while ( $num >= 1_024 ) {
-      $num /= 1_024;
-      ++$n;
-   }
-   return sprintf(
-      $num =~ m/\./ || $n
-         ? "%.2f%s"
-         : '%d',
-      $num, ('','k','M','G', 'T')[$n]);
-}
-
-# TODO: modularize
-sub ts {
-   my ( $time ) = @_;
-   my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
-   $mon  += 1;
-   $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
-      $year, $mon, $mday, $hour, $min, $sec);
-}
 
 sub makefifo {
    my $filename = File::Spec->catfile($opts{basedir}, "mpr_fifo_$PID");
@@ -1433,49 +1542,22 @@ sub do_table {
       next if !defined $file;
 
       if ( filetype($file) =~ m/^(?:sql|trg)$/ ) {
-         # Execute sql statements in .sql and .trg files through DBI
-         # so that we can control things like SQL_LOG_BIN. Otherwise,
-         # we may replicate DROP TABLE statments.
-         local $INPUT_RECORD_SEPARATOR = ";\n";
-         my $fh;
-         if ( $file =~ m/\.gz/ ) {
-            open $fh, '-|', "$opts{decompress} $file"
-               or die "Cannot zcat $file: $OS_ERROR";
-         }
-         else {
-            open $fh, '<', "$file"
-               or die "Cannot open $file: $OS_ERROR";
-         }
-
-         if ( !$opts{test} ) {
-            $dbh ||= get_cxn();
-            $dbh->do("USE `$db`");
-            $dbh->do('SET SQL_LOG_BIN=0') if $opts{binlog} == 0;
-         }
-
-         while ( my $sql = <$fh> ) {
-            if ( $opts{test} ) {
-               print $sql;
-            }
-            else {
-               eval {
-                  $dbh->do($sql);
-               };
-               if ( $EVAL_ERROR ) {
-                  $dbh->disconnect();
-                  die mysql_error_msg($EVAL_ERROR)
-                     . " while restoring $db.$tbl";
-               }
-            } 
-         }
-         close $fh;
+         $dbh ||= get_cxn();
+         $exit_status = do_sql_file(
+            dbh  => $dbh,
+            file => $file,
+            type => 'tables',
+            db   => $db,
+            tbl  => $tbl
+         );
       }
       else {
          if ( $file =~ m/\.gz$/ ) {
             if ( $opts{fifo} ) {
                $fifo ||= makefifo();
                $exit_status
-                  = system_call(qq{gunzip --stdout '$file' > '$fifo' &}) || $exit_status;
+                  = system_call(qq{gunzip --stdout '$file' > '$fifo' &})
+                     || $exit_status;
                $load_from = $fifo;
             }
             else {
@@ -1574,6 +1656,70 @@ sub do_table {
 
    $dbh->disconnect() if $dbh;
    return $exit_status;
+}
+
+# Execute sql statements in file through dbh->do() so that we can
+# control things like SQL_LOG_BIN. Otherwise, we may replicate
+# DROP TABLE statments.
+# Returns 0 on success, 1 on failure (this is to mimic the exit
+# status of older code).
+sub do_sql_file {
+   my ( %args ) = @_;
+   foreach my $arg ( qw(dbh file type) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   if ( $args{type} eq 'tables' ) {
+      die "I need a db and tbl argument for tables"
+         unless $args{db} && $args{tbl};
+   }
+
+   MKDEBUG && _d("Doing $args{type} in $args{file}");
+
+   my $dbh = $args{dbh}; # brevity
+
+   local $INPUT_RECORD_SEPARATOR = ";\n";
+
+   my $fh;
+   if ( $args{file} =~ m/\.gz/ ) {
+      if ( !open $fh, '-|', "$opts{decompress} $args{file}" ) {
+         warn "Cannot zcat $args{file}: $OS_ERROR";
+         return 1;
+      }
+   }
+   else {
+      if ( !open $fh, '<', "$args{file}" ) {
+         warn "Cannot open $args{file}: $OS_ERROR";
+         return 1;
+      }
+   }
+
+   if ( !$opts{test} ) {
+      if ( $args{type} eq 'tables') {
+         $dbh->do("USE `$args{db}`");
+      }
+      $dbh->do('SET SQL_LOG_BIN=0') if $opts{binlog} == 0;
+   }
+
+   while ( my $sql = <$fh> ) {
+      if ( $opts{test} ) {
+         print $sql;
+      }
+      else {
+         eval {
+            $dbh->do($sql);
+         };
+         if ( $EVAL_ERROR ) {
+            $dbh->disconnect();
+            warn mysql_error_msg($EVAL_ERROR)
+               . " while restoring $args{type} "
+               . $args{type} eq 'tables' ? "$args{db}.$args{tbl}" : '';
+            return 1;
+         }
+      } 
+   }
+
+   close $fh;
+   return 0;
 }
 
 # Undef files in $files_ref for which the rows in the corresponding
