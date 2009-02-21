@@ -51,59 +51,6 @@ The following items are unimplemented at this time:
            EOL now, and 4.1 should at least be >= 4.1.20 (the EOL and really-old
            warnings should be separate).  5.0.37 is the minimum useful 5.0
            version.
-      * Data and schema
-         * Support percona extensions to show most active users/tables and if
-           they are not available, just say something about it.
-         * filefrag on data files?
-         * note if a storage engine is enabled but not in use -- but check for
-           permissions to see everything before warning about this, otherwise
-           can have false pos.
-         * estimate how much smaller we can make a table by optimizing its data
-           types.  Calculate the space savings for primary/secondary keys for
-           InnoDB.  See Percona customer case #2389.
-         * fragmentation from SHOW TABLE STATUS (as reported by innodb free
-           space, depending on file-per-table; or for single-file, amount of
-           space used/free in ibdata1) or for myisam, Data_free field; show
-           worst 5 fragmented in tabular format as usual
-             * true fragmentation -- if our patched innodb buffer pool contents
-               is installed
-         * verbose option: 
-            produce a detailed per-db, per-tbl schema report showing size, index
-            size, engine, number of indexes, number of columns etc for each
-            table.  Maybe also mention unusual data types in the table, or a
-            summary of the data types.  Also show triggers.
-            * for datetime columns, check a naming convention and guess whether
-              they can be timestamp instead.  'ts', 'created_at', 'last_updated'
-            * Try to find ip adress columns that are stored as varchar (again,
-              naming convention).  Names I've seen: ip
-            * Alert if there are columns in different tables with the same name
-              and different data types.  See email 25020 on Percona issue id
-              1881 for an example, but don't do an information_schema query to
-              find this out.
-            * For each table with an auto-inc PK and a timestamp, try to guess
-               how many rows/day it grows, both overall and more recently, by
-               splitting up and getting the timestamps at various points in th
-               table.
-            * Draw a histogram of these values.
-      * Indexes:
-         * Top N tables with the most/least indexes
-         * Compute indexes that are not very selective
-      * Storage engines
-         * views
-         * merge tables (how many are broken)
-            * check if MERGE tables sum up the size of their contained tables in
-              SHOW TABLE STATUS
-            * look for this error in SHOW TABLE STATUS: Unable to open
-              underlying table
-         * partitioned tables
-            * count of partitioned tables; this can be seen in Create_options in
-              show table status, or from i_s tables, or create table
-            * look for partitioned tables that don't have many future partitions:
-              ) ENGINE=InnoDB DEFAULT CHARSET=latin1 /*!50100 PARTITION BY RANGE
-              (YEAR(day)) (PARTITION p_2006 VALUES LESS THAN (2007) ENGINE = InnoDB,
-              PARTITION p_2007 VALUES LESS THAN (2008) ENGINE = InnoDB, PARTITION p_2008
-              VALUES LESS THAN (2009) ENGINE = InnoDB, PARTITION p_catchall VALUES LESS
-              THAN MAXVALUE ENGINE = InnoDB) */
       * Status
          * small innodb log files, large innodb_additional_mem_pool
          * on a slave, innodb_flush_log_at_trx_commit doesn't need to be 1
@@ -134,7 +81,7 @@ The following items are unimplemented at this time:
            globally, and think about some other privileges (reload?) that
            shouldn't be given to users who are logged in.
          * aggregate SHOW INNODB STATUS the same way.  A note on issue 1028 is a
-         good example.
+           good example.
          * report master/slave status, how many slaves are attached and from
             where
       * After all the above, look at the error log and see if there are any
@@ -174,40 +121,10 @@ The following items are unimplemented at this time:
      of tables using compression, etc.
    * If our build with table stats, index stats, user stats is available --
      figure out what to do with that.
-   * If our build with InnoDB buffer pool contents is available, show what's in
-     the buffer pool.
-   * check redundant indexes
    * alerts on COUNT(*) .. queries. 
    * flag GROUP_CONCAT() queries for checking whether they are vulnerable to
      group_concat_max_len
-   * guess from column names how they are related to other tables.  account_id
-     can mean this column is a FK to an account table.  If so, check for
-     NULL-ability vs. presence of NULL in the table
-   * Look for tables that have silly schema, like a lot of varchar(255) Other
-     common auto-generated length is varchar(50).  If many varchar have the same
-     length, raise an alarm.  In fact, a schema-wide summary of data types and
-     lengths, and the number of each, would be very useful.
-   * Look for non-recommended data types, like float(M,N) and BIT.  Also any
-     type that has a non-default display width: int([^11]) is a warning sign
-     that they don't understand the display widths
-   * If a table has two potential FK columns, like post_id and author_id, and at
-     the same time has an autoinc PK, raise a notice that maybe the PK should be
-     post_id,author_id.
-   * if a table has one autoinc PK and another int UNIQUE, raise a notice that
-     maybe it should drop the autoinc and promote the UNIQUE to PK.
-   * for InnoDB tables, a key that has the PK appended is redundant.
-   * pack_keys=1 is probably a mistake
-   * tables that have only primary, unique, and one other key with many values
-     are probably a mistake: the user probably thinks a key on (a,b,c) is enough
-     for queries on any of those columns.
-   * look for columns named UUID or GUID or session_id which may contain hex
-     data stored as strings, which would be better stored unhexed in binary
-      * Check LIMIT 1 from all columns and look for UUID/GUID-looking values.
-   * Look for nullable columns that contain no NULLs, especially indexed columns
-   * Automatically run PROCEDURE ANALYSE on tables that look bad.
-   * For each indexed int, check whether it's getting close to the limit of the
-     values it can hold with SELECT MAX(...).
-   * Determine the thoroughness of the search by how large the DB/table is.
+
    * watch how much data InnoDB writes to the log files per second, recommend
      log buffer size.
    * report master/slave info: how many slaves are connected, what the master is

@@ -1,0 +1,96 @@
+Changelog for mk-duplicate-key-checker:
+
+2009-02-01: version 1.2.0
+
+   * Changed output from tabular to human-readable (issue 196).
+   * Improved duplicate key finding (issue 9).
+   * Added DROP KEY statement to output for each duplicate key (issue 82).
+   * -- commented all output lines except SQL statements (issue 82).
+   * Added --[no]sql option (issue 82).
+   * Added summary of keys to end of output (182).
+   * Removed --allatonce option.
+   * Updated documentation and shared code.
+
+2008-12-01: version 1.1.9
+
+   * Updates to shared code.
+   * Updated documentation and shared code.
+
+2008-09-19: version 1.1.8
+
+   * Updates to shared code.
+   * Made debugging code more efficient in non-debug mode.
+
+2008-08-11: version 1.1.7
+
+   * Files downloaded directly from SVN crashed due to version information.
+   * Full-text indexes were not treated specially (issue 10).
+
+2008-06-02: version 1.1.6
+
+   * Updated common code.
+
+2008-03-16: version 1.1.5
+
+   * Added --setvars option (bug #1904689, bug #1911371).
+   * Added --charset option (bug #1877548).
+
+2007-12-16: version 1.1.4
+
+   * --tables and --ignoretables now accept names in the form db.tbl.
+
+2007-12-07: version 1.1.3
+
+   * Updated common code.
+   * Corrected documentation.
+   * Added --engine and --ignoreengine options.
+
+2007-11-04: version 1.1.2
+
+   * Made command-line help easier to use.
+   * Removed the dependency on Term::ReadKey.
+   * Replaced some code with modules that are unit-tested.
+
+2007-09-20: version 1.1.1
+
+   * Exit code wasn't always defined.
+
+2007-09-01: version 1.1.0
+
+   * Column printout was misaligned one space.
+   * Refactored into a runnable module and added tests.
+   * Redundant indexes were only detected if the shorter index was first.
+   * Redundant foreign keys sometimes weren't detected.
+   * All indexes on MEMORY tables were reported as HASH.
+   * Added --clustered option to report appended PK columns as dupes for InnoDB and solidDB.
+
+2007-08-23: version 1.0.5
+
+   * MySQL socket connection option didn't work.
+   * Added --askpass option.
+
+2007-06-22: version 1.0.4
+
+   * Documentation.
+
+2007-06-10: version 1.0.3
+
+   * Added --defaults-file option.
+   * Added standard --version command-line option.
+
+2007-03-25: version 1.0.2
+
+   * Rewrite the GetOpt::Long code and rely on DBD to read MySQL option files.
+   * Error handling if there aren't permissions to run SHOW CREATE TABLE on a
+     view.
+   * Documentation copy/paste error.
+
+2007-03-02: version 1.0.1
+
+   * Fixed several small bugs with quoting
+   * Fixed bugs with index types (FULLTEXT, HASH etc)
+   * Add --allatonce option
+
+2007-03-01: version 1.0.0
+
+   * Initial release.
