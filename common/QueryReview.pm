@@ -59,7 +59,7 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 # Required args:
 # group_by      The name of the attribute in the event by which events will be
-#               grouped into a class.  See SQLMetrics.pm for more on this.  The
+#               grouped into a class.  See EventAggregator.pm for more on this.  The
 #               value is used to generate a GUID-ish value that we can use as
 #               the primary key in a database table.
 # dbh           A dbh to the server with the query review table.
