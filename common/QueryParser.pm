@@ -34,6 +34,16 @@ our $tbl_regex = qr{
             (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
          )
       }xio;
+# This regex is meant to match "derived table" queries, of the form
+# .. from ( select ...
+# .. join ( select ...
+# .. bar join foo, ( select ...
+# Unfortunately it'll also match this:
+# select a, b, (select ...
+our $has_derived = qr{
+      \b(?:FROM|JOIN|,)
+      \s*\(\s*SELECT
+   }xi;
 
 sub new {
    my ( $class ) = @_;
@@ -44,6 +54,7 @@ sub new {
 sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
+   MKDEBUG && _d("getting tables for ", $query);
 
    # These keywords may appear between UPDATE or SELECT and the table refs.
    # They need to be removed so that they are not mistaken for tables.
@@ -51,7 +62,7 @@ sub get_tables {
 
    my @tables;
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
-      MKDEBUG && _d("match: $tbls");
+      MKDEBUG && _d("match: ", $tbls);
       foreach my $tbl ( split(',', $tbls) ) {
          # Remove implicit or explicit (AS) alias.
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
@@ -59,6 +70,16 @@ sub get_tables {
       }
    }
    return @tables;
+}
+
+# Returns true if it sees what looks like a "derived table", e.g. a subquery in
+# the FROM clause.
+sub has_derived_table {
+   my ( $self, $query ) = @_;
+   # See the $tbl_regex regex above.
+   my $match = $query =~ m/$has_derived/;
+   MKDEBUG && _d("$query has " . ($match ? 'a' : 'no') . 'derived table');
+   return $match;
 }
 
 # Return a list of tables/databases and the name they're aliased to.

@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 79;
+use Test::More tests => 84;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -464,5 +464,21 @@ is_deeply(
    [qw(foo)],
    'get_tables on simple subquery'
 );
+
+ok($qp->has_derived_table(
+   'select * from ( select 1) as x'),
+   'simple derived');
+ok($qp->has_derived_table(
+   'select * from a join ( select 1) as x'),
+   'join, derived');
+ok($qp->has_derived_table(
+   'select * from a join b, (select 1) as x'),
+   'comma join, derived');
+is($qp->has_derived_table(
+   'select * from foo'),
+   '', 'no derived');
+is($qp->has_derived_table(
+   'select * from foo where a in(select a from b)'),
+   '', 'no derived on correlated');
 
 exit;
