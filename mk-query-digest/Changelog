@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Added 'bytes' property to log events (issue 247).
    * Some INSERT/REPLACE queries were not truncated (issue 216).
    * INSERT/REPLACE were needlessly converted for EXPLAIN (issue 283).
    * SELECTs starting with a comment were converted for EXPLAIN (issue 252).
