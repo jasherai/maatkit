@@ -478,6 +478,8 @@ sub calculate_statistical_metrics {
 #  ol_attrib   ...or events where the 95th percentile of this attribute...
 #  ol_limit    ...is greater than this value, AND...
 #  ol_freq     ...the event occurred at least this many times.
+# The return value is a list of arrayrefs.  Each arrayref is the event key and
+# an explanation of why it was included (top|outlier).
 sub top_events {
    my ( $self, %args ) = @_;
    my $classes = $self->{result_class};
@@ -496,7 +498,7 @@ sub top_events {
          (!$args{total} || $total < $args{total} )
          && ( !$args{count} || $count < $args{count} )
       ) {
-         push @chosen, $groupby;
+         push @chosen, [$groupby, 'top'];
       }
 
       # Events that are notable outliers
@@ -509,7 +511,7 @@ sub top_events {
             $classes->{$groupby}->{$args{ol_attrib}}
          );
          if ( $stats->{pct_95} >= $args{ol_limit} ) {
-            push @chosen, $groupby;
+            push @chosen, [$groupby, 'outlier'];
          }
       }
 

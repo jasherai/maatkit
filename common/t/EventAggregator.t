@@ -639,7 +639,14 @@ my @chosen;
    ol_freq   => 3,
 );
 
-is_deeply( \@chosen, [qw(event2 event3 event1)], 'Got top events' );
+is_deeply(
+   \@chosen,
+   [
+      [qw(event2 top)],
+      [qw(event3 top)],
+      [qw(event1 outlier)],
+   ],
+   'Got top events' );
 
 @chosen = $ea->top_events(
    groupby => 'fingerprint',
@@ -653,7 +660,14 @@ is_deeply( \@chosen, [qw(event2 event3 event1)], 'Got top events' );
    ol_freq   => undef,
 );
 
-is_deeply( \@chosen, [qw(event2 event3 event1 event0)],
+is_deeply(
+   \@chosen,
+   [
+      [qw(event2 top)],
+      [qw(event3 top)],
+      [qw(event1 outlier)],
+      [qw(event0 outlier)],
+   ],
    'Got top events with outlier' );
 
 # Try to make it fail
