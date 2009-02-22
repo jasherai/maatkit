@@ -158,6 +158,7 @@ sub parse_event {
             # # administrator command: Quit;
             elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
                push @properties, 'cmd', 'Admin', 'arg', $line;
+               push @properties, 'bytes', length($properties[-1]);
                ++$found_arg;
                ++$got_ac;
             }
@@ -203,6 +204,7 @@ sub parse_event {
                if ( defined(my $l = <$fh>) ) {
                   chomp $l;
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
+                  push @properties, 'bytes', length($properties[-1]);
                   $found_arg++;
                }
                else {
@@ -221,10 +223,11 @@ sub parse_event {
             # Note that if this line really IS the query but we skip in
             # the 'if' above because it looks like meta-data, later
             # we'll remedy that.
-            push @properties, 'arg', substr($stmt, $pos - length($line));
+            my $arg = substr($stmt, $pos - length($line));
+            push @properties, 'arg', $arg, 'bytes', length($arg);
             # Handle embedded attributes.
             if ( $misc && $misc->{embed}
-               && ( my ($e) = $properties[-1] =~ m/($misc->{embed})/)
+               && ( my ($e) = $arg =~ m/($misc->{embed})/)
             ) {
                push @properties, $e =~ m/$misc->{capture}/g;
             }

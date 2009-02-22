@@ -28,7 +28,7 @@ sub run_test {
    };
    is($EVAL_ERROR, '', "No error on $def->{file}");
    if ( defined $def->{result} ) {
-      is_deeply($def->{result}, \@e, $def->{file})
+      is_deeply(\@e, $def->{result}, $def->{file})
          or print "Got: ", Dumper(\@e);
    }
    if ( defined $def->{num_events} ) {
@@ -51,6 +51,7 @@ run_test({
          Rows_sent     => 1,
          Rows_examined => 0,
          pos_in_log    => 0,
+         bytes         => length('select sleep(2) from n'),
          cmd           => 'Query',
       },
       {  ts            => '071015 21:45:10',
@@ -64,6 +65,7 @@ run_test({
          Rows_sent     => 1,
          Rows_examined => 0,
          pos_in_log    => 359,
+         bytes         => length('select sleep(2) from test.n'),
          cmd           => 'Query',
       },
    ],
@@ -93,6 +95,7 @@ run_test({
          user           => '[SQL_SLAVE]',
          host           => '',
          ip             => '',
+         bytes          => 5,
       },
       {  db        => 'db1',
          timestamp => 1197996507,
@@ -117,6 +120,7 @@ run_test({
          user           => '[SQL_SLAVE]',
          host           => '',
          ip             => '',
+         bytes          => 129,
       },
       {  timestamp => 1197996507,
          arg       => 'INSERT INTO db3.vendor11gonzo (makef, bizzle)
@@ -145,6 +149,7 @@ VALUES (\'\', \'Exact\')',
          user           => '[SQL_SLAVE]',
          host           => '',
          ip             => '',
+         bytes          => 66,
       },
       {  arg => 'UPDATE db4.vab3concept1upload
 SET    vab3concept1id = \'91848182522\'
@@ -173,6 +178,7 @@ WHERE  vab3concept1upload=\'6994465\'',
          user           => '[SQL_SLAVE]',
          host           => '',
          ip             => '',
+         bytes          => 103,
       },
       {  insert_id => 34484549,
          timestamp => 1197996507,
@@ -202,6 +208,7 @@ VALUES (\'211\', \'18\')',
          user           => '[SQL_SLAVE]',
          host           => '',
          ip             => '',
+         bytes          => 57,
       },
       {  arg => 'UPDATE foo.bar
 SET    biz = \'91848182522\'',
@@ -229,6 +236,7 @@ SET    biz = \'91848182522\'',
          user           => '[SQL_SLAVE]',
          host           => '',
          ip             => '',
+         bytes          => 41,
       },
       {  arg => 'UPDATE bizzle.bat
 SET    boop=\'bop: 899\'
@@ -258,6 +266,7 @@ WHERE  fillze=\'899\'',
          user           => '[SQL_SLAVE]',
          host           => '',
          ip             => '',
+         bytes          => 60,
       },
       {  arg => 'UPDATE foo.bar
 SET    biz = \'91848182522\'',
@@ -285,6 +294,7 @@ SET    biz = \'91848182522\'',
          user           => '[SQL_SLAVE]',
          host           => '',
          ip             => '',
+         bytes          => 41,
       },
    ],
 });
@@ -304,6 +314,7 @@ run_test({
          Rows_examined => 1,
          pos_in_log    => 0,
          cmd           => 'Query',
+         bytes          => 41,
       },
       {  ts   => '071015 21:43:52',
          user => 'root',
@@ -317,6 +328,7 @@ run_test({
          Rows_examined => 0,
          pos_in_log    => 183,
          cmd           => 'Query',
+         bytes          => 68,
       },
    ],
 });
@@ -345,6 +357,7 @@ run_test(
             pos_in_log     => '0',
             ts             => '071218 11:48:27',
             user           => '[SQL_SLAVE]',
+            bytes          => 5,
          },
       ],
    }
@@ -363,7 +376,8 @@ run_test(
             ip         => '',
             pos_in_log => '0',
             ts         => '071015 21:43:52',
-            user       => 'root'
+            user       => 'root',
+            bytes      => 59,
          },
       ],
    },
@@ -393,6 +407,7 @@ run_test(
             user           => '[SQL_SLAVE]',
             host           => '',
             ip             => '',
+            bytes          => 27,
          },
       ],
    }
@@ -422,7 +437,8 @@ run_test({
          ip             => '',
          pos_in_log     => '0',
          ts             => '071218 11:48:27',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes          => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -444,7 +460,8 @@ run_test({
          ip             => '',
          pos_in_log     => '363',
          ts             => '071218 11:48:57',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes          => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -466,7 +483,8 @@ run_test({
          ip             => '',
          pos_in_log     => '725',
          ts             => '071218 11:48:57',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes          => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -488,7 +506,8 @@ run_test({
          ip             => '',
          pos_in_log     => '1083',
          ts             => '071218 11:49:05',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes          => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -510,7 +529,8 @@ run_test({
          ip             => '',
          pos_in_log     => '1445',
          ts             => '071218 11:49:07',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes          => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -532,7 +552,8 @@ run_test({
          ip             => '',
          pos_in_log     => '1803',
          ts             => '071218 11:49:30',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes          => 23,
       }
    ],
 });
@@ -562,6 +583,7 @@ run_test({
          user           => '[SQL_SLAVE]',
          host           => '',
          ip             => '',
+         bytes          => 23,
       },
    ],
 });
@@ -585,6 +607,7 @@ run_test({
          'Lock_time'     => '0.000000',
          'Rows_sent'     => '0',
          pos_in_log      => 0,
+         bytes           => 29,
       },
       {  'Schema'        => 'db2',
          'cmd'           => 'Query',
@@ -599,6 +622,7 @@ run_test({
          'Lock_time'     => '0.000000',
          'Rows_sent'     => '0',
          pos_in_log      => 221,
+         bytes           => 14,
       },
       {  'Schema'        => 'db2',
          'cmd'           => 'Query',
@@ -612,17 +636,15 @@ run_test({
          'Lock_time'     => '0.009453',
          'Rows_sent'     => '0',
          pos_in_log      => 435,
+         bytes           => 31,
       },
    ],
 });
 
 # Parse embedded meta-attributes
 run_test({
-   misc => {
-      embed   => qr/ -- .*/,
-      capture => qr/(\w+): ([^,]+)/
-   },
-   file => 'samples/slow010.txt',
+   misc   => { embed   => qr/ -- .*/, capture => qr/(\w+): ([^,]+)/ },
+   file   => 'samples/slow010.txt',
    result => [
       {  Lock_time     => '0',
          Query_time    => '2',
@@ -638,6 +660,7 @@ run_test({
          file          => '/user.php',
          line          => '417',
          url           => 'd217d035a34ac9e693b41d4c2&limit=500&offset=0',
+         bytes         => 91,
       },
    ],
 });
@@ -659,6 +682,7 @@ run_test({
          'Rows_sent'     => '0',
          pos_in_log      => 0,
          cmd             => 'Admin',
+         bytes           => 29,
       },
       {  'Schema'        => 'db2',
          'db'            => 'db',
@@ -673,6 +697,7 @@ run_test({
          'Rows_sent'     => '0',
          pos_in_log      => 221,
          cmd             => 'Query',
+         bytes           => 14,
       },
       {  'Schema'        => 'db2',
          'db'            => 'db2',
@@ -687,6 +712,7 @@ run_test({
          'Rows_sent'     => '0',
          pos_in_log      => 435,
          cmd             => 'Admin',
+         bytes           => 29,
       },
       {  'Schema'        => 'db2',
          'db'            => 'db',
@@ -701,6 +727,7 @@ run_test({
          'Rows_sent'     => '0',
          pos_in_log      => 663,
          cmd             => 'Query',
+         bytes           => 14,
       }
    ],
 });
@@ -721,6 +748,7 @@ run_test({
          'Rows_sent'     => '0',
          pos_in_log      => 0,
          cmd             => 'Query',
+         bytes           => 16,
       },
       {  'Schema'        => 'sab',
          'arg'           => 'SET autocommit=1',
@@ -734,6 +762,7 @@ run_test({
          'Rows_sent'     => '0',
          pos_in_log      => 172,
          cmd             => 'Query',
+         bytes           => 16,
       },
    ],
 });
@@ -754,7 +783,8 @@ run_test({
          'user'          => 'foo_app',
          'Query_time'    => '0.000015',
          'Rows_sent'     => '0',
-         'Lock_time'     => '0.000000'
+         'Lock_time'     => '0.000000',
+         bytes           => 16,
       },
       {  'Schema'        => 'test',
          'db'            => 'test',
@@ -769,7 +799,8 @@ run_test({
          'Query_time'    => '0.149435',
          'user'          => 'mytopuser',
          'Rows_sent'     => '226',
-         'Lock_time'     => '0.000070'
+         'Lock_time'     => '0.000070',
+         bytes           => 11,
       },
       {  'Schema'        => 'test',
          'cmd'           => 'Admin',
@@ -783,7 +814,8 @@ run_test({
          'Query_time'    => '0.000005',
          'user'          => 'mytopuser',
          'Rows_sent'     => '0',
-         'Lock_time'     => '0.000000'
+         'Lock_time'     => '0.000000',
+         bytes           => 29,
       },
       {  'Schema'        => 'abc',
          'db'            => 'abc',
@@ -797,7 +829,8 @@ run_test({
          'user'          => 'foo_app',
          'Query_time'    => '0.000067',
          'Rows_sent'     => '0',
-         'Lock_time'     => '0.000000'
+         'Lock_time'     => '0.000000',
+         bytes           => 16,
       },
       {  'Schema'        => 'abc',
          'cmd'           => 'Query',
@@ -810,7 +843,8 @@ run_test({
          'user'          => 'foo_app',
          'Query_time'    => '0.000015',
          'Rows_sent'     => '0',
-         'Lock_time'     => '0.000000'
+         'Lock_time'     => '0.000000',
+         bytes           => 6,
       }
    ],
 });
@@ -831,6 +865,7 @@ run_test({
          Rows_sent     => 1,
          Rows_examined => 0,
          pos_in_log    => 0,
+         bytes         => 22,
       },
       {  ts            => '071015 21:43:52',
          cmd           => 'Query',
@@ -844,6 +879,7 @@ run_test({
          Rows_sent     => 1,
          Rows_examined => 0,
          pos_in_log    => 1313,
+         bytes         => 22,
       },
    ],
 });
@@ -872,6 +908,7 @@ run_test({
          Rows_read     => 1,
          arg           => 'USE `user_chos`',
          pos_in_log    => 0,
+         bytes         => 15,
       },
       {  user          => 'user_user',
          cmd           => 'Query',
@@ -888,6 +925,7 @@ run_test({
          Rows_read     => 0,
          arg           => 'SELECT * FROM moderator',
          pos_in_log    => 226,
+         bytes         => 23,
       },
    ],
 });
@@ -908,6 +946,7 @@ run_test({
          Rows_sent     => 1,
          Rows_examined => 127,
          pos_in_log    => 0,
+         bytes         => 19,
       },
    ],
 });
@@ -930,7 +969,8 @@ run_test({
          host          => '',
          ip            => '1.2.3.8',
          pos_in_log    => '0',
-         user          => 'meow'
+         user          => 'meow',
+         bytes         => 29,
       },
       {  Lock_time     => '0.000000',
          Query_time    => '0.000899',
@@ -944,7 +984,8 @@ run_test({
          host          => '',
          ip            => '1.2.3.8',
          pos_in_log    => '221',
-         user          => 'meow'
+         user          => 'meow',
+         bytes         => 14,
       },
       {  Lock_time     => '0.009453',
          Query_time    => '0.018799',
@@ -958,7 +999,8 @@ run_test({
          host          => '',
          ip            => '1.2.3.8',
          pos_in_log    => '435',
-         user          => 'meow'
+         user          => 'meow',
+         bytes         => 29,
       }
    ],
 });
@@ -980,7 +1022,8 @@ run_test({
          pos_in_log    => '0',
          timestamp     => '1233019414',
          ts            => '090127  1:23:34',
-         user          => 'swuser'
+         user          => 'swuser',
+         bytes         => 22,
       },
    ],
 });
@@ -1010,7 +1053,8 @@ run_test({
          host           => '',
          ip             => '',
          pos_in_log     => '0',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes         => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -1031,7 +1075,8 @@ run_test({
          host           => '',
          ip             => '',
          pos_in_log     => '363',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes         => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -1052,7 +1097,8 @@ run_test({
          host           => '',
          ip             => '',
          pos_in_log     => '725',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes         => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -1073,7 +1119,8 @@ run_test({
          host           => '',
          ip             => '',
          pos_in_log     => '1083',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes         => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -1094,7 +1141,8 @@ run_test({
          host           => '',
          ip             => '',
          pos_in_log     => '1445',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes         => 23,
       },
       {  Disk_filesort  => 'No',
          Disk_tmp_table => 'No',
@@ -1115,7 +1163,8 @@ run_test({
          host           => '',
          ip             => '',
          pos_in_log     => '1803',
-         user           => '[SQL_SLAVE]'
+         user           => '[SQL_SLAVE]',
+         bytes         => 23,
       },
    ],
 });
