@@ -3956,10 +3956,10 @@ sub print_explain {
          $sth->execute();
          my $i = 1;
          while ( my @row = $sth->fetchrow_array() ) {
-            print "*************************** ", $i++,
+            print "# *************************** ", $i++,
                ". row ***************************\n";
             foreach my $j ( 0 .. $#row ) {
-               printf "%15s: %s\n", $sth->{NAME}->[$j],
+               printf "# %13s: %s\n", $sth->{NAME}->[$j],
                   defined $row[$j] ? $row[$j] : 'NULL';
             }
          }
