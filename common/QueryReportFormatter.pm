@@ -182,6 +182,7 @@ sub global_report {
 #  * where        The value of the group-by attribute, such as the fingerprint.
 #  * rank         The (optional) rank of the query, for the header
 #  * worst        The attribute in which the sample is stored.
+#  * reason       Why this one is being reported on: top|outlier
 sub event_report {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
@@ -222,6 +223,11 @@ sub event_report {
       $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
+
+   if ( $opts{reason} ) {
+      push @result, "# This item is included in the report because it matches "
+         . ($opts{reason} eq 'top' ? '--limit.' : '--outliers.');
+   }
 
    # Column header line
    my ($format, @headers) = make_header();

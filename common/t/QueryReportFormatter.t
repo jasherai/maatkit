@@ -107,6 +107,7 @@ is($result, $expected, 'Global report');
 
 $expected = <<EOF;
 # Query 1: 3 QPS, 9.00x concurrency, ID 0x82860EDA9A88FCC5 at byte 1 _____
+# This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         66       2
 # Exec time     89      9s      1s      8s      5s      8s      5s      5s
@@ -125,6 +126,7 @@ $result = $qrf->event_report(
    where   => 'select id from users where name=?',
    rank    => 1,
    worst   => 'Query_time',
+   reason  => 'top',
 );
 
 is($result, $expected, 'Event report');
