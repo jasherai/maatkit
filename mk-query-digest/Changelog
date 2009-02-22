@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * IN() lists were parsed as table names (issue 277).
    * The parser crashed on some logs from Windows servers (issue 267).
    * Added the ability to parse embedded attributes (issue 177).
    * Log entries without a Time property crashed --review (issue 263).
