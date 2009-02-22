@@ -78,7 +78,7 @@ sub has_derived_table {
    my ( $self, $query ) = @_;
    # See the $tbl_regex regex above.
    my $match = $query =~ m/$has_derived/;
-   MKDEBUG && _d("$query has " . ($match ? 'a' : 'no') . 'derived table');
+   MKDEBUG && _d("$query has " . ($match ? 'a' : 'no') . ' derived table');
    return $match;
 }
 
