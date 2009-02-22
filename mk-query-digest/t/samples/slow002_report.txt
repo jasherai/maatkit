@@ -141,9 +141,6 @@ select     boop='bop: 899' from bizzle.bat where   fillze='899'\G
 #    SHOW CREATE TABLE `db1`.`conch`\G
 INSERT INTO db1.conch (word3, vid83)
 VALUES ('211', '18')\G
-# Converted for EXPLAIN
-# EXPLAIN
-select * from  db1.conch  where word3='211' and  vid83= '18'\G
 
 # Query 6: 0 QPS, 0x concurrency, ID 0x7546F89214254F2F at byte 803 ______
 #              pct   total     min     max     avg     95%  stddev  median
@@ -169,9 +166,6 @@ select * from  db1.conch  where word3='211' and  vid83= '18'\G
 #    SHOW CREATE TABLE `db3`.`vendor11gonzo`\G
 INSERT INTO db3.vendor11gonzo (makef, bizzle)
 VALUES ('', 'Exact')\G
-# Converted for EXPLAIN
-# EXPLAIN
-select * from  db3.vendor11gonzo  where makef='' and  bizzle= 'Exact'\G
 
 # Query 7: 0 QPS, 0x concurrency, ID 0x85FFF5AA78E5FF6A at byte 0 ________
 #              pct   total     min     max     avg     95%  stddev  median

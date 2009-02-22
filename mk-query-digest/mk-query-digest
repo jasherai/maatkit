@@ -3841,17 +3841,28 @@ my %ea;     # EventAggregators
             }
 
             if ( $groupby eq 'fingerprint' ) {
-               # Find the sample query.  Shorten it if necessary (issue 216).
+               # Find the sample query.
                my $sample = $ea->results->{classes}->{$item}->{$attrib}->{sample};
                my $samp_query = $sample->{arg} || '';
-               $samp_query =~ s{\A(INSERT INTO \S+ VALUES \(.*?\)),\(.*\Z}
-                               {$1/*multi-value INSERT omitted*/}s;
+
+               # Shorten it if necessary (issue 216).  Truncate until the end or
+               # until ON DUPLICATE KEY UPDATE.
+               if ( $opts{truncateinsert} ) {
+                  $samp_query =~ s{\A((?:INSERT|REPLACE)(?:\s\w+)*\s+\S+\s+
+                                  VALUES\s+\(.*?\)),\(.*?(ON\s+DUPLICATE|\Z)}
+                                  {$1 /*... omitted ...*/ $2}xsi;
+               }
 
                # Print out tables for the query, and if it's a SELECT statement, print
                # out its EXPLAIN...
-               if ( $item =~ m/^[\(\s]*select/ ) {
+               if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
                   print_tables($samp_query, $sample->{db}) if $opts{forexplain};
-                  print "# EXPLAIN\n$samp_query\\G\n";
+                  if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
+                     print $samp_query, "\\G\n";
+                  }
+                  else {
+                     print "# EXPLAIN\n$samp_query\\G\n";
+                  }
                }
                else {
                   my $converted_sample = $qr->convert_to_select($samp_query);
@@ -4398,6 +4409,12 @@ default: yes
 Print information about the entire analysis run.
 
 See L<"OUTPUT"> for more information on the header.
+
+=item --[no]truncateinsert
+
+default: yes
+
+Truncate long INSERT and REPLACE statements.
 
 =item --interval
 

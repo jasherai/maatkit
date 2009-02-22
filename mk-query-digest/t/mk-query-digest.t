@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 44;
+use Test::More tests => 46;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -157,6 +157,18 @@ ok(
 ok(
    no_diff($run_with.'slow019.txt --nozeroadmin', 'samples/slow019_report_noza.txt'),
    '--nozeroadmin works'
+);
+
+# This was fixed at some point by checking the fingerprint to see if the
+# query needed to be converted to a SELECT.
+ok(
+   no_diff($run_with.'slow023.txt', 'samples/slow023.txt'),
+   'Queries that start with a comment are not converted for EXPLAIN',
+);
+
+ok(
+   no_diff($run_with.'slow024.txt', 'samples/slow024.txt'),
+   'Long inserts/replaces are truncated (issue 216)',
 );
 
 # #############################################################################
