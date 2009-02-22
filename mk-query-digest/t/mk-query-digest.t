@@ -37,8 +37,8 @@ ok(
 );
 
 ok(
-   no_diff($run_with.'slow001.txt', 'samples/slow001_report.txt'),
-   'Analysis for slow001'
+   no_diff($run_with.'slow001.txt --expectedrange 2,10', 'samples/slow001_report.txt'),
+   'Analysis for slow001 with --expectedrange'
 );
 
 ok(

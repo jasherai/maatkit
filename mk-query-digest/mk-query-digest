@@ -1625,7 +1625,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3018
+# EventAggregator package 3044
 # ###########################################################################
 
 
@@ -1981,7 +1981,7 @@ sub top_events {
          (!$args{total} || $total < $args{total} )
          && ( !$args{count} || $count < $args{count} )
       ) {
-         push @chosen, $groupby;
+         push @chosen, [$groupby, 'top'];
       }
 
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
@@ -1992,7 +1992,7 @@ sub top_events {
             $classes->{$groupby}->{$args{ol_attrib}}
          );
          if ( $stats->{pct_95} >= $args{ol_limit} ) {
-            push @chosen, $groupby;
+            push @chosen, [$groupby, 'outlier'];
          }
       }
 
@@ -2017,7 +2017,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 2977
+# QueryReportFormatter package 3043
 # ###########################################################################
 
 
@@ -2204,6 +2204,11 @@ sub event_report {
       $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
+
+   if ( $opts{reason} ) {
+      push @result, "# This item is included in the report because it matches "
+         . ($opts{reason} eq 'top' ? '--limit.' : '--outliers.');
+   }
 
    my ($format, @headers) = make_header();
    push @result, sprintf($format, '', @headers);
@@ -3786,11 +3791,14 @@ my %ea;     # EventAggregators
 
          # Find the items to include in the report
          my @worst = $ea->top_events(%top_spec);
+         my $explain_why = $opts{expectedrange}
+            && (@worst < $opts{expectedrange}->[0]
+               || @worst > $opts{expectedrange}->[1]);
 
          # Print a report for each item.
          ITEM:
          foreach my $rank ( 1 .. @worst ) {
-            my $item = $worst[$rank - 1];
+            my $item = $worst[$rank - 1]->[0];
 
             my $review_vals;
             if ( $groupby eq 'fingerprint' && $opts{R} ) {
@@ -3808,6 +3816,7 @@ my %ea;     # EventAggregators
                where  => $item,
                rank   => $rank,
                worst  => $attrib,
+               reason => $explain_why ? $worst[$rank - 1]->[1] : '',
             );
             print $qrf->chart_distro(
                $ea,
@@ -3942,16 +3951,16 @@ sub get_query_review_callback {
 sub find_role {
    my ( $opts, $dbh, $current, $read_only, $comment ) = @_;
    if ( !$dbh || !$dbh->ping ) {
-      _d("Getting a dbh from $current $comment");
+      MKDEBUG && _d("Getting a dbh from $current $comment");
       $dbh = $dp->get_dbh(
          $dp->get_cxn_params($opts->{$current}), {AutoCommit => 1});
    }
    if ( $opts->{mirror} ) {
       my ( $is_read_only ) = $dbh->selectrow_array('SELECT @@global.read_only');
-      _d("read_only on $current $comment: $is_read_only (want $read_only)");
+      MKDEBUG && _d("read_only on $current $comment: $is_read_only (want $read_only)");
       if ( $is_read_only != $read_only ) {
          $current = $current eq 'execute' ? 'processlist' : 'execute';
-         _d("read_only wrong $comment, getting a dbh from $current");
+         MKDEBUG && _d("read_only wrong $comment, getting a dbh from $current");
          $dbh = $dp->get_dbh(
             $dp->get_cxn_params($opts->{$current}), {AutoCommit => 1});
       }
@@ -4288,6 +4297,16 @@ unsuccessful, the callback returns false and terminates the chain.
 
 If the connection fails, mk-query-digest tries to reconnect once per second.  See
 also L<"--mirror">.
+
+=item --expectedrange
+
+type: array; default: 5,10
+
+Explain items when there are more or fewer than expected.
+
+Defines the number of items expected to be seen in the report given by
+L<"--report">, as controlled by L<"--limit"> and L<"--outliers">.  If there are
+more or fewer items in the report, each one will explain why it was included.
 
 =item --filter
 

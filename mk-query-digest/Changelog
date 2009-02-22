@@ -1,5 +1,6 @@
 Changelog for mk-query-digest:
 
+   * Added informational text to show why items are reported on (issue 282).
    * IN() lists were parsed as table names (issue 277).
    * The parser crashed on some logs from Windows servers (issue 267).
    * Added the ability to parse embedded attributes (issue 177).
