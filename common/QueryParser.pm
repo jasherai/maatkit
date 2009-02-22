@@ -25,12 +25,22 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
+our $tbl_regex = qr{
+         \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
+         \b\s*
+         # Capture the identifier and any number of comma-join identifiers that
+         # follow it, optionally with aliases with or without the AS keyword
+         ($tbl_ident
+            (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
+         )
+      }xio;
 
 sub new {
    my ( $class ) = @_;
    bless {}, $class;
 }
 
+# Returns a list of table names found in the query text.
 sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
@@ -40,27 +50,18 @@ sub get_tables {
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
    my @tables;
-   foreach my $tbls (
-      $query =~ m{
-         \b(?:\,|FROM|JOIN|UPDATE|INTO) # Words that precede table names
-         \b\s*
-         # Capture the identifier and any number of comma-join identifiers that
-         # follow it, optionally with aliases with or without the AS keyword
-         ($tbl_ident
-            (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
-         )
-      }xgio )
-   {
+   foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
       MKDEBUG && _d("match: $tbls");
       foreach my $tbl ( split(',', $tbls) ) {
          # Remove implicit or explicit (AS) alias.
-         $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gi;
+         $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
          push @tables, $tbl;
       }
    }
    return @tables;
 }
 
+# Return a list of tables/databases and the name they're aliased to.
 sub get_aliases {
    my ( $self, $query ) = @_;
    return unless $query;

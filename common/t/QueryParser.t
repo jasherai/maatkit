@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 77;
+use Test::More tests => 79;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -27,7 +27,7 @@ sub test_query {
    is_deeply(
       [$qp->get_tables($query)],
       $tables,
-      "get_tables: $msg",
+      "get_tables:  $msg",
    );
    return;
 }
@@ -396,6 +396,26 @@ test_query(
    },
    [qw(GARDEN_CLUPL GARDENJOB APLTRACT_GARDENPLANT)],
    'Gets tables from query with aliases and comma-join',
+);
+
+test_query(
+   q{SELECT count(*) AS count_all FROM `impact_actions`  LEFT OUTER JOIN }
+      . q{recommended_change_events ON (impact_actions.event_id = }
+      . q{recommended_change_events.event_id) LEFT OUTER JOIN }
+      . q{recommended_change_aments ON (impact_actions.ament_id = }
+      . q{recommended_change_aments.ament_id) WHERE (impact_actions.user_id = 71058 }
+      # An old version of the regex used to think , was the precursor to a
+      # table name, so it would pull out 7,8,9,10,11 as table names.
+      . q{AND (impact_actions.action_type IN (4,7,8,9,10,11) AND }
+      . q{(impact_actions.change_id = 2699 OR recommended_change_events.change_id = }
+      . q{2699 OR recommended_change_aments.change_id = 2699)))},
+   {
+      '`impact_actions`'          => '`impact_actions`',
+      'recommended_change_events' => 'recommended_change_events',
+      'recommended_change_aments' => 'recommended_change_aments',
+   },
+   [qw(`impact_actions` recommended_change_events recommended_change_aments)],
+   'Does not think IN() list has table names',
 );
 
 is_deeply(
