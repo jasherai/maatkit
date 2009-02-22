@@ -10,3 +10,6 @@ CREATE TABLE query_review (
   reviewed_on  DATETIME,
   comments     VARCHAR(100)
 );
+
+create table test.n(a int);
+insert into test.n(a) values(1), (2);

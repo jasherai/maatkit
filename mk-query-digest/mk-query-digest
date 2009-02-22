@@ -2489,7 +2489,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 3041
+# QueryParser package 3051
 # ###########################################################################
 package QueryParser;
 
@@ -2506,6 +2506,10 @@ our $tbl_regex = qr{
             (?: (?:\s+ (?:AS\s+)? \w+)?, \s*$tbl_ident )*
          )
       }xio;
+our $has_derived = qr{
+      \b(?:FROM|JOIN|,)
+      \s*\(\s*SELECT
+   }xi;
 
 sub new {
    my ( $class ) = @_;
@@ -2515,18 +2519,26 @@ sub new {
 sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
+   MKDEBUG && _d("getting tables for ", $query);
 
    $query =~ s/ (?:LOW_PRIORITY|IGNORE|STRAIGHT_JOIN)//ig;
 
    my @tables;
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
-      MKDEBUG && _d("match: $tbls");
+      MKDEBUG && _d("match: ", $tbls);
       foreach my $tbl ( split(',', $tbls) ) {
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
          push @tables, $tbl;
       }
    }
    return @tables;
+}
+
+sub has_derived_table {
+   my ( $self, $query ) = @_;
+   my $match = $query =~ m/$has_derived/;
+   MKDEBUG && _d("$query has " . ($match ? 'a' : 'no') . ' derived table');
+   return $match;
 }
 
 sub get_aliases {
@@ -3454,6 +3466,7 @@ my $qr = new QueryRewriter(QueryParser=>$qp);
 my $qv;     # QueryReview
 my $qv_dbh; # For QueryReview
 my $ex_dbh; # For --execute
+my $ep_dbh; # For --explain
 my $ps_dbh; # For Processlist
 my @fhs;    # File handles
 my %ea;     # EventAggregators
@@ -3507,6 +3520,11 @@ my %ea;     # EventAggregators
          $daemon->create_PID_file( $opts{pid} );
       } 
       # I'm a daemon now.
+   }
+
+   # TODO: should we get this and all other $dbh's before daemonizing?
+   if ( $opts{explain} ) {
+      $ep_dbh = $dp->get_dbh($dp->get_cxn_params($opts{explain}), {AutoCommit => 1});
    }
 
    # ##########################################################################
@@ -3859,25 +3877,24 @@ my %ea;     # EventAggregators
 
                # Print out tables for the query, and if it's a SELECT statement, print
                # out its EXPLAIN...
+               print_tables($samp_query, $sample->{db}) if $opts{forexplain};
                if ( $item =~ m/^(?:[\(\s]*select|insert|replace)/ ) {
-                  print_tables($samp_query, $sample->{db}) if $opts{forexplain};
                   if ( $item =~ m/^(?:insert|replace)/ ) { # No EXPLAIN
                      print $samp_query, "\\G\n";
                   }
                   else {
                      print "# EXPLAIN\n$samp_query\\G\n";
+                     print_explain($ep_dbh, $samp_query, $sample->{db});
                   }
                }
                else {
-                  my $converted_sample = $qr->convert_to_select($samp_query);
-                  if ( $converted_sample =~ m/^[\(\s]*select/i ) {
-                     print_tables($converted_sample, $sample->{db}) if $opts{forexplain};
-                     print "$samp_query\\G\n";
-                     print "# Converted for EXPLAIN\n# EXPLAIN\n" if $opts{forexplain};
+                  print "$samp_query\\G\n";
+                  my $converted = $qr->convert_to_select($samp_query);
+                  if ( $opts{forexplain} && $converted =~ m/^[\(\s]*select/i ) {
+                     # It converted OK to a SELECT
+                     print "# Converted for EXPLAIN\n# EXPLAIN\n";
+                     print "$converted\\G\n";
                   }
-                  # converted_sample will be the original sample if it
-                  # failed to convert. Otherwise, it will be a SELECT.
-                  print "$converted_sample\\G\n" if $opts{forexplain};
                }
             }
             else {
@@ -3895,7 +3912,7 @@ my %ea;     # EventAggregators
    }
 
    # Disconnect all open $dbh's
-   map { $dp->disconnect($_) } grep { $_ } ($qv_dbh, $ex_dbh, $ps_dbh);
+   map { $dp->disconnect($_) } grep { $_ } ($qv_dbh, $ex_dbh, $ps_dbh, $ep_dbh);
 
    exit;
 } # End global scope.
@@ -3904,12 +3921,9 @@ my %ea;     # EventAggregators
 # Subroutines.
 # ############################################################################
 
-# If no tables are printed, this may be due to a query like
-#    SELECT col FROM (SELECT col FROM tbl2) AS tbl1
-# because QueryParser ignores subquery tables.
 sub print_tables {
    my ( $query, $default_db ) = @_;
-   print "# Tables\n";
+   my @tables;
    foreach my $db_tbl ( $qp->get_tables($query) ) {
       $db_tbl =~ s/`//g;
       my ( $db, $tbl ) = split(/[.]/, $db_tbl);
@@ -3917,12 +3931,42 @@ sub print_tables {
          $tbl = $db;
          $db  = $default_db;
       }
-      print '#    SHOW TABLE STATUS',
+      push @tables, '#    SHOW TABLE STATUS',
          (defined $db && $db ? " FROM `$db`" : ''),
          " LIKE '$tbl'\\G\n";
-      print "#    SHOW CREATE TABLE ",
+      push @tables, "#    SHOW CREATE TABLE ",
          (defined $db && $db ? "`$db`." : ''),
          "`$tbl`\\G\n";
+   }
+   if ( @tables ) {
+      print "# Tables\n";
+      print @tables;
+   }
+}
+
+sub print_explain {
+   my ( $dbh, $query, $db ) = @_;
+   return unless $dbh && $query;
+   eval {
+      if ( !$qp->has_derived_table($query) ) {
+         if ( $db ) {
+            $dbh->do("USE " . $q->quote($db));
+         }
+         my $sth = $dbh->prepare("EXPLAIN $query");
+         $sth->execute();
+         my $i = 1;
+         while ( my @row = $sth->fetchrow_array() ) {
+            print "*************************** ", $i++,
+               ". row ***************************\n";
+            foreach my $j ( 0 .. $#row ) {
+               printf "%15s: %s\n", $sth->{NAME}->[$j],
+                  defined $row[$j] ? $row[$j] : 'NULL';
+            }
+         }
+      }
+   };
+   if ( MKDEBUG && $EVAL_ERROR ) {
+      _d("Problem explaining $query: $EVAL_ERROR");
    }
 }
 
@@ -4333,6 +4377,19 @@ Explain items when there are more or fewer than expected.
 Defines the number of items expected to be seen in the report given by
 L<"--report">, as controlled by L<"--limit"> and L<"--outliers">.  If there are
 more or fewer items in the report, each one will explain why it was included.
+
+=item --explain
+
+type: DSN
+
+Run EXPLAIN for the sample query with this DSN and print results.
+
+This works only when L<"--report"> includes fingerprint.  It causes
+mk-query-digest to run EXPLAIN and include the output into the report.  For
+safety, queries that appear to have a subquery that EXPLAIN will execute won't
+be EXPLAINed.  Those are typically "derived table" queries of the form
+
+  select ... from ( select .... ) der;
 
 =item --filter
 

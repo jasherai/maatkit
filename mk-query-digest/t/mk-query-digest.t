@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 46;
+use Test::More tests => 47;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -217,10 +217,18 @@ my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave1');
 SKIP: {
-   skip 'Cannot connect to sandbox master', 13 if !$dbh1;
+   skip 'Cannot connect to sandbox master', 14 if !$dbh1;
 
    $sb->create_dbs($dbh1, ['test']);
    $sb->load_file('master', 'samples/query_review.sql');
+
+   # Test --explain.  Because the file says 'use sakila' only the first one will
+   # succeed.
+   ok(
+      no_diff($run_with.'slow001.txt --explain h=127.1,P=12345',
+         'samples/slow001_explainreport.txt'),
+      'Analysis for slow001 with --explain',
+   );
 
    $output = 'foo'; # clear previous test results
    my $cmd = "${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review"; 
