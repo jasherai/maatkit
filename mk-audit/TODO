@@ -125,6 +125,20 @@ The following items are unimplemented at this time:
    * flag GROUP_CONCAT() queries for checking whether they are vulnerable to
      group_concat_max_len
 
+      # * Support percona extensions to show most active users/tables and if
+      #    they are not available, just say something about it.
+      #  * filefrag on data files?
+      #  * note if a storage engine is enabled but not in use -- but check for
+      #    permissions to see everything before warning about this, otherwise
+      #    can have false pos.
+      #  * fragmentation from SHOW TABLE STATUS (as reported by innodb free
+      #    space, depending on file-per-table; or for single-file, amount of
+      #    space used/free in ibdata1) or for myisam, Data_free field; show
+      #    worst 5 fragmented in tabular format as usual
+      #      * true fragmentation -- if our patched innodb buffer pool contents
+      #        is installed
+
+
    * watch how much data InnoDB writes to the log files per second, recommend
      log buffer size.
    * report master/slave info: how many slaves are connected, what the master is
