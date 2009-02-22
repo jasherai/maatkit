@@ -146,8 +146,6 @@ sub get_duplicate_keys {
       push @$push_to, $key; 
    }
 
-   my $good_keys;
-   my $dupe_keys;
    my @dupes;
 
    if ( $primary_key ) {
