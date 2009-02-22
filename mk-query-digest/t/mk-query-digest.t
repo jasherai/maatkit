@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 47;
+use Test::More tests => 48;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -68,6 +68,12 @@ ok(
 ok(
    no_diff($run_with.'slow002.txt', 'samples/slow002_report.txt'),
    'Analysis for slow002'
+);
+
+ok(
+   no_diff($run_with.'slow002.txt --filter \'$event->{arg} =~ m/fill/\'',
+   'samples/slow002_report_filtered.txt'),
+   'Analysis for slow002 with --filter'
 );
 
 ok(
