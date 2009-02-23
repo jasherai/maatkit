@@ -30,7 +30,7 @@ sub new {
    bless {}, $class;
 }
 
-my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
+my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
 my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
 # These can appear in the log file when it's opened -- for example, when someone
 # runs FLUSH LOGS or the server starts.
@@ -66,9 +66,6 @@ my $slow_log_hd_line = qr{
 # NOTE: If you change anything inside this subroutine, you need to profile
 # the result.  Sometimes a line of code has been changed from an alternate
 # form for performance reasons -- sometimes as much as 20x better performance.
-#
-# TODO: pass in hooks to let something filter out events as early as possible
-# without parsing more of them than needed.
 sub parse_event {
    my ( $self, $fh, $misc, @callbacks ) = @_;
    my $num_events = 0;
@@ -130,10 +127,12 @@ sub parse_event {
          # something printed out by sql/log.cc.
          if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
 
-            # Maybe it's the beginning of the slow query log event.
-            if ( !$got_ts
-               && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
-            ) {
+            # Maybe it's the beginning of the slow query log event.  XXX
+            # something to know: Perl profiling reports this line as the hot
+            # spot for any of the conditions in the whole if/elsif/elsif
+            # construct.  So if this line looks "hot" then profile each
+            # condition separately.
+            if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
                push @properties, 'ts', $time;
                ++$got_ts;
                # The User@Host might be concatenated onto the end of the Time.
@@ -167,10 +166,14 @@ sub parse_event {
             # such as that... they typically look like this:
             # # Query_time: 2  Lock_time: 0  Rows_sent: 1  Rows_examined: 0
             # If issue 234 bites us, we may see something like
-            # Query_time: 18446744073708.796870.000036 so we match only up to
-            # the second decimal place for numbers.
-            elsif ( my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+)/g ) {
-               push @properties, @temp;
+            # Query_time: 18446744073708.796870.000036 so we trim after the
+            # second decimal place for numbers.
+            elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
+               my (undef, @temp) = split(/:?\s+/, $line);
+               push @properties, map { s/(\.[0-9]+)\.[0-9]+$/$1/; $_ } @temp;
+               if ( @temp % 2 ) {
+                  push @properties, q{}; # Some empty property was found.
+               }
             }
 
             # Include the current default database given by 'use <db>;'  Again

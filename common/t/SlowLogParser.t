@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 42;
+use Test::More tests => 44;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Quotekeys = 0;
@@ -1166,6 +1166,28 @@ run_test({
          user           => '[SQL_SLAVE]',
          bytes         => 23,
       },
+   ],
+});
+
+# samples/slow025.txt has an empty Schema.
+run_test({
+   file => 'samples/slow025.txt',
+   result => [
+      {  Lock_time     => '0.000066',
+         Query_time    => '17.737502',
+         Rows_examined => '0',
+         Rows_sent     => '0',
+         Schema        => '',
+         Thread_id     => '12342',
+         arg           => 'SELECT missing_a_schema_above from crash_me',
+         bytes         => 43,
+         cmd           => 'Query',
+         host          => '',
+         ip            => '10.1.12.30',
+         pos_in_log    => '0',
+         ts            => '081126 13:08:25',
+         user          => 'root'
+      }
    ],
 });
 
