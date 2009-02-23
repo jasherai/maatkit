@@ -22,6 +22,7 @@ package SlowLogParser;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -121,6 +122,7 @@ sub parse_event {
       while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
          $pos     = pos($stmt);  # Be careful not to mess this up!
          my $line = $1;          # Necessary for /g and pos() to work.
+         MKDEBUG && _d($line);
 
          # Handle meta-data lines.  These are case-sensitive.  If they appear in
          # the log with a different case, they are from a user query, not from
@@ -169,11 +171,10 @@ sub parse_event {
             # Query_time: 18446744073708.796870.000036 so we trim after the
             # second decimal place for numbers.
             elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
-               my (undef, @temp) = split(/:?\s+/, $line);
-               push @properties, map { s/(\.[0-9]+)\.[0-9]+$/$1/; $_ } @temp;
-               if ( @temp % 2 ) {
-                  push @properties, q{}; # Some empty property was found.
-               }
+               # I tried using split, but coping with the above bug makes it
+               # slower than a complex regex match.
+               my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
+               push @properties, @temp;
             }
 
             # Include the current default database given by 'use <db>;'  Again
@@ -238,6 +239,7 @@ sub parse_event {
          }
       }
 
+      MKDEBUG && _d("Properties of event: ", Dumper(\@properties));
       my $event = { @properties };
       foreach my $callback ( @callbacks ) {
          last unless $event = $callback->($event);
