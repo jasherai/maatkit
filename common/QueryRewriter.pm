@@ -101,28 +101,23 @@ sub fingerprint {
    $query =~ s/\\["']//g;                # quoted strings
    $query =~ s/".*?"/?/sg;               # quoted strings
    $query =~ s/'.*?'/?/sg;               # quoted strings
-
    # This regex is extremely broad in its definition of what looks like a
    # number.  That is for speed.
-   $query =~ s{                          # Anything vaguely resembling numbers
-      (?<=[^0-9+-])
-      [0-9+-].*?
-      (?=[^0-9a-f.xb+-]|\Z)
-      }{?}gx;
+   $query =~ s/[\d+-][\da-f.xb+-]*/?/gi; # Anything resembling numbers
    $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
    $query =~ s/\A\s+//;                  # Chop off leading whitespace
    chomp $query;                         # Kill trailing whitespace
    $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
    $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
-   $query =~ s{
+   $query =~ s{                          # Collapse IN and VALUES lists
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
-              {$1(?+)}gx;      # Collapse IN() and VALUES() lists
-   $query =~ s{
+              {$1(?+)}gx;
+   $query =~ s{                          # Collapse UNION
                \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
               }
-              {$1 /*repeat$2*/}xg; # UNION
+              {$1 /*repeat$2*/}xg;
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
    # The following are disabled because of speed issues.  Should we try to
    # normalize whitespace between and around operators?  My gut feeling is no.
