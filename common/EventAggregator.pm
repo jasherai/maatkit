@@ -92,15 +92,25 @@ sub new {
    }, $class;
 }
 
-# Aggregate an event hashref's properties.
+# Aggregate an event hashref's properties.  Code is built on the fly to do this,
+# based on the values being passed in.  After code is built for every attribute
+# (or 50 events are seen and we decide to give up) the little bits of code get
+# unrolled into a whole subroutine to handle events.  For that reason, you can't
+# re-use an instance.
 sub aggregate {
    my ( $self, $event ) = @_;
 
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
 
+   # There might be a specially built sub that handles the work.
+   if ( exists $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($self, $event, $group_by);
+   }
+
+   my @attrs = sort keys %{$self->{attributes}};
    ATTRIB:
-   foreach my $attrib ( keys %{$self->{attributes}} ) {
+   foreach my $attrib ( @attrs ) {
       # The value of the attribute ( $group_by ) may be an arrayref.
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
@@ -119,6 +129,52 @@ sub aggregate {
          next GROUPBY unless $handler;
          $handler->($event, $class_attrib, $global_attrib);
       }
+   }
+
+   # Figure out whether we are ready to generate a faster version.
+   if ( $self->{n_queries}++ > 50 # Give up waiting after 50 events.
+      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
+   ) {
+      # All attributes have handlers, so let's combine them into one faster sub.
+      # Start by getting direct handles to the location of each data store and
+      # thing that would otherwise be looked up via hash keys.
+      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
+      my @handl = @{$self->{handlers}}{@attrs};
+      my @globs = @{$self->{result_globals}}{@attrs}; # Global stats for each
+
+      # Now the tricky part -- must make sure only the desired variables from
+      # the outer scope are re-used, and any variables that should have their
+      # own scope are declared within the subroutine.
+      my @lines = (
+         'my ( $self, $event, $group_by ) = @_;',
+         'my ($val, $class, $global, $idx);',
+         (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
+         # Create and get an array of hashrefs for each attribute's storage
+         'my $temp = $self->{result_class}->{ $group_by }
+            ||= { map { $_ => { } } @attrs };',
+         'my @st_fc = @{$temp}{@attrs};', # Stats for class
+      );
+      foreach my $i ( 0 .. $#attrs ) {
+         # Access through array indexes, it's faster than hash lookups
+         push @lines, (
+            '$class  = $st_fc[' . $i . '];',
+            '$global = $globs[' . $i . '];',
+            $self->{unrolled_for}->{$attrs[$i]},
+         );
+      }
+      if ( ref $group_by ) {
+         push @lines, '}'; # Close the loop opened above
+      }
+      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+      unshift @lines, 'sub {';
+      push @lines, '}';
+
+      # Make the subroutine
+      my $code = join("\n", @lines);
+      MKDEBUG && _d("Unrolled subroutine: ", @lines);
+      my $sub = eval $code;
+      die if $EVAL_ERROR;
+      $self->{unrolled_loops} = $sub;
    }
 }
 
@@ -237,7 +293,7 @@ sub make_handler {
       if ( $args{all} ) {
          push @tmp, (
             # If you change this code, change the similar code in bucketize.
-            'PLACE->{all} ||= [ @buckets ];',
+            'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
             '$idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
             '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
          );
@@ -273,10 +329,12 @@ sub make_handler {
    # Save the code for later, as part of an "unrolled" subroutine.
    my @unrolled = (
       "\$val = \$event->{'$attrib'};",
+      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
       'defined $val && do {',
       ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
       '};',
+      ($is_array ? ('}') : ()),
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
 
