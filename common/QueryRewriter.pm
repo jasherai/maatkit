@@ -78,7 +78,7 @@ sub fingerprint {
    $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
       && return 'mysqldump';
    # Matches queries like REPLACE /*foo.bar:3/3*/ INTO checksum.checksum
-   $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
+   $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
    # Administrator commands appear to be a comment, so return them as-is
    $query =~ m/\A# administrator command: /
@@ -103,7 +103,7 @@ sub fingerprint {
    $query =~ s/'.*?'/?/sg;               # quoted strings
    # This regex is extremely broad in its definition of what looks like a
    # number.  That is for speed.
-   $query =~ s/[\d+-][\da-f.xb+-]*/?/gi; # Anything resembling numbers
+   $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
    $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
    $query =~ s/\A\s+//;                  # Chop off leading whitespace
    chomp $query;                         # Kill trailing whitespace
@@ -155,7 +155,7 @@ sub distill {
    # "Fingerprint" the tables.
    my @tables = map {
       $_ =~ s/`//g;
-      $_ =~ s/(_?)\d+/$1?/g;
+      $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
    } $qp->get_tables($query);
 
@@ -177,7 +177,7 @@ sub convert_to_select {
                  update\s+(.*?)
                  \s+set\b(.*?)
                  (?:\s*where\b(.*?))?
-                 (limit\s*\d+(?:\s*,\s*\d+)?)?
+                 (limit\s*[0-9]+(?:\s*,\s*[0-9]+)?)?
                  \Z
               }
               {__update_to_select($1, $2, $3, $4)}exsi
