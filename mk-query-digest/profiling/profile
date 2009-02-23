@@ -4,8 +4,17 @@ REV=`grep 'SVN_REV.*Revision' ../mk-query-digest  | awk '{print $6}'`;
 /usr/bin/time perl -d:FastProf ../mk-query-digest barontest.log > /dev/null 2>times
 echo "" >> results.txt
 echo "Revision $REV" >> results.txt
+echo "" >> eval-results.txt
+echo "Revision $REV" >> eval-results.txt
 cat times >> results.txt
-fprofpp -t 30 | grep -v '^#' | nl >> results.txt
+fprofpp > all-results.txt;
+cat all-results.txt | grep -v '^#' | head -n 30 | nl >> results.txt
+grep 'inside eval' all-results.txt \
+   | perl -ne 'm/\S+ (\S+) (\d+): .at line (\d+) inside eval. (.*)/;
+      $cost{"$3 $4"} += $1; $cnt{"$3 $4"} += $2;
+      END { map { printf "%8.5f %5d %s\n", $cost{$_}, $cnt{$_}, $_}
+         reverse sort { $cost{$a} <=> $cost{$b} } keys %cost }' \
+   | head -n 30 | nl >> eval-results.txt
 if svn st ../mk-query-digest | grep -q '^M'; then
    echo "Not committing"
 else

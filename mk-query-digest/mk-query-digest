@@ -1107,7 +1107,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 3007
+# QueryRewriter package 3060
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1153,7 +1153,7 @@ sub fingerprint {
 
    $query =~ m#\ASELECT /\*!40001 SQL_NO_CACHE \*/ \* FROM `# # mysqldump query
       && return 'mysqldump';
-   $query =~ m#/\*\w+\.\w+:\d/\d\*/#     # mk-table-checksum, etc query
+   $query =~ m#/\*\w+\.\w+:[0-9]/[0-9]\*/#     # mk-table-checksum, etc query
       && return 'maatkit';
    $query =~ m/\A# administrator command: /
       && return $query;
@@ -1171,26 +1171,21 @@ sub fingerprint {
    $query =~ s/\\["']//g;                # quoted strings
    $query =~ s/".*?"/?/sg;               # quoted strings
    $query =~ s/'.*?'/?/sg;               # quoted strings
-
-   $query =~ s{                          # Anything vaguely resembling numbers
-      (?<=[^0-9+-])
-      [0-9+-].*?
-      (?=[^0-9a-f.xb+-]|\Z)
-      }{?}gx;
+   $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
    $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
    $query =~ s/\A\s+//;                  # Chop off leading whitespace
    chomp $query;                         # Kill trailing whitespace
    $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
    $query = lc $query;
    $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
-   $query =~ s{
+   $query =~ s{                          # Collapse IN and VALUES lists
                \b(in|values?)(?:[\s,]*\([\s?,]*\))+
               }
-              {$1(?+)}gx;      # Collapse IN() and VALUES() lists
-   $query =~ s{
+              {$1(?+)}gx;
+   $query =~ s{                          # Collapse UNION
                \b(select\s.*?)(?:(\sunion(?:\sall)?)\s\1)+
               }
-              {$1 /*repeat$2*/}xg; # UNION
+              {$1 /*repeat$2*/}xg;
    $query =~ s/\blimit \?(?:, ?\?| offset \?)?/limit ?/; # LIMIT
    return $query;
 }
@@ -1217,7 +1212,7 @@ sub distill {
 
    my @tables = map {
       $_ =~ s/`//g;
-      $_ =~ s/(_?)\d+/$1?/g;
+      $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
    } $qp->get_tables($query);
 
@@ -1238,7 +1233,7 @@ sub convert_to_select {
                  update\s+(.*?)
                  \s+set\b(.*?)
                  (?:\s*where\b(.*?))?
-                 (limit\s*\d+(?:\s*,\s*\d+)?)?
+                 (limit\s*[0-9]+(?:\s*,\s*[0-9]+)?)?
                  \Z
               }
               {__update_to_select($1, $2, $3, $4)}exsi
@@ -1473,13 +1468,14 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 3048
+# SlowLogParser package 3062
 # ###########################################################################
 package SlowLogParser;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -1488,7 +1484,7 @@ sub new {
    bless {}, $class;
 }
 
-my $slow_log_ts_line = qr/^# Time: (\d{6}\s+\d{1,2}:\d\d:\d\d)/;
+my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
 my $slow_log_uh_line = qr/# User\@Host: ([^\[]+|\[[^[]+\]).*?@ (\S*) \[(.*)\]/;
 my $slow_log_hd_line = qr{
       ^(?:
@@ -1535,12 +1531,11 @@ sub parse_event {
       while ( $stmt =~ m/^(.*)$/mg ) { # /g is important, requires scalar match.
          $pos     = pos($stmt);  # Be careful not to mess this up!
          my $line = $1;          # Necessary for /g and pos() to work.
+         MKDEBUG && _d($line);
 
          if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
 
-            if ( !$got_ts
-               && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)
-            ) {
+            if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
                push @properties, 'ts', $time;
                ++$got_ts;
                if ( !$got_uh
@@ -1565,7 +1560,8 @@ sub parse_event {
                ++$got_ac;
             }
 
-            elsif ( my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+)/g ) {
+            elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
+               my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
                push @properties, @temp;
             }
 
@@ -1604,6 +1600,7 @@ sub parse_event {
          }
       }
 
+      MKDEBUG && _d("Properties of event: ", Dumper(\@properties));
       my $event = { @properties };
       foreach my $callback ( @callbacks ) {
          last unless $event = $callback->($event);
@@ -1629,7 +1626,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3044
+# EventAggregator package 3058
 # ###########################################################################
 
 
@@ -1682,8 +1679,13 @@ sub aggregate {
    my $group_by = $event->{$self->{groupby}};
    return unless defined $group_by;
 
+   if ( exists $self->{unrolled_loops} ) {
+      return $self->{unrolled_loops}->($self, $event, $group_by);
+   }
+
+   my @attrs = sort keys %{$self->{attributes}};
    ATTRIB:
-   foreach my $attrib ( keys %{$self->{attributes}} ) {
+   foreach my $attrib ( @attrs ) {
       GROUPBY:
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
          my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
@@ -1701,6 +1703,42 @@ sub aggregate {
          next GROUPBY unless $handler;
          $handler->($event, $class_attrib, $global_attrib);
       }
+   }
+
+   if ( $self->{n_queries}++ > 50 # Give up waiting after 50 events.
+      || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
+   ) {
+      my @attrs = grep { $self->{handlers}->{$_} } @attrs;
+      my @handl = @{$self->{handlers}}{@attrs};
+      my @globs = @{$self->{result_globals}}{@attrs}; # Global stats for each
+
+      my @lines = (
+         'my ( $self, $event, $group_by ) = @_;',
+         'my ($val, $class, $global, $idx);',
+         (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
+         'my $temp = $self->{result_class}->{ $group_by }
+            ||= { map { $_ => { } } @attrs };',
+         'my @st_fc = @{$temp}{@attrs};', # Stats for class
+      );
+      foreach my $i ( 0 .. $#attrs ) {
+         push @lines, (
+            '$class  = $st_fc[' . $i . '];',
+            '$global = $globs[' . $i . '];',
+            $self->{unrolled_for}->{$attrs[$i]},
+         );
+      }
+      if ( ref $group_by ) {
+         push @lines, '}'; # Close the loop opened above
+      }
+      @lines = map { s/^/   /gm; $_ } @lines; # Indent for debugging
+      unshift @lines, 'sub {';
+      push @lines, '}';
+
+      my $code = join("\n", @lines);
+      MKDEBUG && _d("Unrolled subroutine: ", @lines);
+      my $sub = eval $code;
+      die if $EVAL_ERROR;
+      $self->{unrolled_loops} = $sub;
    }
 }
 
@@ -1778,7 +1816,7 @@ sub make_handler {
       }
       if ( $args{all} ) {
          push @tmp, (
-            'PLACE->{all} ||= [ @buckets ];',
+            'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
             '$idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
             '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
          );
@@ -1810,10 +1848,12 @@ sub make_handler {
 
    my @unrolled = (
       "\$val = \$event->{'$attrib'};",
+      ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
       'defined $val && do {',
       ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
       '};',
+      ($is_array ? ('}') : ()),
    );
    $self->{unrolled_for}->{$attrib} = join("\n", @unrolled);
 
@@ -3714,12 +3754,15 @@ my %ea;     # EventAggregators
          [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
       };
       while ($oktorun) {
-         $ps->parse_event(
-            $get_processlist_sub,
-            $misc,
-            @callbacks,
-         );
-         Time::HiRes::usleep($opts{i} * 1_000_000);
+         eval {
+            $ps->parse_event(
+               $get_processlist_sub,
+               $misc,
+               @callbacks,
+            );
+            Time::HiRes::usleep($opts{i} * 1_000_000);
+         };
+         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
       }
    }
    else { # Parse log files
@@ -3745,7 +3788,14 @@ my %ea;     # EventAggregators
       # TODO: carry the last db and ts values forward if they're undefined
       # now.  Do that by unshifting a new callback onto the front of @callbacks.
       while ( $oktorun && (my $fh = shift(@fhs)) ) {
-         1 while ( $oktorun && $lp->parse_event($fh, $misc, @callbacks) );
+         while ( $oktorun ) {
+            my $events = 0;
+            eval {
+               $events = $lp->parse_event($fh, $misc, @callbacks);
+            };
+            MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
+            last unless $events;
+         }
          close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
       }
    }
@@ -4221,6 +4271,11 @@ order given by L<"--orderby">.  You will normally see a commented C<# EXPLAIN>
 line just before it, so you can copy-paste the query to examine its EXPLAIN
 plan. But for non-SELECT queries that isn't possible to do, so the tool tries to
 transform the query into a roughly equivalent SELECT query, and adds that below.
+
+If you want to find this sample event in the log, use the offset mentioned
+above, and something like the following:
+
+  tail -c +<offset> /path/to/file | head
 
 =head1 QUERY REVIEWS
 
