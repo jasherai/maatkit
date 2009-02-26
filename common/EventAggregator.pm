@@ -329,7 +329,8 @@ sub make_handler {
    my @unrolled = (
       "\$val = \$event->{'$attrib'};",
       ($is_array ? ('foreach my $val ( @$val ) {') : ()),
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+         grep { $_ ne $attrib } @{$args{alt}}),
       'defined $val && do {',
       ( map { s/^/   /gm; $_ } (@limit, @lines) ), # Indent for debugging
       '};',
@@ -342,7 +343,9 @@ sub make_handler {
       'sub {',
       'my ( $event, $class, $global ) = @_;',
       'my ($val, $idx);', # NOTE: define all variables here
-      (map { "\$val = \$event->{'$_'} unless defined \$val;" } @{$args{alt}}),
+      "\$val = \$event->{'$attrib'};",
+      (map { "\$val = \$event->{'$_'} unless defined \$val;" }
+         grep { $_ ne $attrib } @{$args{alt}}),
       'return unless defined $val;',
       ($is_array ? ('foreach my $val ( @$val ) {') : ()),
       @limit,
