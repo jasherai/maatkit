@@ -3,14 +3,18 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 26;
+use Test::More tests => 27;
 use English qw(-no_match_vars);
 
 require "../DuplicateKeyFinder.pm";
 require "../Quoter.pm";
+require "../TableParser.pm";
+use Data::Dumper;
+$Data::Dumper::Indent=1;
 
 my $dk = new DuplicateKeyFinder();
 my $q  = new Quoter();
+my $tp = new TableParser();
 
 sub load_file {
    my ($file) = @_;
@@ -34,7 +38,7 @@ isa_ok($dk, 'DuplicateKeyFinder');
 $ddl   = load_file('samples/one_key.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -46,7 +50,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_key.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -65,7 +69,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_key_reversed.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -87,7 +91,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_keys_thrice.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -95,25 +99,25 @@ is_deeply(
       {
          'key'          => 'a',
          'cols'         => '`a`',
-         'duplicate_of' => 'a_2',
-         'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'a (`a`) is a left-prefix of a_2 (`a`,`b`)',
-      },
-      {
-         'key'          => 'a_2',
-         'cols'         => '`a`,`b`',
          'duplicate_of' => 'a_3',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'a_2 (`a`,`b`) is a duplicate of a_3 (`a`,`b`)',
+         'reason'       => 'a (`a`) is a left-prefix of a_3 (`a`,`b`)',
+      },
+      {
+         'key'          => 'a_3',
+         'cols'         => '`a`,`b`',
+         'duplicate_of' => 'a_2',
+         'duplicate_of_cols' => '`a`,`b`',
+         'reason'       => 'a_3 (`a`,`b`) is a duplicate of a_2 (`a`,`b`)',
       }
    ],
-   'Dupe keys only output once'
+   'Dupe keys only output once (may fail due to different sort order)'
 );
 
 $ddl   = load_file('samples/nondupe_fulltext.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -123,7 +127,7 @@ is_deeply(
 $dupes = [];
 $dk->get_duplicate_keys(
    ignore_type => 1,
-   keys        => $dk->get_keys($ddl, $opt),
+   keys        => $tp->get_keys($ddl, $opt),
    callback    => $callback);
 is_deeply(
    $dupes,
@@ -142,7 +146,7 @@ is_deeply(
 $ddl   = load_file('samples/nondupe_fulltext_not_exact.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -153,17 +157,17 @@ is_deeply(
 $ddl   = load_file('samples/dupe_fulltext_exact.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
    [
       {
-         'key'          => 'ft_idx_a_b_1',
+         'key'          => 'ft_idx_a_b_2',
          'cols'         => '`a`,`b`',
-         'duplicate_of' => 'ft_idx_a_b_2',
+         'duplicate_of' => 'ft_idx_a_b_1',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'ft_idx_a_b_1 (`a`,`b`) is a duplicate of ft_idx_a_b_2 (`a`,`b`)',
+         'reason'       => 'ft_idx_a_b_2 (`a`,`b`) is a duplicate of ft_idx_a_b_1 (`a`,`b`)',
       }
    ],
    'Dupe exact fulltext keys (issue 10)'
@@ -172,7 +176,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_fulltext_reverse_order.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -191,7 +195,7 @@ is_deeply(
 $ddl   = load_file('samples/dupe_key_unordered.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -201,7 +205,7 @@ is_deeply(
 $dupes = [];
 $dk->get_duplicate_keys(
    ignore_order => 1,
-   keys         => $dk->get_keys($ddl, $opt),
+   keys         => $tp->get_keys($ddl, $opt),
    callback     => $callback);
 is_deeply(
    $dupes,
@@ -223,7 +227,7 @@ is_deeply(
 $ddl   = load_file('samples/innodb_dupe.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 
 is_deeply(
@@ -235,7 +239,7 @@ $dupes = [];
 $dk->get_duplicate_keys(
    clustered => 1,
    engine    => 'InnoDB',
-   keys      => $dk->get_keys($ddl, $opt),
+   keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
    $dupes,
@@ -256,7 +260,7 @@ $dupes = [];
 $dk->get_duplicate_keys(
    clustered => 1,
    engine    => 'MyISAM',
-   keys      => $dk->get_keys($ddl, $opt),
+   keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
    $dupes,
@@ -271,7 +275,7 @@ $dupes = [];
 $dk->get_duplicate_keys(
    clustered => 1,
    engine    => 'InnoDB',
-   keys      => $dk->get_keys($ddl, $opt),
+   keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
    $dupes,
@@ -285,18 +289,18 @@ is_deeply(
 $ddl   = load_file('samples/dupe_fk_one.sql');
 $dupes = [];
 $dk->get_duplicate_fks(
-   keys     => $dk->get_fks($ddl, {database => 'test'}),
+   keys     => $tp->get_fks($ddl, {database => 'test'}),
    callback => $callback);
 is_deeply(
    $dupes,
    [
       {
-         'key'          => 't1_ibfk_2',
-         'cols'         => '`b`, `a`',
-         'duplicate_of' => 't1_ibfk_1',
-         'duplicate_of_cols' => '`a`, `b`',
-         'reason'       => 'FOREIGN KEY t1_ibfk_2 (`b`, `a`) REFERENCES `test`.`t2` (`b`, `a`) is a duplicate of FOREIGN KEY t1_ibfk_1 (`a`, `b`) REFERENCES `test`.`t2` (`a`, `b`)',
-      },
+         'key'               => 't1_ibfk_1',
+         'cols'              => '`a`, `b`',
+         'duplicate_of'      => 't1_ibfk_2',
+         'duplicate_of_cols' => '`b`, `a`',
+         'reason'            => 'FOREIGN KEY t1_ibfk_1 (`a`, `b`) REFERENCES `test`.`t2` (`a`, `b`) is a duplicate of FOREIGN KEY t1_ibfk_2 (`b`, `a`) REFERENCES `test`.`t2` (`b`, `a`)',
+      }
    ],
    'Two duplicate foreign keys'
 );
@@ -304,7 +308,7 @@ is_deeply(
 $ddl   = load_file('samples/sakila_film.sql');
 $dupes = [];
 $dk->get_duplicate_fks(
-   keys     => $dk->get_fks($ddl, {database => 'sakila'}),
+   keys     => $tp->get_fks($ddl, {database => 'sakila'}),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -319,7 +323,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-1.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -330,7 +334,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-2.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -341,7 +345,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-3.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -360,7 +364,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-4.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -379,27 +383,20 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-5.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
-   [
-      {
-         'key'          => 'j',
-         'cols'         => '`a`',
-         'duplicate_of' => 'i',
-         'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'j (`a`) is a left-prefix of i (`a`,`b`)',
-      }
-   ],
-   'Two unique keys with common prefix are dupes (issue 9)'
+   [],
+   'Two unique keys with common prefix are not dupes'
 );
 
+is($dk->{keys}->{i}->{constraining_col}, 'a', 'Found redundantly unique key');
 
 $ddl   = load_file('samples/issue_9-7.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -418,7 +415,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_9-6.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,
@@ -468,7 +465,7 @@ is_deeply(
 $ddl   = load_file('samples/issue_269-1.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
-   keys     => $dk->get_keys($ddl, $opt),
+   keys     => $tp->get_keys($ddl, $opt),
    callback => $callback);
 is_deeply(
    $dupes,

@@ -98,7 +98,7 @@ sub parse {
    # TODO: passing is_nullable this way is just a quick hack. Ultimately,
    # we probably should decompose this sub further, taking out the block
    # above that parses col props like nullability, auto_inc, type, etc.
-   my %keys = $self->get_keys($ddl, $opts, \%is_nullable);
+   my $keys = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
       cols           => \@cols,
@@ -107,7 +107,7 @@ sub parse {
       null_cols      => \@null,
       is_nullable    => \%is_nullable,
       is_autoinc     => \%is_autoinc,
-      keys           => \%keys,
+      keys           => $keys,
       defs           => \%def_for,
       numeric_cols   => \@nums,
       is_numeric     => \%is_numeric,
@@ -195,6 +195,8 @@ sub find_possible_keys {
    }
 }
 
+# TODO: this should go in a new module with subs that test for
+# live conditions.
 sub table_exists {
    my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
    my $db_tbl = $q->quote($db, $tbl);
@@ -214,11 +216,10 @@ sub get_engine {
    return $engine || undef;
 }
 
-
 # $ddl is a SHOW CREATE TABLE returned from MySQLDumper::get_create_table().
 # The general format of a key is
 # [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
-# Returns a hash of keys and their properties:
+# Returns a hashref of keys and their properties:
 #    key => {
 #       type         => BTREE, FULLTEXT or  SPATIAL
 #       name         => column name, like: "foo_key"
@@ -230,14 +231,17 @@ sub get_engine {
 #       is_col       => hashref with key for each col=>1
 #   },
 #   key => ...
+# Foreign keys are ignored; use get_fks() instead.
 sub get_keys {
    my ( $self, $ddl, $opts, $is_nullable ) = @_;
-   my %keys;
+   my $engine = $self->get_engine($ddl);
+   my $keys   = {};
 
    KEY:
    foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
 
-      next KEY if $opts->{nofks} && $key =~ m/FOREIGN/;
+      # If you want foreign keys, use get_fks() below.
+      next KEY if $key =~ m/FOREIGN/;
 
       MKDEBUG && _d("Parsed key: $key");
 
@@ -245,7 +249,6 @@ sub get_keys {
       # will report its index as USING HASH even when this is not supported.
       # The true type should be BTREE.  See
       # http://bugs.mysql.com/bug.php?id=22632
-      my $engine = $self->get_engine($ddl);
       if ( $engine !~ m/MEMORY|HEAP/ ) {
          $key =~ s/USING HASH/USING BTREE/;
       }
@@ -275,7 +278,7 @@ sub get_keys {
 
       MKDEBUG && _d("Key $name cols: " . join(', ', @cols));
 
-      $keys{$name} = {
+      $keys->{$name} = {
          name         => $name,
          type         => $type,
          colnames     => $cols,
@@ -287,7 +290,35 @@ sub get_keys {
       };
    }
 
-   return %keys;
+   return $keys;
+}
+
+# Like get_keys() above but only returns a hash of foreign keys.
+sub get_fks {
+   my ( $self, $ddl, $opts ) = @_;
+   my $fks = {};
+
+   foreach my $fk (
+      $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg )
+   {
+      my ( $name )   = $fk =~ m/CONSTRAINT `(.*?)`/;
+      my ( $fkcols ) = $fk =~ m/\(([^\)]+)\)/;
+      my ( $cols )   = $fk =~ m/REFERENCES.*?\(([^\)]+)\)/;
+      my ( $parent ) = $fk =~ m/REFERENCES (\S+) /;
+
+      if ( $parent !~ m/\./ && $opts->{database} ) {
+         $parent = "`$opts->{database}`.$parent";
+      }
+
+      $fks->{$name} = {
+         name   => $name,
+         parent => $parent,
+         cols   => $cols,
+         fkcols => $fkcols,
+      };
+   }
+
+   return $fks;
 }
 
 sub _d {

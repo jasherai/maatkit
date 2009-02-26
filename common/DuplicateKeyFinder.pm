@@ -29,95 +29,35 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 sub new {
    my ( $class ) = @_;
-   return bless {}, $class;
+   my $self = {
+      # These are used in case you want to look back and see more
+      # details about what happened inside get_duplicate_keys().
+      keys        => undef,  # copy of last keys that we worked on
+      unique_cols => undef,  # unique cols for those last keys (hasref)
+      unique_sets => undef,  # unique sets for those last keys (arrayref) 
+   };
+   return bless $self, $class;
 }
 
-# $ddl is a SHOW CREATE TABLE returned from MySQLDumper::get_create_table().
-# The general format of a key is
-# [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
-sub get_keys {
-   my ( $self, $ddl, $opts ) = @_;
-
-   # Find and filter the indexes.
-   my @indexes =
-      grep { $_ !~ m/FOREIGN/ }
-      $ddl =~ m/((?:\w+ )?KEY .+\))/mg;
-
-   # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
-   # will report its index as USING HASH even when this is not supported.  The
-   # true type should be BTREE.  See http://bugs.mysql.com/bug.php?id=22632
-   my $engine = $self->get_engine($ddl);
-   if ( $engine !~ m/MEMORY|HEAP/ ) {
-      @indexes = map { $_ =~ s/USING HASH/USING BTREE/; $_; } @indexes;
-   }
-
-   my @keys = map {
-      my ( $unique, $struct, $cols )
-         = $_ =~ m/(?:(\w+) )?KEY.+(?:USING (\w+))? \((.+)\)/;
-      my ( $special ) = $_ =~ m/(FULLTEXT|SPATIAL)/;
-      $struct = $struct || $special || 'BTREE';
-      my ( $name ) = $_ =~ m/KEY `(.*?)` \(/;
-
-      # MySQL pre-4.1 supports only HASH indexes.
-      if ( $opts->{version} lt '004001000' && $engine =~ m/HEAP|MEMORY/i ) {
-         $struct = 'HASH';
-      }
-
-      {
-         struct   => $struct,
-         cols     => $cols,
-         is_col   => {
-                        map {
-                           my ($col) = $_ =~ m/^`(\w+)\b/;
-                           $col => 1;
-                        } split(',', $cols)
-                     },
-         name     => $name || 'PRIMARY',
-         unique   => $unique && $unique =~ m/(UNIQUE|PRIMARY)/ ? 1 : 0,
-      }
-   } @indexes;
-
-   return \@keys;
-}
-
-sub get_fks {
-   my ( $self, $ddl, $opts ) = @_;
-
-   my @fks = $ddl =~ m/CONSTRAINT .* FOREIGN KEY .* REFERENCES [^\)]*\)/mg;
-
-   my @result = map {
-      my ( $name ) = $_ =~ m/CONSTRAINT `(.*?)`/;
-      my ( $fkcols ) = $_ =~ m/\(([^\)]+)\)/;
-      my ( $cols )   = $_ =~ m/REFERENCES.*?\(([^\)]+)\)/;
-      my ( $parent ) = $_ =~ m/REFERENCES (\S+) /;
-      if ( $parent !~ m/\./ && $opts->{database} ) {
-         $parent = "`$opts->{database}`.$parent";
-      }
-
-      {
-         name   => $name,
-         parent => $parent,
-         cols   => $cols,
-         fkcols => $fkcols,
-      };
-   } @fks;
-   return \@result;
-}
-
+# Requires $args{key} which should be a hashref returned from
+# TableParser::get_keys().
+# Returns an arrayref of hashrefs for each duplicate key.
 sub get_duplicate_keys {
    my ( $self, %args ) = @_;
    die "I need a keys argument" unless $args{keys};
+   my %all_keys  = %{$args{keys}}; # copy keys because we change stuff
+   $self->{keys} = \%all_keys;
    my $primary_key;
    my @unique_keys;
-   my @keys;
+   my @normal_keys;
    my @fulltext_keys;
    my %pass_args = %args;
    delete $pass_args{keys};
 
    ALL_KEYS:
-   foreach my $key ( @{$args{keys}} ) {
-      $key->{real_cols} = $key->{cols}; 
-      $key->{len_cols}  = length $key->{cols};
+   foreach my $key ( values %all_keys ) {
+      $key->{real_cols} = $key->{colnames}; 
+      $key->{len_cols}  = length $key->{colnames};
 
       # The PRIMARY KEY is treated specially. It is effectively never a
       # duplicate, so it is never removed. It is compared to all other
@@ -128,21 +68,21 @@ sub get_duplicate_keys {
          next ALL_KEYS;
       }
 
-      my $is_fulltext = $key->{struct} eq 'FULLTEXT' ? 1 : 0;
+      my $is_fulltext = $key->{type} eq 'FULLTEXT' ? 1 : 0;
 
       # Key column order matters for all keys except FULLTEXT, so we only
       # sort if --ignoreorder or FULLTEXT. 
       if ( $args{ignore_order} || $is_fulltext  ) {
-         my $ordered_cols = join(',', sort(split(/,/, $key->{cols})));
+         my $ordered_cols = join(',', sort(split(/,/, $key->{colnames})));
          MKDEBUG && _d("Reordered $key->{name} cols "
-            . "from ($key->{cols}) to ($ordered_cols)"); 
-         $key->{cols} = $ordered_cols;
+            . "from ($key->{colnames}) to ($ordered_cols)"); 
+         $key->{colnames} = $ordered_cols;
       }
 
       # By default --allstruct is false, so keys of different structs
       # (BTREE, HASH, FULLTEXT, SPATIAL) are kept and compared separately.
       # UNIQUE keys are also separated just to make comparisons easier.
-      my $push_to = $key->{unique} ? \@unique_keys : \@keys;
+      my $push_to = $key->{is_unique} ? \@unique_keys : \@normal_keys;
       if ( !$args{ignore_type} ) {
          $push_to = \@fulltext_keys if $is_fulltext;
          # TODO:
@@ -154,25 +94,24 @@ sub get_duplicate_keys {
 
    my @dupes;
 
-   MKDEBUG && _d('Start normalizing redundantly unique keys');
    # Determine which unique keys define unique columns and which
    # define unique sets.
+   MKDEBUG && _d('Start normalizing redundantly unique keys');
    my %unique_cols;
    my @unique_sets;
    my %normalize;   # unique keys to normalize
    UNIQUE_KEY:
    foreach my $unique_key ( $primary_key, @unique_keys ) {
       next unless $unique_key;
-      my @cols = keys %{$unique_key->{is_col}};
-      if ( @cols == 1 ) {
-         MKDEBUG && _d("$unique_key->{name} defines unique column: $cols[0]");
-         push @{$unique_cols{$cols[0]}}, $unique_key;
+      my $cols = $unique_key->{cols};
+      if ( @$cols == 1 ) {
+         MKDEBUG && _d("$unique_key->{name} defines unique column: $cols->[0]");
+         push @{$unique_cols{$cols->[0]}}, $unique_key;
       }
       else {
          local $LIST_SEPARATOR = '-';
-         # TODO: keep real col order (is_col is unordered hash)
-         MKDEBUG && _d("$unique_key->{name} defines unique set: @cols");
-         push @unique_sets, { cols => [@cols], key => $unique_key };
+         MKDEBUG && _d("$unique_key->{name} defines unique set: @$cols");
+         push @unique_sets, { cols => $cols, key => $unique_key };
       }
    }
 
@@ -204,10 +143,13 @@ sub get_duplicate_keys {
          MKDEBUG && _d("Normalizing $unique_keys[$i]->{name}");
          $unique_keys[$i]->{constraining_col}
             = $normalize{$unique_keys[$i]->{name}};
-         push @keys, $unique_keys[$i];
+         push @normal_keys, $unique_keys[$i];
          delete $unique_keys[$i];
       }
    }
+   $self->{unique_cols} = \%unique_cols;
+   $self->{unique_sets} = \@unique_sets;
+   MKDEBUG && _d('No more keys');
 
    # TODO: normalized keys that get marked as dupes (probably prefixes)
    # should be noted and those that turn out not to be dupes (like the
@@ -223,10 +165,10 @@ sub get_duplicate_keys {
             duplicate_keys => \@dupes,
             %pass_args);
 
-      MKDEBUG && _d('Start comparing PRIMARY KEY to regular keys');
+      MKDEBUG && _d('Start comparing PRIMARY KEY to normal keys');
       $self->remove_prefix_duplicates(
             keys           => [$primary_key],
-            remove_keys    => \@keys,
+            remove_keys    => \@normal_keys,
             duplicate_keys => \@dupes,
             %pass_args);
    }
@@ -237,21 +179,21 @@ sub get_duplicate_keys {
          duplicate_keys => \@dupes,
          %pass_args);
 
-   MKDEBUG && _d('Start comparing regular keys');
+   MKDEBUG && _d('Start comparing normal keys');
    $self->remove_prefix_duplicates(
-         keys           => \@keys,
+         keys           => \@normal_keys,
          duplicate_keys => \@dupes,
          %pass_args);
 
-   MKDEBUG && _d('Start comparing UNIQUE keys to regular keys');
+   MKDEBUG && _d('Start comparing UNIQUE keys to normal keys');
    $self->remove_prefix_duplicates(
          keys           => \@unique_keys,
-         remove_keys    => \@keys,
+         remove_keys    => \@normal_keys,
          duplicate_keys => \@dupes,
          %pass_args);
 
    # If --allstruct, then these special struct keys (FULLTEXT, HASH, etc.)
-   # will have already been put in and handled by @keys.
+   # will have already been put in and handled by @normal_keys.
    MKDEBUG && _d('Start comparing FULLTEXT keys');
    $self->remove_prefix_duplicates(
          keys             => \@fulltext_keys,
@@ -275,10 +217,10 @@ sub get_duplicate_keys {
             keys        => \@unique_keys,
             %pass_args);
 
-      MKDEBUG && _d('Start removing clustered regular key dupes');
+      MKDEBUG && _d('Start removing clustered normal key dupes');
       $self->remove_clustered_duplicates(
             primary_key => $primary_key,
-            keys        => \@keys,
+            keys        => \@normal_keys,
             %pass_args);
    }
 
@@ -288,8 +230,7 @@ sub get_duplicate_keys {
 sub get_duplicate_fks {
    my ( $self, %args ) = @_;
    die "I need a keys argument" unless $args{keys};
-   my $fks = $args{keys};
-   my @fks = @$fks;
+   my @fks = values %{$args{keys}};
    my @dupes;
    foreach my $i ( 0..$#fks - 1 ) {
       next unless $fks[$i];
@@ -316,10 +257,10 @@ sub get_duplicate_fks {
                duplicate_of      => $fks[$i]->{name},
                duplicate_of_cols => $fks[$i]->{cols},
                reason       =>
-                    "FOREIGN KEY $fks->[$j]->{name} ($fks->[$j]->{cols}) "
-                  . "REFERENCES $fks->[$j]->{parent} ($fks->[$j]->{fkcols}) "                     .  'is a duplicate of '
-                  . "FOREIGN KEY $fks->[$i]->{name} ($fks->[$i]->{cols}) "
-                  . "REFERENCES $fks->[$i]->{parent} ($fks->[$i]->{fkcols})"
+                    "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{cols}) "
+                  . "REFERENCES $fks[$j]->{parent} ($fks[$j]->{fkcols}) "                     .  'is a duplicate of '
+                  . "FOREIGN KEY $fks[$i]->{name} ($fks[$i]->{cols}) "
+                  . "REFERENCES $fks[$i]->{parent} ($fks[$i]->{fkcols})"
             };
             push @dupes, $dupe;
             delete $fks[$j];
@@ -343,13 +284,13 @@ sub remove_prefix_duplicates {
    my $remove_key_offset;
 
    $keys  = $args{keys};
-   @$keys = sort { $a->{cols} cmp $b->{cols} }
+   @$keys = sort { $a->{colnames} cmp $b->{colnames} }
             grep { defined $_; }
             @$keys;
 
    if ( $args{remove_keys} ) {
       $remove_keys  = $args{remove_keys};
-      @$remove_keys = sort { $a->{cols} cmp $b->{cols} }
+      @$remove_keys = sort { $a->{colnames} cmp $b->{colnames} }
                       grep { defined $_; }
                       @$remove_keys;
 
@@ -379,10 +320,10 @@ sub remove_prefix_duplicates {
          my $rm   = ($i, $j)[$remove_index];
 
          my $keep_name     = $keys->[$keep]->{name};
-         my $keep_cols     = $keys->[$keep]->{cols};
+         my $keep_cols     = $keys->[$keep]->{colnames};
          my $keep_len_cols = $keys->[$keep]->{len_cols};
          my $rm_name       = $remove_keys->[$rm]->{name};
-         my $rm_cols       = $remove_keys->[$rm]->{cols};
+         my $rm_cols       = $remove_keys->[$rm]->{colnames};
          my $rm_len_cols   = $remove_keys->[$rm]->{len_cols};
 
          MKDEBUG && _d("Comparing [keep] $keep_name ($keep_cols) "
@@ -442,12 +383,12 @@ sub remove_clustered_duplicates {
    my ( $self, %args ) = @_;
    die "I need a primary_key argument" unless $args{primary_key};
    die "I need a keys argument"        unless $args{keys};
-   my $pkcols = $args{primary_key}->{cols};
+   my $pkcols = $args{primary_key}->{colnames};
    my $keys   = $args{keys};
    my @dupes;
    KEY:
    for my $i ( 0..$#{@$keys} ) {
-      my $suffix = $keys->[$i]->{cols};
+      my $suffix = $keys->[$i]->{colnames};
       SUFFIX:
       while ( $suffix =~ s/`[^`]+`,// ) {
          my $len = min(length($pkcols), length($suffix));
@@ -458,8 +399,8 @@ sub remove_clustered_duplicates {
                duplicate_of      => $args{primary_key}->{name},
                duplicate_of_cols => $args{primary_key}->{real_cols},
                reason         =>
-                  "Clustered key $keys->[$i]->{name} ($keys->[$i]->{cols}) "
-                  . "is a duplicate of PRIMARY ($args{primary_key}->{cols})",
+                  "Clustered key $keys->[$i]->{name} ($keys->[$i]->{colnames}) "
+                  . "is a duplicate of PRIMARY ($args{primary_key}->{colnames})"
             };
             push @dupes, $dupe;
             delete $keys->[$i];
