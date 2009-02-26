@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 25;
+use Test::More tests => 26;
 use English qw(-no_match_vars);
 
 require "../DuplicateKeyFinder.pm";
@@ -462,4 +462,19 @@ is_deeply(
    'Very pathological case',
 );
 
+# #############################################################################
+# Issue 269: mk-duplicate-key-checker: Wrongly suggesting removing index
+# #############################################################################
+$ddl   = load_file('samples/issue_269-1.sql');
+$dupes = [];
+$dk->get_duplicate_keys(
+   keys     => $dk->get_keys($ddl, $opt),
+   callback => $callback);
+is_deeply(
+   $dupes,
+   [
+      # TODO
+   ],
+   'Stronger unique constraint is prefix but still kept'
+);
 exit;

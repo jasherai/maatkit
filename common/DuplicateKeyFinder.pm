@@ -66,6 +66,12 @@ sub get_keys {
       {
          struct   => $struct,
          cols     => $cols,
+         is_col   => {
+                        map {
+                           my ($col) = $_ =~ m/^`(\w+)\b/;
+                           $col => 1;
+                        } split(',', $cols)
+                     },
          name     => $name || 'PRIMARY',
          unique   => $unique && $unique =~ m/(UNIQUE|PRIMARY)/ ? 1 : 0,
       }
@@ -148,6 +154,67 @@ sub get_duplicate_keys {
 
    my @dupes;
 
+   MKDEBUG && _d('Start normalizing redundantly unique keys');
+   # Determine which unique keys define unique columns and which
+   # define unique sets.
+   my %unique_cols;
+   my @unique_sets;
+   my %normalize;   # unique keys to normalize
+   UNIQUE_KEY:
+   foreach my $unique_key ( $primary_key, @unique_keys ) {
+      next unless $unique_key;
+      my @cols = keys %{$unique_key->{is_col}};
+      if ( @cols == 1 ) {
+         MKDEBUG && _d("$unique_key->{name} defines unique column: $cols[0]");
+         push @{$unique_cols{$cols[0]}}, $unique_key;
+      }
+      else {
+         local $LIST_SEPARATOR = '-';
+         # TODO: keep real col order (is_col is unordered hash)
+         MKDEBUG && _d("$unique_key->{name} defines unique set: @cols");
+         push @unique_sets, { cols => [@cols], key => $unique_key };
+      }
+   }
+
+   # Normalize redundantly constrained unique sets: unique sets which
+   # have at least one unique column.
+   UNIQUE_SET:
+   foreach my $unique_set ( @unique_sets ) {
+      my $n_unique_cols = 0;
+      COL:
+      foreach my $col ( @{$unique_set->{cols}} ) {
+         if ( exists $unique_cols{$col} ) {
+            MKDEBUG && _d("Unique set $unique_set->{key}->{name} "
+               . "has unique col $col");
+            last COL if ++$n_unique_cols > 1;
+            $unique_set->{constraining_col} = $col;
+         }
+      }
+      if ( $n_unique_cols && $unique_set->{key}->{name} ne 'PRIMARY' ) {
+         # Unique set is redundantly constrained.
+         MKDEBUG && _d("Will normalize unique set $unique_set->{key}->{name} "
+            . "because it is redundantly constrained");
+         $normalize{$unique_set->{key}->{name}}
+            = $unique_set->{constraining_col};
+      }
+   }
+
+   for my $i ( 0..$#unique_keys ) {
+      if ( exists $normalize{$unique_keys[$i]->{name}} ) {
+         MKDEBUG && _d("Normalizing $unique_keys[$i]->{name}");
+         $unique_keys[$i]->{constraining_col}
+            = $normalize{$unique_keys[$i]->{name}};
+         push @keys, $unique_keys[$i];
+         delete $unique_keys[$i];
+      }
+   }
+
+   # TODO: normalized keys that get marked as dupes (probably prefixes)
+   # should be noted and those that turn out not to be dupes (like the
+   # issue 269 test) should probably be noted like "I was a unique key
+   # but I was normalized because such and such key made me redundantly
+   # unique".
+
    if ( $primary_key ) {
       MKDEBUG && _d('Start comparing PRIMARY KEY to UNIQUE keys');
       $self->remove_prefix_duplicates(
@@ -182,47 +249,6 @@ sub get_duplicate_keys {
          remove_keys    => \@keys,
          duplicate_keys => \@dupes,
          %pass_args);
-
-   MKDEBUG && _d('Start removing unnecessary constraints');
-   KEY:
-   foreach my $key ( @keys ) {
-      my @constrainers;
-      foreach my $unique_key ( $primary_key, @unique_keys ) {
-         next unless $unique_key;
-         if (    substr($unique_key->{cols}, 0, $unique_key->{len_cols})
-              eq substr($key->{cols}, 0, $unique_key->{len_cols}) ) {
-            MKDEBUG && _d("$unique_key->{name} constrains $key->{name}");
-            push @constrainers, $unique_key;
-         }
-      }
-      next KEY unless @constrainers;
-
-      @constrainers = sort { $a->{len_cols}<=>$b->{len_cols} } @constrainers;
-      my $min_constrainer = shift @constrainers;
-      MKDEBUG && _d("$key->{name} min constrainer: $min_constrainer->{name}");
-
-      foreach my $constrainer ( @constrainers ) {
-         for my $i ( 0..$#unique_keys ) {
-            if ( $unique_keys[$i]->{name} eq $constrainer->{name} ) {
-               my $dupe = {
-                  key               => $constrainer->{name},
-                  cols              => $constrainer->{real_cols},
-                  duplicate_of      => $min_constrainer->{name},
-                  duplicate_of_cols => $min_constrainer->{real_cols},
-                  reason            =>
-                       "$constrainer->{name} ($constrainer->{cols}) "
-                     . 'is an unnecessary UNIQUE constraint for '
-                     . "$key->{name} ($key->{cols}) because "
-                     . "$min_constrainer->{name} ($min_constrainer->{cols}) "
-                     . 'alone preserves key column uniqueness'
-               };
-               push @dupes, $dupe;
-               delete $unique_keys[$i];
-               $args{callback}->($dupe, %pass_args) if $args{callback};
-            }
-         }
-      }
-   }
 
    # If --allstruct, then these special struct keys (FULLTEXT, HASH, etc.)
    # will have already been put in and handled by @keys.
