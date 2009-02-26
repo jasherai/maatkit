@@ -85,7 +85,7 @@ is_deeply(
       is_nullable    => { 'a' => 1, 'b' => 1 },
       keys           => {
          prefix_idx => {
-            unique => 0,
+            is_unique => 0,
             is_col => {
                a => 1,
                b => 1,
@@ -98,7 +98,7 @@ is_deeply(
             col_prefixes => [ 10, 20 ],
          },
          mix_idx => {
-            unique => 0,
+            is_unique => 0,
             is_col => {
                a => 1,
                b => 1,
@@ -193,7 +193,7 @@ is_deeply(
             col_prefixes => [undef],
             is_col       => { film_id => 1 },
             is_nullable  => 0,
-            unique       => 1,
+            is_unique    => 1,
             type         => 'BTREE',
             name         => 'PRIMARY',
          },
@@ -203,7 +203,7 @@ is_deeply(
             col_prefixes => [undef],
             is_col       => { title => 1, },
             is_nullable  => 0,
-            unique       => 0,
+            is_unique    => 0,
             type         => 'BTREE',
             name         => 'idx_title',
          },
@@ -211,7 +211,7 @@ is_deeply(
             colnames     => '`language_id`',
             cols         => [qw(language_id)],
             col_prefixes => [undef],
-            unique       => 0,
+            is_unique    => 0,
             is_col       => { language_id => 1 },
             is_nullable  => 0,
             type         => 'BTREE',
@@ -221,7 +221,7 @@ is_deeply(
             colnames     => '`original_language_id`',
             cols         => [qw(original_language_id)],
             col_prefixes => [undef],
-            unique       => 0,
+            is_unique    => 0,
             is_col       => { original_language_id => 1 },
             is_nullable  => 1,
             type         => 'BTREE',
@@ -338,7 +338,7 @@ is_deeply(
       },
       'keys' => {
          'sort_order' => {
-            'unique'       => 0,
+            'is_unique'    => 0,
             'is_col'       => { 'sort_order' => 1 },
             'name'         => 'sort_order',
             'type'         => 'BTREE',
@@ -348,7 +348,7 @@ is_deeply(
             'cols'         => [ 'sort_order' ]
          },
          'PRIMARY' => {
-            'unique' => 1,
+            'is_unique' => 1,
             'is_col' => {
                'pfk-source_instrument_id'  => 1,
                'pfk-related_instrument_id' => 1
@@ -403,7 +403,7 @@ is_deeply(
       keys        => {
          PRIMARY => {
             cols         => [qw(id)],
-            unique       => 1,
+            is_unique    => 1,
             is_col       => { id => 1 },
             name         => 'PRIMARY',
             type         => 'BTREE',
@@ -437,7 +437,7 @@ is_deeply(
             col_prefixes => [undef, undef, undef],
             is_col       => { a => 1, b => 1, mixedcol => 1 },
             is_nullable  => 3,
-            unique       => 0,
+            is_unique    => 0,
             type         => 'BTREE',
             name         => 'mykey',
          },

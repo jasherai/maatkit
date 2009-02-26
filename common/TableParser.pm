@@ -38,7 +38,7 @@ sub new {
 # $tbl is the return value from the sub below, parse().
 #
 # And some subs have an optional $opts param which is a hashref of options.
-# $opts{mysql_version} is typically used, which is the return value from
+# $opts->{mysql_version} is typically used, which is the return value from
 # VersionParser::parser() (which returns a zero-padded MySQL version,
 # e.g. 004001000 for 4.1.0).
 
@@ -65,11 +65,10 @@ sub parse {
    # (Bug #1910276).
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
-   my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
-   MKDEBUG && _d('Storage engine: ', $engine);
+   my $engine = $self->get_engine($ddl);
 
-   my @defs = $ddl =~ m/^(\s+`.*?),?$/gm;
-   my @cols = map { $_ =~ m/`([^`]+)`/g } @defs;
+   my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
+   my @cols   = map { $_ =~ m/`([^`]+)`/g } @defs;
    MKDEBUG && _d('Columns: ' . join(', ', @cols));
 
    # Save the column definitions *exactly*
@@ -96,52 +95,10 @@ sub parse {
       $is_autoinc{$col} = $def =~ m/AUTO_INCREMENT/i ? 1 : 0;
    }
 
-   my %keys;
-   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
-
-      # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
-      # will report its index as USING HASH even when this is not supported.
-      # The true type should be BTREE.  See
-      # http://bugs.mysql.com/bug.php?id=22632
-      if ( $engine !~ m/MEMORY|HEAP/ ) {
-         $key =~ s/USING HASH/USING BTREE/;
-      }
-
-      # Determine index type
-      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
-      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
-      $type = $type || $special || 'BTREE';
-      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
-         && $engine =~ m/HEAP|MEMORY/i )
-      {
-         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
-      }
-
-      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
-      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
-      my @cols;
-      my @col_prefixes;
-      foreach my $col_def ( split(',', $cols) ) {
-         # Parse columns of index including potential column prefixes
-         # E.g.: `a`,`b`(20)
-         my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
-         push @cols, $name;
-         push @col_prefixes, $prefix;
-      }
-      $name =~ s/`//g;
-      MKDEBUG && _d("Index $name columns: " . join(', ', @cols));
-
-      $keys{$name} = {
-         colnames     => $cols,
-         cols         => \@cols,
-         col_prefixes => \@col_prefixes,
-         unique       => $unique,
-         is_col       => { map { $_ => 1 } @cols },
-         is_nullable  => scalar(grep { $is_nullable{$_} } @cols),
-         type         => $type,
-         name         => $name,
-      };
-   }
+   # TODO: passing is_nullable this way is just a quick hack. Ultimately,
+   # we probably should decompose this sub further, taking out the block
+   # above that parses col props like nullability, auto_inc, type, etc.
+   my %keys = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
       cols           => \@cols,
@@ -168,7 +125,7 @@ sub sort_indexes {
    my @indexes
       = sort {
          (($a ne 'PRIMARY') <=> ($b ne 'PRIMARY'))
-         || ( !$tbl->{keys}->{$a}->{unique} <=> !$tbl->{keys}->{$b}->{unique} )
+         || ( !$tbl->{keys}->{$a}->{is_unique} <=> !$tbl->{keys}->{$b}->{is_unique} )
          || ( $tbl->{keys}->{$a}->{is_nullable} <=> $tbl->{keys}->{$b}->{is_nullable} )
          || ( scalar(@{$tbl->{keys}->{$a}->{cols}}) <=> scalar(@{$tbl->{keys}->{$b}->{cols}}) )
       }
@@ -252,8 +209,85 @@ sub table_exists {
 
 sub get_engine {
    my ( $self, $ddl, $opts ) = @_;
-   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
+   my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
+   MKDEBUG && _d('Storage engine: ', $engine || 'unknown');
    return $engine || undef;
+}
+
+
+# $ddl is a SHOW CREATE TABLE returned from MySQLDumper::get_create_table().
+# The general format of a key is
+# [FOREIGN|UNIQUE|PRIMARY|FULLTEXT|SPATIAL] KEY `name` [USING BTREE|HASH] (`cols`).
+# Returns a hash of keys and their properties:
+#    key => {
+#       type         => BTREE, FULLTEXT or  SPATIAL
+#       name         => column name, like: "foo_key"
+#       colnames     => original col def string, like: "(`a`,`b`)"
+#       cols         => arrayref containing the col names, like: [qw(a b)]
+#       col_prefixes => arrayref containing any col prefixes (parallels cols)
+#       is_unique    => 1 if the col is UNIQUE or PRIMARY
+#       is_nullable  => true (> 0) if one or more col can be NULL
+#       is_col       => hashref with key for each col=>1
+#   },
+#   key => ...
+sub get_keys {
+   my ( $self, $ddl, $opts, $is_nullable ) = @_;
+   my %keys;
+
+   KEY:
+   foreach my $key ( $ddl =~ m/^  ((?:[A-Z]+ )?KEY .*)$/gm ) {
+
+      next KEY if $opts->{nofks} && $key =~ m/FOREIGN/;
+
+      MKDEBUG && _d("Parsed key: $key");
+
+      # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
+      # will report its index as USING HASH even when this is not supported.
+      # The true type should be BTREE.  See
+      # http://bugs.mysql.com/bug.php?id=22632
+      my $engine = $self->get_engine($ddl);
+      if ( $engine !~ m/MEMORY|HEAP/ ) {
+         $key =~ s/USING HASH/USING BTREE/;
+      }
+
+      # Determine index type
+      my ( $type, $cols ) = $key =~ m/(?:USING (\w+))? \((.+)\)/;
+      my ( $special ) = $key =~ m/(FULLTEXT|SPATIAL)/;
+      $type = $type || $special || 'BTREE';
+      if ( $opts->{mysql_version} && $opts->{mysql_version} lt '004001000'
+         && $engine =~ m/HEAP|MEMORY/i )
+      {
+         $type = 'HASH'; # MySQL pre-4.1 supports only HASH indexes on HEAP
+      }
+
+      my ($name) = $key =~ m/(PRIMARY|`[^`]*`)/;
+      my $unique = $key =~ m/PRIMARY|UNIQUE/ ? 1 : 0;
+      my @cols;
+      my @col_prefixes;
+      foreach my $col_def ( split(',', $cols) ) {
+         # Parse columns of index including potential column prefixes
+         # E.g.: `a`,`b`(20)
+         my ($name, $prefix) = $col_def =~ m/`([^`]+)`(?:\((\d+)\))?/;
+         push @cols, $name;
+         push @col_prefixes, $prefix;
+      }
+      $name =~ s/`//g;
+
+      MKDEBUG && _d("Key $name cols: " . join(', ', @cols));
+
+      $keys{$name} = {
+         name         => $name,
+         type         => $type,
+         colnames     => $cols,
+         cols         => \@cols,
+         col_prefixes => \@col_prefixes,
+         is_unique    => $unique,
+         is_nullable  => scalar(grep { $is_nullable->{$_} } @cols),
+         is_col       => { map { $_ => 1 } @cols },
+      };
+   }
+
+   return %keys;
 }
 
 sub _d {
