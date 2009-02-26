@@ -3510,7 +3510,6 @@ my $qv_dbh; # For QueryReview
 my $ex_dbh; # For --execute
 my $ep_dbh; # For --explain
 my $ps_dbh; # For Processlist
-my @fhs;    # File handles
 my %ea;     # EventAggregators
 
 { # Begin a global scope to avoid poisoning subroutines with global variables.
@@ -3768,15 +3767,8 @@ my %ea;     # EventAggregators
       }
    }
    else { # Parse log files
-      if ( @ARGV == 0 || (@ARGV == 1 && $ARGV[0] eq '-' ) ) {
-         my $fh = *STDIN;
-         push @fhs, $fh;
-      }
-      else {
-         foreach my $arg ( @ARGV ) {
-            open my $fh, "<", $arg or die "Cannot open $arg: $OS_ERROR\n";
-            push @fhs, $fh;
-         }
+      if ( @ARGV == 0 ) {
+         push @ARGV, '-'; # Magical STDIN filename.
       }
 
       my $lp   = new SlowLogParser();
@@ -3789,7 +3781,18 @@ my %ea;     # EventAggregators
       }
       # TODO: carry the last db and ts values forward if they're undefined
       # now.  Do that by unshifting a new callback onto the front of @callbacks.
-      while ( $oktorun && (my $fh = shift(@fhs)) ) {
+      while ( $oktorun && (my $file = shift(@ARGV)) ) {
+         # TODO: non-blocking I/O so we can respond to CTRL-C.  See
+         # http://www.perlmonks.org/?node_id=55241
+         # http://davesource.com/Solutions/20080924.Perl-Non-blocking-Read-On-Pipes-Or-Files.html
+         # http://hell.org.ua/Docs/oreilly/perl/cookbook/ch07_15.htm
+         my $fh;
+         if ( $file eq '-' ) {
+            $fh = *STDIN;
+         }
+         else {
+            open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
+         }
          while ( $oktorun ) {
             my $events = 0;
             eval {
@@ -3797,6 +3800,7 @@ my %ea;     # EventAggregators
             };
             MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
             last unless $events;
+            # TODO: progress report
          }
          close $fh or warn "Cannot close filehandle: $OS_ERROR\n";
       }
@@ -4087,9 +4091,6 @@ sub sig_int {
    if ( $oktorun ) {
       print STDERR "# Caught SIG$signal.\n";
       $oktorun = 0;
-      foreach my $fh ( @fhs ) {
-         close $fh or warn "Can't close filehandle: $OS_ERROR";
-      }
    }
    else {
       print STDERR "# Exiting on SIG$signal.\n";
