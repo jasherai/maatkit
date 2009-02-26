@@ -34,7 +34,6 @@ package EventAggregator;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use POSIX qw(floor);
 
 # ###########################################################################
 # Set up some constants for bucketing values.  It is impossible to keep all
@@ -44,7 +43,7 @@ use POSIX qw(floor);
 use constant MKDEBUG      => $ENV{MKDEBUG};
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
-use constant BASE_OFFSET  => -floor(log(.000001) / BASE_LOG); # typically 284
+use constant BASE_OFFSET  => 1 - sprintf('%d', log(.000001) / BASE_LOG); # 284
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
@@ -217,7 +216,7 @@ sub attributes {
 # so floor(log(N)/log(BUCK_SIZE)).  The smallest bucket's index is -284. We
 # shift all values up 284 so we have values from 0 to 999 that can be used as
 # array indexes.  A value that falls into a bucket simply increments the array
-# entry.
+# entry.  We do NOT use POSIX::floor() because it is too expensive.
 #
 # This eliminates the need to keep and sort all values to calculate median,
 # standard deviation, 95th percentile etc.  Thus the memory usage is bounded by
@@ -294,7 +293,7 @@ sub make_handler {
          push @tmp, (
             # If you change this code, change the similar code in bucketize.
             'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
-            '$idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);',
+            '$idx = ($val > 0 ? int(BASE_OFFSET + (log($val) / BASE_LOG)) : BASE_OFFSET);',
             '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
          );
       }
@@ -367,7 +366,7 @@ sub bucketize {
    my ($sum, $max, $min);
    $max = $min = $vals->[0];
    foreach my $val ( @$vals ) {
-      my $idx = BASE_OFFSET + ($val > 0 ? floor(log($val) / BASE_LOG) : 0);
+      my $idx = ($val > 0 ? int(BASE_OFFSET + (log($val) / BASE_LOG)) : BASE_OFFSET);
       ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
       $max = $max > $val ? $max : $val;
       $min = $min < $val ? $min : $val;
@@ -401,7 +400,7 @@ sub unbucketize {
    sub buckets_of {
       return @buck_tens if @buck_tens;
       @buck_tens = map {
-         my $f = floor(log($_) / log(10)) + 6;
+         my $f = int(6 + (log($_) / log(10)));
          $f > 7 ? 7 : $f;
       } @buck_vals;
       return @buck_tens;
@@ -437,7 +436,7 @@ sub calculate_statistical_metrics {
    my $n_vals = $args->{cnt};
    if ( $n_vals == 1 || $args->{max} == $args->{min} ) {
       my $v      = $args->{max} || 0;
-      my $bucket = floor( log($v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+      my $bucket = int(6 + ( log($v > 0 ? $v : MIN_BUCK) / log(10)));
       $bucket    = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
       return {
          pct_95 => $v,
@@ -448,7 +447,7 @@ sub calculate_statistical_metrics {
    }
    elsif ( $n_vals == 2 ) {
       foreach my $v ( $args->{min}, $args->{max} ) {
-         my $bucket = floor( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)) + 6;
+         my $bucket = int(6 + ( log($v && $v > 0 ? $v : MIN_BUCK) / log(10)));
          $bucket = $bucket > 7 ? 7 : $bucket < 0 ? 0 : $bucket;
       }
       my $v      = $args->{max} || 0;
