@@ -68,7 +68,9 @@ The following items are unimplemented at this time:
          * Actually, DATE_FORMAT(), or TO_DAYS() are just red flags
          * SELECT * is a bad habit, flag it.
          * SELECT tbl.* is bad, too.
+         * COUNT(col) is probably suspect, see Percona issue 3379 complex query
          * Watch for LEFT JOIN that has a WHERE clause that'll make it an INNER
+           (see email "explain extended" from Piotr, see Percona issue 3379).
       * Connections and users
          * report anonymous users
            * Complain loudly if connected as anonymous user -- print out what
