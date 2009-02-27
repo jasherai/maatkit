@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 27;
+use Test::More tests => 28;
 use English qw(-no_match_vars);
 
 require "../DuplicateKeyFinder.pm";
@@ -60,7 +60,7 @@ is_deeply(
          'cols'         => '`a`',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'a (`a`) is a left-prefix of a_2 (`a`,`b`)',
+         'reason'       => 'a is a left-prefix of a_2',
       }
    ],
    'Two dupe keys on table dupe_key'
@@ -79,7 +79,7 @@ is_deeply(
          'cols'         => '`a`',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'a (`a`) is a left-prefix of a_2 (`a`,`b`)',
+         'reason'       => 'a is a left-prefix of a_2',
       }
    ],
    'Two dupe keys on table dupe_key in reverse'
@@ -101,14 +101,14 @@ is_deeply(
          'cols'         => '`a`',
          'duplicate_of' => 'a_3',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'a (`a`) is a left-prefix of a_3 (`a`,`b`)',
+         'reason'       => 'a is a left-prefix of a_3',
       },
       {
          'key'          => 'a_3',
          'cols'         => '`a`,`b`',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'a_3 (`a`,`b`) is a duplicate of a_2 (`a`,`b`)',
+         'reason'       => 'a_3 is a duplicate of a_2',
       }
    ],
    'Dupe keys only output once (may fail due to different sort order)'
@@ -137,7 +137,7 @@ is_deeply(
          'cols'         => '`a`',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'a (`a`) is a left-prefix of a_2 (`a`,`b`)',
+         'reason'       => 'a is a left-prefix of a_2',
       },
    ],
    'Dupe keys when ignoring type'
@@ -167,7 +167,7 @@ is_deeply(
          'cols'         => '`a`,`b`',
          'duplicate_of' => 'ft_idx_a_b_1',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'ft_idx_a_b_2 (`a`,`b`) is a duplicate of ft_idx_a_b_1 (`a`,`b`)',
+         'reason'       => 'ft_idx_a_b_2 is a duplicate of ft_idx_a_b_1',
       }
    ],
    'Dupe exact fulltext keys (issue 10)'
@@ -186,7 +186,7 @@ is_deeply(
          'cols'         => '`a`,`b`',
          'duplicate_of' => 'ft_idx_b_a',
          'duplicate_of_cols' => '`b`,`a`',
-         'reason'       => 'ft_idx_a_b (`a`,`b`) is a duplicate of ft_idx_b_a (`b`,`a`)',
+         'reason'       => 'ft_idx_a_b is a duplicate of ft_idx_b_a',
       }
    ],
    'Dupe reverse order fulltext keys (issue 10)'
@@ -215,7 +215,7 @@ is_deeply(
          'cols'         => '`b`,`a`',
          'duplicate_of' => 'a_2',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'a (`b`,`a`) is a duplicate of a_2 (`a`,`b`)',
+         'reason'       => 'a is a duplicate of a_2',
       }
    ],
    'Two dupe keys when ignoring order'
@@ -249,7 +249,7 @@ is_deeply(
          'cols'         => '`b`,`a`',
          'duplicate_of' => 'PRIMARY',
          'duplicate_of_cols' => '`a`',
-         'reason'       => 'Clustered key b (`b`,`a`) is a duplicate of PRIMARY (`a`)',
+         'reason'       => 'Clustered key b is a duplicate of PRIMARY',
       }
    ],
    'Duplicate keys with cluster options'
@@ -355,7 +355,7 @@ is_deeply(
          'cols'         => '`a`,`b`',
          'duplicate_of' => 'i',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'j (`a`,`b`) is a duplicate of i (`a`,`b`)',
+         'reason'       => 'j is a duplicate of i',
       }
    ],
    'Non-unique key dupes unique key with same col cover (issue 9)'
@@ -374,7 +374,7 @@ is_deeply(
          'cols'         => '`a`,`b`',
          'duplicate_of' => 'PRIMARY',
          'duplicate_of_cols' => '`a`,`b`',
-         'reason'       => 'j (`a`,`b`) is a duplicate of PRIMARY (`a`,`b`)',
+         'reason'       => 'j is a duplicate of PRIMARY',
       }
    ],
    'Non-unique key dupes PRIMARY key same col cover (issue 9)'
@@ -391,7 +391,11 @@ is_deeply(
    'Two unique keys with common prefix are not dupes'
 );
 
-is($dk->{keys}->{i}->{constraining_col}, 'a', 'Found redundantly unique key');
+is_deeply(
+   $dk->{keys}->{i}->{constraining_key}->{cols},
+   [qw(a)],
+   'Found redundantly unique key',
+);
 
 $ddl   = load_file('samples/issue_9-7.sql');
 $dupes = [];
@@ -402,14 +406,14 @@ is_deeply(
    $dupes,
    [
       {
-         'key'          => 'ua_b',
-         'cols'         => '`a`,`b`',
-         'duplicate_of' => 'PRIMARY',
-         'duplicate_of_cols' => '`a`',
-         'reason'       => 'ua_b (`a`,`b`) is an unnecessary UNIQUE constraint for a_b_c (`a`,`b`,`c`) because PRIMARY (`a`) alone preserves key column uniqueness',
-      }
+         'key'               => 'ua_b',
+         'cols'              => '`a`,`b`',
+         'duplicate_of'      => 'a_b_c',
+         'duplicate_of_cols' => '`a`,`b`,`c`',
+         'reason'            => "Uniqueness of ua_b ignored because PRIMARY is a stronger constraint\nua_b is a left-prefix of a_b_c",
+      },
    ],
-   'Dupe unique prefix of non-unique with PRIMARY constraint (issue 9)'
+   'Redundantly unique key dupes normal key after unconstraining'
 );
 
 $ddl   = load_file('samples/issue_9-6.sql');
@@ -421,39 +425,32 @@ is_deeply(
    $dupes,
    [
       {
-       'key'          => 'ua',
-       'cols'         => '`a`',
        'duplicate_of' => 'PRIMARY',
+       'reason' => 'a is a left-prefix of PRIMARY',
        'duplicate_of_cols' => '`a`,`b`',
-       'reason'       => 'ua (`a`) is a left-prefix of PRIMARY (`a`,`b`)',
+       'cols' => '`a`',
+       'key' => 'a'
       },
       {
-       'key'          => 'ua_b',
-       'cols'         => '`a`,`b`',
        'duplicate_of' => 'PRIMARY',
+       'reason' => 'a_b is a duplicate of PRIMARY',
        'duplicate_of_cols' => '`a`,`b`',
-       'reason'       => 'ua_b (`a`,`b`) is a duplicate of PRIMARY (`a`,`b`)',
+       'cols' => '`a`,`b`',
+       'key' => 'a_b'
       },
       {
-       'key'          => 'ua_b2',
-       'cols'         => '`a`,`b`',
        'duplicate_of' => 'PRIMARY',
+       'reason' => "Uniqueness of ua_b ignored because ua is a stronger constraint\nua_b is a duplicate of PRIMARY",
        'duplicate_of_cols' => '`a`,`b`',
-       'reason'       => 'ua_b2 (`a`,`b`) is a duplicate of PRIMARY (`a`,`b`)',
+       'cols' => '`a`,`b`',
+       'key' => 'ua_b'
       },
       {
-       'key'          => 'a',
-       'cols'         => '`a`',
        'duplicate_of' => 'PRIMARY',
+       'reason' => "Uniqueness of ua_b2 ignored because ua is a stronger constraint\nua_b2 is a duplicate of PRIMARY",
        'duplicate_of_cols' => '`a`,`b`',
-       'reason'       => 'a (`a`) is a left-prefix of PRIMARY (`a`,`b`)',
-      },
-      {
-       'key'          => 'a_b',
-       'cols'         => '`a`,`b`',
-       'duplicate_of' => 'PRIMARY',
-       'duplicate_of_cols' => '`a`,`b`',
-       'reason'       => 'a_b (`a`,`b`) is a duplicate of PRIMARY (`a`,`b`)',
+       'cols' => '`a`,`b`',
+       'key' => 'ua_b2'
       }
    ],
    'Very pathological case',
@@ -470,8 +467,13 @@ $dk->get_duplicate_keys(
 is_deeply(
    $dupes,
    [
-      # TODO
    ],
-   'Stronger unique constraint is prefix but still kept'
+   'Keep stronger unique constraint that is prefix'
 );
+is(
+   $dk->{keys}->{id_name}->{unconstrained},
+   '1',
+   'Unconstrained weaker unique set to normal key'
+);
+
 exit;

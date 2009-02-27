@@ -94,19 +94,26 @@ sub get_duplicate_keys {
 
    my @dupes;
 
-   # Determine which unique keys define unique columns and which
+   MKDEBUG && _d('Start unconstraining redundantly unique keys');
+   # See http://code.google.com/p/maatkit/wiki/DeterminingDuplicateKeys
+   # First, determine which unique keys define unique columns and which
    # define unique sets.
-   MKDEBUG && _d('Start normalizing redundantly unique keys');
    my %unique_cols;
    my @unique_sets;
-   my %normalize;   # unique keys to normalize
+   my %unconstrain;   # unique keys to unconstrain
    UNIQUE_KEY:
    foreach my $unique_key ( $primary_key, @unique_keys ) {
-      next unless $unique_key;
+      next unless $unique_key; # primary key may be undefined
       my $cols = $unique_key->{cols};
       if ( @$cols == 1 ) {
          MKDEBUG && _d("$unique_key->{name} defines unique column: $cols->[0]");
-         push @{$unique_cols{$cols->[0]}}, $unique_key;
+         # Save only the first unique key for the unique col. If there
+         # are others, then they are exact duplicates and will be removed
+         # later when unique keys are compared to unique keys.
+         if ( !exists $unique_cols{$cols->[0]} ) {
+            $unique_cols{$cols->[0]}  = $unique_key;
+            $unique_key->{unique_col} = 1;
+         }
       }
       else {
          local $LIST_SEPARATOR = '-';
@@ -115,8 +122,8 @@ sub get_duplicate_keys {
       }
    }
 
-   # Normalize redundantly constrained unique sets: unique sets which
-   # have at least one unique column.
+   # Second, find which unique sets can be unconstraind (i.e. those
+   # which have which have at least one unique column).
    UNIQUE_SET:
    foreach my $unique_set ( @unique_sets ) {
       my $n_unique_cols = 0;
@@ -126,23 +133,29 @@ sub get_duplicate_keys {
             MKDEBUG && _d("Unique set $unique_set->{key}->{name} "
                . "has unique col $col");
             last COL if ++$n_unique_cols > 1;
-            $unique_set->{constraining_col} = $col;
+            $unique_set->{constraining_key} = $unique_cols{$col};
          }
       }
       if ( $n_unique_cols && $unique_set->{key}->{name} ne 'PRIMARY' ) {
          # Unique set is redundantly constrained.
-         MKDEBUG && _d("Will normalize unique set $unique_set->{key}->{name} "
-            . "because it is redundantly constrained");
-         $normalize{$unique_set->{key}->{name}}
-            = $unique_set->{constraining_col};
+         MKDEBUG && _d("Will unconstrain unique set $unique_set->{key}->{name} "
+            . "because it is redundantly constrained by key "
+            . $unique_set->{constraining_key}->{name}
+            . " ($unique_set->{constraining_key}->{colnames})");
+         $unconstrain{$unique_set->{key}->{name}}
+            = $unique_set->{constraining_key};
       }
    }
 
+   # And finally, unconstrain the redudantly unique sets found above by
+   # removing them from the list of unique keys and adding them to the
+   # list of normal keys.
    for my $i ( 0..$#unique_keys ) {
-      if ( exists $normalize{$unique_keys[$i]->{name}} ) {
+      if ( exists $unconstrain{$unique_keys[$i]->{name}} ) {
          MKDEBUG && _d("Normalizing $unique_keys[$i]->{name}");
-         $unique_keys[$i]->{constraining_col}
-            = $normalize{$unique_keys[$i]->{name}};
+         $unique_keys[$i]->{unconstrained} = 1;
+         $unique_keys[$i]->{constraining_key}
+            = $unconstrain{$unique_keys[$i]->{name}};
          push @normal_keys, $unique_keys[$i];
          delete $unique_keys[$i];
       }
@@ -151,12 +164,14 @@ sub get_duplicate_keys {
    $self->{unique_sets} = \@unique_sets;
    MKDEBUG && _d('No more keys');
 
-   # TODO: normalized keys that get marked as dupes (probably prefixes)
-   # should be noted and those that turn out not to be dupes (like the
-   # issue 269 test) should probably be noted like "I was a unique key
-   # but I was normalized because such and such key made me redundantly
-   # unique".
-
+   # If you're tempted to check the primary key against uniques before
+   # unconstraining redundantly unique keys: don't. In cases like
+   #    PRIMARY KEY (a, b)
+   #    UNIQUE KEY  (a)
+   # the unique key will be wrongly removed. It is needed to keep
+   # column a unique. The process of unconstraining redundantly unique
+   # keys marks single column unique keys so that they are never removed
+   # (the mark is adding unique_col=>1 to the unique key's hash).
    if ( $primary_key ) {
       MKDEBUG && _d('Start comparing PRIMARY KEY to UNIQUE keys');
       $self->remove_prefix_duplicates(
@@ -173,22 +188,16 @@ sub get_duplicate_keys {
             %pass_args);
    }
 
-   MKDEBUG && _d('Start comparing UNIQUE keys');
+   MKDEBUG && _d('Start comparing UNIQUE keys to normal keys');
    $self->remove_prefix_duplicates(
          keys           => \@unique_keys,
+         remove_keys    => \@normal_keys,
          duplicate_keys => \@dupes,
          %pass_args);
 
    MKDEBUG && _d('Start comparing normal keys');
    $self->remove_prefix_duplicates(
          keys           => \@normal_keys,
-         duplicate_keys => \@dupes,
-         %pass_args);
-
-   MKDEBUG && _d('Start comparing UNIQUE keys to normal keys');
-   $self->remove_prefix_duplicates(
-         keys           => \@unique_keys,
-         remove_keys    => \@normal_keys,
          duplicate_keys => \@dupes,
          %pass_args);
 
@@ -342,19 +351,32 @@ sub remove_prefix_duplicates {
                next J_KEY;
             }
 
+            # Do not remove the unique key that is constraining a single
+            # column to uniqueness. This prevents UNIQUE KEY (a) from being
+            # removed by PRIMARY KEY (a, b).
+            if ( exists $remove_keys->[$rm]->{unique_col} ) {
+               MKDEBUG && _d("Cannot remove $rm_name because is constrains col "
+                  . $remove_keys->[$rm]->{cols}->[0]);
+               next J_KEY;
+            }
+
             MKDEBUG && _d("Remove $remove_keys->[$rm]->{name}");
-            my $reason = "$remove_keys->[$rm]->{name} "
-                       . "($remove_keys->[$rm]->{real_cols}) is a "
-                       . ($rm_len_cols < $keep_len_cols ? 'left-prefix of '
-                                                        : 'duplicate of ')
-                       . "$keys->[$keep]->{name} "
-                       . "($keys->[$keep]->{real_cols})";
+            my $reason;
+            if ( $remove_keys->[$rm]->{unconstrained} ) {
+               $reason .= "Uniqueness of $rm_name ignored because "
+                        . $remove_keys->[$rm]->{constraining_key}->{name}
+                        . " is a stronger constraint\n"; 
+            }
+            $reason .= $rm_name
+                     . ($rm_len_cols < $keep_len_cols ? ' is a left-prefix of '
+                                                      : ' is a duplicate of ')
+                     . $keep_name;
             my $dupe = {
                key               => $rm_name,
                cols              => $remove_keys->[$rm]->{real_cols},
                duplicate_of      => $keep_name,
                duplicate_of_cols => $keys->[$keep]->{real_cols},
-               reason       => $reason,
+               reason            => $reason,
             };
             push @dupes, $dupe;
             delete $remove_keys->[$rm];
@@ -398,9 +420,8 @@ sub remove_clustered_duplicates {
                cols              => $keys->[$i]->{real_cols},
                duplicate_of      => $args{primary_key}->{name},
                duplicate_of_cols => $args{primary_key}->{real_cols},
-               reason         =>
-                  "Clustered key $keys->[$i]->{name} ($keys->[$i]->{colnames}) "
-                  . "is a duplicate of PRIMARY ($args{primary_key}->{colnames})"
+               reason            => "Clustered key $keys->[$i]->{name} "
+                                    . "is a duplicate of PRIMARY",
             };
             push @dupes, $dupe;
             delete $keys->[$i];
@@ -417,12 +438,6 @@ sub remove_clustered_duplicates {
    return;
 }
 
-sub get_engine {
-   my ( $self, $ddl, $opts ) = @_;
-   my ( $engine ) = $ddl =~ m/\) (?:ENGINE|TYPE)=(\w+)/;
-   return $engine || undef;
-}
-
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -434,7 +449,6 @@ sub _d {
 }
 
 1;
-
 # ###########################################################################
 # End DuplicateKeyFinder package
 # ###########################################################################
