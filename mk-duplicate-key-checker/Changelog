@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Improved duplicate key finding (issue 269).
+
 2009-02-01: version 1.2.0
 
    * Changed output from tabular to human-readable (issue 196).

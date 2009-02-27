@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -37,5 +37,10 @@ is($output, '', '--nosql');
 $output = `$cmd --nosummary | diff samples/nosummary_output.txt -`;
 is($output, '', '--nosummary');
 
-$sb->wipe_clean($dbh);
+
+$sb->load_file('master', '../../common/t/samples/issue_269-1.sql', 'test');
+$output = `$cmd -t a | diff samples/issue_269.txt -`;
+is($output, '', 'No dupes for issue 269');
+
+#$sb->wipe_clean($dbh);
 exit;
