@@ -2547,6 +2547,7 @@ sub print_duplicate_key {
       print "\n";
    }
 
+   $dupe->{reason} =~ s/\n/\n# /g;
    print "# $dupe->{reason}\n";
 
    print "# Column types:\n";
