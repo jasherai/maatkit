@@ -4759,12 +4759,24 @@ while ( my $arg = shift(@ARGV) ) {
    my $dsn = $dsn_parser->parse($arg, $dsns[0]);
    die "You specified a t part, but not a D part in $arg"
       if ($dsn->{t} && !$dsn->{D});
+   if ( $dsn->{D} && !$dsn->{t} ) {
+      die "You specified a database but not a table in $arg.  Are you trying "
+         . "to sync only tables in the '$dsn->{D}' database?  If so, use "
+         . "'--databases $dsn->{D}' instead.\n";
+   }
    push @dsns, $dsn;
 }
 
 if ( !@dsns || (@dsns ==1 && !$opts{R} && !$opts{s}) ) {
    $opt_parser->error('At least one DSN is required, and at least two are '
       . 'required unless --synctomaster or --replicate is specified');
+}
+
+if ( $opts{explainhosts} ) {
+   foreach my $host ( @dsns ) {
+      print "# DSN: ", $dsn_parser->as_string($host), "\n";
+   }
+   exit(0);
 }
 
 $opt_parser->usage_or_errors(%opts);
@@ -5371,6 +5383,9 @@ There are many ways to invoke it.  The following is the abbreviated logic:
          find tables, filtering with --databases etc, and sync each
          DSN to the first.
 
+If you're confused about how it the DSNs are interpreted, give the
+L<"--explainhosts"> option and it will tell you.
+
 =head1 REPLICATION SAFETY
 
 Synchronizing a replication master and slave safely is a non-trivial problem, in
@@ -5569,6 +5584,13 @@ Sync only this comma-separated list of storage engines.
 short form: -x
 
 Execute queries to make the tables have identical data.
+
+=item --explainhosts
+
+Print connection information and exit.
+
+Print out a list of hosts to which mk-table-sync will connect, with all
+the various connection options, and exit.
 
 =item --function
 

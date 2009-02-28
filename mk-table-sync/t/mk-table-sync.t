@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 36;
+use Test::More tests => 38;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -258,6 +258,25 @@ like(
    'Does not die checking tables for triggers (issue 262)'
 );
 
+# #############################################################################
+# Don't let people try to restrict syncing with D=foo
+# #############################################################################
+$output = `perl ../mk-table-sync h=localhost,D=test 2>&1`;
+like($output, qr/Are you trying to sync/, 'Throws error on D=');
+
+# #############################################################################
+# Test --explainhosts (issue 293).
+# #############################################################################
+$output = `perl ../mk-table-sync --explainhosts localhost,D=foo,t=bar t=baz`;
+is($output,
+<<EOF
+# DSN: A=utf8,D=foo,h=localhost,t=bar
+# DSN: A=utf8,D=foo,h=localhost,t=baz
+EOF
+, '--explainhosts');
+
+# #############################################################################
+# Done
+# #############################################################################
 $sb->wipe_clean($master_dbh);
 $sb->wipe_clean($slave_dbh);
-exit;

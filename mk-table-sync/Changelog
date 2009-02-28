@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Added --explainhosts option (issue 293).
+   * Throw an error when trying to use D= to restrict syncing to one database.
    * Checking tables for triggers caused a crash (issue 262).
    * Database or table names with spaces caused a crash (issue 262).
 
