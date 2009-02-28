@@ -21,3 +21,9 @@ else
    done
    /tmp/$NUM/start
 fi
+
+/tmp/$NUM/use -e 'show innodb status' > /dev/null 2>&1
+if [ "$?" != "0" ]; then
+   echo "****** WARNING sandbox doesn't have a working InnoDB! ******"
+   exit 1;
+fi
