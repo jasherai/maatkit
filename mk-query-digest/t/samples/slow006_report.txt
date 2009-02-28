@@ -20,8 +20,8 @@
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS LIKE 'foo_tbl'\G
-#    SHOW CREATE TABLE `foo_tbl`\G
+#    SHOW TABLE STATUS FROM `foo` LIKE 'foo_tbl'\G
+#    SHOW CREATE TABLE `foo`.`foo_tbl`\G
 # EXPLAIN
 SELECT col FROM foo_tbl\G
 

@@ -21,4 +21,4 @@
 # Tables
 #    SHOW TABLE STATUS LIKE 'foo'\G
 #    SHOW CREATE TABLE `foo`\G
-INSERT INTO `foo` VALUES (1, 2, 3) /*... omitted ...*/ \G
+INSERT INTO `foo` VALUES (1, 2, 3) /*... omitted ...*/\G

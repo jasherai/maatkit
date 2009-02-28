@@ -1,5 +1,10 @@
 Changelog for mk-query-digest:
 
+   * Database wasn't printed in SHOW CREATE TABLE/SHOW TABLE STATUS (issue 290).
+   * "--report tables" will now print "SHOW CREATE..." etc (issue 287).
+   * Some long queries were not shortened (issue 292).
+   * INSERT/ON DUPLICATE KEY UPDATE caused extra tables to be found (issue 291).
+   * Changed the --truncateinsert option to --shorten (issue 292).
    * Added --explain to print the EXPLAIN in the report (issue 199).
    * Added 'bytes' property to log events (issue 247).
    * Some INSERT/REPLACE queries were not truncated (issue 216).

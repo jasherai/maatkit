@@ -19,8 +19,8 @@
 #    1s
 #  10s+
 # Tables
-#    SHOW TABLE STATUS LIKE 'tbl'\G
-#    SHOW CREATE TABLE `tbl`\G
+#    SHOW TABLE STATUS FROM `db2` LIKE 'tbl'\G
+#    SHOW CREATE TABLE `db2`.`tbl`\G
 # EXPLAIN
 SELECT MIN(id),MAX(id) FROM tbl\G
 
