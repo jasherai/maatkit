@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 84;
+use Test::More tests => 86;
 use English qw(-no_match_vars);
 
 require '../QueryRewriter.pm';
@@ -278,6 +278,7 @@ test_query(
    [qw(foo)],
    'update with one AS alias',
 );
+
 test_query(
    'UPDATE IGNORE foo bar SET value = 1 WHERE 1',
    {
@@ -286,6 +287,7 @@ test_query(
    [qw(foo)],
    'update ignore with one implicit alias',
 );
+
 test_query(
    'UPDATE IGNORE bar SET value = 1 WHERE 1',
    {
@@ -294,6 +296,7 @@ test_query(
    [qw(bar)],
    'update ignore with one not aliased',
 );
+
 test_query(
    'UPDATE LOW_PRIORITY baz SET value = 1 WHERE 1',
    {
@@ -302,6 +305,7 @@ test_query(
    [qw(baz)],
    'update low_priority with one not aliased',
 );
+
 test_query(
    'UPDATE LOW_PRIORITY IGNORE bat SET value = 1 WHERE 1',
    {
@@ -310,6 +314,7 @@ test_query(
    [qw(bat)],
    'update low_priority ignore with one not aliased',
 );
+
 test_query(
    'INSERT INTO foo VALUES (1)',
    {
@@ -317,6 +322,15 @@ test_query(
    },
    [qw(foo)],
    'insert with one not aliased',
+);
+
+test_query(
+   'INSERT INTO foo VALUES (1) ON DUPLICATE KEY UPDATE bar = 1',
+   {
+      foo => 'foo',
+   },
+   [qw(foo)],
+   'insert / on duplicate key update',
 );
 
 # #############################################################################

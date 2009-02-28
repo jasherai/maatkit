@@ -25,8 +25,11 @@ use English qw(-no_match_vars);
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
+# This regex finds things that look like database.table identifiers, based on
+# their proximity to keywords.  (?<!KEY\s) is a workaround for ON DUPLICATE KEY
+# UPDATE, which is usually followed by a column name.
 our $tbl_regex = qr{
-         \b(?:FROM|JOIN|UPDATE|INTO) # Words that precede table names
+         \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
          \b\s*
          # Capture the identifier and any number of comma-join identifiers that
          # follow it, optionally with aliases with or without the AS keyword
