@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 13;
+use Test::More tests => 17;
 use English qw(-no_match_vars);
 
 require "../Quoter.pm";
@@ -64,5 +64,30 @@ is( $q->quote_val("a'"), "'a\\''", 'letter with quotes');
 is( $q->quote_val(undef), 'NULL', 'NULL');
 is( $q->quote_val(''), "''", 'Empty string');
 is( $q->quote_val('\\\''), "'\\\\\\\''", 'embedded backslash');
+
+# Splitting DB and tbl apart
+is_deeply(
+   [$q->split_unquote("`db`.`tbl`")],
+   [qw(db tbl)],
+   'splits with a quoted db.tbl',
+);
+
+is_deeply(
+   [$q->split_unquote("db.tbl")],
+   [qw(db tbl)],
+   'splits with a db.tbl',
+);
+
+is_deeply(
+   [$q->split_unquote("tbl")],
+   [undef, 'tbl'],
+   'splits without a db',
+);
+
+is_deeply(
+   [$q->split_unquote("tbl", "db")],
+   [qw(db tbl)],
+   'splits with a db',
+);
 
 exit;
