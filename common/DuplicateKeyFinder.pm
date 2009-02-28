@@ -408,6 +408,8 @@ sub remove_clustered_duplicates {
    my $pkcols = $args{primary_key}->{colnames};
    my $keys   = $args{keys};
    my @dupes;
+   # TODO: this can be done more easily now that each key has
+   # its cols in an array, so we just have to look at cols[-1].
    KEY:
    for my $i ( 0..$#{@$keys} ) {
       my $suffix = $keys->[$i]->{colnames};
