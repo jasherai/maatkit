@@ -62,6 +62,30 @@ sub strip_comments {
    return $query;
 }
 
+# Shortens long queries by normalizing stuff out of them.
+sub shorten {
+   my ( $self, $query ) = @_;
+   # Shorten multi-value insert/replace, all the way up to on duplicate key
+   # update if it exists.
+   $query =~ s{
+      \A(
+         (?:INSERT|REPLACE)
+         (?:\s+LOW_PRIORITY|DELAYED|HIGH_PRIORITY|IGNORE)?
+         (?:\s\w+)*\s+\S+\s+VALUES\s*\(.*?\)
+      )
+      \s*,\s*\(.*?(ON\s+DUPLICATE|\Z)}
+      {$1 /*... omitted ...*/$2}xsi;
+
+   # Shorten long IN() lists of literals.
+   $query =~ s{
+      (IN\s*\((?:$quote_re|\w+))    # One literal in an IN list
+      (?:\s*,\s*(?:$quote_re|\w+))+ # Followed by 1 to infinity more
+      }
+      {$1 /*... omitted ...*/ }xsio;
+
+   return $query;
+}
+
 # Normalizes variable queries to a "query fingerprint" by abstracting away
 # parameters, canonicalizing whitespace, etc.  See
 # http://dev.mysql.com/doc/refman/5.0/en/literals.html for literal syntax.

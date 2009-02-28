@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 95;
+use Test::More tests => 106;
 use English qw(-no_match_vars);
 
 require "../QueryRewriter.pm";
@@ -663,6 +663,12 @@ is(
    'column list to isnull/coalesce'
 );
 
+is(
+   $qr->convert_to_select("UPDATE tbl SET col='wherex'WHERE crazy=1"),
+   "select  col='wherex' from tbl where  crazy=1",
+   "update with SET col='wherex'WHERE"
+);
+
 is($qr->convert_to_select(
    q{UPDATE GARDEN_CLUPL PL, GARDENJOB GC, APLTRACT_GARDENPLANT ABU SET }
    . q{GC.MATCHING_POT = 5, GC.LAST_GARDENPOT = 5, GC.LAST_NAME=}
@@ -712,7 +718,67 @@ is($qr->distill('start'), 'START', 'distill START');
 is($qr->distill('ROLLBACK'), 'ROLLBACK', 'distill ROLLBACK');
 
 is(
-   $qr->convert_to_select("UPDATE tbl SET col='wherex'WHERE crazy=1"),
-   "select  col='wherex' from tbl where  crazy=1",
-   "update with SET col='wherex'WHERE"
+   $qr->shorten("insert into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i)"),
+   "insert into t(a,b,c) values(a,b,c) /*... omitted ...*/",
+   "shorten simple insert",
+);
+
+is(
+   $qr->shorten("insert low_priority into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i)"),
+   "insert low_priority into t(a,b,c) values(a,b,c) /*... omitted ...*/",
+   "shorten low_priority simple insert",
+);
+
+is(
+   $qr->shorten("insert delayed into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i)"),
+   "insert delayed into t(a,b,c) values(a,b,c) /*... omitted ...*/",
+   "shorten delayed simple insert",
+);
+
+is(
+   $qr->shorten("insert high_priority into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i)"),
+   "insert high_priority into t(a,b,c) values(a,b,c) /*... omitted ...*/",
+   "shorten high_priority simple insert",
+);
+
+is(
+   $qr->shorten("insert ignore into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i)"),
+   "insert ignore into t(a,b,c) values(a,b,c) /*... omitted ...*/",
+   "shorten ignore simple insert",
+);
+
+is(
+   $qr->shorten("insert high_priority ignore into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i)"),
+   "insert high_priority ignore into t(a,b,c) values(a,b,c) /*... omitted ...*/",
+   "shorten high_priority ignore simple insert",
+);
+
+is(
+   $qr->shorten("replace low_priority into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i)"),
+   "replace low_priority into t(a,b,c) values(a,b,c) /*... omitted ...*/",
+   "shorten replace low_priority",
+);
+
+is(
+   $qr->shorten("replace delayed into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i)"),
+   "replace delayed into t(a,b,c) values(a,b,c) /*... omitted ...*/",
+   "shorten replace delayed",
+);
+
+is(
+   $qr->shorten("insert into t(a,b,c) values(a,b,c),(d,e,f),(g,h,i) on duplicate key update a = b"),
+   "insert into t(a,b,c) values(a,b,c) /*... omitted ...*/on duplicate key update a = b",
+   "shorten insert ... odku",
+);
+
+is(
+   $qr->shorten("select * from a where b in(1,2,3,4,5,6)"),
+   "select * from a where b in(1 /*... omitted ...*/ )",
+   "shorten IN() list numbers",
+);
+
+is(
+   $qr->shorten("select * from a where b in(1, '5 string', \"6 string\")"),
+   "select * from a where b in(1 /*... omitted ...*/ )",
+   "shorten IN() list numbers and strings",
 );
