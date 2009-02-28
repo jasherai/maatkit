@@ -1,0 +1,10 @@
+-- file mysql-bin.000001
+-- position 187907
+-- CHUNK test t1 0 `a` < 16
+-- CHUNK test t1 1 `a` >= 16 AND `a` < 31
+-- CHUNK test t1 2 `a` >= 31 AND `a` < 46
+-- CHUNK test t1 3 `a` >= 46 AND `a` < 61
+-- CHUNK test t1 4 `a` >= 61 AND `a` < 76
+-- CHUNK test t1 5 `a` >= 76 AND `a` < 91
+-- CHUNK test t1 6 `a` >= 91
+-- CHUNK test t2 0 1=1

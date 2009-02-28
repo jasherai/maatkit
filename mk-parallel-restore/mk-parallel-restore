@@ -1133,6 +1133,7 @@ use English qw(-no_match_vars);
 use File::Basename qw(dirname);
 use File::Find;
 use File::Spec;
+use File::Temp;
 use List::Util qw(max sum);
 use POSIX;
 use Time::HiRes qw(time);
@@ -1227,6 +1228,20 @@ $opt_parser->usage_or_errors(%opts);
 if ( !defined $opts{p} && $opts{askpass} ) {
    $opts{p} = OptionParser::prompt_noecho("Enter password: ");
 }
+
+# TODO: remove this again when issue with loading .trg is fixed
+my @conn_params;
+@conn_params = (
+   [qw(--defaults-file F)],
+   [qw(--host          h)],
+   [qw(--password      p)],
+   [qw(--port          P)],
+   [qw(--socket        S)],
+   [qw(--user          u)],
+);
+@conn_params = map  { "$_->[0]='$opts{$_->[1]}'" }
+               grep { defined $opts{$_->[1]}     }
+               @conn_params;
 
 my $dbh = get_cxn();
 $dbh->{InactiveDestroy}  = 1;         # Don't die on fork().
@@ -1514,7 +1529,8 @@ sub info {
 # Actually restores a table.
 sub do_table {
    my ( $db, $tbl, @files ) = @_;
-   my $exit_status = 0;
+   my $exit_status  = 0;
+   my $trigger_file = undef; # TODO: rm this hack
 
    # Sort files.  If it's a --tab, this will result in the following load
    # order:
@@ -1526,6 +1542,10 @@ sub do_table {
    @files = sort {
       my $a_type = filetype($a);
       my $b_type = filetype($b);
+      # TODO: rm this hack
+      if ( $a_type eq 'trg' || $b_type eq 'trg' ) {
+         $trigger_file = $a_type eq 'trg' ? $a : $b;
+      }
       (index($known_filetypes, $a_type) <=> index($known_filetypes, $b_type))
          || ($a cmp $b);
    } @files;
@@ -1536,12 +1556,29 @@ sub do_table {
 
    $bytes_done = skip_finished_chunks($db, $tbl, \@files) unless $opts{noresume};
 
+   # TODO: rm this hack 
+   my $set_bin_log_fh;
+   my $set_bin_log_file;
+   if ( $trigger_file ) {
+      $set_bin_log_fh   = new File::Temp();
+      $set_bin_log_file = $set_bin_log_fh->filename;
+      `echo 'SET SQL_LOG_BIN=$opts{binlog};' > $set_bin_log_file`; 
+      if ( $trigger_file =~ m/\.gz/ ) {
+         # gzipping the file changes its name so File::Temp will no longer
+         # be able to automatically unlink the file for us. Thus, we have
+         # to do it manually, as you'll see below.
+         `gzip $set_bin_log_file`;
+         $set_bin_log_file .= '.gz';
+      }
+      MKDEBUG && _d("set bin log file: $set_bin_log_file");
+   }
+
    foreach my $file ( @files ) {
 
       # skip_finished_chunks() undefs files which are already restored
       next if !defined $file;
 
-      if ( filetype($file) =~ m/^(?:sql|trg)$/ ) {
+      if ( filetype($file) eq 'sql' ) {
          $dbh ||= get_cxn();
          $exit_status = do_sql_file(
             dbh  => $dbh,
@@ -1550,6 +1587,18 @@ sub do_table {
             db   => $db,
             tbl  => $tbl
          );
+      }
+      elsif ( filetype($file) eq 'trg' ) {
+         # TODO: rm this hack
+         my @args = (
+            ($file =~ m/\.gz/ ? "$opts{decompress}" : 'cat'),
+            qq{'$set_bin_log_file'},
+            qq{'$file'},
+            qw(| mysql),
+            @conn_params,
+            $db
+         );
+         $exit_status = system_call( @args ) || $exit_status;
       }
       else {
          if ( $file =~ m/\.gz$/ ) {
@@ -1636,6 +1685,7 @@ sub do_table {
          }
          else {
             unlink $fifo if $fifo;
+            unlink $set_bin_log_file if $set_bin_log_file;
             die "I don't understand how to load file $file\n";
          }
       }
@@ -1654,6 +1704,7 @@ sub do_table {
       unlink $fifo;
    }
 
+   unlink $set_bin_log_file if $set_bin_log_file;
    $dbh->disconnect() if $dbh;
    return $exit_status;
 }
@@ -1772,6 +1823,9 @@ sub skip_finished_chunks {
 
       # We need to DELETE the first missing chunk otherwise we may try to
       # INSERT dupliate values.
+      # TODO: Use of uninitialized value in concatenation (.) or string at
+      # ./mk-parallel-restore line 1808 with --test and tables already
+      # exist; doesn't happen if tables do not exist
       $dbh->do("DELETE FROM $db_tbl WHERE "
                . $chunks_ref->[$first_missing_chunk]);
 

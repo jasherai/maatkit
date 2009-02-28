@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 26;
+use Test::More tests => 27;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -228,7 +228,16 @@ SKIP: {
 
    $res = $dbh->selectall_arrayref('SHOW MASTER STATUS');
    is($master_pos, $res->[0]->[1], 'Bin log pos unchanged');
+
+   # Check that triggers are not replicated
+   `$cmd ./samples/tbls_with_trig/ --binlog 0`;
+   sleep 1;
+
+   $slave_dbh->do('USE test');
+   $res = $slave_dbh->selectall_arrayref('SHOW TRIGGERS');
+   is_deeply($res, [], 'Triggers are not replicated with --binlog 0');
 };
 
+`rm -rf /tmp/default/`;
 $sb->wipe_clean($dbh);
 exit;
