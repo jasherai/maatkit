@@ -138,8 +138,7 @@ sub aggregate {
       # Start by getting direct handles to the location of each data store and
       # thing that would otherwise be looked up via hash keys.
       my @attrs = grep { $self->{handlers}->{$_} } @attrs;
-      my @handl = @{$self->{handlers}}{@attrs};
-      my @globs = @{$self->{result_globals}}{@attrs}; # Global stats for each
+      my $globs = $self->{result_globals}; # Global stats for each
 
       # Now the tricky part -- must make sure only the desired variables from
       # the outer scope are re-used, and any variables that should have their
@@ -148,16 +147,15 @@ sub aggregate {
          'my ( $self, $event, $group_by ) = @_;',
          'my ($val, $class, $global, $idx);',
          (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
-         # Create and get an array of hashrefs for each attribute's storage
+         # Create and get each attribute's storage
          'my $temp = $self->{result_class}->{ $group_by }
             ||= { map { $_ => { } } @attrs };',
-         'my @st_fc = @{$temp}{@attrs};', # Stats for class
       );
       foreach my $i ( 0 .. $#attrs ) {
          # Access through array indexes, it's faster than hash lookups
          push @lines, (
-            '$class  = $st_fc[' . $i . '];',
-            '$global = $globs[' . $i . '];',
+            '$class  = $temp->{"'  . $attrs[$i] . '"};',
+            '$global = $globs->{"' . $attrs[$i] . '"};',
             $self->{unrolled_for}->{$attrs[$i]},
          );
       }
