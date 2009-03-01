@@ -33,15 +33,28 @@ sub new {
       # These are used in case you want to look back and see more
       # details about what happened inside get_duplicate_keys().
       keys        => undef,  # copy of last keys that we worked on
-      unique_cols => undef,  # unique cols for those last keys (hasref)
+      unique_cols => undef,  # unique cols for those last keys (hashref)
       unique_sets => undef,  # unique sets for those last keys (arrayref) 
    };
    return bless $self, $class;
 }
 
-# Requires $args{key} which should be a hashref returned from
-# TableParser::get_keys().
-# Returns an arrayref of hashrefs for each duplicate key.
+# %args should contain:
+#
+#  *  keys           (required) A hashref from TableParser::get_keys().
+#  *  engine         The storage engine for the table.
+#  *  ignore_order   Order never matters for any type of index (generally order
+#                    matters except for FULLTEXT).
+#  *  ignore_type    Compare indexes of different types as if they're the same.
+#  *  clustered      Perform duplication checks against the clustered  key.
+#
+# Returns an arrayref of duplicate key hashrefs.  Each contains
+#
+#  *  key               The name of the index that's a duplicate.
+#  *  cols              The columns in that key (arrayref).
+#  *  duplicate_of      The name of the index it duplicates.
+#  *  duplicate_of_cols The columns of the index it duplicates.
+#  *  reason            A human-readable description of why this is a duplicate.
 sub get_duplicate_keys {
    my ( $self, %args ) = @_;
    die "I need a keys argument" unless $args{keys};
