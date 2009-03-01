@@ -238,7 +238,7 @@ is_deeply(
 $dupes = [];
 $dk->get_duplicate_keys(
    clustered => 1,
-   engine    => 'InnoDB',
+   tbl_info  => { engine    => 'InnoDB', ddl => $ddl },
    keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
@@ -259,7 +259,7 @@ $ddl = load_file('samples/dupe_if_it_were_innodb.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
    clustered => 1,
-   engine    => 'MyISAM',
+   tbl_info  => {engine    => 'MyISAM', ddl => $ddl},
    keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
@@ -274,7 +274,7 @@ $ddl = load_file('samples/mysql_db.sql');
 $dupes = [];
 $dk->get_duplicate_keys(
    clustered => 1,
-   engine    => 'InnoDB',
+   tbl_info  => { engine    => 'InnoDB', ddl => $ddl },
    keys      => $tp->get_keys($ddl, $opt),
    callback  => $callback);
 is_deeply(
