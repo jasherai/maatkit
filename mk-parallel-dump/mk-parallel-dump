@@ -3291,8 +3291,7 @@ generated command-line.
 There's no reason you can't use mk-parallel-dump to do other tasks in
 parallel, such as C<OPTIMIZE TABLE>:
 
-  mk-parallel-dump --noflushlock --locktables -- mysqlcheck \
-    --optimize '%D' '%N'
+  mk-parallel-dump --noflushlock -- mysqlcheck --optimize '%D' '%N'
 
 When you use built-in defaults, mk-parallel-dump will relay these arguments
 on to every forked copy of C<mysqldump>: L<"--defaults-file">, L<"--host">,
