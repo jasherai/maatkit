@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 28;
+use Test::More tests => 30;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -140,6 +140,25 @@ is_deeply(
    [ [999] ],
    'Trigger still works after being restored (issue 223)'
 );
+
+# #############################################################################
+# Issue 275: mk-parallel-dump --chunksize does not work properly with --csv
+# #############################################################################
+
+# This test relies on issue_223.sql loaded above which creates test.t1.
+
+# There should be 56 rows total, so -C 28 should make 2 chunks.
+# And since the range of vals is 1..999, those chunks will be
+# < 500 and >= 500. Furthermore, the top 2 vals are 100 and 999,
+# so the 2nd chunk should contain only 999.
+diag(`rm -rf /tmp/default/`);
+diag(`$cmd --basedir /tmp/ --csv -C 28 -d test -t t1 > /dev/null`);
+
+$output = `gzip -d -c /tmp/default/test/t1.000000.txt.gz | wc -l`;
+like($output, qr/55/, 'First chunk of csv dump (issue 275)');
+
+$output = `gzip -d -c /tmp/default/test/t1.000001.txt.gz`;
+is($output, "999\n", 'Second chunk of csv dump (issue 275)');
 
 diag(`rm -rf /tmp/default/`);
 $sb->wipe_clean($dbh);

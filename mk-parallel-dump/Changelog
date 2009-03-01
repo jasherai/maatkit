@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * --chunksize did not work properly with --csv (issue 275).
+
 2009-02-01: version 1.0.12
 
    * CREATE TRIGGER defs were wrongly included in chunk files (issue 223).

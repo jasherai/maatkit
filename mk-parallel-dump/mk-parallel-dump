@@ -3106,7 +3106,7 @@ sub do_table {
            = $opts{csv}
            ?    "SELECT $todo->{L} INTO OUTFILE '$filename.txt' "
               . "FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\\"' "
-              . "LINES TERMINATED BY '\\n' FROM $D.$N"
+              . "LINES TERMINATED BY '\\n' FROM $D.$N WHERE $todo->{W}"
            :    "SELECT $todo->{L} INTO OUTFILE '$filename.txt' "
               . "FROM $D.$N WHERE $todo->{W}";
          if ( $opts{test} ) {
