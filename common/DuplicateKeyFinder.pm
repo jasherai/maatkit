@@ -41,8 +41,9 @@ sub new {
 
 # %args should contain:
 #
-#  *  keys           (required) A hashref from TableParser::get_keys().
-#  *  engine         The storage engine for the table.
+#  *  keys           (req) A hashref from TableParser::get_keys().
+#  *  tbl_info       (req) { db, tbl, engine, ddl } hashref.
+#  *  callback       (req) An anonymous subroutine, called for each dupe found.
 #  *  ignore_order   Order never matters for any type of index (generally order
 #                    matters except for FULLTEXT).
 #  *  ignore_type    Compare indexes of different types as if they're the same.
@@ -231,7 +232,7 @@ sub get_duplicate_keys {
    # Key foo is redundant to PRIMARY.
    if ( $primary_key
         && $args{clustered}
-        && $args{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
+        && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
 
       MKDEBUG && _d('Start removing UNIQUE dupes of clustered key');
       $self->remove_clustered_duplicates(
@@ -293,10 +294,13 @@ sub get_duplicate_fks {
    return \@dupes;
 }
 
-# Caution: undocumented deep magick below.
+# TODO: Document this subroutine.
+# %args should contain the same things passed to get_duplicate_keys(), plus:
+#  *  remove_keys       ????
+#  *  duplicate_keys    ????
+#  *  exact_duplicates  ????
 sub remove_prefix_duplicates {
    my ( $self, %args ) = @_;
-   die "I need a keys argument" unless $args{keys};
    my $keys;
    my $remove_keys;
    my @dupes;
