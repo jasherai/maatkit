@@ -1855,7 +1855,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DuplicateKeyFinder package 3093
+# DuplicateKeyFinder package 3097
 # ###########################################################################
 package DuplicateKeyFinder;
 
@@ -1871,7 +1871,7 @@ sub new {
    my ( $class ) = @_;
    my $self = {
       keys        => undef,  # copy of last keys that we worked on
-      unique_cols => undef,  # unique cols for those last keys (hasref)
+      unique_cols => undef,  # unique cols for those last keys (hashref)
       unique_sets => undef,  # unique sets for those last keys (arrayref) 
    };
    return bless $self, $class;
@@ -2013,7 +2013,7 @@ sub get_duplicate_keys {
 
    if ( $primary_key
         && $args{clustered}
-        && $args{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
+        && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
 
       MKDEBUG && _d('Start removing UNIQUE dupes of clustered key');
       $self->remove_clustered_duplicates(
@@ -2074,7 +2074,6 @@ sub get_duplicate_fks {
 
 sub remove_prefix_duplicates {
    my ( $self, %args ) = @_;
-   die "I need a keys argument" unless $args{keys};
    my $keys;
    my $remove_keys;
    my @dupes;
@@ -2452,11 +2451,11 @@ my $dk = new DuplicateKeyFinder();
 my $q  = new Quoter();
 my $tp = new TableParser();
 my $du = new MySQLDump();
-my $tp_opts = {
+my %tp_opts = (
    ignore_type  => $opts{a},
    ignore_order => $opts{ignoreorder},
    clustered    => $opts{c},
-};
+);
 
 my $finder = new MySQLFind(
    quoter    => $q,
@@ -2503,16 +2502,16 @@ foreach my $database ( $finder->find_databases($dbh) ) {
       else {
          $dk->get_duplicate_keys(
             keys     => $keys,
-            tbl_info => $tbl_info,
             callback => \&print_duplicate_key,
-            %$tp_opts,
+            tbl_info => $tbl_info,
+            %tp_opts,
          ) if $keys;
 
          $dk->get_duplicate_fks(
             keys     => $fks,
-            tbl_info => $tbl_info,
             callback => \&print_duplicate_key,
-            %$tp_opts,
+            tbl_info => $tbl_info,
+            %tp_opts,
          ) if $fks;
       }
       $summary{'Total Keys'} += (scalar keys %$keys) + (scalar keys %$fks)
