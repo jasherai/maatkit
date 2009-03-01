@@ -17,7 +17,7 @@ if ( $svnst =~ m/\S/ ) {
 }
 
 # Don't release if we use the construct $#{@$array} anywhere
-chomp ( my $bad = `grep -r '#{' ../` );
+chomp ( my $bad = `grep -r '#{' ../mk-*/mk-*` );
 if ( $bad ) {
    print "Not releaseing; you have used a nonportable array index technique:\n"
       . $bad . "\n";
