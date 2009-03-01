@@ -2464,9 +2464,9 @@ foreach my $database ( $finder->find_databases($dbh) ) {
       #  * estimate how much smaller we can make a table by optimizing its data
       #    types.  Calculate the space savings for primary/secondary keys for
       #    InnoDB.  See Percona customer case #2389.
-
-      #  * verbose option: 
-      #     produce a detailed per-db, per-tbl schema report showing size, index
+      #  * Permit to read from a file so we can do something like "mysqldump
+      #  --no-data > file; mk-schema-audit < file".
+      #  *  produce a detailed per-db, per-tbl schema report showing size, index
       #     size, engine, number of indexes, number of columns etc for each
       #     table.  Maybe also mention unusual data types in the table, or a
       #     summary of the data types.  Also show triggers.
