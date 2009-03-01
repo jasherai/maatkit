@@ -1657,7 +1657,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3065
+# EventAggregator package 3106
 # ###########################################################################
 
 
@@ -1739,8 +1739,7 @@ sub aggregate {
       || !grep {ref $self->{handlers}->{$_} ne 'CODE'} @attrs
    ) {
       my @attrs = grep { $self->{handlers}->{$_} } @attrs;
-      my @handl = @{$self->{handlers}}{@attrs};
-      my @globs = @{$self->{result_globals}}{@attrs}; # Global stats for each
+      my $globs = $self->{result_globals}; # Global stats for each
 
       my @lines = (
          'my ( $self, $event, $group_by ) = @_;',
@@ -1748,12 +1747,11 @@ sub aggregate {
          (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
          'my $temp = $self->{result_class}->{ $group_by }
             ||= { map { $_ => { } } @attrs };',
-         'my @st_fc = @{$temp}{@attrs};', # Stats for class
       );
       foreach my $i ( 0 .. $#attrs ) {
          push @lines, (
-            '$class  = $st_fc[' . $i . '];',
-            '$global = $globs[' . $i . '];',
+            '$class  = $temp->{"'  . $attrs[$i] . '"};',
+            '$global = $globs->{"' . $attrs[$i] . '"};',
             $self->{unrolled_for}->{$attrs[$i]},
          );
       }

@@ -576,3 +576,71 @@ Revision 3066
     28	../mk-query-digest:1504 0.38130 93720: local $INPUT_RECORD_SEPARATOR = ";\n#";
     29	../mk-query-digest:1552 0.36466 93741: push @properties, 'user', $user, 'host', $host, 'ip', $ip;
     30	../mk-query-digest:1180 0.35789 46726: $query =~ s/\bnull\b/?/g;             # Get rid of NULLs
+
+Revision 3086
+35.98user 63.35system 1:40.92elapsed 98%CPU (0avgtext+0avgdata 0maxresident)k
+200inputs+97184outputs (1major+15544minor)pagefaults 0swaps
+     1	../mk-query-digest:1205 3.72488 46726: $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
+     2	../mk-query-digest:1595 2.35083 187482: my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
+     3	../mk-query-digest:1569 1.76651 330270: if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
+     4	../mk-query-digest:1545 1.37067 93741: if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
+     5	../mk-query-digest:1609 1.28301 330270: if ( !$found_arg && $pos == $len ) {
+     6	../mk-query-digest:1206 1.12119 46726: $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+     7	../mk-query-digest:1564 1.10946 377133: my $line = $1;          # Necessary for /g and pos() to work.
+     8	../mk-query-digest:1567 1.09761 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+     9	../mk-query-digest:1541 1.01572 93720: while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
+    10	../mk-query-digest:1640 0.91944 93741: last EVENT unless @pending;
+    11	../mk-query-digest:1197 0.89002 46726: $query =~ s/$olc_re//go;
+    12	../mk-query-digest:1635 0.88103 93741: my $event = { @properties };
+    13	../mk-query-digest:1596 0.79486 187482: push @properties, @temp;
+    14	../mk-query-digest:1563 0.77655 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    15	../mk-query-digest:1565 0.68835 377133: MKDEBUG && _d($line);
+    16	../mk-query-digest:1768 0.68565 93740: [at line 5 inside eval] ||= { map { $_ => { } } @attrs };
+    17	../mk-query-digest:1637 0.63442 281223: last unless $event = $callback->($event);
+    18	../mk-query-digest:1209 0.63341 46726: $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+    19	../mk-query-digest:1212 0.51437 46726: $query =~ s{                          # Collapse IN and VALUES lists
+    20	../mk-query-digest:1553 0.46454 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    21	../mk-query-digest:1554 0.46051 93741: $stmt =~ s/;\n#?\Z//;
+    22	../mk-query-digest:1642 0.45722 93720: return $num_events;
+    23	../mk-query-digest:1210 0.44665 46726: $query = lc $query;
+    24	../mk-query-digest:3781 0.40130 93741: return $event;
+    25	../mk-query-digest:1183 0.39428 93741: my ( $self, $query ) = @_;
+    26	../mk-query-digest:1768 0.39044 93740: [at line 2 inside eval] my ( $self, $event, $group_by ) = @_;
+    27	../mk-query-digest:1768 0.38457 93740: [at line 143 inside eval] ++$class->{unq}->{$val};
+    28	../mk-query-digest:1583 0.37592 93741: push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+    29	../mk-query-digest:1535 0.37238 93720: local $INPUT_RECORD_SEPARATOR = ";\n#";
+    30	../mk-query-digest:1531 0.34157 93720: my ( $self, $fh, $misc, @callbacks ) = @_;
+
+Revision 3086
+35.73user 63.11system 1:39.88elapsed 98%CPU (0avgtext+0avgdata 0maxresident)k
+0inputs+97184outputs (0major+15532minor)pagefaults 0swaps
+     1	../mk-query-digest:1205 3.68132 46726: $query =~ s/[0-9+-][0-9a-f.xb+-]*/?/g;# Anything vaguely resembling numbers
+     2	../mk-query-digest:1595 2.32032 187482: my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
+     3	../mk-query-digest:1569 1.74595 330270: if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
+     4	../mk-query-digest:1545 1.34415 93741: if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
+     5	../mk-query-digest:1609 1.26711 330270: if ( !$found_arg && $pos == $len ) {
+     6	../mk-query-digest:1206 1.14104 46726: $query =~ s/[xb.+-]\?/?/g;            # Clean up leftovers
+     7	../mk-query-digest:1564 1.10363 377133: my $line = $1;          # Necessary for /g and pos() to work.
+     8	../mk-query-digest:1567 1.07662 377133: if ($line =~ m/^(?:#|use |SET (?:last_insert_id|insert_id|timestamp))/o) {
+     9	../mk-query-digest:1541 0.99871 93720: while ( defined($stmt = shift @pending) or defined($stmt = <$fh>) ) {
+    10	../mk-query-digest:1640 0.90989 93741: last EVENT unless @pending;
+    11	../mk-query-digest:1197 0.88071 46726: $query =~ s/$olc_re//go;
+    12	../mk-query-digest:1635 0.86017 93741: my $event = { @properties };
+    13	../mk-query-digest:1596 0.78338 187482: push @properties, @temp;
+    14	../mk-query-digest:1563 0.76766 377133: $pos     = pos($stmt);  # Be careful not to mess this up!
+    15	../mk-query-digest:1565 0.68187 377133: MKDEBUG && _d($line);
+    16	../mk-query-digest:1767 0.67239 93740: [at line 5 inside eval] ||= { map { $_ => { } } @attrs };
+    17	../mk-query-digest:1637 0.61703 281223: last unless $event = $callback->($event);
+    18	../mk-query-digest:1209 0.60900 46726: $query =~ tr[ \n\t\r\f][ ]s;          # Collapse whitespace
+    19	../mk-query-digest:1212 0.50746 46726: $query =~ s{                          # Collapse IN and VALUES lists
+    20	../mk-query-digest:1554 0.45714 93741: $stmt =~ s/;\n#?\Z//;
+    21	../mk-query-digest:1553 0.45192 93741: $stmt = '#' . $stmt unless $stmt =~ m/\A#/;
+    22	../mk-query-digest:1642 0.44782 93720: return $num_events;
+    23	../mk-query-digest:1210 0.42939 46726: $query = lc $query;
+    24	../mk-query-digest:1183 0.38735 93741: my ( $self, $query ) = @_;
+    25	../mk-query-digest:1767 0.37928 93740: [at line 2 inside eval] my ( $self, $event, $group_by ) = @_;
+    26	../mk-query-digest:1535 0.36342 93720: local $INPUT_RECORD_SEPARATOR = ";\n#";
+    27	../mk-query-digest:3780 0.36121 93741: return $event;
+    28	../mk-query-digest:1767 0.34437 93740: [at line 143 inside eval] ++$class->{unq}->{$val};
+    29	../mk-query-digest:1583 0.34288 93741: push @properties, 'user', $user, 'host', $host, 'ip', $ip;
+    30	../mk-query-digest:1531 0.33474 93720: my ( $self, $fh, $misc, @callbacks ) = @_;
