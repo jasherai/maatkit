@@ -211,22 +211,22 @@ sub get_duplicate_keys {
 
    # TODO: other structs
 
-   # For engines with clustered indexes, if a key ends with a prefix
+   # For engines with a clustered index, if a key ends with a prefix
    # of the primary key, it's a duplicate. Example:
    #    PRIMARY KEY (a)
    #    KEY foo (b, a)
-   # Key foo is a duplicate of PRIMARY.
+   # Key foo is redundant to PRIMARY.
    if ( $primary_key
         && $args{clustered}
         && $args{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
 
-      MKDEBUG && _d('Start removing clustered UNIQUE key dupes');
+      MKDEBUG && _d('Start removing UNIQUE dupes of clustered key');
       $self->remove_clustered_duplicates(
             primary_key => $primary_key,
             keys        => \@unique_keys,
             %pass_args);
 
-      MKDEBUG && _d('Start removing clustered normal key dupes');
+      MKDEBUG && _d('Start removing ordinary dupes of clustered key');
       $self->remove_clustered_duplicates(
             primary_key => $primary_key,
             keys        => \@normal_keys,
@@ -411,7 +411,7 @@ sub remove_clustered_duplicates {
    # TODO: this can be done more easily now that each key has
    # its cols in an array, so we just have to look at cols[-1].
    KEY:
-   for my $i ( 0..$#{@$keys} ) {
+   for my $i ( 0 .. @$keys - 1 ) {
       my $suffix = $keys->[$i]->{colnames};
       SUFFIX:
       while ( $suffix =~ s/`[^`]+`,// ) {
@@ -422,8 +422,9 @@ sub remove_clustered_duplicates {
                cols              => $keys->[$i]->{real_cols},
                duplicate_of      => $args{primary_key}->{name},
                duplicate_of_cols => $args{primary_key}->{real_cols},
-               reason            => "Clustered key $keys->[$i]->{name} "
-                                    . "is a duplicate of PRIMARY",
+               reason            => "Key $keys->[$i]->{name} "
+                                    . "ends with a prefix of the clustered "
+                                    . "index",
             };
             push @dupes, $dupe;
             delete $keys->[$i];
@@ -432,7 +433,7 @@ sub remove_clustered_duplicates {
          }
       }
    }
-   MKDEBUG && _d('No more clustered keys');
+   MKDEBUG && _d('No more keys');
 
    @$keys = grep { defined $_; } @$keys;
    push @{$args{duplicate_keys}}, @dupes if $args{duplice_keys};

@@ -249,7 +249,7 @@ is_deeply(
          'cols'         => '`b`,`a`',
          'duplicate_of' => 'PRIMARY',
          'duplicate_of_cols' => '`a`',
-         'reason'       => 'Clustered key b is a duplicate of PRIMARY',
+         'reason'       => 'Key b ends with a prefix of the clustered index',
       }
    ],
    'Duplicate keys with cluster options'
