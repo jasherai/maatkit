@@ -132,6 +132,8 @@ sub mysqld_processes
               rss     => $rss,
               vsz     => $vsz,
               cmd     => $cmd,
+              # TODO: this is untestable.  We need to make a callback to get the
+              # output of "file" for this.
               '64bit' => `file $bin` =~ m/64-bit/ ? 'Yes' : 'No',
               syslog  => $ps =~ m/logger/ ? 'Yes' : 'No',
             };
