@@ -16,6 +16,14 @@ if ( $svnst =~ m/\S/ ) {
    exit(1);
 }
 
+# Don't release if we use the construct $#{@$array} anywhere
+chomp ( my $bad = `grep -r '#{' ../` );
+if ( $bad ) {
+   print "Not releaseing; you have used a nonportable array index technique:\n"
+      . $bad . "\n";
+   exit(1);
+}
+
 # Find list of packages.
 my $base     = '..';
 my @packages = sort split(/\n/, `cat packages`);
