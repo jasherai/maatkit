@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 27;
+use Test::More tests => 28;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -236,6 +236,8 @@ SKIP: {
    $slave_dbh->do('USE test');
    $res = $slave_dbh->selectall_arrayref('SHOW TRIGGERS');
    is_deeply($res, [], 'Triggers are not replicated with --binlog 0');
+   $res = $dbh->selectall_arrayref('SHOW MASTER STATUS');
+   is($master_pos, $res->[0]->[1], 'Bin log pos unchanged');
 };
 
 `rm -rf /tmp/default/`;
