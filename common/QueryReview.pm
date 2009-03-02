@@ -69,12 +69,20 @@ sub new {
    my $now = defined $args{ts_default} ? $args{ts_default} : 'NOW()';
 
    # Design statements to INSERT and statements to SELECT from the review table.
-   my $sql = 'INSERT INTO ' . $args{db_tbl}
-         . '(checksum, fingerprint, sample, first_seen, last_seen) VALUES( '
-         . "CONV(?, 16, 10), ?, ?, COALESCE(?, $now), COALESCE(?, $now)) "
-         . "ON DUPLICATE KEY UPDATE "
-         . "first_seen = LEAST(COALESCE(first_seen, $now), COALESCE(?, $now)), "
-         . "last_seen = GREATEST(COALESCE(last_seen, $now), COALESCE(?, $now))";
+   my $sql = <<"      SQL";
+      INSERT INTO $args{db_tbl}
+      (checksum, fingerprint, sample, first_seen, last_seen)
+      VALUES(CONV(?, 16, 10), ?, ?, COALESCE(?, $now), COALESCE(?, $now))
+      ON DUPLICATE KEY UPDATE
+         first_seen = IF(
+            first_seen IS NULL,
+            COALESCE(?, $now),
+            LEAST(first_seen, COALESCE(?, $now))),
+         last_seen = IF(
+            last_seen IS NULL,
+            COALESCE(?, $now),
+            GREATEST(last_seen, COALESCE(?, $now)))
+      SQL
    MKDEBUG && _d("SQL to insert into review table: ", $sql);
    my $insert_sth = $args{dbh}->prepare($sql);
 
@@ -122,7 +130,7 @@ sub set_review_info {
       make_checksum($args{fingerprint}),
       @args{qw(fingerprint sample)},
       map { $args{$_} ? parse_timestamp($args{$_}) : undef }
-         qw(first_seen last_seen first_seen last_seen));
+         qw(first_seen last_seen first_seen first_seen last_seen last_seen));
 }
 
 # Return the columns we'll be using from the review table.
