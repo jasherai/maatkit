@@ -594,7 +594,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3023
+# OptionParser package 3114
 # ###########################################################################
 package OptionParser;
 
@@ -812,6 +812,7 @@ sub new {
       strict       => 1,
       groups       => [ { k => 'o', d => 'Options' } ],
       allowed_with => \@allowed_with,
+      given        => {},
    };
 
    return bless $self, $class;
@@ -838,7 +839,6 @@ sub parse {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
    my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
-   my %opt_given;
    my %opt_seen;
    my %vals = %{$self->{defaults}};
    @vals{keys %defaults} = values %defaults;
@@ -852,21 +852,23 @@ sub parse {
          unless $opt_seen{$key};
    }
 
+   $self->{given} = {}; # in case options are re-parsed
+
    Getopt::Long::Configure('no_ignore_case', 'bundling');
    GetOptions(
       map {
          my $spec = $_;
          $spec->{s} => sub {
                           my ( $opt, $val ) = @_;
-                          MKDEBUG && _d("Given option: $opt ($spec->{k}) "
-                             . " = $val");
-                          $opt_given{$spec->{k}}++;
                           if ( $spec->{c} ) {
                              $vals{$spec->{k}}++
                           }
                           else {
                              $vals{$spec->{k}} = $val;
                           }
+                          MKDEBUG && _d("Given option: $opt ($spec->{k}) "
+                             . " = $val");
+                          $self->{given}->{$spec->{k}} = $vals{$spec->{k}};
                        }
       } @specs
    ) or $self->error('Error parsing options');
@@ -1146,6 +1148,25 @@ if ( MKDEBUG ) {
       ($main::SVN_REV || ''), __LINE__);
    print('# Arguments: ',
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+sub read_para_after {
+   my ( $self, $file, $regex ) = @_;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=pod$/m;
+      last;
+   }
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/$regex/;
+      last;
+   }
+   $para = <$fh>;
+   chomp($para);
+   close $fh or die "Can't close $file: $OS_ERROR";
+   return $para;
 }
 
 sub _d {
@@ -3074,22 +3095,13 @@ $dsn_parser->prop('setvars', $opts{setvars});
 # the magical token.
 my %overridable_args;
 {
-   local $INPUT_RECORD_SEPARATOR = '';
-   my $file = __FILE__;
-   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
-   my $para;
-
-   while ( $para = <$fh> ) {
-      next unless $para =~ m/magical\soverridable/;
-      last;
-   }
-   $para = <$fh>;
+   my $para = $opt_parser->read_para_after(
+      __FILE__, qr/MAGIC_overridable_args/);
    foreach my $arg ( $para =~ m/([\w-]+)/g ) {
       die "Magical argument $arg mentioned in POD isn't a command-line argument"
          unless exists $opts{$arg};
       $overridable_args{$arg} = 1;
    }
-   close $fh;
 };
 
 # Post-process command-line options and arguments.
@@ -3933,19 +3945,10 @@ sub check_repl_table {
 
 sub create_repl_table {
    my ( $dbh ) = @_;
-   # TODO: extract this from the POD -- see issue 92
-   my $sql = "CREATE TABLE $opts{R} (
-                 db         char(64)     NOT NULL,
-                 tbl        char(64)     NOT NULL,
-                 chunk      int          NOT NULL,
-                 boundaries char(100)    NOT NULL,
-                 this_crc   char(40)     NOT NULL,
-                 this_cnt   int          NOT NULL,
-                 master_crc char(40)         NULL,
-                 master_cnt int              NULL,
-                 ts         timestamp    NOT NULL,
-                 PRIMARY KEY (db, tbl, chunk)
-              )";
+   my $sql = $opt_parser->read_para_after(
+      __FILE__, qr/MAGIC_createreplicate/);
+   $sql =~ s/CREATE TABLE checksum/CREATE TABLE $opts{R}/;
+   $sql =~ s/;$//;
    MKDEBUG && _d($dbh, $sql);
    eval {
       $dbh->do($sql);
@@ -4540,7 +4543,7 @@ following columns:
   );
 
 In addition to the columns shown, it may contain any of the other columns listed
-here (Note: this list is used for a magical overridable_args hash in the code):
+here (Note: this list is used by the code, MAGIC_overridable_args):
 
   a C columns r c f k nouseindex o probability s savesince
   singlechunk since sincecolumn sleep sleep-coef trim w W
@@ -4943,7 +4946,8 @@ binlog to the slaves.
 The argument to the option is the table (fully qualified: db.table) in which the
 checksums should be stored. The table must have at least these columns: db, tbl,
 chunk, boundaries, this_crc, master_crc, this_cnt, master_cnt.  The table may be
-named anything you wish.  Here is a suggested table structure:
+named anything you wish.  Here is a suggested table structure, which is
+automatically use for L<"--createreplicate"> (MAGIC_createreplicate):
 
   CREATE TABLE checksum (
      db         char(64)     NOT NULL,
