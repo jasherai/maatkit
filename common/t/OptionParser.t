@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 57;
+use Test::More tests => 58;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -834,5 +834,12 @@ is_deeply(
 is($p->read_para_after("samples/podsample_issue92.txt", qr/magic/),
    'This is the paragraph, hooray',
    'read_para_after');
+
+# The first time I wrote this, I used the /o flag to the regex, which means you
+# always get the same thing on each subsequent call no matter what regex you
+# pass in.  This is to test and make sure I don't do that again.
+is($p->read_para_after("samples/podsample_issue92.txt", qr/abracadabra/),
+   'This is the next paragraph, hooray',
+   'read_para_after again');
 
 exit;

@@ -702,7 +702,7 @@ sub read_para_after {
       last;
    }
    while ( $para = <$fh> ) {
-      next unless $para =~ m/$regex/o;
+      next unless $para =~ m/$regex/;
       last;
    }
    $para = <$fh>;
