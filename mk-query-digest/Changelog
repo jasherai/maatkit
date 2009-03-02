@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+2009-03-01: version 0.9.3
+
    * Added --createreview option to create the --review table (issue 266).
    * Database wasn't printed in SHOW CREATE TABLE/SHOW TABLE STATUS (issue 290).
    * "--report tables" will now print "SHOW CREATE..." etc (issue 287).

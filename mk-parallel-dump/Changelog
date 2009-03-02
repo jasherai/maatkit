@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+2009-03-01: version 1.0.13
+
    * --chunksize did not work properly with --csv (issue 275).
 
 2009-02-01: version 1.0.12

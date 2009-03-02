@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+2009-03-01: version 1.2.1
+
    * Enabled --clustered by default.
    * Some special cases with unique/primary keys weren't handled (issue 9).
    * Improved duplicate key finding (issue 269).

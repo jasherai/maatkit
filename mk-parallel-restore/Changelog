@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+2009-03-01: version 1.0.12
+
    * Changed --nobinlog to --binlog 0|1 (default 1).
    * --nobinlog did not work (issue issue 57, issue 264).
    * Added --decompress option for portability (issue 274).
