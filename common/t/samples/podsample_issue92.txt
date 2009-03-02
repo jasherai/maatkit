@@ -1,0 +1,13 @@
+magic that is ignored!
+
+more magic that is ignored!
+
+=pod
+
+Here is some text.
+
+Here's something that has magic after it.
+
+This is the paragraph, hooray
+
+Here's another paragraph.

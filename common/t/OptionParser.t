@@ -19,7 +19,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 56;
+use Test::More tests => 57;
 use English qw(-no_match_vars);
 
 require "../OptionParser.pm";
@@ -827,5 +827,12 @@ is_deeply(
    ],
    'New =item --[no]foo style for negatables'
 );
+
+# #############################################################################
+# For issue 92, extract a paragraph from POD.
+# #############################################################################
+is($p->read_para_after("samples/podsample_issue92.txt", qr/magic/),
+   'This is the paragraph, hooray',
+   'read_para_after');
 
 exit;
