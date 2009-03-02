@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 48;
+use Test::More tests => 49;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -222,8 +222,9 @@ my $dp  = new DSNParser();
 my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh1 = $sb->get_dbh_for('master');
 my $dbh2 = $sb->get_dbh_for('slave1');
+my $cmd;
 SKIP: {
-   skip 'Cannot connect to sandbox master', 14 if !$dbh1;
+   skip 'Cannot connect to sandbox master', 15 if !$dbh1;
 
    $sb->create_dbs($dbh1, ['test']);
    $sb->load_file('master', 'samples/query_review.sql');
@@ -236,8 +237,16 @@ SKIP: {
       'Analysis for slow001 with --explain',
    );
 
+   # Test --createreview
    $output = 'foo'; # clear previous test results
-   my $cmd = "${run_with}slow006.txt -R h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow006.txt --createreview -R h=127.1,P=12345,D=test,t=query_review"; 
+   $output = `$cmd >/dev/null 2>&1`;
+   my ($table) = $dbh1->selectrow_array(
+      'show tables from test like "query_review"');
+   is($table, 'query_review', '--createreview');
+
+   $output = 'foo'; # clear previous test results
+   $cmd = "${run_with}slow006.txt -R h=127.1,P=12345,D=test,t=query_review"; 
    $output = `$cmd`;
    my $res = $dbh1->selectall_arrayref( 'SELECT * FROM test.query_review',
       { Slice => {} } );

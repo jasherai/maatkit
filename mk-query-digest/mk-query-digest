@@ -385,7 +385,7 @@ sub split_unquote {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 3028
+# OptionParser package 3114
 # ###########################################################################
 package OptionParser;
 
@@ -939,6 +939,25 @@ if ( MKDEBUG ) {
       ($main::SVN_REV || ''), __LINE__);
    print('# Arguments: ',
       join(' ', map { my $a = "_[$_]_"; $a =~ s/\n/\n# /g; $a; } @ARGV), "\n");
+}
+
+sub read_para_after {
+   my ( $self, $file, $regex ) = @_;
+   open my $fh, "<", $file or die "Can't open $file: $OS_ERROR";
+   local $INPUT_RECORD_SEPARATOR = '';
+   my $para;
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/^=pod$/m;
+      last;
+   }
+   while ( $para = <$fh> ) {
+      next unless $para =~ m/$regex/;
+      last;
+   }
+   $para = <$fh>;
+   chomp($para);
+   close $fh or die "Can't close $file: $OS_ERROR";
+   return $para;
 }
 
 sub _d {
@@ -3837,13 +3856,25 @@ my %ea;     # EventAggregators
                my $db_tbl = $q->quote(@db_tbl);
                $qv_dbh = $dp->get_dbh(
                   $dp->get_cxn_params($opts{R}), {AutoCommit => 1});
+
+               # Create the review table if desired
+               if ( $opts{createreview} ) {
+                  my $sql = $opt_parser->read_para_after(
+                     __FILE__, qr/MAGIC_createreview/);
+                  $sql =~ s/query_review/IF NOT EXISTS $db_tbl/;
+                  MKDEBUG && _d($sql);
+                  $qv_dbh->do($sql);
+               }
+
+               # Check for existence and the permissions to insert into the
+               # table.
                my $tp  = new TableParser();
-               if (
-                     !$tp->table_exists($qv_dbh, @db_tbl, $q, 1)
-               ) {
+               if ( !$tp->table_exists($qv_dbh, @db_tbl, $q, 1) ) {
                   die "The query review table $opts{R}->{D}.$opts{R}->{t} "
                      . "does not exist or you do not have INSERT privileges";
                }
+
+               # Set up the new QueryReview object.
                my $du     = new MySQLDump();
                my $struct = $tp->parse( $du->dump($qv_dbh, $q, @db_tbl, 'table'));
                $qv = new QueryReview(
@@ -4348,6 +4379,13 @@ This option deals with bugs in slow-logging functionality that causes large
 values for attributes.  If the attribute's value is bigger than this, the
 last-seen value for that class of query is used instead.
 
+=item --createreview
+
+Create the L<"--review"> table if it does not exist.
+
+This option causes the table specified by --review to be created with the
+default structure shown in the documentation for that option.
+
 =item --daemonize
 
 Fork to the background and detach from the shell.  POSIX only.
@@ -4607,7 +4645,8 @@ Store a sample of each class of query in this DSN.
 
 The argument specifies a table to store all unique query fingerprints in.  The
 table must have at least the following columns, but you can add any more columns
-you wish:
+you wish.  This text is automatically used for L<"--createreview">.
+MAGIC_createreview:
 
   CREATE TABLE query_review (
      checksum     BIGINT UNSIGNED NOT NULL PRIMARY KEY,
@@ -4617,8 +4656,8 @@ you wish:
      last_seen    DATETIME,
      reviewed_by  VARCHAR(20),
      reviewed_on  DATETIME,
-     comments     VARCHAR(100)
-  );
+     comments     TEXT
+  )
 
 The columns are as follows:
 
