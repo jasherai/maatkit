@@ -101,8 +101,8 @@ sub new {
 # Fetch information from the database about a query that's been reviewed.
 sub get_review_info {
    my ( $self, $id ) = @_;
-   $self->{review_sth}->execute(make_checksum($id));
-   my $review_vals = $self->{review_sth}->fetchall_arrayref({});
+   $self->{select_sth}->execute(make_checksum($id));
+   my $review_vals = $self->{select_sth}->fetchall_arrayref({});
    if ( $review_vals && @$review_vals == 1 ) {
       return $review_vals->[0];
    }

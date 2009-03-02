@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 3;
+use Test::More tests => 4;
 use English qw(-no_match_vars);
 
 require '../DSNParser.pm';
@@ -97,25 +97,22 @@ $qv->set_review_info(
    last_seen   => $event->{ts},
 );
 
-$res = $dbh->selectall_arrayref(
-   "SELECT CONV(checksum,10,16) as checksum, fingerprint, sample, first_seen, "
-   . "last_seen, reviewed_by, reviewed_on, comments FROM test.query_review "
-   . "WHERE checksum=CONV('$checksum',16,10)",
-   {Slice => {}});
-
+$res = $qv->get_review_info($fp);
 is_deeply(
    $res,
-   [{
-      checksum    => $checksum,
-      fingerprint => $fp,
-      sample      => "UPDATE foo SET bar='nada' WHERE 1",
-      first_seen  => '2008-12-22 13:13:13',
-      last_seen   => '2008-12-22 13:13:13',
-      reviewed_by => undef,
-      reviewed_on => undef,
-      comments    => undef,
-   }],
+   {
+      checksum_conv => 'D3A1C1CD468791EE',
+      first_seen    => '2008-12-22 13:13:13',
+      last_seen     => '2008-12-22 13:13:13',
+      reviewed_by   => undef,
+      reviewed_on   => undef,
+      comments      => undef,
+   },
    'Stores a new event with default values'
 );
 
-$sb->wipe_clean($dbh);
+is_deeply([$qv->review_cols],
+   [qw(first_seen last_seen reviewed_by reviewed_on comments)],
+   'review columns');
+
+# $sb->wipe_clean($dbh);
