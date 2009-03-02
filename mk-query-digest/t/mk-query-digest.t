@@ -180,9 +180,9 @@ ok(
 # #############################################################################
 # Test cmd line op sanity.
 # #############################################################################
-my $output = `../mk-query-digest --review h=127.1,P=12345`;
+my $output = `../mk-query-digest -R h=127.1,P=12345`;
 like($output, qr/--review DSN requires a D/, 'Dies if no D part in --review DSN');
-$output = `../mk-query-digest --review h=127.1,P=12345,D=test`;
+$output = `../mk-query-digest -R h=127.1,P=12345,D=test`;
 like($output, qr/--review DSN requires a D/, 'Dies if no t part in --review DSN');
 
 # #############################################################################
@@ -237,7 +237,7 @@ SKIP: {
    );
 
    $output = 'foo'; # clear previous test results
-   my $cmd = "${run_with}slow006.txt --review h=127.1,P=12345,D=test,t=query_review"; 
+   my $cmd = "${run_with}slow006.txt -R h=127.1,P=12345,D=test,t=query_review"; 
    $output = `$cmd`;
    my $res = $dbh1->selectall_arrayref( 'SELECT * FROM test.query_review',
       { Slice => {} } );
@@ -264,20 +264,6 @@ SKIP: {
       ],
       'Adds/updates queries to query review table'
    );
-
-   # Make sure a missing Time property does not cause a crash.
-   $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow021.txt --review h=127.1,P=12345,D=test,t=query_review"; 
-   $output = `$cmd`;
-   # Don't test data in table, because it varies based on when you run the test.
-   unlike($output, qr/Use of uninitialized value/, 'didnt crash due to undef ts');
-
-   # Make sure a really ugly Time property that doesn't parser does not cause a crash.
-   $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,D=test,t=query_review"; 
-   $output = `$cmd`;
-   # Don't test data in table, because it varies based on when you run the test.
-   unlike($output, qr/Use of uninitialized value/, 'no crash due to totally missing ts');
 
    # This time we'll run with --report and since none of the queries
    # have been reviewed, the report should include both of them with
@@ -319,11 +305,32 @@ SKIP: {
    $dbh1->do("update test.query_review set first_seen='0000-00-00 00:00:00', "
       . " last_seen='0000-00-00 00:00:00'");
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow022.txt --review h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow022.txt -R h=127.1,P=12345,D=test,t=query_review"; 
    $output = `$cmd`;
    unlike($output, qr/last_seen/, 'no last_seen when 0000 timestamp');
    unlike($output, qr/first_seen/, 'no first_seen when 0000 timestamp');
    unlike($output, qr/0000-00-00 00:00:00/, 'no 0000-00-00 00:00:00 timestamp');
+
+   # ##########################################################################
+   # XXX The following tests will cause non-deterministic data, so run them
+   # after anything that wants to check the contents of the --review table.
+   # ##########################################################################
+
+   # Make sure a missing Time property does not cause a crash.  Don't test data
+   # in table, because it varies based on when you run the test.
+   $output = 'foo'; # clear previous test results
+   $cmd = "${run_with}slow021.txt -R h=127.1,P=12345,D=test,t=query_review"; 
+   $output = `$cmd`;
+   unlike($output, qr/Use of uninitialized value/, 'didnt crash due to undef ts');
+
+   # Make sure a really ugly Time property that doesn't parse does not cause a
+   # crash.  Don't test data in table, because it varies based on when you run
+   # the test.
+   $output = 'foo'; # clear previous test results
+   $cmd = "${run_with}slow022.txt -R h=127.1,P=12345,D=test,t=query_review"; 
+   $output = `$cmd`;
+   # Don't test data in table, because it varies based on when you run the test.
+   unlike($output, qr/Use of uninitialized value/, 'no crash due to totally missing ts');
 
    # ##########################################################################
    # Tests for swapping --processlist and --execute
