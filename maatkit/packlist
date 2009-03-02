@@ -2,12 +2,12 @@
 mk-archiver 1.0.13
 mk-audit 0.9.5
 mk-deadlock-logger 1.0.13
-mk-duplicate-key-checker 1.2.0
+mk-duplicate-key-checker 1.2.1
 mk-find 0.9.14
 mk-heartbeat 1.0.12
-mk-parallel-dump 1.0.12
-mk-parallel-restore 1.0.11
-mk-query-digest 0.9.2
+mk-parallel-dump 1.0.13
+mk-parallel-restore 1.0.12
+mk-query-digest 0.9.3
 mk-query-profiler 1.1.13
 mk-show-grants 1.0.13
 mk-slave-delay 1.0.11
@@ -16,5 +16,5 @@ mk-slave-move 0.9.5
 mk-slave-prefetch 1.0.5
 mk-slave-restart 1.0.11
 mk-table-checksum 1.2.3
-mk-table-sync 1.0.12
+mk-table-sync 1.0.13
 mk-visual-explain 1.0.12
