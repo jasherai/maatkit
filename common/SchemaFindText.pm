@@ -30,11 +30,20 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 # * fh => filehandle
 sub new {
    my ( $class, %args ) = @_;
-   bless \%args, $class;
+   bless {
+      %args,
+      last_tbl_ddl => undef,
+      queued_db    => undef,
+   }, $class;
 }
 
 sub next_db {
    my ( $self ) = @_;
+   if ( $self->{queued_db} ) {
+      my $db = $self->{queued_db};
+      $self->{queued_db} = undef;
+      return $db;
+   }
    local $RS = "";
    my $fh = $self->{fh};
    while ( defined (my $text = <$fh>) ) {
@@ -48,7 +57,10 @@ sub next_tbl {
    local $RS = "";
    my $fh = $self->{fh};
    while ( defined (my $text = <$fh>) ) {
-      return undef if $text =~ m/^USE `[^`]+`/;
+      if ( my ($db) = $text =~ m/^USE `([^`]+)`/ ) {
+         $self->{queued_db} = $db;
+         return undef;
+      }
       my ($ddl) = $text =~ m/^(CREATE TABLE.*?^\)[^\n]*);\n/sm;
       if ( $ddl ) {
          $self->{last_tbl_ddl} = $ddl;
