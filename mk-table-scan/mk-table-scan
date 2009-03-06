@@ -1,9 +1,8 @@
 #!/usr/bin/env perl
 
-# TODO This is mk-duplicate-key-checker, a program to analyze MySQL tables for
-# duplicated or redundant indexes and foreign key constraints.
+# This is mk-table-scan, a program to select rows from tables and indexes.
 # 
-# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# This program is copyright 2008-@CURRENTYEAR@ Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -1780,622 +1779,6 @@ sub _d {
 # End OptionParser package
 # ###########################################################################
 
-# ###########################################################################
-# KeySize package 2864
-# ###########################################################################
-package KeySize;
-
-use strict;
-use warnings FATAL => 'all';
-use English qw(-no_match_vars);
-
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-sub new {
-   my ( $class, %args ) = @_;
-   my $self = {};
-   return bless $self, $class;
-}
-
-sub get_key_size {
-   my ( $self, %args ) = @_;
-   foreach my $arg ( qw(tbl key dbh) ) {
-      die "I need a $arg argument" unless $args{$arg};
-   }
-   my $key = $args{key};
-   foreach my $req_key ( qw(name cols) ) {
-      die "The key hashref argument does not have a $req_key key"
-         unless exists $key->{$req_key};
-   }
-
-   my $sql = 'EXPLAIN SELECT ' . join(', ', @{$key->{cols}})
-           . ' FROM ' . $args{tbl}
-           . " FORCE INDEX (`$key->{name}`)"
-           . ' WHERE ';
-   my @where_cols;
-   foreach my $col ( @{$key->{cols}} ) {
-      push @where_cols, "$col=1";
-   }
-   if ( scalar @{$key->{cols}} == 1 ) {
-      push @where_cols, "$key->{cols}->[0]<>1";
-   }
-   $sql .= join(' OR ', @where_cols);
-   MKDEBUG && _d("key size sql: $sql");
-
-   my $explain = $args{dbh}->selectall_hashref($sql, 'id');
-   my $key_len = $explain->{1}->{key_len};
-   my $rows    = $explain->{1}->{rows};
-
-   my $key_size = 0;
-   if ( defined $key_len && defined $rows ) {
-      $key_size = $key_len * $rows;
-   }
-   elsif ( MKDEBUG ) {
-      _d("key_len or rows NULL in EXPLAIN:\n"
-         . join("\n",
-            map { "$_: ".($explain->{1}->{$_} ? $explain->{1}->{$_} : 'NULL') }
-            keys %{$explain->{1}}));
-   }
-
-   return $key_size;
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print "# $package:$line $$ ", @_, "\n";
-}
-
-1;
-
-# ###########################################################################
-# End KeySize package
-# ###########################################################################
-
-# ###########################################################################
-# DuplicateKeyFinder package 3097
-# ###########################################################################
-package DuplicateKeyFinder;
-
-use strict;
-use warnings FATAL => 'all';
-use English qw(-no_match_vars);
-
-use List::Util qw(min);
-
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-sub new {
-   my ( $class ) = @_;
-   my $self = {
-      keys        => undef,  # copy of last keys that we worked on
-      unique_cols => undef,  # unique cols for those last keys (hashref)
-      unique_sets => undef,  # unique sets for those last keys (arrayref) 
-   };
-   return bless $self, $class;
-}
-
-sub get_duplicate_keys {
-   my ( $self, %args ) = @_;
-   die "I need a keys argument" unless $args{keys};
-   my %all_keys  = %{$args{keys}}; # copy keys because we change stuff
-   $self->{keys} = \%all_keys;
-   my $primary_key;
-   my @unique_keys;
-   my @normal_keys;
-   my @fulltext_keys;
-   my %pass_args = %args;
-   delete $pass_args{keys};
-
-   ALL_KEYS:
-   foreach my $key ( values %all_keys ) {
-      $key->{real_cols} = $key->{colnames}; 
-      $key->{len_cols}  = length $key->{colnames};
-
-      if ( $key->{name} eq 'PRIMARY' ) {
-         $primary_key = $key;
-         next ALL_KEYS;
-      }
-
-      my $is_fulltext = $key->{type} eq 'FULLTEXT' ? 1 : 0;
-
-      if ( $args{ignore_order} || $is_fulltext  ) {
-         my $ordered_cols = join(',', sort(split(/,/, $key->{colnames})));
-         MKDEBUG && _d("Reordered $key->{name} cols "
-            . "from ($key->{colnames}) to ($ordered_cols)"); 
-         $key->{colnames} = $ordered_cols;
-      }
-
-      my $push_to = $key->{is_unique} ? \@unique_keys : \@normal_keys;
-      if ( !$args{ignore_type} ) {
-         $push_to = \@fulltext_keys if $is_fulltext;
-      }
-      push @$push_to, $key; 
-   }
-
-   my @dupes;
-
-   MKDEBUG && _d('Start unconstraining redundantly unique keys');
-   my %unique_cols;
-   my @unique_sets;
-   my %unconstrain;   # unique keys to unconstrain
-   UNIQUE_KEY:
-   foreach my $unique_key ( $primary_key, @unique_keys ) {
-      next unless $unique_key; # primary key may be undefined
-      my $cols = $unique_key->{cols};
-      if ( @$cols == 1 ) {
-         MKDEBUG && _d("$unique_key->{name} defines unique column: $cols->[0]");
-         if ( !exists $unique_cols{$cols->[0]} ) {
-            $unique_cols{$cols->[0]}  = $unique_key;
-            $unique_key->{unique_col} = 1;
-         }
-      }
-      else {
-         local $LIST_SEPARATOR = '-';
-         MKDEBUG && _d("$unique_key->{name} defines unique set: @$cols");
-         push @unique_sets, { cols => $cols, key => $unique_key };
-      }
-   }
-
-   UNIQUE_SET:
-   foreach my $unique_set ( @unique_sets ) {
-      my $n_unique_cols = 0;
-      COL:
-      foreach my $col ( @{$unique_set->{cols}} ) {
-         if ( exists $unique_cols{$col} ) {
-            MKDEBUG && _d("Unique set $unique_set->{key}->{name} "
-               . "has unique col $col");
-            last COL if ++$n_unique_cols > 1;
-            $unique_set->{constraining_key} = $unique_cols{$col};
-         }
-      }
-      if ( $n_unique_cols && $unique_set->{key}->{name} ne 'PRIMARY' ) {
-         MKDEBUG && _d("Will unconstrain unique set $unique_set->{key}->{name} "
-            . "because it is redundantly constrained by key "
-            . $unique_set->{constraining_key}->{name}
-            . " ($unique_set->{constraining_key}->{colnames})");
-         $unconstrain{$unique_set->{key}->{name}}
-            = $unique_set->{constraining_key};
-      }
-   }
-
-   for my $i ( 0..$#unique_keys ) {
-      if ( exists $unconstrain{$unique_keys[$i]->{name}} ) {
-         MKDEBUG && _d("Normalizing $unique_keys[$i]->{name}");
-         $unique_keys[$i]->{unconstrained} = 1;
-         $unique_keys[$i]->{constraining_key}
-            = $unconstrain{$unique_keys[$i]->{name}};
-         push @normal_keys, $unique_keys[$i];
-         delete $unique_keys[$i];
-      }
-   }
-   $self->{unique_cols} = \%unique_cols;
-   $self->{unique_sets} = \@unique_sets;
-   MKDEBUG && _d('No more keys');
-
-   if ( $primary_key ) {
-      MKDEBUG && _d('Start comparing PRIMARY KEY to UNIQUE keys');
-      $self->remove_prefix_duplicates(
-            keys           => [$primary_key],
-            remove_keys    => \@unique_keys,
-            duplicate_keys => \@dupes,
-            %pass_args);
-
-      MKDEBUG && _d('Start comparing PRIMARY KEY to normal keys');
-      $self->remove_prefix_duplicates(
-            keys           => [$primary_key],
-            remove_keys    => \@normal_keys,
-            duplicate_keys => \@dupes,
-            %pass_args);
-   }
-
-   MKDEBUG && _d('Start comparing UNIQUE keys to normal keys');
-   $self->remove_prefix_duplicates(
-         keys           => \@unique_keys,
-         remove_keys    => \@normal_keys,
-         duplicate_keys => \@dupes,
-         %pass_args);
-
-   MKDEBUG && _d('Start comparing normal keys');
-   $self->remove_prefix_duplicates(
-         keys           => \@normal_keys,
-         duplicate_keys => \@dupes,
-         %pass_args);
-
-   MKDEBUG && _d('Start comparing FULLTEXT keys');
-   $self->remove_prefix_duplicates(
-         keys             => \@fulltext_keys,
-         exact_duplicates => 1,
-         %pass_args);
-
-
-   if ( $primary_key
-        && $args{clustered}
-        && $args{tbl_info}->{engine} =~ m/^(?:InnoDB|solidDB)$/ ) {
-
-      MKDEBUG && _d('Start removing UNIQUE dupes of clustered key');
-      $self->remove_clustered_duplicates(
-            primary_key => $primary_key,
-            keys        => \@unique_keys,
-            %pass_args);
-
-      MKDEBUG && _d('Start removing ordinary dupes of clustered key');
-      $self->remove_clustered_duplicates(
-            primary_key => $primary_key,
-            keys        => \@normal_keys,
-            %pass_args);
-   }
-
-   return \@dupes;
-}
-
-sub get_duplicate_fks {
-   my ( $self, %args ) = @_;
-   die "I need a keys argument" unless $args{keys};
-   my @fks = values %{$args{keys}};
-   my @dupes;
-   foreach my $i ( 0..$#fks - 1 ) {
-      next unless $fks[$i];
-      foreach my $j ( $i+1..$#fks ) {
-         next unless $fks[$j];
-         my $i_cols = join(', ',
-            map { "`$_`" } sort($fks[$i]->{cols} =~ m/`([^`]+)`/g));
-         my $j_cols = join(', ',
-            map { "`$_`" } sort($fks[$j]->{cols} =~ m/`([^`]+)`/g));
-         my $i_fkcols = join(', ',
-            map { "`$_`" } sort($fks[$i]->{fkcols} =~ m/`([^`]+)`/g));
-         my $j_fkcols = join(', ',
-            map { "`$_`" } sort($fks[$j]->{fkcols} =~ m/`([^`]+)`/g));
-
-         if ( $fks[$i]->{parent} eq $fks[$j]->{parent}
-              && $i_cols   eq $j_cols
-              && $i_fkcols eq $j_fkcols ) {
-            my $dupe = {
-               key               => $fks[$j]->{name},
-               cols              => $fks[$j]->{cols},
-               duplicate_of      => $fks[$i]->{name},
-               duplicate_of_cols => $fks[$i]->{cols},
-               reason       =>
-                    "FOREIGN KEY $fks[$j]->{name} ($fks[$j]->{cols}) "
-                  . "REFERENCES $fks[$j]->{parent} ($fks[$j]->{fkcols}) "                     .  'is a duplicate of '
-                  . "FOREIGN KEY $fks[$i]->{name} ($fks[$i]->{cols}) "
-                  . "REFERENCES $fks[$i]->{parent} ($fks[$i]->{fkcols})"
-            };
-            push @dupes, $dupe;
-            delete $fks[$j];
-            $args{callback}->($dupe, %args) if $args{callback};
-         }
-      }
-   }
-   return \@dupes;
-}
-
-sub remove_prefix_duplicates {
-   my ( $self, %args ) = @_;
-   my $keys;
-   my $remove_keys;
-   my @dupes;
-   my $keep_index;
-   my $remove_index;
-   my $last_key;
-   my $remove_key_offset;
-
-   $keys  = $args{keys};
-   @$keys = sort { $a->{colnames} cmp $b->{colnames} }
-            grep { defined $_; }
-            @$keys;
-
-   if ( $args{remove_keys} ) {
-      $remove_keys  = $args{remove_keys};
-      @$remove_keys = sort { $a->{colnames} cmp $b->{colnames} }
-                      grep { defined $_; }
-                      @$remove_keys;
-
-      $remove_index      = 1;
-      $keep_index        = 0;
-      $last_key          = scalar(@$keys) - 1;
-      $remove_key_offset = 0;
-   }
-   else {
-      $remove_keys       = $keys;
-      $remove_index      = 0;
-      $keep_index        = 1;
-      $last_key          = scalar(@$keys) - 2;
-      $remove_key_offset = 1;
-   }
-   my $last_remove_key = scalar(@$remove_keys) - 1;
-
-   I_KEY:
-   foreach my $i ( 0..$last_key ) {
-      next I_KEY unless defined $keys->[$i];
-
-      J_KEY:
-      foreach my $j ( $i+$remove_key_offset..$last_remove_key ) {
-         next J_KEY unless defined $remove_keys->[$j];
-
-         my $keep = ($i, $j)[$keep_index];
-         my $rm   = ($i, $j)[$remove_index];
-
-         my $keep_name     = $keys->[$keep]->{name};
-         my $keep_cols     = $keys->[$keep]->{colnames};
-         my $keep_len_cols = $keys->[$keep]->{len_cols};
-         my $rm_name       = $remove_keys->[$rm]->{name};
-         my $rm_cols       = $remove_keys->[$rm]->{colnames};
-         my $rm_len_cols   = $remove_keys->[$rm]->{len_cols};
-
-         MKDEBUG && _d("Comparing [keep] $keep_name ($keep_cols) "
-            . "to [remove if dupe] $rm_name ($rm_cols)");
-
-         if (    substr($rm_cols, 0, $rm_len_cols)
-              eq substr($keep_cols, 0, $rm_len_cols) ) {
-
-            if ( $args{exact_duplicates} && ($rm_len_cols < $keep_len_cols) ) {
-               MKDEBUG && _d("$rm_name not exact duplicate of $keep_name");
-               next J_KEY;
-            }
-
-            if ( exists $remove_keys->[$rm]->{unique_col} ) {
-               MKDEBUG && _d("Cannot remove $rm_name because is constrains col "
-                  . $remove_keys->[$rm]->{cols}->[0]);
-               next J_KEY;
-            }
-
-            MKDEBUG && _d("Remove $remove_keys->[$rm]->{name}");
-            my $reason;
-            if ( $remove_keys->[$rm]->{unconstrained} ) {
-               $reason .= "Uniqueness of $rm_name ignored because "
-                        . $remove_keys->[$rm]->{constraining_key}->{name}
-                        . " is a stronger constraint\n"; 
-            }
-            $reason .= $rm_name
-                     . ($rm_len_cols < $keep_len_cols ? ' is a left-prefix of '
-                                                      : ' is a duplicate of ')
-                     . $keep_name;
-            my $dupe = {
-               key               => $rm_name,
-               cols              => $remove_keys->[$rm]->{real_cols},
-               duplicate_of      => $keep_name,
-               duplicate_of_cols => $keys->[$keep]->{real_cols},
-               reason            => $reason,
-            };
-            push @dupes, $dupe;
-            delete $remove_keys->[$rm];
-
-            $args{callback}->($dupe, %args) if $args{callback};
-
-            next I_KEY if $remove_index == 0;
-            next J_KEY if $remove_index == 1;
-         }
-         else {
-            MKDEBUG && _d("$rm_name not left-prefix of $keep_name");
-            next I_KEY;
-         }
-      }
-   }
-   MKDEBUG && _d('No more keys');
-
-   @$keys        = grep { defined $_; } @$keys;
-   @$remove_keys = grep { defined $_; } @$remove_keys if $args{remove_keys};
-   push @{$args{duplicate_keys}}, @dupes if $args{duplice_keys};
-
-   return;
-}
-
-sub remove_clustered_duplicates {
-   my ( $self, %args ) = @_;
-   die "I need a primary_key argument" unless $args{primary_key};
-   die "I need a keys argument"        unless $args{keys};
-   my $pkcols = $args{primary_key}->{colnames};
-   my $keys   = $args{keys};
-   my @dupes;
-   KEY:
-   for my $i ( 0 .. @$keys - 1 ) {
-      my $suffix = $keys->[$i]->{colnames};
-      SUFFIX:
-      while ( $suffix =~ s/`[^`]+`,// ) {
-         my $len = min(length($pkcols), length($suffix));
-         if ( substr($suffix, 0, $len) eq substr($pkcols, 0, $len) ) {
-            my $dupe = {
-               key               => $keys->[$i]->{name},
-               cols              => $keys->[$i]->{real_cols},
-               duplicate_of      => $args{primary_key}->{name},
-               duplicate_of_cols => $args{primary_key}->{real_cols},
-               reason            => "Key $keys->[$i]->{name} "
-                                    . "ends with a prefix of the clustered "
-                                    . "index",
-            };
-            push @dupes, $dupe;
-            delete $keys->[$i];
-            $args{callback}->($dupe, %args) if $args{callback};
-            last SUFFIX;
-         }
-      }
-   }
-   MKDEBUG && _d('No more keys');
-
-   @$keys = grep { defined $_; } @$keys;
-   push @{$args{duplicate_keys}}, @dupes if $args{duplice_keys};
-
-   return;
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print "# $package:$line $$ ", @_, "\n";
-}
-
-1;
-# ###########################################################################
-# End DuplicateKeyFinder package
-# ###########################################################################
-
-# ###########################################################################
-# Transformers package 2999
-# ###########################################################################
-
-package Transformers;
-
-use strict;
-use warnings FATAL => 'all';
-use English qw(-no_match_vars);
-use Time::Local qw(timelocal);
-use Digest::MD5 qw(md5_hex);
-
-use constant MKDEBUG => $ENV{MKDEBUG};
-
-require Exporter;
-our @ISA         = qw(Exporter);
-our %EXPORT_TAGS = ();
-our @EXPORT      = ();
-our @EXPORT_OK   = qw(
-   micro_t
-   percentage_of
-   secs_to_time
-   shorten
-   ts
-   parse_timestamp
-   unix_timestamp
-   make_checksum
-);
-
-sub micro_t {
-   my ( $t, %args ) = @_;
-   my $p_ms = defined $args{p_ms} ? $args{p_ms} : 0;  # precision for ms vals
-   my $p_s  = defined $args{p_s}  ? $args{p_s}  : 0;  # precision for s vals
-   my $f;
-
-   $t = 0 if $t < 0;
-
-   $t = sprintf('%.17f', $t) if $t =~ /e/;
-
-   $t =~ s/\.(\d{1,6})\d*/\.$1/;
-
-   if ($t > 0 && $t <= 0.000999) {
-      $f = ($t * 1000000) . 'us';
-   }
-   elsif ($t >= 0.001000 && $t <= 0.999999) {
-      $f = sprintf("%.${p_ms}f", $t * 1000);
-      $f = ($f * 1) . 'ms'; # * 1 to remove insignificant zeros
-   }
-   elsif ($t >= 1) {
-      $f = sprintf("%.${p_s}f", $t);
-      $f = ($f * 1) . 's'; # * 1 to remove insignificant zeros
-   }
-   else {
-      $f = 0;  # $t should = 0 at this point
-   }
-
-   return $f;
-}
-
-sub percentage_of {
-   my ( $is, $of, %args ) = @_;
-   my $p   = $args{p} || 0; # float precision
-   my $fmt = $p ? "%.${p}f" : "%d";
-   return sprintf $fmt, ($is * 100) / ($of ||= 1);
-}
-
-sub secs_to_time {
-   my ( $secs, $fmt ) = @_;
-   $secs ||= 0;
-   return '00:00' unless $secs;
-
-   $fmt ||= $secs >= 86_400 ? 'd'
-          : $secs >= 3_600  ? 'h'
-          :                   'm';
-
-   return
-      $fmt eq 'd' ? sprintf(
-         "%d+%02d:%02d:%02d",
-         int($secs / 86_400),
-         int(($secs % 86_400) / 3_600),
-         int(($secs % 3_600) / 60),
-         $secs % 60)
-      : $fmt eq 'h' ? sprintf(
-         "%02d:%02d:%02d",
-         int(($secs % 86_400) / 3_600),
-         int(($secs % 3_600) / 60),
-         $secs % 60)
-      : sprintf(
-         "%02d:%02d",
-         int(($secs % 3_600) / 60),
-         $secs % 60);
-}
-
-sub shorten {
-   my ( $num, %args ) = @_;
-   my $p = defined $args{p} ? $args{p} : 2;     # float precision
-   my $d = defined $args{d} ? $args{d} : 1_024; # divisor
-   my $n = 0;
-   my @units = ('', qw(k M G T P E Z Y));
-   while ( $num >= $d && $n < @units - 1 ) {
-      $num /= $d;
-      ++$n;
-   }
-   return sprintf(
-      $num =~ m/\./ || $n
-         ? "%.${p}f%s"
-         : '%d',
-      $num, $units[$n]);
-}
-
-sub ts {
-   my ( $time ) = @_;
-   my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
-   $mon  += 1;
-   $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
-      $year, $mon, $mday, $hour, $min, $sec);
-}
-
-sub parse_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)$/ )
-   {
-      return sprintf "%d-%02d-%02d %02d:%02d:%02d",
-                     $y + 2000, $m, $d, $h, $i, $s;
-   }
-   return $val;
-}
-
-sub unix_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-         = $val =~ m/^(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)$/ )
-   {
-      return timelocal($s, $i, $h, $d, $m - 1, $y);
-   }
-   return $val;
-}
-
-sub make_checksum {
-   my ( $val ) = @_;
-   my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
-   return $checksum;
-}
-
-sub _d {
-   my ($package, undef, $line) = caller 0;
-   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
-        map { defined $_ ? $_ : 'undef' }
-        @_;
-   print "# $package:$line $$ ", @_, "\n";
-}
-
-1;
-
-# ###########################################################################
-# End Transformers package
-# ###########################################################################
-
 # #############################################################################
 # And now for the "program".
 # #############################################################################
@@ -2404,8 +1787,6 @@ package main;
 use English qw(-no_match_vars);
 use constant MKDEBUG => $ENV{MKDEBUG};
 
-$OUTPUT_AUTOFLUSH = 1;
-
 # ##########################################################################
 # Get configuration information.
 # ##########################################################################
@@ -2413,9 +1794,7 @@ $OUTPUT_AUTOFLUSH = 1;
 my @opt_spec   = OptionParser::pod_to_spec(); 
 my $opt_parser = OptionParser->new(@opt_spec);
 $opt_parser->{prompt} = '<options>';
-$opt_parser->{descr}  = q{examines MySQL tables for duplicate or redundant }
-                      . q{indexes and foreign keys.  Connection options }
-                      . q{are read from MySQL option files.}; # TODO
+$opt_parser->{descr}  = q{scans rows in MySQL tables and indexes.};
 my %opts = $opt_parser->parse();
 $opt_parser->usage_or_errors(%opts);
 
@@ -2456,27 +1835,69 @@ my $finder = new MySQLFind(
    },
 );
 
+my $exit_status = 0;
+
 DATABASE:
 foreach my $database ( $finder->find_databases($dbh) ) {
    TABLE:
    foreach my $table ( $finder->find_tables($dbh, database => $database) ) {
-      my $ddl      = $du->get_create_table($dbh, $q, $database, $table)->[1];
-      my $struct   = $tp->parse($ddl);
-      _d("$database.$table");
-      # Scan the table...
-      my $sql = "CHECKSUM TABLE " . $q->quote($database, $table);
-      MKDEBUG && _d($sql);
-      $dbh->do($sql);
-      foreach my $key ( grep { $_ ne 'PRIMARY' } keys %{$struct->{keys}} ) {
-         $sql = 'select count(*) FROM ' . $q->quote($database, $table)
-            . ' FORCE INDEX(' . $q->quote($key) . ')';
-         MKDEBUG && _d($sql);
-         $dbh->do($sql);
+      eval {
+         my $ddl      = $du->get_create_table($dbh, $q, $database, $table)->[1];
+         my $struct   = $tp->parse($ddl);
+         my $engine   = $tp->get_engine($ddl);
+         if ( $opts{v} ) {
+            print '# ', $database, '.', $table, "\n";
+         }
+         if ( $engine ne 'InnoDB' ) {
+            # Don't scan the table, because table == clustered index
+            # TODO: update this when TableParser detects the clustered index if
+            # it's not PK.
+            my $sql = "SELECT * FROM " . $q->quote($database, $table);
+            if ( $opts{where} ) {
+               $sql .= " WHERE $opts{where}";
+            }
+            MKDEBUG && _d($sql);
+            if ( $opts{v} && $opts{v} > 1 ) {
+               print $sql, "\n";
+            }
+            $dbh->do($sql) if $opts{x};
+         }
+
+         # Scan the indexes...
+         if ( $opts{indexes} ) {
+            INDEX:
+            foreach my $key (
+               grep { $engine ne 'InnoDB' || $_ ne 'PRIMARY' } keys %{$struct->{keys}}
+            ) {
+               MKDEBUG && _d("$database, $table, $key");
+               if ( $struct->{keys}->{$key}->{is_unique} && !$opts{unique} ) {
+                  next INDEX;
+               }
+               my $sql = 'SELECT '
+                  . join(', ',
+                     map { $q->quote($_) }
+                     @{$struct->{keys}->{$key}->{cols}} )
+                  . ' FROM ' . $q->quote($database, $table)
+                  . ' FORCE INDEX(' . $q->quote($key) . ')';
+               if ( $opts{where} ) {
+                  $sql .= " WHERE $opts{where}";
+               }
+               MKDEBUG && _d($sql);
+               if ( $opts{v} && $opts{v} > 1 ) {
+                  print $sql, "\n";
+               }
+               $dbh->do($sql) if $opts{x};
+            }
+         }
+      };
+      if ( $EVAL_ERROR ) {
+         die $EVAL_ERROR unless $opts{force};
+         $exit_status = 1;
       }
    }
 }
 
-exit;
+exit $exit_status;
 
 # ##########################################################################
 # Subroutines
@@ -2538,15 +1959,6 @@ second gets the latest trunk code from Subversion.
 
 =over
 
-=item --allstruct
-
-short form: -a
-
-Compare indexes with different structs (BTREE, HASH, etc).
-
-By default this is disabled, because a BTREE index that covers the same columns
-as a FULLTEXT index is not really a duplicate, for example.
-
 =item --askpass
 
 Prompt for a password when connecting to MySQL.
@@ -2562,27 +1974,6 @@ sets Perl's binmode on STDOUT to utf8, passes the C<mysql_enable_utf8> option
 to DBD::mysql, and runs C<SET NAMES UTF8> after connecting to MySQL. Any other
 value sets binmode on STDOUT without the utf8 layer, and runs C<SET NAMES>
 after connecting to MySQL.
-
-=item --clustered
-
-short form: -c
-
-PK columns appended to secondary key is duplicate.
-
-Detects when a suffix of a secondary key is a leftmost prefix of the primary
-key, and treats it as a duplicate key.  Only detects this condition on storage
-engines whose primary keys are clustered (currently InnoDB and solidDB).
-
-Clustered storage engines append the primary key columns to the leaf nodes of
-all secondary keys anyway, so you might consider it redundant to have them
-appear in the internal nodes as well.  Of course, you may also want them in the
-internal nodes, because just having them at the leaf nodes won't help for some
-queries.  It does help for covering index queries, however.
-
-Here's an example of a key that is considered redundant with this option:
-
-  PRIMARY KEY  (`a`)
-  KEY `b` (`b`,`a`)
 
 =item --databases
 
@@ -2604,11 +1995,15 @@ short form: -e; type: hash
 
 Do only tables whose storage engine is in this comma-separated list.
 
-=item --function
+=item --[no]execute
 
-short form: -f; type: string; default: fk
+short form: -x; default: yes
 
-Do f=foreign keys, k=keys or fk=check both.
+Execute commands to scan the tables and indexes.
+
+=item --force
+
+Continue even if there is an error.
 
 =item --host
 
@@ -2628,10 +2023,6 @@ short form: -E; type: Hash
 
 Ignore this comma-separated list of storage engines.
 
-=item --ignoreorder
-
-Ignore index order so KEY(a,b) duplicates KEY(b,a).
-
 =item --ignoretbl
 
 short form: -n; type: Hash
@@ -2639,6 +2030,14 @@ short form: -n; type: Hash
 Ignore this comma-separated list of tables.
 
 Table names may be qualified with the database name.
+
+=item --[no]indexes
+
+default: yes
+
+Scan indexes as well as the full table.
+
+Skips the clustered index on InnoDB tables.
 
 =item --password
 
@@ -2651,6 +2050,15 @@ Password to use when connecting.
 short form: -P; type: int
 
 Port number to use for connection.
+
+=item --verbosity
+
+short form: -v; cumulative: yes
+
+Print what is being done.
+
+Level 0 is silent.  Level 1 prints every table.  Level 2 prints every SQL
+statement.
 
 =item --setvars
 
@@ -2667,24 +2075,6 @@ short form: -S; type: string
 
 Socket file to use for connection.
 
-=item --[no]summary
-
-default: yes
-
-Print summary of indexes at end of output.
-
-=item --[no]sql
-
-default: yes
-
-Print DROP KEY statement for each duplicate key.
-
-By default an ALTER TABLE  DROP KEY statement is printed below each duplicate
-key so that, if you want to remove the duplicate key, you can copy-paste the
-statement into MySQL.
-
-To disable printing these statements, specify --nosql.
-
 =item --tables
 
 short form: -t; type: hash
@@ -2693,17 +2083,30 @@ Check only this comma-separated list of tables.
 
 Table names may be qualified with the database name.
 
+=item --[no]unique
+
+default: yes
+
+Scan unique indexes.
+
+Scanning only non-unique indexes may be useful on InnoDB tables to force merging
+of the insert buffer.
+
 =item --user
 
 short form: -u; type: string
 
 User for login if not current user.
 
-=item --verbose
+=item --where
 
-short form: -v
+type: string
 
-Output all keys and/or foreign keys found, not just redundant ones.
+A WHERE clause to apply to the scans.
+
+You can also append a LIMIT clause, e.g.
+
+  --where "1=1 LIMIT 5000"
 
 =back
 
