@@ -2,19 +2,22 @@
 
 use strict;
 use warnings FATAL => 'all';
-
 use English qw('-no_match_vars);
 use Test::More tests => 7;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
+
 my $dp = new DSNParser();
 my $sb = new Sandbox(basedir => '/tmp', DSNParser => $dp);
 my $dbh = $sb->get_dbh_for('master')
    or BAIL_OUT('Cannot connect to sandbox master');
 
-my $cnf = '/tmp/12345/my.sandbox.cnf';
-my $cmd = "perl ../mk-duplicate-key-checker -F $cnf";
+my $test_cover = $ENV{MK_TEST_COVERAGE} || '';
+my $cnf = '/tmp/12345/my.sandbox.cnf'; # TODO: use $sb
+my $cmd = "perl $test_cover ../mk-duplicate-key-checker -F $cnf";
+
+diag(`cover -delete`) if $test_cover;
 
 my $output = `$cmd -d mysql -t columns_priv -v`;
 like($output,
@@ -47,4 +50,5 @@ $output = `$cmd -d mysql -t columns_priv 2>&1`;
 unlike($output, qr/Use of uninitialized var/, 'Does not crash on undef var');
 
 $sb->wipe_clean($dbh);
+diag(`cover -report text -silent > cover_results.txt`) if $test_cover;
 exit;
