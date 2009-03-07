@@ -15,3 +15,6 @@ for base in ../*.pm; do
       echo "Module $module has no test file"
    fi
 done
+
+# Makes coverage report (cover_db/coverage.html)
+cover
