@@ -1,5 +1,7 @@
 Changelog for mk-table-sync:
 
+   * Made --where and --replicate mutually exclusive.
+
 2009-03-01: version 1.0.13
 
    * Added --explainhosts option (issue 293).

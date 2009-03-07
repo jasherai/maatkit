@@ -5501,6 +5501,8 @@ second gets the latest trunk code from Subversion.
 
 Specify at least one of --print, --execute, or --test.
 
+--where and --replicate are mutually exclusive.
+
 =over
 
 =item --algorithm
