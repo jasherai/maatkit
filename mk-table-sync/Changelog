@@ -1,6 +1,6 @@
 Changelog for mk-table-sync:
 
-   * Made --where and --replicate mutually exclusive.
+   * Made --where and --replicate mutually exclusive (issue 302).
 
 2009-03-01: version 1.0.13
 
