@@ -209,7 +209,7 @@ is_deeply (
             { S => 'bar', h => 'host' } ))
    ],
    [
-      'DBI:mysql:foo;host=me;mysql_socket=bar;mysql_read_default_group=mysql',
+      'DBI:mysql:foo;host=me;mysql_socket=bar;mysql_read_default_group=client',
       'a',
       'b',
    ],
@@ -225,7 +225,7 @@ is_deeply (
             { S => 'bar', h => 'host' } ))
    ],
    [
-      'DBI:mysql:foo;host=me;mysql_socket=bar;charset=foo;mysql_read_default_group=mysql',
+      'DBI:mysql:foo;host=me;mysql_socket=bar;charset=foo;mysql_read_default_group=client',
       'a',
       'b',
    ],
