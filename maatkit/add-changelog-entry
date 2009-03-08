@@ -1,0 +1,12 @@
+#!/bin/sh
+
+# Add a changelog entry to each modified script's Changelog en masse.
+
+if [ -z "$1" ]; then
+   echo "Specify a changelog message";
+   exit 1;
+fi
+
+for f in `svn st .. | grep mk- | cut -d/ -f2 | sort -u`; do
+   sed -i -e "2a \   * $1" ../$f/Changelog;
+done
