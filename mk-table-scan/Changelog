@@ -1,3 +1,4 @@
 Changelog for mk-table-scan:
 
+   * Connection options were not read from the [client] section (issue 249).
    * Initial release.

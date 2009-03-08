@@ -677,7 +677,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# DSNParser package 3136
+# DSNParser package 3140
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -853,7 +853,7 @@ sub get_cxn_params {
          . join(';', map  { "$opts{$_}->{dsn}=$info->{$_}" }
                      grep { defined $info->{$_} }
                      qw(F h P S A))
-         . ';mysql_read_default_group=mysql';
+         . ';mysql_read_default_group=client';
    }
    MKDEBUG && _d($dsn);
    return ($dsn, $info->{u}, $info->{p});

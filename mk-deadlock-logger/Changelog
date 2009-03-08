@@ -1,5 +1,6 @@
 Changelog for mk-deadlock-logger:
 
+   * Connection options were not read from the [client] section (issue 249).
    * Set connection options immediately after connecting (issue 286).
 
 2008-12-01: version 1.0.13
