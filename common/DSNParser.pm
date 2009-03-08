@@ -225,6 +225,9 @@ sub fill_in_dsn {
    $dsn->{D} ||= $db;
 }
 
+# Actually opens a connection, then sets some things on the connection so it is
+# the way the Maatkit tools will expect.  Tools should NEVER open their own
+# connection or use $dbh->reconnect, or these things will not take place!
 sub get_dbh {
    my ( $self, $cxn_string, $user, $pass, $opts ) = @_;
    $opts ||= {};
@@ -235,25 +238,46 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
+
+   # Try twice to open the $dbh and set it up as desired.
    my $dbh;
    my $tries = 2;
    while ( !$dbh && $tries-- ) {
+      MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+         join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+
       eval {
-         MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
-            join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
          $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
-         # Immediately set character set and binmode on STDOUT.
-         if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
-            my $sql = "/*!40101 SET NAMES $charset*/";
+
+         # If it's a MySQL connection, set some options.
+         if ( $cxn_string =~ m/mysql/i ) {
+            my $sql;
+
+            # Set SQL_MODE and options for SHOW CREATE TABLE.
+            $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
+                 . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
             MKDEBUG && _d("$dbh: $sql");
             $dbh->do($sql);
-            MKDEBUG && _d('Enabling charset for STDOUT');
-            if ( $charset eq 'utf8' ) {
-               binmode(STDOUT, ':utf8')
-                  or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+
+            # Set character set and binmode on STDOUT.
+            if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+               $sql = "/*!40101 SET NAMES $charset*/";
+               MKDEBUG && _d("$dbh: $sql");
+               $dbh->do($sql);
+               MKDEBUG && _d('Enabling charset for STDOUT');
+               if ( $charset eq 'utf8' ) {
+                  binmode(STDOUT, ':utf8')
+                     or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+               }
+               else {
+                  binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+               }
             }
-            else {
-               binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+
+            if ( $self->prop('setvars') ) {
+               $sql = "SET " . $self->prop('setvars');
+               MKDEBUG && _d("$dbh: $sql");
+               $dbh->do($sql);
             }
          }
       };
@@ -268,18 +292,7 @@ sub get_dbh {
          }
       }
    }
-   # If setvars exists and it's MySQL connection, set them
-   my $setvars = $self->prop('setvars');
-   if ( $cxn_string =~ m/mysql/i && $setvars ) {
-      my $sql = "SET $setvars";
-      MKDEBUG && _d("$dbh: $sql");
-      eval {
-         $dbh->do($sql);
-      };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d($EVAL_ERROR);
-      }
-   }
+
    MKDEBUG && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -291,6 +304,7 @@ sub get_dbh {
       ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
       ' $DBI::VERSION: ', $DBI::VERSION,
    );
+
    return $dbh;
 }
 
