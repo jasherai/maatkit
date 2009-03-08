@@ -82,7 +82,7 @@ sub dump {
          my $result = $before . "\nDELIMITER ;;\n";
          foreach my $trg ( @$trgs ) {
             if ( $trg->{sql_mode} ) {
-               $result .= "/*!50003 SET SESSION SQL_MODE=\"$trg->{sql_mode}\" */;;\n";
+               $result .= qq{/*!50003 SET SESSION SQL_MODE='$trg->{sql_mode}' */;;\n};
             }
             $result .= "/*!50003 CREATE */ ";
             if ( $trg->{definer} ) {
@@ -139,7 +139,7 @@ sub get_create_table {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
    if ( !$self->{cache} || !$self->{tables}->{$db}->{$tbl} ) {
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
-         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . q{@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, 'ANSI_QUOTES', ''), ',,', ','), }
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
@@ -204,7 +204,7 @@ sub get_triggers {
    if ( !$self->{cache} || !$self->{triggers}->{$db} ) {
       $self->{triggers}->{$db} = {};
       my $sql = '/*!40101 SET @OLD_SQL_MODE := @@SQL_MODE, '
-         . '@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, "ANSI_QUOTES", ""), ",,", ","), '
+         . q{@@SQL_MODE := REPLACE(REPLACE(@@SQL_MODE, 'ANSI_QUOTES', ''), ',,', ','), }
          . '@OLD_QUOTE := @@SQL_QUOTE_SHOW_CREATE, '
          . '@@SQL_QUOTE_SHOW_CREATE := 1 */';
       MKDEBUG && _d($sql);
