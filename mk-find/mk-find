@@ -28,7 +28,7 @@ our $DISTRIB = '@DISTRIB@';
 our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 2971
+# DSNParser package 3136
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -232,24 +232,42 @@ sub get_dbh {
       mysql_enable_utf8 => ($cxn_string =~ m/charset=utf8/ ? 1 : 0),
    };
    @{$defaults}{ keys %$opts } = values %$opts;
+
    my $dbh;
    my $tries = 2;
    while ( !$dbh && $tries-- ) {
+      MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
+         join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
+
       eval {
-         MKDEBUG && _d($cxn_string, ' ', $user, ' ', $pass, ' {',
-            join(', ', map { "$_=>$defaults->{$_}" } keys %$defaults ), '}');
          $dbh = DBI->connect($cxn_string, $user, $pass, $defaults);
-         if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
-            my $sql = "/*!40101 SET NAMES $charset*/";
+
+         if ( $cxn_string =~ m/mysql/i ) {
+            my $sql;
+
+            $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
+                 . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
             MKDEBUG && _d("$dbh: $sql");
             $dbh->do($sql);
-            MKDEBUG && _d('Enabling charset for STDOUT');
-            if ( $charset eq 'utf8' ) {
-               binmode(STDOUT, ':utf8')
-                  or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+
+            if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
+               $sql = "/*!40101 SET NAMES $charset*/";
+               MKDEBUG && _d("$dbh: $sql");
+               $dbh->do($sql);
+               MKDEBUG && _d('Enabling charset for STDOUT');
+               if ( $charset eq 'utf8' ) {
+                  binmode(STDOUT, ':utf8')
+                     or die "Can't binmode(STDOUT, ':utf8'): $OS_ERROR";
+               }
+               else {
+                  binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+               }
             }
-            else {
-               binmode(STDOUT) or die "Can't binmode(STDOUT): $OS_ERROR";
+
+            if ( $self->prop('setvars') ) {
+               $sql = "SET " . $self->prop('setvars');
+               MKDEBUG && _d("$dbh: $sql");
+               $dbh->do($sql);
             }
          }
       };
@@ -264,17 +282,7 @@ sub get_dbh {
          }
       }
    }
-   my $setvars = $self->prop('setvars');
-   if ( $cxn_string =~ m/mysql/i && $setvars ) {
-      my $sql = "SET $setvars";
-      MKDEBUG && _d("$dbh: $sql");
-      eval {
-         $dbh->do($sql);
-      };
-      if ( $EVAL_ERROR ) {
-         MKDEBUG && _d($EVAL_ERROR);
-      }
-   }
+
    MKDEBUG && _d('DBH info: ',
       $dbh,
       Dumper($dbh->selectrow_hashref(
@@ -286,6 +294,7 @@ sub get_dbh {
       ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
       ' $DBI::VERSION: ', $DBI::VERSION,
    );
+
    return $dbh;
 }
 

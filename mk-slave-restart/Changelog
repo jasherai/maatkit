@@ -1,5 +1,7 @@
 Changelog for mk-slave-restart:
 
+   * Set connection options immediately after connecting (issue 286).
+
 2009-02-01: version 1.0.11
 
    * --error-numbers did not work (issue 118).

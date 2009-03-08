@@ -1,5 +1,7 @@
 Changelog for mk-parallel-restore:
 
+   * Set connection options immediately after connecting (issue 286).
+
 2009-03-01: version 1.0.12
 
    * Changed --nobinlog to --binlog 0|1 (default 1).

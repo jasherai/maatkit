@@ -1,5 +1,7 @@
 Changelog for mk-duplicate-key-checker:
 
+   * Set connection options immediately after connecting (issue 286).
+
 2009-03-01: version 1.2.1
 
    * Enabled --clustered by default.

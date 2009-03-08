@@ -1,5 +1,7 @@
 Changelog for mk-parallel-dump:
 
+   * Set connection options immediately after connecting (issue 286).
+
 2009-03-01: version 1.0.13
 
    * --chunksize did not work properly with --csv (issue 275).

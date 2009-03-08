@@ -1,5 +1,7 @@
 Changelog for mk-find:
 
+   * Set connection options immediately after connecting (issue 286).
+
 2008-12-01: version 0.9.14
 
    * Updates to shared code.

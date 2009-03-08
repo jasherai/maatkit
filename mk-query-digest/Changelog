@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Set connection options immediately after connecting (issue 286).
+
 2009-03-01: version 0.9.3
 
    * Added --createreview option to create the --review table (issue 266).

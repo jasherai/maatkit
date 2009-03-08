@@ -1,5 +1,7 @@
 Changelog for mk-query-profiler and mk-profile-compact:
 
+   * Set connection options immediately after connecting (issue 286).
+
 2008-12-01: version 1.1.13
 
    * Updates to shared code.

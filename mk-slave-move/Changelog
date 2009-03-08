@@ -1,5 +1,7 @@
 Changelog for mk-slave-move:
 
+   * Set connection options immediately after connecting (issue 286).
+
 2009-02-01: version 0.9.5
 
    * Fixed and updated POD.
