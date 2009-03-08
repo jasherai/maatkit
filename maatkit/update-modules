@@ -2,13 +2,24 @@
 
 set -e
 
+# The first argument is the package to update.  The optional second argument
+# is the package within that module (you can only specify one; if you omit it,
+# all are updated).
+
 if [ -z $1 ]; then
    echo "Specify a package to update"
    exit 1
+else
+   PACK=$1
+fi
+
+if [ -n "$2" ]; then
+   MODULE=$2;
+else
+   MODULE="";
 fi
 
 set -u
-PACK=$1
 
 if [ ! -d ../$PACK ]; then
    echo "$PACK doesn't exist"
@@ -19,11 +30,13 @@ for FILE in `ls ../$PACK/mk-*`
 do
    for MOD in `grep 'End .* package' $FILE | awk '{print $3}'`
    do
-      cat $FILE | ./insert_module $MOD > $MOD.tmp
-      if diff -q $FILE $MOD.tmp | grep differ > /dev/null ; then
-         echo "Updating $MOD in $FILE";
-         cat $MOD.tmp > $FILE;
+      if [ -z "$MODULE" -o "$MOD" = "$MODULE" ]; then
+         cat $FILE | ./insert_module $MOD > $MOD.tmp
+         if diff -q $FILE $MOD.tmp | grep differ > /dev/null ; then
+            echo "Updating $MOD in $FILE";
+            cat $MOD.tmp > $FILE;
+         fi
+         rm -f $MOD.tmp;
       fi
-      rm -f $MOD.tmp;
    done
 done
