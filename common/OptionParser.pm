@@ -41,40 +41,6 @@ my $POD_link_re = '[LC]<"?([^">]+)"?>';
 #       d => --help output (see HELP_DESCRIPTION below)
 #       g => Optional grouping (default is "o => Options")
 #    }
-# Each option in the OPTIONS seciont of the POD must have the following form
-# to be parsed correctly:
-#    =item --OPTION_NAME
-#
-#    ATTRIBUTES
-#
-#    HELP_DESCRIPTION
-#
-#    FULL_DESCRIPTION
-#
-# OPTION_NAME is the full (long) name of the option, like --foo. Optionally,
-# the name can be prefixed with [no] (--[no]foo) to make the option negatable.
-#
-# ATTRIBUTES is a single, optional line that allows you to specifiy the
-# following attribues:
-#    short form: short name of the option, like -f (short for --foo)
-#    type:       standard Getopt types (sif) and more; see %types below
-#    default:    option's default value if none is given on the command line
-#    cumulative: if 'yes' then sets the Getopt + spec so that "The option does
-#                not take an argument and will be incremented by 1 every time
-#                it appears on the command line."
-# Each attribute is given like "attribute: value" and multiple attributes
-# are separated by semicolons. Example:
-#    short form: -w; type: time; default: 5m
-#
-# HELP_DESCRIPTION is a single line that briefly describes the option. It
-# is what --help prints about the option. Technically, it is optional if
-# there is at least one sentence in FULL_DESCRIPTION. In such a case, that
-# first full period-terminated sentance in FULL_DESCRIPTION is printed by
-# --help.
-#
-# FULL_DESCRIPTION is optional (unless, as noted above, no HELP_DESCRIPTION
-# is given). Here you can write your novel about the gory details of the
-# option.
 sub pod_to_spec {
    my ( $self, $file ) = @_;
    $file ||= __FILE__;
