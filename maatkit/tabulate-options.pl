@@ -40,11 +40,9 @@ foreach my $prog ( <../mk-*/mk-*> ) {
    close $fh;
 }
 
-my $max = max( map { length($_) } (keys %progs, keys %opts) );
 my @progs = sort keys %progs;
-my $fmt = "%${max}s | %3s | " . join(' | ', map { "%-${max}s" } @progs) . " |\n";
+my $fmt = join("\t", map { "%s" } (1, 2, @progs)) . "\n";
 printf $fmt, "option", "cnt", @progs;
-printf $fmt, ' ', '---', map { '-' x $max } (1, @progs);
 
 foreach my $o ( sort { lc $a cmp lc $b } keys %opts ) {
    printf $fmt, $o, $opts{$o}, map { $progs{$_}->{$o} || '' } @progs;
