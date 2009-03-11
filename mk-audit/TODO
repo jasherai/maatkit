@@ -3,6 +3,9 @@ The following items are unimplemented at this time:
    General:
       * add a --sudo option.  If commands such as dmidecode don't work, this
         option makes them retry with sudo.
+      * worth checking out what's been done in
+        http://forge.mysql.com/projects/project.php?id=44 to see if there's
+        stuff we've missed
    Operating System:
       * Are we inside a Virtual Machine like VMWare or VirtualBox?
       * Some Linux-specific parameters that we commonly check/tweak:
