@@ -2406,14 +2406,13 @@ sub _d {
 # ###########################################################################
 
 # #############################################################################
-# And now for the "program".
+# This is a combination of modules and programs in one -- a runnable module.
+# http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
+# Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
+#
+# Check at the end of this package for the call to main() which actually runs
+# the program.
 # #############################################################################
-
-package main;
-
-mk_duplicate_key_checker::main(@ARGV) unless caller;
-
-1;
 
 package mk_duplicate_key_checker;
 
@@ -2634,6 +2633,11 @@ sub _d {
    # does not use English.
    print "# $package:$line $$ ", @_, "\n";
 }
+
+# ############################################################################
+# Run the program.
+# ############################################################################
+main(@ARGV) unless caller;
 
 1;
 
