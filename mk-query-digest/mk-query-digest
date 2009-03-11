@@ -4646,6 +4646,22 @@ Poll this DSN's processlist for queries, with L<"--interval"> sleep between.
 If the connection fails, mk-query-digest tries to reopen it once per second. See
 also L<"--mirror">.
 
+=item --report
+
+type: Array; default: fingerprint
+
+Print out reports on the aggregate results from L<"--groupby">.
+
+This is the standard slow-log analysis functionality.  See OUTPUT for the
+description of what this does and what the results look like.
+
+Any value you specify here automatically adds a corresponding value to
+L<"--groupby">.
+
+=item --reportall
+
+Include all queries, even if they have already been reviewed.
+
 =item --review
 
 short form: -R; type: DSN
@@ -4689,22 +4705,6 @@ After the tool generates the fingerprint report for L<"--report">, it uses the
 aggregated values from the report to fill the review table.  When you're done,
 your table should contain a row for each fingerprint.  This option depends on
 C<--report fingerprint>.  It will not work otherwise.
-
-=item --report
-
-type: Array; default: fingerprint
-
-Print out reports on the aggregate results from L<"--groupby">.
-
-This is the standard slow-log analysis functionality.  See OUTPUT for the
-description of what this does and what the results look like.
-
-Any value you specify here automatically adds a corresponding value to
-L<"--groupby">.
-
-=item --reportall
-
-Include all queries, even if they have already been reviewed.
 
 =item --[no]rusage
 
