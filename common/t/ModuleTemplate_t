@@ -1,0 +1,35 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Test::More tests => 1;
+
+require '../DSNParser.pm';
+require '../Sandbox.pm';
+# Other required modules.
+
+# Data::Dumper is often helpful.
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
+
+my $dp  = new DSNParser();
+my $sb  = new Sandbox(basedir => '/tmp', DSNParser => $dp);
+my $dbh = $sb->get_dbh_for('master')
+   or BAIL_OUT('Cannot connect to sandbox master');
+# Get slave dbh is needed.
+
+# Instantiate other module objects.
+
+# Start with an isa_ok() for the module being test.
+isa_ok();
+
+# ##########################################################################
+# Test...
+# ##########################################################################
+
+# Document any intra-test dependencies like, "This test relies on the
+# foo table created above."
+
+$sb->wipe_clean($dbh);
+exit;
