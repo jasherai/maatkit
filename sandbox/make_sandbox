@@ -7,6 +7,11 @@ if [ -z "$1" ]; then
    exit 1;
 fi
 
+if [ $1 -le 1024 ]; then
+   echo "Port number has to be > 1024";
+   exit 1;
+fi
+
 DIR=`realpath $0`
 cd `dirname $DIR`
 
