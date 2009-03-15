@@ -56,6 +56,8 @@ The following items are unimplemented at this time:
            version.
       * Status
          * small innodb log files, large innodb_additional_mem_pool
+         * Peter says innodb_autoextend_increment is ignored with
+           innodb_file_per_table, is that true?
          * on a slave, innodb_flush_log_at_trx_commit doesn't need to be 1
          * innodb has a lot more allocated memory than buffer pool + add'l pool
            example: Total memory allocated 16835145778; in additional pool
