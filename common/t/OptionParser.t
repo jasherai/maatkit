@@ -75,7 +75,7 @@ $defaults{bone} = 1;
 eval {
    %opts = $p->parse(%defaults);
 };
-is ($EVAL_ERROR, "Cannot set default for non-existent option 'bone'\n", 'No bone');
+is($EVAL_ERROR, "Cannot set default for non-existent option 'bone'\n", 'No bone');
 
 delete $defaults{bone};
 @ARGV = qw(--love -l -l);
@@ -818,7 +818,7 @@ is_deeply(
 # =item --foo
 # negatable: yes
 # #############################################################################
-@opt_spec = $p->pod_to_spec("samples/podsample_issue_140.txt");
+@opt_spec = $p->pod_to_spec("samples/pod_sample_issue_140.txt");
 is_deeply(
    \@opt_spec,
    [
@@ -831,14 +831,14 @@ is_deeply(
 # #############################################################################
 # For issue 92, extract a paragraph from POD.
 # #############################################################################
-is($p->read_para_after("samples/podsample_issue92.txt", qr/magic/),
+is($p->read_para_after("samples/pod_sample_issue_92.txt", qr/magic/),
    'This is the paragraph, hooray',
    'read_para_after');
 
 # The first time I wrote this, I used the /o flag to the regex, which means you
 # always get the same thing on each subsequent call no matter what regex you
 # pass in.  This is to test and make sure I don't do that again.
-is($p->read_para_after("samples/podsample_issue92.txt", qr/abracadabra/),
+is($p->read_para_after("samples/pod_sample_issue_92.txt", qr/abracadabra/),
    'This is the next paragraph, hooray',
    'read_para_after again');
 
