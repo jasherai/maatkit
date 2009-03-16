@@ -3,7 +3,10 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 4;
+use Test::More tests => 5;
+
+use Data::Dumper;
+$Data::Dumper::Indent = 1;
 
 # Read _d.pl which is just sub _d { ... }
 # and eval it into the current namespace.
@@ -45,6 +48,16 @@ like(
    d('hi', 'there'),
    qr/hi there$/,
    'Prints space between args'
+);
+
+my %foo = (
+   string => 'value',
+   array  => [1],
+);
+like(
+   d('Data::Dumper says', Dumper(\%foo)),
+   qr/Data::Dumper says \$VAR1 = {\n/,
+   'Data::Dumper'
 );
 
 exit;
