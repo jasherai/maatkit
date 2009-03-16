@@ -2,9 +2,8 @@
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 3;
 use English qw(-no_match_vars);
+use Test::More tests => 4;
 
 # Read _d.pl which is just sub _d { ... }
 # and eval it into the current namespace.
@@ -14,20 +13,38 @@ close $fh;
 eval $d_file;
 
 # Calls _d() and redirects its output (which by default
-# goes to STDOUT) to a file so that we can capture it.
+# goes to STDERR) to a file so that we can capture it.
 sub d {
-   open my $output_file, '>', '_d.output' or die $!;
-   select $output_file;
+   open STDERR, '>', '_d.output'
+      or die "Cannot capture STDERR to _d.output: $OS_ERROR";
    _d(@_);
-   close $output_file;
    my $output = `cat _d.output`;
    `rm -f _d.output`;
-   select STDOUT;
    return $output;
 }
 
-like(d('alive'), qr/^# main:\d+ \d+ alive\n/, '_d lives');
-like(d('val: ', undef), qr/val: undef/, 'Prints undef for undef');
-like(d("foo\nbar"), qr/foo\n# bar\n/, 'Breaks \n and adds #');
+like(
+   d('alive'),
+   qr/^# main:\d+ \d+ alive\n/,
+   '_d lives'
+);
+
+like(
+   d('val:', undef),
+   qr/val: undef/,
+   'Prints undef for undef'
+);
+
+like(
+   d("foo\nbar"),
+   qr/foo\n# bar\n/,
+   'Breaks \n and adds #'
+);
+
+like(
+   d('hi', 'there'),
+   qr/hi there$/,
+   'Prints space between args'
+);
 
 exit;
