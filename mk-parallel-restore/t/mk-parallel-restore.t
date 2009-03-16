@@ -114,7 +114,7 @@ $sb->load_file('master', 'samples/issue_30.sql');
 # from chunk 1 to be sure that all of 2 is restored.
 `$mysql -D test -e 'SELECT * FROM issue_30' > /tmp/mkpr_i30`;
 `$mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
-$output = `MKDEBUG=1 $cmd --noatomicresume -D test /tmp/default/test/ | grep 'Resuming'`;
+$output = `MKDEBUG=1 $cmd --noatomicresume -D test /tmp/default/test/ 2>&1 | grep 'Resuming'`;
 like($output, qr/Resuming restore of `test`.`issue_30` from chunk 2 \(1\d+ bytes/, 'Reports non-atomic resume from chunk 2 (issue 30)');
 
 $output = '';
@@ -126,7 +126,7 @@ ok(!$output, 'Resume restored all 100 rows exactly (issue 30)');
 # Now we'll re-do that whole operation but let --atomicresume be its default
 # TRUE and so we should resume from the first fully missing chunk: 3.
 `$mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
-$output = `MKDEBUG=1 $cmd -D test /tmp/default/test/ | grep 'Resuming'`;
+$output = `MKDEBUG=1 $cmd -D test /tmp/default/test/ 2>&1 | grep 'Resuming'`;
 like($output, qr/Resuming restore of `test`.`issue_30` from chunk 3 \(20\d\d bytes/, 'Reports atomic resume from chunk 3 (issue 30)');
 
 `rm -rf /tmp/default`;
@@ -134,7 +134,7 @@ like($output, qr/Resuming restore of `test`.`issue_30` from chunk 3 \(20\d\d byt
 # Test that resume doesn't do anything on a tab dump because there's
 # no chunks file
 `../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 --tab`;
-$output = `MKDEBUG=1 $cmd --noatomicresume -D test --local --tab /tmp/default/test/`;
+$output = `MKDEBUG=1 $cmd --noatomicresume -D test --local --tab /tmp/default/test/ 2>&1`;
 like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab dump (issue 30)');
 
 `rm -rf /tmp/default/`;
@@ -142,7 +142,7 @@ like($output, qr/Cannot resume restore: no chunks file/, 'Does not resume --tab 
 # Test that resume doesn't do anything on non-chunked dump because
 # there's only 1 chunk: where 1=1
 `../../mk-parallel-dump/mk-parallel-dump -F $cnf --basedir /tmp -d test -t issue_30 -C 10000`;
-$output = `MKDEBUG=1 $cmd --noatomicresume -D test /tmp/default/test/`;
+$output = `MKDEBUG=1 $cmd --noatomicresume -D test /tmp/default/test/ 2>&1`;
 like($output, qr/Cannot resume restore: only 1 chunk \(1=1\)/, 'Does not resume single chunk where 1=1 (issue 30)');
 
 `rm -rf /tmp/default`;

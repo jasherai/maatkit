@@ -97,7 +97,7 @@ SKIP: {
    # ##########################################################################
    # Issue 31: Make mk-parallel-dump and mk-parallel-restore do biggest-first
    ############################################################################
-   $output = `MKDEBUG=1 $cmd --basedir /tmp -d sakila | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$4}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
+   $output = `MKDEBUG=1 $cmd --basedir /tmp -d sakila 2>&1 | grep -A 6 ' got ' | grep 'Z => ' | awk '{print \$4}' | cut -f1 -d',' | sort --numeric-sort --check --reverse 2>&1`;
    unlike($output, qr/disorder/, 'Tables dumped biggest-first by default');   
    `rm -rf /tmp/default`;
 }
@@ -109,7 +109,7 @@ $sb->load_file('master', 'samples/issue_223.sql');
 diag(`rm -rf /tmp/default/`);
 
 # Dump table t1 and make sure its trig def is not in any chunk.
-diag(`MKDEBUG=1 $cmd --basedir /tmp/ -C 30 -d test > /dev/null`);
+diag(`MKDEBUG=1 $cmd --basedir /tmp/ -C 30 -d test 1>/dev/null 2>/dev/null`);
 is(
    `zcat /tmp/default/test/t1.000000.sql.gz | grep TRIGGER`,
    '',
