@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
@@ -58,6 +58,13 @@ like(
    d('Data::Dumper says', Dumper(\%foo)),
    qr/Data::Dumper says \$VAR1 = {\n/,
    'Data::Dumper'
+);
+
+my @foo = qw(1 2 3);
+like(
+   d('join array:', join(',', @foo)),
+   qr/join array: 1,2,3$/,
+   'join array'
 );
 
 exit;
