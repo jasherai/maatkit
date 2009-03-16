@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -80,7 +80,7 @@ sub new {
       },
    };
    foreach my $opt ( @opts ) {
-      MKDEBUG && _d('Adding extra property ' . $opt->{key});
+      MKDEBUG && _d('Adding extra property', $opt->{key});
       $self->{opts}->{$opt->{key}} = { desc => $opt->{desc}, copy => $opt->{copy} };
    }
    return bless $self, $class;
@@ -94,7 +94,7 @@ sub new {
 sub prop {
    my ( $self, $prop, $value ) = @_;
    if ( @_ > 2 ) {
-      MKDEBUG && _d("Setting $prop property");
+      MKDEBUG && _d('Setting', $prop, 'property');
       $self->{$prop} = $value;
    }
    return $self->{$prop};
@@ -106,7 +106,7 @@ sub parse {
       MKDEBUG && _d('No DSN to parse');
       return;
    }
-   MKDEBUG && _d("Parsing $dsn");
+   MKDEBUG && _d('Parsing', $dsn);
    $prev     ||= {};
    $defaults ||= {};
    my %given_props;
@@ -122,27 +122,28 @@ sub parse {
       }
       elsif ( $prop_autokey ) {
          # Handle barewords
-         MKDEBUG && _d("Interpreting $dsn_part as $prop_autokey=$dsn_part");
+         MKDEBUG && _d('Interpreting', $dsn_part, 'as',
+            $prop_autokey, '=', $dsn_part);
          $given_props{$prop_autokey} = $dsn_part;
       }
       else {
-         MKDEBUG && _d("Bad DSN part: $dsn_part");
+         MKDEBUG && _d('Bad DSN part:', $dsn_part);
       }
    }
 
    # Fill in final props from given, previous, and/or default props
    foreach my $key ( keys %opts ) {
-      MKDEBUG && _d("Finding value for $key");
+      MKDEBUG && _d('Finding value for', $key);
       $final_props{$key} = $given_props{$key};
       if (   !defined $final_props{$key}
            && defined $prev->{$key} && $opts{$key}->{copy} )
       {
          $final_props{$key} = $prev->{$key};
-         MKDEBUG && _d("Copying value for $key from previous DSN");
+         MKDEBUG && _d('Copying value for', $key, 'from previous DSN');
       }
       if ( !defined $final_props{$key} ) {
          $final_props{$key} = $defaults->{$key};
-         MKDEBUG && _d("Copying value for $key from defaults");
+         MKDEBUG && _d('Copying value for', $key, 'from defaults');
       }
    }
 
@@ -256,13 +257,13 @@ sub get_dbh {
             # Set SQL_MODE and options for SHOW CREATE TABLE.
             $sql = q{SET @@SQL_QUOTE_SHOW_CREATE = 1}
                  . q{/*!40101, @@SQL_MODE='NO_AUTO_VALUE_ON_ZERO'*/};
-            MKDEBUG && _d("$dbh: $sql");
+            MKDEBUG && _d($dbh, ':', $sql);
             $dbh->do($sql);
 
             # Set character set and binmode on STDOUT.
             if ( my ($charset) = $cxn_string =~ m/charset=(\w+)/ ) {
                $sql = "/*!40101 SET NAMES $charset*/";
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
                MKDEBUG && _d('Enabling charset for STDOUT');
                if ( $charset eq 'utf8' ) {
@@ -276,7 +277,7 @@ sub get_dbh {
 
             if ( $self->prop('setvars') ) {
                $sql = "SET " . $self->prop('setvars');
-               MKDEBUG && _d("$dbh: $sql");
+               MKDEBUG && _d($dbh, ':', $sql);
                $dbh->do($sql);
             }
          }
@@ -284,7 +285,7 @@ sub get_dbh {
       if ( !$dbh && $EVAL_ERROR ) {
          MKDEBUG && _d($EVAL_ERROR);
          if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
-            MKDEBUG && _d("Going to try again without utf8 support");
+            MKDEBUG && _d('Going to try again without utf8 support');
             delete $defaults->{mysql_enable_utf8};
          }
          if ( !$tries ) {
@@ -297,12 +298,11 @@ sub get_dbh {
       $dbh,
       Dumper($dbh->selectrow_hashref(
          'SELECT DATABASE(), CONNECTION_ID(), VERSION()/*!50038 , @@hostname*/')),
-      ' Connection info: ', ($dbh->{mysql_hostinfo} || 'undef'),
-      ' Character set info: ',
-      Dumper($dbh->selectall_arrayref(
-         'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
-      ' $DBD::mysql::VERSION: ', $DBD::mysql::VERSION,
-      ' $DBI::VERSION: ', $DBI::VERSION,
+      'Connection info:',      $dbh->{mysql_hostinfo},
+      'Character set info:',   Dumper($dbh->selectall_arrayref(
+                     'SHOW VARIABLES LIKE "character_set%"', { Slice => {}})),
+      '$DBD::mysql::VERSION:', $DBD::mysql::VERSION,
+      '$DBI::VERSION:',        $DBI::VERSION,
    );
 
    return $dbh;
@@ -343,9 +343,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

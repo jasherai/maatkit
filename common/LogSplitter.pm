@@ -1,4 +1,4 @@
-# This program is copyright 2008 Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -98,8 +98,8 @@ sub split_logs {
 
          if ( !defined $session->{fh} ) {
             $self->{n_sessions}++;
-            MKDEBUG && _d("New session: $session_id "
-                          . "($self->{n_sessions} of $self->{maxsessions})");
+            MKDEBUG && _d('New session:', $session_id, ',',
+               $self->{n_sessions}, 'of', $self->{maxsessions});
 
             my $session_file = $self->_next_session_file();
             if ( !$session_file ) {
@@ -125,8 +125,8 @@ sub split_logs {
             push @{ $self->{session_fhs} },
                { fh => $fh, session_id => $session_id };
 
-            MKDEBUG && _d("Created $session_file "
-                          . "for session $self->{attribute}=$session_id");
+            MKDEBUG && _d('Created', $session_file, 'for session',
+               $self->{attribute}, '=', $session_id);
          }
          elsif ( !$session->{active} ) {
             # Reopen the existing but inactive session. This happens when
@@ -145,11 +145,11 @@ sub split_logs {
              # Mark this session as active again;
              $session->{active} = 1;
 
-             MKDEBUG && _d("Reopend $session->{session_file} "
-                           . "for session $self->{attribute}=$session_id");
+             MKDEBUG && _d('Reopend', $session->{session_file}, 'for session',
+               $self->{attribute}, '=', $session_id);
          }
          else {
-            MKDEBUG && _d("Event belongs to active session $session_id");
+            MKDEBUG && _d('Event belongs to active session', $session_id);
          }
 
          my $session_fh = $session->{fh};
@@ -205,8 +205,8 @@ sub split_logs {
 
       my $sessions_per_file = int( $self->{n_sessions}
                                    / $self->{maxsessionfiles} );
-      MKDEBUG && _d("$self->{n_sessions} session, "
-                    . "$sessions_per_file per file");
+      MKDEBUG && _d($self->{n_sessions}, 'session,',
+         $sessions_per_file, 'per file');
 
       # Save sessions to the files.
       my $i      = 0;
@@ -255,7 +255,7 @@ sub _get_session_ds {
    if ( !exists $event->{ $attrib } ) {
       if ( MKDEBUG ) {
          use Data::Dumper;
-         _d("No attribute $attrib in event: " . Dumper($event));
+         _d('No attribute', $attrib, 'in event:', Dumper($event));
       }
       return;
    }
@@ -286,8 +286,8 @@ sub _get_session_ds {
       $session = $self->{sessions}->{ $session_id };
    }
    else {
-      MKDEBUG && _d("Skipping new session $session_id because "
-                    . "maxsessions is reached");
+      MKDEBUG && _d('Skipping new session', $session_id,
+         'because maxsessions is reached');
    }
 
    return ($session, $session_id);
@@ -299,9 +299,8 @@ sub _close_lru_session {
    my $lru_n       = $self->{n_sessions} - MAX_OPEN_FILES - 1;
    my $close_to_n  = $lru_n + CLOSE_N_LRU_FILES - 1;
 
-   MKDEBUG && _d("Closing session fhs $lru_n..$close_to_n "
-                 . "($self->{n_sessions} sessions, "
-                 . "$self->{n_open_fhs} open fhs)");
+   MKDEBUG && _d('Closing session fhs', $lru_n, '..', $close_to_n,
+      '(',$self->{n_sessions}, 'sessions', $self->{n_open_fhs}, 'open fhs)');
 
    foreach my $session ( @$session_fhs[ $lru_n..$close_to_n ] ) {
       close $session->{fh};
@@ -330,10 +329,10 @@ sub _next_session_file {
          if ( ($retval >> 8) != 0 ) {
             die "Cannot create new directory $new_dir: $OS_ERROR";
          }
-         MKDEBUG && _d("Created new saveto_dir $new_dir");
+         MKDEBUG && _d('Created new saveto_dir', $new_dir);
       }
       elsif ( MKDEBUG ) {
-         _d("saveto_dir $new_dir already exists");
+         _d('saveto_dir', $new_dir, 'already exists');
       }
    }
 
@@ -343,7 +342,7 @@ sub _next_session_file {
    my $session_file = $self->{saveto_dir}
                     . $dir_n
                     . $self->{session_file_name} . $session_n;
-   MKDEBUG && _d("Next session file $session_file");
+   MKDEBUG && _d('Next session file', $session_file);
    return $session_file;
 }
 
@@ -352,9 +351,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

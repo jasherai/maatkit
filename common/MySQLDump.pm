@@ -1,4 +1,4 @@
-# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -170,7 +170,7 @@ sub get_create_table {
 
 sub get_columns {
    my ( $self, $dbh, $quoter, $db, $tbl ) = @_;
-   MKDEBUG && _d("Get columns for $db.$tbl");
+   MKDEBUG && _d('Get columns for', $db, $tbl);
    if ( !$self->{cache} || !$self->{columns}->{$db}->{$tbl} ) {
       my $curr_db = $self->_use_db($dbh, $quoter, $db);
       my $sql = "SHOW COLUMNS FROM " . $quoter->quote($db, $tbl);
@@ -312,9 +312,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

@@ -1,6 +1,4 @@
-#!/usr/bin/perl
-
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -19,13 +17,13 @@
 # ###########################################################################
 # TableSyncGroupBy package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
+package TableSyncGroupBy;
 # This package syncs tables without primary keys by doing an all-columns GROUP
 # BY with a count, and then streaming through the results to see how many of
 # each group exist.
-package TableSyncGroupBy;
+
+use strict;
+use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
@@ -43,7 +41,7 @@ sub new {
       # Prepend more _ until not a column.
       $args{count_col} = "_$args{count_col}";
    }
-   MKDEBUG && _d('COUNT column will be named ' . $args{count_col});
+   MKDEBUG && _d('COUNT column will be named', $args{count_col});
    return bless { %args }, $class;
 }
 
@@ -139,9 +137,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

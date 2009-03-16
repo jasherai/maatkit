@@ -1,4 +1,4 @@
-# This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -71,7 +71,7 @@ sub get_key_size {
       push @where_cols, "$key->{cols}->[0]<>1";
    }
    $sql .= join(' OR ', @where_cols);
-   MKDEBUG && _d("key size sql: $sql");
+   MKDEBUG && _d('Key size sql:', $sql);
 
    my $explain = $args{dbh}->selectall_hashref($sql, 'id');
    my $key_len = $explain->{1}->{key_len};
@@ -82,8 +82,8 @@ sub get_key_size {
       $key_size = $key_len * $rows;
    }
    elsif ( MKDEBUG ) {
-      _d("key_len or rows NULL in EXPLAIN:\n"
-         . join("\n",
+      _d("key_len or rows NULL in EXPLAIN:\n",
+         join("\n",
             map { "$_: ".($explain->{1}->{$_} ? $explain->{1}->{$_} : 'NULL') }
             keys %{$explain->{1}}));
    }
@@ -96,9 +96,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

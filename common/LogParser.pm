@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -83,7 +83,7 @@ sub parse_event {
 
    LINE:
    while ( !$done && defined $line ) {
-      MKDEBUG && _d('type: ', $type, ' ', $line);
+      MKDEBUG && _d('type:', $type, $line);
       my $handled_line = 0;
 
       if ( !$mode && $line =~ m/^# [A-Z]/ ) {
@@ -228,7 +228,7 @@ sub parse_event {
          if ( $mode eq 'slow' && $line =~ m/;\s+\Z/ ) {
             MKDEBUG && _d('Line is the end of a query within event');
             if ( my ( $db ) = $line =~ m/^use (.*);/i ) {
-               MKDEBUG && _d('Setting event DB to ', $db);
+               MKDEBUG && _d('Setting event DB to', $db);
                $event->{db} = $db;
                $type = 1;
             }
@@ -502,7 +502,7 @@ sub parse_binlog_event {
          $self->{term} = $del;
          local $RS     = $del;
          $line         = <$fh>; # Throw away DELIMITER line
-         MKDEBUG && _d('New record separator: ', $del);
+         MKDEBUG && _d('New record separator:', $del);
          redo LINE;
       }
 
@@ -553,9 +553,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

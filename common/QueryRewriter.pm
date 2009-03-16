@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -245,12 +245,12 @@ sub __delete_to_select {
 
 sub __insert_to_select {
    my ( $tbl, $cols, $vals ) = @_;
-   MKDEBUG && _d('Args: ', @_);
+   MKDEBUG && _d('Args:', @_);
    my @cols = split(/,/, $cols);
-   MKDEBUG && _d('Cols: ', @cols);
+   MKDEBUG && _d('Cols:', @cols);
    $vals =~ s/^\(|\)$//g; # Strip leading/trailing parens
    my @vals = $vals =~ m/($quote_re|[^,]*${bal}[^,]*|[^,]+)/g;
-   MKDEBUG && _d('Vals: ', @vals);
+   MKDEBUG && _d('Vals:', @vals);
    if ( @cols == @vals ) {
       return "select * from $tbl where "
          . join(' and ', map { "$cols[$_]=$vals[$_]" } (0..$#cols));
@@ -280,9 +280,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

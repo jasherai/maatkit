@@ -1,4 +1,4 @@
-# This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -169,7 +169,7 @@ sub unix_timestamp {
 sub make_checksum {
    my ( $val ) = @_;
    my $checksum = uc substr(md5_hex($val), -16);
-   MKDEBUG && _d("$checksum checksum for $val");
+   MKDEBUG && _d($checksum, 'checksum for', $val);
    return $checksum;
 }
 
@@ -178,9 +178,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

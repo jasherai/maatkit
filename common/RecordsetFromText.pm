@@ -1,4 +1,4 @@
-# This program is copyright 2008 Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -94,7 +94,7 @@ sub parse {
    elsif ( $text =~ m/\*\*\* \d+\. row/ ) { # "vertical" output
       my $n_recs;
       $n_recs++ while $text =~ m/ \d+\. row /g;
-      MKDEBUG && _d("text-type: vertical ($n_recs)");
+      MKDEBUG && _d('text-type: vertical,', $n_recs, 'n_recs');
       if ( $n_recs > 1 ) {
          MKDEBUG && _d('Multiple recsets');
          my @v_recsets;
@@ -158,9 +158,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

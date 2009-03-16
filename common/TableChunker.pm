@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -59,8 +59,8 @@ sub find_chunk_columns {
    if ( $opts->{possible_keys} && @{$opts->{possible_keys}} ) {
       my $i = 1;
       %prefer = map { $_ => $i++ } @{$opts->{possible_keys}};
-      MKDEBUG && _d("Preferred indexes for chunking: "
-         . join(', ', @{$opts->{possible_keys}}));
+      MKDEBUG && _d('Preferred indexes for chunking:',
+         join(', ', @{$opts->{possible_keys}}));
    }
 
    # See if there's an index that will support chunking.
@@ -76,7 +76,7 @@ sub find_chunk_columns {
 
       # If exact, accept only unique, single-column indexes.
       if ( $opts->{exact} ) {
-         next unless $key->{unique} && @{$key->{cols}} == 1;
+         next unless $key->{is_unique} && @{$key->{cols}} == 1;
       }
 
       push @possible_keys, $key;
@@ -87,8 +87,8 @@ sub find_chunk_columns {
       ($prefer{$a->{name}} || 9999) <=> ($prefer{$b->{name}} || 9999)
    } @possible_keys;
 
-   MKDEBUG && _d('Possible keys in order: '
-      . join(', ', map { $_->{name} } @possible_keys));
+   MKDEBUG && _d('Possible keys in order:',
+      join(', ', map { $_->{name} } @possible_keys));
 
    # Build list of candidate chunk columns.   
    my $can_chunk_exact = 0;
@@ -108,8 +108,8 @@ sub find_chunk_columns {
 
    if ( MKDEBUG ) {
       my $chunk_type = $opts->{exact} ? 'Exact' : 'Inexact';
-      _d("$chunk_type chunkable: "
-         . join(', ', map { "$_->{column} on $_->{index}" } @candidate_cols));
+      _d($chunk_type, 'chunkable:',
+         join(', ', map { "$_->{column} on $_->{index}" } @candidate_cols));
    }
 
    # Order the candidates by their original column order.
@@ -132,9 +132,9 @@ sub find_chunk_columns {
    }
 
    if ( MKDEBUG ) {
-      _d('Chunkable columns: '
-         . join(', ', map { "$_->{column} on $_->{index}" } @result));
-      _d("Can chunk exactly: $can_chunk_exact");
+      _d('Chunkable columns:',
+         join(', ', map { "$_->{column} on $_->{index}" } @result));
+      _d('Can chunk exactly:', $can_chunk_exact);
    }
 
    return ($can_chunk_exact, \@result);
@@ -158,14 +158,14 @@ sub calculate_chunks {
       die "Required argument $arg not given or undefined"
          unless defined $args{$arg};
    }
-   MKDEBUG && _d("Arguments: "
-      . join(', ',
+   MKDEBUG && _d('Arguments:',
+      join(', ',
          map { "$_=" . (defined $args{$_} ? $args{$_} : 'undef') } keys %args));
 
    my @chunks;
    my ($range_func, $start_point, $end_point);
    my $col_type = $args{table}->{type_for}->{$args{col}};
-   MKDEBUG && _d("Chunking on $args{col} ($col_type)");
+   MKDEBUG && _d('Chunking on', $args{col}, '(',$col_type,')');
 
    # Determine chunk size in "distance between endpoints" that will give
    # approximately the right number of rows between the endpoints.  Also
@@ -216,7 +216,7 @@ sub calculate_chunks {
       MKDEBUG && _d('End point is undefined or before start point');
       $end_point = 0;
    }
-   MKDEBUG && _d("Start and end of chunk range: $start_point, $end_point");
+   MKDEBUG && _d('Start and end of chunk range:',$start_point,',', $end_point);
 
    # Calculate the chunk size, in terms of "distance between endpoints."  If
    # possible and requested, forbid chunks from being any bigger than
@@ -229,7 +229,7 @@ sub calculate_chunks {
    if ( $args{exact} ) {
       $interval = $args{size};
    }
-   MKDEBUG && _d("Chunk interval: $interval units");
+   MKDEBUG && _d('Chunk interval:', $interval, 'units');
 
    # Generate a list of chunk boundaries.  The first and last chunks are
    # inclusive, and will catch any rows before or after the end of the
@@ -359,7 +359,7 @@ sub inject_chunks {
    foreach my $arg ( qw(database table chunks chunk_num query) ) {
       die "$arg is required" unless defined $args{$arg};
    }
-   MKDEBUG && _d("Injecting chunk $args{chunk_num}");
+   MKDEBUG && _d('Injecting chunk', $args{chunk_num});
    my $comment = sprintf("/*%s.%s:%d/%d*/",
       $args{database}, $args{table},
       $args{chunk_num} + 1, scalar @{$args{chunks}});
@@ -374,7 +374,7 @@ sub inject_chunks {
    my $index_hint = defined $args{index_hint}
                     ? "USE INDEX (`$args{index_hint}`)"
                     : '';
-   MKDEBUG && _d("Parameters: ",
+   MKDEBUG && _d('Parameters:',
       Dumper({WHERE => $where, DB_TBL => $db_tbl, INDEX_HINT => $index_hint}));
    $args{query} =~ s!/\*WHERE\*/! $where!;
    $args{query} =~ s!/\*DB_TBL\*/!$db_tbl!;
@@ -468,9 +468,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,10 +17,10 @@
 # ###########################################################################
 # VersionParser package $Revision$
 # ###########################################################################
+package VersionParser;
+
 use strict;
 use warnings FATAL => 'all';
-
-package VersionParser;
 
 use English qw(-no_match_vars);
 
@@ -34,7 +34,7 @@ sub new {
 sub parse {
    my ( $self, $str ) = @_;
    my $result = sprintf('%03d%03d%03d', $str =~ m/(\d+)/g);
-   MKDEBUG && _d("$str parses to $result");
+   MKDEBUG && _d($str, 'parses to', $result);
    return $result;
 }
 
@@ -47,7 +47,7 @@ sub version_ge {
          $dbh->selectrow_array('SELECT VERSION()'));
    }
    my $result = $self->{$dbh} ge $self->parse($target) ? 1 : 0;
-   MKDEBUG && _d("$self->{$dbh} ge $target: $result");
+   MKDEBUG && _d($self->{$dbh}, 'ge', $target, ':', $result);
    return $result;
 }
 
@@ -56,9 +56,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

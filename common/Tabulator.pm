@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,10 +17,10 @@
 # ###########################################################################
 # Tabulator package $Revision$
 # ###########################################################################
+package Tabulator;
+
 use strict;
 use warnings FATAL => 'all';
-
-package Tabulator;
 
 use English qw(-no_match_vars);
 

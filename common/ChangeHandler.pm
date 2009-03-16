@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -66,7 +66,7 @@ sub fetch_back {
 
 sub take_action {
    my ( $self, @sql ) = @_;
-   MKDEBUG && _d('Calling subroutines on ', @sql);
+   MKDEBUG && _d('Calling subroutines on', @sql);
    foreach my $action ( @{$self->{actions}} ) {
       $action->(@sql);
    }
@@ -75,7 +75,7 @@ sub take_action {
 # Arguments: string, hashref, arrayref
 sub change {
    my ( $self, $action, $row, $cols ) = @_;
-   MKDEBUG && _d("$action where ", $self->make_where_clause($row, $cols));
+   MKDEBUG && _d($action, 'where', $self->make_where_clause($row, $cols));
    $self->{changes}->{
       $self->{replace} && $action ne 'DELETE' ? 'REPLACE' : $action
    }++;
@@ -115,7 +115,7 @@ sub process_rows {
    my $error_count = 0;
    TRY: {
       if ( $queue_level && $queue_level < $self->{queue} ) { # see redo below!
-         MKDEBUG && _d("Not processing now $queue_level<$self->{queue}");
+         MKDEBUG && _d('Not processing now', $queue_level, '<', $self->{queue});
          return;
       }
 
@@ -124,7 +124,7 @@ sub process_rows {
          foreach my $action ( @ACTIONS ) {
             my $func = "make_$action";
             my $rows = $self->{$action};
-            MKDEBUG && _d(scalar(@$rows) . " to $action");
+            MKDEBUG && _d(scalar(@$rows), 'to', $action);
             $cur_act = $action;
             while ( @$rows ) {
                $row = shift @$rows;
@@ -164,7 +164,7 @@ sub make_UPDATE {
    my $where = $self->make_where_clause($row, $cols);
    if ( my $dbh = $self->{fetch_back} ) {
       my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
-      MKDEBUG && _d("Fetching data for UPDATE: $sql");
+      MKDEBUG && _d('Fetching data for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       $cols = [sort keys %$res];
@@ -199,7 +199,7 @@ sub make_row {
    if ( my $dbh = $self->{fetch_back} ) {
       my $where = $self->make_where_clause($row, $cols);
       my $sql = "SELECT * FROM $self->{sdb_tbl} WHERE $where LIMIT 1";
-      MKDEBUG && _d("Fetching data for UPDATE: $sql");
+      MKDEBUG && _d('Fetching data for UPDATE:', $sql);
       my $res = $dbh->selectrow_hashref($sql);
       @{$row}{keys %$res} = values %$res;
       @cols = sort keys %$res;
@@ -231,9 +231,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

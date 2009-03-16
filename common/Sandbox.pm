@@ -1,4 +1,4 @@
-# This program is copyright 2008 Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -52,7 +52,7 @@ sub use {
    _check_server($server);
    return if !defined $cmd || !$cmd;
    my $use = $self->_use_for($server) . " $cmd";
-   MKDEBUG && _d("Executing $use on $server");
+   MKDEBUG && _d('"Executing', $use, 'on', $server);
    eval {
       `$use`;
    };
@@ -93,13 +93,13 @@ sub get_dbh_for {
    my ( $self, $server, $cxn_ops ) = @_;
    _check_server($server);
    $cxn_ops ||= { AutoCommit => 1 };
-   MKDEBUG && _d("Dbh for $server on port $port_for{$server}");
+   MKDEBUG && _d('dbh for', $server, 'on port', $port_for{$server});
    my $dp = $self->{DSNParser};
    my $dsn = $dp->parse('h=127.0.0.1,P=' . $port_for{$server});
    my $dbh;
    eval { $dbh = $dp->get_dbh($dp->get_cxn_params($dsn), $cxn_ops) };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d("Failed to get dbh for $server: $EVAL_ERROR");
+      MKDEBUG && _d('Failed to get dbh for', $server, ':', $EVAL_ERROR);
       return 0;
    }
    return $dbh;
@@ -115,7 +115,7 @@ sub load_file {
    my $d = $use_db ? "-D $use_db" : '';
 
    my $use = $self->_use_for($server) . " $d < $file";
-   MKDEBUG && _d("Loading $file on $server: $use");
+   MKDEBUG && _d('Loading', $file, 'on', $server, ':', $use);
    eval { `$use` };
    if ( $EVAL_ERROR ) {
       die "Failed to execute $file on $server: $EVAL_ERROR";
@@ -153,9 +153,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

@@ -1,4 +1,4 @@
-# This program is copyright (c) 2008 Baron Schwartz.
+# This program is copyright 2008-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -73,6 +73,14 @@ sub next_tbl {
 sub last_tbl_ddl {
    my ( $self ) = @_;
    return $self->{last_tbl_ddl};
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

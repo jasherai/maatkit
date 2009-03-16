@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -57,7 +57,7 @@ sub recurse_to_slaves {
    eval {
       $dbh = $args->{dbh} || $dp->get_dbh(
          $dp->get_cxn_params($dsn), { AutoCommit => 1 });
-      MKDEBUG && _d('Connected to ', $dp->as_string($dsn));
+      MKDEBUG && _d('Connected to', $dp->as_string($dsn));
    };
    if ( $EVAL_ERROR ) {
       print STDERR "Cannot connect to ", $dp->as_string($dsn), "\n"
@@ -71,7 +71,7 @@ sub recurse_to_slaves {
    my $sql  = 'SELECT @@SERVER_ID';
    MKDEBUG && _d($sql);
    my ($id) = $dbh->selectrow_array($sql);
-   MKDEBUG && _d('Working on server ID ', $id);
+   MKDEBUG && _d('Working on server ID', $id);
    my $master_thinks_i_am = $dsn->{server_id};
    if ( !defined $id
        || ( defined $master_thinks_i_am && $master_thinks_i_am != $id )
@@ -96,8 +96,8 @@ sub recurse_to_slaves {
          $self->find_slave_hosts($dp, $dbh, $dsn, $args->{method});
 
       foreach my $slave ( @slaves ) {
-         MKDEBUG && _d('Recursing from ',
-            $dp->as_string($dsn), ' to ', $dp->as_string($slave));
+         MKDEBUG && _d('Recursing from',
+            $dp->as_string($dsn), 'to', $dp->as_string($slave));
          $self->recurse_to_slaves(
             { %$args, dsn => $slave, dbh => undef, parent => $dsn }, $level + 1 );
       }
@@ -114,7 +114,7 @@ sub recurse_to_slaves {
 sub find_slave_hosts {
    my ( $self, $dsn_parser, $dbh, $dsn, $method ) = @_;
    $method ||= '';
-   MKDEBUG && _d('Looking for slaves on ', $dsn_parser->as_string($dsn));
+   MKDEBUG && _d('Looking for slaves on', $dsn_parser->as_string($dsn));
 
    my @slaves;
 
@@ -163,7 +163,7 @@ sub find_slave_hosts {
       }
    }
 
-   MKDEBUG && _d('Found ', scalar(@slaves), ' slaves');
+   MKDEBUG && _d('Found', scalar(@slaves), 'slaves');
    return @slaves;
 }
 
@@ -309,10 +309,10 @@ sub wait_for_master {
       if ( $stat eq 'NULL' || $stat < 0 && !$timeoutok ) {
          die "MASTER_POS_WAIT returned $stat";
       }
-      MKDEBUG && _d("Result of waiting: $stat");
+      MKDEBUG && _d('Result of waiting:', $stat);
    }
    else {
-      MKDEBUG && _d("Not waiting: this server is not a master");
+      MKDEBUG && _d('Not waiting: this server is not a master');
    }
    return $result;
 }
@@ -355,8 +355,8 @@ sub catchup_to_master {
    my $slave_pos     = $self->repl_posn($slave_status);
    my $master_status = $self->get_master_status($master);
    my $master_pos    = $self->repl_posn($master_status);
-   MKDEBUG && _d("Master position: ", $self->pos_to_string($master_pos),
-      " Slave position: ", $self->pos_to_string($slave_pos));
+   MKDEBUG && _d('Master position:', $self->pos_to_string($master_pos),
+      'Slave position:', $self->pos_to_string($slave_pos));
    if ( $self->pos_cmp($slave_pos, $master_pos) < 0 ) {
       MKDEBUG && _d('Waiting for slave to catch up to master');
       $self->start_slave($slave, $master_pos);
@@ -703,9 +703,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

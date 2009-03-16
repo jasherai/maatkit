@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,9 +17,7 @@
 # ###########################################################################
 # TableSyncChunk package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
+package TableSyncChunk;
 # This package implements a simple sync algorithm:
 # * Chunk the table (see TableChunker.pm)
 # * Checksum each chunk (state 0)
@@ -27,7 +25,9 @@ use warnings FATAL => 'all';
 # * Checksum them (state 2)
 # * If a row differs, it must be synced
 # See TableSyncStream for the TableSync interface this conforms to.
-package TableSyncChunk;
+
+use strict;
+use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 use List::Util qw(max);
@@ -51,7 +51,7 @@ sub new {
    while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
       $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
    }
-   MKDEBUG && _d('CRC column will be named ' . $args{crc_col});
+   MKDEBUG && _d('CRC column will be named', $args{crc_col});
 
    # Chunk the table and store the chunks for later processing.
    my @chunks;
@@ -174,7 +174,7 @@ sub same_row {
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
-      MKDEBUG && _d('Rows: ', Dumper($lr, $rr));
+      MKDEBUG && _d('Rows:', Dumper($lr, $rr));
       MKDEBUG && _d('Will examine this chunk before moving to next');
       $self->{state} = 1; # Must examine this chunk row-by-row
    }
@@ -199,21 +199,20 @@ sub done_with_rows {
    my ( $self ) = @_;
    if ( $self->{state} == 1 ) {
       $self->{state} = 2;
-      MKDEBUG && _d("Setting state=$self->{state}");
+      MKDEBUG && _d('Setting state =', $self->{state});
    }
    else {
       $self->{state} = 0;
       $self->{chunk_num}++;
-      MKDEBUG
-         && _d("Setting state=$self->{state}, chunk_num=$self->{chunk_num}");
+      MKDEBUG && _d('Setting state =', $self->{state},
+         'chunk_num =', $self->{chunk_num});
    }
 }
 
 sub done {
    my ( $self ) = @_;
-   MKDEBUG
-      && _d("Done with $self->{chunk_num} of "
-       . scalar(@{$self->{chunks}}) . ' chunks');
+   MKDEBUG && _d('Done with', $self->{chunk_num}, 'of',
+      scalar(@{$self->{chunks}}), 'chunks');
    MKDEBUG && $self->{state} && _d('Chunk differs; must examine rows');
    return $self->{state} == 0
       && $self->{chunk_num} >= scalar(@{$self->{chunks}})
@@ -240,7 +239,7 @@ sub key_cols {
    else {
       @cols = $self->{chunk_col};
    }
-   MKDEBUG && _d("State $self->{state}, key cols " . join(', ', @cols));
+   MKDEBUG && _d('State', $self->{state},',', 'key cols', join(', ', @cols));
    return \@cols;
 }
 
@@ -249,9 +248,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

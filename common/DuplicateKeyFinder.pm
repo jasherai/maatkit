@@ -1,4 +1,4 @@
-# This program is copyright 2009-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -88,8 +88,8 @@ sub get_duplicate_keys {
       # sort if --ignoreorder or FULLTEXT. 
       if ( $args{ignore_order} || $is_fulltext  ) {
          my $ordered_cols = join(',', sort(split(/,/, $key->{colnames})));
-         MKDEBUG && _d("Reordered $key->{name} cols "
-            . "from ($key->{colnames}) to ($ordered_cols)"); 
+         MKDEBUG && _d('Reordered', $key->{name}, 'cols from',
+            $key->{colnames}, 'to', $ordered_cols); 
          $key->{colnames} = $ordered_cols;
       }
 
@@ -120,7 +120,7 @@ sub get_duplicate_keys {
       next unless $unique_key; # primary key may be undefined
       my $cols = $unique_key->{cols};
       if ( @$cols == 1 ) {
-         MKDEBUG && _d("$unique_key->{name} defines unique column: $cols->[0]");
+         MKDEBUG && _d($unique_key->{name},'defines unique column:',$cols->[0]);
          # Save only the first unique key for the unique col. If there
          # are others, then they are exact duplicates and will be removed
          # later when unique keys are compared to unique keys.
@@ -131,7 +131,7 @@ sub get_duplicate_keys {
       }
       else {
          local $LIST_SEPARATOR = '-';
-         MKDEBUG && _d("$unique_key->{name} defines unique set: @$cols");
+         MKDEBUG && _d($unique_key->{name}, 'defines unique set:', @$cols);
          push @unique_sets, { cols => $cols, key => $unique_key };
       }
    }
@@ -144,18 +144,19 @@ sub get_duplicate_keys {
       COL:
       foreach my $col ( @{$unique_set->{cols}} ) {
          if ( exists $unique_cols{$col} ) {
-            MKDEBUG && _d("Unique set $unique_set->{key}->{name} "
-               . "has unique col $col");
+            MKDEBUG && _d('Unique set', $unique_set->{key}->{name},
+               'has unique col', $col);
             last COL if ++$n_unique_cols > 1;
             $unique_set->{constraining_key} = $unique_cols{$col};
          }
       }
       if ( $n_unique_cols && $unique_set->{key}->{name} ne 'PRIMARY' ) {
          # Unique set is redundantly constrained.
-         MKDEBUG && _d("Will unconstrain unique set $unique_set->{key}->{name} "
-            . "because it is redundantly constrained by key "
-            . $unique_set->{constraining_key}->{name}
-            . " ($unique_set->{constraining_key}->{colnames})");
+         MKDEBUG && _d('Will unconstrain unique set',
+            $unique_set->{key}->{name},
+            'because it is redundantly constrained by key',
+            $unique_set->{constraining_key}->{name},
+            '(',$unique_set->{constraining_key}->{colnames},')');
          $unconstrain{$unique_set->{key}->{name}}
             = $unique_set->{constraining_key};
       }
@@ -166,7 +167,7 @@ sub get_duplicate_keys {
    # list of normal keys.
    for my $i ( 0..$#unique_keys ) {
       if ( exists $unconstrain{$unique_keys[$i]->{name}} ) {
-         MKDEBUG && _d("Normalizing $unique_keys[$i]->{name}");
+         MKDEBUG && _d('Normalizing', $unique_keys[$i]->{name});
          $unique_keys[$i]->{unconstrained} = 1;
          $unique_keys[$i]->{constraining_key}
             = $unconstrain{$unique_keys[$i]->{name}};
@@ -352,8 +353,8 @@ sub remove_prefix_duplicates {
          my $rm_cols       = $remove_keys->[$rm]->{colnames};
          my $rm_len_cols   = $remove_keys->[$rm]->{len_cols};
 
-         MKDEBUG && _d("Comparing [keep] $keep_name ($keep_cols) "
-            . "to [remove if dupe] $rm_name ($rm_cols)");
+         MKDEBUG && _d('Comparing [keep]', $keep_name, '(',$keep_cols,')',
+            'to [remove if dupe]', $rm_name, '(',$rm_cols,')');
 
          # Compare the whole remove key to the keep key, not just
          # the their common minimum length prefix. This is correct
@@ -364,7 +365,7 @@ sub remove_prefix_duplicates {
             # FULLTEXT keys, for example, are only duplicates if they
             # are exact duplicates.
             if ( $args{exact_duplicates} && ($rm_len_cols < $keep_len_cols) ) {
-               MKDEBUG && _d("$rm_name not exact duplicate of $keep_name");
+               MKDEBUG && _d($rm_name, 'not exact duplicate of', $keep_name);
                next J_KEY;
             }
 
@@ -372,12 +373,13 @@ sub remove_prefix_duplicates {
             # column to uniqueness. This prevents UNIQUE KEY (a) from being
             # removed by PRIMARY KEY (a, b).
             if ( exists $remove_keys->[$rm]->{unique_col} ) {
-               MKDEBUG && _d("Cannot remove $rm_name because is constrains col "
-                  . $remove_keys->[$rm]->{cols}->[0]);
+               MKDEBUG && _d('Cannot remove', $rm_name,
+                  'because is constrains col',
+                  $remove_keys->[$rm]->{cols}->[0]);
                next J_KEY;
             }
 
-            MKDEBUG && _d("Remove $remove_keys->[$rm]->{name}");
+            MKDEBUG && _d('Remove', $remove_keys->[$rm]->{name});
             my $reason;
             if ( $remove_keys->[$rm]->{unconstrained} ) {
                $reason .= "Uniqueness of $rm_name ignored because "
@@ -404,7 +406,7 @@ sub remove_prefix_duplicates {
             next J_KEY if $remove_index == 1;
          }
          else {
-            MKDEBUG && _d("$rm_name not left-prefix of $keep_name");
+            MKDEBUG && _d($rm_name, 'not left-prefix of', $keep_name);
             next I_KEY;
          }
       }
@@ -463,9 +465,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

@@ -474,7 +474,7 @@ is_deeply(
 #           possible
 # Issue 23: Table filtering isn't efficient
 # #############################################################################
-my $output = `MKDEBUG=1 samples/MySQLFind.pl | grep 'SHOW CREATE' | wc -l`;
+my $output = `MKDEBUG=1 samples/MySQLFind.pl 2>&1 | grep 'SHOW CREATE' | wc -l`;
 chomp $output;
 is($output, '1', 'Does SHOW CREATE only for filtered tables');
 

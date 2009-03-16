@@ -1,4 +1,4 @@
-# This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -83,7 +83,7 @@ sub new {
             COALESCE(?, $now),
             GREATEST(last_seen, COALESCE(?, $now)))
       SQL
-   MKDEBUG && _d("SQL to insert into review table: ", $sql);
+   MKDEBUG && _d('SQL to insert into review table:', $sql);
    my $insert_sth = $args{dbh}->prepare($sql);
 
    # The SELECT statement does not need to get the fingerprint, sample or
@@ -93,7 +93,7 @@ sub new {
         . join(', ', map { $args{quoter}->quote($_) } @review_cols)
         . ", CONV(checksum, 10, 16) AS checksum_conv FROM $args{db_tbl}"
         . " WHERE checksum=CONV(?, 16, 10)";
-   MKDEBUG && _d("SQL to select from review table: ", $sql);
+   MKDEBUG && _d('SQL to select from review table:', $sql);
    my $select_sth = $args{dbh}->prepare($sql);
 
    my $self = {
@@ -144,9 +144,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

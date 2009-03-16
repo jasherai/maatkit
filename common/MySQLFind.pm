@@ -1,4 +1,4 @@
-# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -73,7 +73,7 @@ sub new {
          || $self->{engines}->{regexp} ? 1 : 0);
    die "I need a parser argument"
       if $self->{need_engine} && !defined $args{parser};
-   MKDEBUG && _d('Need engine: ' , $self->{need_engine} ? 'yes' : 'no');
+   MKDEBUG && _d('Need engine:', $self->{need_engine} ? 'yes' : 'no');
    $self->{engines}->{views} = 1  unless defined $self->{engines}->{views};
    $self->{tables}->{status} = [] unless defined $self->{tables}->{status};
    if ( $args{useddl} ) {
@@ -88,7 +88,7 @@ sub init_timestamp {
    my $sql = 'SELECT CURRENT_TIMESTAMP';
    MKDEBUG && _d($sql);
    ($self->{timestamp}->{$dbh}->{now}) = $dbh->selectrow_array($sql);
-   MKDEBUG && _d("Current timestamp: $self->{timestamp}->{$dbh}->{now}");
+   MKDEBUG && _d('Current timestamp:', $self->{timestamp}->{$dbh}->{now});
 }
 
 sub find_databases {
@@ -216,7 +216,7 @@ sub _fetch_tbl_list {
 
 sub _filter {
    my ( $self, $thing, $sub, @vals ) = @_;
-   MKDEBUG && _d("Filtering $thing list on ", Dumper($self->{$thing}));
+   MKDEBUG && _d('Filtering', $thing, 'list on', Dumper($self->{$thing}));
    my $permit = $self->{$thing}->{permit};
    my $reject = $self->{$thing}->{reject};
    my $regexp = $self->{$thing}->{regexp};
@@ -243,7 +243,7 @@ sub _test_date {
    my ( $self, $table, $prop, $test, $dbh ) = @_;
    $prop = lc $prop;
    if ( !defined $table->{$prop} ) {
-      MKDEBUG && _d("$prop is not defined");
+      MKDEBUG && _d($prop, 'is not defined');
       return $self->{nullpass};
    }
    my ( $equality, $num ) = $test =~ m/^([+-])?(\d+)$/;
@@ -265,9 +265,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

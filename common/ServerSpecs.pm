@@ -1,4 +1,4 @@
-# This program is copyright 2008 Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -303,7 +303,8 @@ sub load_ipv4_defaults {
    # sysctl vars are overriden from the conf file
    foreach my $var ( keys %conf_ipv4_defaults ) {
       if ( MKDEBUG && exists $ipv4_defaults->{$var} ) {
-         _d("sysctl override $var: conf=$conf_ipv4_defaults{$var} overrides default=$ipv4_defaults->{$var}");
+         _d('sysctl override', $var, ': conf=', $conf_ipv4_defaults{$var},
+            'overrides default', $ipv4_defaults->{$var});
       }
       $ipv4_defaults->{$var} = $conf_ipv4_defaults{$var};
    }
@@ -316,19 +317,20 @@ sub parse_sysctl_conf {
    my %sysctl;
 
    if ( !-f $sysctl_conf ) {
-      MKDEBUG && _d("sysctl file $sysctl_conf does not exist");
+      MKDEBUG && _d('sysctl file', $sysctl_conf, 'does not exist');
       return;
    }
 
-   if ( open my $SYSCTL, "< $sysctl_conf" ) {
-      MKDEBUG && _d("Parsing $sysctl_conf");
+   if ( open my $SYSCTL, '<', $sysctl_conf ) {
+      MKDEBUG && _d('Parsing', $sysctl_conf);
       while ( my $line = <$SYSCTL> ) {
          next if $line  =~ /^#/; # skip comments
          next unless $line =~ /\s*net.ipv4.(\w+)\s*=\s*(\w+)/;
          my ( $var, $val ) = ( $1, $2 );
-         MKDEBUG && _d("sysctl: $var=$val");
+         MKDEBUG && _d('sysctl:', $var, '=', $val);
          if ( exists $sysctl{$var} && MKDEBUG ) {
-            _d("Duplicate sysctl var: $var (was $sysctl{$var}, is now $val)");
+            _d('Duplicate sysctl var:', $var,
+               '; was', $sysctl{$var}, ', is now', $val);
          }
          $sysctl{$var} = $val;
       }
@@ -345,7 +347,7 @@ sub _can_run {
    # Throw away all output; we're only interested in the return value.
    my $retval = system("$cmd 2>/dev/null > /dev/null");
    $retval = $retval >> 8;
-   MKDEBUG && _d("Running '$cmd' returned $retval");
+   MKDEBUG && _d('Running', $cmd, 'returned', $retval);
    return !$retval ? 1 : 0;
 }
 
@@ -418,9 +420,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

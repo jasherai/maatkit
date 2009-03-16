@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,10 +17,10 @@
 # ###########################################################################
 # TableNibbler package $Revision$
 # ###########################################################################
+package TableNibbler;
+
 use strict;
 use warnings FATAL => 'all';
-
-package TableNibbler;
 
 use English qw(-no_match_vars);
 
@@ -72,11 +72,11 @@ sub generate_asc_stmt {
 
    # These are the columns we'll ascend.
    @asc_cols = @{$tbl->{keys}->{$index}->{cols}};
-   MKDEBUG && _d("Will ascend index $index");
-   MKDEBUG && _d("Will ascend columns " . join(', ', @asc_cols));
+   MKDEBUG && _d('Will ascend index', $index);
+   MKDEBUG && _d('Will ascend columns', join(', ', @asc_cols));
    if ( $args{ascfirst} ) {
       @asc_cols = $asc_cols[0];
-      MKDEBUG && _d("Ascending only first column");
+      MKDEBUG && _d('Ascending only first column');
    }
 
    # We found the columns by name, now find their positions for use as
@@ -89,8 +89,7 @@ sub generate_asc_stmt {
       }
       push @asc_slice, $col_posn{$col};
    }
-   MKDEBUG
-      && _d('Will ascend, in ordinal position: ' . join(', ', @asc_slice));
+   MKDEBUG && _d('Will ascend, in ordinal position:', join(', ', @asc_slice));
 
    my $asc_stmt = {
       cols  => \@cols,
@@ -241,7 +240,7 @@ sub generate_del_stmt {
    else {
       @del_cols = @{$tbl->{cols}};
    }
-   MKDEBUG && _d('Columns needed for DELETE: ' . join(', ', @del_cols));
+   MKDEBUG && _d('Columns needed for DELETE:', join(', ', @del_cols));
 
    # We found the columns by name, now find their positions for use as
    # array slices, and make sure they are included in the SELECT list.
@@ -253,7 +252,7 @@ sub generate_del_stmt {
       }
       push @del_slice, $col_posn{$col};
    }
-   MKDEBUG && _d('Ordinals needed for DELETE: ' . join(', ', @del_slice));
+   MKDEBUG && _d('Ordinals needed for DELETE:', join(', ', @del_slice));
 
    my $del_stmt = {
       cols  => \@cols,
@@ -338,9 +337,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

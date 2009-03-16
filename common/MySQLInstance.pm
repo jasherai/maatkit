@@ -1,4 +1,4 @@
-# This program is copyright 2008 Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -116,16 +116,16 @@ sub mysqld_processes
    my $cmd = 'ps -o euser,%cpu,rss,vsz,cmd -e | grep -v grep | grep mysql';
    my $ps  = defined $ps_output ? $ps_output : `$cmd`;
    if ( $ps ) {
-      MKDEBUG && _d("ps full output: $ps");
+      MKDEBUG && _d('ps full output:', $ps);
       foreach my $line ( split("\n", $ps) ) {
-         MKDEBUG && _d("ps line: $line");
+         MKDEBUG && _d('ps line:', $line);
          my ($user, $pcpu, $rss, $vsz, $cmd) = split(/\s+/, $line, 5);
          my $bin = find_mysqld_binary_unix($cmd);
          if ( !$bin ) {
             MKDEBUG && _d('No mysqld binary in ps line');
             next;
          }
-         MKDEBUG && _d("mysqld binary from ps: $bin");
+         MKDEBUG && _d('mysqld binary from ps:', $bin);
          push @mysqld_processes,
             { user    => $user,
               pcpu    => $pcpu,
@@ -139,17 +139,14 @@ sub mysqld_processes
             };
       }
    }
-   if ( MKDEBUG ) {
-      my $mysqld_processes_dump = Dumper(\@mysqld_processes);
-      _d("$mysqld_processes_dump");
-   }
+   MKDEBUG && _d('mysqld processes:', Dumper(\@mysqld_processes));
    return \@mysqld_processes;
 }
 
 sub new {
    my ( $class, $cmd ) = @_;
    my $self = {};
-   MKDEBUG && _d("cmd: $cmd");
+   MKDEBUG && _d('cmd:', $cmd);
    $self->{mysqld_binary} = find_mysqld_binary_unix($cmd)
       or die "No mysqld binary found in $cmd";
    my $file_output  = `file $self->{mysqld_binary} 2>&1`;
@@ -164,10 +161,7 @@ sub new {
    $self->{cmd_line_ops}->{defaults_file} ||= '';
    $self->{conf_sys_vars}   = {};
    $self->{online_sys_vars} = {};
-   if ( MKDEBUG ) {
-      my $self_dump = Dumper($self);
-      _d("self dump: $self_dump");
-   }
+   MKDEBUG && _d('new MySQLInstance:', Dumper($self));
    return bless $self, $class;
 }
 
@@ -198,12 +192,11 @@ sub load_sys_vars {
    # Sys vars and defaults according to mysqld (if possible; see issue 135).
    my ( $defaults_file_op, $tmp_file ) = $self->_defaults_file_op();
    my $cmd = "$self->{mysqld_binary} $defaults_file_op --help --verbose";
-   MKDEBUG && _d("Getting sys vars from mysqld: $cmd");
+   MKDEBUG && _d('Getting sys vars from mysqld:', $cmd);
    my $retval = system("$cmd 1>/dev/null 2>/dev/null");
    $retval = $retval >> 8;
    if ( $retval != 0 ) {
-      my $self_dump = Dumper($self);
-      MKDEBUG && _d("self dump: $self_dump");
+      MKDEBUG && _d('self dump:', Dumper($self));
       warn "Cannot execute $cmd\n" . $mysqld_broken_msg;
    }
    else {
@@ -277,11 +270,11 @@ sub _defaults_file_op {
       `$cp_cmd`;
       $defaults_file_op = "--defaults-file=" . $tmp_file->filename;
 
-      MKDEBUG && _d(  "Tmp file for defaults file $defaults_file: "
-                    . $tmp_file->filename );
+      MKDEBUG && _d('Tmp file for defaults file', $defaults_file, ':',
+         $tmp_file->filename);
    }
    else {
-      MKDEBUG && _d("Defaults file does not exist: $defaults_file");
+      MKDEBUG && _d('Defaults file does not exist:', $defaults_file);
    }
 
    # Must return $tmp_file obj so its reference lasts into the caller because
@@ -299,7 +292,7 @@ sub _load_default_defaults_files {
       # TODO: change to warn and try to continue
       die "Cannot parse default defaults files: $mysqld_output\n";
    }
-   MKDEBUG && _d("Parsed default defaults files: $ddf_list\n");
+   MKDEBUG && _d('List of default defaults files:', $ddf_list);
    my %have_seen;
    @{ $self->{default_defaults_files} }
       = grep { !$have_seen{$_}++ } split /\s/, $ddf_list;
@@ -319,8 +312,7 @@ sub _vars_from_defaults_file {
    my $retval = system("$my_print_defaults_cmd --help 1>/dev/null 2>/dev/null");
    $retval = $retval >> 8;
    if ( $retval != 0 ) {
-      my $self_dump = Dumper($self);
-      MKDEBUG && _d("self dump: $self_dump");
+      MKDEBUG && _d('self dump:', Dumper($self));
       die "Cannot execute my_print_defaults command '$my_print_defaults_cmd'";
    }
 
@@ -350,15 +342,14 @@ sub _vars_from_defaults_file {
       # This would be a rare case in which the mysqld binary was not
       # given a --defaults-file opt, and none of the default defaults
       # files parsed from mysqld --help --verbose exist.
-      my $self_dump = Dumper($self);
-      MKDEBUG && _d("self dump: $self_dump");
+      MKDEBUG && _d('self dump:', Dumper($self));
       # TODO: change to warn and try to continue
       die 'MySQL instance has no valid defaults files.'
    }
 
    foreach my $defaults_file_op ( @defaults_file_ops ) {
       my $cmd = "$my_print_defaults_cmd $defaults_file_op mysqld";
-      MKDEBUG && _d("my_print_defaults cmd: $cmd");
+      MKDEBUG && _d('my_print_defaults cmd:', $cmd);
       if ( my $my_print_defaults_output = `$cmd` ) {
          foreach my $var_val ( split "\n", $my_print_defaults_output ) {
             # Make sys vars from conf look like those from SHOW VARIABLES
@@ -445,8 +436,7 @@ sub overriden_sys_vars {
    foreach my $var_val ( @{ $self->{defaults_file_sys_vars} } ) {
       my ( $var, $val ) = ( $var_val->[0], $var_val->[1] );
       if ( !defined $var || !defined $val ) {
-         my $dump = Dumper($var_val);
-         MKDEBUG && _d("Undefined var or val: $dump");
+         MKDEBUG && _d('Undefined var or val:', Dumper($var_val));
          next;
       }
       if ( exists $self->{cmd_line_ops}->{$var} ) {
@@ -579,9 +569,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

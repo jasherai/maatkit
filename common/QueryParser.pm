@@ -1,4 +1,4 @@
-# This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -57,7 +57,7 @@ sub new {
 sub get_tables {
    my ( $self, $query ) = @_;
    return unless $query;
-   MKDEBUG && _d("getting tables for ", $query);
+   MKDEBUG && _d('Getting tables for', $query);
 
    # These keywords may appear between UPDATE or SELECT and the table refs.
    # They need to be removed so that they are not mistaken for tables.
@@ -65,7 +65,7 @@ sub get_tables {
 
    my @tables;
    foreach my $tbls ( $query =~ m/$tbl_regex/gio ) {
-      MKDEBUG && _d("match: ", $tbls);
+      MKDEBUG && _d('Match tables:', $tbls);
       foreach my $tbl ( split(',', $tbls) ) {
          # Remove implicit or explicit (AS) alias.
          $tbl =~ s/\s*($tbl_ident)(\s+.*)?/$1/gio;
@@ -81,7 +81,7 @@ sub has_derived_table {
    my ( $self, $query ) = @_;
    # See the $tbl_regex regex above.
    my $match = $query =~ m/$has_derived/;
-   MKDEBUG && _d("$query has " . ($match ? 'a' : 'no') . ' derived table');
+   MKDEBUG && _d($query, 'has ' . ($match ? 'a' : 'no') . ' derived table');
    return $match;
 }
 
@@ -117,7 +117,7 @@ sub get_aliases {
    die "Failed to parse table references from $query"
       unless $tbl_refs && $from;
 
-   MKDEBUG && _d("tbl refs: $tbl_refs");
+   MKDEBUG && _d('tbl refs:', $tbl_refs);
 
    # These keywords precede a table ref. They signal the start of a table
    # ref, but to know where the table ref ends we need the after tbl ref
@@ -145,7 +145,7 @@ sub get_aliases {
       }xgio )
    {
       my ( $tbl_ref, $db_tbl, $alias ) = ($1, $2, $3);
-      MKDEBUG && _d("match: $tbl_ref");
+      MKDEBUG && _d('Match table:', $tbl_ref);
 
       # Handle subqueries.
       if ( $tbl_ref =~ m/^AS\s+\w+/i ) {
@@ -155,7 +155,7 @@ sub get_aliases {
          # FROM clause must have a name."
          # So if the tbl ref begins with 'AS', then we probably have a
          # subquery.
-         MKDEBUG && _d("Subquery $tbl_ref");
+         MKDEBUG && _d('Subquery', $tbl_ref);
          $aliases->{$alias} = undef;
          next;
       }
@@ -172,9 +172,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

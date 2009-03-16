@@ -149,7 +149,7 @@ $t = new TableSyncNibble(
    trim          => 0,
 );
 
-is (
+is(
    $t->get_sql(
       quoter   => $q,
       where    => 'foo=1',
@@ -166,7 +166,7 @@ is (
    'First nibble SQL',
 );
 
-is (
+is(
    $t->get_sql(
       quoter   => $q,
       where    => 'foo=1',
@@ -186,7 +186,7 @@ is (
 $t->{nibble} = 1;
 delete $t->{cached_boundaries};
 
-is (
+is(
    $t->get_sql(
       quoter   => $q,
       where    => '(foo=1)',
@@ -227,7 +227,7 @@ $t->get_sql(
       table    => 'test1',
    );
 
-is (
+is(
    $t->get_sql(
       quoter   => $q,
       where    => 'foo=1',
@@ -349,7 +349,7 @@ $t = new TableSyncNibble(
    bufferinmysql => 1,
 );
 
-like (
+like(
    $t->get_sql(
       quoter   => $q,
       where    => 'foo=1',
@@ -366,7 +366,7 @@ $t->same_row(
    { chunk_num => 0, cnt => 1, crc => 'abc' },
 );
 
-like (
+like(
    $t->get_sql(
       quoter   => $q,
       where    => 'foo=1',

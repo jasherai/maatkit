@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -123,7 +123,7 @@ sub best_algorithm {
    # Choose the best (fastest) among the remaining choices.
    if ( $alg && grep { $_ eq $alg } @choices ) {
       # Honor explicit choices.
-      MKDEBUG && _d("User requested $alg algorithm");
+      MKDEBUG && _d('User requested', $alg, 'algorithm');
       return $alg;
    }
 
@@ -134,7 +134,7 @@ sub best_algorithm {
       @choices = grep { $_ ne 'CHECKSUM' } @choices;
    }
 
-   MKDEBUG && _d('Algorithms, in order: ', @choices);
+   MKDEBUG && _d('Algorithms, in order:', @choices);
    return $choices[0];
 }
 
@@ -162,7 +162,7 @@ sub choose_hash_func {
       };
       if ( $EVAL_ERROR && $EVAL_ERROR =~ m/failed: (.*?) at \S+ line/ ) {
          $error .= qq{$func cannot be used because "$1"\n};
-         MKDEBUG && _d("$func cannot be used because $1");
+         MKDEBUG && _d($func, 'cannot be used because', $1);
       }
    } while ( @funcs && !$result );
 
@@ -191,7 +191,7 @@ sub optimize_xor {
    my $crc_wid   = length($unsliced) < 16 ? 16 : length($unsliced);
 
    do { # Try different positions till sliced result equals non-sliced.
-      MKDEBUG && _d("Trying slice $opt_slice");
+      MKDEBUG && _d('Trying slice', $opt_slice);
       $dbh->do('SET @crc := "", @cnt := 0');
       my $slices = $self->make_xor_slices(
          query     => "\@crc := $func('a')",
@@ -202,18 +202,18 @@ sub optimize_xor {
       my $sql = "SELECT CONCAT($slices) AS TEST FROM (SELECT NULL) AS x";
       $sliced = ($dbh->selectrow_array($sql))[0];
       if ( $sliced ne $unsliced ) {
-         MKDEBUG && _d("Slice $opt_slice does not work");
+         MKDEBUG && _d('Slice', $opt_slice, 'does not work');
          $start += 16;
          ++$opt_slice;
       }
    } while ( $start < $crc_wid && $sliced ne $unsliced );
 
    if ( $sliced eq $unsliced ) {
-      MKDEBUG && _d("Slice $opt_slice works");
+      MKDEBUG && _d('Slice', $opt_slice, 'works');
       return $opt_slice;
    }
    else {
-      MKDEBUG && _d("No slice works");
+      MKDEBUG && _d('No slice works');
       return undef;
    }
 }
@@ -446,9 +446,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

@@ -1,4 +1,4 @@
-# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -77,7 +77,7 @@ sub pod_to_spec {
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
-      MKDEBUG && _d('First option rules: '. $para);
+      MKDEBUG && _d('First option rules:', $para);
       push @rules, $para;
    }
 
@@ -188,24 +188,24 @@ sub new {
          $opt->{g} ||= 'o';
          # Option has a type
          if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            MKDEBUG && _d("Option $opt->{k} type: $y");
+            MKDEBUG && _d('Option', $opt->{k}, 'type:', $y);
             $opt->{y} = $y;
             $opt->{s} =~ s/=./=s/;
          }
          # Option is required if it contains the word 'required'
          if ( $opt->{d} =~ m/required/ ) {
             $opt->{r} = 1;
-            MKDEBUG && _d("Option $opt->{k} is required");
+            MKDEBUG && _d('Option', $opt->{k}, 'is required');
          }
          # Option has a default value if it says 'default' or 'default X'
          if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
             $defaults{$opt->{k}} = defined $def ? $def : 1;
-            MKDEBUG && _d("Option $opt->{k} has a default");
+            MKDEBUG && _d('Option', $opt->{k}, 'has a default');
          }
          if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
             # Defer checking till later because of possible forward references
             $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            MKDEBUG && _d("Option $opt->{k} $dis");
+            MKDEBUG && _d('Option', $opt->{k}, $dis);
          }
       }
       else { # It's an option rule, not a spec.
@@ -216,11 +216,11 @@ sub new {
                } $class->get_participants($opt);
             if ( $opt =~ m/mutually exclusive|one and only one/ ) {
                push @mutex, \@participants;
-               MKDEBUG && _d(@participants, ' are mutually exclusive');
+               MKDEBUG && _d(@participants, 'are mutually exclusive');
             }
             if ( $opt =~ m/at least one|one and only one/ ) {
                push @atleast1, \@participants;
-               MKDEBUG && _d(@participants, ' require at least one');
+               MKDEBUG && _d(@participants, 'require at least one');
             }
          }
          elsif ( $opt =~ m/default to/ ) {
@@ -230,7 +230,7 @@ sub new {
                   $key_for{$_};
                } $class->get_participants($opt);
             $copyfrom{$participants[0]} = $participants[1];
-            MKDEBUG && _d(@participants, ' copy from each other');
+            MKDEBUG && _d(@participants, 'copy from each other');
          }
          elsif ( $opt  =~ m/allowed with/ ) {
             my @participants = map {
@@ -288,7 +288,7 @@ sub get_participants {
          }
       }
    }
-   MKDEBUG && _d("Participants for $str: ", @participants);
+   MKDEBUG && _d('Participants for', $str, ':', @participants);
    return @participants;
 }
 
@@ -330,8 +330,8 @@ sub parse {
                           else {
                              $vals{$spec->{k}} = $val;
                           }
-                          MKDEBUG && _d("Given option: $opt ($spec->{k}) "
-                             . " = $val");
+                          MKDEBUG && _d('Given option:',
+                             $opt, '(',$spec->{k},') =', $val);
                           $self->{given}->{$spec->{k}} = $vals{$spec->{k}};
                        }
       } @specs
@@ -352,7 +352,7 @@ sub parse {
    # Disable options as specified.
    foreach my $dis ( grep { defined $vals{$_} } keys %{$self->{disables}} ) {
       my @disses = map { $self->{key_for}->{$_} } @{$self->{disables}->{$dis}};
-      MKDEBUG && _d("Unsetting options: ", @disses);
+      MKDEBUG && _d('Unsetting options:', @disses);
       @vals{@disses} = map { undef } @disses;
    }
 
@@ -397,8 +397,8 @@ sub parse {
          if ( !$suffix ) {
             my ( $s ) = $spec->{d} =~ m/\(suffix (.)\)/;
             $suffix = $s || 's';
-            MKDEBUG && _d("No suffix given; using $suffix for $spec->{k} "
-               . "(value: '$val')");
+            MKDEBUG && _d('No suffix given; using', $suffix, 'for',
+               $spec->{k}, '(value:', $val, ')');
          }
          if ( $suffix =~ m/[smhd]/ ) {
             $val = $suffix eq 's' ? $num            # Seconds
@@ -406,18 +406,19 @@ sub parse {
                  : $suffix eq 'h' ? $num * 3600     # Hours
                  :                  $num * 86400;   # Days
             $vals{$spec->{k}} = $val;
-            MKDEBUG && _d("Setting option $spec->{k} to $val");
+            MKDEBUG && _d('Setting option', $spec->{k}, 'to', $val);
          }
          else {
             $self->error("Invalid --$spec->{l} argument");
          }
       }
       elsif ( $spec->{y} eq 'd' ) {
-         MKDEBUG && _d("Parsing option $spec->{y} as a DSN");
+         MKDEBUG && _d('Parsing option', $spec->{y}, 'as a DSN');
          my $from_key = $self->{copyfrom}->{$spec->{k}};
          my $default = {};
          if ( $from_key ) {
-            MKDEBUG && _d("Option $spec->{y} DSN copies from option $from_key");
+            MKDEBUG && _d('Option', $spec->{y}, 'DSN copies from option',
+               $from_key);
             $default = $self->{dsn}->parse($self->{dsn}->as_string($vals{$from_key}));
          }
          $vals{$spec->{k}} = $self->{dsn}->parse($val, $default);
@@ -427,7 +428,8 @@ sub parse {
          if ( defined $num ) {
             if ( $factor ) {
                $num *= $factor_for{$factor};
-               MKDEBUG && _d("Setting option $spec->{y} to num * factor");
+               MKDEBUG && _d('Setting option', $spec->{y},
+                  'to num', $num, '* factor', $factor);
             }
             $vals{$spec->{k}} = ($pre || '') . $num;
          }
@@ -439,7 +441,7 @@ sub parse {
 
    # Process list arguments
    foreach my $spec ( grep { $_->{y} } @specs ) {
-      MKDEBUG && _d("Treating option $spec->{k} as a list");
+      MKDEBUG && _d('Treating option', $spec->{k}, 'as a list');
       my $val = $vals{$spec->{k}};
       if ( $spec->{y} eq 'H' || (defined $val && $spec->{y} eq 'h') ) {
          $vals{$spec->{k}} = { map { $_ => 1 } split(',', ($val || '')) };
@@ -468,7 +470,8 @@ sub parse {
       # seems like a hack.
       foreach my $defined_opt ( keys %defined_opts ) {
          MKDEBUG
-            && _d("Unsetting options: $defined_opt (not allowed with $opt)");
+            && _d('Unsetting option', $defined_opt,
+               '; it is not allowed with option', $opt);
          $vals{$defined_opt} = undef;
       }
    }
@@ -682,9 +685,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

@@ -1,4 +1,4 @@
-# This program is copyright 2008-@CURRENTYEAR@ Percona Inc.
+# This program is copyright 2008-2009 Percona Inc.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -168,7 +168,7 @@ sub aggregate {
 
       # Make the subroutine
       my $code = join("\n", @lines);
-      MKDEBUG && _d("Unrolled subroutine: ", @lines);
+      MKDEBUG && _d('Unrolled subroutine:', @lines);
       my $sub = eval $code;
       die if $EVAL_ERROR;
       $self->{unrolled_loops} = $sub;
@@ -243,7 +243,8 @@ sub make_handler {
    my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
-   MKDEBUG && _d("Type for $attrib is $type (sample: $val), is array: $is_array");
+   MKDEBUG && _d('Type for', $attrib, 'is', $type,
+      '(sample:', $val, '), is array:', $is_array);
    $self->{type_for}->{$attrib} = $type;
 
    %args = ( # Set up defaults
@@ -353,7 +354,7 @@ sub make_handler {
    my $code = join("\n", @lines);
    $self->{code_for}->{$attrib} = $code;
 
-   MKDEBUG && _d("Metric handler for '$attrib': ", @lines);
+   MKDEBUG && _d('Metric handler for', $attrib, ':', @lines);
    my $sub = eval join("\n", @lines);
    die if $EVAL_ERROR;
    return $sub;
@@ -517,7 +518,7 @@ sub calculate_statistical_metrics {
    my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
    $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
-   MKDEBUG && _d("95 cutoff $cutoff, sum $sum, sumsq $sumsq, stddev $stddev");
+   MKDEBUG && _d('95 cutoff', $cutoff, 'sum', $sum, 'sumsq', $sumsq, 'stddev', $stddev);
 
    $statistical_metrics->{stddev} = $stddev;
    $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
@@ -584,9 +585,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

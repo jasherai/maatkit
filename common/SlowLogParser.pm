@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -239,7 +239,7 @@ sub parse_event {
          }
       }
 
-      MKDEBUG && _d("Properties of event: ", Dumper(\@properties));
+      MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
       foreach my $callback ( @callbacks ) {
          last unless $event = $callback->($event);
@@ -255,9 +255,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

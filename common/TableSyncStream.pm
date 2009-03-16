@@ -1,6 +1,4 @@
-#!/usr/bin/perl
-
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -19,12 +17,12 @@
 # ###########################################################################
 # TableSyncStream package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
+package TableSyncStream;
 # This package implements the simplest possible table-sync algorithm: read every
 # row from the tables and compare them.
-package TableSyncStream;
+
+use strict;
+use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
@@ -100,9 +98,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

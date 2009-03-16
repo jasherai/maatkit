@@ -1,4 +1,4 @@
-# This program is copyright (c) 2007 Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -17,9 +17,7 @@
 # ###########################################################################
 # TableSyncNibble package $Revision$
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
+package TableSyncNibble;
 # This package implements a moderately complex sync algorithm:
 # * Prepare to nibble the table (see TableNibbler.pm)
 # * Fetch the nibble'th next row (say the 500th) from the current row
@@ -36,7 +34,9 @@ use warnings FATAL => 'all';
 # * if they differ, select each row from __temp;
 # * if rows differ, fetch back and sync as usual.
 # * truncate and start over.
-package TableSyncNibble;
+
+use strict;
+use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 use List::Util qw(max);
@@ -60,7 +60,7 @@ sub new {
    while ( $args{struct}->{is_col}->{$args{crc_col}} ) {
       $args{crc_col} = "_$args{crc_col}"; # Prepend more _ until not a column.
    }
-   MKDEBUG && _d('CRC column will be named ' . $args{crc_col});
+   MKDEBUG && _d('CRC column will be named', $args{crc_col});
 
    $args{sel_stmt} = $args{nibbler}->generate_asc_stmt(
       parser   => $args{parser},
@@ -72,7 +72,7 @@ sub new {
 
    die "No suitable index found"
       unless $args{sel_stmt}->{index}
-         && $args{struct}->{keys}->{$args{sel_stmt}->{index}}->{unique};
+         && $args{struct}->{keys}->{$args{sel_stmt}->{index}}->{is_unique};
    $args{key_cols} = $args{struct}->{keys}->{$args{sel_stmt}->{index}}->{cols};
 
    # Decide on checksumming strategy and store checksum query prototypes for
@@ -218,7 +218,7 @@ sub __get_boundaries {
    $self->{cached_nibble}     = $self->{nibble};
    $self->{cached_boundaries} = $where;
 
-   MKDEBUG && _d('WHERE clause: ', $where);
+   MKDEBUG && _d('WHERE clause:', $where);
    return $where;
 }
 
@@ -235,7 +235,7 @@ sub same_row {
       }
    }
    elsif ( $lr->{cnt} != $rr->{cnt} || $lr->{crc} ne $rr->{crc} ) {
-      MKDEBUG && _d('Rows: ', Dumper($lr, $rr));
+      MKDEBUG && _d('Rows:', Dumper($lr, $rr));
       MKDEBUG && _d('Will examine this nibble before moving to next');
       $self->{state} = 1; # Must examine this nibble row-by-row
    }
@@ -260,21 +260,20 @@ sub done_with_rows {
    my ( $self ) = @_;
    if ( $self->{state} == 1 ) {
       $self->{state} = 2;
-      MKDEBUG && _d("Setting state=$self->{state}");
+      MKDEBUG && _d('Setting state =', $self->{state});
    }
    else {
       $self->{state} = 0;
       $self->{nibble}++;
       delete $self->{cached_boundaries};
-      MKDEBUG
-         && _d("Setting state=$self->{state}, nibble=$self->{nibble}");
+      MKDEBUG && _d('Setting state =', $self->{state},
+         ', nibble =', $self->{nibble});
    }
 }
 
 sub done {
    my ( $self ) = @_;
-   MKDEBUG
-      && _d("Done with nibble $self->{nibble}");
+   MKDEBUG && _d('Done with nibble', $self->{nibble});
    MKDEBUG && $self->{state} && _d('Nibble differs; must examine rows');
    return $self->{state} == 0 && $self->{nibble} && !$self->{cached_row};
 }
@@ -300,7 +299,7 @@ sub key_cols {
    else {
       @cols = @{$self->{key_cols}};
    }
-   MKDEBUG && _d("State $self->{state}, key cols " . join(', ', @cols));
+   MKDEBUG && _d('State', $self->{state},',', 'key cols', join(', ', @cols));
    return \@cols;
 }
 
@@ -309,9 +308,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

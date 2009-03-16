@@ -1,4 +1,4 @@
-# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -85,8 +85,7 @@ sub compare_sets {
       my $cmp;
       if ( $lr && $rr ) {
          $cmp = $self->key_cmp($lr, $rr, $syncer->key_cols(), $tbl);
-         MKDEBUG && _d('Key comparison on left and right: '
-            . (defined $cmp ? $cmp : 'undef'));
+         MKDEBUG && _d('Key comparison on left and right:', $cmp);
       }
       if ( $lr || $rr ) {
          # If the current row is the "same row" on both sides, meaning the two
@@ -132,17 +131,17 @@ sub compare_sets {
 # have to check the type of columns constantly
 sub key_cmp {
    my ( $self, $lr, $rr, $key_cols, $tbl ) = @_;
-   MKDEBUG && _d("Comparing keys using columns " . join(',', @$key_cols));
+   MKDEBUG && _d('Comparing keys using columns:', join(',', @$key_cols));
    foreach my $col ( @$key_cols ) {
       my $l = $lr->{$col};
       my $r = $rr->{$col};
       if ( !defined $l || !defined $r ) {
-         MKDEBUG && _d("$col is not defined in both rows");
+         MKDEBUG && _d($col, 'is not defined in both rows');
          return defined $l || -1;
       }
       else {
          if ($tbl->{is_numeric}->{$col} ) {   # Numeric column
-            MKDEBUG && _d("$col is numeric");
+            MKDEBUG && _d($col, 'is numeric');
             my $cmp = $l <=> $r;
             return $cmp unless $cmp == 0;
          }
@@ -153,11 +152,11 @@ sub key_cmp {
             my $coll = $tbl->{collation_for}->{$col};
             if ( $coll && ( $coll ne 'latin1_swedish_ci'
                            || $l =~ m/[^\040-\177]/ || $r =~ m/[^\040-\177]/) ) {
-               MKDEBUG && _d("Comparing $col via MySQL");
+               MKDEBUG && _d('Comparing', $col, 'via MySQL');
                $cmp = $self->db_cmp($coll, $l, $r);
             }
             else {
-               MKDEBUG && _d("Comparing $col in lowercase");
+               MKDEBUG && _d('Comparing', $col, 'in lowercase');
                $cmp = lc $l cmp lc $r;
             }
             return $cmp unless $cmp == 0;
@@ -171,7 +170,7 @@ sub db_cmp {
    my ( $self, $collation, $l, $r ) = @_;
    if ( !$self->{sth}->{$collation} ) {
       if ( !$self->{charset_for} ) {
-         MKDEBUG && _d("Fetching collations from MySQL");
+         MKDEBUG && _d('Fetching collations from MySQL');
          my @collations = @{$self->{dbh}->selectall_arrayref(
             'SHOW COLLATION', {Slice => { collation => 1, charset => 1 }})};
          foreach my $collation ( @collations ) {
@@ -194,9 +193,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;

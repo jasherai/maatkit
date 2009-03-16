@@ -1,4 +1,4 @@
-# This program is copyright 2007-@CURRENTYEAR@ Baron Schwartz.
+# This program is copyright 2007-2009 Baron Schwartz.
 # Feedback and improvements are welcome.
 #
 # THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
@@ -69,7 +69,7 @@ sub parse {
 
    my @defs   = $ddl =~ m/^(\s+`.*?),?$/gm;
    my @cols   = map { $_ =~ m/`([^`]+)`/g } @defs;
-   MKDEBUG && _d('Columns: ' . join(', ', @cols));
+   MKDEBUG && _d('Columns:', join(', ', @cols));
 
    # Save the column definitions *exactly*
    my %def_for;
@@ -134,7 +134,7 @@ sub sort_indexes {
       }
       sort keys %{$tbl->{keys}};
 
-   MKDEBUG && _d('Indexes sorted best-first: ' . join(', ', @indexes));
+   MKDEBUG && _d('Indexes sorted best-first:', join(', ', @indexes));
    return @indexes;
 }
 
@@ -157,7 +157,7 @@ sub find_best_index {
          ($best) = $self->sort_indexes($tbl);
       }
    }
-   MKDEBUG && _d("Best index found is " . ($best || 'undef'));
+   MKDEBUG && _d('Best index found is', $best);
    return $best;
 }
 
@@ -176,17 +176,17 @@ sub find_possible_keys {
    # Normalize columns to lowercase
    $expl = { map { lc($_) => $expl->{$_} } keys %$expl };
    if ( $expl->{possible_keys} ) {
-      MKDEBUG && _d("possible_keys=$expl->{possible_keys}");
+      MKDEBUG && _d('possible_keys =', $expl->{possible_keys});
       my @candidates = split(',', $expl->{possible_keys});
       my %possible   = map { $_ => 1 } @candidates;
       if ( $expl->{key} ) {
-         MKDEBUG && _d("MySQL chose $expl->{key}");
+         MKDEBUG && _d('MySQL chose', $expl->{key});
          unshift @candidates, grep { $possible{$_} } split(',', $expl->{key});
-         MKDEBUG && _d('Before deduping: ' . join(', ', @candidates));
+         MKDEBUG && _d('Before deduping:', join(', ', @candidates));
          my %seen;
          @candidates = grep { !$seen{$_}++ } @candidates;
       }
-      MKDEBUG && _d('Final list: ' . join(', ', @candidates));
+      MKDEBUG && _d('Final list:', join(', ', @candidates));
       return @candidates;
    }
    else {
@@ -202,9 +202,9 @@ sub table_exists {
    my $db_tbl = $q->quote($db, $tbl);
    my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
    $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
-   MKDEBUG && _d("table_exists check for $db_tbl: $sql");
+   MKDEBUG && _d('table_exists check for', $db_tbl, ':', $sql);
    eval { $dbh->do($sql); };
-   MKDEBUG && _d("eval error (if any): $EVAL_ERROR");
+   MKDEBUG && _d('eval error (if any):', $EVAL_ERROR);
    return 0 if $EVAL_ERROR;
    return 1;
 }
@@ -212,7 +212,7 @@ sub table_exists {
 sub get_engine {
    my ( $self, $ddl, $opts ) = @_;
    my ( $engine ) = $ddl =~ m/\).*?(?:ENGINE|TYPE)=(\w+)/;
-   MKDEBUG && _d('Storage engine: ', $engine || 'unknown');
+   MKDEBUG && _d('Storage engine:', $engine);
    return $engine || undef;
 }
 
@@ -243,7 +243,7 @@ sub get_keys {
       # If you want foreign keys, use get_fks() below.
       next KEY if $key =~ m/FOREIGN/;
 
-      MKDEBUG && _d("Parsed key: $key");
+      MKDEBUG && _d('Parsed key:', $key);
 
       # Make allowances for HASH bugs in SHOW CREATE TABLE.  A non-MEMORY table
       # will report its index as USING HASH even when this is not supported.
@@ -276,7 +276,7 @@ sub get_keys {
       }
       $name =~ s/`//g;
 
-      MKDEBUG && _d("Key $name cols: " . join(', ', @cols));
+      MKDEBUG && _d('Key', $name, 'cols:', join(', ', @cols));
 
       $keys->{$name} = {
          name         => $name,
@@ -326,9 +326,7 @@ sub _d {
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
         map { defined $_ ? $_ : 'undef' }
         @_;
-   # Use $$ instead of $PID in case the package
-   # does not use English.
-   print "# $package:$line $$ ", @_, "\n";
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
 }
 
 1;
