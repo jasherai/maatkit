@@ -2,9 +2,9 @@
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 49;
 use English qw(-no_match_vars);
+use Test::More tests => 51;
+
 use constant MKDEBUG => $ENV{MKDEBUG};
 
 # #############################################################################
@@ -172,6 +172,7 @@ ok(
    'Queries that start with a comment are not converted for EXPLAIN',
 );
 
+# TODO: this is causing a segfault on my machine
 ok(
    no_diff($run_with.'slow024.txt', 'samples/slow024.txt'),
    'Long inserts/replaces are truncated (issue 216)',
@@ -356,7 +357,7 @@ SKIP: {
    # to be running.
 
    $ENV{MKDEBUG}=1;
-   `$cmd > /tmp/read_only.txt &`;
+   `$cmd > /tmp/read_only.txt 2>&1 &`;
    $ENV{MKDEBUG}=0;
    sleep 5;
    $dbh1->do('select sleep(1)');
@@ -399,5 +400,22 @@ SKIP: {
 
    $sb->wipe_clean($dbh1);
 };
+
+# #############################################################################
+# Issue 232: mk-query-digest does not properly handle logs with an empty Schema:
+# #############################################################################
+$output = 'foo'; # clear previous test results
+$cmd = "${run_with}slow026.txt";
+$output = `MKDEBUG=1 $cmd 2>&1`;
+like(
+   $output,
+   qr/Type for db is string /,
+   'Type for empty Schema: is string (issue 232)',
+);
+unlike(
+   $output,
+   qr/Argument "" isn't numeric in numeric gt/,
+   'No error message in debug output for empty Schema: (issue 232)'
+);
 
 exit;
