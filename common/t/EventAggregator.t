@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 23;
+use Test::More tests => 24;
 use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -783,6 +783,29 @@ is(
    $ea->results->{classes}->{foo}->{'Query time'}->{min},
    123,
    'Aggregates attributes with spaces in their names'
+);
+
+# #############################################################################
+# Issue 323: mk-query-digest does not properly handle logs with an empty Schema:
+# #############################################################################
+$ea = new EventAggregator(
+   groupby    => 'fingerprint',
+   worst      => 'Query time',
+   attributes => {
+      'Query time' => ['Query time'],
+      'Schema'     => ['Schema'],
+   },
+);
+$events = {
+   fingerprint  => 'foo',
+   'Query time' => 123,
+   'Schema'     => '',
+};
+$ea->aggregate($events);
+is(
+   $ea->{type_for}->{Schema},
+   'string',
+   'Empty Schema: (issue 323)'
 );
 
 exit;

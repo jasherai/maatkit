@@ -238,8 +238,8 @@ sub make_handler {
    }
    return unless defined $val; # Can't decide type if it's undef.
 
-   # Ripped off from Regexp::Common::number.
-   my $float_re = qr{[+-]?(?:(?=\d|[.])\d*(?:[.])\d{0,})?(?:[E](?:[+-]?\d+)|)}i;
+   # Ripped off from Regexp::Common::number and modified.
+   my $float_re = qr{[+-]?(?:(?=\d|[.])\d+(?:[.])\d{0,})(?:E[+-]?\d+)?}i;
    my $type = $val  =~ m/^(?:\d+|$float_re)$/o ? 'num'
             : $val  =~ m/^(?:Yes|No)$/         ? 'bool'
             :                                    'string';
