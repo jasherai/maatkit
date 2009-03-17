@@ -95,6 +95,7 @@ sub parse_event {
       if ( $stmt =~ s/$slow_log_hd_line//go ){ # Throw away header lines in log
          my @chunks = split(/$INPUT_RECORD_SEPARATOR/o, $stmt);
          if ( @chunks > 1 ) {
+            MKDEBUG && _d("Found multiple chunks");
             $stmt = shift @chunks;
             unshift @pending, @chunks;
          }
@@ -135,12 +136,14 @@ sub parse_event {
             # construct.  So if this line looks "hot" then profile each
             # condition separately.
             if ( !$got_ts && (my ( $time ) = $line =~ m/$slow_log_ts_line/o)) {
+               MKDEBUG && _d("Got ts", $time);
                push @properties, 'ts', $time;
                ++$got_ts;
                # The User@Host might be concatenated onto the end of the Time.
                if ( !$got_uh
                   && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
                ) {
+                  MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
                   push @properties, 'user', $user, 'host', $host, 'ip', $ip;
                   ++$got_uh;
                }
@@ -151,6 +154,7 @@ sub parse_event {
             elsif ( !$got_uh
                   && ( my ( $user, $host, $ip ) = $line =~ m/$slow_log_uh_line/o )
             ) {
+               MKDEBUG && _d("Got user, host, ip", $user, $host, $ip);
                push @properties, 'user', $user, 'host', $host, 'ip', $ip;
                ++$got_uh;
             }
@@ -158,6 +162,7 @@ sub parse_event {
             # A line that looks like meta-data but is not:
             # # administrator command: Quit;
             elsif (!$got_ac && $line =~ m/^# (?:administrator command:.*)$/) {
+               MKDEBUG && _d("Got admin command");
                push @properties, 'cmd', 'Admin', 'arg', $line;
                push @properties, 'bytes', length($properties[-1]);
                ++$found_arg;
@@ -171,6 +176,7 @@ sub parse_event {
             # Query_time: 18446744073708.796870.000036 so we trim after the
             # second decimal place for numbers.
             elsif ( $line =~ m/^# +[A-Z][A-Za-z_]+: \S+/ ) { # Make the test cheap!
+               MKDEBUG && _d("Got some line with properties");
                # I tried using split, but coping with the above bug makes it
                # slower than a complex regex match.
                my @temp = $line =~ m/(\w+):\s+(\d+(?:\.\d+)?|\S+|\Z)/g;
@@ -180,6 +186,7 @@ sub parse_event {
             # Include the current default database given by 'use <db>;'  Again
             # as per the code in sql/log.cc this is case-sensitive.
             elsif ( !$got_db && (my ( $db ) = $line =~ m/^use ([^;]+)/ ) ) {
+               MKDEBUG && _d("Got a default database:", $db);
                push @properties, 'db', $db;
                ++$got_db;
             }
@@ -194,6 +201,7 @@ sub parse_event {
                # Note: this assumes settings won't be complex things like
                # SQL_MODE, which as of 5.0.51 appears to be true (see sql/log.cc,
                # function MYSQL_LOG::write(THD, char*, uint, time_t)).
+               MKDEBUG && _d("Got some setting:", $setting);
                push @properties, split(/,|\s*=\s*/, $setting);
                ++$got_set;
             }
@@ -204,9 +212,11 @@ sub parse_event {
             # in $stmt. Profiling shows this is an expensive if() so we do
             # this only if we've seen the user/host line.
             if ( !$found_arg && $pos == $len ) {
+               MKDEBUG && _d("Did not find arg, looking for special cases");
                local $INPUT_RECORD_SEPARATOR = ";\n";
                if ( defined(my $l = <$fh>) ) {
                   chomp $l;
+                  MKDEBUG && _d("Found admin statement", $l);
                   push @properties, 'cmd', 'Admin', 'arg', '#' . $l;
                   push @properties, 'bytes', length($properties[-1]);
                   $found_arg++;
@@ -216,6 +226,7 @@ sub parse_event {
                   # for example, if someone does something like "head -c 10000
                   # /path/to/slow.log | mk-log-parser".  Or if there was a
                   # server crash and the file has no newline.
+                  MKDEBUG && _d("I can't figure out what to do with this line");
                   next EVENT;
                }
             }
@@ -227,6 +238,7 @@ sub parse_event {
             # Note that if this line really IS the query but we skip in
             # the 'if' above because it looks like meta-data, later
             # we'll remedy that.
+            MKDEBUG && _d("Got the query/arg line");
             my $arg = substr($stmt, $pos - length($line));
             push @properties, 'arg', $arg, 'bytes', length($arg);
             # Handle embedded attributes.
