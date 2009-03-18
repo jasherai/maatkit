@@ -2,9 +2,9 @@
 
 use strict;
 use warnings FATAL => 'all';
-
-use Test::More tests => 24;
 use English qw(-no_match_vars);
+use Test::More tests => 25;
+
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
 $Data::Dumper::Quotekeys = 0;
@@ -807,5 +807,21 @@ is(
    'string',
    'Empty Schema: (issue 323)'
 );
+
+# #############################################################################
+# Issue 321: mk-query-digest stuck in infinite loop while processing log
+# #############################################################################
+
+# samples/issue_321.txt has sub get_bad_vals() which we read and eval
+# into our namespace. Yes, this is weird but I didn't want to paste
+# the huge event here.
+open my $fh, '<', 'samples/issue_321.txt'
+   or BAIL_OUT('Cannot read samples/issue_321.txt');
+my $file = do { local $/ = undef; <$fh> };
+close $fh;
+eval $file;
+my ($bad_vals, $bad_event) = get_bad_vals();
+my $stats = $ea->calculate_statistical_metrics($bad_vals, $bad_event);
+# TODO: fix this
 
 exit;

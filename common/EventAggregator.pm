@@ -476,13 +476,17 @@ sub calculate_statistical_metrics {
 
    # Find the 95th percentile biggest value.  And calculate the values of the
    # ones we exclude.
+   MKDEBUG && _d('total left:', $total_left, 'i:', $i, 'cutoff:', $cutoff);
    my $sum_excl  = 0;
-   while ( $i-- && $total_left > $cutoff ) {
+   # TODO: something about this isn't correct, re issue 321
+   while ( $total_left > $cutoff && $i-- ) {
       if ( $vals->[$i] ) {
          $total_left -= $vals->[$i];
          $sum_excl   += $buck_vals[$i] * $vals->[$i];
+         print "yeah $i, $vals->[$i]\n";
       }
    }
+   MKDEBUG && _d('total left:', $total_left, 'i:', $i, 'cutoff:', $cutoff);
 
    # Continue until we find the next array element that has a value.
    my $bucket_95;
