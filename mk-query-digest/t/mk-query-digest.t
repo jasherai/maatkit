@@ -172,7 +172,6 @@ ok(
    'Queries that start with a comment are not converted for EXPLAIN',
 );
 
-# TODO: this is causing a segfault on my machine
 ok(
    no_diff($run_with.'slow024.txt', 'samples/slow024.txt'),
    'Long inserts/replaces are truncated (issue 216)',
