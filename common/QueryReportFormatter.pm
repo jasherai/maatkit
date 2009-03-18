@@ -158,6 +158,7 @@ sub global_report {
          my @values;
          if ( $ea->attributes->{$attrib} eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+            MKDEBUG && _d('Calculating statistical_metrics');
             my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
             @values = (
                @{$store}{qw(sum min max)},
@@ -252,6 +253,7 @@ sub event_report {
          my $pct;
          if ( $ea->attributes->{$attrib} eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+            MKDEBUG && _d('Calculating statistical_metrics');
             my $metrics
                = $ea->calculate_statistical_metrics($vals->{all}, $vals);
             @values = (

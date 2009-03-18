@@ -30,21 +30,54 @@ use constant MKDEBUG => $ENV{MKDEBUG};
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
+sub new {
+   my ( $class, %args ) = @_;
+   foreach my $arg ( qw(description) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+      description  => $args{description},
+      prompt       => $args{prompt} || '<options>',
+      dsn          => $args{dsn},
+      opts         => {},
+      short_opts   => {},
+      defaults     => {},
+      rules        => [],
+      mutex        => [],
+      atleast1     => [],
+      groups       => [],
+      disables     => {},
+      copyfrom     => {},
+      errors       => [],
+      strict       => 1,
+   };
+   return bless $self, $class;
+}
+
+# Read and parse POD OPTIONS in file or current script if
+# no file is given. This sub must be called before get_opts();
+sub get_specs {
+   my ( $self, $file ) = @_;
+   my @specs = $self->_pod_to_specs($file);
+   _parse_specs(@specs);
+   return;
+}
+
 # Parse command line options from the OPTIONS section of the POD in the
 # given file. If no file is given, the currently running program's POD
 # is parsed.
-# Returns an array of hashrefs which is usually passed to OptionParser::new().
+# Returns an array of hashrefs which is usually passed to _parse_specs().
 # Each hashref in the array corresponds to one command line option from
 # the POD. Each hashref has the structure:
 #    {
-#       s => GetOpt::Long specification,
-#       d => --help output (see HELP_DESCRIPTION below)
-#       g => Optional grouping (default is "o => Options")
+#       spec  => GetOpt::Long specification,
+#       desc  => short description for --help
+#       group => option group (if specified)
 #    }
-sub pod_to_spec {
+sub _pod_to_spec {
    my ( $self, $file ) = @_;
    $file ||= __FILE__;
-   open my $fh, '<', $file or die "Can't open $file: $OS_ERROR";
+   open my $fh, '<', $file or die "Cannot open $file: $OS_ERROR";
 
    my %types = (
       string => 's', # standard Getopt type
@@ -61,7 +94,6 @@ sub pod_to_spec {
    my @specs = ();
    my @rules = ();
    my $para;
-   my $option;
 
    # Read a paragraph at a time from the file.  Skip everything until options
    # are reached...
@@ -77,45 +109,59 @@ sub pod_to_spec {
       chomp $para;
       $para =~ s/\s+/ /g;
       $para =~ s/$POD_link_re/$1/go;
-      MKDEBUG && _d('First option rules:', $para);
+      MKDEBUG && _d('Option rule:', $para);
       push @rules, $para;
    }
 
    # ... then start reading options.
    do {
-      if ( ($option) = $para =~ m/^=item --(.*)/ ) {
+      if ( my ($option) = $para =~ m/^=item --(.*)/ ) {
          MKDEBUG && _d($para);
-         my %props;
-         $para = <$fh>;
-         if ( $para =~ m/: / ) {
+         my %attribs;
+
+         $para = <$fh>; # read next paragraph, possibly attributes
+
+         if ( $para =~ m/: / ) { # attributes
             $para =~ s/\s+\Z//g;
-            %props = map { split(/: /, $_) } split(/; /, $para);
-            if ( $props{'short form'} ) {
-               $props{'short form'} =~ s/-//;
+            %attribs = map { split(/: /, $_) } split(/; /, $para);
+            if ( $attribs{'short form'} ) {
+               $attribs{'short form'} =~ s/-//;
             }
-            $para = <$fh>;
+            $para = <$fh>; # read next paragraph, probably short help desc
          }
+         else {
+            MKDEBUG && _d('Option has no attributes');
+         }
+
+         # Remove extra spaces and POD formatting (L<"">).
          $para =~ s/\s+\Z//g;
          $para =~ s/\s+/ /g;
          $para =~ s/$POD_link_re/$1/go;
+
+         # Take the first period-terminated sentence as the
+         # option's short help description. TODO: is this correct?
          if ( $para =~ m/^[^.]+\.$/ ) {
             $para =~ s/\.$//;
+            MKDEBUG && _d('Short help:', $para);
          }
+         else {
+            die "No description found for option $option at paragraph $para!\n";
+         };
 
-         # Change [no]foo to foo and set negatable prop. See issue 140.
+         # Change [no]foo to foo and set negatable attrib. See issue 140.
          if ( my ($base_option) =  $option =~ m/^\[no\](.*)/ ) {
             $option = $base_option;
-            $props{'negatable'} = 1;
+            $attribs{'negatable'} = 1;
          }
 
          push @specs, {
-            s => $option
-               . ( $props{'short form'} ? '|' . $props{'short form'} : '' )
-               . ( $props{'negatable'}  ? '!'                        : '' )
-               . ( $props{'cumulative'} ? '+'                        : '' )
-               . ( $props{type}         ? '=' . $types{$props{type}} : '' ),
-            d => $para
-               . (defined $props{default} ? " (default $props{default})" : ''),
+            spec => $option
+               . ($attribs{'short form'} ? '|' . $attribs{'short form'} : '' )
+               . ($attribs{'negatable'}  ? '!'                          : '' )
+               . ($attribs{'cumulative'} ? '+'                          : '' )
+               . ($attribs{'type'}       ? '=' . $types{$attribs{type}} : '' ),
+            desc => $para
+               . ($attribs{default} ? " (default $attribs{default})" : ''),
          };
       }
       while ( $para = <$fh> ) {
@@ -145,159 +191,128 @@ sub pod_to_spec {
 }
 
 # Parse an array of option specs and rules (usually the return value of
-# pod_to_spec()). Each option spec is parsed and the following key: value
+# _pod_to_spec()). Each option spec is parsed and the following attributes
 # pairs are added to its hashref:
-#    k: the option's key (usually the option's short form)
-#    l: the option's long name
-#    t: the option's short name
-#    c: whether the option is cumulative
-#    n: whether the option is negatable
-#    r: whether the option is required
-#    y: option's type (see %types in pod_to_spec() above)
-sub new {
-   my ( $class, @opts ) = @_;
-   my %key_seen;
-   my %long_seen;
-   my %key_for;
-   my %defaults;
-   my @mutex;
-   my @atleast1;
-   my %long_for;
-   my %disables;
-   my %copyfrom;
-   my @allowed_with;
+#    short         => the option's short key (-A for --charset)
+#    is_cumulative => true if the option is cumulative
+#    is_negatable  => true if the option is negatable
+#    is_required   => true if the option is required
+#    type          => the option's type (see %types in _pod_to_spec() above)
+#    got           => true if the option was given explicitly on the cmd line
+#    value         => the option's value
+#
+sub _parse_specs {
+   my ( $self, @specs ) = @_;
+   my %disables; # special rule that requires deferred checking
 
-   # Add these standard options automagically.
-   unshift @opts,
-      { s => 'help',    d => 'Show this help message' },
-      { s => 'version', d => 'Output version information and exit' };
-
-   foreach my $opt ( @opts ) {
+   foreach my $opt ( shift @specs ) {
       if ( ref $opt ) { # It's an option spec, not a rule.
-         my ( $long, $short ) = $opt->{s} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
-         $opt->{k} = $short || $long;
-         $key_for{$long} = $opt->{k};
-         $long_for{$opt->{k}} = $long;
-         $long_for{$long} = $long;
-         $opt->{l} = $long;
-         die "Duplicate option $opt->{k}" if $key_seen{$opt->{k}}++;
-         die "Duplicate long option $opt->{l}" if $long_seen{$opt->{l}}++;
-         $opt->{t} = $short;
-         $opt->{n} = $opt->{s} =~ m/!/;
-         $opt->{c} = $opt->{s} =~ m/\+/;
-         $opt->{g} ||= 'o';
-         # Option has a type
-         if ( (my ($y) = $opt->{s} =~ m/=([mdHhAaz])/) ) {
-            MKDEBUG && _d('Option', $opt->{k}, 'type:', $y);
-            $opt->{y} = $y;
-            $opt->{s} =~ s/=./=s/;
+         my ( $long, $short ) = $opt->{spec} =~ m/^([\w-]+)(?:\|([^!+=]*))?/;
+         if ( !$long ) {
+            # This shouldn't happen.
+            die "Cannot parse long option from spec $opt->{spec}";
          }
-         # Option is required if it contains the word 'required'
-         if ( $opt->{d} =~ m/required/ ) {
-            $opt->{r} = 1;
-            MKDEBUG && _d('Option', $opt->{k}, 'is required');
+
+         die "Duplicate long option --$long" if exists $self->{opts}->{$long};
+         $self->{opts}->{$long} = $opt;
+
+         if ( $short ) {
+            die "Duplicate short option -$short"
+               if exists $self->short_opts{$short};
+            $self->short_opts{$short} = $long;
+            $opt->{short} = $short;
          }
-         # Option has a default value if it says 'default' or 'default X'
-         if ( (my ($def) = $opt->{d} =~ m/default\b(?: ([^)]+))?/) ) {
-            $defaults{$opt->{k}} = defined $def ? $def : 1;
-            MKDEBUG && _d('Option', $opt->{k}, 'has a default');
+         else {
+            $opt->{short} = undef;
          }
-         if ( (my ($dis) = $opt->{d} =~ m/(disables .*)/) ) {
-            # Defer checking till later because of possible forward references
-            $disables{$opt->{k}} = [ $class->get_participants($dis) ];
-            MKDEBUG && _d('Option', $opt->{k}, $dis);
+
+         $opt->{is_negatable}  = $opt->{spec} =~ m/!/;
+         $opt->{is_cumulative} = $opt->{spec} =~ m/\+/;
+         $opt->{is_required}   = $opt->{desc} =~ m/required/;
+
+         # TODO: group 
+
+         my ( $type ) = $opts->{spec} =~ m/=(.)/;
+         $opt->{type} = $type;
+         MKDEBUG && _d('Option', $long, 'type:', $type);
+         if ( $type =~ m/=([HhAadzm])/) ) {
+            # Option has a non-Getopt type: HhAadzm (see %types in
+            # _pod_to_spec() above). For these, use Getopt type 's'.
+            $opt->{type} = $type;
+            $opt->{spec} =~ s/=./=s/;
+         }
+
+         # Option has a default value if its desc says 'default' or 'default X'.
+         if ( (my ($def) = $opt->{desc} =~ m/default\b(?: ([^)]+))?/) ) {
+            $self->{defaults}->{$long} = defined $def ? $def : 1;
+            MKDEBUG && _d('Option', $long, 'default:', $def);
+         }
+
+         # Option disable another option if its desc says 'disable'.
+         if ( (my ($dis) = $opt->{desc} =~ m/(disables .*)/) ) {
+            # Defer checking till later because of possible forward references.
+            $disables{$long} = $dis;
+            MKDEBUG && _d('Deferring check of disables rule for', $opt, $dis);
          }
       }
       else { # It's an option rule, not a spec.
-         if ( $opt =~ m/at least one|mutually exclusive|one and only one/ ) {
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $long_for{$_};
-               } $class->get_participants($opt);
-            if ( $opt =~ m/mutually exclusive|one and only one/ ) {
-               push @mutex, \@participants;
-               MKDEBUG && _d(@participants, 'are mutually exclusive');
-            }
-            if ( $opt =~ m/at least one|one and only one/ ) {
-               push @atleast1, \@participants;
-               MKDEBUG && _d(@participants, 'require at least one');
-            }
+         push @{$self->{rules}}, $opt;
+         my @participants = $self->_get_participants($opt);
+         if ( $opt =~ m/mutually exclusive|one and only one/ ) {
+            push @{$self->{mutex}}, \@participants;
+            MKDEBUG && _d(@participants, 'are mutually exclusive');
+         }
+         elsif ( $opt =~ m/at least one|one and only one/ ) {
+            push @{$self->{atleast1}}, \@participants;
+            MKDEBUG && _d(@participants, 'require at least one');
          }
          elsif ( $opt =~ m/default to/ ) {
-            # It's an --x defaults to --y option.
-            my @participants = map {
-                  die "No such option '$_' in $opt" unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            $copyfrom{$participants[0]} = $participants[1];
+            # Example: "DSN values in L<"--dest"> default to values
+            # from L<"--source">."
+            $self->{copyfrom}->{$participants[0]} = $participants[1];
             MKDEBUG && _d(@participants, 'copy from each other');
          }
-         elsif ( $opt  =~ m/allowed with/ ) {
-            my @participants = map {
-                  die "No such option '$_' while processing $opt"
-                     unless $long_for{$_};
-                  $key_for{$_};
-               } $class->get_participants($opt);
-            push @allowed_with, \@participants;
+         # TODO: 'allowed with' is only used in mk-table-checksum.
+         # Groups need to be used instead.
+         else {
+            die "Unrecognized option rule: $opt";
          }
       }
    }
 
-   # Check forward references (and convert to long options) in 'disables' rules.
+   # Check forward references in 'disables' rules.
    foreach my $dis ( keys %disables ) {
-      $disables{$dis} = [
-            map {
-               if ( !defined $long_for{$_} ) {
-                  die "No such option '$_' while processing $dis";
-               }
-               $long_for{$_};
-            } @{$disables{$dis}}
+MKDEBUG && _d('Option', $long, 'disables', $dis);
+      $self->{disables}->{$dis} = [
+         map {
+            die "No such option '$_' while processing $dis"
+               unless exists $self->{opts}->{$long};
+         } @{$disables{$dis}}
       ];
    }
 
-   my $self = {
-      specs        => [ grep { ref $_ } @opts ],
-      errors       => [],
-      instr        => [ grep { !ref $_ } @opts ],
-      mutex        => \@mutex,
-      defaults     => \%defaults,
-      long_for     => \%long_for,
-      atleast1     => \@atleast1,
-      disables     => \%disables,
-      key_for      => \%key_for,
-      copyfrom     => \%copyfrom,
-      strict       => 1,
-      groups       => [ { k => 'o', d => 'Options' } ],
-      allowed_with => \@allowed_with,
-      given        => {},
-   };
-
-   return bless $self, $class;
+   return; 
 }
 
-sub get_participants {
+# Returns an array of long option names in str. This is used to
+# find the "participants" of option rules (i.e. the options to
+# which a rule applies).
+sub _get_participants {
    my ( $self, $str ) = @_;
    my @participants;
-   foreach my $thing ( $str =~ m/(--?[\w-]+)/g ) {
-      if ( (my ($long) = $thing =~ m/--(.+)/) ) {
-         push @participants, $long;
-      }
-      else {
-         foreach my $short ( $thing =~ m/([^-])/g ) {
-            push @participants, $short;
-         }
-      }
+   while ( my ($long) = $str =m/\b--(?:\[no\])?([\w-]+)\b/g ) {
+      die "Option --$long does not exist while processing rule $str"
+         unless exists $self->{opts}->{$long};
+      push @participants, $long;
    }
    MKDEBUG && _d('Participants for', $str, ':', @participants);
    return @participants;
 }
 
-# Parse options on the command line (ARGV) according to the option specs
-# and enforce option rules.
-# Returns a hash of all options and their final values. An option's final
-# value depends on many factors: it's default value, it's value given on
-# the command line, whether it is subject to a rule, etc.
-sub parse {
+# Get options on the command line (ARGV) according to the option specs
+# and enforce option rules. Option values are saved internally in
+# $self->{opts} and accessed later by get(), got() and set().
+sub get_opts {
    my ( $self, %defaults ) = @_;
    my @specs = @{$self->{specs}};
    my %factor_for = (k => 1_024, M => 1_048_576, G => 1_073_741_824);
@@ -479,10 +494,63 @@ sub parse {
    return %vals;
 }
 
+# Get an option's value. The option can be either a
+# short or long name (e.g. -A or --charset).
+sub get {
+   my ( $self, $opt ) = @_;
+   my $opt_key = ($opt =~ m/./ ? $self->short_opts{$opt} : $opt);
+   MKDEBUG && _d('Opt key for', $opt, 'is', $opt_key);
+   if ( !exists $self->opts{$opt_key} ) {
+      die "Option --$opt does not exist";
+   }
+   return $self->opts{$opt_key}->{value};
+}
+
+# Returns true if the option was given explicitly on the
+# command line; returns false if not. The option can be
+# either short or long name (e.g. -A or --charset).
+sub got {
+   my ( $self, $opt ) = @_;
+   my $opt_key = ($opt =~ m/./ ? $self->short_opts{$opt} : $opt);
+   MKDEBUG && _d('Opt key for', $opt, 'is', $opt_key);
+   if ( !exists $self->opts{$opt_key} ) {
+      die "Option --$opt does not exist";
+   }
+   return $self->opts{$opt_key}->{got};
+}
+
+# Set an option's value. The option can be either a
+# short or long name (e.g. -A or --charset). The value
+# can be any scalar, ref, or undef. No type checking
+# is done so becareful to not set, for example, an integer
+# option with a DSN.
+sub set {
+   my ( $self, $opt, $val ) = @_;
+   my $opt_key = ($opt =~ m/./ ? $self->short_opts{$opt} : $opt);
+   MKDEBUG && _d('Opt key for', $opt, 'is', $opt_key);
+   if ( !exists $self->opts{$opt_key} ) {
+      die "Option --$opt does not exist";
+   }
+   $self->opts{$opt_key}->{value} = $val;
+   return;
+}
+
+sub enable_strict_mode {
+   my ( $self ) = @_;
+   $self->{strict} = 1;
+   return;
+}
+
+sub disable_strict_mode {
+   my ( $self ) = @_;
+   $self->{strict} = 0;
+   return;
+}
+
+# Save an error message to be reported later by calling usage_or_errors().
 sub error {
-   my ( $self, $note ) = @_;
-   $self->{__error__} = 1;
-   push @{$self->{errors}}, $note;
+   my ( $self, $error ) = @_;
+   push @{$self->{errors}}, $error;
 }
 
 sub prog {
@@ -515,9 +583,8 @@ sub usage_or_errors {
          or die "Cannot print: $OS_ERROR";
       exit(0);
    }
-   elsif ( $self->{__error__} ) {
-      print $self->errors()
-         or die "Cannot print: $OS_ERROR";
+   elsif ( scalar @{$self->{errors}} ) {
+      print $self->errors() or die "Cannot print: $OS_ERROR";
       exit(0);
    }
 }

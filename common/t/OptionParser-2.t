@@ -3,16 +3,16 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 87;
+use Test::More tests => 83;
 
 require "../OptionParser-2.pm";
 require "../DSNParser.pm";
 
 my $dp = new DSNParser();
 my $o  = new OptionParser(
-   descr  => 'parses command line options.',
-   prompt => '[OPTIONS]',
-   dsn    => $dp,
+      description  => 'parses command line options.',
+   prompt       => '[OPTIONS]',
+   dsn          => $dp,
 );
 
 isa_ok($o, 'OptionParser');
@@ -85,7 +85,7 @@ is_deeply(
          value          => undef,
       },
       'hash-req'   => {
-         spec           => 'hash-req=H',
+         spec           => 'hash-req=s',
          desc           => 'hash required',
          group          => 'default',
          short          => undef,
@@ -97,7 +97,7 @@ is_deeply(
          value          => undef,
       },
       'hash-opt'   => {
-         spec           => 'hash-opt=h',
+         spec           => 'hash-opt=s',
          desc           => 'hash optional',
          group          => 'default',
          short          => undef,
@@ -109,7 +109,7 @@ is_deeply(
          value          => undef,
       },
       'array-req'  => {
-         spec           => 'array-req=A',
+         spec           => 'array-req=s',
          desc           => 'array required',
          group          => 'default',
          short          => undef,
@@ -121,7 +121,7 @@ is_deeply(
          value          => undef,
       },
       'array-opt'  => {
-         spec           => 'array-opt',
+         spec           => 'array-opt=s',
          desc           => 'array optional',
          group          => 'default',
          short          => undef,
@@ -133,7 +133,7 @@ is_deeply(
          value          => undef,
       },
       'host'       => {
-         spec           => 'host=d',
+         spec           => 'host=s',
          desc           => 'host DSN',
          group          => 'default',
          short          => undef,
@@ -145,7 +145,7 @@ is_deeply(
          value          => undef,
       },
       'chunk-size' => {
-         spec           => 'chunk-size=z',
+         spec           => 'chunk-size=s',
          desc           => 'chunk size',
          group          => 'default',
          short          => undef,
@@ -157,7 +157,7 @@ is_deeply(
          value          => undef,
       },
       'time'       => {
-         spec           => 'time=m',
+         spec           => 'time=s',
          desc           => 'time',
          group          => 'default',
          short          => undef,
@@ -228,47 +228,6 @@ like(
    $EVAL_ERROR,
    qr/Option -x does not exist/,
    'Die trying to get() nonexistent short opt'
-);
-
-# get() multiple options
-%opts = $o->get(qw(database port));
-is(
-   \%opts,
-   {
-      'database' => undef,
-      'port'     => undef,
-   },
-   'Get multiple valueless long opts'
-);
-%opts = $o->get(qw(D p));
-is(
-   \%opts,
-   {
-      'D' => undef,
-      'p' => undef,
-   },
-   'Get multiple valuless short opts'
-);
-%opts = $o->get(qw(database p));
-is(
-   \%opts,
-   {
-      'database' => undef,
-      'p'        => undef,
-   },
-   'Get multiple valuless long and short opts'
-);
-eval { $o->get(qw(database foo)); };
-like(
-   $EVAL_ERROR,
-   qr/Option --foo does not exist/,
-   'Die trying to get() multiple nonexistent long opts'
-);
-eval { $o->get(qw(p x)); };
-like(
-   $EVAL_ERROR,
-   qr/Option -x does not exist/,
-   'Die trying to get() multiple nonexistent short opts'
 );
 
 # set()
@@ -372,7 +331,15 @@ like(
    'Dies on POD with an OPTIONS section but no option items'
 );
 
-# TODO: more hostile tests.
+eval { $o->_pod_to_specs('samples/pod_sample_04.txt'); };
+like(
+   $EVAL_ERROR,
+   qr/No description found for option foo at paragraph/,
+   'Dies on option with no description'
+);
+
+# TODO: more hostile tests: duplicate opts, can't parse long opt from spec,
+# unrecognized rules, ...
 
 # #############################################################################
 # Test passed-in option defaults.
@@ -593,10 +560,17 @@ EOF
 # Test _get_participants()
 # #############################################################################
 is_deeply(
-   [$o->_get_participants('--foo --bar, --baz, -abc')],
-   [qw(foo bar baz a b c)],
+   [$o->_get_participants('L<"--foo"> disables --bar-bar and C<--baz>')],
+   [qw(foo bar-bar baz)],
    'Extract option names from a string',
 );
+
+is_deeply(
+   [$o->_get_participants('L<"--foo"> disables L<"--[no]bar-bar">.'],
+   [qw(foo bar-bar)],
+   'Extract [no]-negatable option names from a string',
+);
+# TODO: test w/ opts that don't exist, or short opts
 
 # #############################################################################
 # Test required options.
