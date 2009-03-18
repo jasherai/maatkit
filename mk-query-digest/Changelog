@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Very large INSERT or REPLACE VALUES() segfaulted (issue 322).
+   * Empty Schema attribute was not handled properly (issue 323).
    * Connection options were not read from the [client] section (issue 249).
    * Set connection options immediately after connecting (issue 286).
 
