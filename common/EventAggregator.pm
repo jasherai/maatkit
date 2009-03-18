@@ -35,6 +35,8 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
+use Data::Dumper;
+
 # ###########################################################################
 # Set up some constants for bucketing values.  It is impossible to keep all
 # values seen in memory, but putting them into logarithmically scaled buckets
@@ -566,8 +568,8 @@ sub top_events {
       ) {
          # Calculate the 95th percentile of this event's specified attribute.
          MKDEBUG && _d('Calculating statistical_metrics',
-            $classes->{$groupby}->{$args{ol_attrib}}->{all},
-            $classes->{$groupby}->{$args{ol_attrib}});
+            @{$classes->{$groupby}->{$args{ol_attrib}}->{all}},
+            Dumper($classes->{$groupby}->{$args{ol_attrib}}) );
 
          my $stats = $self->calculate_statistical_metrics(
             $classes->{$groupby}->{$args{ol_attrib}}->{all},
