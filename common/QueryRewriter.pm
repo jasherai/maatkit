@@ -113,7 +113,7 @@ sub fingerprint {
    # mysqldump's INSERT statements will have long values() lists, don't waste
    # time on them... they also tend to segfault Perl on some machines when you
    # get to the "# Collapse IN() and VALUES() lists" regex below!
-   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE) INTO \S+ VALUES \(.*?\)),\(/ ) {
+   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)? INTO \S+ VALUES \(.*?\)),\(/ ) {
       $query = $beginning; # Shorten multi-value INSERT statements ASAP
    }
 

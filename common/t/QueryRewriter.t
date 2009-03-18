@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 107;
+use Test::More tests => 108;
 
 require "../QueryRewriter.pm";
 require '../QueryParser.pm';
@@ -781,6 +781,11 @@ is(
    $qr->fingerprint( load_file('samples/huge_replace_into_values.txt') ),
    q{replace into `film_actor` values(?+)},
    'huge replace into values() (issue 322)',
+);
+is(
+   $qr->fingerprint( load_file('samples/huge_insert_ignore_into_values.txt') ),
+   q{insert ignore into `film_actor` values(?+)},
+   'huge insert ignore into values() (issue 322)',
 );
 
 exit
