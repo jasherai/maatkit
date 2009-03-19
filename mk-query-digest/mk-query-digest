@@ -1792,29 +1792,27 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3191
+# EventAggregator package 3210
 # ###########################################################################
-
-
 package EventAggregator;
-
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Data::Dumper;
 
 use constant MKDEBUG      => $ENV{MKDEBUG};
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
-use constant BASE_OFFSET  => 1 - sprintf('%d', log(.000001) / BASE_LOG); # 284
+use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
 our @buckets  = map { 0 } (1 .. NUM_BUCK);
-my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
+my @buck_vals = (0, MIN_BUCK, MIN_BUCK * BUCK_SIZE);
 {
    my $cur = BUCK_SIZE;
-   for ( 2 .. NUM_BUCK - 1 ) {
+   for ( 3 .. NUM_BUCK - 1 ) {
       push @buck_vals, MIN_BUCK * ($cur *= BUCK_SIZE);
    }
 }
@@ -1981,8 +1979,7 @@ sub make_handler {
       if ( $args{all} ) {
          push @tmp, (
             'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
-            '$idx = ($val > 0 ? int(BASE_OFFSET + (log($val) / BASE_LOG)) : BASE_OFFSET);',
-            '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+            '++PLACE->{all}->[ EventAggregator::bucket_idx($val) ];',
          );
       }
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
@@ -2044,14 +2041,19 @@ sub make_handler {
    return $sub;
 }
 
+sub bucket_idx {
+   my ( $val ) = @_;
+   my $idx = ($val >= MIN_BUCK ? int(BASE_OFFSET + log($val)/BASE_LOG) : 0);
+   return $idx > NUM_BUCK ? NUM_BUCK : $idx;
+}
+
 sub bucketize {
    my ( $self, $vals ) = @_;
    my @bucketed = @buckets;
    my ($sum, $max, $min);
    $max = $min = $vals->[0];
    foreach my $val ( @$vals ) {
-      my $idx = ($val > 0 ? int(BASE_OFFSET + (log($val) / BASE_LOG)) : BASE_OFFSET);
-      ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
+      $bucketed[ bucket_idx($val) ]++;
       $max = $max > $val ? $max : $val;
       $min = $min < $val ? $min : $val;
       $sum += $val;
@@ -2076,9 +2078,14 @@ sub unbucketize {
    sub buckets_of {
       return @buck_tens if @buck_tens;
       @buck_tens = map {
-         my $f = int(6 + (log($_) / log(10)));
-         $f > 7 ? 7 : $f;
-      } @buck_vals;
+         my $f = 0;
+         if ( $_ > 0 ) {
+            $f = int(6 + (log($_) / log(10)));
+            $f = 7 if $f > 7;
+         }
+         $f;
+      }
+      @buck_vals;
       return @buck_tens;
    }
 }
@@ -2126,22 +2133,44 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{cutoff} = $cutoff;
 
    my $total_left = $n_vals;
-   my $i = NUM_BUCK - 1;
+   my $top_vals   = $n_vals - $cutoff;
+   my $bucket     = NUM_BUCK - 1; # 999
+   my $sum_excl   = 0;
 
-   my $sum_excl  = 0;
-   while ( $i-- && $total_left > $cutoff ) {
-      if ( $vals->[$i] ) {
-         $total_left -= $vals->[$i];
-         $sum_excl   += $buck_vals[$i] * $vals->[$i];
+   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals,
+      'cutoff:', $cutoff);
+
+   while ( $bucket-- >= 0 && $top_vals ) {
+      if ( $vals->[$bucket] ) {
+         if ( $vals->[$bucket] <= $top_vals )  {
+            $top_vals   -= $vals->[$bucket];
+            $total_left -= $vals->[$bucket];
+            $sum_excl   += $buck_vals[$bucket] * $vals->[$bucket];
+         }
+         else {
+            $total_left      -= $top_vals;
+            $vals->[$bucket] -= $top_vals;
+            $sum_excl        += $buck_vals[$bucket] * $top_vals;
+            $top_vals         = 0;
+         }
       }
    }
 
-   my $bucket_95;
-   while ( $i-- ){
-      $bucket_95 = $i;
-      last if $vals->[$i];
+   MKDEBUG && _d('total left:', $total_left, 'bucket:', $bucket,
+      'sum excl', $sum_excl);
+
+   return $statistical_metrics if $bucket <= 0;
+
+   if ( !$vals->[$bucket] ) {
+      while ( --$bucket >= 0 ) {
+         last if $vals->[$bucket];
+      }
    }
-   return $statistical_metrics unless $vals->[$bucket_95];
+
+   return $statistical_metrics if $bucket <= 0;
+
+   my $bucket_95 = $bucket;
+   MKDEBUG && _d('95th bucket:', $bucket_95, 'bucket:', $bucket);
 
    my $sum    = $buck_vals[$bucket_95] * $vals->[$bucket_95];
    my $sumsq  = $sum ** 2;
@@ -2149,17 +2178,17 @@ sub calculate_statistical_metrics {
    my $median = 0;
    my $prev   = $bucket_95; # Used for getting median when $cutoff is odd
 
-   while ( $i-- ) {
-      my $val = $vals->[$i];
+   while ( $bucket-- >= 0 ) {
+      my $val = $vals->[$bucket];
       if ( $val ) {
          $total_left -= $val;
          if ( !$median && $total_left <= $mid ) {
-            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$i]
-                    : ($buck_vals[$i] + $buck_vals[$prev]) / 2;
+            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
+                    : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
          }
-         $sum        += $buck_vals[$i] * $val;
-         $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
-         $prev       =  $i;
+         $sum        += $buck_vals[$bucket] * $val;
+         $sumsq      += ($buck_vals[$bucket] ** 2 ) * $val;
+         $prev       =  $bucket;
       }
    }
 
@@ -2198,6 +2227,10 @@ sub top_events {
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
          || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
+         MKDEBUG && _d('Calculating statistical_metrics',
+            @{$classes->{$groupby}->{$args{ol_attrib}}->{all}},
+            Dumper($classes->{$groupby}->{$args{ol_attrib}}) );
+
          my $stats = $self->calculate_statistical_metrics(
             $classes->{$groupby}->{$args{ol_attrib}}->{all},
             $classes->{$groupby}->{$args{ol_attrib}}
@@ -2228,7 +2261,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 3186
+# QueryReportFormatter package 3210
 # ###########################################################################
 
 
@@ -2241,6 +2274,7 @@ Transformers->import(
    qw(shorten micro_t parse_timestamp unix_timestamp
       make_checksum percentage_of));
 
+use constant MKDEBUG     => $ENV{MKDEBUG};
 use constant LINE_LENGTH => 74;
 
 my %formatting_function = (
@@ -2361,6 +2395,7 @@ sub global_report {
          my @values;
          if ( $ea->attributes->{$attrib} eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+            MKDEBUG && _d('Calculating statistical_metrics');
             my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
             @values = (
                @{$store}{qw(sum min max)},
@@ -2441,6 +2476,7 @@ sub event_report {
          my $pct;
          if ( $ea->attributes->{$attrib} eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
+            MKDEBUG && _d('Calculating statistical_metrics');
             my $metrics
                = $ea->calculate_statistical_metrics($vals->{all}, $vals);
             @values = (
@@ -2466,14 +2502,12 @@ sub event_report {
 sub chart_distro {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
-   my $store
-      = $stats->{classes}->{$opts{where}}->{$opts{attribute}};
-   my $vals = $store->{all};
+   my $store = $stats->{classes}->{$opts{where}}->{$opts{attribute}};
+   my $vals  = $store->{all};
    return "" unless defined $vals && scalar @$vals;
-
    my @buck_tens = $ea->buckets_of(10);
    my @distro = map { 0 } (0 .. 7);
-   map { $distro[$buck_tens[$_]] += $vals->[$_] } (0 .. @$vals - 1);
+   map { $distro[$buck_tens[$_]] += $vals->[$_] } (1 .. @$vals - 1);
 
    my $max_val = 0;
    my $vals_per_mark; # number of vals represented by 1 #-mark
