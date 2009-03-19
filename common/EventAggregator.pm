@@ -45,7 +45,7 @@ use Data::Dumper;
 use constant MKDEBUG      => $ENV{MKDEBUG};
 use constant BUCK_SIZE    => 1.05;
 use constant BASE_LOG     => log(BUCK_SIZE);
-use constant BASE_OFFSET  => 1 - sprintf('%d', log(.000001) / BASE_LOG); # 284
+use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
@@ -294,7 +294,7 @@ sub make_handler {
          push @tmp, (
             # If you change this code, change the similar code in bucketize.
             'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
-            '$idx = ($val > 0 ? int(BASE_OFFSET + (log($val) / BASE_LOG)) : BASE_OFFSET);',
+            '$idx = ($val >= MIN_BUCK ? int(BASE_OFFSET + log($val)/BASE_LOG) : 0);',
             '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
          );
       }
@@ -362,16 +362,21 @@ sub make_handler {
    return $sub;
 }
 
-# This method is for testing only.  If you change this code, change the code
-# above too (look for bucketize).
+# These two methods are for testing only.  If you change this code,
+# change the code above too (look for bucketize in make_handler).
+sub bucket_idx {
+   my ( $self, $val ) = @_;
+   my $idx = ($val >= MIN_BUCK ? int(BASE_OFFSET + log($val)/BASE_LOG) : 0);
+   return $idx > NUM_BUCK ? NUM_BUCK : $idx;
+}
+
 sub bucketize {
    my ( $self, $vals ) = @_;
    my @bucketed = @buckets;
    my ($sum, $max, $min);
    $max = $min = $vals->[0];
    foreach my $val ( @$vals ) {
-      my $idx = ($val > 0 ? int(BASE_OFFSET + (log($val) / BASE_LOG)) : BASE_OFFSET);
-      ++$bucketed[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];
+      $bucketed[ $self->bucket_idx($val) ]++;
       $max = $max > $val ? $max : $val;
       $min = $min < $val ? $min : $val;
       $sum += $val;
@@ -483,7 +488,6 @@ sub calculate_statistical_metrics {
       if ( $vals->[$i] ) {
          $total_left -= $vals->[$i];
          $sum_excl   += $buck_vals[$i] * $vals->[$i];
-         print "yeah $i, $vals->[$i]\n";
       }
    }
    MKDEBUG && _d('total left:', $total_left, 'i:', $i, 'cutoff:', $cutoff);
