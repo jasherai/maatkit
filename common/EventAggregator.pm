@@ -50,10 +50,10 @@ use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
 our @buckets  = map { 0 } (1 .. NUM_BUCK);
-my @buck_vals = (MIN_BUCK, MIN_BUCK * BUCK_SIZE);
+my @buck_vals = (0, MIN_BUCK, MIN_BUCK * BUCK_SIZE);
 {
    my $cur = BUCK_SIZE;
-   for ( 2 .. NUM_BUCK - 1 ) {
+   for ( 3 .. NUM_BUCK - 1 ) {
       push @buck_vals, MIN_BUCK * ($cur *= BUCK_SIZE);
    }
 }
@@ -476,29 +476,48 @@ sub calculate_statistical_metrics {
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
+   # Find the 95th percentile values.
+   # For example, if there are 605 values, the 95th cutoff is 574. That
+   # means if we ordered all 605 values, values 1 to 574 inclusive would
+   # be the 95th percentile values. Since, however, $vals is an arrayref
+   # of buckets not vaues, we cannot simply take slice 0..cutoff. Instead,
+   # we must run the array backwards (counting down from 999) until we
+   # have excluded the top 31 values (605-574). Once that is done, the next
+   # bucket with values will be the first bucket of the 95th percentile values.
    my $total_left = $n_vals;
-   my $i = NUM_BUCK - 1;
-
-   # Find the 95th percentile biggest value.  And calculate the values of the
-   # ones we exclude.
-   MKDEBUG && _d('total left:', $total_left, 'i:', $i, 'cutoff:', $cutoff);
-   my $sum_excl  = 0;
-   # TODO: something about this isn't correct, re issue 321
-   while ( $total_left > $cutoff && $i-- ) {
-      if ( $vals->[$i] ) {
-         $total_left -= $vals->[$i];
-         $sum_excl   += $buck_vals[$i] * $vals->[$i];
+   my $top_vals   = $n_vals - $cutoff;
+   my $bucket     = NUM_BUCK - 1; # 999
+   # my $sum_excl   = 0; TODO: is this used for something?
+   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals,
+      'cutoff:', $cutoff);
+   while ( $top_vals && $bucket-- ) {
+      if ( $vals->[$bucket] ) {
+         if ( $vals->[$bucket] <= $top_vals )  {
+            # Exclude all vals in this bucket.
+            $top_vals   -= $vals->[$bucket];
+            $total_left -= $vals->[$bucket];
+         }
+         else {
+            # Exclude only enough vals in this bucket to satisfy $top_vals,
+            # then stop because we have excluded all the top vals.
+            $total_left -= $top_vals;
+            $vals->[$bucket] -= $top_vals;
+            $top_vals    = 0;
+         }
+         # $sum_excl   += $buck_vals[$bucket] * $vals->[$bucket];
       }
    }
-   MKDEBUG && _d('total left:', $total_left, 'i:', $i, 'cutoff:', $cutoff);
+   MKDEBUG && _d('total left:', $total_left, 'bucket:', $bucket);
 
-   # Continue until we find the next array element that has a value.
-   my $bucket_95;
-   while ( $i-- ){
-      $bucket_95 = $i;
-      last if $vals->[$i];
+   # Continue until we find the next bucket that has a value. 
+   my $bucket_95 = $bucket;
+   while ( $bucket && $bucket-- ){
+      $bucket_95 = $bucket;
+      last if $vals->[$bucket];
    }
-   return $statistical_metrics unless $vals->[$bucket_95];
+   MKDEBUG && _d('95th bucket:', $bucket_95, 'bucket:', $bucket);
+   return $statistical_metrics if $bucket_95 == 0; # zero values
+
    # At this point, $bucket_95 points to the first value we want to keep.
 
    # Calculate the standard deviation, median, and max value of the 95th
@@ -510,17 +529,17 @@ sub calculate_statistical_metrics {
    my $prev   = $bucket_95; # Used for getting median when $cutoff is odd
 
    # Continue through the rest of the values.
-   while ( $i-- ) {
-      my $val = $vals->[$i];
+   while ( $bucket-- >= 0 ) {
+      my $val = $vals->[$bucket];
       if ( $val ) {
          $total_left -= $val;
          if ( !$median && $total_left <= $mid ) {
-            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$i]
-                    : ($buck_vals[$i] + $buck_vals[$prev]) / 2;
+            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
+                    : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
          }
-         $sum        += $buck_vals[$i] * $val;
-         $sumsq      += ($buck_vals[$i] ** 2 ) * $val;
-         $prev       =  $i;
+         $sum        += $buck_vals[$bucket] * $val;
+         $sumsq      += ($buck_vals[$bucket] ** 2 ) * $val;
+         $prev       =  $bucket;
       }
    }
 
