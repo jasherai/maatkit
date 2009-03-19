@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 25;
+use Test::More tests => 39;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -351,7 +351,7 @@ sub test_bucket_idx {
    my ( $val, $bucket ) = @_;
    my $msg = sprintf 'val %.8f goes in bucket %d', $val, $bucket;
    is(
-      $ea->bucket_idx($val),
+      EventAggregator::bucket_idx($val),
       $bucket,
       $msg
    );
@@ -445,8 +445,8 @@ $result = $ea->calculate_statistical_metrics(
 # median:------------------^ = 3.5
 is_deeply(
    $result,
-   {  stddev => 2.23248737175256,
-      median => 3.56557131581936,
+   {  stddev => 2.12617844913073,
+      median => 3.5,
       cutoff => 12,
       pct_95 => 8.08558592696284,
    },
@@ -857,6 +857,15 @@ my $bad_event = {
 };
 
 $result = $ea->calculate_statistical_metrics($bad_vals, $bad_event);
-print Dumper($result);
+is_deeply(
+   $result,
+   {
+      cutoff => 574,
+      stddev => 0,
+      pct_95 => 0,
+      median => 0
+   },
+   'Mostly zero values'
+);
 
 exit;

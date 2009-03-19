@@ -14,27 +14,15 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 # Place, Suite 330, Boston, MA  02111-1307  USA.
-
 # ###########################################################################
 # EventAggregator package $Revision$
 # ###########################################################################
-
 package EventAggregator;
-
-# This package's function is to take hashrefs and aggregate them as you specify.
-# It basically does a GROUP BY.  If you say to group by z and calculate
-# aggregate statistics for a, b, c then it manufactures functions to record
-# various kinds of stats for the a per z, b per z, and c per z in incoming
-# hashrefs.  Usually you'll use it a little less abstractly: you'll say the
-# incoming hashrefs are parsed query events from the MySQL slow query log, and
-# you want it to calculate stats for Query_time, Rows_read etc aggregated by
-# query fingerprint.  It automatically determines whether a specified property
-# is a string, number or Yes/No value and aggregates them appropriately.
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-
+# TODO: remove Dumper when I'm done fixing this
 use Data::Dumper;
 
 # ###########################################################################
@@ -292,10 +280,8 @@ sub make_handler {
       }
       if ( $args{all} ) {
          push @tmp, (
-            # If you change this code, change the similar code in bucketize.
             'exists PLACE->{all} or PLACE->{all} = [ @buckets ];',
-            '$idx = ($val >= MIN_BUCK ? int(BASE_OFFSET + log($val)/BASE_LOG) : 0);',
-            '++PLACE->{all}->[ $idx > NUM_BUCK ? NUM_BUCK : $idx ];',
+            '++PLACE->{all}->[ EventAggregator::bucket_idx($val) ];',
          );
       }
       push @lines, map { s/PLACE/$place/g; $_ } @tmp;
@@ -362,21 +348,21 @@ sub make_handler {
    return $sub;
 }
 
-# These two methods are for testing only.  If you change this code,
-# change the code above too (look for bucketize in make_handler).
+# Returns the bucket number for the given val.
 sub bucket_idx {
-   my ( $self, $val ) = @_;
+   my ( $val ) = @_;
    my $idx = ($val >= MIN_BUCK ? int(BASE_OFFSET + log($val)/BASE_LOG) : 0);
    return $idx > NUM_BUCK ? NUM_BUCK : $idx;
 }
 
+# This method is for testing only.
 sub bucketize {
    my ( $self, $vals ) = @_;
    my @bucketed = @buckets;
    my ($sum, $max, $min);
    $max = $min = $vals->[0];
    foreach my $val ( @$vals ) {
-      $bucketed[ $self->bucket_idx($val) ]++;
+      $bucketed[ bucket_idx($val) ]++;
       $max = $max > $val ? $max : $val;
       $min = $min < $val ? $min : $val;
       $sum += $val;
@@ -487,38 +473,53 @@ sub calculate_statistical_metrics {
    my $total_left = $n_vals;
    my $top_vals   = $n_vals - $cutoff;
    my $bucket     = NUM_BUCK - 1; # 999
-   # my $sum_excl   = 0; TODO: is this used for something?
+   my $sum_excl   = 0;
+
    MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals,
       'cutoff:', $cutoff);
-   while ( $top_vals && $bucket-- ) {
+
+   while ( $bucket-- >= 0 && $top_vals ) {
       if ( $vals->[$bucket] ) {
          if ( $vals->[$bucket] <= $top_vals )  {
             # Exclude all vals in this bucket.
             $top_vals   -= $vals->[$bucket];
             $total_left -= $vals->[$bucket];
+            $sum_excl   += $buck_vals[$bucket] * $vals->[$bucket];
          }
          else {
             # Exclude only enough vals in this bucket to satisfy $top_vals,
             # then stop because we have excluded all the top vals.
-            $total_left -= $top_vals;
+            $total_left      -= $top_vals;
+            # TODO: do we have to modify this? maybe restore it later?
             $vals->[$bucket] -= $top_vals;
-            $top_vals    = 0;
+            $sum_excl        += $buck_vals[$bucket] * $top_vals;
+            $top_vals         = 0;
          }
-         # $sum_excl   += $buck_vals[$bucket] * $vals->[$bucket];
       }
    }
-   MKDEBUG && _d('total left:', $total_left, 'bucket:', $bucket);
 
-   # Continue until we find the next bucket that has a value. 
-   my $bucket_95 = $bucket;
-   while ( $bucket && $bucket-- ){
-      $bucket_95 = $bucket;
-      last if $vals->[$bucket];
+   MKDEBUG && _d('total left:', $total_left, 'bucket:', $bucket,
+      'sum excl', $sum_excl);
+
+   # If $bucket <= 0, then the loop above had to run all the way down
+   # to bucket 0 to find enough values to exclude. In such a case, the
+   # only values left are zero.
+   return $statistical_metrics if $bucket <= 0;
+
+   # Find the next bucket with values. It may be the current bucket if
+   # only some of its values were excluded.
+   if ( !$vals->[$bucket] ) {
+      while ( --$bucket >= 0 ) {
+         last if $vals->[$bucket];
+      }
    }
-   MKDEBUG && _d('95th bucket:', $bucket_95, 'bucket:', $bucket);
-   return $statistical_metrics if $bucket_95 == 0; # zero values
 
-   # At this point, $bucket_95 points to the first value we want to keep.
+   # 95th bucket starts at bucket 0 which is all zero values. 
+   return $statistical_metrics if $bucket <= 0;
+
+   # $bucket points to the 95th bucket: the first values we want to keep.
+   my $bucket_95 = $bucket;
+   MKDEBUG && _d('95th bucket:', $bucket_95, 'bucket:', $bucket);
 
    # Calculate the standard deviation, median, and max value of the 95th
    # percentile of values.
@@ -594,6 +595,7 @@ sub top_events {
          || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
          # Calculate the 95th percentile of this event's specified attribute.
+         # TODO: remove Dumper when I'm done fixing this
          MKDEBUG && _d('Calculating statistical_metrics',
             @{$classes->{$groupby}->{$args{ol_attrib}}->{all}},
             Dumper($classes->{$groupby}->{$args{ol_attrib}}) );
