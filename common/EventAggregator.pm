@@ -397,7 +397,9 @@ sub unbucketize {
       @buck_tens = map {
          my $f = int(6 + (log($_) / log(10)));
          $f > 7 ? 7 : $f;
-      } @buck_vals;
+      }
+      grep { $_ > 0 }
+      @buck_vals;
       return @buck_tens;
    }
 }
