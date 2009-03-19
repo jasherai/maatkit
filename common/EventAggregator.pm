@@ -391,14 +391,18 @@ sub unbucketize {
 # of 10. TODO: right now it's hardcoded to buckets of 10, in the future maybe
 # not.
 {
+   # TODO: this is broken.
    my @buck_tens;
    sub buckets_of {
       return @buck_tens if @buck_tens;
       @buck_tens = map {
-         my $f = int(6 + (log($_) / log(10)));
-         $f > 7 ? 7 : $f;
+         my $f = 0;
+         if ( $_ > 0 ) {
+            $f = int(6 + (log($_) / log(10)));
+            $f = 7 if $f > 7;
+         }
+         $f;
       }
-      grep { $_ > 0 }
       @buck_vals;
       return @buck_tens;
    }

@@ -284,14 +284,13 @@ sub event_report {
 sub chart_distro {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
-   my $store
-      = $stats->{classes}->{$opts{where}}->{$opts{attribute}};
-   my $vals = $store->{all};
+   my $store = $stats->{classes}->{$opts{where}}->{$opts{attribute}};
+   my $vals  = $store->{all};
    return "" unless defined $vals && scalar @$vals;
-
+   # TODO: this is broken.
    my @buck_tens = $ea->buckets_of(10);
    my @distro = map { 0 } (0 .. 7);
-   map { $distro[$buck_tens[$_]] += $vals->[$_] } (0 .. @$vals - 1);
+   map { $distro[$buck_tens[$_]] += $vals->[$_] } (1 .. @$vals - 1);
 
    my $max_val = 0;
    my $vals_per_mark; # number of vals represented by 1 #-mark
