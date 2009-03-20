@@ -22,13 +22,12 @@ package EventAggregator;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-# TODO: remove Dumper when I'm done fixing this
-use Data::Dumper;
 
 # ###########################################################################
 # Set up some constants for bucketing values.  It is impossible to keep all
 # values seen in memory, but putting them into logarithmically scaled buckets
 # and just incrementing the bucket each time works, although it is imprecise.
+# See http://code.google.com/p/maatkit/wiki/EventAggregatorInternals.
 # ###########################################################################
 use constant MKDEBUG      => $ENV{MKDEBUG};
 use constant BUCK_SIZE    => 1.05;
@@ -37,14 +36,11 @@ use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
-our @buckets  = map { 0 } (1 .. NUM_BUCK);
-my @buck_vals = (0, MIN_BUCK, MIN_BUCK * BUCK_SIZE);
-{
-   my $cur = BUCK_SIZE;
-   for ( 3 .. NUM_BUCK - 1 ) {
-      push @buck_vals, MIN_BUCK * ($cur *= BUCK_SIZE);
-   }
-}
+# Used to pre-initialize {all} arrayrefs for event attribs in make_handler.
+our @buckets  = map { 0 } (0..NUM_BUCK-1);
+
+# Used in buckets_of() to map buckets of log10 to log1.05 buckets.
+my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 
 # The best way to see how to use this is to look at the .t file.
 #
@@ -348,42 +344,36 @@ sub make_handler {
    return $sub;
 }
 
-# Returns the bucket number for the given val.
+# Returns the bucket number for the given val. Buck numbers are zero-indexed,
+# so although there are 1,000 buckets (NUM_BUCK), 999 is the greatest idx.
+# *** Notice that this sub is not a class method, so either call it
+# from inside this module like bucket_idx() or outside this module
+# like EventAggregator::bucket_idx(). ***
+# TODO: could export this by default to avoid having to specific packge::.
 sub bucket_idx {
    my ( $val ) = @_;
-   my $idx = ($val >= MIN_BUCK ? int(BASE_OFFSET + log($val)/BASE_LOG) : 0);
-   return $idx > NUM_BUCK ? NUM_BUCK : $idx;
+   return 0 if $val < MIN_BUCK;
+   my $idx = int(BASE_OFFSET + log($val)/BASE_LOG);
+   return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
 }
 
-# This method is for testing only.
-sub bucketize {
-   my ( $self, $vals ) = @_;
-   my @bucketed = @buckets;
-   my ($sum, $max, $min);
-   $max = $min = $vals->[0];
-   foreach my $val ( @$vals ) {
-      $bucketed[ bucket_idx($val) ]++;
-      $max = $max > $val ? $max : $val;
-      $min = $min < $val ? $min : $val;
-      $sum += $val;
-   }
-   return (\@bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals});
+# Returns the value for the given bucket.
+# The value of each bucket is the first value that it covers. So the value
+# of bucket 1 is 0.000001000 because it covers [0.000001000, 0.000001050).
+#
+# *** Notice that this sub is not a class method, so either call it
+# from inside this module like bucket_idx() or outside this module
+# like EventAggregator::bucket_value(). ***
+# TODO: could export this by default to avoid having to specific packge::.
+sub bucket_value {
+   my ( $bucket ) = @_;
+   return 0 if $bucket == 0;
+   die "Invalid bucket: $bucket" if $bucket < 0 || $bucket > (NUM_BUCK-1);
+   # $bucket - 1 because buckets are shifted up by 1 to handle zero values.
+   return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
 }
 
-# This method is for testing only.
-sub unbucketize {
-   my ( $self, $vals ) = @_;
-   my @result;
-   foreach my $i ( 0 .. NUM_BUCK - 1 ) {
-      next unless $vals->[$i];
-      foreach my $j ( 1 .. $vals->[$i] ) {
-         push @result, $buck_vals[$i];
-      }
-   }
-   return @result;
-}
-
-# Break the buckets down into powers of ten, in 8 coarser buckets.  Bucket 0
+# Break the buckets down into powers of ten, into 8 coarser buckets.  Bucket 0
 # represents (0 <= val < 10us) and 7 represents 10s and greater.  The powers are
 # thus constrained to between -6 and 1.  Because these are used as array
 # indexes, we shift up so it's non-negative, to get 0 to 7.  Now you have a list
@@ -391,19 +381,17 @@ sub unbucketize {
 # of 10. TODO: right now it's hardcoded to buckets of 10, in the future maybe
 # not.
 {
-   # TODO: this is broken.
    my @buck_tens;
    sub buckets_of {
       return @buck_tens if @buck_tens;
       @buck_tens = map {
          my $f = 0;
-         if ( $_ > 0 ) {
+         if ( $_ >= MIN_BUCK ) {
             $f = int(6 + (log($_) / log(10)));
             $f = 7 if $f > 7;
          }
          $f;
-      }
-      @buck_vals;
+      } @buck_vals;
       return @buck_tens;
    }
 }
@@ -601,11 +589,7 @@ sub top_events {
          || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
          # Calculate the 95th percentile of this event's specified attribute.
-         # TODO: remove Dumper when I'm done fixing this
-         MKDEBUG && _d('Calculating statistical_metrics',
-            @{$classes->{$groupby}->{$args{ol_attrib}}->{all}},
-            Dumper($classes->{$groupby}->{$args{ol_attrib}}) );
-
+         MKDEBUG && _d('Calculating statistical_metrics');
          my $stats = $self->calculate_statistical_metrics(
             $classes->{$groupby}->{$args{ol_attrib}}->{all},
             $classes->{$groupby}->{$args{ol_attrib}}

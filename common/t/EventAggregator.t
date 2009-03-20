@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 39;
+use Test::More tests => 50;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -345,13 +345,43 @@ foreach my $event (@$events) {
 is_deeply( $ea->results, $result, 'user aggregation' );
 
 # #############################################################################
-# Test bucketizing a straightforward list.
+# Test buckets.
 # #############################################################################
+
+# Given an arrayref of vals, returns an arrayref and hashref of those
+# vals suitable for passing to calculate_statistical_metrics().
+sub bucketize {
+   my ( $vals ) = @_;
+   my @bucketed = map { 0 } (0..999); # TODO: shouldn't hard code this
+   my ($sum, $max, $min);
+   $max = $min = $vals->[0];
+   foreach my $val ( @$vals ) {
+      $bucketed[ EventAggregator::bucket_idx($val) ]++;
+      $max = $max > $val ? $max : $val;
+      $min = $min < $val ? $min : $val;
+      $sum += $val;
+   }
+   return (\@bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals});
+}
+
+sub test_bucket_val {
+   my ( $bucket, $val ) = @_;
+   my $msg = sprintf 'bucket %d equals %.9f', $bucket, $val;
+   cmp_ok(
+      sprintf('%.9f', EventAggregator::bucket_value($bucket)),
+      '==',
+      $val,
+      $msg
+   );
+   return;
+}
+
 sub test_bucket_idx {
    my ( $val, $bucket ) = @_;
    my $msg = sprintf 'val %.8f goes in bucket %d', $val, $bucket;
-   is(
+   cmp_ok(
       EventAggregator::bucket_idx($val),
+      '==',
       $bucket,
       $msg
    );
@@ -372,9 +402,25 @@ test_bucket_idx(6, 320);
 test_bucket_idx(7, 324);
 test_bucket_idx(8, 326);
 test_bucket_idx(9, 329);
+test_bucket_idx(20, 345);
+test_bucket_idx(97.356678643, 378);
+test_bucket_idx(100, 378);
+# I don't know why this is failing on the high end of the scale. :-(
+test_bucket_idx(1402556844201353.5, 999); # first val in last bucket
+test_bucket_idx(9000000000000000.0, 999);
+
+# These vals are rounded to 9 decimal places, otherwise we'll have
+# problems with Perl returning stuff like 1.025e-9.
+test_bucket_val(0, 0);
+test_bucket_val(1,   0.000001000);
+test_bucket_val(2,   0.000001050);
+test_bucket_val(3,   0.000001103);
+test_bucket_val(10,  0.000001551);
+test_bucket_val(100, 0.000125239);
+test_bucket_val(999, 1402556844201353.5);
 
 is_deeply(
-   [ $ea->bucketize( [ 2, 3, 6, 4, 8, 9, 1, 1, 1, 5, 4, 3, 1 ] ) ],
+   [ bucketize( [ 2, 3, 6, 4, 8, 9, 1, 1, 1, 5, 4, 3, 1 ] ) ],
    [  [  ( map {0} ( 0 .. 283 ) ),
          4, # 1 -> 284
          ( map {0} ( 285 .. 297 ) ),
@@ -399,35 +445,17 @@ is_deeply(
          cnt => 13,
       },
    ],
-   'Bucketizes values right',
+   'Bucketizes values (values -> buckets)',
 );
 
-is_deeply(
-   [  $ea->unbucketize(
-         $ea->bucketize( [ 2, 3, 6, 4, 8, 9, 1, 1, 1, 5, 4, 3, 1 ] )
-      )
-   ],
-
-   # If there were no loss of precision, we'd get this:
-   # [1, 1, 1, 1, 2, 3, 3, 4, 4, 5, 6, 8, 9]
-   # But we have only 5% precision in the buckets, so...
-   [  '1.04174382747661', '1.04174382747661',
-      '1.04174382747661', '1.04174382747661',
-      '2.06258152254188', '3.04737229873823',
-      '3.04737229873823', '4.08377033290049',
-      '4.08377033290049', '4.96384836320513',
-      '6.03358870952811', '8.08558592696284',
-      '9.36007640870036'
-   ],
-   "Unbucketizes okay",
-);
+# TODO: test buckets_of()
 
 # #############################################################################
 # Test statistical metrics: 95%, stddev, and median
 # #############################################################################
 
 $result = $ea->calculate_statistical_metrics(
-   $ea->bucketize( [ 2, 3, 6, 4, 8, 9, 1, 1, 1, 5, 4, 3, 1 ] ) );
+   bucketize( [ 2, 3, 6, 4, 8, 9, 1, 1, 1, 5, 4, 3, 1 ] ) );
 is_deeply(
    $result,
    {  stddev => 2.26493026699131,
@@ -439,7 +467,7 @@ is_deeply(
 );
 
 $result = $ea->calculate_statistical_metrics(
-   $ea->bucketize( [ 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 6, 8, 9 ] ) );
+   bucketize( [ 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 6, 8, 9 ] ) );
 
 # 95th pct: --------------------------^
 # median:------------------^ = 3.5
@@ -457,7 +485,7 @@ is_deeply(
 # be exact (because we pass in min/max) and the stdev should never be bigger
 # than half the difference between min/max.
 $result = $ea->calculate_statistical_metrics(
-   $ea->bucketize( [ 0.000002, 0.018799 ] ) );
+   bucketize( [ 0.000002, 0.018799 ] ) );
 is_deeply(
    $result,
    {  stddev => 0.0132914861659635,
@@ -501,7 +529,7 @@ is_deeply(
    'Calculates statistical metrics for when $stats missing'
 );
 
-$result = $ea->calculate_statistical_metrics( $ea->bucketize( [0.9] ) );
+$result = $ea->calculate_statistical_metrics( bucketize( [0.9] ) );
 is_deeply(
    $result,
    {  stddev => 0,
