@@ -4,7 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use English qw('-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 7;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -42,5 +42,18 @@ ok(! -f '/tmp/mk-slave-delay.pid', 'PID file removed');
 # #############################################################################
 $output = `../mk-slave-delay --time 1s --delay 1s --interval 1s S=/tmp/12346/mysql_sandbox12346.sock 2>&1`;
 unlike($output, qr/Missing DSN part 'h'/, 'Does not require h DSN part');
+
+# #############################################################################
+# Issue 215.  Specify SLAVE-HOST and MASTER-HOST, but MASTER-HOST does not have
+# binary logging turned on, so SHOW MASTER STATUS is empty.  (This happens quite
+# easily when you connect to a SLAVE-HOST twice by accident.)  To reproduce,
+# just disable log-bin and log-slave-updates on the slave.
+# #############################################################################
+diag `sed -i '/log.bin\\|log.slave/d' /tmp/12346/my.sandbox.cnf`;
+diag `/tmp/12346/stop; /tmp/12346/start;`;
+$output = `../mk-slave-delay -d 1s h=127.1,P=12346 h=127.1 2>&1`;
+like($output, qr/Binary logging is disabled/,
+   'Detects master that is not a master');
+diag `/tmp/12346/stop; rm -rf /tmp/12346; ../../sandbox/make_slave 12346`;
 
 exit;

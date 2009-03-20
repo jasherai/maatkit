@@ -1146,6 +1146,8 @@ while (                       # Quit if:
    if ( $master ) {
       MKDEBUG && _d('Getting binlog pos from master');
       my $res = $master->selectrow_hashref("SHOW MASTER STATUS");
+      die "Binary logging is disabled on the MASTER-HOST.\n"
+         unless $res && %$res && $res->{file};
       my $pos = $positions[-1];
       if ( !@positions || $pos->[$FILE] ne $res->{file}
          || $pos->[$POS] != $res->{position} )
