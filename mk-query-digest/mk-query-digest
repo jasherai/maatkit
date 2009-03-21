@@ -1792,14 +1792,13 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3210
+# EventAggregator package 3216
 # ###########################################################################
 package EventAggregator;
 
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Data::Dumper;
 
 use constant MKDEBUG      => $ENV{MKDEBUG};
 use constant BUCK_SIZE    => 1.05;
@@ -1808,14 +1807,9 @@ use constant BASE_OFFSET  => abs(1 - log(0.000001) / BASE_LOG); # 284.1617969
 use constant NUM_BUCK     => 1000;
 use constant MIN_BUCK     => .000001;
 
-our @buckets  = map { 0 } (1 .. NUM_BUCK);
-my @buck_vals = (0, MIN_BUCK, MIN_BUCK * BUCK_SIZE);
-{
-   my $cur = BUCK_SIZE;
-   for ( 3 .. NUM_BUCK - 1 ) {
-      push @buck_vals, MIN_BUCK * ($cur *= BUCK_SIZE);
-   }
-}
+our @buckets  = map { 0 } (0..NUM_BUCK-1);
+
+my @buck_vals = map { bucket_value($_); } (0..NUM_BUCK-1);
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2043,49 +2037,39 @@ sub make_handler {
 
 sub bucket_idx {
    my ( $val ) = @_;
-   my $idx = ($val >= MIN_BUCK ? int(BASE_OFFSET + log($val)/BASE_LOG) : 0);
-   return $idx > NUM_BUCK ? NUM_BUCK : $idx;
+   return 0 if $val < MIN_BUCK;
+   my $idx = int(BASE_OFFSET + log($val)/BASE_LOG);
+   return $idx > (NUM_BUCK-1) ? (NUM_BUCK-1) : $idx;
 }
 
-sub bucketize {
-   my ( $self, $vals ) = @_;
-   my @bucketed = @buckets;
-   my ($sum, $max, $min);
-   $max = $min = $vals->[0];
-   foreach my $val ( @$vals ) {
-      $bucketed[ bucket_idx($val) ]++;
-      $max = $max > $val ? $max : $val;
-      $min = $min < $val ? $min : $val;
-      $sum += $val;
-   }
-   return (\@bucketed, { sum => $sum, max => $max, min => $min, cnt => scalar @$vals});
-}
-
-sub unbucketize {
-   my ( $self, $vals ) = @_;
-   my @result;
-   foreach my $i ( 0 .. NUM_BUCK - 1 ) {
-      next unless $vals->[$i];
-      foreach my $j ( 1 .. $vals->[$i] ) {
-         push @result, $buck_vals[$i];
-      }
-   }
-   return @result;
+sub bucket_value {
+   my ( $bucket ) = @_;
+   return 0 if $bucket == 0;
+   die "Invalid bucket: $bucket" if $bucket < 0 || $bucket > (NUM_BUCK-1);
+   return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
 }
 
 {
    my @buck_tens;
    sub buckets_of {
       return @buck_tens if @buck_tens;
-      @buck_tens = map {
-         my $f = 0;
-         if ( $_ > 0 ) {
-            $f = int(6 + (log($_) / log(10)));
-            $f = 7 if $f > 7;
+
+      my $start_bucket  = 0;
+      my @base10_starts = (0);
+      map { push @base10_starts, (10**$_)*MIN_BUCK } (1..7);
+
+      for my $base10_bucket ( 0..($#base10_starts-1) ) {
+         my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
+         MKDEBUG && _d('Base 10 bucket $base10_bucket maps to',
+            'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
+         for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
+            $buck_tens[$base1_05_bucket] = $base10_bucket;
          }
-         $f;
+         $start_bucket = $next_bucket;
       }
-      @buck_vals;
+
+      map { $buck_tens[$_] = 7 } ($start_bucket..(NUM_BUCK-1));
+
       return @buck_tens;
    }
 }
@@ -2227,10 +2211,7 @@ sub top_events {
       elsif ( $args{ol_attrib} && (!$args{ol_freq}
          || $classes->{$groupby}->{$args{ol_attrib}}->{cnt} >= $args{ol_freq})
       ) {
-         MKDEBUG && _d('Calculating statistical_metrics',
-            @{$classes->{$groupby}->{$args{ol_attrib}}->{all}},
-            Dumper($classes->{$groupby}->{$args{ol_attrib}}) );
-
+         MKDEBUG && _d('Calculating statistical_metrics');
          my $stats = $self->calculate_statistical_metrics(
             $classes->{$groupby}->{$args{ol_attrib}}->{all},
             $classes->{$groupby}->{$args{ol_attrib}}
@@ -2261,7 +2242,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 3210
+# QueryReportFormatter package 3217
 # ###########################################################################
 
 
@@ -2395,7 +2376,7 @@ sub global_report {
          my @values;
          if ( $ea->attributes->{$attrib} eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
-            MKDEBUG && _d('Calculating statistical_metrics');
+            MKDEBUG && _d('Calculating global statistical_metrics for', $attrib);
             my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
             @values = (
                @{$store}{qw(sum min max)},
