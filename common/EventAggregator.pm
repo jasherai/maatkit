@@ -373,25 +373,41 @@ sub bucket_value {
    return (BUCK_SIZE**($bucket-1)) * MIN_BUCK;
 }
 
-# Break the buckets down into powers of ten, into 8 coarser buckets.  Bucket 0
-# represents (0 <= val < 10us) and 7 represents 10s and greater.  The powers are
-# thus constrained to between -6 and 1.  Because these are used as array
-# indexes, we shift up so it's non-negative, to get 0 to 7.  Now you have a list
-# of 1000 buckets that act as a lookup table between the 5% buckets and buckets
-# of 10. TODO: right now it's hardcoded to buckets of 10, in the future maybe
-# not.
+# Map the 1,000 base 1.05 buckets to 8 base 10 buckets. Returns an array
+# of 1,000 buckets, the value of each represents its index in an 8 bucket
+# base 10 array. For example: base 10 bucket 0 represents vals (0, 0.000010),
+# and base 1.05 buckets 0..47 represent vals (0, 0.000010401). So the first
+# 48 elements of the returned array will have 0 as their values. 
+# TODO: right now it's hardcoded to buckets of 10, in the future maybe not.
 {
    my @buck_tens;
    sub buckets_of {
       return @buck_tens if @buck_tens;
-      @buck_tens = map {
-         my $f = 0;
-         if ( $_ >= MIN_BUCK ) {
-            $f = int(6 + (log($_) / log(10)));
-            $f = 7 if $f > 7;
+
+      # To make a more precise map, we first set the starting values for
+      # each of the 8 base 10 buckets. 
+      my $start_bucket  = 0;
+      my @base10_starts = (0);
+      map { push @base10_starts, (10**$_)*MIN_BUCK } (1..7);
+
+      # Then find the base 1.05 buckets that correspond to each
+      # base 10 bucket. The last value in each bucket's range belongs
+      # to the next bucket, so $next_bucket-1 represents the real last
+      # base 1.05 bucket in which the base 10 bucket's range falls.
+      for my $base10_bucket ( 0..($#base10_starts-1) ) {
+         my $next_bucket = bucket_idx( $base10_starts[$base10_bucket+1] );
+         MKDEBUG && _d('Base 10 bucket $base10_bucket maps to',
+            'base 1.05 buckets', $start_bucket, '..', $next_bucket-1);
+         for my $base1_05_bucket ($start_bucket..($next_bucket-1)) {
+            $buck_tens[$base1_05_bucket] = $base10_bucket;
          }
-         $f;
-      } @buck_vals;
+         $start_bucket = $next_bucket;
+      }
+
+      # Map all remaining base 1.05 buckets to base 10 bucket 7 which
+      # is for vals > 10.
+      map { $buck_tens[$_] = 7 } ($start_bucket..(NUM_BUCK-1));
+
       return @buck_tens;
    }
 }

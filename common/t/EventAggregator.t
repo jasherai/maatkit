@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 50;
+use Test::More tests => 51;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -157,7 +157,7 @@ $result = {
          min => 0,
          max => 0,
          all =>
-            [ ( map {0} ( 0 .. 283 ) ), 1, ( map {0} ( 285 .. 999 ) ) ],
+            [ 1, ( map {0} (1..999) ) ],
          sum => 0,
          cnt => 1,
       }
@@ -209,7 +209,7 @@ $result = {
       max => 1,
       sum => 2,
       cnt => 3,
-      all => [ ( map {0} ( 0 .. 283 ) ), 3, ( map {0} ( 285 .. 999 ) ), ],
+      all => [ 1, ( map {0} (1..283 ) ), 2, ( map {0} (285..999) ), ],
    },
 };
 
@@ -305,7 +305,7 @@ $result = {
          Rows_sent => {
             min => 0,
             max => 1,
-            all => [ ( map {0} ( 0 .. 283 ) ), 2, ( map {0} ( 285 .. 999 ) ) ],
+            all => [ 1, ( map {0} (1..283) ), 1, ( map {0} (285..999) ) ],
             sum => 1,
             cnt => 2
          }
@@ -331,7 +331,7 @@ $result = {
       Rows_sent => {
          min => 0,
          max => 1,
-         all => [ ( map {0} ( 0 .. 283 ) ), 3, ( map {0} ( 285 .. 999 ) ) ],
+         all => [ 1, ( map {0} (1..283) ), 2, ( map {0} (285..999) ) ],
          sum => 2,
          cnt => 3
       }
@@ -448,7 +448,20 @@ is_deeply(
    'Bucketizes values (values -> buckets)',
 );
 
-# TODO: test buckets_of()
+is_deeply(
+   [ EventAggregator::buckets_of() ],
+   [
+      ( map {0} (0..47)    ),
+      ( map {1} (48..94)   ),
+      ( map {2} (95..141)  ),
+      ( map {3} (142..188) ),
+      ( map {4} (189..235) ),
+      ( map {5} (236..283) ),
+      ( map {6} (284..330) ),
+      ( map {7} (331..999) )
+   ],
+   '8 buckets of base 10'
+);
 
 # #############################################################################
 # Test statistical metrics: 95%, stddev, and median
@@ -620,7 +633,7 @@ $result = {
             min => 0,
             max => 0,
             all =>
-               [ ( map {0} ( 0 .. 283 ) ), 1, ( map {0} ( 285 .. 999 ) ) ],
+               [ 1, ( map {0} (1..999) ) ],
             sum    => 0,
             cnt    => 1,
             'last' => 0,
@@ -631,12 +644,7 @@ $result = {
       Rows_read => {
          min => 0, # Because 'last' is only kept at the class level
          max => 4,
-         all => [
-            ( map {0} ( 0 .. 283 ) ), 1,
-            ( map {0} ( 285 .. 311 ) ),
-            2,
-            ( map {0} ( 313 .. 999 ) ),
-         ],
+         all => [ 1, ( map {0} (1..311) ), 2, ( map {0} (313..999) ) ],
          sum => 8,
          cnt => 3,
       },
