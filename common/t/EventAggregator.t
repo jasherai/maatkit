@@ -406,6 +406,7 @@ test_bucket_idx(20, 345);
 test_bucket_idx(97.356678643, 378);
 test_bucket_idx(100, 378);
 # I don't know why this is failing on the high end of the scale. :-(
+# TODO: figure it out.
 test_bucket_idx(1402556844201353.5, 999); # first val in last bucket
 test_bucket_idx(9000000000000000.0, 999);
 
@@ -469,27 +470,50 @@ is_deeply(
 
 $result = $ea->calculate_statistical_metrics(
    bucketize( [ 2, 3, 6, 4, 8, 9, 1, 1, 1, 5, 4, 3, 1 ] ) );
+# The above bucketize will be bucketized as:
+# VALUE  BUCKET  VALUE        RANGE                       N VALS  SUM
+# 1      248     0.992136979  [0.992136979, 1.041743827)  4       3.968547916
+# 2      298     1.964363355  [1.964363355, 2.062581523)  1       1.964363355
+# 3      306     2.902259332  [2.902259332, 3.047372299)  2       5.804518664
+# 4      312     3.889305079  [3.889305079, 4.083770333)  2       7.778610158
+# 5      317     4.963848363  [4.963848363, 5.212040781)  1       4.963848363
+# 6      320     5.746274961  [5.746274961, 6.033588710)  1       5.746274961
+# 8      326     7.700558026  [7.700558026, 8.085585927)  1       7.700558026
+# 9      329     8.914358484  [8.914358484, 9.360076409)  1       8.914358484
+#                                                                 -----------
+#                                                                 46.841079927
+# I have hand-checked these values and they are correct.
 is_deeply(
    $result,
-   {  stddev => 2.26493026699131,
-      median => 3.04737229873823,
+   {
+      stddev => 2.51982318221967,
+      median => 2.90225933213165,
       cutoff => 12,
-      pct_95 => 8.08558592696284,
+      pct_95 => 7.70055802567889,
    },
    'Calculates statistical metrics'
 );
 
 $result = $ea->calculate_statistical_metrics(
    bucketize( [ 1, 1, 1, 1, 2, 3, 4, 4, 4, 4, 6, 8, 9 ] ) );
-
-# 95th pct: --------------------------^
-# median:------------------^ = 3.5
+# The above bucketize will be bucketized as:
+# VALUE  BUCKET  VALUE        RANGE                       N VALS
+# 1      248     0.992136979  [0.992136979, 1.041743827)  4
+# 2      298     1.964363355  [1.964363355, 2.062581523)  1
+# 3      306     2.902259332  [2.902259332, 3.047372299)  1
+# 4      312     3.889305079  [3.889305079, 4.083770333)  4
+# 6      320     5.746274961  [5.746274961, 6.033588710)  1
+# 8      326     7.700558026  [7.700558026, 8.085585927)  1
+# 9      329     8.914358484  [8.914358484, 9.360076409)  1
+#
+# I have hand-checked these values and they are correct.
 is_deeply(
    $result,
-   {  stddev => 2.12617844913073,
-      median => 3.5,
+   {
+      stddev => 2.48633263817885,
+      median => 3.88930507895285,
       cutoff => 12,
-      pct_95 => 8.08558592696284,
+      pct_95 => 7.70055802567889,
    },
    'Calculates median when it is halfway between two elements',
 );
@@ -896,12 +920,12 @@ $result = $ea->calculate_statistical_metrics($bad_vals, $bad_event);
 is_deeply(
    $result,
    {
-      cutoff => 574,
-      stddev => 0,
+      stddev => 0.1974696076416,
+      median => 0,
       pct_95 => 0,
-      median => 0
+      cutoff => 574,
    },
-   'Mostly zero values'
+   'statistical metrics with mostly zero values'
 );
 
 exit;

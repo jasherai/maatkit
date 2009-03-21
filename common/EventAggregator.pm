@@ -417,11 +417,11 @@ sub bucket_value {
 #
 #    pct_95    => top bucket value in the 95th percentile
 #    cutoff    => How many values fall into the 95th percentile
-#    stddev    => of 95% values
-#    median    => of 95% values
+#    stddev    => of all values
+#    median    => of all values
 #
 # The vals arrayref is the buckets as per the above (see the comments at the top
-# of this file).  $args should contain cnt, min, max and sum properties.
+# of this file).  $args should contain cnt, min and max properties.
 sub calculate_statistical_metrics {
    my ( $self, $vals, $args ) = @_;
    my $statistical_metrics = {
@@ -472,97 +472,47 @@ sub calculate_statistical_metrics {
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
-   # Exclude values above the 95th percentile.
-   # For example, if there are 605 values, the 95th cutoff is 574. That
-   # means if we ordered all 605 values, values 1 to 574 inclusive would
-   # be the 95th percentile values. Since, however, $vals is an arrayref
-   # of buckets not vaues, we cannot simply take slice 0..cutoff. Instead,
-   # we must run the array backwards (counting down from NUM_BUCK) until we
-   # have excluded the top 31 values (605-574). 
-   my $total_left = $n_vals;
-   my $top_vals   = $n_vals - $cutoff;
-   my $bucket     = NUM_BUCK - 1; # 999
-   my $sum_excl   = 0;
-
-   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals,
-      'cutoff:', $cutoff);
-
-   while ( $bucket-- >= 0 && $top_vals ) {
-      if ( $vals->[$bucket] ) {
-         if ( $vals->[$bucket] <= $top_vals )  {
-            # Exclude all vals in this bucket.
-            $top_vals   -= $vals->[$bucket];
-            $total_left -= $vals->[$bucket];
-            $sum_excl   += $vals->[$bucket] * $buck_vals[$bucket];
-         }
-         else {
-            # Exclude only enough vals in this bucket to satisfy $top_vals,
-            # then stop because we have excluded all the top vals.
-            $total_left      -= $top_vals;
-            # TODO: do we have to modify this? maybe restore it later?
-            $vals->[$bucket] -= $top_vals;
-            $sum_excl        += $top_vals * $buck_vals[$bucket];
-            $top_vals         = 0;
-         }
-      }
-   }
-
-   MKDEBUG && _d('total left:', $total_left, 'bucket:', $bucket,
-      'sum excl', $sum_excl);
-
-   # If $bucket <= 0, then the loop above had to run all the way down
-   # to bucket 0 to find enough values to exclude. In such a case, the
-   # only values left are zero.
-   return $statistical_metrics if $bucket <= 0;
-
-   # Find the next bucket with values. It may be the current bucket if
-   # only some of its values were excluded.
-   if ( !$vals->[$bucket] ) {
-      while ( --$bucket >= 0 ) {
-         last if $vals->[$bucket];
-      }
-   }
-
-   # At this point, $bucket points to the top bucket in the 95th percentile
-   # that has values. If, however, it's bucket 0, then only zero values remain,
-   # so we can return early. 
-   return $statistical_metrics if $bucket <= 0;
-   my $bucket_95 = $bucket; # save for later to determine pct_95
-   MKDEBUG && _d('95th bucket:', $bucket_95, $buck_vals[$bucket_95]);
-
    # Calculate the standard deviation, median, and max value of the 95th
    # percentile of values.
-   my $sum    = $buck_vals[$bucket] * $vals->[$bucket];
-   my $sumsq  = $sum ** 2;
-   my $mid    = int($cutoff / 2);
-   my $median = 0;
-   my $prev   = $bucket; # Used for getting median when $cutoff is odd
+   my $total_left = $n_vals;
+   my $top_vals   = $n_vals - $cutoff; # vals > 95th
+   my $sum_excl   = 0;
+   my $sum        = 0;
+   my $sumsq      = 0;
+   my $mid        = int($n_vals / 2);
+   my $median     = 0;
+   my $prev       = NUM_BUCK-1; # Used for getting median when $cutoff is odd
+   my $bucket_95  = 0; # top bucket in 95th
 
-   # The vars above account for the current bucket's vals.
-   $total_left -= $vals->[$bucket];
+   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
 
-   # Continue through the remaining buckets.
-   while ( --$bucket >= 0 ) {
+   BUCKET:
+   for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
       my $val = $vals->[$bucket];
-      if ( $val ) {
-         $total_left -= $val;
-         if ( !$median && $total_left <= $mid ) {
-            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
-                    : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
-         }
-         $sum    += $buck_vals[$bucket] * $val;
-         $sumsq  += ($buck_vals[$bucket]**2) * $val;
-         $prev   =  $bucket;
+      next BUCKET unless $val; 
+
+      $total_left -= $val;
+      $sum_excl   += $val;
+      $bucket_95   = $bucket if !$bucket_95 && $sum_excl > $top_vals;
+
+      if ( !$median && $total_left <= $mid ) {
+         $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
+                 : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
       }
+
+      $sum    += $val * $buck_vals[$bucket];
+      $sumsq  += $val * ($buck_vals[$bucket]**2);
+      $prev   =  $bucket;
    }
 
-   my $stddev   = sqrt (($sumsq - (($sum**2) / $cutoff)) / $cutoff);
+   my $stddev   = sqrt (($sumsq - (($sum**2) / $n_vals)) / $n_vals);
    my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
    $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
    MKDEBUG && _d('sum:', $sum, 'sumsq:', $sumsq, 'stddev:', $stddev,
-      'mid:', $mid, 'median:', $median, 'prev bucket:', $prev,
-      'total left:', $total_left);
+      'median:', $median, 'prev bucket:', $prev,
+      'total left:', $total_left, 'sum excl', $sum_excl,
+      'bucket 95:', $bucket_95, $buck_vals[$bucket_95]);
 
    $statistical_metrics->{stddev} = $stddev;
    $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
