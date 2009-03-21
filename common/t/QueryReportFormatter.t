@@ -82,13 +82,42 @@ $events = [
    }
 ];
 
+# Here's the breakdown of values for those three events:
+# 
+# ATTRIBUTE     VALUE     BUCKET  VALUE        RANGE
+# Query_time => 8.000652  326     7.700558026  range [7.700558026, 8.085585927)
+# Query_time => 1.001943  284     0.992136979  range [0.992136979, 1.041743827)
+# Query_time => 1.000682  284     0.992136979  range [0.992136979, 1.041743827)
+#               --------          -----------
+#               10.003277         9.684831984
+#
+# Lock_time  => 0.000109  97      0.000108186  range [0.000108186, 0.000113596)
+# Lock_time  => 0.000145  103     0.000144980  range [0.000144980, 0.000152229)
+# Lock_time  => 0.000201  109     0.000194287  range [0.000194287, 0.000204002)
+#               --------          -----------
+#               0.000455          0.000447453
+#
+# Rows_sent  => 1         284     0.992136979  range [0.992136979, 1.041743827)
+# Rows_sent  => 0         0       0
+# Rows_sent  => 1         284     0.992136979  range [0.992136979, 1.041743827)
+#               --------          -----------
+#               2                 1.984273958
+#
+# Rows_exam  => 1         284     0.992136979  range [0.992136979, 1.041743827)
+# Rows_exam  => 0         0       0 
+# Rows_exam  => 2         298     1.964363355, range [1.964363355, 2.062581523) 
+#               --------          -----------
+#               3                 2.956500334
+
+# I hand-checked these values with my TI-83 calculator.
+# They are, without a doubt, correct.
 $expected = <<EOF;
 # Overall: 3 total, 2 unique, 3 QPS, 10.00x concurrency __________________
 #                    total     min     max     avg     95%  stddev  median
-# Exec time            10s      1s      8s      3s      8s      3s      1s
-# Lock time          455us   109us   201us   151us   204us    46us   108us
-# Rows sent              2       0       1    0.67    1.04    0.50       0
-# Rows exam              3       0       2       1    2.06    0.59    1.04
+# Exec time            10s      1s      8s      3s      8s      3s   992ms
+# Lock time          455us   109us   201us   151us   194us    35us   144us
+# Rows sent              2       0       1    0.67    0.99    0.50       0
+# Rows exam              3       0       2       1    1.96    0.80    0.99
 # Time range        2007-10-15 21:43:52 to 2007-10-15 21:43:53
 EOF
 
