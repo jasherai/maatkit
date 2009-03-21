@@ -472,8 +472,7 @@ sub calculate_statistical_metrics {
    my $cutoff = $n_vals >= 10 ? int ( $n_vals * 0.95 ) : $n_vals;
    $statistical_metrics->{cutoff} = $cutoff;
 
-   # Calculate the standard deviation, median, and max value of the 95th
-   # percentile of values.
+   # Calculate the standard deviation and median of all values.
    my $total_left = $n_vals;
    my $top_vals   = $n_vals - $cutoff; # vals > 95th
    my $sum_excl   = 0;
