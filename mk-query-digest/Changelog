@@ -1,5 +1,7 @@
 Changelog for mk-query-digest:
 
+   * Standard deviation was not for all values (issue 321).
+   * Attributes with mostly zero values caused an infinite loop (issue 321).
    * Very large INSERT or REPLACE VALUES() segfaulted (issue 322).
    * Empty Schema attribute was not handled properly (issue 323).
    * Connection options were not read from the [client] section (issue 249).
