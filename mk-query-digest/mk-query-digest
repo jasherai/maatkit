@@ -1792,7 +1792,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3216
+# EventAggregator package 3231
 # ###########################################################################
 package EventAggregator;
 
@@ -2117,70 +2117,44 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{cutoff} = $cutoff;
 
    my $total_left = $n_vals;
-   my $top_vals   = $n_vals - $cutoff;
-   my $bucket     = NUM_BUCK - 1; # 999
+   my $top_vals   = $n_vals - $cutoff; # vals > 95th
    my $sum_excl   = 0;
+   my $sum        = 0;
+   my $sumsq      = 0;
+   my $mid        = int($n_vals / 2);
+   my $median     = 0;
+   my $prev       = NUM_BUCK-1; # Used for getting median when $cutoff is odd
+   my $bucket_95  = 0; # top bucket in 95th
 
-   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals,
-      'cutoff:', $cutoff);
+   MKDEBUG && _d('total vals:', $total_left, 'top vals:', $top_vals, 'mid:', $mid);
 
-   while ( $bucket-- >= 0 && $top_vals ) {
-      if ( $vals->[$bucket] ) {
-         if ( $vals->[$bucket] <= $top_vals )  {
-            $top_vals   -= $vals->[$bucket];
-            $total_left -= $vals->[$bucket];
-            $sum_excl   += $buck_vals[$bucket] * $vals->[$bucket];
-         }
-         else {
-            $total_left      -= $top_vals;
-            $vals->[$bucket] -= $top_vals;
-            $sum_excl        += $buck_vals[$bucket] * $top_vals;
-            $top_vals         = 0;
-         }
-      }
-   }
-
-   MKDEBUG && _d('total left:', $total_left, 'bucket:', $bucket,
-      'sum excl', $sum_excl);
-
-   return $statistical_metrics if $bucket <= 0;
-
-   if ( !$vals->[$bucket] ) {
-      while ( --$bucket >= 0 ) {
-         last if $vals->[$bucket];
-      }
-   }
-
-   return $statistical_metrics if $bucket <= 0;
-
-   my $bucket_95 = $bucket;
-   MKDEBUG && _d('95th bucket:', $bucket_95, 'bucket:', $bucket);
-
-   my $sum    = $buck_vals[$bucket_95] * $vals->[$bucket_95];
-   my $sumsq  = $sum ** 2;
-   my $mid    = int($cutoff / 2);
-   my $median = 0;
-   my $prev   = $bucket_95; # Used for getting median when $cutoff is odd
-
-   while ( $bucket-- >= 0 ) {
+   BUCKET:
+   for my $bucket ( reverse 0..(NUM_BUCK-1) ) {
       my $val = $vals->[$bucket];
-      if ( $val ) {
-         $total_left -= $val;
-         if ( !$median && $total_left <= $mid ) {
-            $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
-                    : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
-         }
-         $sum        += $buck_vals[$bucket] * $val;
-         $sumsq      += ($buck_vals[$bucket] ** 2 ) * $val;
-         $prev       =  $bucket;
+      next BUCKET unless $val; 
+
+      $total_left -= $val;
+      $sum_excl   += $val;
+      $bucket_95   = $bucket if !$bucket_95 && $sum_excl > $top_vals;
+
+      if ( !$median && $total_left <= $mid ) {
+         $median = (($cutoff % 2) || ($val > 1)) ? $buck_vals[$bucket]
+                 : ($buck_vals[$bucket] + $buck_vals[$prev]) / 2;
       }
+
+      $sum    += $val * $buck_vals[$bucket];
+      $sumsq  += $val * ($buck_vals[$bucket]**2);
+      $prev   =  $bucket;
    }
 
-   my $stddev   = sqrt (($sumsq - (($sum**2) / $cutoff)) / ($cutoff -1 || 1));
+   my $stddev   = sqrt (($sumsq - (($sum**2) / $n_vals)) / $n_vals);
    my $maxstdev = (($args->{max} || 0) - ($args->{min} || 0)) / 2;
    $stddev      = $stddev > $maxstdev ? $maxstdev : $stddev;
 
-   MKDEBUG && _d('95 cutoff', $cutoff, 'sum', $sum, 'sumsq', $sumsq, 'stddev', $stddev);
+   MKDEBUG && _d('sum:', $sum, 'sumsq:', $sumsq, 'stddev:', $stddev,
+      'median:', $median, 'prev bucket:', $prev,
+      'total left:', $total_left, 'sum excl', $sum_excl,
+      'bucket 95:', $bucket_95, $buck_vals[$bucket_95]);
 
    $statistical_metrics->{stddev} = $stddev;
    $statistical_metrics->{pct_95} = $buck_vals[$bucket_95];
