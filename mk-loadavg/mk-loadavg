@@ -1047,7 +1047,7 @@ $opt_parser->usage_or_errors(%opts);
 # First things first: if --stop was given, create the sentinel file.
 # ############################################################################
 if ( $opts{stop} ) {
-   MKDEBUG && _d("Creating sentinel file $opts{sentinel}");
+   MKDEBUG && _d("Creating sentinel file", $opts{sentinel});
    my $file = IO::File->new($opts{sentinel}, ">>")
       or die "Cannot open $opts{sentinel}: $OS_ERROR\n";
    print $file "Remove this file to permit mk-loadavg to run\n"
@@ -1066,7 +1066,7 @@ if ( $opts{stop} ) {
       # continue.
       MKDEBUG && _d("Waiting for other instances to quit");
       sleep($opts{M});
-      MKDEBUG && _d("Unlinking $opts{sentinel}");
+      MKDEBUG && _d("Unlinking", $opts{sentinel});
       unlink $opts{sentinel}
          or die "Cannot unlink $opts{sentinel}: $OS_ERROR";
    }
@@ -1127,7 +1127,7 @@ my %info_subroutines = (
 
 sub watch_server {
    my ( $dsn, $dbh ) = @_;
-   MKDEBUG && _d('Watching server ', $dp->as_string($dsn));
+   MKDEBUG && _d('Watching server', $dp->as_string($dsn));
 
    my $la = new Loadavg();
    my %metrics;
@@ -1161,7 +1161,7 @@ sub watch_server {
       sleep($opts{s});
    }
 
-   MKDEBUG && _d('All done with server ', $dp->as_string($dsn));
+   MKDEBUG && _d('All done with server', $dp->as_string($dsn));
 }
 
 sub pretty_print {
