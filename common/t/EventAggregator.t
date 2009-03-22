@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 53;
+use Test::More tests => 54;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -362,6 +362,24 @@ is_deeply(
       pct_95 => '0.000682',
    },
    'Got simple hash of metrics from metrics()',
+);
+
+is_deeply(
+   $ea->metrics(
+      where => 'foofoofoo',
+      attrib => 'doesnotexist',
+   ),
+   {  pct    => 0,
+      sum    => undef,
+      cnt    => undef,
+      min    => undef,
+      max    => undef,
+      avg    => 0,
+      median => 0,
+      stddev => 0,
+      pct_95 => 0,
+   },
+   'It does not crash on metrics()',
 );
 
 # #############################################################################

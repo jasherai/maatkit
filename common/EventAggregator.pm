@@ -544,11 +544,11 @@ sub metrics {
 
    return {
       cnt    => $store->{cnt},
-      pct    => $global_cnt ? $store->{cnt} / $global_cnt : 0,
+      pct    => $global_cnt && $store->{cnt} ? $store->{cnt} / $global_cnt : 0,
       sum    => $store->{sum},
       min    => $store->{min},
       max    => $store->{max},
-      avg    => $store->{sum} / $store->{cnt},
+      avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
       median => $metrics->{median},
       pct_95 => $metrics->{pct_95},
       stddev => $metrics->{stddev},
