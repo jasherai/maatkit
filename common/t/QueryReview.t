@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 4;
+use Test::More tests => 5;
 use English qw(-no_match_vars);
 
 require '../DSNParser.pm';
@@ -23,12 +23,15 @@ require '../MySQLDump.pm';
 require '../TableParser.pm';
 require '../Quoter.pm';
 require '../LogParser.pm';
+require '../OptionParser.pm';
 my $qr = new QueryRewriter();
 my $lp = new LogParser;
 my $q  = new Quoter();
 my $tp = new TableParser();
 my $du = new MySQLDump();
-my $tbl_struct = $tp->parse($du->dump($dbh, $q, 'test', 'query_review', 'table'));
+my $opt_parser = new OptionParser();
+my $tbl_struct = $tp->parse(
+   $du->get_create_table($dbh, $q, 'test', 'query_review'));
 
 my $qv = new QueryReview(
    dbh        => $dbh,
@@ -115,4 +118,86 @@ is_deeply([$qv->review_cols],
    [qw(first_seen last_seen reviewed_by reviewed_on comments)],
    'review columns');
 
-# $sb->wipe_clean($dbh);
+# ##############################################################################
+# Test review history stuff
+# ##############################################################################
+my $pat = $opt_parser->read_para_after('../../mk-query-digest/mk-query-digest',
+   qr/MAGIC_history_cols/);
+$pat =~ s/\s+//g;
+my $create_table = $opt_parser->read_para_after(
+   '../../mk-query-digest/mk-query-digest', qr/MAGIC_create_review_history/);
+$create_table =~ s/query_review_history/test.query_review_history/;
+$dbh->do($create_table);
+my $hist_struct = $tp->parse(
+   $du->get_create_table($dbh, $q, 'test', 'query_review_history'));
+
+$qv->set_history_options(
+   table      => 'test.query_review_history',
+   dbh        => $dbh,
+   quoter     => $q,
+   tbl_struct => $hist_struct,
+   col_pat    => qr/^(.*?)_($pat)$/,
+);
+
+$qv->set_review_history(
+   'foo',
+   'foo sample',
+   Query_time => {
+      pct    => 1/3,
+      sum    => '0.000682',
+      cnt    => 1,
+      min    => '0.000682',
+      max    => '0.000682',
+      avg    => '0.000682',
+      median => '0.000682',
+      stddev => 0,
+      pct_95 => '0.000682',
+   },
+   ts => {
+      min => '2009-01-01 12:39:12',
+      max => '2009-01-01 13:19:12',
+      cnt => 1,
+   },
+);
+
+$res = $dbh->selectall_arrayref(
+   'SELECT * FROM test.query_review_history',
+   { Slice => {} });
+is_deeply(
+   $res,
+   [  {  checksum          => '17145033699835028696',
+         sample            => 'foo sample',
+         ts_min            => '2009-01-01 12:39:12',
+         ts_max            => '2009-01-01 13:19:12',
+         ts_cnt            => 1,
+         Query_time_sum    => '0.000682',
+         Query_time_min    => '0.000682',
+         Query_time_max    => '0.000682',
+         Query_time_median => '0.000682',
+         Query_time_stddev => 0,
+         Query_time_pct_95 => '0.000682',
+         Lock_time_sum        => undef,
+         Lock_time_min        => undef,
+         Lock_time_max        => undef,
+         Lock_time_pct_95     => undef,
+         Lock_time_stddev     => undef,
+         Lock_time_median     => undef,
+         Rows_sent_sum        => undef,
+         Rows_sent_min        => undef,
+         Rows_sent_max        => undef,
+         Rows_sent_pct_95     => undef,
+         Rows_sent_stddev     => undef,
+         Rows_sent_median     => undef,
+         Rows_examined_sum    => undef,
+         Rows_examined_min    => undef,
+         Rows_examined_max    => undef,
+         Rows_examined_pct_95 => undef,
+         Rows_examined_stddev => undef,
+         Rows_examined_median => undef,
+      },
+   ],
+   'Review history information is in the DB',
+);
+
+
+$sb->wipe_clean($dbh);

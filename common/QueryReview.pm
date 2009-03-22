@@ -102,8 +102,52 @@ sub new {
       insert_sth  => $insert_sth,
       select_sth  => $select_sth,
       tbl_struct  => $args{tbl_struct},
+      quoter      => $args{quoter},
    };
    return bless $self, $class;
+}
+
+# Tell QueryReview object to also prepare to save values in the review history
+# table.
+sub set_history_options {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(table dbh tbl_struct col_pat) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   # Pick out columns, attributes and metrics that need to be stored in the
+   # table.
+   my @cols;
+   my @metrics;
+   foreach my $col ( @{$args{tbl_struct}->{cols}} ) {
+      my ( $attr, $metric ) = $col =~ m/$args{col_pat}/;
+      next unless $attr && $metric;
+      push @cols, $col;
+      push @metrics, [$attr, $metric];
+   }
+
+   my $sql = "REPLACE INTO $args{table}("
+      . join(',', map { $self->{quoter}->quote($_) } ('checksum', 'sample', @cols))
+      . ') VALUES (CONV(?, 16, 10), ?, '
+      . join(', ', map { '?' } @cols)
+      . ')';
+   MKDEBUG && _d($sql);
+
+   $self->{history_sth}     = $args{dbh}->prepare($sql);
+   $self->{history_cols}    = \@cols;
+   $self->{history_metrics} = \@metrics;
+}
+
+# Save review history for a class of queries.  The incoming data is a bunch
+# of hashes.  Each top-level key is an attribute name, and each second-level key
+# is a metric name.  Look at the test for more examples.
+sub set_review_history {
+   my ( $self, $id, $sample, %data ) = @_;
+   %data = map { lc $_ => $data{$_} } keys %data; # columns are lowercased
+   $self->{history_sth}->execute(
+      make_checksum($id),
+      $sample,
+      map { $data{$_->[0]}->{$_->[1]} } @{$self->{history_metrics}});
 }
 
 # Fetch information from the database about a query that's been reviewed.
