@@ -1185,8 +1185,8 @@ while (                       # Quit if:
 
       if ( $pos ) {
          my $position = $positions[$pos];
-         MKDEBUG && _d('Chosen position: ', ts($position->[$TS]),
-               " $position->[$FILE]/$position->[$POS]");
+         MKDEBUG && _d('Chosen position:', ts($position->[$TS]),
+               $position->[$FILE], '/', $position->[$POS]);
       }
       else {
          MKDEBUG && _d('No position found');

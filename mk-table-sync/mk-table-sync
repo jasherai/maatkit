@@ -5092,7 +5092,7 @@ sub sync_a_table {
       my $no_auto_val_sql = '/*!40101 SET @@SQL_MODE := CONCAT(@@SQL_MODE, '
          . '",NO_AUTO_VALUE_ON_ZERO")*/';
       foreach my $dbh ( $args{src}->{dbh}, $args{dst}->{dbh}, $args{src}->{misc_dbh} ) {
-         MKDEBUG && _d("$dbh: $no_auto_val_sql");
+         MKDEBUG && _d($dbh, $no_auto_val_sql);
          $dbh->do($no_auto_val_sql);
       }
 
@@ -5215,17 +5215,17 @@ sub get_cxn {
    my $sql;
    if ( $opts{skipbinlog} ) {
       $sql = "/*!32316 SET SQL_LOG_BIN=0 */";
-      MKDEBUG && _d("$dbh: $sql");
+      MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
    if ( $opts{skipuniquekey} ) {
       $sql = "/*!40014 SET UNIQUE_CHECKS=0 */";
-      MKDEBUG && _d("$dbh: $sql");
+      MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
    if ( $opts{K} ) {
       $sql = "/*!40014 SET FOREIGN_KEY_CHECKS=0 */";
-      MKDEBUG && _d("$dbh: $sql");
+      MKDEBUG && _d($dbh, $sql);
       $dbh->do($sql);
    }
    return $dbh;
@@ -5284,7 +5284,7 @@ sub tbl_permitted {
    return 1 if $opts{t}->{$tbl};
 
    # Else, table is not permitted.
-   MKDEBUG && _d("Table not permitted by --tables: $db.$tbl");
+   MKDEBUG && _d("Table not permitted by --tables:", $db, $tbl);
    return 0;
 }
 

@@ -1762,7 +1762,7 @@ my $have_subqueries = $vp->version_ge($dbh, '4.1.0');
 my $now       = time();
 my $end       = $now + ( $opts{t} || 0 );    # When we should exit
 my ($datadir) = ($dbh->selectrow_array('show variables like "datadir"'))[1];
-MKDEBUG && _d("Data directory ", $datadir);
+MKDEBUG && _d("Data directory", $datadir);
 
 my %stats;
 my %slave;
@@ -1800,7 +1800,7 @@ eval {
             $stats{events}++;
             $pos  = $event->{offset} || $pos;
             $next = max($next, $pos + ($event->{end} || 0));
-            MKDEBUG && _d("i=$i pos=$pos next=$next slave=$slave{pos}");
+            MKDEBUG && _d("i:", $i, "pos:", $pos, "next:", $next, "slave:", $slave{pos});
             $i++;
 
             if ( $opts{progress} && $stats{events} % $opts{progress} == 0 ) {
@@ -1815,7 +1815,7 @@ eval {
             ) {
                $stats{load_data_infile}++;
                if ( !unlink($file) ) {
-                  MKDEBUG && _d("Could not unlink ", $file);
+                  MKDEBUG && _d("Could not unlink", $file);
                   $stats{could_not_unlink}++;
                }
                next EVENT;
@@ -1844,12 +1844,12 @@ eval {
                # will be a problem.
                if ( wait_for_master(\%slave, $pos - $opts{w} + 1) > 0 ) {
                   if (too_far_ahead($pos)) {
-                     MKDEBUG && _d("Event $pos too far ahead of $slave{pos}");
+                     MKDEBUG && _d("Event", $pos, "too far ahead of", $slave{pos});
                      $stats{too_far_ahead}++;
                   }
                   elsif (too_close_to_io($pos)) {
-                     MKDEBUG && _d("Event $pos too close to I/O thread "
-                                   . "($slave{pos} + $slave{lag})");
+                     MKDEBUG && _d("Event", $pos, "too close to I/O thread",
+                                   "(", $slave{pos}, '+', $slave{lag}, ')');
                      $stats{too_close_to_io_thread}++;
                   }
                }
@@ -1892,7 +1892,7 @@ eval {
             # to that value, skip it.
             if ( (my ($newts) = $event->{arg} =~ m/SET TIMESTAMP=(\d+)/) ) {
                if ( $newts == $ts ) {
-                  MKDEBUG && _d('Already saw timestamp ', $newts);
+                  MKDEBUG && _d('Already saw timestamp', $newts);
                   $stats{same_timestamp}++;
                   next EVENT;
                }
@@ -1931,7 +1931,7 @@ eval {
                         $stats{query_error}++;
                         if ( ($opts{errors} == 2) || MKDEBUG ) {
                            _d($EVAL_ERROR);
-                           _d("SQL was: ", $event->{arg});
+                           _d("SQL was:", $event->{arg});
                         }
                         elsif ( $opts{errors} == 1 ) {
                            $query_errors{$fingerprint}++;
@@ -1948,7 +1948,7 @@ eval {
                # specified limit, so we skip it and just wait for the master
                # to pass it by.
                else {
-                  MKDEBUG && _d("Avg time $avg too long for ", $fingerprint);
+                  MKDEBUG && _d("Avg time", $avg, "too long for", $fingerprint);
                   $stats{query_too_long}++;
                   wait_for_master(\%slave, $pos + 1);
                   %slave    = get_status($dbh);
@@ -1976,7 +1976,7 @@ eval {
             chomp $line;
             MKDEBUG && _d($line);
             if ( my ( $proc ) = $line =~ m/(\d+)/ ) {
-               MKDEBUG && _d("Will kill process ", $proc);
+               MKDEBUG && _d("Will kill process", $proc);
                kill(15, $proc);
             }
          }
@@ -1986,7 +1986,7 @@ eval {
                warn "Error closing mysqlbinlog pipe: $OS_ERROR\n";
             }
             else {
-               MKDEBUG && _d("Exit status $CHILD_ERROR from mysqlbinlog");
+               MKDEBUG && _d("Exit status", $CHILD_ERROR, "from mysqlbinlog");
             }
          }
       }
@@ -2065,7 +2065,7 @@ sub oktorun {
 sub not_far_enough_ahead {
    my ( $pos ) = @_;
    if ( $pos < $slave{pos} + $opts{o} ) {
-      MKDEBUG && _d("$pos is not $opts{o} ahead of $slave{pos}");
+      MKDEBUG && _d($pos, "is not", $opts{o}, "ahead of", $slave{pos});
       $stats{not_far_enough_ahead}++;
       return 1;
    }
@@ -2092,8 +2092,7 @@ sub wait_for_master {
    MKDEBUG && _d($sql);
    my $start = gettimeofday();
    my ($events) = $dbh->selectrow_array($sql);
-   MKDEBUG && _d("Waited ", (gettimeofday - $start), " and got ",
-      (defined $events ? $events : 'NULL'));
+   MKDEBUG && _d("Waited", (gettimeofday - $start), "and got", $events);
    return $events;
 }
 
@@ -2102,7 +2101,7 @@ sub wait_for_master {
 # is huge, it will be weighted as 1/16th of its size.
 sub store_avg {
    my ( $query, $time ) = @_;
-   MKDEBUG && _d('Execution time: ', $query, ' ', $time);
+   MKDEBUG && _d('Execution time:', $query, $time);
    $query_stats{$query}->{samples} ||= [];
    my $samples = $query_stats{$query}->{samples};
    push @$samples, $time;
@@ -2112,7 +2111,7 @@ sub store_avg {
    $query_stats{$query}->{avg} = sum(@$samples) / $opts{querysampsize};
    $query_stats{$query}->{exec}++;
    $query_stats{$query}->{sum} += $time;
-   MKDEBUG && _d('Average time: ', $query_stats{$query}->{avg});
+   MKDEBUG && _d('Average time:', $query_stats{$query}->{avg});
 }
 
 sub have_seen_query {
@@ -2133,7 +2132,6 @@ sub get_status {
    if ( !$status || ! %$status ) {
       die "No output from SHOW SLAVE STATUS.\n";
    }
-   # MKDEBUG && _d(Dumper($status));
    my %status = (
       running => ($status->{slave_sql_running} || '') eq 'Yes',
       file    => $status->{relay_log_file},

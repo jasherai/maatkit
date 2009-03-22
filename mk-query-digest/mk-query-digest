@@ -3699,14 +3699,14 @@ my %ea;     # EventAggregators
          my $group_by_val = $event->{arg};
          return 0 unless defined $group_by_val;
          $event->{distill} = $qr->distill($group_by_val);
-         MKDEBUG && !$event->{distill} && _d("Cannot distill ", $event->{arg});
+         MKDEBUG && !$event->{distill} && _d("Cannot distill", $event->{arg});
          return $event;
       };
    }
 
    if ( $opts{filter} ) {
       my $code = "sub{ my(\$event) = shift; $opts{filter} && return \$event; };";
-      MKDEBUG && _d("--filter code: ", $code);
+      MKDEBUG && _d("--filter code:", $code);
       my $sub = eval $code or die;
       push @callbacks, $sub;
    }
@@ -4155,7 +4155,7 @@ sub print_explain {
       }
    };
    if ( MKDEBUG && $EVAL_ERROR ) {
-      _d("Problem explaining $query: $EVAL_ERROR");
+      _d("Problem explaining", $query, $EVAL_ERROR);
    }
 }
 
@@ -4171,16 +4171,17 @@ sub print_explain {
 sub find_role {
    my ( $opts, $dbh, $current, $read_only, $comment ) = @_;
    if ( !$dbh || !$dbh->ping ) {
-      MKDEBUG && _d("Getting a dbh from $current $comment");
+      MKDEBUG && _d("Getting a dbh from", $current, $comment);
       $dbh = $dp->get_dbh(
          $dp->get_cxn_params($opts->{$current}), {AutoCommit => 1});
    }
    if ( $opts->{mirror} ) {
       my ( $is_read_only ) = $dbh->selectrow_array('SELECT @@global.read_only');
-      MKDEBUG && _d("read_only on $current $comment: $is_read_only (want $read_only)");
+      MKDEBUG && _d("read_only on", $current, $comment, ':',
+                    $is_read_only, '(want', $read_only, ')');
       if ( $is_read_only != $read_only ) {
          $current = $current eq 'execute' ? 'processlist' : 'execute';
-         MKDEBUG && _d("read_only wrong $comment, getting a dbh from $current");
+         MKDEBUG && _d("read_only wrong", $comment, "getting a dbh from", $current);
          $dbh = $dp->get_dbh(
             $dp->get_cxn_params($opts->{$current}), {AutoCommit => 1});
       }

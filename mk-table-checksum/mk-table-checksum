@@ -3240,7 +3240,7 @@ if ( $checksum_table_data ) {
    ( $strat, $crc_wid, $crc_type, $func, $opt_slice )
       = @$strat_ref{ qw(strat crc_wid crc_type func opt_slice) };
 
-   MKDEBUG && _d("Checksum strat: ", Dumper($strat_ref));
+   MKDEBUG && _d("Checksum strat:", Dumper($strat_ref));
 
    # Verify that CONCAT_WS is compatible across all servers. On older versions
    # of MySQL it skips both empty strings and NULL; on newer just NULL.
@@ -3348,7 +3348,7 @@ sub get_all_tbls_info {
 
    foreach my $db ( $finder->find_databases($dbh) ) {
       foreach my $tbl ( $finder->find_tables($dbh, database => $db) ) {
-         MKDEBUG && _d("Examining $db.$tbl");
+         MKDEBUG && _d("Examining", $db, '.', $tbl);
          my $final_opts = get_final_opts($dbh, $db, $tbl);
          save_tbl_to_checksum($dbh, $db, $tbl, $final_opts);
       }
@@ -3453,8 +3453,8 @@ sub checksum_tables {
       eval {
          my $final_opts = $table->{final_opts};
          my $do_table = 1;
-         MKDEBUG && _d("Doing $database.$table->{table}");
-         MKDEBUG && _d("Table: ", Dumper($table));
+         MKDEBUG && _d("Doing", $database, '.', $table->{table});
+         MKDEBUG && _d("Table:", Dumper($table));
 
          # Clean out the replication table entry for this table.
          if ( $final_opts->{R} && !$final_opts->{explain} ) {
@@ -3479,8 +3479,8 @@ sub checksum_tables {
                   = $du->get_table_status($dbh, $q, $database, $table->{table});
                my $time = $stat->{update_time};
                if ( $time && $time lt $final_opts->{since} ) {
-                  MKDEBUG && _d("Skipping table because --since value ",
-                     "$final_opts->{since} is newer than $time");
+                  MKDEBUG && _d("Skipping table because --since value",
+                     $final_opts->{since}, "is newer than", $time);
                   $do_table = 0;
                   $table->{chunks} = [];
                }
@@ -3500,15 +3500,15 @@ sub checksum_tables {
                      ( $table->{column}, $final_opts->{sincecolumn} );
 
                if ( $sincecol ) {
-                  MKDEBUG && _d('Column for numerical --since: '
-                     . "$database.$table->{table}.$sincecol");
+                  MKDEBUG && _d('Column for numerical --since:',
+                     $database, '.', $table->{table}, '.', $sincecol);
                   # This ends up being an additional WHERE clause.
                   $table->{since} = $q->quote($sincecol)
                      . '>=' .  $q->quote_val($final_opts->{since});
                }
                else {
-                  MKDEBUG && _d('No column for numerical --since for '
-                     . "$database.$table->{table}");
+                  MKDEBUG && _d('No column for numerical --since for',
+                     $database, '.', $table->{table});
                }
             }
          }
@@ -3551,20 +3551,21 @@ sub checksum_tables {
          # See issues 121 and 122.
          if ( $final_opts->{savesince} && $savesince_sth ) {
             if ( is_temporal($final_opts->{since}) ) {
-               MKDEBUG && _d("Saving temporal --since value: ",
-                  "current timestamp for $database.$table->{table}");
+               MKDEBUG && _d(
+                  "Saving temporal --since value: current timestamp for",
+                  $database, '.', $table->{table});
                $savesince_sth->execute(undef,
                   $database, $table->{table});
             }
             elsif ( defined $table->{maxval} ) {
-               MKDEBUG && _d("Saving numerical --since value: ",
-                  $table->{maxval}, " for $database.$table->{table}");
+               MKDEBUG && _d("Saving numerical --since value:",
+                  $table->{maxval}, "for", $database, '.', $table->{table});
                $savesince_sth->execute($table->{maxval},
                   $database, $table->{table});
             }
             else {
-               MKDEBUG && _d("Cannot save --since value: ",
-                  $table->{maxval}, " for $database.$table->{table}");
+               MKDEBUG && _d("Cannot save --since value:",
+                  $table->{maxval}, "for", $database, '.', $table->{table});
             }
          }
       };
@@ -3594,7 +3595,7 @@ sub checksum_chunks {
       if ( $lag_dbh ) {
          my $lag = $ms->get_slave_lag($lag_dbh);
          while ( !defined $lag || $lag > $final_opts->{maxlag} ) {
-            MKDEBUG && _d("Sleeping: slave lag is ", $lag);
+            MKDEBUG && _d("Sleeping: slave lag is", $lag);
             sleep($opts{'check-interval'});
             $lag = $ms->get_slave_lag($lag_dbh);
          }
@@ -3617,7 +3618,7 @@ sub checksum_chunks {
       }
 
       my $chunk_start_time = gettimeofday();
-      MKDEBUG && _d("Starting at $chunk_start_time");
+      MKDEBUG && _d("Starting at", $chunk_start_time);
 
       if ( $final_opts->{R} ) {
          # We're in --replicate mode.
@@ -3710,7 +3711,7 @@ sub checksum_chunks {
          # Wait for the children to exit.
          foreach my $host ( keys %children ) {
             my $pid = waitpid($children{$host}, 0);
-            MKDEBUG && _d("Child $pid exited with $CHILD_ERROR");
+            MKDEBUG && _d("Child", $pid, "exited with", $CHILD_ERROR);
             $exit_status ||= $CHILD_ERROR >> 8;
          }
          if ( ($final_opts->{k} && !$final_opts->{explain}) ) {
@@ -3721,17 +3722,17 @@ sub checksum_chunks {
       }
 
       my $chunk_stop_time = gettimeofday();
-      MKDEBUG && _d("Finished chunk at $chunk_stop_time");
+      MKDEBUG && _d("Finished chunk at", $chunk_stop_time);
 
       if ( $final_opts->{sleep} && !$final_opts->{explain} ) {
-         MKDEBUG && _d("Sleeping $final_opts->{sleep}");
+         MKDEBUG && _d("Sleeping", $final_opts->{sleep});
          sleep($final_opts->{sleep});
       }
       elsif ( $final_opts->{'sleep-coef'} && !$final_opts->{explain} ) {
          my $sleep_time =
             ($chunk_stop_time - $chunk_start_time)
             * $final_opts->{'sleep-coef'};
-         MKDEBUG && _d("Sleeping $sleep_time");
+         MKDEBUG && _d("Sleeping", $sleep_time);
          sleep($sleep_time);
       }
    } # End foreach CHUNK
@@ -3788,8 +3789,8 @@ sub print_inconsistent_tbls {
 sub save_inconsistent_tbls {
    my ( $dsn, $dbh, $level, $parent, $tbls ) = @_;
    foreach my $table ( @$tbls ) {
-      MKDEBUG && _d("Will recheck $table->{db}.$table->{tbl} "
-                    . "(chunk: $table->{boundaries})");
+      MKDEBUG && _d("Will recheck", $table->{db}, '.', $table->{tbl},
+                    "(chunk:", $table->{boundaries}, ')');
       my $final_opts = get_final_opts($dbh, $table->{db}, $table->{tbl});
       my $chunks     = [ $table->{boundaries} ];
       save_tbl_to_checksum(
@@ -3805,11 +3806,11 @@ sub eval_expr {
    my $result = $val;
    eval {
       ($result) = $dbh->selectrow_array("SELECT $val");
-      MKDEBUG && _d("--$name evaluates to: ", $result);
+      MKDEBUG && _d("option", $name, "evaluates to:", $result);
    };
    if ( $EVAL_ERROR && MKDEBUG ) {
       chomp $EVAL_ERROR;
-      _d("Error evaluating --$name: ", $EVAL_ERROR);
+      _d("Error evaluating option", $name, $EVAL_ERROR);
    }
    return $result;
 }
@@ -3963,7 +3964,7 @@ sub create_repl_table {
       $dbh->do($sql);
    };
    if ( $EVAL_ERROR ) {
-      MKDEBUG && _d("--createreplicate failed: $EVAL_ERROR");
+      MKDEBUG && _d("--createreplicate failed", $EVAL_ERROR);
       return 0;
    }
 
@@ -4013,7 +4014,7 @@ sub parse_resume_file {
    }
 
    close $fh;
-   MKDEBUG && _d("Already checksummed: " . Dumper($already_checksummed));
+   MKDEBUG && _d("Already checksummed:", Dumper($already_checksummed));
 
    return $already_checksummed;
 }
@@ -4021,7 +4022,7 @@ sub parse_resume_file {
 sub already_checksummed {
    my ( $d, $t, $c, $h ) = @_; # db, tbl, chunk num, host
    if ( exists $already_checksummed->{$d}->{$t}->{$c}->{$h} ) {
-      MKDEBUG && _d("Skipping chunk because of --resume: $d $t $c $h");
+      MKDEBUG && _d("Skipping chunk because of --resume:", $d, $t, $c, $h);
       return 1;
    }
    return 0;
@@ -4029,7 +4030,7 @@ sub already_checksummed {
 
 sub do_tbl_replicate {
    my ( $host, $query, $info, $chunk_num, $hdr, $explain, $final_opts ) = @_;
-   MKDEBUG && _d("do_tbl_replicate for $info->{table}");
+   MKDEBUG && _d("do_tbl_replicate for", $info->{table});
    my $dbh = $main_dbh;
    $dbh->do("USE " . $q->quote($info->{database}) );
    my $cnt = 'NULL';
@@ -4046,7 +4047,7 @@ sub do_tbl_replicate {
    );
 
    if ( MKDEBUG && $chunk_num == 0 ) {
-      _d("SQL for inject chunk 0: $sql");
+      _d("SQL for inject chunk 0:", $sql);
    }
 
    my $where = $info->{chunks}->[$chunk_num];
@@ -4072,7 +4073,7 @@ sub do_tbl_replicate {
    foreach my $warning ( @$warnings ) {
       if ( $warning->{Message} =~ m/Data truncated for column 'boundaries'/ ) {
          _d("Warning: WHERE clause too large for boundaries column; ",
-            "mk-table-sync may fail (value: $where)");
+            "mk-table-sync may fail; value:", $where);
       }
       else {
          die Dumper($warning);
@@ -4104,7 +4105,7 @@ sub do_tbl_replicate {
 
 sub do_tbl {
    my ($host, $query, $info, $chunk_num, $is_master, $hdr, $explain, $final_opts) = @_;
-   MKDEBUG && _d("do_tbl for $info->{table}");
+   MKDEBUG && _d("do_tbl for", $info->{table});
    my $dbh = $host->{dbh};
    $dbh->do("USE " . $q->quote($info->{database}) );
    my $cnt = 'NULL';
@@ -4134,7 +4135,8 @@ sub do_tbl {
                                       $info->{table},
                                       $q);
       if ( !$have_table && MKDEBUG ) {
-         MKDEBUG && _d("$info->{database}.$info->{table} does not exist on slave $host->{h}:$host->{P}");
+         MKDEBUG && _d($info->{database}, '.', $info->{table},
+            "does not exist on slave", $host->{h}, $host->{P});
       }
    }
 
@@ -4204,7 +4206,7 @@ sub get_cxn {
 
 sub do_var_crc {
    my ( $dbh, $query, $info, $chunk_num, $explain, $final_opts ) = @_;
-   MKDEBUG && _d("do_var_crc for $info->{table}");
+   MKDEBUG && _d("do_var_crc for", $info->{table});
 
    my $sql = $ch->inject_chunks(
       query      => $query,
@@ -4217,7 +4219,7 @@ sub do_var_crc {
    );
 
    if ( MKDEBUG && $chunk_num == 0 ) {
-      _d("SQL for chunk 0: $sql");
+      _d("SQL for chunk 0:", $sql);
    }
 
    if ( $final_opts->{explain} ) {
@@ -4238,7 +4240,7 @@ sub do_var_crc {
 
 sub do_checksum {
    my ( $dbh, $info, $query, $explain, $final_opts ) = @_;
-   MKDEBUG && _d("do_checksum for $info->{table}");
+   MKDEBUG && _d("do_checksum for", $info->{table});
    if ( $final_opts->{explain} ) {
       printf($explain, @{$info}{qw(database table)}, $query)
          or die "Cannot print: $OS_ERROR";
@@ -4254,7 +4256,7 @@ sub do_checksum {
 
 sub do_count {
    my ( $dbh, $info, $chunk_num, $explain, $final_opts ) = @_;
-   MKDEBUG && _d("do_count for $info->{table}");
+   MKDEBUG && _d("do_count for", $info->{table});
    my $sql = "SELECT COUNT(*) FROM "
       . $q->quote(@{$info}{qw(database table)});
    if ( $final_opts->{W} || $final_opts->{since} ) {

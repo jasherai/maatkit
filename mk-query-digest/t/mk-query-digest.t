@@ -387,14 +387,14 @@ SKIP: {
    # # main:3619 6897 read_only on processlist for --processlist: 0 (want 0)
    # # main:3619 6897 read_only on processlist for --processlist: 0 (want 0)
    # # main:3619 6897 read_only on execute for --execute: 0 (want 1)
-   # # main:3622 6897 read_only wrong for --execute, getting a dbh from processlist
+   # # main:3622 6897 read_only wrong for --execute getting a dbh from processlist
    # # main:3619 6897 read_only on processlist for --processlist: 1 (want 0)
-   # # main:3622 6897 read_only wrong for --processlist, getting a dbh from execute
+   # # main:3622 6897 read_only wrong for --processlist getting a dbh from execute
    # # main:3619 6897 read_only on processlist for --execute: 1 (want 1)
    # # main:3619 6897 read_only on execute for --processlist: 0 (want 0)
-   like($output, qr/wrong for --execute, getting a dbh from processlist/,
+   like($output, qr/wrong for --execute getting a dbh from processlist/,
        'switching --processlist works');
-   like($output, qr/wrong for --processlist, getting a dbh from execute/,
+   like($output, qr/wrong for --processlist getting a dbh from execute/,
        'switching --execute works');
 
    $sb->wipe_clean($dbh1);

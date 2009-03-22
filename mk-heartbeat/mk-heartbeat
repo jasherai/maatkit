@@ -1616,7 +1616,7 @@ $opt_parser->usage_or_errors(%opts);
 # First things first: if --stop was given, create the sentinel file.
 # ############################################################################
 if ( $opts{stop} ) {
-   MKDEBUG && _d("Creating sentinel file $opts{sentinel}");
+   MKDEBUG && _d("Creating sentinel file", $opts{sentinel});
    my $file = IO::File->new($opts{sentinel}, ">>")
       or die "Cannot open $opts{sentinel}: $OS_ERROR\n";
    print $file "Remove this file to permit mk-heartbeat to run\n"
@@ -1636,7 +1636,7 @@ if ( $opts{stop} ) {
       # continue.
       MKDEBUG && _d("Waiting for other instances to quit");
       sleep($opts{i});
-      MKDEBUG && _d("Unlinking $opts{sentinel}");
+      MKDEBUG && _d("Unlinking", $opts{sentinel});
       unlink $opts{sentinel}
          or die "Cannot unlink $opts{sentinel}: $OS_ERROR";
    }
@@ -1660,8 +1660,8 @@ my $select_sql = "SELECT "
                   : 'UNIX_TIMESTAMP() - UNIX_TIMESTAMP(ts) AS delay/*!50038, @@hostname AS host*/' )
                . " FROM $opts{t} WHERE id = 1";
 
-MKDEBUG && _d("UPDATE SQL: $update_sql");
-MKDEBUG && _d("SELECT SQL: $select_sql");
+MKDEBUG && _d("UPDATE SQL:", $update_sql);
+MKDEBUG && _d("SELECT SQL:", $select_sql);
 
 my $dp    = new DSNParser;
 $dp->prop('dbidriver', $opts{dbidriver});
@@ -1705,7 +1705,7 @@ my $format = "%4ds [ " . join(", ", map { "%5.2fs" } @{$opts{frames}}) . " ]\n";
 
 my $now = time();
 my $end = $now + ($opts{m} || 0);    # When to exit
-MKDEBUG && _d("Will exit at $end");
+MKDEBUG && _d("Will exit at", $end);
 
 # --monitor and --update run in a loop, but --check only checks once and
 # exits.
@@ -1724,7 +1724,7 @@ while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
          # --update happens at the second boundary, but --monitor and --check
          # are delayed to avoid spurious results.
          + ($opts{update} ? 0 : $opts{k} ));
-      MKDEBUG && _d('Woke up at ' . gettimeofday());
+      MKDEBUG && _d('Woke up at', gettimeofday());
 
       # Connect or reconnect if necessary.
       if ( !$dbh->ping ) {
@@ -1739,7 +1739,7 @@ while ( ( !$opts{m} || $now < $end ) && !-f $opts{sentinel} ) {
          $sth->execute;
          MKDEBUG && _d($sth->{Statement});
          my ( $delay ) = $sth->fetchrow_array;
-         MKDEBUG && _d("Found delay of $delay");
+         MKDEBUG && _d("Found delay of", $delay);
          unshift @samples, $delay;
          pop @samples if @samples > $limit;
 
@@ -1815,14 +1815,14 @@ sub check_delay {
    # sleep between EACH server checked.
    my @now = gettimeofday();
    usleep((($opts{i} - ($now[0] % $opts{i})) * 1_000_000) - $now[1] + $opts{k});
-   MKDEBUG && _d('Woke up at ' . gettimeofday());
+   MKDEBUG && _d('Woke up at', gettimeofday());
 
    foreach my $thing ( @sths ) {
       my ( $host, $sth ) = @$thing;
       $sth->execute();
       my ( $delay, $hostname ) = $sth->fetchrow_array;
       $host ||= $hostname || '';
-      MKDEBUG && _d("Found delay of $delay on $host");
+      MKDEBUG && _d("Found delay of", $delay, "on", $host);
 
       if ( $opts{recurse} && $host  ) {
          # Must print not only the delay, but the server's hostname if

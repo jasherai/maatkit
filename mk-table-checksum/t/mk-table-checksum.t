@@ -185,7 +185,7 @@ diag(`$create_missing_slave_tbl_cmd`);
 $output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -t test.only_on_master 2>&1`;
 like($output, qr/MyISAM\s+NULL\s+0/, 'Table on master checksummed');
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed');
-like($output, qr/test.only_on_master does not exist on slave 127.0.0.1:12346/, 'Debug reports missing slave table');
+like($output, qr/test \. only_on_master does not exist on slave 127.0.0.1 12346/, 'Debug reports missing slave table');
 
 # This var is used later in another test.
 my $rm_missing_slave_tbl_cmd
@@ -367,7 +367,7 @@ diag(`$create_missing_slave_tbl_cmd`);
 $output = `MKDEBUG=1 perl ../mk-table-checksum h=127.0.0.1,P=12345 P=12346 -t test.only_on_master --schema 2>&1`;
 like($output, qr/MyISAM\s+NULL\s+23678842/, 'Table on master checksummed with --schema');
 like($output, qr/MyISAM\s+NULL\s+NULL/, 'Missing table on slave checksummed with --schema');
-like($output, qr/test.only_on_master does not exist on slave 127.0.0.1:12346/, 'Debug reports missing slave table with --schema');
+like($output, qr/test \. only_on_master does not exist on slave 127.0.0.1 12346/, 'Debug reports missing slave table with --schema');
 
 diag(`$rm_missing_slave_tbl_cmd`);
 

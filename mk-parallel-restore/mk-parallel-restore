@@ -1433,7 +1433,7 @@ while ( @tables_to_do || %kids ) {
       }
       else {                     # I'm the child
          $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
-         MKDEBUG && _d("PID $PID got ", Dumper($todo));
+         MKDEBUG && _d("PID", $PID, "got", Dumper($todo));
          my $exit_status = 0;
          $exit_status = do_table(
             @{$todo}{qw(D N)},
@@ -1579,7 +1579,7 @@ sub do_table {
          `gzip $set_bin_log_file`;
          $set_bin_log_file .= '.gz';
       }
-      MKDEBUG && _d("set bin log file: $set_bin_log_file");
+      MKDEBUG && _d("set bin log file:", $set_bin_log_file);
    }
 
    foreach my $file ( @files ) {
@@ -1733,7 +1733,7 @@ sub do_sql_file {
          unless $args{db} && $args{tbl};
    }
 
-   MKDEBUG && _d("Doing $args{type} in $args{file}");
+   MKDEBUG && _d("Doing", $args{type}, "in", $args{file});
 
    my $dbh = $args{dbh}; # brevity
 
@@ -1791,7 +1791,7 @@ sub skip_finished_chunks {
    my $chunks_ref = $chunks_for_table{$db}->{$tbl};
    my $db_tbl = $q->quote($db, $tbl);
 
-   MKDEBUG && _d("Checking if restore of $db_tbl can be resumed");
+   MKDEBUG && _d("Checking if restore of", $db_tbl, "can be resumed");
 
    if ( !defined $chunks_ref ) {
       MKDEBUG && _d('Cannot resume restore: no chunks file');
@@ -1823,7 +1823,7 @@ sub skip_finished_chunks {
       }
    }
    elsif ( MKDEBUG ) {
-      _d("Restoring from chunk 0 because table $db_tbl does not exist");
+      _d("Restoring from chunk 0 because table", $db_tbl, "does not exist");
    }
 
    my $bytes_done = 0;
@@ -1844,9 +1844,8 @@ sub skip_finished_chunks {
       }
    }
 
-   MKDEBUG && _d("Resuming restore of $db_tbl from chunk "
-                 . $first_missing_chunk
-                 . " ($bytes_done bytes already done)");
+   MKDEBUG && _d("Resuming restore of", $db_tbl, "from chunk",
+              $first_missing_chunk, "with", $bytes_done, "bytes already done");
 
    return $bytes_done;
 }

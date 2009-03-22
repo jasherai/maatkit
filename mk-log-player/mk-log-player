@@ -2600,7 +2600,7 @@ foreach my $session_file ( split ',', $opts{p} ) {
    # The session "file" might actually be a dir, in which case we
    # read ALL files in that dir.
    if ( -d $session_file ) {
-      MKDEBUG && _d("Reading all session log files in $session_file");
+      MKDEBUG && _d("Reading all session log files in", $session_file);
       opendir my $dir, $session_file
          or die "Cannot open directory $session_file: $OS_ERROR";
       push @session_files,
@@ -2614,7 +2614,7 @@ foreach my $session_file ( split ',', $opts{p} ) {
    }
 }
 
-MKDEBUG && _d('Session files: ' . Dumper(\@session_files));
+MKDEBUG && _d('Session files:', @session_files);
 
 if ( @session_files == 0 ) {
    die 'No valid session files';
@@ -2674,9 +2674,9 @@ do {
       }
       else {                     # I'm the child.
          $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
-         MKDEBUG && _d("Child PID $PID got $session_file ($session_n)");
+         MKDEBUG && _d("Child PID", $PID, "got", $session_file, $session_n);
          play_session($session_n, $session_itr);
-         MKDEBUG && _d("Child PID $PID done");
+         MKDEBUG && _d("Child PID", $PID, "done");
          exit;
       }
    } 
@@ -2687,7 +2687,7 @@ do {
       delete $children{$pid};
       delete $exited_children{$pid};
       $reaped = 1;
-      MKDEBUG && _d("Reaped child PID $pid");
+      MKDEBUG && _d("Reaped child PID", $pid);
    }
 
    if ( keys %children && !$reaped ) {
@@ -2697,7 +2697,7 @@ do {
       MKDEBUG && _d("Sleeping to wait for children");
       sleep(1);
    }
-   MKDEBUG && _d(scalar keys %children, ' children are still working');
+   MKDEBUG && _d(scalar keys %children, 'children are still working');
 
 } while ( $session_itr || keys %children );
 
@@ -2727,12 +2727,12 @@ sub wait_for_server {
 
 sub get_next_session_itr {
    if ( $done_reading_session_file ) {
-      MKDEBUG && _d("Done reading session file "
-         . ($session_file || '(opening first session file)'));
+      MKDEBUG && _d("Done reading session file",
+         ($session_file || '(opening first session file)'));
       close $session_fh if defined $session_fh;
       $session_file = shift @session_files;
       return unless defined $session_file;
-      MKDEBUG && _d("Opened session file $session_file");
+      MKDEBUG && _d("Opened session file", $session_file);
 
       if ( $session_file eq '-' ) {
          $session_fh = *STDIN;
@@ -2775,14 +2775,14 @@ sub get_next_session_itr {
       local $INPUT_RECORD_SEPARATOR = "\n-- END SESSION\n\n";
       my $session = <$session_fh>;
       if ( $session ) {
-         MKDEBUG && _d("Read a session in $session_file");
+         MKDEBUG && _d("Read a session in", $session_file);
          $done_reading_session_file = 0;
          chomp $session;
          my @queries = split("\n\n", $session);
          return sub { return shift @queries; };
       }
       else {
-         MKDEBUG && _d("No more sessions in $session_file");
+         MKDEBUG && _d("No more sessions in", $session_file);
          $done_reading_session_file = 1;
          return get_next_session_itr();
       }
@@ -2807,7 +2807,7 @@ sub play_session {
    while ( defined (my $query = $get_next_query->()) ) {
 
       if ( $opts{onlyselect} && $query !~ m/^(?:SELECT|USE) /i ) {
-         MKDEBUG && _d("Skipping query for --onlyselect: $query");
+         MKDEBUG && _d("Skipping query for --onlyselect:", $query);
          next QUERY;
       }
 
@@ -2868,7 +2868,7 @@ sub report_session_stats {
    if ( !$global->{query_time}->{cnt} ) {
       # This can happen if a session was all non-SELECTs and
       # --onlyselect was given.
-      MKDEBUG && _d("Session $session_n has no valid queries");
+      MKDEBUG && _d("Session", $session_n, "has no valid queries");
       return;
    }
 

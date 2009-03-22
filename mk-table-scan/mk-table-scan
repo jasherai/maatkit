@@ -1878,7 +1878,7 @@ foreach my $database ( $finder->find_databases($dbh) ) {
             foreach my $key (
                grep { $engine ne 'InnoDB' || $_ ne 'PRIMARY' } keys %{$struct->{keys}}
             ) {
-               MKDEBUG && _d("$database, $table, $key");
+               MKDEBUG && _d($database, $table, $key);
                if ( $struct->{keys}->{$key}->{is_unique} && !$opts{unique} ) {
                   next INDEX;
                }

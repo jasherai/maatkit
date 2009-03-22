@@ -1709,7 +1709,7 @@ $opt_parser->usage_or_errors(%opts);
 # First things first: if --stop was given, create the sentinel file.
 # ############################################################################
 if ( $opts{stop} ) {
-   MKDEBUG && _d("Creating sentinel file $opts{sentinel}");
+   MKDEBUG && _d("Creating sentinel file", $opts{sentinel});
    my $file = IO::File->new($opts{sentinel}, ">>")
       or die "Cannot open $opts{sentinel}: $OS_ERROR\n";
    print $file "Remove this file to permit mk-slave-restart to run\n"
@@ -1729,7 +1729,7 @@ if ( $opts{stop} ) {
       # continue.
       MKDEBUG && _d("Waiting for other instances to quit");
       sleep($opts{M});
-      MKDEBUG && _d("Unlinking $opts{sentinel}");
+      MKDEBUG && _d("Unlinking", $opts{sentinel});
       unlink $opts{sentinel}
          or die "Cannot unlink $opts{sentinel}: $OS_ERROR";
    }
@@ -1802,8 +1802,8 @@ $ms->recurse_to_slaves(
          };
          if ( $EVAL_ERROR ) {
             chomp $EVAL_ERROR;
-            MKDEBUG && _d('Not watching ', $dp->as_string($dsn),
-               ' because ', $EVAL_ERROR);
+            MKDEBUG && _d('Not watching', $dp->as_string($dsn),
+               'because', $EVAL_ERROR);
          }
       },
       skip_callback => sub {
@@ -1833,10 +1833,10 @@ foreach my $host ( @servers_to_watch ) {
    $children{$dp->as_string($host->{dsn})} = $pid if $must_fork;
 }
 
-MKDEBUG && _d('Child PIDs: ' . join(', ', values %children));
+MKDEBUG && _d('Child PIDs:', values %children);
 # Wait for the children to exit.
 foreach my $host ( keys %children ) {
-   MKDEBUG && _d('Waiting to reap ', $host);
+   MKDEBUG && _d('Waiting to reap', $host);
    my $pid = waitpid($children{$host}, 0);
    $exit_status ||= $CHILD_ERROR >> 8;
 }
@@ -1853,8 +1853,8 @@ exit($exit_status);
 sub watch_server {
    my ( $dsn, $dbh, $was_forked ) = @_;
 
-   MKDEBUG && _d('Watching server ', $dp->as_string($dsn),
-      " forked=$was_forked");
+   MKDEBUG && _d('Watching server', $dp->as_string($dsn),
+      "forked:", $was_forked);
 
    my $start_sql = $vp->version_ge($dbh, '4.0.5')
                  ? 'START SLAVE' : 'SLAVE START';
@@ -2011,7 +2011,7 @@ sub watch_server {
       sleep($increase_sleep ? $sleep : min($sleep, $opts{s}));
    }
 
-   MKDEBUG && _d('All done with server ', $dp->as_string($dsn));
+   MKDEBUG && _d('All done with server', $dp->as_string($dsn));
    if ( $was_forked ) {
       $dp->disconnect($dbh);
       exit(0);

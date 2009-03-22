@@ -115,7 +115,7 @@ $sb->load_file('master', 'samples/issue_30.sql');
 `$mysql -D test -e 'SELECT * FROM issue_30' > /tmp/mkpr_i30`;
 `$mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
 $output = `MKDEBUG=1 $cmd --noatomicresume -D test /tmp/default/test/ 2>&1 | grep 'Resuming'`;
-like($output, qr/Resuming restore of `test`.`issue_30` from chunk 2 \(1\d+ bytes/, 'Reports non-atomic resume from chunk 2 (issue 30)');
+like($output, qr/Resuming restore of `test`.`issue_30` from chunk 2 with \d+ bytes/, 'Reports non-atomic resume from chunk 2 (issue 30)');
 
 $output = '';
 $output = `$mysql -e 'SELECT * FROM test.issue_30' | diff /tmp/mkpr_i30 -`;
@@ -127,7 +127,7 @@ ok(!$output, 'Resume restored all 100 rows exactly (issue 30)');
 # TRUE and so we should resume from the first fully missing chunk: 3.
 `$mysql -D test -e 'DELETE FROM issue_30 WHERE id > 502'`;
 $output = `MKDEBUG=1 $cmd -D test /tmp/default/test/ 2>&1 | grep 'Resuming'`;
-like($output, qr/Resuming restore of `test`.`issue_30` from chunk 3 \(20\d\d bytes/, 'Reports atomic resume from chunk 3 (issue 30)');
+like($output, qr/Resuming restore of `test`.`issue_30` from chunk 3 with 20\d\d bytes/, 'Reports atomic resume from chunk 3 (issue 30)');
 
 `rm -rf /tmp/default`;
 

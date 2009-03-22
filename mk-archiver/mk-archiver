@@ -2179,7 +2179,7 @@ my (@asc_slice, @sel_slice, @del_slice, @bulkdel_slice, @ins_slice);
 my @sel_cols = $opts{c} ? @{$opts{c}}                                # Explicit
              : $opts{k} ? @{$src->{info}->{keys}->{PRIMARY}->{cols}} # PK only
              :            @{$src->{info}->{cols}};                   # All
-MKDEBUG && _d("sel cols: " . join(',', @sel_cols));
+MKDEBUG && _d("sel cols: " . @sel_cols);
 
 $del_stmt = $nibbler->generate_del_stmt(
    parser => $tp,
@@ -2294,7 +2294,7 @@ if ( $dst ) {
       ins_tbl  => $dst->{info},
       sel_cols => \@sel_cols,
    );
-   MKDEBUG && _d("inst stmt: " . Dumper($ins_stmt));
+   MKDEBUG && _d("inst stmt: ", Dumper($ins_stmt));
    @ins_slice = @{$ins_stmt->{slice}};
    if ( $opts{bulkins} ) {
       $ins_sql = 'LOAD DATA'
@@ -2330,10 +2330,10 @@ if ( $opts{t} ) {
 }
 
 if ( MKDEBUG ) {
-   _d("get first sql: $first_sql");
-   _d("get next sql: $next_sql");
-   _d("del row sql: $del_sql");
-   _d("ins row sql: $ins_sql");
+   _d("get first sql:", $first_sql);
+   _d("get next sql:", $next_sql);
+   _d("del row sql:", $del_sql);
+   _d("ins row sql:", $ins_sql);
 }
 
 my $get_first = $dbh->prepare($first_sql);
@@ -2383,7 +2383,7 @@ trace('select', sub {
    $statistics{SELECT} += $get_sth->rows;
 });
 my $row = $get_sth->fetchrow_arrayref();
-MKDEBUG && _d("First row: " . Dumper($row));
+MKDEBUG && _d("First row: ", Dumper($row));
 if ( !$row ) {
    $get_sth->finish;
    $src->{dbh}->disconnect();

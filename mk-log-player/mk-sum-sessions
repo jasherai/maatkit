@@ -1309,7 +1309,7 @@ my $ea = new EventAggregator(
 
 my @result_files = @ARGV ? @ARGV : qw(-);
 foreach my $result_file ( @result_files ) {
-   MKDEBUG && _d("Reading result file $result_file");
+   MKDEBUG && _d("Reading result file", $result_file);
    my $fh;
    if ( $result_file eq '-' ) {
       $fh = *STDIN;
@@ -1367,7 +1367,7 @@ sub parse_result_file {
       # so we only compile them once.
       if ( !@attribs ) {
          @attribs = split(qr/$s/o, $result_lines[0]);
-         MKDEBUG && _d("Result headers: @attribs");
+         MKDEBUG && _d("Result headers:", @attribs);
       }
 
       @vals = split(qr/$s/o, $result_lines[1]);

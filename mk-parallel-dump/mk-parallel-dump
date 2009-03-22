@@ -2464,7 +2464,7 @@ if ( !@ARGV && !$opts{T} ) {
 else {
    @mysqldump_args = @ARGV;
 }
-MKDEBUG && _d('Args for mysqldump: ', join(', ', @mysqldump_args));
+MKDEBUG && _d('Args for mysqldump:', join(', ', @mysqldump_args));
 
 # ############################################################################
 # Connect.
@@ -2482,7 +2482,7 @@ my %exited_children;
 $SIG{CHLD} = sub {
    my $kid;
    while (($kid = waitpid(-1, POSIX::WNOHANG)) > 0) {
-      MKDEBUG && _d('Process ', $kid, ' exited with ', $CHILD_ERROR);
+      MKDEBUG && _d('Process', $kid, 'exited with', $CHILD_ERROR);
       # Must right-shift to get the actual exit status of the child.
       $exited_children{$kid}->{exit_status} = $CHILD_ERROR >> 8;
       $exited_children{$kid}->{exit_time}   = time();
@@ -2539,7 +2539,7 @@ if ( $opts{sets} ) {
       MKDEBUG && _d($sql);
       my $result = $dbh->selectall_arrayref($sql, { Slice => {} } );
       foreach my $row ( @$result ) {
-         MKDEBUG && _d("Set $set contains $row->{db}.$row->{tbl}");
+         MKDEBUG && _d("Set", $set, "contains", $row->{db} , ".", $row->{tbl});
          $stats_for_set{$set}->{tables}++;
          $tables_in_sets{$row->{db}}->{$row->{tbl}}++;
          push @{$tables_for_set{$set}}, [ $row->{db}, $row->{tbl} ];
@@ -2640,9 +2640,9 @@ foreach my $set ( @sets_to_do ) {
          }
          eval {
             my $sql = 'LOCK TABLES ' . join(', ', @to_lock);
-            MKDEBUG && _d('At time ', time(), ' ', $sql);
+            MKDEBUG && _d('At time', time(), $sql);
             $dbh->do($sql);
-            MKDEBUG && _d('At time ', time(), ' lock succeeded');
+            MKDEBUG && _d('At time', time(), 'lock succeeded');
             $done = 1;
          };
          if ( $EVAL_ERROR ) {
@@ -2650,7 +2650,7 @@ foreach my $set ( @sets_to_do ) {
             my $err = mysql_error_msg($EVAL_ERROR);
             my ($db, $tbl) = $err =~ m/Table '([^.]+)\.([^.]+)' doesn't exist/;
             if ( $db && $tbl ) {
-               MKDEBUG && _d("Removing table $db.$tbl from set $set");
+               MKDEBUG && _d("Removing table", $db, ".", $tbl, "from set", $set);
                # Remove the nonexistent table and try again.
                $tables_for_set{$set} = [
                   grep { $_->[0] ne $db || $_->[1] ne $tbl } @{$tables_for_set{$set}}
@@ -2700,7 +2700,7 @@ foreach my $set ( @sets_to_do ) {
    if ( $opts{b} && !$opts{test} ) {
       my $filename = filename($set, '00_master_data.sql');
       makedir($filename);
-      MKDEBUG && _d("Writing to $filename");
+      MKDEBUG && _d("Writing to", $filename);
       open my $file, ">", $filename or die $OS_ERROR;
       my %wanted = map { $_ => 1 }
          qw(file position master_host master_port master_log_file
@@ -2823,7 +2823,7 @@ foreach my $set ( @sets_to_do ) {
          }
          else {                     # I'm the child
             $SIG{CHLD} = 'DEFAULT'; # See bug #1886444
-            MKDEBUG && _d("PID $PID got ", Dumper($todo));
+            MKDEBUG && _d("PID", $PID, "got", Dumper($todo));
             my $exit_status = 0;
             $exit_status = do_table($todo, $filename) || $exit_status;
             exit($exit_status);
@@ -2978,7 +2978,7 @@ sub get_chunks {
    makedir($chunkfile);
 
    if ( !$opts{test} && -f $chunkfile ) {
-      MKDEBUG && _d("Chunk file $chunkfile exists, using it");
+      MKDEBUG && _d("Chunk file", $chunkfile, "exists, using it");
       open my $fh, "<", $chunkfile or die "Can't open $chunkfile: $OS_ERROR";
       my @todo;
       while ( my $where = <$fh> ) {
