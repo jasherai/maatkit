@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 5;
+use Test::More tests => 6;
 use English qw(-no_match_vars);
 
 require '../DSNParser.pm';
@@ -199,5 +199,17 @@ is_deeply(
    'Review history information is in the DB',
 );
 
+eval {
+   $qv->set_review_history(
+      'foo',
+      'foo sample',
+      ts => {
+         min => undef,
+         max => undef,
+         cnt => 1,
+      },
+   );
+};
+is($EVAL_ERROR, '', 'No error on undef ts_min and ts_max');
 
 $sb->wipe_clean($dbh);

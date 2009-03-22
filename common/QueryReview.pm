@@ -103,6 +103,7 @@ sub new {
       select_sth  => $select_sth,
       tbl_struct  => $args{tbl_struct},
       quoter      => $args{quoter},
+      ts_default  => $now,
    };
    return bless $self, $class;
 }
@@ -128,10 +129,16 @@ sub set_history_options {
    }
 
    my $sql = "REPLACE INTO $args{table}("
-      . join(',', map { $self->{quoter}->quote($_) } ('checksum', 'sample', @cols))
+      . join(', ',
+         map { $self->{quoter}->quote($_) } ('checksum', 'sample', @cols))
       . ') VALUES (CONV(?, 16, 10), ?, '
-      . join(', ', map { '?' } @cols)
-      . ')';
+      . join(', ', map {
+         # ts_min and ts_max might be part of the PK, in which case they must
+         # not be NULL.
+         $_ eq 'ts_min' || $_ eq 'ts_max'
+            ? "COALESCE(?, $self->{ts_default})"
+            : '?'
+        } @cols) . ')';
    MKDEBUG && _d($sql);
 
    $self->{history_sth}     = $args{dbh}->prepare($sql);
