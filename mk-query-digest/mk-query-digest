@@ -1792,7 +1792,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3231
+# EventAggregator package 3244
 # ###########################################################################
 package EventAggregator;
 
@@ -1908,6 +1908,11 @@ sub results {
 sub attributes {
    my ( $self ) = @_;
    return $self->{type_for};
+}
+
+sub type_for {
+   my ( $self, $attrib ) = @_;
+   return $self->{type_for}->{$attrib};
 }
 
 sub make_handler {
@@ -2163,6 +2168,30 @@ sub calculate_statistical_metrics {
    return $statistical_metrics;
 }
 
+sub metrics {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(attrib where) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $stats = $self->results;
+   my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
+
+   my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
+   my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
+
+   return {
+      cnt    => $store->{cnt},
+      pct    => $global_cnt && $store->{cnt} ? $store->{cnt} / $global_cnt : 0,
+      sum    => $store->{sum},
+      min    => $store->{min},
+      max    => $store->{max},
+      avg    => $store->{sum} && $store->{cnt} ? $store->{sum} / $store->{cnt} : 0,
+      median => $metrics->{median},
+      pct_95 => $metrics->{pct_95},
+      stddev => $metrics->{stddev},
+   };
+}
+
 sub top_events {
    my ( $self, %args ) = @_;
    my $classes = $self->{result_class};
@@ -2216,7 +2245,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 3217
+# QueryReportFormatter package 3241
 # ###########################################################################
 
 
@@ -2339,7 +2368,7 @@ sub global_report {
    push @result, sprintf($format, '', @headers);
 
    foreach my $attrib ( @{$opts{select}} ) {
-      next unless $ea->attributes->{$attrib};
+      next unless $ea->type_for($attrib);
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
             $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
@@ -2348,7 +2377,7 @@ sub global_report {
       else {
          my $store = $stats->{globals}->{$attrib};
          my @values;
-         if ( $ea->attributes->{$attrib} eq 'num' ) {
+         if ( $ea->type_for($attrib) eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
             MKDEBUG && _d('Calculating global statistical_metrics for', $attrib);
             my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
@@ -2419,7 +2448,7 @@ sub event_report {
          map { '' } (1 ..9);
 
    foreach my $attrib ( @{$opts{select}} ) {
-      next unless $ea->attributes->{$attrib};
+      next unless $ea->type_for($attrib);
       my $vals = $store->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
@@ -2429,11 +2458,9 @@ sub event_report {
       else {
          my @values;
          my $pct;
-         if ( $ea->attributes->{$attrib} eq 'num' ) {
+         if ( $ea->type_for($attrib) eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
-            MKDEBUG && _d('Calculating statistical_metrics');
-            my $metrics
-               = $ea->calculate_statistical_metrics($vals->{all}, $vals);
+            my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
             @values = (
                @{$vals}{qw(sum min max)},
                $vals->{sum} / $vals->{cnt},
@@ -3108,7 +3135,7 @@ sub _d {
 # #############################################################################
 
 # ###########################################################################
-# TableParser package 3186
+# TableParser package 3239
 # ###########################################################################
 package TableParser;
 
@@ -3257,14 +3284,25 @@ sub find_possible_keys {
 
 sub table_exists {
    my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
+   my $result = 0;
    my $db_tbl = $q->quote($db, $tbl);
-   my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
-   $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
-   MKDEBUG && _d('table_exists check for', $db_tbl, ':', $sql);
-   eval { $dbh->do($sql); };
-   MKDEBUG && _d('eval error (if any):', $EVAL_ERROR);
-   return 0 if $EVAL_ERROR;
-   return 1;
+   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d($sql);
+   eval {
+      my $sth = $dbh->prepare($sql);
+      $sth->execute();
+      my @columns = @{$sth->fetchall_arrayref({})};
+      if ( $can_insert ) {
+         $result = grep { ($_->{Privileges} || '') =~ m/insert/ } @columns;
+      }
+      else {
+         $result = 1;
+      }
+   };
+   if ( MKDEBUG && $EVAL_ERROR ) {
+      _d($EVAL_ERROR);
+   }
+   return $result;
 }
 
 sub get_engine {
@@ -3369,7 +3407,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 3186
+# QueryReview package 3245
 # ###########################################################################
 
 package QueryReview;
@@ -3433,8 +3471,50 @@ sub new {
       insert_sth  => $insert_sth,
       select_sth  => $select_sth,
       tbl_struct  => $args{tbl_struct},
+      quoter      => $args{quoter},
+      ts_default  => $now,
    };
    return bless $self, $class;
+}
+
+sub set_history_options {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(table dbh tbl_struct col_pat) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+
+   my @cols;
+   my @metrics;
+   foreach my $col ( @{$args{tbl_struct}->{cols}} ) {
+      my ( $attr, $metric ) = $col =~ m/$args{col_pat}/;
+      next unless $attr && $metric;
+      $attr = ucfirst $attr if $attr =~ m/_/; # TableParser lowercases
+      push @cols, $col;
+      push @metrics, [$attr, $metric];
+   }
+
+   my $sql = "REPLACE INTO $args{table}("
+      . join(', ',
+         map { $self->{quoter}->quote($_) } ('checksum', 'sample', @cols))
+      . ') VALUES (CONV(?, 16, 10), ?, '
+      . join(', ', map {
+         $_ eq 'ts_min' || $_ eq 'ts_max'
+            ? "COALESCE(?, $self->{ts_default})"
+            : '?'
+        } @cols) . ')';
+   MKDEBUG && _d($sql);
+
+   $self->{history_sth}     = $args{dbh}->prepare($sql);
+   $self->{history_cols}    = \@cols;
+   $self->{history_metrics} = \@metrics;
+}
+
+sub set_review_history {
+   my ( $self, $id, $sample, %data ) = @_;
+   $self->{history_sth}->execute(
+      make_checksum($id),
+      $sample,
+      map { $data{$_->[0]}->{$_->[1]} } @{$self->{history_metrics}});
 }
 
 sub get_review_info {
@@ -3588,18 +3668,19 @@ $SIG{INT} = \&sig_int;
 # #############################################################################
 my $oktorun = 1;
 my $dp = new DSNParser (
-   { key => 'D', desc => 'Database that contains the query review table' },
+   { key => 'D', copy => 1, desc => 'Database that contains the query review table' },
    { key => 't', desc => 'Table to use as the query review table' } );
 $dp->prop('autokey', 'h');
 my $q  = new Quoter();
 my $qp = new QueryParser();
 my $qr = new QueryRewriter(QueryParser=>$qp);
-my $qv;     # QueryReview
-my $qv_dbh; # For QueryReview
-my $ex_dbh; # For --execute
-my $ep_dbh; # For --explain
-my $ps_dbh; # For Processlist
-my %ea;     # EventAggregators
+my $qv;      # QueryReview
+my $qv_dbh;  # For QueryReview
+my $qv_dbh2; # For QueryReview and --review-history
+my $ex_dbh;  # For --execute
+my $ep_dbh;  # For --explain
+my $ps_dbh;  # For Processlist
+my %ea;      # EventAggregators
 
 { # Begin a global scope to avoid poisoning subroutines with global variables.
 
@@ -3655,6 +3736,94 @@ my %ea;     # EventAggregators
    # TODO: should we get this and all other $dbh's before daemonizing?
    if ( $opts{explain} ) {
       $ep_dbh = $dp->get_dbh($dp->get_cxn_params($opts{explain}), {AutoCommit => 1});
+   }
+
+   # ##########################################################################
+   # Set up for --review and --review-history.
+   # ##########################################################################
+
+   if ( $opts{R} ) {
+      my $tp  = new TableParser();
+      my $du  = new MySQLDump();
+      $qv_dbh = $dp->get_dbh($dp->get_cxn_params($opts{R}), {AutoCommit => 1});
+      my @db_tbl = @{$opts{R}}{qw(D t)};
+      my $db_tbl = $q->quote(@db_tbl);
+
+      # Create the review table if desired
+      if ( $opts{createreview} ) {
+         my $sql = $opt_parser->read_para_after(
+            __FILE__, qr/MAGIC_create_review/);
+         $sql =~ s/query_review/IF NOT EXISTS $db_tbl/;
+         MKDEBUG && _d($sql);
+         $qv_dbh->do($sql);
+      }
+
+      # Check for existence and the permissions to insert into the
+      # table.
+      if ( !$tp->table_exists($qv_dbh, @db_tbl, $q, 1) ) {
+         die "The query review table $db_tbl "
+            . "does not exist or you do not have INSERT privileges";
+      }
+
+      # Set up the new QueryReview object.
+      my $struct = $tp->parse($du->get_create_table($qv_dbh, $q, @db_tbl));
+      $qv = new QueryReview(
+         dbh         => $qv_dbh,
+         db_tbl      => $db_tbl,
+         tbl_struct  => $struct,
+         quoter      => $q,
+      );
+
+      # Set up the review-history table
+      if ( $opts{'review-history'} ) {
+         $qv_dbh2 = $dp->get_dbh(
+            $dp->get_cxn_params($opts{'review-history'}), {AutoCommit => 1});
+         my @hdb_tbl = @{$opts{'review-history'}}{qw(D t)};
+         my $hdb_tbl = $q->quote(@hdb_tbl);
+
+         # Create the review-history table if desired
+         if ( $opts{'create-review-history'} ) {
+            my $sql = $opt_parser->read_para_after(
+               __FILE__, qr/MAGIC_create_review_history/);
+            $sql =~ s/query_review_history/IF NOT EXISTS $hdb_tbl/;
+            MKDEBUG && _d($sql);
+            $qv_dbh2->do($sql);
+         }
+
+         # Check for existence and the permissions to insert into the
+         # table.
+         if ( !$tp->table_exists($qv_dbh2, @hdb_tbl, $q, 1) ) {
+            die "The query review history table $hdb_tbl "
+               . "does not exist or you do not have INSERT privileges";
+         }
+
+         # Inspect for MAGIC_history_cols.  Add them to the --select list.
+         my $tbl = $tp->parse($du->get_create_table($qv_dbh2, $q, @hdb_tbl));
+         my $pat = $opt_parser->read_para_after(__FILE__, qr/MAGIC_history_cols/);
+         $pat    =~ s/\s+//g;
+         $pat    = qr/^(.*?)_($pat)$/;
+         my %select = map { $_ => 1 } @{$opts{'select'}};
+         foreach my $col ( @{$tbl->{cols}} ) {
+            my ( $attr, $metric ) = $col =~ m/$pat/;
+            next unless $attr && $metric;
+            # TODO: should we add info to TableParser to retrieve the original
+            # lettercase of column names when it matters?  If so, fix
+            # QueryReview also.
+            $attr = ucfirst $attr if $attr =~ m/_/; # TableParser lowercases
+            $select{$attr}++;
+         }
+         $opts{'select'} = [keys %select];
+         MKDEBUG && _d("--select value after parsing --review-history table:", 
+            @{$opts{'select'}});
+
+         # And tell the QueryReview that it has more work to do.
+         $qv->set_history_options(
+            table      => $hdb_tbl,
+            dbh        => $qv_dbh2,
+            tbl_struct => $tbl,
+            col_pat    => $pat,
+         );
+      }
    }
 
    # ##########################################################################
@@ -3918,6 +4087,13 @@ my %ea;     # EventAggregators
       foreach my $i ( 0 .. @{$opts{report}} - 1 ) {
          my $groupby = $opts{report}->[$i];
 
+         # Prepare to do query review for the items, if needed. TODO: this is
+         # ugly, we can still access the global $qv.
+         my $local_qv;
+         if ( $groupby eq 'fingerprint' && $opts{R} ) {
+            $local_qv = $qv;
+         }
+
          if ( @{$opts{report}} > 1 || $groupby ne 'fingerprint' ) {
             print "\n# ", ( '#' x 72 ), "\n";
             print "# Report grouped by $groupby\n";
@@ -3955,44 +4131,6 @@ my %ea;     # EventAggregators
             && (@worst < $opts{expectedrange}->[0]
                || @worst > $opts{expectedrange}->[1]);
 
-         # Prepare to do query review for the items, if needed.
-         if ( $groupby eq 'fingerprint' && $opts{R} ) {
-            eval {
-               my @db_tbl = @{$opts{R}}{qw(D t)};
-               my $db_tbl = $q->quote(@db_tbl);
-               $qv_dbh = $dp->get_dbh(
-                  $dp->get_cxn_params($opts{R}), {AutoCommit => 1});
-
-               # Create the review table if desired
-               if ( $opts{createreview} ) {
-                  my $sql = $opt_parser->read_para_after(
-                     __FILE__, qr/MAGIC_createreview/);
-                  $sql =~ s/query_review/IF NOT EXISTS $db_tbl/;
-                  MKDEBUG && _d($sql);
-                  $qv_dbh->do($sql);
-               }
-
-               # Check for existence and the permissions to insert into the
-               # table.
-               my $tp  = new TableParser();
-               if ( !$tp->table_exists($qv_dbh, @db_tbl, $q, 1) ) {
-                  die "The query review table $opts{R}->{D}.$opts{R}->{t} "
-                     . "does not exist or you do not have INSERT privileges";
-               }
-
-               # Set up the new QueryReview object.
-               my $du     = new MySQLDump();
-               my $struct = $tp->parse( $du->dump($qv_dbh, $q, @db_tbl, 'table'));
-               $qv = new QueryReview(
-                  dbh         => $qv_dbh,
-                  db_tbl      => $db_tbl,
-                  tbl_struct  => $struct,
-                  quoter      => $q,
-               );
-            };
-            $EVAL_ERROR && warn($EVAL_ERROR);
-         }
-
          # Print a report for each item.
          ITEM:
          foreach my $rank ( 1 .. @worst ) {
@@ -4001,11 +4139,26 @@ my %ea;     # EventAggregators
             # Find the sample query.
             my $sample = $stats->{$attrib}->{sample};
 
+            my %history; # Prepare for saving review history
+            if ( $opts{'review-history'} ) {
+               foreach my $attrib(@select) {
+                  $history{$attrib} = $ea->metrics(
+                     attrib => $attrib,
+                     where  => $item,
+                  );
+               }
+            }
+
             my $review_vals;
-            if ( $qv ) {
-               $review_vals = $qv->get_review_info($item);
+            if ( $local_qv ) {
+               $review_vals = $local_qv->get_review_info($item);
                if ( $review_vals->{reviewed_by} && !$opts{reportall} ) {
-                  # This item has already been reviewed, skip it.
+                  # This item has already been reviewed, skip it.  But before
+                  # doing so, save the history if necessary.
+                  if ( $opts{'review-history'} ) {
+                     $local_qv->set_review_history(
+                        $item, $sample->{arg} || '', %history);
+                  }
                   next ITEM;
                }
             }
@@ -4025,22 +4178,26 @@ my %ea;     # EventAggregators
                where      => $item,
             );
 
-            if ( $qv ) {
+            if ( $local_qv ) {
                # Print the review information that is already in the table,
                # before putting anything new into the table.
                print "# Review information\n";
-               foreach my $col ($qv->review_cols) {
+               foreach my $col ($local_qv->review_cols) {
                   my $val = $review_vals->{$col};
                   if ( !$val || $val ne '0000-00-00 00:00:00' ) { # See issue 202
                      printf "# %13s: %-s\n", $col, ( defined $val ? $val : '' );
                   }
                }
-               # Update the query review information.
-               $qv->set_review_info(
+               # Update the query review information and history.
+               $local_qv->set_review_info(
                   fingerprint => $item,
                   sample      => $sample->{arg} || '',
                   first_seen  => $stats->{ts}->{min},
                   last_seen   => $stats->{ts}->{max});
+               if ( $opts{'review-history'} ) {
+                  $local_qv->set_review_history(
+                     $item, $sample->{arg} || '', %history);
+               }
             }
 
             # Print the query fingerprint.
@@ -4101,7 +4258,8 @@ my %ea;     # EventAggregators
    }
 
    # Disconnect all open $dbh's
-   map { $dp->disconnect($_) } grep { $_ } ($qv_dbh, $ex_dbh, $ps_dbh, $ep_dbh);
+   map { $dp->disconnect($_) } grep { $_ }
+      ($qv_dbh, $qv_dbh2, $ex_dbh, $ps_dbh, $ep_dbh);
 
    exit;
 } # End global scope.
@@ -4472,6 +4630,9 @@ See L<"--groupby"> for more.
 
 =head1 OPTIONS
 
+DSN values in L<"--review-history"> default to values in L<"--review"> if COPY
+is yes.
+
 =over
 
 =item --attriblimit
@@ -4490,6 +4651,13 @@ Create the L<"--review"> table if it does not exist.
 
 This option causes the table specified by --review to be created with the
 default structure shown in the documentation for that option.
+
+=item --create-review-history
+
+Create the L<"--review-history"> table if it does not exist.
+
+This option causes the table specified by --review-history to be created with
+the default structure shown in the documentation for that option.
 
 =item --daemonize
 
@@ -4766,8 +4934,8 @@ Store a sample of each class of query in this DSN.
 
 The argument specifies a table to store all unique query fingerprints in.  The
 table must have at least the following columns, but you can add any more columns
-you wish.  This text is automatically used for L<"--createreview">.
-MAGIC_createreview:
+you wish.  The following CREATE TABLE definition is also used for
+L<"--createreview">.  MAGIC_create_review:
 
   CREATE TABLE query_review (
      checksum     BIGINT UNSIGNED NOT NULL PRIMARY KEY,
@@ -4801,6 +4969,86 @@ After the tool generates the fingerprint report for L<"--report">, it uses the
 aggregated values from the report to fill the review table.  When you're done,
 your table should contain a row for each fingerprint.  This option depends on
 C<--report fingerprint>.  It will not work otherwise.
+
+=item --review-history
+
+type: DSN
+
+The table in which to store historical values for review trend analysis.
+
+Each time you review queries with L<"--review">, mk-query-digest will save
+information into this table so you can see how classes of queries have changed
+over time.
+
+This DSN inherits unspecified values from --review.  It should mention a
+table in which to store statistics about each class of queries.  mk-query-digest
+verifies the existence of the table, and your privileges to insert, delete and
+update on that table.
+
+mk-query-digest then inspects the columns in the table.  The table must have at
+least the following columns:
+
+  CREATE TABLE query_review_history (
+    checksum     BIGINT UNSIGNED NOT NULL,
+    sample       TEXT NOT NULL
+  );
+
+Any columns not mentioned above are inspected to see if they follow a certain
+naming convention.  The column is special if the name ends with an underscore
+followed by any of these MAGIC_history_cols values:
+
+  pct|avt|cnt|sum|min|max|pct_95|stddev|median|rank
+
+If the column ends with one of those values, then the prefix is interpreted as
+the event attribute to store in that column, and the suffix is interpreted as
+the metric to be stored.  For example, a column named Query_time_min will be
+used to store the minimum Query_time for the class of events.  The presence of
+this column will also add Query_time to the L<"--select"> list.
+
+The table should also have a primary key, but that is up to you, depending on
+how you want to store the historical data.  We suggest adding ts_min and ts_max
+columns and making them part of the primary key along with the checksum.  But
+you could also just add a ts_min column and make it a DATE type, so you'd get
+one row per class of queries per day.
+
+The default table structure follows.  The following MAGIC_create_review_history
+table definition is used for L<"--create-review-history">:
+
+ CREATE TABLE query_review_history (
+   checksum             BIGINT UNSIGNED NOT NULL,
+   sample               TEXT NOT NULL,
+   ts_min               DATETIME,
+   ts_max               DATETIME,
+   ts_cnt               FLOAT,
+   Query_time_sum       FLOAT,
+   Query_time_min       FLOAT,
+   Query_time_max       FLOAT,
+   Query_time_pct_95    FLOAT,
+   Query_time_stddev    FLOAT,
+   Query_time_median    FLOAT,
+   Lock_time_sum        FLOAT,
+   Lock_time_min        FLOAT,
+   Lock_time_max        FLOAT,
+   Lock_time_pct_95     FLOAT,
+   Lock_time_stddev     FLOAT,
+   Lock_time_median     FLOAT,
+   Rows_sent_sum        FLOAT,
+   Rows_sent_min        FLOAT,
+   Rows_sent_max        FLOAT,
+   Rows_sent_pct_95     FLOAT,
+   Rows_sent_stddev     FLOAT,
+   Rows_sent_median     FLOAT,
+   Rows_examined_sum    FLOAT,
+   Rows_examined_min    FLOAT,
+   Rows_examined_max    FLOAT,
+   Rows_examined_pct_95 FLOAT,
+   Rows_examined_stddev FLOAT,
+   Rows_examined_median FLOAT,
+   PRIMARY KEY(checksum, ts_min, ts_max)
+ );
+
+Note that we store the count (cnt) for the ts attribute only; it will be
+redundant to store this for other attributes.
 
 =item --[no]rusage
 

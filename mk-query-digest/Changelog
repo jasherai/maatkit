@@ -1,6 +1,7 @@
 Changelog for mk-query-digest:
 
-   * Removed string interpolation from debugging calls (issue 308)
+   * Added --review-history and --create-review-history (issue 194).
+   * Removed string interpolation from debugging calls (issue 308).
    * Standard deviation was not for all values (issue 321).
    * Attributes with mostly zero values caused an infinite loop (issue 321).
    * Very large INSERT or REPLACE VALUES() segfaulted (issue 322).

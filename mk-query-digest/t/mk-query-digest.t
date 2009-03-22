@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 51;
+use Test::More tests => 53;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -237,16 +237,23 @@ SKIP: {
       'Analysis for slow001 with --explain',
    );
 
-   # Test --createreview
+   # Test --createreview and --create-review-history
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow006.txt --createreview -R h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow006.txt --createreview -R "
+      . "h=127.1,P=12345,D=test,t=query_review --create-review-history "
+      . "--review-history t=query_review_history";
    $output = `$cmd >/dev/null 2>&1`;
+
    my ($table) = $dbh1->selectrow_array(
       'show tables from test like "query_review"');
    is($table, 'query_review', '--createreview');
+   ($table) = $dbh1->selectrow_array(
+      'show tables from test like "query_review_history"');
+   is($table, 'query_review_history', '--create-review-history');
 
    $output = 'foo'; # clear previous test results
-   $cmd = "${run_with}slow006.txt -R h=127.1,P=12345,D=test,t=query_review"; 
+   $cmd = "${run_with}slow006.txt -R h=127.1,P=12345,D=test,t=query_review "
+      . "--review-history t=query_review_history";
    $output = `$cmd`;
    my $res = $dbh1->selectall_arrayref( 'SELECT * FROM test.query_review',
       { Slice => {} } );
@@ -272,6 +279,73 @@ SKIP: {
          },
       ],
       'Adds/updates queries to query review table'
+   );
+   $res = $dbh1->selectall_arrayref( 'SELECT * FROM test.query_review_history',
+      { Slice => {} } );
+   is_deeply(
+      $res,
+      [  {  Lock_time_median     => '0',
+            Lock_time_stddev     => '0',
+            Query_time_sum       => '3.6e-05',
+            checksum             => '11676753765851784517',
+            Rows_examined_stddev => '0',
+            ts_cnt               => '3',
+            sample               => 'SELECT col FROM foo_tbl',
+            Rows_examined_median => '0',
+            Rows_sent_min        => '0',
+            Rows_examined_min    => '0',
+            Rows_sent_sum        => '0',
+            Query_time_min       => '1.2e-05',
+            Query_time_pct_95    => '1.2e-05',
+            Rows_examined_sum    => '0',
+            Rows_sent_stddev     => '0',
+            Rows_sent_pct_95     => '0',
+            Query_time_max       => '1.2e-05',
+            Rows_examined_max    => '0',
+            Query_time_stddev    => '0',
+            Rows_sent_median     => '0',
+            Lock_time_pct_95     => '0',
+            ts_min               => '0000-00-00 00:00:00',
+            Lock_time_min        => '0',
+            Lock_time_max        => '0',
+            ts_max               => '0000-00-00 00:00:00',
+            Rows_examined_pct_95 => '0',
+            Rows_sent_max        => '0',
+            Query_time_median    => '1.2e-05',
+            Lock_time_sum        => '0'
+         },
+         {  Lock_time_median     => '0',
+            Lock_time_stddev     => '0',
+            Query_time_sum       => '3.6e-05',
+            checksum             => '15334040482108055940',
+            Rows_examined_stddev => '0',
+            ts_cnt               => '3',
+            sample               => 'SELECT col FROM bar_tbl',
+            Rows_examined_median => '0',
+            Rows_sent_min        => '0',
+            Rows_examined_min    => '0',
+            Rows_sent_sum        => '0',
+            Query_time_min       => '1.2e-05',
+            Query_time_pct_95    => '1.2e-05',
+            Rows_examined_sum    => '0',
+            Rows_sent_stddev     => '0',
+            Rows_sent_pct_95     => '0',
+            Query_time_max       => '1.2e-05',
+            Rows_examined_max    => '0',
+            Query_time_stddev    => '0',
+            Rows_sent_median     => '0',
+            Lock_time_pct_95     => '0',
+            ts_min               => '0000-00-00 00:00:00',
+            Lock_time_min        => '0',
+            Lock_time_max        => '0',
+            ts_max               => '0000-00-00 00:00:00',
+            Rows_examined_pct_95 => '0',
+            Rows_sent_max        => '0',
+            Query_time_median    => '1.2e-05',
+            Lock_time_sum        => '0'
+         }
+      ],
+      'Adds/updates queries to query review history table'
    );
 
    # This time we'll run with --report and since none of the queries
