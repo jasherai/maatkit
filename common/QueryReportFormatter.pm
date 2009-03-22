@@ -148,7 +148,7 @@ sub global_report {
 
    # Each additional line
    foreach my $attrib ( @{$opts{select}} ) {
-      next unless $ea->attributes->{$attrib};
+      next unless $ea->type_for($attrib);
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
             $formatting_function{$attrib}->($stats->{globals}->{$attrib}),
@@ -157,7 +157,7 @@ sub global_report {
       else {
          my $store = $stats->{globals}->{$attrib};
          my @values;
-         if ( $ea->attributes->{$attrib} eq 'num' ) {
+         if ( $ea->type_for($attrib) eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
             MKDEBUG && _d('Calculating global statistical_metrics for', $attrib);
             my $metrics = $ea->calculate_statistical_metrics($store->{all}, $store);
@@ -185,6 +185,8 @@ sub global_report {
 #  * rank         The (optional) rank of the query, for the header
 #  * worst        The attribute in which the sample is stored.
 #  * reason       Why this one is being reported on: top|outlier
+# TODO: it would be good to start using $ea->metrics() here for simplicity and
+# uniform code.
 sub event_report {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
@@ -242,7 +244,7 @@ sub event_report {
 
    # Each additional line
    foreach my $attrib ( @{$opts{select}} ) {
-      next unless $ea->attributes->{$attrib};
+      next unless $ea->type_for($attrib);
       my $vals = $store->{$attrib};
       if ( $formatting_function{$attrib} ) { # Handle special cases
          push @result, sprintf $format, make_label($attrib),
@@ -252,11 +254,9 @@ sub event_report {
       else {
          my @values;
          my $pct;
-         if ( $ea->attributes->{$attrib} eq 'num' ) {
+         if ( $ea->type_for($attrib) eq 'num' ) {
             my $func = $attrib =~ m/time$/ ? \&micro_t : \&shorten;
-            MKDEBUG && _d('Calculating statistical_metrics');
-            my $metrics
-               = $ea->calculate_statistical_metrics($vals->{all}, $vals);
+            my $metrics = $ea->calculate_statistical_metrics($vals->{all}, $vals);
             @values = (
                @{$vals}{qw(sum min max)},
                $vals->{sum} / $vals->{cnt},
