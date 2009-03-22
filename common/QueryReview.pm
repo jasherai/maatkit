@@ -122,6 +122,7 @@ sub set_history_options {
    foreach my $col ( @{$args{tbl_struct}->{cols}} ) {
       my ( $attr, $metric ) = $col =~ m/$args{col_pat}/;
       next unless $attr && $metric;
+      $attr = ucfirst $attr if $attr =~ m/_/; # TableParser lowercases
       push @cols, $col;
       push @metrics, [$attr, $metric];
    }
@@ -143,7 +144,6 @@ sub set_history_options {
 # is a metric name.  Look at the test for more examples.
 sub set_review_history {
    my ( $self, $id, $sample, %data ) = @_;
-   %data = map { lc $_ => $data{$_} } keys %data; # columns are lowercased
    $self->{history_sth}->execute(
       make_checksum($id),
       $sample,
