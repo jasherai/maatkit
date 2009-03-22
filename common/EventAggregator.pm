@@ -177,6 +177,13 @@ sub attributes {
    return $self->{type_for};
 }
 
+# Returns the type of the attribute (as decided by the aggregation process,
+# which inspects the values).
+sub type_for {
+   my ( $self, $attrib ) = @_;
+   return $self->{type_for}->{$attrib};
+}
+
 # Make subroutines that do things with events.
 #
 # $attrib: the name of the attrib (Query_time, Rows_read, etc)
@@ -518,6 +525,34 @@ sub calculate_statistical_metrics {
    $statistical_metrics->{median} = $median;
 
    return $statistical_metrics;
+}
+
+# Return a hashref of the metrics for some attribute, pre-digested.
+# %args is:
+#  attrib => the attribute to report on
+#  where  => the value of the fingerprint for the attrib
+sub metrics {
+   my ( $self, %args ) = @_;
+   foreach my $arg ( qw(attrib where) ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $stats = $self->results;
+   my $store = $stats->{classes}->{$args{where}}->{$args{attrib}};
+
+   my $global_cnt = $stats->{globals}->{$args{attrib}}->{cnt};
+   my $metrics    = $self->calculate_statistical_metrics($store->{all}, $store);
+
+   return {
+      cnt    => $store->{cnt},
+      pct    => $global_cnt ? $store->{cnt} / $global_cnt : 0,
+      sum    => $store->{sum},
+      min    => $store->{min},
+      max    => $store->{max},
+      avg    => $store->{sum} / $store->{cnt},
+      median => $metrics->{median},
+      pct_95 => $metrics->{pct_95},
+      stddev => $metrics->{stddev},
+   };
 }
 
 # Find the top N or top % event keys, in sorted order, optionally including
