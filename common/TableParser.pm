@@ -195,18 +195,29 @@ sub find_possible_keys {
    }
 }
 
-# TODO: this should go in a new module with subs that test for
-# live conditions.
+# Returns true if the table exists.  If $can_insert is set, also checks whether
+# the user can insert into the table.
 sub table_exists {
    my ( $self, $dbh, $db, $tbl, $q, $can_insert ) = @_;
+   my $result = 0;
    my $db_tbl = $q->quote($db, $tbl);
-   my $sql    = $can_insert ? "REPLACE INTO $db_tbl " : '';
-   $sql      .= "SELECT * FROM $db_tbl LIMIT 0";
-   MKDEBUG && _d('table_exists check for', $db_tbl, ':', $sql);
-   eval { $dbh->do($sql); };
-   MKDEBUG && _d('eval error (if any):', $EVAL_ERROR);
-   return 0 if $EVAL_ERROR;
-   return 1;
+   my $sql    = "SHOW FULL COLUMNS FROM $db_tbl";
+   MKDEBUG && _d($sql);
+   eval {
+      my $sth = $dbh->prepare($sql);
+      $sth->execute();
+      my @columns = @{$sth->fetchall_arrayref({})};
+      if ( $can_insert ) {
+         $result = grep { ($_->{Privileges} || '') =~ m/insert/ } @columns;
+      }
+      else {
+         $result = 1;
+      }
+   };
+   if ( MKDEBUG && $EVAL_ERROR ) {
+      _d($EVAL_ERROR);
+   }
+   return $result;
 }
 
 sub get_engine {

@@ -482,7 +482,7 @@ SKIP: {
    $user_dbh->disconnect();
 
    # The following tests require that you manually load the
-   # sakila db into the sandbox master.
+   # sakila db into the sandbox master. TODO: there is no need for this :-(
    skip 'Sandbox master does not have the sakila database', 4
       unless @{$dbh->selectcol_arrayref('SHOW DATABASES LIKE "sakila"')};
    is_deeply(
