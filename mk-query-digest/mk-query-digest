@@ -1149,7 +1149,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 3197
+# QueryRewriter package 3256
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1191,7 +1191,7 @@ sub strip_comments {
 }
 
 sub shorten {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $length ) = @_;
    $query =~ s{
       \A(
          (?:INSERT|REPLACE)
@@ -1201,11 +1201,35 @@ sub shorten {
       \s*,\s*\(.*?(ON\s+DUPLICATE|\Z)}
       {$1 /*... omitted ...*/$2}xsi;
 
-   $query =~ s{
-      (IN\s*\((?:$quote_re|\w+))    # One literal in an IN list
-      (?:\s*,\s*(?:$quote_re|\w+))+ # Followed by 1 to infinity more
-      }
-      {$1 /*... omitted ...*/ }xsio;
+   if ( $length && length($query) > $length ) {
+      my $replaced = 0;
+      my $limit    = 1;
+      my ($temp, $last);
+      do {
+         $last = defined $temp ? $temp : '';
+         $temp = $query;
+         $replaced = $temp =~ s{
+            (IN\s*\((?:$quote_re|\w+))           # One literal in an IN list
+            (?:\s*,\s*(?:$quote_re|\w+)){$limit} # Followed by N more
+            }
+            {$1 /*... omitted ...*/ }xsi;
+         if ( !$replaced && $limit > 1 ) {
+            $temp = $last; # We're done, return last successful replacement
+         }
+         elsif ( $replaced ) {
+            $temp =~ s/\.\.\. omitted/... omitted $limit items/;
+            $limit++;
+         }
+      } until ( length($temp) <= $length || $temp eq $last );
+      $query = $temp;
+   }
+   elsif ( !$length ) {
+      $query =~ s{
+         (IN\s*\((?:$quote_re|\w+))    # One literal in an IN list
+         (?:\s*,\s*(?:$quote_re|\w+))+ # Followed by N more
+         }
+         {$1 /*... omitted ...*/ }xsio;
+   }
 
    return $query;
 }
@@ -4225,7 +4249,7 @@ my %ea;      # EventAggregators
 
                # Shorten it if necessary (issue 216 and 292).
                if ( $opts{shorten} ) {
-                  $samp_query = $qr->shorten($samp_query);
+                  $samp_query = $qr->shorten($samp_query, $opts{'shorten'});
                }
 
                # Print out tables for the query, and if it's a SELECT statement, print
@@ -5088,19 +5112,22 @@ or otherwise know are attributes in the query events.  You can specify an
 alternative attribute with a colon.  For example, C<db:Schema> uses db if it's
 available, and Schema if it's not.
 
-=item --[no]shorten
+=item --shorten
 
-default: yes
+type: int; default: 1024
 
 Shorten long statements in reports.
 
-Shortens long statements, replacing the omitted portion with a
-C</*... omitted ...*/> comment.  This applies only to the output in reports.  It
-prevents a large statement from causing difficulty in a report.
+Shortens long statements, replacing the omitted portion with a C</*... omitted
+...*/> comment.  This applies only to the output in reports, not to information
+stored for L<"--review"> or other places.  It prevents a large statement from
+causing difficulty in a report.  The argument is the preferred length of the
+shortened statement.  Not all statements can be shortened, but very large INSERT
+and similar statements often can; and so can IN() lists, although only the first
+such list in the statement will be shortened.
 
-It takes a somewhat brute-force approach.  If it shortens something beyond
-recognition, you can always find the original statement in the log at the offset
-shown in the report header (see L<"OUTPUT">).
+If it shortens something beyond recognition, you can find the original statement
+in the log, at the offset shown in the report header (see L<"OUTPUT">).
 
 =item --timeline
 
