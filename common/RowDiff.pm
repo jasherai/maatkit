@@ -137,7 +137,7 @@ sub key_cmp {
       my $r = $rr->{$col};
       if ( !defined $l || !defined $r ) {
          MKDEBUG && _d($col, 'is not defined in both rows');
-         return defined $l || -1;
+         return defined $l ? 1 : defined $r ? -1 : 0;
       }
       else {
          if ($tbl->{is_numeric}->{$col} ) {   # Numeric column

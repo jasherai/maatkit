@@ -54,7 +54,7 @@ package main;
 
 my $tests;
 BEGIN {
-   $tests = 22;
+   $tests = 23;
 }
 
 use Test::More tests => $tests;
@@ -99,6 +99,12 @@ is(
    $d->key_cmp( { a => 1 }, { a => 1 }, [qw(a)], {},),
    0,
    'Equal keys',
+);
+
+is(
+   $d->key_cmp( { a => undef }, { a => undef }, [qw(a)], {},),
+   0,
+   'Equal null keys',
 );
 
 is(
