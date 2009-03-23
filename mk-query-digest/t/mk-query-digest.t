@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 53;
+use Test::More tests => 54;
 
 use constant MKDEBUG => $ENV{MKDEBUG};
 
@@ -176,6 +176,15 @@ ok(
    no_diff($run_with.'slow024.txt', 'samples/slow024.txt'),
    'Long inserts/replaces are truncated (issue 216)',
 );
+
+# Issue 244, no output when --orderby doesn't exist
+ok(
+   no_diff($run_with . 'slow002.txt --orderby Rows_read:sum',
+      'samples/slow002-orderbynonexistent.txt'),
+   'Order by non-existent falls back to default',
+);
+
+__DATA__
 
 # #############################################################################
 # Test cmd line op sanity.

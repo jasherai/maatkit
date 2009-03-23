@@ -1792,7 +1792,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventAggregator package 3244
+# EventAggregator package 3251
 # ###########################################################################
 package EventAggregator;
 
@@ -1827,6 +1827,9 @@ sub new {
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
+      result_classes => {},
+      result_globals => {},
+      result_samples => {},
    }, $class;
 }
 
@@ -1847,6 +1850,7 @@ sub aggregate {
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
          my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
          my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+         my $samples       = $self->{result_samples};
          my $handler = $self->{handlers}->{ $attrib };
          if ( !$handler ) {
             $handler = $self->make_handler(
@@ -1858,7 +1862,8 @@ sub aggregate {
             $self->{handlers}->{$attrib} = $handler;
          }
          next GROUPBY unless $handler;
-         $handler->($event, $class_attrib, $global_attrib);
+         $samples->{$val} ||= $event; # Initialize to the first event.
+         $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
       }
    }
 
@@ -1867,6 +1872,7 @@ sub aggregate {
    ) {
       my @attrs = grep { $self->{handlers}->{$_} } @attrs;
       my $globs = $self->{result_globals}; # Global stats for each
+      my $samples = $self->{result_samples};
 
       my @lines = (
          'my ( $self, $event, $group_by ) = @_;',
@@ -1874,6 +1880,7 @@ sub aggregate {
          (ref $group_by ? ('foreach my $group_by ( @$group_by ) {') : ()),
          'my $temp = $self->{result_class}->{ $group_by }
             ||= { map { $_ => { } } @attrs };',
+         '$samples->{$group_by} ||= $event;', # Always start with the first.
       );
       foreach my $i ( 0 .. $#attrs ) {
          push @lines, (
@@ -1902,6 +1909,7 @@ sub results {
    return {
       classes => $self->{result_class},
       globals => $self->{result_globals},
+      samples => $self->{result_samples},
    };
 }
 
@@ -1991,7 +1999,7 @@ sub make_handler {
       my $op = $type eq 'num' ? '>=' : 'ge';
       push @lines, (
          'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-         '   $class->{sample} = $event;',
+         '   $samples->{$group_by} = $event;',
          '}',
       );
    }
@@ -2020,7 +2028,7 @@ sub make_handler {
 
    unshift @lines, (
       'sub {',
-      'my ( $event, $class, $global ) = @_;',
+      'my ( $event, $class, $global, $samples, $group_by ) = @_;',
       'my ($val, $idx);', # NOTE: define all variables here
       "\$val = \$event->{'$attrib'};",
       (map { "\$val = \$event->{'$_'} unless defined \$val;" }
@@ -2245,7 +2253,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 3241
+# QueryReportFormatter package 3252
 # ###########################################################################
 
 
@@ -2405,7 +2413,7 @@ sub event_report {
 
    my $store = $stats->{classes}->{$opts{where}};
    return "# No such event $opts{where}\n" unless $store;
-   my $sample = $store->{$opts{worst}}->{sample};
+   my $sample = $stats->{samples}->{$opts{where}};
 
    my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
    my $class_cnt  = $store->{$opts{worst}}->{cnt};
@@ -4101,7 +4109,14 @@ my %ea;      # EventAggregators
          }
 
          my $ea      = $ea{$groupby};
+
+         # $attrib is the attribute by which the report is ordered.
          my ( $attrib, $orderby ) = split(/:/, $opts{orderby}->[$i]);
+         if ( !$ea->type_for($attrib) ) { # issue 244, missing --orderby
+            # TODO: get the default from the $opt_parser.
+            print "--orderby attribute $attrib doesn't exist, using Query_time\n";
+            $attrib = 'Query_time'; # Fall back to the default.
+         }
          my $limit = $opts{limit}->[$i] || '95%:20';
          my ($total, $count);
          if ( $limit =~ m/^\d+$/ ) {
@@ -4137,7 +4152,7 @@ my %ea;      # EventAggregators
             my $item = $worst[$rank - 1]->[0];
             my $stats = $ea->results->{classes}->{$item};
             # Find the sample query.
-            my $sample = $stats->{$attrib}->{sample};
+            my $sample = $ea->results->{samples}->{$item};
 
             my %history; # Prepare for saving review history
             if ( $opts{'review-history'} ) {
@@ -4232,7 +4247,10 @@ my %ea;      # EventAggregators
                else {
                   print "$samp_query\\G\n";
                   my $converted = $qr->convert_to_select($samp_query);
-                  if ( $opts{forexplain} && $converted =~ m/^[\(\s]*select/i ) {
+                  if ( $opts{forexplain}
+                        && $converted
+                        && $converted =~ m/^[\(\s]*select/i
+                  ) {
                      # It converted OK to a SELECT
                      print "# Converted for EXPLAIN\n# EXPLAIN\n";
                      print "$converted\\G\n";
