@@ -62,9 +62,10 @@ sub strip_comments {
    return $query;
 }
 
-# Shortens long queries by normalizing stuff out of them.
+# Shortens long queries by normalizing stuff out of them.  $length is used only
+# for IN() lists;
 sub shorten {
-   my ( $self, $query ) = @_;
+   my ( $self, $query, $length ) = @_;
    # Shorten multi-value insert/replace, all the way up to on duplicate key
    # update if it exists.
    $query =~ s{
@@ -76,12 +77,39 @@ sub shorten {
       \s*,\s*\(.*?(ON\s+DUPLICATE|\Z)}
       {$1 /*... omitted ...*/$2}xsi;
 
-   # Shorten long IN() lists of literals.
-   $query =~ s{
-      (IN\s*\((?:$quote_re|\w+))    # One literal in an IN list
-      (?:\s*,\s*(?:$quote_re|\w+))+ # Followed by 1 to infinity more
-      }
-      {$1 /*... omitted ...*/ }xsio;
+   # Shorten long IN() lists of literals.  But only if the string is longer than
+   # the $length limit.  This is very inefficient, because it repeatedly does
+   # the same replacement with trial and error, but this isn't called from
+   # performance-critical parts of the code at the time of writing.
+   if ( $length && length($query) > $length ) {
+      my $replaced = 0;
+      my $limit    = 1;
+      my ($temp, $last);
+      do {
+         $last = defined $temp ? $temp : '';
+         $temp = $query;
+         $replaced = $temp =~ s{
+            (IN\s*\((?:$quote_re|\w+))           # One literal in an IN list
+            (?:\s*,\s*(?:$quote_re|\w+)){$limit} # Followed by N more
+            }
+            {$1 /*... omitted ...*/ }xsi;
+         if ( !$replaced ) {
+            $temp = $last;
+         }
+         else {
+            $temp =~ s/\.\.\. omitted/... omitted $limit items/;
+            $limit++;
+         }
+      } until ( length($temp) <= $length || $temp eq $last );
+      $query = $temp;
+   }
+   elsif ( !$length ) {
+      $query =~ s{
+         (IN\s*\((?:$quote_re|\w+))    # One literal in an IN list
+         (?:\s*,\s*(?:$quote_re|\w+))+ # Followed by N more
+         }
+         {$1 /*... omitted ...*/ }xsio;
+   }
 
    return $query;
 }
