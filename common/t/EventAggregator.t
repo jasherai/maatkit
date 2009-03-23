@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 54;
+use Test::More tests => 56;
 
 use Data::Dumper;
 $Data::Dumper::Indent    = 1;
@@ -78,20 +78,6 @@ $result = {
             [ ( map {0} ( 0 .. 132 ) ), 1, 1, ( map {0} ( 135 .. 999 ) ) ],
          sum => '0.001334',
          cnt => 2,
-         sample =>
-         {  ts            => '071015 21:43:52',
-            cmd           => 'Query',
-            user          => 'bob',
-            host          => 'localhost',
-            ip            => '',
-            arg           => "SELECT id FROM users WHERE name='bar'",
-            Query_time    => '0.000682',
-            Lock_time     => '0.000201',
-            Rows_sent     => 1,
-            Rows_examined => 2,
-            pos_in_log    => 5,
-            fingerprint   => 'select id from users where name=?',
-         },
       },
       user => {
          unq => {
@@ -125,21 +111,6 @@ $result = {
             [ ( map {0} ( 0 .. 155 ) ), 1, ( map {0} ( 157 .. 999 ) ) ],
          sum => '0.001943',
          cnt => 1,
-         sample =>
-         {  ts   => '071015 21:43:52',
-            cmd  => 'Query',
-            user => 'root',
-            host => 'localhost',
-            ip   => '',
-            arg =>
-               "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
-            Query_time    => '0.001943',
-            Lock_time     => '0.000145',
-            Rows_sent     => 0,
-            Rows_examined => 0,
-            pos_in_log    => 1,
-            fingerprint   => 'insert ignore into articles (id, body,)values(?+)',
-         },
       },
       user => {
          unq => { root => 1 },
@@ -173,6 +144,42 @@ is_deeply( $ea->results->{classes},
    $result, 'Simple fingerprint aggregation' );
 
 is_deeply(
+   $ea->results->{samples},
+   {
+      'select id from users where name=?' => {
+         ts            => '071015 21:43:52',
+         cmd           => 'Query',
+         user          => 'bob',
+         host          => 'localhost',
+         ip            => '',
+         arg           => "SELECT id FROM users WHERE name='bar'",
+         Query_time    => '0.000682',
+         Lock_time     => '0.000201',
+         Rows_sent     => 1,
+         Rows_examined => 2,
+         pos_in_log    => 5,
+         fingerprint   => 'select id from users where name=?',
+      },
+      'insert ignore into articles (id, body,)values(?+)' => {
+         ts   => '071015 21:43:52',
+         cmd  => 'Query',
+         user => 'root',
+         host => 'localhost',
+         ip   => '',
+         arg =>
+            "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
+         Query_time    => '0.001943',
+         Lock_time     => '0.000145',
+         Rows_sent     => 0,
+         Rows_examined => 0,
+         pos_in_log    => 1,
+         fingerprint   => 'insert ignore into articles (id, body,)values(?+)',
+      },
+   },
+   'Worst-in-class samples',
+);
+
+is_deeply(
    $ea->attributes,
    {  Query_time => 'num',
       user       => 'string',
@@ -180,6 +187,58 @@ is_deeply(
       Rows_sent  => 'num',
    },
    'Found attribute types',
+);
+
+# Test with a nonexistent 'worst' attribute.
+$ea = new EventAggregator(
+   groupby    => 'fingerprint',
+   worst      => 'nonexistent',
+   attributes => {
+      Query_time => [qw(Query_time)],
+      user       => [qw(user)],
+      ts         => [qw(ts)],
+      Rows_sent  => [qw(Rows_sent)],
+   },
+);
+
+foreach my $event (@$events) {
+   $event->{fingerprint} = $qr->fingerprint( $event->{arg} );
+   $ea->aggregate($event);
+}
+
+is_deeply(
+   $ea->results->{samples},
+   {
+      'select id from users where name=?' => {
+         cmd           => 'Query',
+         user          => 'root',
+         host          => 'localhost',
+         ip            => '',
+         arg           => "SELECT id FROM users WHERE name='foo'",
+         Query_time    => '0.000652',
+         Lock_time     => '0.000109',
+         Rows_sent     => 1,
+         Rows_examined => 1,
+         pos_in_log    => 0,
+         fingerprint   => 'select id from users where name=?',
+      },
+      'insert ignore into articles (id, body,)values(?+)' => {
+         ts   => '071015 21:43:52',
+         cmd  => 'Query',
+         user => 'root',
+         host => 'localhost',
+         ip   => '',
+         arg =>
+            "INSERT IGNORE INTO articles (id, body,)VALUES(3558268,'sample text')",
+         Query_time    => '0.001943',
+         Lock_time     => '0.000145',
+         Rows_sent     => 0,
+         Rows_examined => 0,
+         pos_in_log    => 1,
+         fingerprint   => 'insert ignore into articles (id, body,)values(?+)',
+      },
+   },
+   'Worst-in-class samples default to the first event seen',
 );
 
 $result = {
@@ -242,20 +301,6 @@ $result = {
          Query_time => {
             min    => '0.000682',
             max    => '0.000682',
-            sample => {
-               cmd           => 'Query',
-               arg           => 'SELECT id FROM users WHERE name=\'bar\'',
-               ip            => '',
-               ts            => '071015 21:43:52',
-               fingerprint   => 'select id from users where name=?',
-               host          => 'localhost',
-               pos_in_log    => 5,
-               Rows_examined => 2,
-               user          => 'bob',
-               Query_time    => '0.000682',
-               Lock_time     => '0.000201',
-               Rows_sent     => 1
-            },
             all => [ ( map {0} ( 0 .. 133 ) ), 1, ( map {0} ( 135 .. 999 ) ) ],
             sum => '0.000682',
             cnt => 1
@@ -278,22 +323,6 @@ $result = {
          Query_time => {
             min    => '0.000652',
             max    => '0.001943',
-            sample => {
-               cmd => 'Query',
-               arg =>
-                  'INSERT IGNORE INTO articles (id, body,)VALUES(3558268,\'sample text\')',
-               ip => '',
-               ts => '071015 21:43:52',
-               fingerprint =>
-                  'insert ignore into articles (id, body,)values(?+)',
-               host          => 'localhost',
-               pos_in_log    => 1,
-               Rows_examined => 0,
-               user          => 'root',
-               Query_time    => '0.001943',
-               Lock_time     => '0.000145',
-               Rows_sent     => 0
-            },
             all => [
                ( map {0} ( 0 .. 132 ) ), 1,
                ( map {0} ( 134 .. 155 ) ), 1,
@@ -310,6 +339,38 @@ $result = {
             cnt => 2
          }
       }
+   },
+   samples => {
+      bob => {
+         cmd           => 'Query',
+         arg           => 'SELECT id FROM users WHERE name=\'bar\'',
+         ip            => '',
+         ts            => '071015 21:43:52',
+         fingerprint   => 'select id from users where name=?',
+         host          => 'localhost',
+         pos_in_log    => 5,
+         Rows_examined => 2,
+         user          => 'bob',
+         Query_time    => '0.000682',
+         Lock_time     => '0.000201',
+         Rows_sent     => 1
+      },
+      root => {
+         cmd => 'Query',
+         arg =>
+            'INSERT IGNORE INTO articles (id, body,)VALUES(3558268,\'sample text\')',
+         ip => '',
+         ts => '071015 21:43:52',
+         fingerprint =>
+            'insert ignore into articles (id, body,)values(?+)',
+         host          => 'localhost',
+         pos_in_log    => 1,
+         Rows_examined => 0,
+         user          => 'root',
+         Query_time    => '0.001943',
+         Lock_time     => '0.000145',
+         Rows_sent     => 0
+      },
    },
    globals => {
       ts => {
@@ -711,6 +772,16 @@ $result = {
          cnt => 3,
       },
    },
+   samples => {
+      arg1 => {
+         arg       => "arg1",
+         Rows_read => 4,
+      },
+      arg2 => {
+         arg       => "arg2",
+         Rows_read => 4124524590823728995,
+      },
+   },
 };
 
 is_deeply( $ea->results, $result, 'Limited attribute values', );
@@ -892,6 +963,18 @@ is_deeply(
                ],
             sum => '5.003912',
             cnt => 6,
+         },
+      },
+      samples => {
+         'sakila.actor' => {
+            Query_time    => '0.000652',
+            arg           => 'select * from sakila.actor join sakila.film_actor using(actor_id)',
+            tables        => [qw(sakila.actor sakila.film_actor)],
+         },
+         'sakila.film_actor' => {
+            Query_time    => '0.000652',
+            arg           => 'select * from sakila.actor join sakila.film_actor using(actor_id)',
+            tables        => [qw(sakila.actor sakila.film_actor)],
          },
       },
    },

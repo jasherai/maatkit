@@ -74,6 +74,9 @@ sub new {
       worst        => $args{worst},
       unroll_limit => $args{unroll_limit} || 50,
       attrib_limit => $args{attrib_limit},
+      result_classes => {},
+      result_globals => {},
+      result_samples => {},
    }, $class;
 }
 
@@ -101,6 +104,7 @@ sub aggregate {
       foreach my $val ( ref $group_by ? @$group_by : ($group_by) ) {
          my $class_attrib  = $self->{result_class}->{$val}->{$attrib} ||= {};
          my $global_attrib = $self->{result_globals}->{$attrib} ||= {};
+         my $samples       = $self->{result_samples};
          my $handler = $self->{handlers}->{ $attrib };
          if ( !$handler ) {
             $handler = $self->make_handler(
@@ -112,7 +116,8 @@ sub aggregate {
             $self->{handlers}->{$attrib} = $handler;
          }
          next GROUPBY unless $handler;
-         $handler->($event, $class_attrib, $global_attrib);
+         $samples->{$val} ||= $event; # Initialize to the first event.
+         $handler->($event, $class_attrib, $global_attrib, $samples, $group_by);
       }
    }
 
@@ -125,6 +130,7 @@ sub aggregate {
       # thing that would otherwise be looked up via hash keys.
       my @attrs = grep { $self->{handlers}->{$_} } @attrs;
       my $globs = $self->{result_globals}; # Global stats for each
+      my $samples = $self->{result_samples};
 
       # Now the tricky part -- must make sure only the desired variables from
       # the outer scope are re-used, and any variables that should have their
@@ -136,6 +142,7 @@ sub aggregate {
          # Create and get each attribute's storage
          'my $temp = $self->{result_class}->{ $group_by }
             ||= { map { $_ => { } } @attrs };',
+         '$samples->{$group_by} ||= $event;', # Always start with the first.
       );
       foreach my $i ( 0 .. $#attrs ) {
          # Access through array indexes, it's faster than hash lookups
@@ -167,6 +174,7 @@ sub results {
    return {
       classes => $self->{result_class},
       globals => $self->{result_globals},
+      samples => $self->{result_samples},
    };
 }
 
@@ -298,7 +306,7 @@ sub make_handler {
       my $op = $type eq 'num' ? '>=' : 'ge';
       push @lines, (
          'if ( $val ' . $op . ' ($class->{max} || 0) ) {',
-         '   $class->{sample} = $event;',
+         '   $samples->{$group_by} = $event;',
          '}',
       );
    }
@@ -331,7 +339,7 @@ sub make_handler {
    # Build a subroutine with the code.
    unshift @lines, (
       'sub {',
-      'my ( $event, $class, $global ) = @_;',
+      'my ( $event, $class, $global, $samples, $group_by ) = @_;',
       'my ($val, $idx);', # NOTE: define all variables here
       "\$val = \$event->{'$attrib'};",
       (map { "\$val = \$event->{'$_'} unless defined \$val;" }
