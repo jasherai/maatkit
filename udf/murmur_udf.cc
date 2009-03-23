@@ -17,7 +17,7 @@
  * actually call the function, it is case-insensitive just like any other SQL
  * function).
  *
- * gcc -fPIC -Wall -I/usr/include/mysql -shared -o murmur_udf.so murmur_udf.cc
+ * g++ -fPIC -Wall -I/usr/include/mysql -shared -o murmur_udf.so murmur_udf.cc
  * cp murmur_udf.so /lib
  * mysql mysql -e "CREATE FUNCTION murmur_hash RETURNS INTEGER SONAME 'murmur_udf.so'"
  *
@@ -46,21 +46,68 @@
 #include <ctype.h>
 #include <string.h>
 
+/* On the first call, use this as the initial_value. */
+#define HASH_64_INIT 0x84222325cbf29ce4ULL
+/* Default for NULLs, just so the result is never NULL. */
+#define HASH_NULL_DEFAULT 0x0a0b0c0d
+
 /* Prototypes */
 
 extern "C" {
-   ulonglong murmur_hash(const void *key, int len, unsigned int seed);
+   ulonglong MurmurHash2( const void *key, int len, unsigned int seed );
    my_bool murmur_hash_init( UDF_INIT* initid, UDF_ARGS* args, char* message );
-   ulonglong (UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error );
+   ulonglong murmur_hash( UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error );
 }
 
 /* Implementations */
 
-ulonglong murmur_hash(const void *key, int len, unsigned int seed) {
+/*
+ * MurmurHash2, by Austin Appleby
+ */
+
+ulonglong
+MurmurHash2( const void *key, int len, unsigned int seed ) {
+
+   // 'm' and 'r' are mixing constants generated offline.
+   // They're not really 'magic', they just happen to work well.
+   const unsigned int m = 0x5bd1e995;
+   const int r = 24;
+
+   // Initialize the hash to a 'random' value
+   unsigned int h = seed ^ len;
+
+   // Mix 4 bytes at a time into the hash
+   const unsigned char * data = (const unsigned char *)key;
+   while (len >= 4) {
+      unsigned int k = *(unsigned int *)data;
+      k *= m; 
+      k ^= k >> r; 
+      k *= m; 
+      h *= m; 
+      h ^= k;
+      data += 4;
+      len -= 4;
+   }
+
+   // Handle the last few bytes of the input array
+   switch(len) {
+      case 3: h ^= data[2] << 16;
+      case 2: h ^= data[1] << 8;
+      case 1: h ^= data[0];
+              h *= m;
+   };
+
+   // Do a few final mixes of the hash to ensure the last few
+   // bytes are well-incorporated.
+   h ^= h >> 13;
+   h *= m;
+   h ^= h >> 15;
+
+   return h;
 }
 
-my_bool
-_init( UDF_INIT* initid, UDF_ARGS* args, char* message ) {
+my_bool 
+murmur_hash_init( UDF_INIT* initid, UDF_ARGS* args, char* message) {
    if (args->arg_count == 0 ) {
       strcpy(message,"MURMUR_HASH requires at least one argument");
       return 1;
@@ -69,8 +116,8 @@ _init( UDF_INIT* initid, UDF_ARGS* args, char* message ) {
    return 0;
 }
 
-ulonglong
-(UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error ) {
+ulonglong 
+murmur_hash( UDF_INIT *initid, UDF_ARGS *args, char *is_null, char *error ) {
 
    uint null_default = HASH_NULL_DEFAULT;
    ulonglong result  = HASH_64_INIT;
@@ -82,21 +129,21 @@ ulonglong
          case STRING_RESULT:
          case DECIMAL_RESULT:
             result
-               = hash64((const void*) args->args[i], args->lengths[i], result);
+               = MurmurHash2((const void*) args->args[i], args->lengths[i], result);
             break;
          case REAL_RESULT:
             {
                double real_val;
                real_val = *((double*) args->args[i]);
                result
-                  = hash64((const void*)&real_val, sizeof(double), result);
+                  = MurmurHash2((const void*)&real_val, sizeof(double), result);
             }
             break;
          case INT_RESULT:
             {
                long long int_val;
                int_val = *((long long*) args->args[i]);
-               result = hash64((const void*)&int_val, sizeof(ulonglong), result);
+               result = MurmurHash2((const void*)&int_val, sizeof(ulonglong), result);
             }
             break;
          default:
@@ -105,7 +152,7 @@ ulonglong
       }
       else {
          result
-            = hash64((const void*)&null_default, sizeof(null_default), result);
+            = MurmurHash2((const void*)&null_default, sizeof(null_default), result);
       }
    }
    return result;
