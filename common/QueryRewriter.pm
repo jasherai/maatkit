@@ -93,10 +93,10 @@ sub shorten {
             (?:\s*,\s*(?:$quote_re|\w+)){$limit} # Followed by N more
             }
             {$1 /*... omitted ...*/ }xsi;
-         if ( !$replaced ) {
-            $temp = $last;
+         if ( !$replaced && $limit > 1 ) {
+            $temp = $last; # We're done, return last successful replacement
          }
-         else {
+         elsif ( $replaced ) {
             $temp =~ s/\.\.\. omitted/... omitted $limit items/;
             $limit++;
          }

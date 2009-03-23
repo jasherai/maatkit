@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 110;
+use Test::More tests => 111;
 
 require "../QueryRewriter.pm";
 require '../QueryParser.pm';
@@ -766,6 +766,12 @@ is(
    $qr->shorten("select * from a where b in(1,2,3,4,5,6)", 1),
    "select * from a where b in(1 /*... omitted 5 items ...*/ )",
    "shorten IN() list numbers",
+);
+
+is(
+   $qr->shorten("select * from a", 1),
+   "select * from a",
+   "Does not shorten strings it does not match",
 );
 
 is(
