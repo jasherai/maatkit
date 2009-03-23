@@ -4886,7 +4886,10 @@ This is a comma-separated list of order-by expressions, one for each attribute
 you wish to report by (see L<"--report">).  The syntax is attribute:aggregate.
 Valid aggregates are sum, min, max, cnt.  See the default value for an example.
 
-This option is automatically altered by L<"--groupby">.
+This option is automatically altered by L<"--groupby">.  If you specify an
+attribute that doesn't exist in the events that are parsed and aggregated,
+mk-query-digest falls back to the default with a notice just at the beginning
+of the per-item report.
 
 =item --outliers
 
