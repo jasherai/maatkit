@@ -108,7 +108,7 @@ sub header {
 # Print a report about the global statistics in the EventAggregator.  %opts is a
 # hash that has the following keys:
 #  * select       An arrayref of attributes to print statistics lines for.
-#  * worst        The attribute in which the sample is stored.
+#  * worst        The --orderby attribute.
 sub global_report {
    my ( $self, $ea, %opts ) = @_;
    my $stats = $ea->results;
@@ -183,7 +183,7 @@ sub global_report {
 #  * select       An arrayref of attributes to print statistics lines for.
 #  * where        The value of the group-by attribute, such as the fingerprint.
 #  * rank         The (optional) rank of the query, for the header
-#  * worst        The attribute in which the sample is stored.
+#  * worst        The --orderby attribute
 #  * reason       Why this one is being reported on: top|outlier
 # TODO: it would be good to start using $ea->metrics() here for simplicity and
 # uniform code.
@@ -192,10 +192,10 @@ sub event_report {
    my $stats = $ea->results;
    my @result;
 
-   # Is there a sample event?
+   # Does the data exist?  Is there a sample event?
    my $store = $stats->{classes}->{$opts{where}};
    return "# No such event $opts{where}\n" unless $store;
-   my $sample = $store->{$opts{worst}}->{sample};
+   my $sample = $stats->{samples}->{$opts{where}};
 
    # Pick the first attribute to get counts
    my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
