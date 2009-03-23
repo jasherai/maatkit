@@ -11,7 +11,7 @@
  * fnv_64 in the mysql command is case-sensitive!  (Of course, when you actually
  * call the function, it is case-insensitive just like any other SQL function).
  *
- * gcc -fPIC -Wall -I/usr/include/mysql -shared -o fnv_udf.so fnv_udf.cc
+ * g++ -fPIC -Wall -I/usr/include/mysql -shared -o fnv_udf.so fnv_udf.cc
  * cp fnv_udf.so /lib * OR: * cp fnv_udf.so /usr/lib
  * mysql mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'fnv_udf.so'"
  *
