@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 38;
+use Test::More tests => 39;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -274,6 +274,15 @@ is($output,
 # DSN: A=utf8,D=foo,h=localhost,t=baz
 EOF
 , '--explainhosts');
+
+# #############################################################################
+# Issue 218: Two NULL column values don't compare properly w/ Stream/GroupBy
+# #############################################################################
+$sb->create_dbs($master_dbh, [qw(issue218)]);
+$sb->use('master', '-e "CREATE TABLE issue218.t1 (i INT)"');
+$sb->use('master', '-e "INSERT INTO issue218.t1 VALUES (NULL)"');
+qx(../mk-table-sync --print --database issue218 h=127.1,P=12345 P=12346);
+ok(!$?, 'Issue 218: NULL values compare as equal');
 
 # #############################################################################
 # Done

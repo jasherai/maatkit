@@ -1,5 +1,6 @@
 Changelog for mk-table-sync:
 
+   * Two NULL column values didn't compare properly w/ Stream/GroupBy (issue 218).
    * Removed string interpolation from debugging calls (issue 308)
    * Connection options were not read from the [client] section (issue 249).
    * Set connection options immediately after connecting (issue 286).
