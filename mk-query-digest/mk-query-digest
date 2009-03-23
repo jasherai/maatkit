@@ -4586,18 +4586,32 @@ above, and something like the following:
 
 =head1 QUERY REVIEWS
 
-A "query review" is the process of storing all the query fingerprints you find
-so you can add meta-data to them, mark them for follow up, etc.  But most
-importantly, you can refer to the stored values on subsequent runs so you'll
-know whether you've seen a query before, and not waste your time on it.
+A "query review" is the process of storing all the query fingerprints analyzed.
+This has several benefits:
 
-You can do even more with C<mk-query-digest>'s query review functionality, though.
-You can add meta-data to each row by adding more columns.  These can be
-arbitrary columns, such as the ticket ID of a JIRA ticket you open for a given
-query.  And you can add comments and other information.
+=over
 
-Next time you run C<mk-query-digest> in L<"--review"> mode, it will do the
-following:
+=item *
+
+You can add meta-data to classes of queries, such as marking them for follow-up,
+adding notes to queries, or marking them with an issue ID for your issue
+tracking system.
+
+=item *
+
+You can refer to the stored values on subsequent runs so you'll know whether
+you've seen a query before.  This can help you cut down on duplicated work.
+
+=item *
+
+You can store historical data such as the row count, query times, and generally
+anything you can see in the report.
+
+=back
+
+To use this feature, you run mk-query-digest with the L<"--review"> option.  It
+will store the fingerprints and other information into the table you specify.
+Next time you run it with the same option, it will do the following:
 
 =over
 
@@ -4633,6 +4647,10 @@ example,
 
 You can see how useful this meta-data is -- as you analyze your queries, you get
 your comments integrated right into the report.
+
+If you add the L<"--review-history"> option, it will also store information into
+a separate database table, so you can keep historical trending information on
+classes of queries.
 
 =back
 
