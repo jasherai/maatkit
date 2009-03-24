@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 
-use Test::More tests => 28;
+use Test::More tests => 29;
 use English qw(-no_match_vars);
 
 require "../DuplicateKeyFinder.pm";
@@ -395,6 +395,25 @@ is_deeply(
    $dk->{keys}->{i}->{constraining_key}->{cols},
    [qw(a)],
    'Found redundantly unique key',
+);
+
+$ddl   = load_file('samples/uppercase_names.sql');
+$dupes = [];
+$dk->get_duplicate_keys(
+   keys     => $tp->get_keys($ddl, $opt),
+   callback => $callback);
+is_deeply(
+   $dupes,
+   [
+      {
+         'key'               => 'A',
+         'cols'              => '`A`',
+         'duplicate_of'      => 'PRIMARY',
+         'duplicate_of_cols' => '`A`',
+         'reason'            => "A is a duplicate of PRIMARY",
+      },
+   ],
+   'Finds duplicates OK on uppercase columns',
 );
 
 $ddl   = load_file('samples/issue_9-7.sql');
