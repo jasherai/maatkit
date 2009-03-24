@@ -3,14 +3,14 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 83;
+use Test::More tests => 98;
 
 require "../OptionParser-2.pm";
 require "../DSNParser.pm";
 
 my $dp = new DSNParser();
 my $o  = new OptionParser(
-      description  => 'parses command line options.',
+   description  => 'parses command line options.',
    prompt       => '[OPTIONS]',
    dsn          => $dp,
 );
@@ -43,8 +43,8 @@ is_deeply(
    'Convert POD OPTIONS to opt specs (pod_sample_01.txt)',
 );
 
-%opts = $o->opts();
 $o->_parse_specs(@opt_specs);
+%opts = $o->opts();
 is_deeply(
    \%opts,
    {
@@ -258,6 +258,7 @@ like(
 
 # got()
 @ARGV = qw(--port 12345);
+$o->get_opts();
 is(
    $o->got('port'),
    1,
@@ -270,49 +271,110 @@ is(
 );
 is(
    $o->got('database'),
-   1,
+   0,
    'Did not "got" long opt'
 );
 is(
    $o->got('D'),
-   1,
+   0,
    'Did not "got" short opt'
 );
 is(
    $o->got('foo'),
-   1,
+   0,
    'Did not "got" nonexistent long opt'
 );
 is(
    $o->got('p'),
-   1,
+   0,
    'Did not "got" nonexistent short opt'
 );
 
-# Strict mode is enabled by default.
+# Strict mode is enabled by default, so nonexistent opts given on the
+# cmd line cause an error...
 @ARGV = qw(--bar);
 $o->get_opts();
 is_deeply(
    $o->errors(),
    ['Option --bar does not exist'],
-   'Nonexistent opt sets an error in strict mode'
+   'Nonexistent opt on cmd line sets an error in strict mode'
 );
+
+$o->get_opts();
 ok(
    scalar $o->errors() == 0,
    'get_opts() resets errors'
 );
 
-$o->disable_strict_mode();
-
-$o->get_opts();
+# ...and trying to get nonexistent opts in the code should
+# always causes self-destruction.
 eval { $o->get('bar'); };
 like(
    $EVAL_ERROR,
    qr/Option --bar does not exist/,
-   'Die trying to get nonexistent option when strict mode off'
+   'Die trying to get nonexistent option when strict mode on'
 ); 
 
-$o->enable_strict_mode();
+# Disable strict mode and re-do the previous two tests.
+$o  = new OptionParser(
+   description  => 'parses command line options.',
+   prompt       => '[OPTIONS]',
+   dsn          => $dp,
+   strict       => 0,
+);
+$o->get_specs('samples/pod_sample_01.txt');
+
+# When strict mode is disabled, nonexistent opts given on the
+# cmd line are ignored...
+@ARGV = qw(--bar);
+$o->get_opts();
+ok(
+   scalar $o->errors() == 0,
+   'Nonexistent opt on cmd line does not set an error when strict mode disabled'
+);
+
+# ...but trying to get them in the code still causes the
+# universe to implode.
+eval { $o->get('bar'); };
+like(
+   $EVAL_ERROR,
+   qr/Option --bar does not exist/,
+   'Die trying to get nonexistent option when strict mode disabled'
+); 
+
+# Re-create the obj in strict mode for the remaining test.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   prompt       => '[OPTIONS]',
+   dsn          => $dp,
+);
+
+
+# _parse_specs() should reset everything, no inheritance across calls.
+$o->_parse_specs(
+   { specs => 'foo', desc => 'foo' }, 
+);
+$o->_parse_specs(
+   { specs => 'bar', desc => 'bar' },
+);
+%opts = $o->opts();
+is_deeply(
+   \%opts,
+   {
+      'bar' => {
+         spec           => 'bar',
+         desc           => 'bar',
+         group          => 'default',
+         short          => undef,
+         is_cumulative  => 0,
+         is_negatable   => 0,
+         is_required    => 0,
+         type           => undef,
+         got            => 0,
+         value          => undef,
+      },
+   '_parse_specs() resets itself between calls'
+);
 
 # #############################################################################
 # Test hostile, broken usage.
@@ -342,8 +404,31 @@ like(
 # unrecognized rules, ...
 
 # #############################################################################
-# Test passed-in option defaults.
+# Test option defaults.
 # #############################################################################
+is_deeply(
+   $o->get_defaults(),
+   {},
+   'No default defaults',
+);
+
+$o->set_defaults(foo => 1, bar => 'barness');
+is_deeply(
+   %{ $o->get_defaults() },
+   {
+      foo => 1,
+      bar => 'barness',
+   },
+   'set_defaults() with values'
+);
+
+$o->set_defaults();
+is_deeply(
+   %{ $o->get_defaults() },
+   {},
+   'set_defaults() without values unsets defaults'
+);
+
 $o->_parse_specs(
    {
       spec => 'defaultset!',
@@ -439,6 +524,12 @@ is(
    'Cannot set default for non-existent option'
 );
 
+is(
+   $o->got('foo'),
+   0,
+   'Did not "got" --foo when --foo has default value'
+);
+
 # #############################################################################
 # Test option attributes negatable and cumulative.
 # #############################################################################
@@ -528,17 +619,20 @@ EOF
    'Options aligned and prompt included'
 );
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
+
 $o->_parse_specs(
    { spec => 'database|D=s',    desc => 'Specify the database for all tables' },
    { spec => 'nouniquechecks!', desc => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
 );
 
-$o->set_prompt(undef);
-
 is(
    $o->usage(),
 <<EOF
-OptionParser.t parses command line options. For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
@@ -593,13 +687,12 @@ $o->set_description('barbar');
 is(
    @{$o->errors()}[0],
 <<EOF
-Usage: OptionParser.t foofoo
+Usage: OptionParser.t <options>
 
 Errors in command-line arguments:
   * Required option --cat must be specified
 
-OptionParser.t barbar  For more details, please use the --help option, or try
-'perldoc OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 EOF
 ,
    'Error output includes note about missing required option'
@@ -622,14 +715,10 @@ $o->_parse_specs(
    '--ignore and --replace are mutually exclusive.',
 );
 
-$o->set_prompt(undef);
-$o->set_description(undef);
-$o->set_defaults();
-
 is(
    $o->usage(),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc
 OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
@@ -828,7 +917,38 @@ is_deeply(
       D => undef,
       P => '12345'
    },
-   'Default time value encoded in description'
+   'Default host value encoded in description'
+);
+
+is(
+   $o->got('foo'),
+   0,
+   'Did not "got" --foo with encoded default'
+);
+is(
+   $o->got('bar'),
+   0,
+   'Did not "got" --bar with encoded default'
+);
+is(
+   $o->got('price'),
+   0,
+   'Did not "got" --price with encoded default'
+);
+is(
+   $o->got('size'),
+   0,
+   'Did not "got" --size with encoded default'
+);
+is(
+   $o->got('time'),
+   0,
+   'Did not "got" --time with encoded default'
+);
+is(
+   $o->got('host'),
+   0,
+   'Did not "got" --host with encoded default'
 );
 
 # #############################################################################
@@ -917,6 +1037,14 @@ is_deeply(
    'Time value with d suffix decoded',
 );
 
+@ARGV = qw(-d 5m);
+$o->get_opts();
+is_deeply(
+   $o->get('d'),
+   5*60,
+   'Explicit suffix overrides default suffix'
+);
+
 # Use shorter, simpler specs to test usage for time blurb.
 $o->_parse_specs(
    { spec => 'foo=m', desc => 'Time' },
@@ -926,8 +1054,7 @@ $o->_parse_specs(
 is(
    $o->usage(),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
@@ -964,8 +1091,7 @@ $o->_parse_specs(
 is(
    $o->usage(),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
@@ -1026,10 +1152,9 @@ is_deeply(
 );
 
 is(
-   $o->usage(%opts),
+   $o->usage(),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
@@ -1125,8 +1250,7 @@ is_deeply(
 is(
    $o->usage(%opts),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
@@ -1169,8 +1293,7 @@ $o->get_opts();
 is(
    $o->usage(%opts),
 <<EOF
-OptionParser.t   For more details, please use the --help option, or try 'perldoc
-OptionParser.t' for complete documentation.
+OptionParser.t parses command line options.  For more details, please use the --help option, or try 'perldoc OptionParser.t' for complete documentation.
 
 Usage: OptionParser.t <options>
 
