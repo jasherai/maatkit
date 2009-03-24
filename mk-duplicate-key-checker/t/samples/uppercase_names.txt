@@ -1,0 +1,17 @@
+# ########################################################################
+# test.UPPER_TEST                                                         
+# ########################################################################
+
+# A is a duplicate of PRIMARY
+# Column types:
+#	  `a` int(11) NOT NULL default '0'
+# To remove this duplicate key, execute:
+ALTER TABLE `test`.`UPPER_TEST` DROP KEY `A`;
+
+# ########################################################################
+# Summary of keys                                                         
+# ########################################################################
+
+# Size Duplicate Keys   0
+# Total Duplicate Keys  1
+# Total Keys            2

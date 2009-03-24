@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 7;
+use Test::More tests => 8;
 
 require '../../common/DSNParser.pm';
 require '../../common/Sandbox.pm';
@@ -40,6 +40,9 @@ is($output, '', '--nosql');
 $output = `$cmd -d test --nosummary | diff samples/nosummary_output.txt -`;
 is($output, '', '--nosummary');
 
+$sb->load_file('master', '../../common/t/samples/uppercase_names.sql', 'test');
+$output = `$cmd -d test -t UPPER_TEST | diff samples/uppercase_names.txt -`;
+is($output, '', 'Issue 306 crash on uppercase column names');
 
 $sb->load_file('master', '../../common/t/samples/issue_269-1.sql', 'test');
 $output = `$cmd -d test -t a | diff samples/issue_269.txt -`;

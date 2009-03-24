@@ -2576,7 +2576,7 @@ sub print_duplicate_key {
               grep { $_ if !$seen_col{$_}++; }
               split(',', "$dupe->{cols},$dupe->{duplicate_of_cols}");
    foreach my $col ( @cols ) {
-      print "#\t" . $struct->{defs}->{$col} . "\n";
+      print "#\t" . $struct->{defs}->{lc $col} . "\n";
    }
 
    print "# To remove this duplicate key, execute:\n"
