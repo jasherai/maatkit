@@ -414,7 +414,7 @@ is_deeply(
 
 $o->set_defaults(foo => 1, bar => 'barness');
 is_deeply(
-   %{ $o->get_defaults() },
+   $o->get_defaults(),
    {
       foo => 1,
       bar => 'barness',
@@ -424,7 +424,7 @@ is_deeply(
 
 $o->set_defaults();
 is_deeply(
-   %{ $o->get_defaults() },
+   $o->get_defaults(),
    {},
    'set_defaults() without values unsets defaults'
 );
@@ -442,10 +442,8 @@ $o->_parse_specs(
    { spec => 'love|l+',           desc => 'And peace'       },
 );
 
-$o->set_defaults('foo' => 1);
-
-# We could just check that $o->get('foo') == 1, but the
-# whole opts hash is checked for thoroughness.
+# We've already tested opt spec parsing,
+# but we do it again for thoroughness.
 %opts = $o->opts();
 is_deeply(
    \%opts,
@@ -460,7 +458,7 @@ is_deeply(
          is_required    => 0,
          type           => undef,
          got            => 0,
-         value          => 1,
+         value          => undef,
       },
       'defaultset'    => {
          spec           => 'defaultset!',
@@ -513,21 +511,37 @@ is_deeply(
          value          => undef,
       },
    },
-   'Parse dog specs with defaults'
+   'Parse dog specs'
 );
 
-$o->set_defaults('bone' => 1);
-eval { $o->_parse_specs(@opt_specs); };
+$o->set_defaults('foo' => 2);
+
+@ARGV = ();
+$o->get_opts();
 is(
-   $EVAL_ERROR,
-   "Cannot set default for non-existent option 'bone'\n",
-   'Cannot set default for non-existent option'
+   $o->get('foo'),
+   2,
+   'Opt gets default value'
 );
-
 is(
    $o->got('foo'),
    0,
    'Did not "got" --foo when --foo has default value'
+);
+
+@ARGV = qw(--foo 5);
+$o->get_opts();
+is(
+   $o->get('foo'),
+   5,
+   'Value given on cmd line overrides default value'
+);
+
+eval { $o->set_defaults('bone' => 1) };
+is(
+   $EVAL_ERROR,
+   "Cannot set default for non-existent option 'bone'\n",
+   'Cannot set default for non-existent option'
 );
 
 # #############################################################################
