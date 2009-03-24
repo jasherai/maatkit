@@ -28,7 +28,7 @@ mytopuser
 # This item is included in the report because it matches --limit.
 #              pct   total     min     max     avg     95%  stddev  median
 # Count         60       3
-# Exec time      0    97us    15us    67us    32us    69us    26us    15us
+# Exec time      0    97us    15us    67us    32us    66us    24us    14us
 # Lock time      0       0       0       0       0       0       0       0
 # Rows sent      0       0       0       0       0       0       0       0
 # Rows exam      0       0       0       0       0       0       0       0

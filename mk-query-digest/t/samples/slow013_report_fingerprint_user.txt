@@ -1,9 +1,9 @@
 # Overall: 5 total, 4 unique, 5 QPS, 0.15x concurrency ___________________
 #                    total     min     max     avg     95%  stddev  median
-# Exec time          150ms     5us   149ms    30ms   155ms    69ms    15us
-# Lock time           70us       0    70us    14us      1s    35us       0
-# Rows sent            226       0     226   45.20  234.30  104.32    1.04
-# Rows exam            226       0     226   45.20  234.30  104.32    1.04
+# Exec time          150ms     5us   149ms    30ms   148ms    59ms    14us
+# Lock time           70us       0    70us    14us    69us    27us       0
+# Rows sent            226       0     226   45.20  223.14   89.26       0
+# Rows exam            226       0     226   45.20  223.14   89.26       0
 # Time range        2008-11-27 08:51:20 to 2008-11-27 08:51:21
 
 # ########################################################################
