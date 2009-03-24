@@ -1,5 +1,7 @@
 #!/usr/bin/env perl
 
+die "FIXME: fix issue 306 please";
+
 # This is mk-duplicate-key-checker, a program to analyze MySQL tables for
 # duplicated or redundant indexes and foreign key constraints.
 # 
