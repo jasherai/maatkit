@@ -3,7 +3,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 98;
+use Test::More tests => 99;
 
 require "../OptionParser-2.pm";
 require "../DSNParser.pm";
@@ -52,6 +52,7 @@ is_deeply(
          spec           => 'database|D=s',
          desc           => 'database string',
          group          => 'default',
+         long           => 'database',
          short          => 'D',
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -64,6 +65,7 @@ is_deeply(
          spec           => 'port|p=i',
          desc           => 'port (default 3306)',
          group          => 'default',
+         long           => 'port',
          short          => 'p',
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -76,6 +78,7 @@ is_deeply(
          spec           => 'price=f',
          desc           => 'price float (default 1.23)',
          group          => 'default',
+         long           => 'price',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -88,10 +91,11 @@ is_deeply(
          spec           => 'hash-req=s',
          desc           => 'hash required',
          group          => 'default',
+         long           => 'hash-req',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 0,
-         is_required    => 0,
+         is_required    => 1,
          type           => 'H',
          got            => 0,
          value          => undef,
@@ -100,6 +104,7 @@ is_deeply(
          spec           => 'hash-opt=s',
          desc           => 'hash optional',
          group          => 'default',
+         long           => 'hash-opt',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -112,10 +117,11 @@ is_deeply(
          spec           => 'array-req=s',
          desc           => 'array required',
          group          => 'default',
+         long           => 'array-req',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 0,
-         is_required    => 0,
+         is_required    => 1,
          type           => 'A',
          got            => 0,
          value          => undef,
@@ -124,6 +130,7 @@ is_deeply(
          spec           => 'array-opt=s',
          desc           => 'array optional',
          group          => 'default',
+         long           => 'array-opt',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -136,6 +143,7 @@ is_deeply(
          spec           => 'host=s',
          desc           => 'host DSN',
          group          => 'default',
+         long           => 'host',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -148,6 +156,7 @@ is_deeply(
          spec           => 'chunk-size=s',
          desc           => 'chunk size',
          group          => 'default',
+         long           => 'chunk-size',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -160,6 +169,7 @@ is_deeply(
          spec           => 'time=s',
          desc           => 'time',
          group          => 'default',
+         long           => 'time',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -172,6 +182,7 @@ is_deeply(
          spec           => 'help+',
          desc           => 'help cumulative',
          group          => 'default',
+         long           => 'help',
          short          => undef,
          is_cumulative  => 1,
          is_negatable   => 0,
@@ -184,6 +195,7 @@ is_deeply(
          spec           => 'magic!',
          desc           => 'magic negatable',
          group          => 'default',
+         long           => 'magic',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 1,
@@ -349,33 +361,6 @@ $o = new OptionParser(
    dsn          => $dp,
 );
 
-
-# _parse_specs() should reset everything, no inheritance across calls.
-$o->_parse_specs(
-   { specs => 'foo', desc => 'foo' }, 
-);
-$o->_parse_specs(
-   { specs => 'bar', desc => 'bar' },
-);
-%opts = $o->opts();
-is_deeply(
-   \%opts,
-   {
-      'bar' => {
-         spec           => 'bar',
-         desc           => 'bar',
-         group          => 'default',
-         short          => undef,
-         is_cumulative  => 0,
-         is_negatable   => 0,
-         is_required    => 0,
-         type           => undef,
-         got            => 0,
-         value          => undef,
-      },
-   '_parse_specs() resets itself between calls'
-);
-
 # #############################################################################
 # Test hostile, broken usage.
 # #############################################################################
@@ -429,6 +414,10 @@ is_deeply(
    'set_defaults() without values unsets defaults'
 );
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    {
       spec => 'defaultset!',
@@ -452,6 +441,7 @@ is_deeply(
          spec           => 'foo!',
          desc           => 'FOo',
          group          => 'default',
+         long           => 'foo',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 1,
@@ -466,6 +456,7 @@ is_deeply(
                          . 'that is longer than 80 characters wide '
                          . 'and must be wrapped',
          group          => 'default',
+         long           => 'defaultset',
          short          => undef,
          is_cumulative  => 0,
          is_negatable   => 1,
@@ -478,6 +469,7 @@ is_deeply(
          spec           => 'defaults-file|F=s',
          desc           => 'alignment test',
          group          => 'default',
+         long           => 'defaults-file',
          short          => 'F',
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -490,6 +482,7 @@ is_deeply(
          spec           => 'dog|D=s',
          desc           => 'Dogs are fun',
          group          => 'default',
+         long           => 'dog',
          short          => 'D',
          is_cumulative  => 0,
          is_negatable   => 0,
@@ -502,6 +495,7 @@ is_deeply(
          spec           => 'love|l+',
          desc           => 'And love',
          group          => 'default',
+         long           => 'love',
          short          => 'l',
          is_cumulative  => 1,
          is_negatable   => 0,
@@ -637,7 +631,6 @@ $o = new OptionParser(
    description  => 'parses command line options.',
    dsn          => $dp,
 );
-
 $o->_parse_specs(
    { spec => 'database|D=s',    desc => 'Specify the database for all tables' },
    { spec => 'nouniquechecks!', desc => 'Set UNIQUE_CHECKS=0 before LOAD DATA INFILE' },
@@ -668,13 +661,13 @@ EOF
 # Test _get_participants()
 # #############################################################################
 is_deeply(
-   [$o->_get_participants('L<"--foo"> disables --bar-bar and C<--baz>')],
+   [ $o->_get_participants('L<"--foo"> disables --bar-bar and C<--baz>') ],
    [qw(foo bar-bar baz)],
    'Extract option names from a string',
 );
 
 is_deeply(
-   [$o->_get_participants('L<"--foo"> disables L<"--[no]bar-bar">.'],
+   [ $o->_get_participants('L<"--foo"> disables L<"--[no]bar-bar">.') ],
    [qw(foo bar-bar)],
    'Extract [no]-negatable option names from a string',
 );
@@ -683,6 +676,10 @@ is_deeply(
 # #############################################################################
 # Test required options.
 # #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec => 'cat|C=s', desc => 'How to catch the cat; required' }
 );
@@ -723,6 +720,10 @@ is(
 # #############################################################################
 # Test option rules.
 # #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec => 'ignore|i',  desc => 'Use IGNORE for INSERT statements'         },
    { spec => 'replace|r', desc => 'Use REPLACE instead of INSERT statements' },
@@ -772,6 +773,11 @@ my @ird_specs = (
    { spec => 'delete|d',   desc => 'Delete'                                   },
 );
 
+
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    @ird_specs,
    '-ird are mutually exclusive.',
@@ -784,6 +790,11 @@ is_deeply(
    'Error set with long opt name and nice commas when rule violated',
 );
 
+
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 eval {
    $o->_parse_specs(
       @ird_specs,
@@ -796,6 +807,10 @@ like(
    'Die on using nonexistent option in one-and-only-one rule'
 );
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    @ird_specs,
    'Use one and only one of --ignore, --replace, or --delete.',
@@ -808,6 +823,10 @@ is_deeply(
    'Error set with one-and-only-one rule violated',
 );
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    @ird_specs,
    'Use one and only one of --ignore, --replace, or --delete.',
@@ -820,6 +839,10 @@ is_deeply(
    'Error set with one-and-only-one when none specified',
 );
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    @ird_specs,
    'Use at least one of --ignore, --replace, or --delete.',
@@ -832,6 +855,10 @@ is_deeply(
    'Error set with at-least-one when none specified',
 );
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    @ird_specs,
    'Use at least one of --ignore, --replace, or --delete.',
@@ -843,6 +870,10 @@ ok(
    'Multiple options OK for at-least-one',
 );
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { specs => 'foo=i', desc => 'Foo disables --bar'   },
    { specs => 'bar',   desc => 'Bar (default 1)'      },
@@ -855,6 +886,10 @@ is_deeply(
 );
 
 # Option can't disable a non-existent option.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 eval {
    $o->_parse_specs(
       { spec => 'foo=i', desc => 'Foo disables --fox' },
@@ -868,6 +903,10 @@ like(
 );
 
 # Option can't 'allowed with' a non-existent option.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 eval {
    $o->_parse_specs(
       { spec => 'foo=i', d => 'Foo disables --bar' },
@@ -884,6 +923,10 @@ like(
 # #############################################################################
 # Test default values encoded in description.
 # #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec => 'foo=i',   desc => 'Foo (default 5)'                 },
    { spec => 'bar',     desc => 'Bar (default)'                   },
@@ -968,6 +1011,10 @@ is(
 # #############################################################################
 # Test size option type.
 # #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec => 'size=z', desc => 'size' }
 );
@@ -1015,6 +1062,10 @@ is_deeply(
 # #############################################################################
 # Test time option type.
 # #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec => 't=m', desc => 'Time'            },
    { spec => 's=m', desc => 'Time (suffix s)' },
@@ -1060,6 +1111,10 @@ is_deeply(
 );
 
 # Use shorter, simpler specs to test usage for time blurb.
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec => 'foo=m', desc => 'Time' },
    { spec => 'bar=m', desc => 'Time (suffix m)' },
@@ -1096,6 +1151,10 @@ is_deeply(
 # #############################################################################
 # Test DSN option type.
 # #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec => 'foo=d', desc => 'DSN foo' },
    { spec => 'bar=d', desc => 'DSN bar' },
@@ -1201,6 +1260,10 @@ EOF
    'DSN stringified with inheritance into post-processed args'
 );
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec => 'foo|f=d', desc => 'DSN foo' },
    { spec => 'bar|b=d', desc => 'DSN bar' },
@@ -1226,6 +1289,10 @@ is_deeply(
 # #############################################################################
 # Test [Hh]ash and [Aa]rray option types.
 # #############################################################################
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec => 'columns|C=H',   desc => 'cols required'       },
    { spec => 'tables|t=h',    desc => 'tables optional'     },
@@ -1295,6 +1362,10 @@ EOF
 # TODO: refine these tests after I think more about how
 # groups will be implemented.
 
+$o = new OptionParser(
+   description  => 'parses command line options.',
+   dsn          => $dp,
+);
 $o->_parse_specs(
    { spec  => 'help',   desc  => 'Help',                         },
    { spec  => 'user=s', desc  => 'User',                         },

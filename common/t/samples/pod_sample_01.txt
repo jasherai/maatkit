@@ -37,9 +37,9 @@ full-explanation paragraphs should be (mostly) ignored.
 
 =item --price
 
-short form: -f; type: float
+type: float
 
-price float (default: 1.23).
+price float (default 1.23).
 
 By "mostly" I mean that there is, in fact, some magick that can happen in
 here. Unfortunately for us all, I have forgotten what that magick is. :-(
