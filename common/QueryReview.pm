@@ -151,6 +151,11 @@ sub set_history_options {
 # is a metric name.  Look at the test for more examples.
 sub set_review_history {
    my ( $self, $id, $sample, %data ) = @_;
+   # Need to transform ts->min/max into timestamps
+   foreach my $thing ( qw(min max) ) {
+      next unless defined $data{ts} && defined $data{ts}->{$thing};
+      $data{ts}->{$thing} = parse_timestamp($data{ts}->{$thing});
+   }
    $self->{history_sth}->execute(
       make_checksum($id),
       $sample,
