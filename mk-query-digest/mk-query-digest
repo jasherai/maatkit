@@ -3439,7 +3439,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 3245
+# QueryReview package 3277
 # ###########################################################################
 
 package QueryReview;
@@ -3543,6 +3543,10 @@ sub set_history_options {
 
 sub set_review_history {
    my ( $self, $id, $sample, %data ) = @_;
+   foreach my $thing ( qw(min max) ) {
+      next unless defined $data{ts} && defined $data{ts}->{$thing};
+      $data{ts}->{$thing} = parse_timestamp($data{ts}->{$thing});
+   }
    $self->{history_sth}->execute(
       make_checksum($id),
       $sample,
@@ -4136,8 +4140,9 @@ my %ea;      # EventAggregators
 
          # $attrib is the attribute by which the report is ordered.
          my ( $attrib, $orderby ) = split(/:/, $opts{orderby}->[$i]);
-         if ( !$ea->type_for($attrib) ) { # issue 244, missing --orderby
-            # TODO: get the default from the $opt_parser.
+         if ( !$ea->type_for($attrib) && $attrib ne 'Query_time' ) {
+            # This fixes issue 244: missing --orderby
+            # TODO: get the default from the $opt_parser, here and in the "if"
             print "--orderby attribute $attrib doesn't exist, using Query_time\n";
             $attrib = 'Query_time'; # Fall back to the default.
          }

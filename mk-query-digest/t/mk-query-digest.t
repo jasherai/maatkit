@@ -184,8 +184,6 @@ ok(
    'Order by non-existent falls back to default',
 );
 
-__DATA__
-
 # #############################################################################
 # Test cmd line op sanity.
 # #############################################################################
@@ -314,10 +312,10 @@ SKIP: {
             Query_time_stddev    => '0',
             Rows_sent_median     => '0',
             Lock_time_pct_95     => '0',
-            ts_min               => '0000-00-00 00:00:00',
+            ts_min               => '2007-12-18 11:48:27',
             Lock_time_min        => '0',
             Lock_time_max        => '0',
-            ts_max               => '0000-00-00 00:00:00',
+            ts_max               => '2007-12-18 11:49:30',
             Rows_examined_pct_95 => '0',
             Rows_sent_max        => '0',
             Query_time_median    => '1.2e-05',
@@ -344,10 +342,10 @@ SKIP: {
             Query_time_stddev    => '0',
             Rows_sent_median     => '0',
             Lock_time_pct_95     => '0',
-            ts_min               => '0000-00-00 00:00:00',
+            ts_min               => '2007-12-18 11:48:57',
             Lock_time_min        => '0',
             Lock_time_max        => '0',
-            ts_max               => '0000-00-00 00:00:00',
+            ts_max               => '2007-12-18 11:49:07',
             Rows_examined_pct_95 => '0',
             Rows_sent_max        => '0',
             Query_time_median    => '1.2e-05',
